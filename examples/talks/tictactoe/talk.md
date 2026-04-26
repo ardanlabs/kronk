@@ -20,15 +20,16 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 
 ### Basic Game Play Prompt
 
-- You are a senior Go software developer and know how to write efficient and idiomatic Go code.
-- I want to write a basic tic-tac-toe game only using the Go standard library.
+- I want to write a simple tic-tac-toe game using only the Go standard library.
+- Do not overthink writing this game and be concise when writing or refactoring the code.
 - The game play can be in the terminal.
 - Allow 2 players to play against each other.
 - Add the code to a file name `examples/talks/tictactoe/main.go`
 
-- Paint the board like this:
+- Paint the board exactly like this:
 
 ```
+
 1 | 2 | 3
 ----------
 4 | 5 | 6
@@ -36,6 +37,7 @@ To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run yo
 7 | 8 | 9
 
 Player X's turn. Enter a number (1-9):
+
 ```
 
 - Make sure there is a line space before and after rendering a new board.
@@ -78,3 +80,4 @@ Player X's turn. Enter a number (1-9):
 - I need functions called playerX and playerO that is used when it's that player's turn to choose a space. I need to encapsulate that functionality.
 - Do not attempt to run the game yourself.
 - Compile the program to validate it compiles. Fix any errors that you find. Then remove the binary you created to validate the code.
+- Run go fmt to make sure the code is properly formatted.

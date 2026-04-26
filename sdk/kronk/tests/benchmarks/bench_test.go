@@ -117,9 +117,62 @@ func cfgHybridIMC() model.Config {
 // prefills the new user/assistant tail.
 
 // turnsPerSession is the number of user→assistant exchanges per benchmark
-// iteration. With a ~10k-token system prompt and ~1-2k tokens added per turn,
-// 6 turns lands the final request near 20k+ tokens of prompt.
-const turnsPerSession = 6
+// iteration. With a ~10k-token system prompt, ~1-2k tokens added per regular
+// turn, and ~3k+ tokens added per tool-call turn (assistant tool_call + tool
+// result + assistant synthesis), 15 turns drives the prompt deep into the
+// 32k context window and exercises IMC across a realistic agentic session.
+const turnsPerSession = 15
+
+// isToolTurn reports whether the given 1-based turn index should include a
+// tool-call cycle (assistant tool_call + tool response + assistant synthesis)
+// in the canned conversation tail. Every third turn is a tool turn, so 5 of
+// the 15 turns per session exercise tool-call message shapes.
+func isToolTurn(turn int) bool {
+	return turn%3 == 0
+}
+
+// cannedToolTail returns the (assistant w/ tool_call, tool response, assistant
+// final) triple appended to history after a tool-turn request. Provides a
+// realistic tool_calls structure so IMC's hash + Jinja rendering paths see
+// the same message shapes a real agent would produce.
+func cannedToolTail(turn int, suffix string) []model.D {
+	callID := fmt.Sprintf("call_bench_%d", turn)
+
+	return []model.D{
+		{
+			"role":    "assistant",
+			"content": "Let me check that against our internal data.",
+			"tool_calls": []model.D{{
+				"id":   callID,
+				"type": "function",
+				"function": model.D{
+					"name":      "search_docs",
+					"arguments": fmt.Sprintf(`{"query": "operational guidance topic %d", "limit": 5, "min_score": 0.6}`, turn),
+				},
+			}},
+		},
+		{
+			"role":         "tool",
+			"tool_call_id": callID,
+			"name":         "search_docs",
+			"content": "Returned 4 documents. " +
+				"Doc 1 (rank 0.92): postmortem on cascading retry storms in the order pipeline; recommended max-attempts=3 with full-jitter backoff. " +
+				"Doc 2 (rank 0.88): SLO playbook for the payments service; documents the 99.9% target and the 28-day rolling error budget calculation. " +
+				"Doc 3 (rank 0.81): runbook for kafka consumer lag spikes; covers rebalance diagnostics and CooperativeStickyAssignor migration steps. " +
+				"Doc 4 (rank 0.74): architecture decision record on adopting OpenTelemetry head-based sampling at 5% with tail-based override for errors and >2s latencies.",
+		},
+		{
+			"role": "assistant",
+			"content": "Synthesizing those four sources:" +
+				"\n\n1. Retry policy: cap at 3 attempts with full-jitter backoff (per the cascading-storm postmortem)." +
+				"\n2. SLO posture: 99.9% over a 28-day rolling window matches the payments-service playbook; reuse that error-budget math." +
+				"\n3. Consumer-lag mitigation: the CooperativeStickyAssignor migration in Doc 3 is the right fix for your rebalance pauses." +
+				"\n4. Tracing: keep 5% head-based sampling but enable the tail-based override for errors and >2s latencies, matching the existing ADR." +
+				"\n\nWant me to draft a rollout plan, or pull additional context on any of these?" +
+				suffix,
+		},
+	}
+}
 
 // sessionSysPrompt returns the system prompt with a per-iteration suffix so
 // the IMC two-tier hash misses across iterations and we measure a real
@@ -866,16 +919,21 @@ func logSessionShape(b *testing.B, ctx context.Context, krn *kronk.Kronk) {
 		b.Logf("System prompt: %d tokens (%d chars)", resp.Tokens, len(sys))
 	}
 
-	// Build the final-turn message list to size it.
+	// Build the final-turn message list to size it. Mirrors runMultiTurnSession's
+	// growth pattern (regular vs tool-turn tails) so the logged size matches
+	// what the bench actually sends on the last turn.
 	history := buildSeedConversation(0)
 	turns := conversationTurns()
-	for i := 0; i < turnsPerSession-1; i++ {
+	for i := range turnsPerSession - 1 {
 		t := turns[i%len(turns)]
-		suffix := fmt.Sprintf(" [Turn %d]", i+1)
-		history = append(history,
-			model.D{"role": "user", "content": t.question + suffix},
-			model.D{"role": "assistant", "content": t.answer + suffix},
-		)
+		turn := i + 1
+		suffix := fmt.Sprintf(" [Turn %d]", turn)
+		history = append(history, model.D{"role": "user", "content": t.question + suffix})
+		if isToolTurn(turn) {
+			history = append(history, cannedToolTail(turn, suffix)...)
+		} else {
+			history = append(history, model.D{"role": "assistant", "content": t.answer + suffix})
+		}
 	}
 	finalT := turns[(turnsPerSession-1)%len(turns)]
 	finalUser := finalT.question + fmt.Sprintf(" [Turn %d]", turnsPerSession)
@@ -933,7 +991,7 @@ func runMultiTurnSession(ctx context.Context, krn *kronk.Kronk, iter int) (sessi
 	var agg sessionResult
 	sessionStart := time.Now()
 
-	for i := 0; i < turnsPerSession; i++ {
+	for i := range turnsPerSession {
 		t := turns[i%len(turns)]
 		suffix := fmt.Sprintf(" [Turn %d]", i+1)
 		userMsg := t.question + suffix
@@ -952,13 +1010,18 @@ func runMultiTurnSession(ctx context.Context, krn *kronk.Kronk, iter int) (sessi
 		agg.lastTurnTTFT = r.ttft
 		agg.lastTurnTime = r.totalTime
 
-		// Append the user message and a canned assistant reply (NOT the
-		// model's actual reply) so the prompt grows deterministically and
-		// identically across NonCaching/IMC runs.
-		history = append(history,
-			model.D{"role": "user", "content": userMsg},
-			model.D{"role": "assistant", "content": t.answer + suffix},
-		)
+		// Append the user message and a canned assistant tail (NOT the model's
+		// actual reply) so the prompt grows deterministically and identically
+		// across NonCaching/IMC runs. Tool turns append a full
+		// (assistant tool_call + tool result + assistant synthesis) triple to
+		// exercise the message shapes a real agent would produce.
+		turn := i + 1
+		history = append(history, model.D{"role": "user", "content": userMsg})
+		if isToolTurn(turn) {
+			history = append(history, cannedToolTail(turn, suffix)...)
+		} else {
+			history = append(history, model.D{"role": "assistant", "content": t.answer + suffix})
+		}
 	}
 
 	agg.totalTime = time.Since(sessionStart)

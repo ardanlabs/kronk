@@ -167,11 +167,14 @@ func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatRes
 	return ch
 }
 
-// validateAndCloneDocument validates the request document and returns a
-// shallow clone to avoid mutating the caller's top-level map. Downstream
-// functions (prepareTextContext, gptInjectToolCallNames) use copy-on-write
-// when they need to modify individual message maps.
+// validateAndCloneDocument clones the request document first to avoid mutating
+// the caller's map (parseParams writes back a normalized enable_thinking), then
+// validates the clone. Downstream functions (prepareTextContext,
+// gptInjectToolCallNames) use copy-on-write when they need to modify individual
+// message maps.
 func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, error) {
+	d = d.Clone()
+
 	params, err := m.validateDocument(d)
 	if err != nil {
 		return Params{}, nil, err
@@ -179,7 +182,7 @@ func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, e
 
 	m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
 
-	return params, d.Clone(), nil
+	return params, d, nil
 }
 
 // prepareContext prepares the document for inference, handling both text-only
