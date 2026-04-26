@@ -2072,8 +2072,8 @@ type modelSpec struct {
 // Configure this to switch between URL and catalog downloads.
 // Set either SourceURL or ModelID, not both.
 var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
-	ModelID:   "gemma-4-26B-A4B-it-UD-Q4_K_M",
+	//SourceURL: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
+	ModelID: "Qwen3-0.6B-Q8_0",
 }
 
 func main() {
@@ -2239,9 +2239,10 @@ func grammarPreset(krn *kronk.Kronk) error {
 		"messages": model.DocumentArray(
 			model.TextMessage(model.RoleUser, prompt),
 		),
-		"grammar":     grammarJSONObject,
-		"temperature": 0.7,
-		"max_tokens":  512,
+		"grammar":         grammarJSONObject,
+		"enable_thinking": false, // Grammar requires output to match from first token
+		"temperature":     0.7,
+		"max_tokens":      512,
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)

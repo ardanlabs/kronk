@@ -102,71 +102,46 @@ func cfgHybridIMC() model.Config {
 // =============================================================================
 // Benchmark conversation generator
 //
-// Builds a multi-turn conversation that fills ~30k tokens of a 32k context
-// window. Uses a large system prompt (~10k tokens) plus many conversation
-// turns with substantial assistant responses (~20k tokens).
+// Builds a multi-turn agentic session: large system prompt (~10k tokens) plus
+// turnsPerSession sequential user/assistant exchanges. Each call to the model
+// in a session sends [system + accumulated turns + new user message]. Canned
+// assistant replies are appended after each call so the prompt growth is
+// deterministic and identical for both NonCaching and IMC modes.
 //
-// Qwen3-8B tokenizer averages ~3.5 chars per token for English prose.
-// Target: ~105k chars total → ~30k tokens, leaving ~2k tokens for output.
+// In real agentic workflows (Cline, Cursor) the conversation grows
+// monotonically. This is the workload IMC is designed for: NonCaching pays
+// full prefill on every turn while IMC restores the prior KV state and only
+// prefills the new user/assistant tail.
 
-// targetPromptChars is the approximate character count we aim for across all
-// messages. At ~3.5 chars/token this yields ~30k tokens.
-const targetPromptChars = 105_000
+// turnsPerSession is the number of user→assistant exchanges per benchmark
+// iteration. With a ~10k-token system prompt and ~1-2k tokens added per turn,
+// 6 turns lands the final request near 20k+ tokens of prompt.
+const turnsPerSession = 6
 
-func benchDoc() model.D {
-	messages := buildConversation()
+// sessionSysPrompt returns the system prompt with a per-iteration suffix so
+// the IMC two-tier hash misses across iterations and we measure a real
+// rebuild + extend cycle each session rather than a permanent cache hit.
+func sessionSysPrompt(iter int) string {
+	return buildSystemPrompt() + fmt.Sprintf("\n\n[Bench session: %d]", iter)
+}
+
+// buildSeedConversation returns the system message for a fresh session.
+func buildSeedConversation(iter int) []model.D {
+	return []model.D{{"role": "system", "content": sessionSysPrompt(iter)}}
+}
+
+// turnRequest builds the request document for a given accumulated history
+// plus the next user question.
+func turnRequest(history []model.D, userMsg string) model.D {
+	messages := make([]model.D, 0, len(history)+1)
+	messages = append(messages, history...)
+	messages = append(messages, model.D{"role": "user", "content": userMsg})
 
 	return model.D{
 		"messages":    messages,
-		"max_tokens":  128,
+		"max_tokens":  64,
 		"temperature": 0.0,
 	}
-}
-
-func buildConversation() []model.D {
-	var messages []model.D
-	totalChars := 0
-
-	// System prompt: detailed instructions (~7k chars ≈ 2k tokens).
-	sys := buildSystemPrompt()
-	messages = append(messages, model.D{"role": "system", "content": sys})
-	totalChars += len(sys)
-
-	// Conversation turns: cycle through Q&A pairs until we approach the target.
-	// Reserve the last user message for the generation prompt.
-	turns := conversationTurns()
-	turnIdx := 0
-
-	for totalChars < targetPromptChars {
-		turn := turns[turnIdx%len(turns)]
-		turnIdx++
-
-		// Vary the content slightly per cycle to avoid degenerate tokenization.
-		suffix := fmt.Sprintf(" [Turn %d]", turnIdx)
-
-		userMsg := turn.question + suffix
-		messages = append(messages, model.D{"role": "user", "content": userMsg})
-		totalChars += len(userMsg)
-
-		if totalChars >= targetPromptChars {
-			break
-		}
-
-		assistMsg := turn.answer + suffix
-		messages = append(messages, model.D{"role": "assistant", "content": assistMsg})
-		totalChars += len(assistMsg)
-	}
-
-	// Ensure the final message is a user message to trigger generation.
-	last := messages[len(messages)-1]
-	if role, _ := last["role"].(string); role != "user" {
-		messages = append(messages, model.D{
-			"role":    "user",
-			"content": "Summarize the key points from our conversation in two sentences.",
-		})
-	}
-
-	return messages
 }
 
 type conversationTurn struct {
@@ -877,46 +852,41 @@ func runStreamingBench(ctx context.Context, krn *kronk.Kronk, d model.D) (benchR
 	return result, nil
 }
 
-// logTokenCounts uses the model's tokenizer to log actual token counts for
-// the system prompt and total conversation. This provides exact numbers
-// rather than estimates based on chars-per-token ratios.
-func logTokenCounts(b *testing.B, ctx context.Context, krn *kronk.Kronk, d model.D) {
+// logSessionShape uses the model's tokenizer to log token counts for the
+// system prompt and the FINAL turn of a session (the largest prompt the
+// benchmark will send).
+func logSessionShape(b *testing.B, ctx context.Context, krn *kronk.Kronk) {
 	b.Helper()
 
-	messages, _ := d["messages"].([]model.D)
-	if len(messages) == 0 {
-		return
+	sys := sessionSysPrompt(0)
+	if resp, err := krn.Tokenize(ctx, model.D{"input": sys}); err == nil {
+		b.Logf("System prompt: %d tokens (%d chars)", resp.Tokens, len(sys))
 	}
 
-	// Tokenize the system prompt.
-	if content, _ := messages[0]["content"].(string); content != "" {
-		if role, _ := messages[0]["role"].(string); role == "system" {
-			resp, err := krn.Tokenize(ctx, model.D{"input": content})
-			switch {
-			case err != nil:
-				b.Logf("tokenize system prompt: %v", err)
-			default:
-				b.Logf("System prompt: %d tokens (%d chars)", resp.Tokens, len(content))
-			}
+	// Build the final-turn message list to size it.
+	history := buildSeedConversation(0)
+	turns := conversationTurns()
+	for i := 0; i < turnsPerSession-1; i++ {
+		t := turns[i%len(turns)]
+		suffix := fmt.Sprintf(" [Turn %d]", i+1)
+		history = append(history,
+			model.D{"role": "user", "content": t.question + suffix},
+			model.D{"role": "assistant", "content": t.answer + suffix},
+		)
+	}
+	finalT := turns[(turnsPerSession-1)%len(turns)]
+	finalUser := finalT.question + fmt.Sprintf(" [Turn %d]", turnsPerSession)
+	history = append(history, model.D{"role": "user", "content": finalUser})
+
+	var sb strings.Builder
+	for _, m := range history {
+		if c, _ := m["content"].(string); c != "" {
+			sb.WriteString(c)
 		}
 	}
-
-	// Tokenize all message content concatenated for total count.
-	var totalChars int
-	var allContent strings.Builder
-	for _, msg := range messages {
-		if content, _ := msg["content"].(string); content != "" {
-			allContent.WriteString(content)
-			totalChars += len(content)
-		}
-	}
-
-	resp, err := krn.Tokenize(ctx, model.D{"input": allContent.String()})
-	switch {
-	case err != nil:
-		b.Logf("tokenize conversation: %v", err)
-	default:
-		b.Logf("Total conversation: %d tokens (%d chars, %d messages)", resp.Tokens, totalChars, len(messages))
+	if resp, err := krn.Tokenize(ctx, model.D{"input": sb.String()}); err == nil {
+		b.Logf("Final turn (%d): %d tokens (%d chars, %d messages)",
+			turnsPerSession, resp.Tokens, sb.Len(), len(history))
 	}
 }
 
@@ -938,38 +908,116 @@ func withBenchModel(b *testing.B, cfg model.Config) *kronk.Kronk {
 	return krn
 }
 
-// benchChat runs the core benchmark loop for a given mode and document.
-func benchChat(b *testing.B, krn *kronk.Kronk, d model.D) {
+// sessionResult aggregates per-turn metrics across one full session.
+type sessionResult struct {
+	totalTime    time.Duration
+	ttftSum      time.Duration
+	lastTurnTTFT time.Duration
+	lastTurnTime time.Duration
+	outputTokens int
+	promptTokens int // sum across turns
+	turns        int
+}
+
+// runMultiTurnSession executes turnsPerSession sequential chat requests,
+// growing the conversation by one user/assistant pair per turn. Canned
+// assistant replies are appended after each call so the prompt sequence is
+// deterministic and identical between NonCaching and IMC runs.
+func runMultiTurnSession(ctx context.Context, krn *kronk.Kronk, iter int) (sessionResult, error) {
+	history := buildSeedConversation(iter)
+	turns := conversationTurns()
+
+	var agg sessionResult
+	sessionStart := time.Now()
+
+	for i := 0; i < turnsPerSession; i++ {
+		t := turns[i%len(turns)]
+		suffix := fmt.Sprintf(" [Turn %d]", i+1)
+		userMsg := t.question + suffix
+
+		d := turnRequest(history, userMsg)
+
+		r, err := runStreamingBench(ctx, krn, d)
+		if err != nil {
+			return agg, fmt.Errorf("turn %d: %w", i+1, err)
+		}
+
+		agg.ttftSum += r.ttft
+		agg.outputTokens += r.outputTokens
+		agg.promptTokens += r.promptTokens
+		agg.turns++
+		agg.lastTurnTTFT = r.ttft
+		agg.lastTurnTime = r.totalTime
+
+		// Append the user message and a canned assistant reply (NOT the
+		// model's actual reply) so the prompt grows deterministically and
+		// identically across NonCaching/IMC runs.
+		history = append(history,
+			model.D{"role": "user", "content": userMsg},
+			model.D{"role": "assistant", "content": t.answer + suffix},
+		)
+	}
+
+	agg.totalTime = time.Since(sessionStart)
+
+	return agg, nil
+}
+
+// benchChat runs the core benchmark loop. Each iteration is a fresh
+// turnsPerSession-turn agentic session. The system prompt carries the
+// iteration number so IMC must rebuild its cache per session (and then
+// extend it across the session's turns) — exactly the pattern IMC is
+// designed to optimize.
+func benchChat(b *testing.B, krn *kronk.Kronk) {
 	b.Helper()
 	b.ReportAllocs()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	// Log actual token counts for the system prompt and full conversation.
-	logTokenCounts(b, ctx, krn, d)
+	logSessionShape(b, ctx, krn)
 
-	// Warmup: prime caches and JIT paths.
-
-	if _, err := runStreamingBench(ctx, krn, d); err != nil {
+	// Warmup with a tiny throwaway prompt to prime JIT/allocators without
+	// seeding the KV cache with content the timed run will reuse.
+	warm := model.D{
+		"messages":   []model.D{{"role": "user", "content": "ping"}},
+		"max_tokens": 4,
+	}
+	if _, err := runStreamingBench(ctx, krn, warm); err != nil {
 		b.Fatalf("warmup failed: %v", err)
 	}
 
 	b.ResetTimer()
 
+	iter := 0
 	for b.Loop() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		iter++
 
-		result, err := runStreamingBench(ctx, krn, d)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		r, err := runMultiTurnSession(ctx, krn, iter)
 		cancel()
 
 		if err != nil {
-			b.Fatalf("benchmark iteration failed: %v", err)
+			b.Fatalf("session %d failed: %v", iter, err)
 		}
 
-		b.ReportMetric(result.tps, "tok/s")
-		b.ReportMetric(float64(result.ttft.Milliseconds()), "ttft-ms")
-		b.ReportMetric(float64(result.totalTime.Milliseconds()), "total-ms")
+		avgTTFT := float64(r.ttftSum.Milliseconds()) / float64(r.turns)
+
+		// Session decode time = total - sum of TTFT (TTFT covers prefill +
+		// first token; the rest is pure decode). Approximate aggregate tok/s
+		// across all turns.
+		decodeMS := float64(r.totalTime.Milliseconds()) - float64(r.ttftSum.Milliseconds())
+		var tokS float64
+		if decodeMS > 0 {
+			tokS = float64(r.outputTokens) / (decodeMS / 1000.0)
+		}
+
+		// Use the standard names the benchfmt tool understands.
+		b.ReportMetric(tokS, "tok/s")
+		b.ReportMetric(avgTTFT, "ttft-ms")
+		b.ReportMetric(float64(r.totalTime.Milliseconds()), "total-ms")
+		b.ReportMetric(float64(r.lastTurnTTFT.Milliseconds()), "lastT-ttft-ms")
+		b.ReportMetric(float64(r.promptTokens)/float64(r.turns), "avg-prompt-tok")
 	}
 }
 
@@ -983,7 +1031,7 @@ func BenchmarkDense_NonCaching(b *testing.B) {
 		b.Skip("model Qwen3-0.6B-Q8_0 not downloaded")
 	}
 	krn := withBenchModel(b, cfgDenseNonCaching())
-	benchChat(b, krn, benchDoc())
+	benchChat(b, krn)
 }
 
 func BenchmarkDense_IMC(b *testing.B) {
@@ -991,7 +1039,7 @@ func BenchmarkDense_IMC(b *testing.B) {
 		b.Skip("model Qwen3-0.6B-Q8_0 not downloaded")
 	}
 	krn := withBenchModel(b, cfgDenseIMC())
-	benchChat(b, krn, benchDoc())
+	benchChat(b, krn)
 }
 
 // =============================================================================
@@ -1005,7 +1053,7 @@ func BenchmarkMoE_NonCaching(b *testing.B) {
 		b.Skip("model gemma-4-26B-A4B-it-UD-Q4_K_M not downloaded")
 	}
 	krn := withBenchModel(b, cfgMoENonCaching())
-	benchChat(b, krn, benchDoc())
+	benchChat(b, krn)
 }
 
 func BenchmarkMoE_IMC(b *testing.B) {
@@ -1013,7 +1061,7 @@ func BenchmarkMoE_IMC(b *testing.B) {
 		b.Skip("model gemma-4-26B-A4B-it-UD-Q4_K_M not downloaded")
 	}
 	krn := withBenchModel(b, cfgMoEIMC())
-	benchChat(b, krn, benchDoc())
+	benchChat(b, krn)
 }
 
 // =============================================================================
@@ -1028,7 +1076,7 @@ func BenchmarkHybrid_NonCaching(b *testing.B) {
 		b.Skip("model Qwen3.6-35B-A3B-UD-Q4_K_M not downloaded")
 	}
 	krn := withBenchModel(b, cfgHybridNonCaching())
-	benchChat(b, krn, benchDoc())
+	benchChat(b, krn)
 }
 
 func BenchmarkHybrid_IMC(b *testing.B) {
@@ -1036,7 +1084,7 @@ func BenchmarkHybrid_IMC(b *testing.B) {
 		b.Skip("model Qwen3.6-35B-A3B-UD-Q4_K_M not downloaded")
 	}
 	krn := withBenchModel(b, cfgHybridIMC())
-	benchChat(b, krn, benchDoc())
+	benchChat(b, krn)
 }
 
 // =============================================================================

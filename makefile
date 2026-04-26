@@ -254,38 +254,20 @@ test-gh: test-gh-only lint vuln-check diff
 benchmark-dense-nc:
 	go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-spc:
-	go test -run=none -bench=BenchmarkDense_SPC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-dense-imc:
+	go test -run=none -bench=BenchmarkDense_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-imc-det:
-	go test -run=none -bench=BenchmarkDense_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-moe-nc:
+	go test -run=none -bench=BenchmarkMoE_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-imc-nondet:
-	go test -run=none -bench=BenchmarkDense_IMCNonDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-moe-imc:
+	go test -run=none -bench=BenchmarkMoE_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-imc-det-spec:
-	go test -run=none -bench=BenchmarkDense_IMCDeterministic_Speculative -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-hybrid-nc:
+	go test -run=none -bench=BenchmarkHybrid_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
-benchmark-dense-imc-multi:
-	go test -run=none -bench=BenchmarkDense_IMCDeterministic_MultiSlot -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-dense-imc-prefill:
-	go test -run=none -bench=BenchmarkDense_IMC_PrefillOnly -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-dense-imc-cold:
-	go test -run=none -bench=BenchmarkDense_IMC_ColdBuild -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-moe-imc-det:
-	go test -run=none -bench=BenchmarkMoE_IMCDeterministic$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-moe-spec-baseline:
-	go test -run=none -bench=BenchmarkMoE_Speculative_Baseline -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-moe-spec-draft:
-	go test -run=none -bench=BenchmarkMoE_Speculative_WithDraft -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
-
-benchmark-hybrid-imc-det:
-	go test -run=none -bench=BenchmarkHybrid_IMCDeterministic -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+benchmark-hybrid-imc:
+	go test -run=none -bench=BenchmarkHybrid_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 # Run all benchmarks sequentially (each target loads/unloads its own model)
 # and write combined raw output to a single file under runs/.
@@ -300,17 +282,11 @@ benchmark-all:
 	echo "" >> $$FILE; \
 	for target in \
 		benchmark-dense-nc \
-		benchmark-dense-spc \
-		benchmark-dense-imc-det \
-		benchmark-dense-imc-nondet \
-		benchmark-dense-imc-det-spec \
-		benchmark-dense-imc-multi \
-		benchmark-dense-imc-prefill \
-		benchmark-dense-imc-cold \
-		benchmark-moe-imc-det \
-		benchmark-moe-spec-baseline \
-		benchmark-moe-spec-draft \
-		benchmark-hybrid-imc-det; \
+		benchmark-dense-imc \
+		benchmark-moe-nc \
+		benchmark-moe-imc \
+		benchmark-hybrid-nc \
+		benchmark-hybrid-imc; \
 	do \
 		echo "" >> $$FILE; \
 		echo "## $$target" >> $$FILE; \

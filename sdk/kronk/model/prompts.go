@@ -75,29 +75,6 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		d["add_generation_prompt"] = true
 	}
 
-	// Ensure enable_thinking is set. If the model config specifies a default
-	// (e.g., enable_thinking: false in sampling-parameters), use that. Otherwise
-	// default to true. When using the SDK directly, callers may not set this
-	// field, but templates (e.g., gemma-4.jinja) rely on it to control whether
-	// reasoning is enabled.
-	if _, ok := d["enable_thinking"]; !ok {
-		if m.cfg.DefaultParams.Thinking != "" {
-			d["enable_thinking"] = m.cfg.DefaultParams.Thinking
-		} else {
-			d["enable_thinking"] = true
-		}
-	}
-
-	// Normalize enable_thinking to a bool so Jinja "is false" / "is true" tests
-	// work correctly. The value may arrive as a string ("true"/"false") from the
-	// CLI or catalog config, but templates require a real boolean.
-	if v, ok := d["enable_thinking"]; ok {
-		switch val := v.(type) {
-		case string:
-			d["enable_thinking"] = val == "true"
-		}
-	}
-
 	// Provide bos_token and eos_token from the model vocabulary. Templates
 	// like gemma-4 require these to produce a valid prompt. When the tokenizer
 	// already prepends BOS (addBOSToken=true), we set bos_token to empty to
