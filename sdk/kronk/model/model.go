@@ -112,6 +112,8 @@ type Model struct {
 	cacheMu           sync.RWMutex
 	cacheCond         *sync.Cond    // Signaled when an IMC slot becomes available (transitional: removed in Phase 4)
 	imcSessions       []*imcSession // IMC sessions, one per slot (transitional: becomes session pool in Phase 4)
+	imcBatch          llama.Batch   // Reusable batch for IMC text cache build/extend; avoids per-call BatchInit/BatchFree.
+	imcHasBatch       bool          // True when imcBatch is allocated (IncrementalCache enabled).
 	addBOSToken       bool          // Whether to add BOS token (from model metadata)
 	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
 	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
@@ -443,6 +445,15 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 				}
 			}
 			m.cacheCond = sync.NewCond(&m.cacheMu)
+
+			// Pre-allocate reusable batch for IMC text cache build/extend.
+			// Mirrors the engine's pre-allocated mropeBatch pattern: avoids
+			// per-call BatchInit/BatchFree allocation in decodeTokensIntoCache.
+			if nb := cfg.NBatch(); nb > 0 {
+				m.imcBatch = llama.BatchInit(int32(nb), 0, 1)
+				m.imcHasBatch = true
+				l(ctx, "imc", "status", "batch-alloc", "nbatch", nb)
+			}
 		}
 
 		m.batch = newBatchEngine(&m, nSlots)
@@ -727,6 +738,12 @@ func (m *Model) Unload(ctx context.Context) error {
 	// Free batch buffer before context (batch references context internals).
 	if hasBatch {
 		m.batch.freeBatch()
+	}
+
+	// Free reusable IMC batch (if allocated). Must happen before lctx free.
+	if m.imcHasBatch {
+		llama.BatchFree(m.imcBatch)
+		m.imcHasBatch = false
 	}
 
 	// Close the context pool if running (embed/rerank models).

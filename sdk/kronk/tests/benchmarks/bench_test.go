@@ -20,14 +20,15 @@ import (
 
 func cfgDenseNonCaching() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchDenseModelPath.ModelFiles,
-		PtrContextWindow: new(32768),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(2048),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(1),
+		Log:                 benchLog,
+		ModelFiles:          benchDenseModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(false),
 	}
 }
 
@@ -47,14 +48,15 @@ func cfgDenseIMC() model.Config {
 
 func cfgMoENonCaching() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchMoEModelPath.ModelFiles,
-		PtrContextWindow: new(32768),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(2048),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(1),
+		Log:                 benchLog,
+		ModelFiles:          benchMoEModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(false),
 	}
 }
 
@@ -74,14 +76,15 @@ func cfgMoEIMC() model.Config {
 
 func cfgHybridNonCaching() model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       benchHybridModelPath.ModelFiles,
-		PtrContextWindow: new(32768),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(2048),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(1),
+		Log:                 benchLog,
+		ModelFiles:          benchHybridModelPath.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrNBatch:           new(2048),
+		PtrNUBatch:          new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		PtrIncrementalCache: new(false),
 	}
 }
 

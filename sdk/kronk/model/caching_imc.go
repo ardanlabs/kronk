@@ -1165,7 +1165,22 @@ func imcRebuildResult(d D, seqID llama.SeqId, slotID, lastMsgIdxToCache int, all
 // decodeTokensIntoCache decodes tokens into a cache sequence starting at startPos.
 // Unlike addTokensToCache, this does NOT clear the sequence first — the caller
 // is responsible for clearing if needed (e.g., rebuild from scratch).
-func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
+//
+// isFinal must be true when this call decodes the FINAL tokens of the cache
+// build (no further decode follows before the caller reads the KV state).
+// When true, logits=true is set on the very last token to mirror the engine's
+// regular prefill path. The media path passes isFinal=false because additional
+// text/media chunks may follow in the same cache build.
+//
+// Performance:
+//   - Reuses m.imcBatch (pre-allocated at model init) when available, avoiding
+//     per-call BatchInit/BatchFree.
+//   - Sets logits=true on the final token (only when isFinal=true) to mirror
+//     the engine's regular prefill path; some llama.cpp backends pick a faster
+//     kernel when logits is set.
+//   - Does ONE llama.Synchronize at the end of the multi-chunk loop instead of
+//     per chunk, allowing the GPU pipeline to overlap chunk submissions.
+func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int, isFinal bool) error {
 	ctx, decodeSpan := otel.AddSpan(ctx, "cache-decode",
 		attribute.Int("tokens", len(tokens)),
 	)
@@ -1183,15 +1198,20 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
 
-	// Create batch with explicit sequence ID.
-	// Allocate batch sized to nBatch (not nCtx) to avoid huge allocations for
-	// large context windows that can cause C-side allocation failures.
-	batchSize := int32(min(nBatch, nTokens))
-	if batchSize <= 0 {
-		batchSize = 1
+	// Use the reusable IMC batch when available; otherwise fall back to
+	// per-call allocation (e.g., IncrementalCache disabled but somehow
+	// reached this path).
+	var batch llama.Batch
+	if m.imcHasBatch {
+		batch = m.imcBatch
+	} else {
+		batchSize := int32(min(nBatch, nTokens))
+		if batchSize <= 0 {
+			batchSize = 1
+		}
+		batch = llama.BatchInit(batchSize, 0, 1)
+		defer llama.BatchFree(batch)
 	}
-	batch := llama.BatchInit(batchSize, 0, 1)
-	defer llama.BatchFree(batch)
 
 	seqIDs := []llama.SeqId{seqID}
 
@@ -1199,17 +1219,31 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 		batch.Clear()
 
 		end := min(i+nBatch, nTokens)
+		isFinalChunk := isFinal && end == nTokens
 
 		for j := i; j < end; j++ {
 			pos := llama.Pos(startPos + j)
-			batch.Add(tokens[j], pos, seqIDs, false)
+			// Set logits=true on the final token of the final chunk (only when
+			// the caller marked this as the final cache-build decode) to mirror
+			// the regular prefill path (`addPrefillChunk` sets isLast on the
+			// last prompt token). The computed logits are unused by IMC, but
+			// matching the engine's batch shape avoids any backend-specific
+			// fast-path divergence.
+			isLast := isFinalChunk && j == end-1
+			batch.Add(tokens[j], pos, seqIDs, isLast)
 		}
 
 		if _, err := llama.Decode(m.lctx, batch); err != nil {
+			// Sync before returning so any in-flight GPU work is drained.
+			llama.Synchronize(m.lctx)
 			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", i, err)
 		}
-		llama.Synchronize(m.lctx)
 	}
+
+	// Single sync at the end. Decode submissions can overlap on backends that
+	// queue work asynchronously (e.g., Metal); we only need the KV state to be
+	// fully written before the snapshot/extend caller reads it.
+	llama.Synchronize(m.lctx)
 
 	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
 
