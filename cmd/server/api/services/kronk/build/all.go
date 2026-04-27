@@ -87,6 +87,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		downapp.Routes(app, downapp.Config{
 			Log:        cfg.Log,
 			ModelsPath: cfg.Models.Path(),
+			Libs:       cfg.Libs,
 		})
 	}
 }
