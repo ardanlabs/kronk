@@ -153,6 +153,9 @@ export const PARAM_TOOLTIPS = {
   bundleOS: 'Target operating system for this library bundle download (linux, bookworm, trixie, darwin, windows). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
   bundleProcessor: 'Target processor backend for this library bundle download (cpu, cuda, metal, rocm, vulkan). Only combinations published by the upstream llama.cpp build matrix can be selected.',
   bundleRemove: 'Delete this bundle directory. Does not affect the active install unless this bundle is the active one.',
+  peerLibsHost: 'Address of another Kronk server on the local network in the form ip:port. The peer must be running with download enabled. Useful in workshop environments where Internet access is slow or unavailable.',
+  peerLibsConnect: 'Query the peer Kronk server for the list of library bundles it has installed and is willing to share.',
+  peerLibsDownload: 'Download this library bundle from the peer over the local network. The peer builds a zip on demand on first request, sends it with a sha256 digest for integrity verification, and the zip is unpacked into the matching bundle directory on this server.',
 } as const satisfies Record<string, string>;
 
 export type TooltipKey = keyof typeof PARAM_TOOLTIPS;

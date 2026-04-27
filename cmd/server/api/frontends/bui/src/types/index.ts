@@ -303,6 +303,33 @@ export interface LibsBundleActionResponse {
   processor: string;
 }
 
+export interface LibsPeerBundle {
+  arch: string;
+  os: string;
+  processor: string;
+  version: string;
+  size?: number;
+  sha256?: string;
+}
+
+export interface LibsPeerBundleListResponse {
+  bundles: LibsPeerBundle[];
+}
+
+export interface LibsPeerPullEvent {
+  status: string;
+  arch?: string;
+  os?: string;
+  processor?: string;
+  version?: string;
+  bytes?: number;
+  bytes_total?: number;
+  mb_per_second?: number;
+  size?: number;
+  sha256?: string;
+  error?: string;
+}
+
 export type RateWindow = 'day' | 'month' | 'year' | 'unlimited';
 
 export interface RateLimit {

@@ -30,6 +30,8 @@ import type {
   LibsCombinationsResponse,
   LibsBundleListResponse,
   LibsBundleActionResponse,
+  LibsPeerBundleListResponse,
+  LibsPeerPullEvent,
 } from '../types';
 
 class ApiService {
@@ -720,6 +722,88 @@ class ApiService {
   async removeLibsInstall(arch: string, os: string, processor: string): Promise<LibsBundleActionResponse> {
     const params = new URLSearchParams({ arch, os, processor });
     return this.request<LibsBundleActionResponse>(`/libs/installs?${params.toString()}`, { method: 'DELETE' });
+  }
+
+  async listPeerLibsBundles(host: string): Promise<LibsPeerBundleListResponse> {
+    const params = new URLSearchParams({ host });
+    return this.request<LibsPeerBundleListResponse>(`/download/libs/peer-bundles?${params.toString()}`);
+  }
+
+  pullLibsFromPeer(
+    host: string,
+    arch: string,
+    os: string,
+    processor: string,
+    onMessage: (data: LibsPeerPullEvent) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+  ): () => void {
+    const controller = new AbortController();
+
+    const params = new URLSearchParams({ host, arch, os, processor });
+    const url = `${this.baseUrl}/download/libs/pull-from-peer?${params.toString()}`;
+
+    fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          onError(`HTTP ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let receivedComplete = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+            try {
+              const data = JSON.parse(jsonStr) as LibsPeerPullEvent;
+              onMessage(data);
+              if (data.status === 'error') {
+                onError(data.error || 'Peer pull failed');
+                return;
+              }
+              if (data.status === 'complete') {
+                receivedComplete = true;
+                onComplete();
+                return;
+              }
+            } catch {
+              // Ignore malformed lines.
+            }
+          }
+        }
+
+        if (!receivedComplete && !controller.signal.aborted) {
+          onError('Stream ended before completion');
+        }
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Connection error');
+        }
+      });
+
+    return () => controller.abort();
   }
 
 }
