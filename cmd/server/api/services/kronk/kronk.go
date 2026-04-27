@@ -122,10 +122,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Arch            string
 		OS              string
 		Processor       string
+		AllowUpgrade    bool
+		InsecureLogging bool
 		HfToken         string `conf:"mask"`
-		AllowUpgrade    bool   `conf:"default:true"`
 		LlamaLog        int    `conf:"default:1"`
-		InsecureLogging bool   `conf:"default:false"`
 	}{
 		Version: conf.Version{
 			Build: tag,
