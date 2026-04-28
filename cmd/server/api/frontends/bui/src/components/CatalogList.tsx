@@ -524,9 +524,9 @@ export default function CatalogList() {
             />
           </div>
 
-          {/* Owner */}
+          {/* Provider */}
           {distinctValues.owners.length > 0 && (
-            <FilterSection title="Owner" expanded={expandedSections.has('owner')} onToggle={() => toggleSection('owner')}>
+            <FilterSection title="Provider" expanded={expandedSections.has('owner')} onToggle={() => toggleSection('owner')}>
               <div className="catalog-filter-options">
                 {distinctValues.owners.map(owner => (
                   <label key={owner}>
@@ -866,7 +866,7 @@ export default function CatalogList() {
                     </div>
 
                     <KeyValueTable rows={[
-                      { key: 'owner', label: 'Owner', value: modelInfo.owned_by },
+                      { key: 'owner', label: 'Provider', value: modelInfo.owned_by },
                       { key: 'family', label: 'Family', value: modelInfo.model_family },
                       { key: 'arch', label: 'Architecture', value: modelInfo.model_type || '-' },
                       { key: 'gguf-arch', label: 'GGUF Arch', value: modelInfo.gguf_arch || '-' },

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/spf13/cobra"
@@ -47,6 +48,10 @@ func run(cmd *cobra.Command, args []string) error {
 
 	switch local {
 	case true:
+		if ierr := kronk.Init(); ierr != nil {
+			return fmt.Errorf("unable to init kronk: %w", ierr)
+		}
+
 		modelConfigFile, ferr := defaults.ModelConfigFile("", client.GetBasePath(cmd))
 		if ferr != nil {
 			return fmt.Errorf("resolving model config file: %w", ferr)

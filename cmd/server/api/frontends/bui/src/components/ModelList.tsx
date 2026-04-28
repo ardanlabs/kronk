@@ -251,7 +251,7 @@ export default function ModelList() {
                     <th style={{ width: '40px', textAlign: 'center' }} title="Configuration and template confirmed working with the Kronk catalog">VAL</th>
                     {([
                       ['id', 'Model ID'],
-                      ['owner', 'Owner'],
+                      ['owner', 'Provider'],
                       ['family', 'Family'],
                     ] as const).map(([field, label]) => (
                       <th key={field} onClick={() => handleSort(field)} className="catalog-table-sortable">
@@ -413,7 +413,7 @@ export default function ModelList() {
                 )}
 
                 <KeyValueTable rows={[
-                  { key: 'owner', label: 'Owner', value: modelInfo.owned_by },
+                  { key: 'owner', label: 'Provider', value: modelInfo.owned_by },
                   { key: 'size', label: 'Size', value: formatBytes(modelInfo.size) },
                   { key: 'created', label: 'Created', value: new Date(modelInfo.created).toLocaleString() },
                   { key: 'projection', label: labelWithTip('Has Projection', 'hasProjection'), value: <span className={`badge ${modelInfo.has_projection ? 'badge-yes' : 'badge-no'}`}>{modelInfo.has_projection ? 'Yes' : 'No'}</span> },
@@ -545,7 +545,7 @@ export default function ModelList() {
                   <div style={{ marginBottom: '24px' }}>
                     <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Model Details</h4>
                     <KeyValueTable rows={[
-                      { key: 'draft-owner', label: 'Owner', value: draftModelInfo.owned_by },
+                      { key: 'draft-owner', label: 'Provider', value: draftModelInfo.owned_by },
                       { key: 'draft-size', label: 'Size', value: formatBytes(draftModelInfo.size) },
                     ]} />
                   </div>

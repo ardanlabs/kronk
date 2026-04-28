@@ -393,11 +393,11 @@ kronk-model-list-local:
 	go run cmd/kronk/main.go model list --local
 
 
-# make kronk-model-pull URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull URL="Qwen/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull:
 	go run cmd/kronk/main.go model pull "$(URL)"
 
-# make kronk-model-pull-local URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull-local URL="Qwen/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull-local:
 	go run cmd/kronk/main.go model pull --local "$(URL)"
 
@@ -406,28 +406,24 @@ kronk-model-ps:
 	go run cmd/kronk/main.go model ps
 
 
-# make kronk-model-remove ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
+# make kronk-model-remove ID="bartowski/cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove:
 	go run cmd/kronk/main.go model remove "$(ID)"
 
-# make kronk-model-remove-local ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
+# make kronk-model-remove-local ID="bartowski/cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove-local:
 	go run cmd/kronk/main.go model remove --local "$(ID)"
 
 
-# make kronk-model-show ID="Qwen3-8B-Q8_0"
+# make kronk-model-show ID="Qwen/Qwen3-8B-Q8_0"
 kronk-model-show:
 	go run cmd/kronk/main.go model show "$(ID)"
 
-# make kronk-model-show-local ID="Qwen3-8B-Q8_0"
+# make kronk-model-show-local ID="Qwen/Qwen3-8B-Q8_0"
 kronk-model-show-local:
 	go run cmd/kronk/main.go model show --local "$(ID)"
 
 # ------------------------------------------------------------------------------
-
-kronk-catalog-update-local:
-	go run cmd/kronk/main.go catalog update --local
-
 
 kronk-catalog-list:
 	go run cmd/kronk/main.go catalog list
@@ -436,11 +432,11 @@ kronk-catalog-list-local:
 	go run cmd/kronk/main.go catalog list --local
 
 
-# make kronk-catalog-show ID="Qwen3-8B-Q8_0"
+# make kronk-catalog-show ID="Qwen/Qwen3-8B-Q8_0"
 kronk-catalog-show:
 	go run cmd/kronk/main.go catalog show "$(ID)"
 
-# make kronk-catalog-show-local ID="Qwen2.5-VL-3B-Instruct-Q8_0"
+# make kronk-catalog-show-local ID="Qwen/Qwen3-8B-Q8_0"
 kronk-catalog-show-local:
 	go run cmd/kronk/main.go catalog show --local "$(ID)"
 
@@ -463,7 +459,7 @@ kronk-security-token-create-local:
 
 # ------------------------------------------------------------------------------
 
-# make kronk-run ID="Qwen3-8B-Q8_0"
+# make kronk-run ID="Qwen/Qwen3-8B-Q8_0"
 kronk-run:
 	go run cmd/kronk/main.go run "$(ID)"
 
@@ -475,30 +471,6 @@ curl-liveness:
 
 curl-readiness:
 	curl -i -X GET http://localhost:11435/v1/readiness
-
-curl-libs:
-	curl -i -X POST http://localhost:11435/v1/libs/pull
-
-curl-model-list:
-	curl -i -X GET http://localhost:11435/v1/models
-
-curl-device-list:
-	curl -i -X GET http://localhost:11435/v1/devices
-
-curl-kronk-pull:
-	curl -i -X POST http://localhost:11435/v1/models/pull \
-	-d '{ \
-		"model_url": "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf" \
-	}'
-
-curl-kronk-remove:
-	curl -i -X DELETE http://localhost:11435/v1/models/Qwen3-8B-Q8_0
-
-curl-kronk-show:
-	curl -i -X GET http://localhost:11435/v1/models/Qwen3-8B-Q8_0
-
-curl-model-status:
-	curl -i -X GET http://localhost:11435/v1/models/status
 
 curl-kronk-chat:
 	curl -i -X POST http://localhost:11435/v1/chat/completions \
@@ -819,32 +791,6 @@ curl-mcp-web-search:
 			"arguments": {"query": "what is the Model Context Protocol", "count": 5} \
 		} \
 	}'
-
-# ==============================================================================
-# Download Service
-#
-# Start the server with download enabled:
-#   make kronk-server-download
-#
-# Test downloading a model file (HEAD to check, GET to download):
-#   make curl-download-head
-#   make curl-download-get
-
-# Check a model file exists and get its size.
-# make curl-download-head FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
-curl-download-head:
-	curl -I http://localhost:11435/download/$(FILE)
-
-# Download a model file.
-# make curl-download-get FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
-curl-download-get:
-	curl -o /dev/null -w "HTTP %{http_code} - %{size_download} bytes\n" \
-		http://localhost:11435/download/$(FILE)
-
-# Download a sha file.
-# make curl-download-sha FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/raw/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
-curl-download-sha:
-	curl http://localhost:11435/download/$(FILE)
 
 # ==============================================================================
 # Running OpenWebUI 

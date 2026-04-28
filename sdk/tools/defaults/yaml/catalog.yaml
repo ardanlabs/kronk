@@ -2,6 +2,7 @@ schema: 1
 providers:
   - unsloth
   - ggml-org
+  - bartowski
   - mradermacher
   - gpustack
   - Qwen

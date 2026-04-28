@@ -67,19 +67,34 @@ func runLocal(mdls *models.Models) error {
 
 func print(summaries []models.CatalogSummary) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tOWNED BY\tFAMILY\tSIZE\tDL\tVAL")
+	fmt.Fprintln(w, "VAL\tMODEL ID\tPROVIDER\tFAMILY\tARCH\tMTMD\tSIZE")
 
 	for _, s := range summaries {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			s.ID, s.OwnedBy, s.ModelFamily, s.TotalSize, yesNo(s.Downloaded), yesNo(s.Validated))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			validatedMark(s.Validated), s.ID, s.OwnedBy, s.ModelFamily,
+			dash(s.ModelType), projectionMark(s.HasProjection), dash(s.TotalSize))
 	}
 
 	w.Flush()
 }
 
-func yesNo(b bool) string {
+func validatedMark(b bool) string {
 	if b {
-		return "yes"
+		return "✓"
 	}
-	return "no"
+	return "✗"
+}
+
+func projectionMark(b bool) string {
+	if b {
+		return "✓"
+	}
+	return ""
+}
+
+func dash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
