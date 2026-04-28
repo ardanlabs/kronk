@@ -91,17 +91,11 @@ func installSystem(cfg Config) (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	// The model index is keyed by the bare model name (e.g. "Qwen3-8B-Q8_0").
-	// Accept HuggingFace-style "<org>/<model>" input by stripping any org
-	// prefix before performing the lookup.
-	lookupID := cfg.ModelName
-	if idx := strings.LastIndex(lookupID, "/"); idx >= 0 {
-		lookupID = lookupID[idx+1:]
-	}
+	fmt.Println("Resolving model:", cfg.ModelName)
 
-	mp, err := mdls.FullPath(lookupID)
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, cfg.ModelName, "")
 	if err != nil {
-		return models.Path{}, fmt.Errorf("model %q not found - use 'kronk model pull' first: %w", cfg.ModelName, err)
+		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
 	return mp, nil

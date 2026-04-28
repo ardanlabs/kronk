@@ -187,30 +187,56 @@ type Path struct {
 }
 
 // FullPath locates the physical location on disk and returns the full path.
+//
+// The index is keyed by the bare model name (e.g. "Qwen3-8B-Q8_0"). Callers
+// may pass that bare name, an "<org>/<model>" pair (e.g. "Qwen/Qwen3-8B-Q8_0"),
+// a "<model>/<variant>" pair (e.g. "Qwen3-8B-Q8_0/IMC"), or the full
+// "<org>/<model>/<variant>" form. This resolver tries each segment in the
+// most-specific-first order until it finds a key that exists in the index.
 func (m *Models) FullPath(modelID string) (Path, error) {
 	index := m.loadIndex()
 
-	modelID, _, _ = strings.Cut(modelID, "/")
-
-	modelPath, exists := index[modelID]
-	if !exists {
-		return Path{}, fmt.Errorf("retrieve-path: model %q not found", modelID)
+	for _, key := range fullPathLookupKeys(modelID) {
+		if mp, ok := index[key]; ok {
+			return mp, nil
+		}
 	}
 
-	return modelPath, nil
+	return Path{}, fmt.Errorf("retrieve-path: model %q not found", modelID)
 }
 
 // MustFullPath finds a model and panics if the model was not found. This
 // should only be used for testing.
 func (m *Models) MustFullPath(modelID string) Path {
-	modelID, _, _ = strings.Cut(modelID, "/")
-
 	fi, err := m.FullPath(modelID)
 	if err != nil {
 		panic(err.Error())
 	}
 
 	return fi
+}
+
+// fullPathLookupKeys returns the index-key candidates to try for the given
+// modelID, in order of preference. The bare-model segment is preferred over
+// org/variant segments so that ambiguous two-segment input is resolved
+// against actual index content.
+func fullPathLookupKeys(modelID string) []string {
+	parts := strings.Split(modelID, "/")
+
+	switch len(parts) {
+	case 1:
+		return []string{parts[0]}
+	case 2:
+		// Could be "<model>/<variant>" or "<org>/<model>". Try the leading
+		// segment first to preserve the original variant-strip semantics,
+		// then fall back to the trailing segment for org-prefixed input.
+		return []string{parts[0], parts[1]}
+	default:
+		// "<org>/<model>/<variant>..." — the bare model name lives in the
+		// middle. Prefer that, then fall back to the leading and trailing
+		// segments.
+		return []string{parts[1], parts[0], parts[len(parts)-1]}
+	}
 }
 
 // =============================================================================
