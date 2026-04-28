@@ -18,8 +18,9 @@ var Cmd = &cobra.Command{
 	Long: `Manage local models - index, list, pull, remove, show, and check running models.
 
 This command manages GGUF model files stored locally on your system. It provides
-operations for building indexes, listing available models, downloading from catalogs,
-removing unused models, and querying which models are currently loaded in memory.
+operations for building indexes, listing available models, downloading from the
+catalog, removing unused models, and querying which models are currently loaded
+in memory.
 
 COMMANDS
 

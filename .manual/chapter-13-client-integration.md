@@ -15,19 +15,19 @@
 ---
 
 Kronk's OpenAI-compatible API works with popular AI clients, coding agents,
-and tools. This chapter covers configuration for coding agents that run in
-the terminal or VS Code, as well as general-purpose clients.
+and tools. This chapter covers configuration for the CLI-style coding
+agents that talk to Kronk, plus a few general-purpose clients.
 
 Reference configuration files for each agent are provided in the `.agents/`
 directory at the project root. These files are ready to copy into each
-agent's config directory.
+agent's CLI config directory.
 
 ```
 .agents/
-├── cline/       # Cline VS Code extension
-├── goose/       # Goose TUI agent
-├── kilo/        # Kilo Code VS Code extension
-└── opencode/    # OpenCode TUI agent
+├── cline/       # Cline (~/.cline)
+├── goose/       # Goose (~/.config/goose)
+├── kilo/        # Kilo Code (~/.config/kilo)
+└── opencode/    # OpenCode (~/.config/opencode)
 ```
 
 ### 13.1 Coding Agent Model Configuration
@@ -49,20 +49,11 @@ Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
     top_p: 0.95
 ```
 
-Other models that work well for coding:
+Another model that works well for coding:
 
 ```yaml
-gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
   context-window: 131072
-  nseq-max: 2
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 1.0
-    top_k: 64
-    top_p: 0.95
-
-gemma-4-31B-it-UD-Q8_K_XL/AGENT:
-  context-window: 65536
   nseq-max: 2
   incremental-cache: true
   sampling-parameters:
@@ -71,7 +62,7 @@ gemma-4-31B-it-UD-Q8_K_XL/AGENT:
     top_p: 0.95
 ```
 
-See `zarf/kms/model_config.yaml` for the full set of pre-configured models.
+See `zarf/kms/model_config.yaml` for additional pre-configured examples.
 
 **Why these settings matter:**
 
@@ -93,49 +84,46 @@ All agent configs below reference this endpoint.
 
 ### 13.2 Cline
 
-[Cline](https://cline.bot) is a VS Code extension for AI-assisted coding.
+[Cline](https://cline.bot) is a coding agent that stores its state under
+`~/.cline/`.
 
-**Configure Cline for Kronk:**
+**Installation:**
 
-1. Open VS Code settings
-2. Search for "Cline"
-3. Set API Provider to "OpenAI Compatible"
-4. Configure:
+Copy the MCP settings file from `.agents/cline/` into Cline's settings
+directory:
+
+```bash
+cp .agents/cline/cline_mcp_settings.json \
+   ~/.cline/data/settings/cline_mcp_settings.json
+```
+
+This registers Kronk's MCP service so Cline can discover the
+`web_search` and other tools served from `http://localhost:9000/mcp`.
+
+**Connection settings:**
+
+Point Cline at the Kronk Web API:
 
 ```
 Base URL: http://localhost:11435/v1
 API Key: <your-kronk-token> or 123 if auth is disabled
-Model: Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT
+Model:   Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT
 ```
 
-**MCP Configuration:**
-
-Copy the MCP settings from `.agents/cline/` to your Cline config:
-
-```json
-{
-  "mcpServers": {
-    "Kronk": {
-      "autoApprove": ["web_search"],
-      "disabled": false,
-      "timeout": 60,
-      "type": "streamableHttp",
-      "url": "http://localhost:9000/mcp"
-    }
-  }
-}
-```
+The `.agents/cline/globalState.json` file is included as a reference for
+which fields Cline expects (model id, base URL, auto-approval settings).
+It is not meant to be copied wholesale — Cline manages this file itself.
 
 Reference files: `.agents/cline/`
 
 ### 13.3 Kilo Code
 
-[Kilo Code](https://kilocode.ai) is a VS Code extension for AI-assisted
-coding, similar to Cline.
+[Kilo Code](https://kilocode.ai) is a coding agent that reads its
+configuration from `~/.config/kilo/`.
 
 **Installation:**
 
-Copy the config files from `.agents/kilo/` to your Kilo config directory:
+Copy the config files from `.agents/kilo/` to Kilo's config directory:
 
 ```bash
 cp .agents/kilo/agent.md  ~/.config/kilo/agent.md
@@ -150,7 +138,7 @@ the model to use Kronk's `kronk_fuzzy_edit` MCP tool for file edits.
 
 ```json
 {
-  "model": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
   "provider": {
     "kronk": {
       "npm": "@ai-sdk/openai-compatible",
@@ -199,7 +187,7 @@ a placeholder API key for local use.
 
 ```json
 {
-  "model": "kronk/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+  "model": "kronk/Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
   "provider": {
     "kronk": {
       "npm": "@ai-sdk/openai-compatible",
@@ -229,18 +217,18 @@ Block.
 
 **Installation:**
 
-Copy the config from `.agents/goose/` to your Goose config directory:
+Copy the config from `.agents/goose/` to Goose's config directory:
 
 ```bash
 cp .agents/goose/config.yaml       ~/.config/goose/config.yaml
-cp .agents/goose/custom_kronk.json ~/.config/goose/custom_kronk.json
+cp .agents/goose/custom_kronk.json ~/.config/goose/custom_providers/custom_kronk.json
 ```
 
 **Key settings in `config.yaml`:**
 
 ```yaml
 GOOSE_PROVIDER: kronk
-GOOSE_MODEL: gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT
+GOOSE_MODEL: Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT
 ```
 
 The `custom_kronk.json` file configures the Kronk provider connection.

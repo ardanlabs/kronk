@@ -3,7 +3,7 @@ export default function DocsCLIModel() {
     <div>
       <div className="page-header">
         <h2>model</h2>
-        <p>Manage models - list, pull, remove, show, and check running models.</p>
+        <p>Manage local models (index, list, pull, remove, resolve, show, ps).</p>
       </div>
 
       <div className="doc-layout">
@@ -38,7 +38,7 @@ export default function DocsCLIModel() {
                   </tr>
                   <tr>
                     <td><code>--base-path &lt;string&gt;</code></td>
-                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
                   </tr>
                 </tbody>
               </table>
@@ -69,7 +69,7 @@ export default function DocsCLIModel() {
                   </tr>
                   <tr>
                     <td><code>KRONK_MODELS</code></td>
-                    <td>$HOME/kronk/models</td>
+                    <td>$HOME/.kronk/models</td>
                     <td>The path to the models directory (local mode)</td>
                   </tr>
                 </tbody>
@@ -104,7 +104,7 @@ kronk model index --local`}</code>
                   </tr>
                   <tr>
                     <td><code>--base-path &lt;string&gt;</code></td>
-                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
                   </tr>
                 </tbody>
               </table>
@@ -135,7 +135,7 @@ kronk model index --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_MODELS</code></td>
-                    <td>$HOME/kronk/models</td>
+                    <td>$HOME/.kronk/models</td>
                     <td>The path to the models directory (local mode)</td>
                   </tr>
                 </tbody>
@@ -187,10 +187,27 @@ kronk model ps`}</code>
 
             <div className="doc-section" id="cmd-pull">
               <h4>pull</h4>
-              <p className="doc-description">Pull a model from the web.</p>
+              <p className="doc-description">Pull a model from the web. The mmproj file is optional.</p>
               <pre className="code-block">
-                <code>kronk model pull &lt;MODEL_URL&gt; [MMPROJ_URL] [flags]</code>
+                <code>kronk model pull &lt;MODEL_ID|MODEL_URL|SHORTHAND&gt; [MMPROJ_URL] [flags]</code>
               </pre>
+              <p>The model can be specified as:</p>
+              <ul>
+                <li>A bare model id: <code>Qwen3-0.6B-Q8_0</code> (resolved via the provider list)</li>
+                <li>A canonical id: <code>unsloth/Qwen3-0.6B-Q8_0</code> (skips provider walk)</li>
+                <li>A full HuggingFace URL: <code>https://huggingface.co/org/repo/resolve/main/model.gguf</code></li>
+                <li>A short form: <code>org/repo/model.gguf</code></li>
+                <li>A shorthand: <code>owner/repo:Q4_K_M</code> (auto-resolves files via the HuggingFace API)</li>
+                <li>With hf.co prefix: <code>hf.co/owner/repo:Q4_K_M</code></li>
+                <li>With revision: <code>owner/repo:Q4_K_M@revision</code></li>
+              </ul>
+              <p>
+                Bare or canonical ids consult <code>~/.kronk/catalog.yaml</code> first,
+                then walk the configured provider list (<code>unsloth</code>,{' '}
+                <code>ggml-org</code>, <code>bartowski</code>, ...) and persist the
+                resolution. Shorthand and URL forms auto-resolve multi-file (split)
+                models and projection files for vision/audio models.
+              </p>
               <table className="flags-table">
                 <thead>
                   <tr>
@@ -205,7 +222,7 @@ kronk model ps`}</code>
                   </tr>
                   <tr>
                     <td><code>--base-path &lt;string&gt;</code></td>
-                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
                   </tr>
                 </tbody>
               </table>
@@ -236,21 +253,24 @@ kronk model ps`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_MODELS</code></td>
-                    <td>$HOME/kronk/models</td>
+                    <td>$HOME/.kronk/models</td>
                     <td>The path to the models directory (local mode)</td>
                   </tr>
                 </tbody>
               </table>
               <h5>Example</h5>
               <pre className="code-block">
-                <code>{`# Pull a model from a URL
-kronk model pull .../model.gguf
+                <code>{`# Pull by canonical HuggingFace id
+kronk model pull unsloth/Qwen3-8B-GGUF
 
-# Pull with local mode
-kronk model pull .../model.gguf --local
+# Pull with shorthand (auto-resolves files)
+kronk model pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
 # Pull a vision model with mmproj file
-kronk model pull <MODEL_URL> <MMPROJ_URL>`}</code>
+kronk model pull <MODEL_URL> <MMPROJ_URL>
+
+# Pull with local mode
+kronk model pull unsloth/Qwen3-8B-GGUF --local`}</code>
               </pre>
             </div>
 
@@ -274,7 +294,7 @@ kronk model pull <MODEL_URL> <MMPROJ_URL>`}</code>
                   </tr>
                   <tr>
                     <td><code>--base-path &lt;string&gt;</code></td>
-                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
                   </tr>
                 </tbody>
               </table>
@@ -305,7 +325,7 @@ kronk model pull <MODEL_URL> <MMPROJ_URL>`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_MODELS</code></td>
-                    <td>$HOME/kronk/models</td>
+                    <td>$HOME/.kronk/models</td>
                     <td>The path to the models directory (local mode)</td>
                   </tr>
                 </tbody>
@@ -313,10 +333,48 @@ kronk model pull <MODEL_URL> <MMPROJ_URL>`}</code>
               <h5>Example</h5>
               <pre className="code-block">
                 <code>{`# Remove a model
-kronk model remove llama-3.2-1b-q4
+kronk model remove unsloth/Qwen3-8B-GGUF
 
 # Remove with local mode
-kronk model remove llama-3.2-1b-q4 --local`}</code>
+kronk model remove unsloth/Qwen3-8B-GGUF --local`}</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="cmd-resolve">
+              <h4>resolve</h4>
+              <p className="doc-description">
+                Resolve a model id to a provider, repo, files and download URLs.
+                Useful for inspecting how the catalog and provider list will be
+                walked before issuing a <code>pull</code>.
+              </p>
+              <pre className="code-block">
+                <code>kronk model resolve &lt;MODEL_ID&gt; [flags]</code>
+              </pre>
+              <table className="flags-table">
+                <thead>
+                  <tr>
+                    <th>Flag</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>--refresh</code></td>
+                    <td>Bypass the resolver-file cache and force a HuggingFace lookup</td>
+                  </tr>
+                  <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
+                  </tr>
+                </tbody>
+              </table>
+              <h5>Example</h5>
+              <pre className="code-block">
+                <code>{`# Resolve a bare model id
+kronk model resolve Qwen3-0.6B-Q8_0
+
+# Resolve with cache bypass (force HF lookup)
+kronk model resolve Qwen3-0.6B-Q8_0 --refresh`}</code>
               </pre>
             </div>
 
@@ -340,7 +398,7 @@ kronk model remove llama-3.2-1b-q4 --local`}</code>
                   </tr>
                   <tr>
                     <td><code>--base-path &lt;string&gt;</code></td>
-                    <td>Base path for kronk data (models, catalogs, templates)</td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
                   </tr>
                 </tbody>
               </table>
@@ -371,7 +429,7 @@ kronk model remove llama-3.2-1b-q4 --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_MODELS</code></td>
-                    <td>$HOME/kronk/models</td>
+                    <td>$HOME/.kronk/models</td>
                     <td>The path to the models directory (local mode)</td>
                   </tr>
                 </tbody>
@@ -379,10 +437,10 @@ kronk model remove llama-3.2-1b-q4 --local`}</code>
               <h5>Example</h5>
               <pre className="code-block">
                 <code>{`# Show model information
-kronk model show llama-3.2-1b-q4
+kronk model show unsloth/Qwen3-8B-GGUF
 
 # Show with local mode
-kronk model show llama-3.2-1b-q4 --local`}</code>
+kronk model show unsloth/Qwen3-8B-GGUF --local`}</code>
               </pre>
             </div>
           </div>
@@ -401,6 +459,7 @@ kronk model show llama-3.2-1b-q4 --local`}</code>
                 <li><a href="#cmd-ps">ps</a></li>
                 <li><a href="#cmd-pull">pull</a></li>
                 <li><a href="#cmd-remove">remove</a></li>
+                <li><a href="#cmd-resolve">resolve</a></li>
                 <li><a href="#cmd-show">show</a></li>
               </ul>
             </div>

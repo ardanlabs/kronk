@@ -41,7 +41,7 @@ func NewWithPaths(basePath string) (*Models, error) {
 	modelPath := filepath.Join(basePath, localFolder)
 
 	if err := os.MkdirAll(modelPath, 0755); err != nil {
-		return nil, fmt.Errorf("creating catalogs directory: %w", err)
+		return nil, fmt.Errorf("creating models directory: %w", err)
 	}
 
 	m := Models{

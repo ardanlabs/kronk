@@ -7,9 +7,12 @@
 - [15.3 Configuration](#153-configuration)
 - [15.4 Available Tools](#154-available-tools)
   - [web_search](#web_search)
+  - [fuzzy_edit](#fuzzy_edit)
 - [15.5 Client Configuration](#155-client-configuration)
   - [Cline](#cline)
   - [Kilo Code](#kilo-code)
+  - [OpenCode](#opencode)
+  - [Goose](#goose)
 - [15.6 Testing with curl](#156-testing-with-curl)
 
 ---
@@ -17,13 +20,19 @@
 
 
 Kronk includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
-service that exposes tools to MCP-compatible clients. The initial tool
-provided is `web_search`, powered by the [Brave Search API](https://brave.com/search/api/).
+service that exposes tools to MCP-compatible clients. Two tools are
+provided today:
+
+- **`web_search`** — Powered by the
+  [Brave Search API](https://brave.com/search/api/).
+- **`fuzzy_edit`** — A tiered-fuzzy-matching file edit tool that is
+  more reliable than the built-in `edit` tools used by most coding
+  agents.
 
 MCP is an open standard that lets AI agents call external tools over a
 simple JSON-RPC protocol. By running the MCP service, any MCP-compatible
-client (Cline, Kilo Code, Cursor, etc.) can discover and invoke tools
-served by Kronk.
+client (Cline, Kilo Code, OpenCode, Goose, Cursor, etc.) can discover
+and invoke tools served by Kronk.
 
 ### 15.1 Architecture
 
@@ -52,6 +61,9 @@ Both modes serve the same MCP protocol on the same default port (`9000`).
 
 The `web_search` tool requires a Brave Search API key. Get a free key at
 [https://brave.com/search/api/](https://brave.com/search/api/).
+
+The `fuzzy_edit` tool needs no external credentials — it operates on the
+local filesystem and is available as soon as the MCP service starts.
 
 ### 15.3 Configuration
 
@@ -97,6 +109,32 @@ URLs, and descriptions.
 | `freshness`  | string | No       | Filter by freshness: `pd` (past day), `pw` (past week), `pm` (past month), `py` (past year) |
 | `safesearch` | string | No       | Safe search filter: `off`, `moderate`, `strict` (default `moderate`)                        |
 
+#### fuzzy_edit
+
+Edits a file by replacing one occurrence of `old_string` with
+`new_string`. Useful for coding agents whose built-in edit tools are
+brittle around whitespace or line endings.
+
+The tool tries three matching strategies in order and stops at the first
+that produces exactly one match:
+
+1. **Exact** — byte-for-byte `strings.Replace`.
+2. **Line-ending normalized** — folds `\r\n` → `\n` on both sides, then
+   exact-matches; preserves the file's original line endings on write.
+3. **Indentation insensitive** — strips leading whitespace per line for
+   comparison; replacement text is inserted as-is.
+
+If no tier yields exactly one match, the call returns an error and the
+file is not modified.
+
+**Parameters:**
+
+| Parameter    | Type   | Required | Description                                                              |
+| ------------ | ------ | -------- | ------------------------------------------------------------------------ |
+| `file_path`  | string | Yes      | Absolute path to the file to edit                                        |
+| `old_string` | string | Yes      | Text to find in the file (fuzzy whitespace matching is applied)          |
+| `new_string` | string | Yes      | Replacement text                                                         |
+
 ### 15.5 Client Configuration
 
 The MCP service uses the Streamable HTTP transport. Configure your
@@ -104,13 +142,14 @@ MCP-compatible client to connect to `http://localhost:9000/mcp`.
 
 #### Cline
 
-Add the following to your Cline MCP settings:
+Add the following to your Cline MCP settings
+(`~/.cline/data/settings/cline_mcp_settings.json`):
 
 ```json
 {
   "mcpServers": {
     "Kronk": {
-      "autoApprove": ["web_search"],
+      "autoApprove": ["web_search", "fuzzy_edit"],
       "disabled": false,
       "timeout": 60,
       "type": "streamableHttp",
@@ -122,7 +161,8 @@ Add the following to your Cline MCP settings:
 
 #### Kilo Code
 
-Add the following to your Kilo Code MCP settings:
+Add the following to your Kilo Code MCP settings
+(inside `~/.config/kilo/kilo.json`):
 
 ```json
 {
@@ -130,13 +170,42 @@ Add the following to your Kilo Code MCP settings:
     "Kronk": {
       "type": "streamable-http",
       "url": "http://localhost:9000/mcp",
-      "disabled": true,
-      "alwaysAllow": ["web_search"],
+      "disabled": false,
+      "alwaysAllow": ["web_search", "fuzzy_edit"],
       "timeout": 60
     }
   }
 }
 ```
+
+Kilo prefixes MCP tool names with the server key, so the tools are
+exposed to the model as `Kronk_web_search` and `Kronk_fuzzy_edit`.
+
+#### OpenCode
+
+Inside `~/.config/opencode/opencode.jsonc`:
+
+```jsonc
+{
+  "mcp": {
+    "kronk": {
+      "type": "remote",
+      "url": "http://localhost:9000/mcp"
+    }
+  }
+}
+```
+
+OpenCode lowercases the server prefix, so the tools are exposed as
+`kronk_web_search` and `kronk_fuzzy_edit`.
+
+#### Goose
+
+Goose discovers tools from any MCP server it is configured against.
+Add an entry to your Goose configuration that points to
+`http://localhost:9000/mcp` using the streamable-HTTP transport. Both
+`web_search` and `fuzzy_edit` will appear in the tool list once the
+connection is established.
 
 ### 15.6 Testing with curl
 

@@ -67,7 +67,7 @@ OPERATING MODES
   Local mode (--local)  - Direct file operations without connecting to a server
 
 ENVIRONMENT VARIABLES
-  KRONK_BASE_PATH      Base path for kronk data (models, templates, catalogs)
+  KRONK_BASE_PATH      Base path for kronk data (models, libraries, catalog, model_config)
   KRONK_PROCESSOR      Hardware target: cpu, cuda, metal, rocm, vulkan
   KRONK_LIB_VERSION    Pin llama.cpp library version
   KRONK_HF_TOKEN       HuggingFace auth token for gated models
@@ -86,7 +86,7 @@ FOR MORE INFORMATION
 func init() {
 	rootCmd.Version = version
 
-	rootCmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, templates, catalog)")
+	rootCmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, libraries, catalog, model_config)")
 
 	rootCmd.AddCommand(server.Cmd)
 	rootCmd.AddCommand(libs.Cmd)

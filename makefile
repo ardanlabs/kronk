@@ -127,7 +127,7 @@ install-libraries-gh: install-kronk
 # Use this to install the test GH models.
 install-test-gh-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0" "unsloth/mmproj-F16"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
 	@echo
 	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
@@ -139,13 +139,13 @@ install-test-gh-models: install-kronk
 # Use this to install the test models.
 install-test-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0" "unsloth/mmproj-F16"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M" "unsloth/mmproj-BF16"
+	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"
 	@echo
-	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M" "unsloth/mmproj-F16"
+	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M"
 	@echo
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0" "mradermacher/Qwen2-Audio-7B.mmproj-Q8_0"
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0"
 	@echo
 	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"
 	@echo
@@ -159,11 +159,11 @@ install-test-models: install-kronk
 # Use this to install models for the class.
 install-class-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0" "unsloth/mmproj-F16"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-Q8_0" "unsloth/mmproj-F16"
+	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-Q8_0"
 	@echo
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0" "mradermacher/Qwen2-Audio-7B.mmproj-Q8_0"
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0"
 	@echo
 	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
 	@echo
@@ -349,7 +349,6 @@ kronk-server:
 	export KRONK_ALLOW_UPGRADE=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-build: kronk-build
@@ -358,7 +357,6 @@ kronk-server-build: kronk-build
 	export KRONK_ALLOW_UPGRADE=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: bui-build

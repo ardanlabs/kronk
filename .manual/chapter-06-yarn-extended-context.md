@@ -53,10 +53,10 @@ Extended Context:   131K tokens (4x extension with YaRN)
 **Basic YaRN Setup:**
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 131072 # Extended context (131K)
-    rope_scaling: yarn # Enable YaRN
+# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 131072    # Extended context (131K)
+  rope-scaling-type: yarn   # Enable YaRN
 ```
 
 That's often all you need—Kronk auto-calculates the other YaRN parameters
@@ -65,17 +65,17 @@ from the context extension ratio.
 **Full Configuration (Advanced):**
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 131072
-    rope_scaling: yarn
-    rope_freq_base: 1000000 # Model-specific (Qwen3 uses 1M)
-    rope_freq_scale: null # Auto-calculate
-    yarn_ext_factor: null # Auto-calculate
-    yarn_attn_factor: 1.0 # Attention scaling
-    yarn_beta_fast: 32.0 # Low correction dimension
-    yarn_beta_slow: 1.0 # High correction dimension
-    yarn_orig_ctx: 32768 # Original training context
+# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 131072
+  rope-scaling-type: yarn
+  rope-freq-base: 1000000   # Model-specific (Qwen3 uses 1M)
+  rope-freq-scale: null     # Auto-calculate
+  yarn-ext-factor: null     # Auto-calculate
+  yarn-attn-factor: 1.0     # Attention scaling
+  yarn-beta-fast: 32.0      # Low correction dimension
+  yarn-beta-slow: 1.0       # High correction dimension
+  yarn-orig-ctx: 32768      # Original training context
 ```
 
 ### 6.4 Scaling Types
@@ -85,7 +85,7 @@ Kronk supports three RoPE scaling methods:
 **None (Default)**
 
 ```yaml
-rope_scaling: none
+rope-scaling-type: none
 ```
 
 Uses native context length. No scaling applied.
@@ -93,7 +93,7 @@ Uses native context length. No scaling applied.
 **Linear**
 
 ```yaml
-rope_scaling: linear
+rope-scaling-type: linear
 ```
 
 Simple linear interpolation. Works but quality degrades faster than YaRN
@@ -102,7 +102,7 @@ at high extension ratios.
 **YaRN (Recommended)**
 
 ```yaml
-rope_scaling: yarn
+rope-scaling-type: yarn
 ```
 
 Frequency-dependent interpolation with attention scaling. Maintains quality
@@ -112,24 +112,24 @@ better at 2-4x extensions.
 
 | Parameter          | Default        | Description                                         |
 | ------------------ | -------------- | --------------------------------------------------- |
-| `rope_scaling`     | none           | Scaling method: `none`, `linear`, `yarn`            |
-| `rope_freq_base`   | model default  | Base frequency (10000 for Llama, 1000000 for Qwen3) |
-| `rope_freq_scale`  | auto           | Frequency scaling factor                            |
-| `yarn_ext_factor`  | auto           | Extrapolation mix factor (0 = disable)              |
-| `yarn_attn_factor` | 1.0            | Attention magnitude scaling                         |
-| `yarn_beta_fast`   | 32.0           | Low correction dimension                            |
-| `yarn_beta_slow`   | 1.0            | High correction dimension                           |
-| `yarn_orig_ctx`    | model metadata | Original training context size                      |
+| `rope-scaling-type`     | none           | Scaling method: `none`, `linear`, `yarn`            |
+| `rope-freq-base`   | model default  | Base frequency (10000 for Llama, 1000000 for Qwen3) |
+| `rope-freq-scale`  | auto           | Frequency scaling factor                            |
+| `yarn-ext-factor`  | auto           | Extrapolation mix factor (0 = disable)              |
+| `yarn-attn-factor` | 1.0            | Attention magnitude scaling                         |
+| `yarn-beta-fast`   | 32.0           | Low correction dimension                            |
+| `yarn-beta-slow`   | 1.0            | High correction dimension                           |
+| `yarn-orig-ctx`    | model metadata | Original training context size                      |
 
 ### 6.6 Model-Specific Examples
 
 **Qwen3 (32K → 131K)**
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 131072
-    rope_scaling: yarn
+# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 131072
+  rope-scaling-type: yarn
 ```
 
 Qwen3 models are specifically designed to support 131K context with YaRN.
@@ -138,11 +138,11 @@ The default parameters work well.
 **Llama 3 (8K → 32K)**
 
 ```yaml
-models:
-  Llama-3-8B-Q8_0:
-    context_window: 32768
-    rope_scaling: yarn
-    rope_freq_base: 10000
+# ~/.kronk/model_config.yaml
+unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
+  context-window: 32768
+  rope-scaling-type: yarn
+  rope-freq-base: 10000
 ```
 
 4x extension from 8K to 32K is within the recommended range.
@@ -164,20 +164,20 @@ Qwen3-8B with F16 KV cache:
 1. Use KV cache quantization:
 
 ```yaml
-cache_type_k: q8_0
-cache_type_v: q8_0
+cache-type-k: q8_0
+cache-type-v: q8_0
 ```
 
 2. Reduce batch parallelism:
 
 ```yaml
-n_seq_max: 1 # Fewer concurrent requests
+nseq-max: 1 # Fewer concurrent requests
 ```
 
 3. Keep KV cache on CPU (slower but saves VRAM):
 
 ```yaml
-offload_kqv: false
+offload-kqv: false
 ```
 
 ### 6.8 Quality Considerations
@@ -201,15 +201,15 @@ offload_kqv: false
 Configuration for processing long documents:
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 65536 # 64K context
-    rope_scaling: yarn
-    n_batch: 4096 # Larger batch for long prompts
-    n_ubatch: 1024
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    n_seq_max: 1 # Single request (memory intensive)
+# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 65536      # 64K context
+  rope-scaling-type: yarn
+  nbatch: 4096               # Larger batch for long prompts
+  nubatch: 1024
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  nseq-max: 1                # Single request (memory intensive)
 ```
 
 This configuration can process documents up to ~50K tokens while leaving

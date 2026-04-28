@@ -8,12 +8,10 @@
 - [7.4 Model Caching](#74-model-caching)
 - [7.5 Model Config Files](#75-model-config-files)
 - [7.6 Catalog System](#76-catalog-system)
-- [7.7 Custom Catalog Repository](#77-custom-catalog-repository)
-- [7.8 Templates](#78-templates)
-- [7.9 Runtime Settings](#79-runtime-settings)
-- [7.10 Logging](#710-logging)
-- [7.11 Data Paths](#711-data-paths)
-- [7.12 Complete Example](#712-complete-example)
+- [7.7 Runtime Settings](#77-runtime-settings)
+- [7.8 Logging](#78-logging)
+- [7.9 Data Paths](#79-data-paths)
+- [7.10 Complete Example](#710-complete-example)
 
 ---
 
@@ -25,15 +23,15 @@ This chapter covers server configuration, management, and the catalog system.
 Most CLI commands communicate with a running server by default:
 
 ```shell
-kronk catalog list                # Talks to server at localhost:11435
-kronk catalog pull Qwen3-0.6B-Q8_0  # Downloads via server
+kronk catalog list                  # Talks to server at localhost:11435
+kronk model pull Qwen3-0.6B-Q8_0    # Downloads via server
 ```
 
 Add `--local` to run commands directly without a server:
 
 ```shell
-kronk catalog list --local        # Direct file access
-kronk catalog pull Qwen3-0.6B-Q8_0 --local
+kronk catalog list --local          # Direct file access
+kronk model pull Qwen3-0.6B-Q8_0 --local
 kronk libs --local
 ```
 
@@ -57,11 +55,10 @@ replaced by underscores:
 
 ```
 --api-host        →  KRONK_WEB_API_HOST
---models-in-cache →  KRONK_MODELS_IN_CACHE
+--models-in-cache →  KRONK_CACHE_MODELS_IN_CACHE
 --cache-ttl       →  KRONK_CACHE_TTL
 --processor       →  KRONK_PROCESSOR
 --hf-token        →  KRONK_HF_TOKEN
-                      GITHUB_TOKEN  (not a flag; env var only)
 ```
 
 Environment variables are useful for:
@@ -140,27 +137,14 @@ underscores replacing hyphens.
 | `--tempo-service-name` | `KRONK_TEMPO_SERVICE_NAME` | `kronk`          | Service name for traces              |
 | `--tempo-probability`  | `KRONK_TEMPO_PROBABILITY`  | `0.25`           | Trace sampling probability (0.0-1.0) |
 
-**Catalog Settings**
+**Cache & Model Configuration Settings**
 
-| Flag                    | Environment Variable              | Default        | Description                                            |
-| ----------------------- | --------------------------------- | -------------- | ------------------------------------------------------ |
-| `--catalog-github-repo` | `KRONK_CATALOG_GITHUB_REPO`       | GitHub API URL | GitHub repo URL for catalog files                      |
-| `--model-config-file`   | `KRONK_CATALOG_MODEL_CONFIG_FILE` | _(empty)_      | Path to model-specific config YAML file                |
-| `--catalog-repo-path`   | `KRONK_CATALOG_REPO_PATH`         | _(empty)_      | Path to cloned catalog repository for publishing edits |
-
-**Template Settings**
-
-| Flag                      | Environment Variable          | Default        | Description                        |
-| ------------------------- | ----------------------------- | -------------- | ---------------------------------- |
-| `--templates-github-repo` | `KRONK_TEMPLATES_GITHUB_REPO` | GitHub API URL | GitHub repo URL for template files |
-
-**Cache Settings**
-
-| Flag                       | Environment Variable                 | Default | Description                               |
-| -------------------------- | ------------------------------------ | ------- | ----------------------------------------- |
-| `--models-in-cache`        | `KRONK_CACHE_MODELS_IN_CACHE`        | `3`     | Maximum models kept loaded in memory      |
-| `--cache-ttl`              | `KRONK_CACHE_TTL`                    | `20m`   | How long unused models stay loaded        |
-| `--ignore-integrity-check` | `KRONK_CACHE_IGNORE_INTEGRITY_CHECK` | `true`  | Skip SHA256 integrity check on model load |
+| Flag                  | Environment Variable            | Default                       | Description                                                                                         |
+| --------------------- | ------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `--model-config-file` | `KRONK_CACHE_MODEL_CONFIG_FILE` | `<base>/model_config.yaml`    | Path to per-model configuration overrides. Defaults to the file under your `--base-path`.           |
+| `--model-instances`   | `KRONK_CACHE_MODEL_INSTANCES`   | `1`                           | Maximum loaded instances of any single model id                                                     |
+| `--models-in-cache`   | `KRONK_CACHE_MODELS_IN_CACHE`   | `2`                           | Maximum distinct models kept loaded in memory                                                       |
+| `--cache-ttl`         | `KRONK_CACHE_TTL`               | `20m`                         | How long an unused model stays loaded                                                               |
 
 **Runtime Settings**
 
@@ -173,7 +157,6 @@ underscores replacing hyphens.
 | `--os`               | `KRONK_OS`               | _(auto)_   | OS override (`linux`, `darwin`, `windows`)                |
 | `--processor`        | `KRONK_PROCESSOR`        | _(auto)_   | Processor type (`cpu`, `metal`, `cuda`, `rocm`, `vulkan`) |
 | `--hf-token`         | `KRONK_HF_TOKEN`         | _(empty)_  | Hugging Face API token for gated models                   |
-| _(env var only)_     | `GITHUB_TOKEN`           | _(empty)_  | GitHub token for higher catalog sync rate limits          |
 | `--allow-upgrade`    | `KRONK_ALLOW_UPGRADE`    | `true`     | Allow automatic library upgrades to the latest llama.cpp release. The server defaults to `true` so a long-running server tracks upstream fixes. The standalone `kronk libs` CLI defaults to `false` (installs the well-known default version) and opts in via `--upgrade`. |
 | `--llama-log`        | `KRONK_LLAMA_LOG`        | `1`        | Llama log level (0=off, 1=on)                             |
 | `--insecure-logging` | `KRONK_INSECURE_LOGGING` | `false`    | Log sensitive data (messages, model config)               |
@@ -185,8 +168,7 @@ kronk server start \
   --api-host=0.0.0.0:11435 \
   --models-in-cache=5 \
   --cache-ttl=30m \
-  --model-config-file=model-config.yaml \
-  --catalog-repo-path=~/code/kronk_catalogs \
+  --model-config-file=./model_config.yaml \
   --hf-token=hf_xxxxx
 ```
 
@@ -199,148 +181,128 @@ The server maintains a pool of loaded models to avoid reload latency.
 ```shell
 kronk server start \
   --models-in-cache=3 \
-  --cache-ttl=5m
+  --cache-ttl=20m
 ```
 
-- `models-in-cache` - Maximum models kept loaded (default: 3)
-- `cache-ttl` - How long unused models stay loaded (default: 5m)
+- `models-in-cache` - Maximum distinct models kept loaded (default: 2)
+- `model-instances` - Maximum loaded instances of any single model id (default: 1)
+- `cache-ttl` - How long an unused model stays loaded (default: 20m)
 
 When a new model is requested and the cache is full, the least recently
 used model is unloaded.
 
 ### 7.5 Model Config Files
 
-Create a YAML file to configure model-specific settings:
+The server reads per-model overrides from `~/.kronk/model_config.yaml` by
+default. Kronk seeds this file from an embedded default on first server
+start; your edits are preserved across upgrades.
+
+The file is a flat map keyed by canonical model id (`provider/modelID`,
+optionally with a `/variant` suffix). Each entry's keys map 1:1 to
+`model.Config` and use kebab-case:
 
 ```yaml
-# model-config.yaml
-models:
-  Qwen3-0.6B-Q8_0:
-    context_window: 32768
-    n_seq_max: 4
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    incremental_cache: true
+# ~/.kronk/model_config.yaml
 
-  Llama-3.3-70B-Instruct-Q8_0:
-    context_window: 8192
-    n_gpu_layers: 0
-    split_mode: row
+unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 32768
+  nseq-max: 4
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  incremental-cache: true
 
-  embeddinggemma-300m-qat-Q8_0:
-    n_seq_max: 2
+unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
+  context-window: 8192
+  ngpu-layers: 0
+  split-mode: row
+
+ggml-org/embeddinggemma-300m-qat-Q8_0:
+  nseq-max: 2
 ```
 
-Start with the config file:
+To point at an alternative file (for testing without modifying your main
+one):
 
 ```shell
-kronk server start --model-config-file=model-config.yaml
+kronk server start --model-config-file=./my-test-config.yaml
 ```
 
 Or via environment variable:
 
 ```shell
-export KRONK_CATALOG_MODEL_CONFIG_FILE=/path/to/model-config.yaml
+export KRONK_CACHE_MODEL_CONFIG_FILE=/path/to/model_config.yaml
 kronk server start
 ```
 
 **Project Reference Configuration**
 
 The Kronk repository includes a comprehensive reference configuration with
-recommended settings for various models and use cases:
-
-```shell
-export KRONK_CATALOG_MODEL_CONFIG_FILE=<clone_path>/zarf/kms/model_config.yaml
-kronk server start
-```
-
-This file includes:
+recommended settings for various models and use cases at
+`zarf/kms/model_config.yaml`. It includes:
 
 - Optimized configurations for coding agents (Cline, OpenCode)
 - YaRN extended context examples
 - IMC configuration for message caching
 - Vision and audio model settings
 - Detailed comments explaining each configuration option
-
-Review `zarf/kms/model_config.yaml` for examples of YAML anchors, cache
-configurations, and model-specific tuning.
+- Examples of YAML anchors for sharing common settings between variants
 
 ### 7.6 Catalog System
 
-The catalog provides a curated list of verified models with preconfigured
-settings.
+The catalog (`~/.kronk/catalog.yaml`) is your **personal** catalog of
+models. On first run Kronk seeds it from an embedded starter list so you
+have something to choose from immediately; the catalog grows as you pull
+models or resolve new IDs against HuggingFace.
 
-**List Available Models**
+Each entry is a resolution cache — provider, family (HF repo), revision,
+file list, sizes, optional MMProj projection, and detected capabilities.
+Templates come from the GGUF metadata of the downloaded model itself and
+are not stored here.
+
+**List entries in the catalog**
 
 ```shell
 kronk catalog list
 ```
 
-Output:
+Output (real columns):
 
 ```
-CATALOG              MODEL ID                         PULLED  ENDPOINT
-Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0              no      chat_completion
-Embedding            embeddinggemma-300m-qat-Q8_0     no      embeddings
-Image-Text-to-Text   gemma-3-4b-it-q4_0               no      chat_completion
-Text-Generation      Qwen3-0.6B-Q8_0                    yes     chat_completion
-Text-Generation      Llama-3.3-70B-Instruct-Q8_0      no      chat_completion
+VAL   MODEL ID                                       PROVIDER   FAMILY                              ARCH      MTMD   SIZE
+✓     ggml-org/embeddinggemma-300m-qat-Q8_0          ggml-org   embeddinggemma-300m-qat-q8_0-GGUF   bert      -      329.0 MB
+✓     unsloth/Qwen3-0.6B-Q8_0                        unsloth    Qwen3-0.6B-GGUF                     qwen3     -      699.0 MB
+✗     unsloth/Ministral-3-14B-Instruct-2512-Q4_0     unsloth    Ministral-3-14B-Instruct-2512-GGUF  llama     -      8.0 GB
 ```
 
-**Filter by Category**
+`VAL` indicates whether the model files have been downloaded and
+validated locally; `MTMD` indicates a multimodal projection (mmproj) is
+present.
+
+**Show catalog entry details**
 
 ```shell
-kronk catalog list --filter-category=Embedding
+kronk catalog show unsloth/Qwen3-0.6B-Q8_0
 ```
 
-**Pull a Model**
+**Pull (download) a model**
 
 ```shell
-kronk catalog pull Qwen3-0.6B-Q8_0
+kronk model pull unsloth/Qwen3-0.6B-Q8_0
 ```
 
-**Show Model Details**
+After the pull completes, the catalog entry is enriched with the resolved
+provider, family, revision, and file sizes so subsequent lookups don't
+need to hit HuggingFace.
+
+**Remove a catalog entry**
 
 ```shell
-kronk catalog show Qwen3-0.6B-Q8_0
+kronk catalog remove unsloth/Qwen3-0.6B-Q8_0   # also removes downloaded files
 ```
 
-**Update Catalog**
+The same operations are available in the BUI's Catalog and Model views.
 
-_Note: We don't have a server version of this yet._
-
-```shell
-kronk catalog update --local
-```
-
-### 7.7 Custom Catalog Repository
-
-Use a custom catalog repository:
-
-```shell
-kronk server start \
-  --catalog-github-repo=https://github.com/myorg/my-catalog
-```
-
-### 7.8 Templates
-
-Templates define chat formatting (Jinja templates) for different models.
-Kronk downloads templates automatically from the offical templates repository.
-
-https://github.com/ardanlabs/kronk_catalogs
-
-You don't need this unless you want to maintain your own repository.
-
-**Custom Templates Repository**
-
-```shell
-kronk server start \
-  --templates-github-repo=https://github.com/myorg/my-templates
-```
-
-Templates are cached in `~/.kronk/templates/` by default.
-
-### 7.9 Runtime Settings
+### 7.7 Runtime Settings
 
 **Processor Selection**
 
@@ -392,18 +354,7 @@ export KRONK_HF_TOKEN=hf_xxxxx
 kronk server start
 ```
 
-For higher GitHub API rate limits during catalog sync:
-
-```shell
-export GITHUB_TOKEN=ghp_xxxxx
-kronk server start
-```
-
-Without a token, GitHub allows 60 requests/hour. With a token, the limit
-increases to 5,000 requests/hour. Kronk degrades gracefully when rate
-limited, falling back to local cache.
-
-### 7.10 Logging
+### 7.8 Logging
 
 **llama.cpp Logging**
 
@@ -428,26 +379,28 @@ kronk server start --insecure-logging=true
 kronk server logs
 ```
 
-### 7.11 Data Paths
+### 7.9 Data Paths
 
 Default data locations:
 
 ```
 ~/.kronk/
+├── catalog.yaml                        # Personal catalog (resolution cache + provider list)
+├── model_config.yaml                   # Per-model configuration overrides
 ├── libraries/                          # llama.cpp libraries (one folder per triple)
 │   └── <os>/<arch>/<processor>/        # e.g. darwin/arm64/metal/, linux/amd64/cuda/
 │       ├── libllama.so / .dylib / .dll
 │       └── version.json
-├── models/                             # Downloaded models
-├── templates/                          # Chat templates
-└── catalog/                            # Catalog cache
+└── models/                             # Downloaded model files
+    ├── .index.yaml                     # Local file index (validated state per model)
+    └── <provider>/<family>/<file>.gguf
 ```
 
-Each `(arch, os, processor)` install lives in its own folder. The runtime
-loads the folder for the detected triple by default; set `KRONK_LIB_PATH`
-to a different triple folder (and restart) to switch active install. See
-chapter 2.3 for `KRONK_LIB_PATH` semantics and the install-management
-commands.
+Each `(arch, os, processor)` library install lives in its own folder.
+The runtime loads the folder for the detected triple by default; set
+`KRONK_LIB_PATH` to a different triple folder (and restart) to switch
+active install. See chapter 2.3 for `KRONK_LIB_PATH` semantics and the
+install-management commands.
 
 **Custom Base Path**
 
@@ -455,7 +408,9 @@ commands.
 kronk server start --base-path=/data/kronk
 ```
 
-### 7.12 Complete Example
+`--base-path` shifts every file above to live under the new root.
+
+### 7.10 Complete Example
 
 Production-ready server configuration:
 
@@ -463,8 +418,8 @@ Production-ready server configuration:
 kronk server start \
   --api-host=0.0.0.0:11435 \
   --models-in-cache=2 \
-  --cache-ttl=10m \
-  --model-config-file=/etc/kronk/models.yaml \
+  --cache-ttl=20m \
+  --model-config-file=/etc/kronk/model_config.yaml \
   --processor=cuda \
   --auth-enabled=true \
   -d
@@ -473,14 +428,14 @@ kronk server start \
 With model config:
 
 ```yaml
-# /etc/kronk/models.yaml
-models:
-  Qwen3-0.6B-Q8_0:
-    context_window: 32768
-    n_seq_max: 4
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    incremental_cache: true
+# /etc/kronk/model_config.yaml
+
+unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 32768
+  nseq-max: 4
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  incremental-cache: true
 ```
 
 ---

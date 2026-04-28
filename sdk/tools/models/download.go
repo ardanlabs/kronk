@@ -28,8 +28,11 @@ type Logger func(ctx context.Context, msg string, args ...any)
 //   - A canonical model id ("unsloth/Qwen3-0.6B-Q8_0")
 //   - A bare model id ("Qwen3-0.6B-Q8_0")
 //
-// For URL input, projSource is used as-is. For id input, the companion
-// mmproj is auto-discovered by the resolver and projSource is ignored.
+// When you pass a full URL for the model source you can then specify the
+// projection file to use by passing a full URL to the projection file.
+//
+// If you pass a canonical or bare model id for the model source, then the
+// system locates the f16 version of the projection file and downloads that.
 //
 // The resolver checks local disk first, then the resolver-file cache at
 // <basePath>/catalog.yaml (seeded from the embedded default on
@@ -39,14 +42,14 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // to the resolver file so subsequent lookups become cache hits.
 //
 // Set KRONK_HF_TOKEN to access gated models.
-func (m *Models) Download(ctx context.Context, log Logger, modelSource string, projSource string) (Path, error) {
+func (m *Models) Download(ctx context.Context, log Logger, modelSource string, projURL string) (Path, error) {
 	if isURL(modelSource) {
-		mp, err := m.DownloadSplits(ctx, log, []string{modelSource}, projSource)
+		mp, err := m.DownloadSplits(ctx, log, []string{modelSource}, projURL)
 		if err != nil {
 			return mp, err
 		}
 
-		if perr := m.persistURLResolution([]string{modelSource}, projSource); perr != nil {
+		if perr := m.persistURLResolution([]string{modelSource}, projURL); perr != nil {
 			log(ctx, "download: unable to persist resolver entry", "ERROR", perr)
 		}
 

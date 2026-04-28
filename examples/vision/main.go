@@ -28,7 +28,6 @@ import (
 // when modelSource is a direct URL; for an id, the resolver auto-discovers
 // the mmproj.
 var modelSource = "unsloth/Qwen3.5-0.8B-Q8_0"
-var modelProjSource = "unsloth/mmproj-F16"
 
 const imageFile = "samples/giraffe.jpg"
 
@@ -85,11 +84,8 @@ func installSystem() (models.Path, error) {
 	}
 
 	fmt.Println("Downloading model:", modelSource)
-	if modelProjSource != "" {
-		fmt.Println("Downloading projection file:", modelProjSource)
-	}
 
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource, modelProjSource)
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource, "")
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}

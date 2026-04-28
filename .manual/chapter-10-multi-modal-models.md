@@ -33,15 +33,19 @@ converts images or audio into tokens the model can understand.
 **Available Models (from catalog):**
 
 ```shell
-kronk catalog list --filter-category=Image
-kronk catalog list --filter-category=Audio
+kronk catalog list
 ```
 
-Example models:
+The `MTMD` column marks entries that ship with a multi-modal projector. To
+filter by capability (images, audio, etc.) use the BUI catalog view, which
+exposes capability filters in the sidebar.
 
-- `Qwen2.5-VL-3B-Instruct-Q8_0` - Vision model
-- `gemma-3-4b-it-q4_0` - Vision model
-- `Qwen2-Audio-7B.Q8_0` - Audio model
+Example models from the seed catalog:
+
+- `unsloth/LFM2.5-VL-1.6B-Q8_0` - Vision model
+- `unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M` - Vision model
+- `mradermacher/Qwen2-Audio-7B.Q8_0` - Audio model
+- `ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0` - Vision + audio + video
 
 ### 10.2 Vision Models
 
@@ -50,7 +54,7 @@ Vision models analyze images and answer questions about their content.
 **Download a Vision Model:**
 
 ```shell
-kronk catalog pull Qwen2.5-VL-3B-Instruct-Q8_0
+kronk model pull unsloth/LFM2.5-VL-1.6B-Q8_0
 ```
 
 **API Request with Image (OpenAI Format):**
@@ -59,7 +63,7 @@ kronk catalog pull Qwen2.5-VL-3B-Instruct-Q8_0
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
+    "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
     "messages": [
       {
         "role": "user",
@@ -108,7 +112,7 @@ Audio models transcribe and understand spoken content.
 **Download an Audio Model:**
 
 ```shell
-kronk catalog pull Qwen2-Audio-7B.Q8_0
+kronk model pull mradermacher/Qwen2-Audio-7B.Q8_0
 ```
 
 **API Request with Audio:**
@@ -117,7 +121,7 @@ kronk catalog pull Qwen2-Audio-7B.Q8_0
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen2-Audio-7B.Q8_0",
+    "model": "mradermacher/Qwen2-Audio-7B.Q8_0",
     "messages": [
       {
         "role": "user",
@@ -151,7 +155,7 @@ content (without the structured OpenAI format):
 
 ```json
 {
-  "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
+  "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
   "messages": [
     {
       "role": "user",
@@ -172,41 +176,40 @@ Kronk auto-detects the media type from the binary header:
 Vision and audio models have specific configuration requirements:
 
 ```yaml
-models:
-  Qwen2.5-VL-3B-Instruct-Q8_0:
-    n_ubatch: 2048 # Higher for image token processing
-    n_seq_max: 2 # Process up to 2 requests concurrently
-    context_window: 8192
+unsloth/LFM2.5-VL-1.6B-Q8_0:
+  nubatch: 2048 # Higher for image token processing
+  nseq-max: 2 # Process up to 2 requests concurrently
+  context-window: 8192
 ```
 
 **Key Considerations:**
 
-- `n_ubatch` should be high (≥2048) for efficient image/audio token processing
-- `n_seq_max` controls batch parallelism (multiple slots in shared context)
+- `nubatch` should be high (≥2048) for efficient image/audio token processing
+- `nseq-max` controls batch parallelism (multiple slots in shared context)
 - Vision/audio models use the same batch engine as text models
 
 ### 10.6 Memory Requirements
 
 Vision and audio models require additional memory for the projector:
 
-**Vision Model Example (Qwen2.5-VL-3B):**
+**Vision Model Example (unsloth/LFM2.5-VL-1.6B-Q8_0):**
 
 ```
-Model weights:     ~3.5 GB
-Projector:         ~0.5 GB
+Model weights:     ~1.2 GB
+Projector:         ~0.8 GB
 KV cache (8K):     ~0.4 GB
 ─────────────────────────
-Total:             ~4.4 GB
+Total:             ~2.4 GB
 ```
 
-**Audio Model Example (Qwen2-Audio-7B):**
+**Audio Model Example (mradermacher/Qwen2-Audio-7B.Q8_0):**
 
 ```
 Model weights:     ~8 GB
-Projector:         ~0.8 GB
+Projector:         ~0.7 GB
 KV cache (8K):     ~0.6 GB
 ─────────────────────────
-Total:             ~9.4 GB
+Total:             ~9.3 GB
 ```
 
 ### 10.7 IMC and Multi-Modal Caching
@@ -252,7 +255,7 @@ IMAGE_B64=$(base64 -i photo.jpg)
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
+    "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
     "messages": [
       {
         "role": "user",
@@ -281,7 +284,7 @@ AUDIO_B64=$(base64 -i recording.wav)
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen2-Audio-7B.Q8_0",
+    "model": "mradermacher/Qwen2-Audio-7B.Q8_0",
     "messages": [
       {
         "role": "user",

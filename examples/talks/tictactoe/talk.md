@@ -2,15 +2,13 @@
 
 ### About this Session
 
-In this talk Bill will introduce Kronk, a new SDK that allows you to write AI based Go apps without the need of a model server. If you have Apple Metal (Mac), CUDA (NVIDIA), or Vulkan, Kronk can tap into that GPU power instead of grinding through the work on the CPU alone.
-
-To dog food the SDK, Bill wrote a model server (KMS) that is optimized to run your local AI workloads with performance in mind. During the talk, Bill will use KMS, OpenCode, and the Gemma4 model to write a simple tic-tac-toe game. Then bill will refactor that tic-tac-toe game and integrate Kronk to be Player2. After this talk you will know how to leverage Kronk in your own applications.
+Running inference against LLM models that run on your own local hardware means no API costs, no data leaving your machine, and no vendor lock-in. Having the ability to do this with Go has traditionally been painful. In this talk, Bill will introduce Kronk, a Go SDK that lets you embed local model inference directly into your Go applications with full GPU acceleration — no CGO required. Whether you are building chat, vision, audio, embedding, or tool calling applications, Kronk gives you the same power as a model server without needing one. To prove it, Bill built a model server using the Kronk SDK, complete with caching, batch processing, and agent support. During the talk, Bill will use KMS, OpenCode, and the Gemma4 model to write a simple tic-tac-toe game. Then bill will refactor that tic-tac-toe game and integrate Kronk to be Player2. After this talk you will know how to leverage Kronk in your own applications.
 
 ### Outline
 
 - Introduction
   - Who am I and why I built Kronk
-  - What is Kronk
+  - What is Kronk and why it will remain FOSS
   - How local inference is the future
 - Build Tic-Tac-Toe App Using Kronk
   - Go TUI app that can perform basic game play

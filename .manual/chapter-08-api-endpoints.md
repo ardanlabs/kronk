@@ -44,7 +44,7 @@ Generate chat responses using the familiar OpenAI format.
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "What is the capital of France?"}
@@ -56,7 +56,7 @@ curl http://localhost:11435/v1/chat/completions \
 
 ```json
 {
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "messages": [
     { "role": "system", "content": "System prompt" },
     { "role": "user", "content": "User message" },
@@ -90,7 +90,7 @@ data: [DONE]
   "id": "chatcmpl-xxx",
   "object": "chat.completion",
   "created": 1234567890,
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "choices": [
     {
       "index": 0,
@@ -115,7 +115,7 @@ For models with thinking/reasoning support (like Qwen3):
 
 ```json
 {
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "messages": [...],
   "enable_thinking": true
 }
@@ -143,7 +143,7 @@ OpenAI's newer Responses API format, used by some clients.
 curl http://localhost:11435/v1/responses \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "input": "Explain quantum computing in simple terms."
   }'
 ```
@@ -180,7 +180,7 @@ Generate vector embeddings for text.
 curl http://localhost:11435/v1/embeddings \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "embeddinggemma-300m-qat-Q8_0",
+    "model": "ggml-org/embeddinggemma-300m-qat-Q8_0",
     "input": "The quick brown fox jumps over the lazy dog."
   }'
 ```
@@ -189,7 +189,7 @@ curl http://localhost:11435/v1/embeddings \
 
 ```json
 {
-  "model": "embeddinggemma-300m-qat-Q8_0",
+  "model": "ggml-org/embeddinggemma-300m-qat-Q8_0",
   "input": [
     "First document to embed.",
     "Second document to embed.",
@@ -210,7 +210,7 @@ curl http://localhost:11435/v1/embeddings \
       "embedding": [0.123, -0.456, 0.789, ...]
     }
   ],
-  "model": "embeddinggemma-300m-qat-Q8_0",
+  "model": "ggml-org/embeddinggemma-300m-qat-Q8_0",
   "usage": {
     "prompt_tokens": 10,
     "total_tokens": 10
@@ -230,7 +230,7 @@ Score and reorder documents by relevance to a query.
 curl http://localhost:11435/v1/rerank \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "bge-reranker-v2-m3-Q8_0",
+    "model": "gpustack/bge-reranker-v2-m3-Q8_0",
     "query": "What is machine learning?",
     "documents": [
       "Machine learning is a subset of artificial intelligence.",
@@ -259,7 +259,7 @@ curl http://localhost:11435/v1/rerank \
       "document": "Deep learning uses neural networks."
     }
   ],
-  "model": "bge-reranker-v2-m3-Q8_0",
+  "model": "gpustack/bge-reranker-v2-m3-Q8_0",
   "usage": {
     "prompt_tokens": 45,
     "total_tokens": 45
@@ -277,7 +277,7 @@ Get the token count for a text input. Works with any model type.
 
 | Field                   | Type      | Required | Description                                                                                                                                                  |
 | ----------------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model`                 | `string`  | Yes      | Model ID (e.g., `Qwen3-8B-Q8_0`). Works with any model type.                                                                                                 |
+| `model`                 | `string`  | Yes      | Model ID (e.g., `Qwen/Qwen3-8B-Q8_0`). Works with any model type.                                                                                                 |
 | `input`                 | `string`  | Yes      | The text to tokenize.                                                                                                                                        |
 | `apply_template`        | `boolean` | No       | If true, wraps the input as a user message and applies the model's chat template before tokenizing. The count includes template overhead. Defaults to false. |
 | `add_generation_prompt` | `boolean` | No       | When `apply_template` is true, controls whether the assistant role prefix is appended to the prompt. Defaults to true.                                       |
@@ -289,7 +289,7 @@ curl http://localhost:11435/v1/tokenize \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "input": "The quick brown fox jumps over the lazy dog"
   }'
 ```
@@ -301,7 +301,7 @@ curl http://localhost:11435/v1/tokenize \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "input": "The quick brown fox jumps over the lazy dog",
     "apply_template": true
   }'
@@ -313,7 +313,7 @@ curl http://localhost:11435/v1/tokenize \
 {
   "object": "tokenize",
   "created": 1738857600,
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "tokens": 11
 }
 ```
@@ -333,7 +333,7 @@ function executions that you handle in your application.
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [
       {"role": "user", "content": "What is the weather in Paris?"}
     ],
@@ -400,7 +400,7 @@ After executing the tool, send the result back:
 
 ```json
 {
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "messages": [
     { "role": "user", "content": "What is the weather in Paris?" },
     {
@@ -457,12 +457,12 @@ curl http://localhost:11435/v1/models
   "object": "list",
   "data": [
     {
-      "id": "Qwen3-8B-Q8_0",
+      "id": "Qwen/Qwen3-8B-Q8_0",
       "object": "model",
       "owned_by": "kronk"
     },
     {
-      "id": "embeddinggemma-300m-qat-Q8_0",
+      "id": "ggml-org/embeddinggemma-300m-qat-Q8_0",
       "object": "model",
       "owned_by": "kronk"
     }

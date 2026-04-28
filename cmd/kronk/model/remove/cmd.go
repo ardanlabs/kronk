@@ -19,7 +19,7 @@ Environment Variables (web mode - default):
       KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.
 
 Environment Variables (--local mode):
-      KRONK_BASE_PATH  Base path for kronk data (models, templates, catalog)
+      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)
       KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory`,
 	Args: cobra.ExactArgs(1),
 	Run:  main,
