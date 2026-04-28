@@ -44,7 +44,6 @@ const menuStructure: MenuCategory[] = [
     label: 'Catalog',
     items: [
       { page: 'catalog-list', label: 'List' },
-      { page: 'catalog-editor', label: 'Editor' },
     ],
   },
   {

@@ -21,13 +21,14 @@ const SECTION_LABELS: Record<ModelListSection, string> = {
   vram: 'VRAM Calculator',
 };
 
-type SortField = 'id' | 'owner' | 'family' | 'size' | 'modified';
+type SortField = 'id' | 'owner' | 'family' | 'projection' | 'size' | 'modified';
 
 function getSortValue(model: ListModelDetail, field: SortField): string | number {
   switch (field) {
     case 'id': return model.id.toLowerCase();
     case 'owner': return (model.owned_by || '').toLowerCase();
     case 'family': return (model.model_family || '').toLowerCase();
+    case 'projection': return model.has_projection ? 1 : 0;
     case 'size': return model.size;
     case 'modified': return new Date(model.modified).getTime();
     default: return '';
@@ -247,11 +248,26 @@ export default function ModelList() {
               <table className="catalog-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '40px', textAlign: 'center' }} title="Configuration and template confirmed working with the Kronk catalog">✓</th>
+                    <th style={{ width: '40px', textAlign: 'center' }} title="Configuration and template confirmed working with the Kronk catalog">VAL</th>
                     {([
                       ['id', 'Model ID'],
                       ['owner', 'Owner'],
                       ['family', 'Family'],
+                    ] as const).map(([field, label]) => (
+                      <th key={field} onClick={() => handleSort(field)} className="catalog-table-sortable">
+                        {label}
+                        <span className="catalog-table-sort-indicator">
+                          {sortField === field ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                        </span>
+                      </th>
+                    ))}
+                    <th style={{ textAlign: 'center' }} onClick={() => handleSort('projection')} className="catalog-table-sortable" title="Multimodal projection file present">
+                      MTMD
+                      <span className="catalog-table-sort-indicator">
+                        {sortField === 'projection' ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                      </span>
+                    </th>
+                    {([
                       ['size', 'Size'],
                       ['modified', 'Modified'],
                     ] as const).map(([field, label]) => (
@@ -281,6 +297,7 @@ export default function ModelList() {
                           <td><span className="catalog-table-cell-ellipsis">{model.id}</span></td>
                           <td>{model.owned_by || '-'}</td>
                           <td>{model.model_family || '-'}</td>
+                          <td style={{ textAlign: 'center' }}>{model.has_projection ? '✓' : ''}</td>
                           <td>{formatBytes(model.size)}</td>
                           <td>{formatDate(model.modified)}</td>
                         </tr>
@@ -294,6 +311,7 @@ export default function ModelList() {
                             <td style={{ paddingLeft: '24px' }}><span className="catalog-table-cell-ellipsis">↳ {ext.id}</span></td>
                             <td></td>
                             <td>Extension Model</td>
+                            <td></td>
                             <td></td>
                             <td></td>
                           </tr>

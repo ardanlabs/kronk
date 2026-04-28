@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
 import { useDownload } from '../contexts/DownloadContext';
@@ -32,7 +31,6 @@ const NEW_MODEL_VALUE = '__new__';
 const defaultTools = JSON.stringify(autoTestTools, null, 2);
 
 export default function ModelPlayground() {
-  const navigate = useNavigate();
   const { models, loadModels } = useModelList();
   const { download, isDownloading, startDownload, cancelDownload, clearDownload } = useDownload();
 
@@ -460,33 +458,6 @@ export default function ModelPlayground() {
     );
   }, [session, inspectorRunning, inspectorPrompt, systemPrompt]);
 
-  const handleExportToCatalog = () => {
-    if (!session) return;
-
-    const draft = {
-      id: selectedModel,
-      template: templateMode === 'builtin' ? selectedTemplate : '',
-      template_script: templateMode === 'custom' ? customScript : '',
-      config: {
-        'context-window': contextWindow,
-        nbatch: nBatch,
-        nubatch: nUBatch,
-        'nseq-max': nSeqMax,
-        'flash-attention': flashAttention,
-        'cache-type-k': cacheType,
-        'cache-type-v': cacheType,
-        'incremental-cache': cacheMode === 'imc',
-      },
-      capabilities: {
-        streaming: true,
-        tooling: toolCalls.length > 0,
-      },
-    };
-
-    sessionStorage.setItem('kronk_catalog_draft', JSON.stringify(draft));
-    navigate('/catalog/editor?source=playground');
-  };
-
   // ── ChatPanel bridge for Basic Chat tab ─────────────────────────────
   const playgroundSampling = useMemo<SamplingParams>(() => ({
     maxTokens,
@@ -588,11 +559,6 @@ export default function ModelPlayground() {
     <div className="playground-container">
       <div className="playground-header">
         <h2>Model Playground</h2>
-        {session && (
-          <button className="btn btn-secondary" onClick={handleExportToCatalog}>
-            Export to Catalog Editor
-          </button>
-        )}
       </div>
 
       <div className="playground-layout">

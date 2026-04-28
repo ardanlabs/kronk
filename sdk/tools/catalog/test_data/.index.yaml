@@ -1,8 +1,0 @@
-bge-reranker-v2-m3-q8_0: rerank.yaml
-embeddinggemma-300m-qat-q8_0: embedding.yaml
-gpt-oss-20b-q8_0: text_generation.yaml
-qwen2-audio-7b.q8_0: audio_text_to_text.yaml
-qwen2.5-vl-3b-instruct-q8_0: image_text_to_text.yaml
-qwen3-8b-q8_0: text_generation.yaml
-qwen3-coder-30b-a3b-instruct-q8_0: text_generation.yaml
-Llama-3.3-70B-Instruct-Q8_0: text_generation.yaml

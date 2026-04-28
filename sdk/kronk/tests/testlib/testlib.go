@@ -11,7 +11,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -70,20 +69,6 @@ func Setup() {
 	resolveModel(mdls, "Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
 
 	printInfo(mdls)
-
-	ctx := context.Background()
-
-	ctlg, err := catalog.New()
-	if err != nil {
-		fmt.Printf("unable to create catalog system: %s", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("Downloading Catalog and Templates...")
-	if err := ctlg.Download(ctx); err != nil {
-		fmt.Printf("unable to download catalog: %s", err)
-		os.Exit(1)
-	}
 
 	fmt.Println("Init Kronk...")
 	if err := kronk.Init(); err != nil {

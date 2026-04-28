@@ -3,16 +3,16 @@ package list
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"text/tabwriter"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 func runWeb() error {
@@ -31,71 +31,55 @@ func runWeb() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	var list []toolapp.CatalogModelResponse
-	if err := cln.Do(ctx, http.MethodGet, url, nil, &list); err != nil {
-		return fmt.Errorf("do: unable to get model list: %w", err)
+	var summaries toolapp.CatalogListResponse
+	if err := cln.Do(ctx, http.MethodGet, url, nil, &summaries); err != nil {
+		return fmt.Errorf("do: unable to get catalog list: %w", err)
 	}
 
-	printWeb(list)
+	print(summaries)
 
 	return nil
 }
 
-func runLocal(catalog *catalog.Catalog, args []string) error {
-	var filterCategory string
-
-	fs := flag.NewFlagSet("catalog list", flag.ContinueOnError)
-	fs.StringVar(&filterCategory, "filter-category", "", "filter catalogs by category name (substring match)")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	list, err := catalog.ModelList(filterCategory)
+func runLocal(mdls *models.Models) error {
+	cat, err := mdls.Catalog()
 	if err != nil {
-		return fmt.Errorf("catalog-list: %w", err)
+		return fmt.Errorf("load catalog: %w", err)
 	}
 
-	print(list)
+	downloaded, validated := mdls.IndexState()
+
+	summaries := make([]models.CatalogSummary, 0, len(cat.Models))
+	for canonical, entry := range cat.Models {
+		summaries = append(summaries, models.NewSummary(canonical, entry, downloaded, validated))
+	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].ID < summaries[j].ID
+	})
+
+	print(summaries)
 
 	return nil
 }
 
 // =============================================================================
 
-func printWeb(list []toolapp.CatalogModelResponse) {
+func print(summaries []models.CatalogSummary) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MODEL ID\tOWNER\tCATALOG\tARCH\tSIZE\tCREATED\tVAL")
+	fmt.Fprintln(w, "ID\tOWNED BY\tFAMILY\tSIZE\tDL\tVAL")
 
-	for _, m := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
-			m.ID,
-			m.OwnedBy,
-			m.Category,
-			m.Architecture,
-			m.TotalSize,
-			m.Metadata.Created.Format(time.DateOnly),
-			m.Validated,
-		)
+	for _, s := range summaries {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			s.ID, s.OwnedBy, s.ModelFamily, s.TotalSize, yesNo(s.Downloaded), yesNo(s.Validated))
 	}
 
 	w.Flush()
 }
 
-func print(list []catalog.ModelDetails) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MODEL ID\tOWNER\tCATALOG\tARCH\tSIZE\tCREATED\tVAL")
-
-	for _, m := range list {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%v\n",
-			m.ID,
-			m.OwnedBy,
-			m.Category,
-			m.Architecture,
-			m.Files.TotalSize(),
-			m.Metadata.Created.Format(time.DateOnly),
-			m.Validated,
-		)
+func yesNo(b bool) string {
+	if b {
+		return "yes"
 	}
-
-	w.Flush()
+	return "no"
 }

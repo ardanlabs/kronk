@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -47,15 +46,6 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 	// -------------------------------------------------------------------------
 
 	cfg := model.NewConfig(opts...)
-
-	if cfg.Cataloger == nil {
-		cataloger, err := catalog.New()
-		if err != nil {
-			return nil, fmt.Errorf("new: unable to create cataloger: %w", err)
-		}
-
-		cfg.Cataloger = cataloger
-	}
 
 	// -------------------------------------------------------------------------
 

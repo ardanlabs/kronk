@@ -1,11 +1,10 @@
-import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
 import type { CatalogModelResponse, CatalogModelsResponse, CatalogCapabilities, VRAMCalculatorResponse } from '../types';
 import { ParamTooltip, labelWithTip } from './ParamTooltips';
-import { fmtNum, fmtVal } from '../lib/format';
 import { extractContextInfo } from '../lib/context';
+import { formatBytes } from '../lib/format';
 import ResizablePanel from './ResizablePanel';
 import KeyValueTable from './KeyValueTable';
 import ModelCard from './ModelCard';
@@ -14,13 +13,11 @@ import DownloadInfoTable from './DownloadInfoTable';
 import DownloadProgressBar from './DownloadProgressBar';
 import { VRAMFormulaModal, VRAMCalculatorPanel, useVRAMState } from './vram';
 
-type DetailSection = 'model-card' | 'catalog' | 'config' | 'sampling' | 'template' | 'vram' | 'pull';
+type DetailSection = 'model-card' | 'catalog' | 'template' | 'vram' | 'pull';
 
 const SECTION_LABELS: Record<DetailSection, string> = {
   'model-card': 'Model Card',
   catalog: 'Catalog',
-  config: 'Configuration',
-  sampling: 'Sampling',
   template: 'Template',
   vram: 'VRAM Calculator',
   pull: 'Pull',
@@ -37,10 +34,6 @@ const TB = 1024 * 1024 * 1024 * 1024;
 const SIZE_MAX_BYTES = 4 * TB; // 4 TiB
 const SLIDER_STEPS = 1000;
 
-// Parameter count range (100M to 1T parameters)
-const PARAM_MIN = 1e8;   // 100M
-const PARAM_MAX = 1e12;  // 1T
-
 function sliderToBytes(pos: number): number {
   if (pos <= 0) return 0;
   if (pos >= SLIDER_STEPS) return SIZE_MAX_BYTES;
@@ -55,31 +48,6 @@ function bytesToSlider(bytes: number): number {
   const logMin = Math.log(MB);
   const logMax = Math.log(SIZE_MAX_BYTES);
   return Math.round(((Math.log(Math.max(bytes, MB)) - logMin) / (logMax - logMin)) * SLIDER_STEPS);
-}
-
-function sliderToParams(pos: number): number {
-  if (pos <= 0) return 0;
-  if (pos >= SLIDER_STEPS) return PARAM_MAX;
-  const logMin = Math.log(PARAM_MIN);
-  const logMax = Math.log(PARAM_MAX);
-  return Math.exp(logMin + (pos / SLIDER_STEPS) * (logMax - logMin));
-}
-
-function paramsToSlider(count: number): number {
-  if (count <= 0) return 0;
-  if (count >= PARAM_MAX) return SLIDER_STEPS;
-  const logMin = Math.log(PARAM_MIN);
-  const logMax = Math.log(PARAM_MAX);
-  return Math.round(((Math.log(Math.max(count, PARAM_MIN)) - logMin) / (logMax - logMin)) * SLIDER_STEPS);
-}
-
-type ParamUnit = 'M' | 'B';
-
-const PARAM_UNIT_MULT: Record<ParamUnit, number> = { M: 1e6, B: 1e9 };
-
-function paramsToBestUnit(count: number): { value: string; unit: ParamUnit } {
-  if (count >= 1e9) return { value: (count / 1e9).toFixed(1), unit: 'B' };
-  return { value: Math.round(count / 1e6).toString(), unit: 'M' };
 }
 
 type SizeUnit = 'MB' | 'GB' | 'TB';
@@ -146,7 +114,6 @@ function FilterSection({
 // ---------------------------------------------------------------------------
 
 export default function CatalogList() {
-  const navigate = useNavigate();
   const { download, startCatalogDownload, cancelDownload } = useDownload();
   const [data, setData] = useState<CatalogModelsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -159,7 +126,7 @@ export default function CatalogList() {
   const [activeSection, setActiveSection] = useState<DetailSection>('model-card');
 
   // Sort state for catalog table
-  type SortField = 'id' | 'owned_by' | 'category' | 'architecture' | 'total_size_bytes' | 'validated' | 'created';
+  type SortField = 'id' | 'owned_by' | 'model_family' | 'model_type' | 'has_projection' | 'total_size_bytes' | 'validated';
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -171,6 +138,19 @@ export default function CatalogList() {
       setSortAsc(true);
     }
   };
+
+  // Remove-from-catalog state
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
+  const removeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (removeTimerRef.current) clearTimeout(removeTimerRef.current);
+    };
+  }, []);
 
   // VRAM calculator state (shared hook, wired after effectiveVram is computed below)
   const [showLearnMore, setShowLearnMore] = useState(false);
@@ -196,27 +176,21 @@ export default function CatalogList() {
   // ── Filter state ──────────────────────────────────────────────────────────
 
   const [searchText, setSearchText] = useState('');
-  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [selectedOwners, setSelectedOwners] = useState<Set<string>>(new Set());
-  const [selectedArchitectures, setSelectedArchitectures] = useState<Set<string>>(new Set());
   const [selectedFamilies, setSelectedFamilies] = useState<Set<string>>(new Set());
+  const [selectedModelTypes, setSelectedModelTypes] = useState<Set<string>>(new Set());
+  const [selectedCapabilities, setSelectedCapabilities] = useState<Set<string>>(new Set());
 
   const [sizeMinVal, setSizeMinVal] = useState('0');
   const [sizeMinUnit, setSizeMinUnit] = useState<SizeUnit>('MB');
   const [sizeMaxVal, setSizeMaxVal] = useState('4');
   const [sizeMaxUnit, setSizeMaxUnit] = useState<SizeUnit>('TB');
 
-  const [paramMinVal, setParamMinVal] = useState('0');
-  const [paramMinUnit, setParamMinUnit] = useState<ParamUnit>('M');
-  const [paramMaxVal, setParamMaxVal] = useState('1000');
-  const [paramMaxUnit, setParamMaxUnit] = useState<ParamUnit>('B');
-
   const [downloadedFilter, setDownloadedFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [validatedFilter, setValidatedFilter] = useState<'all' | 'yes' | 'no'>('all');
-  const [selectedCapabilities, setSelectedCapabilities] = useState<Set<string>>(new Set());
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['category', 'size', 'capabilities']),
+    new Set(['architecture', 'capabilities', 'size']),
   );
 
   const toggleSection = (s: string) => setExpandedSections(prev => toggleSet(prev, s));
@@ -247,41 +221,16 @@ export default function CatalogList() {
     setSizeMaxUnit(display.unit);
   };
 
-  // Compute param count from text inputs
-  const parsedParamMin = parseFloat(paramMinVal);
-  const parsedParamMax = parseFloat(paramMaxVal);
-  const rawParamMin = Number.isFinite(parsedParamMin) ? parsedParamMin * PARAM_UNIT_MULT[paramMinUnit] : 0;
-  const rawParamMax = Number.isFinite(parsedParamMax) ? parsedParamMax * PARAM_UNIT_MULT[paramMaxUnit] : PARAM_MAX;
-  const paramMin = Math.min(rawParamMin, rawParamMax);
-  const paramMax = Math.max(rawParamMin, rawParamMax);
-  const paramSliderMin = paramsToSlider(paramMin);
-  const paramSliderMax = paramsToSlider(paramMax);
-
-  const handleParamSliderMin = (pos: number) => {
-    const clamped = Math.min(pos, paramsToSlider(paramMax));
-    const count = sliderToParams(clamped);
-    const display = paramsToBestUnit(count);
-    setParamMinVal(display.value);
-    setParamMinUnit(display.unit);
-  };
-
-  const handleParamSliderMax = (pos: number) => {
-    const clamped = Math.max(pos, paramsToSlider(paramMin));
-    const count = sliderToParams(clamped);
-    const display = paramsToBestUnit(count);
-    setParamMaxVal(display.value);
-    setParamMaxUnit(display.unit);
-  };
-
   // ── Distinct filter values ────────────────────────────────────────────────
 
   const distinctValues = useMemo(() => {
-    if (!data) return { categories: [], owners: [], architectures: [], families: [] };
+    if (!data) return { owners: [] as string[], families: [] as string[] };
+
+    const isStr = (s: string | undefined): s is string => Boolean(s);
+
     return {
-      categories: [...new Set(data.map(m => m.category).filter(Boolean))].sort(),
-      owners: [...new Set(data.map(m => m.owned_by).filter(Boolean))].sort(),
-      architectures: [...new Set(data.map(m => m.architecture).filter(Boolean))].sort(),
-      families: [...new Set(data.map(m => m.model_family).filter(Boolean))].sort(),
+      owners: [...new Set(data.map(m => m.owned_by).filter(isStr))].sort(),
+      families: [...new Set(data.map(m => m.model_family).filter(isStr))].sort(),
     };
   }, [data]);
 
@@ -291,28 +240,21 @@ export default function CatalogList() {
     if (!data) return [];
     return data.filter(model => {
       if (searchText && !model.id.toLowerCase().includes(searchText.toLowerCase())) return false;
-      if (selectedCategories.size > 0 && !selectedCategories.has(model.category)) return false;
       if (selectedOwners.size > 0 && !selectedOwners.has(model.owned_by)) return false;
-      if (selectedArchitectures.size > 0) {
-        if (!model.architecture || !selectedArchitectures.has(model.architecture)) return false;
-      }
       if (selectedFamilies.size > 0 && !selectedFamilies.has(model.model_family)) return false;
+      if (selectedModelTypes.size > 0 && (!model.model_type || !selectedModelTypes.has(model.model_type))) return false;
       if (model.total_size_bytes < sizeMinBytes || model.total_size_bytes > sizeMaxBytes) return false;
-      if (paramMin > 0 || paramMax < PARAM_MAX) {
-        const pc = model.parameter_count || 0;
-        if (pc > 0 && (pc < paramMin || pc > paramMax)) return false;
-        if (pc === 0 && paramMin > 0) return false;
-      }
       if (downloadedFilter === 'yes' && !model.downloaded) return false;
       if (downloadedFilter === 'no' && model.downloaded) return false;
       if (validatedFilter === 'yes' && !model.validated) return false;
       if (validatedFilter === 'no' && model.validated) return false;
       for (const cap of selectedCapabilities) {
-        if (!(model.capabilities as unknown as Record<string, boolean>)[cap]) return false;
+        const caps = model.capabilities as unknown as Record<string, boolean | string> | undefined;
+        if (!caps || !caps[cap]) return false;
       }
       return true;
     });
-  }, [data, searchText, selectedCategories, selectedOwners, selectedArchitectures, selectedFamilies, sizeMinBytes, sizeMaxBytes, paramMin, paramMax, downloadedFilter, validatedFilter, selectedCapabilities]);
+  }, [data, searchText, selectedOwners, selectedFamilies, selectedModelTypes, sizeMinBytes, sizeMaxBytes, downloadedFilter, validatedFilter, selectedCapabilities]);
 
   const sortedData = useMemo(() => {
     const sorted = [...filteredData];
@@ -321,11 +263,11 @@ export default function CatalogList() {
       switch (sortField) {
         case 'id': cmp = a.id.localeCompare(b.id); break;
         case 'owned_by': cmp = (a.owned_by || '').localeCompare(b.owned_by || ''); break;
-        case 'category': cmp = (a.category || '').localeCompare(b.category || ''); break;
-        case 'architecture': cmp = (a.architecture || '').localeCompare(b.architecture || ''); break;
+        case 'model_family': cmp = (a.model_family || '').localeCompare(b.model_family || ''); break;
+        case 'model_type': cmp = (a.model_type || '').localeCompare(b.model_type || ''); break;
+        case 'has_projection': cmp = (a.has_projection ? 1 : 0) - (b.has_projection ? 1 : 0); break;
         case 'total_size_bytes': cmp = (a.total_size_bytes || 0) - (b.total_size_bytes || 0); break;
         case 'validated': cmp = (a.validated ? 1 : 0) - (b.validated ? 1 : 0); break;
-        case 'created': cmp = new Date(a.metadata.created).getTime() - new Date(b.metadata.created).getTime(); break;
       }
       return sortAsc ? cmp : -cmp;
     });
@@ -333,12 +275,10 @@ export default function CatalogList() {
   }, [filteredData, sortField, sortAsc]);
 
   const hasActiveFilters = searchText !== '' ||
-    selectedCategories.size > 0 || selectedOwners.size > 0 ||
-    selectedArchitectures.size > 0 || selectedFamilies.size > 0 ||
+    selectedOwners.size > 0 || selectedFamilies.size > 0 ||
+    selectedModelTypes.size > 0 || selectedCapabilities.size > 0 ||
     sizeMinBytes > 0 || sizeMaxBytes < SIZE_MAX_BYTES ||
-    paramMin > 0 || paramMax < PARAM_MAX ||
-    downloadedFilter !== 'all' || validatedFilter !== 'all' ||
-    selectedCapabilities.size > 0;
+    downloadedFilter !== 'all' || validatedFilter !== 'all';
 
   // Clear detail panel when filters change and selected model is no longer visible
   useEffect(() => {
@@ -352,21 +292,16 @@ export default function CatalogList() {
 
   const clearAllFilters = () => {
     setSearchText('');
-    setSelectedCategories(new Set());
     setSelectedOwners(new Set());
-    setSelectedArchitectures(new Set());
     setSelectedFamilies(new Set());
+    setSelectedModelTypes(new Set());
+    setSelectedCapabilities(new Set());
     setSizeMinVal('0');
     setSizeMinUnit('MB');
     setSizeMaxVal('4');
     setSizeMaxUnit('TB');
-    setParamMinVal('0');
-    setParamMinUnit('M');
-    setParamMaxVal('1000');
-    setParamMaxUnit('B');
     setDownloadedFilter('all');
     setValidatedFilter('all');
-    setSelectedCapabilities(new Set());
   };
 
   // ── Download state ────────────────────────────────────────────────────────
@@ -416,6 +351,15 @@ export default function CatalogList() {
     setInfoError(null);
     setActiveSection('model-card');
     try {
+      // Reconcile first so any new on-disk models or schema-version
+      // upgrades are picked up before listing. Best-effort: when
+      // reconcile fails (e.g. no admin auth) we still try to list.
+      try {
+        await api.reconcileCatalog();
+      } catch {
+        // ignore — listing still works on stale data.
+      }
+
       const response = await api.listCatalog();
       setData(response);
 
@@ -432,6 +376,9 @@ export default function CatalogList() {
   };
 
   const handleRowClick = async (id: string) => {
+    setConfirmingRemove(false);
+    setRemoveError(null);
+
     if (selectedId === id) {
       setSelectedId(null);
       setModelInfo(null);
@@ -515,6 +462,39 @@ export default function CatalogList() {
     cancelDownload();
   };
 
+  const handleRemoveClick = () => {
+    if (!selectedId) return;
+    setConfirmingRemove(true);
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!selectedId) return;
+
+    const removedId = selectedId;
+    setRemoving(true);
+    setConfirmingRemove(false);
+    setRemoveError(null);
+    setRemoveSuccess(null);
+
+    try {
+      await api.removeCatalogModel(removedId);
+      setRemoveSuccess(`Catalog entry "${removedId}" removed successfully`);
+      setSelectedId(null);
+      setModelInfo(null);
+      setActiveSection('model-card');
+      await loadCatalog();
+      removeTimerRef.current = setTimeout(() => setRemoveSuccess(null), 3000);
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : 'Failed to remove catalog entry');
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const handleCancelRemove = () => {
+    setConfirmingRemove(false);
+  };
+
   const isDownloaded = data?.find((m) => m.id === selectedId)?.downloaded ?? false;
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -544,24 +524,6 @@ export default function CatalogList() {
             />
           </div>
 
-          {/* Category */}
-          {distinctValues.categories.length > 0 && (
-            <FilterSection title="Category" expanded={expandedSections.has('category')} onToggle={() => toggleSection('category')}>
-              <div className="catalog-filter-options">
-                {distinctValues.categories.map(cat => (
-                  <label key={cat}>
-                    <input
-                      type="checkbox"
-                      checked={selectedCategories.has(cat)}
-                      onChange={() => setSelectedCategories(prev => toggleSet(prev, cat))}
-                    />
-                    {cat}
-                  </label>
-                ))}
-              </div>
-            </FilterSection>
-          )}
-
           {/* Owner */}
           {distinctValues.owners.length > 0 && (
             <FilterSection title="Owner" expanded={expandedSections.has('owner')} onToggle={() => toggleSection('owner')}>
@@ -574,24 +536,6 @@ export default function CatalogList() {
                       onChange={() => setSelectedOwners(prev => toggleSet(prev, owner))}
                     />
                     {owner}
-                  </label>
-                ))}
-              </div>
-            </FilterSection>
-          )}
-
-          {/* Architecture */}
-          {distinctValues.architectures.length > 0 && (
-            <FilterSection title="Architecture" expanded={expandedSections.has('architecture')} onToggle={() => toggleSection('architecture')}>
-              <div className="catalog-filter-options">
-                {distinctValues.architectures.map(arch => (
-                  <label key={arch}>
-                    <input
-                      type="checkbox"
-                      checked={selectedArchitectures.has(arch)}
-                      onChange={() => setSelectedArchitectures(prev => toggleSet(prev, arch))}
-                    />
-                    {arch}
                   </label>
                 ))}
               </div>
@@ -615,6 +559,38 @@ export default function CatalogList() {
               </div>
             </FilterSection>
           )}
+
+          {/* Architecture (Dense/MoE/Hybrid) */}
+          <FilterSection title="Architecture" expanded={expandedSections.has('architecture')} onToggle={() => toggleSection('architecture')}>
+            <div className="catalog-filter-options">
+              {(['Dense', 'MoE', 'Hybrid'] as const).map(t => (
+                <label key={t}>
+                  <input
+                    type="checkbox"
+                    checked={selectedModelTypes.has(t)}
+                    onChange={() => setSelectedModelTypes(prev => toggleSet(prev, t))}
+                  />
+                  {t}
+                </label>
+              ))}
+            </div>
+          </FilterSection>
+
+          {/* Capabilities */}
+          <FilterSection title="Capabilities" expanded={expandedSections.has('capabilities')} onToggle={() => toggleSection('capabilities')}>
+            <div className="catalog-filter-options">
+              {CAPABILITY_KEYS.map(cap => (
+                <label key={cap}>
+                  <input
+                    type="checkbox"
+                    checked={selectedCapabilities.has(cap)}
+                    onChange={() => setSelectedCapabilities(prev => toggleSet(prev, cap))}
+                  />
+                  {CAPABILITY_LABELS[cap]}
+                </label>
+              ))}
+            </div>
+          </FilterSection>
 
           {/* Size */}
           <FilterSection title="Size" expanded={expandedSections.has('size')} onToggle={() => toggleSection('size')}>
@@ -675,63 +651,6 @@ export default function CatalogList() {
             </div>
           </FilterSection>
 
-          {/* Parameters */}
-          <FilterSection title="Parameters" expanded={expandedSections.has('parameters')} onToggle={() => toggleSection('parameters')}>
-            <div className="catalog-range-row">
-              <label>Min</label>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={paramMinVal}
-                onChange={(e) => setParamMinVal(e.target.value)}
-              />
-              <select value={paramMinUnit} onChange={(e) => setParamMinUnit(e.target.value as ParamUnit)}>
-                <option value="M">M</option>
-                <option value="B">B</option>
-              </select>
-            </div>
-            <div className="catalog-range-row">
-              <label>Max</label>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={paramMaxVal}
-                onChange={(e) => setParamMaxVal(e.target.value)}
-              />
-              <select value={paramMaxUnit} onChange={(e) => setParamMaxUnit(e.target.value as ParamUnit)}>
-                <option value="M">M</option>
-                <option value="B">B</option>
-              </select>
-            </div>
-            <div className="catalog-dual-range">
-              <div className="catalog-dual-range-track">
-                <div
-                  className="catalog-dual-range-fill"
-                  style={{
-                    left: `${(paramSliderMin / SLIDER_STEPS) * 100}%`,
-                    right: `${100 - (paramSliderMax / SLIDER_STEPS) * 100}%`,
-                  }}
-                />
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={SLIDER_STEPS}
-                value={paramSliderMin}
-                onChange={(e) => handleParamSliderMin(Number(e.target.value))}
-              />
-              <input
-                type="range"
-                min={0}
-                max={SLIDER_STEPS}
-                value={paramSliderMax}
-                onChange={(e) => handleParamSliderMax(Number(e.target.value))}
-              />
-            </div>
-          </FilterSection>
-
           {/* Downloaded */}
           <FilterSection title="Downloaded" expanded={expandedSections.has('downloaded')} onToggle={() => toggleSection('downloaded')}>
             <div className="catalog-filter-radio">
@@ -762,22 +681,6 @@ export default function CatalogList() {
             </div>
           </FilterSection>
 
-          {/* Capabilities */}
-          <FilterSection title="Capabilities" expanded={expandedSections.has('capabilities')} onToggle={() => toggleSection('capabilities')}>
-            <div className="catalog-filter-options">
-              {CAPABILITY_KEYS.map(cap => (
-                <label key={cap}>
-                  <input
-                    type="checkbox"
-                    checked={selectedCapabilities.has(cap)}
-                    onChange={() => setSelectedCapabilities(prev => toggleSet(prev, cap))}
-                  />
-                  {CAPABILITY_LABELS[cap]}
-                </label>
-              ))}
-            </div>
-          </FilterSection>
-
           {/* Footer: match count + clear + actions */}
           <div className="catalog-filter-footer">
             <div className="catalog-match-count">
@@ -790,29 +693,6 @@ export default function CatalogList() {
             )}
           </div>
 
-          <div className="catalog-filter-actions">
-            <button
-              className="btn btn-secondary"
-              onClick={() => {
-                loadCatalog();
-                setSelectedId(null);
-                setModelInfo(null);
-                setActiveSection('model-card');
-                setInfoError(null);
-              }}
-              disabled={loading}
-            >
-              Refresh
-            </button>
-            {selectedId && (
-              <button
-                className="btn btn-secondary"
-                onClick={() => navigate(`/catalog/editor?id=${encodeURIComponent(selectedId)}`)}
-              >
-                Edit
-              </button>
-            )}
-          </div>
         </ResizablePanel>
 
         {/* ── Main Content ──────────────────────────────────────────────── */}
@@ -827,18 +707,15 @@ export default function CatalogList() {
                   <thead>
                     <tr>
                       <th style={{ width: '40px', textAlign: 'center' }} onClick={() => handleSort('validated')} className="catalog-table-sortable" title="Configuration and template confirmed working with the Kronk catalog">
-                        ✓
+                        VAL
                         <span className="catalog-table-sort-indicator">
                           {sortField === 'validated' ? (sortAsc ? ' ▲' : ' ▼') : ''}
                         </span>
                       </th>
                       {([
                         ['id', 'Model ID'],
-                        ['owned_by', 'Owner'],
-                        ['category', 'Category'],
-                        ['architecture', 'Arch'],
-                        ['total_size_bytes', 'Size'],
-                        ['created', 'Created'],
+                        ['owned_by', 'Provider'],
+                        ['model_family', 'Family'],
                       ] as const).map(([field, label]) => (
                         <th key={field} onClick={() => handleSort(field)} className="catalog-table-sortable">
                           {label}
@@ -847,6 +724,24 @@ export default function CatalogList() {
                           </span>
                         </th>
                       ))}
+                      <th onClick={() => handleSort('model_type')} className="catalog-table-sortable" title="Architecture class (Dense, MoE, or Hybrid) derived from GGUF metadata">
+                        Arch
+                        <span className="catalog-table-sort-indicator">
+                          {sortField === 'model_type' ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                        </span>
+                      </th>
+                      <th style={{ textAlign: 'center' }} onClick={() => handleSort('has_projection')} className="catalog-table-sortable" title="Multimodal projection file present">
+                        MTMD
+                        <span className="catalog-table-sort-indicator">
+                          {sortField === 'has_projection' ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                        </span>
+                      </th>
+                      <th onClick={() => handleSort('total_size_bytes')} className="catalog-table-sortable">
+                        Size
+                        <span className="catalog-table-sort-indicator">
+                          {sortField === 'total_size_bytes' ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                        </span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -857,12 +752,12 @@ export default function CatalogList() {
                         onClick={() => handleRowClick(model.id)}
                       >
                         <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : 'var(--color-error)' }}>{model.validated ? '✓' : '✗'}</td>
-                        <td><span className="catalog-table-cell-ellipsis">{model.model_config?.['draft-model'] ? '⚡ ' : ''}{model.id}</span></td>
+                        <td><span className="catalog-table-cell-ellipsis">{model.id}</span></td>
                         <td>{model.owned_by || '-'}</td>
-                        <td>{model.category || '-'}</td>
-                        <td>{model.architecture || '-'}</td>
+                        <td>{model.model_family || '-'}</td>
+                        <td>{model.model_type || '-'}</td>
+                        <td style={{ textAlign: 'center' }}>{model.has_projection ? '✓' : ''}</td>
                         <td>{model.total_size || '-'}</td>
-                        <td>{model.metadata.created ? new Date(model.metadata.created).toLocaleDateString() : '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -875,6 +770,47 @@ export default function CatalogList() {
                 )}
               </div>
             )}
+
+            <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  loadCatalog();
+                  setSelectedId(null);
+                  setModelInfo(null);
+                  setActiveSection('model-card');
+                  setInfoError(null);
+                  setConfirmingRemove(false);
+                  setRemoveError(null);
+                  setRemoveSuccess(null);
+                }}
+                disabled={loading}
+              >
+                Refresh
+              </button>
+              {selectedId && !confirmingRemove && (
+                <button
+                  className="btn btn-danger"
+                  onClick={handleRemoveClick}
+                  disabled={removing}
+                >
+                  Remove Model
+                </button>
+              )}
+              {selectedId && confirmingRemove && (
+                <>
+                  <button className="btn btn-danger" onClick={handleConfirmRemove} disabled={removing}>
+                    {removing ? 'Removing...' : 'Yes, Remove'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={handleCancelRemove} disabled={removing}>
+                    Cancel
+                  </button>
+                </>
+              )}
+            </div>
+
+            {removeError && <div className="alert alert-error" style={{ marginTop: '16px' }}>{removeError}</div>}
+            {removeSuccess && <div className="alert alert-success" style={{ marginTop: '16px' }}>{removeSuccess}</div>}
 
             {infoError && <div className="alert alert-error" style={{ marginTop: '16px' }}>{infoError}</div>}
 
@@ -904,7 +840,7 @@ export default function CatalogList() {
                   <div>
                     <h3 style={{ marginBottom: '16px' }}>{modelInfo.id}</h3>
 
-                    {modelInfo.metadata.description && (
+                    {modelInfo.metadata?.description && (
                       <div style={{ marginBottom: '16px' }}>
                         <p>{modelInfo.metadata.description}</p>
                       </div>
@@ -924,141 +860,36 @@ export default function CatalogList() {
                     <div style={{ marginBottom: '16px' }}>
                       <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Files</h4>
                       <KeyValueTable rows={[
-                        { key: 'model-url', label: 'Model URL', value: modelInfo.files.model.length > 0 ? modelInfo.files.model.map((file, idx) => <div key={idx}>{file.url} {file.size && `(${file.size})`}</div>) : '-' },
-                        { key: 'proj-url', label: 'Projection URL', value: modelInfo.files.proj.url ? <div>{modelInfo.files.proj.url} {modelInfo.files.proj.size && `(${modelInfo.files.proj.size})`}</div> : '-' },
-                      ]} />
-                    </div>
-
-                    <div style={{ marginBottom: '24px' }}>
-                      <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Catalog Metadata</h4>
-                      <KeyValueTable rows={[
-                        { key: 'created', label: 'Created', value: new Date(modelInfo.metadata.created).toLocaleString() },
-                        { key: 'collections', label: 'Collections', value: modelInfo.metadata.collections || '-' },
+                        { key: 'model-url', label: 'Model URL', value: (modelInfo.files?.model?.length ?? 0) > 0 ? modelInfo.files!.model.map((file, idx) => <div key={idx}>{file.url} {file.size ? `(${formatBytes(file.size)})` : ''}</div>) : '-' },
+                        { key: 'proj-url', label: 'Projection URL', value: modelInfo.files?.proj?.url ? <div>{modelInfo.files.proj.url} {modelInfo.files.proj.size ? `(${formatBytes(modelInfo.files.proj.size)})` : ''}</div> : '-' },
                       ]} />
                     </div>
 
                     <KeyValueTable rows={[
-                      { key: 'category', label: 'Category', value: modelInfo.category },
                       { key: 'owner', label: 'Owner', value: modelInfo.owned_by },
                       { key: 'family', label: 'Family', value: modelInfo.model_family },
-                      { key: 'arch', label: 'Architecture', value: modelInfo.architecture || '-' },
-                      { key: 'gguf', label: 'GGUF Arch', value: modelInfo.gguf_arch || '-' },
+                      { key: 'arch', label: 'Architecture', value: modelInfo.model_type || '-' },
+                      { key: 'gguf-arch', label: 'GGUF Arch', value: modelInfo.gguf_arch || '-' },
                       { key: 'params', label: 'Parameters', value: modelInfo.parameters || '-' },
                       { key: 'size', label: 'Size', value: modelInfo.total_size || '-' },
                       { key: 'downloaded', label: 'Downloaded', value: <span className={`badge ${modelInfo.downloaded ? 'badge-yes' : 'badge-no'}`}>{modelInfo.downloaded ? 'Yes' : 'No'}</span> },
-                      { key: 'gated', label: 'Gated Model', value: <span className={`badge ${modelInfo.gated_model ? 'badge-yes' : 'badge-no'}`}>{modelInfo.gated_model ? 'Yes' : 'No'}</span> },
                       { key: 'validated', label: labelWithTip('Validated', 'validated'), value: <span style={{ color: modelInfo.validated ? 'inherit' : 'var(--color-error)' }}>{modelInfo.validated ? '✓' : '✗'}</span> },
-                      { key: 'endpoint', label: 'Endpoint', value: modelInfo.capabilities.endpoint },
+                      { key: 'endpoint', label: 'Endpoint', value: modelInfo.capabilities?.endpoint || '-' },
                       { key: 'template', label: 'Template', value: modelInfo.template || '-' },
                     ]} />
 
                     <div style={{ marginTop: '24px' }}>
                       <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Capabilities</h4>
-                      <KeyValueTable rows={CAPABILITY_KEYS.map(cap => ({
-                        key: cap,
-                        label: CAPABILITY_LABELS[cap],
-                        value: <span className={`badge ${modelInfo.capabilities[cap] ? 'badge-yes' : 'badge-no'}`}>{modelInfo.capabilities[cap] ? 'Yes' : 'No'}</span>,
-                      }))} />
+                      <KeyValueTable rows={CAPABILITY_KEYS.map(cap => {
+                        const on = Boolean((modelInfo.capabilities as unknown as Record<string, boolean> | undefined)?.[cap]);
+                        return {
+                          key: cap,
+                          label: CAPABILITY_LABELS[cap],
+                          value: <span className={`badge ${on ? 'badge-yes' : 'badge-no'}`}>{on ? 'Yes' : 'No'}</span>,
+                        };
+                      })} />
                     </div>
 
-                  </div>
-                )}
-
-                {/* Configuration Section */}
-                {activeSection === 'config' && modelInfo && (
-                  <div>
-                    <h3 style={{ marginBottom: '16px' }}>Model Configuration</h3>
-                    {modelInfo.model_config ? (
-                      <KeyValueTable rows={(() => {
-                        const mc = modelInfo.model_config;
-                        const boolBadge = (v: boolean | null | undefined) => <span className={`badge ${v ? 'badge-yes' : 'badge-no'}`}>{v ? 'Yes' : 'No'}</span>;
-                        return [
-
-                          { key: 'cache-min-tokens', label: labelWithTip('cache-min-tokens', 'cacheMinTokens'), value: fmtVal(mc['cache-min-tokens']) },
-                          { key: 'cache-type-k', label: labelWithTip('cache-type-k', 'cacheTypeK'), value: mc['cache-type-k'] || 'default' },
-                          { key: 'cache-type-v', label: labelWithTip('cache-type-v', 'cacheTypeV'), value: mc['cache-type-v'] || 'default' },
-                          { key: 'context-window', label: labelWithTip('context-window', 'contextWindow'), value: fmtVal(mc['context-window']) },
-                          { key: 'devices', label: labelWithTip('devices', 'devices'), value: mc.devices?.join(', ') || '—' },
-                          { key: 'draft-model.devices', label: labelWithTip('draft-model.devices', 'draftDevice'), value: mc['draft-model']?.devices?.join(', ') || '—' },
-                          { key: 'draft-model.main-gpu', label: labelWithTip('draft-model.main-gpu', 'draftMainGpu'), value: fmtVal(mc['draft-model']?.['main-gpu']) },
-                          { key: 'draft-model.model-id', label: labelWithTip('draft-model.model-id', 'draftModel'), value: mc['draft-model']?.['model-id'] || '—' },
-                          { key: 'draft-model.ndraft', label: labelWithTip('draft-model.ndraft', 'draftTokens'), value: fmtVal(mc['draft-model']?.ndraft) },
-                          { key: 'draft-model.ngpu-layers', label: labelWithTip('draft-model.ngpu-layers', 'draftGpuLayers'), value: fmtVal(mc['draft-model']?.['ngpu-layers']) },
-                          { key: 'draft-model.tensor-split', label: labelWithTip('draft-model.tensor-split', 'draftTensorSplit'), value: mc['draft-model']?.['tensor-split']?.join(', ') || '—' },
-                          { key: 'flash-attention', label: labelWithTip('flash-attention', 'flashAttention'), value: mc['flash-attention'] || 'default' },
-
-                          { key: 'incremental-cache', label: labelWithTip('incremental-cache', 'incrementalCache'), value: boolBadge(mc['incremental-cache']) },
-                          { key: 'main-gpu', label: labelWithTip('main-gpu', 'mainGpu'), value: fmtVal(mc['main-gpu']) },
-                          { key: 'moe.keep-experts-top-n', label: labelWithTip('moe.keep-experts-top-n', 'moeKeepExpertsTopN'), value: fmtVal(mc.moe?.['keep-experts-top-n']) },
-                          { key: 'moe.mode', label: labelWithTip('moe.mode', 'moeMode'), value: mc.moe?.mode || '—' },
-                          { key: 'nbatch', label: labelWithTip('nbatch', 'nbatch'), value: fmtVal(mc.nbatch) },
-                          { key: 'ngpu-layers', label: labelWithTip('ngpu-layers', 'ngpuLayers'), value: fmtVal(mc['ngpu-layers'] ?? 'auto') },
-                          { key: 'nseq-max', label: labelWithTip('nseq-max', 'nSeqMax'), value: fmtVal(mc['nseq-max']) },
-                          { key: 'nthreads', label: labelWithTip('nthreads', 'nthreads'), value: fmtVal(mc.nthreads) },
-                          { key: 'nthreads-batch', label: labelWithTip('nthreads-batch', 'nthreadsBatch'), value: fmtVal(mc['nthreads-batch']) },
-                          { key: 'nubatch', label: labelWithTip('nubatch', 'nubatch'), value: fmtVal(mc.nubatch) },
-                          { key: 'numa', label: labelWithTip('numa', 'numa'), value: mc.numa || '—' },
-                          { key: 'offload-kqv', label: labelWithTip('offload-kqv', 'offloadKQV'), value: fmtVal(mc['offload-kqv']) },
-                          { key: 'op-offload', label: labelWithTip('op-offload', 'opOffload'), value: fmtVal(mc['op-offload']) },
-                          { key: 'op-offload-min-batch', label: labelWithTip('op-offload-min-batch', 'opOffloadMinBatch'), value: fmtVal(mc['op-offload-min-batch']) },
-                          { key: 'rope-freq-base', label: labelWithTip('rope-freq-base', 'ropeFreqBase'), value: fmtVal(mc['rope-freq-base']) },
-                          { key: 'rope-freq-scale', label: labelWithTip('rope-freq-scale', 'ropeFreqScale'), value: fmtVal(mc['rope-freq-scale']) },
-                          { key: 'rope-scaling-type', label: labelWithTip('rope-scaling-type', 'ropeScaling'), value: mc['rope-scaling-type'] || '—' },
-                          { key: 'split-mode', label: labelWithTip('split-mode', 'splitMode'), value: mc['split-mode'] || 'default' },
-                          { key: 'swa-full', label: labelWithTip('swa-full', 'swaFull'), value: mc['swa-full'] == null ? <span className="badge badge-yes">Yes (default)</span> : boolBadge(mc['swa-full']) },
-                          { key: 'tensor-buft-overrides', label: labelWithTip('tensor-buft-overrides', 'tensorBuftOverrides'), value: mc['tensor-buft-overrides']?.join(', ') || '—' },
-                          { key: 'tensor-split', label: labelWithTip('tensor-split', 'tensorSplit'), value: mc['tensor-split']?.join(', ') || '—' },
-                          { key: 'use-direct-io', label: labelWithTip('use-direct-io', 'useDirectIO'), value: boolBadge(mc['use-direct-io']) },
-                          { key: 'use-mmap', label: labelWithTip('use-mmap', 'useMMap'), value: fmtVal(mc['use-mmap']) },
-                          { key: 'yarn-attn-factor', label: labelWithTip('yarn-attn-factor', 'yarnAttnFactor'), value: fmtVal(mc['yarn-attn-factor']) },
-                          { key: 'yarn-beta-fast', label: labelWithTip('yarn-beta-fast', 'yarnBetaFast'), value: fmtVal(mc['yarn-beta-fast']) },
-                          { key: 'yarn-beta-slow', label: labelWithTip('yarn-beta-slow', 'yarnBetaSlow'), value: fmtVal(mc['yarn-beta-slow']) },
-                          { key: 'yarn-ext-factor', label: labelWithTip('yarn-ext-factor', 'yarnExtFactor'), value: fmtVal(mc['yarn-ext-factor']) },
-                          { key: 'yarn-orig-ctx', label: labelWithTip('yarn-orig-ctx', 'yarnOrigCtx'), value: fmtVal(mc['yarn-orig-ctx']) },
-                        ];
-                      })()} />
-                    ) : (
-                      <div className="empty-state">
-                        <p>No configuration available for this model.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Sampling Parameters Section */}
-                {activeSection === 'sampling' && modelInfo && (
-                  <div>
-                    <h3 style={{ marginBottom: '16px' }}>Sampling Parameters</h3>
-                    {modelInfo.model_config?.['sampling-parameters'] ? (() => {
-                      const sp = modelInfo.model_config['sampling-parameters'];
-                      return (
-                        <KeyValueTable rows={[
-                          { key: 'dry_allowed_length', label: labelWithTip('dry_allowed_length', 'dry_allowed_length'), value: fmtVal(sp.dry_allowed_length) },
-                          { key: 'dry_base', label: labelWithTip('dry_base', 'dry_base'), value: fmtVal(sp.dry_base) },
-                          { key: 'dry_multiplier', label: labelWithTip('dry_multiplier', 'dry_multiplier'), value: fmtVal(sp.dry_multiplier) },
-                          { key: 'dry_penalty_last_n', label: labelWithTip('dry_penalty_last_n', 'dry_penalty_last_n'), value: fmtVal(sp.dry_penalty_last_n) },
-                          { key: 'enable_thinking', label: labelWithTip('enable_thinking', 'enable_thinking'), value: fmtVal(sp.enable_thinking ?? '—') },
-                          { key: 'frequency_penalty', label: labelWithTip('frequency_penalty', 'frequency_penalty'), value: fmtNum(sp.frequency_penalty) },
-                          { key: 'grammar', label: labelWithTip('grammar', 'grammar'), value: fmtVal(sp.grammar || '—') },
-                          { key: 'max_tokens', label: labelWithTip('max_tokens', 'max_tokens'), value: fmtVal(sp.max_tokens) },
-                          { key: 'min_p', label: labelWithTip('min_p', 'min_p'), value: fmtNum(sp.min_p) },
-                          { key: 'presence_penalty', label: labelWithTip('presence_penalty', 'presence_penalty'), value: fmtNum(sp.presence_penalty) },
-                          { key: 'reasoning_effort', label: labelWithTip('reasoning_effort', 'reasoning_effort'), value: fmtVal(sp.reasoning_effort ?? '—') },
-                          { key: 'repeat_last_n', label: labelWithTip('repeat_last_n', 'repeat_last_n'), value: fmtVal(sp.repeat_last_n) },
-                          { key: 'repeat_penalty', label: labelWithTip('repeat_penalty', 'repeat_penalty'), value: fmtNum(sp.repeat_penalty) },
-                          { key: 'temperature', label: labelWithTip('temperature', 'temperature'), value: fmtNum(sp.temperature) },
-                          { key: 'top_k', label: labelWithTip('top_k', 'top_k'), value: fmtVal(sp.top_k) },
-                          { key: 'top_p', label: labelWithTip('top_p', 'top_p'), value: fmtNum(sp.top_p) },
-                          { key: 'xtc_min_keep', label: labelWithTip('xtc_min_keep', 'xtc_min_keep'), value: fmtVal(sp.xtc_min_keep) },
-                          { key: 'xtc_probability', label: labelWithTip('xtc_probability', 'xtc_probability'), value: fmtVal(sp.xtc_probability) },
-                          { key: 'xtc_threshold', label: labelWithTip('xtc_threshold', 'xtc_threshold'), value: fmtVal(sp.xtc_threshold) },
-                        ]} />
-                      );
-                    })() : (
-                      <div className="empty-state">
-                        <p>No sampling parameters configured for this model.</p>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -1073,23 +904,17 @@ export default function CatalogList() {
                 {/* Template Section */}
                 {activeSection === 'template' && modelInfo && (
                   <div>
-                    <h3 style={{ marginBottom: '16px' }}>Template</h3>
-                    <KeyValueTable rows={[
-                      { key: 'name', label: 'Template Name', value: modelInfo.template || '-' },
-                    ]} />
-                    <div style={{ marginTop: '16px' }}>
-                      <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Chat Template</h4>
-                      {modelInfo.model_metadata?.['tokenizer.chat_template'] ? (
-                        <CodeBlock
-                          code={modelInfo.model_metadata['tokenizer.chat_template']}
-                          language="django"
-                        />
-                      ) : (
-                        <div className="empty-state">
-                          <p>No chat template found in metadata.</p>
-                        </div>
-                      )}
-                    </div>
+                    <h3 style={{ marginBottom: '16px' }}>Chat Template</h3>
+                    {modelInfo.model_metadata?.['tokenizer.chat_template'] ? (
+                      <CodeBlock
+                        code={modelInfo.model_metadata['tokenizer.chat_template']}
+                        language="django"
+                      />
+                    ) : (
+                      <div className="empty-state">
+                        <p>No chat template found in metadata.</p>
+                      </div>
+                    )}
                   </div>
                 )}
 

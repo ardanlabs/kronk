@@ -11,7 +11,6 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -43,7 +42,7 @@ func runWeb(args []string) error {
 	return nil
 }
 
-func runLocal(mdls *models.Models, cat *catalog.Catalog, args []string) error {
+func runLocal(mdls *models.Models, mc map[string]models.ModelConfig, args []string) error {
 	modelID := args[0]
 
 	fi, err := mdls.FileInformation(modelID)
@@ -57,15 +56,12 @@ func runLocal(mdls *models.Models, cat *catalog.Catalog, args []string) error {
 		return fmt.Errorf("unable to retrieve model info: %w", err)
 	}
 
-	rmc := cat.ResolvedModelConfig(modelID)
-
-	var vram *models.VRAM
-	vramTmp, err := cat.CalculateVRAM(modelID, rmc)
-	if err == nil {
-		vram = &vramTmp
+	rmc := mdls.AnalysisDefaults(modelID)
+	if override, ok := mc[modelID]; ok {
+		models.MergeModelConfig(&rmc, override)
 	}
 
-	printLocal(fi, mi, rmc, vram)
+	printLocal(fi, mi, rmc)
 
 	return nil
 }
@@ -85,16 +81,6 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
 	fmt.Printf("IsGPT:       %t\n", mi.IsGPT)
 	fmt.Println()
-
-	if mi.VRAM != nil {
-		fmt.Println("VRAM Requirements")
-		fmt.Println("-----------------")
-		fmt.Printf("KV Per Token/Layer: %s\n", formatBytes(mi.VRAM.KVPerTokenPerLayer))
-		fmt.Printf("KV Per Slot:        %s\n", formatBytes(mi.VRAM.KVPerSlot))
-		fmt.Printf("Slot Memory:        %s\n", formatBytes(mi.VRAM.SlotMemory))
-		fmt.Printf("Total VRAM:         %s\n", formatBytes(mi.VRAM.TotalVRAM))
-		fmt.Println()
-	}
 
 	if mi.ModelConfig != nil {
 		fmt.Println("Model Configuration")
@@ -129,7 +115,7 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	}
 }
 
-func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig, vram *models.VRAM) {
+func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig) {
 	fmt.Println()
 	fmt.Println("Model Details")
 	fmt.Println("=============")
@@ -144,16 +130,6 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig
 	fmt.Printf("IsEmbed:     %t\n", mi.IsEmbedModel)
 	fmt.Printf("IsRerank:    %t\n", mi.IsRerankModel)
 	fmt.Println()
-
-	if vram != nil {
-		fmt.Println("VRAM Requirements")
-		fmt.Println("-----------------")
-		fmt.Printf("KV Per Token/Layer: %s\n", formatBytes(vram.KVPerTokenPerLayer))
-		fmt.Printf("KV Per Slot:        %s\n", formatBytes(vram.KVPerSlot))
-		fmt.Printf("Slot Memory:        %s\n", formatBytes(vram.SlotMemory))
-		fmt.Printf("Total VRAM:         %s\n", formatBytes(vram.TotalVRAM))
-		fmt.Println()
-	}
 
 	fmt.Println("Model Configuration")
 	fmt.Println("-------------------")

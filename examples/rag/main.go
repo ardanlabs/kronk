@@ -22,18 +22,17 @@ import (
 	"github.com/ardanlabs/kronk/examples/rag/duck"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 const (
-	modelChatURL  = "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
-	modelEmbedURL = "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
-	dbPath        = "rag/docs/duck-rag.db" // ":memory:"
-	chunksFile    = "rag/docs/book.chunks"
-	dimentions    = 768
+	modelChatSource  = "unsloth/gpt-oss-20b-Q8_0"
+	modelEmbedSource = "ggml-org/embeddinggemma-300m-qat-Q8_0"
+	dbPath           = "rag/docs/duck-rag.db" // ":memory:"
+	chunksFile       = "rag/docs/book.chunks"
+	dimentions       = 768
 )
 
 func main() {
@@ -158,34 +157,17 @@ func installSystem() (models.Path, models.Path, error) {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-	// This is not mandatory if you won't be using models from the catalog. That
-	// being said, if you are using a model that is part of the catalog with
-	// a corrected jinja file, having the catalog system up to date will allow
-	// the system to pull that jinja file.
-
-	ctlg, err := catalog.New()
-	if err != nil {
-		return models.Path{}, models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
-	}
-
-	if err := ctlg.Download(ctx); err != nil {
-		return models.Path{}, models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to create models api: %w", err)
 	}
 
-	infoEmbed, err := mdls.Download(context.Background(), kronk.FmtLogger, modelEmbedURL, "")
+	infoEmbed, err := mdls.Download(context.Background(), kronk.FmtLogger, modelEmbedSource, "")
 	if err != nil {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
-	infoChat, err := mdls.Download(context.Background(), kronk.FmtLogger, modelChatURL, "")
+	infoChat, err := mdls.Download(context.Background(), kronk.FmtLogger, modelChatSource, "")
 	if err != nil {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}

@@ -397,35 +397,6 @@ export default function DocsAPITools() {
               </pre>
             </div>
 
-            <div className="doc-section" id="catalog-post--catalog-pull-model">
-              <h4><span className="method-post">POST</span> /catalog/pull/&#123;model&#125;</h4>
-              <p className="doc-description">Pull a model from the catalog by ID. Returns streaming progress updates.</p>
-              <p><strong>Authentication:</strong> Optional when auth is enabled.</p>
-              <h5>Headers</h5>
-              <table className="flags-table">
-                <thead>
-                  <tr>
-                    <th>Header</th>
-                    <th>Required</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>Authorization</code></td>
-                    <td>No</td>
-                    <td>Bearer token for authentication</td>
-                  </tr>
-                </tbody>
-              </table>
-              <h5>Response</h5>
-              <p>Streams download progress as Server-Sent Events.</p>
-              <h5>Example</h5>
-              <p className="example-label"><strong>Pull a catalog model:</strong></p>
-              <pre className="code-block">
-                <code>{`curl -X POST http://localhost:11435/v1/catalog/pull/qwen3-8b-q8_0`}</code>
-              </pre>
-            </div>
           </div>
 
           <div className="card" id="security">
@@ -633,7 +604,6 @@ export default function DocsAPITools() {
                 <li><a href="#catalog-get--catalog">GET /catalog</a></li>
                 <li><a href="#catalog-get--catalog-filter-filter">GET /catalog/filter/&#123;filter&#125;</a></li>
                 <li><a href="#catalog-get--catalog-model">GET /catalog/&#123;model&#125;</a></li>
-                <li><a href="#catalog-post--catalog-pull-model">POST /catalog/pull/&#123;model&#125;</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

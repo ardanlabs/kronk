@@ -14,23 +14,142 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 )
 
 // Logger represents a logger for capturing events.
 type Logger func(ctx context.Context, msg string, args ...any)
 
-// Download performs a complete workflow for downloading and installing
-// the specified model. If you need to set your HuggingFace token, use the
-// environment variable KRONK_HF_TOKEN.
-func (m *Models) Download(ctx context.Context, log Logger, modelURL string, projURL string) (Path, error) {
-	return m.DownloadSplits(ctx, log, []string{modelURL}, projURL)
+// Download performs a complete workflow for downloading and installing the
+// specified model. The input may be:
+//
+//   - A direct HuggingFace URL ("https://huggingface.co/.../Qwen3-0.6B-Q8_0.gguf")
+//   - A canonical model id ("unsloth/Qwen3-0.6B-Q8_0")
+//   - A bare model id ("Qwen3-0.6B-Q8_0")
+//
+// For URL input, projSource is used as-is. For id input, the companion
+// mmproj is auto-discovered by the resolver and projSource is ignored.
+//
+// The resolver checks local disk first, then the resolver-file cache at
+// <basePath>/catalog.yaml (seeded from the embedded default on
+// first use), then walks the configured HuggingFace provider list.
+//
+// Successful downloads — whether triggered by URL or by id — are persisted
+// to the resolver file so subsequent lookups become cache hits.
+//
+// Set KRONK_HF_TOKEN to access gated models.
+func (m *Models) Download(ctx context.Context, log Logger, modelSource string, projSource string) (Path, error) {
+	if isURL(modelSource) {
+		mp, err := m.DownloadSplits(ctx, log, []string{modelSource}, projSource)
+		if err != nil {
+			return mp, err
+		}
+
+		if perr := m.persistURLResolution([]string{modelSource}, projSource); perr != nil {
+			log(ctx, "download: unable to persist resolver entry", "ERROR", perr)
+		}
+
+		// Best-effort GGUF head cache so the catalog detail screen
+		// renders without an HF round-trip.
+		if len(mp.ModelFiles) > 0 {
+			if provider, family, _, _, ok := parseHFURL(NormalizeHuggingFaceDownloadURL(modelSource)); ok {
+				modelID := extractModelID(filepath.Base(mp.ModelFiles[0]))
+				if err := m.CacheGGUFHeadFromFile(provider, family, modelID, mp.ModelFiles[0]); err != nil {
+					log(ctx, "download: unable to cache gguf head", "ERROR", err)
+				}
+			}
+		}
+
+		return mp, nil
+	}
+
+	return m.downloadByID(ctx, log, modelSource)
+}
+
+// isURL reports whether input is a direct HTTP(S) URL.
+func isURL(input string) bool {
+	return strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://")
+}
+
+// downloadByID resolves a bare model id ("Qwen3-0.6B-Q8_0") or canonical
+// id ("unsloth/Qwen3-0.6B-Q8_0") through the resolver and downloads the
+// resulting files (including any companion mmproj).
+func (m *Models) downloadByID(ctx context.Context, log Logger, modelSource string) (Path, error) {
+	rfile, err := defaults.CatalogFile("", m.basePath)
+	if err != nil {
+		return Path{}, fmt.Errorf("download: resolver-file: %w", err)
+	}
+
+	r := NewResolver(m, rfile)
+
+	res, err := r.Resolve(ctx, modelSource)
+	if err != nil {
+		return Path{}, fmt.Errorf("download: resolve %q: %w", modelSource, err)
+	}
+
+	// Already on disk — no download needed. attachLocal/lookupLocal only
+	// populate LocalPaths when every expected file is present, so the
+	// resolver already knows the on-disk layout via Family and we can
+	// build the Path directly without consulting the model index.
+	if len(res.LocalPaths) > 0 {
+		log(ctx, "download-model: already installed", "provider", res.Provider, "family", res.Family)
+
+		if res.LocalProj != "" {
+			log(ctx, "download-projection: already installed", "provider", res.Provider, "family", res.Family)
+		}
+
+		mp := Path{
+			ModelFiles: append([]string(nil), res.LocalPaths...),
+			ProjFile:   res.LocalProj,
+			Downloaded: true,
+		}
+
+		return mp, nil
+	}
+
+	if len(res.DownloadURLs) == 0 {
+		return Path{}, fmt.Errorf("download: resolve %q: resolver returned no download URLs", modelSource)
+	}
+
+	mp, err := m.DownloadSplits(ctx, log, res.DownloadURLs, res.DownloadProj)
+	if err != nil {
+		return Path{}, fmt.Errorf("download: download %q: %w", modelSource, err)
+	}
+
+	// Files are on disk now — re-persist the catalog entry so FileSizes
+	// and MMProjSize get filled by os.Stat. Best-effort.
+	if err := r.refreshSizes(res.CanonicalID); err != nil {
+		log(ctx, "download: unable to refresh catalog sizes", "ERROR", err)
+	}
+
+	// Opportunistically populate the GGUF head cache from the freshly
+	// downloaded file so the BUI catalog detail screen renders without
+	// an HF round-trip on first view. Best-effort.
+	if len(mp.ModelFiles) > 0 {
+		modelID := extractModelID(filepath.Base(mp.ModelFiles[0]))
+		if err := m.CacheGGUFHeadFromFile(res.Provider, res.Family, modelID, mp.ModelFiles[0]); err != nil {
+			log(ctx, "download: unable to cache gguf head", "ERROR", err)
+		}
+	}
+
+	// Enrich the persisted catalog entry with ModelType and Capabilities
+	// while the GGUF head is hot in cache. Best-effort.
+	if err := r.enrichCatalogEntry(ctx, res.CanonicalID, log); err != nil {
+		log(ctx, "download: unable to enrich catalog entry", "ERROR", err)
+	}
+
+	return mp, nil
 }
 
 // DownloadSplits performs a complete workflow for downloading and installing
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
 func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []string, projURL string) (Path, error) {
+	if len(modelURLs) == 0 {
+		return Path{}, fmt.Errorf("download-splits: no model URLs provided")
+	}
+
 	modelFileName, err := extractFileName(modelURLs[0])
 	if err != nil {
 		return Path{}, fmt.Errorf("download-splits: unable to extract file name: %w", err)
@@ -110,13 +229,13 @@ func (m *Models) DownloadSplits(ctx context.Context, log Logger, modelURLs []str
 			log(ctx, "download-model: download complete")
 
 		default:
-			log(ctx, "download-model: model already exists")
+			log(ctx, "download-model: already installed")
 		}
 
 		if len(mp.ModelFiles) >= len(modelURLs) {
 			for j := i + 1; j < len(modelURLs); j++ {
 				log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[] model-id[%s]", NormalizeHuggingFaceDownloadURL(modelURLs[j]), modelID))
-				log(ctx, "download-model: model already exists")
+				log(ctx, "download-model: already installed")
 			}
 			result.ModelFiles = mp.ModelFiles[:len(modelURLs)]
 			result.ProjFile = mp.ProjFile

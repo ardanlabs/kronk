@@ -20,6 +20,7 @@ type File struct {
 	Size                 int64
 	Modified             time.Time
 	Validated            bool
+	HasProjection        bool
 }
 
 // Files returns all the models in the model directory.
@@ -71,6 +72,7 @@ func (m *Models) Files() ([]File, error) {
 			Size:                 totalSize,
 			Modified:             modified,
 			Validated:            mp.Validated,
+			HasProjection:        mp.ProjFile != "",
 		}
 
 		list = append(list, mf)

@@ -13,7 +13,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -84,15 +83,6 @@ func installSystem(cfg Config) (models.Path, error) {
 
 	if _, err := lbs.Download(ctx, kronk.FmtLogger); err != nil {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	ctlg, err := catalog.New(catalog.WithBasePath(cfg.BasePath))
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
-	}
-
-	if err := ctlg.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
 	}
 
 	mdls, err := models.NewWithPaths(cfg.BasePath)

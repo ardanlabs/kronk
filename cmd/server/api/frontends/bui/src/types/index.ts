@@ -30,6 +30,7 @@ export interface ListModelDetail {
   size: number;
   modified: string;
   validated: boolean;
+  has_projection: boolean;
   sampling?: SamplingConfig;
   draft_model_id?: string;
 }
@@ -125,12 +126,6 @@ export interface ModelInfoResponse {
   model_config?: ModelConfig;
 }
 
-export interface CatalogMetadata {
-  created: string;
-  collections: string;
-  description: string;
-}
-
 export interface CatalogCapabilities {
   endpoint: string;
   images: boolean;
@@ -145,7 +140,7 @@ export interface CatalogCapabilities {
 
 export interface CatalogFile {
   url: string;
-  size: string;
+  size: number;
 }
 
 export interface CatalogFiles {
@@ -201,29 +196,55 @@ export interface PerDeviceVRAM {
   totalBytes: number;
 }
 
-export interface CatalogModelResponse {
+// CatalogSummary is the per-entry shape returned by GET /v1/catalog. It
+// is cheap to compute on the server (catalog.yaml + local index, no GGUF
+// reads). model_type and capabilities are persisted on the catalog entry
+// itself (populated when the entry was added or refreshed) so the list
+// page can filter without paying GGUF I/O on every call.
+export interface CatalogSummary {
   id: string;
-  category: string;
   owned_by: string;
   model_family: string;
-  architecture: string;
-  gguf_arch: string;
-  parameters: string;
-  parameter_count: number;
+  revision: string;
   web_page: string;
-  template: string;
   total_size: string;
   total_size_bytes: number;
-  files: CatalogFiles;
-  capabilities: CatalogCapabilities;
-  metadata: CatalogMetadata;
+  has_projection: boolean;
+  downloaded: boolean;
+  validated: boolean;
+  model_type?: string;
+  capabilities?: CatalogCapabilities;
+}
+
+// CatalogModelResponse is the per-entry payload returned by the catalog
+// endpoints. The list endpoint (GET /v1/catalog) populates only the
+// CatalogSummary fields; the detail endpoint (GET /v1/catalog/{id})
+// additionally fills in the GGUF-derived fields (gguf_arch, parameters,
+// template, files, model_metadata).
+//
+// Fields that are not produced by the new backend (description,
+// collections, gated_model, etc.) remain optional so the editor compiles
+// until it is rewritten in a follow-up.
+export interface CatalogModelResponse extends CatalogSummary {
+  gguf_arch?: string;
+  parameters?: string;
+  parameter_count?: number;
+  template?: string;
+  files?: CatalogFiles;
+  model_metadata?: Record<string, string>;
+
+  // Legacy fields — not returned by the new backend.
+  category?: string;
+  architecture?: string;
+  metadata?: {
+    created?: string;
+    collections?: string;
+    description?: string;
+  };
+  gated_model?: boolean;
   vram?: VRAM;
   model_config?: ModelConfig;
   base_config?: ModelConfig;
-  model_metadata?: Record<string, string>;
-  downloaded: boolean;
-  gated_model: boolean;
-  validated: boolean;
   catalog_file?: string;
 }
 
@@ -465,39 +486,7 @@ export interface HFRepoFile {
 }
 
 export interface HFLookupResponse {
-  model: CatalogModelResponse;
   repo_files: HFRepoFile[];
-}
-
-export interface SaveCatalogRequest {
-  id: string;
-  category: string;
-  owned_by: string;
-  model_family: string;
-  architecture: string;
-  parameters: string;
-  web_page: string;
-  gated_model: boolean;
-  template: string;
-  files: CatalogFiles;
-  capabilities: CatalogCapabilities;
-  metadata: {
-    created: string;
-    collections: string;
-    description: string;
-  };
-  config?: ModelConfig;
-  catalog_file: string;
-}
-
-export interface SaveCatalogResponse {
-  status: string;
-  id: string;
-}
-
-export interface CatalogFileInfo {
-  name: string;
-  model_count: number;
 }
 
 export interface VRAMRequest {
@@ -519,59 +508,6 @@ export interface VRAMCalculatorResponse {
   model_weights_cpu?: number;
   compute_buffer_est?: number;
   repo_files?: HFRepoFile[];
-}
-
-export interface HFRepoFile {
-  filename: string;
-  size: number;
-  size_str: string;
-}
-
-export interface HFLookupResponse {
-  model: CatalogModelResponse;
-  repo_files: HFRepoFile[];
-}
-
-export interface SaveCatalogRequest {
-  id: string;
-  category: string;
-  owned_by: string;
-  model_family: string;
-  architecture: string;
-  gguf_arch: string;
-  parameters: string;
-  web_page: string;
-  gated_model: boolean;
-  template: string;
-  files: CatalogFiles;
-  capabilities: CatalogCapabilities;
-  metadata: CatalogMetadata;
-  config?: ModelConfig;
-  catalog_file: string;
-}
-
-export interface SaveCatalogResponse {
-  status: string;
-  id: string;
-}
-
-export interface CatalogFileInfo {
-  name: string;
-  model_count: number;
-}
-
-export type CatalogFilesListResponse = CatalogFileInfo[];
-
-export interface PublishCatalogRequest {
-  catalog_file: string;
-}
-
-export interface PublishCatalogResponse {
-  status: string;
-}
-
-export interface RepoPathResponse {
-  repo_path: string;
 }
 
 export interface ChatToolDefinition {

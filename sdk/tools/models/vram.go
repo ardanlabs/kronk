@@ -352,6 +352,19 @@ func buildVRAMFromMetadata(metadata map[string]string, tensors []ggufTensorInfo,
 	return CalculateVRAM(input), nil
 }
 
+// BuildVRAMFromBytes computes the VRAM requirements directly from
+// already-fetched GGUF header bytes (typically the first
+// ggufHeaderFetchSize bytes from the catalog cache or a local file).
+// totalSize is the on-disk size of all model files combined.
+func BuildVRAMFromBytes(data []byte, totalSize int64, cfg VRAMConfig) (VRAM, error) {
+	metadata, tensors, err := parseGGUFHeaderAndTensors(data, totalSize)
+	if err != nil {
+		return VRAM{}, fmt.Errorf("build-vram-bytes: %w", err)
+	}
+
+	return buildVRAMFromMetadata(metadata, tensors, totalSize, cfg)
+}
+
 // CalculateVRAMFromHuggingFaceFiles computes VRAM requirements from a set of
 // pre-resolved HuggingFace file URLs (e.g. from shorthand resolution). It reads
 // metadata from the first file and sums sizes across all files for split models.
@@ -614,30 +627,43 @@ func FetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int6
 		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to fetch header data: %w", err)
 	}
 
+	metadata, err := ParseGGUFMetadata(data)
+	if err != nil {
+		return nil, 0, fmt.Errorf("fetch-gguf-metadata: %w", err)
+	}
+
+	return metadata, fileSize, nil
+}
+
+// ParseGGUFMetadata parses the GGUF header and key-value metadata from a byte
+// slice (typically the first ggufHeaderFetchSize bytes of a GGUF file). The
+// caller is responsible for sourcing the bytes (local file, HTTP Range,
+// catalog cache, etc).
+func ParseGGUFMetadata(data []byte) (map[string]string, error) {
 	reader := bytes.NewReader(data)
 
 	var header ggufHeader
 	if err := binary.Read(reader, binary.LittleEndian, &header.Magic); err != nil {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read magic: %w", err)
+		return nil, fmt.Errorf("parse-gguf-metadata: read magic: %w", err)
 	}
 
 	if header.Magic != ggufMagic {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: invalid GGUF magic number: got 0x%X", header.Magic)
+		return nil, fmt.Errorf("parse-gguf-metadata: invalid GGUF magic number: got 0x%X", header.Magic)
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.Version); err != nil {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read version: %w", err)
+		return nil, fmt.Errorf("parse-gguf-metadata: read version: %w", err)
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.TensorCount); err != nil {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read tensor count: %w", err)
+		return nil, fmt.Errorf("parse-gguf-metadata: read tensor count: %w", err)
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.MetadataKvCount); err != nil {
-		return nil, 0, fmt.Errorf("fetch-gguf-metadata: failed to read metadata count: %w", err)
+		return nil, fmt.Errorf("parse-gguf-metadata: read metadata count: %w", err)
 	}
 
-	metadata := make(map[string]string)
+	metadata := make(map[string]string, header.MetadataKvCount)
 	for i := uint64(0); i < header.MetadataKvCount; i++ {
 		key, value, err := readMetadataKVFromReader(reader)
 		if err != nil {
@@ -646,7 +672,7 @@ func FetchGGUFMetadata(ctx context.Context, url string) (map[string]string, int6
 		metadata[key] = fmt.Sprintf("%v", value)
 	}
 
-	return metadata, fileSize, nil
+	return metadata, nil
 }
 
 // fetchRange fetches a byte range from a URL using HTTP Range requests.

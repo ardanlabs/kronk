@@ -23,6 +23,7 @@ var (
 
 // Models manages the model system.
 type Models struct {
+	basePath   string
 	modelsPath string
 	biMutex    sync.Mutex
 }
@@ -44,6 +45,7 @@ func NewWithPaths(basePath string) (*Models, error) {
 	}
 
 	m := Models{
+		basePath:   basePath,
 		modelsPath: modelPath,
 	}
 
@@ -53,6 +55,11 @@ func NewWithPaths(basePath string) (*Models, error) {
 // Path returns the location of the models path.
 func (m *Models) Path() string {
 	return m.modelsPath
+}
+
+// BasePath returns the kronk base directory the system was constructed with.
+func (m *Models) BasePath() string {
+	return m.basePath
 }
 
 // BuildIndex builds the model index for fast model access. When checkSHA is

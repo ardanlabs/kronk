@@ -127,55 +127,55 @@ install-libraries-gh: install-kronk
 # Use this to install the test GH models.
 install-test-gh-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0" "unsloth/mmproj-F16"
 	@echo
-	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
-	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 
 # Use this to install the test models.
 install-test-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0" "unsloth/mmproj-F16"
 	@echo
-	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" "unsloth/gemma-4-26B-A4B-it-GGUF/mmproj-BF16.gguf"
+	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M" "unsloth/mmproj-BF16"
 	@echo
-	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf" "unsloth/Qwen3.6-35B-A3B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M" "unsloth/mmproj-F16"
 	@echo
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0" "mradermacher/Qwen2-Audio-7B.mmproj-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
+	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"
 	@echo
-	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
-	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 
 # Use this to install models for the class.
 install-class-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0" "unsloth/mmproj-F16"
 	@echo
-	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-GGUF/LFM2.5-VL-1.6B-Q8_0.gguf" "unsloth/LFM2.5-VL-1.6B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-Q8_0" "unsloth/mmproj-F16"
 	@echo
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0" "mradermacher/Qwen2-Audio-7B.mmproj-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"
+	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/LFM2-700M-GGUF/LFM2-700M-Q8_0.gguf"
+	kronk model pull --local "unsloth/LFM2-700M-Q8_0"
 	@echo
-	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
+	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"
 	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
-	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.2
@@ -445,14 +445,6 @@ kronk-catalog-show-local:
 	go run cmd/kronk/main.go catalog show --local "$(ID)"
 
 
-# make kronk-catalog-pull ID="Qwen3-8B-Q8_0"
-kronk-catalog-pull:
-	go run cmd/kronk/main.go catalog pull "$(ID)"
-
-# make kronk-catalog-pull-local ID="Qwen3-Coder-30B-A3B-Instruct-Q8_0"
-kronk-catalog-pull-local:
-	go run cmd/kronk/main.go catalog pull --local "$(ID)"
-
 # ------------------------------------------------------------------------------
 
 kronk-security-help:
@@ -474,25 +466,6 @@ kronk-security-token-create-local:
 # make kronk-run ID="Qwen3-8B-Q8_0"
 kronk-run:
 	go run cmd/kronk/main.go run "$(ID)"
-
-# ==============================================================================
-# Catalog Arch Check
-
-# Check architecture types for all downloaded catalog models.
-kronk-catalog-archcheck:
-	go run cmd/server/api/tooling/archcheck/main.go
-
-# make kronk-catalog-archcheck-model ID="Qwen3-8B-Q8_0"
-kronk-catalog-archcheck-model:
-	go run cmd/server/api/tooling/archcheck/main.go \
-		-model="$(ID)" \
-		-catalog-path=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs/catalogs
-
-# Check and update catalog files with corrected architecture values.
-kronk-catalog-archcheck-update:
-	go run cmd/server/api/tooling/archcheck/main.go \
-		-update \
-		-catalog-path=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs/catalogs
 
 # ==============================================================================
 # Kronk Endpoints

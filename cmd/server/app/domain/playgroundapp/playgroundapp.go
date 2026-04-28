@@ -17,7 +17,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 type sessionEntry struct {
@@ -29,7 +29,7 @@ type sessionEntry struct {
 type app struct {
 	log      *logger.Logger
 	cache    *cache.Cache
-	catalog  *catalog.Catalog
+	models   *models.Models
 	mu       sync.Mutex
 	sessions map[string]sessionEntry // session_id -> session entry
 	done     chan struct{}
@@ -39,7 +39,7 @@ func newApp(cfg Config) *app {
 	a := &app{
 		log:      cfg.Log,
 		cache:    cfg.Cache,
-		catalog:  cfg.Catalog,
+		models:   cfg.Models,
 		sessions: make(map[string]sessionEntry),
 		done:     make(chan struct{}),
 	}
@@ -47,53 +47,6 @@ func newApp(cfg Config) *app {
 	go a.cleanupLoop()
 
 	return a
-}
-
-func (a *app) listTemplates(ctx context.Context, r *http.Request) web.Encoder {
-	list, err := a.catalog.ListTemplates()
-	if err != nil {
-		return errs.New(errs.Internal, err)
-	}
-
-	templates := make([]TemplateInfo, len(list))
-	for i, t := range list {
-		templates[i] = TemplateInfo{
-			Name: t.Name,
-			Size: t.Size,
-		}
-	}
-
-	return TemplateListResponse{Templates: templates}
-}
-
-func (a *app) getTemplate(ctx context.Context, r *http.Request) web.Encoder {
-	name := web.Param(r, "name")
-	if err := validateTemplateName(name); err != nil {
-		return errs.New(errs.InvalidArgument, err)
-	}
-
-	content, err := a.catalog.ReadTemplate(name)
-	if err != nil {
-		return errs.New(errs.Internal, err)
-	}
-
-	return TemplateContentResponse{
-		Name:   name,
-		Script: content,
-	}
-}
-
-func (a *app) saveTemplate(ctx context.Context, r *http.Request) web.Encoder {
-	var req TemplateSaveRequest
-	if err := web.Decode(r, &req); err != nil {
-		return errs.New(errs.InvalidArgument, err)
-	}
-
-	if err := a.catalog.SaveTemplate(req.Name, req.Script); err != nil {
-		return errs.New(errs.Internal, err)
-	}
-
-	return TemplateSaveResponse{Status: "saved"}
 }
 
 func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
@@ -106,7 +59,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "missing model_id")
 	}
 
-	baseCfg, err := a.catalog.KronkResolvedModelConfig(req.ModelID)
+	baseCfg, err := a.models.KronkResolvedConfig(req.ModelID, a.cache.ModelConfig())
 	if err != nil {
 		return errs.New(errs.Internal, fmt.Errorf("resolving model config: %w", err))
 	}
@@ -120,7 +73,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 
 	// Resolve draft model file paths when the user specifies a draft model ID.
 	if req.Config.DraftModelID != nil && *req.Config.DraftModelID != "" {
-		draftPath, err := a.catalog.ModelFullPath(*req.Config.DraftModelID)
+		draftPath, err := a.models.FullPath(*req.Config.DraftModelID)
 		if err != nil {
 			return errs.New(errs.InvalidArgument, fmt.Errorf("resolving draft model: %w", err))
 		}
@@ -137,14 +90,6 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "nubatch (%d) must not exceed nbatch (%d)", cfg.NUBatch(), cfg.NBatch())
 	}
 
-	cat := &playgroundCataloger{
-		modelID:        req.ModelID,
-		templateMode:   req.TemplateMode,
-		templateName:   req.TemplateName,
-		templateScript: req.TemplateScript,
-		catalog:        a.catalog,
-	}
-
 	var (
 		cacheKey string
 		krn      *kronk.Kronk
@@ -153,7 +98,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	switch {
 	case req.HasOverrides():
 		cacheKey = fmt.Sprintf("%s/playground/%s", req.ModelID, sessionID)
-		krn, err = a.cache.AquireCustom(ctx, cacheKey, cfg, cat)
+		krn, err = a.cache.AquireCustom(ctx, cacheKey, cfg)
 	default:
 		cacheKey = req.ModelID
 		krn, err = a.cache.AquireModel(ctx, req.ModelID)

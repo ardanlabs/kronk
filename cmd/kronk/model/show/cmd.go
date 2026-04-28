@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/spf13/cobra"
 )
@@ -45,14 +45,19 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	cat, err := catalog.New(catalog.WithBasePath(client.GetBasePath(cmd)))
-	if err != nil {
-		return fmt.Errorf("unable to create catalog system: %w", err)
-	}
-
 	switch local {
 	case true:
-		err = runLocal(mdls, cat, args)
+		modelConfigFile, ferr := defaults.ModelConfigFile("", client.GetBasePath(cmd))
+		if ferr != nil {
+			return fmt.Errorf("resolving model config file: %w", ferr)
+		}
+
+		mc, lerr := models.LoadModelConfig(modelConfigFile)
+		if lerr != nil {
+			return fmt.Errorf("loading model config: %w", lerr)
+		}
+
+		err = runLocal(mdls, mc, args)
 	default:
 		err = runWeb(args)
 	}

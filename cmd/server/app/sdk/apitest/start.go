@@ -18,7 +18,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -133,20 +132,6 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	// -------------------------------------------------------------------------
-	// Catalog System
-
-	ctlg, err := catalog.New(
-		catalog.WithModelConfig("../../../../../../zarf/kms/model_config.yaml"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := ctlg.Download(ctx, catalog.WithLogger(log.Info)); err != nil {
-		t.Fatal(err)
-	}
-
-	// -------------------------------------------------------------------------
 	// Init Kronk
 
 	if err := kronk.Init(); err != nil {
@@ -154,10 +139,10 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	cache, err := cache.New(cache.Config{
-		Log:           log.Info,
-		Catalog:       ctlg,
-		ModelsInCache: 1,
-		CacheTTL:      5 * time.Minute,
+		Log:             log.Info,
+		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
+		ModelsInCache:   1,
+		CacheTTL:        5 * time.Minute,
 	})
 
 	if err != nil {
@@ -194,7 +179,6 @@ func New(t *testing.T, testName string) *Test {
 		Cache:      cache,
 		Libs:       libs,
 		Models:     models,
-		Catalog:    ctlg,
 	}
 
 	mux := mux.WebAPI(cfgMux,

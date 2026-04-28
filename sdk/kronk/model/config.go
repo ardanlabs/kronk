@@ -128,9 +128,6 @@ func (d DraftModelConfig) MainGPU() int    { return intOr(d.PtrMainGPU, 0) }
 // of the value vectors in the KV cache. When left as the zero value (GGMLTypeAuto),
 // the default llama.cpp value is used.
 //
-// Cataloger provides catalog config and template retrieval. If not set,
-// a default catalog will be created by kronk.New.
-//
 // ContextWindow (often referred to as context length) is the maximum number of
 // tokens that a large language model can process and consider at one time when
 // generating a response. It defines the model's effective "memory" for a single
@@ -295,7 +292,6 @@ type Config struct {
 	PtrCacheSlotTimeout  *int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
-	Cataloger            Cataloger
 	PtrContextWindow     *int
 	DefaultParams        Params
 	DraftModel           *DraftModelConfig
@@ -594,177 +590,6 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	return cfg
-}
-
-func applyCatalogConfig(user Config, cat Config) Config {
-	if len(user.Devices) == 0 {
-		user.Devices = cat.Devices
-	}
-	if user.PtrContextWindow == nil {
-		user.PtrContextWindow = cat.PtrContextWindow
-	}
-	if user.PtrNBatch == nil {
-		user.PtrNBatch = cat.PtrNBatch
-	}
-	if user.PtrNUBatch == nil {
-		user.PtrNUBatch = cat.PtrNUBatch
-	}
-	if user.PtrNThreads == nil {
-		user.PtrNThreads = cat.PtrNThreads
-	}
-	if user.PtrNThreadsBatch == nil {
-		user.PtrNThreadsBatch = cat.PtrNThreadsBatch
-	}
-	if user.CacheTypeK == GGMLTypeAuto {
-		user.CacheTypeK = cat.CacheTypeK
-	}
-	if user.CacheTypeV == GGMLTypeAuto {
-		user.CacheTypeV = cat.CacheTypeV
-	}
-	if user.PtrUseDirectIO == nil {
-		user.PtrUseDirectIO = cat.PtrUseDirectIO
-	}
-	if user.PtrUseMMap == nil {
-		user.PtrUseMMap = cat.PtrUseMMap
-	}
-	if user.NUMA == NUMADisabled {
-		user.NUMA = cat.NUMA
-	}
-	if user.PtrNSeqMax == nil {
-		user.PtrNSeqMax = cat.PtrNSeqMax
-	}
-	if user.PtrOffloadKQV == nil {
-		user.PtrOffloadKQV = cat.PtrOffloadKQV
-	}
-	if user.PtrOpOffload == nil {
-		user.PtrOpOffload = cat.PtrOpOffload
-	}
-	if user.PtrOpOffloadMinBatch == nil {
-		user.PtrOpOffloadMinBatch = cat.PtrOpOffloadMinBatch
-	}
-	if user.PtrNGpuLayers == nil {
-		user.PtrNGpuLayers = cat.PtrNGpuLayers
-	}
-	if user.PtrMainGPU == nil {
-		user.PtrMainGPU = cat.PtrMainGPU
-	}
-	if user.PtrSplitMode == nil {
-		user.PtrSplitMode = cat.PtrSplitMode
-	}
-	if len(user.TensorSplit) == 0 {
-		user.TensorSplit = cat.TensorSplit
-	}
-	if len(user.TensorBuftOverrides) == 0 {
-		user.TensorBuftOverrides = cat.TensorBuftOverrides
-	}
-	if user.PtrSWAFull == nil {
-		user.PtrSWAFull = cat.PtrSWAFull
-	}
-	if user.PtrIncrementalCache == nil {
-		user.PtrIncrementalCache = cat.PtrIncrementalCache
-	}
-	if user.PtrCacheMinTokens == nil {
-		user.PtrCacheMinTokens = cat.PtrCacheMinTokens
-	}
-	if user.PtrCacheSlotTimeout == nil {
-		user.PtrCacheSlotTimeout = cat.PtrCacheSlotTimeout
-	}
-	if user.PtrInsecureLogging == nil {
-		user.PtrInsecureLogging = cat.PtrInsecureLogging
-	}
-	if user.RopeScaling == RopeScalingNone {
-		user.RopeScaling = cat.RopeScaling
-	}
-	if user.PtrRopeFreqBase == nil {
-		user.PtrRopeFreqBase = cat.PtrRopeFreqBase
-	}
-	if user.PtrRopeFreqScale == nil {
-		user.PtrRopeFreqScale = cat.PtrRopeFreqScale
-	}
-	if user.PtrYarnExtFactor == nil {
-		user.PtrYarnExtFactor = cat.PtrYarnExtFactor
-	}
-	if user.PtrYarnAttnFactor == nil {
-		user.PtrYarnAttnFactor = cat.PtrYarnAttnFactor
-	}
-	if user.PtrYarnBetaFast == nil {
-		user.PtrYarnBetaFast = cat.PtrYarnBetaFast
-	}
-	if user.PtrYarnBetaSlow == nil {
-		user.PtrYarnBetaSlow = cat.PtrYarnBetaSlow
-	}
-	if user.PtrYarnOrigCtx == nil {
-		user.PtrYarnOrigCtx = cat.PtrYarnOrigCtx
-	}
-	if user.MoE == nil {
-		user.MoE = cat.MoE
-	}
-	if user.DraftModel == nil {
-		user.DraftModel = cat.DraftModel
-	}
-
-	user.DefaultParams = applyCatalogSamplingParams(user.DefaultParams, cat.DefaultParams)
-
-	return user
-}
-
-func applyCatalogSamplingParams(user Params, cat Params) Params {
-	if user.Temperature == 0 {
-		user.Temperature = cat.Temperature
-	}
-	if user.TopK == 0 {
-		user.TopK = cat.TopK
-	}
-	if user.TopP == 0 {
-		user.TopP = cat.TopP
-	}
-	if user.MinP == 0 {
-		user.MinP = cat.MinP
-	}
-	if user.RepeatPenalty == 0 {
-		user.RepeatPenalty = cat.RepeatPenalty
-	}
-	if user.RepeatLastN == 0 {
-		user.RepeatLastN = cat.RepeatLastN
-	}
-	if user.FrequencyPenalty == 0 {
-		user.FrequencyPenalty = cat.FrequencyPenalty
-	}
-	if user.PresencePenalty == 0 {
-		user.PresencePenalty = cat.PresencePenalty
-	}
-	if user.DryMultiplier == 0 {
-		user.DryMultiplier = cat.DryMultiplier
-	}
-	if user.DryBase == 0 {
-		user.DryBase = cat.DryBase
-	}
-	if user.DryAllowedLen == 0 {
-		user.DryAllowedLen = cat.DryAllowedLen
-	}
-	if user.DryPenaltyLast == 0 {
-		user.DryPenaltyLast = cat.DryPenaltyLast
-	}
-	if user.XtcProbability == 0 {
-		user.XtcProbability = cat.XtcProbability
-	}
-	if user.XtcThreshold == 0 {
-		user.XtcThreshold = cat.XtcThreshold
-	}
-	if user.XtcMinKeep == 0 {
-		user.XtcMinKeep = cat.XtcMinKeep
-	}
-	if user.Thinking == "" {
-		user.Thinking = cat.Thinking
-	}
-	if user.ReasoningEffort == "" {
-		user.ReasoningEffort = cat.ReasoningEffort
-	}
-	if user.Grammar == "" {
-		user.Grammar = cat.Grammar
-	}
-
-	return user
 }
 
 func adjustContextWindow(cfg Config, model llama.Model) Config {
@@ -1420,7 +1245,6 @@ func NewConfig(opts ...Option) Config {
 }
 
 func WithConfig(src Config) Option                   { return func(c *Config) { *c = src } }
-func WithCataloger(v Cataloger) Option               { return func(c *Config) { c.Cataloger = v } }
 func WithCacheMinTokens(v int) Option                { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
 func WithCacheSlotTimeout(v int) Option              { return func(c *Config) { c.PtrCacheSlotTimeout = new(v) } }
 func WithCacheTypeK(v GGMLType) Option               { return func(c *Config) { c.CacheTypeK = v } }

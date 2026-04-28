@@ -61,10 +61,10 @@ jobs:
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
           mkdir -p $HOME/.kronk/models
-          kronk model pull --local unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf
-          kronk model pull --local Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
-          kronk model pull --local ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf
-          kronk model pull --local gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf
+          kronk model pull --local unsloth/Qwen3.5-0.8B-Q8_0 unsloth/mmproj-F16
+          kronk model pull --local Qwen/Qwen3-8B-Q8_0
+          kronk model pull --local ggml-org/embeddinggemma-300m-qat-Q8_0
+          kronk model pull --local gpustack/bge-reranker-v2-m3-Q8_0
       - name: Install static analysis tools
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@latest

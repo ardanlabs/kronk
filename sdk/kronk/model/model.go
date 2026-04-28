@@ -84,13 +84,6 @@ type draftModel struct {
 	registeredSeqID   llama.SeqId
 }
 
-// Cataloger provides support to retrieve catalog config and template
-// information.
-type Cataloger interface {
-	RetrieveTemplate(modelID string) (Template, error)
-	RetrieveConfig(modelID string) (Config, error)
-}
-
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
 	cfg               Config
@@ -125,27 +118,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		l = func(ctx context.Context, msg string, args ...any) {}
 	}
 
-	cataloger := cfg.Cataloger
-	if cataloger == nil {
-		return nil, fmt.Errorf("catalog required, use catalog.New()")
-	}
-
 	if len(cfg.ModelFiles) == 0 {
 		return nil, fmt.Errorf("model required")
-	}
-
-	// -------------------------------------------------------------------------
-
-	modelID := modelIDFromFiles(cfg.ModelFiles)
-
-	catCfg, err := cataloger.RetrieveConfig(modelID)
-
-	switch err {
-	case nil:
-		cfg = applyCatalogConfig(cfg, catCfg)
-
-	default:
-		l(ctx, "CATALOG-CONFIG", "status", "not found", "modelID", modelID, "err", err)
 	}
 
 	if err := validateConfig(ctx, cfg, l); err != nil {
@@ -322,7 +296,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	metrics.SetVRAM(modelInfo.ID, modelInfo.VRAMTotal, modelInfo.SlotMemory)
 
-	template, err := retrieveTemplate(cataloger, cfg, mdl, modelInfo)
+	template, err := retrieveTemplate(cfg, mdl)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
 	}
@@ -644,7 +618,7 @@ func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, pa
 	return mdl, nil
 }
 
-func retrieveTemplate(cataloger Cataloger, cfg Config, mdl llama.Model, modelInfo ModelInfo) (Template, error) {
+func retrieveTemplate(cfg Config, mdl llama.Model) (Template, error) {
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
@@ -659,13 +633,6 @@ func retrieveTemplate(cataloger Cataloger, cfg Config, mdl llama.Model, modelInf
 			FileName: cfg.JinjaFile,
 			Script:   data,
 		}, nil
-	}
-
-	if cataloger != nil {
-		template, err := cataloger.RetrieveTemplate(modelInfo.ID)
-		if err == nil {
-			return template, nil
-		}
 	}
 
 	data := llama.ModelChatTemplate(mdl, "")

@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -55,8 +56,8 @@ func runWeb(args []string) error {
 	return nil
 }
 
-func runLocal(mdls *models.Models, args []string) error {
-	modelURL := args[0]
+func runLocal(mdls *models.Models, basePath string, args []string) error {
+	input := args[0]
 
 	var projURL string
 	if len(args) == 2 {
@@ -66,25 +67,73 @@ func runLocal(mdls *models.Models, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	// Resolve HuggingFace shorthand references like "owner/repo:Q4_K_M".
-	resolved, isShorthand, err := catalog.ResolveHuggingFaceShorthand(ctx, modelURL)
-	if err != nil {
-		return fmt.Errorf("resolve-shorthand: %w", err)
-	}
-
-	if isShorthand {
-		fmt.Printf("Resolved %s → %d file(s)\n", modelURL, len(resolved.ModelFiles))
-		if projURL == "" {
-			projURL = resolved.ProjFile
+	// Bare model ID or "provider/modelID": resolve via the new resolver.
+	if isModelID(input) {
+		rfile, err := defaults.CatalogFile("", basePath)
+		if err != nil {
+			return fmt.Errorf("resolver-file: %w", err)
 		}
-		_, err = mdls.DownloadSplits(ctx, kronk.FmtLogger, resolved.ModelFiles, projURL)
-	} else {
-		_, err = mdls.Download(ctx, kronk.FmtLogger, modelURL, projURL)
+
+		r := models.NewResolver(mdls, rfile)
+
+		res, err := r.Resolve(ctx, input)
+		if err != nil {
+			return fmt.Errorf("resolve: %w", err)
+		}
+
+		fmt.Printf("Resolved %s → %s/%s (%d file(s))\n", input, res.Provider, res.Family, len(res.DownloadURLs))
+
+		downloadProj := res.DownloadProj
+		if projURL != "" {
+			downloadProj = projURL
+		}
+
+		if _, err := mdls.DownloadSplits(ctx, kronk.FmtLogger, res.DownloadURLs, downloadProj); err != nil {
+			return fmt.Errorf("download-model: %w", err)
+		}
+
+		return nil
 	}
 
-	if err != nil {
+	// Legacy: explicit URL or owner/repo/file.gguf path.
+	if _, err := mdls.Download(ctx, kronk.FmtLogger, input, projURL); err != nil {
 		return fmt.Errorf("download-model: %w", err)
 	}
 
 	return nil
+}
+
+// isModelID reports whether the input looks like a bare model id or a
+// "provider/modelID" pair, as opposed to a URL, an owner/repo/file.gguf
+// path, or the legacy "owner/repo:TAG" shorthand.
+func isModelID(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+
+	// URLs are handled by the legacy path.
+	if strings.Contains(s, "://") {
+		return false
+	}
+	if strings.HasPrefix(strings.ToLower(s), "huggingface.co/") || strings.HasPrefix(strings.ToLower(s), "hf.co/") {
+		return false
+	}
+
+	// Legacy shorthand "owner/repo:TAG" (or with @revision).
+	if strings.Contains(s, ":") {
+		return false
+	}
+
+	// File paths and explicit gguf references.
+	if strings.HasSuffix(strings.ToLower(s), ".gguf") {
+		return false
+	}
+
+	// More than one "/" indicates a path (owner/repo/file.gguf style).
+	if strings.Count(s, "/") > 1 {
+		return false
+	}
+
+	return true
 }
