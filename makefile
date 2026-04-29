@@ -863,6 +863,9 @@ example-embedding:
 example-grammar:
 	cd examples && go run ./grammar/main.go
 
+example-pool:
+	cd examples && go run ./pool/main.go
+
 example-rag:
 	cd examples && go run ./rag/main.go
 

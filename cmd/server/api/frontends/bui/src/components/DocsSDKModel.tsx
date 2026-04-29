@@ -1,4 +1,27 @@
+import { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+
 export default function DocsSDKModel() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const container = document.querySelector('.main-content');
+    if (!container) return;
+    if (!location.hash) {
+      container.scrollTo({ top: 0 });
+      return;
+    }
+    const id = location.hash.slice(1);
+    requestAnimationFrame(() => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      const offset = elementRect.top - containerRect.top + container.scrollTop;
+      container.scrollTo({ top: offset - 20, behavior: 'smooth' });
+    });
+  }, [location.key, location.hash]);
+
   return (
     <div>
       <div className="page-header">

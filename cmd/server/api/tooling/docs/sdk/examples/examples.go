@@ -99,7 +99,9 @@ func extractDescription(code string) string {
 func generateExamplesTSX(exs []example) string {
 	var b strings.Builder
 
-	b.WriteString(`import CodeBlock from './CodeBlock';
+	b.WriteString(`import { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import CodeBlock from './CodeBlock';
 
 `)
 
@@ -109,6 +111,24 @@ func generateExamplesTSX(exs []example) string {
 	}
 
 	b.WriteString("export default function DocsSDKExamples() {\n")
+	b.WriteString("  const location = useLocation();\n\n")
+	b.WriteString("  useEffect(() => {\n")
+	b.WriteString("    const container = document.querySelector('.main-content');\n")
+	b.WriteString("    if (!container) return;\n")
+	b.WriteString("    if (!location.hash) {\n")
+	b.WriteString("      container.scrollTo({ top: 0 });\n")
+	b.WriteString("      return;\n")
+	b.WriteString("    }\n")
+	b.WriteString("    const id = location.hash.slice(1);\n")
+	b.WriteString("    requestAnimationFrame(() => {\n")
+	b.WriteString("      const element = document.getElementById(id);\n")
+	b.WriteString("      if (!element) return;\n")
+	b.WriteString("      const containerRect = container.getBoundingClientRect();\n")
+	b.WriteString("      const elementRect = element.getBoundingClientRect();\n")
+	b.WriteString("      const offset = elementRect.top - containerRect.top + container.scrollTop;\n")
+	b.WriteString("      container.scrollTo({ top: offset - 20, behavior: 'smooth' });\n")
+	b.WriteString("    });\n")
+	b.WriteString("  }, [location.key, location.hash]);\n\n")
 	b.WriteString("  return (\n")
 	b.WriteString("    <div>\n")
 	b.WriteString("      <div className=\"page-header\">\n")
@@ -181,8 +201,11 @@ func updateLayoutExamples(outputDir string, exs []example) error {
 
 	layoutStr := string(content)
 
-	// Find the SDK section and replace the examples items.
-	const startMarker = "{ page: 'docs-sdk-examples', label: 'Examples' },"
+	// Find the SDK section and replace the examples items. The start marker
+	// is intentionally a partial prefix that matches both the legacy flat
+	// layout ("..., label: 'Examples' },") and the current nested layout
+	// ("..., label: 'Examples', children: [").
+	const startMarker = "{ page: 'docs-sdk-examples', label: 'Examples'"
 	const endMarker = "id: 'docs-cli-sub',"
 
 	startIdx := strings.Index(layoutStr, startMarker)
@@ -195,14 +218,14 @@ func updateLayoutExamples(outputDir string, exs []example) error {
 		return fmt.Errorf("could not find CLI section marker in Layout.tsx")
 	}
 
-	// Build the new examples items.
+	// Build the new examples items as a collapsible parent with children.
 	var items strings.Builder
-	items.WriteString(startMarker + "\n")
+	items.WriteString("{ page: 'docs-sdk-examples', label: 'Examples', children: [\n")
 	for _, ex := range exs {
 		anchor := toAnchor("example-" + ex.name)
-		items.WriteString(fmt.Sprintf("          { page: 'docs-sdk-examples', label: '%s', hash: '%s' },\n", ex.displayName, anchor))
+		items.WriteString(fmt.Sprintf("            { page: 'docs-sdk-examples', label: '%s', hash: '%s' },\n", ex.displayName, anchor))
 	}
-	items.WriteString("        ],\n      },\n      {\n        ")
+	items.WriteString("          ] },\n        ],\n      },\n      {\n        ")
 
 	// Replace the section.
 	newLayout := layoutStr[:startIdx] + items.String() + layoutStr[startIdx+endIdx:]
