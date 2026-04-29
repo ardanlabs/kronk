@@ -836,6 +836,8 @@ tidy:
 deps-upgrade: bui-upgrade
 	go get -u -v ./...
 	go mod tidy
+	cd examples && go get -u -v ./...
+	cd examples && go mod tidy
 
 yzma-latest:
 	GOPROXY=direct go get github.com/hybridgroup/yzma@main

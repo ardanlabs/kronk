@@ -152,6 +152,12 @@ make example-grammar
 make example-question
 ```
 
+[RAG](examples/rag/main.go) - This example shows you a complete RAG application.
+
+```shell
+make example-rag
+```
+
 [RERANK](examples/rerank/main.go) - This example shows you how to use a rerank model.
 
 ```shell
@@ -196,7 +202,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const modelURL = "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
+const modelSource = "unsloth/Qwen3-0.6B-Q8_0"
 
 func main() {
 	if err := run(); err != nil {
@@ -252,17 +258,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelURL, "")
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
-
-	// -------------------------------------------------------------------------
-	// You could also download this model using the catalog system.
-	// mp, err := templates.Catalog().DownloadModel(ctx, kronk.FmtLogger, "Qwen3-8B-Q8_0")
-	// if err != nil {
-	// 	return models.Path{}, fmt.Errorf("unable to download model: %w", err)
-	// }
 
 	return mp, nil
 }
