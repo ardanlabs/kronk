@@ -2,7 +2,7 @@
 
 ### Description
 
-Running inference against LLM models that run on your own local hardware means no API costs, no data leaving your machine, and no vendor lock-in. Having the ability to do this with Go has traditionally been painful. In this workshop, Bill will introduce Kronk, a Go SDK that lets you embed local model inference directly into your Go applications with full GPU acceleration — no CGO required. Whether you are building chat, vision, audio, embedding, or tool calling applications, Kronk gives you the same power as a model server without needing one. To prove it, Bill built a model server using the Kronk SDK, complete with caching, batch processing, and agent support. You'll see live demos from writing your first chat app to driving a coding agent with a local model.
+Most teams reach for a Web API or stand up a Python service the moment they need a model. But self-hosted inference — running models on hardware you control — means no per-token costs, no data leaving your environment, no vendor lock-in, and the freedom to use the long tail of great open-source models that go well beyond the LLMs everyone is talking about. The problem is that doing this from Go has historically meant CGO, shelling out to Python, or making a network hop to something like Ollama. None of that feels like Go.
 
 This is a lecture and hands-on full-day workshop where you'll go from zero to running open-source models directly inside your Go applications on your own local machine — no cloud APIs, no external servers, no data leaving your machine. Throughout the day, you will learn all the internals of the Kronk SDK which will teach you about model architectures, KV caching, batch processing, token/decoding, prompt caching, token sampling, and more.
 
