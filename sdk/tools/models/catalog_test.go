@@ -245,8 +245,11 @@ func TestResolver_HFHit_PersistsAndReturnsURLs(t *testing.T) {
 	if !reflect.DeepEqual(res.Files, []string{"Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"}) {
 		t.Errorf("Files = %v", res.Files)
 	}
-	if res.MMProj != "mmproj-F16.gguf" {
+	if res.MMProj != "mmproj-Qwen3.6-35B-A3B-UD-Q4_K_M.gguf" {
 		t.Errorf("MMProj = %q", res.MMProj)
+	}
+	if res.MMProjOrig != "mmproj-F16.gguf" {
+		t.Errorf("MMProjOrig = %q", res.MMProjOrig)
 	}
 	if got, want := res.DownloadURLs[0], "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"; got != want {
 		t.Errorf("DownloadURLs[0] = %q, want %q", got, want)
@@ -339,11 +342,12 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 		Providers: []string{"unsloth"},
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-Q4_K_M": {
-				Provider: "unsloth",
-				Family:   "Qwen3-GGUF",
-				Revision: "main",
-				Files:    []string{"Qwen3-Q4_K_M.gguf"},
-				MMProj:   "mmproj-F16.gguf",
+				Provider:   "unsloth",
+				Family:     "Qwen3-GGUF",
+				Revision:   "main",
+				Files:      []string{"Qwen3-Q4_K_M.gguf"},
+				MMProj:     "mmproj-Qwen3-Q4_K_M.gguf",
+				MMProjOrig: "mmproj-F16.gguf",
 			},
 		},
 	}

@@ -489,6 +489,18 @@ export interface HFLookupResponse {
   repo_files: HFRepoFile[];
 }
 
+export interface ResolveSourceResponse {
+  canonical_id: string;
+  provider: string;
+  family: string;
+  revision: string;
+  download_urls: string[];
+  download_proj?: string;
+  from_cache: boolean;
+  from_local: boolean;
+  installed: boolean;
+}
+
 export interface VRAMRequest {
   model_url: string;
   context_window: number;

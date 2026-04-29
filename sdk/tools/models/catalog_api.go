@@ -9,6 +9,30 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
+// ResolveSource maps a model source (full HuggingFace URL, canonical id
+// "provider/family", or bare id) to a Resolution containing the canonical
+// id, provider, family, revision, full download URL(s), companion
+// projection URL, and any locally-known on-disk paths. The resolver may
+// persist a new entry to catalog.yaml as a side effect of a successful
+// network lookup; this matches Download's behaviour.
+//
+// Use this when you want to preview what Download would fetch — for
+// example to drive a "Resolve" button in the BUI before initiating a
+// pull.
+func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, error) {
+	rfile, err := defaults.CatalogFile("", m.basePath)
+	if err != nil {
+		return Resolution{}, fmt.Errorf("resolve-source: file: %w", err)
+	}
+
+	res, err := NewResolver(m, rfile).Resolve(ctx, source)
+	if err != nil {
+		return Resolution{}, fmt.Errorf("resolve-source: %w", err)
+	}
+
+	return res, nil
+}
+
 // Catalog returns the persisted catalog (catalog.yaml). The Models receiver
 // is used to resolve the on-disk path from m.basePath.
 func (m *Models) Catalog() (Catalog, error) {

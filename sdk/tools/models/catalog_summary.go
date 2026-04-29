@@ -132,8 +132,15 @@ func NewFiles(entry CatalogEntry) CatalogFiles {
 	}
 
 	if entry.MMProj != "" {
+		// The projection URL is built from the HuggingFace source name
+		// (MMProjOrig). Pre-MMProjOrig entries leave the URL empty until
+		// the resolver self-heals on the next online Resolve.
+		var projURL string
+		if entry.MMProjOrig != "" {
+			projURL = BuildHFURL(entry.Provider, entry.Family, entry.Revision, entry.MMProjOrig)
+		}
 		out.Proj = CatalogFile{
-			URL:  BuildHFURL(entry.Provider, entry.Family, entry.Revision, entry.MMProj),
+			URL:  projURL,
 			Size: entry.MMProjSize,
 		}
 	}

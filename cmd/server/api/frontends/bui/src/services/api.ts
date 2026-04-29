@@ -15,6 +15,7 @@ import type {
   VRAMRequest,
   VRAMCalculatorResponse,
   HFLookupResponse,
+  ResolveSourceResponse,
   PlaygroundTemplateInfo,
   PlaygroundTemplateListResponse,
   PlaygroundTemplateResponse,
@@ -483,6 +484,13 @@ class ApiService {
     return this.request<HFLookupResponse>('/catalog/lookup', {
       method: 'POST',
       body: JSON.stringify({ input }),
+    });
+  }
+
+  async resolveSource(source: string): Promise<ResolveSourceResponse> {
+    return this.request<ResolveSourceResponse>('/catalog/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ source }),
     });
   }
 

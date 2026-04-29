@@ -162,12 +162,12 @@ func installSystem() (models.Path, models.Path, error) {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to create models api: %w", err)
 	}
 
-	infoEmbed, err := mdls.Download(context.Background(), kronk.FmtLogger, modelEmbedSource, "")
+	infoEmbed, err := mdls.Download(context.Background(), kronk.FmtLogger, modelEmbedSource)
 	if err != nil {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
-	infoChat, err := mdls.Download(context.Background(), kronk.FmtLogger, modelChatSource, "")
+	infoChat, err := mdls.Download(context.Background(), kronk.FmtLogger, modelChatSource)
 	if err != nil {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}

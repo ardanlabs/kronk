@@ -67,6 +67,7 @@ type CatalogEntry struct {
 	Files        []string            `yaml:"files"`
 	FileSizes    []int64             `yaml:"file_sizes,omitempty"`
 	MMProj       string              `yaml:"mmproj,omitempty"`
+	MMProjOrig   string              `yaml:"mmproj_orig,omitempty"`
 	MMProjSize   int64               `yaml:"mmproj_size,omitempty"`
 	ModelType    string              `yaml:"model_type,omitempty"`
 	Capabilities CatalogCapabilities `yaml:"capabilities,omitempty"`
@@ -74,7 +75,9 @@ type CatalogEntry struct {
 }
 
 // Resolution is the result of a Resolve call. It holds both the persisted
-// metadata and any locally-known on-disk paths.
+// metadata and any locally-known on-disk paths. MMProj is the local
+// (renamed) projection filename used for on-disk lookup; MMProjOrig is
+// the HuggingFace source filename used for building DownloadProj URLs.
 type Resolution struct {
 	CanonicalID  string
 	Provider     string
@@ -82,6 +85,7 @@ type Resolution struct {
 	Revision     string
 	Files        []string
 	MMProj       string
+	MMProjOrig   string
 	DownloadURLs []string
 	DownloadProj string
 	LocalPaths   []string
@@ -243,32 +247,28 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		return Resolution{}, fmt.Errorf("resolve: %w", err)
 	}
 
+	online := hasNetwork()
+
 	if cached, ok := r.lookupCache(rm, provider, modelID); ok {
-		cached.FromCache = true
-		r.attachLocal(&cached)
-		return cached, nil
+		// Self-heal: pre-MMProjOrig entries (or those persisted from a
+		// local-disk discovery before HF was reachable) carry the local
+		// renamed projection name but no HF source name, so DownloadProj
+		// would be empty. When online, fall through to HF so the entry
+		// can be repaired with the canonical mmproj source name. When
+		// offline, return what we have.
+		needsRepair := cached.MMProj != "" && cached.DownloadProj == ""
+		if !needsRepair || !online {
+			cached.FromCache = true
+			r.attachLocal(&cached)
+			return cached, nil
+		}
 	}
 
-	// 2. Local disk. If the model is already installed, that's enough —
-	//    derive the canonical entry from the on-disk layout and persist
-	//    it to the cache file so the next call is a cache hit.
-	if local, ok := r.lookupLocal(provider, modelID); ok {
-		local.FromLocal = true
-		local.DownloadURLs = buildDownloadURLs(local.Provider, local.Family, local.Revision, local.Files)
-		if local.MMProj != "" {
-			local.DownloadProj = buildDownloadURL(local.Provider, local.Family, local.Revision, local.MMProj)
-		}
-
-		rm.Models[local.CanonicalID] = r.buildEntry(local.Provider, local.Family, local.Revision, local.Files, local.MMProj)
-		if err := r.Save(rm); err != nil {
-			return Resolution{}, fmt.Errorf("resolve: persist local: %w", err)
-		}
-
-		return local, nil
-	}
-
-	// 3. HuggingFace search. If a provider was given, search only that
-	//    provider; otherwise walk the priority list.
+	// 2. HuggingFace search. If a provider was given, search only that
+	//    provider; otherwise walk the priority list. The HF lookup is
+	//    the only path that can produce a correct DownloadProj URL —
+	//    the on-disk projection file has been renamed and the original
+	//    HF filename cannot be recovered from the local layout.
 	providers := []string{provider}
 	if provider == "" {
 		providers = rm.Providers
@@ -277,31 +277,53 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		}
 	}
 
-	// Bail out early when there is no network — saves the caller from
-	// waiting on timeouts when offline (e.g., on a plane).
-	if !hasNetwork() {
-		return Resolution{}, fmt.Errorf("resolve: model %q not found locally and no network available", id)
+	if online {
+		for _, p := range providers {
+			res, ok, err := r.resolveAtProvider(ctx, p, modelID)
+			if err != nil {
+				return Resolution{}, fmt.Errorf("resolve: provider %q: %w", p, err)
+			}
+			if !ok {
+				continue
+			}
+
+			// Persist the new entry. MMProj records the local-renamed name
+			// (mmproj-<modelID>.gguf) so attachLocal can find the file on
+			// disk; MMProjOrig records the HuggingFace source filename so
+			// DownloadProj URLs can be reconstructed from cache hits without
+			// another HF round-trip.
+			entry := r.buildEntry(res.Provider, res.Family, res.Revision, res.Files, res.MMProj)
+			entry.MMProjOrig = res.MMProjOrig
+			rm.Models[res.CanonicalID] = entry
+			if err := r.Save(rm); err != nil {
+				return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
+			}
+
+			r.attachLocal(&res)
+			return res, nil
+		}
 	}
 
-	for _, p := range providers {
-		res, ok, err := r.resolveAtProvider(ctx, p, modelID)
-		if err != nil {
-			return Resolution{}, fmt.Errorf("resolve: provider %q: %w", p, err)
-		}
-		if !ok {
-			continue
-		}
+	// 3. Offline fallback. When HF is unreachable but the model is on
+	//    disk, return what we know: provider/family/files/LocalPaths.
+	//    DownloadProj is left empty because the HF projection source
+	//    name cannot be recovered from the renamed on-disk file.
+	if local, ok := r.lookupLocal(provider, modelID); ok {
+		local.FromLocal = true
+		local.DownloadURLs = buildDownloadURLs(local.Provider, local.Family, local.Revision, local.Files)
 
-		// Persist the new entry. The on-disk projection file is renamed
-		// to mmproj-<modelID>.gguf during download, so store that local
-		// form rather than the HuggingFace source name.
-		rm.Models[res.CanonicalID] = r.buildEntry(res.Provider, res.Family, res.Revision, res.Files, localProjName(res.MMProj, res.Files))
+		// Persist what we know so subsequent online Resolves can self-heal
+		// and fill in MMProjOrig.
+		rm.Models[local.CanonicalID] = r.buildEntry(local.Provider, local.Family, local.Revision, local.Files, local.MMProj)
 		if err := r.Save(rm); err != nil {
-			return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
+			return Resolution{}, fmt.Errorf("resolve: persist local: %w", err)
 		}
 
-		r.attachLocal(&res)
-		return res, nil
+		return local, nil
+	}
+
+	if !online {
+		return Resolution{}, fmt.Errorf("resolve: model %q not found locally and no network available", id)
 	}
 
 	return Resolution{}, fmt.Errorf("resolve: model %q not found in any of %v", id, providers)
@@ -519,11 +541,15 @@ func entryToResolution(canonical string, entry CatalogEntry) Resolution {
 		Revision:     entry.Revision,
 		Files:        append([]string(nil), entry.Files...),
 		MMProj:       entry.MMProj,
+		MMProjOrig:   entry.MMProjOrig,
 		DownloadURLs: buildDownloadURLs(entry.Provider, entry.Family, entry.Revision, entry.Files),
 	}
 
-	if entry.MMProj != "" {
-		res.DownloadProj = buildDownloadURL(entry.Provider, entry.Family, entry.Revision, entry.MMProj)
+	// DownloadProj is built from the HuggingFace source name (MMProjOrig),
+	// not the local-renamed name (MMProj). Pre-MMProjOrig entries leave
+	// MMProjOrig empty so the resolver can detect the gap and self-heal.
+	if entry.MMProjOrig != "" {
+		res.DownloadProj = buildDownloadURL(entry.Provider, entry.Family, entry.Revision, entry.MMProjOrig)
 	}
 
 	return res
@@ -596,7 +622,8 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID stri
 			Family:       repo,
 			Revision:     "main",
 			Files:        files,
-			MMProj:       mmproj,
+			MMProj:       localProjName(mmproj, files),
+			MMProjOrig:   mmproj,
 			DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
 		}
 
@@ -667,10 +694,11 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 		return nil
 	}
 
-	var mmproj string
+	var mmproj, mmprojOrig string
 	if projURL != "" {
 		if _, _, _, file, parsed := parseHFURL(NormalizeHuggingFaceDownloadURL(projURL)); parsed {
 			mmproj = localProjName(file, files)
+			mmprojOrig = file
 		}
 	}
 
@@ -693,7 +721,9 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 	modelID := extractModelID(files[0])
 	canonical := canonicalID(provider, modelID)
 
-	rm.Models[canonical] = r.buildEntry(provider, repo, revision, files, mmproj)
+	entry := r.buildEntry(provider, repo, revision, files, mmproj)
+	entry.MMProjOrig = mmprojOrig
+	rm.Models[canonical] = entry
 
 	if err := r.Save(rm); err != nil {
 		return fmt.Errorf("persist-url: save: %w", err)

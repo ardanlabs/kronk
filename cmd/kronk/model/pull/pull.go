@@ -16,7 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-func runWeb(args []string) error {
+func runWeb(source string, projURL string) error {
 	url, err := client.DefaultURL("/v1/models/pull")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
@@ -24,14 +24,9 @@ func runWeb(args []string) error {
 
 	fmt.Println("URL:", url)
 
-	var modelProj string
-	if len(args) == 2 {
-		modelProj = args[1]
-	}
-
 	body := client.D{
-		"model_url": args[0],
-		"proj_url":  modelProj,
+		"model_url": source,
+		"proj_url":  projURL,
 	}
 
 	cln := client.NewSSE[toolapp.PullResponse](
@@ -56,84 +51,54 @@ func runWeb(args []string) error {
 	return nil
 }
 
-func runLocal(mdls *models.Models, basePath string, args []string) error {
-	input := args[0]
-
-	var projURL string
-	if len(args) == 2 {
-		projURL = args[1]
-	}
-
+func runLocal(mdls *models.Models, basePath string, source string, projURL string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	// Bare model ID or "provider/modelID": resolve via the new resolver.
-	if isModelID(input) {
-		rfile, err := defaults.CatalogFile("", basePath)
-		if err != nil {
-			return fmt.Errorf("resolver-file: %w", err)
-		}
-
-		r := models.NewResolver(mdls, rfile)
-
-		res, err := r.Resolve(ctx, input)
-		if err != nil {
-			return fmt.Errorf("resolve: %w", err)
-		}
-
-		fmt.Printf("Resolved %s → %s/%s (%d file(s))\n", input, res.Provider, res.Family, len(res.DownloadURLs))
-
-		downloadProj := res.DownloadProj
-		if projURL != "" {
-			downloadProj = projURL
-		}
-
-		if _, err := mdls.DownloadSplits(ctx, kronk.FmtLogger, res.DownloadURLs, downloadProj); err != nil {
+	// Default workflow — Download handles every input form (bare id,
+	// canonical id, full URL, owner/repo/file.gguf path) and locates
+	// the projection file automatically.
+	if projURL == "" {
+		if _, err := mdls.Download(ctx, kronk.FmtLogger, source); err != nil {
 			return fmt.Errorf("download-model: %w", err)
 		}
 
 		return nil
 	}
 
-	// Legacy: explicit URL or owner/repo/file.gguf path.
-	if _, err := mdls.Download(ctx, kronk.FmtLogger, input, projURL); err != nil {
+	// Explicit projection override — full-control workflow. When the
+	// source is a URL, pair it directly with the supplied projection
+	// URL. When the source is an id, the resolver is consulted only to
+	// expand split (multi-file) models; the supplied projection URL
+	// replaces the resolver's choice.
+	if isURL(source) {
+		if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, []string{source}, projURL); err != nil {
+			return fmt.Errorf("download-model: %w", err)
+		}
+
+		return nil
+	}
+
+	rfile, err := defaults.CatalogFile("", basePath)
+	if err != nil {
+		return fmt.Errorf("resolver-file: %w", err)
+	}
+
+	res, err := models.NewResolver(mdls, rfile).Resolve(ctx, source)
+	if err != nil {
+		return fmt.Errorf("resolve: %w", err)
+	}
+
+	fmt.Printf("Resolved %s → %s/%s (%d file(s))\n", source, res.Provider, res.Family, len(res.DownloadURLs))
+
+	if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, res.DownloadURLs, projURL); err != nil {
 		return fmt.Errorf("download-model: %w", err)
 	}
 
 	return nil
 }
 
-// isModelID reports whether the input looks like a bare model id or a
-// "provider/modelID" pair, as opposed to a URL, an owner/repo/file.gguf
-// path, or the legacy "owner/repo:TAG" shorthand.
-func isModelID(s string) bool {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return false
-	}
-
-	// URLs are handled by the legacy path.
-	if strings.Contains(s, "://") {
-		return false
-	}
-	if strings.HasPrefix(strings.ToLower(s), "huggingface.co/") || strings.HasPrefix(strings.ToLower(s), "hf.co/") {
-		return false
-	}
-
-	// Legacy shorthand "owner/repo:TAG" (or with @revision).
-	if strings.Contains(s, ":") {
-		return false
-	}
-
-	// File paths and explicit gguf references.
-	if strings.HasSuffix(strings.ToLower(s), ".gguf") {
-		return false
-	}
-
-	// More than one "/" indicates a path (owner/repo/file.gguf style).
-	if strings.Count(s, "/") > 1 {
-		return false
-	}
-
-	return true
+// isURL reports whether the source is a full HTTP(S) URL.
+func isURL(source string) bool {
+	return strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://")
 }

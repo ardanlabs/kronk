@@ -891,3 +891,41 @@ func (r LookupResponse) Encode() ([]byte, string, error) {
 	data, err := json.MarshalIndent(r, "", "  ")
 	return data, "application/json", err
 }
+
+// ResolveRequest is the body for POST /v1/catalog/resolve. The source may
+// be a full HuggingFace URL, a canonical id ("provider/family"), or a
+// bare id ("family"). The resolver maps any of these to the canonical
+// download URLs without initiating a download.
+type ResolveRequest struct {
+	Source string `json:"source"`
+}
+
+// Decode implements the decoder interface.
+func (app *ResolveRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// ResolveResponse is the JSON response for POST /v1/catalog/resolve. It
+// describes what Download would fetch for the given source: canonical id,
+// fully qualified download URL(s) (multiple entries for split models),
+// the companion projection URL when applicable, and flags reporting
+// whether the result came from the catalog cache or local disk. When
+// Installed is true, every model file (and the projection when present)
+// is already on disk.
+type ResolveResponse struct {
+	CanonicalID  string   `json:"canonical_id"`
+	Provider     string   `json:"provider"`
+	Family       string   `json:"family"`
+	Revision     string   `json:"revision"`
+	DownloadURLs []string `json:"download_urls"`
+	DownloadProj string   `json:"download_proj,omitempty"`
+	FromCache    bool     `json:"from_cache"`
+	FromLocal    bool     `json:"from_local"`
+	Installed    bool     `json:"installed"`
+}
+
+// Encode implements web.Encoder.
+func (r ResolveResponse) Encode() ([]byte, string, error) {
+	data, err := json.MarshalIndent(r, "", "  ")
+	return data, "application/json", err
+}

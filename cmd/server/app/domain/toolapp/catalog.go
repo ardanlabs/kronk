@@ -147,6 +147,49 @@ func (a *app) lookupCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	return LookupResponse{RepoFiles: ggufFiles}
 }
 
+// resolveCatalog runs the resolver for the given source (full HuggingFace
+// URL, canonical id, or bare id) and returns the canonical download
+// URL(s), companion projection URL, and cache/local flags. No download
+// is initiated; this is the dry-run preview the BUI Pull screen uses to
+// show the user what Download would fetch.
+//
+// The resolver may persist a new entry to catalog.yaml as a side effect
+// of a successful network lookup; this matches the behaviour of the
+// pull endpoint and is desirable so a subsequent pull is a cache hit.
+func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
+	var req ResolveRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		return errs.Errorf(errs.InvalidArgument, "source is required")
+	}
+
+	res, err := a.models.ResolveSource(ctx, source)
+	if err != nil {
+		return errs.Errorf(errs.Internal, "resolve %q: %s", source, err)
+	}
+
+	installed := len(res.LocalPaths) > 0 && len(res.LocalPaths) == len(res.Files)
+	if installed && res.MMProj != "" && res.LocalProj == "" {
+		installed = false
+	}
+
+	return ResolveResponse{
+		CanonicalID:  res.CanonicalID,
+		Provider:     res.Provider,
+		Family:       res.Family,
+		Revision:     res.Revision,
+		DownloadURLs: res.DownloadURLs,
+		DownloadProj: res.DownloadProj,
+		FromCache:    res.FromCache,
+		FromLocal:    res.FromLocal,
+		Installed:    installed,
+	}
+}
+
 // reconcileCatalog runs ReconcileCatalog. New on-disk models get added,
 // pre-existing entries are re-enriched when the persisted schema version
 // lags the code-side constant, and the new schema is stamped on save.

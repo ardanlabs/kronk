@@ -205,11 +205,13 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	// peer Kronk server on the local network.
 	var mp models.Path
 	var err error
-	switch req.DownloadServer {
-	case "":
-		mp, err = a.models.Download(ctx, logger, req.ModelURL, req.ProjURL)
-	default:
+	switch {
+	case req.DownloadServer != "":
 		mp, err = a.downloadFromPeer(ctx, logger, req)
+	case req.ProjURL != "":
+		mp, err = a.models.DownloadURLs(ctx, logger, []string{req.ModelURL}, req.ProjURL)
+	default:
+		mp, err = a.models.Download(ctx, logger, req.ModelURL)
 	}
 	if err != nil {
 		ver := toAppPull(err.Error(), models.Path{})
@@ -387,7 +389,7 @@ func (a *app) downloadFromPeer(ctx context.Context, log models.Logger, req PullR
 		projURL = toDownloadServerURL(req.DownloadServer, projURL)
 	}
 
-	return a.models.DownloadSplits(ctx, log, modelURLs, projURL)
+	return a.models.DownloadURLs(ctx, log, modelURLs, projURL)
 }
 
 // resolvePeerURLs returns the HuggingFace download URLs for the given

@@ -51,6 +51,7 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/catalog", api.listCatalog, auth)
 	app.HandlerFunc(http.MethodPost, version, "/catalog/reconcile", api.reconcileCatalog, authAdmin)
 	app.HandlerFunc(http.MethodPost, version, "/catalog/lookup", api.lookupCatalog, auth)
+	app.HandlerFunc(http.MethodPost, version, "/catalog/resolve", api.resolveCatalog, authAdmin)
 	app.HandlerFunc(http.MethodGet, version, "/catalog/{id...}", api.showCatalog, auth)
 	app.HandlerFunc(http.MethodDelete, version, "/catalog/{id...}", api.removeCatalog, authAdmin)
 

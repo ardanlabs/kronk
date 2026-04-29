@@ -93,7 +93,7 @@ func installSystem(cfg Config) (models.Path, error) {
 
 	fmt.Println("Resolving model:", cfg.ModelName)
 
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, cfg.ModelName, "")
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, cfg.ModelName)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}

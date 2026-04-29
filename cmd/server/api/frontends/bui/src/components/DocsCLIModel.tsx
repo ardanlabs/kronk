@@ -187,11 +187,11 @@ kronk model ps`}</code>
 
             <div className="doc-section" id="cmd-pull">
               <h4>pull</h4>
-              <p className="doc-description">Pull a model from the web. The mmproj file is optional.</p>
+              <p className="doc-description">Pull a model from the web. The projection file is located automatically.</p>
               <pre className="code-block">
-                <code>kronk model pull &lt;MODEL_ID|MODEL_URL|SHORTHAND&gt; [MMPROJ_URL] [flags]</code>
+                <code>kronk model pull &lt;SOURCE&gt; [flags]</code>
               </pre>
-              <p>The model can be specified as:</p>
+              <p>The source may be:</p>
               <ul>
                 <li>A bare model id: <code>Qwen3-0.6B-Q8_0</code> (resolved via the provider list)</li>
                 <li>A canonical id: <code>unsloth/Qwen3-0.6B-Q8_0</code> (skips provider walk)</li>
@@ -202,12 +202,23 @@ kronk model ps`}</code>
                 <li>With revision: <code>owner/repo:Q4_K_M@revision</code></li>
               </ul>
               <p>
-                Bare or canonical ids consult <code>~/.kronk/catalog.yaml</code> first,
-                then walk the configured provider list (<code>unsloth</code>,{' '}
-                <code>ggml-org</code>, <code>bartowski</code>, ...) and persist the
-                resolution. Shorthand and URL forms auto-resolve multi-file (split)
-                models and projection files for vision/audio models.
+                By default the projection file (when applicable) is located
+                automatically. Bare and canonical ids consult{' '}
+                <code>~/.kronk/catalog.yaml</code> first, then walk the configured
+                provider list (<code>unsloth</code>, <code>ggml-org</code>,{' '}
+                <code>bartowski</code>, ...) and persist the resolution. Multi-file
+                (split) models are downloaded in full when the resolver expands
+                them.
               </p>
+              <p>
+                Use <code>--proj &lt;URL&gt;</code> to pin a specific projection
+                file. The flag takes a fully qualified HuggingFace URL and forces
+                the explicit-URL workflow:
+              </p>
+              <ul>
+                <li>With an id source the resolver is consulted only to expand split shards; the supplied projection URL replaces the resolver's choice.</li>
+                <li>With a URL source the model file at that URL is paired directly with the supplied projection URL — no resolver lookup.</li>
+              </ul>
               <table className="flags-table">
                 <thead>
                   <tr>
@@ -216,6 +227,10 @@ kronk model ps`}</code>
                   </tr>
                 </thead>
                 <tbody>
+                  <tr>
+                    <td><code>--proj &lt;URL&gt;</code></td>
+                    <td>Fully qualified projection (mmproj) URL to pin (skips auto-resolution)</td>
+                  </tr>
                   <tr>
                     <td><code>--local</code></td>
                     <td>Run without the model server</td>
@@ -260,14 +275,14 @@ kronk model ps`}</code>
               </table>
               <h5>Example</h5>
               <pre className="code-block">
-                <code>{`# Pull by canonical HuggingFace id
+                <code>{`# Pull by canonical HuggingFace id (projection auto-resolved)
 kronk model pull unsloth/Qwen3-8B-GGUF
 
 # Pull with shorthand (auto-resolves files)
 kronk model pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
-# Pull a vision model with mmproj file
-kronk model pull <MODEL_URL> <MMPROJ_URL>
+# Pull a vision model and pin a specific projection file
+kronk model pull <MODEL_URL> --proj <MMPROJ_URL>
 
 # Pull with local mode
 kronk model pull unsloth/Qwen3-8B-GGUF --local`}</code>
