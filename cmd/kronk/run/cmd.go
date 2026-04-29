@@ -68,7 +68,7 @@ EXAMPLES
 
 ENVIRONMENT VARIABLES
 
-  KRONK_BASE_PATH    Base directory for kronk data (models, templates, catalog)
+  KRONK_BASE_PATH    Base directory for kronk data (models, libraries, catalog, model_config)
   KRONK_MODELS       Path to the models directory (default: $HOME/.kronk/models)`,
 	Args: cobra.ExactArgs(1),
 	Run:  main,

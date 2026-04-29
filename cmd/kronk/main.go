@@ -38,18 +38,15 @@ USAGE
 
 COMMANDS
   server    Start/stop the model server
-  catalog   Manage model catalogs (list, pull, show, update)
   model     Manage local models (list, pull, remove, show, ps)
+  catalog   Browse and manage the model catalog (list, show, remove)
   libs      Install/upgrade llama.cpp libraries
   security  Manage API keys and JWT tokens
   run       Run a model directly for interactive chat (no server needed)
 
 QUICK START
-  # List available models
-  $ kronk catalog list --local
-
   # Download a model (e.g., Qwen3-8B)
-  $ kronk catalog pull Qwen3-8B-Q8_0 --local
+  $ kronk model pull Qwen3-8B-Q8_0 --local
 
   # Start the server (runs on http://localhost:11435)
   $ kronk server start
@@ -70,7 +67,7 @@ OPERATING MODES
   Local mode (--local)  - Direct file operations without connecting to a server
 
 ENVIRONMENT VARIABLES
-  KRONK_BASE_PATH      Base path for kronk data (models, templates, catalogs)
+  KRONK_BASE_PATH      Base path for kronk data (models, libraries, catalog, model_config)
   KRONK_PROCESSOR      Hardware target: cpu, cuda, metal, rocm, vulkan
   KRONK_LIB_VERSION    Pin llama.cpp library version
   KRONK_HF_TOKEN       HuggingFace auth token for gated models
@@ -89,7 +86,7 @@ FOR MORE INFORMATION
 func init() {
 	rootCmd.Version = version
 
-	rootCmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, templates, catalog)")
+	rootCmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, libraries, catalog, model_config)")
 
 	rootCmd.AddCommand(server.Cmd)
 	rootCmd.AddCommand(libs.Cmd)

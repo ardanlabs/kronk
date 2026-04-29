@@ -111,7 +111,7 @@ d := model.D{
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [{"role": "user", "content": "List 3 languages in JSON"}],
     "grammar": "root ::= object\nvalue ::= object | array | string | number | \"true\" | \"false\" | \"null\"\nobject ::= \"{\" ws ( string \":\" ws value (\",\" ws string \":\" ws value)* )? ws \"}\"\narray ::= \"[\" ws ( value (\",\" ws value)* )? ws \"]\"\nstring ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" [\"\\\\bfnrt/] | \"\\\\u\" [0-9a-fA-F]{4})* \"\\\"\"\nnumber ::= \"-\"? (\"0\" | [1-9][0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?\nws ::= [ \\t\\n\\r]*"
   }'
@@ -140,7 +140,7 @@ Via API with `json_schema` field:
 
 ```json
 {
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "messages": [...],
   "json_schema": {
     "type": "object",
@@ -189,7 +189,7 @@ Setting `top_logprobs > 0` implicitly enables `logprobs`.
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [
       {"role": "user", "content": "What is 2+2?"}
     ],

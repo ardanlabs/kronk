@@ -3,6 +3,7 @@ package run
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -86,23 +86,16 @@ func installSystem(cfg Config) (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	ctlg, err := catalog.New(catalog.WithBasePath(cfg.BasePath))
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
-	}
-
-	if err := ctlg.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
-	}
-
 	mdls, err := models.NewWithPaths(cfg.BasePath)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	mp, err := mdls.FullPath(cfg.ModelName)
+	fmt.Println("Resolving model:", cfg.ModelName)
+
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, cfg.ModelName)
 	if err != nil {
-		return models.Path{}, fmt.Errorf("model %q not found - use 'kronk model pull' first: %w", cfg.ModelName, err)
+		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
 
 	return mp, nil
@@ -203,64 +196,71 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	}
 	fmt.Println()
 
-	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow())
-	fmt.Printf("- k/v          : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- nBatch       :", krn.ModelConfig().NBatch())
-	fmt.Println("- nuBatch      :", krn.ModelConfig().NUBatch())
-	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
-	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
-	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
+	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow())
+	fmt.Printf("- k/v            : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
+	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention)
+	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
+	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
+	fmt.Println("- modelType      :", krn.ModelInfo().Type)
+	fmt.Println("- embeddings     :", krn.ModelInfo().IsEmbedModel)
+	fmt.Println("- isGPT          :", krn.ModelInfo().IsGPTModel)
+	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
+	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
+	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
+	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
+	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
+	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
+	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache())
+	if n := krn.ModelConfig().PtrNGpuLayers; n != nil {
+		fmt.Println("- nGPULayers     :", *n)
+	} else {
+		fmt.Println("- nGPULayers     : all")
+	}
 
 	if runCfg.JinjaFile != "" {
-		fmt.Println("- jinjaFile    :", runCfg.JinjaFile)
-	}
-	if runCfg.FlashAttention != "" {
-		fmt.Println("- flashAttn    :", runCfg.FlashAttention)
-	}
-	if runCfg.NGpuLayers != 0 {
-		fmt.Println("- ngpuLayers   :", runCfg.NGpuLayers)
+		fmt.Println("- jinjaFile      :", runCfg.JinjaFile)
 	}
 	if runCfg.Devices != "" {
-		fmt.Println("- devices      :", runCfg.Devices)
+		fmt.Println("- devices        :", runCfg.Devices)
 	}
 	if runCfg.MainGPU >= 0 {
-		fmt.Println("- mainGPU      :", runCfg.MainGPU)
+		fmt.Println("- mainGPU        :", runCfg.MainGPU)
 	}
 	if runCfg.TensorSplit != "" {
-		fmt.Println("- tensorSplit  :", runCfg.TensorSplit)
+		fmt.Println("- tensorSplit    :", runCfg.TensorSplit)
 	}
 	if runCfg.SplitMode != "" {
-		fmt.Println("- splitMode    :", runCfg.SplitMode)
+		fmt.Println("- splitMode      :", runCfg.SplitMode)
 	}
 	if runCfg.MaxTokens != 0 {
-		fmt.Println("- maxTokens    :", runCfg.MaxTokens)
+		fmt.Println("- maxTokens      :", runCfg.MaxTokens)
 	}
 	if runCfg.Temperature != 0 {
-		fmt.Println("- temperature  :", runCfg.Temperature)
+		fmt.Println("- temperature    :", runCfg.Temperature)
 	}
 	if runCfg.TopP != 0 {
-		fmt.Println("- topP         :", runCfg.TopP)
+		fmt.Println("- topP           :", runCfg.TopP)
 	}
 	if runCfg.TopK != 0 {
-		fmt.Println("- topK         :", runCfg.TopK)
+		fmt.Println("- topK           :", runCfg.TopK)
 	}
 	if runCfg.MinP != 0 {
-		fmt.Println("- minP         :", runCfg.MinP)
+		fmt.Println("- minP           :", runCfg.MinP)
 	}
 	if runCfg.RepeatPenalty != 0 {
-		fmt.Println("- repeatPen    :", runCfg.RepeatPenalty)
+		fmt.Println("- repeatPen      :", runCfg.RepeatPenalty)
 	}
 	if runCfg.FrequencyPenalty != 0 {
-		fmt.Println("- freqPen      :", runCfg.FrequencyPenalty)
+		fmt.Println("- freqPen        :", runCfg.FrequencyPenalty)
 	}
 	if runCfg.PresencePenalty != 0 {
-		fmt.Println("- presPen      :", runCfg.PresencePenalty)
+		fmt.Println("- presPen        :", runCfg.PresencePenalty)
 	}
 	if runCfg.EnableThinking != "" {
-		fmt.Println("- thinking     :", runCfg.EnableThinking)
+		fmt.Println("- thinking       :", runCfg.EnableThinking)
 	}
 	if runCfg.ReasoningEffort != "" {
-		fmt.Println("- reasonEffort :", runCfg.ReasoningEffort)
+		fmt.Println("- reasonEffort   :", runCfg.ReasoningEffort)
 	}
 
 	return krn, nil
@@ -303,6 +303,7 @@ func chat(krn *kronk.Kronk, cfg Config) error {
 
 			d := model.D{
 				"messages": messages,
+				"tools":    toolDocuments(),
 			}
 
 			if cfg.MaxTokens != 0 {
@@ -376,6 +377,28 @@ func userInput(messages []model.D) ([]model.D, error) {
 	return messages, nil
 }
 
+func toolDocuments() []model.D {
+	return model.DocumentArray(
+		model.D{
+			"type": "function",
+			"function": model.D{
+				"name":        "get_weather",
+				"description": "Get the current weather for a location",
+				"parameters": model.D{
+					"type": "object",
+					"properties": model.D{
+						"location": model.D{
+							"type":        "string",
+							"description": "The location to get the weather for, e.g. San Francisco, CA",
+						},
+					},
+					"required": []any{"location"},
+				},
+			},
+		},
+	)
+}
+
 func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (<-chan model.ChatResponse, error) {
 	ch, err := krn.ChatStreaming(ctx, d)
 	if err != nil {
@@ -390,10 +413,15 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatRes
 
 	var reasoning bool
 	var lr model.ChatResponse
+	var content strings.Builder
 
 loop:
 	for resp := range ch {
 		lr = resp
+
+		if len(resp.Choices) == 0 {
+			continue
+		}
 
 		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
@@ -410,6 +438,7 @@ loop:
 
 			fmt.Printf("\u001b[92mModel Asking For Tool Calls:\n\u001b[0m")
 
+			var toolCallDocs []model.D
 			for _, tool := range resp.Choices[0].Delta.ToolCalls {
 				fmt.Printf("\u001b[92mToolID[%s]: %s(%s)\n\u001b[0m",
 					tool.ID,
@@ -417,13 +446,29 @@ loop:
 					tool.Function.Arguments,
 				)
 
-				messages = append(messages,
-					model.TextMessage("tool", fmt.Sprintf("Tool call %s: %s(%v)\n",
-						tool.ID,
-						tool.Function.Name,
-						tool.Function.Arguments),
-					),
-				)
+				argsJSON, _ := json.Marshal(tool.Function.Arguments)
+				toolCallDocs = append(toolCallDocs, model.D{
+					"id":   tool.ID,
+					"type": "function",
+					"function": model.D{
+						"name":      tool.Function.Name,
+						"arguments": string(argsJSON),
+					},
+				})
+			}
+
+			messages = append(messages, model.D{
+				"role":       "assistant",
+				"tool_calls": toolCallDocs,
+			})
+
+			for _, tool := range resp.Choices[0].Delta.ToolCalls {
+				messages = append(messages, model.D{
+					"role":         "tool",
+					"tool_call_id": tool.ID,
+					"name":         tool.Function.Name,
+					"content":      `{"temperature": "72°F", "condition": "sunny"}`,
+				})
 			}
 
 			break loop
@@ -444,9 +489,17 @@ loop:
 				}
 			}
 
+			content.WriteString(resp.Choices[0].Delta.Content)
 			fmt.Printf("%s", resp.Choices[0].Delta.Content)
 		}
 	}
+
+	// Append the assistant's response to conversation history.
+	if content.Len() > 0 {
+		messages = append(messages, model.TextMessage(model.RoleAssistant, content.String()))
+	}
+
+	// -------------------------------------------------------------------------
 
 	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
 	contextWindow := krn.ModelConfig().ContextWindow()

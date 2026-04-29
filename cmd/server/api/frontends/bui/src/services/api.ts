@@ -15,11 +15,7 @@ import type {
   VRAMRequest,
   VRAMCalculatorResponse,
   HFLookupResponse,
-  SaveCatalogRequest,
-  SaveCatalogResponse,
-  CatalogFileInfo,
-  PublishCatalogResponse,
-  RepoPathResponse,
+  ResolveSourceResponse,
   PlaygroundTemplateInfo,
   PlaygroundTemplateListResponse,
   PlaygroundTemplateResponse,
@@ -192,13 +188,17 @@ class ApiService {
     projUrl: string | undefined,
     onMessage: (data: PullResponse) => void,
     onError: (error: string) => void,
-    onComplete: () => void
+    onComplete: () => void,
+    downloadServer?: string
   ): () => void {
     const controller = new AbortController();
 
-    const body: { model_url: string; proj_url?: string } = { model_url: modelUrl };
+    const body: { model_url: string; proj_url?: string; download_server?: string } = { model_url: modelUrl };
     if (projUrl) {
       body.proj_url = projUrl;
+    }
+    if (downloadServer) {
+      body.download_server = downloadServer;
     }
 
     fetch(`${this.baseUrl}/models/pull`, {
@@ -277,79 +277,16 @@ class ApiService {
     return this.request<CatalogModelResponse>(`/catalog/${encodeURIComponent(id)}`);
   }
 
-  pullCatalogModel(
-    id: string,
-    onMessage: (data: PullResponse) => void,
-    onError: (error: string) => void,
-    onComplete: () => void,
-    downloadServer?: string
-  ): () => void {
-    const controller = new AbortController();
+  async removeCatalogModel(id: string): Promise<void> {
+    await this.request(`/catalog/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
 
-    const body: { download_server?: string } = {};
-    if (downloadServer) {
-      body.download_server = downloadServer;
-    }
-
-    fetch(`${this.baseUrl}/catalog/pull/${encodeURIComponent(id)}`, {
+  async reconcileCatalog(): Promise<void> {
+    await this.request('/catalog/reconcile', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          onError(`HTTP ${response.status}`);
-          return;
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-          onError('Streaming not supported');
-          return;
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let receivedSuccess = false;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
-            if (!jsonStr.trim()) continue;
-            try {
-              const data = JSON.parse(jsonStr) as PullResponse;
-              onMessage(data);
-              if (data.status === 'complete' || data.downloaded) {
-                receivedSuccess = true;
-                onComplete();
-                return;
-              }
-            } catch {
-              onError('Failed to parse response');
-            }
-          }
-        }
-
-        if (!receivedSuccess && !controller.signal.aborted) {
-          onError('Stream ended before completion');
-        }
-      })
-      .catch((err) => {
-        if (err.name !== 'AbortError') {
-          onError('Connection error');
-        }
-      });
-
-    return () => controller.abort();
+    });
   }
 
   pullLibs(
@@ -550,32 +487,11 @@ class ApiService {
     });
   }
 
-  async saveCatalogModel(data: SaveCatalogRequest): Promise<SaveCatalogResponse> {
-    return this.request<SaveCatalogResponse>('/catalog/save', {
+  async resolveSource(source: string): Promise<ResolveSourceResponse> {
+    return this.request<ResolveSourceResponse>('/catalog/resolve', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ source }),
     });
-  }
-
-  async deleteCatalogModel(id: string): Promise<SaveCatalogResponse> {
-    return this.request<SaveCatalogResponse>(`/catalog/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async listCatalogFiles(): Promise<CatalogFileInfo[]> {
-    return this.request<CatalogFileInfo[]>('/catalog-files');
-  }
-
-  async publishCatalogModel(catalogFile: string): Promise<PublishCatalogResponse> {
-    return this.request<PublishCatalogResponse>('/catalog/publish', {
-      method: 'POST',
-      body: JSON.stringify({ catalog_file: catalogFile }),
-    });
-  }
-
-  async getCatalogRepoPath(): Promise<RepoPathResponse> {
-    return this.request<RepoPathResponse>('/catalog-repo-path');
   }
 
   async calculateVRAM(request: VRAMRequest, token?: string): Promise<VRAMCalculatorResponse> {

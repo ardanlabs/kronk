@@ -5,7 +5,8 @@ import (
 	"os"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
+	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/spf13/cobra"
 )
@@ -20,7 +21,7 @@ Environment Variables (web mode - default):
       KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.
 
 Environment Variables (--local mode):
-      KRONK_BASE_PATH  Base path for kronk data (models, templates, catalog)
+      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)
       KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory`,
 	Args: cobra.ExactArgs(1),
 	Run:  main,
@@ -45,14 +46,23 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	cat, err := catalog.New(catalog.WithBasePath(client.GetBasePath(cmd)))
-	if err != nil {
-		return fmt.Errorf("unable to create catalog system: %w", err)
-	}
-
 	switch local {
 	case true:
-		err = runLocal(mdls, cat, args)
+		if ierr := kronk.Init(); ierr != nil {
+			return fmt.Errorf("unable to init kronk: %w", ierr)
+		}
+
+		modelConfigFile, ferr := defaults.ModelConfigFile("", client.GetBasePath(cmd))
+		if ferr != nil {
+			return fmt.Errorf("resolving model config file: %w", ferr)
+		}
+
+		mc, lerr := models.LoadModelConfig(modelConfigFile)
+		if lerr != nil {
+			return fmt.Errorf("loading model config: %w", lerr)
+		}
+
+		err = runLocal(mdls, mc, args)
 	default:
 		err = runWeb(args)
 	}

@@ -2,7 +2,8 @@
   "mcpServers": {
     "Kronk": {
       "autoApprove": [
-        "web_search"
+        "web_search",
+        "fuzzy_edit"
       ],
       "disabled": false,
       "timeout": 60,

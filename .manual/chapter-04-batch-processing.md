@@ -11,6 +11,7 @@
 - [4.7 Example Configuration](#47-example-configuration)
 - [4.8 IMC Slot Scheduling](#48-imc-slot-scheduling)
 - [4.9 Model Types and State Management](#49-model-types-and-state-management)
+- [4.10 Debugging State Management](#410-debugging-state-management)
 
 ---
 
@@ -124,12 +125,12 @@ so it's important to balance throughput against available VRAM.
 #### Enable Batch Processing
 
 By default, the batch engine runs with a single slot (`NSeqMax=1`). To enable
-parallel request processing, set `NSeqMax > 1` in your model config:
+parallel request processing, set `nseq-max > 1` in
+`~/.kronk/model_config.yaml`:
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    n_seq_max: 4 # 4 concurrent requests
+Qwen/Qwen3-8B-Q8_0:
+  nseq-max: 4 # 4 concurrent requests
 ```
 
 #### Queue Depth
@@ -163,8 +164,8 @@ allocates its own KV cache partition proportional to the full context window.
 Each slot reserves its own KV cache partition, so increasing `NSeqMax`
 increases VRAM usage proportionally. IMC does not add extra sequences.
 For details on how slot memory is allocated and how to estimate total VRAM, see
-[Section 3.5](#35-parallel-inference-nseqmax) and
-[Section 3.7](#37-vram-estimation).
+[Section 3.7 — Parallel Inference (NSeqMax)](chapter-03-model-configuration.md#37-parallel-inference-nseqmax)
+and [Section 3.10 — VRAM Estimation](chapter-03-model-configuration.md#310-vram-estimation).
 
 ### 4.5 Concurrency by Model Type
 
@@ -244,9 +245,9 @@ concurrency for your users without saturating the GPU or running out of VRAM.
 
 **Recommended Settings**
 
-- Single user, interactive: `n_seq_max: 1-2`
-- Multi-user API server: `n_seq_max: 4-8`
-- High-throughput batch jobs: `n_seq_max: 8-16`
+- Single user, interactive: `nseq-max: 1-2`
+- Multi-user API server: `nseq-max: 4-8`
+- High-throughput batch jobs: `nseq-max: 8-16`
 
 **Monitoring**
 
@@ -254,9 +255,9 @@ Use request tracing to watch for long `queue-wait` spans, which indicate
 requests are waiting for an available slot. If you see consistently long
 queue waits, consider:
 
-1. Increasing `NSeqMax` (if VRAM allows)
-2. Reducing `context_window` to fit more slots
-3. Using KV cache quantization (`cache_type_k/v: q8_0`)
+1. Increasing `nseq-max` (if VRAM allows)
+2. Reducing `context-window` to fit more slots
+3. Using KV cache quantization (`cache-type-k`/`cache-type-v: q8_0`)
 
 See [Chapter 14: Observability](#chapter-14-observability) for details on
 tracing and metrics.
@@ -267,20 +268,20 @@ The following config shows a high-throughput setup that balances concurrency,
 memory, and caching for a multi-user API server:
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 8192
-    n_seq_max: 8
-    n_batch: 2048
-    n_ubatch: 512
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    incremental_cache: true
+# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 8192
+  nseq-max: 8
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  incremental-cache: true
 ```
 
 This configuration handles 8 concurrent requests, uses quantized KV cache to
 reduce memory, and caches conversations incrementally for faster prefill. Here is the
-VRAM estimate (see [Section 3.7](#37-vram-estimation) for the full formula):
+VRAM estimate (see [Section 3.10 — VRAM Estimation](chapter-03-model-configuration.md#310-vram-estimation) for the full formula):
 
 ```
 Model                   : Qwen3-8B-Q8_0

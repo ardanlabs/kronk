@@ -10,7 +10,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -69,6 +68,7 @@ type ListModelDetail struct {
 	Size                 int64           `json:"size"`
 	Modified             time.Time       `json:"modified"`
 	Validated            bool            `json:"validated"`
+	HasProjection        bool            `json:"has_projection"`
 	Sampling             *SamplingConfig `json:"sampling,omitempty"`
 	DraftModelID         string          `json:"draft_model_id,omitempty"`
 }
@@ -85,7 +85,7 @@ func (app ListModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.ModelConfig, extendedConfig bool) ListModelInfoResponse {
+func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]models.ModelConfig, extendedConfig bool) ListModelInfoResponse {
 	list := ListModelInfoResponse{
 		Object: "list",
 	}
@@ -101,6 +101,7 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.
 			Size:                 mf.Size,
 			Modified:             mf.Modified,
 			Validated:            mf.Validated,
+			HasProjection:        mf.HasProjection,
 		}
 
 		if extendedConfig {
@@ -144,25 +145,23 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]catalog.
 
 // =============================================================================
 
-// PullRequest represents the input for the pull command.
+// PullRequest represents the input for the pull command. ModelURL
+// accepts a direct HuggingFace URL, an owner/repo/file.gguf path, a
+// canonical catalog id (e.g. "unsloth/Qwen3-8B-Q8_0"), or a bare model
+// id ("Qwen3-8B-Q8_0") which is resolved via the catalog/provider list.
+//
+// DownloadServer, when set, redirects the pull to a peer Kronk server
+// on the local network ("host:port"). The peer must be running with the
+// download endpoint enabled. Useful in classroom/workshop settings
+// where Internet access is slow or unreliable.
 type PullRequest struct {
-	ModelURL  string   `json:"model_url"`
-	ProjURL   string   `json:"proj_url"`
-	SplitURLs []string `json:"-"`
-}
-
-// Decode implements the decoder interface.
-func (app *PullRequest) Decode(data []byte) error {
-	return json.Unmarshal(data, app)
-}
-
-// PullCatalogRequest represents the request to pull a catalog model.
-type PullCatalogRequest struct {
+	ModelURL       string `json:"model_url"`
+	ProjURL        string `json:"proj_url"`
 	DownloadServer string `json:"download_server"`
 }
 
 // Decode implements the decoder interface.
-func (app *PullCatalogRequest) Decode(data []byte) error {
+func (app *PullRequest) Decode(data []byte) error {
 	return json.Unmarshal(data, app)
 }
 
@@ -236,11 +235,10 @@ type ModelInfoResponse struct {
 	Size          int64             `json:"size"`
 	HasProjection bool              `json:"has_projection"`
 	IsGPT         bool              `json:"is_gpt"`
-	WebPage       string            `json:"web_page,omitempty"`
 	Template      string            `json:"template"`
 	Metadata      map[string]string `json:"metadata"`
-	VRAM          *VRAM             `json:"vram,omitempty"`
 	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
+	Vram          *VRAMResponse     `json:"vram,omitempty"`
 }
 
 // Encode implements the encoder interface.
@@ -249,7 +247,7 @@ func (app ModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfig, vram models.VRAM, webPage string) ModelInfoResponse {
+func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig, vram *VRAMResponse) ModelInfoResponse {
 	metadata := make(map[string]string, len(mi.Metadata))
 	for k, v := range mi.Metadata {
 		metadata[k] = formatMetadataValue(k, v)
@@ -264,7 +262,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 		Size:          fi.Size,
 		HasProjection: mi.HasProjection,
 		IsGPT:         mi.IsGPTModel,
-		WebPage:       webPage,
 		Template:      rmc.Template,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
@@ -322,34 +319,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc catalog.ModelConfi
 				ReasoningEffort:  rmc.Sampling.ReasoningEffort,
 			},
 		},
-	}
-
-	if vram.TotalVRAM > 0 {
-		mir.VRAM = &VRAM{
-			Input: VRAMInput{
-				ModelSizeBytes:    vram.Input.ModelSizeBytes,
-				ContextWindow:     vram.Input.ContextWindow,
-				BlockCount:        vram.Input.BlockCount,
-				HeadCountKV:       vram.Input.HeadCountKV,
-				KeyLength:         vram.Input.KeyLength,
-				ValueLength:       vram.Input.ValueLength,
-				BytesPerElement:   vram.Input.BytesPerElement,
-				Slots:             vram.Input.Slots,
-				EmbeddingLength:   vram.Input.EmbeddingLength,
-				MoE:               toAppMoEInfo(vram.Input.MoE),
-				Weights:           toAppWeightBreakdown(vram.Input.Weights),
-				ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
-			},
-			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
-			KVPerSlot:          vram.KVPerSlot,
-			SlotMemory:         vram.SlotMemory,
-			TotalVRAM:          vram.TotalVRAM,
-			MoE:                toAppMoEInfo(vram.MoE),
-			Weights:            toAppWeightBreakdown(vram.Weights),
-			ModelWeightsGPU:    vram.ModelWeightsGPU,
-			ModelWeightsCPU:    vram.ModelWeightsCPU,
-			ComputeBufferEst:   vram.ComputeBufferEst,
-		}
+		Vram: vram,
 	}
 
 	return mir
@@ -478,20 +448,6 @@ type VRAMInput struct {
 	ExpertLayersOnGPU int64            `json:"expert_layers_on_gpu,omitempty"`
 }
 
-// VRAM contains the calculated VRAM requirements.
-type VRAM struct {
-	Input              VRAMInput        `json:"input"`
-	KVPerTokenPerLayer int64            `json:"kv_per_token_per_layer"`
-	KVPerSlot          int64            `json:"kv_per_slot"`
-	SlotMemory         int64            `json:"slot_memory"`
-	TotalVRAM          int64            `json:"total_vram"`
-	MoE                *MoEInfo         `json:"moe,omitempty"`
-	Weights            *WeightBreakdown `json:"weights,omitempty"`
-	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
-	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
-	ComputeBufferEst   int64            `json:"compute_buffer_est"`
-}
-
 // SamplingConfig represents sampling parameters for model inference.
 type SamplingConfig struct {
 	Temperature      float32 `json:"temperature"`
@@ -532,17 +488,6 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 	}
 }
 
-func fromAppMoEConfig(m *MoEConfig) *model.MoEConfig {
-	if m == nil {
-		return nil
-	}
-
-	return &model.MoEConfig{
-		Mode:                             model.MoEMode(m.Mode),
-		PtrKeepExpertsOnGPUForTopNLayers: m.PtrKeepExpertsOnGPUForTopNLayers,
-	}
-}
-
 // ModelConfig represents the model configuration the model will use by default.
 type ModelConfig struct {
 	ContextWindow       *int                     `json:"context-window"`
@@ -579,297 +524,6 @@ type ModelConfig struct {
 	PtrYarnBetaFast     *float32                 `json:"yarn-beta-fast"`
 	PtrYarnBetaSlow     *float32                 `json:"yarn-beta-slow"`
 	PtrYarnOrigCtx      *int                     `json:"yarn-orig-ctx"`
-}
-
-// CatalogMetadata represents extra information about the model.
-type CatalogMetadata struct {
-	Created     time.Time `json:"created"`
-	Collections string    `json:"collections"`
-	Description string    `json:"description"`
-}
-
-// CatalogCapabilities represents the capabilities of a model.
-type CatalogCapabilities struct {
-	Endpoint  string `json:"endpoint"`
-	Images    bool   `json:"images"`
-	Audio     bool   `json:"audio"`
-	Video     bool   `json:"video"`
-	Streaming bool   `json:"streaming"`
-	Reasoning bool   `json:"reasoning"`
-	Tooling   bool   `json:"tooling"`
-	Embedding bool   `json:"embedding"`
-	Rerank    bool   `json:"rerank"`
-}
-
-// CatalogFile represents the actual file url and size.
-type CatalogFile struct {
-	URL  string `json:"url"`
-	Size string `json:"size"`
-}
-
-// CatalogFiles represents file information for a model.
-type CatalogFiles struct {
-	Models []CatalogFile `json:"model"`
-	Proj   CatalogFile   `json:"proj"`
-}
-
-// CatalogModelResponse represents information for a model.
-type CatalogModelResponse struct {
-	ID             string              `json:"id"`
-	Category       string              `json:"category"`
-	OwnedBy        string              `json:"owned_by"`
-	ModelFamily    string              `json:"model_family"`
-	Architecture   string              `json:"architecture"`
-	GGUFArch       string              `json:"gguf_arch"`
-	Parameters     string              `json:"parameters"`
-	ParameterCount int64               `json:"parameter_count"`
-	WebPage        string              `json:"web_page"`
-	GatedModel     bool                `json:"gated_model"`
-	Template       string              `json:"template"`
-	TotalSize      string              `json:"total_size"`
-	TotalSizeBytes int64               `json:"total_size_bytes"`
-	Files          CatalogFiles        `json:"files"`
-	Capabilities   CatalogCapabilities `json:"capabilities"`
-	Metadata       CatalogMetadata     `json:"metadata"`
-	ModelConfig    *ModelConfig        `json:"model_config,omitempty"`
-	BaseConfig     *ModelConfig        `json:"base_config,omitempty"`
-	ModelMetadata  map[string]string   `json:"model_metadata,omitempty"`
-	VRAM           *VRAM               `json:"vram,omitempty"`
-	Downloaded     bool                `json:"downloaded"`
-	Validated      bool                `json:"validated"`
-	CatalogFile    string              `json:"catalog_file,omitempty"`
-}
-
-// Encode implements the encoder interface.
-func (app CatalogModelResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-// CatalogModelsResponse represents a list of catalog models.
-type CatalogModelsResponse []CatalogModelResponse
-
-// Encode implements the encoder interface.
-func (app CatalogModelsResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-func toCatalogModelResponse(catDetails catalog.ModelDetails, rmc *catalog.ModelConfig, metadata map[string]string, vram *models.VRAM) CatalogModelResponse {
-	mdls := make([]CatalogFile, len(catDetails.Files.Models))
-	for i, model := range catDetails.Files.Models {
-		model.URL = models.NormalizeHuggingFaceDownloadURL(model.URL)
-		mdls[i] = CatalogFile(model)
-	}
-
-	formattedMetadata := make(map[string]string)
-	for k, v := range metadata {
-		formattedMetadata[k] = formatMetadataValue(k, v)
-	}
-
-	catDetails.Files.Proj.URL = models.NormalizeHuggingFaceDownloadURL(catDetails.Files.Proj.URL)
-
-	resp := CatalogModelResponse{
-		ID:             catDetails.ID,
-		Category:       catDetails.Category,
-		OwnedBy:        catDetails.OwnedBy,
-		ModelFamily:    catDetails.ModelFamily,
-		Architecture:   catDetails.Architecture,
-		GGUFArch:       catDetails.GGUFArch,
-		WebPage:        models.NormalizeHuggingFaceURL(catDetails.WebPage),
-		GatedModel:     catDetails.GatedModel,
-		Template:       catDetails.Template,
-		TotalSize:      catDetails.Files.TotalSize(),
-		TotalSizeBytes: catDetails.Files.TotalSizeBytes(),
-		Files: CatalogFiles{
-			Models: mdls,
-			Proj:   CatalogFile(catDetails.Files.Proj),
-		},
-		Capabilities: CatalogCapabilities{
-			Endpoint:  catDetails.Capabilities.Endpoint,
-			Images:    catDetails.Capabilities.Images,
-			Audio:     catDetails.Capabilities.Audio,
-			Video:     catDetails.Capabilities.Video,
-			Streaming: catDetails.Capabilities.Streaming,
-			Reasoning: catDetails.Capabilities.Reasoning,
-			Tooling:   catDetails.Capabilities.Tooling,
-			Embedding: catDetails.Capabilities.Embedding,
-			Rerank:    catDetails.Capabilities.Rerank,
-		},
-		Metadata: CatalogMetadata{
-			Created:     catDetails.Metadata.Created,
-			Collections: catDetails.Metadata.Collections,
-			Description: catDetails.Metadata.Description,
-		},
-		ModelMetadata: formattedMetadata,
-		Downloaded:    catDetails.Downloaded,
-		Validated:     catDetails.Validated,
-		CatalogFile:   catDetails.CatalogFile,
-	}
-
-	params := catDetails.Parameters
-	if params == "" {
-		params = catalog.ExtractParameterLabel(catDetails.ID)
-	}
-	resp.Parameters = params
-	resp.ParameterCount = catalog.ParseParameterCount(params)
-
-	if rmc != nil {
-		resp.ModelConfig = &ModelConfig{
-			ContextWindow:       rmc.PtrContextWindow,
-			NBatch:              rmc.PtrNBatch,
-			NUBatch:             rmc.PtrNUBatch,
-			NThreads:            rmc.PtrNThreads,
-			NThreadsBatch:       rmc.PtrNThreadsBatch,
-			CacheTypeK:          rmc.CacheTypeK,
-			CacheTypeV:          rmc.CacheTypeV,
-			UseDirectIO:         rmc.PtrUseDirectIO,
-			PtrUseMMap:          rmc.PtrUseMMap,
-			NUMA:                rmc.NUMA,
-			FlashAttention:      model.DerefFlashAttention(rmc.FlashAttention),
-			NSeqMax:             rmc.PtrNSeqMax,
-			PtrOffloadKQV:       rmc.PtrOffloadKQV,
-			PtrOpOffload:        rmc.PtrOpOffload,
-			PtrNGpuLayers:       rmc.PtrNGpuLayers,
-			PtrSplitMode:        rmc.PtrSplitMode,
-			TensorSplit:         rmc.TensorSplit,
-			TensorBuftOverrides: rmc.TensorBuftOverrides,
-			PtrMainGPU:          rmc.PtrMainGPU,
-			Devices:             rmc.Devices,
-			MoE:                 toAppMoEConfig(rmc.MoE),
-			PtrSWAFull:          rmc.PtrSWAFull,
-			IncrementalCache:    rmc.PtrIncrementalCache,
-			CacheMinTokens:      rmc.PtrCacheMinTokens,
-			CacheSlotTimeout:    rmc.PtrCacheSlotTimeout,
-			RopeScaling:         rmc.RopeScaling,
-			PtrRopeFreqBase:     rmc.PtrRopeFreqBase,
-			PtrRopeFreqScale:    rmc.PtrRopeFreqScale,
-			PtrYarnExtFactor:    rmc.PtrYarnExtFactor,
-			PtrYarnAttnFactor:   rmc.PtrYarnAttnFactor,
-			PtrYarnBetaFast:     rmc.PtrYarnBetaFast,
-			PtrYarnBetaSlow:     rmc.PtrYarnBetaSlow,
-			PtrYarnOrigCtx:      rmc.PtrYarnOrigCtx,
-			Sampling: SamplingConfig{
-				Temperature:      rmc.Sampling.Temperature,
-				TopK:             rmc.Sampling.TopK,
-				TopP:             rmc.Sampling.TopP,
-				MinP:             rmc.Sampling.MinP,
-				MaxTokens:        rmc.Sampling.MaxTokens,
-				RepeatPenalty:    rmc.Sampling.RepeatPenalty,
-				RepeatLastN:      rmc.Sampling.RepeatLastN,
-				DryMultiplier:    rmc.Sampling.DryMultiplier,
-				DryBase:          rmc.Sampling.DryBase,
-				DryAllowedLen:    rmc.Sampling.DryAllowedLen,
-				DryPenaltyLast:   rmc.Sampling.DryPenaltyLast,
-				XtcProbability:   rmc.Sampling.XtcProbability,
-				XtcThreshold:     rmc.Sampling.XtcThreshold,
-				XtcMinKeep:       rmc.Sampling.XtcMinKeep,
-				FrequencyPenalty: rmc.Sampling.FrequencyPenalty,
-				PresencePenalty:  rmc.Sampling.PresencePenalty,
-				EnableThinking:   rmc.Sampling.EnableThinking,
-				ReasoningEffort:  rmc.Sampling.ReasoningEffort,
-				Grammar:          rmc.Sampling.Grammar,
-			},
-		}
-	}
-
-	bmc := catDetails.BaseModelConfig
-	resp.BaseConfig = &ModelConfig{
-		ContextWindow:       bmc.PtrContextWindow,
-		NBatch:              bmc.PtrNBatch,
-		NUBatch:             bmc.PtrNUBatch,
-		NThreads:            bmc.PtrNThreads,
-		NThreadsBatch:       bmc.PtrNThreadsBatch,
-		CacheTypeK:          bmc.CacheTypeK,
-		CacheTypeV:          bmc.CacheTypeV,
-		UseDirectIO:         bmc.PtrUseDirectIO,
-		PtrUseMMap:          bmc.PtrUseMMap,
-		NUMA:                bmc.NUMA,
-		FlashAttention:      model.DerefFlashAttention(bmc.FlashAttention),
-		NSeqMax:             bmc.PtrNSeqMax,
-		PtrOffloadKQV:       bmc.PtrOffloadKQV,
-		PtrOpOffload:        bmc.PtrOpOffload,
-		PtrNGpuLayers:       bmc.PtrNGpuLayers,
-		PtrSplitMode:        bmc.PtrSplitMode,
-		TensorSplit:         bmc.TensorSplit,
-		TensorBuftOverrides: bmc.TensorBuftOverrides,
-		PtrMainGPU:          bmc.PtrMainGPU,
-		Devices:             bmc.Devices,
-		MoE:                 toAppMoEConfig(bmc.MoE),
-		PtrSWAFull:          bmc.PtrSWAFull,
-		IncrementalCache:    bmc.PtrIncrementalCache,
-		CacheMinTokens:      bmc.PtrCacheMinTokens,
-		CacheSlotTimeout:    bmc.PtrCacheSlotTimeout,
-		RopeScaling:         bmc.RopeScaling,
-		PtrRopeFreqBase:     bmc.PtrRopeFreqBase,
-		PtrRopeFreqScale:    bmc.PtrRopeFreqScale,
-		PtrYarnExtFactor:    bmc.PtrYarnExtFactor,
-		PtrYarnAttnFactor:   bmc.PtrYarnAttnFactor,
-		PtrYarnBetaFast:     bmc.PtrYarnBetaFast,
-		PtrYarnBetaSlow:     bmc.PtrYarnBetaSlow,
-		PtrYarnOrigCtx:      bmc.PtrYarnOrigCtx,
-		Sampling: SamplingConfig{
-			Temperature:      bmc.Sampling.Temperature,
-			TopK:             bmc.Sampling.TopK,
-			TopP:             bmc.Sampling.TopP,
-			MinP:             bmc.Sampling.MinP,
-			MaxTokens:        bmc.Sampling.MaxTokens,
-			RepeatPenalty:    bmc.Sampling.RepeatPenalty,
-			RepeatLastN:      bmc.Sampling.RepeatLastN,
-			DryMultiplier:    bmc.Sampling.DryMultiplier,
-			DryBase:          bmc.Sampling.DryBase,
-			DryAllowedLen:    bmc.Sampling.DryAllowedLen,
-			DryPenaltyLast:   bmc.Sampling.DryPenaltyLast,
-			XtcProbability:   bmc.Sampling.XtcProbability,
-			XtcThreshold:     bmc.Sampling.XtcThreshold,
-			XtcMinKeep:       bmc.Sampling.XtcMinKeep,
-			FrequencyPenalty: bmc.Sampling.FrequencyPenalty,
-			PresencePenalty:  bmc.Sampling.PresencePenalty,
-			EnableThinking:   bmc.Sampling.EnableThinking,
-			ReasoningEffort:  bmc.Sampling.ReasoningEffort,
-			Grammar:          bmc.Sampling.Grammar,
-		},
-	}
-
-	if vram != nil {
-		resp.VRAM = &VRAM{
-			Input: VRAMInput{
-				ModelSizeBytes:    vram.Input.ModelSizeBytes,
-				ContextWindow:     vram.Input.ContextWindow,
-				BlockCount:        vram.Input.BlockCount,
-				HeadCountKV:       vram.Input.HeadCountKV,
-				KeyLength:         vram.Input.KeyLength,
-				ValueLength:       vram.Input.ValueLength,
-				BytesPerElement:   vram.Input.BytesPerElement,
-				Slots:             vram.Input.Slots,
-				EmbeddingLength:   vram.Input.EmbeddingLength,
-				MoE:               toAppMoEInfo(vram.Input.MoE),
-				Weights:           toAppWeightBreakdown(vram.Input.Weights),
-				ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
-			},
-			KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
-			KVPerSlot:          vram.KVPerSlot,
-			SlotMemory:         vram.SlotMemory,
-			TotalVRAM:          vram.TotalVRAM,
-			MoE:                toAppMoEInfo(vram.MoE),
-			Weights:            toAppWeightBreakdown(vram.Weights),
-			ModelWeightsGPU:    vram.ModelWeightsGPU,
-			ModelWeightsCPU:    vram.ModelWeightsCPU,
-			ComputeBufferEst:   vram.ComputeBufferEst,
-		}
-	}
-
-	return resp
-}
-
-func toCatalogModelsResponse(list []catalog.ModelDetails) CatalogModelsResponse {
-	catalogModels := make([]CatalogModelResponse, len(list))
-
-	for i, model := range list {
-		catalogModels[i] = toCatalogModelResponse(model, nil, nil, nil)
-	}
-
-	return catalogModels
 }
 
 // =============================================================================
@@ -969,17 +623,65 @@ func (app VRAMResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
+func toVRAMResponse(vram models.VRAM, repoFiles []HFRepoFile) VRAMResponse {
+	return VRAMResponse{
+		Input: VRAMInput{
+			ModelSizeBytes:    vram.Input.ModelSizeBytes,
+			ContextWindow:     vram.Input.ContextWindow,
+			BlockCount:        vram.Input.BlockCount,
+			HeadCountKV:       vram.Input.HeadCountKV,
+			KeyLength:         vram.Input.KeyLength,
+			ValueLength:       vram.Input.ValueLength,
+			BytesPerElement:   vram.Input.BytesPerElement,
+			Slots:             vram.Input.Slots,
+			EmbeddingLength:   vram.Input.EmbeddingLength,
+			MoE:               toAppMoEInfo(vram.Input.MoE),
+			Weights:           toAppWeightBreakdown(vram.Input.Weights),
+			ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
+		},
+		KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
+		KVPerSlot:          vram.KVPerSlot,
+		SlotMemory:         vram.SlotMemory,
+		TotalVRAM:          vram.TotalVRAM,
+		MoE:                toAppMoEInfo(vram.MoE),
+		Weights:            toAppWeightBreakdown(vram.Weights),
+		ModelWeightsGPU:    vram.ModelWeightsGPU,
+		ModelWeightsCPU:    vram.ModelWeightsCPU,
+		ComputeBufferEst:   vram.ComputeBufferEst,
+		RepoFiles:          repoFiles,
+	}
+}
+
+// vramConfigFromRMC builds a VRAMConfig using the model's resolved
+// configuration so the model detail screen can render an initial
+// VRAM estimate without requiring user input.
+func vramConfigFromRMC(rmc models.ModelConfig) models.VRAMConfig {
+	contextWindow := int64(8192)
+	if rmc.PtrContextWindow != nil && *rmc.PtrContextWindow > 0 {
+		contextWindow = int64(*rmc.PtrContextWindow)
+	}
+
+	slots := int64(1)
+	if rmc.PtrNSeqMax != nil && *rmc.PtrNSeqMax > 0 {
+		slots = int64(*rmc.PtrNSeqMax)
+	}
+
+	bpe := int64(1)
+	switch rmc.CacheTypeK {
+	case model.GGMLTypeF32:
+		bpe = models.BytesPerElementF32
+	case model.GGMLTypeF16, model.GGMLTypeBF16, model.GGMLTypeAuto:
+		bpe = models.BytesPerElementF16
+	}
+
+	return models.VRAMConfig{
+		ContextWindow:   contextWindow,
+		BytesPerElement: bpe,
+		Slots:           slots,
+	}
+}
+
 // =============================================================================
-
-// HFLookupRequest represents the input for a HuggingFace model lookup.
-type HFLookupRequest struct {
-	Input string `json:"input"`
-}
-
-// Decode implements the decoder interface.
-func (app *HFLookupRequest) Decode(data []byte) error {
-	return json.Unmarshal(data, app)
-}
 
 // HFRepoFile represents a GGUF file in a HuggingFace repository.
 type HFRepoFile struct {
@@ -988,277 +690,7 @@ type HFRepoFile struct {
 	SizeStr  string `json:"size_str"`
 }
 
-// HFLookupResponse contains the results from a HuggingFace lookup.
-type HFLookupResponse struct {
-	Model     CatalogModelResponse `json:"model"`
-	RepoFiles []HFRepoFile         `json:"repo_files"`
-}
-
-// Encode implements the encoder interface.
-func (app HFLookupResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-func toHFLookupResponse(result catalog.HFLookupResult) HFLookupResponse {
-	resp := HFLookupResponse{
-		Model: toCatalogModelResponse(result.ModelDetails, nil, nil, nil),
-	}
-
-	for _, f := range result.RepoFiles {
-		resp.RepoFiles = append(resp.RepoFiles, HFRepoFile{
-			Filename: f.Filename,
-			Size:     f.Size,
-			SizeStr:  f.SizeStr,
-		})
-	}
-
-	return resp
-}
-
 // =============================================================================
-
-// SaveCatalogRequest represents the input for saving a catalog entry.
-type SaveCatalogRequest struct {
-	ID           string              `json:"id"`
-	Category     string              `json:"category"`
-	OwnedBy      string              `json:"owned_by"`
-	ModelFamily  string              `json:"model_family"`
-	Architecture string              `json:"architecture"`
-	Parameters   string              `json:"parameters"`
-	WebPage      string              `json:"web_page"`
-	GatedModel   bool                `json:"gated_model"`
-	Template     string              `json:"template"`
-	Files        CatalogFiles        `json:"files"`
-	Capabilities CatalogCapabilities `json:"capabilities"`
-	Metadata     CatalogMetadata     `json:"metadata"`
-	Config       *ModelConfig        `json:"config,omitempty"`
-	CatalogFile  string              `json:"catalog_file"`
-}
-
-// Decode implements the decoder interface.
-func (app *SaveCatalogRequest) Decode(data []byte) error {
-	return json.Unmarshal(data, app)
-}
-
-func (app SaveCatalogRequest) toModelDetails() catalog.ModelDetails {
-	modelFiles := make([]catalog.File, len(app.Files.Models))
-	for i, f := range app.Files.Models {
-		modelFiles[i] = catalog.File{URL: f.URL, Size: f.Size}
-	}
-
-	md := catalog.ModelDetails{
-		ID:           app.ID,
-		Category:     app.Category,
-		OwnedBy:      app.OwnedBy,
-		ModelFamily:  app.ModelFamily,
-		Architecture: app.Architecture,
-		Parameters:   app.Parameters,
-		WebPage:      app.WebPage,
-		GatedModel:   app.GatedModel,
-		Template:     app.Template,
-		Files: catalog.Files{
-			Models: modelFiles,
-			Proj:   catalog.File{URL: app.Files.Proj.URL, Size: app.Files.Proj.Size},
-		},
-		Capabilities: catalog.Capabilities{
-			Endpoint:  app.Capabilities.Endpoint,
-			Images:    app.Capabilities.Images,
-			Audio:     app.Capabilities.Audio,
-			Video:     app.Capabilities.Video,
-			Streaming: app.Capabilities.Streaming,
-			Reasoning: app.Capabilities.Reasoning,
-			Tooling:   app.Capabilities.Tooling,
-			Embedding: app.Capabilities.Embedding,
-			Rerank:    app.Capabilities.Rerank,
-		},
-		Metadata: catalog.Metadata{
-			Created:     app.Metadata.Created,
-			Collections: app.Metadata.Collections,
-			Description: app.Metadata.Description,
-		},
-	}
-
-	if app.Config != nil {
-		md.BaseModelConfig = catalog.ModelConfig{
-			PtrContextWindow:    app.Config.ContextWindow,
-			PtrNBatch:           app.Config.NBatch,
-			PtrNUBatch:          app.Config.NUBatch,
-			PtrNThreads:         app.Config.NThreads,
-			PtrNThreadsBatch:    app.Config.NThreadsBatch,
-			CacheTypeK:          app.Config.CacheTypeK,
-			CacheTypeV:          app.Config.CacheTypeV,
-			PtrUseDirectIO:      app.Config.UseDirectIO,
-			PtrUseMMap:          app.Config.PtrUseMMap,
-			NUMA:                app.Config.NUMA,
-			FlashAttention:      new(app.Config.FlashAttention),
-			PtrNSeqMax:          app.Config.NSeqMax,
-			PtrOffloadKQV:       app.Config.PtrOffloadKQV,
-			PtrOpOffload:        app.Config.PtrOpOffload,
-			PtrNGpuLayers:       app.Config.PtrNGpuLayers,
-			PtrSplitMode:        app.Config.PtrSplitMode,
-			TensorSplit:         app.Config.TensorSplit,
-			TensorBuftOverrides: app.Config.TensorBuftOverrides,
-			PtrMainGPU:          app.Config.PtrMainGPU,
-			Devices:             app.Config.Devices,
-			MoE:                 fromAppMoEConfig(app.Config.MoE),
-			PtrSWAFull:          app.Config.PtrSWAFull,
-			PtrIncrementalCache: app.Config.IncrementalCache,
-			PtrCacheMinTokens:   app.Config.CacheMinTokens,
-			PtrCacheSlotTimeout: app.Config.CacheSlotTimeout,
-			PtrInsecureLogging:  new(false),
-			RopeScaling:         app.Config.RopeScaling,
-			PtrRopeFreqBase:     app.Config.PtrRopeFreqBase,
-			PtrRopeFreqScale:    app.Config.PtrRopeFreqScale,
-			PtrYarnExtFactor:    app.Config.PtrYarnExtFactor,
-			PtrYarnAttnFactor:   app.Config.PtrYarnAttnFactor,
-			PtrYarnBetaFast:     app.Config.PtrYarnBetaFast,
-			PtrYarnBetaSlow:     app.Config.PtrYarnBetaSlow,
-			PtrYarnOrigCtx:      app.Config.PtrYarnOrigCtx,
-			Sampling: catalog.SamplingConfig{
-				Temperature:      app.Config.Sampling.Temperature,
-				TopK:             app.Config.Sampling.TopK,
-				TopP:             app.Config.Sampling.TopP,
-				MinP:             app.Config.Sampling.MinP,
-				MaxTokens:        app.Config.Sampling.MaxTokens,
-				RepeatPenalty:    app.Config.Sampling.RepeatPenalty,
-				RepeatLastN:      app.Config.Sampling.RepeatLastN,
-				DryMultiplier:    app.Config.Sampling.DryMultiplier,
-				DryBase:          app.Config.Sampling.DryBase,
-				DryAllowedLen:    app.Config.Sampling.DryAllowedLen,
-				DryPenaltyLast:   app.Config.Sampling.DryPenaltyLast,
-				XtcProbability:   app.Config.Sampling.XtcProbability,
-				XtcThreshold:     app.Config.Sampling.XtcThreshold,
-				XtcMinKeep:       app.Config.Sampling.XtcMinKeep,
-				FrequencyPenalty: app.Config.Sampling.FrequencyPenalty,
-				PresencePenalty:  app.Config.Sampling.PresencePenalty,
-				EnableThinking:   app.Config.Sampling.EnableThinking,
-				ReasoningEffort:  app.Config.Sampling.ReasoningEffort,
-				Grammar:          app.Config.Sampling.Grammar,
-			},
-		}
-	}
-
-	return md
-}
-
-// SaveCatalogResponse is returned after saving or deleting a catalog entry.
-type SaveCatalogResponse struct {
-	Status string `json:"status"`
-	ID     string `json:"id"`
-}
-
-// Encode implements the encoder interface.
-func (app SaveCatalogResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-// PublishCatalogRequest represents the input for publishing a catalog file
-// to the cloned repository.
-type PublishCatalogRequest struct {
-	CatalogFile string `json:"catalog_file"`
-}
-
-// Decode implements the decoder interface.
-func (app *PublishCatalogRequest) Decode(data []byte) error {
-	return json.Unmarshal(data, app)
-}
-
-// PublishCatalogResponse is returned after publishing a catalog file.
-type PublishCatalogResponse struct {
-	Status string `json:"status"`
-}
-
-// Encode implements the encoder interface.
-func (app PublishCatalogResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-// RepoPathResponse is returned for querying the repo path configuration.
-type RepoPathResponse struct {
-	RepoPath string `json:"repo_path"`
-}
-
-// Encode implements the encoder interface.
-func (app RepoPathResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-// CatalogFileInfoResponse represents a catalog file.
-type CatalogFileInfoResponse struct {
-	Name       string `json:"name"`
-	ModelCount int    `json:"model_count"`
-}
-
-// CatalogFilesListResponse is a list of catalog files.
-type CatalogFilesListResponse []CatalogFileInfoResponse
-
-// Encode implements the encoder interface.
-func (app CatalogFilesListResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-func toCatalogFilesResponse(files []catalog.CatalogFileInfo) CatalogFilesListResponse {
-	resp := make(CatalogFilesListResponse, len(files))
-	for i, f := range files {
-		resp[i] = CatalogFileInfoResponse{
-			Name:       f.Name,
-			ModelCount: f.ModelCount,
-		}
-	}
-	return resp
-}
-
-// GrammarFilesResponse is a list of available grammar filenames.
-type GrammarFilesResponse struct {
-	Files []string `json:"files"`
-}
-
-// Encode implements the encoder interface.
-func (app GrammarFilesResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-// GrammarContentResponse returns the content of a grammar file.
-type GrammarContentResponse struct {
-	Content string `json:"content"`
-}
-
-// Encode implements the encoder interface.
-func (app GrammarContentResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-func toGrammarFilesResponse(files []string) GrammarFilesResponse {
-	if files == nil {
-		files = []string{}
-	}
-	return GrammarFilesResponse{Files: files}
-}
-
-// TemplateFilesResponse is a list of available template filenames.
-type TemplateFilesResponse struct {
-	Files []string `json:"files"`
-}
-
-// Encode implements the encoder interface.
-func (app TemplateFilesResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(app)
-	return data, "application/json", err
-}
-
-func toTemplateFilesResponse(files []string) TemplateFilesResponse {
-	if files == nil {
-		files = []string{}
-	}
-	return TemplateFilesResponse{Files: files}
-}
 
 // UnloadResponse represents the output for a model unload operation.
 type UnloadResponse struct {
@@ -1384,5 +816,116 @@ type BundleActionResponse struct {
 // Encode implements the encoder interface.
 func (app BundleActionResponse) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// CatalogListResponse wraps a slice of catalog summaries with an Encode
+// method so the listCatalog handler can return it as a web.Encoder.
+type CatalogListResponse []models.CatalogSummary
+
+// Encode implements web.Encoder.
+func (r CatalogListResponse) Encode() ([]byte, string, error) {
+	data, err := json.MarshalIndent(r, "", "  ")
+	return data, "application/json", err
+}
+
+// CatalogDetailResponse wraps a catalog detail with an Encode method so
+// the showCatalog handler can return it as a web.Encoder. Vram is computed
+// from the same GGUF head bytes used to populate the detail and embedded
+// here so the catalog detail screen does not need a second round trip.
+type CatalogDetailResponse struct {
+	models.CatalogDetail
+	Vram *VRAMResponse `json:"vram,omitempty"`
+}
+
+// Encode implements web.Encoder for the detail payload.
+func (d CatalogDetailResponse) Encode() ([]byte, string, error) {
+	data, err := json.MarshalIndent(d, "", "  ")
+	return data, "application/json", err
+}
+
+// RemoveResponse is the JSON response for DELETE /v1/catalog/{id}.
+type RemoveResponse struct {
+	Status string `json:"status"`
+	ID     string `json:"id"`
+}
+
+// Encode implements web.Encoder.
+func (r RemoveResponse) Encode() ([]byte, string, error) {
+	data, err := json.MarshalIndent(r, "", "  ")
+	return data, "application/json", err
+}
+
+// ReconcileResponse is the JSON response for POST /v1/catalog/reconcile.
+type ReconcileResponse struct {
+	Status string `json:"status"`
+}
+
+// Encode implements web.Encoder.
+func (r ReconcileResponse) Encode() ([]byte, string, error) {
+	data, err := json.MarshalIndent(r, "", "  ")
+	return data, "application/json", err
+}
+
+// LookupRequest is the body for POST /v1/catalog/lookup. The input may be
+// a HuggingFace URL ("https://huggingface.co/owner/repo[/resolve/...]") or
+// a shorthand ("owner/repo" or "owner/repo:tag").
+type LookupRequest struct {
+	Input string `json:"input"`
+}
+
+// Decode implements the decoder interface.
+func (app *LookupRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// LookupResponse is the JSON response for POST /v1/catalog/lookup. It lists
+// the GGUF files available in the resolved HuggingFace repository so the
+// VRAM calculator UI can let the user pick a specific shard or quant.
+type LookupResponse struct {
+	RepoFiles []HFRepoFile `json:"repo_files"`
+}
+
+// Encode implements web.Encoder.
+func (r LookupResponse) Encode() ([]byte, string, error) {
+	data, err := json.MarshalIndent(r, "", "  ")
+	return data, "application/json", err
+}
+
+// ResolveRequest is the body for POST /v1/catalog/resolve. The source may
+// be a full HuggingFace URL, a canonical id ("provider/family"), or a
+// bare id ("family"). The resolver maps any of these to the canonical
+// download URLs without initiating a download.
+type ResolveRequest struct {
+	Source string `json:"source"`
+}
+
+// Decode implements the decoder interface.
+func (app *ResolveRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// ResolveResponse is the JSON response for POST /v1/catalog/resolve. It
+// describes what Download would fetch for the given source: canonical id,
+// fully qualified download URL(s) (multiple entries for split models),
+// the companion projection URL when applicable, and flags reporting
+// whether the result came from the catalog cache or local disk. When
+// Installed is true, every model file (and the projection when present)
+// is already on disk.
+type ResolveResponse struct {
+	CanonicalID  string   `json:"canonical_id"`
+	Provider     string   `json:"provider"`
+	Family       string   `json:"family"`
+	Revision     string   `json:"revision"`
+	DownloadURLs []string `json:"download_urls"`
+	DownloadProj string   `json:"download_proj,omitempty"`
+	FromCache    bool     `json:"from_cache"`
+	FromLocal    bool     `json:"from_local"`
+	Installed    bool     `json:"installed"`
+}
+
+// Encode implements web.Encoder.
+func (r ResolveResponse) Encode() ([]byte, string, error) {
+	data, err := json.MarshalIndent(r, "", "  ")
 	return data, "application/json", err
 }

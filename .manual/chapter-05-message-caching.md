@@ -145,10 +145,10 @@ requests — see [Section 4.9](#49-model-types-and-state-management).
 **Enable IMC:**
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    incremental_cache: true
-    cache_min_tokens: 100 # Minimum tokens before caching (default)
+# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  incremental-cache: true
+  cache-min-tokens: 100 # Minimum tokens before caching (default)
 ```
 
 #### Multi-Session Architecture
@@ -165,13 +165,13 @@ all slots are equally eligible for any session, maximizing slot
 utilization. `StateSeqGetData` captures raw KV bytes regardless of
 whether they originated from text tokens or media embeddings.
 
-With `n_seq_max: 3`, three sub-agents can each have their own cached
+With `nseq-max: 3`, three sub-agents can each have their own cached
 conversation branch. Without multi-session IMC, every sub-agent request
 would cause a prefix mismatch and rebuild the cache from scratch because
 different sub-agents send different system prompts and conversation content.
 
-**Important:** Set `n_seq_max` to at least the number of concurrent
-sub-agents your agent framework spawns. If `n_seq_max` is smaller than
+**Important:** Set `nseq-max` to at least the number of concurrent
+sub-agents your agent framework spawns. If `nseq-max` is smaller than
 the number of sub-agents, cache thrashing can occur — each new sub-agent
 evicts a session, and when the evicted sub-agent returns, it evicts another.
 Every request triggers a full rebuild from scratch, eliminating the
@@ -255,7 +255,7 @@ session's KV state is restored from RAM into the assigned slot.
 5. **Token prefix fallback** — Tokenize the incoming messages and compare
    the resulting token sequence element-by-element against each non-empty
    session's stored `cachedTokens`. Pick the session with the longest
-   common prefix that meets `cache_min_tokens`. Trim the KV cache from the
+   common prefix that meets `cache-min-tokens`. Trim the KV cache from the
    divergence point and decode only the new tokens from there forward. See
    [Token Prefix Fallback](#token-prefix-fallback) for details.
 
@@ -280,7 +280,7 @@ KV cache.
 
 #### KV Pressure Eviction
 
-With `n_seq_max > 1`, Kronk enables a unified KV cache (`KVUnified=1`) so that
+With `nseq-max > 1`, Kronk enables a unified KV cache (`KVUnified=1`) so that
 all sequences share the full `n_ctx` pool. Any single sequence can grow up to the
 full context window, but the **total** KV usage across all sequences cannot exceed
 `n_ctx`.
@@ -291,7 +291,7 @@ requests. However, during active processing, a session's restored KV does
 consume VRAM cells until the request completes and the state is externalized
 again.
 
-**Example:** With `n_seq_max: 3` and `context_window: 131072`:
+**Example:** With `nseq-max: 3` and `context-window: 131072`:
 
 ```
 Session 0: 854 tokens    (stale media — 2 cached messages, hash mismatch)
@@ -313,7 +313,7 @@ fits:
 1. Sum `totalTokensCached` across all non-empty, non-pending sessions
    (sessions with externalized `kvState` are excluded since their VRAM
    is already freed)
-2. If the sum exceeds `context_window`, sort mismatched sessions by token
+2. If the sum exceeds `context-window`, sort mismatched sessions by token
    count (descending)
 3. Evict sessions one at a time — clear the KV sequence (`MemorySeqRm`) and
    reset the session metadata — until the projected total is within bounds
@@ -366,7 +366,7 @@ Trimmed:       3 tokens (T6-T8 removed from KV cache)
 New decode:    4 tokens (T9-T12, from divergence point forward)
 ```
 
-If the common prefix meets the `cache_min_tokens` threshold, IMC:
+If the common prefix meets the `cache-min-tokens` threshold, IMC:
 
 1. Reserves the matching session (marks it pending)
 2. Trims the divergent suffix from the KV cache
@@ -389,7 +389,7 @@ Real-world testing showed 77-80% cache salvage rates. Instead of decoding
 | `token prefix match found`                          | Usable prefix found, will trim and extend                             |
 | `imc-trim-prefix`                                   | KV cache trim in progress (shows cached_tokens, trim_pos)             |
 | `imc-partial-rebuilt`                               | Rebuild complete (shows total_cached, salvaged_prefix, salvaged_pct)  |
-| `no usable token prefix match`                      | All prefixes below `cache_min_tokens`, falling back to empty/LRU slot |
+| `no usable token prefix match`                      | All prefixes below `cache-min-tokens`, falling back to empty/LRU slot |
 
 #### Model Type Interactions
 
@@ -401,28 +401,28 @@ manages state between requests.
 | Model Type | State Management   | Configuration Notes               |
 | ---------- | ------------------ | --------------------------------- |
 | Dense      | Snapshot/Restore   | No special requirements           |
-| MoE        | Snapshot/Restore   | f16 cache, split_mode: row        |
+| MoE        | Snapshot/Restore   | f16 cache, split-mode: row        |
 | Hybrid     | Snapshot/Restore   | f16 cache required, no flash attn |
 
 **MoE Configuration:**
 
 ```yaml
-models:
-  Qwen3-Coder-30B-A3B-Q8_0:
-    incremental_cache: true
-    split_mode: row # Best for MoE architecture
-    cache_type_k: f16 # Safer for MoE routing accuracy
-    cache_type_v: f16
+# ~/.kronk/model_config.yaml
+unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M:
+  incremental-cache: true
+  split-mode: row     # Best for MoE architecture
+  cache-type-k: f16   # Safer for MoE routing accuracy
+  cache-type-v: f16
 ```
 
 **Hybrid Configuration:**
 
 ```yaml
-models:
-  Qwen3-Coder-Next-UD-Q4_K_XL:
-    incremental_cache: true
-    cache_type_k: f16 # Required for hybrid models
-    cache_type_v: f16 # Required for hybrid models
+# ~/.kronk/model_config.yaml
+unsloth/LFM2-700M-Q8_0:
+  incremental-cache: true
+  cache-type-k: f16   # Required for hybrid models
+  cache-type-v: f16   # Required for hybrid models
 ```
 
 ### 5.3 Single-User Caching
@@ -455,7 +455,7 @@ for:
 | Slot routing | Any available slot (all sessions)                               |
 | Sub-agents   | Each gets own session via hash matching                          |
 | Best for     | Agentic workflows                                               |
-| VRAM         | Unified `n_ctx` pool, not multiplied by `n_seq_max`             |
+| VRAM         | Unified `n_ctx` pool, not multiplied by `nseq-max`             |
 | RAM          | One externalized KV snapshot per session between requests       |
 
 ### 5.5 Cache Invalidation
@@ -472,7 +472,7 @@ invalidation helps you avoid unexpected prefill costs.
   selection algorithm)
 - Message prefix hash mismatch with no system prompt match → token prefix
   fallback attempted (see [Token Prefix Fallback](#token-prefix-fallback)).
-  If a common prefix ≥ `cache_min_tokens` is found, only the divergent suffix
+  If a common prefix ≥ `cache-min-tokens` is found, only the divergent suffix
   is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.
 - System prompt changed → full cache rebuild from scratch
 - Conversation shrinks (client dropped messages or reasoning blocks) → system
@@ -490,18 +490,18 @@ Caches are cleared when:
 IMC is enabled by default for all models. No configuration is needed to use it. To disable IMC for a specific model, set `incremental-cache: false` in your `model_config.yaml`:
 
 ```yaml
-Qwen3-8B-Q8_0:
+Qwen/Qwen3-8B-Q8_0:
   incremental-cache: false   # Disable IMC for this model
 ```
 
 You can also tune the minimum cache threshold:
 
 ```yaml
-Qwen3-8B-Q8_0:
+Qwen/Qwen3-8B-Q8_0:
   cache-min-tokens: 100   # Don't cache if < 100 tokens (default: 100)
 ```
 
-**cache_min_tokens**
+**cache-min-tokens**
 
 Minimum common prefix length required for token-level partial prefix
 matching. If no session's cached tokens share at least this many tokens with
@@ -530,12 +530,12 @@ logs, sequential extensions typically take ~3ms each.
 **IMC Memory Overhead:**
 
 IMC adds no extra VRAM beyond what the context window already requires.
-With `n_seq_max > 1`, Kronk enables a unified KV cache where all sequences
+With `nseq-max > 1`, Kronk enables a unified KV cache where all sequences
 share the full `n_ctx` pool. The total KV cache size is determined by
-`context_window`, not multiplied by the number of sessions:
+`context-window`, not multiplied by the number of sessions:
 
 ```
-131K context, n_seq_max=3, IMC (unified KV cache):
+131K context, nseq-max=3, IMC (unified KV cache):
   Total KV cache: ~3.2 GB (8B model, F16)
   Any single slot can use up to the full 131K tokens
   Total across all slots cannot exceed 131K tokens

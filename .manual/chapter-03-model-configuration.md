@@ -19,23 +19,32 @@
   - [Standard Quantization Formats](#standard-quantization-formats)
   - [IQ (Importance Matrix) Quantization](#iq-importance-matrix-quantization)
   - [UD (Ultra-Dynamic) Quantization](#ud-ultra-dynamic-quantization)
-  - [Choosing the Right Quantization](#choosing-the-right-quantization)
-- [3.9 VRAM Estimation](#39-vram-estimation)
+- [3.9 Choosing the Right Quantization](#39-choosing-the-right-quantization)
+- [3.10 VRAM Estimation](#310-vram-estimation)
   - [Slots and Sequences](#slots-and-sequences)
   - [What Affects KV Cache Memory Per Sequence](#what-affects-kv-cache-memory-per-sequence)
   - [What Affects Total KV Cache (Slot Memory)](#what-affects-total-kv-cache-slot-memory)
   - [Caching Modes](#caching-modes)
   - [Example: Real Model Calculation](#example-real-model-calculation)
-- [3.10 Model-Specific Tuning](#310-model-specific-tuning)
-- [3.11 Speculative Decoding](#311-speculative-decoding)
-- [3.12 Sampling Parameters](#312-sampling-parameters)
-- [3.13 Model Config File Example](#313-model-config-file-example)
+- [3.11 Model-Specific Tuning](#311-model-specific-tuning)
+- [3.12 Speculative Decoding](#312-speculative-decoding)
+- [3.13 Sampling Parameters](#313-sampling-parameters)
+- [3.14 Model Config File Example](#314-model-config-file-example)
 
 ---
 
 Model configuration controls how Kronk configures models to run inference.
-Configuration can be set via model config files, catalog templates, or
-programmatically through the SDK.
+There are exactly two ways to configure a model:
+
+1. **`~/.kronk/model_config.yaml`** — per-model overrides keyed by model id,
+   used by the model server and any tool that goes through
+   `models.KronkResolvedConfig`.
+2. **`model.Config` (Go struct)** — passed directly to `kronk.New(cfg)` when
+   you embed the SDK in your own application.
+
+The catalog (`~/.kronk/catalog.yaml`) is **not** a source of tuning knobs —
+it is a resolution cache (provider, family, revision, files). All tuning
+described in this chapter lives in `model_config.yaml` or `model.Config`.
 
 ### 3.1 Basic Configuration
 
@@ -936,7 +945,7 @@ significant VRAM. Enable `swa_full` when accuracy matters more than memory.
 
 ```yaml
 # Example: Gemma 4 26B-A4B with full SWA cache
-gemma-4-26B-A4B-it-UD-Q8_K_XL:
+unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
   context-window: 32768
   swa-full: true
   incremental-cache: true
@@ -979,12 +988,13 @@ means more tokens per forward pass.
 
 #### Configuration
 
-Speculative decoding is configured via the `draft-model` block in catalog
-YAML or `model_config.yaml`:
+Speculative decoding is configured via the `draft-model` block under a
+target model entry in `model_config.yaml` (or via `model.Config.DraftModel`
+when you embed the SDK directly):
 
 ```yaml
-# In a catalog YAML file
-config:
+# In ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
   context-window: 32768
   nbatch: 2048
   nubatch: 512
@@ -993,28 +1003,20 @@ config:
   nseq-max: 1
   incremental-cache: true
   draft-model:
-    model-id: Qwen3-0.6B-Q8_0 # Draft model ID (must be downloaded)
-    ndraft: 5 # Candidates per step (default: 5)
-    ngpu-layers: 0 # GPU layers (0=all, -1=none)
-    device: "" # Pin to specific GPU (e.g., "GPU1")
+    model-id: unsloth/Qwen3-0.6B-Q8_0  # Draft model ID (must be downloaded)
+    ndraft: 5                          # Candidates per step (default: 5)
+    ngpu-layers: 0                     # GPU layers (0=all, -1=none)
+    devices: []                        # Pin to specific GPUs (e.g., ["CUDA0"])
 ```
 
-```yaml
-# In model_config.yaml
-Qwen3-8B-Q8_0:
-  incremental-cache: true
-  nseq-max: 1
-  draft-model:
-    model-id: Qwen3-0.6B-Q8_0
-    ndraft: 5
-```
-
-| Field      | YAML Key      | Default | Description                         |
-| ---------- | ------------- | ------- | ----------------------------------- |
-| ModelID    | `model-id`    | (none)  | Draft model ID (must be downloaded) |
-| NDraft     | `ndraft`      | 5       | Number of candidate tokens per step |
-| NGpuLayers | `ngpu-layers` | 0 (all) | GPU layers for draft model          |
-| Device     | `device`      | ""      | Pin draft model to a specific GPU   |
+| Field      | YAML Key      | Default | Description                                 |
+| ---------- | ------------- | ------- | ------------------------------------------- |
+| ModelID    | `model-id`    | (none)  | Draft model ID (must be downloaded)         |
+| NDraft     | `ndraft`      | 5       | Number of candidate tokens per step         |
+| NGpuLayers | `ngpu-layers` | 0 (all) | GPU layers for draft model                  |
+| Devices    | `devices`     | `[]`    | Pin draft model to specific GPUs (by name)  |
+| MainGPU    | `main-gpu`    | (auto)  | Main GPU index for the draft model          |
+| TensorSplit | `tensor-split` | `[]`  | Tensor split ratios across draft GPUs       |
 
 #### Draft Model Selection
 
@@ -1139,32 +1141,49 @@ reaches the context window limit.
 
 ### 3.14 Model Config File Example
 
-Create a YAML config file for custom model settings:
+`~/.kronk/model_config.yaml` is a flat map keyed by canonical model id
+(`provider/modelID`, optionally with a `/variant` suffix). Each entry's
+fields use kebab-case YAML keys that map 1:1 to `model.Config`:
 
 ```yaml
-# model-config.yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 32768
-    n_batch: 2048
-    n_ubatch: 512
-    n_seq_max: 2
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    flash_attention: enabled
-    incremental_cache: true
+# ~/.kronk/model_config.yaml
 
-  Llama-3.3-70B-Instruct-Q8_0:
-    context_window: 8192
-    n_gpu_layers: 0
-    split_mode: row
-    offload_kqv: true
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 32768
+  nbatch: 2048
+  nubatch: 512
+  nseq-max: 2
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+
+Qwen/Qwen3-8B-Q8_0/YARN:
+  context-window: 131072
+  rope-scaling-type: yarn
+  yarn-orig-ctx: 32768
+
+unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
+  context-window: 8192
+  ngpu-layers: 0
+  split-mode: row
+  offload-kqv: true
 ```
 
-Start the server with custom config:
+The `/YARN` suffix is a **config variant** — multiple entries can target
+the same on-disk model and be selected per request by passing the full
+variant name as the `model` field.
+
+Kronk seeds this file from an embedded default on first server start;
+your edits are preserved across upgrades. To point at an alternative file
+for testing, use the `--model-config-file` server flag:
 
 ```shell
-kronk server start --model-config-file=model-config.yaml
+kronk server start --model-config-file=./my-test-config.yaml
 ```
 
 ---

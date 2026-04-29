@@ -255,8 +255,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     progressStartRef.current = null;
     lastProgressUpdateRef.current = 0;
 
-    abortRef.current = api.pullCatalogModel(
+    abortRef.current = api.pullModel(
       catalogId,
+      undefined,
       (data: PullResponse) => {
         if (data.meta) {
           setDownload((prev) => {

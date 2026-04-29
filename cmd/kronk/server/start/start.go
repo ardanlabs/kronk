@@ -111,18 +111,10 @@ func buildEnvVars(cmd *cobra.Command) []string {
 		envVars = append(envVars, "KRONK_TEMPO_PROBABILITY="+strconv.FormatFloat(v, 'f', -1, 64))
 	}
 
-	// Catalog settings
-	if v, _ := cmd.Flags().GetString("catalog-github-repo"); v != "" {
-		envVars = append(envVars, "KRONK_CATALOG_GITHUB_REPO="+v)
-	}
-	if v, _ := cmd.Flags().GetString("model-config-file"); v != "" {
-		envVars = append(envVars, "KRONK_CATALOG_MODEL_CONFIG_FILE="+v)
-	}
-	if v, _ := cmd.Flags().GetString("catalog-repo-path"); v != "" {
-		envVars = append(envVars, "KRONK_CATALOG_REPO_PATH="+v)
-	}
-
 	// Cache settings
+	if v, _ := cmd.Flags().GetString("model-config-file"); v != "" {
+		envVars = append(envVars, "KRONK_CACHE_MODEL_CONFIG_FILE="+v)
+	}
 	if v, _ := cmd.Flags().GetInt("model-instances"); v != 0 {
 		envVars = append(envVars, "KRONK_CACHE_MODEL_INSTANCES="+strconv.Itoa(v))
 	}

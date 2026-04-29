@@ -37,7 +37,6 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		Cache:      cfg.Cache,
 		Libs:       cfg.Libs,
 		Models:     cfg.Models,
-		Catalog:    cfg.Catalog,
 	})
 
 	chatapp.Routes(app, chatapp.Config{
@@ -80,7 +79,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
 		Cache:      cfg.Cache,
-		Catalog:    cfg.Catalog,
+		Models:     cfg.Models,
 	})
 
 	if cfg.DownloadEnabled {

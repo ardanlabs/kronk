@@ -41,7 +41,7 @@ kronk server start --debug-host localhost:9090
 Or via environment variable:
 
 ```shell
-export KRONK_DEBUG_HOST=localhost:9090
+export KRONK_WEB_DEBUG_HOST=localhost:9090
 kronk server start
 ```
 
@@ -367,8 +367,8 @@ export KRONK_INSECURE_LOGGING=true
 
 **Debug Server:**
 
-- `--debug-host` - Debug server address (env: `KRONK_DEBUG_HOST`,
-  default: `localhost:8090`)
+- `--debug-host` - Debug server address (env: `KRONK_WEB_DEBUG_HOST`,
+  default: `0.0.0.0:8090`)
 
 **Tracing:**
 

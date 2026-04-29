@@ -3,7 +3,7 @@ export default function DocsCLISecurity() {
     <div>
       <div className="page-header">
         <h2>security</h2>
-        <p>Manage security - tokens and access control.</p>
+        <p>Manage API security (keys and tokens).</p>
       </div>
 
       <div className="doc-layout">
@@ -13,17 +13,33 @@ export default function DocsCLISecurity() {
             <pre className="code-block">
               <code>kronk security &lt;command&gt; [flags]</code>
             </pre>
+            <p>
+              Provides JWT-based access control for the Kronk Model Server.
+              It manages two types of credentials:
+            </p>
+            <ul>
+              <li>
+                <strong>Private keys</strong> — used to sign JWT tokens. Each
+                key has a unique ID and is used for token issuance. Keys can
+                be created, listed, and revoked.
+              </li>
+              <li>
+                <strong>JWT tokens</strong> — short-lived credentials issued
+                by private keys. Tokens authenticate API requests and can
+                include custom claims for fine-grained authorization.
+              </li>
+            </ul>
+            <p>
+              All security commands require an admin-level token in{' '}
+              <code>KRONK_TOKEN</code> before execution.
+            </p>
           </div>
 
-          <div className="card" id="subcommands">
-            <h3>Subcommands</h3>
-
-            <div className="doc-section" id="cmd-key">
-              <h4>key</h4>
-              <p className="doc-description">Manage private keys - create and delete private keys.</p>
-              <pre className="code-block">
-                <code>kronk security key &lt;command&gt; [flags]</code>
-              </pre>
+          <div className="card" id="cmd-key">
+            <h3>key — Manage private keys</h3>
+            <pre className="code-block">
+              <code>kronk security key &lt;command&gt; [flags]</code>
+            </pre>
 
             <div className="doc-section" id="cmd-key-create">
               <h4>create</h4>
@@ -43,6 +59,10 @@ export default function DocsCLISecurity() {
                     <td><code>--local</code></td>
                     <td>Run without the model server</td>
                   </tr>
+                  <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Environment Variables</h5>
@@ -58,7 +78,12 @@ export default function DocsCLISecurity() {
                   <tr>
                     <td><code>KRONK_TOKEN</code></td>
                     <td></td>
-                    <td>Admin token (required when auth enabled)</td>
+                    <td>Admin token (required)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_WEB_API_HOST</code></td>
+                    <td>localhost:11435</td>
+                    <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                 </tbody>
               </table>
@@ -72,7 +97,7 @@ kronk security key create`}</code>
 
             <div className="doc-section" id="cmd-key-delete">
               <h4>delete</h4>
-              <p className="doc-description">Delete a private key by its key ID.</p>
+              <p className="doc-description">Delete a private key by its key ID (file name without extension).</p>
               <pre className="code-block">
                 <code>kronk security key delete --keyid &lt;KEY_ID&gt; [flags]</code>
               </pre>
@@ -92,6 +117,10 @@ kronk security key create`}</code>
                     <td><code>--local</code></td>
                     <td>Run without the model server</td>
                   </tr>
+                  <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Environment Variables</h5>
@@ -107,7 +136,12 @@ kronk security key create`}</code>
                   <tr>
                     <td><code>KRONK_TOKEN</code></td>
                     <td></td>
-                    <td>Admin token (required when auth enabled)</td>
+                    <td>Admin token (required)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_WEB_API_HOST</code></td>
+                    <td>localhost:11435</td>
+                    <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                 </tbody>
               </table>
@@ -137,6 +171,10 @@ kronk security key delete --keyid abc123`}</code>
                     <td><code>--local</code></td>
                     <td>Run without the model server</td>
                   </tr>
+                  <tr>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
+                  </tr>
                 </tbody>
               </table>
               <h5>Environment Variables</h5>
@@ -152,7 +190,12 @@ kronk security key delete --keyid abc123`}</code>
                   <tr>
                     <td><code>KRONK_TOKEN</code></td>
                     <td></td>
-                    <td>Admin token (required when auth enabled)</td>
+                    <td>Admin token (required)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_WEB_API_HOST</code></td>
+                    <td>localhost:11435</td>
+                    <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                 </tbody>
               </table>
@@ -163,14 +206,13 @@ export KRONK_TOKEN=<admin-token>
 kronk security key list`}</code>
               </pre>
             </div>
-            </div>
+          </div>
 
-            <div className="doc-section" id="cmd-token">
-              <h4>token</h4>
-              <p className="doc-description">Manage tokens - create and manage security tokens.</p>
-              <pre className="code-block">
-                <code>kronk security token &lt;command&gt; [flags]</code>
-              </pre>
+          <div className="card" id="cmd-token">
+            <h3>token — Manage JWT tokens</h3>
+            <pre className="code-block">
+              <code>kronk security token &lt;command&gt; [flags]</code>
+            </pre>
 
             <div className="doc-section" id="cmd-token-create">
               <h4>create</h4>
@@ -187,16 +229,20 @@ kronk security key list`}</code>
                 </thead>
                 <tbody>
                   <tr>
+                    <td><code>--duration &lt;duration&gt;</code></td>
+                    <td>Token duration (e.g. <code>1h</code>, <code>24h</code>, <code>720h</code>)</td>
+                  </tr>
+                  <tr>
+                    <td><code>--endpoints &lt;list&gt;</code></td>
+                    <td>Endpoints with optional rate limits (e.g. <code>chat-completions:1000/day</code>)</td>
+                  </tr>
+                  <tr>
                     <td><code>--local</code></td>
                     <td>Run without the model server</td>
                   </tr>
                   <tr>
-                    <td><code>--duration &lt;duration&gt;</code></td>
-                    <td>Token duration (e.g., 1h, 24h, 720h)</td>
-                  </tr>
-                  <tr>
-                    <td><code>--endpoints &lt;list&gt;</code></td>
-                    <td>Endpoints with optional rate limits</td>
+                    <td><code>--base-path &lt;string&gt;</code></td>
+                    <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
                   </tr>
                 </tbody>
               </table>
@@ -213,7 +259,12 @@ kronk security key list`}</code>
                   <tr>
                     <td><code>KRONK_TOKEN</code></td>
                     <td></td>
-                    <td>Admin token (required when auth enabled)</td>
+                    <td>Admin token (required)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_WEB_API_HOST</code></td>
+                    <td>localhost:11435</td>
+                    <td>IP Address for the kronk server (web mode)</td>
                   </tr>
                 </tbody>
               </table>
@@ -221,12 +272,11 @@ kronk security key list`}</code>
               <pre className="code-block">
                 <code>{`# Create a token with 24 hour duration
 export KRONK_TOKEN=<admin-token>
-kronk security token create --duration 24h --endpoints chat-completions,embeddings
+kronk security token create --duration=24h --endpoints=chat-completions,embeddings
 
 # Create a token with rate limits
-kronk security token create --duration 720h --endpoints "chat-completions:1000/day,embeddings:unlimited"`}</code>
+kronk security token create --duration=720h --endpoints="chat-completions:1000/day,embeddings:unlimited"`}</code>
               </pre>
-            </div>
             </div>
           </div>
         </div>
@@ -237,13 +287,16 @@ kronk security token create --duration 720h --endpoints "chat-completions:1000/d
               <a href="#usage" className="doc-index-header">Usage</a>
             </div>
             <div className="doc-index-section">
-              <a href="#subcommands" className="doc-index-header">Subcommands</a>
+              <a href="#cmd-key" className="doc-index-header">key</a>
               <ul>
-                <li><a href="#cmd-key">key</a></li>
                 <li><a href="#cmd-key-create">create</a></li>
                 <li><a href="#cmd-key-delete">delete</a></li>
                 <li><a href="#cmd-key-list">list</a></li>
-                <li><a href="#cmd-token">token</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#cmd-token" className="doc-index-header">token</a>
+              <ul>
                 <li><a href="#cmd-token-create">create</a></li>
               </ul>
             </div>

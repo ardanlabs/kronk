@@ -127,55 +127,55 @@ install-libraries-gh: install-kronk
 # Use this to install the test GH models.
 install-test-gh-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
 	@echo
-	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
-	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 
 # Use this to install the test models.
 install-test-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" "unsloth/gemma-4-26B-A4B-it-GGUF/mmproj-BF16.gguf"
+	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"
 	@echo
-	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf" "unsloth/Qwen3.6-35B-A3B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M"
 	@echo
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0"
 	@echo
-	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
+	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"
 	@echo
-	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
-	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 
 # Use this to install models for the class.
 install-class-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf" "unsloth/Qwen3.5-0.8B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-GGUF/LFM2.5-VL-1.6B-Q8_0.gguf" "unsloth/LFM2.5-VL-1.6B-GGUF/mmproj-F16.gguf"
+	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-Q8_0"
 	@echo
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.Q8_0.gguf" "mradermacher/Qwen2-Audio-7B-GGUF/Qwen2-Audio-7B.mmproj-Q8_0.gguf"
+	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0"
 	@echo
-	kronk model pull --local "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"
+	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/LFM2-700M-GGUF/LFM2-700M-Q8_0.gguf"
+	kronk model pull --local "unsloth/LFM2-700M-Q8_0"
 	@echo
-	kronk model pull --local "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"
+	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"
 	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf"
+	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
-	kronk model pull --local "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf"
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.2
@@ -349,7 +349,6 @@ kronk-server:
 	export KRONK_ALLOW_UPGRADE=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-build: kronk-build
@@ -358,7 +357,6 @@ kronk-server-build: kronk-build
 	export KRONK_ALLOW_UPGRADE=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_CATALOG_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	export KRONK_CATALOG_REPO_PATH=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: bui-build
@@ -393,11 +391,11 @@ kronk-model-list-local:
 	go run cmd/kronk/main.go model list --local
 
 
-# make kronk-model-pull URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull URL="Qwen/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull:
 	go run cmd/kronk/main.go model pull "$(URL)"
 
-# make kronk-model-pull-local URL="Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull-local URL="Qwen/Qwen3-8B-Q8_0.gguf"
 kronk-model-pull-local:
 	go run cmd/kronk/main.go model pull --local "$(URL)"
 
@@ -406,28 +404,24 @@ kronk-model-ps:
 	go run cmd/kronk/main.go model ps
 
 
-# make kronk-model-remove ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
+# make kronk-model-remove ID="bartowski/cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove:
 	go run cmd/kronk/main.go model remove "$(ID)"
 
-# make kronk-model-remove-local ID="cerebras_qwen3-coder-reap-25b-a3b-q8_0"
+# make kronk-model-remove-local ID="bartowski/cerebras_qwen3-coder-reap-25b-a3b-q8_0"
 kronk-model-remove-local:
 	go run cmd/kronk/main.go model remove --local "$(ID)"
 
 
-# make kronk-model-show ID="Qwen3-8B-Q8_0"
+# make kronk-model-show ID="Qwen/Qwen3-8B-Q8_0"
 kronk-model-show:
 	go run cmd/kronk/main.go model show "$(ID)"
 
-# make kronk-model-show-local ID="Qwen3-8B-Q8_0"
+# make kronk-model-show-local ID="Qwen/Qwen3-8B-Q8_0"
 kronk-model-show-local:
 	go run cmd/kronk/main.go model show --local "$(ID)"
 
 # ------------------------------------------------------------------------------
-
-kronk-catalog-update-local:
-	go run cmd/kronk/main.go catalog update --local
-
 
 kronk-catalog-list:
 	go run cmd/kronk/main.go catalog list
@@ -436,22 +430,14 @@ kronk-catalog-list-local:
 	go run cmd/kronk/main.go catalog list --local
 
 
-# make kronk-catalog-show ID="Qwen3-8B-Q8_0"
+# make kronk-catalog-show ID="Qwen/Qwen3-8B-Q8_0"
 kronk-catalog-show:
 	go run cmd/kronk/main.go catalog show "$(ID)"
 
-# make kronk-catalog-show-local ID="Qwen2.5-VL-3B-Instruct-Q8_0"
+# make kronk-catalog-show-local ID="Qwen/Qwen3-8B-Q8_0"
 kronk-catalog-show-local:
 	go run cmd/kronk/main.go catalog show --local "$(ID)"
 
-
-# make kronk-catalog-pull ID="Qwen3-8B-Q8_0"
-kronk-catalog-pull:
-	go run cmd/kronk/main.go catalog pull "$(ID)"
-
-# make kronk-catalog-pull-local ID="Qwen3-Coder-30B-A3B-Instruct-Q8_0"
-kronk-catalog-pull-local:
-	go run cmd/kronk/main.go catalog pull --local "$(ID)"
 
 # ------------------------------------------------------------------------------
 
@@ -471,28 +457,9 @@ kronk-security-token-create-local:
 
 # ------------------------------------------------------------------------------
 
-# make kronk-run ID="Qwen3-8B-Q8_0"
+# make kronk-run ID="Qwen/Qwen3-8B-Q8_0"
 kronk-run:
 	go run cmd/kronk/main.go run "$(ID)"
-
-# ==============================================================================
-# Catalog Arch Check
-
-# Check architecture types for all downloaded catalog models.
-kronk-catalog-archcheck:
-	go run cmd/server/api/tooling/archcheck/main.go
-
-# make kronk-catalog-archcheck-model ID="Qwen3-8B-Q8_0"
-kronk-catalog-archcheck-model:
-	go run cmd/server/api/tooling/archcheck/main.go \
-		-model="$(ID)" \
-		-catalog-path=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs/catalogs
-
-# Check and update catalog files with corrected architecture values.
-kronk-catalog-archcheck-update:
-	go run cmd/server/api/tooling/archcheck/main.go \
-		-update \
-		-catalog-path=$$HOME/code/go/src/github.com/ardanlabs/kronk_catalogs/catalogs
 
 # ==============================================================================
 # Kronk Endpoints
@@ -502,30 +469,6 @@ curl-liveness:
 
 curl-readiness:
 	curl -i -X GET http://localhost:11435/v1/readiness
-
-curl-libs:
-	curl -i -X POST http://localhost:11435/v1/libs/pull
-
-curl-model-list:
-	curl -i -X GET http://localhost:11435/v1/models
-
-curl-device-list:
-	curl -i -X GET http://localhost:11435/v1/devices
-
-curl-kronk-pull:
-	curl -i -X POST http://localhost:11435/v1/models/pull \
-	-d '{ \
-		"model_url": "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf" \
-	}'
-
-curl-kronk-remove:
-	curl -i -X DELETE http://localhost:11435/v1/models/Qwen3-8B-Q8_0
-
-curl-kronk-show:
-	curl -i -X GET http://localhost:11435/v1/models/Qwen3-8B-Q8_0
-
-curl-model-status:
-	curl -i -X GET http://localhost:11435/v1/models/status
 
 curl-kronk-chat:
 	curl -i -X POST http://localhost:11435/v1/chat/completions \
@@ -848,32 +791,6 @@ curl-mcp-web-search:
 	}'
 
 # ==============================================================================
-# Download Service
-#
-# Start the server with download enabled:
-#   make kronk-server-download
-#
-# Test downloading a model file (HEAD to check, GET to download):
-#   make curl-download-head
-#   make curl-download-get
-
-# Check a model file exists and get its size.
-# make curl-download-head FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
-curl-download-head:
-	curl -I http://localhost:11435/download/$(FILE)
-
-# Download a model file.
-# make curl-download-get FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/resolve/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
-curl-download-get:
-	curl -o /dev/null -w "HTTP %{http_code} - %{size_download} bytes\n" \
-		http://localhost:11435/download/$(FILE)
-
-# Download a sha file.
-# make curl-download-sha FILE="bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF/raw/main/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf"
-curl-download-sha:
-	curl http://localhost:11435/download/$(FILE)
-
-# ==============================================================================
 # Running OpenWebUI 
 
 owu-up:
@@ -919,6 +836,8 @@ tidy:
 deps-upgrade: bui-upgrade
 	go get -u -v ./...
 	go mod tidy
+	cd examples && go get -u -v ./...
+	cd examples && go mod tidy
 
 yzma-latest:
 	GOPROXY=direct go get github.com/hybridgroup/yzma@main

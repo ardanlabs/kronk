@@ -51,18 +51,18 @@ USAGE
 
 COMMANDS
   server    Start/stop the model server
-  catalog   Manage model catalogs (list, pull, show, update)
   model     Manage local models (list, pull, remove, show, ps)
+  catalog   Browse and manage the model catalog (list, show, remove)
   libs      Install/upgrade llama.cpp libraries
   security  Manage API keys and JWT tokens
   run       Run a model directly for interactive chat (no server needed)
 
 QUICK START
-  # List available models
+  # List entries in the catalog
   kronk catalog list --local
 
   # Download a model (e.g., Qwen3-8B)
-  kronk catalog pull Qwen3-0.6B-Q8_0 --local
+  kronk model pull Qwen3-0.6B-Q8_0 --local
 
   # Start the server (runs on http://localhost:11435)
   kronk server start
@@ -94,7 +94,7 @@ Usage:
   kronk [command]
 
 Available Commands:
-  catalog     Manage model catalogs (list, pull, show, update)
+  catalog     Browse and manage the model catalog (list, show, remove)
   completion  Generate the autocompletion script for the specified shell
   help        Help about any command
   libs        Install or upgrade llama.cpp libraries
@@ -104,7 +104,7 @@ Available Commands:
   server      Start, stop, and manage the Kronk model server
 
 Flags:
-      --base-path string   Base path for kronk data (models, templates, catalog)
+      --base-path string   Base path for kronk data (models, libraries, catalog, model_config)
   -h, --help               help for kronk
   -v, --version            version for kronk
 
@@ -238,7 +238,12 @@ through the running server. Activate any installed bundle by exporting
 
 ### 2.4 Downloading Your First Model
 
-Kronk provides a curated catalog of verified models. List available models:
+Kronk maintains your **personal catalog** at `~/.kronk/catalog.yaml`. On
+first run it is seeded from an embedded starter list so you have something
+to choose from immediately; the catalog grows as you pull more models or
+resolve new IDs against HuggingFace.
+
+List entries in the catalog:
 
 ```shell
 kronk catalog list --local
@@ -247,20 +252,27 @@ kronk catalog list --local
 Output:
 
 ```
-CATALOG              MODEL ID                                 ARCH     SIZE       PULLED   ENDPOINT
-Rerank               bge-reranker-v2-m3-Q8_0                  Dense    636.0 MB   yes      rerank
-Text-Generation      cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0   MoE      26.5 GB    yes      chat_completion
-Embedding            embeddinggemma-300m-qat-Q8_0             Dense    329.0 MB   yes      embeddings
-Image-Text-to-Text   GLM-4.6V-UD-Q5_K_XL                      MoE      80.3 GB    yes      chat_completion
+VAL   MODEL ID                                            PROVIDER    FAMILY                              ARCH      MTMD   SIZE
+✓     ggml-org/embeddinggemma-300m-qat-Q8_0               ggml-org    embeddinggemma-300m-qat-q8_0-GGUF   bert      -      329.0 MB
+✓     unsloth/Qwen3-0.6B-Q8_0                             unsloth     Qwen3-0.6B-GGUF                     qwen3     -      699.0 MB
+✗     bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0    bartowski   Qwen3-Coder-REAP-25B-A3B-GGUF       qwen3moe  -      26.5 GB
+✗     unsloth/LFM2.5-VL-1.6B-Q8_0                         unsloth     LFM2.5-VL-1.6B-GGUF                 lfm2      ✓      1.7 GB
 ```
 
-Download a model (recommended starter: Qwen3-8B):
+The `VAL` column shows whether the model files have been downloaded and
+validated locally; `MTMD` indicates a multimodal projection (mmproj) is
+present.
+
+Download a model (recommended starter: Qwen3-0.6B-Q8_0):
 
 ```shell
-kronk catalog pull Qwen3-0.6B-Q8_0 --local
+kronk model pull Qwen3-0.6B-Q8_0 --local
 ```
 
-Models are stored in `~/.kronk/models/` by default.
+Models are stored in `~/.kronk/models/<provider>/<family>/` by default.
+After the pull completes the catalog entry is updated with the resolved
+provider, family, revision, and file sizes so subsequent lookups don't
+need to hit HuggingFace.
 
 ### 2.5 Starting the Server
 
@@ -311,14 +323,14 @@ startup  status=model config  path=/Users/you/.kronk/model_config.yaml
 The file is a YAML document where each top-level key is a model ID (or a model ID with a config variant suffix). Under each key you set the configuration options for that model. Here's a simplified example:
 
 ```yaml
-Qwen3-8B-Q8_0:
+Qwen/Qwen3-8B-Q8_0:
   context-window: 32768
   sampling-parameters:
     temperature: 0.7
     top_p: 0.8
     top_k: 20
 
-gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
+unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
   sampling-parameters:
@@ -326,13 +338,13 @@ gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
     top_k: 64
     top_p: 0.95
 
-Qwen3-8B-Q8_0/YARN:
+Qwen/Qwen3-8B-Q8_0/YARN:
   context-window: 131072
   rope-scaling-type: yarn
   yarn-orig-ctx: 32768
 ```
 
-The `/YARN` suffix is a **config variant** — it lets you define multiple configurations for the same model. When making an API request, use the full variant name (e.g., `Qwen3-8B-Q8_0/YARN`) as the `model` field to select that configuration.
+The `/YARN` suffix is a **config variant** — it lets you define multiple configurations for the same model. When making an API request, use the full variant name (e.g., `Qwen/Qwen3-8B-Q8_0/YARN`) as the `model` field to select that configuration.
 
 **Available Options**
 
@@ -374,17 +386,28 @@ kronk server start
 
 **Configuration Priority**
 
-When the server loads a model, configuration is resolved through three tiers (highest priority wins):
+When the server loads a model, configuration is resolved through two
+layers (plus sampling defaults):
 
-1. **model_config.yaml** — Your local overrides (highest priority)
-2. **Catalog defaults** — Settings from the model's catalog entry
-3. **Built-in defaults** — Fallback values from the model package
+1. **Analysis defaults** — Hardware-aware values inferred from the GGUF
+   metadata and the local devices (context window, batch sizes, cache
+   types, flash attention, GPU layers).
+2. **`model_config.yaml` overrides** — Your per-model overrides merged on
+   top of the analysis defaults. Anything you set here wins.
+3. **Sampling defaults** — Any zero-valued sampling fields are filled in
+   from the SDK's built-in sampling defaults so the model always has a
+   complete sampler configuration.
 
-This means any option you set in `model_config.yaml` overrides what the catalog provides for that model.
+The catalog itself is **not** part of this layering — it is a resolution
+cache (provider, family, revision, files) and not a source of tuning
+knobs. All tuning lives in `model_config.yaml` (or in `model.Config` when
+you're embedding the SDK directly).
 
 **Tips**
 
-- You can configure models that aren't in the catalog — just use the model's file name (without `.gguf`) as the key.
+- The key is the canonical model id — `provider/modelID` (for example
+  `unsloth/Qwen3-0.6B-Q8_0`) or a variant such as
+  `unsloth/Qwen3-0.6B-Q8_0/IMC` — not a file name.
 - Use YAML anchors (`&name` and `<<: *name`) to share common settings between variants. The default file includes examples of this pattern.
 - The `--model-config` server flag lets you point to an alternative config file for testing without modifying your main one.
 
@@ -430,7 +453,7 @@ kronk server start
 open http://localhost:11435
 
 # 4. Download via the BUI Catalog/List screen or use this CLI call
-kronk catalog pull Qwen3-0.6B-Q8_0 --local
+kronk model pull Qwen3-0.6B-Q8_0 --local
 
 # 5. Test the API using this curl call or the BUI App/Chat screen
 curl http://localhost:11435/v1/chat/completions \

@@ -14,7 +14,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/maypok86/otter/v2"
 	"golang.org/x/sync/singleflight"
@@ -24,12 +23,6 @@ import (
 var ErrServerBusy = errors.New("server busy: all model slots have active requests")
 
 // Config represents setting for the kronk manager.
-//
-// CatalogRepo represents the Github repo for where the catalog is. If left empty
-// then api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs is used.
-//
-// TemplateRepo represents the Github repo for where the templates are. If left empty
-// then api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates is used.
 //
 // MaxInCache: Defines the maximum number of unique models will be available at a
 // time. Defaults to 3 if the value is 0.
@@ -49,22 +42,13 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 type Config struct {
 	Log             model.Logger
 	BasePath        string
-	Catalog         *catalog.Catalog
+	ModelConfigFile string
 	ModelsInCache   int
 	CacheTTL        time.Duration
 	InsecureLogging bool
 }
 
 func validateConfig(cfg Config) (Config, error) {
-	if cfg.Catalog == nil {
-		ctlg, err := catalog.New()
-		if err != nil {
-			return Config{}, err
-		}
-
-		cfg.Catalog = ctlg
-	}
-
 	if cfg.ModelsInCache <= 0 {
 		cfg.ModelsInCache = 2
 	}
@@ -82,7 +66,7 @@ func validateConfig(cfg Config) (Config, error) {
 // APIs and will unload over time if not in use.
 type Cache struct {
 	log              model.Logger
-	catalog          *catalog.Catalog
+	modelConfig      map[string]models.ModelConfig
 	cache            *otter.Cache[string, *kronk.Kronk]
 	itemsInCache     atomic.Int32
 	maxModelsInCache int
@@ -98,16 +82,27 @@ func New(cfg Config) (*Cache, error) {
 		return nil, err
 	}
 
-	models, err := models.NewWithPaths(cfg.BasePath)
+	mdls, err := models.NewWithPaths(cfg.BasePath)
 	if err != nil {
 		return nil, fmt.Errorf("new: creating models system: %w", err)
 	}
 
+	var mc map[string]models.ModelConfig
+	if cfg.ModelConfigFile != "" {
+		mc, err = models.LoadModelConfig(cfg.ModelConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("new: loading model config: %w", err)
+		}
+	}
+	if mc == nil {
+		mc = map[string]models.ModelConfig{}
+	}
+
 	c := Cache{
 		log:              cfg.Log,
-		catalog:          cfg.Catalog,
+		modelConfig:      mc,
 		maxModelsInCache: cfg.ModelsInCache,
-		models:           models,
+		models:           mdls,
 		insecureLogging:  cfg.InsecureLogging,
 	}
 
@@ -211,7 +206,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 			return krn, nil
 		}
 
-		cfg, err := c.catalog.KronkResolvedModelConfig(modelID)
+		cfg, err := c.models.KronkResolvedConfig(modelID, c.modelConfig)
 		if err != nil {
 			return nil, fmt.Errorf("acquire-model: unable to retrieve model config: %w", err)
 		}
@@ -224,7 +219,6 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 		krn, err := kronk.NewWithContext(ctx,
 			model.WithConfig(cfg),
-			model.WithCataloger(c.catalog),
 		)
 
 		if err != nil {
@@ -270,7 +264,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 // This bypasses the normal catalog resolution path. The key should use format
 // <modelID>/playground/<session_id> so that ModelStatus() can still match
 // playground sessions to locally installed models.
-func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config, cat model.Cataloger) (*kronk.Kronk, error) {
+func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
 	krn, exists := c.cache.GetIfPresent(key)
 	if exists {
 		return krn, nil
@@ -293,7 +287,6 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config, 
 
 		krn, err := kronk.NewWithContext(ctx,
 			model.WithConfig(cfg),
-			model.WithCataloger(cat),
 		)
 
 		if err != nil {
@@ -313,6 +306,11 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config, 
 	}
 
 	return result.(*kronk.Kronk), nil
+}
+
+// ModelConfig returns the loaded per-model configuration overrides.
+func (c *Cache) ModelConfig() map[string]models.ModelConfig {
+	return c.modelConfig
 }
 
 // GetExisting returns a cached model if it exists, without creating one.

@@ -99,10 +99,11 @@ export default function DocsManual() {
           </ul>
           <p><strong>Operations</strong></p>
           <ul>
-            <li><strong>Catalog System</strong> - Curated collection of verified models with one-command downloads.</li>
+            <li><strong>Catalog System</strong> - Your personal catalog of downloaded models, seeded with a starter list and managed via the CLI and BUI.</li>
             <li><strong>Browser UI (BUI)</strong> - Web interface for model management, downloads, and configuration.</li>
             <li><strong>Authentication</strong> - JWT-based security with key management, endpoint authorization and rate limiting.</li>
             <li><strong>Observability</strong> - Tracing and metrics integration with Grafana support.</li>
+            <li><strong>Local Storage</strong> - Everything Kronk manages — catalog, downloaded models, llama.cpp libraries, and per-model configuration — lives under <code>~/.kronk/</code>.</li>
           </ul>
           <h3 id="13-supported-platforms-and-hardware">1.3 Supported Platforms and Hardware</h3>
           <p>Kronk supports full hardware acceleration across major platforms:</p>
@@ -159,7 +160,7 @@ export default function DocsManual() {
               </tr>
               <tr>
                 <td><strong>SDK Tools</strong></td>
-                <td>Models, Libs, Catalog, Template APIs</td>
+                <td>Models, Libs, Downloader, Devices</td>
                 <td>High-level APIs for common tasks</td>
               </tr>
               <tr>
@@ -204,7 +205,8 @@ ch, _ := krn.ChatStreaming(ctx, model.D{
 for resp := range ch {
     fmt.Print(resp.Choice[0].Delta.Content)
 }`}</code></pre>
-          <pre className="code-block"><code className="language-shell">{`# Or use the Model Server for OpenAI-compatible API
+          <pre className="code-block"><code className="language-shell">{`# Or use the Model Server for OpenAI-compatible API.
+# Server-side per-model tuning lives in ~/.kronk/model_config.yaml.
 kronk server start
 curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","messages":[...]}'`}</code></pre>
           <hr />
@@ -234,18 +236,18 @@ USAGE
 
 COMMANDS
   server    Start/stop the model server
-  catalog   Manage model catalogs (list, pull, show, update)
   model     Manage local models (list, pull, remove, show, ps)
+  catalog   Browse and manage the model catalog (list, show, remove)
   libs      Install/upgrade llama.cpp libraries
   security  Manage API keys and JWT tokens
   run       Run a model directly for interactive chat (no server needed)
 
 QUICK START
-  # List available models
+  # List entries in the catalog
   kronk catalog list --local
 
   # Download a model (e.g., Qwen3-8B)
-  kronk catalog pull Qwen3-0.6B-Q8_0 --local
+  kronk model pull Qwen3-0.6B-Q8_0 --local
 
   # Start the server (runs on http://localhost:11435)
   kronk server start
@@ -277,7 +279,7 @@ Usage:
   kronk [command]
 
 Available Commands:
-  catalog     Manage model catalogs (list, pull, show, update)
+  catalog     Browse and manage the model catalog (list, show, remove)
   completion  Generate the autocompletion script for the specified shell
   help        Help about any command
   libs        Install or upgrade llama.cpp libraries
@@ -287,7 +289,7 @@ Available Commands:
   server      Start, stop, and manage the Kronk model server
 
 Flags:
-      --base-path string   Base path for kronk data (models, templates, catalog)
+      --base-path string   Base path for kronk data (models, libraries, catalog, model_config)
   -h, --help               help for kronk
   -v, --version            version for kronk
 
@@ -365,17 +367,19 @@ kronk libs --list-installs
 kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</code></pre>
           <p>In web mode (the default — no <code>--local</code>) the same commands are dispatched through the running server. Activate any installed bundle by exporting <code>KRONK_LIB_PATH</code> to its folder and restarting the server.</p>
           <h3 id="24-downloading-your-first-model">2.4 Downloading Your First Model</h3>
-          <p>Kronk provides a curated catalog of verified models. List available models:</p>
+          <p>Kronk maintains your <strong>personal catalog</strong> at <code>~/.kronk/catalog.yaml</code>. On first run it is seeded from an embedded starter list so you have something to choose from immediately; the catalog grows as you pull more models or resolve new IDs against HuggingFace.</p>
+          <p>List entries in the catalog:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local`}</code></pre>
           <p>Output:</p>
-          <pre className="code-block"><code>{`CATALOG              MODEL ID                                 ARCH     SIZE       PULLED   ENDPOINT
-Rerank               bge-reranker-v2-m3-Q8_0                  Dense    636.0 MB   yes      rerank
-Text-Generation      cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0   MoE      26.5 GB    yes      chat_completion
-Embedding            embeddinggemma-300m-qat-Q8_0             Dense    329.0 MB   yes      embeddings
-Image-Text-to-Text   GLM-4.6V-UD-Q5_K_XL                      MoE      80.3 GB    yes      chat_completion`}</code></pre>
-          <p>Download a model (recommended starter: Qwen3-8B):</p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen3-0.6B-Q8_0 --local`}</code></pre>
-          <p>Models are stored in <code>~/.kronk/models/</code> by default.</p>
+          <pre className="code-block"><code>{`VAL   MODEL ID                                            PROVIDER    FAMILY                              ARCH      MTMD   SIZE
+✓     ggml-org/embeddinggemma-300m-qat-Q8_0               ggml-org    embeddinggemma-300m-qat-q8_0-GGUF   bert      -      329.0 MB
+✓     unsloth/Qwen3-0.6B-Q8_0                             unsloth     Qwen3-0.6B-GGUF                     qwen3     -      699.0 MB
+✗     bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0    bartowski   Qwen3-Coder-REAP-25B-A3B-GGUF       qwen3moe  -      26.5 GB
+✗     unsloth/LFM2.5-VL-1.6B-Q8_0                         unsloth     LFM2.5-VL-1.6B-GGUF                 lfm2      ✓      1.7 GB`}</code></pre>
+          <p>The <code>VAL</code> column shows whether the model files have been downloaded and validated locally; <code>MTMD</code> indicates a multimodal projection (mmproj) is present.</p>
+          <p>Download a model (recommended starter: Qwen3-0.6B-Q8_0):</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull Qwen3-0.6B-Q8_0 --local`}</code></pre>
+          <p>Models are stored in <code>~/.kronk/models/&lt;provider&gt;/&lt;family&gt;/</code> by default. After the pull completes the catalog entry is updated with the resolved provider, family, revision, and file sizes so subsequent lookups don't need to hit HuggingFace.</p>
           <h3 id="25-starting-the-server">2.5 Starting the Server</h3>
           <p>Start the Kronk Model Server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
@@ -396,14 +400,14 @@ BUI: http://localhost:11435`}</code></pre>
           <pre className="code-block"><code>{`startup  status=model config  path=/Users/you/.kronk/model_config.yaml`}</code></pre>
           <p><strong>File Structure</strong></p>
           <p>The file is a YAML document where each top-level key is a model ID (or a model ID with a config variant suffix). Under each key you set the configuration options for that model. Here's a simplified example:</p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
   context-window: 32768
   sampling-parameters:
     temperature: 0.7
     top_p: 0.8
     top_k: 20
 
-gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
+unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
   sampling-parameters:
@@ -411,11 +415,11 @@ gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
     top_k: 64
     top_p: 0.95
 
-Qwen3-8B-Q8_0/YARN:
+Qwen/Qwen3-8B-Q8_0/YARN:
   context-window: 131072
   rope-scaling-type: yarn
   yarn-orig-ctx: 32768`}</code></pre>
-          <p>The <code>/YARN</code> suffix is a <strong>config variant</strong> — it lets you define multiple configurations for the same model. When making an API request, use the full variant name (e.g., <code>Qwen3-8B-Q8_0/YARN</code>) as the <code>model</code> field to select that configuration.</p>
+          <p>The <code>/YARN</code> suffix is a <strong>config variant</strong> — it lets you define multiple configurations for the same model. When making an API request, use the full variant name (e.g., <code>Qwen/Qwen3-8B-Q8_0/YARN</code>) as the <code>model</code> field to select that configuration.</p>
           <p><strong>Available Options</strong></p>
           <p>The file includes a commented reference at the top listing every option. Here are the most commonly used:</p>
           <table className="flags-table">
@@ -491,16 +495,16 @@ nano ~/.kronk/model_config.yaml`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server stop
 kronk server start`}</code></pre>
           <p><strong>Configuration Priority</strong></p>
-          <p>When the server loads a model, configuration is resolved through three tiers (highest priority wins):</p>
+          <p>When the server loads a model, configuration is resolved through two layers (plus sampling defaults):</p>
           <ol>
-            <li><strong>model_config.yaml</strong> — Your local overrides (highest priority)</li>
-            <li><strong>Catalog defaults</strong> — Settings from the model's catalog entry</li>
-            <li><strong>Built-in defaults</strong> — Fallback values from the model package</li>
+            <li><strong>Analysis defaults</strong> — Hardware-aware values inferred from the GGUF metadata and the local devices (context window, batch sizes, cache types, flash attention, GPU layers).</li>
+            <li><strong>&lt;code&gt;model_config.yaml&lt;/code&gt; overrides</strong> — Your per-model overrides merged on top of the analysis defaults. Anything you set here wins.</li>
+            <li><strong>Sampling defaults</strong> — Any zero-valued sampling fields are filled in from the SDK's built-in sampling defaults so the model always has a complete sampler configuration.</li>
           </ol>
-          <p>This means any option you set in <code>model_config.yaml</code> overrides what the catalog provides for that model.</p>
+          <p>The catalog itself is <strong>not</strong> part of this layering — it is a resolution cache (provider, family, revision, files) and not a source of tuning knobs. All tuning lives in <code>model_config.yaml</code> (or in <code>model.Config</code> when you're embedding the SDK directly).</p>
           <p><strong>Tips</strong></p>
           <ul>
-            <li>You can configure models that aren't in the catalog — just use the model's file name (without <code>.gguf</code>) as the key.</li>
+            <li>The key is the canonical model id — <code>provider/modelID</code> (for example <code>unsloth/Qwen3-0.6B-Q8_0</code>) or a variant such as <code>unsloth/Qwen3-0.6B-Q8_0/IMC</code> — not a file name.</li>
             <li>Use YAML anchors (<code>&name</code> and <code>&lt;&lt;: *name</code>) to share common settings between variants. The default file includes examples of this pattern.</li>
             <li>The <code>--model-config</code> server flag lets you point to an alternative config file for testing without modifying your main one.</li>
           </ul>
@@ -530,7 +534,7 @@ kronk server start
 open http://localhost:11435
 
 # 4. Download via the BUI Catalog/List screen or use this CLI call
-kronk catalog pull Qwen3-0.6B-Q8_0 --local
+kronk model pull Qwen3-0.6B-Q8_0 --local
 
 # 5. Test the API using this curl call or the BUI App/Chat screen
 curl http://localhost:11435/v1/chat/completions \\
@@ -650,7 +654,12 @@ curl http://localhost:11435/v1/chat/completions \\
           </ul>
           <hr />
           <h2 id="chapter-3-model-configuration">Chapter 3: Model Configuration</h2>
-          <p>Model configuration controls how Kronk configures models to run inference. Configuration can be set via model config files, catalog templates, or programmatically through the SDK.</p>
+          <p>Model configuration controls how Kronk configures models to run inference. There are exactly two ways to configure a model:</p>
+          <ol>
+            <li><strong>&lt;code&gt;~/.kronk/model_config.yaml&lt;/code&gt;</strong> — per-model overrides keyed by model id, used by the model server and any tool that goes through <code>models.KronkResolvedConfig</code>.</li>
+            <li><strong>&lt;code&gt;model.Config&lt;/code&gt; (Go struct)</strong> — passed directly to <code>kronk.New(cfg)</code> when you embed the SDK in your own application.</li>
+          </ol>
+          <p>The catalog (<code>~/.kronk/catalog.yaml</code>) is <strong>not</strong> a source of tuning knobs — it is a resolution cache (provider, family, revision, files). All tuning described in this chapter lives in <code>model_config.yaml</code> or <code>model.Config</code>.</p>
           <h3 id="31-basic-configuration">3.1 Basic Configuration</h3>
           <p>For most models you will want to touch these basic settings. There are many more which will be presented later. Each model has GGUF metadata that Kronk can read for defaults like setting the context window size when not provided. Kronk also has default settings for things like <code>temperature</code> and <code>top_p</code> when not provided.</p>
           <h4 id="context-window">Context Window</h4>
@@ -1672,7 +1681,7 @@ Step 4 — Total VRAM:
             </tbody>
           </table>
           <pre className="code-block"><code className="language-yaml">{`# Example: Gemma 4 26B-A4B with full SWA cache
-gemma-4-26B-A4B-it-UD-Q8_K_XL:
+unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
   context-window: 32768
   swa-full: true
   incremental-cache: true`}</code></pre>
@@ -1740,9 +1749,9 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL:
             <li>Only text generation is supported (not vision/audio)</li>
           </ul>
           <h4 id="configuration">Configuration</h4>
-          <p>Speculative decoding is configured via the <code>draft-model</code> block in catalog YAML or <code>model_config.yaml</code>:</p>
-          <pre className="code-block"><code className="language-yaml">{`# In a catalog YAML file
-config:
+          <p>Speculative decoding is configured via the <code>draft-model</code> block under a target model entry in <code>model_config.yaml</code> (or via <code>model.Config.DraftModel</code> when you embed the SDK directly):</p>
+          <pre className="code-block"><code className="language-yaml">{`# In ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
   context-window: 32768
   nbatch: 2048
   nubatch: 512
@@ -1751,17 +1760,10 @@ config:
   nseq-max: 1
   incremental-cache: true
   draft-model:
-    model-id: Qwen3-0.6B-Q8_0 # Draft model ID (must be downloaded)
-    ndraft: 5 # Candidates per step (default: 5)
-    ngpu-layers: 0 # GPU layers (0=all, -1=none)
-    device: "" # Pin to specific GPU (e.g., "GPU1")`}</code></pre>
-          <pre className="code-block"><code className="language-yaml">{`# In model_config.yaml
-Qwen3-8B-Q8_0:
-  incremental-cache: true
-  nseq-max: 1
-  draft-model:
-    model-id: Qwen3-0.6B-Q8_0
-    ndraft: 5`}</code></pre>
+    model-id: unsloth/Qwen3-0.6B-Q8_0  # Draft model ID (must be downloaded)
+    ndraft: 5                          # Candidates per step (default: 5)
+    ngpu-layers: 0                     # GPU layers (0=all, -1=none)
+    devices: []                        # Pin to specific GPUs (e.g., ["CUDA0"])`}</code></pre>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1791,10 +1793,22 @@ Qwen3-8B-Q8_0:
                 <td>GPU layers for draft model</td>
               </tr>
               <tr>
-                <td>Device</td>
-                <td><code>device</code></td>
-                <td>""</td>
-                <td>Pin draft model to a specific GPU</td>
+                <td>Devices</td>
+                <td><code>devices</code></td>
+                <td><code>[]</code></td>
+                <td>Pin draft model to specific GPUs (by name)</td>
+              </tr>
+              <tr>
+                <td>MainGPU</td>
+                <td><code>main-gpu</code></td>
+                <td>(auto)</td>
+                <td>Main GPU index for the draft model</td>
+              </tr>
+              <tr>
+                <td>TensorSplit</td>
+                <td><code>tensor-split</code></td>
+                <td><code>[]</code></td>
+                <td>Tensor split ratios across draft GPUs</td>
               </tr>
             </tbody>
           </table>
@@ -1874,26 +1888,36 @@ Qwen3-8B-Q8_0:
 }`}</code></pre>
           <p>If not set, the model will generate until it produces a stop token or reaches the context window limit.</p>
           <h3 id="314-model-config-file-example">3.14 Model Config File Example</h3>
-          <p>Create a YAML config file for custom model settings:</p>
-          <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 32768
-    n_batch: 2048
-    n_ubatch: 512
-    n_seq_max: 2
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    flash_attention: enabled
-    incremental_cache: true
+          <p><code>~/.kronk/model_config.yaml</code> is a flat map keyed by canonical model id (<code>provider/modelID</code>, optionally with a <code>/variant</code> suffix). Each entry's fields use kebab-case YAML keys that map 1:1 to <code>model.Config</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
 
-  Llama-3.3-70B-Instruct-Q8_0:
-    context_window: 8192
-    n_gpu_layers: 0
-    split_mode: row
-    offload_kqv: true`}</code></pre>
-          <p>Start the server with custom config:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=model-config.yaml`}</code></pre>
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 32768
+  nbatch: 2048
+  nubatch: 512
+  nseq-max: 2
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: enabled
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+
+Qwen/Qwen3-8B-Q8_0/YARN:
+  context-window: 131072
+  rope-scaling-type: yarn
+  yarn-orig-ctx: 32768
+
+unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
+  context-window: 8192
+  ngpu-layers: 0
+  split-mode: row
+  offload-kqv: true`}</code></pre>
+          <p>The <code>/YARN</code> suffix is a <strong>config variant</strong> — multiple entries can target the same on-disk model and be selected per request by passing the full variant name as the <code>model</code> field.</p>
+          <p>Kronk seeds this file from an embedded default on first server start; your edits are preserved across upgrades. To point at an alternative file for testing, use the <code>--model-config-file</code> server flag:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-test-config.yaml`}</code></pre>
           <hr />
           <h2 id="chapter-4-batch-processing">Chapter 4: Batch Processing</h2>
           <p>Batch processing allows Kronk to handle multiple concurrent requests efficiently by sharing model resources. This chapter explains the architecture and how to optimize for your workload.</p>
@@ -1972,10 +1996,9 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
           <h3 id="44-configuring-batch-processing">4.4 Configuring Batch Processing</h3>
           <p>Batch processing is controlled primarily through the model configuration. The key setting is <code>NSeqMax</code>, which determines how many slots the batch engine creates and therefore how many requests can be processed in parallel. Increasing <code>NSeqMax</code> improves concurrency but requires proportionally more KV cache memory, so it's important to balance throughput against available VRAM.</p>
           <h4 id="enable-batch-processing">Enable Batch Processing</h4>
-          <p>By default, the batch engine runs with a single slot (<code>NSeqMax=1</code>). To enable parallel request processing, set <code>NSeqMax &gt; 1</code> in your model config:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    n_seq_max: 4 # 4 concurrent requests`}</code></pre>
+          <p>By default, the batch engine runs with a single slot (<code>NSeqMax=1</code>). To enable parallel request processing, set <code>nseq-max &gt; 1</code> in <code>~/.kronk/model_config.yaml</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
+  nseq-max: 4 # 4 concurrent requests`}</code></pre>
           <h4 id="queue-depth">Queue Depth</h4>
           <p>A bounded request queue sits in front of the batch engine to absorb bursts of incoming requests without rejecting them immediately.</p>
           <p>The request queue holds <code>NSeqMax × 2</code> requests by default. With <code>NSeqMax=4</code>, up to 8 requests can be in-flight: 4 actively processing in slots and 4 waiting in the queue. This multiplier is configurable via <code>WithQueueDepth</code> when using the SDK:</p>
@@ -1983,7 +2006,7 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
           <p>When all slots and queue positions are occupied, new requests block until a slot becomes available or the request's context is cancelled. If a queued request waits longer than <code>CacheSlotTimeout</code> (default: 30 seconds), the engine preempts the longest-running slot — cancelling that in-flight request with a "preempted by queued request" error — and assigns the slot to the waiting request. If the engine is shutting down, queued requests receive an immediate error. This backpressure and preemption mechanism prevents any single request from starving others indefinitely.</p>
           <h4 id="memory-and-caching">Memory and Caching</h4>
           <p>Adding slots increases throughput but costs memory. Each additional slot allocates its own KV cache partition proportional to the full context window.</p>
-          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. IMC does not add extra sequences. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="#35-parallel-inference-nseqmax">Section 3.5</a> and <a href="#37-vram-estimation">Section 3.7</a>.</p>
+          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. IMC does not add extra sequences. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="chapter-03-model-configuration.md#37-parallel-inference-nseqmax">Section 3.7 — Parallel Inference (NSeqMax)</a> and <a href="chapter-03-model-configuration.md#310-vram-estimation">Section 3.10 — VRAM Estimation</a>.</p>
           <h3 id="45-concurrency-by-model-type">4.5 Concurrency by Model Type</h3>
           <p>Not all model types achieve concurrency the same way. Text inference models (including vision and audio) use the batch engine described in the previous sections, where multiple slots share a single model context and their tokens are combined into one decode call. Embedding and reranking models take a different approach — they create a pool of independent contexts that each process requests separately. The table below summarizes the distinction, and the diagrams that follow show the request flow for each approach.</p>
           <table className="flags-table">
@@ -2059,30 +2082,30 @@ Request 3 (WAIT) ──▶│                                  │
           </ul>
           <p><strong>Recommended Settings</strong></p>
           <ul>
-            <li>Single user, interactive: <code>n_seq_max: 1-2</code></li>
-            <li>Multi-user API server: <code>n_seq_max: 4-8</code></li>
-            <li>High-throughput batch jobs: <code>n_seq_max: 8-16</code></li>
+            <li>Single user, interactive: <code>nseq-max: 1-2</code></li>
+            <li>Multi-user API server: <code>nseq-max: 4-8</code></li>
+            <li>High-throughput batch jobs: <code>nseq-max: 8-16</code></li>
           </ul>
           <p><strong>Monitoring</strong></p>
           <p>Use request tracing to watch for long <code>queue-wait</code> spans, which indicate requests are waiting for an available slot. If you see consistently long queue waits, consider:</p>
           <ol>
-            <li>Increasing <code>NSeqMax</code> (if VRAM allows)</li>
-            <li>Reducing <code>context_window</code> to fit more slots</li>
-            <li>Using KV cache quantization (<code>cache_type_k/v: q8_0</code>)</li>
+            <li>Increasing <code>nseq-max</code> (if VRAM allows)</li>
+            <li>Reducing <code>context-window</code> to fit more slots</li>
+            <li>Using KV cache quantization (<code>cache-type-k</code>/<code>cache-type-v: q8_0</code>)</li>
           </ol>
           <p>See <a href="#chapter-14-observability">Chapter 14: Observability</a> for details on tracing and metrics.</p>
           <h3 id="47-example-configuration">4.7 Example Configuration</h3>
           <p>The following config shows a high-throughput setup that balances concurrency, memory, and caching for a multi-user API server:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    context_window: 8192
-    n_seq_max: 8
-    n_batch: 2048
-    n_ubatch: 512
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    incremental_cache: true`}</code></pre>
-          <p>This configuration handles 8 concurrent requests, uses quantized KV cache to reduce memory, and caches conversations incrementally for faster prefill. Here is the VRAM estimate (see <a href="#37-vram-estimation">Section 3.7</a> for the full formula):</p>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 8192
+  nseq-max: 8
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  incremental-cache: true`}</code></pre>
+          <p>This configuration handles 8 concurrent requests, uses quantized KV cache to reduce memory, and caches conversations incrementally for faster prefill. Here is the VRAM estimate (see <a href="chapter-03-model-configuration.md#310-vram-estimation">Section 3.10 — VRAM Estimation</a> for the full formula):</p>
           <pre className="code-block"><code>{`Model                   : Qwen3-8B-Q8_0
 Model Weights           : ~9 GB
 Context Window (n_ctx)  : 8,192
@@ -2378,15 +2401,15 @@ Conversation edit (sys prompt hash match, full hash mismatch):
             <li>Sub-agent architectures with multiple concurrent agents</li>
           </ul>
           <p><strong>Enable IMC:</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    incremental_cache: true
-    cache_min_tokens: 100 # Minimum tokens before caching (default)`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  incremental-cache: true
+  cache-min-tokens: 100 # Minimum tokens before caching (default)`}</code></pre>
           <h4 id="multi-session-architecture">Multi-Session Architecture</h4>
           <p>All <code>NSeqMax</code> sessions are available for IMC. Each session independently tracks its own conversation branch — its own message hash, system prompt hash, token count, and message index. Sub-agents are routed to different sessions via hash matching, allowing them to maintain independent caches.</p>
           <p>Each session externalizes its cached KV state to RAM after the request completes. On the next request, the cached state is restored into any available slot — sessions are not pinned to specific slots. This means all slots are equally eligible for any session, maximizing slot utilization. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
-          <p>With <code>n_seq_max: 3</code>, three sub-agents can each have their own cached conversation branch. Without multi-session IMC, every sub-agent request would cause a prefix mismatch and rebuild the cache from scratch because different sub-agents send different system prompts and conversation content.</p>
-          <p><strong>Important:</strong> Set <code>n_seq_max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>n_seq_max</code> is smaller than the number of sub-agents, cache thrashing can occur — each new sub-agent evicts a session, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. With unified KV cache, all slots share the same <code>n_ctx</code> pool, so adding more slots does not multiply VRAM usage. However, more sessions means more cached conversations competing for the shared pool. KV pressure eviction automatically clears stale sessions when space gets tight — see <a href="#kv-pressure-eviction">KV Pressure Eviction</a>.</p>
+          <p>With <code>nseq-max: 3</code>, three sub-agents can each have their own cached conversation branch. Without multi-session IMC, every sub-agent request would cause a prefix mismatch and rebuild the cache from scratch because different sub-agents send different system prompts and conversation content.</p>
+          <p><strong>Important:</strong> Set <code>nseq-max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>nseq-max</code> is smaller than the number of sub-agents, cache thrashing can occur — each new sub-agent evicts a session, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. With unified KV cache, all slots share the same <code>n_ctx</code> pool, so adding more slots does not multiply VRAM usage. However, more sessions means more cached conversations competing for the shared pool. KV pressure eviction automatically clears stale sessions when space gets tight — see <a href="#kv-pressure-eviction">KV Pressure Eviction</a>.</p>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
           <pre className="code-block"><code>{`Messages: [system, user]
@@ -2421,7 +2444,7 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
             <li><strong>KV pressure eviction</strong> — When a matching session is found and the total KV usage across all sessions exceeds the context window, evict mismatched sessions (largest first) to reclaim space. Sessions with externalized <code>kvState</code> do not count against VRAM KV pressure because their VRAM sequences are already cleared. See <a href="#kv-pressure-eviction">KV Pressure Eviction</a> for details.</li>
             <li><strong>On full match</strong> — Pick the session with the best prefix coverage (most cached messages). If the request has new messages to cache, extend the session's cache. If the messages are identical, it's a pure cache hit.</li>
             <li><strong>System prompt preservation (two-tier hash)</strong> — No full match, but a session has the same system prompt cached. Keep the system prompt KV in place, trim everything after the system prompt token boundary, and re-template and re-decode only the conversation body. Before preserving, IMC verifies the system prompt token boundary is consistent after re-templating — if the template produces a different token count for the system prompt, it falls back to a full rebuild.</li>
-            <li><strong>Token prefix fallback</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty session's stored <code>cachedTokens</code>. Pick the session with the longest common prefix that meets <code>cache_min_tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#token-prefix-fallback">Token Prefix Fallback</a> for details.</li>
+            <li><strong>Token prefix fallback</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty session's stored <code>cachedTokens</code>. Pick the session with the longest common prefix that meets <code>cache-min-tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#token-prefix-fallback">Token Prefix Fallback</a> for details.</li>
             <li><strong>No match at all</strong> — Pick an empty session if one exists, otherwise evict the least-recently-used (LRU) session and rebuild from scratch.</li>
           </ol>
           <p><strong>Concurrent Build Protection:</strong></p>
@@ -2429,9 +2452,9 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           <p><strong>Decode Failure Recovery:</strong></p>
           <p>If a cache decode fails at any point (extend, rebuild, trim, or media build), IMC clears the entire KV sequence and resets the session metadata. This ensures the slot never advertises cached content that doesn't exist in the KV cache.</p>
           <h4 id="kv-pressure-eviction">KV Pressure Eviction</h4>
-          <p>With <code>n_seq_max &gt; 1</code>, Kronk enables a unified KV cache (<code>KVUnified=1</code>) so that all sequences share the full <code>n_ctx</code> pool. Any single sequence can grow up to the full context window, but the <strong>total</strong> KV usage across all sequences cannot exceed <code>n_ctx</code>.</p>
+          <p>With <code>nseq-max &gt; 1</code>, Kronk enables a unified KV cache (<code>KVUnified=1</code>) so that all sequences share the full <code>n_ctx</code> pool. Any single sequence can grow up to the full context window, but the <strong>total</strong> KV usage across all sequences cannot exceed <code>n_ctx</code>.</p>
           <p>All sessions externalize their KV state to RAM after each request and clear their VRAM sequence, so they do not contribute to VRAM KV pressure between requests. However, during active processing, a session's restored KV does consume VRAM cells until the request completes and the state is externalized again.</p>
-          <p><strong>Example:</strong> With <code>n_seq_max: 3</code> and <code>context_window: 131072</code>:</p>
+          <p><strong>Example:</strong> With <code>nseq-max: 3</code> and <code>context-window: 131072</code>:</p>
           <pre className="code-block"><code>{`Session 0: 854 tokens    (stale media — 2 cached messages, hash mismatch)
 Session 1: 46,541 tokens (stale media — 17 cached messages, hash mismatch)
 Session 2: 86,682 tokens (active media — 49 cached messages, hash match)
@@ -2441,7 +2464,7 @@ Total VRAM-resident: 134,077 tokens > 131,072 → context window full!`}</code><
           <p>After the session scan finds a matching session (Step 1), IMC checks whether the projected total KV usage across all sessions exceeds the context window. If it does, mismatched sessions are evicted largest-first until the total fits:</p>
           <ol>
             <li>Sum <code>totalTokensCached</code> across all non-empty, non-pending sessions (sessions with externalized <code>kvState</code> are excluded since their VRAM is already freed)</li>
-            <li>If the sum exceeds <code>context_window</code>, sort mismatched sessions by token count (descending)</li>
+            <li>If the sum exceeds <code>context-window</code>, sort mismatched sessions by token count (descending)</li>
             <li>Evict sessions one at a time — clear the KV sequence (<code>MemorySeqRm</code>) and reset the session metadata — until the projected total is within bounds</li>
           </ol>
           <p>In the example above, evicting Session 1 (46,541 tokens) brings the total to 87,536 — well within the 131,072 limit. Session 0 (854 tokens) may or may not need eviction depending on the remaining headroom.</p>
@@ -2467,7 +2490,7 @@ Incoming tokens: [T1, T2, T3, T4, T5, T9, T10, T11, T12]
 Common prefix: 5 tokens (salvaged from KV cache)
 Trimmed:       3 tokens (T6-T8 removed from KV cache)
 New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
-          <p>If the common prefix meets the <code>cache_min_tokens</code> threshold, IMC:</p>
+          <p>If the common prefix meets the <code>cache-min-tokens</code> threshold, IMC:</p>
           <ol>
             <li>Reserves the matching session (marks it pending)</li>
             <li>Trims the divergent suffix from the KV cache</li>
@@ -2507,7 +2530,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
               </tr>
               <tr>
                 <td><code>no usable token prefix match</code></td>
-                <td>All prefixes below <code>cache_min_tokens</code>, falling back to empty/LRU slot</td>
+                <td>All prefixes below <code>cache-min-tokens</code>, falling back to empty/LRU slot</td>
               </tr>
             </tbody>
           </table>
@@ -2530,7 +2553,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
               <tr>
                 <td>MoE</td>
                 <td>Snapshot/Restore</td>
-                <td>f16 cache, split_mode: row</td>
+                <td>f16 cache, split-mode: row</td>
               </tr>
               <tr>
                 <td>Hybrid</td>
@@ -2540,18 +2563,18 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
             </tbody>
           </table>
           <p><strong>MoE Configuration:</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-Coder-30B-A3B-Q8_0:
-    incremental_cache: true
-    split_mode: row # Best for MoE architecture
-    cache_type_k: f16 # Safer for MoE routing accuracy
-    cache_type_v: f16`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M:
+  incremental-cache: true
+  split-mode: row     # Best for MoE architecture
+  cache-type-k: f16   # Safer for MoE routing accuracy
+  cache-type-v: f16`}</code></pre>
           <p><strong>Hybrid Configuration:</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-Coder-Next-UD-Q4_K_XL:
-    incremental_cache: true
-    cache_type_k: f16 # Required for hybrid models
-    cache_type_v: f16 # Required for hybrid models`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+unsloth/LFM2-700M-Q8_0:
+  incremental-cache: true
+  cache-type-k: f16   # Required for hybrid models
+  cache-type-v: f16   # Required for hybrid models`}</code></pre>
           <h3 id="53-single-user-caching">5.3 Single-User Caching</h3>
           <p>IMC is designed for single-user use. All <code>NSeqMax</code> sessions are available, with each session independently tracking its own conversation branch via hash matching. All sessions can run on any available slot. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
           <h3 id="54-when-to-use-imc">5.4 When to Use IMC</h3>
@@ -2595,7 +2618,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
               </tr>
               <tr>
                 <td>VRAM</td>
-                <td>Unified <code>n_ctx</code> pool, not multiplied by <code>n_seq_max</code></td>
+                <td>Unified <code>n_ctx</code> pool, not multiplied by <code>nseq-max</code></td>
               </tr>
               <tr>
                 <td>RAM</td>
@@ -2608,7 +2631,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           <p><strong>IMC Invalidation:</strong></p>
           <ul>
             <li>Message prefix hash mismatch with same system prompt → system prompt KV preserved, conversation body trimmed and re-decoded (Step 4 of the session selection algorithm)</li>
-            <li>Message prefix hash mismatch with no system prompt match → token prefix fallback attempted (see <a href="#token-prefix-fallback">Token Prefix Fallback</a>). If a common prefix ≥ <code>cache_min_tokens</code> is found, only the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.</li>
+            <li>Message prefix hash mismatch with no system prompt match → token prefix fallback attempted (see <a href="#token-prefix-fallback">Token Prefix Fallback</a>). If a common prefix ≥ <code>cache-min-tokens</code> is found, only the divergent suffix is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.</li>
             <li>System prompt changed → full cache rebuild from scratch</li>
             <li>Conversation shrinks (client dropped messages or reasoning blocks) → system prompt preserved if unchanged, conversation body re-decoded</li>
           </ul>
@@ -2620,12 +2643,12 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           </ul>
           <h3 id="56-configuration-reference">5.6 Configuration Reference</h3>
           <p>IMC is enabled by default for all models. No configuration is needed to use it. To disable IMC for a specific model, set <code>incremental-cache: false</code> in your <code>model_config.yaml</code>:</p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
   incremental-cache: false   # Disable IMC for this model`}</code></pre>
           <p>You can also tune the minimum cache threshold:</p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen3-8B-Q8_0:
+          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
   cache-min-tokens: 100   # Don't cache if < 100 tokens (default: 100)`}</code></pre>
-          <p><strong>cache_min_tokens</strong></p>
+          <p><strong>cache-min-tokens</strong></p>
           <p>Minimum common prefix length required for token-level partial prefix matching. If no session's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
           <p>Default: 100 tokens</p>
           <h3 id="57-performance-and-limitations">5.7 Performance and Limitations</h3>
@@ -2638,8 +2661,8 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
           </ul>
           <p>Cache extensions (adding new messages to an existing cached prefix) are especially fast because only the delta tokens are decoded. In production logs, sequential extensions typically take ~3ms each.</p>
           <p><strong>IMC Memory Overhead:</strong></p>
-          <p>IMC adds no extra VRAM beyond what the context window already requires. With <code>n_seq_max &gt; 1</code>, Kronk enables a unified KV cache where all sequences share the full <code>n_ctx</code> pool. The total KV cache size is determined by <code>context_window</code>, not multiplied by the number of sessions:</p>
-          <pre className="code-block"><code>{`131K context, n_seq_max=3, IMC (unified KV cache):
+          <p>IMC adds no extra VRAM beyond what the context window already requires. With <code>nseq-max &gt; 1</code>, Kronk enables a unified KV cache where all sequences share the full <code>n_ctx</code> pool. The total KV cache size is determined by <code>context-window</code>, not multiplied by the number of sessions:</p>
+          <pre className="code-block"><code>{`131K context, nseq-max=3, IMC (unified KV cache):
   Total KV cache: ~3.2 GB (8B model, F16)
   Any single slot can use up to the full 131K tokens
   Total across all slots cannot exceed 131K tokens`}</code></pre>
@@ -2740,33 +2763,33 @@ Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
           </ul>
           <h3 id="63-configuration">6.3 Configuration</h3>
           <p><strong>Basic YaRN Setup:</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    context_window: 131072 # Extended context (131K)
-    rope_scaling: yarn # Enable YaRN`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 131072    # Extended context (131K)
+  rope-scaling-type: yarn   # Enable YaRN`}</code></pre>
           <p>That's often all you need—Kronk auto-calculates the other YaRN parameters from the context extension ratio.</p>
           <p><strong>Full Configuration (Advanced):</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    context_window: 131072
-    rope_scaling: yarn
-    rope_freq_base: 1000000 # Model-specific (Qwen3 uses 1M)
-    rope_freq_scale: null # Auto-calculate
-    yarn_ext_factor: null # Auto-calculate
-    yarn_attn_factor: 1.0 # Attention scaling
-    yarn_beta_fast: 32.0 # Low correction dimension
-    yarn_beta_slow: 1.0 # High correction dimension
-    yarn_orig_ctx: 32768 # Original training context`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 131072
+  rope-scaling-type: yarn
+  rope-freq-base: 1000000   # Model-specific (Qwen3 uses 1M)
+  rope-freq-scale: null     # Auto-calculate
+  yarn-ext-factor: null     # Auto-calculate
+  yarn-attn-factor: 1.0     # Attention scaling
+  yarn-beta-fast: 32.0      # Low correction dimension
+  yarn-beta-slow: 1.0       # High correction dimension
+  yarn-orig-ctx: 32768      # Original training context`}</code></pre>
           <h3 id="64-scaling-types">6.4 Scaling Types</h3>
           <p>Kronk supports three RoPE scaling methods:</p>
           <p><strong>None (Default)</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`rope_scaling: none`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`rope-scaling-type: none`}</code></pre>
           <p>Uses native context length. No scaling applied.</p>
           <p><strong>Linear</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`rope_scaling: linear`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`rope-scaling-type: linear`}</code></pre>
           <p>Simple linear interpolation. Works but quality degrades faster than YaRN at high extension ratios.</p>
           <p><strong>YaRN (Recommended)</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`rope_scaling: yarn`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`rope-scaling-type: yarn`}</code></pre>
           <p>Frequency-dependent interpolation with attention scaling. Maintains quality better at 2-4x extensions.</p>
           <h3 id="65-parameter-reference">6.5 Parameter Reference</h3>
           <table className="flags-table">
@@ -2779,42 +2802,42 @@ Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td><code>rope_scaling</code></td>
+                <td><code>rope-scaling-type</code></td>
                 <td>none</td>
                 <td>Scaling method: <code>none</code>, <code>linear</code>, <code>yarn</code></td>
               </tr>
               <tr>
-                <td><code>rope_freq_base</code></td>
+                <td><code>rope-freq-base</code></td>
                 <td>model default</td>
                 <td>Base frequency (10000 for Llama, 1000000 for Qwen3)</td>
               </tr>
               <tr>
-                <td><code>rope_freq_scale</code></td>
+                <td><code>rope-freq-scale</code></td>
                 <td>auto</td>
                 <td>Frequency scaling factor</td>
               </tr>
               <tr>
-                <td><code>yarn_ext_factor</code></td>
+                <td><code>yarn-ext-factor</code></td>
                 <td>auto</td>
                 <td>Extrapolation mix factor (0 = disable)</td>
               </tr>
               <tr>
-                <td><code>yarn_attn_factor</code></td>
+                <td><code>yarn-attn-factor</code></td>
                 <td>1.0</td>
                 <td>Attention magnitude scaling</td>
               </tr>
               <tr>
-                <td><code>yarn_beta_fast</code></td>
+                <td><code>yarn-beta-fast</code></td>
                 <td>32.0</td>
                 <td>Low correction dimension</td>
               </tr>
               <tr>
-                <td><code>yarn_beta_slow</code></td>
+                <td><code>yarn-beta-slow</code></td>
                 <td>1.0</td>
                 <td>High correction dimension</td>
               </tr>
               <tr>
-                <td><code>yarn_orig_ctx</code></td>
+                <td><code>yarn-orig-ctx</code></td>
                 <td>model metadata</td>
                 <td>Original training context size</td>
               </tr>
@@ -2822,17 +2845,17 @@ Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
           </table>
           <h3 id="66-model-specific-examples">6.6 Model-Specific Examples</h3>
           <p><strong>Qwen3 (32K → 131K)</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    context_window: 131072
-    rope_scaling: yarn`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 131072
+  rope-scaling-type: yarn`}</code></pre>
           <p>Qwen3 models are specifically designed to support 131K context with YaRN. The default parameters work well.</p>
           <p><strong>Llama 3 (8K → 32K)</strong></p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Llama-3-8B-Q8_0:
-    context_window: 32768
-    rope_scaling: yarn
-    rope_freq_base: 10000`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
+  context-window: 32768
+  rope-scaling-type: yarn
+  rope-freq-base: 10000`}</code></pre>
           <p>4x extension from 8K to 32K is within the recommended range.</p>
           <h3 id="67-memory-impact">6.7 Memory Impact</h3>
           <p>Extended context significantly increases memory requirements:</p>
@@ -2845,16 +2868,16 @@ Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
           <ol>
             <li>Use KV cache quantization:</li>
           </ol>
-          <pre className="code-block"><code className="language-yaml">{`cache_type_k: q8_0
-cache_type_v: q8_0`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`cache-type-k: q8_0
+cache-type-v: q8_0`}</code></pre>
           <ol>
             <li>Reduce batch parallelism:</li>
           </ol>
-          <pre className="code-block"><code className="language-yaml">{`n_seq_max: 1 # Fewer concurrent requests`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`nseq-max: 1 # Fewer concurrent requests`}</code></pre>
           <ol>
             <li>Keep KV cache on CPU (slower but saves VRAM):</li>
           </ol>
-          <pre className="code-block"><code className="language-yaml">{`offload_kqv: false`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`offload-kqv: false`}</code></pre>
           <h3 id="68-quality-considerations">6.8 Quality Considerations</h3>
           <p><strong>Extension ratio guidelines:</strong></p>
           <ul>
@@ -2872,26 +2895,26 @@ cache_type_v: q8_0`}</code></pre>
           </ol>
           <h3 id="69-example-long-document-processing">6.9 Example: Long Document Processing</h3>
           <p>Configuration for processing long documents:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    context_window: 65536 # 64K context
-    rope_scaling: yarn
-    n_batch: 4096 # Larger batch for long prompts
-    n_ubatch: 1024
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    n_seq_max: 1 # Single request (memory intensive)`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 65536      # 64K context
+  rope-scaling-type: yarn
+  nbatch: 4096               # Larger batch for long prompts
+  nubatch: 1024
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  nseq-max: 1                # Single request (memory intensive)`}</code></pre>
           <p>This configuration can process documents up to ~50K tokens while leaving room for generation.</p>
           <hr />
           <h2 id="chapter-7-model-server">Chapter 7: Model Server</h2>
           <p>The Kronk Model Server provides an OpenAI-compatible REST API for inference. This chapter covers server configuration, management, and the catalog system.</p>
           <p><strong>CLI Modes: Web vs Local</strong></p>
           <p>Most CLI commands communicate with a running server by default:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog list                # Talks to server at localhost:11435
-kronk catalog pull Qwen3-0.6B-Q8_0  # Downloads via server`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk catalog list                  # Talks to server at localhost:11435
+kronk model pull Qwen3-0.6B-Q8_0    # Downloads via server`}</code></pre>
           <p>Add <code>--local</code> to run commands directly without a server:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog list --local        # Direct file access
-kronk catalog pull Qwen3-0.6B-Q8_0 --local
+          <pre className="code-block"><code className="language-shell">{`kronk catalog list --local          # Direct file access
+kronk model pull Qwen3-0.6B-Q8_0 --local
 kronk libs --local`}</code></pre>
           <p>Use <code>--local</code> when:</p>
           <ul>
@@ -2908,11 +2931,10 @@ kronk libs --local`}</code></pre>
           <p><strong>Environment Variables</strong></p>
           <p>Every command-line flag has a corresponding environment variable. The naming convention is <code>KRONK_</code> followed by the flag name in uppercase with hyphens replaced by underscores:</p>
           <pre className="code-block"><code>{`--api-host        →  KRONK_WEB_API_HOST
---models-in-cache →  KRONK_MODELS_IN_CACHE
+--models-in-cache →  KRONK_CACHE_MODELS_IN_CACHE
 --cache-ttl       →  KRONK_CACHE_TTL
 --processor       →  KRONK_PROCESSOR
---hf-token        →  KRONK_HF_TOKEN
-                      GITHUB_TOKEN  (not a flag; env var only)`}</code></pre>
+--hf-token        →  KRONK_HF_TOKEN`}</code></pre>
           <p>Environment variables are useful for:</p>
           <ul>
             <li>Configuration in Docker/Kubernetes deployments</li>
@@ -3051,7 +3073,7 @@ kronk libs --local`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p><strong>Catalog Settings</strong></p>
+          <p><strong>Cache & Model Configuration Settings</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -3062,73 +3084,29 @@ kronk libs --local`}</code></pre>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td><code>--catalog-github-repo</code></td>
-                <td><code>KRONK_CATALOG_GITHUB_REPO</code></td>
-                <td>GitHub API URL</td>
-                <td>GitHub repo URL for catalog files</td>
-              </tr>
               <tr>
                 <td><code>--model-config-file</code></td>
-                <td><code>KRONK_CATALOG_MODEL_CONFIG_FILE</code></td>
-                <td><em>(empty)</em></td>
-                <td>Path to model-specific config YAML file</td>
+                <td><code>KRONK_CACHE_MODEL_CONFIG_FILE</code></td>
+                <td><code>&lt;base&gt;/model_config.yaml</code></td>
+                <td>Path to per-model configuration overrides. Defaults to the file under your <code>--base-path</code>.</td>
               </tr>
               <tr>
-                <td><code>--catalog-repo-path</code></td>
-                <td><code>KRONK_CATALOG_REPO_PATH</code></td>
-                <td><em>(empty)</em></td>
-                <td>Path to cloned catalog repository for publishing edits</td>
+                <td><code>--model-instances</code></td>
+                <td><code>KRONK_CACHE_MODEL_INSTANCES</code></td>
+                <td><code>1</code></td>
+                <td>Maximum loaded instances of any single model id</td>
               </tr>
-            </tbody>
-          </table>
-          <p><strong>Template Settings</strong></p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Flag</th>
-                <th>Environment Variable</th>
-                <th>Default</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>--templates-github-repo</code></td>
-                <td><code>KRONK_TEMPLATES_GITHUB_REPO</code></td>
-                <td>GitHub API URL</td>
-                <td>GitHub repo URL for template files</td>
-              </tr>
-            </tbody>
-          </table>
-          <p><strong>Cache Settings</strong></p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Flag</th>
-                <th>Environment Variable</th>
-                <th>Default</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>
               <tr>
                 <td><code>--models-in-cache</code></td>
                 <td><code>KRONK_CACHE_MODELS_IN_CACHE</code></td>
-                <td><code>3</code></td>
-                <td>Maximum models kept loaded in memory</td>
+                <td><code>2</code></td>
+                <td>Maximum distinct models kept loaded in memory</td>
               </tr>
               <tr>
                 <td><code>--cache-ttl</code></td>
                 <td><code>KRONK_CACHE_TTL</code></td>
                 <td><code>20m</code></td>
-                <td>How long unused models stay loaded</td>
-              </tr>
-              <tr>
-                <td><code>--ignore-integrity-check</code></td>
-                <td><code>KRONK_CACHE_IGNORE_INTEGRITY_CHECK</code></td>
-                <td><code>true</code></td>
-                <td>Skip SHA256 integrity check on model load</td>
+                <td>How long an unused model stays loaded</td>
               </tr>
             </tbody>
           </table>
@@ -3186,12 +3164,6 @@ kronk libs --local`}</code></pre>
                 <td>Hugging Face API token for gated models</td>
               </tr>
               <tr>
-                <td><em>(env var only)</em></td>
-                <td><code>GITHUB_TOKEN</code></td>
-                <td><em>(empty)</em></td>
-                <td>GitHub token for higher catalog sync rate limits</td>
-              </tr>
-              <tr>
                 <td><code>--allow-upgrade</code></td>
                 <td><code>KRONK_ALLOW_UPGRADE</code></td>
                 <td><code>true</code></td>
@@ -3216,89 +3188,74 @@ kronk libs --local`}</code></pre>
   --api-host=0.0.0.0:11435 \\
   --models-in-cache=5 \\
   --cache-ttl=30m \\
-  --model-config-file=model-config.yaml \\
-  --catalog-repo-path=~/code/kronk_catalogs \\
+  --model-config-file=./model_config.yaml \\
   --hf-token=hf_xxxxx`}</code></pre>
           <h3 id="74-model-caching">7.4 Model Caching</h3>
           <p>The server maintains a pool of loaded models to avoid reload latency.</p>
           <p><strong>Configuration</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --models-in-cache=3 \\
-  --cache-ttl=5m`}</code></pre>
+  --cache-ttl=20m`}</code></pre>
           <ul>
-            <li><code>models-in-cache</code> - Maximum models kept loaded (default: 3)</li>
-            <li><code>cache-ttl</code> - How long unused models stay loaded (default: 5m)</li>
+            <li><code>models-in-cache</code> - Maximum distinct models kept loaded (default: 2)</li>
+            <li><code>model-instances</code> - Maximum loaded instances of any single model id (default: 1)</li>
+            <li><code>cache-ttl</code> - How long an unused model stays loaded (default: 20m)</li>
           </ul>
           <p>When a new model is requested and the cache is full, the least recently used model is unloaded.</p>
           <h3 id="75-model-config-files">7.5 Model Config Files</h3>
-          <p>Create a YAML file to configure model-specific settings:</p>
-          <pre className="code-block"><code className="language-yaml">{`# model-config.yaml
-models:
-  Qwen3-0.6B-Q8_0:
-    context_window: 32768
-    n_seq_max: 4
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    incremental_cache: true
+          <p>The server reads per-model overrides from <code>~/.kronk/model_config.yaml</code> by default. Kronk seeds this file from an embedded default on first server start; your edits are preserved across upgrades.</p>
+          <p>The file is a flat map keyed by canonical model id (<code>provider/modelID</code>, optionally with a <code>/variant</code> suffix). Each entry's keys map 1:1 to <code>model.Config</code> and use kebab-case:</p>
+          <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
 
-  Llama-3.3-70B-Instruct-Q8_0:
-    context_window: 8192
-    n_gpu_layers: 0
-    split_mode: row
+unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 32768
+  nseq-max: 4
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  incremental-cache: true
 
-  embeddinggemma-300m-qat-Q8_0:
-    n_seq_max: 2`}</code></pre>
-          <p>Start with the config file:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=model-config.yaml`}</code></pre>
+unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
+  context-window: 8192
+  ngpu-layers: 0
+  split-mode: row
+
+ggml-org/embeddinggemma-300m-qat-Q8_0:
+  nseq-max: 2`}</code></pre>
+          <p>To point at an alternative file (for testing without modifying your main one):</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-test-config.yaml`}</code></pre>
           <p>Or via environment variable:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_CATALOG_MODEL_CONFIG_FILE=/path/to/model-config.yaml
+          <pre className="code-block"><code className="language-shell">{`export KRONK_CACHE_MODEL_CONFIG_FILE=/path/to/model_config.yaml
 kronk server start`}</code></pre>
           <p><strong>Project Reference Configuration</strong></p>
-          <p>The Kronk repository includes a comprehensive reference configuration with recommended settings for various models and use cases:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_CATALOG_MODEL_CONFIG_FILE=<clone_path>/zarf/kms/model_config.yaml
-kronk server start`}</code></pre>
-          <p>This file includes:</p>
+          <p>The Kronk repository includes a comprehensive reference configuration with recommended settings for various models and use cases at <code>zarf/kms/model_config.yaml</code>. It includes:</p>
           <ul>
             <li>Optimized configurations for coding agents (Cline, OpenCode)</li>
             <li>YaRN extended context examples</li>
             <li>IMC configuration for message caching</li>
             <li>Vision and audio model settings</li>
             <li>Detailed comments explaining each configuration option</li>
+            <li>Examples of YAML anchors for sharing common settings between variants</li>
           </ul>
-          <p>Review <code>zarf/kms/model_config.yaml</code> for examples of YAML anchors, cache configurations, and model-specific tuning.</p>
           <h3 id="76-catalog-system">7.6 Catalog System</h3>
-          <p>The catalog provides a curated list of verified models with preconfigured settings.</p>
-          <p><strong>List Available Models</strong></p>
+          <p>The catalog (<code>~/.kronk/catalog.yaml</code>) is your <strong>personal</strong> catalog of models. On first run Kronk seeds it from an embedded starter list so you have something to choose from immediately; the catalog grows as you pull models or resolve new IDs against HuggingFace.</p>
+          <p>Each entry is a resolution cache — provider, family (HF repo), revision, file list, sizes, optional MMProj projection, and detected capabilities. Templates come from the GGUF metadata of the downloaded model itself and are not stored here.</p>
+          <p><strong>List entries in the catalog</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list`}</code></pre>
-          <p>Output:</p>
-          <pre className="code-block"><code>{`CATALOG              MODEL ID                         PULLED  ENDPOINT
-Audio-Text-to-Text   Qwen2-Audio-7B.Q8_0              no      chat_completion
-Embedding            embeddinggemma-300m-qat-Q8_0     no      embeddings
-Image-Text-to-Text   gemma-3-4b-it-q4_0               no      chat_completion
-Text-Generation      Qwen3-0.6B-Q8_0                    yes     chat_completion
-Text-Generation      Llama-3.3-70B-Instruct-Q8_0      no      chat_completion`}</code></pre>
-          <p><strong>Filter by Category</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog list --filter-category=Embedding`}</code></pre>
-          <p><strong>Pull a Model</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen3-0.6B-Q8_0`}</code></pre>
-          <p><strong>Show Model Details</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog show Qwen3-0.6B-Q8_0`}</code></pre>
-          <p><strong>Update Catalog</strong></p>
-          <p><em>Note: We don't have a server version of this yet.</em></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog update --local`}</code></pre>
-          <h3 id="77-custom-catalog-repository">7.7 Custom Catalog Repository</h3>
-          <p>Use a custom catalog repository:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start \\
-  --catalog-github-repo=https://github.com/myorg/my-catalog`}</code></pre>
-          <h3 id="78-templates">7.8 Templates</h3>
-          <p>Templates define chat formatting (Jinja templates) for different models. Kronk downloads templates automatically from the offical templates repository.</p>
-          <p>https://github.com/ardanlabs/kronk_catalogs</p>
-          <p>You don't need this unless you want to maintain your own repository.</p>
-          <p><strong>Custom Templates Repository</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start \\
-  --templates-github-repo=https://github.com/myorg/my-templates`}</code></pre>
-          <p>Templates are cached in <code>~/.kronk/templates/</code> by default.</p>
-          <h3 id="79-runtime-settings">7.9 Runtime Settings</h3>
+          <p>Output (real columns):</p>
+          <pre className="code-block"><code>{`VAL   MODEL ID                                       PROVIDER   FAMILY                              ARCH      MTMD   SIZE
+✓     ggml-org/embeddinggemma-300m-qat-Q8_0          ggml-org   embeddinggemma-300m-qat-q8_0-GGUF   bert      -      329.0 MB
+✓     unsloth/Qwen3-0.6B-Q8_0                        unsloth    Qwen3-0.6B-GGUF                     qwen3     -      699.0 MB
+✗     unsloth/Ministral-3-14B-Instruct-2512-Q4_0     unsloth    Ministral-3-14B-Instruct-2512-GGUF  llama     -      8.0 GB`}</code></pre>
+          <p><code>VAL</code> indicates whether the model files have been downloaded and validated locally; <code>MTMD</code> indicates a multimodal projection (mmproj) is present.</p>
+          <p><strong>Show catalog entry details</strong></p>
+          <pre className="code-block"><code className="language-shell">{`kronk catalog show unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
+          <p><strong>Pull (download) a model</strong></p>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
+          <p>After the pull completes, the catalog entry is enriched with the resolved provider, family, revision, and file sizes so subsequent lookups don't need to hit HuggingFace.</p>
+          <p><strong>Remove a catalog entry</strong></p>
+          <pre className="code-block"><code className="language-shell">{`kronk catalog remove unsloth/Qwen3-0.6B-Q8_0   # also removes downloaded files`}</code></pre>
+          <p>The same operations are available in the BUI's Catalog and Model views.</p>
+          <h3 id="77-runtime-settings">7.7 Runtime Settings</h3>
           <p><strong>Processor Selection</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --processor=cuda    # NVIDIA GPU
 kronk server start --processor=metal   # Apple Silicon
@@ -3341,11 +3298,7 @@ kronk server start --processor=cpu     # CPU only`}</code></pre>
           <p>Or via environment variable:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_HF_TOKEN=hf_xxxxx
 kronk server start`}</code></pre>
-          <p>For higher GitHub API rate limits during catalog sync:</p>
-          <pre className="code-block"><code className="language-shell">{`export GITHUB_TOKEN=ghp_xxxxx
-kronk server start`}</code></pre>
-          <p>Without a token, GitHub allows 60 requests/hour. With a token, the limit increases to 5,000 requests/hour. Kronk degrades gracefully when rate limited, falling back to local cache.</p>
-          <h3 id="710-logging">7.10 Logging</h3>
+          <h3 id="78-logging">7.8 Logging</h3>
           <p><strong>llama.cpp Logging</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log=1    # Enable llama.cpp logs
 kronk server start --llama-log=0    # Disable (default)`}</code></pre>
@@ -3355,38 +3308,41 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <p><strong>Warning:</strong> This logs sensitive data. Never use in production.</p>
           <p><strong>View Server Logs</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server logs`}</code></pre>
-          <h3 id="711-data-paths">7.11 Data Paths</h3>
+          <h3 id="79-data-paths">7.9 Data Paths</h3>
           <p>Default data locations:</p>
           <pre className="code-block"><code>{`~/.kronk/
+├── catalog.yaml                        # Personal catalog (resolution cache + provider list)
+├── model_config.yaml                   # Per-model configuration overrides
 ├── libraries/                          # llama.cpp libraries (one folder per triple)
 │   └── <os>/<arch>/<processor>/        # e.g. darwin/arm64/metal/, linux/amd64/cuda/
 │       ├── libllama.so / .dylib / .dll
 │       └── version.json
-├── models/                             # Downloaded models
-├── templates/                          # Chat templates
-└── catalog/                            # Catalog cache`}</code></pre>
-          <p>Each <code>(arch, os, processor)</code> install lives in its own folder. The runtime loads the folder for the detected triple by default; set <code>KRONK_LIB_PATH</code> to a different triple folder (and restart) to switch active install. See chapter 2.3 for <code>KRONK_LIB_PATH</code> semantics and the install-management commands.</p>
+└── models/                             # Downloaded model files
+    ├── .index.yaml                     # Local file index (validated state per model)
+    └── <provider>/<family>/<file>.gguf`}</code></pre>
+          <p>Each <code>(arch, os, processor)</code> library install lives in its own folder. The runtime loads the folder for the detected triple by default; set <code>KRONK_LIB_PATH</code> to a different triple folder (and restart) to switch active install. See chapter 2.3 for <code>KRONK_LIB_PATH</code> semantics and the install-management commands.</p>
           <p><strong>Custom Base Path</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --base-path=/data/kronk`}</code></pre>
-          <h3 id="712-complete-example">7.12 Complete Example</h3>
+          <p><code>--base-path</code> shifts every file above to live under the new root.</p>
+          <h3 id="710-complete-example">7.10 Complete Example</h3>
           <p>Production-ready server configuration:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=0.0.0.0:11435 \\
   --models-in-cache=2 \\
-  --cache-ttl=10m \\
-  --model-config-file=/etc/kronk/models.yaml \\
+  --cache-ttl=20m \\
+  --model-config-file=/etc/kronk/model_config.yaml \\
   --processor=cuda \\
   --auth-enabled=true \\
   -d`}</code></pre>
           <p>With model config:</p>
-          <pre className="code-block"><code className="language-yaml">{`# /etc/kronk/models.yaml
-models:
-  Qwen3-0.6B-Q8_0:
-    context_window: 32768
-    n_seq_max: 4
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-    incremental_cache: true`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`# /etc/kronk/model_config.yaml
+
+unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 32768
+  nseq-max: 4
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  incremental-cache: true`}</code></pre>
           <hr />
           <h2 id="chapter-8-api-endpoints">Chapter 8: API Endpoints</h2>
           <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the available endpoints and their usage.</p>
@@ -3444,7 +3400,7 @@ models:
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "What is the capital of France?"}
@@ -3452,7 +3408,7 @@ models:
   }'`}</code></pre>
           <p><strong>Request Parameters:</strong></p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "messages": [
     { "role": "system", "content": "System prompt" },
     { "role": "user", "content": "User message" },
@@ -3477,7 +3433,7 @@ data: [DONE]`}</code></pre>
   "id": "chatcmpl-xxx",
   "object": "chat.completion",
   "created": 1234567890,
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "choices": [
     {
       "index": 0,
@@ -3497,7 +3453,7 @@ data: [DONE]`}</code></pre>
           <p><strong>Reasoning Models:</strong></p>
           <p>For models with thinking/reasoning support (like Qwen3):</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "messages": [...],
   "enable_thinking": true
 }`}</code></pre>
@@ -3513,7 +3469,7 @@ data: [DONE]`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/responses \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "input": "Explain quantum computing in simple terms."
   }'`}</code></pre>
           <p>The <code>input</code> field can be a string or an array of message objects.</p>
@@ -3537,12 +3493,12 @@ data: {"type":"response.completed",...}`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/embeddings \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "embeddinggemma-300m-qat-Q8_0",
+    "model": "ggml-org/embeddinggemma-300m-qat-Q8_0",
     "input": "The quick brown fox jumps over the lazy dog."
   }'`}</code></pre>
           <p><strong>Multiple Inputs:</strong></p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "embeddinggemma-300m-qat-Q8_0",
+  "model": "ggml-org/embeddinggemma-300m-qat-Q8_0",
   "input": [
     "First document to embed.",
     "Second document to embed.",
@@ -3559,7 +3515,7 @@ data: {"type":"response.completed",...}`}</code></pre>
       "embedding": [0.123, -0.456, 0.789, ...]
     }
   ],
-  "model": "embeddinggemma-300m-qat-Q8_0",
+  "model": "ggml-org/embeddinggemma-300m-qat-Q8_0",
   "usage": {
     "prompt_tokens": 10,
     "total_tokens": 10
@@ -3572,7 +3528,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/rerank \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "bge-reranker-v2-m3-Q8_0",
+    "model": "gpustack/bge-reranker-v2-m3-Q8_0",
     "query": "What is machine learning?",
     "documents": [
       "Machine learning is a subset of artificial intelligence.",
@@ -3597,7 +3553,7 @@ data: {"type":"response.completed",...}`}</code></pre>
       "document": "Deep learning uses neural networks."
     }
   ],
-  "model": "bge-reranker-v2-m3-Q8_0",
+  "model": "gpustack/bge-reranker-v2-m3-Q8_0",
   "usage": {
     "prompt_tokens": 45,
     "total_tokens": 45
@@ -3621,7 +3577,7 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td><code>model</code></td>
                 <td><code>string</code></td>
                 <td>Yes</td>
-                <td>Model ID (e.g., <code>Qwen3-8B-Q8_0</code>). Works with any model type.</td>
+                <td>Model ID (e.g., <code>Qwen/Qwen3-8B-Q8_0</code>). Works with any model type.</td>
               </tr>
               <tr>
                 <td><code>input</code></td>
@@ -3648,7 +3604,7 @@ data: {"type":"response.completed",...}`}</code></pre>
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "input": "The quick brown fox jumps over the lazy dog"
   }'`}</code></pre>
           <p><strong>Request (with template):</strong></p>
@@ -3656,7 +3612,7 @@ data: {"type":"response.completed",...}`}</code></pre>
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "input": "The quick brown fox jumps over the lazy dog",
     "apply_template": true
   }'`}</code></pre>
@@ -3664,7 +3620,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <pre className="code-block"><code className="language-json">{`{
   "object": "tokenize",
   "created": 1738857600,
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "tokens": 11
 }`}</code></pre>
           <p>When <code>apply_template</code> is true, the token count will be higher than raw text because it includes template overhead (role markers, separators, and the generation prompt).</p>
@@ -3674,7 +3630,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [
       {"role": "user", "content": "What is the weather in Paris?"}
     ],
@@ -3732,7 +3688,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p><strong>Handling Tool Results:</strong></p>
           <p>After executing the tool, send the result back:</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "messages": [
     { "role": "user", "content": "What is the weather in Paris?" },
     {
@@ -3773,12 +3729,12 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
   "object": "list",
   "data": [
     {
-      "id": "Qwen3-8B-Q8_0",
+      "id": "Qwen/Qwen3-8B-Q8_0",
       "object": "model",
       "owned_by": "kronk"
     },
     {
-      "id": "embeddinggemma-300m-qat-Q8_0",
+      "id": "ggml-org/embeddinggemma-300m-qat-Q8_0",
       "object": "model",
       "owned_by": "kronk"
     }
@@ -4091,7 +4047,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [{"role": "user", "content": "List 3 languages in JSON"}],
     "grammar": "root ::= object\\nvalue ::= object | array | string | number | \\"true\\" | \\"false\\" | \\"null\\"\\nobject ::= \\"{\\" ws ( string \\":\\" ws value (\\",\\" ws string \\":\\" ws value)* )? ws \\"}\\"\\narray ::= \\"[\\" ws ( value (\\",\\" ws value)* )? ws \\"]\\"\\nstring ::= \\"\\\\\\"\\" ([^\\"\\\\\\\\] | \\"\\\\\\\\\\" [\\"\\\\\\\\bfnrt/] | \\"\\\\\\\\u\\" [0-9a-fA-F]{4})* \\"\\\\\\"\\"\\nnumber ::= \\"-\\"? (\\"0\\" | [1-9][0-9]*) (\\".\\" [0-9]+)? ([eE] [+-]? [0-9]+)?\\nws ::= [ \\\\t\\\\n\\\\r]*"
   }'`}</code></pre>
@@ -4112,7 +4068,7 @@ d := model.D{
 }`}</code></pre>
           <p>Via API with <code>json_schema</code> field:</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen3-8B-Q8_0",
+  "model": "Qwen/Qwen3-8B-Q8_0",
   "messages": [...],
   "json_schema": {
     "type": "object",
@@ -4166,7 +4122,7 @@ d := model.D{
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [
       {"role": "user", "content": "What is 2+2?"}
     ],
@@ -4419,23 +4375,24 @@ d := model.D{
             <li><strong>Audio</strong>: WAV audio files</li>
           </ul>
           <p><strong>Available Models (from catalog):</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog list --filter-category=Image
-kronk catalog list --filter-category=Audio`}</code></pre>
-          <p>Example models:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk catalog list`}</code></pre>
+          <p>The <code>MTMD</code> column marks entries that ship with a multi-modal projector. To filter by capability (images, audio, etc.) use the BUI catalog view, which exposes capability filters in the sidebar.</p>
+          <p>Example models from the seed catalog:</p>
           <ul>
-            <li><code>Qwen2.5-VL-3B-Instruct-Q8_0</code> - Vision model</li>
-            <li><code>gemma-3-4b-it-q4_0</code> - Vision model</li>
-            <li><code>Qwen2-Audio-7B.Q8_0</code> - Audio model</li>
+            <li><code>unsloth/LFM2.5-VL-1.6B-Q8_0</code> - Vision model</li>
+            <li><code>unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M</code> - Vision model</li>
+            <li><code>mradermacher/Qwen2-Audio-7B.Q8_0</code> - Audio model</li>
+            <li><code>ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0</code> - Vision + audio + video</li>
           </ul>
           <h3 id="102-vision-models">10.2 Vision Models</h3>
           <p>Vision models analyze images and answer questions about their content.</p>
           <p><strong>Download a Vision Model:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen2.5-VL-3B-Instruct-Q8_0`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull unsloth/LFM2.5-VL-1.6B-Q8_0`}</code></pre>
           <p><strong>API Request with Image (OpenAI Format):</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
+    "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
     "messages": [
       {
         "role": "user",
@@ -4473,12 +4430,12 @@ kronk catalog list --filter-category=Audio`}</code></pre>
           <h3 id="103-audio-models">10.3 Audio Models</h3>
           <p>Audio models transcribe and understand spoken content.</p>
           <p><strong>Download an Audio Model:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog pull Qwen2-Audio-7B.Q8_0`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull mradermacher/Qwen2-Audio-7B.Q8_0`}</code></pre>
           <p><strong>API Request with Audio:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen2-Audio-7B.Q8_0",
+    "model": "mradermacher/Qwen2-Audio-7B.Q8_0",
     "messages": [
       {
         "role": "user",
@@ -4506,7 +4463,7 @@ kronk catalog list --filter-category=Audio`}</code></pre>
           <h3 id="104-plain-base64-format">10.4 Plain Base64 Format</h3>
           <p>For simpler integrations, Kronk also accepts plain base64 as the message content (without the structured OpenAI format):</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
+  "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
   "messages": [
     {
       "role": "user",
@@ -4522,31 +4479,30 @@ kronk catalog list --filter-category=Audio`}</code></pre>
           </ul>
           <h3 id="105-configuration-for-multi-modal-models">10.5 Configuration for Multi-Modal Models</h3>
           <p>Vision and audio models have specific configuration requirements:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen2.5-VL-3B-Instruct-Q8_0:
-    n_ubatch: 2048 # Higher for image token processing
-    n_seq_max: 2 # Process up to 2 requests concurrently
-    context_window: 8192`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`unsloth/LFM2.5-VL-1.6B-Q8_0:
+  nubatch: 2048 # Higher for image token processing
+  nseq-max: 2 # Process up to 2 requests concurrently
+  context-window: 8192`}</code></pre>
           <p><strong>Key Considerations:</strong></p>
           <ul>
-            <li><code>n_ubatch</code> should be high (≥2048) for efficient image/audio token processing</li>
-            <li><code>n_seq_max</code> controls batch parallelism (multiple slots in shared context)</li>
+            <li><code>nubatch</code> should be high (≥2048) for efficient image/audio token processing</li>
+            <li><code>nseq-max</code> controls batch parallelism (multiple slots in shared context)</li>
             <li>Vision/audio models use the same batch engine as text models</li>
           </ul>
           <h3 id="106-memory-requirements">10.6 Memory Requirements</h3>
           <p>Vision and audio models require additional memory for the projector:</p>
-          <p><strong>Vision Model Example (Qwen2.5-VL-3B):</strong></p>
-          <pre className="code-block"><code>{`Model weights:     ~3.5 GB
-Projector:         ~0.5 GB
+          <p><strong>Vision Model Example (unsloth/LFM2.5-VL-1.6B-Q8_0):</strong></p>
+          <pre className="code-block"><code>{`Model weights:     ~1.2 GB
+Projector:         ~0.8 GB
 KV cache (8K):     ~0.4 GB
 ─────────────────────────
-Total:             ~4.4 GB`}</code></pre>
-          <p><strong>Audio Model Example (Qwen2-Audio-7B):</strong></p>
+Total:             ~2.4 GB`}</code></pre>
+          <p><strong>Audio Model Example (mradermacher/Qwen2-Audio-7B.Q8_0):</strong></p>
           <pre className="code-block"><code>{`Model weights:     ~8 GB
-Projector:         ~0.8 GB
+Projector:         ~0.7 GB
 KV cache (8K):     ~0.6 GB
 ─────────────────────────
-Total:             ~9.4 GB`}</code></pre>
+Total:             ~9.3 GB`}</code></pre>
           <h3 id="107-imc-and-multi-modal-caching">10.7 IMC and Multi-Modal Caching</h3>
           <p>IMC fully supports vision and audio models. Media embeddings (images, audio) are cached in the KV cache alongside text tokens. After each request, the entire cached prefix — including media embeddings — is snapshotted to RAM via <code>StateSeqGetData</code> and the VRAM sequence is cleared. On the next request, the cached state is restored from RAM into any available slot, just like text-only sessions. Media is never re-encoded through the projection model unless the conversation cache is rebuilt from scratch.</p>
           <p>For example, in a multi-turn vision conversation:</p>
@@ -4569,7 +4525,7 @@ IMAGE_B64=$(base64 -i photo.jpg)
 curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen2.5-VL-3B-Instruct-Q8_0",
+    "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
     "messages": [
       {
         "role": "user",
@@ -4593,7 +4549,7 @@ AUDIO_B64=$(base64 -i recording.wav)
 curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen2-Audio-7B.Q8_0",
+    "model": "mradermacher/Qwen2-Audio-7B.Q8_0",
     "messages": [
       {
         "role": "user",
@@ -4616,7 +4572,7 @@ curl http://localhost:11435/v1/chat/completions \\
           <p><strong>Start Server with Auth Enabled:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --auth-enabled`}</code></pre>
           <p>Or via environment variable:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTH_ENABLED=true
+          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTH_LOCAL_ENABLED=true
 kronk server start`}</code></pre>
           <p><strong>First-Time Setup:</strong></p>
           <p>On first startup with authentication enabled, Kronk automatically:</p>
@@ -4717,7 +4673,7 @@ eyJhbGciOiJSUzI1NiIsImtpZCI6ImExYjJjM2Q0Li4uIiwidHlwIjoiSldUIn0...`}</code></pre
   -H "Authorization: Bearer eyJhbGciOiJS..." \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [{"role": "user", "content": "Hello"}]
   }'`}</code></pre>
           <p><strong>Environment Variable Pattern:</strong></p>
@@ -4736,7 +4692,7 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen3-8B-Q8_0",
+    model="Qwen/Qwen3-8B-Q8_0",
     messages=[{"role": "user", "content": "Hello"}]
 )`}</code></pre>
           <h3 id="117-authorization-flow">11.7 Authorization Flow</h3>
@@ -4768,13 +4724,25 @@ response = client.chat.completions.create(
           <p><strong>Bypassing Rate Limits:</strong></p>
           <p>Admin tokens (like <code>master.jwt</code>) bypass all rate limiting.</p>
           <h3 id="119-configuration-reference">11.9 Configuration Reference</h3>
-          <p><strong>Server Flags:</strong></p>
+          <p><strong>Deployment Modes:</strong></p>
+          <p>Auth can run in two modes:</p>
+          <ol>
+            <li><strong>Embedded (default)</strong> — The auth service runs in-process inside <code>kronk server</code> over an in-memory listener. This is what <code>kronk server start --auth-enabled</code> uses. Configured via the <code>--auth-enabled</code> / <code>--auth-issuer</code> flags and the <code>KRONK_AUTH_LOCAL_*</code> env vars.</li>
+            <li><strong>Standalone</strong> — A separate <code>auth</code> binary listens on its own host; <code>kronk server</code> connects to it via <code>--auth-host</code> (<code>KRONK_AUTH_HOST</code>). The standalone service has its own <code>AUTH_AUTH_*</code> env-var prefix (e.g. <code>AUTH_AUTH_HOST</code>, <code>AUTH_AUTH_ISSUER</code>, <code>AUTH_AUTH_ENABLED</code>). Setting <code>KRONK_AUTH_HOST</code> on the kronk server skips the embedded auth startup entirely.</li>
+          </ol>
+          <p><strong>Server Flags (kronk server):</strong></p>
           <ul>
-            <li><code>--auth-enabled</code> - Enable authentication (env: <code>KRONK_AUTH_ENABLED</code>)</li>
-            <li><code>--auth-issuer</code> - JWT issuer name (env: <code>KRONK_AUTH_ISSUER</code>)</li>
-            <li><code>--auth-host</code> - External auth service host (env: <code>KRONK_AUTH_HOST</code>)</li>
+            <li><code>--auth-enabled</code> - Enable embedded local auth (env: <code>KRONK_AUTH_LOCAL_ENABLED</code>)</li>
+            <li><code>--auth-issuer</code> - JWT issuer name for the embedded auth (env: <code>KRONK_AUTH_LOCAL_ISSUER</code>)</li>
+            <li><code>--auth-host</code> - Host of an external standalone auth service (env: <code>KRONK_AUTH_HOST</code>)</li>
           </ul>
-          <p><strong>Environment Variables:</strong></p>
+          <p><strong>Standalone Auth Service Env Vars:</strong></p>
+          <ul>
+            <li><code>AUTH_AUTH_HOST</code> - Listen address (default <code>localhost:6000</code>)</li>
+            <li><code>AUTH_AUTH_ISSUER</code> - JWT issuer name (default <code>kronk project</code>)</li>
+            <li><code>AUTH_AUTH_ENABLED</code> - Enable auth enforcement (default <code>false</code>)</li>
+          </ul>
+          <p><strong>Environment Variables (CLI / clients):</strong></p>
           <ul>
             <li><code>KRONK_TOKEN</code> - Token for CLI commands and API requests</li>
             <li><code>KRONK_WEB_API_HOST</code> - Server address for CLI web mode (default: <code>localhost:11435</code>)</li>
@@ -4811,233 +4779,70 @@ response = client.chat.completions.create(
           <hr />
           <p><em>Next: &lt;a href="#chapter-12-browser-ui-bui"&gt;Chapter 12: Browser UI (BUI)&lt;/a&gt;</em></p>
           <h2 id="chapter-12-browser-ui-bui">Chapter 12: Browser UI (BUI)</h2>
-          <p>Kronk includes a web-based interface for managing models, libraries, security, and server configuration without using the command line.</p>
+          <p>Kronk ships with a built-in Browser UI (BUI) served from the same port as the API. It is a thin client over the Web API and exposes the same operations the CLI provides — pulling libraries and models, browsing the catalog, managing tokens, and running interactive experiments against a loaded model. This chapter is a high-level guide to what the BUI offers; it intentionally does not enumerate every tab, filter, or button so that the documentation stays accurate as the UI evolves.</p>
           <h3 id="121-accessing-the-bui">12.1 Accessing the BUI</h3>
-          <p>The BUI is served from the same port as the API.</p>
-          <p><strong>Open in Browser:</strong></p>
+          <p>The BUI loads automatically when you open the server root in a browser:</p>
           <pre className="code-block"><code>{`http://localhost:11435`}</code></pre>
-          <p>The BUI automatically loads when you navigate to the server root.</p>
-          <h3 id="122-downloading-libraries">12.2 Downloading Libraries</h3>
-          <p>Before running inference, you need the llama.cpp libraries.</p>
-          <p><strong>Steps:</strong></p>
-          <ol>
-            <li>Navigate to the <strong>Libraries</strong> page from the menu</li>
-            <li>Click <strong>Pull Libraries</strong></li>
-            <li>Wait for the download to complete</li>
-          </ol>
-          <p>The BUI auto-detects your platform (OS, architecture, GPU) and downloads the appropriate binaries to <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> (for example <code>~/.kronk/libraries/darwin/arm64/metal/</code>). Each <code>(arch, os, processor)</code> triple lives in its own folder.</p>
-          <p><strong>Override Detection:</strong></p>
-          <p>If auto-detection is incorrect, you can specify:</p>
+          <p>It is bundled inside the <code>kronk</code> binary and served from the same address configured by <code>KRONK_WEB_API_HOST</code> (default <code>0.0.0.0:11435</code>).</p>
+          <h3 id="122-sidebar-layout">12.2 Sidebar Layout</h3>
+          <p>Navigation is grouped into the following top-level sections in the sidebar:</p>
           <ul>
-            <li>Processor type (CPU, CUDA, Metal, ROCm, Vulkan)</li>
-            <li>Architecture (amd64, arm64)</li>
-            <li>Operating system</li>
+            <li><strong>Home</strong> — landing page with a project banner and feature overview</li>
+            <li><strong>Models</strong> — local model file management</li>
+            <li><strong>Catalog</strong> — personal catalog browsing</li>
+            <li><strong>Libraries</strong> — llama.cpp library installs</li>
+            <li><strong>Apps</strong> — interactive tools (Chat, Playground, VRAM Calculator)</li>
+            <li><strong>Security</strong> — keys and tokens (relevant when auth is enabled)</li>
+            <li><strong>Docs</strong> — bundled documentation (Manual, SDK, CLI, Web API)</li>
+            <li><strong>Settings</strong> — BUI preferences and the admin token</li>
           </ul>
-          <p><strong>Library Installs panel:</strong></p>
-          <p>Below the active-install pull controls, the same page exposes a <strong>Library Installs</strong> section. It lets you install bundles for triples other than the current machine's detected one — useful for prepping a shared filesystem or staging a target host. Each install lands in its own folder under the libraries root and does not touch the active install.</p>
-          <p>The panel renders three filtered selectors (OS, Architecture, Processor) populated from the supported <code>(arch, os, processor)</code> matrix returned by <code>GET /v1/libs/combinations</code>, optional version pinning, and a table of currently-installed bundles with a Remove action per row.</p>
-          <p>To make any installed bundle the active one at runtime, export <code>KRONK_LIB_PATH</code> to its triple folder and restart the server. The BUI does not switch the active install in-process; libraries are not hot-reloaded.</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
-kronk server start`}</code></pre>
-          <h3 id="123-browsing-the-catalog">12.3 Browsing the Catalog</h3>
-          <p>Navigate to the <strong>Catalog &gt; List</strong> page to browse available models.</p>
-          <p><strong>Filter Sidebar:</strong></p>
-          <p>A resizable filter sidebar on the left lets you narrow results by:</p>
+          <h3 id="123-what-the-bui-provides">12.3 What the BUI Provides</h3>
+          <h4 id="models">Models</h4>
+          <p>The Models area lists every model file under <code>~/.kronk/models/</code> along with the currently running models and a page for pulling new ones by HuggingFace URL or canonical model id.</p>
+          <p>It mirrors the CLI surface: <code>kronk model list</code>, <code>kronk model ps</code>, <code>kronk model pull</code>, <code>kronk model show</code>, and <code>kronk model remove</code>. Per- model details (configuration, sampling, template, GGUF metadata) are read-only views; persistent overrides live in <code>~/.kronk/model_config.yaml</code> (see Chapter 3).</p>
+          <h4 id="catalog">Catalog</h4>
+          <p>The Catalog area browses entries in <code>~/.kronk/catalog.yaml</code> — your <strong>personal</strong> catalog, seeded on first run from an embedded starter list and grown as you pull or resolve new models against HuggingFace.</p>
+          <p>It mirrors <code>kronk catalog list</code>, <code>kronk catalog show</code>, and <code>kronk catalog remove</code>, plus model pulling via <code>kronk model pull</code>. There is no curated upstream catalog; Chapter 7 covers the catalog model in detail.</p>
+          <h4 id="libraries">Libraries</h4>
+          <p>The Libraries area downloads and manages llama.cpp shared libraries under <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>. The active install used at runtime is selected via <code>KRONK_LIB_PATH</code>; the BUI can stage additional <code>(arch, os, processor)</code> bundles for other targets but does not hot-reload the active install. See Chapter 2 and the <code>kronk libs</code> CLI for the same operations.</p>
+          <h4 id="apps">Apps</h4>
+          <p>Three interactive tools live under <strong>Apps</strong>:</p>
           <ul>
-            <li><strong>Search</strong> — Free-text search by model ID</li>
-            <li><strong>Category</strong> — Checkbox filters (Text-Generation, Image-Text-to-Text, Audio-Text-to-Text, Embedding, Reranking)</li>
-            <li><strong>Owner</strong> — Filter by model publisher</li>
-            <li><strong>Architecture</strong> — Filter by model architecture (e.g. llama, qwen2)</li>
-            <li><strong>Family</strong> — Filter by model family</li>
-            <li><strong>Size</strong> — Min/max range slider with MB/GB/TB units</li>
-            <li><strong>Parameters</strong> — Min/max range slider with M/B units</li>
-            <li><strong>Downloaded</strong> — All / Yes / No</li>
-            <li><strong>Validated</strong> — All / Yes / No</li>
-            <li><strong>Capabilities</strong> — Filter by capabilities (streaming, tooling, reasoning, images, audio, embedding, rerank)</li>
+            <li><strong>Chat</strong> — a multi-turn chat interface with model selection, system prompt, and full sampling controls. Useful for ad-hoc conversations against any loaded model.</li>
+            <li><strong>Model Playground</strong> — an interactive bench for exercising a model under specific configuration (context window, batch sizes, cache mode, sampling parameters) and for running automated sweeps. It lets you load a session, send chat messages, inspect rendered prompts, and probe tool-calling behaviour against a configurable set of tool definitions.</li>
+            <li><strong>VRAM Calculator</strong> — a standalone estimator for the VRAM a model will consume given a chosen context window, slot count, KV cache precision, and other parameters. The same calculator is embedded in per-model detail views.</li>
           </ul>
-          <p>A <strong>Clear All Filters</strong> button resets everything.</p>
-          <p><strong>Model Details:</strong></p>
-          <p>Click a model row to view detail tabs on the right:</p>
+          <h4 id="security">Security</h4>
+          <p>When authentication is enabled (Chapter 11), the Security area lets you list, create, and delete signing keys and create user tokens with chosen durations, endpoint scopes, and rate limits. These pages require an admin token configured under Settings; with auth disabled they remain accessible but are not meaningful.</p>
+          <h4 id="docs">Docs</h4>
+          <p>The Docs area embeds the full Kronk documentation set so it is available offline next to the running server:</p>
           <ul>
-            <li><strong>Catalog</strong> — Model ID, category, owner, family, architecture, files, and capabilities</li>
-            <li><strong>Configuration</strong> — Model config parameters (context window, batch sizes, flash attention, cache settings, GPU layers, YaRN, speculative decoding)</li>
-            <li><strong>Sampling</strong> — Default sampling parameters from the catalog entry</li>
-            <li><strong>Metadata</strong> — Model metadata and description</li>
-            <li><strong>Template</strong> — The chat template associated with the model</li>
-            <li><strong>VRAM Calculator</strong> — Estimate VRAM requirements with adjustable context window, bytes per element, and slot count</li>
-            <li><strong>Pull Output</strong> — Real-time download progress when pulling a model</li>
+            <li><strong>Manual</strong> — this manual, with chapter navigation</li>
+            <li><strong>SDK</strong> — Kronk SDK and Model API references plus usage examples</li>
+            <li><strong>CLI</strong> — reference for <code>kronk</code> subcommands (catalog, libs, model, run, security, server)</li>
+            <li><strong>Web API</strong> — reference for the HTTP endpoints (Chat, Messages, Responses, Embeddings, Rerank, Tokenize, Tools)</li>
           </ul>
-          <p><strong>Pulling Models:</strong></p>
-          <p>Select a model, then click <strong>Pull</strong> to download it. The pull output tab shows real-time download progress. You can optionally specify a download server URL.</p>
-          <p><strong>Catalog Editor:</strong></p>
-          <p>Navigate to <strong>Catalog &gt; Editor</strong> to create or edit catalog entries. The editor supports all catalog fields including files, projection URLs, capabilities, configuration, and sampling parameters. You can also pre-fill the editor from the Playground via <strong>Export to Catalog Editor</strong>.</p>
-          <h3 id="124-managing-models">12.4 Managing Models</h3>
-          <p>Navigate to the <strong>Models &gt; List</strong> page to see all downloaded models.</p>
-          <p><strong>Model Table:</strong></p>
-          <p>The table shows Model ID, Owner, Family, Size, and Modified date with sortable columns. A ✓/✗ indicator shows validation status. Models with extension files (e.g. projection models) appear as expandable child rows.</p>
-          <p><strong>Model Details:</strong></p>
-          <p>Click a model to view detail tabs:</p>
+          <h4 id="settings">Settings</h4>
+          <p>Settings holds BUI-level preferences, including the API token used by the BUI when calling the Web API. Set this when running with <code>--auth-enabled</code> so the BUI can reach security-protected endpoints.</p>
+          <h3 id="124-authentication">12.4 Authentication</h3>
+          <p>The BUI talks to the same <code>/v1</code> API as any other client. When <code>--auth-enabled</code> is set on <code>kronk server start</code>, every BUI call must carry a valid bearer token — configure it under <strong>Settings</strong>. With auth disabled the BUI works without configuration. See Chapter 11 for key and token management.</p>
+          <h3 id="125-notes-on-live-state">12.5 Notes on Live State</h3>
+          <p>A few things the BUI deliberately does not do:</p>
           <ul>
-            <li><strong>Model Configuration</strong> — Full configuration including context window, batch sizes, GPU layers, flash attention, cache settings, and YaRN parameters</li>
-            <li><strong>Sampling Parameters</strong> — Default sampling configuration</li>
-            <li><strong>Metadata</strong> — Model metadata from the GGUF file</li>
-            <li><strong>Template</strong> — Associated chat template</li>
-            <li><strong>VRAM Calculator</strong> — VRAM estimation with adjustable parameters</li>
+            <li>It does not switch the active llama.cpp install in-process. Changing <code>KRONK_LIB_PATH</code> requires a server restart.</li>
+            <li>It does not edit <code>~/.kronk/model_config.yaml</code> from the model pages. Persistent configuration changes are made by editing that file directly (see Chapter 3); the BUI's per-model views are read-only.</li>
+            <li>The Playground's loaded session is held in server memory; closing the browser tab does not unload the model. Use <strong>Unload Session</strong> before adjusting model configuration.</li>
           </ul>
-          <p><strong>Actions:</strong></p>
-          <ul>
-            <li><strong>Rebuild Index</strong> — Re-scan the models directory and rebuild the model index</li>
-            <li><strong>Remove</strong> — Delete a model with confirmation prompt</li>
-          </ul>
-          <p><strong>Other Model Pages:</strong></p>
-          <ul>
-            <li><strong>Models &gt; Running</strong> — View currently loaded/running models</li>
-            <li><strong>Models &gt; Pull</strong> — Pull new models by HuggingFace URL or shorthand</li>
-          </ul>
-          <h3 id="125-managing-keys-and-tokens">12.5 Managing Keys and Tokens</h3>
-          <p>When authentication is enabled, use the BUI to manage security.</p>
-          <p><strong>Keys Page:</strong></p>
-          <ul>
-            <li>View all signing keys with their IDs and creation dates</li>
-            <li>Create new signing keys</li>
-            <li>Delete keys (except master key)</li>
-          </ul>
-          <p><strong>Tokens Page:</strong></p>
-          <ul>
-            <li>Generate new tokens with specific:</li>
-          </ul>
-          <p>- Duration (hours, days) - Endpoint access (chat-completions, embeddings, etc.) - Rate limits (requests per day/month/year)</p>
-          <ul>
-            <li>Copy generated tokens to clipboard</li>
-          </ul>
-          <p><strong>Note:</strong> You must provide an admin token in the BUI settings to access security management features.</p>
-          <h3 id="126-other-screens">12.6 Other Screens</h3>
-          <p><strong>Home:</strong></p>
-          <p>The landing page shows a project banner and feature overview cards. Use the sidebar to navigate to other sections.</p>
-          <p><strong>Documentation:</strong></p>
-          <p>Built-in documentation accessible from the <strong>Docs</strong> menu, organized into:</p>
-          <ul>
-            <li><strong>Manual</strong> — Full Kronk manual with chapter navigation</li>
-            <li><strong>SDK</strong> — Kronk SDK reference, Model API reference, and usage examples (Audio, Chat, Embedding, Grammar, Question, Rerank, Response, Vision)</li>
-            <li><strong>CLI</strong> — Command reference for catalog, libs, model, run, security, and server commands</li>
-            <li><strong>Web API</strong> — API reference for Chat, Messages, Responses, Embeddings, Rerank, Tokenize, and Tools endpoints</li>
-          </ul>
-          <p><strong>Settings:</strong></p>
-          <p>Configure BUI preferences:</p>
-          <ul>
-            <li>API token for authenticated requests</li>
-          </ul>
-          <p><strong>Apps:</strong></p>
-          <p>The <strong>Apps</strong> section in the sidebar contains:</p>
-          <ul>
-            <li><strong>Chat</strong> — A standalone multi-turn chat interface with conversation history, model selection, and full sampling parameter controls</li>
-            <li><strong>Playground</strong> — The Model Playground (see <a href="#127-model-playground">12.7</a>)</li>
-            <li><strong>VRAM Calculator</strong> — Standalone VRAM estimation tool for planning hardware requirements</li>
-          </ul>
-          <h3 id="127-model-playground">12.7 Model Playground</h3>
-          <p>The Model Playground is an interactive testing environment for evaluating models directly in the BUI. It supports three operating modes — <strong>Automated</strong>, <strong>Manual</strong>, and <strong>History</strong> — accessible from the sidebar.</p>
-          <p><strong>Steps:</strong></p>
-          <ol>
-            <li>Navigate to the <strong>Playground</strong> page from the menu (or go to <code>/playground</code>)</li>
-            <li>Select a model from the dropdown, or choose <strong>New…</strong> to pull a GGUF file by HuggingFace URL (with optional projection URL for vision/audio models)</li>
-            <li>Choose a <strong>Template Mode</strong>:
-              <ul>
-                <li><strong>Builtin</strong> — select a chat template from the catalog (or leave as Auto)</li>
-                <li><strong>Custom</strong> — paste a Jinja template script</li>
-              </ul>
-            </li>
-            <li>Configure model parameters: Context Window, NBatch, NUBatch, NSeqMax, Flash Attention (auto/enabled/disabled), KV Cache Type (f16/q8_0/q4_0), and Cache Mode (None/IMC)</li>
-            <li>Select <strong>Automated Mode</strong>, <strong>Manual Mode</strong>, or <strong>History</strong></li>
-          </ol>
-          <h4 id="1271-automated-mode">12.7.1 Automated Mode</h4>
-          <p>Automated mode runs structured test suites against a model and scores the results. It is designed for benchmarking model quality and finding optimal configurations without manual interaction.</p>
-          <p><strong>Sweep Modes:</strong></p>
-          <ul>
-            <li><strong>Sampling Sweep</strong> — Varies sampling parameters (temperature, top_p, top_k, min_p, and others including repetition, DRY/XTC controls, and reasoning settings) using user-defined value ranges while holding the model configuration fixed. Each parameter accepts comma-separated values; the first value is the baseline and additional values define the sweep range. When catalog defaults are available for the selected model, they are displayed next to the parameter name as a hint. Requires a loaded session.</li>
-            <li><strong>Config Sweep</strong> — Varies model configuration parameters (context window, nbatch, nubatch, nseq_max, flash attention, cache type, cache mode) as a full cross-product of user-selected values. Each candidate reloads the model with a new session, making it slower than sampling sweeps. Does <strong>not</strong> require a pre-loaded session.</li>
-          </ul>
-          <p><strong>⚠</strong> Unload the current session before running config sweeps.</p>
-          <p><strong>Scenarios:</strong></p>
-          <p>Two test scenarios can be enabled independently:</p>
-          <ul>
-            <li><strong>Chat Quality</strong> — Tests text generation with math problems, translations, list formatting, and multi-turn conversations. Responses are scored using exact match (with partial credit for contained answers) and regex validation. Config sweeps additionally include code generation and instruction-following prompts for throughput measurement.</li>
-            <li><strong>Tool Calling</strong> — Tests function calling with 10 built-in tool definitions (<code>get_weather</code>, <code>add</code>, <code>search_products</code>, <code>send_email</code>, <code>get_stock_price</code>, <code>convert_currency</code>, <code>create_calendar_event</code>, <code>translate_text</code>, <code>get_directions</code>, <code>set_reminder</code>). Validates that the model emits tool calls with valid JSON arguments and required fields. Includes multi-turn tool calling scenarios.</li>
-          </ul>
-          <p>If tool calling is enabled, automated mode probes the template for tool calling compatibility before running. If the probe fails, it falls back to chat-only tests automatically.</p>
-          <p><strong>Context Fill Testing:</strong></p>
-          <p>When chat scenarios are enabled, automated mode calibrates context fill prompts at 20%, 50%, and 80% of the context window. These prompts fill the conversation with background text to measure TPS degradation as the KV cache fills. The first prompt in each scenario is used as a warmup; TPS and TTFT averages exclude warmup results.</p>
-          <p><strong>Repeats:</strong></p>
-          <p>Each prompt can be run multiple times (configurable 1–20, default 3) with scores averaged for more stable results.</p>
-          <p><strong>Running Tests:</strong></p>
-          <ol>
-            <li>Select <strong>Sampling Sweep</strong> or <strong>Config Sweep</strong></li>
-            <li>Configure the sweep value ranges (sampling) or sweep value sets (config). For sampling sweeps, enter comma-separated values for each parameter — the first value is the baseline and additional values form the sweep grid. Catalog defaults (shown as hints next to parameter names) are used as initial values when a model is selected</li>
-            <li>Enable/disable <strong>Chat Quality</strong> and <strong>Tool Calling</strong> scenarios</li>
-            <li>Set the number of <strong>Repeats Per Test Case</strong></li>
-            <li>Click <strong>Run Automated Testing</strong></li>
-            <li>Use <strong>Stop</strong> to cancel a run in progress, or <strong>Clear Results</strong> after completion</li>
-          </ol>
-          <p><strong>Results:</strong></p>
-          <ul>
-            <li>A progress bar shows trial progress with elapsed time and estimated remaining time</li>
-            <li>A sortable results table displays per-trial scores, TPS, TTFT, and context fill TPS at 20%/50%/80%</li>
-            <li>Each row is expandable to show per-scenario, per-prompt details including input, expected output, actual output, usage statistics, and scoring notes</li>
-            <li>The <strong>Best Configuration Found</strong> section highlights the winning trial</li>
-          </ul>
-          <p><strong>Best Configuration Criteria:</strong></p>
-          <p>After a run completes, adjust the weights used to rank configurations (Chat Score, Tool Score, Total Score, Avg TPS, Avg TTFT) and click <strong>Reevaluate</strong> to re-rank results without re-running the tests.</p>
-          <p><strong>Note:</strong> When NSeqMax &gt; 1 in config sweeps, prompts run concurrently to measure real parallel throughput.</p>
-          <h4 id="1272-manual-mode">12.7.2 Manual Mode</h4>
-          <p>Manual mode provides hands-on interaction with a loaded model through three tabs. A session must be created before using any tab.</p>
-          <p><strong>Steps:</strong></p>
-          <ol>
-            <li>Configure the model parameters</li>
-            <li>Click <strong>Create Session</strong> to load the model</li>
-            <li>The effective configuration is displayed after creation</li>
-            <li>Use the tabs below for testing</li>
-            <li>Click <strong>Unload Session</strong> to release the model when finished</li>
-          </ol>
-          <p><strong>Basic Chat Tab:</strong></p>
-          <p>Interactive streaming chat with full control over generation parameters:</p>
-          <ul>
-            <li><strong>System Prompt</strong> — Editable system message</li>
-            <li><strong>Generation</strong> — Temperature, Top P, Top K, Min P, Max Tokens</li>
-            <li><strong>Repetition Control</strong> — Repeat Penalty, Repeat Last N, Frequency Penalty, Presence Penalty</li>
-            <li><strong>DRY Sampler</strong> — DRY Multiplier, DRY Base, DRY Allowed Length, DRY Penalty Last N</li>
-            <li><strong>XTC Sampler</strong> — XTC Probability, XTC Threshold, XTC Min Keep</li>
-            <li><strong>Reasoning</strong> — Enable Thinking (on/off), Reasoning Effort (none/minimal/low/medium/high)</li>
-          </ul>
-          <p>Messages stream in real-time with tokens-per-second displayed after each response. A warmup request runs before each message to ensure accurate TPS measurement.</p>
-          <p><strong>Tool Calling Test Tab:</strong></p>
-          <p>Test whether a model correctly emits tool calls:</p>
-          <ol>
-            <li>Edit the <strong>Tool Definitions</strong> JSON (pre-populated with 10 sample tools)</li>
-            <li>Enter a <strong>Test Prompt</strong></li>
-            <li>Click <strong>Run Test</strong></li>
-            <li>Results show <strong>PASS</strong> with the emitted tool calls (function names and arguments) or <strong>NO TOOL CALLS</strong> with the model's text output</li>
-          </ol>
-          <p><strong>Prompt Inspector Tab:</strong></p>
-          <p>Examine how the chat template renders messages into the prompt sent to the model:</p>
-          <ol>
-            <li>Enter a <strong>Test Message</strong></li>
-            <li>Click <strong>Render Prompt</strong></li>
-            <li>The fully rendered prompt text (system prompt + test message) is displayed with a <strong>Copy</strong> button</li>
-          </ol>
-          <p>This is useful for debugging chat template formatting or verifying that system prompts are rendered correctly for a given template.</p>
-          <p><strong>Export to Catalog:</strong></p>
-          <p>Click <strong>Export to Catalog Editor</strong> (in the header) to pre-fill a catalog entry with the playground's current model, template, and configuration settings.</p>
-          <h4 id="1273-history-mode">12.7.3 History Mode</h4>
-          <p>History mode displays a log of previous playground sessions and test runs, allowing you to review past results without re-running tests.</p>
           <hr />
           <p><em>Next: &lt;a href="#chapter-13-client-integration"&gt;Chapter 13: Client Integration&lt;/a&gt;</em></p>
           <h2 id="chapter-13-client-integration">Chapter 13: Client Integration</h2>
-          <p>Kronk's OpenAI-compatible API works with popular AI clients, coding agents, and tools. This chapter covers configuration for coding agents that run in the terminal or VS Code, as well as general-purpose clients.</p>
-          <p>Reference configuration files for each agent are provided in the <code>.agents/</code> directory at the project root. These files are ready to copy into each agent's config directory.</p>
+          <p>Kronk's OpenAI-compatible API works with popular AI clients, coding agents, and tools. This chapter covers configuration for the CLI-style coding agents that talk to Kronk, plus a few general-purpose clients.</p>
+          <p>Reference configuration files for each agent are provided in the <code>.agents/</code> directory at the project root. These files are ready to copy into each agent's CLI config directory.</p>
           <pre className="code-block"><code>{`.agents/
-├── cline/       # Cline VS Code extension
-├── goose/       # Goose TUI agent
-├── kilo/        # Kilo Code VS Code extension
-└── opencode/    # OpenCode TUI agent`}</code></pre>
+├── cline/       # Cline (~/.cline)
+├── goose/       # Goose (~/.config/goose)
+├── kilo/        # Kilo Code (~/.config/kilo)
+└── opencode/    # OpenCode (~/.config/opencode)`}</code></pre>
           <h3 id="131-coding-agent-model-configuration">13.1 Coding Agent Model Configuration</h3>
           <p>All coding agents share the same Kronk server and model configuration. The model is configured in <code>model_config.yaml</code> (or the catalog) with an <code>/AGENT</code> suffix that the agent references as its model name.</p>
           <p><strong>Recommended Configuration:</strong></p>
@@ -5049,25 +4854,16 @@ kronk server start`}</code></pre>
     temperature: 0.6
     top_k: 20
     top_p: 0.95`}</code></pre>
-          <p>Other models that work well for coding:</p>
-          <pre className="code-block"><code className="language-yaml">{`gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+          <p>Another model that works well for coding:</p>
+          <pre className="code-block"><code className="language-yaml">{`gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
   incremental-cache: true
   sampling-parameters:
     temperature: 1.0
     top_k: 64
-    top_p: 0.95
-
-gemma-4-31B-it-UD-Q8_K_XL/AGENT:
-  context-window: 65536
-  nseq-max: 2
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 1.0
-    top_k: 64
     top_p: 0.95`}</code></pre>
-          <p>See <code>zarf/kms/model_config.yaml</code> for the full set of pre-configured models.</p>
+          <p>See <code>zarf/kms/model_config.yaml</code> for additional pre-configured examples.</p>
           <p><strong>Why these settings matter:</strong></p>
           <ul>
             <li><strong>&lt;code&gt;incremental-cache: true&lt;/code&gt;</strong> — IMC caches the conversation prefix in RAM between requests, so only the new message needs prefilling on each turn. This is essential for iterative coding workflows where conversations grow to tens of thousands of tokens.</li>
@@ -5077,41 +4873,29 @@ gemma-4-31B-it-UD-Q8_K_XL/AGENT:
           <p><strong>MCP Service:</strong></p>
           <p>The Kronk MCP service provides tools (like <code>web_search</code>) to coding agents. It starts automatically with the Kronk server on <code>http://localhost:9000/mcp</code>. All agent configs below reference this endpoint.</p>
           <h3 id="132-cline">13.2 Cline</h3>
-          <p><a href="https://cline.bot">Cline</a> is a VS Code extension for AI-assisted coding.</p>
-          <p><strong>Configure Cline for Kronk:</strong></p>
-          <ol>
-            <li>Open VS Code settings</li>
-            <li>Search for "Cline"</li>
-            <li>Set API Provider to "OpenAI Compatible"</li>
-            <li>Configure:</li>
-          </ol>
+          <p><a href="https://cline.bot">Cline</a> is a coding agent that stores its state under <code>~/.cline/</code>.</p>
+          <p><strong>Installation:</strong></p>
+          <p>Copy the MCP settings file from <code>.agents/cline/</code> into Cline's settings directory:</p>
+          <pre className="code-block"><code className="language-bash">{`cp .agents/cline/cline_mcp_settings.json \\
+   ~/.cline/data/settings/cline_mcp_settings.json`}</code></pre>
+          <p>This registers Kronk's MCP service so Cline can discover the <code>web_search</code> and other tools served from <code>http://localhost:9000/mcp</code>.</p>
+          <p><strong>Connection settings:</strong></p>
+          <p>Point Cline at the Kronk Web API:</p>
           <pre className="code-block"><code>{`Base URL: http://localhost:11435/v1
 API Key: <your-kronk-token> or 123 if auth is disabled
-Model: Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT`}</code></pre>
-          <p><strong>MCP Configuration:</strong></p>
-          <p>Copy the MCP settings from <code>.agents/cline/</code> to your Cline config:</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "mcpServers": {
-    "Kronk": {
-      "autoApprove": ["web_search"],
-      "disabled": false,
-      "timeout": 60,
-      "type": "streamableHttp",
-      "url": "http://localhost:9000/mcp"
-    }
-  }
-}`}</code></pre>
+Model:   Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT`}</code></pre>
+          <p>The <code>.agents/cline/globalState.json</code> file is included as a reference for which fields Cline expects (model id, base URL, auto-approval settings). It is not meant to be copied wholesale — Cline manages this file itself.</p>
           <p>Reference files: <code>.agents/cline/</code></p>
           <h3 id="133-kilo-code">13.3 Kilo Code</h3>
-          <p><a href="https://kilocode.ai">Kilo Code</a> is a VS Code extension for AI-assisted coding, similar to Cline.</p>
+          <p><a href="https://kilocode.ai">Kilo Code</a> is a coding agent that reads its configuration from <code>~/.config/kilo/</code>.</p>
           <p><strong>Installation:</strong></p>
-          <p>Copy the config files from <code>.agents/kilo/</code> to your Kilo config directory:</p>
+          <p>Copy the config files from <code>.agents/kilo/</code> to Kilo's config directory:</p>
           <pre className="code-block"><code className="language-bash">{`cp .agents/kilo/agent.md  ~/.config/kilo/agent.md
 cp .agents/kilo/kilo.json ~/.config/kilo/kilo.json`}</code></pre>
           <p>The <code>kilo.json</code> configures Kronk as a custom provider with model definitions and MCP settings. The <code>agent.md</code> file provides custom instructions that tell the model to use Kronk's <code>kronk_fuzzy_edit</code> MCP tool for file edits.</p>
           <p><strong>Key settings in &lt;code&gt;kilo.json&lt;/code&gt;:</strong></p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+  "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
   "provider": {
     "kronk": {
       "npm": "@ai-sdk/openai-compatible",
@@ -5140,7 +4924,7 @@ cp .agents/opencode/opencode.jsonc ~/.config/opencode/opencode.jsonc`}</code></p
           <p>The <code>opencode.jsonc</code> configures Kronk as a custom provider. The <code>agent.md</code> file provides custom instructions that tell the model to use Kronk's <code>kronk_fuzzy_edit</code> MCP tool for file edits. The <code>auth.json</code> file provides a placeholder API key for local use.</p>
           <p><strong>Key settings in &lt;code&gt;opencode.jsonc&lt;/code&gt;:</strong></p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "kronk/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
+  "model": "kronk/Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
   "provider": {
     "kronk": {
       "npm": "@ai-sdk/openai-compatible",
@@ -5161,12 +4945,12 @@ cp .agents/opencode/opencode.jsonc ~/.config/opencode/opencode.jsonc`}</code></p
           <h3 id="135-goose">13.5 Goose</h3>
           <p><a href="https://block.github.io/goose/">Goose</a> is a terminal-based AI agent from Block.</p>
           <p><strong>Installation:</strong></p>
-          <p>Copy the config from <code>.agents/goose/</code> to your Goose config directory:</p>
+          <p>Copy the config from <code>.agents/goose/</code> to Goose's config directory:</p>
           <pre className="code-block"><code className="language-bash">{`cp .agents/goose/config.yaml       ~/.config/goose/config.yaml
-cp .agents/goose/custom_kronk.json ~/.config/goose/custom_kronk.json`}</code></pre>
+cp .agents/goose/custom_kronk.json ~/.config/goose/custom_providers/custom_kronk.json`}</code></pre>
           <p><strong>Key settings in &lt;code&gt;config.yaml&lt;/code&gt;:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`GOOSE_PROVIDER: kronk
-GOOSE_MODEL: gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT`}</code></pre>
+GOOSE_MODEL: Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT`}</code></pre>
           <p>The <code>custom_kronk.json</code> file configures the Kronk provider connection.</p>
           <p>Reference files: <code>.agents/goose/</code></p>
           <h3 id="136-openwebui">13.6 OpenWebUI</h3>
@@ -5261,7 +5045,7 @@ print(response.content)`}</code></pre>
           <p><strong>Configure Debug Host:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --debug-host localhost:9090`}</code></pre>
           <p>Or via environment variable:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_DEBUG_HOST=localhost:9090
+          <pre className="code-block"><code className="language-shell">{`export KRONK_WEB_DEBUG_HOST=localhost:9090
 kronk server start`}</code></pre>
           <h3 id="142-debug-endpoints">14.2 Debug Endpoints</h3>
           <p>The debug server exposes these endpoints:</p>
@@ -5462,7 +5246,7 @@ kronk server start`}</code></pre>
           <h3 id="1412-configuration-reference">14.12 Configuration Reference</h3>
           <p><strong>Debug Server:</strong></p>
           <ul>
-            <li><code>--debug-host</code> - Debug server address (env: <code>KRONK_DEBUG_HOST</code>, default: <code>localhost:8090</code>)</li>
+            <li><code>--debug-host</code> - Debug server address (env: <code>KRONK_WEB_DEBUG_HOST</code>, default: <code>0.0.0.0:8090</code>)</li>
           </ul>
           <p><strong>Tracing:</strong></p>
           <ul>
@@ -5478,8 +5262,12 @@ kronk server start`}</code></pre>
           <hr />
           <p><em>Next: &lt;a href="#chapter-15-mcp-service"&gt;Chapter 15: MCP Service&lt;/a&gt;</em></p>
           <h2 id="chapter-15-mcp-service">Chapter 15: MCP Service</h2>
-          <p>Kronk includes a built-in <a href="https://modelcontextprotocol.io/">Model Context Protocol (MCP)</a> service that exposes tools to MCP-compatible clients. The initial tool provided is <code>web_search</code>, powered by the <a href="https://brave.com/search/api/">Brave Search API</a>.</p>
-          <p>MCP is an open standard that lets AI agents call external tools over a simple JSON-RPC protocol. By running the MCP service, any MCP-compatible client (Cline, Kilo Code, Cursor, etc.) can discover and invoke tools served by Kronk.</p>
+          <p>Kronk includes a built-in <a href="https://modelcontextprotocol.io/">Model Context Protocol (MCP)</a> service that exposes tools to MCP-compatible clients. Two tools are provided today:</p>
+          <ul>
+            <li><strong>&lt;code&gt;web_search&lt;/code&gt;</strong> — Powered by the <a href="https://brave.com/search/api/">Brave Search API</a>.</li>
+            <li><strong>&lt;code&gt;fuzzy_edit&lt;/code&gt;</strong> — A tiered-fuzzy-matching file edit tool that is more reliable than the built-in <code>edit</code> tools used by most coding agents.</li>
+          </ul>
+          <p>MCP is an open standard that lets AI agents call external tools over a simple JSON-RPC protocol. By running the MCP service, any MCP-compatible client (Cline, Kilo Code, OpenCode, Goose, Cursor, etc.) can discover and invoke tools served by Kronk.</p>
           <h3 id="151-architecture">15.1 Architecture</h3>
           <p>The MCP service can run in two modes:</p>
           <p><strong>Embedded (default)</strong> — When the Kronk model server starts and no external MCP host is configured (<code>--mcp-host</code> is empty), it automatically starts an embedded MCP server on <code>localhost:9000</code>. No extra process is needed.</p>
@@ -5490,6 +5278,7 @@ kronk server start`}</code></pre>
           <p>Both modes serve the same MCP protocol on the same default port (<code>9000</code>).</p>
           <h3 id="152-prerequisites">15.2 Prerequisites</h3>
           <p>The <code>web_search</code> tool requires a Brave Search API key. Get a free key at <a href="https://brave.com/search/api/">https://brave.com/search/api/</a>.</p>
+          <p>The <code>fuzzy_edit</code> tool needs no external credentials — it operates on the local filesystem and is available as soon as the MCP service starts.</p>
           <h3 id="153-configuration">15.3 Configuration</h3>
           <p><strong>Environment Variables:</strong></p>
           <table className="flags-table">
@@ -5576,14 +5365,54 @@ make mcp-server`}</code></pre>
               </tr>
             </tbody>
           </table>
+          <h4 id="fuzzy_edit">fuzzy_edit</h4>
+          <p>Edits a file by replacing one occurrence of <code>old_string</code> with <code>new_string</code>. Useful for coding agents whose built-in edit tools are brittle around whitespace or line endings.</p>
+          <p>The tool tries three matching strategies in order and stops at the first that produces exactly one match:</p>
+          <ol>
+            <li><strong>Exact</strong> — byte-for-byte <code>strings.Replace</code>.</li>
+            <li><strong>Line-ending normalized</strong> — folds <code>\r\n</code> → <code>\n</code> on both sides, then exact-matches; preserves the file's original line endings on write.</li>
+            <li><strong>Indentation insensitive</strong> — strips leading whitespace per line for comparison; replacement text is inserted as-is.</li>
+          </ol>
+          <p>If no tier yields exactly one match, the call returns an error and the file is not modified.</p>
+          <p><strong>Parameters:</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>Type</th>
+                <th>Required</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>file_path</code></td>
+                <td>string</td>
+                <td>Yes</td>
+                <td>Absolute path to the file to edit</td>
+              </tr>
+              <tr>
+                <td><code>old_string</code></td>
+                <td>string</td>
+                <td>Yes</td>
+                <td>Text to find in the file (fuzzy whitespace matching is applied)</td>
+              </tr>
+              <tr>
+                <td><code>new_string</code></td>
+                <td>string</td>
+                <td>Yes</td>
+                <td>Replacement text</td>
+              </tr>
+            </tbody>
+          </table>
           <h3 id="155-client-configuration">15.5 Client Configuration</h3>
           <p>The MCP service uses the Streamable HTTP transport. Configure your MCP-compatible client to connect to <code>http://localhost:9000/mcp</code>.</p>
           <h4 id="cline">Cline</h4>
-          <p>Add the following to your Cline MCP settings:</p>
+          <p>Add the following to your Cline MCP settings (<code>~/.cline/data/settings/cline_mcp_settings.json</code>):</p>
           <pre className="code-block"><code className="language-json">{`{
   "mcpServers": {
     "Kronk": {
-      "autoApprove": ["web_search"],
+      "autoApprove": ["web_search", "fuzzy_edit"],
       "disabled": false,
       "timeout": 60,
       "type": "streamableHttp",
@@ -5592,18 +5421,32 @@ make mcp-server`}</code></pre>
   }
 }`}</code></pre>
           <h4 id="kilo-code">Kilo Code</h4>
-          <p>Add the following to your Kilo Code MCP settings:</p>
+          <p>Add the following to your Kilo Code MCP settings (inside <code>~/.config/kilo/kilo.json</code>):</p>
           <pre className="code-block"><code className="language-json">{`{
   "mcpServers": {
     "Kronk": {
       "type": "streamable-http",
       "url": "http://localhost:9000/mcp",
-      "disabled": true,
-      "alwaysAllow": ["web_search"],
+      "disabled": false,
+      "alwaysAllow": ["web_search", "fuzzy_edit"],
       "timeout": 60
     }
   }
 }`}</code></pre>
+          <p>Kilo prefixes MCP tool names with the server key, so the tools are exposed to the model as <code>Kronk_web_search</code> and <code>Kronk_fuzzy_edit</code>.</p>
+          <h4 id="opencode">OpenCode</h4>
+          <p>Inside <code>~/.config/opencode/opencode.jsonc</code>:</p>
+          <pre className="code-block"><code className="language-jsonc">{`{
+  "mcp": {
+    "kronk": {
+      "type": "remote",
+      "url": "http://localhost:9000/mcp"
+    }
+  }
+}`}</code></pre>
+          <p>OpenCode lowercases the server prefix, so the tools are exposed as <code>kronk_web_search</code> and <code>kronk_fuzzy_edit</code>.</p>
+          <h4 id="goose">Goose</h4>
+          <p>Goose discovers tools from any MCP server it is configured against. Add an entry to your Goose configuration that points to <code>http://localhost:9000/mcp</code> using the streamable-HTTP transport. Both <code>web_search</code> and <code>fuzzy_edit</code> will appear in the tool list once the connection is established.</p>
           <h3 id="156-testing-with-curl">15.6 Testing with curl</h3>
           <p>You can test the MCP service manually using curl. See the makefile targets for convenience commands.</p>
           <p><strong>Initialize a session:</strong></p>
@@ -5692,10 +5535,7 @@ kronk server start`}</code></pre>
           <p><strong>Check model exists:</strong></p>
           <pre className="code-block"><code className="language-shell">{`ls ~/.kronk/models/`}</code></pre>
           <p><strong>Re-download the model:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog pull <model-name> --local`}</code></pre>
-          <p><strong>Verify model integrity:</strong></p>
-          <p>By default, Kronk skips integrity checks on startup for speed. To force verification:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --ignore-integrity-check=false`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull <model-id> --local`}</code></pre>
           <p><strong>Problem: Model exists but server says "model not found"</strong></p>
           <p>The model files are on disk but Kronk can't find them. This happens when the model index (<code>.index.yaml</code>) is out of sync — for example after manually moving model files, a failed download, or removing a model outside of Kronk.</p>
           <p><strong>Solution — rebuild the model index:</strong></p>
@@ -5712,40 +5552,33 @@ kronk model index --local`}</code></pre>
             <li><code>kronk model list</code> doesn't show a model you know is downloaded</li>
             <li>After deleting model files outside of <code>kronk model remove</code></li>
           </ul>
-          <p><strong>Error: "failed to retrieve model template"</strong></p>
-          <p>The model's chat template is missing from the templates directory.</p>
-          <p><strong>Solution:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk catalog pull-templates --local`}</code></pre>
           <h3 id="163-memory-errors">16.3 Memory Errors</h3>
           <p><strong>Error: "unable to init context" or "unable to get memory"</strong></p>
           <p>Insufficient memory for the model plus its KV cache at the configured context window size.</p>
           <p><strong>Causes:</strong></p>
           <ul>
             <li>Context window too large for available VRAM/RAM</li>
-            <li>Too many parallel sequences (<code>n_seq_max</code>)</li>
+            <li>Too many parallel sequences (<code>nseq-max</code>)</li>
             <li>Model weights don't fit in available memory</li>
           </ul>
           <p><strong>Solutions:</strong></p>
           <p>Reduce context window:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    context_window: 8192 # Reduce from 32768`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
+  context-window: 8192 # Reduce from 32768`}</code></pre>
           <p>Reduce parallel sequences:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    n_seq_max: 1 # Single request at a time`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
+  nseq-max: 1 # Single request at a time`}</code></pre>
           <p>Use quantized KV cache:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    cache_type_k: q8_0 # ~50% less KV cache memory vs f16
-    cache_type_v: q8_0`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
+  cache-type-k: q8_0 # ~50% less KV cache memory vs f16
+  cache-type-v: q8_0`}</code></pre>
           <p>See <a href="chapter-03-model-configuration.md#39-vram-estimation">Chapter 3: VRAM Estimation</a> for how to calculate whether a model fits in your hardware.</p>
           <p><strong>Error: "the context window is full"</strong></p>
           <p>The total token count (input + cached + generated) exceeds the configured context window during inference.</p>
           <p><strong>Solutions:</strong></p>
           <ul>
             <li>Reduce input size (fewer messages, shorter prompts)</li>
-            <li>Increase <code>context_window</code> in model config (requires more VRAM)</li>
+            <li>Increase <code>context-window</code> in model config (requires more VRAM)</li>
             <li>Enable YaRN for extended context (see <a href="chapter-06-yarn-extended-context.md">Chapter 6</a>)</li>
           </ul>
           <p><strong>Error: "input tokens [N] exceed context window [M]"</strong></p>
@@ -5753,7 +5586,7 @@ kronk model index --local`}</code></pre>
           <p><strong>Solutions:</strong></p>
           <ul>
             <li>Shorten the prompt or system message</li>
-            <li>Increase <code>context_window</code></li>
+            <li>Increase <code>context-window</code></li>
             <li>If using IMC, the cached prefix counts toward the limit</li>
           </ul>
           <h3 id="164-request-timeouts">16.4 Request Timeouts</h3>
@@ -5771,8 +5604,8 @@ kronk model index --local`}</code></pre>
   --read-timeout 5m \\
   --write-timeout 30m`}</code></pre>
           <p>Or via environment variables:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_READ_TIMEOUT=5m
-export KRONK_WRITE_TIMEOUT=30m`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_WEB_READ_TIMEOUT=5m
+export KRONK_WEB_WRITE_TIMEOUT=30m`}</code></pre>
           <p><strong>Error: "server busy processing other requests, try again shortly"</strong></p>
           <p>All IMC sessions have pending cache builds in-flight, or the slot preemption timeout was reached.</p>
           <p><strong>Causes:</strong></p>
@@ -5783,8 +5616,8 @@ export KRONK_WRITE_TIMEOUT=30m`}</code></pre>
           <p><strong>Solutions:</strong></p>
           <ul>
             <li>Wait and retry the request — the error is transient</li>
-            <li>Increase <code>n_seq_max</code> to allow more concurrent sessions</li>
-            <li>Increase <code>cache_slot_timeout</code> (default: 30 seconds) if requests need more time</li>
+            <li>Increase <code>nseq-max</code> to allow more concurrent sessions</li>
+            <li>Increase <code>cache-slot-timeout</code> (default: 30 seconds) if requests need more time</li>
           </ul>
           <h3 id="165-authentication-errors">16.5 Authentication Errors</h3>
           <p><strong>Error: "unauthorized: no authorization header"</strong></p>
@@ -5852,9 +5685,8 @@ data: [DONE]\\n\\n`}</code></pre>
           </ul>
           <p><strong>Solutions:</strong></p>
           <p>Enable IMC to cache the conversation prefix:</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
-    incremental_cache: true`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
+  incremental-cache: true`}</code></pre>
           <p>With IMC, only the new message is prefilled — cached tokens are restored from RAM in ~10-30ms regardless of conversation length.</p>
           <p><strong>Problem: Slow token generation (tokens/second)</strong></p>
           <p><strong>Causes:</strong></p>
@@ -5871,9 +5703,8 @@ sudo powermetrics --samplers gpu_power
 # On Linux with NVIDIA
 nvidia-smi`}</code></pre>
           <p>Ensure all layers are on GPU (default):</p>
-          <pre className="code-block"><code className="language-yaml">{`models:
-  Qwen3-8B-Q8_0:
-    n_gpu_layers: 0 # 0 = all layers on GPU (default)`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
+  ngpu-layers: 0 # 0 = all layers on GPU (default)`}</code></pre>
           <p>For MoE models on Apple Silicon, consider a dense model at lower quantization — the sequential memory access pattern is faster than MoE's scattered expert routing (see <a href="chapter-03-model-configuration.md#310-model-specific-tuning">Chapter 3: Model-Specific Tuning</a>).</p>
           <h3 id="168-imc-caching-issues">16.8 IMC Caching Issues</h3>
           <p><strong>Problem: Every request triggers a full cache rebuild</strong></p>
@@ -5881,7 +5712,7 @@ nvidia-smi`}</code></pre>
           <ul>
             <li>Client is modifying earlier messages between requests</li>
             <li>Non-deterministic Jinja template producing different tokens for the same messages</li>
-            <li><code>n_seq_max</code> too low for the number of concurrent sub-agents (cache thrashing)</li>
+            <li><code>nseq-max</code> too low for the number of concurrent sub-agents (cache thrashing)</li>
           </ul>
           <p><strong>Diagnosis:</strong></p>
           <p>Look for these log patterns:</p>
@@ -5929,7 +5760,7 @@ nvidia-smi`}</code></pre>
           </table>
           <p><strong>Solutions:</strong></p>
           <ul>
-            <li>Increase <code>n_seq_max</code> to match the number of concurrent sub-agents</li>
+            <li>Increase <code>nseq-max</code> to match the number of concurrent sub-agents</li>
             <li>Check if the client is modifying conversation history between requests</li>
             <li>If using a non-deterministic template, IMC falls back to token prefix matching automatically — this is expected behavior</li>
           </ul>
@@ -5937,7 +5768,7 @@ nvidia-smi`}</code></pre>
           <p><strong>Error:</strong> <code>imc restore failed for seq N</code></p>
           <p>The RAM-to-VRAM restore (<code>StateSeqSetData</code>) failed for a session.</p>
           <p><strong>Cause:</strong> Usually indicates the KV cache memory could not be allocated (VRAM pressure from other sessions or models).</p>
-          <p><strong>Solution:</strong> The session is automatically reset and the next request triggers a full rebuild. If this happens frequently, reduce <code>n_seq_max</code> or <code>context_window</code> to lower VRAM pressure.</p>
+          <p><strong>Solution:</strong> The session is automatically reset and the next request triggers a full rebuild. If this happens frequently, reduce <code>nseq-max</code> or <code>context-window</code> to lower VRAM pressure.</p>
           <h3 id="169-viewing-logs">16.9 Viewing Logs</h3>
           <p><strong>Run server in foreground:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
@@ -5973,17 +5804,12 @@ nvidia-smi`}</code></pre>
               <tr>
                 <td><code>unable to load model</code></td>
                 <td>Missing or corrupt model file</td>
-                <td>Re-download with <code>kronk catalog pull</code></td>
-              </tr>
-              <tr>
-                <td><code>failed to retrieve model template</code></td>
-                <td>Missing chat template</td>
-                <td><code>kronk catalog pull-templates --local</code></td>
+                <td>Re-download with <code>kronk model pull</code></td>
               </tr>
               <tr>
                 <td><code>unable to init context</code></td>
                 <td>Insufficient VRAM/RAM</td>
-                <td>Reduce context window or n_seq_max</td>
+                <td>Reduce context-window or nseq-max</td>
               </tr>
               <tr>
                 <td><code>input tokens [N] exceed context window [M]</code></td>
@@ -6003,7 +5829,7 @@ nvidia-smi`}</code></pre>
               <tr>
                 <td><code>server busy processing other requests</code></td>
                 <td>All IMC sessions busy</td>
-                <td>Retry, or increase n_seq_max</td>
+                <td>Retry, or increase nseq-max</td>
               </tr>
               <tr>
                 <td><code>no authorization header</code></td>
@@ -6031,9 +5857,9 @@ nvidia-smi`}</code></pre>
                 <td>Wait for shutdown, restart server</td>
               </tr>
               <tr>
-                <td><code>github rate limited</code></td>
-                <td>GitHub API 403/429 during pull</td>
-                <td>Set <code>GITHUB_TOKEN</code> env var</td>
+                <td><code>huggingface 401 / 403</code></td>
+                <td>Gated/private repo or rate limit</td>
+                <td>Set <code>KRONK_HF_TOKEN</code> env var</td>
               </tr>
               <tr>
                 <td><code>model doesn't support embedding</code></td>
@@ -6057,11 +5883,101 @@ nvidia-smi`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="1611-getting-help">16.11 Getting Help</h3>
+          <h3 id="1611-catalog-model-pull-issues">16.11 Catalog &amp; Model Pull Issues</h3>
+          <p><strong>Error: &lt;code&gt;huggingface 401&lt;/code&gt; / &lt;code&gt;403&lt;/code&gt; during &lt;code&gt;kronk model pull&lt;/code&gt;</strong></p>
+          <p>The repo is gated/private or the request was throttled.</p>
+          <p><strong>Solution:</strong> export a HuggingFace token before pulling. The token must have read access to any gated repos you intend to use:</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_HF_TOKEN=hf_xxx
+kronk model pull <provider/model-id>`}</code></pre>
+          <p><strong>Problem: &lt;code&gt;kronk model pull &lt;id&gt;&lt;/code&gt; says "model not found in catalog"</strong></p>
+          <p>The id has not been resolved against HuggingFace yet. Use <code>model resolve</code> to look it up and seed the local catalog:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model resolve https://huggingface.co/<owner>/<repo>
+kronk model pull <provider/model-id>`}</code></pre>
+          <p><strong>Problem: &lt;code&gt;catalog.yaml&lt;/code&gt; was hand-edited and Kronk now refuses to start</strong></p>
+          <p>The catalog file is YAML keyed by canonical id with strict typing. Run <code>kronk catalog list --local</code> to validate it; remove the broken entry with <code>kronk catalog remove &lt;id&gt; --local</code> and re-add it via <code>kronk model resolve</code>.</p>
+          <p><strong>Problem: pull failed mid-download, &lt;code&gt;kronk model list&lt;/code&gt; shows the model as invalid</strong></p>
+          <p>Partial files are left behind under <code>~/.kronk/models/&lt;provider&gt;/&lt;family&gt;/</code>. Remove the model and re-pull:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model remove <provider/model-id> --local
+kronk model pull <provider/model-id>
+kronk model index --local`}</code></pre>
+          <h3 id="1612-mcp-service-issues">16.12 MCP Service Issues</h3>
+          <p><strong>Error: &lt;code&gt;/mcp&lt;/code&gt; returns 404</strong></p>
+          <p>The MCP endpoint is <code>http://localhost:9000/mcp</code> (no trailing slash). The client must use the Streamable HTTP transport — Cline calls it <code>streamableHttp</code>, Kilo Code uses <code>streamable-http</code>, and OpenCode/Goose both spell it <code>remote</code>.</p>
+          <p><strong>Error: &lt;code&gt;web_search&lt;/code&gt; reports "missing Brave API key"</strong></p>
+          <p>The Brave Search key is unset. Provide it before starting the server:</p>
+          <pre className="code-block"><code className="language-shell">{`# Embedded mode (kronk server start)
+export KRONK_MCP_BRAVEAPIKEY=<your-brave-api-key>
+
+# Standalone (make mcp-server)
+export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>`}</code></pre>
+          <p><strong>Problem: model can't find the tool ("unknown tool kronk_fuzzy_edit")</strong></p>
+          <p>Each MCP-aware client prefixes tool names with the server key. Check that the prefix matches the key you used in the client config:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Server key in config</th>
+                <th>Tool names exposed</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Cline</td>
+                <td><code>Kronk</code></td>
+                <td><code>web_search</code>, <code>fuzzy_edit</code></td>
+              </tr>
+              <tr>
+                <td>Kilo</td>
+                <td><code>Kronk</code></td>
+                <td><code>Kronk_web_search</code>, <code>Kronk_fuzzy_edit</code></td>
+              </tr>
+              <tr>
+                <td>OpenCode</td>
+                <td><code>kronk</code></td>
+                <td><code>kronk_web_search</code>, <code>kronk_fuzzy_edit</code></td>
+              </tr>
+              <tr>
+                <td>Goose</td>
+                <td>(lowercase)</td>
+                <td><code>kronk_web_search</code>, <code>kronk_fuzzy_edit</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Error: &lt;code&gt;fuzzy_edit&lt;/code&gt; returns "old_string not found in file (even with fuzzy matching)"</strong></p>
+          <p>The search snippet is either absent from the file or matches more than once. Tighten the snippet to a unique block of lines, or break the edit into a smaller anchor that appears exactly once.</p>
+          <p><strong>Problem: embedded MCP server is not starting</strong></p>
+          <p>Setting <code>KRONK_MCP_HOST</code> to a non-empty value tells <code>kronk server</code> to defer to an external MCP host instead of starting its own. Unset it (or run the standalone service via <code>make mcp-server</code>) if you want the embedded mode back.</p>
+          <h3 id="1613-port-conflicts-filesystem">16.13 Port Conflicts &amp; Filesystem</h3>
+          <p><strong>Error: &lt;code&gt;bind: address already in use&lt;/code&gt;</strong></p>
+          <p>Another process is already listening on the port Kronk is trying to bind. Default ports are <code>11435</code> (API), <code>8090</code> (debug), and <code>9000</code> (MCP).</p>
+          <p><strong>Solutions:</strong></p>
+          <pre className="code-block"><code className="language-shell">{`# Find the offending process
+lsof -i :11435
+
+# Or move Kronk to a different port
+kronk server start --api-host 0.0.0.0:21435`}</code></pre>
+          <p><strong>Error: &lt;code&gt;permission denied&lt;/code&gt; reading or writing &lt;code&gt;~/.kronk/&lt;/code&gt;</strong></p>
+          <p>Ensure your user owns the kronk base directory. Auth in particular expects <code>~/.kronk/keys/</code> to be <code>0700</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`chmod -R u+rwX ~/.kronk
+chmod 700 ~/.kronk/keys`}</code></pre>
+          <p><strong>Error: &lt;code&gt;lock file already exists&lt;/code&gt; from BadgerDB (&lt;code&gt;~/.kronk/badger/LOCK&lt;/code&gt;)</strong></p>
+          <p>Only one Kronk process may hold the rate-limit DB at a time. Confirm no other server is running, then remove the lock:</p>
+          <pre className="code-block"><code className="language-shell">{`ps aux | grep "kronk server"
+rm ~/.kronk/badger/LOCK   # only if no process is using it`}</code></pre>
+          <p><strong>Problem: &lt;code&gt;kronk server start -d&lt;/code&gt; says "already running" but no process exists</strong></p>
+          <p>The PID file is stale. Remove it and start again:</p>
+          <pre className="code-block"><code className="language-shell">{`rm ~/.kronk/kronk.pid
+kronk server start -d`}</code></pre>
+          <p><strong>Problem: model pull fails with "no space left on device"</strong></p>
+          <p>The models directory is full. Free space by removing unused models:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model list --local
+kronk model remove <provider/model-id> --local`}</code></pre>
+          <p>Models live under <code>~/.kronk/models/</code>; check available space with <code>df -h ~/.kronk/models</code>.</p>
+          <h3 id="1614-getting-help">16.14 Getting Help</h3>
           <p><strong>Check server liveness:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
           <p><strong>Check server readiness (model loaded):</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/readyz`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/readiness`}</code></pre>
           <p><strong>List loaded models:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p><strong>Check Prometheus metrics:</strong></p>
@@ -6086,7 +6002,7 @@ go tool pprof cpu.prof`}</code></pre>
           <h2 id="chapter-17-developer-guide">Chapter 17: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
           <h3 id="171-quick-reference">17.1 Quick Reference</h3>
-          <p>Here is a quick chart of some of the more imporant make commands.</p>
+          <p>Here is a quick chart of some of the more important make commands.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -6097,11 +6013,15 @@ go tool pprof cpu.prof`}</code></pre>
             <tbody>
               <tr>
                 <td>Install CLI</td>
-                <td><code>make install-kronk</code>.</td>
+                <td><code>make install-kronk</code></td>
               </tr>
               <tr>
                 <td>Run all tests</td>
-                <td><code>make test</code></td>
+                <td><code>make test</code> (requires env vars below)</td>
+              </tr>
+              <tr>
+                <td>Test prereqs</td>
+                <td><code>export RUN_IN_PARALLEL=yes; export GITHUB_WORKSPACE=$(pwd)</code></td>
               </tr>
               <tr>
                 <td>Single test</td>
@@ -6110,6 +6030,18 @@ go tool pprof cpu.prof`}</code></pre>
               <tr>
                 <td>Run server</td>
                 <td><code>make kronk-server</code></td>
+              </tr>
+              <tr>
+                <td>Run server (bg)</td>
+                <td><code>make kronk-server-detach</code></td>
+              </tr>
+              <tr>
+                <td>Tail server log</td>
+                <td><code>make kronk-server-logs</code></td>
+              </tr>
+              <tr>
+                <td>Stop server</td>
+                <td><code>make kronk-server-stop</code></td>
               </tr>
               <tr>
                 <td>Build BUI</td>
@@ -6128,8 +6060,8 @@ go tool pprof cpu.prof`}</code></pre>
                 <td><code>make deps-upgrade</code></td>
               </tr>
               <tr>
-                <td>Lint</td>
-                <td><code>staticcheck ./...</code></td>
+                <td>Post-edit checks</td>
+                <td><code>gofmt -s -w &lt;files&gt; && go vet ./... && staticcheck ./...</code></td>
               </tr>
               <tr>
                 <td>Developer setup</td>
@@ -6139,21 +6071,21 @@ go tool pprof cpu.prof`}</code></pre>
           </table>
           <h3 id="172-build-test-commands">17.2 Build &amp; Test Commands</h3>
           <p><strong>Install CLI locally:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`go install ./cmd/kronk`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`make install-kronk`}</code></pre>
+          <p>This is the canonical install path used everywhere in the docs. Internally it runs <code>go install ./cmd/kronk</code> with the project's build tags.</p>
           <p><strong>Run all tests:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`make test`}</code></pre>
-          <p>Tests require prerequisites and environment variables:</p>
-          <pre className="code-block"><code className="language-shell">{`# Install dependencies first
-make install-libraries install-models
-
-# Set required environment variables
+          <pre className="code-block"><code className="language-shell">{`# Set required environment variables (project root must be absolute)
 export RUN_IN_PARALLEL=yes
-export GITHUB_WORKSPACE=/path/to/kronk  # project root
+export GITHUB_WORKSPACE=$(pwd)
 
 # Run from project root directory
 make test`}</code></pre>
+          <p><code>make test</code> expands to <code>test-only + lint + vuln-check + diff</code>. The <code>test-only</code> target depends on <code>install-libraries</code> and <code>install-test-models</code>, so the llama.cpp libraries and test GGUF models are downloaded automatically the first time you run it.</p>
+          <p>For fast iteration (skip <code>lint</code>, <code>vuln-check</code>, and <code>diff</code>):</p>
+          <pre className="code-block"><code className="language-shell">{`make test-only`}</code></pre>
           <p><strong>Run a single test:</strong></p>
           <pre className="code-block"><code className="language-shell">{`go test -v -count=1 -run TestName ./sdk/kronk/...`}</code></pre>
+          <p>The path can target any package (e.g. <code>./cmd/...</code> or a specific subpackage); <code>./sdk/kronk/...</code> is just where most inference tests live.</p>
           <h3 id="173-developer-setup">17.3 Developer Setup</h3>
           <p>Configure git hooks for automatic pre-commit checks:</p>
           <pre className="code-block"><code className="language-shell">{`make setup`}</code></pre>
@@ -6161,7 +6093,14 @@ make test`}</code></pre>
           <ul>
             <li><code>make kronk-docs</code> - Regenerates documentation</li>
             <li><code>make bui-build</code> - Rebuilds the BUI frontend</li>
+            <li><code>gomod2nix --dir . --outdir zarf/nix</code> - Regenerates the Nix lock file (only if <code>gomod2nix</code> is on <code>PATH</code>)</li>
+            <li><code>git add -A</code> - Stages all generated changes so they land in the same commit</li>
           </ul>
+          <p><strong>Toolchain dependencies:</strong></p>
+          <p><code>make setup</code> only configures git hooks. The lint/vuln/codegen toolchain is installed separately:</p>
+          <pre className="code-block"><code className="language-shell">{`make install-gotooling   # staticcheck, govulncheck, protoc-gen-go(-grpc), gomod2nix
+make install-tooling     # brew: protobuf, grpcurl, node (only needed for codegen / BUI work)`}</code></pre>
+          <p>A fresh checkout that skips <code>install-gotooling</code> will fail the <code>lint</code> and <code>vuln-check</code> steps of <code>make test</code> and the post-edit checks listed in §17.1.</p>
           <h3 id="174-project-architecture">17.4 Project Architecture</h3>
           <p><strong>Directory Structure:</strong></p>
           <table className="flags-table">
@@ -6174,31 +6113,51 @@ make test`}</code></pre>
             <tbody>
               <tr>
                 <td><code>cmd/kronk/</code></td>
-                <td>CLI tool (subcommands: catalog, libs, model, run, security, server)</td>
+                <td>CLI tool (subcommands: <code>catalog</code>, <code>client</code>, <code>devices</code>, <code>libs</code>, <code>model</code>, <code>run</code>, <code>security</code>, <code>server</code>)</td>
               </tr>
               <tr>
                 <td><code>cmd/server/</code></td>
-                <td>OpenAI-compatible model server (gRPC + HTTP) with BUI frontend</td>
+                <td>OpenAI-compatible HTTP model server with embedded BUI. Internal gRPC over <code>bufconn</code> for the embedded auth service.</td>
+              </tr>
+              <tr>
+                <td><code>cmd/server/api/</code></td>
+                <td>Transport layer: HTTP services, BUI frontend embed, tooling (docs generator, logfmt)</td>
+              </tr>
+              <tr>
+                <td><code>cmd/server/app/</code></td>
+                <td>Application layer: <code>domain/</code> (auth, mcp, model, etc. handlers) + <code>sdk/</code> (cache, mux, security wiring)</td>
+              </tr>
+              <tr>
+                <td><code>cmd/server/foundation/</code></td>
+                <td>Cross-cutting infra: <code>logger/</code>, <code>web/</code> (request lifecycle, tracing helpers)</td>
               </tr>
               <tr>
                 <td><code>cmd/server/api/tooling/docs/</code></td>
-                <td>Documentation generator for BUI (SDK and CLI docs)</td>
+                <td>Documentation generator (SDK godoc + CLI command tree → BUI markdown)</td>
               </tr>
               <tr>
                 <td><code>sdk/kronk/</code></td>
-                <td>Core API: model loading, chat, embeddings, cache, metrics</td>
+                <td>Public SDK API surface (<code>init.go</code>, <code>chat.go</code>, <code>embedding.go</code>, <code>rerank.go</code>, <code>tokenize.go</code>, concurrency)</td>
               </tr>
               <tr>
                 <td><code>sdk/kronk/model/</code></td>
-                <td>Core inference and caching engine</td>
+                <td>Core inference and caching engine (batch, slots, IMC, sampler, prefill/decode)</td>
               </tr>
               <tr>
                 <td><code>sdk/kronk/observ/</code></td>
-                <td>Observability packages (metrics/, otel/)</td>
+                <td>Observability packages: <code>metrics/</code>, <code>otel/</code></td>
               </tr>
               <tr>
                 <td><code>sdk/tools/</code></td>
-                <td>Support for libs, models, catalogs, templates, and defaults</td>
+                <td>CLI tooling support: <code>defaults/</code>, <code>devices/</code>, <code>downloader/</code>, <code>github/</code>, <code>libs/</code>, <code>models/</code></td>
+              </tr>
+              <tr>
+                <td><code>examples/</code></td>
+                <td>Standalone module (own <code>go.mod</code>) with runnable SDK examples — source for auto-generated example docs</td>
+              </tr>
+              <tr>
+                <td><code>zarf/</code></td>
+                <td>Deployment assets: <code>docker/</code>, <code>kms/</code> (model config samples), <code>nix/</code> (gomod2nix lock)</td>
               </tr>
             </tbody>
           </table>
@@ -6207,7 +6166,7 @@ make test`}</code></pre>
           <h3 id="175-bui-frontend-development">17.5 BUI Frontend Development</h3>
           <p>The Browser UI is a React application located at:</p>
           <pre className="code-block"><code>{`cmd/server/api/frontends/bui/src/`}</code></pre>
-          <p><strong>Directory Structure:</strong></p>
+          <p><strong>Directory Structure (&lt;code&gt;src/&lt;/code&gt;):</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -6225,12 +6184,24 @@ make test`}</code></pre>
                 <td>React context providers for shared state</td>
               </tr>
               <tr>
+                <td><code>hooks/</code></td>
+                <td>Reusable hooks (e.g. <code>useDraftSession.ts</code>)</td>
+              </tr>
+              <tr>
+                <td><code>lib/</code></td>
+                <td>Shared TypeScript utilities (<code>context.ts</code>, <code>format.ts</code>)</td>
+              </tr>
+              <tr>
                 <td><code>services/</code></td>
                 <td>API client (<code>api.ts</code>)</td>
               </tr>
               <tr>
                 <td><code>types/</code></td>
                 <td>TypeScript type definitions</td>
+              </tr>
+              <tr>
+                <td><code>main.tsx</code></td>
+                <td>Vite entry point — mounts <code>&lt;App&gt;</code> into <code>index.html</code></td>
               </tr>
               <tr>
                 <td><code>App.tsx</code></td>
@@ -6242,6 +6213,33 @@ make test`}</code></pre>
               </tr>
             </tbody>
           </table>
+          <p>The BUI project root (<code>cmd/server/api/frontends/bui/</code>) also contains <code>index.html</code>, <code>package.json</code>, <code>vite.config.ts</code>, and <code>tsconfig.json</code>.</p>
+          <p><strong>Build & Embed:</strong></p>
+          <p>The BUI is a Vite + React + TypeScript app. The build output is <strong>embedded into the Go binary</strong> at compile time via <code>//go:embed static</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/services/kronk/kronk.go#L37-L38"><code>cmd/server/api/services/kronk/kronk.go</code></a>. Editing source under <code>bui/src/</code> has no runtime effect until the bundle is rebuilt and the server is recompiled.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Workflow</th>
+                <th>Command</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>HMR dev server</td>
+                <td><code>npm run dev</code> (from <code>cmd/server/api/frontends/bui/</code>)</td>
+              </tr>
+              <tr>
+                <td>Production build</td>
+                <td><code>make bui-build</code> (or <code>npm run build</code>)</td>
+              </tr>
+              <tr>
+                <td>Build + embed + run</td>
+                <td><code>make kronk-server-build</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Component Conventions:</strong></p>
+          <p>Tooltip and form-label conventions are governed by <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/frontends/bui/src/components/AGENTS.md"><code>bui/src/components/AGENTS.md</code></a>. All parameter explanations live in <code>PARAM_TOOLTIPS</code> and are accessed through the type-safe <code>TooltipKey</code>, <code>FieldLabel</code>, and <code>labelWithTip</code> helpers in <code>ParamTooltips.tsx</code>. Any new form field must add a <code>PARAM_TOOLTIPS</code> entry.</p>
           <p><strong>Routing:</strong></p>
           <p>Uses <code>react-router-dom</code> with <code>BrowserRouter</code>. Routes are defined in <code>routeMap</code> in <code>App.tsx</code>.</p>
           <p><strong>Adding New Pages:</strong></p>
@@ -6283,9 +6281,10 @@ make test`}</code></pre>
           <p><strong>API Service (&lt;code&gt;services/api.ts&lt;/code&gt;):</strong></p>
           <ul>
             <li><code>ApiService</code> class with methods for all endpoints</li>
-            <li>Streaming support for pull operations (models, catalog, libs)</li>
+            <li>Streaming support for pull operations (models and libraries)</li>
             <li>Auth-required endpoints accept token parameter</li>
           </ul>
+          <p>The catalog is local and personal — there is no <code>catalog pull</code> stream.</p>
           <p><strong>Styling Conventions:</strong></p>
           <ul>
             <li>CSS variables defined in <code>:root</code> (colors: <code>--color-orange</code>, <code>--color-blue</code>, etc.)</li>
@@ -6293,30 +6292,38 @@ make test`}</code></pre>
             <li>No CSS modules or styled-components; use global CSS classes</li>
           </ul>
           <p><strong>Documentation Generation:</strong></p>
+          <p>The single binary at <code>cmd/server/api/tooling/docs/main.go</code> runs three pipelines in order: SDK godoc → examples → manual chapters.</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Type</th>
+                <th>Pipeline</th>
                 <th>Generator Location</th>
+                <th>Source</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>SDK docs</td>
-                <td><code>cmd/server/api/tooling/docs/sdk/</code> (uses <code>go doc</code> output)</td>
-              </tr>
-              <tr>
-                <td>CLI docs</td>
-                <td><code>cmd/server/api/tooling/docs/cli/</code> (from command definitions)</td>
+                <td>SDK godoc</td>
+                <td><code>cmd/server/api/tooling/docs/sdk/gofmt/</code></td>
+                <td><code>go doc</code> output for <code>sdk/...</code></td>
               </tr>
               <tr>
                 <td>Examples</td>
-                <td>Auto-generated from <code>examples/</code> directory</td>
+                <td><code>cmd/server/api/tooling/docs/sdk/examples/</code></td>
+                <td><code>examples/</code> module</td>
+              </tr>
+              <tr>
+                <td>Manual chapters</td>
+                <td><code>cmd/server/api/tooling/docs/manual/</code></td>
+                <td><code>.manual/chapter-*.md</code> files</td>
               </tr>
             </tbody>
           </table>
+          <p>The manual chapters pipeline is what turns this very file into BUI React components — edits here flow into the BUI on the next <code>make kronk-docs</code>.</p>
           <p>Generate all documentation:</p>
-          <pre className="code-block"><code className="language-shell">{`go run ./cmd/server/api/tooling/docs -pkg=all`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`make kronk-docs
+# equivalent to: go run cmd/server/api/tooling/docs/*.go`}</code></pre>
+          <p>The generator takes no flags; it always rebuilds all three pipelines.</p>
           <h3 id="176-code-style-guidelines">17.6 Code Style Guidelines</h3>
           <p><strong>Package Comments:</strong></p>
           <pre className="code-block"><code className="language-go">{`// Package kronk provides the core inference API.`}</code></pre>
@@ -6328,8 +6335,9 @@ return fmt.Errorf("loading model: %w", err)
 var ErrModelNotFound = errors.New("model not found")`}</code></pre>
           <p><strong>Struct Design:</strong></p>
           <ul>
-            <li>Use unexported fields with exported types</li>
-            <li>Use <code>Config</code> pattern for constructors</li>
+            <li>Consumer-facing structs (<code>Config</code>, <code>Result</code>, request/response DTOs) expose exported fields the caller fills in.</li>
+            <li>Internal state structs keep fields unexported and surface behavior through methods on the exported type.</li>
+            <li>Use the <code>Config</code> pattern for constructors.</li>
           </ul>
           <pre className="code-block"><code className="language-go">{`type Config struct {
     Host string
@@ -6340,13 +6348,30 @@ func New(cfg Config) *Server {
     // ...
 }`}</code></pre>
           <p><strong>Testing:</strong></p>
-          <p>Disable CGO in tests:</p>
-          <pre className="code-block"><code className="language-shell">{`go test ./...`}</code></pre>
-          <p><strong>Import Order (goimports):</strong></p>
+          <p>Tests link against yzma (llama.cpp Go bindings), so they require CGO and the installed libraries plus test models. Always go through <code>make test</code> (or <code>make test-only</code> for fast iteration) per §17.2. Never run with <code>CGO_ENABLED=0</code> — inference packages will fail to compile.</p>
+          <p><strong>Post-edit Checks (per &lt;a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/AGENTS.md"&gt;AGENTS.md&lt;/a&gt;):</strong></p>
+          <p>After modifying any <code>.go</code> file, run on the changed files / package:</p>
+          <pre className="code-block"><code className="language-shell">{`gofmt -s -w <changed files>
+go vet ./...
+staticcheck ./...
+go fix <changed package>`}</code></pre>
+          <p>These are non-negotiable; they are also what <code>make test</code>'s <code>lint</code> step runs.</p>
+          <p><strong>Comment Conventions:</strong></p>
+          <ul>
+            <li>Doc comments are full sentences ending with a period.</li>
+            <li>Package doc lives on the file that declares the package's main type or entry point (e.g. <code>package kronk</code> doc on <code>kronk.go</code>).</li>
+            <li>Use a block separator between logical sections in larger files:</li>
+          </ul>
+          <pre className="code-block"><code className="language-go">{`// =============================================================================
+// Tiered Replace
+// =============================================================================`}</code></pre>
+          <p>See <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp/fuzzyedit.go#L58-L60">fuzzyedit.go</a> for the canonical pattern.</p>
+          <p><strong>Import Order:</strong></p>
+          <p>Imports are grouped into three blocks separated by blank lines and sorted by <code>goimports -local github.com/ardanlabs/kronk</code>:</p>
           <ol>
             <li>Standard library</li>
             <li>External packages</li>
-            <li>Internal packages</li>
+            <li>Internal packages (<code>github.com/ardanlabs/kronk/...</code>)</li>
           </ol>
           <p><strong>Control Flow:</strong></p>
           <ul>
@@ -6373,7 +6398,7 @@ default:
           <h3 id="177-sdk-internals">17.7 SDK Internals</h3>
           <p>This section documents implementation details for developers working on the Kronk SDK packages.</p>
           <h4 id="1771-package-structure">17.7.1 Package Structure</h4>
-          <p><strong>sdk/kronk/</strong> - Core API package:</p>
+          <p><strong>sdk/kronk/</strong> - Public SDK API surface:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -6384,7 +6409,7 @@ default:
             <tbody>
               <tr>
                 <td><code>acquire.go</code></td>
-                <td>Model pool acquire/release</td>
+                <td>Model pool acquire/release (top-level wrapper)</td>
               </tr>
               <tr>
                 <td><code>chat.go</code></td>
@@ -6392,7 +6417,7 @@ default:
               </tr>
               <tr>
                 <td><code>concurrency.go</code></td>
-                <td>Generic streaming utilities</td>
+                <td>Generic streaming utilities, semaphore-based backpressure</td>
               </tr>
               <tr>
                 <td><code>embedding.go</code></td>
@@ -6404,7 +6429,11 @@ default:
               </tr>
               <tr>
                 <td><code>kronk.go</code></td>
-                <td>Main Kronk type, model pool management</td>
+                <td>Main <code>Kronk</code> type, model pool management</td>
+              </tr>
+              <tr>
+                <td><code>logger.go</code></td>
+                <td>Streaming response logger (used when insecure-logging on)</td>
               </tr>
               <tr>
                 <td><code>rerank.go</code></td>
@@ -6414,9 +6443,15 @@ default:
                 <td><code>response.go</code></td>
                 <td>OpenAI Responses API streaming</td>
               </tr>
+              <tr>
+                <td><code>tokenize.go</code></td>
+                <td>Token-count API</td>
+              </tr>
             </tbody>
           </table>
-          <p><strong>sdk/kronk/model/</strong> - Low-level inference:</p>
+          <p><strong>sdk/kronk/model/</strong> - Low-level inference engine.</p>
+          <p>The package is large (30+ files); files are grouped here by concern.</p>
+          <p><em>Core types and lifecycle:</em></p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -6426,153 +6461,323 @@ default:
             </thead>
             <tbody>
               <tr>
-                <td><code>batch.go</code></td>
-                <td>Batch engine for parallel text inference</td>
-              </tr>
-              <tr>
-                <td><code>batch_finish.go</code></td>
-                <td>Request completion, KV cleanup per model type</td>
-              </tr>
-              <tr>
-                <td><code>batch_schedule.go</code></td>
-                <td>Slot assignment (first-available for all sessions)</td>
-              </tr>
-              <tr>
-                <td><code>batch_slot_start.go</code></td>
-                <td>Slot initialization, KV restore from RAM, KV snapshot to RAM</td>
-              </tr>
-              <tr>
-                <td><code>caching.go</code></td>
-                <td>Cache orchestration and routing</td>
-              </tr>
-              <tr>
-                <td><code>caching_imc.go</code></td>
-                <td>IMC session matching, hash scanning, and cache operations</td>
-              </tr>
-              <tr>
-                <td><code>caching_imc_media.go</code></td>
-                <td>IMC media cache build and extend (vision/audio)</td>
-              </tr>
-              <tr>
-                <td><code>chat.go</code></td>
-                <td>Chat inference loop, batch routing</td>
+                <td><code>model.go</code></td>
+                <td><code>Model</code> type, llama context management, lifecycle</td>
               </tr>
               <tr>
                 <td><code>config.go</code></td>
-                <td>Model configuration (GPU, cache, batching)</td>
-              </tr>
-              <tr>
-                <td><code>embed.go</code></td>
-                <td>Embedding inference</td>
-              </tr>
-              <tr>
-                <td><code>logprobs.go</code></td>
-                <td>Token log probability extraction</td>
-              </tr>
-              <tr>
-                <td><code>media.go</code></td>
-                <td>Vision/audio media processing</td>
-              </tr>
-              <tr>
-                <td><code>model.go</code></td>
-                <td>Model type, context management, lifecycle</td>
-              </tr>
-              <tr>
-                <td><code>models.go</code></td>
-                <td>OpenAI-compatible types (ChatMessage, ToolCall, etc.)</td>
+                <td>Model configuration (GPU, cache, batching, YaRN, etc.)</td>
               </tr>
               <tr>
                 <td><code>params.go</code></td>
                 <td>Sampling parameters</td>
               </tr>
               <tr>
-                <td><code>processor.go</code></td>
-                <td>Template-specific token processors</td>
+                <td><code>models.go</code></td>
+                <td>OpenAI-compatible types (<code>ChatMessage</code>, <code>ToolCall</code>, etc.)</td>
               </tr>
               <tr>
-                <td><code>prompts.go</code></td>
-                <td>Prompt formatting</td>
+                <td><code>chat.go</code></td>
+                <td>Chat inference entry point, request validation, batch routing</td>
+              </tr>
+              <tr>
+                <td><code>embed.go</code></td>
+                <td>Embedding inference</td>
               </tr>
               <tr>
                 <td><code>rerank.go</code></td>
                 <td>Reranking inference</td>
               </tr>
+              <tr>
+                <td><code>prompts.go</code></td>
+                <td>Jinja2 chat template application</td>
+              </tr>
+              <tr>
+                <td><code>tokenize.go</code></td>
+                <td>Token-count helper</td>
+              </tr>
+              <tr>
+                <td><code>media.go</code></td>
+                <td>Vision/audio media detection and conversion</td>
+              </tr>
+              <tr>
+                <td><code>check.go</code></td>
+                <td>Model file SHA validation</td>
+              </tr>
+              <tr>
+                <td><code>logging.go</code></td>
+                <td>Streaming response logger (mirrors final response for log)</td>
+              </tr>
+              <tr>
+                <td><code>yzma.go</code></td>
+                <td>Workarounds for yzma FFI issues not yet fixed upstream</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><em>Batch engine</em> (<code>batch_*.go</code>):</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>batch_engine.go</code></td>
+                <td><code>batchEngine</code> — parallel inference slots, request queue, wake loop</td>
+              </tr>
+              <tr>
+                <td><code>batch_schedule.go</code></td>
+                <td>Slot assignment (first-available for all sessions)</td>
+              </tr>
+              <tr>
+                <td><code>batch_slot.go</code></td>
+                <td><code>chatJob</code> and slot state structures</td>
+              </tr>
+              <tr>
+                <td><code>batch_slot_start.go</code></td>
+                <td>Slot init: KV restore from RAM, sampler build, prefix snapshot</td>
+              </tr>
+              <tr>
+                <td><code>batch_decode.go</code></td>
+                <td>MTMD batch decode helpers</td>
+              </tr>
+              <tr>
+                <td><code>batch_prefill_text.go</code></td>
+                <td>Round-robin token prefill across slots</td>
+              </tr>
+              <tr>
+                <td><code>batch_prefill_media.go</code></td>
+                <td>Vision/audio chunk prefill (interleaves embeddings with text)</td>
+              </tr>
+              <tr>
+                <td><code>batch_tokens.go</code></td>
+                <td>Per-token sampling and pipeline (logprobs, EOG, classify, stream)</td>
+              </tr>
+              <tr>
+                <td><code>batch_utf8.go</code></td>
+                <td>Partial-codepoint buffering across token boundaries</td>
+              </tr>
+              <tr>
+                <td><code>batch_finish.go</code></td>
+                <td>Request completion, metrics, KV cleanup per model type</td>
+              </tr>
+              <tr>
+                <td><code>batch_errors.go</code></td>
+                <td>Slot cancellation / shutdown error helpers</td>
+              </tr>
+              <tr>
+                <td><code>batch_shutdown.go</code></td>
+                <td>Drain active slots and pending jobs on shutdown</td>
+              </tr>
+              <tr>
+                <td><code>batch_speculative.go</code></td>
+                <td>Speculative decoding (draft model prefill + verify)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><em>Caching:</em></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>caching.go</code></td>
+                <td>Cache orchestration and routing (<code>cacheResult</code>)</td>
+              </tr>
+              <tr>
+                <td><code>caching_imc.go</code></td>
+                <td>IMC session matching, two-tier hash scan, prefix trim/extend</td>
+              </tr>
+              <tr>
+                <td><code>caching_imc_media.go</code></td>
+                <td>IMC media cache build/extend (vision/audio)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><em>Sampling and grammar:</em></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>grammar.go</code></td>
+                <td>JSON Schema → GBNF conversion for grammar-constrained output</td>
+              </tr>
+              <tr>
+                <td><code>logprobs.go</code></td>
+                <td>Top-k token log probability extraction</td>
+              </tr>
+              <tr>
+                <td><code>speculative_sparse.go</code></td>
+                <td>Sparse candidate sampling for speculative decode verification</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><em>Content processors</em> (per-template tool/reasoning classification):</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>processor.go</code></td>
+                <td>Processor interface, content classifier state machine</td>
+              </tr>
+              <tr>
+                <td><code>processor_parse.go</code></td>
+                <td>Router: dispatches to model-specific tool parser</td>
+              </tr>
+              <tr>
+                <td><code>processor_gemma.go</code></td>
+                <td>Gemma4-style tool calls</td>
+              </tr>
+              <tr>
+                <td><code>processor_glm.go</code></td>
+                <td>GLM <code>&lt;arg_key&gt;</code>/<code>&lt;arg_value&gt;</code> tag tool calls</td>
+              </tr>
+              <tr>
+                <td><code>processor_gpt.go</code></td>
+                <td>GPT-OSS Harmony tool calls</td>
+              </tr>
+              <tr>
+                <td><code>processor_qwen.go</code></td>
+                <td>Qwen3-Coder XML-like tool tags</td>
+              </tr>
+              <tr>
+                <td><code>processor_mistral.go</code></td>
+                <td>Mistral / Devstral tool calls</td>
+              </tr>
+              <tr>
+                <td><code>processor_json.go</code></td>
+                <td>Standard JSON tool calls</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><em>Misc:</em></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>pool.go</code></td>
+                <td><code>contextPool</code> — parallel llama contexts for embedding/rerank workloads</td>
+              </tr>
             </tbody>
           </table>
           <h4 id="1772-streaming-architecture">17.7.2 Streaming Architecture</h4>
+          <p><strong>Two streaming primitives</strong> (<code>concurrency.go</code>):</p>
+          <ul>
+            <li><code>streaming[T]</code> — 1:1 relay. Used by <code>ChatStreaming</code> to forward <code>model.ChatResponse</code> chunks straight to the caller.</li>
+            <li><code>streamingWith[T, U]</code> — 1:N event transformation. Used by <code>ResponseStreaming</code> to fan out a single upstream chunk into multiple SSE event types.</li>
+          </ul>
+          <p>Both acquire the model on entry and release it from a <code>defer</code> when the user-facing channel closes (see §17.7.4) — the lifecycle is not hand-rolled in the per-API files.</p>
           <p><strong>Response Streaming Pattern</strong> (<code>response.go</code>, <code>concurrency.go</code>):</p>
           <ul>
-            <li>Uses <code>streamingWith[T, U]</code> generic function for 1:N event transformation</li>
             <li><code>streamProcessor</code> has three phases: <code>Start()</code>, <code>Process(chunk)</code>, <code>Complete(lastChunk)</code></li>
+            <li>Phase flow: <code>Start</code> runs once before the upstream channel opens, <code>Process</code> runs once per upstream chunk, <code>Complete</code> runs once after the upstream channel closes and receives the last chunk seen.</li>
             <li><code>streamState</code> struct maintains response ID, sequence numbers, aggregated usage</li>
             <li>SSE format: <code>event: &lt;type&gt;\ndata: &lt;json&gt;\n\n</code></li>
           </ul>
           <p><strong>FinishReason Handling:</strong></p>
           <ul>
             <li><code>FinishReasonPtr *string</code> field with <code>FinishReason()</code> accessor</li>
-            <li>Constants: <code>FinishReasonStop="stop"</code>, <code>FinishReasonTool="tool_calls"</code>, <code>FinishReasonError="error"</code></li>
+            <li>Only three constants exist (<code>models.go</code>): <code>FinishReasonStop="stop"</code>, <code>FinishReasonTool="tool_calls"</code>, <code>FinishReasonError="error"</code>. There is no <code>"length"</code> — a <code>max_tokens</code> cap is reported as <code>FinishReasonStop</code>, unlike the OpenAI API.</li>
             <li>When <code>FinishReasonPtr != nil</code>, skip text/reasoning deltas (they duplicate previous content)</li>
             <li>Always process tool calls even with FinishReason set (may only arrive in final chunk)</li>
           </ul>
           <h4 id="1773-concurrency-strategy">17.7.3 Concurrency Strategy</h4>
-          <p><code>NSeqMax</code> behaves differently depending on model type:</p>
+          <p>All concurrent requests on a single <code>Kronk</code> block on one semaphore; its capacity is fixed at <code>New()</code> time and depends on the model class. <code>acquireModel()</code> is the gate (see §17.7.4).</p>
+          <p><code>NSeqMax</code> is the <code>nseq-max</code> knob from <code>model_config.yaml</code>, and behaves differently depending on model type:</p>
           <p><strong>Embedding and Reranking Models</strong>:</p>
           <ul>
-            <li><code>NSeqMax</code> controls the internal context pool size</li>
+            <li><code>NSeqMax</code> controls the internal context pool size (see §17.7.6)</li>
             <li>Model weights are shared, only KV cache memory is multiplied</li>
             <li>Inputs within a request are partitioned across pool contexts for parallel processing</li>
             <li>Semaphore capacity = <code>NSeqMax</code></li>
           </ul>
           <p><strong>Text Inference Models</strong> (chat, completion, vision, audio):</p>
           <ul>
-            <li><code>NSeqMax</code> controls batch parallelism within the batch engine</li>
+            <li><code>NSeqMax</code> controls batch parallelism within the batch engine — the number of concurrent slots (see §17.7.5)</li>
             <li>Only one <code>model.Model</code> instance is created with multiple slots</li>
-            <li>Semaphore capacity = <code>NSeqMax * queueDepth</code> (default queueDepth=2)</li>
+            <li>Semaphore capacity = <code>NSeqMax * queueDepth</code> (default <code>queueDepth=2</code>)</li>
+            <li>Why ×2: with <code>queueDepth=2</code>, one request can sit on the batch engine's request queue while another is in prefill/decode, smoothing throughput across acquire → prefill → decode → release. Increase to absorb bursty load; decrease to bound queued memory.</li>
           </ul>
-          <p><strong>Detection Logic</strong> (<code>kronk.go</code>):</p>
-          <pre className="code-block"><code className="language-go">{`switch {
+          <p><strong>Detection Logic</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/kronk.go#L63-L83">kronk.go:63-83</a>):</p>
+          <pre className="code-block"><code className="language-go">{`queueDepth := cfg.QueueDepth()
+if queueDepth == 0 {
+    queueDepth = 2
+}
+
+var semCapacity int
+
+switch {
 case mi.IsEmbedModel || mi.IsRerankModel:
-    semCapacity = max(cfg.NSeqMax, 1)
+    semCapacity = max(cfg.NSeqMax(), 1)
 default:
-    semCapacity = max(cfg.NSeqMax, 1) * o.queueDepth
+    semCapacity = max(cfg.NSeqMax(), 1) * queueDepth
 }`}</code></pre>
           <h4 id="1774-model-acquirerelease-cleanup">17.7.4 Model Acquire/Release &amp; Cleanup</h4>
-          <p><strong>Acquisition</strong> (<code>acquire.go</code>):</p>
+          <p>The wrappers in <code>concurrency.go</code> (<code>streaming</code> / <code>streamingWith</code>, see §17.7.2) are what call <code>acquireModel</code> and <code>releaseModel</code> — per-API files do not call them directly.</p>
+          <p><strong>Acquisition</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">acquire.go</a>):</p>
           <ol>
-            <li><strong>Backpressure slot</strong>: Acquire semaphore slot (limits total in-flight requests)</li>
-            <li><strong>Return model</strong>: Return the single model instance</li>
+            <li><strong>Shutdown check</strong>: take <code>shutdown.Lock()</code>; if <code>shutdownFlag</code> is set, return <code>"acquire-model: kronk has been unloaded"</code>.</li>
+            <li><strong>Active stream accounting</strong>: increment the <code>activeStreams</code> atomic counter while still holding the shutdown lock (the unload path waits on this counter to drain).</li>
+            <li><strong>Backpressure slot</strong>: block on the semaphore (<code>krn.sem &lt;- struct&#123;&#125;&#123;&#125;</code>), respecting <code>ctx.Done()</code> — on context cancellation, decrement <code>activeStreams</code> and return <code>ctx.Err()</code>.</li>
+            <li><strong>Return model</strong>: return the single <code>*model.Model</code> (<code>krn.model</code>).</li>
+          </ol>
+          <p><strong>Release</strong> (<code>acquire.go</code>):</p>
+          <ol>
+            <li>Drain a slot from the semaphore (<code>&lt;-krn.sem</code>).</li>
+            <li>Decrement <code>activeStreams</code>.</li>
           </ol>
           <p><strong>Cleanup Flow:</strong></p>
-          <ol>
-            <li><code>streaming()</code> acquires model, defers <code>releaseModel()</code> in wrapper goroutine</li>
-            <li><code>ChatStreaming</code> defers <code>m.resetContext()</code> before any processing</li>
-            <li>When generation completes, <code>resetContext()</code> runs first:
-              <ul>
-                <li><code>llama.Synchronize(m.lctx)</code> - waits for GPU operations</li>
-                <li><code>llama.MemoryClear(mem, true)</code> - clears KV cache</li>
-              </ul>
-            </li>
-            <li>Channel closes, wrapper exits, <code>releaseModel()</code> runs</li>
-          </ol>
-          <p><strong>Key invariant:</strong> <code>resetContext()</code> always runs before model release due to defer ordering.</p>
-          <h4 id="1775-batch-engine-internals">17.7.5 Batch Engine Internals</h4>
-          <p><strong>ChatStreaming Decision Logic</strong> (<code>chat.go</code>):</p>
-          <p>The <code>submitToBatchEngine()</code> function decides the processing path:</p>
-          <pre className="code-block"><code className="language-go">{`// submitToBatchEngine returns false if batch not available.
-if m.batch == nil || object != ObjectChatText {
-    return false
-}
-// Submit job to batch engine...
-return true`}</code></pre>
-          <p>All chat requests (including vision/audio) are submitted to the batch engine:</p>
-          <pre className="code-block"><code className="language-go">{`m.submitToBatchEngine(...)
-batching = true`}</code></pre>
-          <p><strong>Batch Engine Architecture</strong> (<code>batch.go</code>):</p>
+          <p>The KV-cache cleanup path depends on whether the request goes through the batch engine. The decision is captured by the local <code>batching</code> flag in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go">chat.go</a>.</p>
+          <p><em>Batched path</em> (text inference via IMC — the normal route for chat):</p>
           <ul>
-            <li><code>batchEngine</code> manages <code>nSlots</code> parallel <code>slot</code> structs</li>
+            <li>The <code>m.resetContext()</code> defer in <code>chat.go</code> is gated on <code>!batching</code> and is skipped.</li>
+            <li>Per-slot KV cleanup happens inside the batch engine in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go">batch_finish.go</a>, which clears each slot's sequence and frees per-request resources.</li>
+            <li><code>releaseModel()</code> then runs from the wrapper <code>defer</code> in <code>concurrency.go</code> after the user-facing channel closes.</li>
+          </ul>
+          <p><em>Non-batched path</em> (e.g. some embed/rerank entrypoints, non-IMC media flows):</p>
+          <ul>
+            <li><code>chat.go</code> registers <code>defer m.resetContext()</code> after <code>validateAndCloneDocument</code> and <code>prepareContext</code> succeed (not "before any processing").</li>
+            <li><code>resetContext()</code> calls <code>llama.Synchronize(m.lctx)</code> then <code>llama.MemoryClear(mem, true)</code> for each model memory.</li>
+            <li><code>releaseModel()</code> runs after that, from the wrapper <code>defer</code>.</li>
+          </ul>
+          <p><strong>Key invariant:</strong> the semaphore guarantees the model is never released while a request is in flight — <code>releaseModel()</code> is only called from the streaming wrapper's <code>defer</code>, which fires after the user-facing channel closes.</p>
+          <h4 id="1775-batch-engine-internals">17.7.5 Batch Engine Internals</h4>
+          <p><strong>ChatStreaming Decision Logic</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go#L258-L315">chat.go:258-315</a>):</p>
+          <p>All chat requests — text and media (<code>ObjectChatText</code> and <code>ObjectChatMedia</code>) — flow through <code>submitToBatchEngine</code>. It builds a <code>chatJob</code> (carrying request data plus the resolved IMC fields from <code>cacheResult</code>) and unconditionally calls <code>m.batch.submit(&job)</code>. Returns:</p>
+          <ul>
+            <li><code>true</code> on successful submit; the caller sets <code>batching = true</code> in <code>chat.go</code> so the non-batched cleanup defer is skipped (see §17.7.4).</li>
+            <li><code>false</code> only on submit error. The error has already been streamed to the caller via <code>sendChatError</code> and any IMC pending reservation cleared.</li>
+          </ul>
+          <p>There is no longer an <code>m.batch == nil || object != ObjectChatText</code> early return — vision/audio also runs through the batch engine.</p>
+          <p><strong>Batch Engine Architecture</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">batch_engine.go</a>):</p>
+          <ul>
+            <li><code>batchEngine</code> manages <code>nSlots</code> parallel <code>*slot</code> structs (slot type lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go">batch_slot.go</a>)</li>
+            <li>Constructed via <code>newBatchEngine(m, nSlots)</code> during model setup; <code>nSlots = NSeqMax</code> (see §17.7.3)</li>
+            <li>Queueing: <code>requestQ chan <em>chatJob&lt;/code&gt; (buffered &lt;code&gt;nSlots</em>2</code>) is the public inbox; <code>pendingJobs</code> holds jobs already dequeued but unable to start because no slot was free, and is checked before reading <code>requestQ</code> again</li>
             <li>Each slot tracks: <code>seqID</code>, prompt tokens, decode state, sampler, response channel, logprobs, prefill state</li>
-            <li>Signal-based wake pattern: <code>wakeCh chan struct&#123;&#125;</code> (buffered size 1) wakes immediately on new requests</li>
-            <li>Polling intervals: 100µs (active slots generating), 5ms (idle, no active slots)</li>
+            <li>Signal-based wake: <code>wakeCh chan struct&#123;&#125;</code> (buffered size 1) is poked on every successful submit, eliminating up-to-1ms scheduling latency on request pickup</li>
+            <li>Polling intervals when no wake signal arrives: 100µs (active slots generating), 5ms (idle, no active slots)</li>
           </ul>
           <p><strong>Slots, Sequences, and Sessions:</strong></p>
           <ul>
@@ -6581,26 +6786,55 @@ batching = true`}</code></pre>
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
             <li><code>imcSession</code> = logical cached conversation branch (hash, tokens, KV state)</li>
           </ul>
-          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are decoupled from slots: session state is externalized to RAM after each request and restored into any available slot on the next request via <code>StateSeqSetData</code>. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
+          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are decoupled from slots: session state is externalized to RAM after each request and restored into any available slot on the next request via <code>StateSeqSetData</code>. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings. Full IMC lifecycle is detailed in §17.7.7.</p>
           <h4 id="1776-context-pooling">17.7.6 Context Pooling</h4>
+          <p>Kronk uses two distinct context strategies depending on the workload.</p>
+          <p><strong>Text inference: single shared context.</strong></p>
           <ul>
-            <li><code>llama.Context</code> is created once in <code>NewModel</code> and reused across requests</li>
-            <li>Call <code>resetContext()</code> between requests to clear KV cache</li>
-            <li>Avoids Vulkan memory fragmentation from repeated context alloc/dealloc</li>
+            <li>One <code>llama.Context</code> is created in <code>NewModel</code> and reused across requests.</li>
+            <li>KV cleanup splits by path (see §17.7.4):</li>
+          </ul>
+          <p>- Non-batched path → <code>resetContext()</code> runs <code>llama.Synchronize(m.lctx)</code> then <code>llama.MemoryClear(mem, true)</code>. - Batched path (text/IMC) → per-slot cleanup happens in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go">batch_finish.go</a>; <code>resetContext()</code> is skipped.</p>
+          <ul>
+            <li>Reusing a single context avoids GPU memory fragmentation on all backends (CUDA, Metal, Vulkan, ROCm) caused by repeated context alloc/free.</li>
+          </ul>
+          <p><strong>Embedding & rerank: &lt;code&gt;contextPool&lt;/code&gt;</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/pool.go">pool.go</a>):</p>
+          <ul>
+            <li><code>newContextPool(model, ctxParams, log, n)</code> creates <code>n = NSeqMax</code> parallel <code>llama.Context</code> instances. All share the same <code>llama.Model</code> (weights), so only KV cache memory is multiplied per context.</li>
+            <li>Available context indices are tracked via a buffered <code>avail chan int</code>; callers acquire by receiving from the channel and release by sending the index back.</li>
+            <li>Inputs within a single embed/rerank request are partitioned across pool contexts for parallel processing — this is the concurrency semantic documented in §17.7.3 for embedding/reranking models.</li>
           </ul>
           <h4 id="1777-imc-implementation-details">17.7.7 IMC Implementation Details</h4>
+          <p><strong>Key Functions:</strong></p>
+          <p>The four entry points an agent will grep for live in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">caching_imc.go</a> and <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>:</p>
+          <ul>
+            <li><code>processIMC</code> — session selection / strategy dispatch</li>
+            <li><code>extendIMCCache</code> — append new messages to a matched session</li>
+            <li><code>buildIMCCacheFromScratch</code> — fresh build (no usable prefix)</li>
+            <li><code>rebuildIMCFromPartialPrefix</code> — salvage a token-prefix overlap</li>
+          </ul>
           <p><strong>Critical Implementation Details:</strong></p>
           <ol>
-            <li><strong>Extension tokenization must use &lt;code&gt;special=true&lt;/code&gt;</strong>: Use <code>llama.Tokenize(vocab, extension, false, true)</code> to ensure ChatML tokens like <code>&lt;|im_start|&gt;</code> are recognized.</li>
+            <li><strong>Extension tokenization must use &lt;code&gt;special=true&lt;/code&gt;</strong>: <code>llama.Tokenize(m.vocab, extension, m.addBOSToken, true)</code> — the <code>true</code> in the 4th arg ensures ChatML tokens like <code>&lt;|im_start|&gt;</code> are recognized. The <code>addBOS</code> arg uses the model's <code>addBOSToken</code> setting, not a hardcoded value.</li>
             <li><strong>Prefix mismatch detection</strong>: Use <code>strings.HasPrefix(fullPrompt, prefixPrompt)</code> to detect Jinja template nondeterminism.</li>
             <li><strong>&lt;code&gt;add_generation_prompt=false&lt;/code&gt; for cached prefixes</strong>: Creates valid prefix for extension. Generation prompt added only for final suffix.</li>
           </ol>
-          <p><strong>IMC Algorithm:</strong></p>
+          <p><strong>IMC Algorithm — 5 strategies</strong> (per <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go#L54-L68">caching_imc.go:54-68</a>):</p>
+          <p><code>processIMC</code> snapshots all sessions and picks one of:</p>
           <ol>
-            <li>First request (cache empty): Cache <code>messages[0:len-1]</code>, generate from last message</li>
-            <li>Subsequent requests (prefix match): Extend cache with <code>messages[cachedCount:len-1]</code></li>
-            <li>New thread (prefix mismatch): Rebuild cache from scratch</li>
+            <li><strong>Pure cache hit</strong> — <code>cachedMsgCount == len(messages)-1</code>. Nothing to decode beyond the suffix; KV state is already correct.</li>
+            <li><strong>Hash-prefix extend</strong> — a session's <code>cachedMsgsHash</code> matches the prefix hash of the incoming messages → extend with <code>messages[cachedMsgCount : len-1]</code>.</li>
+            <li><strong>System-prompt preserve</strong> — only the system prompt hash matches. The sys prompt KV is preserved; the conversation body is rebuilt fresh on top of it.</li>
+            <li><strong>Token-prefix fallback</strong> — no hash match, but a session's <code>cachedTokens</code> shares a leading run with the incoming prompt's tokens. Trim to the common prefix, rebuild the rest (<code>rebuildIMCFromPartialPrefix</code>).</li>
+            <li><strong>Rebuild from scratch</strong> — no usable overlap. Pick an empty session, or evict the LRU session by <code>lastUsed</code>, and call <code>buildIMCCacheFromScratch</code>.</li>
           </ol>
+          <p><strong>Multi-user IMC:</strong></p>
+          <p>Each of the <code>NSeqMax</code> sessions is an independent conversation branch. Concurrent users and sub-agents land in different sessions via hash matching, so they don't trample each other's caches. When all sessions are full, the LRU session is evicted on <code>lastUsed</code>.</p>
+          <p><strong>Text vs Media IMC:</strong></p>
+          <ul>
+            <li><strong>Text sessions</strong> externalize KV to RAM via <code>StateSeqGetData</code> after each request and restore into any free slot via <code>StateSeqSetData</code> on the next request. Sessions migrate freely between slots.</li>
+            <li><strong>Media sessions</strong> (vision/audio) stay <strong>slot-dedicated</strong>: image/audio embeddings cannot be externalized through <code>StateSeqGetData/SetData</code>, so the session is bound to a fixed slot for its lifetime. Media-specific build/extend logic lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>; the <code>hasMedia</code>, <code>useMRoPE</code>, and <code>mediaKVCounts</code> fields track media state.</li>
+          </ul>
           <p><strong>IMC Lifecycle (All Sessions):</strong></p>
           <ol>
             <li><code>processIMC()</code> scans <strong>sessions</strong> (not slots) for a hash match</li>
@@ -6610,46 +6844,175 @@ batching = true`}</code></pre>
             <li>Suffix tokens are decoded and generation runs</li>
             <li><code>finishSlot()</code> clears the full VRAM sequence (cached prefix already lives in RAM)</li>
           </ol>
-          <p><strong>IMC Session State:</strong></p>
+          <p><strong>IMC Session State</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L39-L55">model.go:39-55</a>):</p>
           <pre className="code-block"><code className="language-go">{`type imcSession struct {
-    slotID            int           // Slot index (transitional)
-    seqID             llama.SeqId   // KV cache sequence ID (transitional)
+    slotID            int           // Slot index (transitional: removed in Phase 4)
+    seqID             llama.SeqId   // KV cache sequence ID (transitional: removed in Phase 4)
     cachedMsgsHash    string        // Hash of all cached messages
     cachedTokens      []llama.Token // Full token sequence in KV cache
     totalTokensCached int           // Total KV positions cached
     cachedMsgCount    int           // Number of messages cached
     kvState           []byte        // Externalized KV state (RAM buffer)
     kvStateBytes      int           // Size of kvState in bytes
-    lastUsed          time.Time     // Last access time (for eviction)
-    pending           bool          // True when build/extend in-flight
+    lastUsed          time.Time     // Last access time (for LRU eviction)
+    pending           bool          // True when build/extend in-flight (transitional: removed in Phase 4)
     hasMedia          bool          // True if cached content includes media
     useMRoPE          bool          // True if cached media used M-RoPE
     mediaKVCounts     []int         // KV positions per media chunk
     sysPromptHash     string        // Hash of system prompt message
     sysPromptTokens   int           // Token count of system prompt
 }`}</code></pre>
+          <p>The fields marked <code>transitional</code> (<code>slotID</code>, <code>seqID</code>, <code>pending</code>) are scheduled for removal in an upcoming Phase 4 refactor that fully decouples sessions from slots.</p>
           <h4 id="1778-tool-call-internals">17.7.8 Tool Call Internals</h4>
-          <p><strong>chatMessage Unmarshaling</strong> (<code>models.go</code>):</p>
+          <p><strong>Processor state machine</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor.go">processor.go</a>):</p>
+          <p>A per-slot <code>processor</code> classifies streaming output token-by-token into one of four statuses (<code>processor.go:10-15</code>):</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Constant</th>
+                <th>Value</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>statusNone</code></td>
+                <td>0</td>
+                <td>Initial / between segments</td>
+              </tr>
+              <tr>
+                <td><code>statusReasoning</code></td>
+                <td>1</td>
+                <td>Inside <code>&lt;think&gt;</code> (or model equivalent)</td>
+              </tr>
+              <tr>
+                <td><code>statusCompletion</code></td>
+                <td>2</td>
+                <td>Regular response text</td>
+              </tr>
+              <tr>
+                <td><code>statusTooling</code></td>
+                <td>3</td>
+                <td>Inside a tool call</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>While in <code>statusTooling</code>, tokens are appended to <code>toolCallBuf</code> and not streamed to the caller as completion text. When the tool-call segment closes, the buffered content is handed to <code>parseToolCall</code> for structured extraction.</p>
+          <p><strong>Tool call format dispatch</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go">processor_parse.go</a>):</p>
+          <p><code>parseToolCall</code> routes accumulated tool-call content to a model-specific parser based on its format:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Format</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>processor_json.go</code></td>
+                <td>Standard JSON <code>&#123;"name":..., "arguments":...&#125;</code></td>
+              </tr>
+              <tr>
+                <td><code>processor_qwen.go</code></td>
+                <td>Qwen3-Coder XML-like <code>&lt;tool_call&gt;</code> / <code>&lt;function=...&gt;</code> tags</td>
+              </tr>
+              <tr>
+                <td><code>processor_gpt.go</code></td>
+                <td>GPT-OSS Harmony (`&lt;\</td>
+                <td>channel\</td>
+                <td>&gt;commentary to=NAME&lt;\</td>
+                <td>constrain\</td>
+                <td>&gt;...`)</td>
+              </tr>
+              <tr>
+                <td><code>processor_glm.go</code></td>
+                <td>GLM <code>&lt;arg_key&gt;</code> / <code>&lt;arg_value&gt;</code> pairs</td>
+              </tr>
+              <tr>
+                <td><code>processor_gemma.go</code></td>
+                <td>Gemma4 tool calls</td>
+              </tr>
+              <tr>
+                <td><code>processor_mistral.go</code></td>
+                <td>Mistral / Devstral tool calls</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>Split-token tag handling:</strong></p>
+          <p>Some models (Qwen3-Coder variants) emit a bare <code>&lt;function=...&gt;</code> without the <code>&lt;tool_call&gt;</code> wrapper, and the tag itself can be tokenized across multiple tokens (e.g. <code>&lt;</code>, <code>function</code>, <code>=</code>). The processor uses <code>pendingTagBuf</code> / <code>inPendingTag</code> to accumulate fragments until the tag is complete or disproven.</p>
+          <p><strong>GPT-OSS Harmony channel handling:</strong></p>
+          <p>For GPT-OSS, the processor accumulates the channel name (<code>channelBuf</code>) and watches for <code>&lt;|constrain|&gt;</code> (<code>awaitingConstrain</code>). The function name is extracted from <code>to=NAME</code> in the channel and stored in <code>toolFuncName</code> for later assembly into a structured <code>ResponseToolCall</code>.</p>
+          <p><strong>Tool call ID:</strong></p>
+          <p>IDs are generated by <code>newToolCallID()</code> as <code>"call_" + uuid.NewString()</code> — stable contract for the OpenAI-compatible response wire format.</p>
+          <p><strong>chatMessage unmarshaling</strong> (<code>models.go</code>):</p>
           <ul>
-            <li><code>Content</code> can be <code>nil</code> for assistant messages with tool_calls</li>
-            <li>Handle <code>len(app.Content) == 0 || string(app.Content) == "null"</code> as valid empty content</li>
+            <li><code>Content</code> can be <code>nil</code> for assistant messages with <code>tool_calls</code>.</li>
+            <li>Handle <code>len(app.Content) == 0 || string(app.Content) == "null"</code> as valid empty content.</li>
           </ul>
-          <p><strong>ToolCallArguments Type:</strong></p>
+          <p><strong>ToolCallArguments type:</strong></p>
           <ul>
-            <li>Custom type that marshals to JSON string (OpenAI spec)</li>
-            <li>Unmarshals from either string or object for non-compliant clients</li>
+            <li>Custom type that marshals to a JSON string (OpenAI spec).</li>
+            <li>Unmarshals from either a string or an object for non-compliant clients.</li>
           </ul>
           <h4 id="1779-logprobs-implementation">17.7.9 Logprobs Implementation</h4>
-          <p><strong>Implementation</strong> (<code>logprobs.go</code>):</p>
+          <p><strong>Implementation</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go">logprobs.go</a>):</p>
           <ul>
-            <li><code>extractLogprobs()</code>: Retrieves logits via <code>llama.GetLogitsIth()</code></li>
-            <li><code>logSoftmax()</code>: Numerically stable log-softmax using log-sum-exp trick</li>
-            <li><code>getTopKLogprobs()</code>: Uses min-heap for efficient O(n log k) top-k extraction</li>
+            <li><code>extractLogprobs(lctx, vocab, sampledToken, iBatch, topK, buf)</code>: retrieves logits via <code>llama.GetLogitsIth(lctx, iBatch, nVocab)</code> and converts them to log probabilities. <code>iBatch</code> identifies which slot's logits row to read when multiple slots are batched in one forward pass (see §17.7.5). <code>buf</code> is a pre-allocated byte buffer reused across tokens to avoid per-token allocations during top-K decoding.</li>
+            <li><code>logSoftmax()</code>: numerically stable log-softmax using the log-sum-exp trick.</li>
+            <li><code>getTopKLogprobs()</code>: <code>container/heap</code> min-heap for O(n log k) top-k extraction.</li>
           </ul>
-          <p><strong>Critical:</strong> Logprobs must be extracted <strong>before</strong> <code>llama.SamplerAccept()</code> is called.</p>
-          <h3 id="178-api-handler-notes">17.8 API Handler Notes</h3>
-          <p><strong>Input Format Conversion</strong> (<code>cmd/server/app/domain/</code>):</p>
-          <p>Both streaming and non-streaming Response APIs must call <code>convertInputToMessages(d)</code> to handle the OpenAI Responses <code>input</code> field format.</p>
+          <p><strong>Gating:</strong></p>
+          <p>The extraction path runs only when <code>params.TopLogprobs &gt; 0</code>. With logprobs disabled, this work is skipped entirely on the hot path.</p>
+          <p><strong>Critical ordering — extract before &lt;code&gt;llama.SamplerAccept&lt;/code&gt;</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_tokens.go#L38-L57">batch_tokens.go:38, 57</a>):</p>
+          <p><code>SamplerAccept</code> mutates sampler state (repetition history, penalty buffers, dry/xtc state). Reading logits after acceptance would no longer reflect the probability landscape for the token we're trying to score.</p>
+          <p>This corresponds to step 12.1 of the request flow in §17.11.</p>
+          <h3 id="178-responses-api-normalization">17.8 Responses API Normalization</h3>
+          <p>The SDK's <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go">response.go</a> exposes the OpenAI Responses API on top of the same <code>model.Chat</code> engine that serves Chat Completions. To do that, the input document is normalized into a Chat-Completions-style <code>messages</code> array before <code>model.Chat</code> / <code>model.ChatStreaming</code> is invoked.</p>
+          <p><strong>Owner</strong>: the SDK methods <code>Response</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go#L140">line 140</a>) and <code>ResponseStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go#L163">line 163</a>) call <code>convertInputToMessages(d)</code> themselves as the first step. Callers (CLI, MCP, server handlers) do not need to invoke it.</p>
+          <p><strong>Why it exists</strong>: lets the SDK accept both the Chat-style <code>messages</code> payload and the Responses-style <code>input</code> payload (string, message list, or function-call/output items).</p>
+          <p><strong>Normalization helpers</strong> (all in <code>response.go</code>):</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Function</th>
+                <th>Responsibility</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>convertInputToMessages</code></td>
+                <td>Top-level entrypoint; orchestrates the helpers below</td>
+              </tr>
+              <tr>
+                <td><code>inputToMessages</code></td>
+                <td>Turns the <code>input</code> field (string / messages / items) into <code>[]model.D</code></td>
+              </tr>
+              <tr>
+                <td><code>normalizeResponsesItems</code></td>
+                <td>Maps Responses items (<code>function_call</code>, <code>function_call_output</code>, …) to Chat messages; groups consecutive <code>function_call</code>s into one assistant message with multiple <code>tool_calls</code></td>
+              </tr>
+              <tr>
+                <td><code>normalizeResponsesContent</code></td>
+                <td>Translates Responses content parts (<code>input_text</code>, <code>output_text</code>, …) inside existing messages into Chat-format content</td>
+              </tr>
+              <tr>
+                <td><code>normalizeTools</code></td>
+                <td>Converts Responses' flat tool definitions into the Chat-Completions <code>&#123; "function": &#123;...&#125; &#125;</code> shape</td>
+              </tr>
+              <tr>
+                <td><code>injectInstructions</code></td>
+                <td>Promotes the Responses <code>instructions</code> field into a leading <code>role:"system"</code> message</td>
+              </tr>
+              <tr>
+                <td><code>extractInputParams</code></td>
+                <td>Pulls Responses-only parameters (e.g. <code>Instructions</code>) into <code>inputParams</code> for downstream handling</td>
+              </tr>
+              <tr>
+                <td><code>extractTools</code></td>
+                <td>Reads the (already-normalized) tool list out of the document</td>
+              </tr>
+            </tbody>
+          </table>
           <h3 id="179-goroutine-budget">17.9 Goroutine Budget</h3>
           <p>A running Kronk server typically shows ~25 baseline goroutines before any requests arrive. When requests are active, expect roughly 3-5 additional goroutines per in-flight request. For example, 3 concurrent requests for the same model will show ~40 goroutines total. This is normal.</p>
           <p><strong>Baseline goroutines (~25, always running):</strong></p>
@@ -6688,6 +7051,11 @@ batching = true`}</code></pre>
                 <td><code>cmd/server/app/domain/authapp/start.go</code></td>
               </tr>
               <tr>
+                <td>Embedded MCP <code>http.Server</code> (listener + conns)</td>
+                <td>~2-3</td>
+                <td><code>cmd/server/app/domain/mcpapp/start.go</code></td>
+              </tr>
+              <tr>
                 <td>OTEL background collector probe</td>
                 <td>1</td>
                 <td><code>sdk/kronk/observ/otel/otel.go</code></td>
@@ -6700,11 +7068,13 @@ batching = true`}</code></pre>
               <tr>
                 <td>Batch engine <code>processLoop</code></td>
                 <td>1</td>
-                <td><code>sdk/kronk/model/batch.go</code></td>
+                <td><code>sdk/kronk/model/batch_engine.go</code></td>
               </tr>
             </tbody>
           </table>
+          <p>The baseline assumes embedded auth and embedded MCP — the defaults when <code>KRONK_AUTH_HOST</code> and <code>KRONK_MCP_HOST</code> are unset. Pointing either at an external service removes its row from the table.</p>
           <p><strong>Per-request goroutines (~3-5 each):</strong></p>
+          <p>The floor is three: the <code>http.Server</code> connection handler, the SDK wrapper goroutine (<code>streaming</code> or <code>streamingWith</code>), and the <code>ChatStreaming</code>/<code>ResponseStreaming</code> request goroutine. <code>wrapChannelForLogging</code> adds one more when <code>InsecureLogging</code> is enabled.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -6722,31 +7092,40 @@ batching = true`}</code></pre>
                 <td><code>sdk/kronk/model/chat.go</code></td>
               </tr>
               <tr>
-                <td><code>streaming()</code> wrapper goroutine</td>
+                <td><code>streaming()</code> wrapper goroutine (Chat / Embedding paths)</td>
                 <td><code>sdk/kronk/concurrency.go</code></td>
               </tr>
               <tr>
-                <td><code>wrapChannelForLogging</code> (only if <code>InsecureLogging</code> is on)</td>
+                <td><code>streamingWith()</code> wrapper goroutine (ResponseStreaming path)</td>
+                <td><code>sdk/kronk/concurrency.go</code></td>
+              </tr>
+              <tr>
+                <td><code>wrapChannelForLogging</code> (only when <code>InsecureLogging</code> is on)</td>
                 <td><code>sdk/kronk/model/chat.go</code></td>
               </tr>
             </tbody>
           </table>
           <p>The goroutine metric is a point-in-time snapshot from <code>runtime.NumGoroutine()</code> captured every 10th request by the metrics middleware. It includes everything in the process, including Go runtime internals. After active requests complete, the count drops back to the baseline.</p>
           <h3 id="1710-request-tracing-spans">17.10 Request Tracing Spans</h3>
-          <p>Each chat completion request produces the following trace hierarchy:</p>
+          <p>Each chat completion request produces the following trace hierarchy. <code>prepare-request</code>, <code>queue-wait</code>, and <code>process-request</code> are sibling spans under the request's root context — none is a child of another.</p>
           <pre className="code-block"><code>{`POST /v1/chat/completions
-├── prepare-request              Validation, caching, and prompt creation
-│   ├── process-cache            Cache lookup/update (IMC, when enabled)
-│   │   └── cache-tokenize-*     Tokenization for cache (imc-extend, imc-scratch)
-│   └── create-prompt            Jinja template application
+├── prepare-request                          Validation, caching, prompt creation
+│   ├── process-cache                        Cache lookup/update (IMC, when enabled)
+│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§17.7.7 strategy 4)
+│   │   ├── cache-tokenize-imc-extend        Hash-prefix extend (strategy 2)
+│   │   ├── cache-tokenize-imc-sysprompt-preserve  System-prompt preserve (strategy 3)
+│   │   ├── cache-tokenize-imc-scratch       Rebuild from scratch (strategy 5)
+│   │   ├── cache-tokenize-imc-media-text-extend  Media-IMC text extend
+│   │   └── cache-decode                     KV-fill decode for build/extend
+│   └── create-prompt                        Jinja template application
 │
-│        ← queue wait →          Job sits in requestQ channel until batch engine picks it up
+├── queue-wait                               Job sits in requestQ until a slot picks it up
 │
-└── process-request              Batch engine slot processing
-    ├── prefill                  Tokenization + KV cache fill (ends at first output token)
-    └── token-generation         Decode loop producing output tokens`}</code></pre>
-          <p><strong>Phase 1: prepare-request</strong> runs in the <code>ChatStreaming</code> goroutine. It validates the document, processes the IMC cache, and creates the prompt via the Jinja template. When caching is enabled, <code>process-cache</code> and its child <code>cache-tokenize-*</code> spans appear here.</p>
-          <p><strong>Queue wait</strong> is the gap between <code>prepare-request</code> ending and <code>process-request</code> starting. The job has been submitted to the batch engine's <code>requestQ</code> channel and is waiting for the <code>processLoop</code> goroutine to wake up and assign it to a slot. The exact duration is recorded as a <code>queue-wait</code> attribute on the <code>process-request</code> span.</p>
+└── process-request                          Batch engine slot processing
+    ├── prefill                              Tokenize + KV fill (ends at first token)
+    └── token-generation                     Decode loop producing output tokens`}</code></pre>
+          <p><strong>Phase 1: prepare-request</strong> runs in the <code>ChatStreaming</code> request goroutine. It validates the document, processes the IMC cache, and creates the prompt via the Jinja template. When caching is enabled, <code>process-cache</code> and its <code>cache-tokenize-imc-*</code> and <code>cache-decode</code> children appear here. Only the tokenize variant matching the strategy chosen by <code>processIMC</code> is emitted on any given request.</p>
+          <p><strong>queue-wait</strong> is its own top-level span (not an attribute). It is started at the very end of <code>prepare-request</code> in the request goroutine and ended by <code>startSlot</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go#L36-L39">batch_slot_start.go:36-39</a>) when the batch engine picks the job up off <code>requestQ</code>. Its duration is the gap between <code>prepare-request</code> ending and <code>process-request</code> starting.</p>
           <p><strong>Phase 2: process-request</strong> runs in the batch engine's <code>processLoop</code> goroutine. The <code>prefill</code> span covers tokenization and KV cache filling. Time to first token (TTFT) is measured from prefill start to the first output token. The <code>token-generation</code> span covers the decode loop that produces output tokens.</p>
           <p>Additional spans that may appear at the top level:</p>
           <table className="flags-table">
@@ -6768,34 +7147,74 @@ batching = true`}</code></pre>
                 <td>Vision/audio requests</td>
                 <td>Loading the multimodal projection file</td>
               </tr>
+              <tr>
+                <td><code>imc-media-cache-build</code></td>
+                <td>Vision/audio IMC builds</td>
+                <td>Media-IMC cache build (separate from the text path)</td>
+              </tr>
             </tbody>
           </table>
           <h3 id="1711-inference-code-path">17.11 Inference Code Path</h3>
-          <p>This section describes the high-level steps that occur when a chat inference request is processed. For the corresponding function-level trace with file locations, see <a href="#1712-inference-code-path-detailed">section 17.12</a>.</p>
+          <p>This section traces a <code>ChatStreaming</code> request end-to-end. Each step has a high-level description followed by a <strong>Code:</strong> sub-block listing the function calls and file locations the agent will navigate.</p>
           <h4 id="step-1-receive-the-request">Step 1: Receive the Request</h4>
-          <p>The caller provides a document containing messages and sampling parameters. The system validates that the request includes a timeout deadline to prevent unbounded processing.</p>
+          <p>The caller provides a document containing messages and sampling parameters. The SDK validates that the request's context has a deadline to prevent unbounded processing.</p>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>Kronk.ChatStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/chat.go">sdk/kronk/chat.go</a>) — validates the context deadline and wraps <code>Model.ChatStreaming</code> in a closure.</li>
+          </ul>
           <h4 id="step-2-acquire-the-model">Step 2: Acquire the Model</h4>
-          <p>A semaphore controls how many requests can be in-flight at once. The request blocks here until a slot in the semaphore opens up, providing backpressure when the system is under load. The model instance is returned once a slot is acquired.</p>
+          <p>The kronk-level semaphore controls how many requests can be in-flight at once. The request blocks here until a slot opens up, providing backpressure when the system is under load. See §17.7.4 for the full acquire/release contract.</p>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>streaming()</code> / <code>streamingWith()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/concurrency.go">sdk/kronk/concurrency.go</a>) calls <code>acquireModel()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">sdk/kronk/acquire.go</a>) — checks the shutdown flag, increments the kronk-level <code>krn.activeStreams</code>, and blocks on the semaphore (with <code>ctx.Done</code> cancellation).</li>
+            <li>The wrapper goroutine <code>defer</code>s <code>releaseModel()</code> and <code>close(ch)</code>.</li>
+          </ul>
           <h4 id="step-3-validate-the-document">Step 3: Validate the Document</h4>
           <p>The request document is validated to ensure it contains properly structured messages. Sampling parameters (temperature, top_p, top_k, min_p, max_tokens, grammar, etc.) are extracted and resolved against model defaults. The document is shallow-cloned so downstream processing can modify it without affecting the caller.</p>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>Model.ChatStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go">model/chat.go</a>) creates the response channel, wraps it with <code>wrapChannelForLogging</code> if <code>InsecureLogging</code> is on, increments the <strong>model-level</strong> <code>m.activeStreams</code> (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the <code>prepare-request</code> span (§17.10).</li>
+            <li><code>validateAndCloneDocument()</code> (<code>model/chat.go</code>) — validates the <code>messages</code> field, calls <code>parseParams()</code> to extract sampling parameters, shallow-clones the document.</li>
+          </ul>
           <h4 id="step-4-prepare-the-context">Step 4: Prepare the Context</h4>
           <p>The system determines whether this is a text-only or media (vision/audio) request:</p>
           <ul>
-            <li><strong>Text</strong>: Multi-part content arrays are flattened into plain strings.</li>
-            <li><strong>Media</strong>: The projection model is loaded, media content (images or audio) is detected and converted into raw bytes for the encoder pipeline.</li>
+            <li><strong>Text</strong>: multi-part content arrays are flattened into plain strings.</li>
+            <li><strong>Media</strong>: the projection model is loaded; media content (images or audio) is detected and converted into raw bytes for the encoder pipeline.</li>
           </ul>
-          <h4 id="step-5-process-the-cache">Step 5: Process the Cache</h4>
-          <p>If caching is enabled, the system checks whether any portion of the conversation is already in the KV cache to avoid redundant computation:</p>
+          <p><strong>Code:</strong></p>
           <ul>
-            <li><strong>Incremental Message Cache (IMC)</strong>: Hashes all messages except the last and scans slots for a matching conversation prefix. The best match determines the strategy: pure cache hit (nothing to decode), extend (decode only new messages), partial prefix trim (salvage a common prefix), or rebuild from scratch.</li>
+            <li><code>prepareContext()</code> (<code>model/chat.go</code>) returns <code>ObjectChatText</code> or <code>ObjectChatMedia</code>.</li>
           </ul>
+          <p>- Text path: <code>prepareTextContext()</code>. - Media path: <code>prepareMediaContext()</code> — loads the projection file via <code>mtmd.InitFromFile()</code> and converts the OpenAI media format to byte slices.</p>
+          <h4 id="step-5-process-the-cache">Step 5: Process the Cache</h4>
+          <p>If caching is enabled, the system checks whether any portion of the conversation is already in the KV cache to avoid redundant computation. The IMC algorithm picks one of <strong>5 strategies</strong> — see §17.7.7 for the full decision tree (pure cache hit, hash-prefix extend, system-prompt preserve, token-prefix fallback, or rebuild from scratch with LRU eviction).</p>
           <p>Tool response messages are also enriched with their originating function names so templates can render tool results correctly.</p>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>prepareCacheAndPrompt()</code> (<code>model/chat.go</code>):</li>
+          </ul>
+          <p>- <code>injectToolResponseNames()</code> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>. - <code>processCache()</code> (<code>model/caching.go</code>) → <code>processIMC()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">model/caching_imc.go</a>) — runs the §17.7.7 5-strategy selection across all <code>NSeqMax</code> sessions, tokenizes any extension tokens, and sets the <code>pending</code> flag on the chosen session.</p>
           <h4 id="step-6-apply-the-chat-template">Step 6: Apply the Chat Template</h4>
           <p>The remaining (non-cached) messages are run through the model's Jinja2 chat template. This converts the structured message array into the exact prompt string the model expects, including any special tokens, role markers, and tool definitions. For media requests, raw media bytes are returned alongside the text prompt.</p>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>createPrompt()</code> → <code>applyRequestJinjaTemplate()</code> (<code>model/chat.go</code>) — returns the prompt string plus media byte slices.</li>
+          </ul>
           <h4 id="step-7-submit-to-the-batch-engine">Step 7: Submit to the Batch Engine</h4>
           <p>The fully prepared request — prompt string, media bytes, sampling parameters, and cache state — is packaged into a job and placed on the batch engine's request queue. A wake signal is sent so the batch engine picks it up immediately rather than waiting for its next poll cycle.</p>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>submitToBatchEngine()</code> (<code>model/chat.go</code>) — builds the <code>chatJob</code> struct (request data, cache state, IMC fields) and calls <code>batch.submit()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>), which pushes onto <code>requestQ</code> and pokes <code>wakeCh</code>. The <code>queue-wait</code> span (§17.10) starts here.</li>
+          </ul>
           <h4 id="step-8-assign-to-a-slot">Step 8: Assign to a Slot</h4>
-          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to the first available processing slot. All IMC sessions (text and media) use first-available slot assignment. If all slots are busy, the longest-running slot is preempted after a configurable timeout.</p>
+          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to the first available processing slot. All IMC sessions (text and media) use first-available slot assignment. If all slots are busy, the longest-running slot is preempted after a configurable timeout (<code>cache-slot-timeout</code>, see §17.7.5).</p>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>processLoop()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>) — signal-based wake on <code>wakeCh</code> (§17.7.5); polls at 100µs when active, 5ms when idle.</li>
+            <li><code>processBatch()</code> clears the batch buffer, runs any pending slot preemption, prefills the draft model for speculative slots, adds 1 generation token per active slot, then continues text prefill via round-robin <code>addPrefillChunk()</code> and media prefill via <code>addPrefillMediaChunk()</code>.</li>
+            <li><code>fillSlots()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_schedule.go">model/batch_schedule.go</a>) dequeues the job and assigns it to a slot.</li>
+          </ul>
           <h4 id="step-9-initialize-the-slot">Step 9: Initialize the Slot</h4>
           <p>The assigned slot is prepared for this request:</p>
           <ol>
@@ -6805,9 +7224,28 @@ batching = true`}</code></pre>
             <li><strong>Tokenize the prompt</strong>: The prompt string is converted into a sequence of token IDs. Only the non-cached portion of the prompt needs tokenization.</li>
             <li><strong>Context window check</strong>: The total token count (cached + new) is verified against the model's context window limit.</li>
           </ol>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>startSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go">model/batch_slot_start.go</a>) — resets the slot, ends the <code>queue-wait</code> span, and starts the <code>process-request</code> and <code>prefill</code> spans (§17.10).</li>
+            <li><code>toSampler()</code> builds the llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat); a separate grammar sampler is created if requested.</li>
+            <li>IMC KV restore: <code>StateSeqSetData</code> from <code>session.kvState</code>, then <code>decodeTokensIntoCache()</code> for extend, or <code>MemorySeqRm</code> for rebuild, or partial trim.</li>
+            <li>IMC KV snapshot: <code>StateSeqGetData</code> into <code>session.kvState</code> after build/extend.</li>
+            <li><code>llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)</code> — <code>special=true</code> ensures ChatML markers are recognized (§17.7.7).</li>
+            <li>Draft prompt assembly for speculative decoding.</li>
+            <li>First chunk added via <code>addPrefillChunk()</code>.</li>
+          </ul>
           <h4 id="step-10-prefill-kv-cache-fill">Step 10: Prefill (KV Cache Fill)</h4>
           <p>The prompt tokens are fed through the model in chunks to build up the KV cache — this is the "prefill" phase. Tokens are added to a batch buffer up to the configured batch size limit, then a GPU forward pass (decode) is executed. When multiple slots are active, tokens are allocated round-robin across slots so no single request can starve others. This repeats until all prompt tokens have been processed.</p>
           <p>For media requests, image or audio embeddings are interleaved with text tokens and decoded through the model's multimodal pipeline.</p>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>addPrefillChunk()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go">model/batch_prefill_text.go</a>) — adds tokens up to the <code>NBatch</code> cap; round-robin chunk size is <code>NUBatch</code>.</li>
+            <li>Each token: <code>batch.Add(token, position, seqIDs, isLast)</code>.</li>
+            <li><code>llama.Decode(lctx, batch)</code> — GPU forward pass, fills KV cache.</li>
+            <li><code>llama.Synchronize(lctx)</code> — waits for GPU completion.</li>
+            <li>Repeats until all prefill tokens are consumed.</li>
+            <li>Media path: <code>addPrefillMediaChunk()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_media.go">model/batch_prefill_media.go</a>) interleaves embeddings with text tokens.</li>
+          </ul>
           <h4 id="step-11-token-generation-decode-loop">Step 11: Token Generation (Decode Loop)</h4>
           <p>Once prefill is complete, the model enters the decode loop — generating one output token per iteration:</p>
           <ol>
@@ -6815,10 +7253,16 @@ batching = true`}</code></pre>
             <li><strong>Sampling</strong>: The model's output logits are processed through the sampler chain to select the next token. If grammar constraints are active, the sampler respects the grammar rules.</li>
             <li><strong>Speculative decoding</strong> (optional): A smaller draft model generates candidate tokens ahead of the main model. These drafts are verified in a single batch forward pass, accepting correct predictions and rejecting mismatches. This can significantly increase tokens per second.</li>
           </ol>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li>Back in <code>processBatch</code> (<code>model/batch_engine.go</code>), for each active slot with <code>prefillDone=true</code>: <code>batch.Add(sampled, nPast, seqIDs, true)</code> then <code>llama.Decode()</code>.</li>
+            <li>Speculative path: <code>generateDraftTokens()</code> → batch in draft + sampled → <code>verifySpeculativeTokens()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go">model/batch_speculative.go</a>).</li>
+            <li><code>processSlotToken()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_tokens.go">model/batch_tokens.go</a>) samples via <code>llama.SamplerSample(sampler, lctx, iBatch)</code> or, when grammar is active, <code>grammarSampler.SampleWithGrammar(lctx, sampler, iBatch)</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/grammar.go">model/grammar.go</a>).</li>
+          </ul>
           <h4 id="step-12-process-each-token">Step 12: Process Each Token</h4>
           <p>Each sampled token goes through a processing pipeline:</p>
           <ol>
-            <li><strong>Logprobs extraction</strong>: If requested, token log-probabilities are extracted from the model's logits before the sampler state is updated.</li>
+            <li><strong>Logprobs extraction</strong>: If requested, token log-probabilities are extracted from the model's logits before the sampler state is updated (§17.7.9 explains why the order matters).</li>
             <li><strong>End-of-generation check</strong>: If the token is an EOG (end-of-generation) token, generation stops and the request moves to the finish phase.</li>
             <li><strong>UTF-8 assembly</strong>: Tokens are converted to text bytes. Since a single Unicode character can span multiple tokens, partial bytes are buffered until a complete codepoint is available.</li>
             <li><strong>Content classification</strong>: A state machine categorizes the output into reasoning (think tags), completion (regular response), or tool call content. This determines how the text is accumulated and streamed.</li>
@@ -6826,6 +7270,11 @@ batching = true`}</code></pre>
             <li><strong>Max tokens check</strong>: If the output token count reaches the requested limit, generation stops.</li>
             <li><strong>Stream to client</strong>: For non-tool content, each complete text fragment is sent as an SSE delta event through the response channel.</li>
           </ol>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>handleSampledToken()</code> (<code>model/batch_tokens.go</code>) drives the pipeline:</li>
+          </ul>
+          <p>- <code>extractLogprobs()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go">model/logprobs.go</a>) — <code>llama.GetLogitsIth</code> + log-softmax + top-k heap. Runs <strong>before</strong> <code>llama.SamplerAccept()</code> (§17.7.9). - <code>llama.SamplerAccept()</code> (and grammar accept). - <code>llama.VocabIsEOG()</code> → if true, jump to <code>finishSlot()</code>. - <code>llama.TokenToPiece()</code> → buffer partial multi-byte codepoints, then <code>extractCompleteUTF8()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_utf8.go">model/batch_utf8.go</a>). - First token: records <code>prefillDone=true</code>, computes TTFT, ends the <code>prefill</code> span, starts the <code>token-generation</code> span. - Processor classification: <code>stepGPT()</code> for GPT-OSS, <code>stepStandard()</code> for everything else (§17.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers. - Counter increment: <code>reasonTokens</code> or <code>completionTokens</code>. - Max-tokens check: if <code>outputTokens &gt;= maxTokens</code>, <code>finishSlot()</code>. - Accumulate into <code>finalContent</code> / <code>finalReasoning</code> / <code>finalTooling</code>. - <code>sendDeltaResponse()</code> for non-tool content (tool content is buffered until parse).</p>
           <h4 id="step-13-finish-the-request">Step 13: Finish the Request</h4>
           <p>When generation ends (EOG token, max tokens, or error), the request is finalized:</p>
           <ol>
@@ -6841,130 +7290,16 @@ batching = true`}</code></pre>
             </li>
             <li><strong>Free resources</strong>: The sampler, grammar sampler, and any multimodal resources (bitmaps, projection context) are freed.</li>
           </ol>
+          <p><strong>Code:</strong></p>
+          <ul>
+            <li><code>finishSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go">model/batch_finish.go</a>):</li>
+          </ul>
+          <p>- Flushes the UTF-8 buffer. - Tool-call parse: GPT-OSS path calls <code>parseGPTToolCall()</code> directly (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177">batch_finish.go:177</a>); all other models route through <code>parseToolCall</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go">model/processor_parse.go</a>) — see §17.7.8. - Metrics: TPS = <code>(outputTokens - 1) / elapsed</code>, TTFT, draft-acceptance rate. - <code>sendFinalResponse()</code> with usage, content, reasoning, tool calls, logprobs. - KV cleanup: <code>MemorySeqRm(mem, seqID, -1, -1)</code> clears the full VRAM sequence; the IMC prefix is already in RAM from Step 9. - Frees the sampler, grammar sampler, MTMD bitmaps/chunks, and <code>mtmdCtx</code>. - Closes the job channel; the <code>streaming()</code> wrapper drains and closes the caller's channel. - Decrements the <strong>model-level</strong> <code>m.activeStreams</code>.</p>
           <h4 id="step-14-release-the-model">Step 14: Release the Model</h4>
-          <p>The response channel is closed, signaling to the caller that streaming is complete. The semaphore slot is released, allowing the next queued request to begin processing.</p>
-          <h3 id="1712-inference-code-path-detailed">17.12 Inference Code Path (Detailed)</h3>
-          <p>This section traces the function-level code path for a <code>ChatStreaming</code> request. Each step corresponds to the high-level description in <a href="#1711-inference-code-path">section 17.11</a>.</p>
-          <p><strong>1. &lt;code&gt;Kronk.ChatStreaming&lt;/code&gt;</strong> (<code>sdk/kronk/chat.go</code>)</p>
+          <p>The response channel is closed, signaling to the caller that streaming is complete. The kronk-level semaphore slot is released, allowing the next queued request to begin processing.</p>
+          <p><strong>Code:</strong></p>
           <ul>
-            <li>Validates context has a deadline.</li>
-            <li>Wraps <code>Model.ChatStreaming</code> in a closure.</li>
-          </ul>
-          <p><strong>2. &lt;code&gt;streaming()&lt;/code&gt;</strong> (<code>sdk/kronk/concurrency.go</code>)</p>
-          <ul>
-            <li>Calls <code>acquireModel()</code> — checks shutdown flag, increments <code>activeStreams</code>, acquires semaphore slot for backpressure.</li>
-            <li>Spawns goroutine that calls <code>Model.ChatStreaming</code>, relays chunks to caller's channel.</li>
-            <li>Defers <code>releaseModel()</code> (releases semaphore) and <code>close(ch)</code>.</li>
-          </ul>
-          <p><strong>3. &lt;code&gt;Model.ChatStreaming&lt;/code&gt;</strong> (<code>sdk/kronk/model/chat.go</code>)</p>
-          <ul>
-            <li>Creates response channel, wraps with logging if <code>InsecureLogging</code> enabled.</li>
-            <li>Increments <code>activeStreams</code> atomically.</li>
-            <li>Spawns goroutine with <code>prepare-request</code> span.</li>
-          </ul>
-          <p><strong>4. &lt;code&gt;validateAndCloneDocument()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
-          <ul>
-            <li>Validates <code>messages</code> field exists and is <code>[]D</code>.</li>
-            <li>Calls <code>parseParams()</code> — extracts temperature, top_p, top_k, min_p, max_tokens, grammar, etc.</li>
-            <li>Shallow-clones the document.</li>
-          </ul>
-          <p><strong>5. &lt;code&gt;prepareContext()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
-          <ul>
-            <li><strong>Text path</strong>: <code>prepareTextContext()</code> — flattens multi-part content arrays to plain strings.</li>
-            <li><strong>Media path</strong>: <code>prepareMediaContext()</code> — detects vision/audio, loads projection file via <code>mtmd.InitFromFile()</code>, converts OpenAI format to media bytes.</li>
-            <li>Returns object type: <code>ObjectChatText</code> or <code>ObjectChatMedia</code>.</li>
-          </ul>
-          <p><strong>6. &lt;code&gt;prepareCacheAndPrompt()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
-          <ul>
-            <li><strong>6a. &lt;code&gt;injectToolResponseNames()&lt;/code&gt;</strong> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>.</li>
-            <li><strong>6b. &lt;code&gt;processCache()&lt;/code&gt;</strong> (<code>model/caching.go</code>):</li>
-          </ul>
-          <p>- <strong>IMC</strong>: <code>processIMC()</code> — two-tier hash scan across sessions, finds best match (pure hit, extend, partial prefix trim, or rebuild from scratch), tokenizes extension tokens, sets <code>pending</code> flag on the selected session.</p>
-          <ul>
-            <li><strong>6c. &lt;code&gt;createPrompt()&lt;/code&gt;</strong> → <code>applyRequestJinjaTemplate()</code> — applies Jinja2 chat template to remaining messages, returns prompt string + media bytes.</li>
-          </ul>
-          <p><strong>7. &lt;code&gt;submitToBatchEngine()&lt;/code&gt;</strong> (<code>model/chat.go</code>)</p>
-          <ul>
-            <li>Builds <code>chatJob</code> struct with all request data, cache state, and IMC fields.</li>
-            <li>Calls <code>batch.submit()</code> — sends job to <code>requestQ</code> channel, sends wake signal on <code>wakeCh</code>.</li>
-            <li>Starts <code>queue-wait</code> span.</li>
-          </ul>
-          <p><strong>8. &lt;code&gt;processLoop()&lt;/code&gt; wakes</strong> (<code>model/batch_engine.go</code>)</p>
-          <ul>
-            <li>Signal-based: wakes immediately on <code>wakeCh</code>, polls at 100µs when active, 5ms when idle.</li>
-            <li>Calls <code>processBatch()</code>.</li>
-          </ul>
-          <p><strong>9. &lt;code&gt;processBatch()&lt;/code&gt;</strong> (<code>model/batch_engine.go</code>)</p>
-          <ul>
-            <li>Clears batch buffer.</li>
-            <li>Executes any pending slot preemption.</li>
-            <li>Prefills draft model for speculative decoding slots.</li>
-            <li>Adds generation tokens for active slots (1 token per slot).</li>
-            <li>Continues text prefill via round-robin <code>addPrefillChunk()</code> across slots.</li>
-            <li>Continues media prefill via <code>addPrefillMediaChunk()</code>.</li>
-            <li><strong>&lt;code&gt;fillSlots()&lt;/code&gt;</strong> (<code>model/batch_schedule.go</code>) — dequeues job, assigns to first-available slot (all IMC sessions use first-available routing).</li>
-          </ul>
-          <p><strong>10. &lt;code&gt;startSlot()&lt;/code&gt;</strong> (<code>model/batch_slot_start.go</code>)</p>
-          <ul>
-            <li>Resets slot, ends <code>queue-wait</code> span, starts <code>process-request</code> and <code>prefill</code> spans.</li>
-            <li><strong>Creates sampler</strong>: <code>toSampler()</code> — builds llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat).</li>
-            <li><strong>Creates grammar sampler</strong> if grammar specified.</li>
-            <li><strong>IMC KV restore from RAM</strong>: restores externalized KV state from <code>session.kvState</code> into the slot's sequence via <code>StateSeqSetData</code>. Then decodes extension tokens via <code>decodeTokensIntoCache()</code>, or clears sequence for rebuild, or trims for partial prefix.</li>
-            <li><strong>IMC KV snapshot to RAM</strong>: after cache build/extend but before suffix decode, snapshots the cached prefix via <code>StateSeqGetData</code> into <code>session.kvState</code>.</li>
-            <li><strong>Tokenize prompt</strong>: <code>llama.Tokenize(vocab, prompt, addBOS, special=true)</code> — converts remaining prompt text to tokens.</li>
-            <li>Context window check.</li>
-            <li>Assembles draft prompt tokens for speculative decoding.</li>
-            <li><strong>&lt;code&gt;addPrefillChunk()&lt;/code&gt;</strong> — adds first chunk of tokens to batch.</li>
-          </ul>
-          <p><strong>11. Prefill phase</strong> (<code>model/batch_prefill_text.go</code>)</p>
-          <ul>
-            <li><code>addPrefillChunk()</code> adds tokens to batch in chunks up to <code>NBatch</code> limit.</li>
-            <li>Each token: <code>batch.Add(token, position, seqIDs, isLast)</code>.</li>
-            <li>Round-robin across slots via <code>NUBatch</code> chunk limit.</li>
-            <li><strong>&lt;code&gt;llama.Decode(lctx, batch)&lt;/code&gt;</strong> — GPU forward pass, fills KV cache.</li>
-            <li><strong>&lt;code&gt;llama.Synchronize(lctx)&lt;/code&gt;</strong> — waits for GPU completion.</li>
-            <li>Repeats until all prefill tokens consumed.</li>
-          </ul>
-          <p><strong>12. Token generation loop</strong> (back in <code>processBatch</code>)</p>
-          <ul>
-            <li>For each active slot with <code>prefillDone=true</code>:</li>
-          </ul>
-          <p>- <code>batch.Add(sampled, nPast, seqIDs, true)</code> — add last sampled token. - <code>llama.Decode()</code> — forward pass. - <strong>Speculative path</strong>: <code>generateDraftTokens()</code> → add draft+sampled to batch → <code>verifySpeculativeTokens()</code>.</p>
-          <p><strong>13. &lt;code&gt;processSlotToken()&lt;/code&gt;</strong> (<code>model/batch_tokens.go</code>)</p>
-          <ul>
-            <li><strong>Sample</strong>: <code>llama.SamplerSample(sampler, lctx, iBatch)</code> or grammar-aware <code>SampleWithGrammar()</code>.</li>
-          </ul>
-          <p><strong>14. &lt;code&gt;handleSampledToken()&lt;/code&gt;</strong> (<code>model/batch_tokens.go</code>)</p>
-          <ul>
-            <li><strong>Extract logprobs</strong>: <code>extractLogprobs()</code> via <code>llama.GetLogitsIth()</code> + log-softmax + top-k heap.</li>
-            <li><strong>Accept token</strong>: <code>llama.SamplerAccept()</code> (and grammar accept).</li>
-            <li><strong>EOG check</strong>: <code>llama.VocabIsEOG()</code> → if true, <code>finishSlot()</code>.</li>
-            <li><strong>UTF-8 buffering</strong>: <code>llama.TokenToPiece()</code> → buffer partial multi-byte codepoints → <code>extractCompleteUTF8()</code>.</li>
-            <li><strong>First token</strong>: records <code>prefillDone=true</code>, calculates TTFT, ends prefill span, starts <code>token-generation</code> span.</li>
-            <li><strong>Processor state machine</strong>: <code>stepGPT()</code> or <code>stepStandard()</code> — classifies content as reasoning/completion/tooling, detects think tags, tool call markers.</li>
-            <li><strong>Token counting</strong>: increments <code>reasonTokens</code> or <code>completionTokens</code>.</li>
-            <li><strong>Max tokens check</strong>: if <code>outputTokens &gt;= maxTokens</code>, <code>finishSlot()</code>.</li>
-            <li><strong>Accumulate</strong>: appends to <code>finalContent</code>, <code>finalReasoning</code>, or <code>finalTooling</code> builders.</li>
-            <li><strong>Stream</strong>: <code>sendDeltaResponse()</code> — sends SSE chunk via response channel (skipped for tool content).</li>
-          </ul>
-          <p><strong>15. &lt;code&gt;finishSlot()&lt;/code&gt;</strong> (<code>model/batch_finish.go</code>)</p>
-          <ul>
-            <li><strong>Flush UTF-8 buffer</strong> — emit any remaining complete codepoints.</li>
-            <li><strong>Parse tool calls</strong>: <code>parseGPTToolCall()</code> or <code>parseToolCall()</code> — extracts function name, arguments, validates JSON.</li>
-            <li><strong>Calculate metrics</strong>: TPS = <code>(outputTokens-1) / elapsed</code>, TTFT, draft acceptance rate.</li>
-            <li><strong>Send final response</strong>: <code>sendFinalResponse()</code> with usage, content, reasoning, tool calls, logprobs.</li>
-            <li><strong>KV cache cleanup</strong>:</li>
-          </ul>
-          <p>- IMC (all model types): <code>MemorySeqRm(mem, seqID, -1, -1)</code> — full clear. Cached prefix already snapshotted to RAM in <code>startSlot</code>. - Non-IMC: <code>MemorySeqRm(mem, seqID, -1, -1)</code> — full clear.</p>
-          <ul>
-            <li><strong>Free resources</strong>: free sampler, grammar sampler, MTMD bitmaps/chunks, mtmdCtx.</li>
-            <li><strong>Close job channel</strong> → <code>streaming()</code> goroutine drains → closes caller channel.</li>
-            <li><strong>Decrement &lt;code&gt;activeStreams&lt;/code&gt;</strong>.</li>
-          </ul>
-          <p><strong>16. &lt;code&gt;releaseModel()&lt;/code&gt;</strong> (<code>sdk/kronk/acquire.go</code>)</p>
-          <ul>
-            <li>Releases semaphore slot (<code>&lt;-krn.sem</code>).</li>
-            <li>Decrements <code>activeStreams</code>.</li>
+            <li><code>releaseModel()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">sdk/kronk/acquire.go</a>) — drains a slot from the kronk-level semaphore (<code>&lt;-krn.sem</code>) and decrements <code>krn.activeStreams</code> (the kronk-level counter; the model-level one was already decremented in Step 13).</li>
           </ul>
         </div>
 
@@ -7062,12 +7397,10 @@ batching = true`}</code></pre>
                 <li><a href="#74-model-caching" className={activeSection === '74-model-caching' ? 'active' : ''}>7.4 Model Caching</a></li>
                 <li><a href="#75-model-config-files" className={activeSection === '75-model-config-files' ? 'active' : ''}>7.5 Model Config Files</a></li>
                 <li><a href="#76-catalog-system" className={activeSection === '76-catalog-system' ? 'active' : ''}>7.6 Catalog System</a></li>
-                <li><a href="#77-custom-catalog-repository" className={activeSection === '77-custom-catalog-repository' ? 'active' : ''}>7.7 Custom Catalog Repository</a></li>
-                <li><a href="#78-templates" className={activeSection === '78-templates' ? 'active' : ''}>7.8 Templates</a></li>
-                <li><a href="#79-runtime-settings" className={activeSection === '79-runtime-settings' ? 'active' : ''}>7.9 Runtime Settings</a></li>
-                <li><a href="#710-logging" className={activeSection === '710-logging' ? 'active' : ''}>7.10 Logging</a></li>
-                <li><a href="#711-data-paths" className={activeSection === '711-data-paths' ? 'active' : ''}>7.11 Data Paths</a></li>
-                <li><a href="#712-complete-example" className={activeSection === '712-complete-example' ? 'active' : ''}>7.12 Complete Example</a></li>
+                <li><a href="#77-runtime-settings" className={activeSection === '77-runtime-settings' ? 'active' : ''}>7.7 Runtime Settings</a></li>
+                <li><a href="#78-logging" className={activeSection === '78-logging' ? 'active' : ''}>7.8 Logging</a></li>
+                <li><a href="#79-data-paths" className={activeSection === '79-data-paths' ? 'active' : ''}>7.9 Data Paths</a></li>
+                <li><a href="#710-complete-example" className={activeSection === '710-complete-example' ? 'active' : ''}>7.10 Complete Example</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -7131,12 +7464,10 @@ batching = true`}</code></pre>
               <a href="#chapter-12-browser-ui-bui" className={`doc-index-header ${activeSection === 'chapter-12-browser-ui-bui' ? 'active' : ''}`}>Chapter 12: Browser UI (BUI)</a>
               <ul>
                 <li><a href="#121-accessing-the-bui" className={activeSection === '121-accessing-the-bui' ? 'active' : ''}>12.1 Accessing the BUI</a></li>
-                <li><a href="#122-downloading-libraries" className={activeSection === '122-downloading-libraries' ? 'active' : ''}>12.2 Downloading Libraries</a></li>
-                <li><a href="#123-browsing-the-catalog" className={activeSection === '123-browsing-the-catalog' ? 'active' : ''}>12.3 Browsing the Catalog</a></li>
-                <li><a href="#124-managing-models" className={activeSection === '124-managing-models' ? 'active' : ''}>12.4 Managing Models</a></li>
-                <li><a href="#125-managing-keys-and-tokens" className={activeSection === '125-managing-keys-and-tokens' ? 'active' : ''}>12.5 Managing Keys and Tokens</a></li>
-                <li><a href="#126-other-screens" className={activeSection === '126-other-screens' ? 'active' : ''}>12.6 Other Screens</a></li>
-                <li><a href="#127-model-playground" className={activeSection === '127-model-playground' ? 'active' : ''}>12.7 Model Playground</a></li>
+                <li><a href="#122-sidebar-layout" className={activeSection === '122-sidebar-layout' ? 'active' : ''}>12.2 Sidebar Layout</a></li>
+                <li><a href="#123-what-the-bui-provides" className={activeSection === '123-what-the-bui-provides' ? 'active' : ''}>12.3 What the BUI Provides</a></li>
+                <li><a href="#124-authentication" className={activeSection === '124-authentication' ? 'active' : ''}>12.4 Authentication</a></li>
+                <li><a href="#125-notes-on-live-state" className={activeSection === '125-notes-on-live-state' ? 'active' : ''}>12.5 Notes on Live State</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -7194,7 +7525,10 @@ batching = true`}</code></pre>
                 <li><a href="#168-imc-caching-issues" className={activeSection === '168-imc-caching-issues' ? 'active' : ''}>16.8 IMC Caching Issues</a></li>
                 <li><a href="#169-viewing-logs" className={activeSection === '169-viewing-logs' ? 'active' : ''}>16.9 Viewing Logs</a></li>
                 <li><a href="#1610-common-error-messages" className={activeSection === '1610-common-error-messages' ? 'active' : ''}>16.10 Common Error Messages</a></li>
-                <li><a href="#1611-getting-help" className={activeSection === '1611-getting-help' ? 'active' : ''}>16.11 Getting Help</a></li>
+                <li><a href="#1611-catalog-model-pull-issues" className={activeSection === '1611-catalog-model-pull-issues' ? 'active' : ''}>16.11 Catalog &amp; Model Pull Issues</a></li>
+                <li><a href="#1612-mcp-service-issues" className={activeSection === '1612-mcp-service-issues' ? 'active' : ''}>16.12 MCP Service Issues</a></li>
+                <li><a href="#1613-port-conflicts-filesystem" className={activeSection === '1613-port-conflicts-filesystem' ? 'active' : ''}>16.13 Port Conflicts &amp; Filesystem</a></li>
+                <li><a href="#1614-getting-help" className={activeSection === '1614-getting-help' ? 'active' : ''}>16.14 Getting Help</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -7207,11 +7541,10 @@ batching = true`}</code></pre>
                 <li><a href="#175-bui-frontend-development" className={activeSection === '175-bui-frontend-development' ? 'active' : ''}>17.5 BUI Frontend Development</a></li>
                 <li><a href="#176-code-style-guidelines" className={activeSection === '176-code-style-guidelines' ? 'active' : ''}>17.6 Code Style Guidelines</a></li>
                 <li><a href="#177-sdk-internals" className={activeSection === '177-sdk-internals' ? 'active' : ''}>17.7 SDK Internals</a></li>
-                <li><a href="#178-api-handler-notes" className={activeSection === '178-api-handler-notes' ? 'active' : ''}>17.8 API Handler Notes</a></li>
+                <li><a href="#178-responses-api-normalization" className={activeSection === '178-responses-api-normalization' ? 'active' : ''}>17.8 Responses API Normalization</a></li>
                 <li><a href="#179-goroutine-budget" className={activeSection === '179-goroutine-budget' ? 'active' : ''}>17.9 Goroutine Budget</a></li>
                 <li><a href="#1710-request-tracing-spans" className={activeSection === '1710-request-tracing-spans' ? 'active' : ''}>17.10 Request Tracing Spans</a></li>
                 <li><a href="#1711-inference-code-path" className={activeSection === '1711-inference-code-path' ? 'active' : ''}>17.11 Inference Code Path</a></li>
-                <li><a href="#1712-inference-code-path-detailed" className={activeSection === '1712-inference-code-path-detailed' ? 'active' : ''}>17.12 Inference Code Path (Detailed)</a></li>
               </ul>
             </div>
           </div>

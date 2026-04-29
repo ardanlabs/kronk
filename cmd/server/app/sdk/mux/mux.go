@@ -11,7 +11,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -59,7 +58,6 @@ type Config struct {
 	Cache           *cache.Cache
 	Libs            *libs.Libs
 	Models          *models.Models
-	Catalog         *catalog.Catalog
 	DownloadEnabled bool
 }
 

@@ -63,7 +63,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -115,17 +114,6 @@ func TestMain(m *testing.M) {
 	// Hybrid target — only needed for BenchmarkHybrid_* benchmarks.
 	if dp, err := mdls.FullPath("Qwen3.6-35B-A3B-UD-Q4_K_M"); err == nil {
 		benchHybridModelPath = dp
-	}
-
-	ctlg, err := catalog.New()
-	if err != nil {
-		fmt.Printf("bench: unable to create catalog: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := ctlg.Download(context.Background()); err != nil {
-		fmt.Printf("bench: unable to download catalog: %v\n", err)
-		os.Exit(1)
 	}
 
 	if err := kronk.Init(); err != nil {

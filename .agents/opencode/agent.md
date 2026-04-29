@@ -4,7 +4,7 @@
 - Think efficiently and concisely, prioritizing speed. Use short, direct reasoning steps.
 - Summarize your reasoning in 50 words or less.
 - Double check tool call arguments before submitting.
-- Every file edit = `kronk_fuzzy_edit`. No exceptions. Never call `edit`.
+- Use go doc and gopls for API and doc inspection.
 
 # Tool Policy
 

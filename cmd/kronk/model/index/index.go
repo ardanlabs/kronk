@@ -45,6 +45,10 @@ func runLocal(models *models.Models) error {
 		return fmt.Errorf("build-index: %w", err)
 	}
 
+	if err := models.ReconcileCatalog(context.Background(), kronk.FmtLogger); err != nil {
+		return fmt.Errorf("reconcile-catalog: %w", err)
+	}
+
 	fmt.Println("Index rebuilt successfully")
 
 	return nil

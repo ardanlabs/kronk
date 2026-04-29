@@ -55,13 +55,14 @@ func runLocal(models *models.Models) error {
 
 func printWeb(models []toolapp.ListModelDetail) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tMODIFIED\tVAL")
+	fmt.Fprintln(w, "VAL\tMODEL ID\tPROVIDER\tFAMILY\tMTMD\tSIZE\tMODIFIED")
 
 	for _, model := range models {
-		size := formatSize(model.Size)
-		modified := formatTime(model.Modified)
-
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\n", model.ID, model.OwnedBy, model.ModelFamily, size, modified, model.Validated)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			validatedMark(model.Validated), model.ID,
+			dash(model.OwnedBy), dash(model.ModelFamily),
+			projectionMark(model.HasProjection),
+			formatSize(model.Size), formatTime(model.Modified))
 	}
 
 	w.Flush()
@@ -69,16 +70,38 @@ func printWeb(models []toolapp.ListModelDetail) {
 
 func printLocal(files []models.File) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tOWNED BY\tMODEL FAMILY\tSIZE\tMODIFIED\tVAL")
+	fmt.Fprintln(w, "VAL\tMODEL ID\tPROVIDER\tFAMILY\tMTMD\tSIZE\tMODIFIED")
 
 	for _, model := range files {
-		size := formatSize(model.Size)
-		modified := formatTime(model.Modified)
-
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\n", model.ID, model.OwnedBy, model.ModelFamily, size, modified, model.Validated)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			validatedMark(model.Validated), model.ID,
+			dash(model.OwnedBy), dash(model.ModelFamily),
+			projectionMark(model.HasProjection),
+			formatSize(model.Size), formatTime(model.Modified))
 	}
 
 	w.Flush()
+}
+
+func validatedMark(b bool) string {
+	if b {
+		return "✓"
+	}
+	return "✗"
+}
+
+func projectionMark(b bool) string {
+	if b {
+		return "✓"
+	}
+	return ""
+}
+
+func dash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 func formatSize(bytes int64) string {

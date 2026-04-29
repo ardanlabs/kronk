@@ -16,32 +16,14 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// modelSpec defines how to obtain the model to download.
-// - SourceURL: Download the model file directly from a HuggingFace URL
-// - ProjURL  : Download the projection file directly from a HuggingFace URL
-// - ModelID  : Download the model from the catalog by model ID
-//
-// To use a catalog model, comment out SourceURL/ProjURL and set ModelID.
-// To use direct URLs, comment out ModelID and set SourceURL/ProjURL.
-type modelSpec struct {
-	SourceURL string
-	ProjURL   string
-	ModelID   string
-}
-
-// Configure this to switch between URL and catalog downloads.
-// Set either (SourceURL and ProjURL) or ModelID, not both.
-var modelSpecConfig = modelSpec{
-	SourceURL: "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.Q8_0.gguf",
-	ProjURL:   "https://huggingface.co/mradermacher/Qwen2-Audio-7B-GGUF/resolve/main/Qwen2-Audio-7B.mmproj-Q8_0.gguf",
-	// ModelID: "Qwen2-Audio-7B-Q8_0",
-}
+// modelSource is the model to download. It may be a HuggingFace URL,
+// a canonical "provider/modelID", or a bare model id.
+var modelSource = "mradermacher/Qwen2-Audio-7B.Q8_0"
 
 const audioFile = "samples/jfk.wav"
 
@@ -92,41 +74,14 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-
-	ctlg, err := catalog.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
-	}
-
-	if err := ctlg.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	// Download model based on spec config using switch/case
-	var mp models.Path
+	fmt.Println("Downloading model:", modelSource)
 
-	switch {
-	case modelSpecConfig.SourceURL != "":
-		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
-		fmt.Println("Downloading projection file:", modelSpecConfig.ProjURL)
-		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, modelSpecConfig.ProjURL)
-
-	case modelSpecConfig.ModelID != "":
-		fmt.Println("Downloading model from catalog:", modelSpecConfig.ModelID)
-		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.ModelID)
-
-	default:
-		return models.Path{}, fmt.Errorf("modelSpecConfig requires either (SourceURL and ProjURL) or ModelID to be set")
-	}
-
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}

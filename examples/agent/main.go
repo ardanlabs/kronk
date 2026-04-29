@@ -23,23 +23,14 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-type modelSpec struct {
-	SourceURL string
-	ModelID   string
-}
-
-// Configure this to switch between URL and catalog downloads.
-// Set either SourceURL or ModelID, not both.
-var modelSpecConfig = modelSpec{
-	//SourceURL: "https://huggingface.co/unsloth/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-Q8_0.gguf",
-	ModelID: "gpt-oss-20b-Q8_0",
-}
+// modelSource is the model to download. It may be a HuggingFace URL,
+// a canonical "provider/modelID", or a bare model id.
+var modelSource = "unsloth/gpt-oss-20b-Q8_0"
 
 // =============================================================================
 
@@ -426,34 +417,15 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	// Download catalog system.
-	ctlg, err := catalog.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to create catalog system: %w", err)
-	}
-	if err := ctlg.Download(ctx); err != nil {
-		return models.Path{}, fmt.Errorf("unable to download catalog: %w", err)
-	}
-
 	// Download model.
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to create models manager: %w", err)
 	}
 
-	var mp models.Path
-	switch {
-	case modelSpecConfig.SourceURL != "":
-		fmt.Println("Downloading model from URL:", modelSpecConfig.SourceURL)
-		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelSpecConfig.SourceURL, "")
+	fmt.Println("Downloading model:", modelSource)
 
-	case modelSpecConfig.ModelID != "":
-		fmt.Println("Downloading model from catalog:", modelSpecConfig.ModelID)
-		mp, err = ctlg.DownloadModel(ctx, kronk.FmtLogger, modelSpecConfig.ModelID)
-
-	default:
-		return models.Path{}, fmt.Errorf("modelSpecConfig requires either SourceURL or ModelID to be set")
-	}
+	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}

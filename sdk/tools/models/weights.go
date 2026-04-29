@@ -177,27 +177,39 @@ func fetchGGUFHeaderAndTensors(ctx context.Context, url string) (metadata map[st
 		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to fetch header data: %w", err)
 	}
 
+	metadata, tensors, err = parseGGUFHeaderAndTensors(data, fileSize)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	return metadata, tensors, fileSize, nil
+}
+
+// parseGGUFHeaderAndTensors parses the GGUF magic, KV metadata, and
+// tensor table from already-fetched header bytes (catalog cache or
+// local file). fileSize is only used in error context.
+func parseGGUFHeaderAndTensors(data []byte, fileSize int64) (metadata map[string]string, tensors []ggufTensorInfo, err error) {
 	reader := bytes.NewReader(data)
 
 	var header ggufHeader
 	if err := binary.Read(reader, binary.LittleEndian, &header.Magic); err != nil {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to read magic (data_len=%d): %w", len(data), err)
+		return nil, nil, fmt.Errorf("parse-gguf-header-tensors: failed to read magic (data_len=%d): %w", len(data), err)
 	}
 
 	if header.Magic != ggufMagic {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: invalid GGUF magic number: got 0x%X, first_16_bytes=%x, data_len=%d", header.Magic, data[:min(16, len(data))], len(data))
+		return nil, nil, fmt.Errorf("parse-gguf-header-tensors: invalid GGUF magic number: got 0x%X, first_16_bytes=%x, data_len=%d", header.Magic, data[:min(16, len(data))], len(data))
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.Version); err != nil {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to read version: %w", err)
+		return nil, nil, fmt.Errorf("parse-gguf-header-tensors: failed to read version: %w", err)
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.TensorCount); err != nil {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to read tensor count: %w", err)
+		return nil, nil, fmt.Errorf("parse-gguf-header-tensors: failed to read tensor count: %w", err)
 	}
 
 	if err := binary.Read(reader, binary.LittleEndian, &header.MetadataKvCount); err != nil {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to read metadata count: %w", err)
+		return nil, nil, fmt.Errorf("parse-gguf-header-tensors: failed to read metadata count: %w", err)
 	}
 
 	// Parse KV metadata.
@@ -219,11 +231,11 @@ func fetchGGUFHeaderAndTensors(ctx context.Context, url string) (metadata map[st
 	// Parse tensor descriptors from the remaining data.
 	tensors, err = parseTensorTableFromReader(reader, header.TensorCount)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("fetch-gguf-header-tensors: failed to parse tensor table: data_len=%d, file_size=%d, version=%d, tensors=%d, kv_count=%d, kv_parsed=%d, kv_err=%v, bytes_remaining_after_kv=%d: %w",
+		return nil, nil, fmt.Errorf("parse-gguf-header-tensors: failed to parse tensor table: data_len=%d, file_size=%d, version=%d, tensors=%d, kv_count=%d, kv_parsed=%d, kv_err=%v, bytes_remaining_after_kv=%d: %w",
 			len(data), fileSize, header.Version, header.TensorCount, header.MetadataKvCount, kvParsed, kvParseErr, bytesAfterKV, err)
 	}
 
-	return metadata, tensors, fileSize, nil
+	return metadata, tensors, nil
 }
 
 // parseTensorTableFromReader reads tensor descriptors from a bytes.Reader.

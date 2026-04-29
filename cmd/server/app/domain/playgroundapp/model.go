@@ -286,61 +286,6 @@ func (s SessionDeleteResponse) Encode() ([]byte, string, error) {
 
 // =============================================================================
 
-// TemplateListResponse contains the list of available templates.
-type TemplateListResponse struct {
-	Templates []TemplateInfo `json:"templates"`
-}
-
-// Encode implements the encoder interface.
-func (t TemplateListResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(t)
-	return data, "application/json", err
-}
-
-// TemplateInfo represents information about a template file.
-type TemplateInfo struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
-}
-
-// =============================================================================
-
-// TemplateContentResponse contains a template's content.
-type TemplateContentResponse struct {
-	Name   string `json:"name"`
-	Script string `json:"script"`
-}
-
-// Encode implements the encoder interface.
-func (t TemplateContentResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(t)
-	return data, "application/json", err
-}
-
-// =============================================================================
-
-// TemplateSaveRequest is the request to save a template.
-type TemplateSaveRequest struct {
-	Name   string `json:"name"`
-	Script string `json:"script"`
-}
-
-// Decode implements the decoder interface.
-func (t *TemplateSaveRequest) Decode(data []byte) error {
-	return json.Unmarshal(data, t)
-}
-
-// Validate checks the request.
-func (t *TemplateSaveRequest) Validate() error {
-	if err := validateTemplateName(t.Name); err != nil {
-		return err
-	}
-	if len(t.Script) > 64*1024 {
-		return fmt.Errorf("template script too large (max 64KB)")
-	}
-	return nil
-}
-
 func validateTemplateName(name string) error {
 	if name == "" {
 		return fmt.Errorf("missing template name")
@@ -355,17 +300,6 @@ func validateTemplateName(name string) error {
 		return fmt.Errorf("template name must not start with a dot")
 	}
 	return nil
-}
-
-// TemplateSaveResponse is the response from saving a template.
-type TemplateSaveResponse struct {
-	Status string `json:"status"`
-}
-
-// Encode implements the encoder interface.
-func (t TemplateSaveResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(t)
-	return data, "application/json", err
 }
 
 // =============================================================================

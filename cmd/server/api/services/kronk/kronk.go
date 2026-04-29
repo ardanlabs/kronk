@@ -28,7 +28,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
-	"github.com/ardanlabs/kronk/sdk/tools/catalog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -107,18 +106,14 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			// 25% should be enough for most systems. Some might want to have
 			// this even lower.
 		}
-		Catalog struct {
-			GithubRepo      string `conf:"default:https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/catalogs"`
-			ModelConfigFile string
-			RepoPath        string
-		}
 		Cache struct {
-			ModelsInCache int           `conf:"default:2"`
-			TTL           time.Duration `conf:"default:20m"`
+			ModelConfigFile string
+			ModelsInCache   int           `conf:"default:2"`
+			TTL             time.Duration `conf:"default:20m"`
 		}
 		BasePath        string
 		LibPath         string
-		LibVersion      string
+		LibVersion      string `conf:"b8951"`
 		Arch            string
 		OS              string
 		Processor       string
@@ -301,30 +296,19 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	models.BuildIndex(log.Info, false)
 
+	if err := models.ReconcileCatalog(ctx, log.Info); err != nil {
+		log.Info(ctx, "startup", "WARNING", "reconcile catalog", "ERROR", err)
+	}
+
 	// -------------------------------------------------------------------------
-	// Catalog System
+	// Model Config
 
-	log.Info(ctx, "startup", "status", "downloading catalog")
-
-	modelConfigFile, err := defaults.ModelConfigFile(cfg.Catalog.ModelConfigFile, cfg.BasePath)
+	modelConfigFile, err := defaults.ModelConfigFile(cfg.Cache.ModelConfigFile, cfg.BasePath)
 	if err != nil {
 		return fmt.Errorf("resolving model config file: %w", err)
 	}
 
 	log.Info(ctx, "startup", "status", "model config", "path", modelConfigFile)
-
-	ctlg, err := catalog.New(
-		catalog.WithBasePath(cfg.BasePath),
-		catalog.WithGithubRepo(cfg.Catalog.GithubRepo),
-		catalog.WithModelConfig(modelConfigFile),
-		catalog.WithRepoPath(cfg.Catalog.RepoPath))
-	if err != nil {
-		return fmt.Errorf("unable to create catalog system: %w", err)
-	}
-
-	if err := ctlg.Download(ctx, catalog.WithLogger(log.Info)); err != nil {
-		return fmt.Errorf("unable to download catalog: %w", err)
-	}
 
 	// -------------------------------------------------------------------------
 	// Init Kronk
@@ -338,7 +322,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	cache, err := cache.New(cache.Config{
 		Log:             log.Info,
 		BasePath:        cfg.BasePath,
-		Catalog:         ctlg,
+		ModelConfigFile: modelConfigFile,
 		ModelsInCache:   cfg.Cache.ModelsInCache,
 		CacheTTL:        cfg.Cache.TTL,
 		InsecureLogging: cfg.InsecureLogging,
@@ -409,7 +393,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Cache:           cache,
 		Libs:            libs,
 		Models:          models,
-		Catalog:         ctlg,
 		DownloadEnabled: cfg.Download.Enabled,
 	}
 

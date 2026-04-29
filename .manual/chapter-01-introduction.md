@@ -61,10 +61,11 @@ provides:
 
 **Operations**
 
-- **Catalog System** - Curated collection of verified models with one-command downloads.
+- **Catalog System** - Your personal catalog of downloaded models, seeded with a starter list and managed via the CLI and BUI.
 - **Browser UI (BUI)** - Web interface for model management, downloads, and configuration.
 - **Authentication** - JWT-based security with key management, endpoint authorization and rate limiting.
 - **Observability** - Tracing and metrics integration with Grafana support.
+- **Local Storage** - Everything Kronk manages — catalog, downloaded models, llama.cpp libraries, and per-model configuration — lives under `~/.kronk/`.
 
 ### 1.3 Supported Platforms and Hardware
 
@@ -95,7 +96,7 @@ functionality and the Model Server is one application built on top of it.
 | Layer           | Component                            | Purpose                                    |
 | --------------- | ------------------------------------ | ------------------------------------------ |
 | **Application** | Kronk Model Server                   | REST API server (or your own app)          |
-| **SDK Tools**   | Models, Libs, Catalog, Template APIs | High-level APIs for common tasks           |
+| **SDK Tools**   | Models, Libs, Downloader, Devices    | High-level APIs for common tasks           |
 | **SDK Core**    | Kronk SDK API, Model SDK API         | Model loading, inference, pooling, caching |
 | **Bindings**    | yzma (non-CGO FFI via purego)        | Go bindings to llama.cpp without CGO       |
 | **Engine**      | llama.cpp                            | Hardware-accelerated inference             |
@@ -130,7 +131,8 @@ for resp := range ch {
 ```
 
 ```shell
-# Or use the Model Server for OpenAI-compatible API
+# Or use the Model Server for OpenAI-compatible API.
+# Server-side per-model tuning lives in ~/.kronk/model_config.yaml.
 kronk server start
 curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","messages":[...]}'
 ```

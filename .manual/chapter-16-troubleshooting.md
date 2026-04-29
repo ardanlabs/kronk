@@ -12,7 +12,10 @@
 - [16.8 IMC Caching Issues](#168-imc-caching-issues)
 - [16.9 Viewing Logs](#169-viewing-logs)
 - [16.10 Common Error Messages](#1610-common-error-messages)
-- [16.11 Getting Help](#1611-getting-help)
+- [16.11 Catalog & Model Pull Issues](#1611-catalog--model-pull-issues)
+- [16.12 MCP Service Issues](#1612-mcp-service-issues)
+- [16.13 Port Conflicts & Filesystem](#1613-port-conflicts--filesystem)
+- [16.14 Getting Help](#1614-getting-help)
 
 ---
 
@@ -185,16 +188,7 @@ ls ~/.kronk/models/
 **Re-download the model:**
 
 ```shell
-kronk catalog pull <model-name> --local
-```
-
-**Verify model integrity:**
-
-By default, Kronk skips integrity checks on startup for speed. To force
-verification:
-
-```shell
-kronk server start --ignore-integrity-check=false
+kronk model pull <model-id> --local
 ```
 
 **Problem: Model exists but server says "model not found"**
@@ -224,16 +218,6 @@ a rebuild from the BUI Models page.
 - `kronk model list` doesn't show a model you know is downloaded
 - After deleting model files outside of `kronk model remove`
 
-**Error: "failed to retrieve model template"**
-
-The model's chat template is missing from the templates directory.
-
-**Solution:**
-
-```shell
-kronk catalog pull-templates --local
-```
-
 ### 16.3 Memory Errors
 
 **Error: "unable to init context" or "unable to get memory"**
@@ -244,7 +228,7 @@ context window size.
 **Causes:**
 
 - Context window too large for available VRAM/RAM
-- Too many parallel sequences (`n_seq_max`)
+- Too many parallel sequences (`nseq-max`)
 - Model weights don't fit in available memory
 
 **Solutions:**
@@ -252,26 +236,23 @@ context window size.
 Reduce context window:
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    context_window: 8192 # Reduce from 32768
+Qwen/Qwen3-8B-Q8_0:
+  context-window: 8192 # Reduce from 32768
 ```
 
 Reduce parallel sequences:
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    n_seq_max: 1 # Single request at a time
+Qwen/Qwen3-8B-Q8_0:
+  nseq-max: 1 # Single request at a time
 ```
 
 Use quantized KV cache:
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    cache_type_k: q8_0 # ~50% less KV cache memory vs f16
-    cache_type_v: q8_0
+Qwen/Qwen3-8B-Q8_0:
+  cache-type-k: q8_0 # ~50% less KV cache memory vs f16
+  cache-type-v: q8_0
 ```
 
 See [Chapter 3: VRAM Estimation](chapter-03-model-configuration.md#39-vram-estimation)
@@ -285,7 +266,7 @@ context window during inference.
 **Solutions:**
 
 - Reduce input size (fewer messages, shorter prompts)
-- Increase `context_window` in model config (requires more VRAM)
+- Increase `context-window` in model config (requires more VRAM)
 - Enable YaRN for extended context (see
   [Chapter 6](chapter-06-yarn-extended-context.md))
 
@@ -297,7 +278,7 @@ before any generation can begin.
 **Solutions:**
 
 - Shorten the prompt or system message
-- Increase `context_window`
+- Increase `context-window`
 - If using IMC, the cached prefix counts toward the limit
 
 ### 16.4 Request Timeouts
@@ -325,8 +306,8 @@ kronk server start \
 Or via environment variables:
 
 ```shell
-export KRONK_READ_TIMEOUT=5m
-export KRONK_WRITE_TIMEOUT=30m
+export KRONK_WEB_READ_TIMEOUT=5m
+export KRONK_WEB_WRITE_TIMEOUT=30m
 ```
 
 **Error: "server busy processing other requests, try again shortly"**
@@ -342,8 +323,8 @@ timeout was reached.
 **Solutions:**
 
 - Wait and retry the request — the error is transient
-- Increase `n_seq_max` to allow more concurrent sessions
-- Increase `cache_slot_timeout` (default: 30 seconds) if requests need
+- Increase `nseq-max` to allow more concurrent sessions
+- Increase `cache-slot-timeout` (default: 30 seconds) if requests need
   more time
 
 ### 16.5 Authentication Errors
@@ -459,9 +440,8 @@ data: [DONE]\n\n
 Enable IMC to cache the conversation prefix:
 
 ```yaml
-models:
-  Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
-    incremental_cache: true
+Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
+  incremental-cache: true
 ```
 
 With IMC, only the new message is prefilled — cached tokens are restored
@@ -490,9 +470,8 @@ nvidia-smi
 Ensure all layers are on GPU (default):
 
 ```yaml
-models:
-  Qwen3-8B-Q8_0:
-    n_gpu_layers: 0 # 0 = all layers on GPU (default)
+Qwen/Qwen3-8B-Q8_0:
+  ngpu-layers: 0 # 0 = all layers on GPU (default)
 ```
 
 For MoE models on Apple Silicon, consider a dense model at lower
@@ -509,7 +488,7 @@ scattered expert routing (see
 - Client is modifying earlier messages between requests
 - Non-deterministic Jinja template producing different tokens for the same
   messages
-- `n_seq_max` too low for the number of concurrent sub-agents (cache
+- `nseq-max` too low for the number of concurrent sub-agents (cache
   thrashing)
 
 **Diagnosis:**
@@ -529,7 +508,7 @@ Look for these log patterns:
 
 **Solutions:**
 
-- Increase `n_seq_max` to match the number of concurrent sub-agents
+- Increase `nseq-max` to match the number of concurrent sub-agents
 - Check if the client is modifying conversation history between requests
 - If using a non-deterministic template, IMC falls back to token prefix
   matching automatically — this is expected behavior
@@ -544,8 +523,8 @@ The RAM-to-VRAM restore (`StateSeqSetData`) failed for a session.
 (VRAM pressure from other sessions or models).
 
 **Solution:** The session is automatically reset and the next request
-triggers a full rebuild. If this happens frequently, reduce `n_seq_max`
-or `context_window` to lower VRAM pressure.
+triggers a full rebuild. If this happens frequently, reduce `nseq-max`
+or `context-window` to lower VRAM pressure.
 
 ### 16.9 Viewing Logs
 
@@ -587,25 +566,173 @@ kronk server start --llama-log 0
 | -------------------------------------------- | -------------------------------- | -------------------------------------- |
 | `unable to load library`                     | Missing llama.cpp libraries      | `kronk libs --local`                   |
 | `unknown device`                             | Wrong processor for hardware     | Check `kronk devices`, re-install libs |
-| `unable to load model`                       | Missing or corrupt model file    | Re-download with `kronk catalog pull`  |
-| `failed to retrieve model template`          | Missing chat template            | `kronk catalog pull-templates --local` |
-| `unable to init context`                     | Insufficient VRAM/RAM            | Reduce context window or n_seq_max     |
+| `unable to load model`                       | Missing or corrupt model file    | Re-download with `kronk model pull`    |
+| `unable to init context`                     | Insufficient VRAM/RAM            | Reduce context-window or nseq-max      |
 | `input tokens [N] exceed context window [M]` | Prompt too large                 | Shorten prompt or increase context     |
 | `the context window is full`                 | KV cache exhausted during decode | Reduce input size or increase context  |
 | `context deadline exceeded`                  | HTTP timeout reached             | Increase `--write-timeout`             |
-| `server busy processing other requests`      | All IMC sessions busy            | Retry, or increase n_seq_max           |
+| `server busy processing other requests`      | All IMC sessions busy            | Retry, or increase nseq-max            |
 | `no authorization header`                    | Missing auth token               | Add `Authorization: Bearer <token>`    |
 | `invalid token`                              | Expired or malformed JWT         | Create a new token                     |
 | `endpoint not authorized`                    | Token missing endpoint scope     | Create token with correct endpoints    |
 | `rate limit exceeded`                        | Quota exhausted                  | Wait for reset or increase limit       |
 | `engine shutting down`                       | Server is stopping               | Wait for shutdown, restart server      |
-| `github rate limited`                        | GitHub API 403/429 during pull   | Set `GITHUB_TOKEN` env var             |
+| `huggingface 401 / 403`                      | Gated/private repo or rate limit | Set `KRONK_HF_TOKEN` env var           |
 | `model doesn't support embedding`            | Wrong model for endpoint         | Use an embedding model                 |
 | `model doesn't support reranking`            | Wrong model for endpoint         | Use a reranking model                  |
 | `imc restore failed`                         | RAM→VRAM restore failed          | Auto-recovers; reduce VRAM pressure    |
 | `imc extend stale`                           | Concurrent cache modification    | Auto-retries; transient                |
 
-### 16.11 Getting Help
+### 16.11 Catalog & Model Pull Issues
+
+**Error: `huggingface 401` / `403` during `kronk model pull`**
+
+The repo is gated/private or the request was throttled.
+
+**Solution:** export a HuggingFace token before pulling. The token must
+have read access to any gated repos you intend to use:
+
+```shell
+export KRONK_HF_TOKEN=hf_xxx
+kronk model pull <provider/model-id>
+```
+
+**Problem: `kronk model pull <id>` says "model not found in catalog"**
+
+The id has not been resolved against HuggingFace yet. Use `model resolve`
+to look it up and seed the local catalog:
+
+```shell
+kronk model resolve https://huggingface.co/<owner>/<repo>
+kronk model pull <provider/model-id>
+```
+
+**Problem: `catalog.yaml` was hand-edited and Kronk now refuses to start**
+
+The catalog file is YAML keyed by canonical id with strict typing. Run
+`kronk catalog list --local` to validate it; remove the broken entry with
+`kronk catalog remove <id> --local` and re-add it via `kronk model resolve`.
+
+**Problem: pull failed mid-download, `kronk model list` shows the model
+as invalid**
+
+Partial files are left behind under
+`~/.kronk/models/<provider>/<family>/`. Remove the model and re-pull:
+
+```shell
+kronk model remove <provider/model-id> --local
+kronk model pull <provider/model-id>
+kronk model index --local
+```
+
+### 16.12 MCP Service Issues
+
+**Error: `/mcp` returns 404**
+
+The MCP endpoint is `http://localhost:9000/mcp` (no trailing slash). The
+client must use the Streamable HTTP transport — Cline calls it
+`streamableHttp`, Kilo Code uses `streamable-http`, and OpenCode/Goose
+both spell it `remote`.
+
+**Error: `web_search` reports "missing Brave API key"**
+
+The Brave Search key is unset. Provide it before starting the server:
+
+```shell
+# Embedded mode (kronk server start)
+export KRONK_MCP_BRAVEAPIKEY=<your-brave-api-key>
+
+# Standalone (make mcp-server)
+export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>
+```
+
+**Problem: model can't find the tool ("unknown tool kronk_fuzzy_edit")**
+
+Each MCP-aware client prefixes tool names with the server key. Check
+that the prefix matches the key you used in the client config:
+
+| Client   | Server key in config | Tool names exposed                    |
+| -------- | -------------------- | ------------------------------------- |
+| Cline    | `Kronk`              | `web_search`, `fuzzy_edit`            |
+| Kilo     | `Kronk`              | `Kronk_web_search`, `Kronk_fuzzy_edit` |
+| OpenCode | `kronk`              | `kronk_web_search`, `kronk_fuzzy_edit` |
+| Goose    | (lowercase)          | `kronk_web_search`, `kronk_fuzzy_edit` |
+
+**Error: `fuzzy_edit` returns "old_string not found in file (even with
+fuzzy matching)"**
+
+The search snippet is either absent from the file or matches more than
+once. Tighten the snippet to a unique block of lines, or break the edit
+into a smaller anchor that appears exactly once.
+
+**Problem: embedded MCP server is not starting**
+
+Setting `KRONK_MCP_HOST` to a non-empty value tells `kronk server` to
+defer to an external MCP host instead of starting its own. Unset it (or
+run the standalone service via `make mcp-server`) if you want the
+embedded mode back.
+
+### 16.13 Port Conflicts & Filesystem
+
+**Error: `bind: address already in use`**
+
+Another process is already listening on the port Kronk is trying to
+bind. Default ports are `11435` (API), `8090` (debug), and `9000` (MCP).
+
+**Solutions:**
+
+```shell
+# Find the offending process
+lsof -i :11435
+
+# Or move Kronk to a different port
+kronk server start --api-host 0.0.0.0:21435
+```
+
+**Error: `permission denied` reading or writing `~/.kronk/`**
+
+Ensure your user owns the kronk base directory. Auth in particular
+expects `~/.kronk/keys/` to be `0700`:
+
+```shell
+chmod -R u+rwX ~/.kronk
+chmod 700 ~/.kronk/keys
+```
+
+**Error: `lock file already exists` from BadgerDB
+(`~/.kronk/badger/LOCK`)**
+
+Only one Kronk process may hold the rate-limit DB at a time. Confirm no
+other server is running, then remove the lock:
+
+```shell
+ps aux | grep "kronk server"
+rm ~/.kronk/badger/LOCK   # only if no process is using it
+```
+
+**Problem: `kronk server start -d` says "already running" but no process
+exists**
+
+The PID file is stale. Remove it and start again:
+
+```shell
+rm ~/.kronk/kronk.pid
+kronk server start -d
+```
+
+**Problem: model pull fails with "no space left on device"**
+
+The models directory is full. Free space by removing unused models:
+
+```shell
+kronk model list --local
+kronk model remove <provider/model-id> --local
+```
+
+Models live under `~/.kronk/models/`; check available space with
+`df -h ~/.kronk/models`.
+
+### 16.14 Getting Help
 
 **Check server liveness:**
 
@@ -616,7 +743,7 @@ curl http://localhost:11435/v1/liveness
 **Check server readiness (model loaded):**
 
 ```shell
-curl http://localhost:11435/v1/readyz
+curl http://localhost:11435/v1/readiness
 ```
 
 **List loaded models:**

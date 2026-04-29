@@ -1,32 +1,27 @@
-// Package catalog provide support for the catalog sub-command.
+// Package catalog provides support for the catalog sub-command.
 package catalog
 
 import (
 	"github.com/ardanlabs/kronk/cmd/kronk/catalog/list"
-	"github.com/ardanlabs/kronk/cmd/kronk/catalog/pull"
+	"github.com/ardanlabs/kronk/cmd/kronk/catalog/remove"
 	"github.com/ardanlabs/kronk/cmd/kronk/catalog/show"
-	"github.com/ardanlabs/kronk/cmd/kronk/catalog/update"
 	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
 	Use:   "catalog",
-	Short: "Manage model catalogs (list, pull, show, update)",
-	Long: `Manage model catalogs - list, pull, show, and update available models.
+	Short: "Browse and manage the model catalog (list, show, remove)",
+	Long: `Browse and manage the model catalog.
 
-The catalog system provides a curated collection of verified GGUF models with
-preconfigured settings for optimal performance. Models are organized by type:
-  • Text-Generation - For chat and text completion tasks
-  • Image-Text-to-Text - Vision models for image analysis
-  • Audio-Text-to-Text - Speech models for transcription
-  • Embedding - For vector search and similarity
+The catalog is the curated set of HuggingFace models the system knows how to
+download. Entries are stored in catalog.yaml under ~/.kronk/catalog/ and seeded
+from an embedded default on first run.
 
 COMMANDS
 
-  list    List available models from the catalog
-  pull    Download a model from the catalog
-  show    Display detailed information about a model
-  update  Update the local catalog cache
+  list     List all catalog entries
+  show     Display detailed information about a catalog entry
+  remove   Remove a catalog entry, its GGUF cache, and any downloaded files
 
 MODES
 
@@ -35,17 +30,14 @@ MODES
 
 EXAMPLES
 
-  # List all available models
+  # List every catalog entry
   kronk catalog list
 
-  # Filter by category
-  kronk catalog list --filter-category=Text-Generation
+  # Show full details for a single entry
+  kronk catalog show unsloth/Qwen3-8B-GGUF
 
-  # Download a model
-  kronk catalog pull Qwen3-8B-Q8_0
-
-  # Show model details
-  kronk catalog show Qwen3-8B-Q8_0`,
+  # Remove an entry plus its downloaded files
+  kronk catalog remove unsloth/Qwen3-8B-GGUF`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
@@ -53,7 +45,6 @@ EXAMPLES
 
 func init() {
 	Cmd.AddCommand(list.Cmd)
-	Cmd.AddCommand(pull.Cmd)
 	Cmd.AddCommand(show.Cmd)
-	Cmd.AddCommand(update.Cmd)
+	Cmd.AddCommand(remove.Cmd)
 }

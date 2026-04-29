@@ -1,16 +1,15 @@
 # AGENTS.md - sdk/tools
 
-CLI tooling support for model, catalog, template, and library management.
+CLI tooling support for model and library management.
 
 ## Package Overview
 
-- **catalog/** - Catalog system for model metadata, config retrieval, and downloads
 - **defaults/** - Default paths, versions, and platform detection (arch/OS/processor)
 - **devices/** - Compute device enumeration (CPU/GPU) and system RAM detection
 - **downloader/** - HTTP file downloads with progress tracking and HuggingFace auth
+- **github/** - GitHub API helpers
 - **libs/** - llama.cpp library installation and version management
-- **models/** - Local model file management, indexing, and validation
-- **templates/** - Jinja template downloads and management
+- **models/** - Local model file management, indexing, validation, resolver, and per-model config
 
 ## Directory Structure
 
@@ -18,68 +17,10 @@ Default base directory: `~/.kronk/`
 
 ```
 ~/.kronk/
-├── catalogs/          # Model catalog YAML files
 ├── libraries/         # llama.cpp shared libraries
-├── models/            # Downloaded model files (GGUF)
-│   └── <org>/<family>/<model>.gguf
-└── templates/         # Jinja chat templates
+└── models/            # Downloaded model files (GGUF)
+    └── <org>/<family>/<model>.gguf
 ```
-
-## catalog Package
-
-Manages model catalog system with metadata and configuration.
-
-**Key Types:**
-
-- `Catalog` - Main catalog manager
-- `Model` - Model metadata (ID, files, capabilities, config)
-- `ModelConfig` - Per-model settings (context window, batch size, cache types, sampling)
-- `SamplingConfig` - Inference sampling parameters with `WithDefaults()` for zero-value handling
-
-**Configuration Layering:**
-
-`RetrieveModelConfig()` resolves configuration through a three-tier priority system:
-
-1. **Model package defaults** - `SamplingConfig.WithDefaults()` applies `model.DefTemp`, `model.DefTopK`, etc. for any zero-valued sampling fields
-2. **Catalog YAML** - Model-specific settings from catalog files (context window, batch sizes, cache types, sampling params)
-3. **model_config.yaml** - User overrides loaded via `--model-config` flag (highest priority)
-
-The model does not need to exist in the catalog. If not found, catalog settings are skipped and only model_config.yaml overrides (if any) plus defaults are applied.
-
-**Resolution Flow:**
-
-```
-RetrieveModelConfig(modelID) → ModelConfig
-  │
-  ├─ 1. Try RetrieveModelDetails(modelID) from catalog
-  │     └─ If found: cfg = catalog.ModelConfig
-  │
-  ├─ 2. Check c.modelConfig[modelID] from model_config.yaml
-  │     └─ If found: override non-zero fields into cfg
-  │
-  └─ 3. cfg.Sampling = cfg.Sampling.WithDefaults()
-        └─ Fill zero-valued sampling fields with model package defaults
-```
-
-**model_config.yaml Format:**
-
-```yaml
-google/gemma-3-4b-it-Q4_K_M:
-  context-window: 32768
-  nbatch: 2048
-  nubatch: 512
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 0.7
-    top_k: 40
-```
-
-Keys are model IDs. The `/IMC` variant allows different configs for the same model.
-
-**Model ID Format:**
-
-- Standard: `org/model-name` (e.g., `google/gemma-3-4b-it-Q4_K_M`)
-- With config variant: `org/model-name/IMC` (e.g., `google/gemma-3-4b-it-Q4_K_M/IMC`)
 
 ## defaults Package
 
@@ -92,6 +33,8 @@ Platform detection and default value resolution.
 - `OS(override)` - Detects operating system (checks `KRONK_OS` env var)
 - `Processor(override)` - Returns processor type: cpu, cuda, metal, rocm, vulkan (checks `KRONK_PROCESSOR`)
 - `LibVersion(override)` - Returns library version (checks `KRONK_LIB_VERSION`)
+- `ModelConfigFile(override, basePath)` - Resolves the path to `model_config.yaml`
+- `CatalogFile(override, basePath)` - Resolves the path to `catalog.yaml`
 
 ## downloader Package
 
@@ -142,40 +85,54 @@ type VersionTag struct {
 
 ## models Package
 
-Local model file management and indexing.
+Local model file management, indexing, and resolved configuration.
 
 **Key Operations:**
 
 - `BuildIndex(log)` - Scan models directory, validate files, create index
-- `RetrievePath(modelID)` - Get file paths for a model
-- `RetrieveList()` - List all downloaded models
+- `RetrievePath(modelID)` / `FullPath(modelID)` - Get file paths for a model
+- `Files()` - List all downloaded models
 - `Remove(modelID)` - Delete model files
+- `KronkResolvedConfig(modelID, mc)` - Build a `model.Config` from analysis-derived
+  defaults + user `model_config.yaml` overrides + sampling defaults
+- `AnalysisDefaults(modelID)` - Returns hardware-aware defaults derived from GGUF metadata
+- `LoadModelConfig(path)` - Parse a `model_config.yaml` file into a per-model override map
+- `ResolveGrammar(*SamplingConfig)` - Resolve `.grm` filename references to grammar text
 
 **Index File:**
 
-`.index.yaml` in models directory maps model IDs to file paths and validation status.
+`.index.yaml` in the models directory maps model IDs to file paths and validation status.
 
-**Model Validation:**
+**Configuration Layering (`KronkResolvedConfig`):**
 
-Uses `model.CheckModel()` to verify GGUF file integrity. Validation status cached in index.
+1. **Layer 1 — Analysis defaults** - hardware-aware values derived from the GGUF
+   metadata (context window, batch sizes, cache types, flash attention, GPU layers).
+2. **Layer 3 — `model_config.yaml`** - user overrides loaded via `LoadModelConfig`.
+3. **Sampling defaults** - `SamplingConfig.WithDefaults()` fills any zero-valued
+   sampling fields with the SDK's defaults.
 
-## templates Package
+The legacy catalog YAML middle layer is no longer applied.
 
-Jinja template management for chat formatting.
+**`model_config.yaml` Format:**
 
-**Key Operations:**
+```yaml
+google/gemma-3-4b-it-Q4_K_M:
+  context-window: 32768
+  nbatch: 2048
+  nubatch: 512
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.7
+    top_k: 40
+```
 
-- `Download(ctx, log)` - Download templates from GitHub repo
-- `RetrieveTemplate(modelID)` - Get template for a specific model
-- `RetrieveTemplateByName(name)` - Get template by filename
+Keys are model IDs. Variant suffixes such as `/IMC` allow distinct configurations
+for the same on-disk model.
 
-**Template Source:**
+**Model ID Format:**
 
-Default: `https://api.github.com/repos/ardanlabs/kronk_catalogs/contents/templates`
-
-**Integration:**
-
-Templates package embeds a `Catalog` instance for model lookups. Access via `templates.Catalog()`.
+- Standard: `org/model-name` (e.g., `google/gemma-3-4b-it-Q4_K_M`)
+- With config variant: `org/model-name/IMC` (e.g., `google/gemma-3-4b-it-Q4_K_M/IMC`)
 
 ## Environment Variables
 
@@ -183,7 +140,7 @@ Templates package embeds a `Catalog` instance for model lookups. Access via `tem
 | ------------------- | ------------------------------------------------- |
 | `KRONK_ARCH`        | Override CPU architecture detection               |
 | `KRONK_OS`          | Override OS detection                             |
-| `KRONK_PROCESSOR`   | Set processor type (cpu/cuda/metal/rocm/vulkan)        |
+| `KRONK_PROCESSOR`   | Set processor type (cpu/cuda/metal/rocm/vulkan)   |
 | `KRONK_LIB_VERSION` | Pin llama.cpp library version                     |
 | `KRONK_HF_TOKEN`    | HuggingFace authentication token for gated models |
-| `GITHUB_TOKEN`       | GitHub personal access token for higher API rate limits during catalog sync |
+| `GITHUB_TOKEN`      | GitHub personal access token for higher API rate limits |

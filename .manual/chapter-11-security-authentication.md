@@ -31,7 +31,7 @@ kronk server start --auth-enabled
 Or via environment variable:
 
 ```shell
-export KRONK_AUTH_ENABLED=true
+export KRONK_AUTH_LOCAL_ENABLED=true
 kronk server start
 ```
 
@@ -200,7 +200,7 @@ curl http://localhost:11435/v1/chat/completions \
   -H "Authorization: Bearer eyJhbGciOiJS..." \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [{"role": "user", "content": "Hello"}]
   }'
 ```
@@ -227,7 +227,7 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="Qwen3-8B-Q8_0",
+    model="Qwen/Qwen3-8B-Q8_0",
     messages=[{"role": "user", "content": "Hello"}]
 )
 ```
@@ -270,13 +270,38 @@ Admin tokens (like `master.jwt`) bypass all rate limiting.
 
 ### 11.9 Configuration Reference
 
-**Server Flags:**
+**Deployment Modes:**
 
-- `--auth-enabled` - Enable authentication (env: `KRONK_AUTH_ENABLED`)
-- `--auth-issuer` - JWT issuer name (env: `KRONK_AUTH_ISSUER`)
-- `--auth-host` - External auth service host (env: `KRONK_AUTH_HOST`)
+Auth can run in two modes:
 
-**Environment Variables:**
+1. **Embedded (default)** — The auth service runs in-process inside
+   `kronk server` over an in-memory listener. This is what
+   `kronk server start --auth-enabled` uses. Configured via the
+   `--auth-enabled` / `--auth-issuer` flags and the `KRONK_AUTH_LOCAL_*`
+   env vars.
+2. **Standalone** — A separate `auth` binary listens on its own host;
+   `kronk server` connects to it via `--auth-host` (`KRONK_AUTH_HOST`).
+   The standalone service has its own `AUTH_AUTH_*` env-var prefix
+   (e.g. `AUTH_AUTH_HOST`, `AUTH_AUTH_ISSUER`, `AUTH_AUTH_ENABLED`).
+   Setting `KRONK_AUTH_HOST` on the kronk server skips the embedded
+   auth startup entirely.
+
+**Server Flags (kronk server):**
+
+- `--auth-enabled` - Enable embedded local auth
+  (env: `KRONK_AUTH_LOCAL_ENABLED`)
+- `--auth-issuer` - JWT issuer name for the embedded auth
+  (env: `KRONK_AUTH_LOCAL_ISSUER`)
+- `--auth-host` - Host of an external standalone auth service
+  (env: `KRONK_AUTH_HOST`)
+
+**Standalone Auth Service Env Vars:**
+
+- `AUTH_AUTH_HOST` - Listen address (default `localhost:6000`)
+- `AUTH_AUTH_ISSUER` - JWT issuer name (default `kronk project`)
+- `AUTH_AUTH_ENABLED` - Enable auth enforcement (default `false`)
+
+**Environment Variables (CLI / clients):**
 
 - `KRONK_TOKEN` - Token for CLI commands and API requests
 - `KRONK_WEB_API_HOST` - Server address for CLI web mode

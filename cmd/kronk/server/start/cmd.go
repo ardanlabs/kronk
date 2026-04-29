@@ -11,12 +11,9 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start Kronk model server",
-	Long: `Start Kronk model server. Use --help to get environment settings.
-
-Environment Variable (catalog sync):
-      GITHUB_TOKEN  GitHub personal access token for higher API rate limits`,
-	Args: cobra.NoArgs,
-	Run:  main,
+	Long:  `Start Kronk model server. Use --help to get environment settings.`,
+	Args:  cobra.NoArgs,
+	Run:   main,
 }
 
 func init() {
@@ -42,9 +39,7 @@ func init() {
 	Cmd.Flags().Float64("tempo-probability", -1, "Tempo sampling probability (0.0-1.0)")
 
 	// Catalog settings
-	Cmd.Flags().String("catalog-github-repo", "", "GitHub repo URL for catalogs")
 	Cmd.Flags().String("model-config-file", "", "Special config file for model specific config")
-	Cmd.Flags().String("catalog-repo-path", "", "Path to cloned catalog repository for publishing")
 
 	// Cache settings
 	Cmd.Flags().Int("model-instances", 0, "Maximum model instances")

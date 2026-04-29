@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 import KeyValueTable from '../KeyValueTable';
 import { formatBytes } from '../../lib/format';
 import { labelWithTip } from '../ParamTooltips';
@@ -437,13 +436,7 @@ function configToYAML(config: VramComputedConfig): string {
   return lines.join('\n');
 }
 
-export interface VramCatalogDraft {
-  source: 'vram';
-  modelUrl: string;
-  config: VramComputedConfig;
-}
-
-function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit, modelUrl }: {
+function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit }: {
   input: VRAMInput;
   isMoE: boolean;
   gpuLayers?: number;
@@ -454,23 +447,8 @@ function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCa
   modelUrl?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const navigate = useNavigate();
   const config = buildComputedCatalogConfig(input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit);
   const yaml = configToYAML(config);
-
-  const handleExport = () => {
-    const url = modelUrl?.trim();
-    if (!url) return;
-
-    const draft: VramCatalogDraft = {
-      source: 'vram',
-      modelUrl: url,
-      config,
-    };
-
-    sessionStorage.setItem('kronk_catalog_draft', JSON.stringify(draft));
-    navigate('/catalog/editor?source=vram');
-  };
 
   return (
     <div style={{ marginTop: '0px', padding: '0px 12px 25px 0px', background: 'var(--color-gray-50)', borderRadius: '6px' }}>
@@ -496,16 +474,6 @@ function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCa
           <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: '12px' }}>▶</span>
           Computed Catalog Configuration
         </button>
-        {modelUrl?.trim() && (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ fontSize: '0.8em', padding: '4px 10px' }}
-            onClick={handleExport}
-          >
-            Export to Catalog Editor
-          </button>
-        )}
       </div>
       {open && (
         <pre id="computed-catalog-config" style={{
