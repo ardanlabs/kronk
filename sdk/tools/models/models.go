@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
@@ -65,7 +66,7 @@ func (m *Models) BasePath() string {
 // BuildIndex builds the model index for fast model access. When checkSHA is
 // true, all models are fully validated with SHA256 checks. When false,
 // previously validated models are trusted (used at KMS startup for speed).
-func (m *Models) BuildIndex(log Logger, checkSHA bool) error {
+func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 	currentIndex := m.loadIndex()
 
 	m.biMutex.Lock()

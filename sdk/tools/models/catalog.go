@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
@@ -397,7 +398,7 @@ func (r *Resolver) buildEntry(provider, family, revision string, files []string,
 // class and capability flags without waiting for the next reconcile.
 // Best-effort: when GGUFHead can't source the bytes the entry is left
 // untouched.
-func (r *Resolver) enrichCatalogEntry(ctx context.Context, canonical string, log Logger) error {
+func (r *Resolver) enrichCatalogEntry(ctx context.Context, canonical string, log applog.Logger) error {
 	if r.models == nil {
 		return nil
 	}

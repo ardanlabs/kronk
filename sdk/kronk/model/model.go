@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/jinja"
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -87,7 +88,7 @@ type draftModel struct {
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
 	cfg               Config
-	log               Logger
+	log               applog.Logger
 	model             llama.Model
 	vocab             llama.Vocab
 	ctxParams         llama.ContextParams
@@ -445,7 +446,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 // loadDraftModel loads the draft model for speculative decoding. It creates
 // a separate model, context, and greedy sampler. The draft model uses the
 // same context window as the target to support long prompts.
-func loadDraftModel(ctx context.Context, log Logger, cfg Config, targetModel llama.Model, targetCtxParams llama.ContextParams) (*draftModel, error) {
+func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetModel llama.Model, targetCtxParams llama.ContextParams) (*draftModel, error) {
 	dCfg := cfg.DraftModel
 
 	// Load draft model.
@@ -587,7 +588,7 @@ func buildDraftSampler(params Params) llama.Sampler {
 	return chain
 }
 
-func loadModelFromFiles(ctx context.Context, log Logger, modelFiles []string, params llama.ModelParams) (llama.Model, error) {
+func loadModelFromFiles(ctx context.Context, log applog.Logger, modelFiles []string, params llama.ModelParams) (llama.Model, error) {
 	baseModelFile := path.Base(modelFiles[0])
 
 	log(ctx, "loading model from file", "status", "started", "model", baseModelFile)

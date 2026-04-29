@@ -62,7 +62,6 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -74,7 +73,7 @@ var (
 	benchDenseModelPath  models.Path
 	benchMoEModelPath    models.Path
 	benchHybridModelPath models.Path
-	benchLog             model.Logger
+	benchLog             kronk.Logger
 	benchLogFile         *os.File
 )
 

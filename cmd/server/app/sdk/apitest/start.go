@@ -35,7 +35,7 @@ func New(t *testing.T, testName string) *Test {
 
 	// -------------------------------------------------------------------------
 
-	traceProvider, teardown, err := otel.InitTracing(log, otel.Config{
+	traceProvider, teardown, err := otel.InitTracing(log.Info, otel.Config{
 		ServiceName: "kronk",
 		Host:        "",
 		ExcludedRoutes: map[string]struct{}{

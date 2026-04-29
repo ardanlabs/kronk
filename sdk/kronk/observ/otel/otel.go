@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -37,7 +37,7 @@ type Config struct {
 // with a noop tracer provider and if a host is configured, launches a background
 // goroutine that checks every 60 seconds for collector availability. When the
 // collector becomes reachable, it swaps in a real tracer provider.
-func InitTracing(log *logger.Logger, cfg Config) (trace.TracerProvider, func(ctx context.Context), error) {
+func InitTracing(log applog.Logger, cfg Config) (trace.TracerProvider, func(ctx context.Context), error) {
 
 	// Always start with a noop provider so the service can run without
 	// a collector being available.
@@ -50,12 +50,12 @@ func InitTracing(log *logger.Logger, cfg Config) (trace.TracerProvider, func(ctx
 
 	// If no host is configured, return noop with no background work.
 	if cfg.Host == "" {
-		log.Info(context.Background(), "OTEL", "tracer", "NOOP", "status", "no host configured")
+		log(context.Background(), "OTEL", "tracer", "NOOP", "status", "no host configured")
 
 		return otel.GetTracerProvider(), func(ctx context.Context) {}, nil
 	}
 
-	log.Info(context.Background(), "OTEL", "tracer", "NOOP", "status", "starting background collector probe", "host", cfg.Host)
+	log(context.Background(), "OTEL", "tracer", "NOOP", "status", "starting background collector probe", "host", cfg.Host)
 
 	bgCtx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -75,7 +75,7 @@ func InitTracing(log *logger.Logger, cfg Config) (trace.TracerProvider, func(ctx
 
 		tp, err := buildRealProvider(bgCtx, cfg)
 		if err != nil {
-			log.Info(context.Background(), "OTEL", "status", "collector reachable but init failed", "error", err)
+			log(context.Background(), "OTEL", "status", "collector reachable but init failed", "error", err)
 			return false
 		}
 
@@ -85,7 +85,7 @@ func InitTracing(log *logger.Logger, cfg Config) (trace.TracerProvider, func(ctx
 
 		otel.SetTracerProvider(tp)
 
-		log.Info(context.Background(), "OTEL", "tracer", cfg.Host, "status", "connected")
+		log(context.Background(), "OTEL", "tracer", cfg.Host, "status", "connected")
 
 		return true
 	}

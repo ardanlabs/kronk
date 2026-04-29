@@ -33,7 +33,7 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 // InsecureLogging: When true, logs potentially sensitive data such as message
 // content and detailed model configuration.
 type Config struct {
-	Log             model.Logger
+	Log             kronk.Logger
 	BasePath        string
 	ModelConfigFile string
 	ModelsInCache   int
@@ -58,7 +58,7 @@ func validateConfig(cfg Config) (Config, error) {
 // Cache manages a set of Kronk APIs for use. It maintains a cache of these
 // APIs and will unload over time if not in use.
 type Cache struct {
-	log              model.Logger
+	log              kronk.Logger
 	modelConfig      map[string]models.ModelConfig
 	cache            *otter.Cache[string, *kronk.Kronk]
 	itemsInCache     atomic.Int32

@@ -140,7 +140,7 @@ export default function DocsSDKModel() {
 	PtrIncrementalCache  *bool
 	PtrInsecureLogging   *bool
 	JinjaFile            string
-	Log                  Logger
+	Log                  applog.Logger
 	PtrMainGPU           *int
 	MoE                  *MoEConfig
 	ModelFiles           []string
@@ -267,7 +267,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-logger">
               <h4>Logger</h4>
               <pre className="code-block">
-                <code>{`type Logger func(ctx context.Context, msg string, args ...any)`}</code>
+                <code>{`type Logger = applog.Logger`}</code>
               </pre>
               <p className="doc-description">Logger provides a function for logging messages from different APIs.</p>
             </div>

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
@@ -89,7 +90,7 @@ func (m *Models) CatalogEntry(canonicalID string) (CatalogEntry, bool, error) {
 // Enrichment is best-effort throughout — when GGUFHead can't source the
 // bytes (offline + nothing cached + nothing downloaded) the entry is
 // left untouched and tried again next reconcile.
-func (m *Models) ReconcileCatalog(ctx context.Context, log Logger) error {
+func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error {
 	rfile, err := defaults.CatalogFile("", m.basePath)
 	if err != nil {
 		return fmt.Errorf("reconcile-catalog: file: %w", err)
@@ -177,7 +178,7 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log Logger) error {
 // Range lookup. Returns the (possibly modified) entry and a boolean that
 // is true when the entry actually changed. Failures are logged and treated
 // as a no-op so an offline reconcile leaves entries untouched.
-func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log Logger) (CatalogEntry, bool) {
+func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log applog.Logger) (CatalogEntry, bool) {
 	data, err := m.GGUFHead(ctx, entry)
 	if err != nil {
 		log(ctx, "enrich-entry: gguf-head", "provider", entry.Provider, "family", entry.Family, "ERROR", err)
@@ -208,7 +209,7 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log Logger
 // removal contract: removing a model from the model list alone (via
 // Models.Remove) does NOT touch the catalog. Removing from the catalog
 // here removes both.
-func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log Logger) error {
+func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log applog.Logger) error {
 	rfile, err := defaults.CatalogFile("", m.basePath)
 	if err != nil {
 		return fmt.Errorf("remove-catalog-entry: file: %w", err)
