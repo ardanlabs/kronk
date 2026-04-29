@@ -885,9 +885,12 @@ func resolveKVLengths(metadata map[string]string, arch string) (keyLen int64, va
 }
 
 // parseMetadataInt64OrArrayAvg parses a metadata value that may be either a
-// single integer (e.g. "8") or a per-layer array (e.g. "[0 0 8 0 0 8 ...]").
-// For arrays, the average of all elements is returned. This handles hybrid
-// architectures like LFM2 where head_count_kv varies per layer.
+// single integer (e.g. "8") or a per-layer array. Arrays produced by our own
+// GGUF parser are space-separated ("[0 0 8 ...]") while arrays surfaced by
+// llama.cpp's gguf_kv_to_str are comma-separated ("[0, 0, 8, ...]"); both are
+// accepted. For arrays, the average of all elements is returned. This handles
+// hybrid architectures like LFM2 and MoE Gemma where head_count_kv varies per
+// layer.
 func parseMetadataInt64OrArrayAvg(metadata map[string]string, key string) (int64, error) {
 	val, ok := metadata[key]
 	if !ok {
@@ -908,18 +911,31 @@ func parseMetadataInt64OrArrayAvg(metadata map[string]string, key string) (int64
 		return 0, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
 	}
 
-	fields := strings.Fields(inner)
+	splitFn := func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	}
+	fields := strings.FieldsFunc(inner, splitFn)
 
 	var sum int64
+	var count int64
 	for _, f := range fields {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
 		n, err := strconv.ParseInt(f, 10, 64)
 		if err != nil {
 			return 0, fmt.Errorf("parse-metadata-int64: unable to parse array element %q for key %q: %w", f, key, err)
 		}
 		sum += n
+		count++
 	}
 
-	return sum / int64(len(fields)), nil
+	if count == 0 {
+		return 0, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
+	}
+
+	return sum / count, nil
 }
 
 func ggmlTypeToBytes(typeK, typeV GGMLType) int64 {

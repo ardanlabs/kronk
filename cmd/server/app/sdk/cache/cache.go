@@ -24,18 +24,11 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 
 // Config represents setting for the kronk manager.
 //
-// MaxInCache: Defines the maximum number of unique models will be available at a
-// time. Defaults to 3 if the value is 0.
-//
-// ModelInstances: Defines how many instances of the same model should be
-// loaded. Defaults to 1 if the value is 0.
-//
-// ContextWindow: Sets the global context window for all models. Defaults to
-// what is in the model metadata if set to 0. If no metadata is found, 4096
-// is the default.
+// ModelsInCache: Defines the maximum number of unique models that will be
+// available at a time. Defaults to 2 if the value is 0.
 //
 // CacheTTL: Defines the time an existing model can live in the cache without
-// being used.
+// being used. Defaults to 5 minutes if the value is 0.
 //
 // InsecureLogging: When true, logs potentially sensitive data such as message
 // content and detailed model configuration.
@@ -167,15 +160,17 @@ ids:
 		cacheID, _, _ := strings.Cut(model.Key, "/")
 		for _, mi := range list {
 			if mi.ID == cacheID {
+				krn := model.Value
 				ps = append(ps, ModelDetail{
 					ID:            model.Key,
 					OwnedBy:       mi.OwnedBy,
 					ModelFamily:   mi.ModelFamily,
 					Size:          mi.Size,
-					VRAMTotal:     model.Value.ModelInfo().VRAMTotal,
-					SlotMemory:    model.Value.ModelInfo().SlotMemory,
+					VRAMTotal:     krn.ModelInfo().VRAMTotal,
+					KVCache:       krn.ModelInfo().SlotMemory,
+					Slots:         max(krn.ModelConfig().NSeqMax(), 1),
 					ExpiresAt:     model.ExpiresAt(),
-					ActiveStreams: model.Value.ActiveStreams(),
+					ActiveStreams: krn.ActiveStreams(),
 				})
 				continue ids
 			}
@@ -188,10 +183,21 @@ ids:
 // AquireModel will provide a kronk API for the specified model. If the model
 // is not in the cache, an API for the model will be created.
 func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, error) {
-	krn, exists := c.cache.GetIfPresent(modelID)
-	if exists {
-		return krn, nil
+	if entry, exists := c.cache.GetEntry(modelID); exists {
+		c.log(ctx, "acquire-model",
+			"status", "cache-hit",
+			"key", modelID,
+			"ttl-reset", true,
+			"expires-at", entry.ExpiresAt(),
+			"active-streams", entry.Value.ActiveStreams(),
+		)
+		return entry.Value, nil
 	}
+
+	c.log(ctx, "acquire-model",
+		"status", "cache-miss",
+		"key", modelID,
+	)
 
 	if c.allSlotsActive() {
 		return nil, ErrServerBusy
@@ -217,6 +223,12 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 		cfg.Log = c.log
 
+		// Free a slot up-front (if needed) so the new model is not loaded
+		// while an old one is still resident in memory.
+		if err := c.evictForCapacity(ctx, modelID); err != nil {
+			return nil, fmt.Errorf("acquire-model: %w", err)
+		}
+
 		krn, err := kronk.NewWithContext(ctx,
 			model.WithConfig(cfg),
 		)
@@ -227,6 +239,15 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 
 		c.cache.Set(modelID, krn)
 		c.itemsInCache.Add(1)
+
+		if entry, ok := c.cache.GetEntryQuietly(modelID); ok {
+			c.log(ctx, "acquire-model",
+				"status", "cache-set",
+				"key", modelID,
+				"expires-at", entry.ExpiresAt(),
+				"ttl", entry.ExpiresAfter(),
+			)
+		}
 
 		totalEntries := len(krn.SystemInfo())*2 + (5 * 2)
 		info := make([]any, 0, totalEntries)
@@ -265,10 +286,21 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 // <modelID>/playground/<session_id> so that ModelStatus() can still match
 // playground sessions to locally installed models.
 func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
-	krn, exists := c.cache.GetIfPresent(key)
-	if exists {
-		return krn, nil
+	if entry, exists := c.cache.GetEntry(key); exists {
+		c.log(ctx, "acquire-custom",
+			"status", "cache-hit",
+			"key", key,
+			"ttl-reset", true,
+			"expires-at", entry.ExpiresAt(),
+			"active-streams", entry.Value.ActiveStreams(),
+		)
+		return entry.Value, nil
 	}
+
+	c.log(ctx, "acquire-custom",
+		"status", "cache-miss",
+		"key", key,
+	)
 
 	if c.allSlotsActive() {
 		return nil, ErrServerBusy
@@ -285,6 +317,12 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) 
 
 		cfg.Log = c.log
 
+		// Free a slot up-front (if needed) so the new model is not loaded
+		// while an old one is still resident in memory.
+		if err := c.evictForCapacity(ctx, key); err != nil {
+			return nil, fmt.Errorf("acquire-custom: %w", err)
+		}
+
 		krn, err := kronk.NewWithContext(ctx,
 			model.WithConfig(cfg),
 		)
@@ -295,6 +333,15 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) 
 
 		c.cache.Set(key, krn)
 		c.itemsInCache.Add(1)
+
+		if entry, ok := c.cache.GetEntryQuietly(key); ok {
+			c.log(ctx, "acquire-custom",
+				"status", "cache-set",
+				"key", key,
+				"expires-at", entry.ExpiresAt(),
+				"ttl", entry.ExpiresAfter(),
+			)
+		}
 
 		c.log(ctx, "acquire-custom", "status", "load new model", "key", key, "contextWindow", krn.ModelConfig().ContextWindow())
 
@@ -327,6 +374,68 @@ func (c *Cache) Invalidate(key string) {
 	c.cache.Invalidate(key)
 }
 
+// evictForCapacity makes room for a new model by evicting an idle model from
+// the cache before the new one is loaded. This avoids a temporary peak where
+// both models are resident in memory at the same time. It blocks until the
+// victim's unload has completed.
+//
+// The newKey parameter is the key being loaded; it is excluded from victim
+// selection (it shouldn't normally be in the cache, but this is defensive).
+func (c *Cache) evictForCapacity(ctx context.Context, newKey string) error {
+	const pollInterval = 25 * time.Millisecond
+	const maxWait = 60 * time.Second
+
+	if int(c.itemsInCache.Load()) < c.maxModelsInCache {
+		return nil
+	}
+
+	// Pick the coldest entry that has no active streams as the victim.
+	var victim string
+	for entry := range c.cache.Coldest() {
+		if entry.Key == newKey {
+			continue
+		}
+		if entry.Value.ActiveStreams() == 0 {
+			victim = entry.Key
+			break
+		}
+	}
+
+	if victim == "" {
+		return ErrServerBusy
+	}
+
+	c.log(ctx, "acquire-model",
+		"status", "evict-before-load",
+		"victim", victim,
+		"items-in-cache", c.itemsInCache.Load(),
+		"max-models-in-cache", c.maxModelsInCache,
+	)
+
+	c.cache.Invalidate(victim)
+
+	deadline := time.Now().Add(maxWait)
+	for int(c.itemsInCache.Load()) >= c.maxModelsInCache {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("evict-for-capacity: timeout waiting for victim[%s] to unload", victim)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
+
+	c.log(ctx, "acquire-model",
+		"status", "evict-before-load-complete",
+		"victim", victim,
+		"items-in-cache", c.itemsInCache.Load(),
+	)
+
+	return nil
+}
+
 // allSlotsActive returns true if all model slots are occupied and every
 // cached model has at least one active stream.
 func (c *Cache) allSlotsActive() bool {
@@ -346,7 +455,7 @@ func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 	ctx, cancel := context.WithTimeout(context.Background(), unloadTimeout)
 	defer cancel()
 
-	c.log(ctx, "kronk cache eviction", "key", event.Key, "cause", event.Cause, "was-evicted", event.WasEvicted(), "active-streams", event.Value.ActiveStreams())
+	c.log(ctx, "kronk cache eviction", "key", event.Key, "cause", event.Cause.String(), "cause-code", int(event.Cause), "was-evicted", event.WasEvicted(), "active-streams", event.Value.ActiveStreams())
 
 	// If there are active streams and this was an automatic eviction (not a replacement
 	// from our own Set call below), re-insert the model to prevent eviction.

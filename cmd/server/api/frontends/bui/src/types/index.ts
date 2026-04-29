@@ -46,7 +46,8 @@ export interface ModelDetail {
   model_family: string;
   size: number;
   vram_total: number;
-  slot_memory: number;
+  kv_cache: number;
+  slots: number;
   expires_at: string;
   active_streams: number;
 }

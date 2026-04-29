@@ -67,7 +67,8 @@ export default function ModelPs() {
                     <th>Family</th>
                     <th style={{ textAlign: 'right' }}>Size</th>
                     <th style={{ textAlign: 'right' }}>VRAM Total</th>
-                    <th style={{ textAlign: 'right' }}>Slot Memory</th>
+                    <th style={{ textAlign: 'right' }}>KV Cache</th>
+                    <th style={{ textAlign: 'right' }}>Slots</th>
                     <th>Expires At</th>
                     <th>Active Streams</th>
                     <th></th>
@@ -81,7 +82,8 @@ export default function ModelPs() {
                       <td>{model.model_family}</td>
                       <td style={{ textAlign: 'right' }}>{formatBytes(model.size)}</td>
                       <td style={{ textAlign: 'right' }}>{formatBytes(model.vram_total)}</td>
-                      <td style={{ textAlign: 'right' }}>{formatBytes(model.slot_memory)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatBytes(model.kv_cache)}</td>
+                      <td style={{ textAlign: 'right' }}>{model.slots}</td>
                       <td>{formatDate(model.expires_at)}</td>
                       <td>{model.active_streams}</td>
                       <td>
@@ -102,7 +104,8 @@ export default function ModelPs() {
                     <tr>
                       <td colSpan={4} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total:</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.vram_total, 0))}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.slot_memory, 0))}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.kv_cache, 0))}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{data.reduce((sum, m) => sum + m.slots, 0)}</td>
                       <td colSpan={3}></td>
                     </tr>
                   </tfoot>

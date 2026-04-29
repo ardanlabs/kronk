@@ -9,7 +9,8 @@ type ModelDetail struct {
 	ModelFamily   string
 	Size          int64
 	VRAMTotal     int64
-	SlotMemory    int64
+	KVCache       int64
+	Slots         int
 	ExpiresAt     time.Time
 	ActiveStreams int
 }

@@ -42,8 +42,7 @@ func init() {
 	Cmd.Flags().String("model-config-file", "", "Special config file for model specific config")
 
 	// Cache settings
-	Cmd.Flags().Int("model-instances", 0, "Maximum model instances")
-	Cmd.Flags().Int("models-in-cache", 0, "Maximum models in cache")
+	Cmd.Flags().Int("models-in-cache", 0, "Maximum models in cache (default: 2)")
 	Cmd.Flags().String("cache-ttl", "", "Cache TTL duration (e.g., 5m, 1h)")
 
 	// Runtime settings
