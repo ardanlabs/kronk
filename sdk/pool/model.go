@@ -1,8 +1,8 @@
-package cache
+package pool
 
 import "time"
 
-// ModelDetail provides details for the models in the cache.
+// ModelDetail provides details for the models in the pool.
 type ModelDetail struct {
 	ID            string
 	OwnedBy       string

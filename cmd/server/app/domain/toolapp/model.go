@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -370,7 +370,7 @@ func (app ModelDetailsResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
+func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 	details := make(ModelDetailsResponse, len(models))
 
 	for i, model := range models {

@@ -1,7 +1,7 @@
-// Package cache manages a cache of kronk APIs for specific models. Used by
+// Package pool manages a pool of kronk APIs for specific models. Used by
 // the model server to manage the number of models that are maintained in
 // memory at any given time.
-package cache
+package pool
 
 import (
 	"context"
@@ -27,7 +27,7 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 // ModelsInCache: Defines the maximum number of unique models that will be
 // available at a time. Defaults to 2 if the value is 0.
 //
-// CacheTTL: Defines the time an existing model can live in the cache without
+// CacheTTL: Defines the time an existing model can live in the pool without
 // being used. Defaults to 5 minutes if the value is 0.
 //
 // InsecureLogging: When true, logs potentially sensitive data such as message
@@ -55,9 +55,9 @@ func validateConfig(cfg Config) (Config, error) {
 
 // =============================================================================
 
-// Cache manages a set of Kronk APIs for use. It maintains a cache of these
+// Pool manages a set of Kronk APIs for use. It maintains a pool of these
 // APIs and will unload over time if not in use.
-type Cache struct {
+type Pool struct {
 	log              kronk.Logger
 	modelConfig      map[string]models.ModelConfig
 	cache            *otter.Cache[string, *kronk.Kronk]
@@ -69,7 +69,7 @@ type Cache struct {
 }
 
 // New constructs the manager for use.
-func New(cfg Config) (*Cache, error) {
+func New(cfg Config) (*Pool, error) {
 	cfg, err := validateConfig(cfg)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func New(cfg Config) (*Cache, error) {
 		mc = map[string]models.ModelConfig{}
 	}
 
-	c := Cache{
+	p := Pool{
 		log:              cfg.Log,
 		modelConfig:      mc,
 		maxModelsInCache: cfg.ModelsInCache,
@@ -102,7 +102,7 @@ func New(cfg Config) (*Cache, error) {
 	opt := otter.Options[string, *kronk.Kronk]{
 		MaximumSize:      cfg.ModelsInCache,
 		ExpiryCalculator: otter.ExpiryAccessing[string, *kronk.Kronk](cfg.CacheTTL),
-		OnDeletion:       c.eviction,
+		OnDeletion:       p.eviction,
 	}
 
 	cache, err := otter.New(&opt)
@@ -110,22 +110,22 @@ func New(cfg Config) (*Cache, error) {
 		return nil, fmt.Errorf("new: constructing cache: %w", err)
 	}
 
-	c.cache = cache
+	p.cache = cache
 
-	return &c, nil
+	return &p, nil
 }
 
-// Shutdown releases all apis from the cache and performs a proper unloading.
-func (c *Cache) Shutdown(ctx context.Context) error {
+// Shutdown releases all apis from the pool and performs a proper unloading.
+func (p *Pool) Shutdown(ctx context.Context) error {
 	if _, exists := ctx.Deadline(); !exists {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
 	}
 
-	c.cache.InvalidateAll()
+	p.cache.InvalidateAll()
 
-	for c.itemsInCache.Load() > 0 {
+	for p.itemsInCache.Load() > 0 {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -137,22 +137,22 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// ModelStatus returns information about the current models in the cache.
-func (c *Cache) ModelStatus() ([]ModelDetail, error) {
+// ModelStatus returns information about the current models in the pool.
+func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 
-	// Extract the entries currently in the cache.
+	// Extract the entries currently in the pool.
 	var entries []otter.Entry[string, *kronk.Kronk]
-	for entry := range c.cache.Coldest() {
+	for entry := range p.cache.Coldest() {
 		entries = append(entries, entry)
 	}
 
 	// Retrieve the models installed locally.
-	list, err := c.models.Files()
+	list, err := p.models.Files()
 	if err != nil {
 		return nil, err
 	}
 
-	// Match the model in the cache with a locally stored model
+	// Match the model in the pool with a locally stored model
 	// so we can get information about that model.
 	ps := make([]ModelDetail, 0, len(entries))
 ids:
@@ -181,10 +181,10 @@ ids:
 }
 
 // AquireModel will provide a kronk API for the specified model. If the model
-// is not in the cache, an API for the model will be created.
-func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, error) {
-	if entry, exists := c.cache.GetEntry(modelID); exists {
-		c.log(ctx, "acquire-model",
+// is not in the pool, an API for the model will be created.
+func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, error) {
+	if entry, exists := p.cache.GetEntry(modelID); exists {
+		p.log(ctx, "acquire-model",
 			"status", "cache-hit",
 			"key", modelID,
 			"ttl-reset", true,
@@ -194,38 +194,38 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		return entry.Value, nil
 	}
 
-	c.log(ctx, "acquire-model",
+	p.log(ctx, "acquire-model",
 		"status", "cache-miss",
 		"key", modelID,
 	)
 
-	if c.allSlotsActive() {
+	if p.allSlotsActive() {
 		return nil, ErrServerBusy
 	}
 
 	// Use singleflight to prevent concurrent loads of the same model.
 	// This ensures only one goroutine loads a model while others wait.
-	result, err, _ := c.loadGroup.Do(modelID, func() (any, error) {
+	result, err, _ := p.loadGroup.Do(modelID, func() (any, error) {
 
-		// Double-check cache after acquiring the singleflight lock.
-		if krn, exists := c.cache.GetIfPresent(modelID); exists {
+		// Double-check pool after acquiring the singleflight lock.
+		if krn, exists := p.cache.GetIfPresent(modelID); exists {
 			return krn, nil
 		}
 
-		cfg, err := c.models.KronkResolvedConfig(modelID, c.modelConfig)
+		cfg, err := p.models.KronkResolvedConfig(modelID, p.modelConfig)
 		if err != nil {
 			return nil, fmt.Errorf("acquire-model: unable to retrieve model config: %w", err)
 		}
 
-		if c.insecureLogging {
+		if p.insecureLogging {
 			cfg.PtrInsecureLogging = new(true)
 		}
 
-		cfg.Log = c.log
+		cfg.Log = p.log
 
 		// Free a slot up-front (if needed) so the new model is not loaded
 		// while an old one is still resident in memory.
-		if err := c.evictForCapacity(ctx, modelID); err != nil {
+		if err := p.evictForCapacity(ctx, modelID); err != nil {
 			return nil, fmt.Errorf("acquire-model: %w", err)
 		}
 
@@ -237,11 +237,11 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 			return nil, fmt.Errorf("acquire-model: unable to create inference model: %w", err)
 		}
 
-		c.cache.Set(modelID, krn)
-		c.itemsInCache.Add(1)
+		p.cache.Set(modelID, krn)
+		p.itemsInCache.Add(1)
 
-		if entry, ok := c.cache.GetEntryQuietly(modelID); ok {
-			c.log(ctx, "acquire-model",
+		if entry, ok := p.cache.GetEntryQuietly(modelID); ok {
+			p.log(ctx, "acquire-model",
 				"status", "cache-set",
 				"key", modelID,
 				"expires-at", entry.ExpiresAt(),
@@ -269,7 +269,7 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 		info = append(info, "isRerankModel")
 		info = append(info, krn.ModelInfo().IsRerankModel)
 
-		c.log(ctx, "acquire-model", info...)
+		p.log(ctx, "acquire-model", info...)
 
 		return krn, nil
 	})
@@ -285,9 +285,9 @@ func (c *Cache) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, 
 // This bypasses the normal catalog resolution path. The key should use format
 // <modelID>/playground/<session_id> so that ModelStatus() can still match
 // playground sessions to locally installed models.
-func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
-	if entry, exists := c.cache.GetEntry(key); exists {
-		c.log(ctx, "acquire-custom",
+func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
+	if entry, exists := p.cache.GetEntry(key); exists {
+		p.log(ctx, "acquire-custom",
 			"status", "cache-hit",
 			"key", key,
 			"ttl-reset", true,
@@ -297,29 +297,29 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) 
 		return entry.Value, nil
 	}
 
-	c.log(ctx, "acquire-custom",
+	p.log(ctx, "acquire-custom",
 		"status", "cache-miss",
 		"key", key,
 	)
 
-	if c.allSlotsActive() {
+	if p.allSlotsActive() {
 		return nil, ErrServerBusy
 	}
 
-	result, err, _ := c.loadGroup.Do(key, func() (any, error) {
-		if krn, exists := c.cache.GetIfPresent(key); exists {
+	result, err, _ := p.loadGroup.Do(key, func() (any, error) {
+		if krn, exists := p.cache.GetIfPresent(key); exists {
 			return krn, nil
 		}
 
-		if c.insecureLogging {
+		if p.insecureLogging {
 			cfg.PtrInsecureLogging = new(true)
 		}
 
-		cfg.Log = c.log
+		cfg.Log = p.log
 
 		// Free a slot up-front (if needed) so the new model is not loaded
 		// while an old one is still resident in memory.
-		if err := c.evictForCapacity(ctx, key); err != nil {
+		if err := p.evictForCapacity(ctx, key); err != nil {
 			return nil, fmt.Errorf("acquire-custom: %w", err)
 		}
 
@@ -331,11 +331,11 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) 
 			return nil, fmt.Errorf("acquire-custom: unable to create inference model: %w", err)
 		}
 
-		c.cache.Set(key, krn)
-		c.itemsInCache.Add(1)
+		p.cache.Set(key, krn)
+		p.itemsInCache.Add(1)
 
-		if entry, ok := c.cache.GetEntryQuietly(key); ok {
-			c.log(ctx, "acquire-custom",
+		if entry, ok := p.cache.GetEntryQuietly(key); ok {
+			p.log(ctx, "acquire-custom",
 				"status", "cache-set",
 				"key", key,
 				"expires-at", entry.ExpiresAt(),
@@ -343,7 +343,7 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) 
 			)
 		}
 
-		c.log(ctx, "acquire-custom", "status", "load new model", "key", key, "contextWindow", krn.ModelConfig().ContextWindow())
+		p.log(ctx, "acquire-custom", "status", "load new model", "key", key, "contextWindow", krn.ModelConfig().ContextWindow())
 
 		return krn, nil
 	})
@@ -356,42 +356,42 @@ func (c *Cache) AquireCustom(ctx context.Context, key string, cfg model.Config) 
 }
 
 // ModelConfig returns the loaded per-model configuration overrides.
-func (c *Cache) ModelConfig() map[string]models.ModelConfig {
-	return c.modelConfig
+func (p *Pool) ModelConfig() map[string]models.ModelConfig {
+	return p.modelConfig
 }
 
-// GetExisting returns a cached model if it exists, without creating one.
-func (c *Cache) GetExisting(key string) (*kronk.Kronk, bool) {
-	krn, exists := c.cache.GetIfPresent(key)
+// GetExisting returns a pooled model if it exists, without creating one.
+func (p *Pool) GetExisting(key string) (*kronk.Kronk, bool) {
+	krn, exists := p.cache.GetIfPresent(key)
 	if !exists {
 		return nil, false
 	}
 	return krn, true
 }
 
-// Invalidate removes a single entry from the cache, triggering unload.
-func (c *Cache) Invalidate(key string) {
-	c.cache.Invalidate(key)
+// Invalidate removes a single entry from the pool, triggering unload.
+func (p *Pool) Invalidate(key string) {
+	p.cache.Invalidate(key)
 }
 
 // evictForCapacity makes room for a new model by evicting an idle model from
-// the cache before the new one is loaded. This avoids a temporary peak where
+// the pool before the new one is loaded. This avoids a temporary peak where
 // both models are resident in memory at the same time. It blocks until the
 // victim's unload has completed.
 //
 // The newKey parameter is the key being loaded; it is excluded from victim
-// selection (it shouldn't normally be in the cache, but this is defensive).
-func (c *Cache) evictForCapacity(ctx context.Context, newKey string) error {
+// selection (it shouldn't normally be in the pool, but this is defensive).
+func (p *Pool) evictForCapacity(ctx context.Context, newKey string) error {
 	const pollInterval = 25 * time.Millisecond
 	const maxWait = 60 * time.Second
 
-	if int(c.itemsInCache.Load()) < c.maxModelsInCache {
+	if int(p.itemsInCache.Load()) < p.maxModelsInCache {
 		return nil
 	}
 
 	// Pick the coldest entry that has no active streams as the victim.
 	var victim string
-	for entry := range c.cache.Coldest() {
+	for entry := range p.cache.Coldest() {
 		if entry.Key == newKey {
 			continue
 		}
@@ -405,17 +405,17 @@ func (c *Cache) evictForCapacity(ctx context.Context, newKey string) error {
 		return ErrServerBusy
 	}
 
-	c.log(ctx, "acquire-model",
+	p.log(ctx, "acquire-model",
 		"status", "evict-before-load",
 		"victim", victim,
-		"items-in-cache", c.itemsInCache.Load(),
-		"max-models-in-cache", c.maxModelsInCache,
+		"items-in-cache", p.itemsInCache.Load(),
+		"max-models-in-cache", p.maxModelsInCache,
 	)
 
-	c.cache.Invalidate(victim)
+	p.cache.Invalidate(victim)
 
 	deadline := time.Now().Add(maxWait)
-	for int(c.itemsInCache.Load()) >= c.maxModelsInCache {
+	for int(p.itemsInCache.Load()) >= p.maxModelsInCache {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("evict-for-capacity: timeout waiting for victim[%s] to unload", victim)
 		}
@@ -427,62 +427,62 @@ func (c *Cache) evictForCapacity(ctx context.Context, newKey string) error {
 		}
 	}
 
-	c.log(ctx, "acquire-model",
+	p.log(ctx, "acquire-model",
 		"status", "evict-before-load-complete",
 		"victim", victim,
-		"items-in-cache", c.itemsInCache.Load(),
+		"items-in-cache", p.itemsInCache.Load(),
 	)
 
 	return nil
 }
 
 // allSlotsActive returns true if all model slots are occupied and every
-// cached model has at least one active stream.
-func (c *Cache) allSlotsActive() bool {
+// pooled model has at least one active stream.
+func (p *Pool) allSlotsActive() bool {
 	count := 0
-	for entry := range c.cache.Hottest() {
+	for entry := range p.cache.Hottest() {
 		count++
 		if entry.Value.ActiveStreams() == 0 {
 			return false
 		}
 	}
 
-	return count >= c.maxModelsInCache
+	return count >= p.maxModelsInCache
 }
 
-func (c *Cache) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
+func (p *Pool) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 	const unloadTimeout = 5 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), unloadTimeout)
 	defer cancel()
 
-	c.log(ctx, "kronk cache eviction", "key", event.Key, "cause", event.Cause.String(), "cause-code", int(event.Cause), "was-evicted", event.WasEvicted(), "active-streams", event.Value.ActiveStreams())
+	p.log(ctx, "kronk pool eviction", "key", event.Key, "cause", event.Cause.String(), "cause-code", int(event.Cause), "was-evicted", event.WasEvicted(), "active-streams", event.Value.ActiveStreams())
 
 	// If there are active streams and this was an automatic eviction (not a replacement
 	// from our own Set call below), re-insert the model to prevent eviction.
 	// WasEvicted() returns false for CauseReplacement and CauseInvalidation.
 	if event.Value.ActiveStreams() > 0 && event.WasEvicted() {
-		c.log(ctx, "kronk cache eviction prevented", "key", event.Key, "active-streams", event.Value.ActiveStreams())
-		c.cache.Set(event.Key, event.Value)
+		p.log(ctx, "kronk pool eviction prevented", "key", event.Key, "active-streams", event.Value.ActiveStreams())
+		p.cache.Set(event.Key, event.Value)
 		return
 	}
 
 	// If this is a replacement event (from our Set above) and there are still active
-	// streams, just return without unloading - the model is still in the cache.
-	// For invalidation (shutdown), we still need to unload since the cache is being cleared.
+	// streams, just return without unloading - the model is still in the pool.
+	// For invalidation (shutdown), we still need to unload since the pool is being cleared.
 	if event.Value.ActiveStreams() > 0 && event.Cause != otter.CauseInvalidation {
-		c.log(ctx, "kronk cache eviction skipped (replacement with active streams)", "key", event.Key, "active-streams", event.Value.ActiveStreams())
+		p.log(ctx, "kronk pool eviction skipped (replacement with active streams)", "key", event.Key, "active-streams", event.Value.ActiveStreams())
 		return
 	}
 
-	c.log(ctx, "kronk cache eviction", "key", event.Key, "status", "unload-started", "active-streams", event.Value.ActiveStreams())
+	p.log(ctx, "kronk pool eviction", "key", event.Key, "status", "unload-started", "active-streams", event.Value.ActiveStreams())
 
 	if err := event.Value.Unload(ctx); err != nil {
-		c.log(ctx, "kronk cache eviction", "key", event.Key, "ERROR", err)
+		p.log(ctx, "kronk pool eviction", "key", event.Key, "ERROR", err)
 	}
 
-	c.log(ctx, "kronk cache eviction", "key", event.Key, "status", "unload-finished")
+	p.log(ctx, "kronk pool eviction", "key", event.Key, "status", "unload-finished")
 
 	metrics.ClearVRAM(event.Key)
 
-	c.itemsInCache.Add(-1)
+	p.itemsInCache.Add(-1)
 }

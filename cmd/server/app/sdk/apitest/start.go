@@ -10,7 +10,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
@@ -18,6 +17,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -138,7 +138,7 @@ func New(t *testing.T, testName string) *Test {
 		t.Fatal(err)
 	}
 
-	cache, err := cache.New(cache.Config{
+	p, err := pool.New(pool.Config{
 		Log:             log.Info,
 		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
 		ModelsInCache:   1,
@@ -156,7 +156,7 @@ func New(t *testing.T, testName string) *Test {
 
 		ctx := context.Background()
 
-		if err := cache.Shutdown(ctx); err != nil {
+		if err := p.Shutdown(ctx); err != nil {
 			t.Fatal(err)
 		}
 
@@ -176,7 +176,7 @@ func New(t *testing.T, testName string) *Test {
 		Build:      "test",
 		Log:        log,
 		AuthClient: authClient,
-		Cache:      cache,
+		Pool:       p,
 		Libs:       libs,
 		Models:     models,
 	}

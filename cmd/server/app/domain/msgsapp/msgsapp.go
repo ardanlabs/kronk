@@ -8,23 +8,23 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/pool"
 )
 
 type app struct {
-	log   *logger.Logger
-	cache *cache.Cache
+	log  *logger.Logger
+	pool *pool.Pool
 }
 
 func newApp(cfg Config) *app {
 	return &app{
-		log:   cfg.Log,
-		cache: cfg.Cache,
+		log:  cfg.Log,
+		pool: cfg.Pool,
 	}
 }
 
@@ -42,7 +42,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "missing max_tokens field")
 	}
 
-	krn, err := a.cache.AquireModel(ctx, req.Model)
+	krn, err := a.pool.AquireModel(ctx, req.Model)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}

@@ -48,7 +48,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	// Add extension models from the model config that aren't already present.
 	// Extension models use "/" in their ID (e.g., "model/FMC") and inherit
 	// from a base model.
-	modelConfig := a.cache.ModelConfig()
+	modelConfig := a.pool.ModelConfig()
 	for modelID := range modelConfig {
 		if _, exists := existing[modelID]; exists {
 			continue
@@ -105,7 +105,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) resolvedModelConfig(modelID string) models.ModelConfig {
 	cfg := a.models.AnalysisDefaults(modelID)
 
-	if override, ok := a.cache.ModelConfig()[modelID]; ok {
+	if override, ok := a.pool.ModelConfig()[modelID]; ok {
 		models.MergeModelConfig(&cfg, override)
 	}
 
@@ -309,7 +309,7 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
-	models, err := a.cache.ModelStatus()
+	models, err := a.pool.ModelStatus()
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -327,7 +327,7 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	a.log.Info(ctx, "tool-unload", "modelID", req.ID)
 
-	krn, exists := a.cache.GetExisting(req.ID)
+	krn, exists := a.pool.GetExisting(req.ID)
 	if !exists {
 		return errs.Errorf(errs.NotFound, "model %q is not loaded", req.ID)
 	}
@@ -336,7 +336,7 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.FailedPrecondition, "model has %d active stream(s); cannot unload", n)
 	}
 
-	a.cache.Invalidate(req.ID)
+	a.pool.Invalidate(req.ID)
 
 	return UnloadResponse{Status: "unloaded", ID: req.ID}
 }

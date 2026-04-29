@@ -1,7 +1,3 @@
-## Lighting Talk: Kronk - Why You Should Care?
-
----
-
 ## Self-Hosted Inference in Go: No Python, No CGO, No Network Hop
 
 ### About this Session

@@ -20,7 +20,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
@@ -28,6 +27,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -319,7 +319,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}
 
-	cache, err := cache.New(cache.Config{
+	p, err := pool.New(pool.Config{
 		Log:             log.Info,
 		BasePath:        cfg.BasePath,
 		ModelConfigFile: modelConfigFile,
@@ -338,7 +338,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
 		defer cancel()
 
-		if err := cache.Shutdown(ctx); err != nil {
+		if err := p.Shutdown(ctx); err != nil {
 			log.Error(ctx, "kronk manager", "ERROR", err)
 		}
 	}()
@@ -390,7 +390,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Build:           tag,
 		Log:             log,
 		AuthClient:      authClient,
-		Cache:           cache,
+		Pool:            p,
 		Libs:            libs,
 		Models:          models,
 		DownloadEnabled: cfg.Download.Enabled,
