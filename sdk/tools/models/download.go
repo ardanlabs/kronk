@@ -19,6 +19,9 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 )
 
+// Logger represents a logger for capturing events.
+type Logger = applog.Logger
+
 // Download performs a complete workflow for downloading and installing the
 // specified model. The input may be:
 //
