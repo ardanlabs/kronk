@@ -6141,6 +6141,10 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
                 <td>Observability packages: <code>metrics/</code>, <code>otel/</code></td>
               </tr>
               <tr>
+                <td><code>sdk/pool/</code></td>
+                <td>Multi-model pool: keeps a capped set of <code>Kronk</code> APIs warm with TTL-based eviction; used by the model server</td>
+              </tr>
+              <tr>
                 <td><code>sdk/tools/</code></td>
                 <td>CLI tooling support: <code>defaults/</code>, <code>devices/</code>, <code>downloader/</code>, <code>github/</code>, <code>libs/</code>, <code>models/</code></td>
               </tr>
@@ -6674,6 +6678,33 @@ default:
               </tr>
             </tbody>
           </table>
+          <p><strong>sdk/pool/</strong> - Multi-model pool used by the model server.</p>
+          <p>Holds a capped LRU-style cache of live <code>*kronk.Kronk</code> instances keyed by model ID, so multiple models can stay warm and be acquired on demand without paying the load cost on every request. Cache size and idle TTL are configurable.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>pool.go</code></td>
+                <td><code>Pool</code> type, <code>Config</code>, <code>New</code>, <code>AquireModel</code>, <code>AquireCustom</code>, <code>ModelStatus</code>, <code>Shutdown</code>, eviction</td>
+              </tr>
+              <tr>
+                <td><code>model.go</code></td>
+                <td><code>ModelDetail</code> struct returned by <code>ModelStatus()</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Key behaviors:</p>
+          <ul>
+            <li><strong>Singleflight load</strong> — concurrent <code>AquireModel</code> calls for the same model ID coalesce into a single load.</li>
+            <li><strong>Pre-emptive eviction</strong> — when the pool is full, the coldest idle entry is unloaded <em>before</em> the new model is loaded so two large models never sit in VRAM at the same time.</li>
+            <li><strong>Active-stream protection</strong> — automatic TTL eviction of an entry with in-flight streams is rejected; the entry is re-inserted to keep it resident until the stream finishes.</li>
+            <li><strong>Shutdown</strong> — <code>Shutdown(ctx)</code> invalidates the cache and blocks until every entry has finished unloading (or <code>ctx</code> expires).</li>
+          </ul>
           <h4 id="1772-streaming-architecture">17.7.2 Streaming Architecture</h4>
           <p><strong>Two streaming primitives</strong> (<code>concurrency.go</code>):</p>
           <ul>

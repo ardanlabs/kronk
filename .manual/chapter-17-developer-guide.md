@@ -135,6 +135,7 @@ A fresh checkout that skips `install-gotooling` will fail the `lint` and
 | `sdk/kronk/`                   | Public SDK API surface (`init.go`, `chat.go`, `embedding.go`, `rerank.go`, `tokenize.go`, concurrency)             |
 | `sdk/kronk/model/`             | Core inference and caching engine (batch, slots, IMC, sampler, prefill/decode)                                     |
 | `sdk/kronk/observ/`            | Observability packages: `metrics/`, `otel/`                                                                        |
+| `sdk/pool/`                    | Multi-model pool: keeps a capped set of `Kronk` APIs warm with TTL-based eviction; used by the model server        |
 | `sdk/tools/`                   | CLI tooling support: `defaults/`, `devices/`, `downloader/`, `github/`, `libs/`, `models/`                         |
 | `examples/`                    | Standalone module (own `go.mod`) with runnable SDK examples — source for auto-generated example docs               |
 | `zarf/`                        | Deployment assets: `docker/`, `kms/` (model config samples), `nix/` (gomod2nix lock)                               |
@@ -461,6 +462,31 @@ _Misc:_
 | File      | Purpose                                                                |
 | --------- | ---------------------------------------------------------------------- |
 | `pool.go` | `contextPool` — parallel llama contexts for embedding/rerank workloads |
+
+**sdk/pool/** - Multi-model pool used by the model server.
+
+Holds a capped LRU-style cache of live `*kronk.Kronk` instances keyed by
+model ID, so multiple models can stay warm and be acquired on demand
+without paying the load cost on every request. Cache size and idle TTL
+are configurable.
+
+| File      | Purpose                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------ |
+| `pool.go` | `Pool` type, `Config`, `New`, `AquireModel`, `AquireCustom`, `ModelStatus`, `Shutdown`, eviction |
+| `model.go` | `ModelDetail` struct returned by `ModelStatus()`                                                |
+
+Key behaviors:
+
+- **Singleflight load** — concurrent `AquireModel` calls for the same model
+  ID coalesce into a single load.
+- **Pre-emptive eviction** — when the pool is full, the coldest idle entry
+  is unloaded *before* the new model is loaded so two large models never
+  sit in VRAM at the same time.
+- **Active-stream protection** — automatic TTL eviction of an entry with
+  in-flight streams is rejected; the entry is re-inserted to keep it
+  resident until the stream finishes.
+- **Shutdown** — `Shutdown(ctx)` invalidates the cache and blocks until
+  every entry has finished unloading (or `ctx` expires).
 
 #### 17.7.2 Streaming Architecture
 
