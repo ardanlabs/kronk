@@ -2,7 +2,7 @@
 
 ### Description
 
-Most teams reach for a Web API or stand up a Python service the moment they need a model. But self-hosted inference — running models on hardware you control — means no per-token costs, no data leaving your environment, no vendor lock-in, and the freedom to use the long tail of great open-source models that go well beyond the LLMs everyone is talking about. The problem is that doing this from Go has historically meant CGO, shelling out to Python, or making a network hop to something like Ollama. None of that feels like Go.
+Self-hosted inference — running models on hardware you control — means no per-token costs, no data leaving your environment, no vendor lock-in, and access to the long tail of open-source models that go well beyond the LLMs everyone is talking about. And contrary to popular belief, you don't need a GPU rack: small models like `Qwen3.5-0.8B-Q8_0` run comfortably on the same laptop you're using right now. The hard part has been doing it from Go without CGO, Python, or a network hop to something like Ollama.
 
 This is a lecture and hands-on full-day workshop where you'll go from zero to running open-source models directly inside your Go applications on your own local machine — no cloud APIs, no external servers, no data leaving your machine. Throughout the day, you will learn all the internals of the Kronk SDK which will teach you about model architectures, KV caching, batch processing, token/decoding, prompt caching, token sampling, and more.
 
