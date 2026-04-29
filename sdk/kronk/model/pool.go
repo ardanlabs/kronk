@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -13,7 +14,7 @@ import (
 type contextPool struct {
 	model     llama.Model
 	ctxParams llama.ContextParams
-	log       Logger
+	log       applog.Logger
 
 	mu       sync.Mutex
 	contexts []llama.Context
@@ -23,7 +24,7 @@ type contextPool struct {
 
 // newContextPool creates a pool of n llama contexts from the given model.
 // Each context has its own KV cache but shares the model weights.
-func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.ContextParams, log Logger, n int) (*contextPool, error) {
+func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.ContextParams, log applog.Logger, n int) (*contextPool, error) {
 	if n < 1 {
 		n = 1
 	}

@@ -355,7 +355,8 @@ type ModelDetail struct {
 	ModelFamily   string    `json:"model_family"`
 	Size          int64     `json:"size"`
 	VRAMTotal     int64     `json:"vram_total"`
-	SlotMemory    int64     `json:"slot_memory"`
+	KVCache       int64     `json:"kv_cache"`
+	Slots         int       `json:"slots"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	ActiveStreams int       `json:"active_streams"`
 }
@@ -379,7 +380,8 @@ func toModelDetails(models []cache.ModelDetail) ModelDetailsResponse {
 			ModelFamily:   model.ModelFamily,
 			Size:          model.Size,
 			VRAMTotal:     model.VRAMTotal,
-			SlotMemory:    model.SlotMemory,
+			KVCache:       model.KVCache,
+			Slots:         model.Slots,
 			ExpiresAt:     model.ExpiresAt,
 			ActiveStreams: model.ActiveStreams,
 		}

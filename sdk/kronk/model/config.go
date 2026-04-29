@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -46,7 +47,7 @@ const (
 )
 
 // Logger provides a function for logging messages from different APIs.
-type Logger func(ctx context.Context, msg string, args ...any)
+type Logger = applog.Logger
 
 // =============================================================================
 
@@ -300,7 +301,7 @@ type Config struct {
 	PtrIncrementalCache  *bool
 	PtrInsecureLogging   *bool
 	JinjaFile            string
-	Log                  Logger
+	Log                  applog.Logger
 	PtrMainGPU           *int
 	MoE                  *MoEConfig
 	ModelFiles           []string
@@ -411,7 +412,7 @@ func (cfg Config) String() string {
 		formatFloat32Ptr(cfg.PtrYarnBetaFast), formatFloat32Ptr(cfg.PtrYarnBetaSlow), formatFloat32Ptr(cfg.PtrYarnExtFactor), formatIntPtr(cfg.PtrYarnOrigCtx), cfg.DraftModel)
 }
 
-func validateConfig(ctx context.Context, cfg Config, log Logger) error {
+func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
 	}
@@ -1257,7 +1258,7 @@ func WithFlashAttention(v FlashAttentionType) Option { return func(c *Config) { 
 func WithIncrementalCache(v bool) Option             { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
 func WithInsecureLogging(v bool) Option              { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
 func WithJinjaFile(v string) Option                  { return func(c *Config) { c.JinjaFile = v } }
-func WithLog(v Logger) Option                        { return func(c *Config) { c.Log = v } }
+func WithLog(v applog.Logger) Option                 { return func(c *Config) { c.Log = v } }
 func WithMainGPU(v int) Option                       { return func(c *Config) { c.PtrMainGPU = new(v) } }
 func WithMoE(v *MoEConfig) Option                    { return func(c *Config) { c.MoE = v } }
 func WithModelFiles(v []string) Option               { return func(c *Config) { c.ModelFiles = v } }

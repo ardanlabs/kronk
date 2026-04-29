@@ -142,7 +142,6 @@ underscores replacing hyphens.
 | Flag                  | Environment Variable            | Default                       | Description                                                                                         |
 | --------------------- | ------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- |
 | `--model-config-file` | `KRONK_CACHE_MODEL_CONFIG_FILE` | `<base>/model_config.yaml`    | Path to per-model configuration overrides. Defaults to the file under your `--base-path`.           |
-| `--model-instances`   | `KRONK_CACHE_MODEL_INSTANCES`   | `1`                           | Maximum loaded instances of any single model id                                                     |
 | `--models-in-cache`   | `KRONK_CACHE_MODELS_IN_CACHE`   | `2`                           | Maximum distinct models kept loaded in memory                                                       |
 | `--cache-ttl`         | `KRONK_CACHE_TTL`               | `20m`                         | How long an unused model stays loaded                                                               |
 
@@ -185,7 +184,6 @@ kronk server start \
 ```
 
 - `models-in-cache` - Maximum distinct models kept loaded (default: 2)
-- `model-instances` - Maximum loaded instances of any single model id (default: 1)
 - `cache-ttl` - How long an unused model stays loaded (default: 20m)
 
 When a new model is requested and the cache is full, the least recently

@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 )
 
 // Remove remove the specified file from the models directory.
-func (m *Models) Remove(mp Path, log Logger) (err error) {
+func (m *Models) Remove(mp Path, log applog.Logger) (err error) {
 	defer func() {
 		if errDfr := m.BuildIndex(log, false); err != nil {
 			err = errDfr

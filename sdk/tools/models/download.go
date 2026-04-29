@@ -13,13 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 )
 
 // Logger represents a logger for capturing events.
-type Logger func(ctx context.Context, msg string, args ...any)
+type Logger = applog.Logger
 
 // Download performs a complete workflow for downloading and installing the
 // specified model. The input may be:
@@ -48,7 +49,7 @@ type Logger func(ctx context.Context, msg string, args ...any)
 // DownloadURLs.
 //
 // Set KRONK_HF_TOKEN to access gated models.
-func (m *Models) Download(ctx context.Context, log Logger, modelSource string) (Path, error) {
+func (m *Models) Download(ctx context.Context, log applog.Logger, modelSource string) (Path, error) {
 	if isURL(modelSource) {
 		return m.downloadByURL(ctx, log, modelSource)
 	}
@@ -70,7 +71,7 @@ func (m *Models) Download(ctx context.Context, log Logger, modelSource string) (
 // For the default workflow, use Download.
 //
 // Set KRONK_HF_TOKEN to access gated models.
-func (m *Models) DownloadURLs(ctx context.Context, log Logger, modelURLs []string, projURL string) (Path, error) {
+func (m *Models) DownloadURLs(ctx context.Context, log applog.Logger, modelURLs []string, projURL string) (Path, error) {
 	if len(modelURLs) == 0 {
 		return Path{}, fmt.Errorf("download-urls: no model URLs provided")
 	}
@@ -112,7 +113,7 @@ func (m *Models) DownloadURLs(ctx context.Context, log Logger, modelURLs []strin
 // resolves a companion projection file by deriving the canonical id
 // from the URL. When the projection lookup fails the model is still
 // downloaded; only the projection is skipped.
-func (m *Models) downloadByURL(ctx context.Context, log Logger, modelURL string) (Path, error) {
+func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL string) (Path, error) {
 	projURL := m.lookupProjForURL(ctx, modelURL)
 
 	mp, err := m.downloadSplits(ctx, log, []string{modelURL}, projURL)
@@ -170,7 +171,7 @@ func isURL(input string) bool {
 // downloadByID resolves a bare model id ("Qwen3-0.6B-Q8_0") or canonical
 // id ("unsloth/Qwen3-0.6B-Q8_0") through the resolver and downloads the
 // resulting files (including any companion mmproj).
-func (m *Models) downloadByID(ctx context.Context, log Logger, modelSource string) (Path, error) {
+func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSource string) (Path, error) {
 	rfile, err := defaults.CatalogFile("", m.basePath)
 	if err != nil {
 		return Path{}, fmt.Errorf("download: resolver-file: %w", err)
@@ -240,7 +241,7 @@ func (m *Models) downloadByID(ctx context.Context, log Logger, modelSource strin
 // downloadSplits performs a complete workflow for downloading and installing
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
-func (m *Models) downloadSplits(ctx context.Context, log Logger, modelURLs []string, projURL string) (Path, error) {
+func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURLs []string, projURL string) (Path, error) {
 	if len(modelURLs) == 0 {
 		return Path{}, fmt.Errorf("download-splits: no model URLs provided")
 	}
@@ -350,7 +351,7 @@ func (m *Models) downloadSplits(ctx context.Context, log Logger, modelURLs []str
 
 // =============================================================================
 
-func (m *Models) downloadModel(ctx context.Context, log Logger, modelFileURL string, projFileURL string, progress downloader.ProgressFunc) (Path, error) {
+func (m *Models) downloadModel(ctx context.Context, log applog.Logger, modelFileURL string, projFileURL string, progress downloader.ProgressFunc) (Path, error) {
 	// Validate the URL is the correct HF download URL.
 	if !strings.Contains(modelFileURL, "/resolve/") {
 		return Path{}, fmt.Errorf("download-model: invalid model download url, missing /resolve/: %s", modelFileURL)

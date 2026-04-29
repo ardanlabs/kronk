@@ -3091,12 +3091,6 @@ kronk libs --local`}</code></pre>
                 <td>Path to per-model configuration overrides. Defaults to the file under your <code>--base-path</code>.</td>
               </tr>
               <tr>
-                <td><code>--model-instances</code></td>
-                <td><code>KRONK_CACHE_MODEL_INSTANCES</code></td>
-                <td><code>1</code></td>
-                <td>Maximum loaded instances of any single model id</td>
-              </tr>
-              <tr>
                 <td><code>--models-in-cache</code></td>
                 <td><code>KRONK_CACHE_MODELS_IN_CACHE</code></td>
                 <td><code>2</code></td>
@@ -3198,7 +3192,6 @@ kronk libs --local`}</code></pre>
   --cache-ttl=20m`}</code></pre>
           <ul>
             <li><code>models-in-cache</code> - Maximum distinct models kept loaded (default: 2)</li>
-            <li><code>model-instances</code> - Maximum loaded instances of any single model id (default: 1)</li>
             <li><code>cache-ttl</code> - How long an unused model stays loaded (default: 20m)</li>
           </ul>
           <p>When a new model is requested and the cache is full, the least recently used model is unloaded.</p>

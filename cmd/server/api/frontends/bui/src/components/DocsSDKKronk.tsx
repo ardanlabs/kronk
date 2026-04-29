@@ -103,7 +103,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="type-loglevel">
               <h4>LogLevel</h4>
               <pre className="code-block">
-                <code>{`type LogLevel int`}</code>
+                <code>{`type LogLevel = applog.LogLevel`}</code>
               </pre>
               <p className="doc-description">LogLevel represents the logging level.</p>
             </div>
@@ -111,7 +111,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="type-logger">
               <h4>Logger</h4>
               <pre className="code-block">
-                <code>{`type Logger func(ctx context.Context, msg string, args ...any)`}</code>
+                <code>{`type Logger = applog.Logger`}</code>
               </pre>
               <p className="doc-description">Logger provides a function for logging messages from different APIs.</p>
             </div>
@@ -404,18 +404,21 @@ export default function DocsSDKKronk() {
               </pre>
               <p className="doc-description">Unload will close down the loaded model. You should call this only when you are completely done using Kronk.</p>
             </div>
-
-            <div className="doc-section" id="method-loglevel-int">
-              <h4>LogLevel.Int</h4>
-              <pre className="code-block">
-                <code>func (ll LogLevel) Int() int</code>
-              </pre>
-              <p className="doc-description">Int returns the integer value.</p>
-            </div>
           </div>
 
           <div className="card" id="constants">
             <h3>Constants</h3>
+
+            <div className="doc-section" id="const-logsilent">
+              <h4>LogSilent</h4>
+              <pre className="code-block">
+                <code>{`const (
+	LogSilent = applog.LogSilent
+	LogNormal = applog.LogNormal
+)`}</code>
+              </pre>
+              <p className="doc-description">Set of logging levels supported by llama.cpp.</p>
+            </div>
 
             <div className="doc-section" id="const-version">
               <h4>Version</h4>
@@ -432,8 +435,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="var-discardlogger">
               <h4>DiscardLogger</h4>
               <pre className="code-block">
-                <code>{`var DiscardLogger = func(ctx context.Context, msg string, args ...any) {
-}`}</code>
+                <code>{`var DiscardLogger = applog.DiscardLogger`}</code>
               </pre>
               <p className="doc-description">DiscardLogger discards logging.</p>
             </div>
@@ -441,25 +443,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="var-fmtlogger">
               <h4>FmtLogger</h4>
               <pre className="code-block">
-                <code>{`var FmtLogger = func(ctx context.Context, msg string, args ...any) {
-	traceID, ok := ctx.Value(traceIDKey(1)).(string)
-	switch ok {
-	case true:
-		fmt.Printf("traceID: %s: %s:", traceID, msg)
-	default:
-		fmt.Printf("%s:", msg)
-	}
-
-	for i := 0; i < len(args); i += 2 {
-		if i+1 < len(args) {
-			fmt.Printf(" %v[%v]", args[i], args[i+1])
-		}
-	}
-
-	if len(msg) > 0 && msg[0] != '\\r' {
-		fmt.Println()
-	}
-}`}</code>
+                <code>{`var FmtLogger = applog.FmtLogger`}</code>
               </pre>
               <p className="doc-description">FmtLogger provides a basic logger that writes to stdout.</p>
             </div>
@@ -519,12 +503,12 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-tokenize">Kronk.Tokenize</a></li>
                 <li><a href="#method-kronk-tokenizehttp">Kronk.TokenizeHTTP</a></li>
                 <li><a href="#method-kronk-unload">Kronk.Unload</a></li>
-                <li><a href="#method-loglevel-int">LogLevel.Int</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
               <a href="#constants" className="doc-index-header">Constants</a>
               <ul>
+                <li><a href="#const-logsilent">LogSilent</a></li>
                 <li><a href="#const-version">Version</a></li>
               </ul>
             </div>

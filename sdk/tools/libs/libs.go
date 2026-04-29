@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 	"github.com/hybridgroup/yzma/pkg/download"
@@ -24,7 +25,7 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b8966"
+	defaultVersion = "b8969"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -34,7 +35,7 @@ const (
 var ErrReadOnly = errors.New("libs: install path is read-only (no version.json)")
 
 // Logger represents a logger for capturing events.
-type Logger func(ctx context.Context, msg string, args ...any)
+type Logger = applog.Logger
 
 // VersionTag represents information about the installed version of llama.cpp.
 type VersionTag struct {

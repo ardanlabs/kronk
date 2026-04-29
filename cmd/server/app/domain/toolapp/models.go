@@ -11,6 +11,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -376,7 +377,7 @@ func fetchVRAMRepoFiles(ctx context.Context, modelURL string) []HFRepoFile {
 // begins. SHA pointer files are fetched the same way (the peer's
 // /download/{path...} handler serves both /resolve/main/ and
 // /raw/main/).
-func (a *app) downloadFromPeer(ctx context.Context, log models.Logger, req PullRequest) (models.Path, error) {
+func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRequest) (models.Path, error) {
 	modelURLs, projURL, err := a.resolvePeerURLs(ctx, req.ModelURL, req.ProjURL)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("download-from-peer: resolve %q: %w", req.ModelURL, err)
