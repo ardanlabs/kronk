@@ -59,12 +59,19 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+// defaultMemProfileRate is Go's runtime default sampling rate (one sample
+// per ~512 KiB allocated). benchChat restores this value around the timed
+// region so pprof memory profiles only reflect inference work and not the
+// one-shot kronk.New / VRAM-diag GGUF parse cost.
+const defaultMemProfileRate = 512 * 1024
 
 // =============================================================================
 // Test setup - model paths resolved once
@@ -78,6 +85,12 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	// Disable memory profile sampling during model load, warmup, and any
+	// other setup work. benchChat re-enables sampling for the duration of
+	// the timed loop so pprof's -memprofile reflects only inference cost,
+	// not the one-shot kronk.New / VRAM-diag GGUF parse.
+	runtime.MemProfileRate = 0
+
 	// When BENCH_LOG is set, write model logs to that file.
 	// Usage: BENCH_LOG=bench.log go test -bench=BenchmarkDense_IMC ...
 	if logPath := os.Getenv("BENCH_LOG"); logPath != "" {

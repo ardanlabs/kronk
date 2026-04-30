@@ -3,26 +3,14 @@ package kronk
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
-)
-
-// defaultBaseDir and defaultLibFolder mirror the on-disk defaults used by
-// the Kronk CLI tooling (sdk/tools/defaults + sdk/tools/libs). They are
-// duplicated here so the kronk SDK package does not depend on the tools
-// tree. Callers that need richer resolution (per-triple subfolders,
-// version.json detection, legacy-layout migration, etc.) should compute
-// the path with sdk/tools/libs and pass it via WithLibPath.
-const (
-	defaultBaseDir   = ".kronk"
-	defaultLibFolder = "libraries"
-	envKronkLibPath  = "KRONK_LIB_PATH"
 )
 
 var (
@@ -79,10 +67,7 @@ func Init(opts ...InitOption) error {
 		opt(&o)
 	}
 
-	libPath := o.libPath
-	if libPath == "" {
-		libPath = defaultLibPath()
-	}
+	libPath := libs.Path(o.libPath)
 
 	// Windows uses PATH for DLL discovery, Unix uses LD_LIBRARY_PATH.
 	switch runtime.GOOS {
@@ -130,20 +115,4 @@ func Init(opts ...InitOption) error {
 	initDone = true
 
 	return nil
-}
-
-// defaultLibPath returns the library path to use when the caller did not
-// supply one through WithLibPath. KRONK_LIB_PATH takes precedence over the
-// built-in default of <home>/.kronk/libraries.
-func defaultLibPath() string {
-	if v := os.Getenv(envKronkLibPath); v != "" {
-		return v
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".", defaultBaseDir, defaultLibFolder)
-	}
-
-	return filepath.Join(homeDir, defaultBaseDir, defaultLibFolder)
 }
