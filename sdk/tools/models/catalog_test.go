@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -19,23 +20,23 @@ type fakeHF struct {
 	search map[string][]string
 	// metas maps "owner/repo" -> siblings.
 	metas map[string][]string
-	// missing repos return ErrHFNotFound from ModelMeta.
+	// missing repos return hf.ErrNotFound from ModelMeta.
 	missing map[string]bool
 	// hits records every Search/Meta call made for verification.
 	calls []string
 }
 
-func (f *fakeHF) ModelMeta(_ context.Context, owner, repo, _ string) (HFModelMeta, error) {
+func (f *fakeHF) ModelMeta(_ context.Context, owner, repo, _ string) (hf.ModelMeta, error) {
 	key := owner + "/" + repo
 	f.calls = append(f.calls, "meta:"+key)
 	if f.missing[key] {
-		return HFModelMeta{}, ErrHFNotFound
+		return hf.ModelMeta{}, hf.ErrNotFound
 	}
 	siblings, ok := f.metas[key]
 	if !ok {
-		return HFModelMeta{}, ErrHFNotFound
+		return hf.ModelMeta{}, hf.ErrNotFound
 	}
-	return HFModelMeta{ID: key, Siblings: siblings}, nil
+	return hf.ModelMeta{ID: key, Siblings: siblings}, nil
 }
 
 func (f *fakeHF) SearchModels(_ context.Context, author, query string) ([]string, error) {
@@ -43,7 +44,7 @@ func (f *fakeHF) SearchModels(_ context.Context, author, query string) ([]string
 	f.calls = append(f.calls, "search:"+key)
 	repos, ok := f.search[key]
 	if !ok || len(repos) == 0 {
-		return nil, ErrHFNotFound
+		return nil, hf.ErrNotFound
 	}
 	return repos, nil
 }
@@ -272,7 +273,7 @@ func TestResolver_HFHit_PersistsAndReturnsURLs(t *testing.T) {
 func TestResolver_ProviderWalk_StopsAtFirstHit(t *testing.T) {
 	hf := &fakeHF{
 		search: map[string][]string{
-			"unsloth|Qwen3":  {}, // empty -> ErrHFNotFound
+			"unsloth|Qwen3":  {}, // empty -> hf.ErrNotFound
 			"ggml-org|Qwen3": {"ggml-org/Qwen3-GGUF"},
 		},
 		metas: map[string][]string{
@@ -389,7 +390,7 @@ func TestResolver_NotFoundAcrossProviders(t *testing.T) {
 }
 
 func TestResolver_HFNotFoundIsNotFatal(t *testing.T) {
-	// Ensure the resolver treats ErrHFNotFound from one provider as a
+	// Ensure the resolver treats hf.ErrNotFound from one provider as a
 	// "skip" rather than a hard error.
 	hf := &fakeHF{
 		search: map[string][]string{
@@ -414,11 +415,11 @@ func TestResolver_HFNotFoundIsNotFatal(t *testing.T) {
 	}
 }
 
-func TestErrHFNotFoundDetection(t *testing.T) {
-	if !isNotFound(ErrHFNotFound) {
-		t.Error("isNotFound did not detect ErrHFNotFound")
+func TestErrNotFoundDetection(t *testing.T) {
+	if !isNotFound(hf.ErrNotFound) {
+		t.Error("isNotFound did not detect hf.ErrNotFound")
 	}
-	wrapped := errors.New("oh: " + ErrHFNotFound.Error())
+	wrapped := errors.New("oh: " + hf.ErrNotFound.Error())
 	if !isNotFound(wrapped) {
 		t.Error("isNotFound did not detect wrapped err")
 	}

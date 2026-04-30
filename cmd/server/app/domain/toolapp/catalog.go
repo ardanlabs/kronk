@@ -8,6 +8,9 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -68,7 +71,7 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		return detail
 	}
 
-	metadata, perr := models.ParseGGUFMetadata(data)
+	metadata, perr := gguf.ParseMetadata(data)
 	if perr != nil {
 		a.log.Info(ctx, "catalog-show", "id", id, "WARN", "parse gguf", "ERROR", perr)
 		return detail
@@ -91,13 +94,13 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		totalSize += n
 	}
 
-	cfg := models.VRAMConfig{
-		ContextWindow:   models.ContextWindow8K,
-		BytesPerElement: models.BytesPerElementQ8_0,
-		Slots:           models.Slots1,
+	cfg := vram.Config{
+		ContextWindow:   vram.ContextWindow8K,
+		BytesPerElement: vram.BytesPerElementQ8_0,
+		Slots:           vram.Slots1,
 	}
 
-	if v, vErr := models.BuildVRAMFromBytes(data, totalSize, cfg); vErr != nil {
+	if v, vErr := vram.FromBytes(data, totalSize, cfg); vErr != nil {
 		a.log.Info(ctx, "catalog-show", "id", id, "WARN", "build vram", "ERROR", vErr)
 	} else {
 		vr := toVRAMResponse(v, nil)
@@ -121,12 +124,12 @@ func (a *app) lookupCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "input is required")
 	}
 
-	owner, repo, _, err := models.ParseHFInput(input)
+	owner, repo, _, err := hf.ParseInput(input)
 	if err != nil || owner == "" || repo == "" {
 		return errs.Errorf(errs.InvalidArgument, "unable to parse input %q", input)
 	}
 
-	all, err := models.FetchHFRepoFiles(ctx, owner, repo, "main", "", true)
+	all, err := hf.RepoFiles(ctx, owner, repo, "main", "", true)
 	if err != nil {
 		return errs.Errorf(errs.Internal, "fetch repo files: %s", err)
 	}

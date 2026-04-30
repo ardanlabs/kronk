@@ -2,11 +2,11 @@ package models
 
 import (
 	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 )
 
 // CatalogFile is one downloadable artifact (model or projection).
@@ -128,7 +128,7 @@ func NewFiles(entry CatalogEntry) CatalogFiles {
 		}
 
 		out.Model[i] = CatalogFile{
-			URL:  BuildHFURL(entry.Provider, entry.Family, entry.Revision, f),
+			URL:  hf.BuildURL(entry.Provider, entry.Family, entry.Revision, f),
 			Size: size,
 		}
 	}
@@ -139,7 +139,7 @@ func NewFiles(entry CatalogEntry) CatalogFiles {
 		// the resolver self-heals on the next online Resolve.
 		var projURL string
 		if entry.MMProjOrig != "" {
-			projURL = BuildHFURL(entry.Provider, entry.Family, entry.Revision, entry.MMProjOrig)
+			projURL = hf.BuildURL(entry.Provider, entry.Family, entry.Revision, entry.MMProjOrig)
 		}
 		out.Proj = CatalogFile{
 			URL:  projURL,
@@ -155,21 +155,6 @@ func NewFiles(entry CatalogEntry) CatalogFiles {
 // webPage synthesizes the canonical HF model URL.
 func webPage(provider, family string) string {
 	return fmt.Sprintf("https://huggingface.co/%s/%s", provider, family)
-}
-
-// BuildHFURL composes a HuggingFace resolve URL.
-func BuildHFURL(owner, repo, revision, file string) string {
-	if revision == "" {
-		revision = "main"
-	}
-
-	return fmt.Sprintf(
-		"https://huggingface.co/%s/%s/resolve/%s/%s",
-		url.PathEscape(owner),
-		url.PathEscape(repo),
-		url.PathEscape(revision),
-		file,
-	)
 }
 
 // FormatBytes renders a byte count as a human-readable string ("1.23 GB",

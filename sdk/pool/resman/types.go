@@ -39,9 +39,18 @@ type Device struct {
 
 // Snapshot captures the system resources the manager will reason about. It is
 // taken once when the manager is constructed.
+//
+// UnifiedMemory is true on systems where the GPU and CPU share a single
+// physical memory pool (Apple Silicon Metal). When true, the manager tracks
+// only the system-RAM pool and never adds a separate GPU device to its
+// budget; this prevents double-counting the same physical bytes against two
+// budgets. The flag is set by FromDevices when any GPU in the snapshot
+// reports type "gpu_metal", and is forwarded to Usage so observability code
+// can label the single pool appropriately.
 type Snapshot struct {
-	Devices  []Device
-	RAMBytes int64
+	Devices       []Device
+	RAMBytes      int64
+	UnifiedMemory bool
 }
 
 // Config configures the resource manager.
@@ -100,13 +109,19 @@ type Ticket struct {
 }
 
 // Usage describes the manager's current accounting, suitable for observability.
+//
+// UnifiedMemory mirrors the Snapshot flag: when true, the system uses a
+// shared GPU/CPU memory pool (Apple Silicon Metal) and only the RAM
+// budget/used fields are populated. The Devices slice will be empty.
 type Usage struct {
 	BudgetPercent int
 	HeadroomBytes int64
 	Devices       []DeviceUsage
+	RAMTotal      int64
 	RAMBudget     int64
 	RAMUsed       int64
 	Reservations  []LoadPlan
+	UnifiedMemory bool
 }
 
 // DeviceUsage describes the accounting state for a single device.

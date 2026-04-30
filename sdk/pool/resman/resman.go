@@ -11,6 +11,7 @@ package resman
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -21,6 +22,7 @@ import (
 type Manager struct {
 	budgetPercent int
 	headroomBytes int64
+	unifiedMemory bool
 	devices       []Device
 	deviceByName  map[string]int
 	deviceBudget  []int64
@@ -55,6 +57,7 @@ func New(cfg Config) (*Manager, error) {
 	m := Manager{
 		budgetPercent: cfg.BudgetPercent,
 		headroomBytes: headroom,
+		unifiedMemory: cfg.Snapshot.UnifiedMemory,
 		deviceByName:  make(map[string]int),
 		ramTotal:      cfg.Snapshot.RAMBytes,
 		reservations:  make(map[string]LoadPlan),
@@ -87,13 +90,30 @@ func New(cfg Config) (*Manager, error) {
 
 // FromDevices builds a Snapshot from a live devices.Devices result. The
 // production wiring uses this to feed the manager from devices.List().
+//
+// On systems with unified memory (Apple Silicon Metal) the GPU and CPU
+// share one physical pool. To avoid double-counting the same bytes against
+// two budgets, FromDevices marks the snapshot UnifiedMemory and drops any
+// gpu_metal entries; the manager then tracks only system RAM. macOS ARM64
+// is also treated as unified memory even when llama.cpp has not yet
+// reported a Metal device (e.g. when the snapshot is taken before libs are
+// loaded).
 func FromDevices(d devices.Devices) Snapshot {
 	out := Snapshot{
 		RAMBytes: int64(d.SystemRAMBytes),
 	}
 
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		out.UnifiedMemory = true
+	}
+
 	for _, di := range d.Devices {
 		if !strings.HasPrefix(di.Type, "gpu_") {
+			continue
+		}
+
+		if di.Type == "gpu_metal" {
+			out.UnifiedMemory = true
 			continue
 		}
 
@@ -188,6 +208,8 @@ func (m *Manager) Usage() Usage {
 	out := Usage{
 		BudgetPercent: m.budgetPercent,
 		HeadroomBytes: m.headroomBytes,
+		UnifiedMemory: m.unifiedMemory,
+		RAMTotal:      m.ramTotal,
 		RAMBudget:     m.ramBudget,
 		RAMUsed:       m.ramUsed,
 		Devices:       make([]DeviceUsage, len(m.devices)),

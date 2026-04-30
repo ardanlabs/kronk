@@ -8,8 +8,11 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
+	"github.com/ardanlabs/kronk/sdk/pool/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -247,7 +250,7 @@ func (app ModelInfoResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig, vram *VRAMResponse) ModelInfoResponse {
+func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig, vramResp *VRAMResponse) ModelInfoResponse {
 	metadata := make(map[string]string, len(mi.Metadata))
 	for k, v := range mi.Metadata {
 		metadata[k] = formatMetadataValue(k, v)
@@ -319,7 +322,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 				ReasoningEffort:  rmc.Sampling.ReasoningEffort,
 			},
 		},
-		Vram: vram,
+		Vram: vramResp,
 	}
 
 	return mir
@@ -392,6 +395,96 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 
 // =============================================================================
 
+// DeviceBudget describes the budget accounting for a single device.
+type DeviceBudget struct {
+	Index       int    `json:"index"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	TotalBytes  int64  `json:"total_bytes"`
+	BudgetBytes int64  `json:"budget_bytes"`
+	UsedBytes   int64  `json:"used_bytes"`
+}
+
+// ReservationDevice records a per-device allocation belonging to a reservation.
+type ReservationDevice struct {
+	Index int    `json:"index"`
+	Name  string `json:"name"`
+	Bytes int64  `json:"bytes"`
+}
+
+// Reservation describes a single active reservation held by the resource
+// manager.
+type Reservation struct {
+	Key       string              `json:"key"`
+	VRAMBytes int64               `json:"vram_bytes"`
+	RAMBytes  int64               `json:"ram_bytes"`
+	Per       []ReservationDevice `json:"per"`
+}
+
+// PoolBudgetResponse describes the resource manager's current budget and
+// usage. Used by the BUI to verify that BudgetPercent is being applied.
+type PoolBudgetResponse struct {
+	BudgetPercent int            `json:"budget_percent"`
+	HeadroomBytes int64          `json:"headroom_bytes"`
+	UnifiedMemory bool           `json:"unified_memory"`
+	RAMTotal      int64          `json:"ram_total"`
+	RAMBudget     int64          `json:"ram_budget"`
+	RAMUsed       int64          `json:"ram_used"`
+	Devices       []DeviceBudget `json:"devices"`
+	Reservations  []Reservation  `json:"reservations"`
+}
+
+// Encode implements the encoder interface.
+func (app PoolBudgetResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toPoolBudget(u resman.Usage) PoolBudgetResponse {
+	out := PoolBudgetResponse{
+		BudgetPercent: u.BudgetPercent,
+		HeadroomBytes: u.HeadroomBytes,
+		UnifiedMemory: u.UnifiedMemory,
+		RAMTotal:      u.RAMTotal,
+		RAMBudget:     u.RAMBudget,
+		RAMUsed:       u.RAMUsed,
+		Devices:       make([]DeviceBudget, len(u.Devices)),
+		Reservations:  make([]Reservation, len(u.Reservations)),
+	}
+
+	for i, d := range u.Devices {
+		out.Devices[i] = DeviceBudget{
+			Index:       d.Index,
+			Name:        d.Name,
+			Type:        d.Type,
+			TotalBytes:  d.TotalBytes,
+			BudgetBytes: d.BudgetBytes,
+			UsedBytes:   d.UsedBytes,
+		}
+	}
+
+	for i, r := range u.Reservations {
+		per := make([]ReservationDevice, len(r.Per))
+		for j, alloc := range r.Per {
+			per[j] = ReservationDevice{
+				Index: alloc.Index,
+				Name:  alloc.Name,
+				Bytes: alloc.Bytes,
+			}
+		}
+		out.Reservations[i] = Reservation{
+			Key:       r.Key,
+			VRAMBytes: r.VRAMBytes,
+			RAMBytes:  r.RAMBytes,
+			Per:       per,
+		}
+	}
+
+	return out
+}
+
+// =============================================================================
+
 // MoEInfo contains Mixture of Experts metadata.
 type MoEInfo struct {
 	IsMoE            bool  `json:"is_moe"`
@@ -400,7 +493,7 @@ type MoEInfo struct {
 	HasSharedExperts bool  `json:"has_shared_experts"`
 }
 
-func toAppMoEInfo(m *models.MoEInfo) *MoEInfo {
+func toAppMoEInfo(m *gguf.MoEInfo) *MoEInfo {
 	if m == nil {
 		return nil
 	}
@@ -421,7 +514,7 @@ type WeightBreakdown struct {
 	ExpertBytesByLayer []int64 `json:"expert_bytes_by_layer"`
 }
 
-func toAppWeightBreakdown(w *models.WeightBreakdown) *WeightBreakdown {
+func toAppWeightBreakdown(w *gguf.WeightBreakdown) *WeightBreakdown {
 	if w == nil {
 		return nil
 	}
@@ -625,39 +718,39 @@ func (app VRAMResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toVRAMResponse(vram models.VRAM, repoFiles []HFRepoFile) VRAMResponse {
+func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 	return VRAMResponse{
 		Input: VRAMInput{
-			ModelSizeBytes:    vram.Input.ModelSizeBytes,
-			ContextWindow:     vram.Input.ContextWindow,
-			BlockCount:        vram.Input.BlockCount,
-			HeadCountKV:       vram.Input.HeadCountKV,
-			KeyLength:         vram.Input.KeyLength,
-			ValueLength:       vram.Input.ValueLength,
-			BytesPerElement:   vram.Input.BytesPerElement,
-			Slots:             vram.Input.Slots,
-			EmbeddingLength:   vram.Input.EmbeddingLength,
-			MoE:               toAppMoEInfo(vram.Input.MoE),
-			Weights:           toAppWeightBreakdown(vram.Input.Weights),
-			ExpertLayersOnGPU: vram.Input.ExpertLayersOnGPU,
+			ModelSizeBytes:    v.Input.ModelSizeBytes,
+			ContextWindow:     v.Input.ContextWindow,
+			BlockCount:        v.Input.BlockCount,
+			HeadCountKV:       v.Input.HeadCountKV,
+			KeyLength:         v.Input.KeyLength,
+			ValueLength:       v.Input.ValueLength,
+			BytesPerElement:   v.Input.BytesPerElement,
+			Slots:             v.Input.Slots,
+			EmbeddingLength:   v.Input.EmbeddingLength,
+			MoE:               toAppMoEInfo(v.Input.MoE),
+			Weights:           toAppWeightBreakdown(v.Input.Weights),
+			ExpertLayersOnGPU: v.Input.ExpertLayersOnGPU,
 		},
-		KVPerTokenPerLayer: vram.KVPerTokenPerLayer,
-		KVPerSlot:          vram.KVPerSlot,
-		SlotMemory:         vram.SlotMemory,
-		TotalVRAM:          vram.TotalVRAM,
-		MoE:                toAppMoEInfo(vram.MoE),
-		Weights:            toAppWeightBreakdown(vram.Weights),
-		ModelWeightsGPU:    vram.ModelWeightsGPU,
-		ModelWeightsCPU:    vram.ModelWeightsCPU,
-		ComputeBufferEst:   vram.ComputeBufferEst,
+		KVPerTokenPerLayer: v.KVPerTokenPerLayer,
+		KVPerSlot:          v.KVPerSlot,
+		SlotMemory:         v.SlotMemory,
+		TotalVRAM:          v.TotalVRAM,
+		MoE:                toAppMoEInfo(v.MoE),
+		Weights:            toAppWeightBreakdown(v.Weights),
+		ModelWeightsGPU:    v.ModelWeightsGPU,
+		ModelWeightsCPU:    v.ModelWeightsCPU,
+		ComputeBufferEst:   v.ComputeBufferEst,
 		RepoFiles:          repoFiles,
 	}
 }
 
-// vramConfigFromRMC builds a VRAMConfig using the model's resolved
+// vramConfigFromRMC builds a vram.Config using the model's resolved
 // configuration so the model detail screen can render an initial
 // VRAM estimate without requiring user input.
-func vramConfigFromRMC(rmc models.ModelConfig) models.VRAMConfig {
+func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 	contextWindow := int64(8192)
 	if rmc.PtrContextWindow != nil && *rmc.PtrContextWindow > 0 {
 		contextWindow = int64(*rmc.PtrContextWindow)
@@ -671,12 +764,12 @@ func vramConfigFromRMC(rmc models.ModelConfig) models.VRAMConfig {
 	bpe := int64(1)
 	switch rmc.CacheTypeK {
 	case model.GGMLTypeF32:
-		bpe = models.BytesPerElementF32
+		bpe = vram.BytesPerElementF32
 	case model.GGMLTypeF16, model.GGMLTypeBF16, model.GGMLTypeAuto:
-		bpe = models.BytesPerElementF16
+		bpe = vram.BytesPerElementF16
 	}
 
-	return models.VRAMConfig{
+	return vram.Config{
 		ContextWindow:   contextWindow,
 		BytesPerElement: bpe,
 		Slots:           slots,

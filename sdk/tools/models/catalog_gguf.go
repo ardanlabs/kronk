@@ -21,7 +21,7 @@ import (
 //
 // On cache miss the bytes are written through to the catalog GGUF cache
 // so the next call is a fast cache hit. Callers parse the bytes using
-// the GGUF binary format (see vram.go's FetchGGUFMetadata).
+// the GGUF binary format (see sdk/kronk/gguf.ParseMetadata).
 func (m *Models) GGUFHead(ctx context.Context, entry CatalogEntry) ([]byte, error) {
 	if len(entry.Files) == 0 {
 		return nil, fmt.Errorf("gguf-head: catalog entry has no files")

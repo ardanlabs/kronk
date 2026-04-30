@@ -7,6 +7,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -20,7 +21,7 @@ func (p *Pool) planRequest(ctx context.Context, modelID, key string, cfg model.C
 
 	ctxWin := int64(cfg.ContextWindow())
 	if ctxWin <= 0 {
-		ctxWin = int64(models.ContextWindow4K)
+		ctxWin = int64(vram.ContextWindow4K)
 	}
 
 	nseq := int64(cfg.NSeqMax())
@@ -28,7 +29,7 @@ func (p *Pool) planRequest(ctx context.Context, modelID, key string, cfg model.C
 		nseq = 1
 	}
 
-	vramCfg := models.VRAMConfig{
+	vramCfg := vram.Config{
 		ContextWindow:   ctxWin,
 		BytesPerElement: bpe,
 		Slots:           nseq,
@@ -61,13 +62,12 @@ func (p *Pool) planRequest(ctx context.Context, modelID, key string, cfg model.C
 		"key", key,
 		"model-id", modelID,
 		"source", source,
-		"predicted-bytes", predicted,
 		"predicted", humanBytes(predicted),
 		"context-window", ctxWin,
 		"slots", nseq,
 		"bytes-per-element", bpe,
-		"vram-bytes", req.VRAMBytes,
-		"ram-bytes", req.RAMBytes,
+		"vram", humanBytes(req.VRAMBytes),
+		"ram", humanBytes(req.RAMBytes),
 		"devices", req.Devices,
 		"tensor-split", req.TensorSplit,
 	)
@@ -85,9 +85,9 @@ func (p *Pool) planRequest(ctx context.Context, modelID, key string, cfg model.C
 // the keys that calculation needs (e.g. BERT-based rerankers and embedders).
 // The raw on-disk size is a conservative under-estimate but enough to gate
 // concurrent loads.
-func predictBytes(m *models.Models, modelID string, cfg models.VRAMConfig) (int64, string, error) {
-	if vram, err := m.CalculateVRAM(modelID, cfg); err == nil {
-		return vram.TotalVRAM, "calculate-vram", nil
+func predictBytes(m *models.Models, modelID string, cfg vram.Config) (int64, string, error) {
+	if v, err := m.CalculateVRAM(modelID, cfg); err == nil {
+		return v.TotalVRAM, "calculate-vram", nil
 	}
 
 	info, err := m.ModelInformation(modelID)

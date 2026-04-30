@@ -15,6 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -256,7 +257,7 @@ func (p *Pool) modelDisplayMemory(krn *kronk.Kronk, modelID string) (kvCache int
 
 	ctxWin := int64(cfg.ContextWindow())
 	if ctxWin <= 0 {
-		ctxWin = int64(models.ContextWindow4K)
+		ctxWin = int64(vram.ContextWindow4K)
 	}
 
 	nseq := int64(cfg.NSeqMax())
@@ -264,14 +265,14 @@ func (p *Pool) modelDisplayMemory(krn *kronk.Kronk, modelID string) (kvCache int
 		nseq = 1
 	}
 
-	vramCfg := models.VRAMConfig{
+	vramCfg := vram.Config{
 		ContextWindow:   ctxWin,
 		BytesPerElement: bytesPerElement(cfg.CacheTypeK),
 		Slots:           nseq,
 	}
 
-	if vram, err := p.models.CalculateVRAM(modelID, vramCfg); err == nil {
-		return vram.SlotMemory, vram.TotalVRAM
+	if v, err := p.models.CalculateVRAM(modelID, vramCfg); err == nil {
+		return v.SlotMemory, v.TotalVRAM
 	}
 
 	return mi.SlotMemory, mi.VRAMTotal
@@ -359,7 +360,7 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 				"status", "cache-set",
 				"key", modelID,
 				"expires-at", entry.ExpiresAt(),
-				"ttl", entry.ExpiresAfter(),
+				"ttl", entry.ExpiresAfter().String(),
 			)
 		}
 
@@ -473,7 +474,7 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 				"status", "cache-set",
 				"key", key,
 				"expires-at", entry.ExpiresAt(),
-				"ttl", entry.ExpiresAfter(),
+				"ttl", entry.ExpiresAfter().String(),
 			)
 		}
 
@@ -521,9 +522,7 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 	p.log(ctx, "reserve",
 		"status", "begin",
 		"key", newKey,
-		"vram-bytes", req.VRAMBytes,
 		"vram", humanBytes(req.VRAMBytes),
-		"ram-bytes", req.RAMBytes,
 		"ram", humanBytes(req.RAMBytes),
 		"devices", req.Devices,
 		"items-in-cache", p.itemsInCache.Load(),

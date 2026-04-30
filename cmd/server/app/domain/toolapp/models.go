@@ -12,6 +12,8 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -242,13 +244,13 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	slots := max(req.Slots, 1)
 	contextWindow := req.ContextWindow
 
-	cfg := models.VRAMConfig{
+	cfg := vram.Config{
 		ContextWindow:   contextWindow,
 		BytesPerElement: req.BytesPerElement,
 		Slots:           slots,
 	}
 
-	vram, err := models.CalculateVRAMFromHuggingFace(ctx, req.ModelURL, cfg)
+	v, err := vram.FromHuggingFace(ctx, req.ModelURL, cfg)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -257,7 +259,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	// can offer a model selector.
 	repoFiles := fetchVRAMRepoFiles(ctx, req.ModelURL)
 
-	return toVRAMResponse(vram, repoFiles)
+	return toVRAMResponse(v, repoFiles)
 }
 
 func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
@@ -297,15 +299,15 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	rmc := a.resolvedModelConfig(modelID)
 	rmc.Sampling = rmc.Sampling.WithDefaults()
 
-	var vram *VRAMResponse
+	var vramResp *VRAMResponse
 	if v, err := a.models.CalculateVRAM(modelID, vramConfigFromRMC(rmc)); err == nil {
 		vr := toVRAMResponse(v, nil)
-		vram = &vr
+		vramResp = &vr
 	} else {
 		a.log.Info(ctx, "show-model: calculate-vram", "ERROR", err)
 	}
 
-	return toModelInfo(fi, mi, rmc, vram)
+	return toModelInfo(fi, mi, rmc, vramResp)
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
@@ -317,6 +319,26 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 	a.log.Info(ctx, "models", "len", len(models))
 
 	return toModelDetails(models)
+}
+
+func (a *app) poolBudget(ctx context.Context, r *http.Request) web.Encoder {
+	rm := a.pool.ResourceManager()
+	if rm == nil {
+		return errs.Errorf(errs.Internal, "resource manager not available")
+	}
+
+	usage := rm.Usage()
+
+	a.log.Info(ctx, "pool-budget",
+		"budget-percent", usage.BudgetPercent,
+		"headroom-bytes", usage.HeadroomBytes,
+		"devices", len(usage.Devices),
+		"reservations", len(usage.Reservations),
+		"ram-used", usage.RAMUsed,
+		"ram-budget", usage.RAMBudget,
+	)
+
+	return toPoolBudget(usage)
 }
 
 func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
@@ -347,12 +369,12 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 // the list of GGUF files available in that HuggingFace repository. This is
 // best-effort: if parsing or fetching fails, an empty slice is returned.
 func fetchVRAMRepoFiles(ctx context.Context, modelURL string) []HFRepoFile {
-	owner, repo, _, err := models.ParseHFInput(modelURL)
+	owner, repo, _, err := hf.ParseInput(modelURL)
 	if err != nil || owner == "" || repo == "" {
 		return nil
 	}
 
-	allFiles, err := models.FetchHFRepoFiles(ctx, owner, repo, "main", "", true)
+	allFiles, err := hf.RepoFiles(ctx, owner, repo, "main", "", true)
 	if err != nil {
 		return nil
 	}
@@ -434,7 +456,7 @@ func (a *app) resolvePeerURLs(ctx context.Context, modelSource, projSource strin
 func toDownloadServerURL(server, rawURL string) string {
 	const hfPrefix = "https://huggingface.co/"
 
-	normalized := models.NormalizeHuggingFaceDownloadURL(rawURL)
+	normalized := hf.NormalizeDownloadURL(rawURL)
 	path := strings.TrimPrefix(normalized, hfPrefix)
 
 	return fmt.Sprintf("http://%s/download/%s", server, path)

@@ -16,9 +16,9 @@ func (p *Pool) logResmanInit(ctx context.Context) {
 	args := []any{
 		"status", "resman-init",
 		"budget-percent", u.BudgetPercent,
-		"headroom-bytes", u.HeadroomBytes,
+		"headroom", humanBytes(u.HeadroomBytes),
 		"gpu-count", len(u.Devices),
-		"ram-budget", u.RAMBudget,
+		"ram-budget", humanBytes(u.RAMBudget),
 		"max-models-in-cache", p.maxModelsInCache,
 	}
 
@@ -44,8 +44,8 @@ func (p *Pool) logResmanUsage(ctx context.Context, op string, extra ...any) {
 		"status", "resman-usage",
 		"op", op,
 		"reservations", len(u.Reservations),
-		"ram-used", u.RAMUsed,
-		"ram-budget", u.RAMBudget,
+		"ram-used", humanBytes(u.RAMUsed),
+		"ram-budget", humanBytes(u.RAMBudget),
 	)
 
 	for _, d := range u.Devices {
@@ -67,8 +67,8 @@ func (p *Pool) logResmanUsage(ctx context.Context, op string, extra ...any) {
 // suitable for inclusion in a log call.
 func describePlan(plan resman.LoadPlan) []any {
 	args := []any{
-		"plan-vram", plan.VRAMBytes,
-		"plan-ram", plan.RAMBytes,
+		"plan-vram", humanBytes(plan.VRAMBytes),
+		"plan-ram", humanBytes(plan.RAMBytes),
 	}
 	for i, alloc := range plan.Per {
 		args = append(args,
@@ -79,12 +79,12 @@ func describePlan(plan resman.LoadPlan) []any {
 	return args
 }
 
-// humanBytes formats a byte count using binary (IEC) units. The output is
-// short and stable for log scraping (e.g. "12.0GiB", "256MiB", "0").
+// humanBytes formats a byte count using decimal (SI) units. The output is
+// short and stable for log scraping (e.g. "12.9GB", "256MB", "0B").
 func humanBytes(n int64) string {
-	const unit = 1024
+	const unit = 1000
 	if n < unit {
-		return fmt.Sprintf("%d", n)
+		return fmt.Sprintf("%dB", n)
 	}
 
 	div, exp := int64(unit), 0
@@ -93,7 +93,7 @@ func humanBytes(n int64) string {
 		exp++
 	}
 
-	suffixes := []string{"KiB", "MiB", "GiB", "TiB", "PiB"}
+	suffixes := []string{"KB", "MB", "GB", "TB", "PB"}
 	if exp >= len(suffixes) {
 		exp = len(suffixes) - 1
 	}

@@ -54,6 +54,39 @@ export interface ModelDetail {
 
 export type ModelDetailsResponse = ModelDetail[];
 
+export interface DeviceBudget {
+  index: number;
+  name: string;
+  type: string;
+  total_bytes: number;
+  budget_bytes: number;
+  used_bytes: number;
+}
+
+export interface ReservationDevice {
+  index: number;
+  name: string;
+  bytes: number;
+}
+
+export interface Reservation {
+  key: string;
+  vram_bytes: number;
+  ram_bytes: number;
+  per: ReservationDevice[];
+}
+
+export interface PoolBudgetResponse {
+  budget_percent: number;
+  headroom_bytes: number;
+  unified_memory: boolean;
+  ram_total: number;
+  ram_budget: number;
+  ram_used: number;
+  devices: DeviceBudget[];
+  reservations: Reservation[];
+}
+
 export interface ModelConfig {
   'context-window': number;
   nbatch: number;

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
@@ -236,14 +237,14 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 	// -------------------------------------------------------------------------
 	// Memory estimates.
 
-	kvBytesF16 := headCountKV * (keyLength + valueLength) * BytesPerElementF16
-	kvBytesQ8 := headCountKV * (keyLength + valueLength) * BytesPerElementQ8_0
+	kvBytesF16 := headCountKV * (keyLength + valueLength) * vram.BytesPerElementF16
+	kvBytesQ8 := headCountKV * (keyLength + valueLength) * vram.BytesPerElementQ8_0
 
 	// Use 85% of free GPU as the budget.
 	gpuBudget := int64(float64(sf.GPUFreeBytes) * 0.85)
 
 	modelSize := int64(info.Size)
-	computeBuf := estimateComputeBuffer(VRAMInput{
+	computeBuf := vram.EstimateComputeBuffer(vram.Input{
 		ModelSizeBytes:  modelSize,
 		EmbeddingLength: embeddingLength,
 	})
@@ -361,34 +362,34 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	// Determine context window.
 	ctxCap := p.trainingCtx
 	if ctxCap <= 0 {
-		ctxCap = ContextWindow8K
+		ctxCap = vram.ContextWindow8K
 	}
 
 	switch name {
 	case "balanced":
-		ctxCap = minInt64(ctxCap, ContextWindow32K)
+		ctxCap = minInt64(ctxCap, vram.ContextWindow32K)
 	case "max_context":
 		// Use full training context.
 	case "max_concurrency":
-		ctxCap = minInt64(ctxCap, ContextWindow8K)
+		ctxCap = minInt64(ctxCap, vram.ContextWindow8K)
 	}
 
 	// Select the largest context bucket that fits within the GPU budget.
 	buckets := []int64{
-		ContextWindow4K, ContextWindow8K, ContextWindow16K,
-		ContextWindow32K, ContextWindow64K, ContextWindow128K, ContextWindow256K,
+		vram.ContextWindow4K, vram.ContextWindow8K, vram.ContextWindow16K,
+		vram.ContextWindow32K, vram.ContextWindow64K, vram.ContextWindow128K, vram.ContextWindow256K,
 	}
 
 	rec.CacheTypeK = "f16"
 	rec.CacheTypeV = "f16"
-	bytesPerElem := BytesPerElementF16
+	bytesPerElem := vram.BytesPerElementF16
 
-	computeBuf := estimateComputeBuffer(VRAMInput{
+	computeBuf := vram.EstimateComputeBuffer(vram.Input{
 		ModelSizeBytes:  p.modelSize,
 		EmbeddingLength: p.embLen,
 	})
 
-	bestCtx := ContextWindow4K
+	bestCtx := vram.ContextWindow4K
 	for _, bucket := range buckets {
 		if bucket > ctxCap {
 			break
@@ -406,15 +407,15 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	}
 
 	// If f16 doesn't fit at all with the minimum bucket, try q8_0.
-	minKVF16 := ContextWindow4K * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * BytesPerElementF16
+	minKVF16 := vram.ContextWindow4K * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * vram.BytesPerElementF16
 	minTotalF16 := p.modelSize + (rec.NSeqMax * minKVF16) + computeBuf
 
 	if p.gpuBudget > 0 && minTotalF16 > p.gpuBudget {
 		rec.CacheTypeK = "q8_0"
 		rec.CacheTypeV = "q8_0"
-		bytesPerElem = BytesPerElementQ8_0
+		bytesPerElem = vram.BytesPerElementQ8_0
 
-		bestCtx = ContextWindow4K
+		bestCtx = vram.ContextWindow4K
 		for _, bucket := range buckets {
 			if bucket > ctxCap {
 				break

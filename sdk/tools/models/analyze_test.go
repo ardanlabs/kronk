@@ -3,6 +3,7 @@ package models
 import (
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
@@ -110,8 +111,8 @@ func TestAnalyzeModelDense(t *testing.T) {
 		t.Errorf("Recommended.FlashAttention = %q, want %q", a.Recommended.FlashAttention, "auto")
 	}
 
-	if a.Recommended.ContextWindow < ContextWindow8K {
-		t.Errorf("Recommended.ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, ContextWindow8K)
+	if a.Recommended.ContextWindow < vram.ContextWindow8K {
+		t.Errorf("Recommended.ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, vram.ContextWindow8K)
 	}
 
 	if !a.Recommended.Fits {
@@ -376,8 +377,8 @@ func TestAnalyzeModelTightMemory(t *testing.T) {
 	}
 
 	// With tight memory the recommendation should still produce a valid config.
-	if a.Recommended.ContextWindow < ContextWindow4K {
-		t.Errorf("ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, ContextWindow4K)
+	if a.Recommended.ContextWindow < vram.ContextWindow4K {
+		t.Errorf("ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, vram.ContextWindow4K)
 	}
 
 	if a.Recommended.EstimatedVRAMBytes <= 0 {
