@@ -143,6 +143,7 @@ func New(t *testing.T, testName string) *Test {
 		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
 		ModelsInCache:   1,
 		CacheTTL:        5 * time.Minute,
+		BudgetPercent:   95,
 	})
 
 	if err != nil {
