@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 )
 
 // CatalogFile is one downloadable artifact (model or projection).
@@ -208,17 +210,10 @@ func FormatParameterCount(n int64) string {
 	}
 }
 
-// parseInt64 parses metadata values that arrived as strings. Returns 0
-// when the value isn't a valid integer.
-func parseInt64(s string) int64 {
-	n, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-	return n
-}
-
 // TemplateName returns "tokenizer.chat_template" when present, indicating
 // the model carries an embedded chat template; otherwise "".
 func TemplateName(metadata map[string]string) string {
-	if _, ok := metadata["tokenizer.chat_template"]; ok {
+	if gguf.HasChatTemplate(metadata) {
 		return "tokenizer.chat_template"
 	}
 	return ""
@@ -240,13 +235,13 @@ func TemplateName(metadata map[string]string) string {
 // "any-to-any" and "omni" both turn on audio and video; the explicit
 // "audio" and "video" tokens turn on the matching modality only.
 func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapabilities {
-	arch := strings.ToLower(metadata["general.architecture"])
+	arch := strings.ToLower(gguf.DetectArchitecture(metadata))
 
 	caps := CatalogCapabilities{
 		Streaming: true,
 	}
 
-	hasTemplate := metadata["tokenizer.chat_template"] != ""
+	hasTemplate := gguf.HasChatTemplate(metadata)
 	switch {
 	case strings.Contains(arch, "embed"):
 		caps.Endpoint = "embeddings"
@@ -267,9 +262,9 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 
 		hint := strings.ToLower(strings.Join([]string{
 			arch,
-			metadata["general.name"],
-			metadata["general.basename"],
-			metadata["general.tags"],
+			gguf.GeneralName(metadata),
+			gguf.GeneralBasename(metadata),
+			gguf.GeneralTags(metadata),
 		}, " "))
 
 		anyToAny := strings.Contains(hint, "any-to-any") || strings.Contains(hint, "omni")
@@ -288,7 +283,7 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 // ParameterCount extracts the model's parameter count from GGUF metadata.
 // Returns 0 when the metadata value is missing or unparseable.
 func ParameterCount(metadata map[string]string) int64 {
-	return parseInt64(metadata["general.parameter_count"])
+	return gguf.ParameterCount(metadata)
 }
 
 // ParametersLabel returns a human-readable parameter count for the model,
@@ -299,22 +294,7 @@ func ParametersLabel(metadata map[string]string) string {
 	if n := ParameterCount(metadata); n > 0 {
 		return FormatParameterCount(n)
 	}
-	return strings.TrimSpace(metadata["general.size_label"])
-}
-
-// hybridArchPrefixes lists architecture names known to combine attention
-// with recurrent (SSM/Mamba/DeltaNet) layers.
-var hybridArchPrefixes = []string{
-	"lfm2",
-	"jamba",
-	"mamba",
-	"recurrentgemma",
-	"qwen3next",
-	"qwen3-next",
-	"granite-hybrid",
-	"granitemoehybrid",
-	"nemotron-h",
-	"nemotronh",
+	return gguf.SizeLabel(metadata)
 }
 
 // ArchitectureClass classifies a model as "Dense", "MoE", or "Hybrid"
@@ -322,32 +302,11 @@ var hybridArchPrefixes = []string{
 // the recurrent state cleanup path is the differentiator that matters
 // for the engine.
 func ArchitectureClass(metadata map[string]string) string {
-	if isHybridFromMetadata(metadata) {
+	if gguf.IsHybridArchitecture(metadata) {
 		return "Hybrid"
 	}
 	if detectMoE(metadata).IsMoE {
 		return "MoE"
 	}
 	return "Dense"
-}
-
-// isHybridFromMetadata reports whether the metadata indicates a model
-// with recurrent layers. Detection looks for SSM/Mamba metadata keys
-// and a known-hybrid architecture prefix.
-func isHybridFromMetadata(metadata map[string]string) bool {
-	arch := strings.ToLower(detectArchitecture(metadata))
-	for _, p := range hybridArchPrefixes {
-		if strings.HasPrefix(arch, p) {
-			return true
-		}
-	}
-
-	for k := range metadata {
-		lk := strings.ToLower(k)
-		if strings.Contains(lk, ".ssm.") || strings.Contains(lk, ".mamba.") || strings.Contains(lk, ".recurrent.") {
-			return true
-		}
-	}
-
-	return false
 }

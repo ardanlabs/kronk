@@ -6,12 +6,13 @@
 - [7.2 Stopping the Server](#72-stopping-the-server)
 - [7.3 Server Configuration](#73-server-configuration)
 - [7.4 Model Caching](#74-model-caching)
-- [7.5 Model Config Files](#75-model-config-files)
-- [7.6 Catalog System](#76-catalog-system)
-- [7.7 Runtime Settings](#77-runtime-settings)
-- [7.8 Logging](#78-logging)
-- [7.9 Data Paths](#79-data-paths)
-- [7.10 Complete Example](#710-complete-example)
+- [7.5 Resource Manager](#75-resource-manager)
+- [7.6 Model Config Files](#76-model-config-files)
+- [7.7 Catalog System](#77-catalog-system)
+- [7.8 Runtime Settings](#78-runtime-settings)
+- [7.9 Logging](#79-logging)
+- [7.10 Data Paths](#710-data-paths)
+- [7.11 Complete Example](#711-complete-example)
 
 ---
 
@@ -55,7 +56,7 @@ replaced by underscores:
 
 ```
 --api-host        →  KRONK_WEB_API_HOST
---models-in-cache →  KRONK_CACHE_MODELS_IN_CACHE
+--budget-percent  →  KRONK_CACHE_BUDGET_PERCENT
 --cache-ttl       →  KRONK_CACHE_TTL
 --processor       →  KRONK_PROCESSOR
 --hf-token        →  KRONK_HF_TOKEN
@@ -142,7 +143,7 @@ underscores replacing hyphens.
 | Flag                  | Environment Variable            | Default                       | Description                                                                                         |
 | --------------------- | ------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- |
 | `--model-config-file` | `KRONK_CACHE_MODEL_CONFIG_FILE` | `<base>/model_config.yaml`    | Path to per-model configuration overrides. Defaults to the file under your `--base-path`.           |
-| `--models-in-cache`   | `KRONK_CACHE_MODELS_IN_CACHE`   | `2`                           | Maximum distinct models kept loaded in memory                                                       |
+| `--budget-percent`    | `KRONK_CACHE_BUDGET_PERCENT`    | `80`                          | Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See [Section 7.5](#75-resource-manager). |
 | `--cache-ttl`         | `KRONK_CACHE_TTL`               | `20m`                         | How long an unused model stays loaded                                                               |
 
 **Runtime Settings**
@@ -165,7 +166,7 @@ underscores replacing hyphens.
 ```shell
 kronk server start \
   --api-host=0.0.0.0:11435 \
-  --models-in-cache=5 \
+  --budget-percent=80 \
   --cache-ttl=30m \
   --model-config-file=./model_config.yaml \
   --hf-token=hf_xxxxx
@@ -179,17 +180,83 @@ The server maintains a pool of loaded models to avoid reload latency.
 
 ```shell
 kronk server start \
-  --models-in-cache=3 \
+  --budget-percent=80 \
   --cache-ttl=20m
 ```
 
-- `models-in-cache` - Maximum distinct models kept loaded (default: 2)
+- `budget-percent` - Percentage (1..100) of detected GPU VRAM and system RAM
+  the resource manager may commit to loaded models (default: 80)
 - `cache-ttl` - How long an unused model stays loaded (default: 20m)
 
-When a new model is requested and the cache is full, the least recently
-used model is unloaded.
+When a new model is requested and admitting it would exceed the budget,
+the resource manager evicts the coldest idle model in the pool to free
+room. If no idle model can be evicted (every loaded model has active
+streams), the request returns `server busy`. See
+[Section 7.5](#75-resource-manager) for the full admission and eviction
+model.
 
-### 7.5 Model Config Files
+### 7.5 Resource Manager
+
+Kronk's pool sits behind an in-memory **resource manager** (resman) that
+admits or rejects model loads based on a memory budget rather than a fixed
+model count. The manager is a pure accountant — it never queries the GPU
+or the OS at runtime; it works from a snapshot of detected devices taken
+once at server startup and from per-model VRAM predictions.
+
+**BudgetPercent**
+
+`--budget-percent` (default `80`) is the single admission knob. It is
+applied independently to:
+
+- Each detected GPU's `TotalBytes` to derive that device's budget.
+- The system's total RAM to derive the host RAM budget.
+
+For example on a machine with one 24 GB GPU and 64 GB of RAM, the default
+80% budget yields ~19.2 GB of GPU budget (minus a small per-GPU headroom
+of 256 MiB) and ~51 GB of host RAM budget. A model is admitted only if
+its predicted footprint fits within the budget that remains on the
+appropriate device.
+
+**Per-GPU buckets — VRAM is NOT pooled across cards**
+
+Each GPU is its own independent budget bucket. The manager will never
+"sum" two cards' free VRAM together to admit a single model. A model
+that doesn't fit on any one card cannot be loaded today, even if the
+combined free VRAM across cards would be large enough.
+
+> Multi-GPU layer offload (loading parts of one model across multiple
+> cards) is not supported yet. When a configuration explicitly lists
+> multiple devices and supplies a `tensor-split`, the manager honors the
+> split proportions and charges each card the corresponding share, but
+> on each card the share must still fit within that card's per-GPU
+> budget.
+
+**File-size fallback for BERT-style models**
+
+The VRAM prediction uses standard transformer metadata
+(`block_count`, `attention.head_count_kv`, key/value lengths) to size
+the KV cache and compute buffers. Some embedding/reranking models —
+notably BERT-derived rerankers — don't expose those keys in their GGUF
+metadata. For those models the manager falls back to charging the raw
+on-disk file size against the budget. This is a conservative
+under-estimate but is enough to gate concurrent loads.
+
+**Eviction on a busy pool**
+
+When a load is admitted but no headroom remains, the pool evicts the
+coldest idle (no active streams) model in the cache, waits for its
+unload to release the reservation, and retries. If every loaded model
+has active streams, the request fails with `server busy: all model
+slots have active requests` and the client should retry later.
+
+**Inspecting current usage**
+
+The pool emits structured `resman-init` and `resman-usage` log lines on
+startup and after every reserve/release, including per-GPU
+`used/budget/free` and `ram-used/ram-budget`. These are the easiest way
+to confirm the manager is reasoning about the right hardware.
+
+### 7.6 Model Config Files
 
 The server reads per-model overrides from `~/.kronk/model_config.yaml` by
 default. Kronk seeds this file from an embedded default on first server
@@ -245,7 +312,7 @@ recommended settings for various models and use cases at
 - Detailed comments explaining each configuration option
 - Examples of YAML anchors for sharing common settings between variants
 
-### 7.6 Catalog System
+### 7.7 Catalog System
 
 The catalog (`~/.kronk/catalog.yaml`) is your **personal** catalog of
 models. On first run Kronk seeds it from an embedded starter list so you
@@ -300,7 +367,7 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0   # also removes downloaded files
 
 The same operations are available in the BUI's Catalog and Model views.
 
-### 7.7 Runtime Settings
+### 7.8 Runtime Settings
 
 **Processor Selection**
 
@@ -352,7 +419,7 @@ export KRONK_HF_TOKEN=hf_xxxxx
 kronk server start
 ```
 
-### 7.8 Logging
+### 7.9 Logging
 
 **llama.cpp Logging**
 
@@ -377,7 +444,7 @@ kronk server start --insecure-logging=true
 kronk server logs
 ```
 
-### 7.9 Data Paths
+### 7.10 Data Paths
 
 Default data locations:
 
@@ -408,14 +475,14 @@ kronk server start --base-path=/data/kronk
 
 `--base-path` shifts every file above to live under the new root.
 
-### 7.10 Complete Example
+### 7.11 Complete Example
 
 Production-ready server configuration:
 
 ```shell
 kronk server start \
   --api-host=0.0.0.0:11435 \
-  --models-in-cache=2 \
+  --budget-percent=80 \
   --cache-ttl=20m \
   --model-config-file=/etc/kronk/model_config.yaml \
   --processor=cuda \

@@ -2931,7 +2931,7 @@ kronk libs --local`}</code></pre>
           <p><strong>Environment Variables</strong></p>
           <p>Every command-line flag has a corresponding environment variable. The naming convention is <code>KRONK_</code> followed by the flag name in uppercase with hyphens replaced by underscores:</p>
           <pre className="code-block"><code>{`--api-host        →  KRONK_WEB_API_HOST
---models-in-cache →  KRONK_CACHE_MODELS_IN_CACHE
+--budget-percent  →  KRONK_CACHE_BUDGET_PERCENT
 --cache-ttl       →  KRONK_CACHE_TTL
 --processor       →  KRONK_PROCESSOR
 --hf-token        →  KRONK_HF_TOKEN`}</code></pre>
@@ -3091,10 +3091,10 @@ kronk libs --local`}</code></pre>
                 <td>Path to per-model configuration overrides. Defaults to the file under your <code>--base-path</code>.</td>
               </tr>
               <tr>
-                <td><code>--models-in-cache</code></td>
-                <td><code>KRONK_CACHE_MODELS_IN_CACHE</code></td>
-                <td><code>2</code></td>
-                <td>Maximum distinct models kept loaded in memory</td>
+                <td><code>--budget-percent</code></td>
+                <td><code>KRONK_CACHE_BUDGET_PERCENT</code></td>
+                <td><code>80</code></td>
+                <td>Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See <a href="#75-resource-manager">Section 7.5</a>.</td>
               </tr>
               <tr>
                 <td><code>--cache-ttl</code></td>
@@ -3180,7 +3180,7 @@ kronk libs --local`}</code></pre>
           <p><strong>Example</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=0.0.0.0:11435 \\
-  --models-in-cache=5 \\
+  --budget-percent=80 \\
   --cache-ttl=30m \\
   --model-config-file=./model_config.yaml \\
   --hf-token=hf_xxxxx`}</code></pre>
@@ -3188,14 +3188,37 @@ kronk libs --local`}</code></pre>
           <p>The server maintains a pool of loaded models to avoid reload latency.</p>
           <p><strong>Configuration</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
-  --models-in-cache=3 \\
+  --budget-percent=80 \\
   --cache-ttl=20m`}</code></pre>
           <ul>
-            <li><code>models-in-cache</code> - Maximum distinct models kept loaded (default: 2)</li>
+            <li><code>budget-percent</code> - Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models (default: 80)</li>
             <li><code>cache-ttl</code> - How long an unused model stays loaded (default: 20m)</li>
           </ul>
-          <p>When a new model is requested and the cache is full, the least recently used model is unloaded.</p>
-          <h3 id="75-model-config-files">7.5 Model Config Files</h3>
+          <p>When a new model is requested and admitting it would exceed the budget, the resource manager evicts the coldest idle model in the pool to free room. If no idle model can be evicted (every loaded model has active streams), the request returns <code>server busy</code>. See <a href="#75-resource-manager">Section 7.5</a> for the full admission and eviction model.</p>
+          <h3 id="75-resource-manager">7.5 Resource Manager</h3>
+          <p>Kronk's pool sits behind an in-memory <strong>resource manager</strong> (resman) that admits or rejects model loads based on a memory budget rather than a fixed model count. The manager is a pure accountant — it never queries the GPU or the OS at runtime; it works from a snapshot of detected devices taken once at server startup and from per-model VRAM predictions.</p>
+          <p><strong>BudgetPercent</strong></p>
+          <p><code>--budget-percent</code> (default <code>80</code>) is the single admission knob. It is applied independently to:</p>
+          <ul>
+            <li>Each detected GPU's <code>TotalBytes</code> to derive that device's budget.</li>
+            <li>The system's total RAM to derive the host RAM budget.</li>
+          </ul>
+          <p>For example on a machine with one 24 GB GPU and 64 GB of RAM, the default 80% budget yields ~19.2 GB of GPU budget (minus a small per-GPU headroom of 256 MiB) and ~51 GB of host RAM budget. A model is admitted only if its predicted footprint fits within the budget that remains on the appropriate device.</p>
+          <p><strong>Per-GPU buckets — VRAM is NOT pooled across cards</strong></p>
+          <p>Each GPU is its own independent budget bucket. The manager will never "sum" two cards' free VRAM together to admit a single model. A model that doesn't fit on any one card cannot be loaded today, even if the combined free VRAM across cards would be large enough.</p>
+          <blockquote>Multi-GPU layer offload (loading parts of one model across multiple</blockquote>
+          <blockquote>cards) is not supported yet. When a configuration explicitly lists</blockquote>
+          <blockquote>multiple devices and supplies a <code>tensor-split</code>, the manager honors the</blockquote>
+          <blockquote>split proportions and charges each card the corresponding share, but</blockquote>
+          <blockquote>on each card the share must still fit within that card's per-GPU</blockquote>
+          <blockquote>budget.</blockquote>
+          <p><strong>File-size fallback for BERT-style models</strong></p>
+          <p>The VRAM prediction uses standard transformer metadata (<code>block_count</code>, <code>attention.head_count_kv</code>, key/value lengths) to size the KV cache and compute buffers. Some embedding/reranking models — notably BERT-derived rerankers — don't expose those keys in their GGUF metadata. For those models the manager falls back to charging the raw on-disk file size against the budget. This is a conservative under-estimate but is enough to gate concurrent loads.</p>
+          <p><strong>Eviction on a busy pool</strong></p>
+          <p>When a load is admitted but no headroom remains, the pool evicts the coldest idle (no active streams) model in the cache, waits for its unload to release the reservation, and retries. If every loaded model has active streams, the request fails with <code>server busy: all model slots have active requests</code> and the client should retry later.</p>
+          <p><strong>Inspecting current usage</strong></p>
+          <p>The pool emits structured <code>resman-init</code> and <code>resman-usage</code> log lines on startup and after every reserve/release, including per-GPU <code>used/budget/free</code> and <code>ram-used/ram-budget</code>. These are the easiest way to confirm the manager is reasoning about the right hardware.</p>
+          <h3 id="76-model-config-files">7.6 Model Config Files</h3>
           <p>The server reads per-model overrides from <code>~/.kronk/model_config.yaml</code> by default. Kronk seeds this file from an embedded default on first server start; your edits are preserved across upgrades.</p>
           <p>The file is a flat map keyed by canonical model id (<code>provider/modelID</code>, optionally with a <code>/variant</code> suffix). Each entry's keys map 1:1 to <code>model.Config</code> and use kebab-case:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
@@ -3229,7 +3252,7 @@ kronk server start`}</code></pre>
             <li>Detailed comments explaining each configuration option</li>
             <li>Examples of YAML anchors for sharing common settings between variants</li>
           </ul>
-          <h3 id="76-catalog-system">7.6 Catalog System</h3>
+          <h3 id="77-catalog-system">7.7 Catalog System</h3>
           <p>The catalog (<code>~/.kronk/catalog.yaml</code>) is your <strong>personal</strong> catalog of models. On first run Kronk seeds it from an embedded starter list so you have something to choose from immediately; the catalog grows as you pull models or resolve new IDs against HuggingFace.</p>
           <p>Each entry is a resolution cache — provider, family (HF repo), revision, file list, sizes, optional MMProj projection, and detected capabilities. Templates come from the GGUF metadata of the downloaded model itself and are not stored here.</p>
           <p><strong>List entries in the catalog</strong></p>
@@ -3248,7 +3271,7 @@ kronk server start`}</code></pre>
           <p><strong>Remove a catalog entry</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog remove unsloth/Qwen3-0.6B-Q8_0   # also removes downloaded files`}</code></pre>
           <p>The same operations are available in the BUI's Catalog and Model views.</p>
-          <h3 id="77-runtime-settings">7.7 Runtime Settings</h3>
+          <h3 id="78-runtime-settings">7.8 Runtime Settings</h3>
           <p><strong>Processor Selection</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --processor=cuda    # NVIDIA GPU
 kronk server start --processor=metal   # Apple Silicon
@@ -3291,7 +3314,7 @@ kronk server start --processor=cpu     # CPU only`}</code></pre>
           <p>Or via environment variable:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_HF_TOKEN=hf_xxxxx
 kronk server start`}</code></pre>
-          <h3 id="78-logging">7.8 Logging</h3>
+          <h3 id="79-logging">7.9 Logging</h3>
           <p><strong>llama.cpp Logging</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log=1    # Enable llama.cpp logs
 kronk server start --llama-log=0    # Disable (default)`}</code></pre>
@@ -3301,7 +3324,7 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <p><strong>Warning:</strong> This logs sensitive data. Never use in production.</p>
           <p><strong>View Server Logs</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server logs`}</code></pre>
-          <h3 id="79-data-paths">7.9 Data Paths</h3>
+          <h3 id="710-data-paths">7.10 Data Paths</h3>
           <p>Default data locations:</p>
           <pre className="code-block"><code>{`~/.kronk/
 ├── catalog.yaml                        # Personal catalog (resolution cache + provider list)
@@ -3317,11 +3340,11 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <p><strong>Custom Base Path</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --base-path=/data/kronk`}</code></pre>
           <p><code>--base-path</code> shifts every file above to live under the new root.</p>
-          <h3 id="710-complete-example">7.10 Complete Example</h3>
+          <h3 id="711-complete-example">7.11 Complete Example</h3>
           <p>Production-ready server configuration:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=0.0.0.0:11435 \\
-  --models-in-cache=2 \\
+  --budget-percent=80 \\
   --cache-ttl=20m \\
   --model-config-file=/etc/kronk/model_config.yaml \\
   --processor=cuda \\
@@ -7419,12 +7442,13 @@ default:
                 <li><a href="#72-stopping-the-server" className={activeSection === '72-stopping-the-server' ? 'active' : ''}>7.2 Stopping the Server</a></li>
                 <li><a href="#73-server-configuration" className={activeSection === '73-server-configuration' ? 'active' : ''}>7.3 Server Configuration</a></li>
                 <li><a href="#74-model-caching" className={activeSection === '74-model-caching' ? 'active' : ''}>7.4 Model Caching</a></li>
-                <li><a href="#75-model-config-files" className={activeSection === '75-model-config-files' ? 'active' : ''}>7.5 Model Config Files</a></li>
-                <li><a href="#76-catalog-system" className={activeSection === '76-catalog-system' ? 'active' : ''}>7.6 Catalog System</a></li>
-                <li><a href="#77-runtime-settings" className={activeSection === '77-runtime-settings' ? 'active' : ''}>7.7 Runtime Settings</a></li>
-                <li><a href="#78-logging" className={activeSection === '78-logging' ? 'active' : ''}>7.8 Logging</a></li>
-                <li><a href="#79-data-paths" className={activeSection === '79-data-paths' ? 'active' : ''}>7.9 Data Paths</a></li>
-                <li><a href="#710-complete-example" className={activeSection === '710-complete-example' ? 'active' : ''}>7.10 Complete Example</a></li>
+                <li><a href="#75-resource-manager" className={activeSection === '75-resource-manager' ? 'active' : ''}>7.5 Resource Manager</a></li>
+                <li><a href="#76-model-config-files" className={activeSection === '76-model-config-files' ? 'active' : ''}>7.6 Model Config Files</a></li>
+                <li><a href="#77-catalog-system" className={activeSection === '77-catalog-system' ? 'active' : ''}>7.7 Catalog System</a></li>
+                <li><a href="#78-runtime-settings" className={activeSection === '78-runtime-settings' ? 'active' : ''}>7.8 Runtime Settings</a></li>
+                <li><a href="#79-logging" className={activeSection === '79-logging' ? 'active' : ''}>7.9 Logging</a></li>
+                <li><a href="#710-data-paths" className={activeSection === '710-data-paths' ? 'active' : ''}>7.10 Data Paths</a></li>
+                <li><a href="#711-complete-example" className={activeSection === '711-complete-example' ? 'active' : ''}>7.11 Complete Example</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

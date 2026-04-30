@@ -42,7 +42,8 @@ func init() {
 	Cmd.Flags().String("model-config-file", "", "Special config file for model specific config")
 
 	// Cache settings
-	Cmd.Flags().Int("models-in-cache", 0, "Maximum models in cache (default: 2)")
+	Cmd.Flags().Int("budget-percent", 0, "Percentage (1..100) of system/VRAM memory the resource manager may consume (default: 80)")
+	Cmd.Flags().Int("models-in-cache", 0, "Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 32)")
 	Cmd.Flags().String("cache-ttl", "", "Cache TTL duration (e.g., 5m, 1h)")
 
 	// Runtime settings

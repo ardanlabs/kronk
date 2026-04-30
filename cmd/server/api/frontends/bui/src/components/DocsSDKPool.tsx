@@ -61,11 +61,13 @@ export default function DocsSDKPool() {
 	BasePath        string
 	ModelConfigFile string
 	ModelsInCache   int
+	BudgetPercent   int
 	CacheTTL        time.Duration
+	Snapshot        *resman.Snapshot
 	InsecureLogging bool
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents setting for the kronk manager. ModelsInCache: Defines the maximum number of unique models that will be available at a time. Defaults to 2 if the value is 0. CacheTTL: Defines the time an existing model can live in the pool without being used. Defaults to 5 minutes if the value is 0. InsecureLogging: When true, logs potentially sensitive data such as message content and detailed model configuration.</p>
+              <p className="doc-description">Config represents setting for the kronk manager. BudgetPercent: Percentage (1..100) of detected GPU VRAM and system RAM that the pool's resource manager is allowed to commit to loaded models. Defaults to defaultBudgetPercent (80) when zero. This is the primary admission knob. ModelsInCache: A hard upper bound on the number of distinct entries the pool will keep, regardless of budget. Used as a safety net to keep TTL eviction predictable; defaults to 32 when zero. CacheTTL: Defines the time an existing model can live in the pool without being used. Defaults to 5 minutes if the value is 0. Snapshot: Optional resource snapshot used to construct the resource manager. When nil the pool calls devices.List() at construction time. Tests use this to inject a deterministic device topology. InsecureLogging: When true, logs potentially sensitive data such as message content and detailed model configuration.</p>
             </div>
 
             <div className="doc-section" id="type-modeldetail">
@@ -148,6 +150,14 @@ export default function DocsSDKPool() {
               <p className="doc-description">ModelStatus returns information about the current models in the pool.</p>
             </div>
 
+            <div className="doc-section" id="method-pool-resourcemanager">
+              <h4>Pool.ResourceManager</h4>
+              <pre className="code-block">
+                <code>func (p *Pool) ResourceManager() *resman.Manager</code>
+              </pre>
+              <p className="doc-description">ResourceManager returns the pool's underlying resource manager. Useful for surfacing budget/usage data via observability endpoints.</p>
+            </div>
+
             <div className="doc-section" id="method-pool-shutdown">
               <h4>Pool.Shutdown</h4>
               <pre className="code-block">
@@ -195,6 +205,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-pool-invalidate">Pool.Invalidate</a></li>
                 <li><a href="#method-pool-modelconfig">Pool.ModelConfig</a></li>
                 <li><a href="#method-pool-modelstatus">Pool.ModelStatus</a></li>
+                <li><a href="#method-pool-resourcemanager">Pool.ResourceManager</a></li>
                 <li><a href="#method-pool-shutdown">Pool.Shutdown</a></li>
               </ul>
             </div>

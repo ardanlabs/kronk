@@ -1611,7 +1611,7 @@ func run() error {
 
 	cfg := pool.Config{
 		Log:           kronk.FmtLogger,
-		ModelsInCache: 2,
+		BudgetPercent: 80,
 		CacheTTL:      cacheTTL,
 	}
 

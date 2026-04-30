@@ -2,48 +2,12 @@ package models
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
-
-// ggufFileTypeNames maps the GGUF general.file_type integer to a
-// human-readable quantization name. These values come from the
-// llama.cpp LLAMA_FTYPE_* enum.
-var ggufFileTypeNames = map[int64]string{
-	0:  "F32",
-	1:  "F16",
-	2:  "Q4_0",
-	3:  "Q4_1",
-	7:  "Q8_0",
-	8:  "Q8_1",
-	10: "Q2_K",
-	11: "Q3_K_S",
-	12: "Q3_K_M",
-	13: "Q3_K_L",
-	14: "Q4_K_S",
-	15: "Q4_K_M",
-	16: "Q5_K_S",
-	17: "Q5_K_M",
-	18: "Q6_K",
-	19: "IQ2_XXS",
-	20: "IQ2_XS",
-	21: "IQ3_XXS",
-	22: "IQ1_S",
-	23: "IQ4_NL",
-	24: "IQ3_S",
-	25: "IQ2_S",
-	26: "IQ4_XS",
-	27: "IQ1_M",
-	28: "BF16",
-	29: "Q4_0_4_4",
-	30: "Q4_0_4_8",
-	31: "Q4_0_8_8",
-	32: "TQ1_0",
-	33: "TQ2_0",
-}
 
 // =============================================================================
 // Analysis types
@@ -208,7 +172,7 @@ func (m *Models) ModelAnalysis(modelID string) (Analysis, error) {
 func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 	md := info.Metadata
 
-	arch := detectArchitecture(md)
+	arch := gguf.DetectArchitecture(md)
 	if arch == "" {
 		return Analysis{}, fmt.Errorf("model-analysis: unable to detect architecture")
 	}
@@ -216,27 +180,27 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 	// -------------------------------------------------------------------------
 	// Parse model facts.
 
-	blockCount, err := parseMetadataInt64WithFallback(md, arch+".block_count", ".block_count")
+	blockCount, err := gguf.ParseInt64WithFallback(md, arch+".block_count", ".block_count")
 	if err != nil {
 		return Analysis{}, fmt.Errorf("model-analysis: block_count: %w", err)
 	}
 
-	headCount, _ := parseMetadataInt64(md, arch+".attention.head_count")
-	headCountKV, _ := parseMetadataInt64OrArrayAvg(md, arch+".attention.head_count_kv")
-	keyLength, valueLength, _ := resolveKVLengths(md, arch)
-	embeddingLength, _ := parseMetadataInt64WithFallback(md, arch+".embedding_length", ".embedding_length")
-	feedForward, _ := parseMetadataInt64WithFallback(md, arch+".feed_forward_length", ".feed_forward_length")
-	trainingCtx, _ := parseMetadataInt64WithFallback(md, arch+".context_length", ".context_length")
-	vocabSize, _ := parseMetadataInt64WithFallback(md, arch+".vocab_size", "tokenizer.ggml.tokens")
+	headCount, _ := gguf.ParseInt64(md, arch+".attention.head_count")
+	headCountKV, _ := gguf.ParseInt64OrArrayAvg(md, arch+".attention.head_count_kv")
+	keyLength, valueLength, _ := gguf.ResolveKVLengths(md, arch)
+	embeddingLength, _ := gguf.ParseInt64WithFallback(md, arch+".embedding_length", ".embedding_length")
+	feedForward, _ := gguf.ParseInt64WithFallback(md, arch+".feed_forward_length", ".feed_forward_length")
+	trainingCtx, _ := gguf.ParseInt64WithFallback(md, arch+".context_length", ".context_length")
+	vocabSize, _ := gguf.ParseInt64WithFallback(md, arch+".vocab_size", "tokenizer.ggml.tokens")
 
-	fileType, _ := parseMetadataInt64(md, "general.file_type")
-	quantName := ggufFileTypeName(fileType)
+	fileType, _ := gguf.ParseInt64(md, "general.file_type")
+	quantName := gguf.FileTypeName(fileType)
 
 	moeInfo := detectMoE(md)
 	class := classifyModel(info, moeInfo, arch)
 
-	rope := parseRopeFacts(md, arch)
-	attn := parseAttentionFacts(md, arch, blockCount)
+	rope := ropeFactsFromGGUF(gguf.ParseRopeFacts(md, arch))
+	attn := attentionFactsFromGGUF(gguf.ParseAttentionFacts(md, arch, blockCount))
 
 	mf := ModelFacts{
 		ID:              info.ID,
@@ -522,7 +486,7 @@ func buildReason(name string, rec RuntimeRecommendation, p profileInput) string 
 // Helpers
 
 func classifyModel(info ModelInfo, moe MoEInfo, arch string) string {
-	if isVisionEncoder(arch) || info.HasProjection {
+	if gguf.IsVisionEncoder(arch) || info.HasProjection {
 		return "vision"
 	}
 
@@ -541,76 +505,28 @@ func classifyModel(info ModelInfo, moe MoEInfo, arch string) string {
 	return "dense"
 }
 
-func parseRopeFacts(md map[string]string, arch string) RopeFacts {
-	var r RopeFacts
-
-	if v, err := parseMetadataFloat64(md, arch+".rope.freq_base"); err == nil {
-		r.FreqBase = v
+// ropeFactsFromGGUF converts a gguf.RopeFacts into the models-side
+// RopeFacts so the public API does not leak the gguf type.
+func ropeFactsFromGGUF(r gguf.RopeFacts) RopeFacts {
+	return RopeFacts{
+		FreqBase:    r.FreqBase,
+		FreqScale:   r.FreqScale,
+		ScalingType: r.ScalingType,
+		OriginalCtx: r.OriginalCtx,
+		DimCount:    r.DimCount,
 	}
-
-	if v, err := parseMetadataFloat64(md, arch+".rope.freq_scale"); err == nil {
-		r.FreqScale = v
-	}
-
-	if v, ok := md[arch+".rope.scaling.type"]; ok {
-		r.ScalingType = v
-	} else if v, ok := md["rope_scaling"]; ok {
-		r.ScalingType = v
-	}
-
-	if v, err := parseMetadataInt64(md, arch+".rope.scaling.original_context_length"); err == nil {
-		r.OriginalCtx = v
-	}
-
-	if v, err := parseMetadataInt64(md, arch+".rope.dimension_count"); err == nil {
-		r.DimCount = v
-	}
-
-	return r
 }
 
-func parseAttentionFacts(md map[string]string, arch string, blockCount int64) AttentionFacts {
-	var a AttentionFacts
-
-	if v, err := parseMetadataInt64(md, arch+".attention.sliding_window"); err == nil {
-		a.SlidingWindow = v
+// attentionFactsFromGGUF converts a gguf.AttentionFacts into the
+// models-side AttentionFacts so the public API does not leak the
+// gguf type.
+func attentionFactsFromGGUF(a gguf.AttentionFacts) AttentionFacts {
+	return AttentionFacts{
+		SlidingWindow:       a.SlidingWindow,
+		SlidingWindowLayers: a.SlidingWindowLayers,
+		FullAttentionLayers: a.FullAttentionLayers,
+		LogitSoftcapping:    a.LogitSoftcapping,
 	}
-
-	// Count SWA layers from the sliding_window_pattern array if present.
-	if pattern, ok := md[arch+".attention.sliding_window_pattern"]; ok {
-		swaCount := countSWALayers(pattern)
-		a.SlidingWindowLayers = swaCount
-		a.FullAttentionLayers = blockCount - swaCount
-	} else if a.SlidingWindow > 0 {
-		// If there's a sliding window but no pattern, assume all layers are SWA.
-		a.SlidingWindowLayers = blockCount
-		a.FullAttentionLayers = 0
-	} else {
-		a.FullAttentionLayers = blockCount
-	}
-
-	if v, err := parseMetadataFloat64(md, arch+".final_logit_softcapping"); err == nil {
-		a.LogitSoftcapping = v
-	}
-
-	return a
-}
-
-// countSWALayers counts true values in a stringified bool array like
-// "[true true true true true false true ...]".
-func countSWALayers(pattern string) int64 {
-	trimmed := strings.TrimSpace(pattern)
-	trimmed = strings.Trim(trimmed, "[]")
-	fields := strings.Fields(trimmed)
-
-	var count int64
-	for _, f := range fields {
-		if f == "true" {
-			count++
-		}
-	}
-
-	return count
 }
 
 func buildSystemFacts(devs devices.Devices) SystemFacts {
@@ -634,27 +550,6 @@ func buildSystemFacts(devs devices.Devices) SystemFacts {
 	}
 
 	return sf
-}
-
-func ggufFileTypeName(ft int64) string {
-	if name, ok := ggufFileTypeNames[ft]; ok {
-		return name
-	}
-
-	if ft == 0 {
-		return ""
-	}
-
-	return fmt.Sprintf("unknown(%d)", ft)
-}
-
-func parseMetadataFloat64(md map[string]string, key string) (float64, error) {
-	val, ok := md[key]
-	if !ok {
-		return 0, fmt.Errorf("parse-metadata-float64: key %q not found", key)
-	}
-
-	return strconv.ParseFloat(val, 64)
 }
 
 func minInt64(a, b int64) int64 {

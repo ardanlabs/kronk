@@ -108,7 +108,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		Cache struct {
 			ModelConfigFile string
-			ModelsInCache   int           `conf:"default:2"`
+			BudgetPercent   int           `conf:"default:80"`
+			ModelsInCache   int           `conf:"default:32"`
 			TTL             time.Duration `conf:"default:20m"`
 		}
 		BasePath        string
@@ -323,6 +324,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Log:             log.Info,
 		BasePath:        cfg.BasePath,
 		ModelConfigFile: modelConfigFile,
+		BudgetPercent:   cfg.Cache.BudgetPercent,
 		ModelsInCache:   cfg.Cache.ModelsInCache,
 		CacheTTL:        cfg.Cache.TTL,
 		InsecureLogging: cfg.InsecureLogging,

@@ -238,6 +238,7 @@ test-only: install-libraries install-test-models
 	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
 	go test -v -count=1 ./cmd/server/app/sdk/cache && \
 	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	go test -v -count=1 ./sdk/kronk/pool/... && \
 	go test -v -count=1 ./sdk/kronk/jsonrepair && \
 	go test -v -count=1 -p 1 ./sdk/kronk/tests/... && \
 	go test -v -count=1 ./sdk/kronk/model && \
@@ -253,6 +254,7 @@ test-gh-only: install-libraries-gh install-test-gh-models
 	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
 	go test -v -count=1 ./cmd/server/app/sdk/cache && \
 	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
+	go test -v -count=1 ./sdk/kronk/pool/... && \
 	go test -v -count=1 ./sdk/kronk/jsonrepair && \
 	go test -v -count=1 ./sdk/kronk/model && \
 	go test -v -count=1 ./sdk/tools/...
