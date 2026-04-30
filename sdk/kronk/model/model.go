@@ -18,6 +18,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -304,8 +305,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	// (and the BUI display path it feeds) overlays a more accurate value
 	// using sdk/tools/models.CalculateVRAM in that case.
 	l(ctx, "calculate-vram",
-		"vram-total", modelInfo.VRAMTotal,
-		"slot-memory", modelInfo.SlotMemory,
+		"vram-total", humanBytes(modelInfo.VRAMTotal),
+		"slot-memory", humanBytes(modelInfo.SlotMemory),
 		"diag", vramDiag,
 	)
 
@@ -835,58 +836,43 @@ func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, i
 // describing which branch produced the result, intended for inclusion in
 // the calling log line so unexpected zero-KV results can be traced.
 //
-// The metadata parsers live in sdk/kronk/gguf so this function and the
-// tools/models VRAM calculator share a single array-aware implementation.
-// Hybrid architectures like gemma3/gemma4 store
-// attention.head_count_kv as a per-layer array; the shared
-// ParseInt64OrArrayAvg averages across layers so SlotMemory is non-zero
-// for those models.
+// The whole calculation — file size, tensor parsing, MoE weight
+// breakdown, KV cache, compute buffer — is delegated to
+// sdk/kronk/vram.FromFiles so this function and the resman planner's
+// tools/models.CalculateVRAM go through the exact same orchestrator.
+// Reading metadata directly from the GGUF (rather than from the
+// llama.cpp-populated ModelInfo.Metadata map) is what fixes hybrid
+// architectures like gemma3/gemma4 whose attention.head_count_kv is
+// stored as a per-layer ARRAY: llama.cpp's gguf_kv_to_str silently
+// drops ARRAY values, so any path that reads from ModelInfo.Metadata
+// will lose them. The SDK's own GGUF parser preserves them.
 func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64, diag string) {
-	arch := mi.Metadata["general.architecture"]
-	if arch == "" {
-		return int64(mi.Size), 0, "missing general.architecture"
+	if len(cfg.ModelFiles) == 0 {
+		return int64(mi.Size), 0, "missing model files"
 	}
 
-	rawBlockCount := mi.Metadata[arch+".block_count"]
-	blockCount, err := strconv.ParseInt(rawBlockCount, 10, 64)
+	vramCfg := vram.Config{
+		ContextWindow:     int64(cfg.ContextWindow()),
+		BytesPerElement:   int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
+		Slots:             int64(max(cfg.NSeqMax(), 1)),
+		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
+	}
+
+	result, err := vram.FromFiles(cfg.ModelFiles, vramCfg)
 	if err != nil {
-		return int64(mi.Size), 0, fmt.Sprintf("parse %s.block_count[%q]: %v", arch, rawBlockCount, err)
+		return int64(mi.Size), 0, err.Error()
 	}
 
-	rawHeadCountKV := mi.Metadata[arch+".attention.head_count_kv"]
-	headCountKV, err := gguf.ParseInt64OrArrayAvg(mi.Metadata, arch+".attention.head_count_kv")
-	if err != nil {
-		return int64(mi.Size), 0, fmt.Sprintf("parse %s.attention.head_count_kv[%q]: %v", arch, rawHeadCountKV, err)
-	}
+	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] swa_window[%d] swa_layers[%d]",
+		mi.Metadata["general.architecture"],
+		result.Input.BlockCount, result.Input.HeadCountKV,
+		result.Input.KeyLength, result.Input.ValueLength,
+		result.Input.BytesPerElement, result.Input.ContextWindow,
+		result.Input.Slots, result.Input.SlidingWindow,
+		result.Input.SlidingWindowLayers,
+	)
 
-	keyLength, valueLength, err := gguf.ResolveKVLengths(mi.Metadata, arch)
-	if err != nil {
-		return int64(mi.Size), 0, fmt.Sprintf("resolve-kv-lengths arch[%s]: %v", arch, err)
-	}
-
-	bytesPerElement := gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))
-
-	nSeqMax := int64(max(cfg.NSeqMax(), 1))
-
-	contextWindow := int64(cfg.ContextWindow())
-
-	kv := gguf.CalculateKVCache(gguf.KVCacheInput{
-		ContextWindow:   contextWindow,
-		BlockCount:      blockCount,
-		HeadCountKV:     headCountKV,
-		KeyLength:       keyLength,
-		ValueLength:     valueLength,
-		BytesPerElement: bytesPerElement,
-		Slots:           nSeqMax,
-	})
-
-	slotMemory = kv.SlotMemory
-	vramTotal = int64(mi.Size) + slotMemory
-
-	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d]",
-		arch, blockCount, headCountKV, keyLength, valueLength, bytesPerElement, contextWindow, nSeqMax)
-
-	return vramTotal, slotMemory, diag
+	return result.TotalVRAM, result.SlotMemory, diag
 }
 
 // resolveBackendDevice maps a user-facing device name to the ggml backend
@@ -959,4 +945,26 @@ func parseTensorBuftOverrides(patterns []string) ([]llama.TensorBuftOverride, er
 	}
 	overrides = append(overrides, llama.TensorBuftOverride{}) // sentinel
 	return overrides, nil
+}
+
+// humanBytes formats a byte count using decimal (SI) units. Mirrors the
+// helper in sdk/pool to keep log output consistent.
+func humanBytes(n int64) string {
+	const unit = 1000
+	if n < unit {
+		return fmt.Sprintf("%dB", n)
+	}
+
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+
+	suffixes := []string{"KB", "MB", "GB", "TB", "PB"}
+	if exp >= len(suffixes) {
+		exp = len(suffixes) - 1
+	}
+
+	return fmt.Sprintf("%.1f%s", float64(n)/float64(div), suffixes[exp])
 }

@@ -41,6 +41,14 @@ export default function DocsSDKPool() {
           <div className="card" id="functions">
             <h3>Functions</h3>
 
+            <div className="doc-section" id="func-humanbytes">
+              <h4>HumanBytes</h4>
+              <pre className="code-block">
+                <code>func HumanBytes(n int64) string</code>
+              </pre>
+              <p className="doc-description">HumanBytes formats a byte count using decimal (SI) units. The output is short and stable for log scraping (e.g. "12.9GB", "256MB", "0B").</p>
+            </div>
+
             <div className="doc-section" id="func-new">
               <h4>New</h4>
               <pre className="code-block">
@@ -83,6 +91,7 @@ export default function DocsSDKPool() {
 	Slots         int
 	ExpiresAt     time.Time
 	ActiveStreams int
+	Status        string
 }`}</code>
               </pre>
               <p className="doc-description">ModelDetail provides details for the models in the pool.</p>
@@ -131,7 +140,15 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) Invalidate(key string)</code>
               </pre>
-              <p className="doc-description">Invalidate removes a single entry from the pool, triggering unload.</p>
+              <p className="doc-description">Invalidate removes a single entry from the pool, triggering unload. This is fire-and-forget: the otter eviction callback runs asynchronously, so the resource manager's reservation may not be released by the time this returns. Callers that need a consistent post-eviction view of the pool (e.g. the BUI Unload button refreshing the budget panel) should use InvalidateSync instead.</p>
+            </div>
+
+            <div className="doc-section" id="method-pool-invalidatesync">
+              <h4>Pool.InvalidateSync</h4>
+              <pre className="code-block">
+                <code>func (p *Pool) InvalidateSync(ctx context.Context, key string) error</code>
+              </pre>
+              <p className="doc-description">InvalidateSync invalidates a cache entry and waits for the eviction callback to release the underlying resource manager reservation. After it returns successfully the budget endpoint, ModelStatus, and any other consumer of resman.Usage will reflect the unload. Returns nil on success, ctx.Err() if the context is cancelled, or a timeout error if the eviction callback fails to complete within maxWait.</p>
             </div>
 
             <div className="doc-section" id="method-pool-modelconfig">
@@ -147,7 +164,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) ModelStatus() ([]ModelDetail, error)</code>
               </pre>
-              <p className="doc-description">ModelStatus returns information about the current models in the pool.</p>
+              <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the otter cache) and in-flight loads (memory reservations made by AquireModel that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests.</p>
             </div>
 
             <div className="doc-section" id="method-pool-resourcemanager">
@@ -164,6 +181,27 @@ export default function DocsSDKPool() {
                 <code>func (p *Pool) Shutdown(ctx context.Context) error</code>
               </pre>
               <p className="doc-description">Shutdown releases all apis from the pool and performs a proper unloading.</p>
+            </div>
+          </div>
+
+          <div className="card" id="constants">
+            <h3>Constants</h3>
+
+            <div className="doc-section" id="const-modelstatusloaded">
+              <h4>ModelStatusLoaded</h4>
+              <pre className="code-block">
+                <code>{`const (
+	// ModelStatusLoaded means the model is fully loaded into the cache and
+	// ready to serve requests.
+	ModelStatusLoaded = "loaded"
+
+	// ModelStatusLoading means the resource manager has reserved memory for
+	// the model but the GGUF is still being read from disk and prepared by
+	// llama.cpp. It is not yet servable.
+	ModelStatusLoading = "loading"
+)`}</code>
+              </pre>
+              <p className="doc-description">Model status values surfaced to BUI/observability.</p>
             </div>
           </div>
 
@@ -185,6 +223,7 @@ export default function DocsSDKPool() {
             <div className="doc-index-section">
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
+                <li><a href="#func-humanbytes">HumanBytes</a></li>
                 <li><a href="#func-new">New</a></li>
               </ul>
             </div>
@@ -203,10 +242,17 @@ export default function DocsSDKPool() {
                 <li><a href="#method-pool-aquiremodel">Pool.AquireModel</a></li>
                 <li><a href="#method-pool-getexisting">Pool.GetExisting</a></li>
                 <li><a href="#method-pool-invalidate">Pool.Invalidate</a></li>
+                <li><a href="#method-pool-invalidatesync">Pool.InvalidateSync</a></li>
                 <li><a href="#method-pool-modelconfig">Pool.ModelConfig</a></li>
                 <li><a href="#method-pool-modelstatus">Pool.ModelStatus</a></li>
                 <li><a href="#method-pool-resourcemanager">Pool.ResourceManager</a></li>
                 <li><a href="#method-pool-shutdown">Pool.Shutdown</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#constants" className="doc-index-header">Constants</a>
+              <ul>
+                <li><a href="#const-modelstatusloaded">ModelStatusLoaded</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

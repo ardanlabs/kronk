@@ -5,7 +5,15 @@ import { formatBytes } from '../lib/format';
 import { labelWithTip, ParamTooltip } from './ParamTooltips';
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString();
+  if (!dateStr) return '—';
+  // Go's zero time.Time marshals to "0001-01-01T00:00:00Z". The pool
+  // emits this for in-flight reservations whose ExpiresAt isn't known
+  // yet; rendering it through Date() yields "12/31/1, 4:07:02 PM" which
+  // is misleading garbage on screen.
+  if (dateStr.startsWith('0001-01-01')) return '—';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString();
 }
 
 function pct(used: number, budget: number): string {
@@ -57,9 +65,14 @@ export default function ModelPs() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Running Models</h2>
-        <p>Models currently loaded in cache and the pool's resource budget</p>
+      <div className="page-header-with-action">
+        <div>
+          <h2>Running Models</h2>
+          <p className="page-description">Models currently loaded in cache and the pool's resource budget</p>
+        </div>
+        <button className="btn btn-primary" onClick={loadAll} disabled={loading}>
+          Refresh
+        </button>
       </div>
 
       {budget && (
@@ -126,9 +139,13 @@ export default function ModelPs() {
 
           {budget.reservations.length > 0 && (
             <>
-              <h4 style={{ marginTop: 24, marginBottom: 12 }}>
+              <h4 style={{ marginTop: 24, marginBottom: 4 }}>
                 Active Reservations ({budget.reservations.length})
               </h4>
+              <p style={{ marginTop: 0, marginBottom: 12, color: 'var(--text-muted, #888)' }}>
+                Bytes currently charged against the resource budget by the resman. May briefly
+                differ from Loaded Models during load or unload.
+              </p>
               <div className="table-container">
                 <table>
                   <thead>
@@ -165,6 +182,11 @@ export default function ModelPs() {
       )}
 
       <div className="card">
+        <h3 style={{ marginTop: 0, marginBottom: 4 }}>Loaded Models</h3>
+        <p style={{ marginTop: 0, marginBottom: 16, color: 'var(--text-muted, #888)' }}>
+          Models currently in cache and serving traffic.
+        </p>
+
         {loading && <div className="loading">Loading running models</div>}
 
         {error && <div className="alert alert-error">{error}</div>}
@@ -176,49 +198,66 @@ export default function ModelPs() {
                 <thead>
                   <tr>
                     <th>{labelWithTip('ID', 'runningModelID')}</th>
+                    <th>{labelWithTip('Status', 'runningModelStatus')}</th>
                     <th>{labelWithTip('Owner', 'runningModelOwner')}</th>
                     <th>{labelWithTip('Family', 'runningModelFamily')}</th>
                     <th style={{ textAlign: 'right' }}>{labelWithTip('Size', 'runningModelSize')}</th>
-                    <th style={{ textAlign: 'right' }}>{labelWithTip('VRAM Total', 'runningModelVRAMTotal')}</th>
-                    <th style={{ textAlign: 'right' }}>{labelWithTip('KV Cache', 'runningModelKVCache')}</th>
+                    <th style={{ textAlign: 'right' }}>{labelWithTip('VRAM', 'runningModelVRAMTotal')}</th>
+                    <th style={{ textAlign: 'right' }}>{labelWithTip('KV', 'runningModelKVCache')}</th>
                     <th style={{ textAlign: 'right' }}>{labelWithTip('Slots', 'runningModelSlots')}</th>
-                    <th>{labelWithTip('Expires At', 'runningModelExpiresAt')}</th>
-                    <th>{labelWithTip('Active Streams', 'runningModelActiveStreams')}</th>
+                    <th>{labelWithTip('Expires', 'runningModelExpiresAt')}</th>
+                    <th style={{ textAlign: 'right' }}>{labelWithTip('Streams', 'runningModelActiveStreams')}</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((model) => (
-                    <tr key={model.id}>
-                      <td style={{ whiteSpace: 'nowrap' }}>{model.id}</td>
-                      <td>{model.owned_by}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{model.model_family}</td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(model.size)}</td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(model.vram_total)}</td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(model.kv_cache)}</td>
-                      <td style={{ textAlign: 'right' }}>{model.slots}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{formatDate(model.expires_at)}</td>
-                      <td>{model.active_streams}</td>
-                      <td>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => handleUnload(model.id)}
-                          disabled={unloading === model.id || model.active_streams > 0}
-                          title={model.active_streams > 0 ? 'Cannot unload while streams are active' : 'Unload model from cache'}
-                        >
-                          {unloading === model.id ? 'Unloading…' : 'Unload'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {data.map((model) => {
+                    const isLoading = model.status === 'loading';
+                    return (
+                      <tr key={model.id} style={isLoading ? { opacity: 0.7, fontStyle: 'italic' } : undefined}>
+                        <td>{model.id}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {isLoading ? (
+                            <span style={{ color: 'var(--text-muted, #888)' }}>Loading…</span>
+                          ) : (
+                            'loaded'
+                          )}
+                        </td>
+                        <td>{model.owned_by || '—'}</td>
+                        <td>{model.model_family || '—'}</td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{model.size > 0 ? formatBytes(model.size) : '—'}</td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(model.vram_total)}</td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{isLoading ? '—' : formatBytes(model.kv_cache)}</td>
+                        <td style={{ textAlign: 'right' }}>{isLoading ? '—' : model.slots}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{isLoading ? '—' : formatDate(model.expires_at)}</td>
+                        <td style={{ textAlign: 'right' }}>{isLoading ? '—' : model.active_streams}</td>
+                        <td>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => handleUnload(model.id)}
+                            disabled={unloading === model.id || model.active_streams > 0 || isLoading}
+                            title={
+                              isLoading
+                                ? 'Cannot unload while the model is still loading'
+                                : model.active_streams > 0
+                                  ? 'Cannot unload while streams are active'
+                                  : 'Unload model from cache'
+                            }
+                          >
+                            {unloading === model.id ? 'Unloading…' : 'Unload'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 {data.length > 1 && (
                   <tfoot>
                     <tr>
-                      <td colSpan={4} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total:</td>
-                      <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.vram_total, 0))}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{formatBytes(data.reduce((sum, m) => sum + m.kv_cache, 0))}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{data.reduce((sum, m) => sum + m.slots, 0)}</td>
+                      <td colSpan={5} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total:</td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatBytes(data.reduce((sum, m) => sum + m.vram_total, 0))}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatBytes(data.reduce((sum, m) => sum + (m.status === 'loading' ? 0 : m.kv_cache), 0))}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{data.reduce((sum, m) => sum + (m.status === 'loading' ? 0 : m.slots), 0)}</td>
                       <td colSpan={3}></td>
                     </tr>
                   </tfoot>
@@ -232,12 +271,6 @@ export default function ModelPs() {
             )}
           </div>
         )}
-
-        <div style={{ marginTop: '16px' }}>
-          <button className="btn btn-secondary" onClick={loadAll} disabled={loading}>
-            Refresh
-          </button>
-        </div>
       </div>
     </div>
   );

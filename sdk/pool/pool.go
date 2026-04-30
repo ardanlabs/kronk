@@ -93,10 +93,9 @@ type Pool struct {
 	models           *models.Models
 	insecureLogging  bool
 	loadGroup        singleflight.Group
-
-	resman    *resman.Manager
-	ticketsMu sync.Mutex
-	tickets   map[string]resman.Ticket
+	resman           *resman.Manager
+	ticketsMu        sync.Mutex
+	tickets          map[string]resman.Ticket
 }
 
 // New constructs the manager for use.
@@ -195,6 +194,13 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 }
 
 // ModelStatus returns information about the current models in the pool.
+//
+// The result includes both fully loaded models (entries currently in the
+// otter cache) and in-flight loads (memory reservations made by
+// AquireModel that have not yet completed their GGUF read). The latter are
+// returned with Status=ModelStatusLoading so BUI/observability can show
+// them as occupying budget while still being unavailable to serve
+// requests.
 func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 
 	// Extract the entries currently in the pool.
@@ -212,6 +218,7 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	// Match the model in the pool with a locally stored model
 	// so we can get information about that model.
 	ps := make([]ModelDetail, 0, len(entries))
+	loadedKeys := make(map[string]struct{}, len(entries))
 ids:
 	for _, model := range entries {
 		cacheID, _, _ := strings.Cut(model.Key, "/")
@@ -229,28 +236,58 @@ ids:
 					Slots:         max(krn.ModelConfig().NSeqMax(), 1),
 					ExpiresAt:     model.ExpiresAt(),
 					ActiveStreams: krn.ActiveStreams(),
+					Status:        ModelStatusLoaded,
 				})
+				loadedKeys[model.Key] = struct{}{}
 				continue ids
 			}
 		}
+	}
+
+	// Surface any in-flight reservations (memory accounted for by the
+	// resource manager but the underlying kronk.Kronk has not finished
+	// loading and is not yet in the otter cache). Without this, the
+	// "Active Reservations" panel and the "Running Models" grid disagree
+	// during the SHA-verify + GGUF-read window.
+	for _, r := range p.resman.Usage().Reservations {
+		if _, ok := loadedKeys[r.Key]; ok {
+			continue
+		}
+
+		cacheID, _, _ := strings.Cut(r.Key, "/")
+
+		var ownedBy, modelFamily string
+		var size int64
+		for _, mi := range list {
+			if mi.ID == cacheID {
+				ownedBy = mi.OwnedBy
+				modelFamily = mi.ModelFamily
+				size = mi.Size
+				break
+			}
+		}
+
+		ps = append(ps, ModelDetail{
+			ID:          r.Key,
+			OwnedBy:     ownedBy,
+			ModelFamily: modelFamily,
+			Size:        size,
+			VRAMTotal:   r.VRAMBytes + r.RAMBytes,
+			Status:      ModelStatusLoading,
+		})
 	}
 
 	return ps, nil
 }
 
 // modelDisplayMemory returns the KV cache and total VRAM values to surface
-// in BUI/observability output for a loaded model. It prefers the
-// resman-side calculation (models.CalculateVRAM) over whatever the SDK
-// stored in ModelInfo.
-//
-// Defense-in-depth: as of the sdk/kronk/gguf consolidation both sides
-// share the array-aware metadata parser, so the SDK's own calculation now
-// reports correct slot memory for hybrid architectures (notably
-// gemma3/gemma4, whose attention.head_count_kv is a per-layer array that
-// llama.cpp's gguf_kv_to_str silently drops). This overlay is kept in
-// place because it costs essentially nothing and protects against any
-// future ARRAY-key regression in another architecture. Falls back to the
-// SDK's stored values when the resman calculation cannot run.
+// in BUI/observability output for a loaded model. Both this path and
+// the SDK-internal calculateVRAMDiag now route through
+// vram.FromFiles, so the two computations are byte-identical for any
+// well-formed local model. The dedicated lookup is retained so a
+// hypothetical resman-side failure (e.g. an index miss) cleanly falls
+// back to the values the SDK stored at load time rather than zeroing
+// out the BUI display.
 func (p *Pool) modelDisplayMemory(krn *kronk.Kronk, modelID string) (kvCache int64, vramTotal int64) {
 	cfg := krn.ModelConfig()
 	mi := krn.ModelInfo()
@@ -266,9 +303,10 @@ func (p *Pool) modelDisplayMemory(krn *kronk.Kronk, modelID string) (kvCache int
 	}
 
 	vramCfg := vram.Config{
-		ContextWindow:   ctxWin,
-		BytesPerElement: bytesPerElement(cfg.CacheTypeK),
-		Slots:           nseq,
+		ContextWindow:     ctxWin,
+		BytesPerElement:   bytesPerElement(cfg.CacheTypeK, cfg.CacheTypeV),
+		Slots:             nseq,
+		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
 	}
 
 	if v, err := p.models.CalculateVRAM(modelID, vramCfg); err == nil {
@@ -505,8 +543,45 @@ func (p *Pool) GetExisting(key string) (*kronk.Kronk, bool) {
 }
 
 // Invalidate removes a single entry from the pool, triggering unload.
+//
+// This is fire-and-forget: the otter eviction callback runs
+// asynchronously, so the resource manager's reservation may not be
+// released by the time this returns. Callers that need a consistent
+// post-eviction view of the pool (e.g. the BUI Unload button refreshing
+// the budget panel) should use InvalidateSync instead.
 func (p *Pool) Invalidate(key string) {
 	p.cache.Invalidate(key)
+}
+
+// InvalidateSync invalidates a cache entry and waits for the eviction
+// callback to release the underlying resource manager reservation. After
+// it returns successfully the budget endpoint, ModelStatus, and any
+// other consumer of resman.Usage will reflect the unload.
+//
+// Returns nil on success, ctx.Err() if the context is cancelled, or a
+// timeout error if the eviction callback fails to complete within
+// maxWait.
+func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
+	const pollInterval = 25 * time.Millisecond
+	const maxWait = 60 * time.Second
+
+	p.cache.Invalidate(key)
+
+	deadline := time.Now().Add(maxWait)
+	for {
+		if !p.hasTicket(key) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("invalidate-sync: timeout waiting for key[%s] to unload", key)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
 }
 
 // reserveWithEviction reserves the model's memory footprint with the
@@ -522,12 +597,28 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 	p.log(ctx, "reserve",
 		"status", "begin",
 		"key", newKey,
-		"vram", humanBytes(req.VRAMBytes),
-		"ram", humanBytes(req.RAMBytes),
+		"vram", HumanBytes(req.VRAMBytes),
+		"ram", HumanBytes(req.RAMBytes),
 		"devices", req.Devices,
 		"items-in-cache", p.itemsInCache.Load(),
 		"max-models-in-cache", p.maxModelsInCache,
 	)
+
+	// Reject infeasible reservations BEFORE evicting anything. Without this
+	// check, a request whose footprint exceeds the total configured budget
+	// (e.g. an over-spec'd context window) would walk the eviction loop
+	// kicking out every loaded model in turn, then fail with ErrServerBusy
+	// — leaving the user with no models loaded and the pool empty. The
+	// reservation can only ever be satisfied if its footprint fits inside
+	// the relevant budget when nothing else is reserved.
+	if err := p.checkRequestFitsBudget(newKey, req); err != nil {
+		p.log(ctx, "reserve",
+			"status", "infeasible",
+			"key", newKey,
+			"ERROR", err,
+		)
+		return resman.Ticket{}, resman.LoadPlan{}, fmt.Errorf("reserve: %w", err)
+	}
 
 	for attempt := range maxAttempts {
 
@@ -542,7 +633,7 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 				"items-in-cache", p.itemsInCache.Load(),
 				"max-models-in-cache", p.maxModelsInCache,
 			)
-			if err := p.evictOneIdle(ctx, newKey, "cap"); err != nil {
+			if err := p.evictOneIdle(ctx, newKey, "cap", req); err != nil {
 				p.log(ctx, "reserve",
 					"status", "cap-evict-failed",
 					"key", newKey,
@@ -582,7 +673,7 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 		)
 		p.logResmanUsage(ctx, "no-capacity", "key", newKey)
 
-		if err := p.evictOneIdle(ctx, newKey, "budget"); err != nil {
+		if err := p.evictOneIdle(ctx, newKey, "budget", req); err != nil {
 			p.log(ctx, "reserve",
 				"status", "budget-evict-failed",
 				"key", newKey,
@@ -600,23 +691,154 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 	return resman.Ticket{}, resman.LoadPlan{}, fmt.Errorf("reserve: gave up after %d eviction attempts", maxAttempts)
 }
 
-// evictOneIdle picks the coldest pooled entry without active streams,
-// invalidates it, and waits for the eviction callback to release the
-// reservation. Returns ErrServerBusy when no idle victim is available.
-func (p *Pool) evictOneIdle(ctx context.Context, newKey, reason string) error {
+// checkRequestFitsBudget returns a non-nil error when the request can
+// never be satisfied given the manager's current configuration — i.e. it
+// asks for more bytes than the relevant budget would hold even if every
+// other reservation were released. The pool must refuse to evict in that
+// case; otherwise it would gut the cache for nothing.
+func (p *Pool) checkRequestFitsBudget(newKey string, req resman.PlanRequest) error {
+	usage := p.resman.Usage()
+
+	if req.RAMBytes > 0 && usage.RAMBudget > 0 && req.RAMBytes > usage.RAMBudget {
+		return fmt.Errorf("request[%s] needs ram=%s but max ram budget is %s",
+			newKey, HumanBytes(req.RAMBytes), HumanBytes(usage.RAMBudget))
+	}
+
+	if req.VRAMBytes > 0 {
+		// When specific devices are requested, each must individually fit
+		// (the manager allocates per-device, not pooled). When unpinned,
+		// the request must fit on at least one device.
+		if len(req.Devices) > 0 {
+			for _, name := range req.Devices {
+				var budget int64
+				for _, d := range usage.Devices {
+					if d.Name == name {
+						budget = d.BudgetBytes
+						break
+					}
+				}
+				if budget > 0 && req.VRAMBytes > budget && len(req.Devices) == 1 {
+					return fmt.Errorf("request[%s] needs vram=%s but device[%s] budget is %s",
+						newKey, HumanBytes(req.VRAMBytes), name, HumanBytes(budget))
+				}
+			}
+		} else {
+			var maxBudget int64
+			for _, d := range usage.Devices {
+				if d.BudgetBytes > maxBudget {
+					maxBudget = d.BudgetBytes
+				}
+			}
+			if maxBudget > 0 && req.VRAMBytes > maxBudget {
+				return fmt.Errorf("request[%s] needs vram=%s but largest device budget is %s",
+					newKey, HumanBytes(req.VRAMBytes), HumanBytes(maxBudget))
+			}
+		}
+	}
+
+	return nil
+}
+
+// selectEvictionVictim implements the pure choice rule for picking a
+// pool entry to evict. Extracted from evictOneIdle so it can be unit
+// tested without a live cache or resource manager.
+//
+// idleColdestFirst contains evictable cache keys in coldest (LRU) order.
+// usage is the resource manager's current accounting, used for sizing
+// each reservation. Returns the chosen victim key plus a selection mode
+// label ("smallest-fit" or "coldest-idle") for observability. Returns
+// "", "" when there is no idle candidate at all.
+func selectEvictionVictim(reason string, req resman.PlanRequest, idleColdestFirst []string, usage resman.Usage) (string, string) {
+	if len(idleColdestFirst) == 0 {
+		return "", ""
+	}
+
+	if reason == "budget" && (req.RAMBytes > 0 || req.VRAMBytes > 0) {
+		// How much we still need to free to admit req.
+		ramDeficit := req.RAMBytes - (usage.RAMBudget - usage.RAMUsed)
+		if ramDeficit < 0 {
+			ramDeficit = 0
+		}
+
+		// Index reservations by key for O(1) lookup.
+		sizes := make(map[string]resman.LoadPlan, len(usage.Reservations))
+		for _, r := range usage.Reservations {
+			sizes[r.Key] = r
+		}
+
+		// Smallest single-fit: among idle entries that the manager
+		// actually tracks, pick the smallest whose RAM release covers
+		// the deficit. This avoids freeing 44 GB to satisfy a 4 GB
+		// shortfall when a 25 GB idle candidate would have done.
+		var bestKey string
+		var bestScore int64 = -1
+		for _, key := range idleColdestFirst {
+			s, ok := sizes[key]
+			if !ok {
+				continue
+			}
+			if ramDeficit > 0 && s.RAMBytes < ramDeficit {
+				continue
+			}
+			// Dominant-axis size: RAM dominates on unified memory; on
+			// split-budget hardware VRAM matters too.
+			score := s.RAMBytes
+			if s.VRAMBytes > score {
+				score = s.VRAMBytes
+			}
+			if bestScore < 0 || score < bestScore {
+				bestScore = score
+				bestKey = key
+			}
+		}
+
+		if bestKey != "" {
+			return bestKey, "smallest-fit"
+		}
+	}
+
+	// LRU fallback: coldest entry that is still idle. Also the path for
+	// "cap"-driven evictions where there is no specific deficit.
+	return idleColdestFirst[0], "coldest-idle"
+}
+
+// evictOneIdle selects an idle pool entry to evict and waits for the
+// eviction callback to release the reservation. Returns ErrServerBusy
+// when no idle victim is available.
+//
+// Selection policy:
+//   - When reason is "budget" and req has a non-zero footprint, prefer the
+//     SMALLEST idle reservation whose RAMBytes (and VRAMBytes if relevant)
+//     individually frees enough memory to admit the request. This avoids
+//     the pathological "evict a 44 GB AGENT model to make room for a 4 GB
+//     deficit" case — keeping expensive-to-reload models warm whenever a
+//     smaller idle candidate would have sufficed.
+//   - When no single victim fits the deficit (or for cap-driven evictions
+//     where there is no specific deficit), fall back to the coldest idle
+//     entry — the historical LRU behaviour.
+//
+// In both cases the choice respects: never evict newKey itself, and never
+// evict an entry with active streams.
+func (p *Pool) evictOneIdle(ctx context.Context, newKey, reason string, req resman.PlanRequest) error {
 	const pollInterval = 25 * time.Millisecond
 	const maxWait = 60 * time.Second
 
-	var victim string
+	// Walk the cache in coldest-first order to preserve LRU semantics for
+	// the fallback path, recording only entries that are evictable
+	// (non-self, no active streams).
+	var idleColdestFirst []string
 	for entry := range p.cache.Coldest() {
 		if entry.Key == newKey {
 			continue
 		}
-		if entry.Value.ActiveStreams() == 0 {
-			victim = entry.Key
-			break
+		if entry.Value.ActiveStreams() != 0 {
+			continue
 		}
+		idleColdestFirst = append(idleColdestFirst, entry.Key)
 	}
+
+	usage := p.resman.Usage()
+	victim, victimSelectionMode := selectEvictionVictim(reason, req, idleColdestFirst, usage)
 
 	if victim == "" {
 		return ErrServerBusy
@@ -625,6 +847,7 @@ func (p *Pool) evictOneIdle(ctx context.Context, newKey, reason string) error {
 	p.log(ctx, "acquire",
 		"status", "evict-before-load",
 		"reason", reason,
+		"selection", victimSelectionMode,
 		"victim", victim,
 		"items-in-cache", p.itemsInCache.Load(),
 		"max-models-in-cache", p.maxModelsInCache,

@@ -238,27 +238,27 @@ export default function VRAMResults({
             const perDeviceCapacity = reportedCapacity > 0
               ? reportedCapacity
               : (perDevice.length === 1 ? effectiveGpuCapacity : Math.floor(effectiveGpuCapacity / perDevice.length));
-            const barMax = Math.max(1, perDeviceCapacity > 0 ? perDeviceCapacity : dev.totalBytes);
-            const freeBytes = Math.max(0, barMax - dev.totalBytes);
-            const overcommit = dev.totalBytes > barMax && perDeviceCapacity > 0;
+            const barMax = Math.max(1, perDeviceCapacity > 0 ? perDeviceCapacity : dev.total_bytes);
+            const freeBytes = Math.max(0, barMax - dev.total_bytes);
+            const overcommit = dev.total_bytes > barMax && perDeviceCapacity > 0;
             return (
               <div key={i} style={{ marginBottom: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', marginBottom: '2px' }}>
                   <span>{dev.label}</span>
                   <span>
-                    {formatBytes(dev.totalBytes)}
+                    {formatBytes(dev.total_bytes)}
                     {perDeviceCapacity > 0 && <span style={{ opacity: 0.6 }}> / {formatBytes(perDeviceCapacity)}</span>}
                   </span>
                 </div>
                 <div style={{ background: 'var(--color-gray-200)', borderRadius: '4px', height: '20px', overflow: 'hidden', display: 'flex' }}>
-                  {dev.weightsBytes > 0 && (
-                    <div style={{ width: `${(dev.weightsBytes / barMax) * 100}%`, background: 'var(--color-primary)', height: '100%' }} title={`Weights: ${formatBytes(dev.weightsBytes)}`} />
+                  {dev.weights_bytes > 0 && (
+                    <div style={{ width: `${(dev.weights_bytes / barMax) * 100}%`, background: 'var(--color-primary)', height: '100%' }} title={`Weights: ${formatBytes(dev.weights_bytes)}`} />
                   )}
-                  {dev.kvBytes > 0 && (
-                    <div style={{ width: `${(dev.kvBytes / barMax) * 100}%`, background: 'var(--color-orange)', height: '100%' }} title={`KV Cache: ${formatBytes(dev.kvBytes)}`} />
+                  {dev.kv_bytes > 0 && (
+                    <div style={{ width: `${(dev.kv_bytes / barMax) * 100}%`, background: 'var(--color-orange)', height: '100%' }} title={`KV Cache: ${formatBytes(dev.kv_bytes)}`} />
                   )}
-                  {dev.computeBytes > 0 && (
-                    <div style={{ width: `${(dev.computeBytes / barMax) * 100}%`, background: '#8b5cf6', height: '100%' }} title={`Compute Buffer: ${formatBytes(dev.computeBytes)}`} />
+                  {dev.compute_bytes > 0 && (
+                    <div style={{ width: `${(dev.compute_bytes / barMax) * 100}%`, background: '#8b5cf6', height: '100%' }} title={`Compute Buffer: ${formatBytes(dev.compute_bytes)}`} />
                   )}
                   {freeBytes > 0 && !overcommit && (
                     <div style={{ flex: 1, background: '#66bb6a', height: '100%' }} title={`Free: ${formatBytes(freeBytes)}`} />
@@ -266,7 +266,7 @@ export default function VRAMResults({
                 </div>
                 {overcommit && (
                   <div style={{ fontSize: '0.75em', color: '#ef5350', marginTop: '2px' }}>
-                    ⚠ Exceeds GPU capacity by {formatBytes(dev.totalBytes - perDeviceCapacity)}
+                    ⚠ Exceeds GPU capacity by {formatBytes(dev.total_bytes - perDeviceCapacity)}
                   </div>
                 )}
               </div>

@@ -16,9 +16,9 @@ func (p *Pool) logResmanInit(ctx context.Context) {
 	args := []any{
 		"status", "resman-init",
 		"budget-percent", u.BudgetPercent,
-		"headroom", humanBytes(u.HeadroomBytes),
+		"headroom", HumanBytes(u.HeadroomBytes),
 		"gpu-count", len(u.Devices),
-		"ram-budget", humanBytes(u.RAMBudget),
+		"ram-budget", HumanBytes(u.RAMBudget),
 		"max-models-in-cache", p.maxModelsInCache,
 	}
 
@@ -26,7 +26,7 @@ func (p *Pool) logResmanInit(ctx context.Context) {
 		args = append(args,
 			fmt.Sprintf("gpu[%d]", d.Index),
 			fmt.Sprintf("name=%s type=%s total=%s budget=%s",
-				d.Name, d.Type, humanBytes(d.TotalBytes), humanBytes(d.BudgetBytes)),
+				d.Name, d.Type, HumanBytes(d.TotalBytes), HumanBytes(d.BudgetBytes)),
 		)
 	}
 
@@ -44,8 +44,8 @@ func (p *Pool) logResmanUsage(ctx context.Context, op string, extra ...any) {
 		"status", "resman-usage",
 		"op", op,
 		"reservations", len(u.Reservations),
-		"ram-used", humanBytes(u.RAMUsed),
-		"ram-budget", humanBytes(u.RAMBudget),
+		"ram-used", HumanBytes(u.RAMUsed),
+		"ram-budget", HumanBytes(u.RAMBudget),
 	)
 
 	for _, d := range u.Devices {
@@ -53,9 +53,9 @@ func (p *Pool) logResmanUsage(ctx context.Context, op string, extra ...any) {
 			fmt.Sprintf("gpu[%d]", d.Index),
 			fmt.Sprintf("name=%s used=%s/%s (%s free)",
 				d.Name,
-				humanBytes(d.UsedBytes),
-				humanBytes(d.BudgetBytes),
-				humanBytes(d.BudgetBytes-d.UsedBytes)),
+				HumanBytes(d.UsedBytes),
+				HumanBytes(d.BudgetBytes),
+				HumanBytes(d.BudgetBytes-d.UsedBytes)),
 		)
 	}
 
@@ -67,21 +67,21 @@ func (p *Pool) logResmanUsage(ctx context.Context, op string, extra ...any) {
 // suitable for inclusion in a log call.
 func describePlan(plan resman.LoadPlan) []any {
 	args := []any{
-		"plan-vram", humanBytes(plan.VRAMBytes),
-		"plan-ram", humanBytes(plan.RAMBytes),
+		"plan-vram", HumanBytes(plan.VRAMBytes),
+		"plan-ram", HumanBytes(plan.RAMBytes),
 	}
 	for i, alloc := range plan.Per {
 		args = append(args,
 			fmt.Sprintf("alloc[%d]", i),
-			fmt.Sprintf("device=%s bytes=%s", alloc.Name, humanBytes(alloc.Bytes)),
+			fmt.Sprintf("device=%s bytes=%s", alloc.Name, HumanBytes(alloc.Bytes)),
 		)
 	}
 	return args
 }
 
-// humanBytes formats a byte count using decimal (SI) units. The output is
+// HumanBytes formats a byte count using decimal (SI) units. The output is
 // short and stable for log scraping (e.g. "12.9GB", "256MB", "0B").
-func humanBytes(n int64) string {
+func HumanBytes(n int64) string {
 	const unit = 1000
 	if n < unit {
 		return fmt.Sprintf("%dB", n)

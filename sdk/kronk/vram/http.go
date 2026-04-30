@@ -142,18 +142,25 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		weights = &wb
 	}
 
+	att := gguf.ParseAttentionFacts(metadata, arch, blockCount)
+
 	input := Input{
-		ModelSizeBytes:  modelSizeBytes,
-		ContextWindow:   cfg.ContextWindow,
-		BlockCount:      blockCount,
-		HeadCountKV:     headCountKV,
-		KeyLength:       keyLength,
-		ValueLength:     valueLength,
-		BytesPerElement: cfg.BytesPerElement,
-		Slots:           cfg.Slots,
-		EmbeddingLength: embeddingLength,
-		MoE:             moePtr,
-		Weights:         weights,
+		ModelSizeBytes:      modelSizeBytes,
+		ContextWindow:       cfg.ContextWindow,
+		BlockCount:          blockCount,
+		HeadCountKV:         headCountKV,
+		KeyLength:           keyLength,
+		ValueLength:         valueLength,
+		BytesPerElement:     cfg.BytesPerElement,
+		Slots:               cfg.Slots,
+		SlidingWindow:       att.SlidingWindow,
+		SlidingWindowLayers: att.SlidingWindowLayers,
+		EmbeddingLength:     embeddingLength,
+		MoE:                 moePtr,
+		Weights:             weights,
+		GPULayers:           cfg.GPULayers,
+		ExpertLayersOnGPU:   cfg.ExpertLayersOnGPU,
+		KVCacheOnCPU:        cfg.KVCacheOnCPU,
 	}
 
 	return Calculate(input), nil

@@ -21,6 +21,7 @@ type example struct {
 
 var skipDirs = map[string]bool{
 	"samples": true,
+	"talks":   true,
 	"yzma":    true,
 }
 

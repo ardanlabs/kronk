@@ -172,6 +172,7 @@ export const PARAM_TOOLTIPS = {
   runningModelSlots: 'Number of parallel sequences (NSeqMax) configured for this model. Each slot can host one in-flight request.',
   runningModelExpiresAt: 'Wall-clock time at which the pool will idle-evict this model unless it is touched again.',
   runningModelActiveStreams: 'Number of in-flight chat/embed/rerank streams currently using this model. The pool refuses to evict a model with active streams.',
+  runningModelStatus: 'Lifecycle stage in the pool. "loaded" means the GGUF is open in llama.cpp and the model can serve requests. "loading" means the resource manager has reserved memory for the load but the GGUF is still being SHA-verified and read from disk; the model is not servable yet but the budget already accounts for it.',
 
   // Library bundles
   bundleArch: 'Target CPU architecture for this library bundle download (amd64 or arm64). Each bundle lives in its own folder under the libraries root and does not replace the active install.',

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -1229,6 +1230,39 @@ type MoEConfig struct {
 
 func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int {
 	return intOr(m.PtrKeepExpertsOnGPUForTopNLayers, 0)
+}
+
+// ExpertsAllOnGPU is the sentinel value used for vram.Config.ExpertLayersOnGPU
+// to request that every routed-expert layer be charged against GPU VRAM.
+// The vram package treats any value greater than or equal to the model's
+// block count as "all layers on GPU", so a large constant works
+// regardless of model depth and avoids a metadata round-trip just to
+// discover it.
+const ExpertsAllOnGPU = int64(math.MaxInt32)
+
+// ExpertLayersOnGPU translates the model's MoE configuration into the
+// value the vram calculator expects so every prediction site (resman
+// planner, post-load model logging, BUI display) reflects what
+// llama.cpp will actually do at runtime. With no MoE override we mirror
+// llama.cpp's default behavior: experts follow the layer they belong to,
+// and full GPU offload puts every expert on the GPU. Without this
+// resolution the calculator defaults experts to CPU even when the
+// runtime puts them on GPU, producing the inverse of the placement
+// that's actually loaded and silently under-accounting expert weight
+// memory in the BUI VRAM column.
+func (cfg Config) ExpertLayersOnGPU() int64 {
+	if cfg.MoE == nil {
+		return ExpertsAllOnGPU
+	}
+	switch cfg.MoE.Mode {
+	case MoEModeExpertsCPU:
+		return 0
+	case MoEModeKeepTopN:
+		return int64(cfg.MoE.KeepExpertsOnGPUForTopNLayers())
+	default:
+		// MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, "".
+		return ExpertsAllOnGPU
+	}
 }
 
 // =============================================================================

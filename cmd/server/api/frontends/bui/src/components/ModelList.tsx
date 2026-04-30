@@ -69,6 +69,7 @@ export default function ModelList() {
     initialContextWindow: 8192,
     initialBytesPerElement: 1,
     serverResponse: vramServerResponse,
+    modelId: selectedModelId ?? undefined,
   });
   const contextInfo = extractContextInfo(modelInfo?.metadata);
   const [showLearnMore, setShowLearnMore] = useState(false);
@@ -228,9 +229,57 @@ export default function ModelList() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Models</h2>
-        <p>List of all models available in the system. Click a model to view details.</p>
+      <div className="page-header-with-action">
+        <div>
+          <h2>Models</h2>
+          <p className="page-description">List of all models available in the system. Click a model to view details.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              invalidate();
+              loadModels();
+              setSelectedModelId(null);
+              setModelInfo(null);
+              setConfirmingRemove(false);
+              setRemoveError(null);
+              setRemoveSuccess(null);
+              setInfoError(null);
+              setRebuildError(null);
+              setRebuildSuccess(false);
+            }}
+            disabled={loading}
+          >
+            Refresh
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={handleRebuildIndex}
+            disabled={rebuildingIndex || loading}
+          >
+            {rebuildingIndex ? 'Rebuilding...' : 'Rebuild Index'}
+          </button>
+          {selectedModelId && !confirmingRemove && (
+            <button
+              className="btn btn-primary"
+              onClick={handleRemoveClick}
+              disabled={removing}
+            >
+              Remove Model
+            </button>
+          )}
+          {selectedModelId && confirmingRemove && (
+            <>
+              <button className="btn btn-primary" onClick={handleConfirmRemove} disabled={removing}>
+                {removing ? 'Removing...' : 'Yes, Remove'}
+              </button>
+              <button className="btn btn-primary" onClick={handleCancelRemove} disabled={removing}>
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -329,53 +378,6 @@ export default function ModelList() {
             )}
           </div>
         )}
-
-        <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
-          <button
-            className="btn btn-secondary"
-            onClick={() => {
-              invalidate();
-              loadModels();
-              setSelectedModelId(null);
-              setModelInfo(null);
-              setConfirmingRemove(false);
-              setRemoveError(null);
-              setRemoveSuccess(null);
-              setInfoError(null);
-              setRebuildError(null);
-              setRebuildSuccess(false);
-            }}
-            disabled={loading}
-          >
-            Refresh
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={handleRebuildIndex}
-            disabled={rebuildingIndex || loading}
-          >
-            {rebuildingIndex ? 'Rebuilding...' : 'Rebuild Index'}
-          </button>
-          {selectedModelId && !confirmingRemove && (
-            <button
-              className="btn btn-danger"
-              onClick={handleRemoveClick}
-              disabled={removing}
-            >
-              Remove Model
-            </button>
-          )}
-          {selectedModelId && confirmingRemove && (
-            <>
-              <button className="btn btn-danger" onClick={handleConfirmRemove} disabled={removing}>
-                {removing ? 'Removing...' : 'Yes, Remove'}
-              </button>
-              <button className="btn btn-secondary" onClick={handleCancelRemove} disabled={removing}>
-                Cancel
-              </button>
-            </>
-          )}
-        </div>
 
         {infoError && <div className="alert alert-error" style={{ marginTop: '16px' }}>{infoError}</div>}
 

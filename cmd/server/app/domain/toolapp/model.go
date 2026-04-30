@@ -362,6 +362,7 @@ type ModelDetail struct {
 	Slots         int       `json:"slots"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	ActiveStreams int       `json:"active_streams"`
+	Status        string    `json:"status"`
 }
 
 // ModelDetailsResponse is a collection of model detail.
@@ -387,6 +388,7 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 			Slots:         model.Slots,
 			ExpiresAt:     model.ExpiresAt,
 			ActiveStreams: model.ActiveStreams,
+			Status:        model.Status,
 		}
 	}
 
@@ -529,18 +531,32 @@ func toAppWeightBreakdown(w *gguf.WeightBreakdown) *WeightBreakdown {
 
 // VRAMInput contains the input parameters used for VRAM calculation.
 type VRAMInput struct {
-	ModelSizeBytes    int64            `json:"model_size_bytes"`
-	ContextWindow     int64            `json:"context_window"`
-	BlockCount        int64            `json:"block_count"`
-	HeadCountKV       int64            `json:"head_count_kv"`
-	KeyLength         int64            `json:"key_length"`
-	ValueLength       int64            `json:"value_length"`
-	BytesPerElement   int64            `json:"bytes_per_element"`
-	Slots             int64            `json:"slots"`
-	EmbeddingLength   int64            `json:"embedding_length,omitempty"`
-	MoE               *MoEInfo         `json:"moe,omitempty"`
-	Weights           *WeightBreakdown `json:"weights,omitempty"`
-	ExpertLayersOnGPU int64            `json:"expert_layers_on_gpu,omitempty"`
+	ModelSizeBytes      int64            `json:"model_size_bytes"`
+	ContextWindow       int64            `json:"context_window"`
+	BlockCount          int64            `json:"block_count"`
+	HeadCountKV         int64            `json:"head_count_kv"`
+	KeyLength           int64            `json:"key_length"`
+	ValueLength         int64            `json:"value_length"`
+	BytesPerElement     int64            `json:"bytes_per_element"`
+	Slots               int64            `json:"slots"`
+	SlidingWindow       int64            `json:"sliding_window,omitempty"`
+	SlidingWindowLayers int64            `json:"sliding_window_layers,omitempty"`
+	EmbeddingLength     int64            `json:"embedding_length,omitempty"`
+	MoE                 *MoEInfo         `json:"moe,omitempty"`
+	Weights             *WeightBreakdown `json:"weights,omitempty"`
+	GPULayers           int64            `json:"gpu_layers,omitempty"`
+	ExpertLayersOnGPU   int64            `json:"expert_layers_on_gpu,omitempty"`
+	KVCacheOnCPU        bool             `json:"kv_cache_on_cpu,omitempty"`
+}
+
+// PerDeviceVRAM is the per-GPU VRAM split used when tensor_split /
+// device_count are specified.
+type PerDeviceVRAM struct {
+	Label        string `json:"label"`
+	WeightsBytes int64  `json:"weights_bytes"`
+	KVBytes      int64  `json:"kv_bytes"`
+	ComputeBytes int64  `json:"compute_bytes"`
+	TotalBytes   int64  `json:"total_bytes"`
 }
 
 // SamplingConfig represents sampling parameters for model inference.
@@ -685,11 +701,27 @@ func (app TokenResponse) Encode() ([]byte, string, error) {
 // =============================================================================
 
 // VRAMRequest represents the input for VRAM calculation.
+//
+// Either ModelURL (HuggingFace URL or owner/repo path) or ModelID (a
+// local model id known to the server) must be supplied. When AutoFit is
+// true the server runs the layer/expert-offload search using the
+// supplied hardware constraints (GPUFreeBytes, SystemRAMBytes,
+// DeviceCount, TensorSplit) and returns the best-fitting configuration.
 type VRAMRequest struct {
-	ModelURL        string `json:"model_url"`
-	ContextWindow   int64  `json:"context_window"`
-	BytesPerElement int64  `json:"bytes_per_element"`
-	Slots           int64  `json:"slots"`
+	ModelURL          string    `json:"model_url"`
+	ModelID           string    `json:"model_id,omitempty"`
+	ContextWindow     int64     `json:"context_window"`
+	BytesPerElement   int64     `json:"bytes_per_element"`
+	Slots             int64     `json:"slots"`
+	GPULayers         int64     `json:"gpu_layers,omitempty"`
+	ExpertLayersOnGPU int64     `json:"expert_layers_on_gpu,omitempty"`
+	KVCacheOnCPU      bool      `json:"kv_cache_on_cpu,omitempty"`
+	DeviceCount       int64     `json:"device_count,omitempty"`
+	TensorSplit       []float64 `json:"tensor_split,omitempty"`
+
+	AutoFit        bool    `json:"auto_fit,omitempty"`
+	GPUFreeBytes   []int64 `json:"gpu_free_bytes,omitempty"`
+	SystemRAMBytes int64   `json:"system_ram_bytes,omitempty"`
 }
 
 // Decode implements the decoder interface.
@@ -709,7 +741,22 @@ type VRAMResponse struct {
 	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
 	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
 	ComputeBufferEst   int64            `json:"compute_buffer_est"`
-	RepoFiles          []HFRepoFile     `json:"repo_files,omitempty"`
+
+	// MoE / dense breakdown for UI display.
+	AlwaysActiveGPUBytes int64 `json:"always_active_gpu_bytes,omitempty"`
+	AlwaysActiveCPUBytes int64 `json:"always_active_cpu_bytes,omitempty"`
+	ExpertGPUBytes       int64 `json:"expert_gpu_bytes,omitempty"`
+	ExpertCPUBytes       int64 `json:"expert_cpu_bytes,omitempty"`
+
+	// KV cache placement and total system RAM estimate.
+	KVVRAMBytes       int64 `json:"kv_vram_bytes"`
+	KVCPUBytes        int64 `json:"kv_cpu_bytes"`
+	TotalSystemRAMEst int64 `json:"total_system_ram_est"`
+
+	// Per-device split (only populated when DeviceCount/TensorSplit
+	// were supplied on the request).
+	PerDevice []PerDeviceVRAM `json:"per_device,omitempty"`
+	RepoFiles []HFRepoFile    `json:"repo_files,omitempty"`
 }
 
 // Encode implements the encoder interface.
@@ -719,32 +766,58 @@ func (app VRAMResponse) Encode() ([]byte, string, error) {
 }
 
 func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
-	return VRAMResponse{
+	resp := VRAMResponse{
 		Input: VRAMInput{
-			ModelSizeBytes:    v.Input.ModelSizeBytes,
-			ContextWindow:     v.Input.ContextWindow,
-			BlockCount:        v.Input.BlockCount,
-			HeadCountKV:       v.Input.HeadCountKV,
-			KeyLength:         v.Input.KeyLength,
-			ValueLength:       v.Input.ValueLength,
-			BytesPerElement:   v.Input.BytesPerElement,
-			Slots:             v.Input.Slots,
-			EmbeddingLength:   v.Input.EmbeddingLength,
-			MoE:               toAppMoEInfo(v.Input.MoE),
-			Weights:           toAppWeightBreakdown(v.Input.Weights),
-			ExpertLayersOnGPU: v.Input.ExpertLayersOnGPU,
+			ModelSizeBytes:      v.Input.ModelSizeBytes,
+			ContextWindow:       v.Input.ContextWindow,
+			BlockCount:          v.Input.BlockCount,
+			HeadCountKV:         v.Input.HeadCountKV,
+			KeyLength:           v.Input.KeyLength,
+			ValueLength:         v.Input.ValueLength,
+			BytesPerElement:     v.Input.BytesPerElement,
+			Slots:               v.Input.Slots,
+			SlidingWindow:       v.Input.SlidingWindow,
+			SlidingWindowLayers: v.Input.SlidingWindowLayers,
+			EmbeddingLength:     v.Input.EmbeddingLength,
+			MoE:                 toAppMoEInfo(v.Input.MoE),
+			Weights:             toAppWeightBreakdown(v.Input.Weights),
+			GPULayers:           v.Input.GPULayers,
+			ExpertLayersOnGPU:   v.Input.ExpertLayersOnGPU,
+			KVCacheOnCPU:        v.Input.KVCacheOnCPU,
 		},
-		KVPerTokenPerLayer: v.KVPerTokenPerLayer,
-		KVPerSlot:          v.KVPerSlot,
-		SlotMemory:         v.SlotMemory,
-		TotalVRAM:          v.TotalVRAM,
-		MoE:                toAppMoEInfo(v.MoE),
-		Weights:            toAppWeightBreakdown(v.Weights),
-		ModelWeightsGPU:    v.ModelWeightsGPU,
-		ModelWeightsCPU:    v.ModelWeightsCPU,
-		ComputeBufferEst:   v.ComputeBufferEst,
-		RepoFiles:          repoFiles,
+		KVPerTokenPerLayer:   v.KVPerTokenPerLayer,
+		KVPerSlot:            v.KVPerSlot,
+		SlotMemory:           v.SlotMemory,
+		TotalVRAM:            v.TotalVRAM,
+		MoE:                  toAppMoEInfo(v.MoE),
+		Weights:              toAppWeightBreakdown(v.Weights),
+		ModelWeightsGPU:      v.ModelWeightsGPU,
+		ModelWeightsCPU:      v.ModelWeightsCPU,
+		ComputeBufferEst:     v.ComputeBufferEst,
+		AlwaysActiveGPUBytes: v.AlwaysActiveGPUBytes,
+		AlwaysActiveCPUBytes: v.AlwaysActiveCPUBytes,
+		ExpertGPUBytes:       v.ExpertGPUBytes,
+		ExpertCPUBytes:       v.ExpertCPUBytes,
+		KVVRAMBytes:          v.KVVRAMBytes,
+		KVCPUBytes:           v.KVCPUBytes,
+		TotalSystemRAMEst:    v.TotalSystemRAMEst,
+		RepoFiles:            repoFiles,
 	}
+
+	if len(v.PerDevice) > 0 {
+		resp.PerDevice = make([]PerDeviceVRAM, len(v.PerDevice))
+		for i, d := range v.PerDevice {
+			resp.PerDevice[i] = PerDeviceVRAM{
+				Label:        d.Label,
+				WeightsBytes: d.WeightsBytes,
+				KVBytes:      d.KVBytes,
+				ComputeBytes: d.ComputeBytes,
+				TotalBytes:   d.TotalBytes,
+			}
+		}
+	}
+
+	return resp
 }
 
 // vramConfigFromRMC builds a vram.Config using the model's resolved

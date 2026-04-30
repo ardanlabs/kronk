@@ -52,6 +52,18 @@ export default function Settings() {
             <p style={{ fontSize: '12px', color: 'var(--color-gray-600)', marginTop: '8px' }}>
               This token will be stored in your browser and used for all API requests that require authentication.
             </p>
+            <div style={{ fontSize: '12px', color: 'var(--color-gray-600)', marginTop: '12px', padding: '10px 12px', background: 'var(--color-warning-bg-light)', border: '1px solid var(--color-warning-border)', borderRadius: '4px' }}>
+              <strong>Where do I find this token?</strong>
+              <p style={{ margin: '6px 0 0 0' }}>
+                The admin (master) token is generated automatically by the server on first startup
+                and written to <code>~/.kronk/keys/master.jwt</code>. Run:
+              </p>
+              <pre style={{ margin: '6px 0 0 0', padding: '6px 8px', background: 'var(--color-gray-100)', borderRadius: '3px', overflowX: 'auto' }}>cat ~/.kronk/keys/master.jwt</pre>
+              <p style={{ margin: '6px 0 0 0' }}>
+                Copy the contents and paste them above. The token persists per-browser in
+                localStorage; clearing site data or switching browsers requires re-entering it.
+              </p>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button className="btn btn-primary" type="submit">

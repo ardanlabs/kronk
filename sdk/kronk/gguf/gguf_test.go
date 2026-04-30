@@ -142,7 +142,9 @@ func TestMaxBytesPerElement(t *testing.T) {
 
 func TestCalculateKVCache_Gemma4(t *testing.T) {
 	// Gemma4 31B at 32K context, single slot, F16 cache, averaged
-	// head_count_kv=14, key/value length 512, 60 layers.
+	// head_count_kv=14, key/value length 512, 60 layers. No SWA fields
+	// supplied → every layer is budgeted at full ContextWindow (legacy
+	// behaviour preserved for callers that haven't wired AttentionFacts).
 	in := KVCacheInput{
 		ContextWindow:   32768,
 		BlockCount:      60,
@@ -168,5 +170,46 @@ func TestCalculateKVCache_Gemma4(t *testing.T) {
 
 	if out.SlotMemory != wantPerSlot {
 		t.Fatalf("SlotMemory got %d, want %d (single slot)", out.SlotMemory, wantPerSlot)
+	}
+}
+
+// TestCalculateKVCache_Gemma4_SWA verifies SWA-aware accounting. With 50
+// of 60 layers running a 4096-token sliding window and 10 layers full
+// context, the per-slot KV is dramatically smaller than the all-layers-
+// full-context fallback. This is the bug behind "AGENT" configs being
+// rejected: the planner predicted ~130 GB for a model that actually fits
+// in ~30-50 GB.
+func TestCalculateKVCache_Gemma4_SWA(t *testing.T) {
+	in := KVCacheInput{
+		ContextWindow:       131072,
+		BlockCount:          60,
+		HeadCountKV:         14,
+		KeyLength:           512,
+		ValueLength:         512,
+		BytesPerElement:     BytesPerElementF16,
+		Slots:               2,
+		SlidingWindow:       4096,
+		SlidingWindowLayers: 50,
+	}
+
+	out := CalculateKVCache(in)
+
+	const kvPerToken int64 = 14 * (512 + 512) * 2
+
+	wantPerSlot := int64(131072)*10*kvPerToken + int64(4096)*50*kvPerToken
+	if out.KVPerSlot != wantPerSlot {
+		t.Fatalf("KVPerSlot got %d, want %d", out.KVPerSlot, wantPerSlot)
+	}
+
+	wantSlotMem := wantPerSlot * 2
+	if out.SlotMemory != wantSlotMem {
+		t.Fatalf("SlotMemory got %d, want %d (two slots)", out.SlotMemory, wantSlotMem)
+	}
+
+	// Sanity: SWA path must produce a strictly smaller footprint than
+	// the all-full-attention formula it replaces.
+	fullAll := int64(131072) * 60 * kvPerToken * 2
+	if out.SlotMemory >= fullAll {
+		t.Fatalf("SWA result (%d) is not smaller than full-attention fallback (%d)", out.SlotMemory, fullAll)
 	}
 }

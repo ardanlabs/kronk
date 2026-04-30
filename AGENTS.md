@@ -13,6 +13,7 @@ You will want to look at `Chapter 17: Developer Guide` for detailed information 
 - You need these env vars to run test
   - export RUN_IN_PARALLEL=yes
   - export GITHUB_WORKSPACE=<Root Location Of Kronk Project>
+- Never perform a full repo test run and never run tests from this location `sdk/kronk/tests`.
 
 ## MCP Services
 
