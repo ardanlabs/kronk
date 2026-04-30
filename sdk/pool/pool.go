@@ -755,10 +755,7 @@ func selectEvictionVictim(reason string, req resman.PlanRequest, idleColdestFirs
 
 	if reason == "budget" && (req.RAMBytes > 0 || req.VRAMBytes > 0) {
 		// How much we still need to free to admit req.
-		ramDeficit := req.RAMBytes - (usage.RAMBudget - usage.RAMUsed)
-		if ramDeficit < 0 {
-			ramDeficit = 0
-		}
+		ramDeficit := max(req.RAMBytes-(usage.RAMBudget-usage.RAMUsed), 0)
 
 		// Index reservations by key for O(1) lookup.
 		sizes := make(map[string]resman.LoadPlan, len(usage.Reservations))
@@ -782,10 +779,7 @@ func selectEvictionVictim(reason string, req resman.PlanRequest, idleColdestFirs
 			}
 			// Dominant-axis size: RAM dominates on unified memory; on
 			// split-budget hardware VRAM matters too.
-			score := s.RAMBytes
-			if s.VRAMBytes > score {
-				score = s.VRAMBytes
-			}
+			score := max(s.VRAMBytes, s.RAMBytes)
 			if bestScore < 0 || score < bestScore {
 				bestScore = score
 				bestKey = key

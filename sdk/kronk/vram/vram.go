@@ -265,7 +265,7 @@ func CalculatePerDevice(modelWeightsGPU, slotMemory, computeBufferEst, deviceCou
 	wRemaining := modelWeightsGPU
 	kvRemaining := slotMemory
 
-	for i := int64(0); i < deviceCount; i++ {
+	for i := range deviceCount {
 		isLast := i == deviceCount-1
 		var w, kv int64
 		if isLast {
@@ -332,10 +332,7 @@ func AutoFit(input Input, constraints FitConstraints) (gpuLayers int64, expertLa
 		return 0, 0, Calculate(input)
 	}
 
-	deviceCount := constraints.DeviceCount
-	if deviceCount < 1 {
-		deviceCount = 1
-	}
+	deviceCount := max(constraints.DeviceCount, 1)
 
 	hasPerGPU := int64(len(constraints.GPUFreeBytes)) == deviceCount && deviceCount > 0
 

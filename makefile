@@ -235,29 +235,18 @@ test-only: install-libraries install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
-	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
-	go test -v -count=1 ./cmd/server/app/sdk/cache && \
-	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
-	go test -v -count=1 ./sdk/kronk/pool/... && \
-	go test -v -count=1 ./sdk/kronk/jsonrepair && \
-	go test -v -count=1 -p 1 ./sdk/kronk/tests/... && \
-	go test -v -count=1 ./sdk/kronk/model && \
-	go test -v -count=1 ./sdk/tools/...
+	go test -v -p=1 -count=1 ./cmd/server/... && \
+	go test -v -p=1 -count=1 ./sdk/...
 
 test: test-only lint vuln-check diff
 
 test-gh-only: install-libraries-gh install-test-gh-models
-	@echo ========== RUN TESTS ==========
+	@echo ========== RUN GH ONLY TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	export GITHUB_ACTIONS=true && \
-	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
-	go test -v -count=1 ./cmd/server/app/sdk/cache && \
-	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
-	go test -v -count=1 ./sdk/kronk/pool/... && \
-	go test -v -count=1 ./sdk/kronk/jsonrepair && \
-	go test -v -count=1 ./sdk/kronk/model && \
-	go test -v -count=1 ./sdk/tools/...
+	go test -v -p=1 -count=1 ./cmd/server/... && \
+	go test -v -p=1 -count=1 ./sdk/...
 
 test-gh: test-gh-only lint vuln-check diff
 

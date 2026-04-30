@@ -44,13 +44,7 @@ type KVCache struct {
 func CalculateKVCache(input KVCacheInput) KVCache {
 	kvPerTokenPerLayer := input.HeadCountKV * (input.KeyLength + input.ValueLength) * input.BytesPerElement
 
-	swaLayers := input.SlidingWindowLayers
-	if swaLayers < 0 {
-		swaLayers = 0
-	}
-	if swaLayers > input.BlockCount {
-		swaLayers = input.BlockCount
-	}
+	swaLayers := min(max(input.SlidingWindowLayers, 0), input.BlockCount)
 
 	fullLayers := input.BlockCount - swaLayers
 
