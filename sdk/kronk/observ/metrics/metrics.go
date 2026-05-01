@@ -24,8 +24,42 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+// reg is the private Prometheus registry that owns every Kronk collector.
+//
+// We deliberately do NOT register against prometheus.DefaultRegisterer
+// because this package is part of the SDK and may be imported by callers
+// who use the SDK directly (no KMS). The default registry is a global
+// owned by the application, and a library that writes to it would:
+//
+//   - silently expose Kronk's series on the caller's /metrics endpoint,
+//   - and panic the caller's process if any of Kronk's metric names
+//     collided with one they registered themselves (e.g. "requests",
+//     "errors", "goroutines").
+//
+// All Kronk metrics live on this private registry instead. KMS exposes
+// it via the /metrics handler (see cmd/server/app/sdk/debug); SDK-only
+// callers can ignore it, in which case observations are recorded into
+// collectors that are never scraped (a few atomic ops, effectively free).
+//
+// Callers who want to merge Kronk's metrics into their own registry can
+// use Gatherer() with prometheus.Gatherers{} or wrap it as a collector.
+var reg = prometheus.NewRegistry()
+
+// auto is a promauto Factory bound to the private registry, so every
+// auto.NewXxx call below registers against reg instead of the
+// global default registerer.
+var auto = promauto.With(reg)
+
+// Gatherer returns the Prometheus gatherer that holds Kronk's metrics.
+// The KMS HTTP /metrics handler exposes this. SDK-only callers can
+// ignore it, or merge it into their own registry via prometheus.Gatherers.
+func Gatherer() prometheus.Gatherer {
+	return reg
+}
 
 // Histogram bucket families. We pick families that match the expected
 // magnitude of each measurement — a too-narrow set of buckets gives
@@ -115,20 +149,30 @@ type promMetrics struct {
 var m promMetrics
 
 func init() {
+
+	// The default Prometheus registry auto-installs these runtime
+	// collectors (process_*, go_*); since we use a private registry, we
+	// have to opt back in so KMS dashboards keep showing GC, heap, fds,
+	// goroutines, etc.
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
 	m = promMetrics{
-		goroutines: promauto.NewGauge(prometheus.GaugeOpts{
+		goroutines: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "goroutines",
 			Help: "Number of goroutines",
 		}),
-		requests: promauto.NewCounter(prometheus.CounterOpts{
+		requests: auto.NewCounter(prometheus.CounterOpts{
 			Name: "requests",
 			Help: "Total number of requests",
 		}),
-		errors: promauto.NewCounter(prometheus.CounterOpts{
+		errors: auto.NewCounter(prometheus.CounterOpts{
 			Name: "errors",
 			Help: "Total number of errors",
 		}),
-		panics: promauto.NewCounter(prometheus.CounterOpts{
+		panics: auto.NewCounter(prometheus.CounterOpts{
 			Name: "panics",
 			Help: "Total number of panics",
 		}),
@@ -140,7 +184,7 @@ func init() {
 		prefillTTFTSeconds:    newHistVec("model_prefill_ttft_seconds", "Prefill-only time-to-first-token in seconds (prefill-start to first sampled token)", subSecondBuckets),
 		requestTTFTSeconds:    newHistVec("model_request_ttft_seconds", "End-to-end request time-to-first-token in seconds (request-received to first sampled token)", requestTTFTBuckets),
 
-		tokensTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		tokensTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "usage_tokens_total",
 			Help: "Total tokens served, by kind (prompt|reasoning|completion).",
 		}, []string{"model_id", "kind"}),
@@ -150,123 +194,123 @@ func init() {
 		slotMemory: newGaugeVec("vram_slot_memory_bytes", "KV cache slot memory in bytes"),
 
 		// Pool.
-		poolAcquireTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		poolAcquireTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "pool_acquire_total",
 			Help: "Total pool acquire attempts, by result (hit|miss|dedup|busy|error).",
 		}, []string{"result"}),
-		poolEvictionsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		poolEvictionsTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "pool_evictions_total",
 			Help: "Total model evictions, by reason and selection mode.",
 		}, []string{"reason", "selection"}),
-		poolEvictBeforeLoadTotal: promauto.NewCounter(prometheus.CounterOpts{
+		poolEvictBeforeLoadTotal: auto.NewCounter(prometheus.CounterOpts{
 			Name: "pool_evict_before_load_total",
 			Help: "Total times the pool had to evict an idle model before admitting a new load.",
 		}),
-		poolLoadFailuresTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		poolLoadFailuresTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "pool_load_failures_total",
 			Help: "Total pool load failures, by stage (plan|reserve|evict|load).",
 		}, []string{"stage"}),
-		poolAcquireDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+		poolAcquireDuration: auto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "pool_acquire_duration_seconds",
 			Help:    "End-to-end pool acquire latency in seconds, labeled by cache=hit|miss.",
 			Buckets: requestTTFTBuckets,
 		}, []string{"cache"}),
-		poolSingleflightWait: promauto.NewHistogram(prometheus.HistogramOpts{
+		poolSingleflightWait: auto.NewHistogram(prometheus.HistogramOpts{
 			Name:    "pool_singleflight_wait_seconds",
 			Help:    "Time spent waiting for a duplicate in-flight load to finish.",
 			Buckets: requestTTFTBuckets,
 		}),
-		poolEvictWaitSeconds: promauto.NewHistogram(prometheus.HistogramOpts{
+		poolEvictWaitSeconds: auto.NewHistogram(prometheus.HistogramOpts{
 			Name:    "pool_evict_wait_seconds",
 			Help:    "Time spent waiting for an evicted entry to release its reservation.",
 			Buckets: subSecondBuckets,
 		}),
-		poolUnloadDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+		poolUnloadDuration: auto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "pool_unload_duration_seconds",
 			Help:    "Model unload duration in seconds.",
 			Buckets: subSecondBuckets,
 		}, []string{"model_id"}),
-		poolItemsInCache: promauto.NewGauge(prometheus.GaugeOpts{
+		poolItemsInCache: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "pool_items_in_cache",
 			Help: "Number of distinct model entries currently in the pool cache.",
 		}),
-		poolMaxItemsInCache: promauto.NewGauge(prometheus.GaugeOpts{
+		poolMaxItemsInCache: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "pool_max_items_in_cache",
 			Help: "Maximum number of model entries the pool will keep before TTL/cap eviction.",
 		}),
-		poolActiveStreams: promauto.NewGaugeVec(prometheus.GaugeOpts{
+		poolActiveStreams: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "pool_active_streams",
 			Help: "Active streaming requests per model.",
 		}, []string{"model_id"}),
-		poolInflightLoads: promauto.NewGauge(prometheus.GaugeOpts{
+		poolInflightLoads: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "pool_inflight_loads",
 			Help: "Number of model loads currently in progress (reservation held but not yet in cache).",
 		}),
 
 		// Resource manager.
-		resmanBudgetPercent: promauto.NewGauge(prometheus.GaugeOpts{
+		resmanBudgetPercent: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "resman_budget_percent",
 			Help: "Configured percentage of physical memory the resource manager may commit.",
 		}),
-		resmanHeadroomBytes: promauto.NewGauge(prometheus.GaugeOpts{
+		resmanHeadroomBytes: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "resman_headroom_bytes",
 			Help: "Per-GPU safety margin (bytes) subtracted after BudgetPercent is applied.",
 		}),
-		resmanUnifiedMemory: promauto.NewGauge(prometheus.GaugeOpts{
+		resmanUnifiedMemory: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "resman_unified_memory",
 			Help: "1 if the system uses a shared GPU/CPU memory pool (Apple Silicon Metal), else 0.",
 		}),
-		resmanReservations: promauto.NewGauge(prometheus.GaugeOpts{
+		resmanReservations: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "resman_reservations",
 			Help: "Active reservations tracked by the resource manager.",
 		}),
-		resmanRAMTotalBytes: promauto.NewGauge(prometheus.GaugeOpts{
+		resmanRAMTotalBytes: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "resman_ram_total_bytes",
 			Help: "Detected system RAM in bytes.",
 		}),
-		resmanRAMBudgetBytes: promauto.NewGauge(prometheus.GaugeOpts{
+		resmanRAMBudgetBytes: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "resman_ram_budget_bytes",
 			Help: "RAM budget in bytes (TotalBytes * BudgetPercent).",
 		}),
-		resmanRAMUsedBytes: promauto.NewGauge(prometheus.GaugeOpts{
+		resmanRAMUsedBytes: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "resman_ram_used_bytes",
 			Help: "RAM currently reserved by loaded models.",
 		}),
-		resmanRAMFreeBytes: promauto.NewGauge(prometheus.GaugeOpts{
+		resmanRAMFreeBytes: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "resman_ram_free_bytes",
 			Help: "RAM currently available within the budget.",
 		}),
-		resmanDeviceTotalBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
+		resmanDeviceTotalBytes: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "resman_device_total_bytes",
 			Help: "Per-GPU total memory in bytes.",
 		}, []string{"device", "type"}),
-		resmanDeviceBudgetBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
+		resmanDeviceBudgetBytes: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "resman_device_budget_bytes",
 			Help: "Per-GPU budget in bytes after BudgetPercent and headroom.",
 		}, []string{"device", "type"}),
-		resmanDeviceUsedBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
+		resmanDeviceUsedBytes: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "resman_device_used_bytes",
 			Help: "Per-GPU bytes currently reserved.",
 		}, []string{"device", "type"}),
-		resmanDeviceFreeBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
+		resmanDeviceFreeBytes: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "resman_device_free_bytes",
 			Help: "Per-GPU bytes currently free within the budget.",
 		}, []string{"device", "type"}),
-		resmanReservationBytes: promauto.NewGaugeVec(prometheus.GaugeOpts{
+		resmanReservationBytes: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "resman_reservation_bytes",
 			Help: "Per-reservation bytes, labeled by model_id, kind=ram|vram, and device.",
 		}, []string{"model_id", "kind", "device"}),
-		resmanRejectionsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		resmanRejectionsTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "resman_reserve_rejections_total",
 			Help: "Total reservation rejections by reason (no_capacity|unknown_device|invalid_plan|duplicate_key|no_gpus|other).",
 		}, []string{"reason"}),
 
 		// Request-level.
-		chatRequestsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		chatRequestsTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "chat_requests_total",
 			Help: "Total chat completion requests by model_id and status (ok|error|cancel).",
 		}, []string{"model_id", "status"}),
-		chatErrorsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		chatErrorsTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "chat_errors_total",
 			Help: "Chat completion errors by model_id and error class.",
 		}, []string{"model_id", "class"}),
@@ -277,7 +321,7 @@ func init() {
 
 func newGaugeVec(name, help string, extraLabels ...string) *prometheus.GaugeVec {
 	labels := append([]string{"model_id"}, extraLabels...)
-	return promauto.NewGaugeVec(prometheus.GaugeOpts{
+	return auto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: name,
 		Help: help,
 	}, labels)
@@ -285,7 +329,7 @@ func newGaugeVec(name, help string, extraLabels ...string) *prometheus.GaugeVec 
 
 func newHistVec(name, help string, buckets []float64, extraLabels ...string) *prometheus.HistogramVec {
 	labels := append([]string{"model_id"}, extraLabels...)
-	return promauto.NewHistogramVec(prometheus.HistogramOpts{
+	return auto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    name,
 		Help:    help,
 		Buckets: buckets,
@@ -545,10 +589,7 @@ func PublishResmanUsage(u ResmanUsage) {
 	m.resmanRAMTotalBytes.Set(float64(u.RAMTotal))
 	m.resmanRAMBudgetBytes.Set(float64(u.RAMBudget))
 	m.resmanRAMUsedBytes.Set(float64(u.RAMUsed))
-	free := u.RAMBudget - u.RAMUsed
-	if free < 0 {
-		free = 0
-	}
+	free := max(u.RAMBudget-u.RAMUsed, 0)
 	m.resmanRAMFreeBytes.Set(float64(free))
 
 	// Reset per-device gauges so devices that disappeared between calls
@@ -563,10 +604,7 @@ func PublishResmanUsage(u ResmanUsage) {
 		m.resmanDeviceTotalBytes.WithLabelValues(d.Name, d.Type).Set(float64(d.TotalBytes))
 		m.resmanDeviceBudgetBytes.WithLabelValues(d.Name, d.Type).Set(float64(d.BudgetBytes))
 		m.resmanDeviceUsedBytes.WithLabelValues(d.Name, d.Type).Set(float64(d.UsedBytes))
-		dFree := d.BudgetBytes - d.UsedBytes
-		if dFree < 0 {
-			dFree = 0
-		}
+		dFree := max(d.BudgetBytes-d.UsedBytes, 0)
 		m.resmanDeviceFreeBytes.WithLabelValues(d.Name, d.Type).Set(float64(dFree))
 	}
 
