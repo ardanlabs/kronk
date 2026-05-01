@@ -235,7 +235,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 		for i, snap := range snapshots {
 			if !snap.empty && !snap.pending {
 				session := m.imcSessions[i]
-				if len(session.kvState) == 0 {
+				if session.kvState.Len() == 0 {
 					projectedKV += snap.totalTokensCached
 				}
 			}
@@ -261,7 +261,7 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 					"projected-kv", projectedKV, "n_ctx", nCtx)
 
 				// Clear VRAM KV only if not already externalized.
-				if len(session.kvState) == 0 {
+				if session.kvState.Len() == 0 {
 					m.decodeMu.Lock()
 					llama.MemorySeqRm(m.mem, snap.seqID, -1, -1)
 					m.decodeMu.Unlock()
@@ -1287,8 +1287,12 @@ func imcResetSession(s *imcSession) {
 	s.cachedTokens = nil
 	s.totalTokensCached = 0
 	s.cachedMsgCount = 0
-	s.kvState = nil
-	s.kvStateBytes = 0
+	// Reset clears the valid contents (Len becomes 0) but retains the
+	// backing byte array. The next snapshot for whatever conversation
+	// is bound to this session will overwrite the bytes in place,
+	// avoiding the per-turn ~GB allocation that previously dominated
+	// the IMC benchmark's B/op number.
+	s.kvState.Reset()
 	s.lastUsed = time.Time{}
 	s.pending = false
 	s.hasMedia = false

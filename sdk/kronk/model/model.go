@@ -46,8 +46,7 @@ type imcSession struct {
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
 	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
 	cachedMsgCount    int           // Number of messages cached
-	kvState           []byte        // Externalized KV cache state (RAM buffer); restored into any slot via StateSeqSetData
-	kvStateBytes      int           // Size of kvState in bytes (for byte-budgeted LRU eviction)
+	kvState           kvBuffer      // Externalized KV cache state (RAM buffer); restored into any slot via StateSeqSetData. Lazy-grow / never-shrink: backing array is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
 	lastUsed          time.Time     // Last access time (for eviction)
 	pending           bool          // True when a build/extend is in-flight (transitional: removed in Phase 4)
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
