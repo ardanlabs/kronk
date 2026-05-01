@@ -52,7 +52,7 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 	s.nPrefilled += chunkSize
 
 	prefillDuration := time.Since(prefillStart)
-	metrics.AddPrefillTime(e.model.modelInfo.ID, prefillDuration)
+	metrics.AddPrefillTime(e.model.modelInfo.ID, "text", prefillDuration)
 
 	// Check if prefill is complete.
 	if s.nPrefilled >= len(s.prefillTokens) {

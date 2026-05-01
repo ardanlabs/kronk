@@ -1,6 +1,6 @@
 services:
   openwebui:
-    image: ghcr.io/open-webui/open-webui:v0.7.2
+    image: ghcr.io/open-webui/open-webui:v0.9.2
     container_name: openwebui
     restart: always
     pull_policy: never
@@ -22,7 +22,7 @@ services:
       - ./openwebui:/app/backend/data
 
   grafana:
-    image: grafana/grafana:12.3.0
+    image: grafana/grafana:12.3.1
     container_name: grafana
     restart: always
     pull_policy: never
@@ -50,7 +50,7 @@ services:
       - tempo
 
   loki:
-    image: grafana/loki:3.6.0
+    image: grafana/loki:3.7.0
     container_name: loki
     restart: always
     pull_policy: never
@@ -63,7 +63,7 @@ services:
       - kronk-net
 
   prometheus:
-    image: prom/prometheus:v3.8.0
+    image: prom/prometheus:v3.11.0
     container_name: prometheus
     restart: always
     pull_policy: never
@@ -101,7 +101,7 @@ services:
       - loki
 
   tempo:
-    image: grafana/tempo:2.9.0
+    image: grafana/tempo:2.10.0
     container_name: tempo
     restart: always
     pull_policy: never

@@ -302,8 +302,8 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "editorMode": "builder",
-          "expr": "model_prompt_creation_avg{model_id=~\"$model_id\"}",
+          "editorMode": "code",
+          "expr": "rate(model_prompt_creation_seconds_sum{model_id=~\"$model_id\"}[5m]) / rate(model_prompt_creation_seconds_count{model_id=~\"$model_id\"}[5m])",
           "hide": false,
           "legendFormat": "prompt_creation_avg ({{model_id}})",
           "range": true,
@@ -314,10 +314,10 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "editorMode": "builder",
-          "expr": "model_prefill_avg{model_id=~\"$model_id\"}",
+          "editorMode": "code",
+          "expr": "rate(model_prefill_seconds_sum{model_id=~\"$model_id\"}[5m]) / rate(model_prefill_seconds_count{model_id=~\"$model_id\"}[5m])",
           "hide": false,
-          "legendFormat": "prefill_avg ({{model_id}})",
+          "legendFormat": "prefill_avg ({{model_id}}, {{kind}})",
           "range": true,
           "refId": "B"
         },
@@ -326,12 +326,36 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "editorMode": "builder",
-          "expr": "model_ttft_avg{model_id=~\"$model_id\"}",
+          "editorMode": "code",
+          "expr": "rate(model_request_ttft_seconds_sum{model_id=~\"$model_id\"}[5m]) / rate(model_request_ttft_seconds_count{model_id=~\"$model_id\"}[5m])",
           "hide": false,
-          "legendFormat": "ttft_avg ({{model_id}})",
+          "legendFormat": "request_ttft_avg ({{model_id}})",
           "range": true,
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "rate(model_prefill_ttft_seconds_sum{model_id=~\"$model_id\"}[5m]) / rate(model_prefill_ttft_seconds_count{model_id=~\"$model_id\"}[5m])",
+          "hide": false,
+          "legendFormat": "prefill_ttft_avg ({{model_id}})",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, model_id) (rate(model_request_ttft_seconds_bucket{model_id=~\"$model_id\"}[5m])))",
+          "hide": false,
+          "legendFormat": "request_ttft_p99 ({{model_id}})",
+          "range": true,
+          "refId": "E"
         }
       ],
       "title": "Model Timings",
@@ -419,10 +443,10 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "editorMode": "builder",
-          "expr": "usage_prompt_tokens_avg{model_id=~\"$model_id\"}",
+          "editorMode": "code",
+          "expr": "sum by (model_id, kind) (rate(usage_tokens_total{model_id=~\"$model_id\"}[5m]))",
           "hide": false,
-          "legendFormat": "prompt_tokens_avg ({{model_id}})",
+          "legendFormat": "tokens_per_sec ({{model_id}}, {{kind}})",
           "range": true,
           "refId": "A"
         },
@@ -431,10 +455,10 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "editorMode": "builder",
-          "expr": "usage_reasoning_tokens_avg{model_id=~\"$model_id\"}",
+          "editorMode": "code",
+          "expr": "rate(usage_tokens_per_second_sum{model_id=~\"$model_id\"}[5m]) / rate(usage_tokens_per_second_count{model_id=~\"$model_id\"}[5m])",
           "hide": false,
-          "legendFormat": "reasoning_tokens_avg ({{model_id}})",
+          "legendFormat": "per_request_tps_avg ({{model_id}})",
           "range": true,
           "refId": "B"
         },
@@ -443,51 +467,15 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "editorMode": "builder",
-          "expr": "usage_completion_tokens_avg{model_id=~\"$model_id\"}",
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, model_id) (rate(usage_tokens_per_second_bucket{model_id=~\"$model_id\"}[5m])))",
           "hide": false,
-          "legendFormat": "completion_tokens_avg ({{model_id}})",
+          "legendFormat": "per_request_tps_p99 ({{model_id}})",
           "range": true,
           "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "builder",
-          "expr": "usage_output_tokens_avg{model_id=~\"$model_id\"}",
-          "hide": false,
-          "legendFormat": "output_tokens_avg ({{model_id}})",
-          "range": true,
-          "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "builder",
-          "expr": "usage_total_tokens_avg{model_id=~\"$model_id\"}",
-          "hide": false,
-          "legendFormat": "total_tokens_avg ({{model_id}})",
-          "range": true,
-          "refId": "E"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "builder",
-          "expr": "usage_tokens_per_second_avg{model_id=~\"$model_id\"}",
-          "hide": false,
-          "legendFormat": "tokens_per_second_avg ({{model_id}})",
-          "range": true,
-          "refId": "F"
         }
       ],
-      "title": "Usage Tokens",
+      "title": "Token Throughput & Per-Request TPS",
       "type": "timeseries"
     },
     {
@@ -594,6 +582,433 @@
     },
     {
       "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "bytes",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 20 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "resman_ram_budget_bytes",
+          "legendFormat": "RAM budget",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "resman_ram_used_bytes",
+          "legendFormat": "RAM used",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "resman_device_budget_bytes",
+          "legendFormat": "{{device}} budget",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "resman_device_used_bytes",
+          "legendFormat": "{{device}} used",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "Resman Memory Budget",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "ops/s",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 30 },
+      "id": 8,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "sum by (result) (rate(pool_acquire_total[5m]))",
+          "legendFormat": "acquire {{result}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rate(pool_evictions_total[5m]))",
+          "legendFormat": "evict {{reason}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "rate(pool_evict_before_load_total[5m])",
+          "legendFormat": "evict-before-load",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Pool Acquire & Eviction Rates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "seconds",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 30 },
+      "id": 9,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, cache) (rate(pool_acquire_duration_seconds_bucket[5m])))",
+          "legendFormat": "acquire p99 ({{cache}})",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(pool_singleflight_wait_seconds_bucket[5m])))",
+          "legendFormat": "singleflight p99",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, model_id) (rate(chat_queue_wait_seconds_bucket{model_id=~\"$model_id\"}[5m])))",
+          "legendFormat": "queue p99 ({{model_id}})",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(pool_evict_wait_seconds_bucket[5m])))",
+          "legendFormat": "evict-wait p99",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "Pool & Queue Latency (P99)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 40 },
+      "id": 10,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "resman_reservations",
+          "legendFormat": "reservations",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "pool_inflight_loads",
+          "legendFormat": "inflight loads",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rate(resman_reserve_rejections_total[5m]))",
+          "legendFormat": "reject {{reason}} (per s)",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "sum by (stage) (rate(pool_load_failures_total[5m]))",
+          "legendFormat": "load fail {{stage}} (per s)",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "Reservations & Rejections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "req/s",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 40 },
+      "id": 11,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "sum by (status) (rate(chat_requests_total{model_id=~\"$model_id\"}[5m]))",
+          "legendFormat": "{{status}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "sum by (class) (rate(chat_errors_total{model_id=~\"$model_id\"}[5m]))",
+          "legendFormat": "error {{class}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Chat Requests",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 50 },
+      "id": 12,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "pool_items_in_cache",
+          "legendFormat": "items in cache",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "pool_max_items_in_cache",
+          "legendFormat": "max items in cache",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "pool_active_streams{model_id=~\"$model_id\"}",
+          "legendFormat": "active streams ({{model_id}})",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Pool Cache & Active Streams",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
         "type": "loki",
         "uid": "P8E80F9AEF21F6940"
       },
@@ -601,7 +1016,7 @@
         "h": 19,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 60
       },
       "id": 3,
       "options": {
@@ -647,7 +1062,7 @@
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
         },
-        "definition": "label_values(model_load_avg, model_id)",
+        "definition": "label_values(model_load_seconds_count, model_id)",
         "hide": 0,
         "includeAll": true,
         "label": "Model",
@@ -655,7 +1070,7 @@
         "name": "model_id",
         "options": [],
         "query": {
-          "query": "label_values(model_load_avg, model_id)",
+          "query": "label_values(model_load_seconds_count, model_id)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,

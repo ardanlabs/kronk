@@ -37,6 +37,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	if job.queueWaitSpan != nil {
 		job.queueWaitSpan.End()
 	}
+	if !job.queuedAt.IsZero() {
+		metrics.ObserveChatQueueWait(e.model.modelInfo.ID, time.Since(job.queuedAt))
+	}
 
 	// Start span for this chat request. Store the span context so child
 	// spans (prefill, token-generation) are nested under process-request.
@@ -149,7 +152,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				return
 			}
 
-			metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
+			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 
 			cacheIdx = llama.Pos(totalCached)
 
@@ -264,7 +267,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				return
 			}
 
-			metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
+			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 

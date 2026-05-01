@@ -162,6 +162,9 @@ func New(cfg Config) (*Pool, error) {
 
 	p.logResmanInit(context.Background())
 
+	metrics.SetPoolMaxItemsInCache(cfg.ModelsInCache)
+	p.publishMetrics()
+
 	return &p, nil
 }
 
@@ -169,6 +172,81 @@ func New(cfg Config) (*Pool, error) {
 // for surfacing budget/usage data via observability endpoints.
 func (p *Pool) ResourceManager() *resman.Manager {
 	return p.resman
+}
+
+// publishMetrics refreshes the pool/resman gauges with the current
+// snapshot. Cheap (one Usage() call + a few Set() operations) and called
+// after every Reserve/Release event so dashboards see fresh data without
+// a separate scraper goroutine.
+func (p *Pool) publishMetrics() {
+	u := p.resman.Usage()
+
+	pu := metrics.ResmanUsage{
+		BudgetPercent: u.BudgetPercent,
+		HeadroomBytes: u.HeadroomBytes,
+		UnifiedMemory: u.UnifiedMemory,
+		RAMTotal:      u.RAMTotal,
+		RAMBudget:     u.RAMBudget,
+		RAMUsed:       u.RAMUsed,
+	}
+
+	pu.Devices = make([]metrics.ResmanDeviceUsage, 0, len(u.Devices))
+	for _, d := range u.Devices {
+		pu.Devices = append(pu.Devices, metrics.ResmanDeviceUsage{
+			Name:        d.Name,
+			Type:        d.Type,
+			TotalBytes:  d.TotalBytes,
+			BudgetBytes: d.BudgetBytes,
+			UsedBytes:   d.UsedBytes,
+		})
+	}
+
+	pu.Reservations = make([]metrics.ResmanReservation, 0, len(u.Reservations))
+	for _, r := range u.Reservations {
+		per := make([]metrics.ResmanPerDevice, 0, len(r.Per))
+		for _, a := range r.Per {
+			per = append(per, metrics.ResmanPerDevice{Name: a.Name, Bytes: a.Bytes})
+		}
+		pu.Reservations = append(pu.Reservations, metrics.ResmanReservation{
+			Key:       r.Key,
+			RAMBytes:  r.RAMBytes,
+			VRAMBytes: r.VRAMBytes,
+			Per:       per,
+		})
+	}
+
+	metrics.PublishResmanUsage(pu)
+
+	items := int(p.itemsInCache.Load())
+	metrics.SetPoolItemsInCache(items)
+
+	// Inflight = tickets held but not yet visible in the cache.
+	p.ticketsMu.Lock()
+	inflight := len(p.tickets) - items
+	p.ticketsMu.Unlock()
+	if inflight < 0 {
+		inflight = 0
+	}
+	metrics.SetPoolInflightLoads(inflight)
+}
+
+// classifyResmanError maps a resman error to a metrics rejection-reason
+// label.
+func classifyResmanError(err error) string {
+	switch {
+	case errors.Is(err, resman.ErrNoCapacity):
+		return "no_capacity"
+	case errors.Is(err, resman.ErrUnknownDevice):
+		return "unknown_device"
+	case errors.Is(err, resman.ErrInvalidPlan):
+		return "invalid_plan"
+	case errors.Is(err, resman.ErrDuplicateKey):
+		return "duplicate_key"
+	case errors.Is(err, resman.ErrNoGPUs):
+		return "no_gpus"
+	default:
+		return "other"
+	}
 }
 
 // Shutdown releases all apis from the pool and performs a proper unloading.
@@ -319,6 +397,8 @@ func (p *Pool) modelDisplayMemory(krn *kronk.Kronk, modelID string) (kvCache int
 // AquireModel will provide a kronk API for the specified model. If the model
 // is not in the pool, an API for the model will be created.
 func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, error) {
+	start := time.Now()
+
 	if entry, exists := p.cache.GetEntry(modelID); exists {
 		p.log(ctx, "acquire-model",
 			"status", "cache-hit",
@@ -327,6 +407,8 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 			"expires-at", entry.ExpiresAt(),
 			"active-streams", entry.Value.ActiveStreams(),
 		)
+		metrics.AddPoolAcquire("hit")
+		metrics.ObservePoolAcquireDuration("hit", time.Since(start))
 		return entry.Value, nil
 	}
 
@@ -337,7 +419,8 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 
 	// Use singleflight to prevent concurrent loads of the same model.
 	// This ensures only one goroutine loads a model while others wait.
-	result, err, _ := p.loadGroup.Do(modelID, func() (any, error) {
+	sfStart := time.Now()
+	result, err, shared := p.loadGroup.Do(modelID, func() (any, error) {
 
 		// Double-check pool after acquiring the singleflight lock.
 		if krn, exists := p.cache.GetIfPresent(modelID); exists {
@@ -359,6 +442,7 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 		// manager, evicting idle entries if needed to make room.
 		planReq, err := p.planRequest(ctx, modelID, modelID, cfg)
 		if err != nil {
+			metrics.AddPoolLoadFailure("plan")
 			return nil, fmt.Errorf("acquire-model: %w", err)
 		}
 
@@ -386,6 +470,7 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 				"ERROR", err,
 			)
 			p.logResmanUsage(ctx, "post-failed-load", "key", modelID)
+			metrics.AddPoolLoadFailure("load")
 			return nil, fmt.Errorf("acquire-model: unable to create inference model: %w", err)
 		}
 
@@ -427,6 +512,24 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 		return krn, nil
 	})
 
+	if shared {
+		metrics.ObservePoolSingleflightWait(time.Since(sfStart))
+	}
+
+	switch {
+	case err == nil && shared:
+		metrics.AddPoolAcquire("dedup")
+	case err == nil:
+		metrics.AddPoolAcquire("miss")
+	case errors.Is(err, ErrServerBusy):
+		metrics.AddPoolAcquire("busy")
+	default:
+		metrics.AddPoolAcquire("error")
+	}
+	metrics.ObservePoolAcquireDuration("miss", time.Since(start))
+
+	p.publishMetrics()
+
 	if err != nil {
 		return nil, err
 	}
@@ -439,6 +542,8 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 // <modelID>/playground/<session_id> so that ModelStatus() can still match
 // playground sessions to locally installed models.
 func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
+	start := time.Now()
+
 	if entry, exists := p.cache.GetEntry(key); exists {
 		p.log(ctx, "acquire-custom",
 			"status", "cache-hit",
@@ -447,6 +552,8 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 			"expires-at", entry.ExpiresAt(),
 			"active-streams", entry.Value.ActiveStreams(),
 		)
+		metrics.AddPoolAcquire("hit")
+		metrics.ObservePoolAcquireDuration("hit", time.Since(start))
 		return entry.Value, nil
 	}
 
@@ -455,7 +562,8 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 		"key", key,
 	)
 
-	result, err, _ := p.loadGroup.Do(key, func() (any, error) {
+	sfStart := time.Now()
+	result, err, shared := p.loadGroup.Do(key, func() (any, error) {
 		if krn, exists := p.cache.GetIfPresent(key); exists {
 			return krn, nil
 		}
@@ -473,6 +581,7 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 		modelID, _, _ := strings.Cut(key, "/")
 		planReq, err := p.planRequest(ctx, modelID, key, cfg)
 		if err != nil {
+			metrics.AddPoolLoadFailure("plan")
 			return nil, fmt.Errorf("acquire-custom: %w", err)
 		}
 
@@ -500,6 +609,7 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 				"ERROR", err,
 			)
 			p.logResmanUsage(ctx, "post-failed-load", "key", key)
+			metrics.AddPoolLoadFailure("load")
 			return nil, fmt.Errorf("acquire-custom: unable to create inference model: %w", err)
 		}
 
@@ -520,6 +630,24 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 
 		return krn, nil
 	})
+
+	if shared {
+		metrics.ObservePoolSingleflightWait(time.Since(sfStart))
+	}
+
+	switch {
+	case err == nil && shared:
+		metrics.AddPoolAcquire("dedup")
+	case err == nil:
+		metrics.AddPoolAcquire("miss")
+	case errors.Is(err, ErrServerBusy):
+		metrics.AddPoolAcquire("busy")
+	default:
+		metrics.AddPoolAcquire("error")
+	}
+	metrics.ObservePoolAcquireDuration("miss", time.Since(start))
+
+	p.publishMetrics()
 
 	if err != nil {
 		return nil, err
@@ -617,6 +745,8 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 			"key", newKey,
 			"ERROR", err,
 		)
+		metrics.AddPoolLoadFailure("plan")
+		metrics.AddResmanRejection("no_capacity")
 		return resman.Ticket{}, resman.LoadPlan{}, fmt.Errorf("reserve: %w", err)
 	}
 
@@ -639,6 +769,7 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 					"key", newKey,
 					"ERROR", err,
 				)
+				metrics.AddPoolLoadFailure("evict")
 				return resman.Ticket{}, resman.LoadPlan{}, err
 			}
 			continue
@@ -654,6 +785,11 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 			return ticket, plan, nil
 		}
 
+		// Track every Reserve failure as a resman rejection. ErrNoCapacity
+		// rejections are common during eviction loops; other classes
+		// indicate misconfiguration.
+		metrics.AddResmanRejection(classifyResmanError(err))
+
 		// Only ErrNoCapacity is recoverable via eviction.
 		if !errors.Is(err, resman.ErrNoCapacity) {
 			p.log(ctx, "reserve",
@@ -662,6 +798,7 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 				"attempt", attempt,
 				"ERROR", err,
 			)
+			metrics.AddPoolLoadFailure("reserve")
 			return resman.Ticket{}, resman.LoadPlan{}, fmt.Errorf("reserve: %w", err)
 		}
 
@@ -679,6 +816,7 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 				"key", newKey,
 				"ERROR", err,
 			)
+			metrics.AddPoolLoadFailure("evict")
 			return resman.Ticket{}, resman.LoadPlan{}, err
 		}
 	}
@@ -688,6 +826,7 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 		"key", newKey,
 		"max-attempts", maxAttempts,
 	)
+	metrics.AddPoolLoadFailure("reserve")
 	return resman.Ticket{}, resman.LoadPlan{}, fmt.Errorf("reserve: gave up after %d eviction attempts", maxAttempts)
 }
 
@@ -847,6 +986,10 @@ func (p *Pool) evictOneIdle(ctx context.Context, newKey, reason string, req resm
 		"max-models-in-cache", p.maxModelsInCache,
 	)
 
+	metrics.AddPoolEvictBeforeLoad()
+	metrics.AddPoolEviction(reason, victimSelectionMode)
+
+	evictStart := time.Now()
 	p.cache.Invalidate(victim)
 
 	deadline := time.Now().Add(maxWait)
@@ -869,6 +1012,8 @@ func (p *Pool) evictOneIdle(ctx context.Context, newKey, reason string, req resm
 		case <-time.After(pollInterval):
 		}
 	}
+
+	metrics.ObservePoolEvictWait(time.Since(evictStart))
 
 	p.log(ctx, "acquire",
 		"status", "evict-before-load-complete",
@@ -933,13 +1078,25 @@ func (p *Pool) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 
 	p.log(ctx, "kronk pool eviction", "key", event.Key, "status", "unload-started", "active-streams", event.Value.ActiveStreams())
 
+	unloadStart := time.Now()
+
 	if err := event.Value.Unload(ctx); err != nil {
 		p.log(ctx, "kronk pool eviction", "key", event.Key, "ERROR", err)
 	}
 
+	unloadDur := time.Since(unloadStart)
+	metrics.ObservePoolUnloadDuration(event.Key, unloadDur)
+
+	// Track the eviction reason as observed by the otter cache. The
+	// "evict-before-load" path also fires this callback (via Invalidate),
+	// so this counter is the union of TTL, replacement, invalidation,
+	// and capacity-driven evictions.
+	metrics.AddPoolEviction(otterCauseLabel(event.Cause), "")
+
 	p.log(ctx, "kronk pool eviction", "key", event.Key, "status", "unload-finished")
 
 	metrics.ClearVRAM(event.Key)
+	metrics.ClearPoolActiveStreams(event.Key)
 
 	if ticket, ok := p.takeTicket(event.Key); ok {
 		p.resman.Release(ticket)
@@ -951,4 +1108,22 @@ func (p *Pool) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 	}
 
 	p.itemsInCache.Add(-1)
+
+	p.publishMetrics()
+}
+
+// otterCauseLabel maps the otter eviction cause to a metrics label.
+func otterCauseLabel(cause otter.DeletionCause) string {
+	switch cause {
+	case otter.CauseExpiration:
+		return "ttl"
+	case otter.CauseOverflow:
+		return "cap"
+	case otter.CauseReplacement:
+		return "replacement"
+	case otter.CauseInvalidation:
+		return "invalidation"
+	default:
+		return "unknown"
+	}
 }

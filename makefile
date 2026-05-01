@@ -178,11 +178,11 @@ install-class-models: install-kronk
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 
-OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.2
-GRAFANA    := grafana/grafana:12.3.0
-PROMETHEUS := prom/prometheus:v3.8.0
-TEMPO      := grafana/tempo:2.9.0
-LOKI       := grafana/loki:3.6.0
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.9.2
+GRAFANA    := grafana/grafana:12.3.1
+PROMETHEUS := prom/prometheus:v3.11.0
+TEMPO      := grafana/tempo:2.10.0
+LOKI       := grafana/loki:3.7.0
 PROMTAIL   := grafana/promtail:3.6.0
 
 # Install the docker images.

@@ -22,6 +22,7 @@ type chatJob struct {
 	ch            chan<- ChatResponse // Channel for streaming responses back to caller
 	queueWaitSpan trace.Span          // Span covering time spent waiting in the queue
 	queuedAt      time.Time           // Time when the job was submitted to the queue
+	requestStart  time.Time           // Time when the request entered the SDK (for end-to-end TTFT)
 
 	// -------------------------------------------------------------------------
 	// Request Content

@@ -96,7 +96,14 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 			ttft = time.Since(s.prefillStart)
 		}
 		s.ttft = ttft
-		metrics.AddTimeToFirstToken(e.model.modelInfo.ID, ttft)
+		metrics.AddPrefillTTFT(e.model.modelInfo.ID, ttft)
+
+		// End-to-end TTFT: from the moment the request entered the SDK
+		// (ChatStreaming/Chat) to the first sampled token. Includes
+		// queue wait, tokenization, cache work, and prefill.
+		if !s.job.requestStart.IsZero() {
+			metrics.AddRequestTTFT(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+		}
 
 		e.model.log(s.job.ctx, "batch-engine", "status", "prefill-done",
 			"slot", s.id, "seq", s.seqID, "id", s.job.id,

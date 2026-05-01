@@ -5104,25 +5104,53 @@ kronk server start`}</code></pre>
             <li><code>errors</code> - Total error count</li>
             <li><code>panics</code> - Total panic count</li>
           </ul>
-          <p>Model loading (in seconds):</p>
+          <p>All timing distributions are exposed as Prometheus <strong>histograms</strong> (suffix <code>_seconds</code>), which emit <code>_bucket</code>, <code>_sum</code>, and <code>_count</code> series. Compute averages with <code>rate(X_sum[5m]) / rate(X_count[5m])</code> and percentiles with <code>histogram_quantile(...)</code>.</p>
+          <p>Model loading histograms (seconds):</p>
           <ul>
-            <li><code>model_load_avg</code>, <code>model_load_min</code>, <code>model_load_max</code></li>
-            <li><code>model_load_proj_avg</code>, <code>model_load_proj_min</code>, <code>model_load_proj_max</code></li>
+            <li><code>model_load_seconds</code> — model file load time</li>
+            <li><code>model_load_proj_seconds</code> — multimodal proj file load time</li>
           </ul>
-          <p>Inference timing (in seconds):</p>
+          <p>Inference timing histograms (seconds):</p>
           <ul>
-            <li><code>model_prompt_creation_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>model_prefill_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>model_ttft_avg</code>, <code>_min</code>, <code>_max</code> (time to first token)</li>
+            <li><code>model_prompt_creation_seconds</code></li>
+            <li><code>model_prefill_seconds</code> (labeled by <code>kind="text|media|imc-decode"</code>)</li>
+            <li><code>model_prefill_ttft_seconds</code> (prefill-start to first sampled token)</li>
+            <li><code>model_request_ttft_seconds</code> (end-to-end request to first sampled token)</li>
           </ul>
           <p>Token usage:</p>
           <ul>
-            <li><code>usage_prompt_tokens_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>usage_reasoning_tokens_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>usage_completion_tokens_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>usage_output_tokens_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>usage_total_tokens_avg</code>, <code>_min</code>, <code>_max</code></li>
-            <li><code>usage_tokens_per_second_avg</code>, <code>_min</code>, <code>_max</code></li>
+            <li><code>usage_tokens_total</code> — counter, labeled by <code>kind="prompt|reasoning|completion"</code>. Use <code>rate(...)</code> for fleet throughput. Output and total are linear combinations and can be derived in PromQL.</li>
+            <li><code>usage_tokens_per_second</code> — histogram of per-request decode rate (computed after TTFT).</li>
+          </ul>
+          <p>Request lifecycle:</p>
+          <ul>
+            <li><code>chat_requests_total&#123;model_id, status="ok|error|cancel"&#125;</code> — counter of chat completion outcomes.</li>
+            <li><code>chat_errors_total&#123;model_id, class&#125;</code> — counter of chat errors by class (<code>pre-batch</code>, <code>fail-job</code>, <code>context-cancelled</code>, …).</li>
+            <li><code>chat_request_duration_seconds</code> — histogram of end-to-end chat request duration.</li>
+            <li><code>chat_queue_wait_seconds</code> — histogram of time spent waiting in the batch engine queue.</li>
+          </ul>
+          <p>Pool (sdk/pool):</p>
+          <ul>
+            <li><code>pool_acquire_total&#123;result="hit|miss|dedup|busy|error"&#125;</code> — counter of acquire outcomes.</li>
+            <li><code>pool_acquire_duration_seconds&#123;cache="hit|miss"&#125;</code> — histogram of acquire latency.</li>
+            <li><code>pool_singleflight_wait_seconds</code> — histogram of duplicate-load wait time.</li>
+            <li><code>pool_evictions_total&#123;reason, selection&#125;</code> — counter labelled by reason (<code>ttl|cap|budget|replacement|invalidation|unknown</code>) and selection (<code>smallest-fit|coldest-idle|n/a</code>).</li>
+            <li><code>pool_evict_before_load_total</code> — counter of pre-admission evictions.</li>
+            <li><code>pool_evict_wait_seconds</code> — histogram of time waiting for an eviction callback to release its reservation.</li>
+            <li><code>pool_unload_duration_seconds&#123;model_id&#125;</code> — histogram of unload duration.</li>
+            <li><code>pool_load_failures_total&#123;stage="plan|reserve|evict|load"&#125;</code> — counter of load failures by stage.</li>
+            <li><code>pool_items_in_cache</code>, <code>pool_max_items_in_cache</code> — gauges for current/configured cache occupancy.</li>
+            <li><code>pool_active_streams&#123;model_id&#125;</code> — gauge of streaming requests per model.</li>
+            <li><code>pool_inflight_loads</code> — gauge of loads currently holding a reservation but not yet visible in the cache.</li>
+          </ul>
+          <p>Resource manager (sdk/pool/resman):</p>
+          <ul>
+            <li><code>resman_budget_percent</code>, <code>resman_headroom_bytes</code>, <code>resman_unified_memory</code> — configuration gauges.</li>
+            <li><code>resman_reservations</code> — gauge of active reservations.</li>
+            <li><code>resman_ram_total_bytes</code>, <code>resman_ram_budget_bytes</code>, <code>resman_ram_used_bytes</code>, <code>resman_ram_free_bytes</code> — RAM accounting.</li>
+            <li><code>resman_device_total_bytes&#123;device,type&#125;</code>, <code>resman_device_budget_bytes</code>, <code>resman_device_used_bytes</code>, <code>resman_device_free_bytes</code> — per-GPU accounting.</li>
+            <li><code>resman_reservation_bytes&#123;model_id, kind="ram|vram", device&#125;</code> — per-reservation memory commitment.</li>
+            <li><code>resman_reserve_rejections_total&#123;reason="no_capacity|unknown_device|invalid_plan|duplicate_key|no_gpus|other"&#125;</code> — counter of <code>Reserve</code> rejections.</li>
           </ul>
           <h3 id="145-prometheus-integration">14.5 Prometheus Integration</h3>
           <p><strong>Example Prometheus Configuration:</strong></p>
@@ -5133,10 +5161,17 @@ scrape_configs:
       - targets: ["localhost:8090"]
     scrape_interval: 15s`}</code></pre>
           <p><strong>Grafana Dashboard Query Examples:</strong></p>
-          <p>Time to first token:</p>
-          <pre className="code-block"><code className="language-promql">{`model_ttft_avg`}</code></pre>
-          <p>Tokens per second throughput:</p>
-          <pre className="code-block"><code className="language-promql">{`usage_tokens_per_second_avg`}</code></pre>
+          <p>Average end-to-end time to first token:</p>
+          <pre className="code-block"><code className="language-promql">{`rate(model_request_ttft_seconds_sum[5m])
+  / rate(model_request_ttft_seconds_count[5m])`}</code></pre>
+          <p>P99 end-to-end time to first token:</p>
+          <pre className="code-block"><code className="language-promql">{`histogram_quantile(0.99,
+  sum by (le, model_id) (rate(model_request_ttft_seconds_bucket[5m])))`}</code></pre>
+          <p>Fleet token throughput by kind (tokens/second):</p>
+          <pre className="code-block"><code className="language-promql">{`sum by (model_id, kind) (rate(usage_tokens_total[5m]))`}</code></pre>
+          <p>Average per-request tokens-per-second:</p>
+          <pre className="code-block"><code className="language-promql">{`rate(usage_tokens_per_second_sum[5m])
+  / rate(usage_tokens_per_second_count[5m])`}</code></pre>
           <p>Request rate:</p>
           <pre className="code-block"><code className="language-promql">{`rate(requests[5m])`}</code></pre>
           <p>Error rate:</p>
