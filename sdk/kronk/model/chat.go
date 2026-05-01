@@ -215,9 +215,11 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 	var cache cacheResult
 
 	// Inject tool function names into role:"tool" messages before caching.
-	// This adds "name" (for standard templates like Gemma 4) and
-	// "tool_call_name" (for GPT templates) so tool responses render correctly.
-	d = m.injectToolResponseNames(d)
+	// This adds "tool_call_name" (for GPT templates) so tool responses
+	// render correctly.
+	if m.modelInfo.IsGPTModel {
+		d = m.injectGPTToolResponseNames(d)
+	}
 
 	// Deserialize tool call arguments from JSON strings to maps so Jinja
 	// templates can iterate over them with |items. The OpenAI API spec
@@ -444,11 +446,10 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 	return prompt, media, nil
 }
 
-// injectToolResponseNames adds the tool function name to role:"tool" messages
+// injectGPTToolResponseNames adds the tool function name to role:"tool" messages
 // by matching tool_call_id against preceding assistant tool_calls. It injects
-// "name" (used by standard templates like Gemma 4) and "tool_call_name" (used
-// by GPT templates). Existing values are not overwritten.
-func (m *Model) injectToolResponseNames(d D) D {
+// "tool_call_name" (used by GPT templates). Existing values are not overwritten.
+func (m *Model) injectGPTToolResponseNames(d D) D {
 	messages, ok := d["messages"].([]D)
 	if !ok {
 		return d
@@ -508,10 +509,9 @@ func (m *Model) injectToolResponseNames(d D) D {
 			continue
 		}
 
-		existingName, _ := msg["name"].(string)
 		existingTCName, _ := msg["tool_call_name"].(string)
 
-		if existingName != "" && existingTCName != "" {
+		if existingTCName != "" {
 			continue
 		}
 
@@ -525,9 +525,6 @@ func (m *Model) injectToolResponseNames(d D) D {
 
 		newMsg := msg.ShallowClone()
 
-		if existingName == "" {
-			newMsg["name"] = name
-		}
 		if existingTCName == "" {
 			newMsg["tool_call_name"] = name
 		}
