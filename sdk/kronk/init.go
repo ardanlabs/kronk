@@ -67,6 +67,12 @@ func Init(opts ...InitOption) error {
 		opt(&o)
 	}
 
+	// NOTE: This is the only place where the sdk/kronk is reaching for a
+	// tools package for support. There is no way around this and I can't move
+	// the libs package out of tools for backwards compatibility. This is a
+	// function of wanting a separation between inference and supporting
+	// inference. The libs package is still a support package, but sdk/kronk
+	// needs the support in this case as well.
 	libPath := libs.Path(o.libPath)
 
 	// Windows uses PATH for DLL discovery, Unix uses LD_LIBRARY_PATH.

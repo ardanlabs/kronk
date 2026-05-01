@@ -257,19 +257,19 @@ benchmark-dense-nc:
 	go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc:
-	go test -run=none -bench=BenchmarkDense_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-nc:
 	go test -run=none -bench=BenchmarkMoE_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-imc:
-	go test -run=none -bench=BenchmarkMoE_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkMoE_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-hybrid-nc:
 	go test -run=none -bench=BenchmarkHybrid_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-hybrid-imc:
-	go test -run=none -bench=BenchmarkHybrid_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkHybrid_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 # Run all benchmarks sequentially (each target loads/unloads its own model)
 # and write combined raw output to a single file under runs/.
