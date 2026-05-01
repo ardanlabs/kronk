@@ -89,7 +89,11 @@ Kronk supports full hardware acceleration across major platforms:
 Kronk is designed as a layered architecture where the SDK provides all core
 functionality and the Model Server is one application built on top of it.
 
-![Kronk SDK Architecture](https://github.com/ardanlabs/kronk/blob/main/images/design/sdk.png?raw=true)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-dark.png?raw=true">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-light.png?raw=true">
+  <img alt="Kronk SDK Architecture" src="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-light.png?raw=true">
+</picture>
 
 **Layer Breakdown:**
 

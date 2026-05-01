@@ -264,7 +264,7 @@ func markdownToJSX(markdown string) string {
 	flushParagraph := func() {
 		if len(paraLines) > 0 {
 			merged := strings.Join(paraLines, " ")
-			result = append(result, fmt.Sprintf("          <p>%s</p>", convertInlineMarkdown(merged)))
+			result = append(result, fmt.Sprintf("          <p>%s</p>", htmlToJSX(convertInlineMarkdown(merged))))
 			paraLines = nil
 		}
 	}
@@ -648,6 +648,25 @@ func escapeForTemplateLiteral(s string) string {
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "`", "\\`")
 	s = strings.ReplaceAll(s, "${", "\\${")
+	return s
+}
+
+// htmlToJSX rewrites raw HTML embedded in markdown so it parses as valid JSX.
+// It renames HTML attributes that differ in JSX (e.g., srcset -> srcSet) and
+// self-closes void elements (source, img, br, hr, input, meta, link) when they
+// are written as <tag ...> instead of <tag ... />.
+func htmlToJSX(s string) string {
+	s = regexp.MustCompile(`\bsrcset=`).ReplaceAllString(s, "srcSet=")
+
+	voidTags := []string{"source", "img", "br", "hr", "input", "meta", "link"}
+	for _, tag := range voidTags {
+		re := regexp.MustCompile(`<` + tag + `\b([^>]*[^/])?>`)
+		s = re.ReplaceAllStringFunc(s, func(match string) string {
+			inner := strings.TrimSuffix(match, ">")
+			inner = strings.TrimRight(inner, " ")
+			return inner + " />"
+		})
+	}
 	return s
 }
 

@@ -142,7 +142,7 @@ export default function DocsManual() {
           </ul>
           <h3 id="14-architecture-overview">1.4 Architecture Overview</h3>
           <p>Kronk is designed as a layered architecture where the SDK provides all core functionality and the Model Server is one application built on top of it.</p>
-          <p><img src="https://github.com/ardanlabs/kronk/blob/main/images/design/sdk.png?raw=true" alt="Kronk SDK Architecture" /></p>
+          <p><picture> <source media="(prefers-color-scheme: dark)" srcSet="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-dark.png?raw=true" /> <source media="(prefers-color-scheme: light)" srcSet="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-light.png?raw=true" /> <img alt="Kronk SDK Architecture" src="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-light.png?raw=true" /> </picture></p>
           <p><strong>Layer Breakdown:</strong></p>
           <table className="flags-table">
             <thead>
