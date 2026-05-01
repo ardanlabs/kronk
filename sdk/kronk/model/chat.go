@@ -214,13 +214,6 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, requestStart time.Time) (string, [][]byte, cacheResult, error) {
 	var cache cacheResult
 
-	// Inject tool function names into role:"tool" messages before caching.
-	// This adds "tool_call_name" (for GPT templates) so tool responses
-	// render correctly.
-	if m.modelInfo.IsGPTModel {
-		d = m.injectGPTToolResponseNames(d)
-	}
-
 	// Deserialize tool call arguments from JSON strings to maps so Jinja
 	// templates can iterate over them with |items. The OpenAI API spec
 	// sends arguments as JSON-encoded strings, but templates like Qwen3
@@ -444,95 +437,6 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 	}
 
 	return prompt, media, nil
-}
-
-// injectGPTToolResponseNames adds the tool function name to role:"tool" messages
-// by matching tool_call_id against preceding assistant tool_calls. It injects
-// "tool_call_name" (used by GPT templates). Existing values are not overwritten.
-func (m *Model) injectGPTToolResponseNames(d D) D {
-	messages, ok := d["messages"].([]D)
-	if !ok {
-		return d
-	}
-
-	// Build a map of tool_call_id -> function name from assistant messages.
-	toolCallIDToName := make(map[string]string)
-
-	for _, msg := range messages {
-		role, _ := msg["role"].(string)
-		if role != "assistant" {
-			continue
-		}
-
-		toolCalls, ok := msg["tool_calls"].([]D)
-		if !ok {
-			continue
-		}
-
-		for _, tcMap := range toolCalls {
-			id, _ := tcMap["id"].(string)
-			if id == "" {
-				continue
-			}
-
-			fn, ok := tcMap["function"].(D)
-			if !ok {
-				continue
-			}
-
-			name, _ := fn["name"].(string)
-			if name != "" {
-				toolCallIDToName[id] = name
-			}
-		}
-	}
-
-	if len(toolCallIDToName) == 0 {
-		return d
-	}
-
-	// Inject names into tool response messages using copy-on-write.
-	var copied bool
-	for i, msg := range messages {
-		role, _ := msg["role"].(string)
-		if role != "tool" {
-			continue
-		}
-
-		toolCallID, _ := msg["tool_call_id"].(string)
-		if toolCallID == "" {
-			continue
-		}
-
-		name, exists := toolCallIDToName[toolCallID]
-		if !exists {
-			continue
-		}
-
-		existingTCName, _ := msg["tool_call_name"].(string)
-
-		if existingTCName != "" {
-			continue
-		}
-
-		if !copied {
-			newMsgs := make([]D, len(messages))
-			copy(newMsgs, messages)
-			messages = newMsgs
-			d["messages"] = messages
-			copied = true
-		}
-
-		newMsg := msg.ShallowClone()
-
-		if existingTCName == "" {
-			newMsg["tool_call_name"] = name
-		}
-
-		messages[i] = newMsg
-	}
-
-	return d
 }
 
 // deserializeToolCallArguments converts JSON-string arguments in assistant
