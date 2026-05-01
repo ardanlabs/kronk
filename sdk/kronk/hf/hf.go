@@ -1,4 +1,6 @@
-package models
+// Package hf provides HuggingFace API helpers and URL utilities used by
+// the rest of Kronk.
+package hf
 
 import (
 	"context"
@@ -11,17 +13,17 @@ import (
 	"strings"
 )
 
-// HFRepoFile represents a file available in a HuggingFace repository.
-type HFRepoFile struct {
+// RepoFile represents a file available in a HuggingFace repository.
+type RepoFile struct {
 	Filename string `json:"filename"`
 	Size     int64  `json:"size"`
 	SizeStr  string `json:"size_str"`
 }
 
-// ParseHFInput parses a HuggingFace URL or path into owner, repo, and
+// ParseInput parses a HuggingFace URL or path into owner, repo, and
 // filename components. The input can be a full URL or a short form like
 // owner/repo/file.gguf.
-func ParseHFInput(input string) (owner, repo, filename string, err error) {
+func ParseInput(input string) (owner, repo, filename string, err error) {
 	input = strings.TrimSpace(input)
 
 	for _, prefix := range []string{
@@ -40,7 +42,7 @@ func ParseHFInput(input string) (owner, repo, filename string, err error) {
 
 	parts := strings.Split(input, "/")
 	if len(parts) < 2 {
-		return "", "", "", fmt.Errorf("parse-hf-input: invalid input %q, expected owner/repo format", input)
+		return "", "", "", fmt.Errorf("parse-input: invalid input %q, expected owner/repo format", input)
 	}
 
 	owner = parts[0]
@@ -58,8 +60,8 @@ func ParseHFInput(input string) (owner, repo, filename string, err error) {
 	return owner, repo, filename, nil
 }
 
-// hfTreeEntry represents a file entry returned by the HuggingFace tree API.
-type hfTreeEntry struct {
+// treeEntry represents a file entry returned by the HuggingFace tree API.
+type treeEntry struct {
 	Type string `json:"type"`
 	Path string `json:"path"`
 	Size int64  `json:"size"`
@@ -68,10 +70,10 @@ type hfTreeEntry struct {
 	} `json:"lfs"`
 }
 
-// FetchHFRepoFiles fetches files from the HuggingFace tree API for the given
+// RepoFiles fetches files from the HuggingFace tree API for the given
 // repository. When recursive is true the full repo tree is fetched; otherwise
 // only the immediate contents of path are listed.
-func FetchHFRepoFiles(ctx context.Context, owner, repo, revision, path string, recursive bool) ([]HFRepoFile, error) {
+func RepoFiles(ctx context.Context, owner, repo, revision, path string, recursive bool) ([]RepoFile, error) {
 	if revision == "" {
 		revision = "main"
 	}
@@ -91,7 +93,7 @@ func FetchHFRepoFiles(ctx context.Context, owner, repo, revision, path string, r
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("fetch-hf-repo-files: creating request: %w", err)
+		return nil, fmt.Errorf("repo-files: creating request: %w", err)
 	}
 
 	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
@@ -100,20 +102,20 @@ func FetchHFRepoFiles(ctx context.Context, owner, repo, revision, path string, r
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch-hf-repo-files: fetching: %w", err)
+		return nil, fmt.Errorf("repo-files: fetching: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch-hf-repo-files: unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf("repo-files: unexpected status %d", resp.StatusCode)
 	}
 
-	var entries []hfTreeEntry
+	var entries []treeEntry
 	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		return nil, fmt.Errorf("fetch-hf-repo-files: decoding: %w", err)
+		return nil, fmt.Errorf("repo-files: decoding: %w", err)
 	}
 
-	var files []HFRepoFile
+	var files []RepoFile
 	for _, e := range entries {
 		if e.Type != "file" {
 			continue
@@ -124,7 +126,7 @@ func FetchHFRepoFiles(ctx context.Context, owner, repo, revision, path string, r
 			size = e.LFS.Size
 		}
 
-		files = append(files, HFRepoFile{
+		files = append(files, RepoFile{
 			Filename: e.Path,
 			Size:     size,
 			SizeStr:  FormatFileSize(size),

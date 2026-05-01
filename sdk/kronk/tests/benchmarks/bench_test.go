@@ -3,6 +3,7 @@ package benchmarks_test
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1052,6 +1053,15 @@ func benchChat(b *testing.B, krn *kronk.Kronk) {
 	if _, err := runStreamingBench(ctx, krn, warm); err != nil {
 		b.Fatalf("warmup failed: %v", err)
 	}
+
+	// Enable memory profile sampling only for the timed iteration loop so
+	// pprof's -memprofile reflects per-request inference cost, not the
+	// one-shot kronk.New setup or warmup. TestMain disables sampling
+	// globally; we restore the runtime default here and turn it back off
+	// after the loop so subsequent benchmarks' setup is also excluded.
+	runtime.GC()
+	runtime.MemProfileRate = defaultMemProfileRate
+	defer func() { runtime.MemProfileRate = 0 }()
 
 	b.ResetTimer()
 

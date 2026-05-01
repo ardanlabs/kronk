@@ -446,10 +446,13 @@ export default function CatalogList() {
 
   // VRAM calculator: derive effective response and wire hook
   const effectiveVram = modelInfo?.vram ?? (modelInfo ? remoteVram[modelInfo.id] : undefined);
+  const catalogModelUrl = modelInfo?.files?.model?.[0]?.url;
   const { controlsProps: vramControls, resultsProps: vramResults } = useVRAMState({
     initialContextWindow: 8192,
     initialBytesPerElement: 1,
     serverResponse: effectiveVram ?? null,
+    modelId: modelInfo?.vram ? modelInfo.id : undefined,
+    modelUrl: !modelInfo?.vram ? catalogModelUrl : undefined,
   });
   const contextInfo = extractContextInfo(modelInfo?.model_metadata);
   const handlePull = () => {
@@ -501,9 +504,48 @@ export default function CatalogList() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Catalog</h2>
-        <p>Browse available models in the catalog. Click a model to view details.</p>
+      <div className="page-header-with-action">
+        <div>
+          <h2>Catalog</h2>
+          <p className="page-description">Browse available models in the catalog. Click a model to view details.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              loadCatalog();
+              setSelectedId(null);
+              setModelInfo(null);
+              setActiveSection('model-card');
+              setInfoError(null);
+              setConfirmingRemove(false);
+              setRemoveError(null);
+              setRemoveSuccess(null);
+            }}
+            disabled={loading}
+          >
+            Refresh
+          </button>
+          {selectedId && !confirmingRemove && (
+            <button
+              className="btn btn-primary"
+              onClick={handleRemoveClick}
+              disabled={removing}
+            >
+              Remove Model
+            </button>
+          )}
+          {selectedId && confirmingRemove && (
+            <>
+              <button className="btn btn-primary" onClick={handleConfirmRemove} disabled={removing}>
+                {removing ? 'Removing...' : 'Yes, Remove'}
+              </button>
+              <button className="btn btn-primary" onClick={handleCancelRemove} disabled={removing}>
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="playground-layout">
@@ -770,44 +812,6 @@ export default function CatalogList() {
                 )}
               </div>
             )}
-
-            <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  loadCatalog();
-                  setSelectedId(null);
-                  setModelInfo(null);
-                  setActiveSection('model-card');
-                  setInfoError(null);
-                  setConfirmingRemove(false);
-                  setRemoveError(null);
-                  setRemoveSuccess(null);
-                }}
-                disabled={loading}
-              >
-                Refresh
-              </button>
-              {selectedId && !confirmingRemove && (
-                <button
-                  className="btn btn-danger"
-                  onClick={handleRemoveClick}
-                  disabled={removing}
-                >
-                  Remove Model
-                </button>
-              )}
-              {selectedId && confirmingRemove && (
-                <>
-                  <button className="btn btn-danger" onClick={handleConfirmRemove} disabled={removing}>
-                    {removing ? 'Removing...' : 'Yes, Remove'}
-                  </button>
-                  <button className="btn btn-secondary" onClick={handleCancelRemove} disabled={removing}>
-                    Cancel
-                  </button>
-                </>
-              )}
-            </div>
 
             {removeError && <div className="alert alert-error" style={{ marginTop: '16px' }}>{removeError}</div>}
             {removeSuccess && <div className="alert alert-success" style={{ marginTop: '16px' }}>{removeSuccess}</div>}

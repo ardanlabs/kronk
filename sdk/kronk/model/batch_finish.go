@@ -1,7 +1,9 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -245,6 +247,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	// Add metrics.
 	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
+	metrics.AddChatRequest(e.model.modelInfo.ID, "ok")
+	if !s.job.requestStart.IsZero() {
+		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+	}
 
 	// Send final response.
 	returnPrompt := ""
@@ -264,6 +270,18 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 
 	if job.queueWaitSpan != nil {
 		job.queueWaitSpan.End()
+	}
+
+	status := "error"
+	class := "fail-job"
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		status = "cancel"
+		class = "context-cancelled"
+	}
+	metrics.AddChatRequest(e.model.modelInfo.ID, status)
+	metrics.AddChatError(e.model.modelInfo.ID, class)
+	if !job.requestStart.IsZero() {
+		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(job.requestStart))
 	}
 
 	// Clear IMC pending reservation if this job reserved a slot.

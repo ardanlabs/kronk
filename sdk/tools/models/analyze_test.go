@@ -3,6 +3,7 @@ package models
 import (
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
@@ -110,8 +111,8 @@ func TestAnalyzeModelDense(t *testing.T) {
 		t.Errorf("Recommended.FlashAttention = %q, want %q", a.Recommended.FlashAttention, "auto")
 	}
 
-	if a.Recommended.ContextWindow < ContextWindow8K {
-		t.Errorf("Recommended.ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, ContextWindow8K)
+	if a.Recommended.ContextWindow < vram.ContextWindow8K {
+		t.Errorf("Recommended.ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, vram.ContextWindow8K)
 	}
 
 	if !a.Recommended.Fits {
@@ -376,8 +377,8 @@ func TestAnalyzeModelTightMemory(t *testing.T) {
 	}
 
 	// With tight memory the recommendation should still produce a valid config.
-	if a.Recommended.ContextWindow < ContextWindow4K {
-		t.Errorf("ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, ContextWindow4K)
+	if a.Recommended.ContextWindow < vram.ContextWindow4K {
+		t.Errorf("ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, vram.ContextWindow4K)
 	}
 
 	if a.Recommended.EstimatedVRAMBytes <= 0 {
@@ -455,66 +456,6 @@ func TestToModelConfigQ8(t *testing.T) {
 
 	if cfg.PtrNGpuLayers != nil {
 		t.Errorf("PtrNGpuLayers = %v, want nil", cfg.PtrNGpuLayers)
-	}
-}
-
-func TestGGUFFileTypeName(t *testing.T) {
-	tests := []struct {
-		ft   int64
-		want string
-	}{
-		{0, "F32"},
-		{1, "F16"},
-		{7, "Q8_0"},
-		{15, "Q4_K_M"},
-		{17, "Q5_K_M"},
-		{28, "BF16"},
-		{999, "unknown(999)"},
-	}
-
-	for _, tt := range tests {
-		got := ggufFileTypeName(tt.ft)
-		if got != tt.want {
-			t.Errorf("ggufFileTypeName(%d) = %q, want %q", tt.ft, got, tt.want)
-		}
-	}
-}
-
-func TestCountSWALayers(t *testing.T) {
-	tests := []struct {
-		name    string
-		pattern string
-		want    int64
-	}{
-		{
-			name:    "gemma4-60-layers",
-			pattern: "[true true true true true false true true true true true false true true true true true false true true true true true false true true true true true false true true true true true false true true true true true false true true true true true false true true true true true false true true true true true false]",
-			want:    50,
-		},
-		{
-			name:    "all-true",
-			pattern: "[true true true]",
-			want:    3,
-		},
-		{
-			name:    "all-false",
-			pattern: "[false false false]",
-			want:    0,
-		},
-		{
-			name:    "empty",
-			pattern: "[]",
-			want:    0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := countSWALayers(tt.pattern)
-			if got != tt.want {
-				t.Errorf("countSWALayers() = %d, want %d", got, tt.want)
-			}
-		})
 	}
 }
 

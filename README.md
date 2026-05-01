@@ -146,6 +146,12 @@ make example-embedding
 make example-grammar
 ```
 
+[POOL](examples/pool/main.go) - This example shows you how to use the pool package to manage multipl models in memory at the same time.
+
+```shell
+make example-pool
+```
+
 [QUESTION](examples/question/main.go) - This example shows you how to ask a simple question with the chat-completion api.
 
 ```shell

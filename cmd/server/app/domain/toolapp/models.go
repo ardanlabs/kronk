@@ -12,6 +12,9 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -48,7 +51,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	// Add extension models from the model config that aren't already present.
 	// Extension models use "/" in their ID (e.g., "model/FMC") and inherit
 	// from a base model.
-	modelConfig := a.cache.ModelConfig()
+	modelConfig := a.pool.ModelConfig()
 	for modelID := range modelConfig {
 		if _, exists := existing[modelID]; exists {
 			continue
@@ -105,7 +108,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) resolvedModelConfig(modelID string) models.ModelConfig {
 	cfg := a.models.AnalysisDefaults(modelID)
 
-	if override, ok := a.cache.ModelConfig()[modelID]; ok {
+	if override, ok := a.pool.ModelConfig()[modelID]; ok {
 		models.MergeModelConfig(&cfg, override)
 	}
 
@@ -239,25 +242,67 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	slots := max(req.Slots, 1)
-	contextWindow := req.ContextWindow
-
-	cfg := models.VRAMConfig{
-		ContextWindow:   contextWindow,
-		BytesPerElement: req.BytesPerElement,
-		Slots:           slots,
+	if req.ModelURL == "" && req.ModelID == "" {
+		return errs.Errorf(errs.InvalidArgument, "either model_url or model_id is required")
 	}
 
-	vram, err := models.CalculateVRAMFromHuggingFace(ctx, req.ModelURL, cfg)
+	slots := max(req.Slots, 1)
+
+	cfg := vram.Config{
+		ContextWindow:     req.ContextWindow,
+		BytesPerElement:   req.BytesPerElement,
+		Slots:             slots,
+		GPULayers:         req.GPULayers,
+		ExpertLayersOnGPU: req.ExpertLayersOnGPU,
+		KVCacheOnCPU:      req.KVCacheOnCPU,
+	}
+
+	v, err := a.computeVRAM(ctx, req, cfg)
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
 
-	// Fetch the list of available GGUF files in the repository so the UI
-	// can offer a model selector.
-	repoFiles := fetchVRAMRepoFiles(ctx, req.ModelURL)
+	// Auto-fit: re-run with the search loop using the supplied hardware
+	// constraints, then keep the resulting offload values for the
+	// response so the caller can apply them as new control values.
+	if req.AutoFit {
+		ngl, ext, fitted := vram.AutoFit(v.Input, vram.FitConstraints{
+			DeviceCount:    req.DeviceCount,
+			GPUFreeBytes:   req.GPUFreeBytes,
+			SystemRAMBytes: req.SystemRAMBytes,
+			TensorSplit:    req.TensorSplit,
+			KVCacheOnCPU:   req.KVCacheOnCPU,
+		})
+		v = fitted
+		v.Input.GPULayers = ngl
+		v.Input.ExpertLayersOnGPU = ext
+	}
 
-	return toVRAMResponse(vram, repoFiles)
+	// Per-device split when the caller asked for one.
+	if req.DeviceCount > 0 {
+		v.PerDevice = vram.CalculatePerDevice(
+			v.ModelWeightsGPU, v.KVVRAMBytes, v.ComputeBufferEst,
+			req.DeviceCount, req.TensorSplit, nil, 0,
+		)
+	}
+
+	// Only fetch repo file list on the initial (non-auto-fit / non-incremental)
+	// call when the caller supplies a ModelURL — keeps recompute calls fast.
+	var repoFiles []HFRepoFile
+	if req.ModelURL != "" && !req.AutoFit && req.GPULayers == 0 && req.ExpertLayersOnGPU == 0 && !req.KVCacheOnCPU && req.DeviceCount == 0 {
+		repoFiles = fetchVRAMRepoFiles(ctx, req.ModelURL)
+	}
+
+	return toVRAMResponse(v, repoFiles)
+}
+
+// computeVRAM dispatches to the local-model or HuggingFace path based on
+// which identifier the caller provided.
+func (a *app) computeVRAM(ctx context.Context, req VRAMRequest, cfg vram.Config) (vram.Result, error) {
+	if req.ModelID != "" {
+		return a.models.CalculateVRAM(req.ModelID, cfg)
+	}
+	return vram.FromHuggingFace(ctx, req.ModelURL, cfg)
 }
 
 func (a *app) removeModel(ctx context.Context, r *http.Request) web.Encoder {
@@ -297,19 +342,19 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	rmc := a.resolvedModelConfig(modelID)
 	rmc.Sampling = rmc.Sampling.WithDefaults()
 
-	var vram *VRAMResponse
+	var vramResp *VRAMResponse
 	if v, err := a.models.CalculateVRAM(modelID, vramConfigFromRMC(rmc)); err == nil {
 		vr := toVRAMResponse(v, nil)
-		vram = &vr
+		vramResp = &vr
 	} else {
 		a.log.Info(ctx, "show-model: calculate-vram", "ERROR", err)
 	}
 
-	return toModelInfo(fi, mi, rmc, vram)
+	return toModelInfo(fi, mi, rmc, vramResp)
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
-	models, err := a.cache.ModelStatus()
+	models, err := a.pool.ModelStatus()
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -317,6 +362,26 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 	a.log.Info(ctx, "models", "len", len(models))
 
 	return toModelDetails(models)
+}
+
+func (a *app) poolBudget(ctx context.Context, r *http.Request) web.Encoder {
+	rm := a.pool.ResourceManager()
+	if rm == nil {
+		return errs.Errorf(errs.Internal, "resource manager not available")
+	}
+
+	usage := rm.Usage()
+
+	a.log.Info(ctx, "pool-budget",
+		"budget-percent", usage.BudgetPercent,
+		"headroom", pool.HumanBytes(usage.HeadroomBytes),
+		"devices", len(usage.Devices),
+		"reservations", len(usage.Reservations),
+		"ram-used", pool.HumanBytes(usage.RAMUsed),
+		"ram-budget", pool.HumanBytes(usage.RAMBudget),
+	)
+
+	return toPoolBudget(usage)
 }
 
 func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
@@ -327,7 +392,7 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	a.log.Info(ctx, "tool-unload", "modelID", req.ID)
 
-	krn, exists := a.cache.GetExisting(req.ID)
+	krn, exists := a.pool.GetExisting(req.ID)
 	if !exists {
 		return errs.Errorf(errs.NotFound, "model %q is not loaded", req.ID)
 	}
@@ -336,7 +401,14 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.FailedPrecondition, "model has %d active stream(s); cannot unload", n)
 	}
 
-	a.cache.Invalidate(req.ID)
+	// Wait for the eviction callback to release the resource manager
+	// reservation before returning. Otherwise the BUI's follow-up
+	// /pool/budget refresh races the async unload and the user sees
+	// stale "Used" / "Free in Budget" numbers until they manually hit
+	// the Refresh button.
+	if err := a.pool.InvalidateSync(ctx, req.ID); err != nil {
+		return errs.Errorf(errs.Internal, "unload: %s", err)
+	}
 
 	return UnloadResponse{Status: "unloaded", ID: req.ID}
 }
@@ -347,12 +419,12 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 // the list of GGUF files available in that HuggingFace repository. This is
 // best-effort: if parsing or fetching fails, an empty slice is returned.
 func fetchVRAMRepoFiles(ctx context.Context, modelURL string) []HFRepoFile {
-	owner, repo, _, err := models.ParseHFInput(modelURL)
+	owner, repo, _, err := hf.ParseInput(modelURL)
 	if err != nil || owner == "" || repo == "" {
 		return nil
 	}
 
-	allFiles, err := models.FetchHFRepoFiles(ctx, owner, repo, "main", "", true)
+	allFiles, err := hf.RepoFiles(ctx, owner, repo, "main", "", true)
 	if err != nil {
 		return nil
 	}
@@ -434,7 +506,7 @@ func (a *app) resolvePeerURLs(ctx context.Context, modelSource, projSource strin
 func toDownloadServerURL(server, rawURL string) string {
 	const hfPrefix = "https://huggingface.co/"
 
-	normalized := models.NormalizeHuggingFaceDownloadURL(rawURL)
+	normalized := hf.NormalizeDownloadURL(rawURL)
 	path := strings.TrimPrefix(normalized, hfPrefix)
 
 	return fmt.Sprintf("http://%s/download/%s", server, path)

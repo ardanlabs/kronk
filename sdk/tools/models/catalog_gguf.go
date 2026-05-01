@@ -3,14 +3,14 @@ package models
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
-// GGUFHead returns the first ggufHeaderFetchSize bytes of the catalog
+// GGUFHead returns the first gguf.HeaderFetchSize bytes of the catalog
 // entry's primary model file. Lookup order:
 //
 //  1. The catalog GGUF cache at
@@ -21,7 +21,7 @@ import (
 //
 // On cache miss the bytes are written through to the catalog GGUF cache
 // so the next call is a fast cache hit. Callers parse the bytes using
-// the GGUF binary format (see vram.go's FetchGGUFMetadata).
+// the GGUF binary format (see sdk/kronk/gguf.ParseMetadata).
 func (m *Models) GGUFHead(ctx context.Context, entry CatalogEntry) ([]byte, error) {
 	if len(entry.Files) == 0 {
 		return nil, fmt.Errorf("gguf-head: catalog entry has no files")
@@ -34,14 +34,14 @@ func (m *Models) GGUFHead(ctx context.Context, entry CatalogEntry) ([]byte, erro
 		return nil, fmt.Errorf("gguf-head: cache path: %w", err)
 	}
 
-	if data, ok := readCachedGGUFHead(cacheFile); ok {
+	if data, err := gguf.ReadHeaderBytes(cacheFile); err == nil && gguf.IsValidHeaderBytes(data) {
 		return data, nil
 	}
 
 	// Try the local file before the network.
 	localFile := filepath.Join(m.modelsPath, entry.Provider, entry.Family, filepath.Base(entry.Files[0]))
-	if data, ok := readLocalGGUFHead(localFile); ok {
-		writeCachedGGUFHead(cacheFile, data)
+	if data, err := gguf.ReadHeaderBytes(localFile); err == nil && gguf.IsValidHeaderBytes(data) {
+		_ = gguf.WriteHeaderBytes(cacheFile, data)
 		return data, nil
 	}
 
@@ -51,17 +51,17 @@ func (m *Models) GGUFHead(ctx context.Context, entry CatalogEntry) ([]byte, erro
 
 	url := buildDownloadURL(entry.Provider, entry.Family, entry.Revision, entry.Files[0])
 
-	data, _, err := fetchGGUFHeaderBytes(ctx, url)
+	data, _, err := gguf.FetchHeaderBytes(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("gguf-head: fetch %s: %w", url, err)
 	}
 
-	writeCachedGGUFHead(cacheFile, data)
+	_ = gguf.WriteHeaderBytes(cacheFile, data)
 
 	return data, nil
 }
 
-// CacheGGUFHeadFromFile copies the first ggufHeaderFetchSize bytes of
+// CacheGGUFHeadFromFile copies the first gguf.HeaderFetchSize bytes of
 // localFile into the catalog GGUF cache for the given canonical id.
 // Used by Download to populate the cache opportunistically after a
 // successful download. Best-effort — errors are returned but callers
@@ -72,12 +72,12 @@ func (m *Models) CacheGGUFHeadFromFile(provider, family, modelID, localFile stri
 		return fmt.Errorf("cache-gguf-head: %w", err)
 	}
 
-	data, ok := readLocalGGUFHead(localFile)
-	if !ok {
+	data, err := gguf.ReadHeaderBytes(localFile)
+	if err != nil || !gguf.IsValidHeaderBytes(data) {
 		return fmt.Errorf("cache-gguf-head: read %s", localFile)
 	}
 
-	if err := writeCachedGGUFHead(cacheFile, data); err != nil {
+	if err := gguf.WriteHeaderBytes(cacheFile, data); err != nil {
 		return fmt.Errorf("cache-gguf-head: write %s: %w", cacheFile, err)
 	}
 
@@ -120,50 +120,4 @@ func ggufCacheFile(basePath, provider, family, modelID string) (string, error) {
 	}
 
 	return filepath.Join(familyDir, modelID+".gguf"), nil
-}
-
-// readCachedGGUFHead returns cached GGUF head bytes when the cache file
-// exists and parses as a valid GGUF header.
-func readCachedGGUFHead(path string) ([]byte, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false
-	}
-
-	if !isValidGGUFHeaderBytes(data) {
-		return nil, false
-	}
-
-	return data, true
-}
-
-// readLocalGGUFHead reads the first ggufHeaderFetchSize bytes of a local
-// GGUF file. Returns false when the file is missing or the read fails.
-func readLocalGGUFHead(path string) ([]byte, bool) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, false
-	}
-	defer f.Close()
-
-	data, err := io.ReadAll(io.LimitReader(f, ggufHeaderFetchSize))
-	if err != nil {
-		return nil, false
-	}
-
-	if !isValidGGUFHeaderBytes(data) {
-		return nil, false
-	}
-
-	return data, true
-}
-
-// writeCachedGGUFHead writes head bytes atomically to the cache file.
-// Best-effort — caller should not block on errors.
-func writeCachedGGUFHead(path string, data []byte) error {
-	if !isValidGGUFHeaderBytes(data) {
-		return fmt.Errorf("write-cached-gguf-head: invalid header bytes")
-	}
-
-	return writeFileAtomic(path, data, 0644)
 }

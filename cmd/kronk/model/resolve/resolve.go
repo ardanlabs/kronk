@@ -19,15 +19,13 @@ func dropCacheEntry(r *models.Resolver, id string) error {
 	provider, modelID := splitProviderID(id)
 
 	for key := range rm.Models {
-		keyProvider, keyModel := splitProviderID(key)
+		_, keyModel := splitProviderID(key)
 
 		switch {
 		case provider != "" && key == id:
 			delete(rm.Models, key)
 		case provider == "" && keyModel == modelID:
 			delete(rm.Models, key)
-		default:
-			_ = keyProvider
 		}
 	}
 

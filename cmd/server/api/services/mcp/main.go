@@ -61,11 +61,6 @@ func run(ctx context.Context, log *logger.Logger) error {
 			Host        string `conf:"default:localhost:9000"`
 			BraveAPIKey string `conf:"mask"`
 		}
-		Tempo struct {
-			Host        string  `conf:"default:tempo:4317"`
-			ServiceName string  `conf:"default:mcp"`
-			Probability float64 `conf:"default:0.05"`
-		}
 	}{
 		Version: conf.Version{
 			Build: tag,
@@ -100,29 +95,6 @@ func run(ctx context.Context, log *logger.Logger) error {
 	expvar.NewString("build").Set(cfg.Build)
 
 	fmt.Println(logo)
-
-	// -------------------------------------------------------------------------
-	// Start Tracing Support
-
-	log.Info(ctx, "startup", "status", "initializing tracing support")
-
-	traceProvider, teardown, err := otel.InitTracing(log.Info, otel.Config{
-		ServiceName: cfg.Tempo.ServiceName,
-		Host:        cfg.Tempo.Host,
-		ExcludedRoutes: map[string]struct{}{
-			"/v1/liveness":  {},
-			"/v1/readiness": {},
-		},
-		Probability: cfg.Tempo.Probability,
-	})
-
-	if err != nil {
-		return fmt.Errorf("starting tracing: %w", err)
-	}
-
-	defer teardown(context.Background())
-
-	_ = traceProvider
 
 	// -------------------------------------------------------------------------
 	// Start Debug Service

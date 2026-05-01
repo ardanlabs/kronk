@@ -7,22 +7,22 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/pool"
 )
 
 type app struct {
-	log   *logger.Logger
-	cache *cache.Cache
+	log  *logger.Logger
+	pool *pool.Pool
 }
 
 func newApp(cfg Config) *app {
 	return &app{
-		log:   cfg.Log,
-		cache: cfg.Cache,
+		log:  cfg.Log,
+		pool: cfg.Pool,
 	}
 }
 
@@ -42,7 +42,7 @@ func (a *app) embeddings(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "model name must be a string")
 	}
 
-	krn, err := a.cache.AquireModel(ctx, modelID)
+	krn, err := a.pool.AquireModel(ctx, modelID)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}

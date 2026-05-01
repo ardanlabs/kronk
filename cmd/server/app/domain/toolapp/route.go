@@ -4,10 +4,10 @@ import (
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -16,7 +16,7 @@ import (
 type Config struct {
 	Log        *logger.Logger
 	AuthClient *authclient.Client
-	Cache      *cache.Cache
+	Pool       *pool.Pool
 	Libs       *libs.Libs
 	Models     *models.Models
 }
@@ -45,6 +45,8 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodPost, version, "/models/vram", api.calculateVRAM, auth)
 	app.HandlerFunc(http.MethodPost, version, "/models/unload", api.unloadModel, authAdmin)
 	app.HandlerFunc(http.MethodDelete, version, "/models/{model}", api.removeModel, authAdmin)
+
+	app.HandlerFunc(http.MethodGet, version, "/pool/budget", api.poolBudget, auth)
 
 	app.HandlerFunc(http.MethodGet, version, "/devices", api.listDevices, auth)
 

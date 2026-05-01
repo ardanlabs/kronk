@@ -4,10 +4,10 @@ import (
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -15,7 +15,7 @@ import (
 type Config struct {
 	Log        *logger.Logger
 	AuthClient *authclient.Client
-	Cache      *cache.Cache
+	Pool       *pool.Pool
 	Models     *models.Models
 }
 

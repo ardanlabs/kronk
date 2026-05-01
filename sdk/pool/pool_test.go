@@ -1,24 +1,32 @@
-package cache_test
+package pool_test
 
 import (
 	"bytes"
 	"context"
 	"io"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/cache"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
 
 var log model.Logger
 
-func Test_Cache(t *testing.T) {
+// newTestLogger returns a kronk.Logger backed by slog that writes to w.
+func newTestLogger(w io.Writer) kronk.Logger {
+	sl := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	return func(ctx context.Context, msg string, args ...any) {
+		sl.InfoContext(ctx, msg, args...)
+	}
+}
+
+func Test_Pool(t *testing.T) {
 	log = initKronk(t)
 	t.Run("new-manager", newManager)
 	t.Run("acquire-model", acquireModel)
@@ -28,11 +36,11 @@ func Test_Cache(t *testing.T) {
 
 func newManager(t *testing.T) {
 	t.Run("default config values", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log: log,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -40,13 +48,13 @@ func newManager(t *testing.T) {
 	})
 
 	t.Run("custom config values", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log:           log,
 			ModelsInCache: 1,
 			CacheTTL:      10 * time.Minute,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -55,17 +63,15 @@ func newManager(t *testing.T) {
 }
 
 func acquireModel(t *testing.T) {
-	log := logger.New(io.Discard, logger.LevelInfo, "test", nil)
-
 	modelID := findAvailableModel(t, "")
 
-	cfg := cache.Config{
-		Log:           log.Info,
+	cfg := pool.Config{
+		Log:           kronk.DiscardLogger,
 		ModelsInCache: 1,
 		CacheTTL:      5 * time.Minute,
 	}
 
-	mgr, err := cache.New(cfg)
+	mgr, err := pool.New(cfg)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -112,11 +118,11 @@ func shutdown(t *testing.T) {
 	modelID := findAvailableModel(t, "")
 
 	t.Run("shutdown empty cache", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log: log,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -130,13 +136,13 @@ func shutdown(t *testing.T) {
 	})
 
 	t.Run("shutdown with loaded models", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log:           log,
 			ModelsInCache: 1,
 			CacheTTL:      5 * time.Minute,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -158,13 +164,13 @@ func shutdown(t *testing.T) {
 	})
 
 	t.Run("shutdown timeout expires", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log:           log,
 			ModelsInCache: 1,
 			CacheTTL:      5 * time.Minute,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -187,13 +193,13 @@ func shutdown(t *testing.T) {
 	})
 
 	t.Run("shutdown with cancelled context", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log:           log,
 			ModelsInCache: 1,
 			CacheTTL:      5 * time.Minute,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -214,13 +220,13 @@ func shutdown(t *testing.T) {
 	})
 
 	t.Run("shutdown blocks until eviction completes", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log:           log,
 			ModelsInCache: 1,
 			CacheTTL:      5 * time.Minute,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -262,13 +268,13 @@ func eviction(t *testing.T) {
 	modelID2 := findAvailableModel(t, modelID1)
 
 	t.Run("eviction on TTL expiry", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log:           log,
 			ModelsInCache: 1,
 			CacheTTL:      500 * time.Millisecond,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -295,13 +301,13 @@ func eviction(t *testing.T) {
 	})
 
 	t.Run("eviction on capacity exceeded", func(t *testing.T) {
-		cfg := cache.Config{
+		cfg := pool.Config{
 			Log:           log,
 			ModelsInCache: 1,
 			CacheTTL:      5 * time.Minute,
 		}
 
-		mgr, err := cache.New(cfg)
+		mgr, err := pool.New(cfg)
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -354,7 +360,7 @@ func initKronk(t *testing.T) model.Logger {
 	}
 
 	var b bytes.Buffer
-	log := logger.New(&b, logger.LevelInfo, "test", nil)
+	log := newTestLogger(&b)
 
 	t.Cleanup(func() {
 		t.Log("=====================")
@@ -362,7 +368,7 @@ func initKronk(t *testing.T) model.Logger {
 		t.Log("=====================")
 	})
 
-	return log.Info
+	return log
 }
 
 // cacheTestModels are the smallest models available in CI for cache

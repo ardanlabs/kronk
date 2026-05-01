@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
@@ -95,54 +96,25 @@ type Resolution struct {
 	FromCache    bool
 }
 
-// HFModelMeta is the subset of HuggingFace model metadata the resolver needs.
-type HFModelMeta struct {
-	ID       string
-	Siblings []string
-	Gated    bool
-}
-
-// HFClient is the contract the resolver uses to talk to HuggingFace. The
-// default implementation talks to https://huggingface.co; tests inject a
-// fake.
-type HFClient interface {
-	// ModelMeta fetches model metadata for a specific repo. It must return
-	// a 404-typed error (errors.Is(err, ErrHFNotFound)) when the repo does
-	// not exist so the resolver can move on to the next provider.
-	ModelMeta(ctx context.Context, owner, repo, revision string) (HFModelMeta, error)
-
-	// SearchModels searches an author's repos for the given query. Returns
-	// owner/repo identifiers in HuggingFace's relevance order.
-	SearchModels(ctx context.Context, author, query string) ([]string, error)
-}
-
-// ErrHFNotFound is returned by HFClient implementations when the requested
-// repo or author/query produces no results.
-var ErrHFNotFound = fmt.Errorf("not found")
-
-// ErrHFThrottled is returned when HuggingFace rate-limits the request. The
-// resolver wraps this with a hint suggesting KRONK_HF_TOKEN.
-var ErrHFThrottled = fmt.Errorf("rate limited")
-
 // Resolver maps a model ID (bare or provider/id) to download URLs and
 // on-disk paths. It uses a YAML cache file ("catalog.yaml") for
 // previously-seen IDs and falls back to the HuggingFace API for new ones.
 type Resolver struct {
 	filePath string
 	mu       sync.Mutex
-	hfClient HFClient
+	hfClient hf.Client
 	models   *Models
 }
 
 // NewResolver constructs a Resolver using the default HuggingFace client.
 // filePath is the location of catalog.yaml on disk.
 func NewResolver(m *Models, filePath string) *Resolver {
-	return NewResolverWithClient(m, filePath, NewDefaultHFClient())
+	return NewResolverWithClient(m, filePath, hf.NewDefaultClient())
 }
 
 // NewResolverWithClient constructs a Resolver with a caller-supplied HF
 // client. Used by tests.
-func NewResolverWithClient(m *Models, filePath string, client HFClient) *Resolver {
+func NewResolverWithClient(m *Models, filePath string, client hf.Client) *Resolver {
 	return &Resolver{
 		filePath: filePath,
 		hfClient: client,
@@ -676,7 +648,7 @@ func splitOwnerRepo(s string) (owner, repo string, ok bool) {
 }
 
 func isNotFound(err error) bool {
-	return err != nil && (err == ErrHFNotFound || strings.Contains(err.Error(), ErrHFNotFound.Error()))
+	return err != nil && (err == hf.ErrNotFound || strings.Contains(err.Error(), hf.ErrNotFound.Error()))
 }
 
 // =============================================================================
@@ -690,14 +662,14 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 		return nil
 	}
 
-	provider, repo, revision, files, ok := parseHFURLs(modelURLs)
+	provider, repo, revision, files, ok := hf.ParseURLs(modelURLs)
 	if !ok {
 		return nil
 	}
 
 	var mmproj, mmprojOrig string
 	if projURL != "" {
-		if _, _, _, file, parsed := parseHFURL(NormalizeHuggingFaceDownloadURL(projURL)); parsed {
+		if _, _, _, file, parsed := hf.ParseURL(hf.NormalizeDownloadURL(projURL)); parsed {
 			mmproj = localProjName(file, files)
 			mmprojOrig = file
 		}
@@ -733,23 +705,6 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 	return nil
 }
 
-// parseHFURL parses a HuggingFace resolve URL into its provider/repo/
-// revision/file components. It accepts only fully-qualified URLs of the
-// form https://huggingface.co/{owner}/{repo}/resolve/{revision}/{file...}.
-func parseHFURL(rawURL string) (provider, repo, revision, file string, ok bool) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "", "", "", "", false
-	}
-
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 5 || parts[2] != "resolve" {
-		return "", "", "", "", false
-	}
-
-	return parts[0], parts[1], parts[3], strings.Join(parts[4:], "/"), true
-}
-
 // localProjName returns the on-disk projection filename that downloadModel
 // produces by renaming the HuggingFace source file to "mmproj-<modelID>.gguf".
 // Returns "" when there is no projection.
@@ -763,30 +718,4 @@ func localProjName(hfMMProj string, modelFiles []string) string {
 	modelID := strings.TrimSuffix(filepath.Base(first), ext)
 
 	return fmt.Sprintf("mmproj-%s%s", modelID, ext)
-}
-
-// parseHFURLs parses a batch of model URLs that must share the same
-// provider/repo/revision and returns the sorted list of repo-relative
-// file names.
-func parseHFURLs(urls []string) (provider, repo, revision string, files []string, ok bool) {
-	files = make([]string, 0, len(urls))
-
-	for i, u := range urls {
-		p, rp, rev, f, parsed := parseHFURL(NormalizeHuggingFaceDownloadURL(u))
-		if !parsed {
-			return "", "", "", nil, false
-		}
-
-		if i == 0 {
-			provider, repo, revision = p, rp, rev
-		} else if p != provider || rp != repo || rev != revision {
-			return "", "", "", nil, false
-		}
-
-		files = append(files, f)
-	}
-
-	sort.Strings(files)
-
-	return provider, repo, revision, files, true
 }

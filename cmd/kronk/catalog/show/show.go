@@ -10,6 +10,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -64,7 +65,7 @@ func runLocal(mdls *models.Models, args []string) error {
 
 	data, err := mdls.GGUFHead(ctx, entry)
 	if err == nil {
-		metadata, perr := models.ParseGGUFMetadata(data)
+		metadata, perr := gguf.ParseMetadata(data)
 		if perr == nil {
 			detail.ModelMetadata = metadata
 			detail.GGUFArch = metadata["general.architecture"]

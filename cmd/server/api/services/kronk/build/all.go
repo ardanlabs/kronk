@@ -34,7 +34,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	toolapp.Routes(app, toolapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
-		Cache:      cfg.Cache,
+		Pool:       cfg.Pool,
 		Libs:       cfg.Libs,
 		Models:     cfg.Models,
 	})
@@ -42,43 +42,43 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	chatapp.Routes(app, chatapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
-		Cache:      cfg.Cache,
+		Pool:       cfg.Pool,
 	})
 
 	embedapp.Routes(app, embedapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
-		Cache:      cfg.Cache,
+		Pool:       cfg.Pool,
 	})
 
 	rerankapp.Routes(app, rerankapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
-		Cache:      cfg.Cache,
+		Pool:       cfg.Pool,
 	})
 
 	tokenapp.Routes(app, tokenapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
-		Cache:      cfg.Cache,
+		Pool:       cfg.Pool,
 	})
 
 	respapp.Routes(app, respapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
-		Cache:      cfg.Cache,
+		Pool:       cfg.Pool,
 	})
 
 	msgsapp.Routes(app, msgsapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
-		Cache:      cfg.Cache,
+		Pool:       cfg.Pool,
 	})
 
 	playgroundapp.Routes(app, playgroundapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
-		Cache:      cfg.Cache,
+		Pool:       cfg.Pool,
 		Models:     cfg.Models,
 	})
 

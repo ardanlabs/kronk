@@ -64,9 +64,11 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	// where Unload sees zero active streams and frees the model before the
 	// goroutine starts executing.
 	active := m.activeStreams.Add(1)
+	metrics.SetPoolActiveStreams(m.modelInfo.ID, int(active))
 
 	go func() {
 		id := "chatcmpl-" + uuid.NewString()
+		requestStart := time.Now()
 
 		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
 
@@ -74,12 +76,14 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		defer func() {
 			if rec := recover(); rec != nil {
+				m.recordChatFailure(ctx, requestStart, fmt.Errorf("panic: %v", rec))
 				m.sendChatError(ctx, ch, id, fmt.Errorf("%v", rec))
 			}
 
 			if !batching {
 				close(ch)
 				remaining := m.activeStreams.Add(-1)
+				metrics.SetPoolActiveStreams(m.modelInfo.ID, int(remaining))
 				m.log(ctx, "chat-streaming", "status", "finished", "id", id, "active_streams", remaining)
 			}
 		}()
@@ -89,6 +93,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		params, d, err := m.validateAndCloneDocument(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
+			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
@@ -96,6 +101,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		d, mtmdCtx, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
+			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
@@ -110,11 +116,10 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 		}()
 
-		requestStart := time.Now()
-
 		prompt, media, cache, err := m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
 		if err != nil {
 			prepSpan.End()
+			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
@@ -127,7 +132,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		prepSpan.End()
 
-		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache) {
+		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache, requestStart) {
 			batching = true
 			return
 		}
@@ -214,11 +219,6 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, requestStart time.Time) (string, [][]byte, cacheResult, error) {
 	var cache cacheResult
 
-	// Inject tool function names into role:"tool" messages before caching.
-	// This adds "name" (for standard templates like Gemma 4) and
-	// "tool_call_name" (for GPT templates) so tool responses render correctly.
-	d = m.injectToolResponseNames(d)
-
 	// Deserialize tool call arguments from JSON strings to maps so Jinja
 	// templates can iterate over them with |items. The OpenAI API spec
 	// sends arguments as JSON-encoded strings, but templates like Qwen3
@@ -258,7 +258,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 // submitToBatchEngine attempts to submit the request to the batch engine.
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
-func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult) bool {
+func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult, requestStart time.Time) bool {
 	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
@@ -268,6 +268,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		ctx:           ctx,
 		queueWaitSpan: queueSpan,
 		queuedAt:      time.Now(),
+		requestStart:  requestStart,
 		d:             d,
 		object:        object,
 		prompt:        prompt,
@@ -444,100 +445,6 @@ func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error)
 	return prompt, media, nil
 }
 
-// injectToolResponseNames adds the tool function name to role:"tool" messages
-// by matching tool_call_id against preceding assistant tool_calls. It injects
-// "name" (used by standard templates like Gemma 4) and "tool_call_name" (used
-// by GPT templates). Existing values are not overwritten.
-func (m *Model) injectToolResponseNames(d D) D {
-	messages, ok := d["messages"].([]D)
-	if !ok {
-		return d
-	}
-
-	// Build a map of tool_call_id -> function name from assistant messages.
-	toolCallIDToName := make(map[string]string)
-
-	for _, msg := range messages {
-		role, _ := msg["role"].(string)
-		if role != "assistant" {
-			continue
-		}
-
-		toolCalls, ok := msg["tool_calls"].([]D)
-		if !ok {
-			continue
-		}
-
-		for _, tcMap := range toolCalls {
-			id, _ := tcMap["id"].(string)
-			if id == "" {
-				continue
-			}
-
-			fn, ok := tcMap["function"].(D)
-			if !ok {
-				continue
-			}
-
-			name, _ := fn["name"].(string)
-			if name != "" {
-				toolCallIDToName[id] = name
-			}
-		}
-	}
-
-	if len(toolCallIDToName) == 0 {
-		return d
-	}
-
-	// Inject names into tool response messages using copy-on-write.
-	var copied bool
-	for i, msg := range messages {
-		role, _ := msg["role"].(string)
-		if role != "tool" {
-			continue
-		}
-
-		toolCallID, _ := msg["tool_call_id"].(string)
-		if toolCallID == "" {
-			continue
-		}
-
-		name, exists := toolCallIDToName[toolCallID]
-		if !exists {
-			continue
-		}
-
-		existingName, _ := msg["name"].(string)
-		existingTCName, _ := msg["tool_call_name"].(string)
-
-		if existingName != "" && existingTCName != "" {
-			continue
-		}
-
-		if !copied {
-			newMsgs := make([]D, len(messages))
-			copy(newMsgs, messages)
-			messages = newMsgs
-			d["messages"] = messages
-			copied = true
-		}
-
-		newMsg := msg.ShallowClone()
-
-		if existingName == "" {
-			newMsg["name"] = name
-		}
-		if existingTCName == "" {
-			newMsg["tool_call_name"] = name
-		}
-
-		messages[i] = newMsg
-	}
-
-	return d
-}
-
 // deserializeToolCallArguments converts JSON-string arguments in assistant
 // tool_calls to maps so Jinja templates can iterate them with |items.
 func deserializeToolCallArguments(d D) D {
@@ -620,6 +527,31 @@ func (m *Model) validateDocument(d D) (Params, error) {
 	}
 
 	return p, nil
+}
+
+// recordChatFailure emits the request_total/error counters and the
+// request duration histogram for a chat that failed before being handed
+// to the batch engine. errors.Is checks pull context cancellations into
+// the "cancel" status so dashboards can distinguish them from genuine
+// errors.
+func (m *Model) recordChatFailure(ctx context.Context, requestStart time.Time, err error) {
+	status := "error"
+	class := "pre-batch"
+
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		status = "cancel"
+		class = "context-cancelled"
+	case ctx.Err() != nil:
+		status = "cancel"
+		class = "context-cancelled"
+	}
+
+	metrics.AddChatRequest(m.modelInfo.ID, status)
+	metrics.AddChatError(m.modelInfo.ID, class)
+	if !requestStart.IsZero() {
+		metrics.ObserveChatRequestDuration(m.modelInfo.ID, time.Since(requestStart))
+	}
 }
 
 func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id string, err error) {

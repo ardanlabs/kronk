@@ -178,11 +178,11 @@ install-class-models: install-kronk
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 
-OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.7.2
-GRAFANA    := grafana/grafana:12.3.0
-PROMETHEUS := prom/prometheus:v3.8.0
-TEMPO      := grafana/tempo:2.9.0
-LOKI       := grafana/loki:3.6.0
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.9.2
+GRAFANA    := grafana/grafana:12.3.1
+PROMETHEUS := prom/prometheus:v3.11.0
+TEMPO      := grafana/tempo:2.10.0
+LOKI       := grafana/loki:3.7.0
 PROMTAIL   := grafana/promtail:3.6.0
 
 # Install the docker images.
@@ -235,27 +235,18 @@ test-only: install-libraries install-test-models
 	@echo ========== RUN TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
-	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
-	go test -v -count=1 ./cmd/server/app/sdk/cache && \
-	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
-	go test -v -count=1 ./sdk/kronk/jsonrepair && \
-	go test -v -count=1 -p 1 ./sdk/kronk/tests/... && \
-	go test -v -count=1 ./sdk/kronk/model && \
-	go test -v -count=1 ./sdk/tools/...
+	go test -v -p=1 -count=1 ./cmd/server/... && \
+	go test -v -p=1 -count=1 ./sdk/...
 
 test: test-only lint vuln-check diff
 
 test-gh-only: install-libraries-gh install-test-gh-models
-	@echo ========== RUN TESTS ==========
+	@echo ========== RUN GH ONLY TESTS ==========
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	export GITHUB_ACTIONS=true && \
-	go test -v -count=1 ./cmd/server/api/services/kronk/tests && \
-	go test -v -count=1 ./cmd/server/app/sdk/cache && \
-	go test -v -count=1 ./cmd/server/app/sdk/security/... && \
-	go test -v -count=1 ./sdk/kronk/jsonrepair && \
-	go test -v -count=1 ./sdk/kronk/model && \
-	go test -v -count=1 ./sdk/tools/...
+	go test -v -p=1 -count=1 ./cmd/server/... && \
+	go test -v -p=1 -count=1 $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
 
 test-gh: test-gh-only lint vuln-check diff
 
@@ -266,19 +257,19 @@ benchmark-dense-nc:
 	go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-dense-imc:
-	go test -run=none -bench=BenchmarkDense_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-nc:
 	go test -run=none -bench=BenchmarkMoE_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-moe-imc:
-	go test -run=none -bench=BenchmarkMoE_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkMoE_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-hybrid-nc:
 	go test -run=none -bench=BenchmarkHybrid_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 benchmark-hybrid-imc:
-	go test -run=none -bench=BenchmarkHybrid_IMC$$ -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkHybrid_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
 # Run all benchmarks sequentially (each target loads/unloads its own model)
 # and write combined raw output to a single file under runs/.
@@ -862,6 +853,9 @@ example-embedding:
 
 example-grammar:
 	cd examples && go run ./grammar/main.go
+
+example-pool:
+	cd examples && go run ./pool/main.go
 
 example-rag:
 	cd examples && go run ./rag/main.go

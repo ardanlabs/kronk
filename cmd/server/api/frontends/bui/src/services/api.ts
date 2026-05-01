@@ -2,6 +2,7 @@ import type {
   ListModelInfoResponse,
   ModelDetailsResponse,
   ModelInfoResponse,
+  PoolBudgetResponse,
   CatalogModelsResponse,
   CatalogModelResponse,
   KeysResponse,
@@ -85,6 +86,10 @@ class ApiService {
 
   async listRunningModels(): Promise<ModelDetailsResponse> {
     return this.request<ModelDetailsResponse>('/models/ps');
+  }
+
+  async getPoolBudget(): Promise<PoolBudgetResponse> {
+    return this.request<PoolBudgetResponse>('/pool/budget');
   }
 
   async unloadModel(id: string): Promise<void> {

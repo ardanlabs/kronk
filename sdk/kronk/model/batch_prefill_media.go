@@ -179,7 +179,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			s.iBatch = -1
 		}
 
-		metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(prefillStart))
+		metrics.AddPrefillTime(e.model.modelInfo.ID, "media", time.Since(prefillStart))
 
 	case mtmd.InputChunkTypeAudio:
 		e.model.log(s.job.ctx, "prefill-media", "status", "encoding-audio",
@@ -225,7 +225,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			s.iBatch = -1
 		}
 
-		metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(prefillStart))
+		metrics.AddPrefillTime(e.model.modelInfo.ID, "media", time.Since(prefillStart))
 	}
 
 	return true

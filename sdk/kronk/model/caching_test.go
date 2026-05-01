@@ -1022,8 +1022,9 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 // =============================================================================
 
 // TestIMCResetSessionClearsKVState verifies that imcResetSession clears the
-// externalized KV state fields (kvState, kvStateBytes). Without this, a reset
-// session could retain stale RAM state that gets restored into a future request.
+// externalized KV state contents. The backing array is intentionally retained
+// (lazy-grow / never-shrink) so the next snapshot for the rebound conversation
+// can fill it without allocating; only the valid length is cleared.
 func TestIMCResetSessionClearsKVState(t *testing.T) {
 	s := &imcSession{
 		slotID:            0,
@@ -1032,8 +1033,6 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		cachedTokens:      []llama.Token{1, 2, 3},
 		totalTokensCached: 100,
 		cachedMsgCount:    2,
-		kvState:           []byte{0xDE, 0xAD, 0xBE, 0xEF},
-		kvStateBytes:      4,
 		lastUsed:          time.Now(),
 		pending:           true,
 		hasMedia:          true,
@@ -1042,14 +1041,16 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		sysPromptHash:     "syshash",
 		sysPromptTokens:   50,
 	}
+	buf := s.kvState.Prepare(4)
+	copy(buf, []byte{0xDE, 0xAD, 0xBE, 0xEF})
 
 	imcResetSession(s)
 
-	if s.kvState != nil {
-		t.Errorf("kvState = %v, want nil", s.kvState)
+	if s.kvState.Len() != 0 {
+		t.Errorf("kvState.Len() = %d, want 0 (contents cleared)", s.kvState.Len())
 	}
-	if s.kvStateBytes != 0 {
-		t.Errorf("kvStateBytes = %d, want 0", s.kvStateBytes)
+	if s.kvState.Cap() == 0 {
+		t.Errorf("kvState.Cap() = 0, want backing array retained for reuse")
 	}
 	if s.cachedMsgsHash != "" {
 		t.Errorf("cachedMsgsHash = %q, want empty", s.cachedMsgsHash)
@@ -1109,19 +1110,15 @@ func TestClearCachesResetsKVState(t *testing.T) {
 			cachedMsgsHash:    "hash",
 			totalTokensCached: 500,
 			cachedMsgCount:    3,
-			kvState:           make([]byte, 1024),
-			kvStateBytes:      1024,
 		}
+		m.imcSessions[i].kvState.Prepare(1024)
 	}
 
 	m.clearCaches()
 
 	for i, s := range m.imcSessions {
-		if s.kvState != nil {
-			t.Errorf("session[%d] kvState not cleared", i)
-		}
-		if s.kvStateBytes != 0 {
-			t.Errorf("session[%d] kvStateBytes = %d, want 0", i, s.kvStateBytes)
+		if s.kvState.Len() != 0 {
+			t.Errorf("session[%d] kvState.Len() = %d, want 0 (contents cleared)", i, s.kvState.Len())
 		}
 		if s.totalTokensCached != 0 {
 			t.Errorf("session[%d] totalTokensCached = %d, want 0", i, s.totalTokensCached)
@@ -1191,23 +1188,20 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	m.cacheCond = sync.NewCond(&m.cacheMu)
 
 	session := &imcSession{
-		slotID:       0,
-		seqID:        0,
-		kvState:      []byte{0x01, 0x02, 0x03},
-		kvStateBytes: 3,
-		pending:      true,
+		slotID:  0,
+		seqID:   0,
+		pending: true,
 	}
+	buf := session.kvState.Prepare(3)
+	copy(buf, []byte{0x01, 0x02, 0x03})
 	m.imcSessions[0] = session
 
 	m.imcCommitSession(session, "newhash", 1000, 5,
 		[]llama.Token{1, 2, 3}, false, nil, "syshash", 50)
 
 	// kvState should be preserved — only startSlot snapshots update it.
-	if len(session.kvState) != 3 {
-		t.Errorf("kvState len = %d, want 3 (should be preserved)", len(session.kvState))
-	}
-	if session.kvStateBytes != 3 {
-		t.Errorf("kvStateBytes = %d, want 3 (should be preserved)", session.kvStateBytes)
+	if session.kvState.Len() != 3 {
+		t.Errorf("kvState.Len() = %d, want 3 (should be preserved)", session.kvState.Len())
 	}
 
 	// Verify other fields were updated.
@@ -1267,8 +1261,7 @@ func TestIMCKVPressureSkipsExternalizedSessions(t *testing.T) {
 	m.imcSessions[0].totalTokensCached = 800
 	m.imcSessions[0].cachedMsgCount = 2
 	m.imcSessions[0].lastUsed = now.Add(-10 * time.Second)
-	m.imcSessions[0].kvState = make([]byte, 4096)
-	m.imcSessions[0].kvStateBytes = 4096
+	m.imcSessions[0].kvState.Prepare(4096)
 
 	// Session[1]: media session (no kvState, KV resident in VRAM).
 	hash1 := hashMessages([]D{
@@ -1308,7 +1301,7 @@ func TestIMCKVPressureSkipsExternalizedSessions(t *testing.T) {
 	if m.imcSessions[0].totalTokensCached != 800 {
 		t.Errorf("session[0] totalTokensCached = %d, want 800 (externalized session should not be evicted)", m.imcSessions[0].totalTokensCached)
 	}
-	if m.imcSessions[0].kvState == nil {
+	if m.imcSessions[0].kvState.Len() == 0 {
 		t.Error("session[0] kvState should be preserved (not evicted)")
 	}
 
@@ -1362,17 +1355,24 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 func TestIMCSessionMediaTransitions(t *testing.T) {
 	s := &imcSession{slotID: 0, seqID: 0}
 
+	// snapshot simulates startSlot writing kvState by going through the
+	// kvBuffer Prepare/Commit lifecycle.
+	snapshot := func(b byte) {
+		buf := s.kvState.Prepare(1)
+		buf[0] = b
+		s.kvState.Commit(1)
+	}
+
 	// Turn 1: Text build. hasMedia=false.
 	s.cachedMsgsHash = "text1"
 	s.totalTokensCached = 100
 	s.hasMedia = false
-	s.kvState = []byte{0x01}
-	s.kvStateBytes = 1
+	snapshot(0x01)
 
 	if s.hasMedia {
 		t.Fatal("turn 1: session should be text-only")
 	}
-	if s.kvState == nil {
+	if s.kvState.Len() == 0 {
 		t.Fatal("turn 1: text session should have kvState")
 	}
 
@@ -1387,15 +1387,14 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	s.cachedMsgsHash = "media1"
 	s.totalTokensCached = 500
 	s.hasMedia = true
-	s.kvState = []byte{0x02} // Media sessions also get externalized to RAM.
-	s.kvStateBytes = 1
+	snapshot(0x02) // Media sessions also get externalized to RAM.
 	s.mediaKVCounts = []int{200}
 
 	// Turn 3: Media→Text follow-up. Session stays media, kvState present.
 	if !s.hasMedia {
 		t.Fatal("turn 3: session should still be media")
 	}
-	if s.kvState == nil {
+	if s.kvState.Len() == 0 {
 		t.Fatal("turn 3: media session should have kvState (externalized to RAM)")
 	}
 
@@ -1413,8 +1412,8 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	if s.hasMedia {
 		t.Fatal("turn 5: after reset, hasMedia should be false")
 	}
-	if s.kvState != nil {
-		t.Fatal("turn 5: after reset, kvState should be nil")
+	if s.kvState.Len() != 0 {
+		t.Fatal("turn 5: after reset, kvState contents should be cleared (Len()==0)")
 	}
 
 	// But imcMediaBuild=true on the job, so imcSessionMedia=true.
@@ -1426,8 +1425,7 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	// After commit + snapshot, session is media again with kvState.
 	s.hasMedia = true
 	s.totalTokensCached = 800
-	s.kvState = []byte{0x03}
-	s.kvStateBytes = 1
+	snapshot(0x03)
 	s.mediaKVCounts = []int{200, 150}
 
 	// Turn 6: Media→Text. Session stays media.
@@ -1494,7 +1492,7 @@ func TestIMCCommitThenRematch(t *testing.T) {
 	if s.sysPromptTokens != 100 {
 		t.Errorf("sysPromptTokens = %d, want 100", s.sysPromptTokens)
 	}
-	if len(s.kvState) != 0 {
+	if s.kvState.Len() != 0 {
 		t.Error("kvState should be empty (not set by commit)")
 	}
 

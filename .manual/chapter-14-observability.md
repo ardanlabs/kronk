@@ -119,25 +119,57 @@ System metrics:
 - `errors` - Total error count
 - `panics` - Total panic count
 
-Model loading (in seconds):
+All timing distributions are exposed as Prometheus **histograms** (suffix
+`_seconds`), which emit `_bucket`, `_sum`, and `_count` series. Compute
+averages with `rate(X_sum[5m]) / rate(X_count[5m])` and percentiles with
+`histogram_quantile(...)`.
 
-- `model_load_avg`, `model_load_min`, `model_load_max`
-- `model_load_proj_avg`, `model_load_proj_min`, `model_load_proj_max`
+Model loading histograms (seconds):
 
-Inference timing (in seconds):
+- `model_load_seconds` — model file load time
+- `model_load_proj_seconds` — multimodal proj file load time
 
-- `model_prompt_creation_avg`, `_min`, `_max`
-- `model_prefill_avg`, `_min`, `_max`
-- `model_ttft_avg`, `_min`, `_max` (time to first token)
+Inference timing histograms (seconds):
+
+- `model_prompt_creation_seconds`
+- `model_prefill_seconds` (labeled by `kind="text|media|imc-decode"`)
+- `model_prefill_ttft_seconds` (prefill-start to first sampled token)
+- `model_request_ttft_seconds` (end-to-end request to first sampled token)
 
 Token usage:
 
-- `usage_prompt_tokens_avg`, `_min`, `_max`
-- `usage_reasoning_tokens_avg`, `_min`, `_max`
-- `usage_completion_tokens_avg`, `_min`, `_max`
-- `usage_output_tokens_avg`, `_min`, `_max`
-- `usage_total_tokens_avg`, `_min`, `_max`
-- `usage_tokens_per_second_avg`, `_min`, `_max`
+- `usage_tokens_total` — counter, labeled by `kind="prompt|reasoning|completion"`. Use `rate(...)` for fleet throughput. Output and total are linear combinations and can be derived in PromQL.
+- `usage_tokens_per_second` — histogram of per-request decode rate (computed after TTFT).
+
+Request lifecycle:
+
+- `chat_requests_total{model_id, status="ok|error|cancel"}` — counter of chat completion outcomes.
+- `chat_errors_total{model_id, class}` — counter of chat errors by class (`pre-batch`, `fail-job`, `context-cancelled`, …).
+- `chat_request_duration_seconds` — histogram of end-to-end chat request duration.
+- `chat_queue_wait_seconds` — histogram of time spent waiting in the batch engine queue.
+
+Pool (sdk/pool):
+
+- `pool_acquire_total{result="hit|miss|dedup|busy|error"}` — counter of acquire outcomes.
+- `pool_acquire_duration_seconds{cache="hit|miss"}` — histogram of acquire latency.
+- `pool_singleflight_wait_seconds` — histogram of duplicate-load wait time.
+- `pool_evictions_total{reason, selection}` — counter labelled by reason (`ttl|cap|budget|replacement|invalidation|unknown`) and selection (`smallest-fit|coldest-idle|n/a`).
+- `pool_evict_before_load_total` — counter of pre-admission evictions.
+- `pool_evict_wait_seconds` — histogram of time waiting for an eviction callback to release its reservation.
+- `pool_unload_duration_seconds{model_id}` — histogram of unload duration.
+- `pool_load_failures_total{stage="plan|reserve|evict|load"}` — counter of load failures by stage.
+- `pool_items_in_cache`, `pool_max_items_in_cache` — gauges for current/configured cache occupancy.
+- `pool_active_streams{model_id}` — gauge of streaming requests per model.
+- `pool_inflight_loads` — gauge of loads currently holding a reservation but not yet visible in the cache.
+
+Resource manager (sdk/pool/resman):
+
+- `resman_budget_percent`, `resman_headroom_bytes`, `resman_unified_memory` — configuration gauges.
+- `resman_reservations` — gauge of active reservations.
+- `resman_ram_total_bytes`, `resman_ram_budget_bytes`, `resman_ram_used_bytes`, `resman_ram_free_bytes` — RAM accounting.
+- `resman_device_total_bytes{device,type}`, `resman_device_budget_bytes`, `resman_device_used_bytes`, `resman_device_free_bytes` — per-GPU accounting.
+- `resman_reservation_bytes{model_id, kind="ram|vram", device}` — per-reservation memory commitment.
+- `resman_reserve_rejections_total{reason="no_capacity|unknown_device|invalid_plan|duplicate_key|no_gpus|other"}` — counter of `Reserve` rejections.
 
 ### 14.5 Prometheus Integration
 
@@ -154,16 +186,31 @@ scrape_configs:
 
 **Grafana Dashboard Query Examples:**
 
-Time to first token:
+Average end-to-end time to first token:
 
 ```promql
-model_ttft_avg
+rate(model_request_ttft_seconds_sum[5m])
+  / rate(model_request_ttft_seconds_count[5m])
 ```
 
-Tokens per second throughput:
+P99 end-to-end time to first token:
 
 ```promql
-usage_tokens_per_second_avg
+histogram_quantile(0.99,
+  sum by (le, model_id) (rate(model_request_ttft_seconds_bucket[5m])))
+```
+
+Fleet token throughput by kind (tokens/second):
+
+```promql
+sum by (model_id, kind) (rate(usage_tokens_total[5m]))
+```
+
+Average per-request tokens-per-second:
+
+```promql
+rate(usage_tokens_per_second_sum[5m])
+  / rate(usage_tokens_per_second_count[5m])
 ```
 
 Request rate:

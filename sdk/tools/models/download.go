@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
@@ -98,7 +99,7 @@ func (m *Models) DownloadURLs(ctx context.Context, log applog.Logger, modelURLs 
 	// Best-effort GGUF head cache so the catalog detail screen
 	// renders without an HF round-trip.
 	if len(mp.ModelFiles) > 0 {
-		if provider, family, _, _, ok := parseHFURL(NormalizeHuggingFaceDownloadURL(modelURLs[0])); ok {
+		if provider, family, _, _, ok := hf.ParseURL(hf.NormalizeDownloadURL(modelURLs[0])); ok {
 			modelID := extractModelID(filepath.Base(mp.ModelFiles[0]))
 			if err := m.CacheGGUFHeadFromFile(provider, family, modelID, mp.ModelFiles[0]); err != nil {
 				log(ctx, "download: unable to cache gguf head", "ERROR", err)
@@ -128,7 +129,7 @@ func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL 
 	// Best-effort GGUF head cache so the catalog detail screen
 	// renders without an HF round-trip.
 	if len(mp.ModelFiles) > 0 {
-		if provider, family, _, _, ok := parseHFURL(NormalizeHuggingFaceDownloadURL(modelURL)); ok {
+		if provider, family, _, _, ok := hf.ParseURL(hf.NormalizeDownloadURL(modelURL)); ok {
 			modelID := extractModelID(filepath.Base(mp.ModelFiles[0]))
 			if err := m.CacheGGUFHeadFromFile(provider, family, modelID, mp.ModelFiles[0]); err != nil {
 				log(ctx, "download: unable to cache gguf head", "ERROR", err)
@@ -143,7 +144,7 @@ func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL 
 // asks the resolver for the matching projection file. Returns an empty
 // string when the URL cannot be parsed or no projection is found.
 func (m *Models) lookupProjForURL(ctx context.Context, modelURL string) string {
-	provider, _, _, file, ok := parseHFURL(NormalizeHuggingFaceDownloadURL(modelURL))
+	provider, _, _, file, ok := hf.ParseURL(hf.NormalizeDownloadURL(modelURL))
 	if !ok || provider == "" || file == "" {
 		return ""
 	}
@@ -280,10 +281,10 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 		ModelFiles: make([]string, len(modelURLs)),
 	}
 
-	projURL = NormalizeHuggingFaceDownloadURL(projURL)
+	projURL = hf.NormalizeDownloadURL(projURL)
 
 	for i, modelURL := range modelURLs {
-		modelURL = NormalizeHuggingFaceDownloadURL(modelURL)
+		modelURL = hf.NormalizeDownloadURL(modelURL)
 
 		if i > 0 {
 			projURL = ""
@@ -330,7 +331,7 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 
 		if len(mp.ModelFiles) >= len(modelURLs) {
 			for j := i + 1; j < len(modelURLs); j++ {
-				log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[] model-id[%s]", NormalizeHuggingFaceDownloadURL(modelURLs[j]), modelID))
+				log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[] model-id[%s]", hf.NormalizeDownloadURL(modelURLs[j]), modelID))
 				log(ctx, "download-model: already installed")
 			}
 			result.ModelFiles = mp.ModelFiles[:len(modelURLs)]

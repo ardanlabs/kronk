@@ -148,8 +148,8 @@ export default function DocsCLIServer() {
                   <td>Maximum number of concurrent model instances</td>
                 </tr>
                 <tr>
-                  <td><code>--models-in-cache &lt;int&gt;</code></td>
-                  <td>Maximum models held in cache</td>
+                  <td><code>--budget-percent &lt;int&gt;</code></td>
+                  <td>Percentage (1..100) of detected GPU VRAM and system RAM that the resource manager may commit to loaded models (default 80)</td>
                 </tr>
                 <tr>
                   <td><code>--cache-ttl &lt;duration&gt;</code></td>
@@ -261,7 +261,7 @@ export default function DocsCLIServer() {
                   <td>Path to model_config.yaml</td>
                 </tr>
                 <tr>
-                  <td><code>KRONK_CACHE_MODEL_INSTANCES</code> / <code>KRONK_CACHE_MODELS_IN_CACHE</code> / <code>KRONK_CACHE_TTL</code></td>
+                  <td><code>KRONK_CACHE_MODEL_INSTANCES</code> / <code>KRONK_CACHE_BUDGET_PERCENT</code> / <code>KRONK_CACHE_TTL</code></td>
                   <td>Cache settings</td>
                 </tr>
                 <tr>

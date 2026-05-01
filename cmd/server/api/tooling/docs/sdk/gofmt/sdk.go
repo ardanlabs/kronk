@@ -51,12 +51,13 @@ type function struct {
 // =============================================================================
 
 func Run() error {
-	pkg := flag.String("pkg", "all", "Package to generate docs for: kronk, model, or all")
+	pkg := flag.String("pkg", "all", "Package to generate docs for: kronk, model, pool, or all")
 	flag.Parse()
 
 	packages := make(map[string]string)
 	packages["kronk"] = "github.com/ardanlabs/kronk/sdk/kronk"
 	packages["model"] = "github.com/ardanlabs/kronk/sdk/kronk/model"
+	packages["pool"] = "github.com/ardanlabs/kronk/sdk/pool"
 
 	outputDir := "cmd/server/api/frontends/bui/src/components"
 
@@ -71,6 +72,11 @@ func Run() error {
 			return fmt.Errorf("generating model docs: %w", err)
 		}
 
+	case "pool":
+		if err := generateDocs(packages["pool"], outputDir, "DocsSDKPool.tsx", "Pool"); err != nil {
+			return fmt.Errorf("generating pool docs: %w", err)
+		}
+
 	case "all":
 		if err := generateDocs(packages["kronk"], outputDir, "DocsSDKKronk.tsx", "Kronk"); err != nil {
 			return fmt.Errorf("generating kronk docs: %w", err)
@@ -80,8 +86,12 @@ func Run() error {
 			return fmt.Errorf("generating model docs: %w", err)
 		}
 
+		if err := generateDocs(packages["pool"], outputDir, "DocsSDKPool.tsx", "Pool"); err != nil {
+			return fmt.Errorf("generating pool docs: %w", err)
+		}
+
 	default:
-		return fmt.Errorf("unknown package: %s (use kronk, model, or all)", *pkg)
+		return fmt.Errorf("unknown package: %s (use kronk, model, pool, or all)", *pkg)
 	}
 
 	fmt.Println("Documentation generated successfully")
@@ -579,7 +589,28 @@ func generateTSX(docs *packageDocs, displayName string) string {
 		allMethods = append(allMethods, t.methods...)
 	}
 
+	b.WriteString("import { useEffect } from 'react';\n")
+	b.WriteString("import { useLocation } from 'react-router-dom';\n\n")
+
 	b.WriteString(fmt.Sprintf("export default function DocsSDK%s() {\n", displayName))
+	b.WriteString("  const location = useLocation();\n\n")
+	b.WriteString("  useEffect(() => {\n")
+	b.WriteString("    const container = document.querySelector('.main-content');\n")
+	b.WriteString("    if (!container) return;\n")
+	b.WriteString("    if (!location.hash) {\n")
+	b.WriteString("      container.scrollTo({ top: 0 });\n")
+	b.WriteString("      return;\n")
+	b.WriteString("    }\n")
+	b.WriteString("    const id = location.hash.slice(1);\n")
+	b.WriteString("    requestAnimationFrame(() => {\n")
+	b.WriteString("      const element = document.getElementById(id);\n")
+	b.WriteString("      if (!element) return;\n")
+	b.WriteString("      const containerRect = container.getBoundingClientRect();\n")
+	b.WriteString("      const elementRect = element.getBoundingClientRect();\n")
+	b.WriteString("      const offset = elementRect.top - containerRect.top + container.scrollTop;\n")
+	b.WriteString("      container.scrollTo({ top: offset - 20, behavior: 'smooth' });\n")
+	b.WriteString("    });\n")
+	b.WriteString("  }, [location.key, location.hash]);\n\n")
 	b.WriteString("  return (\n")
 	b.WriteString("    <div>\n")
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
@@ -185,7 +186,7 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log applog
 		return entry, false
 	}
 
-	metadata, err := ParseGGUFMetadata(data)
+	metadata, err := gguf.ParseMetadata(data)
 	if err != nil {
 		log(ctx, "enrich-entry: parse-gguf", "provider", entry.Provider, "family", entry.Family, "ERROR", err)
 		return entry, false

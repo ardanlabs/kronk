@@ -115,6 +115,9 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	if v, _ := cmd.Flags().GetString("model-config-file"); v != "" {
 		envVars = append(envVars, "KRONK_CACHE_MODEL_CONFIG_FILE="+v)
 	}
+	if v, _ := cmd.Flags().GetInt("budget-percent"); v != 0 {
+		envVars = append(envVars, "KRONK_CACHE_BUDGET_PERCENT="+strconv.Itoa(v))
+	}
 	if v, _ := cmd.Flags().GetInt("models-in-cache"); v != 0 {
 		envVars = append(envVars, "KRONK_CACHE_MODELS_IN_CACHE="+strconv.Itoa(v))
 	}

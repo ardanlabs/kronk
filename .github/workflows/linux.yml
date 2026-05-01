@@ -73,27 +73,11 @@ jobs:
         timeout-minutes: 30
         run: |
           export RUN_IN_PARALLEL=no
-          go test -v -count=1 -timeout 30m ./cmd/server/api/services/kronk/tests
-      - name: Run sdk/cache tests
+          go test -v -p=1 -count=1 ./cmd/server/...
+      - name: Run sdk tests
         run: |
           export RUN_IN_PARALLEL=no
-          go test -v -count=1 ./cmd/server/app/sdk/cache
-      - name: Run sdk/security tests
-        run: |
-          export RUN_IN_PARALLEL=no
-          go test -v -count=1 ./cmd/server/app/sdk/security/...
-      - name: Run kronk jsonrepair tests
-        run: |
-          export RUN_IN_PARALLEL=no
-          go test -v -count=1 ./sdk/kronk/jsonrepair
-      - name: Run kronk model tests
-        run: |
-          export RUN_IN_PARALLEL=no
-          go test -v -count=1 ./sdk/kronk/model
-      - name: Run sdk/tools tests
-        run: |
-          export RUN_IN_PARALLEL=no
-          go test -v -count=1 ./sdk/tools/...
+          go test -v -p=1 -count=1 $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
       - name: Run vet, linter, vuln, diff checks
         run: |
           go vet ./...

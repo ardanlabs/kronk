@@ -1,4 +1,4 @@
-package models
+package hf
 
 import (
 	"context"
@@ -11,23 +11,52 @@ import (
 	"time"
 )
 
-// DefaultHFClient is the production implementation of HFClient. It talks
+// ModelMeta is the subset of HuggingFace model metadata the resolver needs.
+type ModelMeta struct {
+	ID       string
+	Siblings []string
+	Gated    bool
+}
+
+// Client is the contract the resolver uses to talk to HuggingFace. The
+// default implementation talks to https://huggingface.co; tests inject a
+// fake.
+type Client interface {
+	// ModelMeta fetches model metadata for a specific repo. It must return
+	// a 404-typed error (errors.Is(err, ErrNotFound)) when the repo does
+	// not exist so the resolver can move on to the next provider.
+	ModelMeta(ctx context.Context, owner, repo, revision string) (ModelMeta, error)
+
+	// SearchModels searches an author's repos for the given query. Returns
+	// owner/repo identifiers in HuggingFace's relevance order.
+	SearchModels(ctx context.Context, author, query string) ([]string, error)
+}
+
+// ErrNotFound is returned by Client implementations when the requested
+// repo or author/query produces no results.
+var ErrNotFound = fmt.Errorf("not found")
+
+// ErrThrottled is returned when HuggingFace rate-limits the request. The
+// resolver wraps this with a hint suggesting KRONK_HF_TOKEN.
+var ErrThrottled = fmt.Errorf("rate limited")
+
+// DefaultClient is the production implementation of Client. It talks
 // to https://huggingface.co and honours KRONK_HF_TOKEN.
-type DefaultHFClient struct {
+type DefaultClient struct {
 	BaseURL string // defaults to https://huggingface.co
 	HTTP    *http.Client
 }
 
-// NewDefaultHFClient constructs the production HF client.
-func NewDefaultHFClient() *DefaultHFClient {
-	return &DefaultHFClient{
+// NewDefaultClient constructs the production HF client.
+func NewDefaultClient() *DefaultClient {
+	return &DefaultClient{
 		BaseURL: "https://huggingface.co",
 		HTTP:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-// ModelMeta implements HFClient.
-func (c *DefaultHFClient) ModelMeta(ctx context.Context, owner, repo, revision string) (HFModelMeta, error) {
+// ModelMeta implements Client.
+func (c *DefaultClient) ModelMeta(ctx context.Context, owner, repo, revision string) (ModelMeta, error) {
 	u := fmt.Sprintf("%s/api/models/%s/%s", c.baseURL(), url.PathEscape(owner), url.PathEscape(repo))
 	if revision != "" && revision != "main" {
 		u += "?revision=" + url.QueryEscape(revision)
@@ -35,7 +64,7 @@ func (c *DefaultHFClient) ModelMeta(ctx context.Context, owner, repo, revision s
 
 	body, err := c.do(ctx, u)
 	if err != nil {
-		return HFModelMeta{}, err
+		return ModelMeta{}, err
 	}
 
 	var raw struct {
@@ -47,7 +76,7 @@ func (c *DefaultHFClient) ModelMeta(ctx context.Context, owner, repo, revision s
 	}
 
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return HFModelMeta{}, fmt.Errorf("hf-model-meta: decode: %w", err)
+		return ModelMeta{}, fmt.Errorf("hf-model-meta: decode: %w", err)
 	}
 
 	siblings := make([]string, 0, len(raw.Siblings))
@@ -55,16 +84,16 @@ func (c *DefaultHFClient) ModelMeta(ctx context.Context, owner, repo, revision s
 		siblings = append(siblings, s.RFilename)
 	}
 
-	return HFModelMeta{
+	return ModelMeta{
 		ID:       raw.ID,
 		Siblings: siblings,
 		Gated:    isGated(raw.Gated),
 	}, nil
 }
 
-// SearchModels implements HFClient. It searches HuggingFace for models
+// SearchModels implements Client. It searches HuggingFace for models
 // owned by `author` matching `query`, restricted to GGUF repos.
-func (c *DefaultHFClient) SearchModels(ctx context.Context, author, query string) ([]string, error) {
+func (c *DefaultClient) SearchModels(ctx context.Context, author, query string) ([]string, error) {
 	q := url.Values{}
 	q.Set("author", author)
 	if query != "" {
@@ -93,13 +122,13 @@ func (c *DefaultHFClient) SearchModels(ctx context.Context, author, query string
 	}
 
 	if len(out) == 0 {
-		return nil, ErrHFNotFound
+		return nil, ErrNotFound
 	}
 
 	return out, nil
 }
 
-func (c *DefaultHFClient) baseURL() string {
+func (c *DefaultClient) baseURL() string {
 	if c.BaseURL == "" {
 		return "https://huggingface.co"
 	}
@@ -107,7 +136,7 @@ func (c *DefaultHFClient) baseURL() string {
 	return c.BaseURL
 }
 
-func (c *DefaultHFClient) httpClient() *http.Client {
+func (c *DefaultClient) httpClient() *http.Client {
 	if c.HTTP == nil {
 		return http.DefaultClient
 	}
@@ -117,7 +146,7 @@ func (c *DefaultHFClient) httpClient() *http.Client {
 
 // do issues a GET request, attaching KRONK_HF_TOKEN when set, and maps
 // HTTP error codes to the resolver's typed errors.
-func (c *DefaultHFClient) do(ctx context.Context, u string) ([]byte, error) {
+func (c *DefaultClient) do(ctx context.Context, u string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("hf-request: build: %w", err)
@@ -136,12 +165,12 @@ func (c *DefaultHFClient) do(ctx context.Context, u string) ([]byte, error) {
 	case http.StatusOK:
 		// fall through
 	case http.StatusNotFound:
-		return nil, ErrHFNotFound
+		return nil, ErrNotFound
 	case http.StatusTooManyRequests:
 		if os.Getenv("KRONK_HF_TOKEN") == "" {
-			return nil, fmt.Errorf("%w: HuggingFace is rate-limiting requests; set KRONK_HF_TOKEN to authenticate", ErrHFThrottled)
+			return nil, fmt.Errorf("%w: HuggingFace is rate-limiting requests; set KRONK_HF_TOKEN to authenticate", ErrThrottled)
 		}
-		return nil, fmt.Errorf("%w: HuggingFace is rate-limiting requests", ErrHFThrottled)
+		return nil, fmt.Errorf("%w: HuggingFace is rate-limiting requests", ErrThrottled)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, fmt.Errorf("hf-request: status %d for %s — set KRONK_HF_TOKEN", resp.StatusCode, u)
 	default:

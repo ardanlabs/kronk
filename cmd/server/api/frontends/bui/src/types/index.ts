@@ -50,9 +50,43 @@ export interface ModelDetail {
   slots: number;
   expires_at: string;
   active_streams: number;
+  status: string;
 }
 
 export type ModelDetailsResponse = ModelDetail[];
+
+export interface DeviceBudget {
+  index: number;
+  name: string;
+  type: string;
+  total_bytes: number;
+  budget_bytes: number;
+  used_bytes: number;
+}
+
+export interface ReservationDevice {
+  index: number;
+  name: string;
+  bytes: number;
+}
+
+export interface Reservation {
+  key: string;
+  vram_bytes: number;
+  ram_bytes: number;
+  per: ReservationDevice[];
+}
+
+export interface PoolBudgetResponse {
+  budget_percent: number;
+  headroom_bytes: number;
+  unified_memory: boolean;
+  ram_total: number;
+  ram_budget: number;
+  ram_used: number;
+  devices: DeviceBudget[];
+  reservations: Reservation[];
+}
 
 export interface ModelConfig {
   'context-window': number;
@@ -158,8 +192,14 @@ export interface VRAMInput {
   value_length: number;
   bytes_per_element: number;
   slots: number;
+  sliding_window?: number;
+  sliding_window_layers?: number;
   embedding_length?: number;
+  moe?: MoEInfo;
+  weights?: WeightBreakdown;
+  gpu_layers?: number;
   expert_layers_on_gpu?: number;
+  kv_cache_on_cpu?: boolean;
 }
 
 export interface MoEInfo {
@@ -187,14 +227,22 @@ export interface VRAM {
   model_weights_gpu?: number;
   model_weights_cpu?: number;
   compute_buffer_est?: number;
+  always_active_gpu_bytes?: number;
+  always_active_cpu_bytes?: number;
+  expert_gpu_bytes?: number;
+  expert_cpu_bytes?: number;
+  kv_vram_bytes?: number;
+  kv_cpu_bytes?: number;
+  total_system_ram_est?: number;
+  per_device?: PerDeviceVRAM[];
 }
 
 export interface PerDeviceVRAM {
   label: string;
-  weightsBytes: number;
-  kvBytes: number;
-  computeBytes: number;
-  totalBytes: number;
+  weights_bytes: number;
+  kv_bytes: number;
+  compute_bytes: number;
+  total_bytes: number;
 }
 
 // CatalogSummary is the per-entry shape returned by GET /v1/catalog. It
@@ -503,10 +551,19 @@ export interface ResolveSourceResponse {
 }
 
 export interface VRAMRequest {
-  model_url: string;
+  model_url?: string;
+  model_id?: string;
   context_window: number;
   bytes_per_element: number;
   slots: number;
+  gpu_layers?: number;
+  expert_layers_on_gpu?: number;
+  kv_cache_on_cpu?: boolean;
+  device_count?: number;
+  tensor_split?: number[];
+  auto_fit?: boolean;
+  gpu_free_bytes?: number[];
+  system_ram_bytes?: number;
 }
 
 export interface VRAMCalculatorResponse {
@@ -520,6 +577,14 @@ export interface VRAMCalculatorResponse {
   model_weights_gpu?: number;
   model_weights_cpu?: number;
   compute_buffer_est?: number;
+  always_active_gpu_bytes?: number;
+  always_active_cpu_bytes?: number;
+  expert_gpu_bytes?: number;
+  expert_cpu_bytes?: number;
+  kv_vram_bytes?: number;
+  kv_cpu_bytes?: number;
+  total_system_ram_est?: number;
+  per_device?: PerDeviceVRAM[];
   repo_files?: HFRepoFile[];
 }
 

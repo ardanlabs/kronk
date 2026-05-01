@@ -1,4 +1,27 @@
+import { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+
 export default function DocsSDKModel() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const container = document.querySelector('.main-content');
+    if (!container) return;
+    if (!location.hash) {
+      container.scrollTo({ top: 0 });
+      return;
+    }
+    const id = location.hash.slice(1);
+    requestAnimationFrame(() => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      const offset = elementRect.top - containerRect.top + container.scrollTop;
+      container.scrollTo({ top: offset - 20, behavior: 'smooth' });
+    });
+  }, [location.key, location.hash]);
+
   return (
     <div>
       <div className="page-header">
@@ -681,6 +704,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) ContextWindow() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-expertlayersongpu">
+              <h4>Config.ExpertLayersOnGPU</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) ExpertLayersOnGPU() int64</code>
+              </pre>
+              <p className="doc-description">ExpertLayersOnGPU translates the model's MoE configuration into the value the vram calculator expects so every prediction site (resman planner, post-load model logging, BUI display) reflects what llama.cpp will actually do at runtime. With no MoE override we mirror llama.cpp's default behavior: experts follow the layer they belong to, and full GPU offload puts every expert on the GPU. Without this resolution the calculator defaults experts to CPU even when the runtime puts them on GPU, producing the inverse of the placement that's actually loaded and silently under-accounting expert weight memory in the BUI VRAM column.</p>
             </div>
 
             <div className="doc-section" id="method-config-incrementalcache">
@@ -1371,6 +1402,14 @@ export default function DocsSDKModel() {
 )`}</code>
               </pre>
             </div>
+
+            <div className="doc-section" id="const-expertsallongpu">
+              <h4>ExpertsAllOnGPU</h4>
+              <pre className="code-block">
+                <code>{`const ExpertsAllOnGPU = int64(math.MaxInt32)`}</code>
+              </pre>
+              <p className="doc-description">ExpertsAllOnGPU is the sentinel value used for vram.Config.ExpertLayersOnGPU to request that every routed-expert layer be charged against GPU VRAM. The vram package treats any value greater than or equal to the model's block count as "all layers on GPU", so a large constant works regardless of model depth and avoids a metadata round-trip just to discover it.</p>
+            </div>
           </div>
         </div>
 
@@ -1437,6 +1476,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-cachemintokens">Config.CacheMinTokens</a></li>
                 <li><a href="#method-config-cacheslottimeout">Config.CacheSlotTimeout</a></li>
                 <li><a href="#method-config-contextwindow">Config.ContextWindow</a></li>
+                <li><a href="#method-config-expertlayersongpu">Config.ExpertLayersOnGPU</a></li>
                 <li><a href="#method-config-incrementalcache">Config.IncrementalCache</a></li>
                 <li><a href="#method-config-insecurelogging">Config.InsecureLogging</a></li>
                 <li><a href="#method-config-maingpu">Config.MainGPU</a></li>
@@ -1514,6 +1554,7 @@ export default function DocsSDKModel() {
                 <li><a href="#const-defadaptivepdecay">DefAdaptivePDecay</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
+                <li><a href="#const-expertsallongpu">ExpertsAllOnGPU</a></li>
               </ul>
             </div>
           </div>

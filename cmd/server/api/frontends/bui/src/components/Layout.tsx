@@ -22,6 +22,7 @@ interface MenuItem {
   page: Page;
   label: string;
   hash?: string;
+  children?: MenuItem[];
 }
 
 const menuStructure: MenuCategory[] = [
@@ -104,17 +105,20 @@ const menuStructure: MenuCategory[] = [
         items: [
           { page: 'docs-sdk-kronk', label: 'Kronk' },
           { page: 'docs-sdk-model', label: 'Model' },
-          { page: 'docs-sdk-examples', label: 'Examples' },
-          { page: 'docs-sdk-examples', label: 'Agent', hash: 'example-agent' },
-          { page: 'docs-sdk-examples', label: 'Audio', hash: 'example-audio' },
-          { page: 'docs-sdk-examples', label: 'Chat', hash: 'example-chat' },
-          { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
-          { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
-          { page: 'docs-sdk-examples', label: 'Question', hash: 'example-question' },
-          { page: 'docs-sdk-examples', label: 'Rag', hash: 'example-rag' },
-          { page: 'docs-sdk-examples', label: 'Rerank', hash: 'example-rerank' },
-          { page: 'docs-sdk-examples', label: 'Response', hash: 'example-response' },
-          { page: 'docs-sdk-examples', label: 'Vision', hash: 'example-vision' },
+          { page: 'docs-sdk-pool', label: 'Pool' },
+          { page: 'docs-sdk-examples', label: 'Examples', children: [
+            { page: 'docs-sdk-examples', label: 'Agent', hash: 'example-agent' },
+            { page: 'docs-sdk-examples', label: 'Audio', hash: 'example-audio' },
+            { page: 'docs-sdk-examples', label: 'Chat', hash: 'example-chat' },
+            { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
+            { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
+            { page: 'docs-sdk-examples', label: 'Pool', hash: 'example-pool' },
+            { page: 'docs-sdk-examples', label: 'Question', hash: 'example-question' },
+            { page: 'docs-sdk-examples', label: 'Rag', hash: 'example-rag' },
+            { page: 'docs-sdk-examples', label: 'Rerank', hash: 'example-rerank' },
+            { page: 'docs-sdk-examples', label: 'Response', hash: 'example-response' },
+            { page: 'docs-sdk-examples', label: 'Vision', hash: 'example-vision' },
+          ] },
         ],
       },
       {
@@ -335,10 +339,31 @@ export default function Layout({ children }: LayoutProps) {
     };
 
     const categoryPath = findCategoryPath(menuStructure, currentPage);
-    if (categoryPath.length > 0) {
+
+    // Find parent MenuItems (have children) whose page matches the current page.
+    const itemKeys: string[] = [];
+    const visitItems = (items?: MenuItem[]) => {
+      if (!items) return;
+      for (const it of items) {
+        if (it.children && it.page === currentPage && !it.hash) {
+          itemKeys.push(`menu-item:${it.page}`);
+        }
+        visitItems(it.children);
+      }
+    };
+    const visitCategories = (cats: MenuCategory[]) => {
+      for (const c of cats) {
+        visitItems(c.items);
+        if (c.subcategories) visitCategories(c.subcategories);
+      }
+    };
+    visitCategories(menuStructure);
+
+    if (categoryPath.length > 0 || itemKeys.length > 0) {
       setExpandedCategories((prev) => {
         const next = new Set(prev);
         categoryPath.forEach((id) => next.add(id));
+        itemKeys.forEach((k) => next.add(k));
         return next;
       });
     }
@@ -375,7 +400,35 @@ export default function Layout({ children }: LayoutProps) {
   const renderMenuItem = (item: MenuItem) => {
     const path = routeMap[item.page];
     const isActive = currentPage === item.page && !item.hash;
-    
+
+    if (item.children && item.children.length > 0) {
+      const itemKey = `menu-item:${item.page}${item.hash ? `#${item.hash}` : ''}`;
+      const isExpanded = expandedCategories.has(itemKey);
+      const target = item.hash ? `${path}#${item.hash}` : path;
+
+      const handleClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        toggleCategory(itemKey);
+        if (!isActive) navigate(target);
+      };
+
+      return (
+        <div key={itemKey} className="menu-item-group">
+          <a
+            href={target}
+            onClick={handleClick}
+            className={`menu-item menu-item-parent ${isActive ? 'active' : ''}`}
+          >
+            <span className="menu-item-label">{item.label}</span>
+            <span className={`menu-category-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
+          </a>
+          <div className={`menu-items menu-item-children ${isExpanded ? 'expanded' : ''}`}>
+            {item.children.map(renderMenuItem)}
+          </div>
+        </div>
+      );
+    }
+
     if (item.hash) {
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault();

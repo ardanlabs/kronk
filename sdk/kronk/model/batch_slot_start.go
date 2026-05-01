@@ -37,6 +37,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	if job.queueWaitSpan != nil {
 		job.queueWaitSpan.End()
 	}
+	if !job.queuedAt.IsZero() {
+		metrics.ObserveChatQueueWait(e.model.modelInfo.ID, time.Since(job.queuedAt))
+	}
 
 	// Start span for this chat request. Store the span context so child
 	// spans (prefill, token-generation) are nested under process-request.
@@ -73,13 +76,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	switch {
 	case e.model.cfg.IncrementalCache() && job.imcCacheHit:
 		// Snapshot session state under lock. With externalized KV, the
-		// session's kvState slice may be replaced by another goroutine's
-		// snapshot, so we must copy the slice header atomically.
+		// session's kvState slice header may be reset/regrown by another
+		// goroutine's eviction, so we must copy the slice header atomically.
 		var kvState []byte
 		if job.imcSession != nil {
 			e.model.cacheMu.RLock()
 			cacheIdx = llama.Pos(job.imcSession.totalTokensCached)
-			kvState = job.imcSession.kvState
+			kvState = job.imcSession.kvState.Bytes()
 			e.model.cacheMu.RUnlock()
 		}
 
@@ -149,7 +152,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				return
 			}
 
-			metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
+			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 
 			cacheIdx = llama.Pos(totalCached)
 
@@ -264,7 +267,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				return
 			}
 
-			metrics.AddPrefillTime(e.model.modelInfo.ID, time.Since(imcDecodeStart))
+			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 
@@ -301,29 +304,54 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 		snapshotStart := time.Now()
 
+		// Reuse the session's kvBuffer in place. Prepare returns a slice
+		// of length kvSize, reusing the existing backing array when its
+		// capacity is sufficient (the common case after the first turn)
+		// and allocating only when the conversation has grown beyond any
+		// previous peak. Per-session serialization (the pending flag and
+		// the imcSessions ownership model) guarantees no concurrent reader
+		// holds a reference to this buffer while we fill it.
+		//
+		// capBefore lets us log whether this snapshot grew the backing
+		// array (allocation) or reused it (zero allocation) — the central
+		// invariant we want to observe in production.
+		capBefore := job.imcSession.kvState.Cap()
+
 		e.model.decodeMu.Lock()
 		llama.Synchronize(e.model.lctx)
 		kvSize := llama.StateSeqGetSize(e.model.lctx, s.seqID)
-		kvBuf := make([]byte, kvSize)
+		kvBuf := job.imcSession.kvState.Prepare(int(kvSize))
 		nExtracted := llama.StateSeqGetData(e.model.lctx, kvBuf, s.seqID)
 		e.model.decodeMu.Unlock()
 
+		capAfter := job.imcSession.kvState.Cap()
+		bufAction := "reuse"
+		if capAfter > capBefore {
+			bufAction = "grow"
+		}
+
+		// Commit (or zero) the buffer length under cacheMu so concurrent
+		// readers (LRU snapshot scans, future requests matching this
+		// session) see a consistent length.
+		e.model.cacheMu.Lock()
+		job.imcSession.kvState.Commit(int(nExtracted))
+		e.model.cacheMu.Unlock()
+
 		if nExtracted > 0 {
-			kvBuf = kvBuf[:nExtracted]
-
-			e.model.cacheMu.Lock()
-			job.imcSession.kvState = kvBuf
-			job.imcSession.kvStateBytes = int(nExtracted)
-			e.model.cacheMu.Unlock()
-
 			e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-done",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"snapshot_bytes", fmtBytes(nExtracted), "kv_alloc", fmtBytes(kvSize),
+				"buf_action", bufAction,
+				"buf_cap_before", fmtBytes(uint64(capBefore)),
+				"buf_cap_after", fmtBytes(uint64(capAfter)),
 				"elapsed", fmtDur(time.Since(snapshotStart)))
 		} else {
 			e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-failed",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"kv_alloc", fmtBytes(kvSize),
+				"buf_action", bufAction,
+				"buf_cap_before", fmtBytes(uint64(capBefore)),
+				"buf_cap_after", fmtBytes(uint64(capAfter)),
 				"elapsed", fmtDur(time.Since(snapshotStart)))
 		}
 	}

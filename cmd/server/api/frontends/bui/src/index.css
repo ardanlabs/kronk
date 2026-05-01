@@ -480,6 +480,25 @@ input, select, textarea {
     padding-left: 68px;
 }
 
+/* A menu-item that has nested children (collapsible group). */
+.menu-item-parent {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.menu-item-parent .menu-item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Children of a parent menu-item nest one level deeper than their parent. */
+.submenu .menu-item-children .menu-item {
+    padding-left: 68px;
+}
+
 .main-content {
     flex: 1;
     padding: 30px 30px 20px 30px;

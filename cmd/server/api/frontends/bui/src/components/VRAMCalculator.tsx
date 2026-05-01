@@ -205,7 +205,12 @@ export default function VRAMCalculator() {
   const [lookupUrl, setLookupUrl] = useState('');
   const cachedKeyRef = useRef('');
 
-  const { controlsProps, resultsProps } = useVRAMState({ serverResponse: result, enableHardwareOverrides: true });
+  const { controlsProps, resultsProps } = useVRAMState({
+    serverResponse: result,
+    enableHardwareOverrides: true,
+    modelUrl: calculatedModelUrl || undefined,
+    authToken: token || undefined,
+  });
 
   const displayRows = useMemo(() => collapseRepoFiles(repoFiles), [repoFiles]);
 

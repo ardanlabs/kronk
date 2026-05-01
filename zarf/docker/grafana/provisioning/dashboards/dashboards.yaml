@@ -1,9 +1,16 @@
 apiVersion: 1
 
+# The kronk.json dashboard is the source of truth. Lock the provider so a
+# stray UI "Save" or "Delete" cannot drift the dashboard from what is
+# checked into the repo. Operators who want to experiment can still tweak
+# panels in the UI for the duration of a session; the next provisioning
+# poll will restore the file.
 providers:
   - name: dashboards
     type: file
     updateIntervalSeconds: 30
+    allowUiUpdates: false
+    disableDeletion: true
     options:
       path: /etc/dashboards
       foldersFromFilesStructure: true

@@ -148,6 +148,32 @@ export const PARAM_TOOLTIPS = {
   isGPT: 'Whether the model uses a GPT-style (causal, decoder-only) architecture. GPT models generate text left-to-right. Non-GPT models may be encoder-decoder or embedding models.',
   validated: 'Whether the model has been validated against the Kronk catalog. Validated models have confirmed-working configurations, templates, and recommended settings.',
 
+  // ── Pool / resource budget tooltips ──────────────────────────────────────
+  budgetPercent: 'Percentage of detected GPU VRAM and system RAM the pool is allowed to commit to loaded models. Reservations beyond this percentage trigger eviction of idle models. Default: 80%.',
+  budgetHeadroom: 'Per-GPU safety margin subtracted from each device\'s budget after the percentage is applied. Reserves a small cushion so the resman never hands out memory that would just-barely OOM under driver/compute-buffer overhead. Default: 256 MB.',
+  budgetDeviceTotal: 'Total physical memory the device reports. For GPUs this is dedicated VRAM; for the System RAM row this is the host\'s total RAM. On Apple Silicon (unified memory), the GPU shares this same pool.',
+  budgetDeviceBudget: 'How many bytes the resource manager will allow loaded models to consume on this device. Equals (Total × BudgetPercent / 100) − Headroom.',
+  budgetDeviceUsed: 'Currently reserved bytes on this device, summed across all live model reservations.',
+  budgetDevicePctOfBudget: 'Used ÷ Budget. Approaches 100% as more models are kept warm; passing 100% would have triggered eviction first.',
+  budgetDeviceFree: 'Bytes still available within the budget on this device. New models that exceed this trigger eviction of an idle model before loading.',
+  budgetReservationKey: 'Cache/reservation key. For catalog loads this is the model ID; playground sessions use modelID/playground/<session-id> so each session is tracked separately.',
+  budgetReservationTotal: 'Total bytes the resman has charged for this reservation, summed across VRAM and system memory. This is the number that counts against the overall budget.',
+  budgetReservationVRAM: 'Bytes charged against discrete GPU VRAM budgets. Zero on systems with no GPU and on Apple Silicon unified memory (where the GPU shares the system pool).',
+  budgetReservationSystem: 'Bytes charged against the system-memory budget. On unified-memory systems (Apple Silicon Metal) the entire model footprint is charged here because the GPU and CPU share one physical pool.',
+  budgetReservationPerDevice: 'Per-device byte allocation for this reservation. Populated when the reservation was split across multiple GPUs via tensor-split. Empty (—) when the reservation is on a single device or on system memory.',
+
+  // Running models grid tooltips
+  runningModelID: 'Cache key for the loaded model. Catalog models use the model ID directly; playground/custom sessions use modelID/playground/<session-id>.',
+  runningModelOwner: 'Publisher namespace from the model file path (e.g. unsloth, google, meta-llama).',
+  runningModelFamily: 'Model family / repo name as it appears in the catalog.',
+  runningModelSize: 'On-disk size of the GGUF file(s) backing this model.',
+  runningModelVRAMTotal: 'Predicted total memory footprint computed by CalculateVRAM: model weights + KV cache + estimated compute buffer. Hardware-agnostic — on Apple unified memory this same number lives in system RAM.',
+  runningModelKVCache: 'Memory consumed by the KV cache across all slots at the current context window and slot count.',
+  runningModelSlots: 'Number of parallel sequences (NSeqMax) configured for this model. Each slot can host one in-flight request.',
+  runningModelExpiresAt: 'Wall-clock time at which the pool will idle-evict this model unless it is touched again.',
+  runningModelActiveStreams: 'Number of in-flight chat/embed/rerank streams currently using this model. The pool refuses to evict a model with active streams.',
+  runningModelStatus: 'Lifecycle stage in the pool. "loaded" means the GGUF is open in llama.cpp and the model can serve requests. "loading" means the resource manager has reserved memory for the load but the GGUF is still being SHA-verified and read from disk; the model is not servable yet but the budget already accounts for it.',
+
   // Library bundles
   bundleArch: 'Target CPU architecture for this library bundle download (amd64 or arm64). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
   bundleOS: 'Target operating system for this library bundle download (linux, bookworm, trixie, darwin, windows). Each bundle lives in its own folder under the libraries root and does not replace the active install.',

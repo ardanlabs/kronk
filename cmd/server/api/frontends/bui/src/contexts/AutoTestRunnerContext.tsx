@@ -28,7 +28,6 @@ import {
 } from '../services/autoTestRunner';
 import { api } from '../services/api';
 import { saveCompletedRun } from '../services/autoTestHistory';
-import { calculateVRAM } from '../components/vram/calculate';
 
 function mergeLogEntries(
   prevLogs: AutoTestLogEntry[],
@@ -608,7 +607,8 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // VRAM estimation phase: compute estimated VRAM for each candidate.
+        // VRAM estimation phase: compute estimated VRAM for each candidate
+        // using the server's authoritative VRAM calculator.
         let filteredCandidates = configCandidates;
         let vramByCandidate: Map<ConfigCandidate, number> | undefined;
         try {
@@ -616,21 +616,30 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           const modelInfo = await api.showModel(sessionSeed.model_id);
           const vramInput = modelInfo.vram?.input;
           if (vramInput) {
-            const vramWeights = modelInfo.vram?.weights ?? null;
-            const vramMoE = modelInfo.vram?.moe ?? null;
             vramByCandidate = new Map();
-            for (const candidate of configCandidates) {
-              const input = { ...vramInput };
-              if (candidate['context_window'] !== undefined) input.context_window = candidate['context_window'];
-              if (candidate['nseq_max'] !== undefined) input.slots = candidate['nseq_max'];
-              if (candidate['cache_type'] !== undefined) {
-                if (candidate['cache_type'] === 'q8_0') input.bytes_per_element = 1;
-                else if (candidate['cache_type'] === 'q4_0') input.bytes_per_element = 0.5625;
-                else input.bytes_per_element = 2; // f16
+            const results = await Promise.all(configCandidates.map(async candidate => {
+              const ctxWindow = candidate['context_window'] ?? vramInput.context_window;
+              const slots = candidate['nseq_max'] ?? vramInput.slots;
+              let bpe = vramInput.bytes_per_element;
+              if (candidate['cache_type'] === 'q8_0') bpe = 1;
+              else if (candidate['cache_type'] === 'q4_0') bpe = 0.5625;
+              else if (candidate['cache_type'] !== undefined) bpe = 2; // f16
+              const expertLayers = candidate['moe_keep_experts_top_n'] ?? vramInput.expert_layers_on_gpu ?? 0;
+              try {
+                const resp = await api.calculateVRAM({
+                  model_id: sessionSeed.model_id,
+                  context_window: ctxWindow,
+                  bytes_per_element: bpe,
+                  slots,
+                  expert_layers_on_gpu: expertLayers,
+                });
+                return { candidate, total: resp.total_vram };
+              } catch {
+                return { candidate, total: undefined };
               }
-              const expertLayers = candidate['moe_keep_experts_top_n'] ?? input.expert_layers_on_gpu ?? 0;
-              const result = calculateVRAM(input, { weights: vramWeights, moe: vramMoE, expertLayersOnGPU: expertLayers });
-              vramByCandidate.set(candidate, result.totalVram);
+            }));
+            for (const r of results) {
+              if (r.total !== undefined) vramByCandidate.set(r.candidate, r.total);
             }
           }
         } catch {

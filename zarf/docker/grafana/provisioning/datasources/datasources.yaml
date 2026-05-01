@@ -4,8 +4,13 @@ deleteDatasources:
   - name: Tempo
     orgId: 1
 
+# Datasource UIDs are pinned so the kronk.json dashboard (which embeds
+# UIDs in every panel target) keeps working across fresh deployments
+# without manual fix-up. If you ever change a UID here, update the same
+# value in zarf/docker/grafana/dashboards/kronk.json.
 datasources:
   - name: Tempo
+    uid: P214B5B846CF3925F
     type: tempo
     url: http://tempo:3200
     access: proxy
@@ -29,6 +34,7 @@ datasources:
     version: 1
     editable: true
   - name: Prometheus
+    uid: PBFA97CFB590B2093
     type: prometheus
     url: http://prometheus:9090
     access: proxy
@@ -46,6 +52,7 @@ datasources:
     version: 1
     editable: true
   - name: Loki
+    uid: P8E80F9AEF21F6940
     type: loki
     access: proxy
     url: http://loki:3101

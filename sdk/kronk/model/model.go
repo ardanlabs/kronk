@@ -15,8 +15,10 @@ import (
 
 	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -44,8 +46,7 @@ type imcSession struct {
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
 	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
 	cachedMsgCount    int           // Number of messages cached
-	kvState           []byte        // Externalized KV cache state (RAM buffer); restored into any slot via StateSeqSetData
-	kvStateBytes      int           // Size of kvState in bytes (for byte-budgeted LRU eviction)
+	kvState           kvBuffer      // Externalized KV cache state (RAM buffer); restored into any slot via StateSeqSetData. Lazy-grow / never-shrink: backing array is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
 	lastUsed          time.Time     // Last access time (for eviction)
 	pending           bool          // True when a build/extend is in-flight (transitional: removed in Phase 4)
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
@@ -293,7 +294,20 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	modelInfo.VRAMTotal, modelInfo.SlotMemory = calculateVRAM(cfg, modelInfo)
+	var vramDiag string
+	modelInfo.VRAMTotal, modelInfo.SlotMemory, vramDiag = calculateVRAMDiag(cfg, modelInfo)
+
+	// The SDK-side calculation can return slot-memory=0 for architectures
+	// whose head_count_kv is stored as a per-layer ARRAY (notably
+	// gemma3/gemma4). llama.cpp's gguf_kv_to_str returns false for ARRAY
+	// values so those keys never make it into modelInfo.Metadata. The pool
+	// (and the BUI display path it feeds) overlays a more accurate value
+	// using sdk/tools/models.CalculateVRAM in that case.
+	l(ctx, "calculate-vram",
+		"vram-total", humanBytes(modelInfo.VRAMTotal),
+		"slot-memory", humanBytes(modelInfo.SlotMemory),
+		"diag", vramDiag,
+	)
 
 	metrics.SetVRAM(modelInfo.ID, modelInfo.VRAMTotal, modelInfo.SlotMemory)
 
@@ -816,152 +830,48 @@ func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, i
 	}
 }
 
-func calculateVRAM(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64) {
-	arch := mi.Metadata["general.architecture"]
-	if arch == "" {
-		return int64(mi.Size), 0
+// calculateVRAMDiag computes the predicted VRAM and KV-cache slot memory
+// for a loaded model. The third return value is a short diagnostic
+// describing which branch produced the result, intended for inclusion in
+// the calling log line so unexpected zero-KV results can be traced.
+//
+// The whole calculation — file size, tensor parsing, MoE weight
+// breakdown, KV cache, compute buffer — is delegated to
+// sdk/kronk/vram.FromFiles so this function and the resman planner's
+// tools/models.CalculateVRAM go through the exact same orchestrator.
+// Reading metadata directly from the GGUF (rather than from the
+// llama.cpp-populated ModelInfo.Metadata map) is what fixes hybrid
+// architectures like gemma3/gemma4 whose attention.head_count_kv is
+// stored as a per-layer ARRAY: llama.cpp's gguf_kv_to_str silently
+// drops ARRAY values, so any path that reads from ModelInfo.Metadata
+// will lose them. The SDK's own GGUF parser preserves them.
+func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory int64, diag string) {
+	if len(cfg.ModelFiles) == 0 {
+		return int64(mi.Size), 0, "missing model files"
 	}
 
-	blockCount, err := strconv.ParseInt(mi.Metadata[arch+".block_count"], 10, 64)
+	vramCfg := vram.Config{
+		ContextWindow:     int64(cfg.ContextWindow()),
+		BytesPerElement:   int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
+		Slots:             int64(max(cfg.NSeqMax(), 1)),
+		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
+	}
+
+	result, err := vram.FromFiles(cfg.ModelFiles, vramCfg)
 	if err != nil {
-		return int64(mi.Size), 0
+		return int64(mi.Size), 0, err.Error()
 	}
 
-	headCountKV, err := parseMetadataInt64OrArrayAvg(mi.Metadata, arch+".attention.head_count_kv")
-	if err != nil {
-		return int64(mi.Size), 0
-	}
+	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] swa_window[%d] swa_layers[%d]",
+		mi.Metadata["general.architecture"],
+		result.Input.BlockCount, result.Input.HeadCountKV,
+		result.Input.KeyLength, result.Input.ValueLength,
+		result.Input.BytesPerElement, result.Input.ContextWindow,
+		result.Input.Slots, result.Input.SlidingWindow,
+		result.Input.SlidingWindowLayers,
+	)
 
-	keyLength, valueLength, err := resolveKVLengths(mi.Metadata, arch)
-	if err != nil {
-		return int64(mi.Size), 0
-	}
-
-	bytesPerElement := ggmlTypeToBytes(cfg.CacheTypeK, cfg.CacheTypeV)
-
-	nSeqMax := int64(max(cfg.NSeqMax(), 1))
-
-	contextWindow := int64(cfg.ContextWindow())
-
-	kvPerTokenPerLayer := headCountKV * (keyLength + valueLength) * bytesPerElement
-	kvPerSlot := contextWindow * blockCount * kvPerTokenPerLayer
-	slotMemory = nSeqMax * kvPerSlot
-	vramTotal = int64(mi.Size) + slotMemory
-
-	return vramTotal, slotMemory
-}
-
-// resolveKVLengths returns key_length and value_length for VRAM calculation.
-// It first checks for explicit metadata keys. When those are missing (e.g.
-// audio models like Qwen2-Audio), it falls back to embedding_length / head_count
-// which is the same default llama.cpp uses internally.
-func resolveKVLengths(metadata map[string]string, arch string) (keyLen int64, valLen int64, err error) {
-	keyLen, keyErr := strconv.ParseInt(metadata[arch+".attention.key_length"], 10, 64)
-	valLen, valErr := strconv.ParseInt(metadata[arch+".attention.value_length"], 10, 64)
-
-	if keyErr == nil && valErr == nil {
-		return keyLen, valLen, nil
-	}
-
-	embLen, err := strconv.ParseInt(metadata[arch+".embedding_length"], 10, 64)
-	if err != nil {
-		return 0, 0, fmt.Errorf("resolve-kv-lengths: key_length and embedding_length both missing")
-	}
-
-	headCount, err := strconv.ParseInt(metadata[arch+".attention.head_count"], 10, 64)
-	if err != nil || headCount == 0 {
-		return 0, 0, fmt.Errorf("resolve-kv-lengths: key_length and head_count both missing")
-	}
-
-	derived := embLen / headCount
-
-	if keyErr != nil {
-		keyLen = derived
-	}
-	if valErr != nil {
-		valLen = derived
-	}
-
-	return keyLen, valLen, nil
-}
-
-// parseMetadataInt64OrArrayAvg parses a metadata value that may be either a
-// single integer (e.g. "8") or a per-layer array. Arrays produced by our own
-// GGUF parser are space-separated ("[0 0 8 ...]") while arrays surfaced by
-// llama.cpp's gguf_kv_to_str are comma-separated ("[0, 0, 8, ...]"); both are
-// accepted. For arrays, the average of all elements is returned. This handles
-// hybrid architectures like LFM2 and MoE Gemma where head_count_kv varies per
-// layer.
-func parseMetadataInt64OrArrayAvg(metadata map[string]string, key string) (int64, error) {
-	val, ok := metadata[key]
-	if !ok {
-		return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
-	}
-
-	if n, err := strconv.ParseInt(val, 10, 64); err == nil {
-		return n, nil
-	}
-
-	trimmed := strings.TrimSpace(val)
-	if !strings.HasPrefix(trimmed, "[") || !strings.HasSuffix(trimmed, "]") {
-		return 0, fmt.Errorf("parse-metadata-int64: unable to parse %q for key %q", val, key)
-	}
-
-	inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
-	if inner == "" {
-		return 0, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
-	}
-
-	splitFn := func(r rune) bool {
-		return r == ',' || r == ' ' || r == '\t' || r == '\n'
-	}
-	fields := strings.FieldsFunc(inner, splitFn)
-
-	var sum int64
-	var count int64
-	for _, f := range fields {
-		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
-		}
-		n, err := strconv.ParseInt(f, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("parse-metadata-int64: unable to parse array element %q for key %q: %w", f, key, err)
-		}
-		sum += n
-		count++
-	}
-
-	if count == 0 {
-		return 0, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
-	}
-
-	return sum / count, nil
-}
-
-func ggmlTypeToBytes(typeK, typeV GGMLType) int64 {
-	bytesK := ggmlBytes(typeK)
-	bytesV := ggmlBytes(typeV)
-
-	if bytesK > bytesV {
-		return bytesK
-	}
-	return bytesV
-}
-
-func ggmlBytes(t GGMLType) int64 {
-	switch t {
-	case GGMLTypeF32:
-		return 4
-	case GGMLTypeF16, GGMLTypeBF16:
-		return 2
-	case GGMLTypeQ8_0:
-		return 1
-	case GGMLTypeQ4_0, GGMLTypeQ4_1, GGMLTypeQ5_0, GGMLTypeQ5_1:
-		return 1
-	default:
-		return 2
-	}
+	return result.TotalVRAM, result.SlotMemory, diag
 }
 
 // resolveBackendDevice maps a user-facing device name to the ggml backend
@@ -1034,4 +944,26 @@ func parseTensorBuftOverrides(patterns []string) ([]llama.TensorBuftOverride, er
 	}
 	overrides = append(overrides, llama.TensorBuftOverride{}) // sentinel
 	return overrides, nil
+}
+
+// humanBytes formats a byte count using decimal (SI) units. Mirrors the
+// helper in sdk/pool to keep log output consistent.
+func humanBytes(n int64) string {
+	const unit = 1000
+	if n < unit {
+		return fmt.Sprintf("%dB", n)
+	}
+
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+
+	suffixes := []string{"KB", "MB", "GB", "TB", "PB"}
+	if exp >= len(suffixes) {
+		exp = len(suffixes) - 1
+	}
+
+	return fmt.Sprintf("%.1f%s", float64(n)/float64(div), suffixes[exp])
 }
