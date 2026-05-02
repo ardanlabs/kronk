@@ -65,6 +65,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">InitYzmaWorkarounds loads the mtmd library and preps our fixed FFI functions. This is safe to call multiple times; it only initializes once.</p>
             </div>
 
+            <div className="doc-section" id="func-registerprocessor">
+              <h4>RegisterProcessor</h4>
+              <pre className="code-block">
+                <code>func RegisterProcessor(f ProcessorFactory)</code>
+              </pre>
+              <p className="doc-description">RegisterProcessor appends a processor factory to the registry. Call once per processor at server bootstrap, before any models are loaded. Order matters: the catch-all processor (standard) must be registered last so the more specific processors get first chance to claim.</p>
+            </div>
+
             <div className="doc-section" id="func-newgrammarsampler">
               <h4>NewGrammarSampler</h4>
               <pre className="code-block">
@@ -86,6 +94,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func NewModel(ctx context.Context, cfg Config) (*Model, error)</code>
               </pre>
+              <p className="doc-description">NewModel loads a model from the GGUF files specified in cfg and returns a *Model ready to serve requests. It validates the configuration, builds llama.cpp model parameters, applies NUMA settings, performs the actual GGUF load (serialized via a process-wide mutex to guard the GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics, retrieves the chat template, and initializes the per-model runtime — either a context pool for embed/rerank models or a batch engine plus processor plugin and optional draft model for generation models. The returned *Model owns the underlying llama.Model, llama.Context, KV memory, batch engine, and (when configured) draft model; release them via Model.Unload when finished.</p>
             </div>
 
             <div className="doc-section" id="func-detectmodeltypefromfiles">
@@ -115,6 +124,14 @@ export default function DocsSDKModel() {
 
           <div className="card" id="types">
             <h3>Types</h3>
+
+            <div className="doc-section" id="type-channel">
+              <h4>Channel</h4>
+              <pre className="code-block">
+                <code>{`type Channel uint8`}</code>
+              </pre>
+              <p className="doc-description">Channel labels the semantic class of an emitted token, mapping 1:1 to the OpenAI chat/completions delta fields produced by the SSE writer.</p>
+            </div>
 
             <div className="doc-section" id="type-chatresponse">
               <h4>ChatResponse</h4>
@@ -269,6 +286,18 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">EmbedUsage provides token usage information for embeddings.</p>
+            </div>
+
+            <div className="doc-section" id="type-fingerprint">
+              <h4>Fingerprint</h4>
+              <pre className="code-block">
+                <code>{`type Fingerprint struct {
+	ChatTemplate string // raw jinja chat template
+	Architecture string // gguf "general.architecture" (e.g. "llama", "qwen2")
+	ModelName    string // gguf "general.name" (e.g. "Qwen3-Coder-30B-A3B")
+}`}</code>
+              </pre>
+              <p className="doc-description">Fingerprint carries the model metadata that processor selection logic inspects at Model.Load time.</p>
             </div>
 
             <div className="doc-section" id="type-flashattentiontype">
@@ -509,6 +538,36 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="type-processor">
+              <h4>Processor</h4>
+              <pre className="code-block">
+                <code>{`type Processor interface {
+	// Name returns the processor identifier (e.g. "standard", "gpt-oss").
+	// Used for logging and as the override key in model configs.
+	Name() string
+
+	// NewStateMachine returns a fresh per-slot state machine. Callers must
+	// not share StateMachine instances across slots.
+	NewStateMachine() StateMachine
+
+	// ParseToolCall parses the accumulated tool-call buffer into structured
+	// tool calls. Called once when generation finishes, never on the hot
+	// per-token path. The logger is used for repair/parse failures; tests
+	// may pass a no-op logger.
+	ParseToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
+}`}</code>
+              </pre>
+              <p className="doc-description">Processor is the plugin interface implemented by each model lineage. Implementations live in sdk/kronk/processors/&lt;name&gt;/ and are registered at startup via RegisterProcessor.</p>
+            </div>
+
+            <div className="doc-section" id="type-processorfactory">
+              <h4>ProcessorFactory</h4>
+              <pre className="code-block">
+                <code>{`type ProcessorFactory func(Fingerprint) (Processor, bool)`}</code>
+              </pre>
+              <p className="doc-description">ProcessorFactory is the constructor signature each processor package's New function satisfies. The bool return reports whether this processor claims the given Fingerprint; on false, the registry continues to the next factory.</p>
+            </div>
+
             <div className="doc-section" id="type-rerankresponse">
               <h4>RerankResponse</h4>
               <pre className="code-block">
@@ -584,6 +643,17 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="type-result">
+              <h4>Result</h4>
+              <pre className="code-block">
+                <code>{`type Result struct {
+	Channel Channel
+	Content string
+}`}</code>
+              </pre>
+              <p className="doc-description">Result is the per-token outcome returned by StateMachine.Process. Content may be empty when the token is a structural marker that has been fully consumed by the state machine (e.g. &lt;think&gt;, &lt;tool_call&gt;). When Content is non-empty, it is routed to the appropriate accumulator based on Channel.</p>
+            </div>
+
             <div className="doc-section" id="type-ropescalingtype">
               <h4>RopeScalingType</h4>
               <pre className="code-block">
@@ -598,6 +668,21 @@ export default function DocsSDKModel() {
                 <code>{`type SplitMode int32`}</code>
               </pre>
               <p className="doc-description">SplitMode controls how the model is split across multiple GPUs. This is particularly important for Mixture of Experts (MoE) models.</p>
+            </div>
+
+            <div className="doc-section" id="type-statemachine">
+              <h4>StateMachine</h4>
+              <pre className="code-block">
+                <code>{`type StateMachine interface {
+	// Process classifies a single decoded token's content and returns the
+	// Result plus whether the model has signaled end-of-generation.
+	Process(content string) (r Result, eog bool)
+
+	// Reset returns the state machine to its initial state for reuse.
+	Reset()
+}`}</code>
+              </pre>
+              <p className="doc-description">StateMachine is the per-request, per-slot streaming state machine. One instance is created per slot via Processor.NewStateMachine and reused across requests on that slot via Reset. Behavior is undefined if Process is called after a previous call returned eog=true. Callers must invoke Reset before reusing the state machine.</p>
             </div>
 
             <div className="doc-section" id="type-streamingresponselogger">
@@ -1421,6 +1506,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
+                <li><a href="#func-registerprocessor">RegisterProcessor</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -1432,6 +1518,7 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#types" className="doc-index-header">Types</a>
               <ul>
+                <li><a href="#type-channel">Channel</a></li>
                 <li><a href="#type-chatresponse">ChatResponse</a></li>
                 <li><a href="#type-choice">Choice</a></li>
                 <li><a href="#type-config">Config</a></li>
@@ -1441,6 +1528,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-embeddata">EmbedData</a></li>
                 <li><a href="#type-embedreponse">EmbedReponse</a></li>
                 <li><a href="#type-embedusage">EmbedUsage</a></li>
+                <li><a href="#type-fingerprint">Fingerprint</a></li>
                 <li><a href="#type-flashattentiontype">FlashAttentionType</a></li>
                 <li><a href="#type-ggmltype">GGMLType</a></li>
                 <li><a href="#type-logger">Logger</a></li>
@@ -1453,14 +1541,18 @@ export default function DocsSDKModel() {
                 <li><a href="#type-modeltype">ModelType</a></li>
                 <li><a href="#type-option">Option</a></li>
                 <li><a href="#type-params">Params</a></li>
+                <li><a href="#type-processor">Processor</a></li>
+                <li><a href="#type-processorfactory">ProcessorFactory</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
                 <li><a href="#type-rerankusage">RerankUsage</a></li>
                 <li><a href="#type-responsemessage">ResponseMessage</a></li>
                 <li><a href="#type-responsetoolcall">ResponseToolCall</a></li>
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
+                <li><a href="#type-result">Result</a></li>
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>
+                <li><a href="#type-statemachine">StateMachine</a></li>
                 <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>

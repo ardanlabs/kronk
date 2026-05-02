@@ -1,18 +1,24 @@
-package model
+package glm
 
-import "strings"
+import (
+	"strings"
 
-// parseGLMToolCall parses GLM-style tool calls with <arg_key>/<arg_value> tags.
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/google/uuid"
+)
+
+// parseGLM parses GLM-style tool calls with <arg_key>/<arg_value> tags.
 // Format: get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>
-func parseGLMToolCall(content string) []ResponseToolCall {
-	var toolCalls []ResponseToolCall
+//
+// Direct port of the legacy parseGLMToolCall.
+func parseGLM(content string) []model.ResponseToolCall {
+	var toolCalls []model.ResponseToolCall
 
 	for call := range strings.SplitSeq(content, "\n") {
 		if call == "" {
 			continue
 		}
 
-		// Find the function name (everything before the first <arg_key>)
 		argKeyIdx := strings.Index(call, "<arg_key>")
 		if argKeyIdx == -1 {
 			continue
@@ -21,7 +27,6 @@ func parseGLMToolCall(content string) []ResponseToolCall {
 		name := strings.TrimSpace(call[:argKeyIdx])
 		args := make(map[string]any)
 
-		// Parse all <arg_key>...</arg_key><arg_value>...</arg_value> pairs
 		remaining := call[argKeyIdx:]
 		for {
 			keyStart := strings.Index(remaining, "<arg_key>")
@@ -52,10 +57,10 @@ func parseGLMToolCall(content string) []ResponseToolCall {
 			remaining = remaining[valEnd+12:]
 		}
 
-		toolCalls = append(toolCalls, ResponseToolCall{
+		toolCalls = append(toolCalls, model.ResponseToolCall{
 			ID:   newToolCallID(),
 			Type: "function",
-			Function: ResponseToolCallFunction{
+			Function: model.ResponseToolCallFunction{
 				Name:      name,
 				Arguments: args,
 			},
@@ -63,4 +68,8 @@ func parseGLMToolCall(content string) []ResponseToolCall {
 	}
 
 	return toolCalls
+}
+
+func newToolCallID() string {
+	return "call_" + uuid.NewString()
 }

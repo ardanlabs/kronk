@@ -174,13 +174,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					"bytes", len(content), "content", content)
 			}
 
-			switch {
-			case e.model.modelInfo.IsGPTModel:
-				s.respToolCalls = s.proc.parseGPTToolCall(content)
-
-			default:
-				s.respToolCalls = s.proc.parseToolCall(content)
-			}
+			s.respToolCalls = e.model.processor.ParseToolCall(ctx, e.model.log, content)
 
 			// Validate parsed tool call arguments produce valid JSON.
 			for i, tc := range s.respToolCalls {

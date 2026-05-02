@@ -1,247 +1,107 @@
 package model
 
 import (
-	"fmt"
-	"strings"
+	"context"
 
-	"github.com/google/uuid"
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 )
+
+// =============================================================================
+// Processor Plugin Contract
+//
+// A processor plugin teaches the model server how a particular model lineage
+// (Qwen, GPT-OSS, Mistral, Gemma, GLM, …) emits two kinds of structured
+// content during streaming generation:
+//
+//  1. Reasoning vs answer vs tool-call content (per-token classification),
+//     surfaced through the StateMachine interface.
+//
+//  2. Final tool-call payloads (parsed once at end-of-stream from the
+//     accumulated tool-call buffer), surfaced through ParseToolCall.
+//
+// A single Processor implementation is selected at Model.Load() based on
+// the chat template, architecture, and model name. The selected plugin
+// lives on *Model for the lifetime of the model and is safe for concurrent
+// use across slots — except for NewStateMachine, which returns a fresh,
+// slot-owned state machine on every call.
+//
+// Plugins live under sdk/kronk/processors/<name>/ and are wired into the
+// model package via RegisterProcessor at server bootstrap (no init()
+// registration — every processor is explicitly enumerated at startup).
+// =============================================================================
+
+// Channel labels the semantic class of an emitted token, mapping 1:1 to the
+// OpenAI chat/completions delta fields produced by the SSE writer.
+type Channel uint8
 
 const (
-	statusNone       = 0
-	statusReasoning  = 1
-	statusCompletion = 2
-	statusTooling    = 3
+	// ChannelNone indicates a structural marker the caller should not
+	// surface in either content or tool-call output. The token is still
+	// counted toward the slot's output-token total.
+	ChannelNone Channel = iota
+
+	// ChannelReasoning content is accumulated into the response's
+	// reasoning_content field and streamed as reasoning deltas.
+	ChannelReasoning
+
+	// ChannelAnswer content is accumulated into the response's content
+	// field and streamed as content deltas.
+	ChannelAnswer
+
+	// ChannelTool content is accumulated into the slot's tool-call buffer
+	// and parsed once via ParseToolCall when generation finishes.
+	ChannelTool
 )
 
-type response struct {
-	status  int
-	content string
+// Result is the per-token outcome returned by StateMachine.Process.
+//
+// Content may be empty when the token is a structural marker that has been
+// fully consumed by the state machine (e.g. <think>, <tool_call>). When
+// Content is non-empty, it is routed to the appropriate accumulator based on
+// Channel.
+type Result struct {
+	Channel Channel
+	Content string
 }
 
-type processor struct {
-	model           *Model
-	status          int
-	collecting      bool
-	awaitingChannel bool
+// StateMachine is the per-request, per-slot streaming state machine. One
+// instance is created per slot via Processor.NewStateMachine and reused
+// across requests on that slot via Reset.
+//
+// Behavior is undefined if Process is called after a previous call returned
+// eog=true. Callers must invoke Reset before reusing the state machine.
+type StateMachine interface {
+	// Process classifies a single decoded token's content and returns the
+	// Result plus whether the model has signaled end-of-generation.
+	Process(content string) (r Result, eog bool)
 
-	// For accumulating tool call content across tokens (batch engine use).
-	toolCallBuf  strings.Builder
-	inToolCall   bool
-	toolCallDone bool // Set after </tool_call> or <tool_call|>; next non-tool-call token triggers EOG.
-
-	// For GPT models: accumulate channel name tokens and handle <|constrain|>.
-	channelBuf        strings.Builder
-	awaitingConstrain bool
-	toolFuncName      string // Function name extracted from "to=NAME" in channel
-
-	// For detecting split tags like "<function=" across multiple tokens.
-	// Some models (Qwen3-Coder variants) emit <function=...> directly without
-	// the <tool_call> wrapper, and the tag may be tokenized as "<", "function", "=".
-	pendingTagBuf strings.Builder
-	inPendingTag  bool
+	// Reset returns the state machine to its initial state for reuse.
+	Reset()
 }
 
-func newProcessor(m *Model) *processor {
-	return &processor{
-		model:  m,
-		status: statusCompletion,
-	}
+// Processor is the plugin interface implemented by each model lineage.
+// Implementations live in sdk/kronk/processors/<name>/ and are registered
+// at startup via RegisterProcessor.
+type Processor interface {
+	// Name returns the processor identifier (e.g. "standard", "gpt-oss").
+	// Used for logging and as the override key in model configs.
+	Name() string
+
+	// NewStateMachine returns a fresh per-slot state machine. Callers must
+	// not share StateMachine instances across slots.
+	NewStateMachine() StateMachine
+
+	// ParseToolCall parses the accumulated tool-call buffer into structured
+	// tool calls. Called once when generation finishes, never on the hot
+	// per-token path. The logger is used for repair/parse failures; tests
+	// may pass a no-op logger.
+	ParseToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
 }
 
-func newToolCallID() string {
-	return "call_" + uuid.NewString()
-}
-
-// =============================================================================
-// Step methods for batch engine (no llama calls - pure state machine)
-// =============================================================================
-
-// stepStandard processes a single token for standard models without calling llama.
-// This is used by the batch engine where decode/sample happens externally.
-// Returns (response, endOfGeneration).
-func (p *processor) stepStandard(content string) (response, bool) {
-	// Handle pending tag accumulation for detecting split tags like "<function=".
-	if p.inPendingTag {
-		p.pendingTagBuf.WriteString(content)
-		accumulated := p.pendingTagBuf.String()
-
-		// Check if we've accumulated enough to detect <function=.
-		if strings.HasPrefix(accumulated, "<function=") {
-			// Found the pattern. Enter tool call mode and start accumulating.
-			p.inPendingTag = false
-			p.pendingTagBuf.Reset()
-			p.status = statusTooling
-			p.inToolCall = true
-			p.toolCallBuf.Reset()
-			p.toolCallBuf.WriteString(accumulated)
-			return response{}, false
-		}
-
-		// Check if it's definitely not going to be <function=.
-		if !strings.HasPrefix("<function=", accumulated) {
-			// Flush accumulated content as normal output.
-			p.inPendingTag = false
-			p.pendingTagBuf.Reset()
-			return response{status: p.status, content: accumulated}, false
-		}
-
-		// Still a prefix match, continue accumulating.
-		return response{}, false
-	}
-
-	// Handle tool call accumulation mode.
-	if p.inToolCall {
-		switch content {
-		case "<tool_call>", "<|tool_call>":
-			// Nested or repeated tag, skip.
-			return response{}, false
-
-		case "</tool_call>", "<tool_call|>":
-			// End of one tool call block. Check if we have accumulated content.
-			toolContent := strings.Trim(p.toolCallBuf.String(), "\n")
-			if toolContent != "" {
-				toolContent = fmt.Sprintf("%s\n", toolContent)
-			}
-
-			p.toolCallBuf.Reset()
-			p.inToolCall = false
-			p.toolCallDone = true
-
-			// Stay in tool call mode in case there are more tool calls.
-			// The next token will be checked by the toolCallDone guard:
-			// another <|tool_call> continues, anything else triggers EOG.
-			return response{status: statusTooling, content: toolContent}, false
-
-		case "[TOOL_CALLS]":
-			// Another tool call starting - flush buffer and start new accumulation.
-			p.toolCallBuf.Reset()
-			p.toolCallBuf.WriteString("[TOOL_CALLS]")
-			return response{}, false
-
-		default:
-			// Check if we're accumulating Mistral format (no closing tag).
-			buf := p.toolCallBuf.String()
-			if strings.HasPrefix(buf, "[TOOL_CALLS]") {
-				// Mistral format: accumulate and stream to finalTooling.
-				p.toolCallBuf.WriteString(content)
-				return response{status: statusTooling, content: content}, false
-			}
-
-			// Standard format: accumulate in buffer only.
-			p.toolCallBuf.WriteString(content)
-
-			// Check if we've completed a function call (models that skip </tool_call>).
-			accumulated := p.toolCallBuf.String()
-			if strings.HasSuffix(strings.TrimSpace(accumulated), "</function>") {
-				toolContent := strings.Trim(accumulated, "\n")
-				if toolContent != "" {
-					toolContent = fmt.Sprintf("%s\n", toolContent)
-				}
-
-				p.toolCallBuf.Reset()
-				p.inToolCall = false
-				p.toolCallDone = true
-
-				return response{status: statusTooling, content: toolContent}, false
-			}
-
-			return response{}, false
-		}
-	}
-
-	// After a tool call closes, only allow another tool call opener.
-	// Anything else (reasoning, text, etc.) means the model is done.
-	if p.toolCallDone {
-		switch content {
-		case "<tool_call>", "<|tool_call>":
-			p.toolCallDone = false
-			p.inToolCall = true
-			p.toolCallBuf.Reset()
-			return response{}, false
-		default:
-			p.toolCallDone = false
-			return response{}, true // EOG — stop generation after tool call(s).
-		}
-	}
-
-	// Handle Gemma4 channel: swallow the channel name token (e.g. "thought")
-	// that follows <|channel>, then stream content as reasoning until <channel|>.
-	if p.awaitingChannel {
-		p.awaitingChannel = false
-		p.status = statusReasoning
-		return response{}, false
-	}
-
-	// Normal token processing.
-	switch content {
-	case "<think>":
-		p.status = statusReasoning
-		return response{}, false
-
-	case "</think>", "<channel|>":
-		p.status = statusCompletion
-		return response{}, false
-
-	case "<|channel>":
-		p.awaitingChannel = true
-		return response{}, false
-
-	case "<tool_call>", "<|tool_call>":
-		p.status = statusTooling
-		p.inToolCall = true
-		p.toolCallBuf.Reset()
-		return response{}, false
-
-	case "<tool_call|>", "<|tool_response>", "<tool_response|>":
-		// Gemma4 structural markers outside of tool call accumulation; skip.
-		return response{}, false
-
-	case "[TOOL_CALLS]":
-		// Mistral/Devstral format: [TOOL_CALLS]name[ARGS]{...}
-		// Stream the marker to finalTooling for parsing at EOG.
-		p.status = statusTooling
-		p.inToolCall = true
-		p.toolCallBuf.Reset()
-		p.toolCallBuf.WriteString("[TOOL_CALLS]")
-		return response{status: statusTooling, content: "[TOOL_CALLS]"}, false
-
-	default:
-		// Check for start of <function= pattern (may be split across tokens).
-		if content == "<" || strings.HasPrefix(content, "<f") || strings.HasPrefix(content, "<function") {
-			if strings.HasPrefix(content, "<function=") {
-				// Complete tag in one token, enter tool call mode directly.
-				p.status = statusTooling
-				p.inToolCall = true
-				p.toolCallBuf.Reset()
-				p.toolCallBuf.WriteString(content)
-				return response{}, false
-			}
-
-			// Could be start of <function=, start accumulating.
-			if strings.HasPrefix("<function=", content) {
-				p.inPendingTag = true
-				p.pendingTagBuf.Reset()
-				p.pendingTagBuf.WriteString(content)
-				return response{}, false
-			}
-		}
-
-		return response{status: p.status, content: content}, false
-	}
-}
-
-// resetState resets the processor state for reuse in a new slot.
-func (p *processor) resetState() {
-	p.status = statusCompletion
-	p.collecting = false
-	p.awaitingChannel = false
-	p.toolCallBuf.Reset()
-	p.inToolCall = false
-	p.toolCallDone = false
-	p.channelBuf.Reset()
-	p.awaitingConstrain = false
-	p.toolFuncName = ""
-	p.inPendingTag = false
-	p.pendingTagBuf.Reset()
+// Fingerprint carries the model metadata that processor selection logic
+// inspects at Model.Load time.
+type Fingerprint struct {
+	ChatTemplate string // raw jinja chat template
+	Architecture string // gguf "general.architecture" (e.g. "llama", "qwen2")
+	ModelName    string // gguf "general.name" (e.g. "Qwen3-Coder-30B-A3B")
 }

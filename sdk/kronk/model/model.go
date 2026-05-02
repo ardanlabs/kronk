@@ -111,9 +111,22 @@ type Model struct {
 	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
 	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
 	pool              *contextPool  // Context pool for parallel embed/rerank
+	processor         Processor     // Selected via selectProcessor at load time; nil for embed/rerank.
 	draft             *draftModel   // Draft model for speculative decoding
 }
 
+// NewModel loads a model from the GGUF files specified in cfg and returns
+// a *Model ready to serve requests. It validates the configuration, builds
+// llama.cpp model parameters, applies NUMA settings, performs the actual
+// GGUF load (serialized via a process-wide mutex to guard the
+// GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics,
+// retrieves the chat template, and initializes the per-model runtime —
+// either a context pool for embed/rerank models or a batch engine plus
+// processor plugin and optional draft model for generation models.
+//
+// The returned *Model owns the underlying llama.Model, llama.Context, KV
+// memory, batch engine, and (when configured) draft model; release them
+// via Model.Unload when finished.
 func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l := cfg.Log
 	if cfg.Log == nil {
@@ -128,20 +141,135 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		return nil, fmt.Errorf("validate-config: unable to validate config: %w", err)
 	}
 
-	mParams := llama.ModelDefaultParams()
+	// -------------------------------------------------------------------------
 
-	deviceNames := cfg.Devices
+	mParams, ka, err := buildModelParams(ctx, &cfg, l)
+	if err != nil {
+		return nil, err
+	}
 
-	var devicesBuf []llama.GGMLBackendDevice
-	if len(deviceNames) > 0 {
-		resolved, err := resolveBackendDevices(deviceNames)
+	applyNUMA(ctx, cfg, l)
+
+	// -------------------------------------------------------------------------
+
+	mdl, loadDuration, err := loadModelWithEnvGuard(ctx, l, cfg, mParams, ka)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg = adjustConfig(cfg, mdl)
+	modelInfo := toModelInfo(cfg, mdl)
+
+	metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
+
+	// -------------------------------------------------------------------------
+
+	var vramDiag string
+	modelInfo.VRAMTotal, modelInfo.SlotMemory, vramDiag = calculateVRAMDiag(cfg, modelInfo)
+
+	// The SDK-side calculation can return slot-memory=0 for architectures
+	// whose head_count_kv is stored as a per-layer ARRAY (notably
+	// gemma3/gemma4). llama.cpp's gguf_kv_to_str returns false for ARRAY
+	// values so those keys never make it into modelInfo.Metadata. The pool
+	// (and the BUI display path it feeds) overlays a more accurate value
+	// using sdk/tools/models.CalculateVRAM in that case.
+	l(ctx, "calculate-vram",
+		"vram-total", humanBytes(modelInfo.VRAMTotal),
+		"slot-memory", humanBytes(modelInfo.SlotMemory),
+		"diag", vramDiag,
+	)
+
+	metrics.SetVRAM(modelInfo.ID, modelInfo.VRAMTotal, modelInfo.SlotMemory)
+
+	template, err := retrieveTemplate(cfg, mdl)
+	if err != nil {
+		llama.ModelFree(mdl)
+		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
+	}
+
+	modelInfo.Template = template
+
+	// Check if model metadata specifies to add BOS token.
+	// Default to true for backward compatibility with models that don't specify.
+	addBOSToken := true
+	if v, ok := modelInfo.Metadata["tokenizer.ggml.add_bos_token"]; ok && v == "false" {
+		addBOSToken = false
+	}
+
+	// -------------------------------------------------------------------------
+
+	ctxParams := modelCtxParams(cfg, modelInfo)
+
+	l(ctx, "MODEL-INFO", "values", modelInfo.String(), "addBOSToken", addBOSToken)
+	l(ctx, "MODEL-CONFIG", "values", cfg.String())
+
+	logMoEConfig(ctx, cfg, l)
+	logContextParamsTrace(ctx, ctxParams, l)
+
+	// -------------------------------------------------------------------------
+
+	m := Model{
+		cfg:         cfg,
+		log:         l,
+		model:       mdl,
+		vocab:       llama.ModelGetVocab(mdl),
+		ctxParams:   ctxParams,
+		template:    template,
+		projFile:    cfg.ProjFile,
+		modelInfo:   modelInfo,
+		addBOSToken: addBOSToken,
+	}
+
+	// Initialize either context pool (for embed/rerank) or batch engine (for generation).
+	// Embed/rerank models use a pool of contexts for parallel processing.
+	// Generation models use the batch engine with a primary context.
+	nSlots := max(cfg.NSeqMax(), 1)
+
+	switch {
+	case modelInfo.IsEmbedModel || modelInfo.IsRerankModel:
+		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
 		if err != nil {
-			return nil, fmt.Errorf("resolve-devices: %w", err)
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("new-context-pool: unable to create context pool: %w", err)
+		}
+		m.pool = pool
+
+	default:
+		if err := initGenerationRuntime(ctx, &m, nSlots); err != nil {
+			llama.ModelFree(mdl)
+			return nil, err
+		}
+	}
+
+	return &m, nil
+}
+
+// modelParamsKeepalive holds backing buffers that the C side of llama.cpp
+// reads via pointer during ModelLoadFromFile. They must outlive the load
+// call; the caller passes this to loadModelWithEnvGuard which holds the
+// references via runtime.KeepAlive across the load.
+type modelParamsKeepalive struct {
+	devices     []llama.GGMLBackendDevice
+	tensorSplit []float32
+	tensorBuft  []llama.TensorBuftOverride
+}
+
+// buildModelParams translates Config into llama.ModelParams. It mutates
+// cfg.TensorBuftOverrides when MoE compilation produces an implicit override
+// list, so the caller passes cfg by pointer to keep that change visible.
+func buildModelParams(ctx context.Context, cfg *Config, l applog.Logger) (llama.ModelParams, modelParamsKeepalive, error) {
+	mParams := llama.ModelDefaultParams()
+	var ka modelParamsKeepalive
+
+	if len(cfg.Devices) > 0 {
+		resolved, err := resolveBackendDevices(cfg.Devices)
+		if err != nil {
+			return mParams, ka, fmt.Errorf("resolve-devices: %w", err)
 		}
 		if err := mParams.SetDevices(resolved); err != nil {
-			return nil, fmt.Errorf("set-devices: %w", err)
+			return mParams, ka, fmt.Errorf("set-devices: %w", err)
 		}
-		devicesBuf = resolved
+		ka.devices = resolved
 	}
 
 	// llama.cpp has a -1 default for loading all layers into the GPU
@@ -173,11 +301,10 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	// TensorSplit: proportional distribution of layers across multiple GPUs.
-	var tensorSplitBuf []float32
 	if len(cfg.TensorSplit) > 0 {
-		tensorSplitBuf = make([]float32, len(cfg.TensorSplit))
-		copy(tensorSplitBuf, cfg.TensorSplit)
-		mParams.TensorSplit = &tensorSplitBuf[0]
+		ka.tensorSplit = make([]float32, len(cfg.TensorSplit))
+		copy(ka.tensorSplit, cfg.TensorSplit)
+		mParams.TensorSplit = &ka.tensorSplit[0]
 	}
 
 	// Compile MoEConfig into TensorBuftOverrides if applicable.
@@ -211,16 +338,15 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	// TensorBuftOverrides: force specific tensors to run on CPU.
-	var tensorBuftBuf []llama.TensorBuftOverride
 	if len(cfg.TensorBuftOverrides) > 0 {
 		overrides, err := parseTensorBuftOverrides(cfg.TensorBuftOverrides)
 		if err != nil {
-			return nil, fmt.Errorf("tensor-buft-overrides: %w", err)
+			return mParams, ka, fmt.Errorf("tensor-buft-overrides: %w", err)
 		}
 		if err := mParams.SetTensorBufOverrides(overrides); err != nil {
-			return nil, fmt.Errorf("set-tensor-buft-overrides: %w", err)
+			return mParams, ka, fmt.Errorf("set-tensor-buft-overrides: %w", err)
 		}
-		tensorBuftBuf = overrides
+		ka.tensorBuft = overrides
 	}
 
 	// UseMMap: controls mmap for model loading.
@@ -233,31 +359,39 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		}
 	}
 
-	// NUMA strategy: must be called once before model loading.
-	if cfg.NUMA != "" {
-		var numaStrategy llama.NumaStrategy
-		switch cfg.NUMA {
-		case NUMADistribute:
-			numaStrategy = llama.NumaStrategyDistribute
-		case NUMAIsolate:
-			numaStrategy = llama.NumaStrategyIsolate
-		case NUMANumactl:
-			numaStrategy = llama.NumaStrategyNumactl
-		case NUMAMirror:
-			numaStrategy = llama.NumaStrategyMirror
-		}
-		llama.NumaInit(numaStrategy)
-		l(ctx, "NUMA", "strategy", cfg.NUMA)
+	return mParams, ka, nil
+}
+
+// applyNUMA initializes the llama.cpp NUMA strategy. NUMA init must happen
+// once before any model load.
+func applyNUMA(ctx context.Context, cfg Config, l applog.Logger) {
+	if cfg.NUMA == "" {
+		return
 	}
 
-	// -------------------------------------------------------------------------
+	var numaStrategy llama.NumaStrategy
+	switch cfg.NUMA {
+	case NUMADistribute:
+		numaStrategy = llama.NumaStrategyDistribute
+	case NUMAIsolate:
+		numaStrategy = llama.NumaStrategyIsolate
+	case NUMANumactl:
+		numaStrategy = llama.NumaStrategyNumactl
+	case NUMAMirror:
+		numaStrategy = llama.NumaStrategyMirror
+	}
+	llama.NumaInit(numaStrategy)
+	l(ctx, "NUMA", "strategy", cfg.NUMA)
+}
 
-	// Set/unset GGML_OP_OFFLOAD_MIN_BATCH before model load.
-	// This env var is read by the llama.cpp C library at load time.
-	// Use a mutex to prevent concurrent model loads from racing on the env var.
-	// Save and restore the previous value so subsequent loads (e.g., draft model)
-	// are not unintentionally affected.
+// loadModelWithEnvGuard performs the actual GGUF load while serializing the
+// process-level GGML_OP_OFFLOAD_MIN_BATCH env var so concurrent loads (e.g.
+// target + draft) do not race. The previous env value is saved and restored
+// so unrelated callers are unaffected. The keepalive struct keeps the
+// param-backing buffers alive across the C call.
+func loadModelWithEnvGuard(ctx context.Context, l applog.Logger, cfg Config, mParams llama.ModelParams, ka modelParamsKeepalive) (llama.Model, time.Duration, error) {
 	modelLoadMu.Lock()
+	defer modelLoadMu.Unlock()
 
 	prevOffloadMinBatch, hadOffloadMinBatch := os.LookupEnv("GGML_OP_OFFLOAD_MIN_BATCH")
 	if cfg.OpOffloadMinBatch() > 0 {
@@ -266,92 +400,55 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	} else {
 		os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
 	}
+	defer func() {
+		if hadOffloadMinBatch {
+			os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", prevOffloadMinBatch)
+		} else {
+			os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
+		}
+	}()
 
 	loadStart := time.Now()
-
 	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mParams)
-	runtime.KeepAlive(devicesBuf)
-	runtime.KeepAlive(tensorSplitBuf)
-	runtime.KeepAlive(tensorBuftBuf)
-
-	if hadOffloadMinBatch {
-		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", prevOffloadMinBatch)
-	} else {
-		os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
-	}
-	modelLoadMu.Unlock()
+	runtime.KeepAlive(ka.devices)
+	runtime.KeepAlive(ka.tensorSplit)
+	runtime.KeepAlive(ka.tensorBuft)
 
 	if err != nil {
-		return nil, fmt.Errorf("load-model-from-files: unable to load model: %w", err)
+		return 0, 0, fmt.Errorf("load-model-from-files: unable to load model: %w", err)
 	}
 
-	loadDuration := time.Since(loadStart)
+	return mdl, time.Since(loadStart), nil
+}
 
-	cfg = adjustConfig(cfg, mdl)
-	modelInfo := toModelInfo(cfg, mdl)
+// logMoEConfig emits a single MOE-CONFIG line summarizing the effective MoE
+// settings. Skipped for unconfigured/auto modes since there is nothing
+// meaningful to report.
+func logMoEConfig(ctx context.Context, cfg Config, l applog.Logger) {
+	if cfg.MoE == nil || cfg.MoE.Mode == "" || cfg.MoE.Mode == MoEModeAuto {
+		return
+	}
 
-	metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
+	topN := 0
+	if cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
+		topN = *cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers
+	}
 
-	// -------------------------------------------------------------------------
+	overrides := cfg.TensorBuftOverrides
+	if overrides == nil {
+		overrides = []string{}
+	}
 
-	var vramDiag string
-	modelInfo.VRAMTotal, modelInfo.SlotMemory, vramDiag = calculateVRAMDiag(cfg, modelInfo)
-
-	// The SDK-side calculation can return slot-memory=0 for architectures
-	// whose head_count_kv is stored as a per-layer ARRAY (notably
-	// gemma3/gemma4). llama.cpp's gguf_kv_to_str returns false for ARRAY
-	// values so those keys never make it into modelInfo.Metadata. The pool
-	// (and the BUI display path it feeds) overlays a more accurate value
-	// using sdk/tools/models.CalculateVRAM in that case.
-	l(ctx, "calculate-vram",
-		"vram-total", humanBytes(modelInfo.VRAMTotal),
-		"slot-memory", humanBytes(modelInfo.SlotMemory),
-		"diag", vramDiag,
+	l(ctx, "MOE-CONFIG",
+		"mode", string(cfg.MoE.Mode),
+		"experts_on_gpu_layers", topN,
+		"overrides_applied", fmt.Sprintf("%v", overrides),
 	)
+}
 
-	metrics.SetVRAM(modelInfo.ID, modelInfo.VRAMTotal, modelInfo.SlotMemory)
-
-	template, err := retrieveTemplate(cfg, mdl)
-	if err != nil {
-		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
-	}
-
-	modelInfo.Template = template
-
-	// Check if model metadata specifies to add BOS token.
-	// Default to true for backward compatibility with models that don't specify.
-	addBOSToken := true
-	if v, ok := modelInfo.Metadata["tokenizer.ggml.add_bos_token"]; ok && v == "false" {
-		addBOSToken = false
-	}
-
-	// -------------------------------------------------------------------------
-
-	ctxParams := modelCtxParams(cfg, modelInfo)
-
-	l(ctx, "MODEL-INFO", "values", modelInfo.String(), "addBOSToken", addBOSToken)
-
-	l(ctx, "MODEL-CONFIG", "values", cfg.String())
-
-	// Log effective MoE configuration for debugging.
-	if cfg.MoE != nil && cfg.MoE.Mode != "" && cfg.MoE.Mode != MoEModeAuto {
-		topN := 0
-		if cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
-			topN = *cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers
-		}
-
-		overrides := cfg.TensorBuftOverrides
-		if overrides == nil {
-			overrides = []string{}
-		}
-
-		l(ctx, "MOE-CONFIG",
-			"mode", string(cfg.MoE.Mode),
-			"experts_on_gpu_layers", topN,
-			"overrides_applied", fmt.Sprintf("%v", overrides),
-		)
-	}
-
+// logContextParamsTrace emits the multi-line LLAMA-CONTEXT-PARAMS dump used
+// for post-load diagnostics.
+func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l applog.Logger) {
 	faName := "unknown"
 	switch ctxParams.FlashAttentionType {
 	case llama.FlashAttentionTypeAuto:
@@ -372,89 +469,92 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		ctxParams.RopeFreqBase, ctxParams.RopeFreqScale, ctxParams.RopeScalingType,
 		ctxParams.SwaFull, typeKName, typeVName, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
 		ctxParams.YarnBetaSlow, ctxParams.YarnExtFactor, ctxParams.YarnOrigCtx))
+}
 
-	// -------------------------------------------------------------------------
-
-	m := Model{
-		cfg:         cfg,
-		log:         l,
-		model:       mdl,
-		vocab:       llama.ModelGetVocab(mdl),
-		ctxParams:   ctxParams,
-		template:    template,
-		projFile:    cfg.ProjFile,
-		modelInfo:   modelInfo,
-		addBOSToken: addBOSToken,
+// initGenerationRuntime wires up the generation-only runtime: primary llama
+// context, KV memory, IMC sessions, family plugin, batch engine, and the
+// optional draft model for speculative decoding. On error the helper frees
+// any partial state it created, but leaves m.model for the caller to free.
+func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
+	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
+	if err != nil {
+		return fmt.Errorf("init-from-model: unable to init context: %w", err)
 	}
 
-	// Initialize either context pool (for embed/rerank) or batch engine (for generation).
-	// Embed/rerank models use a pool of contexts for parallel processing.
-	// Generation models use the batch engine with a primary context.
-	nSlots := max(cfg.NSeqMax(), 1)
+	mem, err := llama.GetMemory(lctx)
+	if err != nil {
+		llama.Free(lctx)
+		return fmt.Errorf("get-memory: unable to get memory: %w", err)
+	}
 
-	switch {
-	case modelInfo.IsEmbedModel || modelInfo.IsRerankModel:
-		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
-		if err != nil {
-			llama.ModelFree(mdl)
-			return nil, fmt.Errorf("new-context-pool: unable to create context pool: %w", err)
+	llama.MemoryClear(mem, true)
+
+	m.lctx = lctx
+	m.mem = mem
+
+	// Initialize IMC sessions (one per slot). Transitional: sessions are
+	// currently slot-indexed. Future phases will decouple from slots.
+	if m.cfg.IncrementalCache() {
+		m.imcSessions = make([]*imcSession, nSlots)
+		for i := range nSlots {
+			m.imcSessions[i] = &imcSession{
+				slotID: i,
+				seqID:  llama.SeqId(i),
+			}
 		}
-		m.pool = pool
+		m.cacheCond = sync.NewCond(&m.cacheMu)
+	}
 
-	default:
-		// Generation models need a primary context for the batch engine.
-		lctx, err := llama.InitFromModel(mdl, ctxParams)
-		if err != nil {
-			llama.ModelFree(mdl)
-			return nil, fmt.Errorf("init-from-model: unable to init context: %w", err)
-		}
+	// Select the processor plugin once at load time. The selected
+	// processor lives on *Model for the lifetime of the model and
+	// provides the per-slot state machine and tool-call parser used by
+	// the batch engine. Embed/rerank models do not reach this branch,
+	// so m.processor stays nil for them.
+	fp := Fingerprint{
+		ChatTemplate: m.template.Script,
+		Architecture: m.modelInfo.Metadata["general.architecture"],
+		ModelName:    m.modelInfo.ID,
+	}
 
-		mem, err := llama.GetMemory(lctx)
+	m.log(ctx, "select-processor",
+		"status", "fingerprint",
+		"model", fp.ModelName,
+		"arch", fp.Architecture,
+		"template-len", len(fp.ChatTemplate),
+	)
+
+	m.processor = selectProcessor(fp)
+
+	if m.processor == nil {
+		llama.Free(lctx)
+		return fmt.Errorf("select-processor: no processor registered for %q (call kronk.registerDefaultProcessors or model.RegisterProcessor(standard.New) at bootstrap)", m.modelInfo.ID)
+	}
+
+	m.log(ctx, "select-processor",
+		"status", "selected",
+		"model", fp.ModelName,
+		"processor", m.processor.Name(),
+	)
+
+	m.batch = newBatchEngine(m, nSlots)
+	m.batch.start(ctx)
+
+	// Initialize draft model for speculative decoding if configured.
+	if m.cfg.DraftModel != nil {
+		draft, err := loadDraftModel(ctx, m.log, m.cfg, m.model, m.ctxParams)
 		if err != nil {
+			m.batch.stop(ctx)
+			m.batch.freeBatch()
 			llama.Free(lctx)
-			llama.ModelFree(mdl)
-			return nil, fmt.Errorf("get-memory: unable to get memory: %w", err)
+			return fmt.Errorf("load-draft-model: %w", err)
 		}
-
-		llama.MemoryClear(mem, true)
-
-		m.lctx = lctx
-		m.mem = mem
-
-		// Initialize IMC sessions (one per slot). Transitional: sessions are
-		// currently slot-indexed. Future phases will decouple from slots.
-		if cfg.IncrementalCache() {
-			m.imcSessions = make([]*imcSession, nSlots)
-			for i := range nSlots {
-				m.imcSessions[i] = &imcSession{
-					slotID: i,
-					seqID:  llama.SeqId(i),
-				}
-			}
-			m.cacheCond = sync.NewCond(&m.cacheMu)
-		}
-
-		m.batch = newBatchEngine(&m, nSlots)
-		m.batch.start(ctx)
-
-		// Initialize draft model for speculative decoding if configured.
-		if cfg.DraftModel != nil {
-			draft, err := loadDraftModel(ctx, l, cfg, mdl, ctxParams)
-			if err != nil {
-				m.batch.stop(ctx)
-				m.batch.freeBatch()
-				llama.Free(lctx)
-				llama.ModelFree(mdl)
-				return nil, fmt.Errorf("load-draft-model: %w", err)
-			}
-			m.draft = draft
-			l(ctx, "draft-model", "status", "loaded",
-				"nDraft", draft.nDraft, "devices", cfg.DraftModel.Devices,
-				"nCtx", llama.NCtx(draft.lctx))
-		}
+		m.draft = draft
+		m.log(ctx, "draft-model", "status", "loaded",
+			"nDraft", draft.nDraft, "devices", m.cfg.DraftModel.Devices,
+			"nCtx", llama.NCtx(draft.lctx))
 	}
 
-	return &m, nil
+	return nil
 }
 
 // loadDraftModel loads the draft model for speculative decoding. It creates

@@ -1,28 +1,28 @@
-package model
+package standard
 
 import (
 	"context"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/jsonrepair"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/google/uuid"
 )
 
-// parseJSONToolCall parses tool calls in standard JSON format.
-// Format: {"name":"get_weather", "arguments":{"location":"NYC"}}
-func (p *processor) parseJSONToolCall(content string) []ResponseToolCall {
-	var toolCalls []ResponseToolCall
+// parseJSON parses a sequence of JSON tool-call objects.
+// Format: {"name":"get_weather","arguments":{"location":"NYC"}}
+func parseJSON(ctx context.Context, log applog.Logger, content string) []model.ResponseToolCall {
+	var toolCalls []model.ResponseToolCall
 
 	remaining := content
 	for len(remaining) > 0 {
-		// Skip leading whitespace and newlines.
 		remaining = strings.TrimLeft(remaining, " \t\n\r")
 		if len(remaining) == 0 {
 			break
 		}
 
-		// Find the start of a JSON object.
 		if remaining[0] != '{' {
-			// Skip non-JSON content until we find '{' or run out.
 			idx := strings.Index(remaining, "{")
 			if idx == -1 {
 				break
@@ -30,24 +30,24 @@ func (p *processor) parseJSONToolCall(content string) []ResponseToolCall {
 			remaining = remaining[idx:]
 		}
 
-		// Find the end of this JSON object.
 		jsonEnd := findJSONObjectEnd(remaining)
 		if jsonEnd == -1 {
-			// Malformed JSON - try to parse what's left.
 			jsonEnd = len(remaining)
 		}
 
 		call := remaining[:jsonEnd]
 		remaining = remaining[jsonEnd:]
 
-		toolCall := ResponseToolCall{
+		toolCall := model.ResponseToolCall{
 			ID:   newToolCallID(),
 			Type: "function",
 		}
 
 		if err := jsonrepair.Unmarshal(call, &toolCall.Function); err != nil {
-			p.model.log(context.Background(), "jsonrepair", "status", "unmarshal-failed",
-				"format", "json", "error", err, "json", call)
+			if log != nil {
+				log(ctx, "jsonrepair", "status", "unmarshal-failed",
+					"format", "json", "error", err, "json", call)
+			}
 			toolCall.Status = 2
 			toolCall.Error = err.Error()
 			toolCall.Raw = call
@@ -63,11 +63,10 @@ func (p *processor) parseJSONToolCall(content string) []ResponseToolCall {
 	return toolCalls
 }
 
-// findJSONObjectEnd finds the end of a JSON object starting at the beginning of s.
-// Returns the index after the closing brace, or -1 if not found.
+// findJSONObjectEnd finds the end of a JSON object starting at the beginning
+// of s. Returns the index after the closing brace, or -1 if not found.
 func findJSONObjectEnd(s string) int {
 	if len(s) == 0 || s[0] != '{' {
-		// Try to find the start of JSON object.
 		idx := strings.Index(s, "{")
 		if idx == -1 {
 			return -1
@@ -84,21 +83,17 @@ func findJSONObjectEnd(s string) int {
 			escape = false
 			continue
 		}
-
 		if c == '\\' && inString {
 			escape = true
 			continue
 		}
-
 		if c == '"' {
 			inString = !inString
 			continue
 		}
-
 		if inString {
 			continue
 		}
-
 		switch c {
 		case '{':
 			depth++
@@ -111,4 +106,8 @@ func findJSONObjectEnd(s string) int {
 	}
 
 	return -1
+}
+
+func newToolCallID() string {
+	return "call_" + uuid.NewString()
 }
