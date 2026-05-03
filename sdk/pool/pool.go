@@ -33,9 +33,11 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 // Defaults to defaultBudgetPercent (80) when zero. This is the primary
 // admission knob.
 //
-// ModelsInCache: A hard upper bound on the number of distinct entries the
-// pool will keep, regardless of budget. Used as a safety net to keep TTL
-// eviction predictable; defaults to 32 when zero.
+// ModelsInCache: Safety-net cap on the number of distinct entries the pool
+// will keep, independent of the byte budget. Defaults to 10 when zero. The
+// default is set higher than typical concurrent use (1-3 models) so the
+// budget remains the primary admission knob; lower it on small systems
+// where you want a tighter hard ceiling on resident models.
 //
 // CacheTTL: Defines the time an existing model can live in the pool without
 // being used. Defaults to 5 minutes if the value is 0.
@@ -60,7 +62,7 @@ type Config struct {
 // Default config values applied when the corresponding field is zero.
 const (
 	defaultBudgetPercent = 80
-	defaultModelsInCache = 32
+	defaultModelsInCache = 10
 	defaultCacheTTL      = 5 * time.Minute
 )
 

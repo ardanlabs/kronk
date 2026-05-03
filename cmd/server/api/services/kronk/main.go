@@ -109,7 +109,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Cache struct {
 			ModelConfigFile string
 			BudgetPercent   int           `conf:"default:80"`
-			ModelsInCache   int           `conf:"default:32"`
+			ModelsInCache   int           `conf:"default:10"`
 			TTL             time.Duration `conf:"default:20m"`
 		}
 		BasePath        string

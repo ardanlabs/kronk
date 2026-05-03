@@ -57,6 +57,7 @@ replaced by underscores:
 ```
 --api-host        →  KRONK_WEB_API_HOST
 --budget-percent  →  KRONK_CACHE_BUDGET_PERCENT
+--models-in-cache →  KRONK_CACHE_MODELS_IN_CACHE
 --cache-ttl       →  KRONK_CACHE_TTL
 --processor       →  KRONK_PROCESSOR
 --hf-token        →  KRONK_HF_TOKEN
@@ -144,6 +145,7 @@ underscores replacing hyphens.
 | --------------------- | ------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- |
 | `--model-config-file` | `KRONK_CACHE_MODEL_CONFIG_FILE` | `<base>/model_config.yaml`    | Path to per-model configuration overrides. Defaults to the file under your `--base-path`.           |
 | `--budget-percent`    | `KRONK_CACHE_BUDGET_PERCENT`    | `80`                          | Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See [Section 7.5](#75-resource-manager). |
+| `--models-in-cache`   | `KRONK_CACHE_MODELS_IN_CACHE`   | `10`                          | Safety-net cap on the number of distinct models kept loaded, regardless of budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models. |
 | `--cache-ttl`         | `KRONK_CACHE_TTL`               | `20m`                         | How long an unused model stays loaded                                                               |
 
 **Runtime Settings**
@@ -181,11 +183,17 @@ The server maintains a pool of loaded models to avoid reload latency.
 ```shell
 kronk server start \
   --budget-percent=80 \
+  --models-in-cache=10 \
   --cache-ttl=20m
 ```
 
 - `budget-percent` - Percentage (1..100) of detected GPU VRAM and system RAM
   the resource manager may commit to loaded models (default: 80)
+- `models-in-cache` - Safety-net cap on the number of distinct models kept
+  loaded, regardless of budget (default: 10). The default is set higher than
+  typical concurrent use (1-3 models) so the budget remains the primary
+  admission knob; lower it on small systems where you want a tighter hard
+  ceiling on resident models.
 - `cache-ttl` - How long an unused model stays loaded (default: 20m)
 
 When a new model is requested and admitting it would exceed the budget,
@@ -248,6 +256,15 @@ coldest idle (no active streams) model in the cache, waits for its
 unload to release the reservation, and retries. If every loaded model
 has active streams, the request fails with `server busy: all model
 slots have active requests` and the client should retry later.
+
+**ModelsInCache safety-net cap**
+
+`--models-in-cache` (default `10`) is a hard upper bound on the number
+of distinct entries the pool will keep, independent of the byte budget.
+The default is set higher than typical concurrent use (1-3 models) so
+the budget remains the primary admission knob in normal operation. It
+exists so operators on small systems — or anyone debugging cache churn
+— can pin the maximum number of resident models with a single integer.
 
 **Inspecting current usage**
 
