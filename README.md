@@ -86,7 +86,11 @@ Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about
 
 The Kronk SDK allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
 
-![api arch](./images/design/sdk.png?v1)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./images/project/sdk-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./images/project/sdk-light.png">
+  <img alt="Kronk SDK Architecture" src="./images/project/sdk-light.png">
+</picture>
 
 Check out the [examples](#examples) section below.
 

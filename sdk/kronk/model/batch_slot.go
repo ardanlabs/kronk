@@ -73,13 +73,13 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Identity & Lifecycle
 
-	id     int           // Slot index within the batch engine
-	seqID  llama.SeqId   // KV cache sequence ID for this slot
-	seqIDs []llama.SeqId // Pre-allocated slice for batch.Add calls
-	job    *chatJob      // Current request being processed
-	active bool          // True when slot is processing a request
-	span   trace.Span    // OpenTelemetry span for request tracing
-	proc   *processor    // Response processor for content streaming
+	id           int           // Slot index within the batch engine
+	seqID        llama.SeqId   // KV cache sequence ID for this slot
+	seqIDs       []llama.SeqId // Pre-allocated slice for batch.Add calls
+	job          *chatJob      // Current request being processed
+	active       bool          // True when slot is processing a request
+	span         trace.Span    // OpenTelemetry span for request tracing
+	stateMachine StateMachine  // Per-slot state machine; created from m.processor.NewStateMachine()
 
 	// -------------------------------------------------------------------------
 	// Sampling
@@ -226,7 +226,7 @@ func (s *slot) reset() {
 	s.useMRoPE = false
 	s.useNonCausal = false
 
-	if s.proc != nil {
-		s.proc.resetState()
+	if s.stateMachine != nil {
+		s.stateMachine.Reset()
 	}
 }

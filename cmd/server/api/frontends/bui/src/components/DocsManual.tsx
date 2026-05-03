@@ -142,7 +142,7 @@ export default function DocsManual() {
           </ul>
           <h3 id="14-architecture-overview">1.4 Architecture Overview</h3>
           <p>Kronk is designed as a layered architecture where the SDK provides all core functionality and the Model Server is one application built on top of it.</p>
-          <p><img src="https://github.com/ardanlabs/kronk/blob/main/images/design/sdk.png?raw=true" alt="Kronk SDK Architecture" /></p>
+          <p><picture> <source media="(prefers-color-scheme: dark)" srcSet="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-dark.png?raw=true" /> <source media="(prefers-color-scheme: light)" srcSet="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-light.png?raw=true" /> <img alt="Kronk SDK Architecture" src="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-light.png?raw=true" /> </picture></p>
           <p><strong>Layer Breakdown:</strong></p>
           <table className="flags-table">
             <thead>
@@ -2932,6 +2932,7 @@ kronk libs --local`}</code></pre>
           <p>Every command-line flag has a corresponding environment variable. The naming convention is <code>KRONK_</code> followed by the flag name in uppercase with hyphens replaced by underscores:</p>
           <pre className="code-block"><code>{`--api-host        →  KRONK_WEB_API_HOST
 --budget-percent  →  KRONK_CACHE_BUDGET_PERCENT
+--models-in-cache →  KRONK_CACHE_MODELS_IN_CACHE
 --cache-ttl       →  KRONK_CACHE_TTL
 --processor       →  KRONK_PROCESSOR
 --hf-token        →  KRONK_HF_TOKEN`}</code></pre>
@@ -3097,6 +3098,12 @@ kronk libs --local`}</code></pre>
                 <td>Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See <a href="#75-resource-manager">Section 7.5</a>.</td>
               </tr>
               <tr>
+                <td><code>--models-in-cache</code></td>
+                <td><code>KRONK_CACHE_MODELS_IN_CACHE</code></td>
+                <td><code>10</code></td>
+                <td>Safety-net cap on the number of distinct models kept loaded, regardless of budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models.</td>
+              </tr>
+              <tr>
                 <td><code>--cache-ttl</code></td>
                 <td><code>KRONK_CACHE_TTL</code></td>
                 <td><code>20m</code></td>
@@ -3189,9 +3196,11 @@ kronk libs --local`}</code></pre>
           <p><strong>Configuration</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --budget-percent=80 \\
+  --models-in-cache=10 \\
   --cache-ttl=20m`}</code></pre>
           <ul>
             <li><code>budget-percent</code> - Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models (default: 80)</li>
+            <li><code>models-in-cache</code> - Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 10). The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models.</li>
             <li><code>cache-ttl</code> - How long an unused model stays loaded (default: 20m)</li>
           </ul>
           <p>When a new model is requested and admitting it would exceed the budget, the resource manager evicts the coldest idle model in the pool to free room. If no idle model can be evicted (every loaded model has active streams), the request returns <code>server busy</code>. See <a href="#75-resource-manager">Section 7.5</a> for the full admission and eviction model.</p>
@@ -3216,6 +3225,8 @@ kronk libs --local`}</code></pre>
           <p>The VRAM prediction uses standard transformer metadata (<code>block_count</code>, <code>attention.head_count_kv</code>, key/value lengths) to size the KV cache and compute buffers. Some embedding/reranking models — notably BERT-derived rerankers — don't expose those keys in their GGUF metadata. For those models the manager falls back to charging the raw on-disk file size against the budget. This is a conservative under-estimate but is enough to gate concurrent loads.</p>
           <p><strong>Eviction on a busy pool</strong></p>
           <p>When a load is admitted but no headroom remains, the pool evicts the coldest idle (no active streams) model in the cache, waits for its unload to release the reservation, and retries. If every loaded model has active streams, the request fails with <code>server busy: all model slots have active requests</code> and the client should retry later.</p>
+          <p><strong>ModelsInCache safety-net cap</strong></p>
+          <p><code>--models-in-cache</code> (default <code>10</code>) is a hard upper bound on the number of distinct entries the pool will keep, independent of the byte budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob in normal operation. It exists so operators on small systems — or anyone debugging cache churn — can pin the maximum number of resident models with a single integer.</p>
           <p><strong>Inspecting current usage</strong></p>
           <p>The pool emits structured <code>resman-init</code> and <code>resman-usage</code> log lines on startup and after every reserve/release, including per-GPU <code>used/budget/free</code> and <code>ram-used/ram-budget</code>. These are the easiest way to confirm the manager is reasoning about the right hardware.</p>
           <h3 id="76-model-config-files">7.6 Model Config Files</h3>

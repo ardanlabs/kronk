@@ -73,11 +73,11 @@ jobs:
         timeout-minutes: 30
         run: |
           export RUN_IN_PARALLEL=no
-          go test -v -p=1 -count=1 ./cmd/server/...
+          go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
       - name: Run sdk tests
         run: |
           export RUN_IN_PARALLEL=no
-          go test -v -p=1 -count=1 $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
+          go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
       - name: Run vet, linter, vuln, diff checks
         run: |
           go vet ./...

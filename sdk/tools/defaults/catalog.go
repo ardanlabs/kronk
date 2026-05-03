@@ -13,7 +13,7 @@ var catalogFS embed.FS
 
 const (
 	// catalogDirName is the per-user catalog directory under BaseDir.
-	// It owns catalog.yaml and the gguf_cache/ subdirectory.
+	// It owns catalog.yaml.
 	catalogDirName = "catalog"
 
 	// catalogFileName is the on-disk YAML filename inside catalogDirName.
@@ -22,10 +22,6 @@ const (
 	// embeddedCatalogPath is the path inside catalogFS, which mirrors
 	// the //go:embed directive above.
 	embeddedCatalogPath = "yaml/catalog.yaml"
-
-	// ggufCacheDirName is the subdirectory of catalogDirName that holds
-	// raw GGUF head bytes per <provider>/<family>/<modelID>.gguf.
-	ggufCacheDirName = "gguf_cache"
 )
 
 // CatalogFile returns the path to the catalog.yaml file. If no override is
@@ -72,28 +68,4 @@ func CatalogFile(override string, basePath string) (string, error) {
 	}
 
 	return target, nil
-}
-
-// GGUFCacheDir returns ~/.kronk/catalog/gguf_cache/, creating it (and the
-// parent catalog directory) on demand.
-func GGUFCacheDir(basePath string) (string, error) {
-	basePath = BaseDir(basePath)
-	dir := filepath.Join(basePath, catalogDirName, ggufCacheDirName)
-
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("gguf-cache-dir: %w", err)
-	}
-
-	return dir, nil
-}
-
-// EmbeddedCatalog returns the embedded default catalog.yaml content. Useful
-// for callers that need the seed bytes without writing them to disk.
-func EmbeddedCatalog() ([]byte, error) {
-	data, err := catalogFS.ReadFile(embeddedCatalogPath)
-	if err != nil {
-		return nil, fmt.Errorf("embedded-catalog: %w", err)
-	}
-
-	return data, nil
 }

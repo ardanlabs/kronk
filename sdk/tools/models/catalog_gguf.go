@@ -107,14 +107,10 @@ func (m *Models) RemoveGGUFHeadCache(provider, family, modelID string) error {
 // =============================================================================
 
 // ggufCacheFile returns the absolute path to the cache file for a single
-// catalog entry. Creates parent directories on demand.
+// catalog entry. Creates parent directories on demand. The cache lives at
+// <basePath>/catalog/gguf_cache/<provider>/<family>/<modelID>.gguf.
 func ggufCacheFile(basePath, provider, family, modelID string) (string, error) {
-	dir, err := defaults.GGUFCacheDir(basePath)
-	if err != nil {
-		return "", err
-	}
-
-	familyDir := filepath.Join(dir, provider, family)
+	familyDir := filepath.Join(defaults.BaseDir(basePath), "catalog", "gguf_cache", provider, family)
 	if err := os.MkdirAll(familyDir, 0755); err != nil {
 		return "", fmt.Errorf("gguf-cache-file: mkdir: %w", err)
 	}

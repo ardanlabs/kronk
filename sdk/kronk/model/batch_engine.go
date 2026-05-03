@@ -42,20 +42,22 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	nCtx := llama.NCtx(m.lctx)
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
-	// Initialize slots.
+	// Initialize slots. Each slot owns a state machine instance produced
+	// by the model's processor plugin. State machines are stateful
+	// per-slot — never share one across slots.
 	slots := make([]*slot, nSlots)
 	for i := range slots {
 		seqID := llama.SeqId(i)
 		slots[i] = &slot{
-			id:         i,
-			seqID:      seqID,
-			seqIDs:     []llama.SeqId{seqID}, // Pre-allocate for batchAdd
-			specAccEMA: 1.0,                  // Start optimistic for adaptive draft sizing
-			proc:       newProcessor(m),
+			id:           i,
+			seqID:        seqID,
+			seqIDs:       []llama.SeqId{seqID}, // Pre-allocate for batchAdd
+			specAccEMA:   1.0,                  // Start optimistic for adaptive draft sizing
+			stateMachine: m.processor.NewStateMachine(),
 		}
 	}
 
-	e := &batchEngine{
+	e := batchEngine{
 		model:      m,
 		nSlots:     nSlots,
 		slots:      slots,
@@ -75,7 +77,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		m.log(context.Background(), "batch-engine", "status", "mrope-batch-alloc", "nbatch", nBatch)
 	}
 
-	return e
+	return &e
 }
 
 // start begins the batch processing loop.

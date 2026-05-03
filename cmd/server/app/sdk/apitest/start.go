@@ -127,7 +127,7 @@ func New(t *testing.T, testName string) *Test {
 		t.Fatal(err)
 	}
 
-	if err := models.BuildIndex(log.Info, true); err != nil {
+	if err := models.BuildIndex(log.Info, false); err != nil {
 		t.Fatal(err)
 	}
 

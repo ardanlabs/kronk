@@ -29,7 +29,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// the output format, so free-form thinking is counterproductive and
 	// would consume max_tokens before producing any constrained content.
 	if strings.HasSuffix(job.prompt, "<think>\n") && job.params.Grammar == "" {
-		s.proc.status = statusReasoning
+		// Drive the state machine into reasoning mode by feeding the same
+		// marker the model would have emitted. Processors that recognize
+		// <think> (standard, qwen, mistral, glm) flip to ChannelReasoning;
+		// processors that don't (gemma, gpt) treat it as content — but
+		// those processors do not produce a "<think>\n" suffix in the
+		// prompt, so this branch never runs for them.
+		s.stateMachine.Process("<think>")
 		s.reasonFlag = 1
 	}
 
