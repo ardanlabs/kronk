@@ -12,7 +12,7 @@ import (
 // processSlotToken samples and processes a token for a slot.
 func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	// Sample the next token. If grammar is active, use grammar-aware sampling
-	// but only when the processor is in the completion phase. During the
+	// but only when the parser is in the completion phase. During the
 	// reasoning phase (<think>...</think>), grammar constraints would corrupt
 	// the thinking tokens and prevent the model from closing the think block.
 	var token llama.Token
@@ -125,7 +125,7 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 
 	// If no complete UTF-8 codepoints are ready, count the token using the
 	// current flags (partial bytes can't trigger a state transition) and skip
-	// the processor and streaming.
+	// the parser and streaming.
 	if len(content) == 0 {
 		switch {
 		case s.reasonFlag > 0:
@@ -145,8 +145,8 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		return
 	}
 
-	// Process through the processor-plugin state machine.
-	result, eog := s.stateMachine.Process(content)
+	// Classify through the parser-plugin state machine.
+	result, eog := s.stateMachine.Classify(content)
 
 	if eog {
 		e.finishSlot(s, nil)

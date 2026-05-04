@@ -65,12 +65,12 @@ export default function DocsSDKModel() {
               <p className="doc-description">InitYzmaWorkarounds loads the mtmd library and preps our fixed FFI functions. This is safe to call multiple times; it only initializes once.</p>
             </div>
 
-            <div className="doc-section" id="func-registerprocessor">
-              <h4>RegisterProcessor</h4>
+            <div className="doc-section" id="func-registerparser">
+              <h4>RegisterParser</h4>
               <pre className="code-block">
-                <code>func RegisterProcessor(f ProcessorFactory)</code>
+                <code>func RegisterParser(f ParserFactory)</code>
               </pre>
-              <p className="doc-description">RegisterProcessor appends a processor factory to the registry. Call once per processor at server bootstrap, before any models are loaded. Order matters: the catch-all processor (standard) must be registered last so the more specific processors get first chance to claim.</p>
+              <p className="doc-description">RegisterParser appends a parser factory to the registry. Call once per parser at server bootstrap, before any models are loaded. Order matters: the catch-all parser (standard) must be registered last so the more specific parsers get first chance to claim.</p>
             </div>
 
             <div className="doc-section" id="func-newgrammarsampler">
@@ -94,7 +94,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func NewModel(ctx context.Context, cfg Config) (*Model, error)</code>
               </pre>
-              <p className="doc-description">NewModel loads a model from the GGUF files specified in cfg and returns a *Model ready to serve requests. It validates the configuration, builds llama.cpp model parameters, applies NUMA settings, performs the actual GGUF load (serialized via a process-wide mutex to guard the GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics, retrieves the chat template, and initializes the per-model runtime — either a context pool for embed/rerank models or a batch engine plus processor plugin and optional draft model for generation models. The returned *Model owns the underlying llama.Model, llama.Context, KV memory, batch engine, and (when configured) draft model; release them via Model.Unload when finished.</p>
+              <p className="doc-description">NewModel loads a model from the GGUF files specified in cfg and returns a *Model ready to serve requests. It validates the configuration, builds llama.cpp model parameters, applies NUMA settings, performs the actual GGUF load (serialized via a process-wide mutex to guard the GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics, retrieves the chat template, and initializes the per-model runtime — either a context pool for embed/rerank models or a batch engine plus parser plugin and optional draft model for generation models. The returned *Model owns the underlying llama.Model, llama.Context, KV memory, batch engine, and (when configured) draft model; release them via Model.Unload when finished.</p>
             </div>
 
             <div className="doc-section" id="func-detectmodeltypefromfiles">
@@ -297,7 +297,7 @@ export default function DocsSDKModel() {
 	ModelName    string // gguf "general.name" (e.g. "Qwen3-Coder-30B-A3B")
 }`}</code>
               </pre>
-              <p className="doc-description">Fingerprint carries the model metadata that processor selection logic inspects at Model.Load time.</p>
+              <p className="doc-description">Fingerprint carries the model metadata that parser selection logic inspects at Model.Load time.</p>
             </div>
 
             <div className="doc-section" id="type-flashattentiontype">
@@ -538,11 +538,11 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
-            <div className="doc-section" id="type-processor">
-              <h4>Processor</h4>
+            <div className="doc-section" id="type-parser">
+              <h4>Parser</h4>
               <pre className="code-block">
-                <code>{`type Processor interface {
-	// Name returns the processor identifier (e.g. "standard", "gpt-oss").
+                <code>{`type Parser interface {
+	// Name returns the parser identifier (e.g. "standard", "gpt-oss").
 	// Used for logging and as the override key in model configs.
 	Name() string
 
@@ -550,22 +550,22 @@ export default function DocsSDKModel() {
 	// not share StateMachine instances across slots.
 	NewStateMachine() StateMachine
 
-	// ParseToolCall parses the accumulated tool-call buffer into structured
+	// ToolCall parses the accumulated tool-call buffer into structured
 	// tool calls. Called once when generation finishes, never on the hot
 	// per-token path. The logger is used for repair/parse failures; tests
 	// may pass a no-op logger.
-	ParseToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
+	ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
 }`}</code>
               </pre>
-              <p className="doc-description">Processor is the plugin interface implemented by each model lineage. Implementations live in sdk/kronk/processors/&lt;name&gt;/ and are registered at startup via RegisterProcessor.</p>
+              <p className="doc-description">Parser is the plugin interface implemented by each model lineage. Implementations live in sdk/kronk/parsers/&lt;name&gt;/ and are registered at startup via RegisterParser.</p>
             </div>
 
-            <div className="doc-section" id="type-processorfactory">
-              <h4>ProcessorFactory</h4>
+            <div className="doc-section" id="type-parserfactory">
+              <h4>ParserFactory</h4>
               <pre className="code-block">
-                <code>{`type ProcessorFactory func(Fingerprint) (Processor, bool)`}</code>
+                <code>{`type ParserFactory func(Fingerprint) (Parser, bool)`}</code>
               </pre>
-              <p className="doc-description">ProcessorFactory is the constructor signature each processor package's New function satisfies. The bool return reports whether this processor claims the given Fingerprint; on false, the registry continues to the next factory.</p>
+              <p className="doc-description">ParserFactory is the constructor signature each parser package's New function satisfies. The bool return reports whether this parser claims the given Fingerprint; on false, the registry continues to the next factory.</p>
             </div>
 
             <div className="doc-section" id="type-rerankresponse">
@@ -651,7 +651,7 @@ export default function DocsSDKModel() {
 	Content string
 }`}</code>
               </pre>
-              <p className="doc-description">Result is the per-token outcome returned by StateMachine.Process. Content may be empty when the token is a structural marker that has been fully consumed by the state machine (e.g. &lt;think&gt;, &lt;tool_call&gt;). When Content is non-empty, it is routed to the appropriate accumulator based on Channel.</p>
+              <p className="doc-description">Result is the per-token outcome returned by StateMachine.Classify. Content may be empty when the token is a structural marker that has been fully consumed by the state machine (e.g. &lt;think&gt;, &lt;tool_call&gt;). When Content is non-empty, it is routed to the appropriate accumulator based on Channel.</p>
             </div>
 
             <div className="doc-section" id="type-ropescalingtype">
@@ -674,15 +674,15 @@ export default function DocsSDKModel() {
               <h4>StateMachine</h4>
               <pre className="code-block">
                 <code>{`type StateMachine interface {
-	// Process classifies a single decoded token's content and returns the
+	// Classify classifies a single decoded token's content and returns the
 	// Result plus whether the model has signaled end-of-generation.
-	Process(content string) (r Result, eog bool)
+	Classify(content string) (r Result, eog bool)
 
 	// Reset returns the state machine to its initial state for reuse.
 	Reset()
 }`}</code>
               </pre>
-              <p className="doc-description">StateMachine is the per-request, per-slot streaming state machine. One instance is created per slot via Processor.NewStateMachine and reused across requests on that slot via Reset. Behavior is undefined if Process is called after a previous call returned eog=true. Callers must invoke Reset before reusing the state machine.</p>
+              <p className="doc-description">StateMachine is the per-request, per-slot streaming state machine. One instance is created per slot via Parser.NewStateMachine and reused across requests on that slot via Reset. Behavior is undefined if Classify is called after a previous call returned eog=true. Callers must invoke Reset before reusing the state machine.</p>
             </div>
 
             <div className="doc-section" id="type-streamingresponselogger">
@@ -1506,7 +1506,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
-                <li><a href="#func-registerprocessor">RegisterProcessor</a></li>
+                <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -1541,8 +1541,8 @@ export default function DocsSDKModel() {
                 <li><a href="#type-modeltype">ModelType</a></li>
                 <li><a href="#type-option">Option</a></li>
                 <li><a href="#type-params">Params</a></li>
-                <li><a href="#type-processor">Processor</a></li>
-                <li><a href="#type-processorfactory">ProcessorFactory</a></li>
+                <li><a href="#type-parser">Parser</a></li>
+                <li><a href="#type-parserfactory">ParserFactory</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
                 <li><a href="#type-rerankusage">RerankUsage</a></li>

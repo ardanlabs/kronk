@@ -43,7 +43,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
 
 	// Initialize slots. Each slot owns a state machine instance produced
-	// by the model's processor plugin. State machines are stateful
+	// by the model's parser plugin. State machines are stateful
 	// per-slot — never share one across slots.
 	slots := make([]*slot, nSlots)
 	for i := range slots {
@@ -53,7 +53,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 			seqID:        seqID,
 			seqIDs:       []llama.SeqId{seqID}, // Pre-allocate for batchAdd
 			specAccEMA:   1.0,                  // Start optimistic for adaptive draft sizing
-			stateMachine: m.processor.NewStateMachine(),
+			stateMachine: m.parser.NewStateMachine(),
 		}
 	}
 

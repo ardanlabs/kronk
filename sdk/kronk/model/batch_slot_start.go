@@ -20,7 +20,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.job = job
 
 	// If the rendered prompt ends with "<think>\n", the template has already
-	// opened a reasoning block. Prime the processor and slot to start in
+	// opened a reasoning block. Prime the parser and slot to start in
 	// reasoning mode so generated tokens are correctly classified until
 	// </think>. Setting reasonFlag ensures grammar sampling is skipped
 	// during the thinking phase.
@@ -30,12 +30,12 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// would consume max_tokens before producing any constrained content.
 	if strings.HasSuffix(job.prompt, "<think>\n") && job.params.Grammar == "" {
 		// Drive the state machine into reasoning mode by feeding the same
-		// marker the model would have emitted. Processors that recognize
+		// marker the model would have emitted. Parsers that recognize
 		// <think> (standard, qwen, mistral, glm) flip to ChannelReasoning;
-		// processors that don't (gemma, gpt) treat it as content — but
-		// those processors do not produce a "<think>\n" suffix in the
+		// parsers that don't (gemma, gpt) treat it as content — but
+		// those parsers do not produce a "<think>\n" suffix in the
 		// prompt, so this branch never runs for them.
-		s.stateMachine.Process("<think>")
+		s.stateMachine.Classify("<think>")
 		s.reasonFlag = 1
 	}
 
@@ -377,7 +377,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			return
 		}
 
-	case e.slotNeedsMRoPE(s, job):
+	case e.slotNeedsMRoPE(job):
 		if !e.startSlotTextMRoPE(s, job, cacheIdx, buf) {
 			return
 		}
@@ -501,7 +501,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 
 // slotNeedsMRoPE returns true if the slot has cached media that was built with
 // M-RoPE 4D positions, meaning the suffix text must also use M-RoPE decoding.
-func (e *batchEngine) slotNeedsMRoPE(s *slot, job *chatJob) bool {
+func (e *batchEngine) slotNeedsMRoPE(job *chatJob) bool {
 	if !job.imcCacheHit {
 		return false
 	}

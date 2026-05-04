@@ -111,7 +111,7 @@ type Model struct {
 	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
 	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
 	pool              *contextPool  // Context pool for parallel embed/rerank
-	processor         Processor     // Selected via selectProcessor at load time; nil for embed/rerank.
+	parser            Parser        // Selected via selectParser at load time; nil for embed/rerank.
 	draft             *draftModel   // Draft model for speculative decoding
 }
 
@@ -122,7 +122,7 @@ type Model struct {
 // GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics,
 // retrieves the chat template, and initializes the per-model runtime —
 // either a context pool for embed/rerank models or a batch engine plus
-// processor plugin and optional draft model for generation models.
+// parser plugin and optional draft model for generation models.
 //
 // The returned *Model owns the underlying llama.Model, llama.Context, KV
 // memory, batch engine, and (when configured) draft model; release them
@@ -505,35 +505,35 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 		m.cacheCond = sync.NewCond(&m.cacheMu)
 	}
 
-	// Select the processor plugin once at load time. The selected
-	// processor lives on *Model for the lifetime of the model and
+	// Select the parser plugin once at load time. The selected
+	// parser lives on *Model for the lifetime of the model and
 	// provides the per-slot state machine and tool-call parser used by
 	// the batch engine. Embed/rerank models do not reach this branch,
-	// so m.processor stays nil for them.
+	// so m.parser stays nil for them.
 	fp := Fingerprint{
 		ChatTemplate: m.template.Script,
 		Architecture: m.modelInfo.Metadata["general.architecture"],
 		ModelName:    m.modelInfo.ID,
 	}
 
-	m.log(ctx, "select-processor",
+	m.log(ctx, "select-parser",
 		"status", "fingerprint",
 		"model", fp.ModelName,
 		"arch", fp.Architecture,
 		"template-len", len(fp.ChatTemplate),
 	)
 
-	m.processor = selectProcessor(fp)
+	m.parser = selectParser(fp)
 
-	if m.processor == nil {
+	if m.parser == nil {
 		llama.Free(lctx)
-		return fmt.Errorf("select-processor: no processor registered for %q (call kronk.registerDefaultProcessors or model.RegisterProcessor(standard.New) at bootstrap)", m.modelInfo.ID)
+		return fmt.Errorf("select-parser: no parser registered for %q (call kronk.registerDefaultParsers or model.RegisterParser(standard.New) at bootstrap)", m.modelInfo.ID)
 	}
 
-	m.log(ctx, "select-processor",
+	m.log(ctx, "select-parser",
 		"status", "selected",
 		"model", fp.ModelName,
-		"processor", m.processor.Name(),
+		"parser", m.parser.Name(),
 	)
 
 	m.batch = newBatchEngine(m, nSlots)

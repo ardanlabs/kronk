@@ -79,7 +79,7 @@ type slot struct {
 	job          *chatJob      // Current request being processed
 	active       bool          // True when slot is processing a request
 	span         trace.Span    // OpenTelemetry span for request tracing
-	stateMachine StateMachine  // Per-slot state machine; created from m.processor.NewStateMachine()
+	stateMachine StateMachine  // Per-slot state machine; created from m.parser.NewStateMachine()
 
 	// -------------------------------------------------------------------------
 	// Sampling

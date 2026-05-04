@@ -43,11 +43,11 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 		return nil, fmt.Errorf("new: the Init() function has not been called")
 	}
 
-	// Ensure the processor-plugin registry has the built-in processors
+	// Ensure the parser-plugin registry has the built-in parsers
 	// wired in before the model loads. Idempotent — callers that
-	// pre-registered a custom processor before this call keep precedence
-	// (selectProcessor walks registrations in order).
-	registerDefaultProcessors()
+	// pre-registered a custom parser before this call keep precedence
+	// (selectParser walks registrations in order).
+	registerDefaultParsers()
 
 	// -------------------------------------------------------------------------
 
