@@ -387,6 +387,7 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	computeBuf := vram.EstimateComputeBuffer(vram.Input{
 		ModelSizeBytes:  p.modelSize,
 		EmbeddingLength: p.embLen,
+		Slots:           rec.NSeqMax,
 	})
 
 	bestCtx := vram.ContextWindow4K
