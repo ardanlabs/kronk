@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import type { ModelDetailsResponse, PoolBudgetResponse } from '../types';
 import { formatBytes } from '../lib/format';
 import { labelWithTip, ParamTooltip } from './ParamTooltips';
+import UsageBar from './UsageBar';
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '—';
@@ -98,6 +99,28 @@ export default function ModelPs() {
               </em>
             </p>
           )}
+
+          <div className="usage-bar-list">
+            {budget.devices.map((d) => (
+              <UsageBar
+                key={`bar-${d.index}-${d.name}`}
+                label={d.name}
+                sublabel={d.type}
+                used={d.used_bytes}
+                budget={d.budget_bytes}
+                total={d.total_bytes}
+              />
+            ))}
+            {(budget.ram_total > 0 || budget.ram_budget > 0) && (
+              <UsageBar
+                label={budget.unified_memory ? 'Unified Memory' : 'System RAM'}
+                sublabel={budget.unified_memory ? 'metal+ram' : 'ram'}
+                used={budget.ram_used}
+                budget={budget.ram_budget}
+                total={budget.ram_total > 0 ? budget.ram_total : budget.ram_budget}
+              />
+            )}
+          </div>
 
           <div className="table-container">
             <table>

@@ -156,6 +156,7 @@ export const PARAM_TOOLTIPS = {
   budgetDeviceUsed: 'Currently reserved bytes on this device, summed across all live model reservations.',
   budgetDevicePctOfBudget: 'Used ÷ Budget. Approaches 100% as more models are kept warm; passing 100% would have triggered eviction first.',
   budgetDeviceFree: 'Bytes still available within the budget on this device. New models that exceed this trigger eviction of an idle model before loading.',
+  budgetUsageBar: 'Visual scaled to the device\'s physical Total. Filled segment = currently reserved bytes (green < 60% of Budget, amber 60–85%, red > 85%). The vertical tick marks the Budget cap (Total × BudgetPercent − Headroom). The dim tail to the right of the tick is physical memory the resman intentionally won\'t hand out — it\'s reserved for OS/driver overhead and the configured headroom.',
   budgetReservationKey: 'Cache/reservation key. For catalog loads this is the model ID; playground sessions use modelID/playground/<session-id> so each session is tracked separately.',
   budgetReservationTotal: 'Total bytes the resman has charged for this reservation, summed across VRAM and system memory. This is the number that counts against the overall budget.',
   budgetReservationVRAM: 'Bytes charged against discrete GPU VRAM budgets. Zero on systems with no GPU and on Apple Silicon unified memory (where the GPU shares the system pool).',
