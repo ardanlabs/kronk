@@ -553,6 +553,288 @@ func Test_Reserve_FailedDoesNotMutate(t *testing.T) {
 	}
 }
 
+// snapshot24_16_8 returns a snapshot with three GPUs of asymmetric VRAM
+// (24 GB, 16 GB and 8 GB) and 64 GB of system RAM. Used to exercise
+// free-choice placement when more than two cards have unequal headroom.
+func snapshot24_16_8() resman.Snapshot {
+	return resman.Snapshot{
+		Devices: []resman.Device{
+			{Name: "CUDA0", Type: "gpu_cuda", TotalBytes: 24 * GiB},
+			{Name: "CUDA1", Type: "gpu_cuda", TotalBytes: 16 * GiB},
+			{Name: "CUDA2", Type: "gpu_cuda", TotalBytes: 8 * GiB},
+		},
+		RAMBytes: 64 * GiB,
+	}
+}
+
+// Test_Reserve_FreeChoice_ThreeWayAsymmetric verifies that free-choice
+// placement walks down a 3-card asymmetric topology in the correct order:
+// each unpinned reservation must land on whichever card currently has the
+// most remaining headroom.
+func Test_Reserve_FreeChoice_ThreeWayAsymmetric(t *testing.T) {
+	m, err := resman.New(noHeadroom(snapshot24_16_8(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	// Each step reserves a 6 GiB model and asserts the chosen card.
+	//
+	// Free state after each step (in GiB):
+	//
+	//   start                CUDA0=24 CUDA1=16 CUDA2= 8
+	//   step1 → CUDA0 (24)   CUDA0=18 CUDA1=16 CUDA2= 8
+	//   step2 → CUDA0 (18)   CUDA0=12 CUDA1=16 CUDA2= 8
+	//   step3 → CUDA1 (16)   CUDA0=12 CUDA1=10 CUDA2= 8
+	//   step4 → CUDA0 (12)   CUDA0= 6 CUDA1=10 CUDA2= 8
+	//   step5 → CUDA1 (10)   CUDA0= 6 CUDA1= 4 CUDA2= 8
+	//   step6 → CUDA2  (8)   CUDA0= 6 CUDA1= 4 CUDA2= 2
+	steps := []struct {
+		key  string
+		want string
+	}{
+		{"s1", "CUDA0"},
+		{"s2", "CUDA0"},
+		{"s3", "CUDA1"},
+		{"s4", "CUDA0"},
+		{"s5", "CUDA1"},
+		{"s6", "CUDA2"},
+	}
+
+	for _, s := range steps {
+		_, plan, err := m.Reserve(resman.PlanRequest{Key: s.key, VRAMBytes: 6 * GiB})
+		if err != nil {
+			t.Fatalf("%s reserve: %v", s.key, err)
+		}
+		if len(plan.Per) != 1 || plan.Per[0].Name != s.want {
+			t.Fatalf("%s placement: want %s, got %+v", s.key, s.want, plan.Per)
+		}
+	}
+
+	// State is now CUDA0=6, CUDA1=4, CUDA2=2 free. A 7 GiB request must
+	// fail because no single card can hold it (placement never sums across
+	// GPUs).
+	_, _, err = m.Reserve(resman.PlanRequest{Key: "overflow", VRAMBytes: 7 * GiB})
+	if !errors.Is(err, resman.ErrNoCapacity) {
+		t.Fatalf("expected ErrNoCapacity when no single card has 7 GiB free, got: %v", err)
+	}
+
+	// Sanity: no card may ever exceed its budget.
+	for _, d := range m.Usage().Devices {
+		if d.UsedBytes > d.BudgetBytes {
+			t.Errorf("device[%s] used=%d > budget=%d", d.Name, d.UsedBytes, d.BudgetBytes)
+		}
+	}
+}
+
+// Test_Reserve_TensorSplit_RatioOverflowsSmallCard verifies that a tensor
+// split whose proportional share exceeds the smaller card's budget is
+// rejected with ErrNoCapacity, even though the request would fit if summed
+// across both cards.
+func Test_Reserve_TensorSplit_RatioOverflowsSmallCard(t *testing.T) {
+	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	// 30 GiB total VRAM exists across the cards (24+12), but a 50/50 split
+	// puts 15 GiB on CUDA1 — overflowing its 12 GiB budget.
+	_, _, err = m.Reserve(resman.PlanRequest{
+		Key:         "ratio-bad",
+		VRAMBytes:   30 * GiB,
+		Devices:     []string{"CUDA0", "CUDA1"},
+		TensorSplit: []float32{0.5, 0.5},
+	})
+	if !errors.Is(err, resman.ErrNoCapacity) {
+		t.Fatalf("expected ErrNoCapacity when split share overflows smaller card, got: %v", err)
+	}
+
+	// Failed split must not have committed any bytes on either card.
+	for _, d := range m.Usage().Devices {
+		if d.UsedBytes != 0 {
+			t.Errorf("device[%s] mutated by failed split: used=%d", d.Name, d.UsedBytes)
+		}
+	}
+
+	// A skewed split that places the larger share on the larger card fits.
+	// 30 GiB at 0.7/0.3 → 21 GiB on CUDA0, 9 GiB on CUDA1.
+	_, plan, err := m.Reserve(resman.PlanRequest{
+		Key:         "ratio-ok",
+		VRAMBytes:   30 * GiB,
+		Devices:     []string{"CUDA0", "CUDA1"},
+		TensorSplit: []float32{0.7, 0.3},
+	})
+	if err != nil {
+		t.Fatalf("skewed split must fit: %v", err)
+	}
+
+	// Allocation sum must equal VRAMBytes (rounding remainder lands on last).
+	var sum int64
+	for _, a := range plan.Per {
+		sum += a.Bytes
+	}
+	if sum != 30*GiB {
+		t.Errorf("split sum: want %d, got %d", 30*GiB, sum)
+	}
+}
+
+// Test_Reserve_TensorSplit_HeadroomShrinksShare verifies the interaction
+// between HeadroomBytes and asymmetric tensor split. With a 2 GiB headroom
+// applied to each card, CUDA1's effective budget drops from 12 GiB to
+// 10 GiB. A 50/50 split that would barely fit without headroom must now be
+// rejected once headroom is accounted for.
+func Test_Reserve_TensorSplit_HeadroomShrinksShare(t *testing.T) {
+	cfg := resman.Config{
+		Snapshot:      snapshot24_12(),
+		BudgetPercent: 100,
+		HeadroomBytes: 2 * GiB,
+	}
+
+	m, err := resman.New(cfg)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	// Effective budgets: CUDA0=22 GiB, CUDA1=10 GiB.
+	u := m.Usage()
+	if u.Devices[0].BudgetBytes != 22*GiB {
+		t.Fatalf("CUDA0 budget: want %d, got %d", 22*GiB, u.Devices[0].BudgetBytes)
+	}
+	if u.Devices[1].BudgetBytes != 10*GiB {
+		t.Fatalf("CUDA1 budget: want %d, got %d", 10*GiB, u.Devices[1].BudgetBytes)
+	}
+
+	// 20 GiB at 50/50 → 10 GiB each. CUDA1 is exactly at its post-headroom
+	// budget, so this fits.
+	if _, _, err := m.Reserve(resman.PlanRequest{
+		Key:         "split-at-budget",
+		VRAMBytes:   20 * GiB,
+		Devices:     []string{"CUDA0", "CUDA1"},
+		TensorSplit: []float32{0.5, 0.5},
+	}); err != nil {
+		t.Fatalf("at-budget split must fit: %v", err)
+	}
+
+	// 22 GiB at 50/50 → 11 GiB each. Without headroom CUDA1 (12 GiB) would
+	// fit; with the 2 GiB headroom (10 GiB effective) the share now
+	// overflows and the split must be rejected.
+	_, _, err = m.Reserve(resman.PlanRequest{
+		Key:         "split-over-headroom",
+		VRAMBytes:   22 * GiB,
+		Devices:     []string{"CUDA0", "CUDA1"},
+		TensorSplit: []float32{0.5, 0.5},
+	})
+	if !errors.Is(err, resman.ErrNoCapacity) {
+		t.Fatalf("expected ErrNoCapacity once headroom shrinks CUDA1 below split share, got: %v", err)
+	}
+}
+
+// Test_Reserve_FreeChoice_FollowsHeadroomAfterRelease verifies that
+// free-choice placement re-evaluates remaining headroom after each release:
+// the next unpinned reservation must move to whichever card currently has
+// the most room, even if a previous round placed work elsewhere.
+func Test_Reserve_FreeChoice_FollowsHeadroomAfterRelease(t *testing.T) {
+	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	// Step 1: 18 GiB lands on CUDA0 (free 24 > 12). After: CUDA0=6 free,
+	// CUDA1=12 free → CUDA1 now has more headroom.
+	t1, plan, err := m.Reserve(resman.PlanRequest{Key: "big", VRAMBytes: 18 * GiB})
+	if err != nil {
+		t.Fatalf("big reserve: %v", err)
+	}
+	if plan.Per[0].Name != "CUDA0" {
+		t.Fatalf("step1: want CUDA0, got %s", plan.Per[0].Name)
+	}
+
+	// Step 2: a 5 GiB unpinned reservation must follow the new headroom and
+	// land on CUDA1 (12 > 6).
+	t2, plan, err := m.Reserve(resman.PlanRequest{Key: "small1", VRAMBytes: 5 * GiB})
+	if err != nil {
+		t.Fatalf("small1 reserve: %v", err)
+	}
+	if plan.Per[0].Name != "CUDA1" {
+		t.Fatalf("step2: want CUDA1, got %s", plan.Per[0].Name)
+	}
+
+	// Step 3: release the big CUDA0 ticket. State: CUDA0=24 free, CUDA1=7
+	// free → headroom flips back to CUDA0.
+	m.Release(t1)
+
+	// Step 4: a fresh 5 GiB unpinned reservation must now return to CUDA0.
+	_, plan, err = m.Reserve(resman.PlanRequest{Key: "small2", VRAMBytes: 5 * GiB})
+	if err != nil {
+		t.Fatalf("small2 reserve: %v", err)
+	}
+	if plan.Per[0].Name != "CUDA0" {
+		t.Fatalf("step4: want CUDA0 after release, got %s", plan.Per[0].Name)
+	}
+
+	// Step 5: release the CUDA1 ticket. CUDA0=19 free, CUDA1=12 free →
+	// CUDA0 still has more headroom; the next unpinned 5 GiB stays on CUDA0.
+	m.Release(t2)
+	_, plan, err = m.Reserve(resman.PlanRequest{Key: "small3", VRAMBytes: 5 * GiB})
+	if err != nil {
+		t.Fatalf("small3 reserve: %v", err)
+	}
+	if plan.Per[0].Name != "CUDA0" {
+		t.Fatalf("step5: want CUDA0, got %s", plan.Per[0].Name)
+	}
+}
+
+// Test_Reserve_PinBeatsFreeChoice verifies that pinning to a smaller card
+// is honored even when the larger card is empty, and that an over-budget
+// pin to the smaller card is rejected with ErrNoCapacity rather than
+// silently overflowing onto the bigger card.
+func Test_Reserve_PinBeatsFreeChoice(t *testing.T) {
+	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	// Both cards are empty; free-choice would pick CUDA0 (24 > 12). A pin
+	// to CUDA1 must override that and place on the smaller card.
+	_, plan, err := m.Reserve(resman.PlanRequest{
+		Key: "pin-small", VRAMBytes: 5 * GiB, Devices: []string{"CUDA1"},
+	})
+	if err != nil {
+		t.Fatalf("pinned reserve: %v", err)
+	}
+	if len(plan.Per) != 1 || plan.Per[0].Name != "CUDA1" {
+		t.Fatalf("pin must override free-choice; got %+v", plan.Per)
+	}
+
+	// CUDA0 must still be empty — pin must not "spill" onto a bigger card.
+	u := m.Usage()
+	if u.Devices[0].UsedBytes != 0 {
+		t.Errorf("CUDA0 must be untouched by pin to CUDA1, got %d", u.Devices[0].UsedBytes)
+	}
+	if u.Devices[1].UsedBytes != 5*GiB {
+		t.Errorf("CUDA1 used: want %d, got %d", 5*GiB, u.Devices[1].UsedBytes)
+	}
+
+	// A pin that exceeds the smaller card's budget must fail with
+	// ErrNoCapacity even though CUDA0 has more than enough headroom — pins
+	// must never silently relocate.
+	before := m.Usage()
+	_, _, err = m.Reserve(resman.PlanRequest{
+		Key: "pin-overflow", VRAMBytes: 16 * GiB, Devices: []string{"CUDA1"},
+	})
+	if !errors.Is(err, resman.ErrNoCapacity) {
+		t.Fatalf("expected ErrNoCapacity on over-budget pin, got: %v", err)
+	}
+
+	// Failed pin must not mutate either card.
+	after := m.Usage()
+	for i, d := range after.Devices {
+		if d.UsedBytes != before.Devices[i].UsedBytes {
+			t.Errorf("device[%s] mutated by failed pin: before=%d after=%d",
+				d.Name, before.Devices[i].UsedBytes, d.UsedBytes)
+		}
+	}
+}
+
 // Test_Headroom verifies the headroom is subtracted from the budget. A model
 // that would fit at BudgetPercent without headroom must be rejected once
 // headroom is accounted for.
