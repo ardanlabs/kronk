@@ -196,6 +196,8 @@ install-docker:
 	wait;
 
 copy-agent-configs:
+	mkdir -p $$HOME/.config/opencode
+	mkdir -p $$HOME/.config/kilo
 	cp .agents/opencode/opencode.jsonc $$HOME/.config/opencode/opencode.jsonc
 	cp .agents/opencode/agent.md $$HOME/.config/opencode/agent.md
 	cp .agents/kilo/kilo.json $$HOME/.config/kilo/kilo.json
