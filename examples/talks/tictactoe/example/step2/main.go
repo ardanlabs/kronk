@@ -414,13 +414,15 @@ a number from 1 through 9. This is what the game board looks like.
 
 You can see how each number coresponds to a different space.
 
-You are player2 which uses the "O" marker.
+You are Player2 which uses the "O" marker.
 
 Player1 is current occupying spaces %v and You are currently occupying
 spaces %v. The available spaces are %v.
 
-Please choose a space from the available spaces list that you think gives you
-the best chance to win.
+As a priority choose a space that allows you to win if you can win on your current
+move. As a second priority choose a space that blocks Player1 from winning. If
+Player1 can't win on their next move, then choose a space from the available
+spaces list that you think gives you the best chance to win in the future.
 
 You will return the space number you select using this JSON document format
 provided in the system prompt.
