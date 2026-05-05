@@ -33,22 +33,25 @@ type compiledTemplate struct {
 	err  error
 }
 
-// imcSession holds the state for a single IMC (Incremental Message Cache) session.
-// Currently sessions are slot-indexed (one per physical slot). Future phases will
-// externalize KV state to RAM and decouple sessions from slots.
-//
-// Transitional: slotID, seqID, and pending are retained until IMC scheduling
-// no longer uses slot routing (Phase 4/5).
+// imcSession holds the state for a single IMC (Incremental Message Cache)
+// session. Sessions are session-pool entries, sized 1:1 with the
+// configured slot count. Each session externalizes its cached KV
+// state via SessionStore between requests, so any incoming request
+// matched to a session may execute on any free slot — slot identity
+// is decided fresh by the scheduler each time. The slotID/seqID
+// fields preserve the historical 1:1 mapping used to address the
+// session's KV sequence in VRAM while it is still resident (e.g. for
+// KV-pressure eviction of un-externalized sessions).
 type imcSession struct {
-	slotID            int           // Slot index this session is bound to (transitional: removed in Phase 4)
-	seqID             llama.SeqId   // KV cache sequence ID (transitional: removed in Phase 4)
+	slotID            int           // Stable session-pool index (== seqID). Used to address the session's KV sequence in VRAM and for log correlation; sessions are NOT bound to a particular execution slot.
+	seqID             llama.SeqId   // KV sequence ID this session uses when its bytes are resident in VRAM.
 	cachedMsgsHash    string        // Hash of all cached messages
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
 	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
 	cachedMsgCount    int           // Number of messages cached
-	kvState           kvBuffer      // Externalized KV cache state (RAM buffer); restored into any slot via StateSeqSetData. Lazy-grow / never-shrink: backing array is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
+	kvState           SessionStore  // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
 	lastUsed          time.Time     // Last access time (for eviction)
-	pending           bool          // True when a build/extend is in-flight (transitional: removed in Phase 4)
+	pending           bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts     []int         // KV positions consumed per media chunk (image/audio); used for text-only extend math
@@ -105,8 +108,8 @@ type Model struct {
 	unloaded          atomic.Bool
 	decodeMu          sync.Mutex
 	cacheMu           sync.RWMutex
-	cacheCond         *sync.Cond    // Signaled when an IMC slot becomes available (transitional: removed in Phase 4)
-	imcSessions       []*imcSession // IMC sessions, one per slot (transitional: becomes session pool in Phase 4)
+	cacheCond         *sync.Cond    // Signaled when an IMC session's pending flag is cleared (a build/extend has finished).
+	imcSessions       []*imcSession // IMC session pool, sized 1:1 with execution slots; sessions migrate freely between slots via SessionStore.
 	addBOSToken       bool          // Whether to add BOS token (from model metadata)
 	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
 	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
@@ -492,14 +495,20 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	m.lctx = lctx
 	m.mem = mem
 
-	// Initialize IMC sessions (one per slot). Transitional: sessions are
-	// currently slot-indexed. Future phases will decouple from slots.
+	// Initialize the IMC session pool. Sized 1:1 with execution slots
+	// today; sessions externalize their KV state via SessionStore so any
+	// session can run on any free slot.
 	if m.cfg.IncrementalCache() {
 		m.imcSessions = make([]*imcSession, nSlots)
 		for i := range nSlots {
+			store, err := newSessionStore(m.cfg)
+			if err != nil {
+				return fmt.Errorf("init-generation-runtime: session-store: %w", err)
+			}
 			m.imcSessions[i] = &imcSession{
-				slotID: i,
-				seqID:  llama.SeqId(i),
+				slotID:  i,
+				seqID:   llama.SeqId(i),
+				kvState: store,
 			}
 		}
 		m.cacheCond = sync.NewCond(&m.cacheMu)
@@ -820,6 +829,18 @@ func (m *Model) Unload(ctx context.Context) error {
 	if m.lctx != 0 {
 		llama.Synchronize(m.lctx)
 		llama.Free(m.lctx)
+	}
+
+	// Release per-session SessionStore resources (e.g. on-disk files).
+	// The RAM impl is a no-op; the disk impl removes its file. Errors
+	// are logged and otherwise ignored — the model is going away.
+	for i, sess := range m.imcSessions {
+		if sess == nil || sess.kvState == nil {
+			continue
+		}
+		if err := sess.kvState.Close(); err != nil {
+			m.log(ctx, "unload", "status", "session-store-close-failed", "session", i, "err", err.Error())
+		}
 	}
 
 	llama.ModelFree(m.model)

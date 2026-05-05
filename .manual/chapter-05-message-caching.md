@@ -510,6 +510,41 @@ scratch.
 
 Default: 100 tokens
 
+**session-store-kind / session-store-dir**
+
+Selects the backend used to externalize each IMC session's KV cache
+bytes between requests. Each backend lives in its own subpackage
+under `sdk/kronk/kvstorage/<kind>/`, mirroring the parser-plugin
+layout under `sdk/kronk/parsers/<name>/`.
+
+```yaml
+# Default — keep KV snapshots in process RAM
+Qwen/Qwen3-8B-Q8_0:
+  session-store-kind: ram
+
+# Persist KV snapshots to disk (required when RAM is the bottleneck)
+Qwen/Qwen3-8B-Q8_0:
+  session-store-kind: disk
+  session-store-dir: /var/lib/kronk/sessions
+```
+
+| Kind   | Subpackage       | Description                                                                                                                                                                |
+| ------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ram`  | `kvstorage/ram`  | Default. One Go-allocated `[]byte` per session with lazy-grow / never-shrink semantics. Zero configuration.                                                                |
+| `disk` | `kvstorage/disk` | Per-session file under `session-store-dir`. Trades RAM for disk I/O on each snapshot/restore. Use when (NSeqMax × peak-conversation-KV) bytes of RAM is more than you can spare. |
+
+Default: `ram` (used when the field is empty).
+
+The disk backend creates each session's file via `os.CreateTemp` so
+file names are unique within the directory; files are removed on
+`Model.Unload`. On a process crash the per-session files are leaked
+under `session-store-dir` and must be reclaimed out-of-band (cron,
+`systemd-tmpfiles`, or a manual sweep). The directory must already
+exist and be writable; it is not created on demand.
+
+Additional backends (network-attached, NVMe-direct) are reserved for
+future phases.
+
 ### 5.7 Performance and Limitations
 
 IMC improves request latency by skipping redundant prefill work. It delivers

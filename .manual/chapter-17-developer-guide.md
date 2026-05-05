@@ -763,20 +763,19 @@ full, the LRU session is evicted on `lastUsed`.
 5. Suffix tokens are decoded and generation runs
 6. `finishSlot()` clears the full VRAM sequence (cached prefix already lives in RAM)
 
-**IMC Session State** ([model.go:39-55](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L39-L55)):
+**IMC Session State** ([model.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L36-L60)):
 
 ```go
 type imcSession struct {
-    slotID            int           // Slot index (transitional: removed in Phase 4)
-    seqID             llama.SeqId   // KV cache sequence ID (transitional: removed in Phase 4)
+    slotID            int           // Stable session-pool index (== seqID)
+    seqID             llama.SeqId   // KV sequence ID this session uses while resident in VRAM
     cachedMsgsHash    string        // Hash of all cached messages
     cachedTokens      []llama.Token // Full token sequence in KV cache
     totalTokensCached int           // Total KV positions cached
     cachedMsgCount    int           // Number of messages cached
-    kvState           []byte        // Externalized KV state (RAM buffer)
-    kvStateBytes      int           // Size of kvState in bytes
+    kvState           SessionStore  // Externalized KV state (kvstorage backend)
     lastUsed          time.Time     // Last access time (for LRU eviction)
-    pending           bool          // True when build/extend in-flight (transitional: removed in Phase 4)
+    pending           bool          // True when build/extend in-flight; protects kvState
     hasMedia          bool          // True if cached content includes media
     useMRoPE          bool          // True if cached media used M-RoPE
     mediaKVCounts     []int         // KV positions per media chunk
@@ -785,9 +784,16 @@ type imcSession struct {
 }
 ```
 
-The fields marked `transitional` (`slotID`, `seqID`, `pending`) are
-scheduled for removal in an upcoming Phase 4 refactor that fully decouples
-sessions from slots.
+`imcSessions` is sized 1:1 with execution slots at startup, but
+sessions are **not** bound to slots — `kvState` (a
+[SessionStore](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/session_store.go#L57-L97))
+externalizes the cached KV bytes between requests so any matched
+session can run on any free slot. The `slotID`/`seqID` fields name
+the session pool entry and the KV sequence the session occupies
+while bytes are still resident in VRAM (used for KV-pressure
+eviction of un-externalized sessions). The `pending` flag is the
+per-session in-flight latch that protects `kvState` from concurrent
+writers.
 
 #### 17.7.8 Tool Call Internals
 

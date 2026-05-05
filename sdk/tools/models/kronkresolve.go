@@ -190,6 +190,12 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrCacheSlotTimeout != nil {
 		dst.PtrCacheSlotTimeout = src.PtrCacheSlotTimeout
 	}
+	if src.SessionStoreDir != "" {
+		dst.SessionStoreDir = src.SessionStoreDir
+	}
+	if src.SessionStoreKind != "" {
+		dst.SessionStoreKind = src.SessionStoreKind
+	}
 	if src.PtrInsecureLogging != nil {
 		dst.PtrInsecureLogging = src.PtrInsecureLogging
 	}

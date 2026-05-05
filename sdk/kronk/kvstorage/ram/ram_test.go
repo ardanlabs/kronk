@@ -1,14 +1,14 @@
-package model
+package ram
 
 import (
 	"testing"
 	"unsafe"
 )
 
-// TestKVBuffer_ZeroValue verifies that a zero-value kvBuffer is usable
+// TestStore_ZeroValue verifies that a zero-value Store is usable
 // without initialization.
-func TestKVBuffer_ZeroValue(t *testing.T) {
-	var k kvBuffer
+func TestStore_ZeroValue(t *testing.T) {
+	var k Store
 
 	if got := k.Len(); got != 0 {
 		t.Errorf("zero value Len() = %d, want 0", got)
@@ -21,10 +21,10 @@ func TestKVBuffer_ZeroValue(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareGrows verifies that Prepare allocates when the
+// TestStore_PrepareGrows verifies that Prepare allocates when the
 // requested size exceeds the current capacity.
-func TestKVBuffer_PrepareGrows(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareGrows(t *testing.T) {
+	var k Store
 
 	buf := k.Prepare(1024)
 	if len(buf) != 1024 {
@@ -38,11 +38,11 @@ func TestKVBuffer_PrepareGrows(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareReusesBackingArray is the central invariant: when
+// TestStore_PrepareReusesBackingArray is the central invariant: when
 // the requested size fits in the existing capacity, no new allocation
 // happens and the same backing array is reused.
-func TestKVBuffer_PrepareReusesBackingArray(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareReusesBackingArray(t *testing.T) {
+	var k Store
 
 	first := k.Prepare(2048)
 	firstAddr := unsafe.SliceData(first)
@@ -63,11 +63,11 @@ func TestKVBuffer_PrepareReusesBackingArray(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareGrowsWhenExceeding verifies that Prepare allocates
+// TestStore_PrepareGrowsWhenExceeding verifies that Prepare allocates
 // a fresh backing array when the requested size exceeds current capacity,
 // and the new capacity is at least the requested size.
-func TestKVBuffer_PrepareGrowsWhenExceeding(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareGrowsWhenExceeding(t *testing.T) {
+	var k Store
 
 	first := k.Prepare(1024)
 	firstAddr := unsafe.SliceData(first)
@@ -87,10 +87,10 @@ func TestKVBuffer_PrepareGrowsWhenExceeding(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareNegativeSize verifies that a negative size is
+// TestStore_PrepareNegativeSize verifies that a negative size is
 // clamped to zero rather than panicking.
-func TestKVBuffer_PrepareNegativeSize(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareNegativeSize(t *testing.T) {
+	var k Store
 	_ = k.Prepare(1024)
 
 	buf := k.Prepare(-1)
@@ -102,10 +102,10 @@ func TestKVBuffer_PrepareNegativeSize(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_Commit verifies that Commit truncates Len without
+// TestStore_Commit verifies that Commit truncates Len without
 // affecting Cap.
-func TestKVBuffer_Commit(t *testing.T) {
-	var k kvBuffer
+func TestStore_Commit(t *testing.T) {
+	var k Store
 	_ = k.Prepare(1024)
 
 	k.Commit(512)
@@ -118,9 +118,9 @@ func TestKVBuffer_Commit(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_CommitClamps verifies that Commit clamps to [0, cap].
-func TestKVBuffer_CommitClamps(t *testing.T) {
-	var k kvBuffer
+// TestStore_CommitClamps verifies that Commit clamps to [0, cap].
+func TestStore_CommitClamps(t *testing.T) {
+	var k Store
 	_ = k.Prepare(1024)
 
 	k.Commit(-50)
@@ -134,11 +134,11 @@ func TestKVBuffer_CommitClamps(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_Reset verifies that Reset clears Len but retains Cap and
+// TestStore_Reset verifies that Reset clears Len but retains Cap and
 // the same backing array — that's the whole point of the never-shrink
 // design.
-func TestKVBuffer_Reset(t *testing.T) {
-	var k kvBuffer
+func TestStore_Reset(t *testing.T) {
+	var k Store
 	first := k.Prepare(2048)
 	firstAddr := unsafe.SliceData(first)
 
@@ -159,12 +159,12 @@ func TestKVBuffer_Reset(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_BytesAliasesBuffer verifies that Bytes returns a slice
+// TestStore_BytesAliasesBuffer verifies that Bytes returns a slice
 // that aliases the internal buffer (mutating the returned slice is
 // observable via Bytes again, and via Len which reflects the slice
 // length).
-func TestKVBuffer_BytesAliasesBuffer(t *testing.T) {
-	var k kvBuffer
+func TestStore_BytesAliasesBuffer(t *testing.T) {
+	var k Store
 	buf := k.Prepare(4)
 	buf[0] = 0xAA
 	buf[1] = 0xBB
@@ -183,12 +183,12 @@ func TestKVBuffer_BytesAliasesBuffer(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareAddsHeadroomOnGrow verifies that a small grow
+// TestStore_PrepareAddsHeadroomOnGrow verifies that a small grow
 // over the previous capacity provisions at least 25% headroom. This
 // is the central optimization that eliminates per-turn reallocations
 // when conversations grow monotonically by small deltas.
-func TestKVBuffer_PrepareAddsHeadroomOnGrow(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareAddsHeadroomOnGrow(t *testing.T) {
+	var k Store
 
 	// Establish an initial capacity.
 	_ = k.Prepare(1000)
@@ -209,12 +209,12 @@ func TestKVBuffer_PrepareAddsHeadroomOnGrow(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareReusesAfterHeadroomGrow verifies that subsequent
+// TestStore_PrepareReusesAfterHeadroomGrow verifies that subsequent
 // Prepares within the headroom slack reuse the backing array. This is
 // the practical payoff: after one headroom grow, many turns of small
 // deltas hit the reuse path with zero allocation.
-func TestKVBuffer_PrepareReusesAfterHeadroomGrow(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareReusesAfterHeadroomGrow(t *testing.T) {
+	var k Store
 	_ = k.Prepare(1000)
 
 	// Small grow allocates with 25% headroom (cap becomes ≥ 1250).
@@ -240,13 +240,13 @@ func TestKVBuffer_PrepareReusesAfterHeadroomGrow(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareLargeJumpHonorsExactSize verifies that when the
+// TestStore_PrepareLargeJumpHonorsExactSize verifies that when the
 // requested size exceeds oldCap + 25%, the new capacity is exactly the
 // requested size (no extra headroom). Mirrors Go's "newLen > 2*oldCap"
 // shortcut and prevents accidental over-allocation when matching into
 // a session whose previous conversation was much smaller.
-func TestKVBuffer_PrepareLargeJumpHonorsExactSize(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareLargeJumpHonorsExactSize(t *testing.T) {
+	var k Store
 	_ = k.Prepare(1000)
 
 	// 5000 is well over 1000 + 250 = 1250, so the size wins and
@@ -259,11 +259,11 @@ func TestKVBuffer_PrepareLargeJumpHonorsExactSize(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareFirstAllocNoHeadroom verifies that the very
+// TestStore_PrepareFirstAllocNoHeadroom verifies that the very
 // first allocation (oldCap == 0) is sized exactly to the request.
 // 0 + 0/4 = 0 < size, so size wins.
-func TestKVBuffer_PrepareFirstAllocNoHeadroom(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareFirstAllocNoHeadroom(t *testing.T) {
+	var k Store
 
 	_ = k.Prepare(1024)
 
@@ -273,13 +273,13 @@ func TestKVBuffer_PrepareFirstAllocNoHeadroom(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_PrepareLogarithmicGrowCount verifies that under a
+// TestStore_PrepareLogarithmicGrowCount verifies that under a
 // monotonically growing workload (each turn larger than the last by
 // a small delta), the number of actual reallocations is O(log_1.25(N))
 // rather than O(N). This is the practical performance guarantee of the
 // 25% headroom strategy.
-func TestKVBuffer_PrepareLogarithmicGrowCount(t *testing.T) {
-	var k kvBuffer
+func TestStore_PrepareLogarithmicGrowCount(t *testing.T) {
+	var k Store
 
 	// Simulate 200 turns where each turn is 1% larger than the last,
 	// starting at 1 MiB and growing to ~7.3 MiB. Without headroom this
@@ -307,13 +307,13 @@ func TestKVBuffer_PrepareLogarithmicGrowCount(t *testing.T) {
 	}
 }
 
-// TestKVBuffer_NoChurnUnderRepeatedSnapshots simulates the IMC
+// TestStore_NoChurnUnderRepeatedSnapshots simulates the IMC
 // per-turn snapshot pattern: many Prepare/Commit cycles whose sizes
 // stay below an established peak. After warm-up, no further allocation
 // should happen — assert by comparing the backing array address across
 // many iterations.
-func TestKVBuffer_NoChurnUnderRepeatedSnapshots(t *testing.T) {
-	var k kvBuffer
+func TestStore_NoChurnUnderRepeatedSnapshots(t *testing.T) {
+	var k Store
 
 	// Establish peak capacity.
 	first := k.Prepare(1 << 20) // 1 MiB

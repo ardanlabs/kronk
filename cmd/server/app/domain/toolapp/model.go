@@ -293,6 +293,8 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			IncrementalCache:    rmc.PtrIncrementalCache,
 			CacheMinTokens:      rmc.PtrCacheMinTokens,
 			CacheSlotTimeout:    rmc.PtrCacheSlotTimeout,
+			SessionStoreDir:     rmc.SessionStoreDir,
+			SessionStoreKind:    rmc.SessionStoreKind,
 			RopeScaling:         rmc.RopeScaling,
 			PtrRopeFreqBase:     rmc.PtrRopeFreqBase,
 			PtrRopeFreqScale:    rmc.PtrRopeFreqScale,
@@ -626,6 +628,8 @@ type ModelConfig struct {
 	IncrementalCache    *bool                    `json:"incremental-cache"`
 	CacheMinTokens      *int                     `json:"cache-min-tokens"`
 	CacheSlotTimeout    *int                     `json:"cache-slot-timeout"`
+	SessionStoreDir     string                   `json:"session-store-dir,omitempty"`
+	SessionStoreKind    string                   `json:"session-store-kind,omitempty"`
 	Sampling            SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling         model.RopeScalingType    `json:"rope-scaling-type"`
 	PtrRopeFreqBase     *float32                 `json:"rope-freq-base"`

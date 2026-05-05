@@ -41,11 +41,11 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
 
-	imcSession      *imcSession // Matched IMC session (transitional: carries session alongside slot fields)
+	imcSession      *imcSession // Matched IMC session (the session-pool entry whose KV state will be restored into the assigned slot)
 	imcSessionMedia bool        // True if session has media (snapshot at job creation; safe to read without lock)
-	imcSlotID       int         // Target slot index for IMC routing (transitional: removed in Phase 5)
+	imcSlotID       int         // Session-pool index (== imcSession.slotID); used by imcClearPending lookup and log correlation
 	imcCacheHit     bool        // True if conversation history was found in cache
-	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot (transitional: removed in Phase 5)
+	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
 
 	// IMC dedicated slot fields.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence

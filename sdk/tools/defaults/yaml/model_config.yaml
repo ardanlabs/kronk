@@ -23,6 +23,8 @@
 #   rope-freq-base: 1000000              # RoPE base frequency (nil = from model, e.g., 10000 Llama, 1000000 Qwen)
 #   rope-freq-scale: 0.25                # RoPE frequency scale (nil = auto-calculated)
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
+#   session-store-dir: /var/lib/kronk    # Directory for disk session-store files (required when session-store-kind: disk)
+#   session-store-kind: ram              # IMC session KV-state backend: ram (default), disk
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
 #   swa-full: true                       # Full KV cache for SWA layers (default: llama.cpp decides, currently true)
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)

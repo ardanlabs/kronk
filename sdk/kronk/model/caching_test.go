@@ -7,8 +7,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+// ramSessionStore returns a fresh in-process RAM SessionStore for use
+// in tests that need to construct an imcSession with a non-nil
+// kvState. The production code path goes through newSessionStore(cfg)
+// which dispatches by config; tests don't exercise that dispatch and
+// just need the default backend.
+func ramSessionStore() SessionStore {
+	return ram.New()
+}
 
 func TestHashMessages(t *testing.T) {
 	tests := []struct {
@@ -296,8 +306,9 @@ func TestIMCSlotState(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -342,6 +353,7 @@ func TestClearCaches(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
+			kvState:           ramSessionStore(),
 			seqID:             llama.SeqId(i),
 			slotID:            i,
 			cachedMsgsHash:    "hash",
@@ -406,8 +418,9 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -460,6 +473,7 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
+			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
 			slotID:  i,
 			pending: true,
@@ -500,8 +514,9 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -567,8 +582,9 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -636,8 +652,9 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -701,8 +718,9 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -820,8 +838,9 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -965,8 +984,9 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -1027,6 +1047,7 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 // can fill it without allocating; only the valid length is cleared.
 func TestIMCResetSessionClearsKVState(t *testing.T) {
 	s := &imcSession{
+		kvState:           ramSessionStore(),
 		slotID:            0,
 		seqID:             0,
 		cachedMsgsHash:    "abc123",
@@ -1105,6 +1126,7 @@ func TestClearCachesResetsKVState(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
+			kvState:           ramSessionStore(),
 			seqID:             llama.SeqId(i),
 			slotID:            i,
 			cachedMsgsHash:    "hash",
@@ -1165,7 +1187,7 @@ func TestIMCSessionMediaFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			session := &imcSession{hasMedia: tt.hasMedia}
+			session := &imcSession{hasMedia: tt.hasMedia, kvState: ramSessionStore()}
 			got := session.hasMedia || tt.imcMediaBuild
 			if got != tt.wantMediaFlag {
 				t.Errorf("imcSessionMedia = %v, want %v", got, tt.wantMediaFlag)
@@ -1188,6 +1210,7 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	m.cacheCond = sync.NewCond(&m.cacheMu)
 
 	session := &imcSession{
+		kvState: ramSessionStore(),
 		slotID:  0,
 		seqID:   0,
 		pending: true,
@@ -1246,8 +1269,9 @@ func TestIMCKVPressureSkipsExternalizedSessions(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -1325,6 +1349,7 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			session := &imcSession{
+				kvState:  ramSessionStore(),
 				slotID:   1,
 				seqID:    1,
 				hasMedia: tt.hasMedia,
@@ -1353,7 +1378,7 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 // followed by a new imcMediaBuild. All sessions (text and media) get
 // kvState externalized to RAM.
 func TestIMCSessionMediaTransitions(t *testing.T) {
-	s := &imcSession{slotID: 0, seqID: 0}
+	s := &imcSession{slotID: 0, seqID: 0, kvState: ramSessionStore()}
 
 	// snapshot simulates startSlot writing kvState by going through the
 	// kvBuffer Prepare/Commit lifecycle.
@@ -1457,8 +1482,9 @@ func TestIMCCommitThenRematch(t *testing.T) {
 	m.cacheCond = sync.NewCond(&m.cacheMu)
 
 	m.imcSessions[0] = &imcSession{
-		seqID:  0,
-		slotID: 0,
+		kvState: ramSessionStore(),
+		seqID:   0,
+		slotID:  0,
 	}
 
 	// Simulate a completed first request: 2 messages cached.
@@ -1546,8 +1572,9 @@ func TestIMCExtendAfterCommit(t *testing.T) {
 	m.cacheCond = sync.NewCond(&m.cacheMu)
 
 	m.imcSessions[0] = &imcSession{
-		seqID:  0,
-		slotID: 0,
+		kvState: ramSessionStore(),
+		seqID:   0,
+		slotID:  0,
 	}
 
 	// Commit: 2 messages cached, 500 tokens.
@@ -1599,8 +1626,9 @@ func TestIMCSysPromptPreserveRoute(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -1654,8 +1682,9 @@ func TestIMCSysPromptChangeFallsToEmptySlot(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			seqID:  llama.SeqId(i),
-			slotID: i,
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			slotID:  i,
 		}
 	}
 
@@ -1701,16 +1730,16 @@ func TestIMCRebuildResultPartialTrim(t *testing.T) {
 	trimFrom := 4 // Keep first 4 tokens (sys prompt), decode rest.
 
 	result := imcRebuildResult(
-		D{"messages": []D{}}, // d
-		llama.SeqId(0),       // seqID
-		0,                    // slotID
-		5,                    // lastMsgIdxToCache
-		allTokens,            // allTokens
-		"newhash",            // newHash
-		"syshash",            // sysHash
-		200,                  // sysToks
-		trimFrom,             // trimFrom
-		&imcSession{},        // session
+		D{"messages": []D{}},                    // d
+		llama.SeqId(0),                          // seqID
+		0,                                       // slotID
+		5,                                       // lastMsgIdxToCache
+		allTokens,                               // allTokens
+		"newhash",                               // newHash
+		"syshash",                               // sysHash
+		200,                                     // sysToks
+		trimFrom,                                // trimFrom
+		&imcSession{kvState: ramSessionStore()}, // session
 	)
 
 	if result.imcClearSeq {
@@ -1756,7 +1785,7 @@ func TestIMCRebuildResultFullRebuild(t *testing.T) {
 		"syshash",
 		200,
 		0, // trimFrom == 0 → full rebuild
-		&imcSession{},
+		&imcSession{kvState: ramSessionStore()},
 	)
 
 	if !result.imcClearSeq {

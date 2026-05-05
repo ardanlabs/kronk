@@ -310,7 +310,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 		snapshotStart := time.Now()
 
-		// Reuse the session's kvBuffer in place. Prepare returns a slice
+		// Reuse the session's SessionStore in place. Prepare returns a slice
 		// of length kvSize, reusing the existing backing array when its
 		// capacity is sufficient (the common case after the first turn)
 		// and allocating only when the conversation has grown beyond any

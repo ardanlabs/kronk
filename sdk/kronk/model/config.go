@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 
@@ -231,6 +232,17 @@ func (d DraftModelConfig) MainGPU() int    { return intOr(d.PtrMainGPU, 0) }
 // Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that
 // support extended context (e.g., 32k training → 131k with YaRN).
 //
+// SessionStoreDir is the directory where the disk session store
+// backend persists per-session KV cache files. Required when
+// SessionStoreKind is SessionStoreKindDisk; ignored otherwise. The
+// directory must exist and be writable; it is not created on demand.
+//
+// SessionStoreKind selects the backend used to externalize each IMC
+// session's KV cache bytes between requests. Valid values are listed
+// under the SessionStoreKind* constants in session_store.go. When the
+// empty string, defaults to SessionStoreKindRAM (in-process RAM
+// buffer). Only meaningful when IncrementalCache is enabled.
+//
 // SWAFull controls whether models with sliding window attention (SWA) use a
 // full-size KV cache for SWA layers instead of the memory-efficient small
 // cache. When nil (default), llama.cpp's default is used (currently true).
@@ -321,6 +333,8 @@ type Config struct {
 	PtrRopeFreqBase      *float32
 	PtrRopeFreqScale     *float32
 	RopeScaling          RopeScalingType
+	SessionStoreDir      string
+	SessionStoreKind     string
 	PtrSplitMode         *SplitMode
 	PtrSWAFull           *bool
 	TensorBuftOverrides  []string
@@ -356,6 +370,18 @@ func (cfg Config) YarnOrigCtx() int        { return intOr(cfg.PtrYarnOrigCtx, 0)
 func (cfg Config) IncrementalCache() bool  { return boolOr(cfg.PtrIncrementalCache, false) }
 func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLogging, false) }
 func (cfg Config) UseDirectIO() bool       { return boolOr(cfg.PtrUseDirectIO, false) }
+
+// sessionStoreKind returns the configured SessionStore backend, or
+// defaultSessionStoreKind ("ram") if unset. Lowercase because Go does
+// not allow a method and field to share a name; callers outside the
+// package read Config.SessionStoreKind directly and apply their own
+// default if needed.
+func (cfg Config) sessionStoreKind() string {
+	if cfg.SessionStoreKind == "" {
+		return defaultSessionStoreKind
+	}
+	return cfg.SessionStoreKind
+}
 
 func (cfg Config) String() string {
 	formatBoolPtr := func(p *bool) string {
@@ -397,7 +423,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.Devices, cfg.FlashAttention,
 		formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
@@ -406,6 +432,7 @@ func (cfg Config) String() string {
 		cfg.NUMA,
 		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile,
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
+		cfg.SessionStoreDir, cfg.sessionStoreKind(),
 		formatSplitModePtr(cfg.PtrSplitMode),
 		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit, formatBoolPtr(cfg.PtrUseDirectIO),
 		formatBoolPtr(cfg.PtrUseMMap),
@@ -471,6 +498,24 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 	if cfg.OpOffloadMinBatch() < 0 {
 		return fmt.Errorf("validate-config: OpOffloadMinBatch must be >= 0, got %d", cfg.OpOffloadMinBatch())
+	}
+
+	switch cfg.SessionStoreKind {
+	case "", SessionStoreKindRAM:
+		// valid (empty defaults to RAM)
+	case SessionStoreKindDisk:
+		if cfg.SessionStoreDir == "" {
+			return fmt.Errorf("validate-config: SessionStoreDir is required when SessionStoreKind is %q", SessionStoreKindDisk)
+		}
+		fi, err := os.Stat(cfg.SessionStoreDir)
+		if err != nil {
+			return fmt.Errorf("validate-config: SessionStoreDir %q: %w", cfg.SessionStoreDir, err)
+		}
+		if !fi.IsDir() {
+			return fmt.Errorf("validate-config: SessionStoreDir %q is not a directory", cfg.SessionStoreDir)
+		}
+	default:
+		return fmt.Errorf("validate-config: unknown SessionStoreKind: %q (valid: %q, %q)", cfg.SessionStoreKind, SessionStoreKindRAM, SessionStoreKindDisk)
 	}
 
 	for _, modelFile := range cfg.ModelFiles {

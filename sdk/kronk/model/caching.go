@@ -17,14 +17,18 @@ type cacheResult struct {
 	cacheIdx  llama.Pos // KV position where cached content ends; new tokens start here
 	err       error     // Any error that occurred
 
-	// Transitional: slot-oriented fields retained until Phase 4/5 remove slot routing.
-	cacheSeqID      llama.SeqId // Sequence ID for the cached content
-	imcSlotID       int         // Target slot index for IMC routing
-	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot
-	imcPending      bool        // True if the target slot was already pending (caller should retry)
+	// IMC session-routing fields. Sessions externalize their KV state
+	// via SessionStore between requests, so the matched session may run
+	// on any free slot. cacheSeqID and imcSlotID identify the session;
+	// the actual execution slot is chosen by the scheduler at startSlot.
+	cacheSeqID      llama.SeqId // KV sequence ID this session uses while resident in VRAM
+	imcSlotID       int         // Session-pool index (== imcSession.slotID)
+	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
+	imcPending      bool        // True if the matched session was already pending (caller should retry)
 
-	// IMC session pointer. Carries the session reference alongside the
-	// slot-oriented fields during the transition period.
+	// imcSession is the matched session pointer; the SessionStore on it
+	// is the authoritative source of the cached prefix bytes restored
+	// into the chosen slot's sequence at startSlot.
 	imcSession *imcSession
 
 	// IMC extension fields — tokens to decode on top of the cached KV state.

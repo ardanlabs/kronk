@@ -1,42 +1,53 @@
-package model
-
-// kvBuffer encapsulates a session's externalized KV cache state with
-// lazy-grow / never-shrink semantics.
+// Package ram provides the in-process RAM implementation of the
+// model.SessionStore contract used by IMC (Incremental Message Cache)
+// to externalize per-session KV cache bytes between requests.
 //
-// The backing byte array is allocated on first Prepare, grown only when a
+// This is the default session store. It keeps each session's bytes in a
+// single Go-allocated []byte with lazy-grow / never-shrink semantics —
+// the backing array is allocated on first Prepare, grown only when a
 // snapshot exceeds the current capacity, and retained across snapshots
-// (and across session rebinds) so per-turn allocation churn is eliminated.
-// Conversations grow monotonically and are bounded by the model context
-// window, so each session's buffer reaches steady-state after a small
-// number of Prepare calls and never reallocates again.
+// (and across session rebinds) so per-turn allocation churn is
+// eliminated. Conversations grow monotonically and are bounded by the
+// model context window, so each session's buffer reaches steady-state
+// after a small number of Prepare calls and never reallocates again.
 //
-// kvBuffer is NOT safe for concurrent use. Callers must serialize access
-// via the existing per-session invariants — at most one in-flight request
-// touches a given session's kvBuffer at a time.
+// Future kvstorage subpackages (e.g. kvstorage/disk) provide alternative
+// backends behind the same model.SessionStore contract.
+package ram
+
+// Store is the in-process RAM session store. It is NOT safe for
+// concurrent use; the IMC scheduler serializes access via the
+// per-session pending invariant — at most one in-flight request
+// touches a given session's Store at a time.
 //
-// The zero value is a usable, empty buffer.
-type kvBuffer struct {
+// The zero value is a usable, empty Store.
+type Store struct {
 	buf []byte
 }
 
-// Len returns the number of valid bytes currently held in the buffer.
-// This is the size of the most recently Commit'ed snapshot.
-func (k *kvBuffer) Len() int {
-	return len(k.buf)
+// New returns a new, empty Store ready for use.
+func New() *Store {
+	return &Store{}
 }
 
-// Cap returns the current backing-array capacity. Useful for diagnostics
-// and tests that want to verify the never-shrink invariant.
-func (k *kvBuffer) Cap() int {
-	return cap(k.buf)
+// Len returns the number of valid bytes currently held in the store.
+// This is the size of the most recently Commit'ed snapshot.
+func (s *Store) Len() int {
+	return len(s.buf)
+}
+
+// Cap returns the current backing-array capacity. Useful for
+// diagnostics and tests that want to verify the never-shrink invariant.
+func (s *Store) Cap() int {
+	return cap(s.buf)
 }
 
 // Bytes returns the valid byte slice for read access (e.g., to pass to
 // llama.StateSeqSetData when restoring KV state). The returned slice
 // aliases the internal buffer; callers must not retain it past the next
 // Prepare/Commit/Reset call.
-func (k *kvBuffer) Bytes() []byte {
-	return k.buf
+func (s *Store) Bytes() []byte {
+	return s.buf
 }
 
 // Prepare returns a slice of length size, ready to be filled (e.g., by
@@ -62,37 +73,37 @@ func (k *kvBuffer) Bytes() []byte {
 // headroom. This mirrors Go's "newLen > 2*oldCap" shortcut.
 //
 // A negative size is treated as 0.
-func (k *kvBuffer) Prepare(size int) []byte {
+func (s *Store) Prepare(size int) []byte {
 	if size < 0 {
 		size = 0
 	}
 
-	oldCap := cap(k.buf)
+	oldCap := cap(s.buf)
 	if oldCap < size {
 		// Add 25% headroom over the previous capacity, but never less
 		// than the requested size. Integer math: oldCap/4 is +25%.
 		newCap := max(oldCap+oldCap/4, size)
-		k.buf = make([]byte, size, newCap)
+		s.buf = make([]byte, size, newCap)
 	} else {
-		k.buf = k.buf[:size]
+		s.buf = s.buf[:size]
 	}
 
-	return k.buf
+	return s.buf
 }
 
-// Commit truncates the buffer to the actual length n after a fill
+// Commit truncates the store to the actual length n after a fill
 // operation (e.g., when llama.StateSeqGetData returns fewer bytes than
 // the prepared size, or zero on failure). The backing array is retained.
 //
 // n is clamped to [0, cap(buf)].
-func (k *kvBuffer) Commit(n int) {
+func (s *Store) Commit(n int) {
 	switch {
 	case n < 0:
 		n = 0
-	case n > cap(k.buf):
-		n = cap(k.buf)
+	case n > cap(s.buf):
+		n = cap(s.buf)
 	}
-	k.buf = k.buf[:n]
+	s.buf = s.buf[:n]
 }
 
 // Reset clears the valid contents (Len becomes 0) but retains the
@@ -100,6 +111,15 @@ func (k *kvBuffer) Commit(n int) {
 // is rebound to a different conversation: the old conversation's bytes
 // become irrelevant but the buffer itself stays attached to the session
 // to avoid a fresh allocation on the next snapshot.
-func (k *kvBuffer) Reset() {
-	k.buf = k.buf[:0]
+func (s *Store) Reset() {
+	s.buf = s.buf[:0]
+}
+
+// Close releases the backing array. Always returns nil; satisfies the
+// SessionStore.Close contract. The RAM impl has no file descriptors
+// or external resources to release — Go's garbage collector reclaims
+// the backing array once no caller retains a reference.
+func (s *Store) Close() error {
+	s.buf = nil
+	return nil
 }

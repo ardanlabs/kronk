@@ -2651,6 +2651,40 @@ unsloth/LFM2-700M-Q8_0:
           <p><strong>cache-min-tokens</strong></p>
           <p>Minimum common prefix length required for token-level partial prefix matching. If no session's cached tokens share at least this many tokens with the incoming request, the fallback is skipped and the cache is rebuilt from scratch.</p>
           <p>Default: 100 tokens</p>
+          <p><strong>session-store-kind / session-store-dir</strong></p>
+          <p>Selects the backend used to externalize each IMC session's KV cache bytes between requests. Each backend lives in its own subpackage under <code>sdk/kronk/kvstorage/&lt;kind&gt;/</code>, mirroring the parser-plugin layout under <code>sdk/kronk/parsers/&lt;name&gt;/</code>.</p>
+          <pre className="code-block"><code className="language-yaml">{`# Default — keep KV snapshots in process RAM
+Qwen/Qwen3-8B-Q8_0:
+  session-store-kind: ram
+
+# Persist KV snapshots to disk (required when RAM is the bottleneck)
+Qwen/Qwen3-8B-Q8_0:
+  session-store-kind: disk
+  session-store-dir: /var/lib/kronk/sessions`}</code></pre>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Kind</th>
+                <th>Subpackage</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>ram</code></td>
+                <td><code>kvstorage/ram</code></td>
+                <td>Default. One Go-allocated <code>[]byte</code> per session with lazy-grow / never-shrink semantics. Zero configuration.</td>
+              </tr>
+              <tr>
+                <td><code>disk</code></td>
+                <td><code>kvstorage/disk</code></td>
+                <td>Per-session file under <code>session-store-dir</code>. Trades RAM for disk I/O on each snapshot/restore. Use when (NSeqMax × peak-conversation-KV) bytes of RAM is more than you can spare.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Default: <code>ram</code> (used when the field is empty).</p>
+          <p>The disk backend creates each session's file via <code>os.CreateTemp</code> so file names are unique within the directory; files are removed on <code>Model.Unload</code>. On a process crash the per-session files are leaked under <code>session-store-dir</code> and must be reclaimed out-of-band (cron, <code>systemd-tmpfiles</code>, or a manual sweep). The directory must already exist and be writable; it is not created on demand.</p>
+          <p>Additional backends (network-attached, NVMe-direct) are reserved for future phases.</p>
           <h3 id="57-performance-and-limitations">5.7 Performance and Limitations</h3>
           <p>IMC improves request latency by skipping redundant prefill work. It delivers large savings for multi-turn conversations but imposes restrictions on template behavior and session management.</p>
           <p><strong>IMC Prefill Savings:</strong></p>
@@ -6937,25 +6971,24 @@ default:
             <li>Suffix tokens are decoded and generation runs</li>
             <li><code>finishSlot()</code> clears the full VRAM sequence (cached prefix already lives in RAM)</li>
           </ol>
-          <p><strong>IMC Session State</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L39-L55">model.go:39-55</a>):</p>
+          <p><strong>IMC Session State</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L36-L60">model.go</a>):</p>
           <pre className="code-block"><code className="language-go">{`type imcSession struct {
-    slotID            int           // Slot index (transitional: removed in Phase 4)
-    seqID             llama.SeqId   // KV cache sequence ID (transitional: removed in Phase 4)
+    slotID            int           // Stable session-pool index (== seqID)
+    seqID             llama.SeqId   // KV sequence ID this session uses while resident in VRAM
     cachedMsgsHash    string        // Hash of all cached messages
     cachedTokens      []llama.Token // Full token sequence in KV cache
     totalTokensCached int           // Total KV positions cached
     cachedMsgCount    int           // Number of messages cached
-    kvState           []byte        // Externalized KV state (RAM buffer)
-    kvStateBytes      int           // Size of kvState in bytes
+    kvState           SessionStore  // Externalized KV state (kvstorage backend)
     lastUsed          time.Time     // Last access time (for LRU eviction)
-    pending           bool          // True when build/extend in-flight (transitional: removed in Phase 4)
+    pending           bool          // True when build/extend in-flight; protects kvState
     hasMedia          bool          // True if cached content includes media
     useMRoPE          bool          // True if cached media used M-RoPE
     mediaKVCounts     []int         // KV positions per media chunk
     sysPromptHash     string        // Hash of system prompt message
     sysPromptTokens   int           // Token count of system prompt
 }`}</code></pre>
-          <p>The fields marked <code>transitional</code> (<code>slotID</code>, <code>seqID</code>, <code>pending</code>) are scheduled for removal in an upcoming Phase 4 refactor that fully decouples sessions from slots.</p>
+          <p><code>imcSessions</code> is sized 1:1 with execution slots at startup, but sessions are <strong>not</strong> bound to slots — <code>kvState</code> (a <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/session_store.go#L57-L97">SessionStore</a>) externalizes the cached KV bytes between requests so any matched session can run on any free slot. The <code>slotID</code>/<code>seqID</code> fields name the session pool entry and the KV sequence the session occupies while bytes are still resident in VRAM (used for KV-pressure eviction of un-externalized sessions). The <code>pending</code> flag is the per-session in-flight latch that protects <code>kvState</code> from concurrent writers.</p>
           <h4 id="1778-tool-call-internals">17.7.8 Tool Call Internals</h4>
           <p><strong>Processor state machine</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor.go">processor.go</a>):</p>
           <p>A per-slot <code>processor</code> classifies streaming output token-by-token into one of four statuses (<code>processor.go:10-15</code>):</p>
