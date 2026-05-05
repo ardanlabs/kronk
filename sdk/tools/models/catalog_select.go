@@ -11,9 +11,10 @@ import (
 // quantSuffixRe matches a trailing quant tag on a GGUF model id, e.g.:
 //
 //	-Q4_K_M, -Q5_K_S, -IQ3_M, -UD-Q4_K_M, -BF16, -F16, -F32
+//	.Q8_0, .Q4_K_M (mradermacher-style separator)
 //
 // The match is anchored to the end of the string.
-var quantSuffixRe = regexp.MustCompile(`(?i)(-(UD-)?(IQ|Q)\d+(_[A-Z0-9]+)*|-(BF16|F16|F32))$`)
+var quantSuffixRe = regexp.MustCompile(`(?i)([-.](UD[-.])?(IQ|Q)\d+(_[A-Z0-9]+)*|[-.](BF16|F16|F32))$`)
 
 // resolverSplitSuffixRe matches the "-NNNNN-of-NNNNN" GGUF split suffix.
 var resolverSplitSuffixRe = regexp.MustCompile(`-\d+-of-\d+$`)

@@ -60,6 +60,8 @@ func TestStripQuantSuffix(t *testing.T) {
 		{"Llama-3.3-70B-Instruct-Q8_0-00001-of-00002", "Llama-3.3-70B-Instruct"},
 		{"some-model-BF16", "some-model"},
 		{"some-model-F16", "some-model"},
+		{"Qwen2-Audio-7B.Q8_0", "Qwen2-Audio-7B"},
+		{"Qwen2-Audio-7B.Q4_K_M", "Qwen2-Audio-7B"},
 	}
 	for _, tt := range tests {
 		got := stripQuantSuffix(tt.in)
@@ -79,6 +81,8 @@ func TestHasQuantSuffix(t *testing.T) {
 		{"Qwen3.6-35B-A3B", false},
 		{"gemma-4-26B-A4B-it", false},
 		{"Llama-3.3-70B-Instruct-Q8_0-00001-of-00002", true},
+		{"Qwen2-Audio-7B.Q8_0", true},
+		{"Qwen2-Audio-7B.Q4_K_M", true},
 	}
 	for _, tt := range tests {
 		got := hasQuantSuffix(tt.in)
