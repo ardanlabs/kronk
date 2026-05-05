@@ -550,7 +550,7 @@ export default function CatalogList() {
 
       <div className="playground-layout">
         {/* ── Filter Sidebar ────────────────────────────────────────────── */}
-        <ResizablePanel defaultWidth={340} minWidth={240} maxWidth={600} storageKey="catalog-sidebar-width" className="catalog-filter-sidebar-panel">
+        <ResizablePanel defaultWidth={280} minWidth={240} maxWidth={600} storageKey="catalog-sidebar-width" className="catalog-filter-sidebar-panel">
           {/* Search */}
           <div className="catalog-filter-section">
             <input
