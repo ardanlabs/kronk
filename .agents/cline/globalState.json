@@ -2,7 +2,7 @@
     "globalClineRulesToggles": {},
     "globalWorkflowToggles": {},
     "autoApprovalSettings": {
-        "version": 270,
+        "version": 336,
         "enabled": true,
         "favorites": [],
         "maxRequests": 20,
@@ -23,23 +23,23 @@
             "path": "/Users/bill/code/go/src/github.com/ardanlabs/kronk",
             "name": "kronk",
             "vcs": "git",
-            "commitHash": "d50b2a3656b72a8866b26fa74b08007d5ff1d251"
+            "commitHash": "9e3ff227fa3e7381f1388498ec54dab128ad8a0c"
         }
     ],
+    "welcomeViewCompleted": true,
     "primaryRootIndex": 0,
     "actModeThinkingBudgetTokens": 1024,
     "planModeThinkingBudgetTokens": 1024,
-    "actModeOpenAiModelId": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
-    "planModeOpenAiModelId": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
-    "actModeApiModelId": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
+    "actModeOpenAiModelId": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+    "planModeOpenAiModelId": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+    "actModeApiModelId": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
     "openAiBaseUrl": "http://localhost:11435/v1",
     "nativeToolCallEnabled": false,
     "isNewUser": false,
-    "welcomeViewCompleted": true,
     "remoteRulesToggles": {},
     "remoteWorkflowToggles": {},
-    "actModeApiProvider": "openai",
-    "planModeApiProvider": "openai",
+    "actModeApiProvider": "kronk",
+    "planModeApiProvider": "kronk",
     "clineVersion": "3.68.0",
     "lastShownAnnouncementId": "3.68",
     "terminalReuseEnabled": false,
@@ -83,5 +83,7 @@
     "enableParallelToolCalling": true,
     "backgroundEditEnabled": true,
     "__vscodeMigrationVersion": 1,
-    "telemetrySetting": "disabled"
+    "telemetrySetting": "disabled",
+    "cliKanbanMigrationAnnouncementShown": true,
+    "remoteSkillsToggles": {}
 }

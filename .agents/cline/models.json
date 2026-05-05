@@ -1,0 +1,31 @@
+{
+    "version": 1,
+    "providers": {
+        "kronk": {
+            "provider": {
+                "name": "Kronk",
+                "baseUrl": "http://localhost:11435/v1",
+                "defaultModelId": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT"
+            },
+            "models": {
+                "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT": {
+                    "id": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+                    "name": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT"
+                }
+            }
+        },
+        "openai": {
+            "provider": {
+                "name": "OpenAI Compatible",
+                "baseUrl": "http://localhost:11435/v1",
+                "defaultModelId": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT"
+            },
+            "models": {
+                "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT": {
+                    "id": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+                    "name": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT"
+                }
+            }
+        }
+    }
+}
