@@ -25,7 +25,7 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b9016"
+	defaultVersion = "b9030"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
