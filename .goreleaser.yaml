@@ -6,8 +6,6 @@ builds:
   - id: kronk
     main: ./cmd/kronk
     binary: kronk
-    env:
-      - CGO_ENABLED=0
     goos:
       - linux
       - darwin
@@ -32,3 +30,23 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+
+brews:
+  - name: kronk
+    ids:
+      - kronk
+    repository:
+      owner: ardanlabs
+      name: homebrew-kronk
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/ardanlabs/kronk"
+    description: "Local LLM inference SDK and server CLI"
+    license: "Apache-2.0"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "kronk {{ .Tag }}"
+    test: |
+      system "#{bin}/kronk", "--version"

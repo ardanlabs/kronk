@@ -299,10 +299,9 @@ func New(cfg Config) *Server {
 
 **Testing:**
 
-Tests link against yzma (llama.cpp Go bindings), so they require CGO and the
+Tests link against yzma (llama.cpp Go bindings), so they the
 installed libraries plus test models. Always go through `make test` (or
-`make test-only` for fast iteration) per §17.2. Never run with
-`CGO_ENABLED=0` — inference packages will fail to compile.
+`make test-only` for fast iteration) per §17.2.
 
 **Post-edit Checks (per [AGENTS.md](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/AGENTS.md)):**
 
@@ -470,17 +469,17 @@ model ID, so multiple models can stay warm and be acquired on demand
 without paying the load cost on every request. Cache size and idle TTL
 are configurable.
 
-| File      | Purpose                                                                                          |
-| --------- | ------------------------------------------------------------------------------------------------ |
-| `pool.go` | `Pool` type, `Config`, `New`, `AquireModel`, `AquireCustom`, `ModelStatus`, `Shutdown`, eviction |
-| `model.go` | `ModelDetail` struct returned by `ModelStatus()`                                                |
+| File       | Purpose                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| `pool.go`  | `Pool` type, `Config`, `New`, `AquireModel`, `AquireCustom`, `ModelStatus`, `Shutdown`, eviction |
+| `model.go` | `ModelDetail` struct returned by `ModelStatus()`                                                 |
 
 Key behaviors:
 
 - **Singleflight load** — concurrent `AquireModel` calls for the same model
   ID coalesce into a single load.
 - **Pre-emptive eviction** — when the pool is full, the coldest idle entry
-  is unloaded *before* the new model is loaded so two large models never
+  is unloaded _before_ the new model is loaded so two large models never
   sit in VRAM at the same time.
 - **Active-stream protection** — automatic TTL eviction of an entry with
   in-flight streams is rejected; the entry is re-inserted to keep it
@@ -595,7 +594,7 @@ The KV-cache cleanup path depends on whether the request goes through the
 batch engine. The decision is captured by the local `batching` flag in
 [chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go).
 
-*Batched path* (text inference via IMC — the normal route for chat):
+_Batched path_ (text inference via IMC — the normal route for chat):
 
 - The `m.resetContext()` defer in `chat.go` is gated on `!batching` and is
   skipped.
@@ -605,7 +604,7 @@ batch engine. The decision is captured by the local `batching` flag in
 - `releaseModel()` then runs from the wrapper `defer` in `concurrency.go`
   after the user-facing channel closes.
 
-*Non-batched path* (e.g. some embed/rerank entrypoints, non-IMC media flows):
+_Non-batched path_ (e.g. some embed/rerank entrypoints, non-IMC media flows):
 
 - `chat.go` registers `defer m.resetContext()` after `validateAndCloneDocument`
   and `prepareContext` succeed (not "before any processing").
@@ -819,14 +818,14 @@ extraction.
 `parseToolCall` routes accumulated tool-call content to a model-specific
 parser based on its format:
 
-| File                   | Format                                                       |
-| ---------------------- | ------------------------------------------------------------ |
-| `processor_json.go`    | Standard JSON `{"name":..., "arguments":...}`                |
-| `processor_qwen.go`    | Qwen3-Coder XML-like `<tool_call>` / `<function=...>` tags   |
+| File                   | Format                                                                |
+| ---------------------- | --------------------------------------------------------------------- |
+| `processor_json.go`    | Standard JSON `{"name":..., "arguments":...}`                         |
+| `processor_qwen.go`    | Qwen3-Coder XML-like `<tool_call>` / `<function=...>` tags            |
 | `processor_gpt.go`     | GPT-OSS Harmony (`<\|channel\|>commentary to=NAME<\|constrain\|>...`) |
-| `processor_glm.go`     | GLM `<arg_key>` / `<arg_value>` pairs                        |
-| `processor_gemma.go`   | Gemma4 tool calls                                            |
-| `processor_mistral.go` | Mistral / Devstral tool calls                                |
+| `processor_glm.go`     | GLM `<arg_key>` / `<arg_value>` pairs                                 |
+| `processor_gemma.go`   | Gemma4 tool calls                                                     |
+| `processor_mistral.go` | Mistral / Devstral tool calls                                         |
 
 **Split-token tag handling:**
 
@@ -905,16 +904,16 @@ function-call/output items).
 
 **Normalization helpers** (all in `response.go`):
 
-| Function                     | Responsibility                                                            |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| `convertInputToMessages`     | Top-level entrypoint; orchestrates the helpers below                      |
-| `inputToMessages`            | Turns the `input` field (string / messages / items) into `[]model.D`      |
-| `normalizeResponsesItems`    | Maps Responses items (`function_call`, `function_call_output`, …) to Chat messages; groups consecutive `function_call`s into one assistant message with multiple `tool_calls` |
-| `normalizeResponsesContent`  | Translates Responses content parts (`input_text`, `output_text`, …) inside existing messages into Chat-format content |
-| `normalizeTools`             | Converts Responses' flat tool definitions into the Chat-Completions `{ "function": {...} }` shape |
-| `injectInstructions`         | Promotes the Responses `instructions` field into a leading `role:"system"` message |
-| `extractInputParams`         | Pulls Responses-only parameters (e.g. `Instructions`) into `inputParams` for downstream handling |
-| `extractTools`               | Reads the (already-normalized) tool list out of the document              |
+| Function                    | Responsibility                                                                                                                                                                |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `convertInputToMessages`    | Top-level entrypoint; orchestrates the helpers below                                                                                                                          |
+| `inputToMessages`           | Turns the `input` field (string / messages / items) into `[]model.D`                                                                                                          |
+| `normalizeResponsesItems`   | Maps Responses items (`function_call`, `function_call_output`, …) to Chat messages; groups consecutive `function_call`s into one assistant message with multiple `tool_calls` |
+| `normalizeResponsesContent` | Translates Responses content parts (`input_text`, `output_text`, …) inside existing messages into Chat-format content                                                         |
+| `normalizeTools`            | Converts Responses' flat tool definitions into the Chat-Completions `{ "function": {...} }` shape                                                                             |
+| `injectInstructions`        | Promotes the Responses `instructions` field into a leading `role:"system"` message                                                                                            |
+| `extractInputParams`        | Pulls Responses-only parameters (e.g. `Instructions`) into `inputParams` for downstream handling                                                                              |
+| `extractTools`              | Reads the (already-normalized) tool list out of the document                                                                                                                  |
 
 ### 17.9 Goroutine Budget
 
@@ -925,17 +924,17 @@ same model will show ~40 goroutines total. This is normal.
 
 **Baseline goroutines (~25, always running):**
 
-| Source                                         | Goroutines | Location                                    |
-| ---------------------------------------------- | ---------- | ------------------------------------------- |
-| Go runtime (GC, finalizer, netpoller, etc.)    | ~4-6       | runtime internals                           |
-| API `http.Server` (listener + idle conns)      | ~3         | `cmd/server/api/services/kronk/kronk.go`    |
-| Debug `http.Server` (pprof, metrics, statsviz) | ~3         | `cmd/server/api/services/kronk/kronk.go`    |
-| `statsviz.Register` (websocket handler)        | ~2         | `cmd/server/app/sdk/debug/debug.go`         |
-| gRPC auth server (`gs.Serve`)                  | ~2-3       | `cmd/server/app/domain/authapp/start.go`    |
-| Embedded MCP `http.Server` (listener + conns)  | ~2-3       | `cmd/server/app/domain/mcpapp/start.go`     |
-| OTEL background collector probe                | 1          | `sdk/kronk/observ/otel/otel.go`             |
-| `otelhttp.NewHandler` internals                | ~1-2       | `cmd/server/foundation/web/web.go`          |
-| Batch engine `processLoop`                     | 1          | `sdk/kronk/model/batch_engine.go`           |
+| Source                                         | Goroutines | Location                                 |
+| ---------------------------------------------- | ---------- | ---------------------------------------- |
+| Go runtime (GC, finalizer, netpoller, etc.)    | ~4-6       | runtime internals                        |
+| API `http.Server` (listener + idle conns)      | ~3         | `cmd/server/api/services/kronk/kronk.go` |
+| Debug `http.Server` (pprof, metrics, statsviz) | ~3         | `cmd/server/api/services/kronk/kronk.go` |
+| `statsviz.Register` (websocket handler)        | ~2         | `cmd/server/app/sdk/debug/debug.go`      |
+| gRPC auth server (`gs.Serve`)                  | ~2-3       | `cmd/server/app/domain/authapp/start.go` |
+| Embedded MCP `http.Server` (listener + conns)  | ~2-3       | `cmd/server/app/domain/mcpapp/start.go`  |
+| OTEL background collector probe                | 1          | `sdk/kronk/observ/otel/otel.go`          |
+| `otelhttp.NewHandler` internals                | ~1-2       | `cmd/server/foundation/web/web.go`       |
+| Batch engine `processLoop`                     | 1          | `sdk/kronk/model/batch_engine.go`        |
 
 The baseline assumes embedded auth and embedded MCP — the defaults when
 `KRONK_AUTH_HOST` and `KRONK_MCP_HOST` are unset. Pointing either at an
@@ -948,13 +947,13 @@ goroutine (`streaming` or `streamingWith`), and the
 `ChatStreaming`/`ResponseStreaming` request goroutine. `wrapChannelForLogging`
 adds one more when `InsecureLogging` is enabled.
 
-| Source                                                                  | Location                   |
-| ----------------------------------------------------------------------- | -------------------------- |
-| `http.Server` connection handler                                        | Go stdlib                  |
-| `ChatStreaming` request goroutine                                       | `sdk/kronk/model/chat.go`  |
-| `streaming()` wrapper goroutine (Chat / Embedding paths)                | `sdk/kronk/concurrency.go` |
-| `streamingWith()` wrapper goroutine (ResponseStreaming path)            | `sdk/kronk/concurrency.go` |
-| `wrapChannelForLogging` (only when `InsecureLogging` is on)             | `sdk/kronk/model/chat.go`  |
+| Source                                                       | Location                   |
+| ------------------------------------------------------------ | -------------------------- |
+| `http.Server` connection handler                             | Go stdlib                  |
+| `ChatStreaming` request goroutine                            | `sdk/kronk/model/chat.go`  |
+| `streaming()` wrapper goroutine (Chat / Embedding paths)     | `sdk/kronk/concurrency.go` |
+| `streamingWith()` wrapper goroutine (ResponseStreaming path) | `sdk/kronk/concurrency.go` |
+| `wrapChannelForLogging` (only when `InsecureLogging` is on)  | `sdk/kronk/model/chat.go`  |
 
 The goroutine metric is a point-in-time snapshot from `runtime.NumGoroutine()`
 captured every 10th request by the metrics middleware. It includes everything
@@ -1007,11 +1006,11 @@ produces output tokens.
 
 Additional spans that may appear at the top level:
 
-| Span                    | When                          | Description                                            |
-| ----------------------- | ----------------------------- | ------------------------------------------------------ |
-| `model-file-load-time`  | First request for a model     | Loading the GGUF model file                            |
-| `proj-file-load-time`   | Vision/audio requests         | Loading the multimodal projection file                 |
-| `imc-media-cache-build` | Vision/audio IMC builds       | Media-IMC cache build (separate from the text path)    |
+| Span                    | When                      | Description                                         |
+| ----------------------- | ------------------------- | --------------------------------------------------- |
+| `model-file-load-time`  | First request for a model | Loading the GGUF model file                         |
+| `proj-file-load-time`   | Vision/audio requests     | Loading the multimodal projection file              |
+| `imc-media-cache-build` | Vision/audio IMC builds   | Media-IMC cache build (separate from the text path) |
 
 ### 17.11 Inference Code Path
 

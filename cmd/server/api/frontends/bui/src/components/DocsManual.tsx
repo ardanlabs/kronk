@@ -614,7 +614,7 @@ curl http://localhost:11435/v1/chat/completions \\
               </tr>
             </tbody>
           </table>
-          <p>The Go binary is built once with <code>CGO_ENABLED=0</code>, then wrapped per backend so that <code>KRONK_LIB_PATH</code>, <code>KRONK_ALLOW_UPGRADE</code>, and <code>LD_LIBRARY_PATH</code> are set automatically. No dev shell is required to run the resulting binary.</p>
+          <p>The Go binary is built and then wrapped per backend so that <code>KRONK_LIB_PATH</code>, <code>KRONK_ALLOW_UPGRADE</code>, and <code>LD_LIBRARY_PATH</code> are set automatically. No dev shell is required to run the resulting binary.</p>
           <p><strong>Note:</strong> The <code>vendorHash</code> in the flake must be updated whenever <code>go.mod</code> or <code>go.sum</code> changes. Build with a fake hash and Nix will report the correct one.</p>
           <p><strong>Environment Variables</strong></p>
           <p>All shells and built packages automatically set the following:</p>
@@ -6448,7 +6448,7 @@ func New(cfg Config) *Server {
     // ...
 }`}</code></pre>
           <p><strong>Testing:</strong></p>
-          <p>Tests link against yzma (llama.cpp Go bindings), so they require CGO and the installed libraries plus test models. Always go through <code>make test</code> (or <code>make test-only</code> for fast iteration) per §17.2. Never run with <code>CGO_ENABLED=0</code> — inference packages will fail to compile.</p>
+          <p>Tests link against yzma (llama.cpp Go bindings), so they the installed libraries plus test models. Always go through <code>make test</code> (or <code>make test-only</code> for fast iteration) per §17.2.</p>
           <p><strong>Post-edit Checks (per &lt;a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/AGENTS.md"&gt;AGENTS.md&lt;/a&gt;):</strong></p>
           <p>After modifying any <code>.go</code> file, run on the changed files / package:</p>
           <pre className="code-block"><code className="language-shell">{`gofmt -s -w <changed files>

@@ -499,7 +499,7 @@ with the correct llama.cpp backend and runtime libraries baked in:
 | `nix build ./zarf/nix#vulkan` | Vulkan  | Vulkan-capable GPU   |
 | `nix build ./zarf/nix#cuda`   | CUDA    | NVIDIA GPU with CUDA |
 
-The Go binary is built once with `CGO_ENABLED=0`, then wrapped per backend so
+The Go binary is built and then wrapped per backend so
 that `KRONK_LIB_PATH`, `KRONK_ALLOW_UPGRADE`, and `LD_LIBRARY_PATH` are set
 automatically. No dev shell is required to run the resulting binary.
 
