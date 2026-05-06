@@ -8,6 +8,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
@@ -27,7 +28,22 @@ func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, 
 		return Resolution{}, fmt.Errorf("resolve-source: file: %w", err)
 	}
 
-	res, err := NewResolver(m, rfile).Resolve(ctx, source)
+	// Resolver.Resolve only accepts bare ids ("Qwen3-0.6B-Q8_0") or
+	// canonical ids ("unsloth/Qwen3-0.6B-Q8_0"). When the caller passes
+	// a full HuggingFace URL — as the BUI Pull screen does for the
+	// "Full URL" input form — convert it to a canonical id first so
+	// the resolver can do its job. This mirrors the URL → canonical
+	// derivation already used by lookupProjForURL in download.go.
+	id := source
+	if isURL(source) {
+		provider, _, _, file, ok := hf.ParseURL(hf.NormalizeDownloadURL(source))
+		if !ok || provider == "" || file == "" {
+			return Resolution{}, fmt.Errorf("resolve-source: invalid huggingface url: %q", source)
+		}
+		id = fmt.Sprintf("%s/%s", provider, extractModelID(file))
+	}
+
+	res, err := NewResolver(m, rfile).Resolve(ctx, id)
 	if err != nil {
 		return Resolution{}, fmt.Errorf("resolve-source: %w", err)
 	}

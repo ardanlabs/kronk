@@ -54,13 +54,18 @@ export default function ModelPull() {
   const handlePull = () => {
     if (!resolved || isDownloading || resolved.installed) return;
 
-    // The /v1/models/pull endpoint accepts the original source string
-    // and re-runs the resolver itself. Sending the canonical id keeps
-    // the request small and avoids any mismatch with what was just
-    // resolved on screen.
-    const modelArg = resolved.canonical_id || source.trim();
-
     const proj = showOverride ? projOverride.trim() : '';
+
+    // When the user supplies a projection override, the server routes
+    // through DownloadURLs which requires a fully qualified HuggingFace
+    // URL for the model — sending the canonical id here would fail with
+    // "model URL must be fully qualified". Use the URL the resolver
+    // already produced. Without an override, the canonical id is fine
+    // and keeps the request small.
+    const modelArg = proj
+      ? (resolved.download_urls?.[0] || resolved.canonical_id || source.trim())
+      : (resolved.canonical_id || source.trim());
+
     startDownload(modelArg, proj || undefined);
   };
 

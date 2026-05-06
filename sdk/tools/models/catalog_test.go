@@ -475,6 +475,75 @@ func TestErrNotFoundDetection(t *testing.T) {
 	}
 }
 
+func TestModelsResolveSource_FullURL_ConvertsToCanonical(t *testing.T) {
+	// ResolveSource must accept a full HuggingFace download URL and route
+	// it through the resolver as a canonical id. Pre-seeding catalog.yaml
+	// with a matching entry lets the cache hit, so the test runs without
+	// touching HF. Regression test for the BUI Pull screen returning
+	// HTTP 500 when given a full URL.
+	dir := t.TempDir()
+	catalogDir := filepath.Join(dir, "catalog")
+	if err := os.MkdirAll(catalogDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	rfile := filepath.Join(catalogDir, "catalog.yaml")
+
+	cached := Catalog{
+		Providers: []string{"unsloth"},
+		Models: map[string]CatalogEntry{
+			"unsloth/Qwen3-0.6B-Q8_0": {
+				Provider: "unsloth",
+				Family:   "Qwen3-0.6B-GGUF",
+				Revision: "main",
+				Files:    []string{"Qwen3-0.6B-Q8_0.gguf"},
+			},
+		},
+	}
+	data, _ := yaml.Marshal(cached)
+	mustWriteFile(t, rfile, string(data))
+
+	m, err := NewWithPaths(dir)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	url := "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
+
+	res, err := m.ResolveSource(context.Background(), url)
+	if err != nil {
+		t.Fatalf("ResolveSource(%q): %v", url, err)
+	}
+
+	if res.CanonicalID != "unsloth/Qwen3-0.6B-Q8_0" {
+		t.Errorf("CanonicalID = %q, want unsloth/Qwen3-0.6B-Q8_0", res.CanonicalID)
+	}
+	if res.Provider != "unsloth" {
+		t.Errorf("Provider = %q, want unsloth", res.Provider)
+	}
+	if !res.FromCache {
+		t.Error("expected FromCache=true (cache should hit after URL→canonical conversion)")
+	}
+}
+
+func TestModelsResolveSource_InvalidURL_ReturnsError(t *testing.T) {
+	// A URL that doesn't match the HuggingFace resolve layout must surface
+	// a clean error rather than being passed verbatim to the resolver.
+	dir := t.TempDir()
+
+	m, err := NewWithPaths(dir)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	_, err = m.ResolveSource(context.Background(), "https://example.com/not-huggingface")
+	if err == nil {
+		t.Fatal("expected error for non-HF URL")
+	}
+	if !strings.Contains(err.Error(), "invalid huggingface url") {
+		t.Errorf("err = %v, want 'invalid huggingface url'", err)
+	}
+}
+
 // =============================================================================
 
 func mustWriteFile(t *testing.T, path, content string) {
