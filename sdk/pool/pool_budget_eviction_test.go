@@ -70,8 +70,8 @@ func probeFootprints(t *testing.T, modelA, modelB string) (int64, int64) {
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: probeRAMBudget}
 	cfg := pool.Config{
 		Log:           log,
-		ModelsInCache: 10,
-		CacheTTL:      5 * time.Minute,
+		ModelsInPool:  10,
+		TTL:           5 * time.Minute,
 		BudgetPercent: 100,
 		Snapshot:      &snap,
 	}
@@ -120,8 +120,8 @@ func evictsOnSecondLoad(t *testing.T, modelA, modelB string, sizeA, sizeB int64)
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: budget}
 	cfg := pool.Config{
 		Log:           log,
-		ModelsInCache: 10, // cap is well above 2; budget drives eviction.
-		CacheTTL:      5 * time.Minute,
+		ModelsInPool:  10, // cap is well above 2; budget drives eviction.
+		TTL:           5 * time.Minute,
 		BudgetPercent: 100,
 		Snapshot:      &snap,
 	}
@@ -166,8 +166,8 @@ func rejectsInfeasibleRequest(t *testing.T, modelA string, sizeA int64) {
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA / 2}
 	cfg := pool.Config{
 		Log:           log,
-		ModelsInCache: 10,
-		CacheTTL:      5 * time.Minute,
+		ModelsInPool:  10,
+		TTL:           5 * time.Minute,
 		BudgetPercent: 100,
 		Snapshot:      &snap,
 	}
@@ -201,8 +201,8 @@ func releaseRestoresBudget(t *testing.T, modelA string, sizeA int64) {
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA + 64*MiB}
 	cfg := pool.Config{
 		Log:           log,
-		ModelsInCache: 10,
-		CacheTTL:      5 * time.Minute,
+		ModelsInPool:  10,
+		TTL:           5 * time.Minute,
 		BudgetPercent: 100,
 		Snapshot:      &snap,
 	}

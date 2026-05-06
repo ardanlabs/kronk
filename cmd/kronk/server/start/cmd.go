@@ -43,8 +43,8 @@ func init() {
 
 	// Cache settings
 	Cmd.Flags().Int("budget-percent", 0, "Percentage (1..100) of system/VRAM memory the resource manager may consume (default: 80)")
-	Cmd.Flags().Int("models-in-cache", 0, "Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 10)")
-	Cmd.Flags().String("cache-ttl", "", "Cache TTL duration (e.g., 5m, 1h)")
+	Cmd.Flags().Int("models-in-pool", 0, "Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 10)")
+	Cmd.Flags().String("pool-ttl", "", "Cache TTL duration (e.g., 5m, 1h)")
 
 	// Runtime settings
 	Cmd.Flags().String("device", "", "Device to use for inference (e.g., cuda, metal, rocm)")

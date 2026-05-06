@@ -106,10 +106,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			// 25% should be enough for most systems. Some might want to have
 			// this even lower.
 		}
-		Cache struct {
+		Pool struct {
 			ModelConfigFile string
 			BudgetPercent   int           `conf:"default:80"`
-			ModelsInCache   int           `conf:"default:10"`
+			ModelsInPool    int           `conf:"default:10"`
 			TTL             time.Duration `conf:"default:20m"`
 		}
 		BasePath        string
@@ -304,7 +304,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Model Config
 
-	modelConfigFile, err := defaults.ModelConfigFile(cfg.Cache.ModelConfigFile, cfg.BasePath)
+	modelConfigFile, err := defaults.ModelConfigFile(cfg.Pool.ModelConfigFile, cfg.BasePath)
 	if err != nil {
 		return fmt.Errorf("resolving model config file: %w", err)
 	}
@@ -324,9 +324,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Log:             log.Info,
 		BasePath:        cfg.BasePath,
 		ModelConfigFile: modelConfigFile,
-		BudgetPercent:   cfg.Cache.BudgetPercent,
-		ModelsInCache:   cfg.Cache.ModelsInCache,
-		CacheTTL:        cfg.Cache.TTL,
+		BudgetPercent:   cfg.Pool.BudgetPercent,
+		ModelsInPool:    cfg.Pool.ModelsInPool,
+		TTL:             cfg.Pool.TTL,
 		InsecureLogging: cfg.InsecureLogging,
 	})
 

@@ -33,13 +33,13 @@ var ErrServerBusy = errors.New("server busy: all model slots have active request
 // Defaults to defaultBudgetPercent (80) when zero. This is the primary
 // admission knob.
 //
-// ModelsInCache: Safety-net cap on the number of distinct entries the pool
+// ModelsInPool: Safety-net cap on the number of distinct entries the pool
 // will keep, independent of the byte budget. Defaults to 10 when zero. The
 // default is set higher than typical concurrent use (1-3 models) so the
 // budget remains the primary admission knob; lower it on small systems
 // where you want a tighter hard ceiling on resident models.
 //
-// CacheTTL: Defines the time an existing model can live in the pool without
+// TTL: Defines the time an existing model can live in the pool without
 // being used. Defaults to 5 minutes if the value is 0.
 //
 // Snapshot: Optional resource snapshot used to construct the resource
@@ -52,9 +52,9 @@ type Config struct {
 	Log             kronk.Logger
 	BasePath        string
 	ModelConfigFile string
-	ModelsInCache   int
+	ModelsInPool    int
 	BudgetPercent   int
-	CacheTTL        time.Duration
+	TTL             time.Duration
 	Snapshot        *resman.Snapshot
 	InsecureLogging bool
 }
@@ -62,8 +62,8 @@ type Config struct {
 // Default config values applied when the corresponding field is zero.
 const (
 	defaultBudgetPercent = 80
-	defaultModelsInCache = 10
-	defaultCacheTTL      = 5 * time.Minute
+	defaultModelsInPool  = 10
+	defaultTTL           = 5 * time.Minute
 )
 
 func validateConfig(cfg Config) (Config, error) {
@@ -71,12 +71,12 @@ func validateConfig(cfg Config) (Config, error) {
 		cfg.BudgetPercent = defaultBudgetPercent
 	}
 
-	if cfg.ModelsInCache <= 0 {
-		cfg.ModelsInCache = defaultModelsInCache
+	if cfg.ModelsInPool <= 0 {
+		cfg.ModelsInPool = defaultModelsInPool
 	}
 
-	if cfg.CacheTTL <= 0 {
-		cfg.CacheTTL = defaultCacheTTL
+	if cfg.TTL <= 0 {
+		cfg.TTL = defaultTTL
 	}
 
 	return cfg, nil
@@ -87,17 +87,17 @@ func validateConfig(cfg Config) (Config, error) {
 // Pool manages a set of Kronk APIs for use. It maintains a pool of these
 // APIs and will unload over time if not in use.
 type Pool struct {
-	log              kronk.Logger
-	modelConfig      map[string]models.ModelConfig
-	cache            *otter.Cache[string, *kronk.Kronk]
-	itemsInCache     atomic.Int32
-	maxModelsInCache int
-	models           *models.Models
-	insecureLogging  bool
-	loadGroup        singleflight.Group
-	resman           *resman.Manager
-	ticketsMu        sync.Mutex
-	tickets          map[string]resman.Ticket
+	log             kronk.Logger
+	modelConfig     map[string]models.ModelConfig
+	cache           *otter.Cache[string, *kronk.Kronk]
+	itemsInPool     atomic.Int32
+	maxModelsInPool int
+	models          *models.Models
+	insecureLogging bool
+	loadGroup       singleflight.Group
+	resman          *resman.Manager
+	ticketsMu       sync.Mutex
+	tickets         map[string]resman.Ticket
 }
 
 // New constructs the manager for use.
@@ -140,18 +140,18 @@ func New(cfg Config) (*Pool, error) {
 	}
 
 	p := Pool{
-		log:              cfg.Log,
-		modelConfig:      mc,
-		maxModelsInCache: cfg.ModelsInCache,
-		models:           mdls,
-		insecureLogging:  cfg.InsecureLogging,
-		resman:           rm,
-		tickets:          make(map[string]resman.Ticket),
+		log:             cfg.Log,
+		modelConfig:     mc,
+		maxModelsInPool: cfg.ModelsInPool,
+		models:          mdls,
+		insecureLogging: cfg.InsecureLogging,
+		resman:          rm,
+		tickets:         make(map[string]resman.Ticket),
 	}
 
 	opt := otter.Options[string, *kronk.Kronk]{
-		MaximumSize:      cfg.ModelsInCache,
-		ExpiryCalculator: otter.ExpiryAccessing[string, *kronk.Kronk](cfg.CacheTTL),
+		MaximumSize:      cfg.ModelsInPool,
+		ExpiryCalculator: otter.ExpiryAccessing[string, *kronk.Kronk](cfg.TTL),
 		OnDeletion:       p.eviction,
 	}
 
@@ -164,7 +164,7 @@ func New(cfg Config) (*Pool, error) {
 
 	p.logResmanInit(context.Background())
 
-	metrics.SetPoolMaxItemsInCache(cfg.ModelsInCache)
+	metrics.SetPoolMaxItemsInPool(cfg.ModelsInPool)
 	p.publishMetrics()
 
 	return &p, nil
@@ -219,8 +219,8 @@ func (p *Pool) publishMetrics() {
 
 	metrics.PublishResmanUsage(pu)
 
-	items := int(p.itemsInCache.Load())
-	metrics.SetPoolItemsInCache(items)
+	items := int(p.itemsInPool.Load())
+	metrics.SetPoolItemsInPool(items)
 
 	// Inflight = tickets held but not yet visible in the cache.
 	p.ticketsMu.Lock()
@@ -261,7 +261,7 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 
 	p.cache.InvalidateAll()
 
-	for p.itemsInCache.Load() > 0 {
+	for p.itemsInPool.Load() > 0 {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -478,7 +478,7 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 
 		p.storeTicket(modelID, ticket)
 		p.cache.Set(modelID, krn)
-		p.itemsInCache.Add(1)
+		p.itemsInPool.Add(1)
 
 		if entry, ok := p.cache.GetEntryQuietly(modelID); ok {
 			p.log(ctx, "acquire-model",
@@ -617,7 +617,7 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 
 		p.storeTicket(key, ticket)
 		p.cache.Set(key, krn)
-		p.itemsInCache.Add(1)
+		p.itemsInPool.Add(1)
 
 		if entry, ok := p.cache.GetEntryQuietly(key); ok {
 			p.log(ctx, "acquire-custom",
@@ -716,7 +716,7 @@ func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 
 // reserveWithEviction reserves the model's memory footprint with the
 // resource manager, evicting idle entries to free either the budget or the
-// items-in-cache cap when necessary.
+// items-in-pool cap when necessary.
 //
 // On success it returns the ticket and the resolved plan. On failure it
 // returns ErrServerBusy if no idle victims remain, or a wrapped error from
@@ -730,8 +730,8 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 		"vram", HumanBytes(req.VRAMBytes),
 		"ram", HumanBytes(req.RAMBytes),
 		"devices", req.Devices,
-		"items-in-cache", p.itemsInCache.Load(),
-		"max-models-in-cache", p.maxModelsInCache,
+		"items-in-pool", p.itemsInPool.Load(),
+		"max-models-in-pool", p.maxModelsInPool,
 	)
 
 	// Reject infeasible reservations BEFORE evicting anything. Without this
@@ -754,16 +754,16 @@ func (p *Pool) reserveWithEviction(ctx context.Context, newKey string, req resma
 
 	for attempt := range maxAttempts {
 
-		// Enforce the items-in-cache cap before attempting to reserve. Even
+		// Enforce the items-in-pool cap before attempting to reserve. Even
 		// when budget allows, the cap bounds how many distinct entries we
 		// keep in memory.
-		if int(p.itemsInCache.Load()) >= p.maxModelsInCache {
+		if int(p.itemsInPool.Load()) >= p.maxModelsInPool {
 			p.log(ctx, "reserve",
 				"status", "cap-hit",
 				"key", newKey,
 				"attempt", attempt,
-				"items-in-cache", p.itemsInCache.Load(),
-				"max-models-in-cache", p.maxModelsInCache,
+				"items-in-pool", p.itemsInPool.Load(),
+				"max-models-in-pool", p.maxModelsInPool,
 			)
 			if err := p.evictOneIdle(ctx, newKey, "cap", req); err != nil {
 				p.log(ctx, "reserve",
@@ -984,8 +984,8 @@ func (p *Pool) evictOneIdle(ctx context.Context, newKey, reason string, req resm
 		"reason", reason,
 		"selection", victimSelectionMode,
 		"victim", victim,
-		"items-in-cache", p.itemsInCache.Load(),
-		"max-models-in-cache", p.maxModelsInCache,
+		"items-in-pool", p.itemsInPool.Load(),
+		"max-models-in-pool", p.maxModelsInPool,
 	)
 
 	metrics.AddPoolEvictBeforeLoad()
@@ -996,7 +996,7 @@ func (p *Pool) evictOneIdle(ctx context.Context, newKey, reason string, req resm
 
 	deadline := time.Now().Add(maxWait)
 	for {
-		if !p.hasTicket(victim) && int(p.itemsInCache.Load()) < p.maxModelsInCache+1 {
+		if !p.hasTicket(victim) && int(p.itemsInPool.Load()) < p.maxModelsInPool+1 {
 			// The eviction callback has run (ticket released) and the
 			// counter has been decremented or is at its previous level.
 			// We use cap+1 to allow the counter check to succeed even if
@@ -1020,7 +1020,7 @@ func (p *Pool) evictOneIdle(ctx context.Context, newKey, reason string, req resm
 	p.log(ctx, "acquire",
 		"status", "evict-before-load-complete",
 		"victim", victim,
-		"items-in-cache", p.itemsInCache.Load(),
+		"items-in-pool", p.itemsInPool.Load(),
 	)
 
 	return nil
@@ -1109,7 +1109,7 @@ func (p *Pool) eviction(event otter.DeletionEvent[string, *kronk.Kronk]) {
 		p.logResmanUsage(ctx, "post-release", "key", event.Key)
 	}
 
-	p.itemsInCache.Add(-1)
+	p.itemsInPool.Add(-1)
 
 	p.publishMetrics()
 }

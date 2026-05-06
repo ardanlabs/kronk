@@ -341,7 +341,7 @@ kronk-server:
 	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_ALLOW_UPGRADE=true && \
 	export KRONK_INSECURE_LOGGING=true && \
-	export KRONK_CACHE_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-build: kronk-build
@@ -349,7 +349,7 @@ kronk-server-build: kronk-build
 	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_ALLOW_UPGRADE=true && \
 	export KRONK_INSECURE_LOGGING=true && \
-	export KRONK_CACHE_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: bui-build

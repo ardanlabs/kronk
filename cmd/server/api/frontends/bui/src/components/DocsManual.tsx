@@ -2973,9 +2973,9 @@ kronk libs --local`}</code></pre>
           <p><strong>Environment Variables</strong></p>
           <p>Every command-line flag has a corresponding environment variable. The naming convention is <code>KRONK_</code> followed by the flag name in uppercase with hyphens replaced by underscores:</p>
           <pre className="code-block"><code>{`--api-host        →  KRONK_WEB_API_HOST
---budget-percent  →  KRONK_CACHE_BUDGET_PERCENT
---models-in-cache →  KRONK_CACHE_MODELS_IN_CACHE
---cache-ttl       →  KRONK_CACHE_TTL
+--budget-percent  →  KRONK_POOL_BUDGET_PERCENT
+--models-in-pool →  KRONK_POOL_MODELS_IN_POOL
+--pool-ttl       →  KRONK_POOL_TTL
 --processor       →  KRONK_PROCESSOR
 --hf-token        →  KRONK_HF_TOKEN`}</code></pre>
           <p>Environment variables are useful for:</p>
@@ -3116,7 +3116,7 @@ kronk libs --local`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p><strong>Cache & Model Configuration Settings</strong></p>
+          <p><strong>Pool & Model Configuration Settings</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -3129,25 +3129,25 @@ kronk libs --local`}</code></pre>
             <tbody>
               <tr>
                 <td><code>--model-config-file</code></td>
-                <td><code>KRONK_CACHE_MODEL_CONFIG_FILE</code></td>
+                <td><code>KRONK_POOL_MODEL_CONFIG_FILE</code></td>
                 <td><code>&lt;base&gt;/model_config.yaml</code></td>
                 <td>Path to per-model configuration overrides. Defaults to the file under your <code>--base-path</code>.</td>
               </tr>
               <tr>
                 <td><code>--budget-percent</code></td>
-                <td><code>KRONK_CACHE_BUDGET_PERCENT</code></td>
+                <td><code>KRONK_POOL_BUDGET_PERCENT</code></td>
                 <td><code>80</code></td>
                 <td>Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See <a href="#75-resource-manager">Section 7.5</a>.</td>
               </tr>
               <tr>
-                <td><code>--models-in-cache</code></td>
-                <td><code>KRONK_CACHE_MODELS_IN_CACHE</code></td>
+                <td><code>--models-in-pool</code></td>
+                <td><code>KRONK_POOL_MODELS_IN_POOL</code></td>
                 <td><code>10</code></td>
                 <td>Safety-net cap on the number of distinct models kept loaded, regardless of budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models.</td>
               </tr>
               <tr>
-                <td><code>--cache-ttl</code></td>
-                <td><code>KRONK_CACHE_TTL</code></td>
+                <td><code>--pool-ttl</code></td>
+                <td><code>KRONK_POOL_TTL</code></td>
                 <td><code>20m</code></td>
                 <td>How long an unused model stays loaded</td>
               </tr>
@@ -3230,7 +3230,7 @@ kronk libs --local`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=0.0.0.0:11435 \\
   --budget-percent=80 \\
-  --cache-ttl=30m \\
+  --pool-ttl=30m \\
   --model-config-file=./model_config.yaml \\
   --hf-token=hf_xxxxx`}</code></pre>
           <h3 id="74-model-caching">7.4 Model Caching</h3>
@@ -3238,12 +3238,12 @@ kronk libs --local`}</code></pre>
           <p><strong>Configuration</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --budget-percent=80 \\
-  --models-in-cache=10 \\
-  --cache-ttl=20m`}</code></pre>
+  --models-in-pool=10 \\
+  --pool-ttl=20m`}</code></pre>
           <ul>
             <li><code>budget-percent</code> - Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models (default: 80)</li>
-            <li><code>models-in-cache</code> - Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 10). The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models.</li>
-            <li><code>cache-ttl</code> - How long an unused model stays loaded (default: 20m)</li>
+            <li><code>models-in-pool</code> - Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 10). The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models.</li>
+            <li><code>pool-ttl</code> - How long an unused model stays loaded (default: 20m)</li>
           </ul>
           <p>When a new model is requested and admitting it would exceed the budget, the resource manager evicts the coldest idle model in the pool to free room. If no idle model can be evicted (every loaded model has active streams), the request returns <code>server busy</code>. See <a href="#75-resource-manager">Section 7.5</a> for the full admission and eviction model.</p>
           <h3 id="75-resource-manager">7.5 Resource Manager</h3>
@@ -3268,7 +3268,7 @@ kronk libs --local`}</code></pre>
           <p><strong>Eviction on a busy pool</strong></p>
           <p>When a load is admitted but no headroom remains, the pool evicts the coldest idle (no active streams) model in the cache, waits for its unload to release the reservation, and retries. If every loaded model has active streams, the request fails with <code>server busy: all model slots have active requests</code> and the client should retry later.</p>
           <p><strong>ModelsInCache safety-net cap</strong></p>
-          <p><code>--models-in-cache</code> (default <code>10</code>) is a hard upper bound on the number of distinct entries the pool will keep, independent of the byte budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob in normal operation. It exists so operators on small systems — or anyone debugging cache churn — can pin the maximum number of resident models with a single integer.</p>
+          <p><code>--models-in-pool</code> (default <code>10</code>) is a hard upper bound on the number of distinct entries the pool will keep, independent of the byte budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob in normal operation. It exists so operators on small systems — or anyone debugging cache churn — can pin the maximum number of resident models with a single integer.</p>
           <p><strong>Inspecting current usage</strong></p>
           <p>The pool emits structured <code>resman-init</code> and <code>resman-usage</code> log lines on startup and after every reserve/release, including per-GPU <code>used/budget/free</code> and <code>ram-used/ram-budget</code>. These are the easiest way to confirm the manager is reasoning about the right hardware.</p>
           <h3 id="76-model-config-files">7.6 Model Config Files</h3>
@@ -3293,7 +3293,7 @@ ggml-org/embeddinggemma-300m-qat-Q8_0:
           <p>To point at an alternative file (for testing without modifying your main one):</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-test-config.yaml`}</code></pre>
           <p>Or via environment variable:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_CACHE_MODEL_CONFIG_FILE=/path/to/model_config.yaml
+          <pre className="code-block"><code className="language-shell">{`export KRONK_POOL_MODEL_CONFIG_FILE=/path/to/model_config.yaml
 kronk server start`}</code></pre>
           <p><strong>Project Reference Configuration</strong></p>
           <p>The Kronk repository includes a comprehensive reference configuration with recommended settings for various models and use cases at <code>zarf/kms/model_config.yaml</code>. It includes:</p>
@@ -3398,7 +3398,7 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=0.0.0.0:11435 \\
   --budget-percent=80 \\
-  --cache-ttl=20m \\
+  --pool-ttl=20m \\
   --model-config-file=/etc/kronk/model_config.yaml \\
   --processor=cuda \\
   --auth-enabled=true \\

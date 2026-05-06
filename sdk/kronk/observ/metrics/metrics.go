@@ -114,8 +114,8 @@ type promMetrics struct {
 	poolSingleflightWait     prometheus.Histogram
 	poolEvictWaitSeconds     prometheus.Histogram
 	poolUnloadDuration       *prometheus.HistogramVec // labels: model_id.
-	poolItemsInCache         prometheus.Gauge
-	poolMaxItemsInCache      prometheus.Gauge
+	poolItemsInPool          prometheus.Gauge
+	poolMaxItemsInPool       prometheus.Gauge
 	poolActiveStreams        *prometheus.GaugeVec // labels: model_id.
 	poolInflightLoads        prometheus.Gauge
 
@@ -230,12 +230,12 @@ func init() {
 			Help:    "Model unload duration in seconds.",
 			Buckets: subSecondBuckets,
 		}, []string{"model_id"}),
-		poolItemsInCache: auto.NewGauge(prometheus.GaugeOpts{
-			Name: "pool_items_in_cache",
+		poolItemsInPool: auto.NewGauge(prometheus.GaugeOpts{
+			Name: "pool_items_in_pool",
 			Help: "Number of distinct model entries currently in the pool cache.",
 		}),
-		poolMaxItemsInCache: auto.NewGauge(prometheus.GaugeOpts{
-			Name: "pool_max_items_in_cache",
+		poolMaxItemsInPool: auto.NewGauge(prometheus.GaugeOpts{
+			Name: "pool_max_items_in_pool",
 			Help: "Maximum number of model entries the pool will keep before TTL/cap eviction.",
 		}),
 		poolActiveStreams: auto.NewGaugeVec(prometheus.GaugeOpts{
@@ -510,14 +510,14 @@ func ObservePoolUnloadDuration(modelID string, d time.Duration) {
 	m.poolUnloadDuration.WithLabelValues(normalizeModelID(modelID)).Observe(d.Seconds())
 }
 
-// SetPoolItemsInCache updates the gauge of items currently in the pool.
-func SetPoolItemsInCache(n int) {
-	m.poolItemsInCache.Set(float64(n))
+// SetPoolItemsInPool updates the gauge of items currently in the pool.
+func SetPoolItemsInPool(n int) {
+	m.poolItemsInPool.Set(float64(n))
 }
 
-// SetPoolMaxItemsInCache updates the gauge of the configured cache cap.
-func SetPoolMaxItemsInCache(n int) {
-	m.poolMaxItemsInCache.Set(float64(n))
+// SetPoolMaxItemsInPool updates the gauge of the configured cache cap.
+func SetPoolMaxItemsInPool(n int) {
+	m.poolMaxItemsInPool.Set(float64(n))
 }
 
 // SetPoolActiveStreams updates the active streams gauge for a model.

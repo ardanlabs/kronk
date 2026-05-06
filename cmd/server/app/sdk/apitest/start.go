@@ -141,8 +141,8 @@ func New(t *testing.T, testName string) *Test {
 	p, err := pool.New(pool.Config{
 		Log:             log.Info,
 		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
-		ModelsInCache:   1,
-		CacheTTL:        5 * time.Minute,
+		ModelsInPool:    1,
+		TTL:             5 * time.Minute,
 		BudgetPercent:   95,
 	})
 

@@ -39,9 +39,9 @@ func Test_FailedLoadReleasesReservation(t *testing.T) {
 	}
 
 	cfg := pool.Config{
-		Log:           captureLog,
-		ModelsInCache: 2,
-		CacheTTL:      5 * time.Minute,
+		Log:          captureLog,
+		ModelsInPool: 2,
+		TTL:          5 * time.Minute,
 	}
 
 	mgr, err := pool.New(cfg)

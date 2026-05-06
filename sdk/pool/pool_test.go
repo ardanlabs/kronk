@@ -49,9 +49,9 @@ func newManager(t *testing.T) {
 
 	t.Run("custom config values", func(t *testing.T) {
 		cfg := pool.Config{
-			Log:           log,
-			ModelsInCache: 1,
-			CacheTTL:      10 * time.Minute,
+			Log:          log,
+			ModelsInPool: 1,
+			TTL:          10 * time.Minute,
 		}
 
 		mgr, err := pool.New(cfg)
@@ -66,9 +66,9 @@ func acquireModel(t *testing.T) {
 	modelID := findAvailableModel(t, "")
 
 	cfg := pool.Config{
-		Log:           kronk.DiscardLogger,
-		ModelsInCache: 1,
-		CacheTTL:      5 * time.Minute,
+		Log:          kronk.DiscardLogger,
+		ModelsInPool: 1,
+		TTL:          5 * time.Minute,
 	}
 
 	mgr, err := pool.New(cfg)
@@ -137,9 +137,9 @@ func shutdown(t *testing.T) {
 
 	t.Run("shutdown with loaded models", func(t *testing.T) {
 		cfg := pool.Config{
-			Log:           log,
-			ModelsInCache: 1,
-			CacheTTL:      5 * time.Minute,
+			Log:          log,
+			ModelsInPool: 1,
+			TTL:          5 * time.Minute,
 		}
 
 		mgr, err := pool.New(cfg)
@@ -165,9 +165,9 @@ func shutdown(t *testing.T) {
 
 	t.Run("shutdown timeout expires", func(t *testing.T) {
 		cfg := pool.Config{
-			Log:           log,
-			ModelsInCache: 1,
-			CacheTTL:      5 * time.Minute,
+			Log:          log,
+			ModelsInPool: 1,
+			TTL:          5 * time.Minute,
 		}
 
 		mgr, err := pool.New(cfg)
@@ -194,9 +194,9 @@ func shutdown(t *testing.T) {
 
 	t.Run("shutdown with cancelled context", func(t *testing.T) {
 		cfg := pool.Config{
-			Log:           log,
-			ModelsInCache: 1,
-			CacheTTL:      5 * time.Minute,
+			Log:          log,
+			ModelsInPool: 1,
+			TTL:          5 * time.Minute,
 		}
 
 		mgr, err := pool.New(cfg)
@@ -221,9 +221,9 @@ func shutdown(t *testing.T) {
 
 	t.Run("shutdown blocks until eviction completes", func(t *testing.T) {
 		cfg := pool.Config{
-			Log:           log,
-			ModelsInCache: 1,
-			CacheTTL:      5 * time.Minute,
+			Log:          log,
+			ModelsInPool: 1,
+			TTL:          5 * time.Minute,
 		}
 
 		mgr, err := pool.New(cfg)
@@ -269,9 +269,9 @@ func eviction(t *testing.T) {
 
 	t.Run("eviction on TTL expiry", func(t *testing.T) {
 		cfg := pool.Config{
-			Log:           log,
-			ModelsInCache: 1,
-			CacheTTL:      500 * time.Millisecond,
+			Log:          log,
+			ModelsInPool: 1,
+			TTL:          500 * time.Millisecond,
 		}
 
 		mgr, err := pool.New(cfg)
@@ -302,9 +302,9 @@ func eviction(t *testing.T) {
 
 	t.Run("eviction on capacity exceeded", func(t *testing.T) {
 		cfg := pool.Config{
-			Log:           log,
-			ModelsInCache: 1,
-			CacheTTL:      5 * time.Minute,
+			Log:          log,
+			ModelsInPool: 1,
+			TTL:          5 * time.Minute,
 		}
 
 		mgr, err := pool.New(cfg)

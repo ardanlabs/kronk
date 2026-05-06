@@ -152,11 +152,11 @@ export default function DocsCLIServer() {
                   <td>Percentage (1..100) of detected GPU VRAM and system RAM that the resource manager may commit to loaded models (default 80)</td>
                 </tr>
                 <tr>
-                  <td><code>--models-in-cache &lt;int&gt;</code></td>
+                  <td><code>--models-in-pool &lt;int&gt;</code></td>
                   <td>Safety-net cap on the number of distinct models kept loaded, regardless of budget (default 10). The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models.</td>
                 </tr>
                 <tr>
-                  <td><code>--cache-ttl &lt;duration&gt;</code></td>
+                  <td><code>--pool-ttl &lt;duration&gt;</code></td>
                   <td>Cache TTL duration (e.g. <code>5m</code>, <code>1h</code>)</td>
                 </tr>
               </tbody>
@@ -261,12 +261,12 @@ export default function DocsCLIServer() {
                   <td>Tracing configuration</td>
                 </tr>
                 <tr>
-                  <td><code>KRONK_CACHE_MODEL_CONFIG_FILE</code></td>
+                  <td><code>KRONK_POOL_MODEL_CONFIG_FILE</code></td>
                   <td>Path to model_config.yaml</td>
                 </tr>
                 <tr>
-                  <td><code>KRONK_CACHE_MODEL_INSTANCES</code> / <code>KRONK_CACHE_BUDGET_PERCENT</code> / <code>KRONK_CACHE_TTL</code></td>
-                  <td>Cache settings</td>
+                  <td><code>KRONK_POOL_MODEL_INSTANCES</code> / <code>KRONK_POOL_BUDGET_PERCENT</code> / <code>KRONK_POOL_TTL</code></td>
+                  <td>Pool settings</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_LIB_PATH</code> / <code>KRONK_LIB_VERSION</code></td>

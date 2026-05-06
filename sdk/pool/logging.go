@@ -19,7 +19,7 @@ func (p *Pool) logResmanInit(ctx context.Context) {
 		"headroom", HumanBytes(u.HeadroomBytes),
 		"gpu-count", len(u.Devices),
 		"ram-budget", HumanBytes(u.RAMBudget),
-		"max-models-in-cache", p.maxModelsInCache,
+		"max-models-in-pool", p.maxModelsInPool,
 	}
 
 	for _, d := range u.Devices {

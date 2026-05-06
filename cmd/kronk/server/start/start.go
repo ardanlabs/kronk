@@ -111,18 +111,18 @@ func buildEnvVars(cmd *cobra.Command) []string {
 		envVars = append(envVars, "KRONK_TEMPO_PROBABILITY="+strconv.FormatFloat(v, 'f', -1, 64))
 	}
 
-	// Cache settings
+	// Pool settings
 	if v, _ := cmd.Flags().GetString("model-config-file"); v != "" {
-		envVars = append(envVars, "KRONK_CACHE_MODEL_CONFIG_FILE="+v)
+		envVars = append(envVars, "KRONK_POOL_MODEL_CONFIG_FILE="+v)
 	}
 	if v, _ := cmd.Flags().GetInt("budget-percent"); v != 0 {
-		envVars = append(envVars, "KRONK_CACHE_BUDGET_PERCENT="+strconv.Itoa(v))
+		envVars = append(envVars, "KRONK_POOL_BUDGET_PERCENT="+strconv.Itoa(v))
 	}
-	if v, _ := cmd.Flags().GetInt("models-in-cache"); v != 0 {
-		envVars = append(envVars, "KRONK_CACHE_MODELS_IN_CACHE="+strconv.Itoa(v))
+	if v, _ := cmd.Flags().GetInt("models-in-pool"); v != 0 {
+		envVars = append(envVars, "KRONK_POOL_MODELS_IN_POOL="+strconv.Itoa(v))
 	}
-	if v, _ := cmd.Flags().GetString("cache-ttl"); v != "" {
-		envVars = append(envVars, "KRONK_CACHE_TTL="+v)
+	if v, _ := cmd.Flags().GetString("pool-ttl"); v != "" {
+		envVars = append(envVars, "KRONK_POOL_TTL="+v)
 	}
 
 	// Runtime settings
