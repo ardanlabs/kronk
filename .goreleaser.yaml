@@ -31,24 +31,30 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
-# NOTE: `brews:` is deprecated by GoReleaser in favor of `homebrew_casks:`,
-# but Homebrew casks are macOS-only. We need cross-platform brew support
-# (macOS + Linuxbrew), so we intentionally stay on `brews:` until GoReleaser
-# either removes it or ships a cross-platform cask story.
-brews:
+# NOTE: GoReleaser deprecated `brews:` in favor of `homebrew_casks:` (v2.10).
+# Per the GoReleaser maintainer, casks generated this way work on both macOS
+# and Linuxbrew, so this is the recommended path going forward.
+homebrew_casks:
   - name: kronk
+    binaries:
+      - kronk
     repository:
       owner: ardanlabs
       name: homebrew-kronk
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: "https://github.com/ardanlabs/kronk"
     description: "Local LLM inference SDK and server CLI"
-    license: "Apache-2.0"
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
     commit_msg_template: "kronk {{ .Tag }}"
-    test: |
-      system "#{bin}/kronk", "--version"
+    # Strip the macOS Gatekeeper quarantine bit so unsigned binaries run
+    # without "developer cannot be verified" prompts.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kronk"]
+          end
