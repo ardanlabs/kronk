@@ -39,6 +39,14 @@
 # ==============================================================================
 # CODING MODELS
 
+Qwen3.6-27B-Q4_K_M/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+
 Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
