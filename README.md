@@ -24,6 +24,17 @@ $ make website
 
 You can also install Kronk, run the Kronk Model Server, and open the browser to localhost:11435
 
+On macOS or Linux with Homebrew:
+
+```shell
+$ brew tap ardanlabs/kronk
+$ brew install kronk
+
+$ kronk server start
+```
+
+Or with Go:
+
 ```shell
 $ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 
@@ -62,7 +73,22 @@ Twitter:  https://x.com/goinggodotnet
 
 ## Install Kronk
 
-To install the Kronk tool run the following command:
+The recommended way to install Kronk on macOS or Linux is with Homebrew:
+
+```shell
+$ brew tap ardanlabs/kronk
+$ brew install kronk
+
+$ kronk --help
+```
+
+To upgrade later:
+
+```shell
+$ brew upgrade kronk
+```
+
+You can also install via Go on any supported platform:
 
 ```shell
 $ go install github.com/ardanlabs/kronk/cmd/kronk@latest

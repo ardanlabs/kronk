@@ -28,13 +28,32 @@
 
 ### 2.2 Installing the CLI
 
-Install Kronk using Go:
+**Option 1: Homebrew (recommended for macOS and Linux)**
+
+```shell
+brew tap ardanlabs/kronk
+brew install kronk
+```
+
+To upgrade later:
+
+```shell
+brew upgrade kronk
+```
+
+The Homebrew formula is published from the [ardanlabs/homebrew-kronk](https://github.com/ardanlabs/homebrew-kronk) tap and is updated automatically on every Kronk release.
+
+**Option 2: Go install (any supported platform)**
 
 ```shell
 go install github.com/ardanlabs/kronk/cmd/kronk@latest
 ```
 
-Verify the installation:
+**Option 3: Pre-built binary**
+
+Download the appropriate archive for your OS and architecture from the [GitHub releases page](https://github.com/ardanlabs/kronk/releases), extract the `kronk` binary, and place it on your `PATH`.
+
+**Verify the installation**
 
 ```shell
 kronk --help

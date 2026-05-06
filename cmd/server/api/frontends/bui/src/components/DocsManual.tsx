@@ -223,9 +223,17 @@ curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","
             <li>16GB+ system RAM (96GB+ Recommended)</li>
           </ul>
           <h3 id="22-installing-the-cli">2.2 Installing the CLI</h3>
-          <p>Install Kronk using Go:</p>
+          <p><strong>Option 1: Homebrew (recommended for macOS and Linux)</strong></p>
+          <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk
+brew install kronk`}</code></pre>
+          <p>To upgrade later:</p>
+          <pre className="code-block"><code className="language-shell">{`brew upgrade kronk`}</code></pre>
+          <p>The Homebrew formula is published from the <a href="https://github.com/ardanlabs/homebrew-kronk">ardanlabs/homebrew-kronk</a> tap and is updated automatically on every Kronk release.</p>
+          <p><strong>Option 2: Go install (any supported platform)</strong></p>
           <pre className="code-block"><code className="language-shell">{`go install github.com/ardanlabs/kronk/cmd/kronk@latest`}</code></pre>
-          <p>Verify the installation:</p>
+          <p><strong>Option 3: Pre-built binary</strong></p>
+          <p>Download the appropriate archive for your OS and architecture from the <a href="https://github.com/ardanlabs/kronk/releases">GitHub releases page</a>, extract the <code>kronk</code> binary, and place it on your <code>PATH</code>.</p>
+          <p><strong>Verify the installation</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk --help`}</code></pre>
           <p>You should see output listing available commands:</p>
           <pre className="code-block"><code>{`KRONK
