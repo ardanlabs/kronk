@@ -4,6 +4,8 @@ the `Version` variable. That variable will contain the new latest version.
 We need release notes for the next release so please look at all the changes
 in git we made since the last tagged version.
 
+Copy the final markdown into the clipboard.
+
 Please use the release note template below to learn what sections are required
 and the format to use.
 
