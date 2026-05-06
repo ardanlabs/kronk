@@ -31,10 +31,12 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# NOTE: `brews:` is deprecated by GoReleaser in favor of `homebrew_casks:`,
+# but Homebrew casks are macOS-only. We need cross-platform brew support
+# (macOS + Linuxbrew), so we intentionally stay on `brews:` until GoReleaser
+# either removes it or ships a cross-platform cask story.
 brews:
   - name: kronk
-    ids:
-      - kronk
     repository:
       owner: ardanlabs
       name: homebrew-kronk
