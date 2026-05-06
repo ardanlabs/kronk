@@ -36,13 +36,6 @@
                         "context": 131072,
                         "output": 65536
                     }
-                },
-                "Qwen3.6-27B-Q4_K_M/AGENT": {
-                    "name": "Qwen3.6 27B Q4_K_M",
-                    "limit": {
-                        "context": 131072,
-                        "output": 65536
-                    }
                 }
             }
         }
