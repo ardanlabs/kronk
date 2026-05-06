@@ -207,13 +207,32 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	// and the configured HuggingFace provider list. When DownloadServer
 	// is set, the resolved HuggingFace URLs are rewritten to point at a
 	// peer Kronk server on the local network.
+	//
+	// When ProjURL is set the request must reach DownloadURLs with fully
+	// qualified HuggingFace URLs. If the caller passed an id (bare or
+	// canonical) instead, run ResolveSource first so the BUI can keep
+	// sending a single shape regardless of whether a projection override
+	// is in play.
 	var mp models.Path
 	var err error
 	switch {
 	case req.DownloadServer != "":
 		mp, err = a.downloadFromPeer(ctx, logger, req)
 	case req.ProjURL != "":
-		mp, err = a.models.DownloadURLs(ctx, logger, []string{req.ModelURL}, req.ProjURL)
+		modelURLs := []string{req.ModelURL}
+		if !strings.HasPrefix(req.ModelURL, "http://") && !strings.HasPrefix(req.ModelURL, "https://") {
+			res, rerr := a.models.ResolveSource(ctx, req.ModelURL)
+			if rerr != nil {
+				err = fmt.Errorf("resolve %q: %w", req.ModelURL, rerr)
+				break
+			}
+			if len(res.DownloadURLs) == 0 {
+				err = fmt.Errorf("resolve %q: no download URLs (input identifies a repository, not a file)", req.ModelURL)
+				break
+			}
+			modelURLs = res.DownloadURLs
+		}
+		mp, err = a.models.DownloadURLs(ctx, logger, modelURLs, req.ProjURL)
 	default:
 		mp, err = a.models.Download(ctx, logger, req.ModelURL)
 	}

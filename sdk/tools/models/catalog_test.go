@@ -475,6 +475,135 @@ func TestErrNotFoundDetection(t *testing.T) {
 	}
 }
 
+func TestNeedsParse(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		// Bare ids and canonical ids stay on the resolver path.
+		{"Qwen3-0.6B-Q8_0", false},
+		{"unsloth/Qwen3-0.6B-Q8_0", false},
+		{"unsloth/Qwen3-0.6B-Q8_0.gguf", false},
+		{"", false},
+
+		// owner/repo/file shorthand has 2 slashes.
+		{"unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf", true},
+
+		// Schemes and HF host prefixes always parse.
+		{"https://huggingface.co/owner/repo", true},
+		{"http://huggingface.co/owner/repo/tree/main", true},
+		{"hf.co/owner/repo", true},
+		{"HF.CO/owner/repo", true},
+		{"HUGGINGFACE.CO/owner/repo", true},
+		{"huggingface.co/owner/repo/resolve/main/file.gguf", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			if got := needsParse(tc.input); got != tc.want {
+				t.Errorf("needsParse(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestModelsResolveSource_AcceptedInputForms(t *testing.T) {
+	// Pre-seed the catalog so the resolver hits the cache and no HF
+	// network call is needed. Each input form below should normalise to
+	// the same cached canonical id and return the same Resolution.
+	dir := t.TempDir()
+	catalogDir := filepath.Join(dir, "catalog")
+	if err := os.MkdirAll(catalogDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	rfile := filepath.Join(catalogDir, "catalog.yaml")
+
+	cached := Catalog{
+		Providers: []string{"unsloth"},
+		Models: map[string]CatalogEntry{
+			"unsloth/Qwen3-0.6B-Q8_0": {
+				Provider: "unsloth",
+				Family:   "Qwen3-0.6B-GGUF",
+				Revision: "main",
+				Files:    []string{"Qwen3-0.6B-Q8_0.gguf"},
+			},
+		},
+	}
+	data, _ := yaml.Marshal(cached)
+	mustWriteFile(t, rfile, string(data))
+
+	m, err := NewWithPaths(dir)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"canonical-id", "unsloth/Qwen3-0.6B-Q8_0"},
+		{"canonical-id-with-gguf", "unsloth/Qwen3-0.6B-Q8_0.gguf"},
+		{"owner-repo-file", "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"},
+		{"hf-co-shorthand", "hf.co/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"},
+		{"resolve-url", "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"},
+		{"blob-url", "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/blob/main/Qwen3-0.6B-Q8_0.gguf"},
+		{"trailing-whitespace", "  unsloth/Qwen3-0.6B-Q8_0  "},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := m.ResolveSource(context.Background(), tc.input)
+			if err != nil {
+				t.Fatalf("ResolveSource(%q): %v", tc.input, err)
+			}
+			if res.CanonicalID != "unsloth/Qwen3-0.6B-Q8_0" {
+				t.Errorf("CanonicalID = %q, want unsloth/Qwen3-0.6B-Q8_0", res.CanonicalID)
+			}
+			if !res.FromCache {
+				t.Error("expected FromCache=true (input should normalise to cached canonical id)")
+			}
+			if len(res.RepoFiles) != 0 {
+				t.Errorf("RepoFiles = %v, want empty for resolved input", res.RepoFiles)
+			}
+		})
+	}
+}
+
+func TestModelsResolveSource_EmptyInput(t *testing.T) {
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	for _, in := range []string{"", "   ", "\t\n"} {
+		_, err := m.ResolveSource(context.Background(), in)
+		if err == nil {
+			t.Errorf("ResolveSource(%q): expected error, got nil", in)
+			continue
+		}
+		if !strings.Contains(err.Error(), "empty source") {
+			t.Errorf("ResolveSource(%q): err = %v, want 'empty source'", in, err)
+		}
+	}
+}
+
+func TestModelsResolveSource_InvalidShorthand(t *testing.T) {
+	// A shorthand that doesn't decompose into owner/repo (e.g. "owner//file")
+	// must surface a clean parse error rather than reaching the resolver.
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	_, err = m.ResolveSource(context.Background(), "https://huggingface.co/")
+	if err == nil {
+		t.Fatal("expected error for empty owner/repo URL")
+	}
+	if !strings.Contains(err.Error(), "parse") {
+		t.Errorf("err = %v, want 'parse' substring", err)
+	}
+}
+
 // =============================================================================
 
 func mustWriteFile(t *testing.T, path, content string) {

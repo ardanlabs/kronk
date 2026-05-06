@@ -548,6 +548,11 @@ export interface ResolveSourceResponse {
   from_cache: boolean;
   from_local: boolean;
   installed: boolean;
+  // repo_files is populated only when the input identified a repository
+  // without selecting a specific file. The other fields above are then
+  // empty (except provider and family) and the caller should let the
+  // user pick a file from this list.
+  repo_files?: HFRepoFile[];
 }
 
 export interface VRAMRequest {

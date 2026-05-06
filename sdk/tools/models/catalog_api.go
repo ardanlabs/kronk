@@ -5,34 +5,122 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
-// ResolveSource maps a model source (full HuggingFace URL, canonical id
-// "provider/family", or bare id) to a Resolution containing the canonical
-// id, provider, family, revision, full download URL(s), companion
-// projection URL, and any locally-known on-disk paths. The resolver may
-// persist a new entry to catalog.yaml as a side effect of a successful
-// network lookup; this matches Download's behaviour.
+// ResolveSource maps a model source to a Resolution containing the
+// canonical id, provider, family, revision, full download URL(s),
+// companion projection URL, and any locally-known on-disk paths. The
+// resolver may persist a new entry to catalog.yaml as a side effect of
+// a successful network lookup; this matches Download's behaviour.
 //
 // Use this when you want to preview what Download would fetch — for
 // example to drive a "Resolve" button in the BUI before initiating a
 // pull.
+//
+// Accepted input forms (whitespace is trimmed):
+//
+//   - Bare id:            "Qwen3-0.6B-Q8_0"
+//   - Canonical id:       "unsloth/Qwen3-0.6B-Q8_0" (with or without ".gguf")
+//   - Owner/repo/file:    "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"
+//   - hf.co/ shorthand:   "hf.co/unsloth/Qwen3-0.6B-GGUF/..."
+//   - HF resolve URL:     "https://huggingface.co/owner/repo/resolve/main/file.gguf"
+//   - HF blob URL:        "https://huggingface.co/owner/repo/blob/main/file.gguf"
+//   - HF tree URL:        "https://huggingface.co/owner/repo/tree/main"
+//   - HF repo URL:        "https://huggingface.co/owner/repo"
+//
+// When the input identifies a repository without selecting a specific
+// file (e.g. "owner/repo", a tree URL, or a repo root URL), the resolver
+// is not run; instead the returned Resolution carries RepoFiles listing
+// every GGUF in the repo so the caller can present a picker.
 func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return Resolution{}, fmt.Errorf("resolve-source: empty source")
+	}
+
 	rfile, err := defaults.CatalogFile("", m.basePath)
 	if err != nil {
 		return Resolution{}, fmt.Errorf("resolve-source: file: %w", err)
 	}
 
-	res, err := NewResolver(m, rfile).Resolve(ctx, source)
+	// Use hf.ParseInput when the source carries any HuggingFace shape
+	// (URL with scheme, hf.co/ prefix, or owner/repo[/file]). It accepts
+	// resolve, blob, tree, and bare repo URLs. Bare ids ("Qwen3-0.6B-Q8_0")
+	// are passed straight through to the resolver.
+	id := source
+	if needsParse(source) {
+		owner, repo, file, perr := hf.ParseInput(source)
+		if perr != nil || owner == "" || repo == "" {
+			return Resolution{}, fmt.Errorf("resolve-source: parse %q: %w", source, perr)
+		}
+
+		// No filename — the input only identifies the repository. Return
+		// the GGUF file list so the caller can pick one.
+		if file == "" {
+			files, ferr := listRepoGGUFs(ctx, owner, repo)
+			if ferr != nil {
+				return Resolution{}, fmt.Errorf("resolve-source: list %s/%s: %w", owner, repo, ferr)
+			}
+
+			return Resolution{
+				Provider:  owner,
+				Family:    repo,
+				RepoFiles: files,
+			}, nil
+		}
+
+		id = fmt.Sprintf("%s/%s", owner, extractModelID(file))
+	}
+
+	res, err := NewResolver(m, rfile).Resolve(ctx, id)
 	if err != nil {
 		return Resolution{}, fmt.Errorf("resolve-source: %w", err)
 	}
 
 	return res, nil
+}
+
+// needsParse reports whether source contains a HuggingFace URL or a
+// multi-segment shorthand that hf.ParseInput should handle. Bare ids
+// (no slash, no scheme) and canonical ids ("provider/modelID") go
+// straight to the resolver.
+func needsParse(source string) bool {
+	lower := strings.ToLower(source)
+	switch {
+	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
+		return true
+	case strings.HasPrefix(lower, "huggingface.co/"), strings.HasPrefix(lower, "hf.co/"):
+		return true
+	}
+
+	// "owner/repo/file..." has at least two slashes; "provider/modelID"
+	// has exactly one and stays on the resolver path.
+	return strings.Count(source, "/") >= 2
+}
+
+// listRepoGGUFs returns the GGUF files in a HuggingFace repository at
+// the default revision. Used by ResolveSource when the input does not
+// pin a specific file.
+func listRepoGGUFs(ctx context.Context, owner, repo string) ([]hf.RepoFile, error) {
+	all, err := hf.RepoFiles(ctx, owner, repo, "main", "", true)
+	if err != nil {
+		return nil, err
+	}
+
+	var ggufs []hf.RepoFile
+	for _, f := range all {
+		if strings.HasSuffix(strings.ToLower(f.Filename), ".gguf") {
+			ggufs = append(ggufs, f)
+		}
+	}
+
+	return ggufs, nil
 }
 
 // Catalog returns the persisted catalog (catalog.yaml). The Models receiver

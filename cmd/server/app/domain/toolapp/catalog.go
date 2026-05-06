@@ -175,6 +175,25 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "resolve %q: %s", source, err)
 	}
 
+	// Repo-only input: the resolver returned a file list instead of a
+	// resolution. Pass it through so the BUI can render a picker.
+	if len(res.RepoFiles) > 0 {
+		repoFiles := make([]HFRepoFile, 0, len(res.RepoFiles))
+		for _, f := range res.RepoFiles {
+			repoFiles = append(repoFiles, HFRepoFile{
+				Filename: f.Filename,
+				Size:     f.Size,
+				SizeStr:  f.SizeStr,
+			})
+		}
+
+		return ResolveResponse{
+			Provider:  res.Provider,
+			Family:    res.Family,
+			RepoFiles: repoFiles,
+		}
+	}
+
 	installed := len(res.LocalPaths) > 0 && len(res.LocalPaths) == len(res.Files)
 	if installed && res.MMProj != "" && res.LocalProj == "" {
 		installed = false

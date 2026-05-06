@@ -94,6 +94,14 @@ type Resolution struct {
 	LocalProj    string
 	FromLocal    bool
 	FromCache    bool
+
+	// RepoFiles is populated only when the input identified a repository
+	// without selecting a specific model file (e.g. "owner/repo" or a
+	// HuggingFace tree/blob URL with no filename). It lists every GGUF
+	// in the repo so the caller can present a picker. When set, the
+	// resolver fields above are zero-valued and no resolver lookup was
+	// performed.
+	RepoFiles []hf.RepoFile
 }
 
 // Resolver maps a model ID (bare or provider/id) to download URLs and

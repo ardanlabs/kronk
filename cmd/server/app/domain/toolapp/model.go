@@ -1084,16 +1084,23 @@ func (app *ResolveRequest) Decode(data []byte) error {
 // whether the result came from the catalog cache or local disk. When
 // Installed is true, every model file (and the projection when present)
 // is already on disk.
+//
+// When the input only identifies a repository (e.g. "owner/repo" or a
+// HuggingFace tree/repo URL with no filename), the resolver is not run
+// and RepoFiles instead lists every GGUF in the repo so the caller can
+// present a picker. In that case CanonicalID, DownloadURLs, etc. are
+// empty and only Provider and Family are set.
 type ResolveResponse struct {
-	CanonicalID  string   `json:"canonical_id"`
-	Provider     string   `json:"provider"`
-	Family       string   `json:"family"`
-	Revision     string   `json:"revision"`
-	DownloadURLs []string `json:"download_urls"`
-	DownloadProj string   `json:"download_proj,omitempty"`
-	FromCache    bool     `json:"from_cache"`
-	FromLocal    bool     `json:"from_local"`
-	Installed    bool     `json:"installed"`
+	CanonicalID  string       `json:"canonical_id"`
+	Provider     string       `json:"provider"`
+	Family       string       `json:"family"`
+	Revision     string       `json:"revision"`
+	DownloadURLs []string     `json:"download_urls"`
+	DownloadProj string       `json:"download_proj,omitempty"`
+	FromCache    bool         `json:"from_cache"`
+	FromLocal    bool         `json:"from_local"`
+	Installed    bool         `json:"installed"`
+	RepoFiles    []HFRepoFile `json:"repo_files,omitempty"`
 }
 
 // Encode implements web.Encoder.
