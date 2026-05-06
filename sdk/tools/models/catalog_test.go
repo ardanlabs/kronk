@@ -170,7 +170,11 @@ func TestSelectFiles_Split(t *testing.T) {
 	}
 }
 
-func TestSelectFiles_MmprojOnlyF16(t *testing.T) {
+func TestSelectFiles_MmprojFallsBackWhenNoF16(t *testing.T) {
+	// mradermacher and similar quantizers publish only quantized mmproj
+	// variants. Falling back to the highest-quality available quant lets
+	// these models work end-to-end instead of silently disabling media
+	// support.
 	siblings := []string{
 		"Qwen-Q4_K_M.gguf",
 		"mmproj-Q8_0.gguf",
@@ -179,14 +183,53 @@ func TestSelectFiles_MmprojOnlyF16(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match")
 	}
-	if mmproj != "" {
-		t.Errorf("mmproj = %q, want empty (no F16 available)", mmproj)
+	if mmproj != "mmproj-Q8_0.gguf" {
+		t.Errorf("mmproj = %q, want mmproj-Q8_0.gguf (F16 absent — best quant fallback)", mmproj)
 	}
 }
 
-func TestSelectFiles_MmprojRejectsBF16(t *testing.T) {
-	// BF16 is not F16. When only BF16 is published the projection
-	// should be left empty rather than mis-selected.
+func TestSelectFiles_MmprojEmbeddedNamingMradermacher(t *testing.T) {
+	// mradermacher prefixes every artifact with the model id, including
+	// the projection: "<id>.mmproj-<quant>.gguf". Earlier code only
+	// recognized files starting with "mmproj", so these were
+	// misclassified as model files and the projection was silently lost.
+	siblings := []string{
+		"Qwen2-Audio-7B.Q8_0.gguf",
+		"Qwen2-Audio-7B.mmproj-Q8_0.gguf",
+		"Qwen2-Audio-7B.mmproj-f16.gguf",
+	}
+	files, mmproj, ok := selectFiles(siblings, "Qwen2-Audio-7B.Q8_0")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if !reflect.DeepEqual(files, []string{"Qwen2-Audio-7B.Q8_0.gguf"}) {
+		t.Errorf("files = %v, want [Qwen2-Audio-7B.Q8_0.gguf] (mmproj must not leak into model files)", files)
+	}
+	if mmproj != "Qwen2-Audio-7B.mmproj-f16.gguf" {
+		t.Errorf("mmproj = %q, want Qwen2-Audio-7B.mmproj-f16.gguf", mmproj)
+	}
+}
+
+func TestSelectFiles_MmprojBF16NotMisclassifiedAsF16(t *testing.T) {
+	// BF16 is not F16. The F16 regex must not match BF16. When only
+	// BF16 is available it is now accepted as a fallback projection
+	// (better than no media support), but it must never be reported as
+	// the F16 selection.
+	siblings := []string{
+		"gemma-Q4_K_M.gguf",
+		"mmproj-BF16.gguf",
+		"mmproj-F16.gguf",
+	}
+	_, mmproj, ok := selectFiles(siblings, "gemma-Q4_K_M")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if mmproj != "mmproj-F16.gguf" {
+		t.Errorf("mmproj = %q, want mmproj-F16.gguf (must prefer F16 over BF16)", mmproj)
+	}
+}
+
+func TestSelectFiles_MmprojBF16FallbackAcceptedWhenAlone(t *testing.T) {
 	siblings := []string{
 		"gemma-Q4_K_M.gguf",
 		"mmproj-BF16.gguf",
@@ -195,8 +238,8 @@ func TestSelectFiles_MmprojRejectsBF16(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match")
 	}
-	if mmproj != "" {
-		t.Errorf("mmproj = %q, want empty (BF16 must not match F16)", mmproj)
+	if mmproj != "mmproj-BF16.gguf" {
+		t.Errorf("mmproj = %q, want mmproj-BF16.gguf (only candidate available)", mmproj)
 	}
 }
 

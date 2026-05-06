@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"strings"
 
 	"github.com/ardanlabs/jinja"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -26,20 +28,78 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 
 	default:
 		// Media models: extract []byte content and replace with markers.
-		// The input d is already cloned by prepareMediaContext, so mutation is safe.
+		//
+		// This function is PURE with respect to the caller-supplied D and its
+		// inner message maps. Earlier versions mutated each doc["content"] in
+		// place, which caused subtle bugs when the same message map was
+		// rendered more than once: the second pass would find no []byte
+		// (already replaced with marker text) but the rendered prompt would
+		// still contain the markers, producing a marker/bitmap mismatch and
+		// mtmd.Tokenize returning code 1.
+		msgs, ok := d["messages"].([]D)
+		if !ok {
+			prompt, err := m.applyJinjaTemplate(ctx, d)
+			if err != nil {
+				return "", nil, err
+			}
+			return prompt, nil, nil
+		}
+
+		marker := fmt.Sprintf("%s\n", mtmd.DefaultMarker())
+		defaultMarker := mtmd.DefaultMarker()
+
 		var media [][]byte
-		if msgs, ok := d["messages"].([]D); ok {
-			for _, doc := range msgs {
-				if content, exists := doc["content"]; exists {
-					if value, ok := content.([]byte); ok {
-						media = append(media, value)
-						doc["content"] = fmt.Sprintf("%s\n", mtmd.DefaultMarker())
-					}
+		renderMsgs := make([]D, len(msgs))
+
+		for i, doc := range msgs {
+			content, hasContent := doc["content"]
+			if !hasContent {
+				renderMsgs[i] = doc
+				continue
+			}
+
+			switch value := content.(type) {
+			case []byte:
+				// Single media payload — emit one marker, capture bytes.
+				media = append(media, value)
+				renderMsgs[i] = cloneDocWithContent(doc, marker)
+
+			case []any:
+				// Normalized multipart parts (strings and []byte). Flatten
+				// to a single string for the template, emitting one marker
+				// per []byte part in original order. The number of markers
+				// emitted is provably equal to the number of media buffers
+				// appended.
+				rendered, msgMedia, err := renderNormalizedParts(value, marker, defaultMarker, i)
+				if err != nil {
+					return "", nil, err
 				}
+				media = append(media, msgMedia...)
+				renderMsgs[i] = cloneDocWithContent(doc, rendered)
+
+			case string:
+				// Reject literal marker text in non-media content. A user
+				// supplying a string that already contains the media marker
+				// would inflate the prompt's marker count without providing
+				// a matching bitmap, causing mtmd.Tokenize to fail.
+				if strings.Contains(value, defaultMarker) {
+					return "", nil, fmt.Errorf("apply-request-jinja-template: message[%d] content contains reserved media marker %q", i, defaultMarker)
+				}
+				renderMsgs[i] = doc
+
+			default:
+				renderMsgs[i] = doc
 			}
 		}
 
-		prompt, err := m.applyJinjaTemplate(ctx, d)
+		// Shallow-clone the top-level D so add_generation_prompt / bos_token /
+		// eos_token mutations from applyJinjaTemplate do not leak back to the
+		// caller.
+		renderD := make(D, len(d))
+		maps.Copy(renderD, d)
+		renderD["messages"] = renderMsgs
+
+		prompt, err := m.applyJinjaTemplate(ctx, renderD)
 		if err != nil {
 			return "", nil, err
 		}
@@ -96,6 +156,48 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 	}
 
 	return s, nil
+}
+
+// cloneDocWithContent returns a shallow clone of doc with content replaced.
+// Used to avoid mutating the caller's message map when injecting media markers.
+func cloneDocWithContent(doc D, content any) D {
+	out := make(D, len(doc))
+	maps.Copy(out, doc)
+	out["content"] = content
+	return out
+}
+
+// renderNormalizedParts flattens a normalized multipart content slice (the
+// output of toMediaMessage for messages with interleaved text and media) into
+// a single string suitable for Jinja templating, while collecting all media
+// payloads in original order.
+//
+// Invariant: the returned string contains exactly one marker per []byte part
+// in parts, and the returned media slice has exactly that many entries in the
+// same order. This guarantees the marker count emitted into the prompt equals
+// the bitmap count fed to mtmd.Tokenize.
+func renderNormalizedParts(parts []any, marker, defaultMarker string, msgIdx int) (string, [][]byte, error) {
+	var b strings.Builder
+	var media [][]byte
+
+	for j, part := range parts {
+		switch v := part.(type) {
+		case string:
+			if strings.Contains(v, defaultMarker) {
+				return "", nil, fmt.Errorf("apply-request-jinja-template: message[%d].content[%d] contains reserved media marker %q", msgIdx, j, defaultMarker)
+			}
+			b.WriteString(v)
+
+		case []byte:
+			b.WriteString(marker)
+			media = append(media, v)
+
+		default:
+			return "", nil, fmt.Errorf("apply-request-jinja-template: message[%d].content[%d] has unsupported part type %T", msgIdx, j, part)
+		}
+	}
+
+	return b.String(), media, nil
 }
 
 // tokenText converts a token ID to its string representation.

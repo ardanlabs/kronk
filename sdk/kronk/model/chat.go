@@ -201,7 +201,6 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, strin
 	// If the model supports media but this request has no media content,
 	// treat it as text so caching (IMC) can operate.
 	mediaType, _, _, _ := detectMediaContent(d)
-
 	if mediaType == MediaTypeNone {
 		return m.prepareTextContext(d), 0, ObjectChatText, nil
 	}

@@ -564,14 +564,32 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 // startSlotMedia initializes a media (vision/audio) slot. Returns true on success.
 func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, buf []byte) bool {
 	// Convert raw media bytes into bitmap structures for the vision encoder.
+	// Reject empty payloads or any bytes mtmd cannot decode (BitmapInitFromBuf
+	// returns 0) so we surface a precise error instead of the generic
+	// "tokenization failed with code 1" from mtmd.Tokenize.
 	if len(job.media) > 0 {
 		s.bitmaps = make([]mtmd.Bitmap, len(job.media))
 		for i, med := range job.media {
 			if len(med) == 0 {
-				continue
+				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d] is empty", i))
+				return false
 			}
 			s.bitmaps[i] = mtmd.BitmapInitFromBuf(job.mtmdCtx, &med[0], uint64(len(med)))
+			if s.bitmaps[i] == 0 {
+				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d] could not be decoded by mtmd (BitmapInitFromBuf returned 0)", i))
+				return false
+			}
 		}
+	}
+
+	// Verify the marker count in the rendered prompt matches the number of
+	// bitmaps before calling mtmd.Tokenize. mtmd returns an opaque code 1
+	// when these don't match; pre-checking here gives a precise error and
+	// catches double-render or template bugs early.
+	markerCount := strings.Count(job.prompt, mtmd.DefaultMarker())
+	if markerCount != len(s.bitmaps) {
+		e.finishSlot(s, fmt.Errorf("start-slot-media: marker/bitmap count mismatch: prompt has %d %q markers but %d bitmaps were prepared", markerCount, mtmd.DefaultMarker(), len(s.bitmaps)))
+		return false
 	}
 
 	// Create input chunks that interleave text tokens with image embeddings.

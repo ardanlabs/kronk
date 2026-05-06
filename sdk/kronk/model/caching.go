@@ -98,6 +98,11 @@ func hashMessage(cm cacheableMessage) string {
 // Used by IMC to validate that the cached prefix matches the current request.
 // Includes raw media bytes (images/audio) in the hash so that different images
 // produce different hashes, enabling cache validation for media content.
+//
+// After prepareMediaContext, media content can be stored as either:
+//   - []byte (single media payload — simple case)
+//   - []any of strings and []byte parts (interleaved text + media in one
+//     message produced by normalizeMediaMessages / toMediaMessage)
 func hashMessages(messages []D) string {
 	h := sha256.New()
 
@@ -106,19 +111,33 @@ func hashMessages(messages []D) string {
 		content := extractMessageContent(msg)
 		fmt.Fprintf(h, "%d:%s:%s|", i, role, content)
 
-		// Include raw media bytes in hash for vision/audio models.
-		// After prepareMediaContext, media content is stored as []byte.
-		if b, ok := msg["content"].([]byte); ok {
-			fmt.Fprintf(h, "media:%d:", len(b))
-			h.Write(b)
+		switch c := msg["content"].(type) {
+		case []byte:
+			fmt.Fprintf(h, "media:%d:", len(c))
+			h.Write(c)
+
+		case []any:
+			for _, part := range c {
+				if b, ok := part.([]byte); ok {
+					fmt.Fprintf(h, "media:%d:", len(b))
+					h.Write(b)
+				}
+			}
 		}
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// extractMessageContent extracts the text content from a message.
-// Handles both string content and array content (OpenAI multi-part format).
+// extractMessageContent extracts the text content from a message. Handles:
+//   - string content (plain text or post-normalization single-text message)
+//   - []any content where each part is either a string (post-normalization
+//     interleaved parts) or a typed map (raw OpenAI multipart)
+//   - []D content where each part is a typed map (raw OpenAI multipart)
+//
+// Media payloads ([]byte) are intentionally not stringified here; callers that
+// need to mix media into the hash use hashMessages, which handles []byte
+// content separately.
 func extractMessageContent(msg D) string {
 	switch c := msg["content"].(type) {
 	case string:
@@ -127,6 +146,10 @@ func extractMessageContent(msg D) string {
 	case []any:
 		var content strings.Builder
 		for _, part := range c {
+			if s, ok := part.(string); ok {
+				content.WriteString(s)
+				continue
+			}
 			content.WriteString(textFromPart(part))
 		}
 		return content.String()

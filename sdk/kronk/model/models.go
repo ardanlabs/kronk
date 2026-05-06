@@ -306,6 +306,15 @@ func (d D) Clone() D {
 				s[i] = item.Clone()
 			}
 			clone[k] = s
+		case []any:
+			// Normalized multipart content (string + []byte parts) lives in
+			// []any after toMediaMessage. Copy the outer slice so the clone
+			// can be modified independently. []byte parts are still shared
+			// (treated as immutable media payloads) — same contract as
+			// strings, which Go shares by value already.
+			s := make([]any, len(val))
+			copy(s, val)
+			clone[k] = s
 		default:
 			clone[k] = v
 		}
@@ -396,7 +405,7 @@ func (d D) Messages() string {
 
 		switch role {
 		case "assistant":
-			fmt.Fprintf(&b, "Message[%d] Content (400 bytes): %.400v\n", i, m["content"])
+			fmt.Fprintf(&b, "Message[%d] Content: %s\n", i, formatLogContent(m["content"]))
 			toolCalls, _ := m["tool_calls"].([]D)
 			fmt.Fprintf(&b, "Message[%d] ToolCalls len=%d\n", i, len(toolCalls))
 			for j, tc := range toolCalls {
@@ -406,22 +415,72 @@ func (d D) Messages() string {
 		case "tool":
 			fmt.Fprintf(&b, "Message[%d] tool_call_id: %v\n", i, m["tool_call_id"])
 			fmt.Fprintf(&b, "Message[%d] tool_call_name: %v\n", i, m["tool_call_name"])
-			fmt.Fprintf(&b, "Message[%d] Content (400 bytes): %.400v\n", i, m["content"])
+			fmt.Fprintf(&b, "Message[%d] Content: %s\n", i, formatLogContent(m["content"]))
 
 		default:
-			switch v := m["content"].(type) {
-			case []byte:
-				fmt.Fprintf(&b, "Message[%d] Content: BYTES (%d bytes)\n", i, len(v))
-			case []D:
-				content := contentPartsText(v)
-				fmt.Fprintf(&b, "Message[%d] Content (%d parts, 400 bytes): %.400s\n", i, len(v), content)
-			default:
-				fmt.Fprintf(&b, "Message[%d] Content (400 bytes): %.400v\n", i, v)
-			}
+			fmt.Fprintf(&b, "Message[%d] Content: %s\n", i, formatLogContent(m["content"]))
 		}
 	}
 
 	return b.String()
+}
+
+// formatLogContent renders a message["content"] value for diagnostic logging
+// without ever dumping raw media bytes. Binary content ([]byte, or []byte
+// nested inside a normalized []any) is summarized as "BYTES (N bytes)" so a
+// 100 KB image cannot balloon a single log line into hundreds of kilobytes
+// of base64 or decimal byte sequences and break downstream log consumers
+// (their default bufio.Scanner buffers are 64 KiB).
+func formatLogContent(content any) string {
+	switch v := content.(type) {
+	case nil:
+		return "<nil>"
+	case string:
+		if len(v) > 400 {
+			return v[:400]
+		}
+		return v
+	case []byte:
+		return fmt.Sprintf("BYTES (%d bytes)", len(v))
+	case []D:
+		text := contentPartsText(v)
+		if len(text) > 400 {
+			text = text[:400]
+		}
+		return fmt.Sprintf("(%d parts, 400 bytes text): %s", len(v), text)
+	case []any:
+		// Normalized multipart content (string and []byte parts). Never
+		// %v-format the slice directly — fmt's precision does not apply
+		// to composite types, so a single image []byte would dump the
+		// entire decoded byte sequence.
+		var text strings.Builder
+		var byteBytes int
+		var byteParts int
+		for _, p := range v {
+			switch pv := p.(type) {
+			case string:
+				if text.Len() > 0 {
+					text.WriteByte(' ')
+				}
+				text.WriteString(pv)
+			case []byte:
+				byteParts++
+				byteBytes += len(pv)
+			}
+		}
+		out := text.String()
+		if len(out) > 400 {
+			out = out[:400]
+		}
+		return fmt.Sprintf("(%d parts, %d media bytes in %d media parts, 400 bytes text): %s",
+			len(v), byteBytes, byteParts, out)
+	default:
+		s := fmt.Sprintf("%v", v)
+		if len(s) > 400 {
+			s = s[:400]
+		}
+		return s
+	}
 }
 
 // contentPartsText extracts and concatenates text from OpenAI-style content
@@ -914,92 +973,215 @@ type TokenizeResponse struct {
 
 type chatMessageURLData struct {
 	// Only base64 encoded image is currently supported.
-	URL string `json:"url"`
+	URL string
 }
 
 type chatMessageRawData struct {
 	// Only base64 encoded audio is currently supported.
-	Data string `json:"data"`
+	Data string
 }
 
 type chatMessageContent struct {
-	Type      string             `json:"type"`
-	Text      string             `json:"text"`
-	ImageURL  chatMessageURLData `json:"image_url"`
-	VideoURL  chatMessageURLData `json:"video_url"`
-	AudioData chatMessageRawData `json:"input_audio"`
+	Type      string
+	Text      string
+	ImageURL  chatMessageURLData
+	VideoURL  chatMessageURLData
+	AudioData chatMessageRawData
 }
 
+// chatMessage is the internal typed view of one user/assistant/tool message
+// extracted from the raw request D. Content is one of:
+//
+//   - nil                          — no content (e.g. assistant tool_calls)
+//   - string                       — plain text (or base64 string for Form1
+//     when the SDK caller supplied bytes via plain string content)
+//   - []byte                       — raw media bytes (Form1, RawMediaMessage)
+//   - []chatMessageContent         — typed multipart parts (Form2, OpenAI
+//     image_url / video_url / input_audio)
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"` // string | []chatMessageContent | nil
-}
-
-func (ccm *chatMessage) UnmarshalJSON(b []byte) error {
-	var app struct {
-		Role    string          `json:"role"`
-		Content json.RawMessage `json:"content"`
-	}
-
-	if err := json.Unmarshal(b, &app); err != nil {
-		return err
-	}
-
-	// Content can be empty for assistant messages with tool_calls,
-	// or for tool role messages where content is optional.
-	if len(app.Content) == 0 || string(app.Content) == "null" {
-		*ccm = chatMessage{
-			Role:    app.Role,
-			Content: nil,
-		}
-		return nil
-	}
-
-	var content any
-
-	switch app.Content[0] {
-	case '"':
-		var str string
-		err := json.Unmarshal(app.Content, &str)
-		if err != nil {
-			return err
-		}
-
-		content = str
-
-	default:
-		var multiContent []chatMessageContent
-		if err := json.Unmarshal(app.Content, &multiContent); err != nil {
-			return err
-		}
-
-		content = multiContent
-	}
-
-	*ccm = chatMessage{
-		Role:    app.Role,
-		Content: content,
-	}
-
-	return nil
+	Role    string
+	Content any
 }
 
 type chatMessages struct {
-	Messages []chatMessage `json:"messages"`
+	Messages []chatMessage
 }
 
+// toChatMessages builds a typed chatMessages view of d["messages"] without
+// going through a JSON marshal/unmarshal round-trip. It walks the D directly
+// so:
+//
+//   - []byte content is preserved as []byte (no base64 round-trip just so
+//     the caller can re-decode the same bytes a moment later in
+//     detectMediaType);
+//   - typed multipart parts ([]D / []any of maps with "type", "text",
+//     "image_url", "video_url", "input_audio") are projected into
+//     []chatMessageContent;
+//   - text content is preserved as string.
+//
+// This is the single place where request shape is normalized for media
+// detection. Other functions (detectMediaContent, toMediaMessage) consume
+// chatMessages.Messages without re-parsing the underlying D.
 func toChatMessages(d D) (chatMessages, error) {
-	jsonData, err := json.Marshal(d)
+	raw, ok := d["messages"]
+	if !ok {
+		return chatMessages{}, nil
+	}
+
+	msgs, err := coerceMessageSlice(raw)
 	if err != nil {
-		return chatMessages{}, fmt.Errorf("marshaling: %w", err)
+		return chatMessages{}, err
 	}
 
-	var msgs chatMessages
-	if err := json.Unmarshal(jsonData, &msgs); err != nil {
-		return chatMessages{}, fmt.Errorf("unmarshaling: %w", err)
+	out := chatMessages{Messages: make([]chatMessage, 0, len(msgs))}
+
+	for i, msg := range msgs {
+		var cm chatMessage
+		if r, ok := msg["role"].(string); ok {
+			cm.Role = r
+		}
+
+		c, hasContent := msg["content"]
+		if !hasContent || c == nil {
+			out.Messages = append(out.Messages, cm)
+			continue
+		}
+
+		content, err := convertChatContent(c, i)
+		if err != nil {
+			return chatMessages{}, err
+		}
+		cm.Content = content
+
+		out.Messages = append(out.Messages, cm)
 	}
 
-	return msgs, nil
+	return out, nil
+}
+
+// coerceMessageSlice accepts the common shapes that d["messages"] can hold
+// after JSON decoding into a model.D: []D (the post-MapToModelD canonical
+// shape), []any of map-likes (defensive — e.g. before validateDocument has
+// tightened the shape), or []map[string]any.
+func coerceMessageSlice(raw any) ([]D, error) {
+	switch v := raw.(type) {
+	case []D:
+		return v, nil
+	case []map[string]any:
+		out := make([]D, len(v))
+		for i, m := range v {
+			out[i] = D(m)
+		}
+		return out, nil
+	case []any:
+		out := make([]D, 0, len(v))
+		for i, item := range v {
+			switch m := item.(type) {
+			case D:
+				out = append(out, m)
+			case map[string]any:
+				out = append(out, D(m))
+			default:
+				return nil, fmt.Errorf("messages[%d]: expected message map, got %T", i, item)
+			}
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("messages: expected []D, got %T", raw)
+}
+
+func convertChatContent(c any, msgIdx int) (any, error) {
+	switch v := c.(type) {
+	case string:
+		return v, nil
+	case []byte:
+		return v, nil
+	case []chatMessageContent:
+		// Already in the target shape (e.g. test fixtures).
+		return v, nil
+	case []D:
+		return chatMessagePartsFromMaps(v, msgIdx, dToMap)
+	case []map[string]any:
+		return chatMessagePartsFromMaps(v, msgIdx, identityMap)
+	case []any:
+		out := make([]chatMessageContent, 0, len(v))
+		for j, p := range v {
+			m, ok := mapFromPart(p)
+			if !ok {
+				return nil, fmt.Errorf("messages[%d].content[%d]: expected part map, got %T", msgIdx, j, p)
+			}
+			out = append(out, chatMessagePartFromMap(m))
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("messages[%d].content: unsupported type %T", msgIdx, c)
+}
+
+func chatMessagePartsFromMaps[T any](parts []T, msgIdx int, toMap func(T) (map[string]any, bool)) ([]chatMessageContent, error) {
+	out := make([]chatMessageContent, 0, len(parts))
+	for j, p := range parts {
+		m, ok := toMap(p)
+		if !ok {
+			return nil, fmt.Errorf("messages[%d].content[%d]: expected part map, got %T", msgIdx, j, p)
+		}
+		out = append(out, chatMessagePartFromMap(m))
+	}
+	return out, nil
+}
+
+func dToMap(d D) (map[string]any, bool)                   { return d, true }
+func identityMap(m map[string]any) (map[string]any, bool) { return m, true }
+
+func mapFromPart(p any) (map[string]any, bool) {
+	switch v := p.(type) {
+	case map[string]any:
+		return v, true
+	case D:
+		return v, true
+	}
+	return nil, false
+}
+
+func chatMessagePartFromMap(m map[string]any) chatMessageContent {
+	cm := chatMessageContent{}
+	if t, ok := m["type"].(string); ok {
+		cm.Type = t
+	}
+	if t, ok := m["text"].(string); ok {
+		cm.Text = t
+	}
+	if u := urlDataFromAny(m["image_url"]); u != nil {
+		cm.ImageURL = *u
+	}
+	if u := urlDataFromAny(m["video_url"]); u != nil {
+		cm.VideoURL = *u
+	}
+	if a := rawDataFromAny(m["input_audio"]); a != nil {
+		cm.AudioData = *a
+	}
+	return cm
+}
+
+func urlDataFromAny(v any) *chatMessageURLData {
+	m, ok := mapFromPart(v)
+	if !ok {
+		return nil
+	}
+	if url, ok := m["url"].(string); ok {
+		return &chatMessageURLData{URL: url}
+	}
+	return nil
+}
+
+func rawDataFromAny(v any) *chatMessageRawData {
+	m, ok := mapFromPart(v)
+	if !ok {
+		return nil
+	}
+	if data, ok := m["data"].(string); ok {
+		return &chatMessageRawData{Data: data}
+	}
+	return nil
 }
 
 // =============================================================================

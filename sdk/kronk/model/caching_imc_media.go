@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -39,14 +40,10 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 	m.log(ctx, "imc-media-cache", "status", "prompt-created", "seq", seqID,
 		"prompt_len", len(prompt), "media_count", len(media))
 
-	// Step 2: Create bitmaps from raw media bytes.
+	// Step 2: Create bitmaps from raw media bytes. Reject any payload that
+	// produces a zero bitmap so we surface a precise error instead of the
+	// generic "tokenization failed with code 1" from mtmd.Tokenize.
 	bitmaps := make([]mtmd.Bitmap, len(media))
-	for i, med := range media {
-		if len(med) == 0 {
-			continue
-		}
-		bitmaps[i] = mtmd.BitmapInitFromBuf(mtmdCtx, &med[0], uint64(len(med)))
-	}
 	defer func() {
 		for _, b := range bitmaps {
 			if b != 0 {
@@ -54,8 +51,26 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 			}
 		}
 	}()
+	for i, med := range media {
+		if len(med) == 0 {
+			return 0, nil, fmt.Errorf("imc-media-cache: media[%d] is empty", i)
+		}
+		bitmaps[i] = mtmd.BitmapInitFromBuf(mtmdCtx, &med[0], uint64(len(med)))
+		if bitmaps[i] == 0 {
+			return 0, nil, fmt.Errorf("imc-media-cache: media[%d] could not be decoded by mtmd (BitmapInitFromBuf returned 0)", i)
+		}
+	}
 
 	// Step 3: Tokenize the prompt with media into interleaved chunks.
+	// Verify the marker count in the rendered prompt matches the number of
+	// bitmaps before calling mtmd.Tokenize. mtmd returns an opaque code 1
+	// when these don't match; pre-checking here gives a precise error and
+	// catches double-render or template bugs early.
+	markerCount := strings.Count(prompt, mtmd.DefaultMarker())
+	if markerCount != len(bitmaps) {
+		return 0, nil, fmt.Errorf("imc-media-cache: marker/bitmap count mismatch: prompt has %d %q markers but %d bitmaps were prepared", markerCount, mtmd.DefaultMarker(), len(bitmaps))
+	}
+
 	inputChunks := mtmd.InputChunksInit()
 	defer mtmd.InputChunksFree(inputChunks)
 

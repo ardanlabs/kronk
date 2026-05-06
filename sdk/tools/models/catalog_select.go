@@ -84,14 +84,25 @@ func selectFiles(siblings []string, modelID string) (files []string, mmproj stri
 
 // classifySiblings separates GGUF files from mmproj files. Non-GGUF
 // siblings are dropped.
+//
+// Recognized mmproj naming patterns:
+//
+//   - Leading:  mmproj-<rest>.gguf, mmproj.gguf
+//     (used by unsloth, ggml-org, and most catalog defaults)
+//   - Embedded: <modelID>.mmproj-<rest>.gguf, <modelID>-mmproj-<rest>.gguf
+//     (used by mradermacher and other community quantizers that prefix
+//     the repo's model id onto every artifact, including the projection)
+//
+// The token must be delimited by a non-alphanumeric character on both
+// sides so unrelated names containing "mmproj" inside another word do
+// not get misclassified.
 func classifySiblings(siblings []string) (gguf, proj []string) {
 	for _, s := range siblings {
 		if !strings.HasSuffix(strings.ToLower(s), ".gguf") {
 			continue
 		}
 
-		base := strings.ToLower(path.Base(s))
-		if strings.HasPrefix(base, "mmproj") {
+		if isMMProj(strings.ToLower(path.Base(s))) {
 			proj = append(proj, s)
 			continue
 		}
@@ -100,6 +111,43 @@ func classifySiblings(siblings []string) (gguf, proj []string) {
 	}
 
 	return gguf, proj
+}
+
+// isMMProj reports whether base is a GGUF mmproj filename. It accepts
+// both the leading form ("mmproj...") and the embedded form
+// ("<id>.mmproj-..." / "<id>-mmproj-...") used by some quantizers.
+//
+// base must be lower-cased.
+func isMMProj(base string) bool {
+	const tok = "mmproj"
+
+	idx := strings.Index(base, tok)
+	if idx < 0 {
+		return false
+	}
+
+	// Left boundary: start of name, or a separator.
+	if idx > 0 {
+		c := base[idx-1]
+		if !isMMProjSep(c) {
+			return false
+		}
+	}
+
+	// Right boundary: end of name, or a separator.
+	end := idx + len(tok)
+	if end < len(base) {
+		c := base[end]
+		if !isMMProjSep(c) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isMMProjSep(c byte) bool {
+	return c == '-' || c == '.' || c == '_'
 }
 
 // matchModel finds the sibling whose model id (basename without .gguf
@@ -211,8 +259,23 @@ func collectSplitParts(gguf []string, target string) []string {
 	return parts
 }
 
-// pickF16Mmproj returns the best F16 mmproj sibling for the chosen
-// model, or "" when none is suitable.
+// pickF16Mmproj returns the best mmproj sibling for the chosen model,
+// or "" when none is suitable.
+//
+// Selection policy (in priority order):
+//
+//  1. F16 in the same directory as the model file.
+//  2. F16 anywhere in the repo.
+//  3. Highest-quality non-F16 quant (Q8, Q6, Q5, Q4, BF16, others) in the
+//     same directory as the model file.
+//  4. Highest-quality non-F16 quant anywhere in the repo.
+//
+// F16 is preferred because the projection runs at full precision in many
+// templates and quantization can degrade vision/audio embedding quality.
+// Falling back to a quantized projection is necessary because some
+// community quantizers (mradermacher etc.) only publish quantized
+// mmprojs — refusing them entirely leaves the model unable to process
+// media at all.
 func pickF16Mmproj(proj []string, target string) string {
 	if len(proj) == 0 {
 		return ""
@@ -220,29 +283,78 @@ func pickF16Mmproj(proj []string, target string) string {
 
 	tDir := dirSlash(target)
 
-	// Filter to F16 candidates only. Use a regex that rejects BF16.
-	var f16 []string
+	var f16, others []string
 	for _, p := range proj {
 		base := path.Base(p)
 		if f16Re.MatchString(base) {
 			f16 = append(f16, p)
+			continue
 		}
+		others = append(others, p)
 	}
 
-	if len(f16) == 0 {
-		return ""
+	if pick := pickBestInDir(f16, tDir); pick != "" {
+		return pick
+	}
+	if len(f16) > 0 {
+		sort.Strings(f16)
+		return f16[0]
 	}
 
-	// Prefer same-directory matches.
-	for _, p := range f16 {
-		if dirSlash(p) == tDir {
+	if pick := pickBestInDir(rankNonF16(others), tDir); pick != "" {
+		return pick
+	}
+	if len(others) > 0 {
+		sorted := rankNonF16(others)
+		return sorted[0]
+	}
+
+	return ""
+}
+
+// pickBestInDir returns the first candidate whose directory matches dir,
+// or "" when none match. Candidates are scanned in given order.
+func pickBestInDir(candidates []string, dir string) string {
+	for _, p := range candidates {
+		if dirSlash(p) == dir {
 			return p
 		}
 	}
+	return ""
+}
 
-	// Otherwise fall back to the first F16 mmproj available.
-	sort.Strings(f16)
-	return f16[0]
+// rankNonF16 returns mmproj candidates in best-to-worst quant order.
+// Used as the fallback when no F16 projection is published.
+func rankNonF16(candidates []string) []string {
+	out := append([]string(nil), candidates...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return mmprojQuantScore(path.Base(out[i])) > mmprojQuantScore(path.Base(out[j]))
+	})
+	return out
+}
+
+// mmprojQuantScore returns a higher value for higher-precision mmproj
+// quantization, so callers can rank candidates without enumerating the
+// full quant set. Unknown / unparseable quant tags get the lowest score.
+func mmprojQuantScore(base string) int {
+	b := strings.ToLower(base)
+	switch {
+	case strings.Contains(b, "bf16"):
+		return 90
+	case strings.Contains(b, "q8"):
+		return 80
+	case strings.Contains(b, "q6"):
+		return 60
+	case strings.Contains(b, "q5"):
+		return 50
+	case strings.Contains(b, "q4"):
+		return 40
+	case strings.Contains(b, "q3"):
+		return 30
+	case strings.Contains(b, "q2"):
+		return 20
+	}
+	return 0
 }
 
 // dirSlash returns the directory portion of a slash-separated path

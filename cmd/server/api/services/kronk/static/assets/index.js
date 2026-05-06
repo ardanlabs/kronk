@@ -1371,7 +1371,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, audioFi
 	fmt.Printf("\\nQuestion: %s\\n", question)
 
 	d := model.D{
-		"messages":    model.RawMediaMessage(question, audio),
+		"messages":    model.AudioMessage(question, audio, "wav"),
 		"max_tokens":  2048,
 		"temperature": 0.7,
 		"top_p":       0.9,
@@ -3781,7 +3781,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFi
 	fmt.Printf("\\nQuestion: %s\\n", question)
 
 	d := model.D{
-		"messages":    model.RawMediaMessage(question, image),
+		"messages":    model.ImageMessage(question, image, "jpg"),
 		"temperature": 0.7,
 		"top_p":       0.9,
 		"top_k":       40,

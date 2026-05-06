@@ -96,15 +96,10 @@ func Init(opts ...InitOption) error {
 		return fmt.Errorf("init: unable to load mtmd library: %w", err)
 	}
 
-	libraryLocation = libPath
-	llama.Init()
-
-	if err := model.InitYzmaWorkarounds(libPath); err != nil {
-		return fmt.Errorf("unable to init yzma workarounds: %w", err)
-	}
-
-	// ---------------------------------------------------------------------
-
+	// Install log callbacks BEFORE llama.Init(). Newer ggml/llama.cpp
+	// builds eagerly initialize backend devices (e.g. Metal) inside
+	// llama.Init(), and any log messages emitted during that init would
+	// otherwise bypass the silencer and print to stderr.
 	if o.logLevel < 1 || o.logLevel > 2 {
 		o.logLevel = LogSilent
 	}
@@ -116,6 +111,13 @@ func Init(opts ...InitOption) error {
 	default:
 		llama.LogSet(llama.LogNormal)
 		mtmd.LogSet(llama.LogNormal)
+	}
+
+	libraryLocation = libPath
+	llama.Init()
+
+	if err := model.InitYzmaWorkarounds(libPath); err != nil {
+		return fmt.Errorf("unable to init yzma workarounds: %w", err)
 	}
 
 	initDone = true
