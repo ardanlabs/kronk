@@ -79,7 +79,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)

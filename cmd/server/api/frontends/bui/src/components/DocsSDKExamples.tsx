@@ -555,7 +555,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)
@@ -796,7 +796,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)
@@ -1069,9 +1069,9 @@ loop:
 }
 `;
 
-const concurrencyExample = `// This example shows you how to create a concurrent chat application against an
-// inference model using kronk. Thanks to Kronk and yzma, reasoning and tool
-// calling is enabled.
+const concurrencyExample = `// This example shows you how to leverage Kronk's batch processing by running
+// multiple inference requests concurrently against a single loaded model. It
+// classifies trail-cam images using a small vision model.
 //
 // The first time you run this program the system will download and install
 // the model and libraries.
@@ -1088,6 +1088,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1101,7 +1102,13 @@ import (
 	"github.com/google/uuid"
 )
 
-var modelSource = "unsloth/Qwen3.5-0.8B-Q8_0"
+const (
+	modelSource    = "unsloth/Qwen3.5-0.8B-Q8_0"
+	imageLocation  = "samples/deer"
+	numWorkers     = 4
+	numRequests    = 20
+	requestTimeout = 60 * time.Second
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -1110,12 +1117,12 @@ func main() {
 }
 
 func run() error {
-	info, err := installSystem()
+	mp, err := installSystem()
 	if err != nil {
 		return fmt.Errorf("unable to install system: %w", err)
 	}
 
-	krn, err := newKronk(info)
+	krn, err := newKronk(mp)
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -1123,11 +1130,11 @@ func run() error {
 	defer func() {
 		fmt.Println("\\nUnloading Kronk")
 		if err := krn.Unload(context.Background()); err != nil {
-			fmt.Printf("failed to unload model: %v", err)
+			fmt.Printf("failed to unload model: %v\\n", err)
 		}
 	}()
 
-	return runVisionTest(krn)
+	return classifyImages(krn)
 }
 
 func installSystem() (models.Path, error) {
@@ -1147,7 +1154,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)
@@ -1161,7 +1168,7 @@ func installSystem() (models.Path, error) {
 }
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
-	fmt.Println("loading model...")
+	fmt.Println("Loading model...")
 
 	if err := kronk.Init(); err != nil {
 		return nil, fmt.Errorf("unable to init kronk: %w", err)
@@ -1170,7 +1177,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 		model.WithProjFile(mp.ProjFile),
-		//model.WithLog(kronk.FmtLogger),
 		model.WithIncrementalCache(false),
 		model.WithContextWindow(8*1024),
 		model.WithNSeqMax(2),
@@ -1179,33 +1185,47 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
 	}
 
+	printModelInfo(krn)
+
+	return krn, nil
+}
+
+func printModelInfo(krn *kronk.Kronk) {
+	info := krn.SystemInfo()
+	keys := make([]string, 0, len(info))
+	for k := range info {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	fmt.Print("- system info:\\n\\t")
-	for k, v := range krn.SystemInfo() {
-		fmt.Printf("%s:%v, ", k, v)
+	for _, k := range keys {
+		fmt.Printf("%s:%v, ", k, info[k])
 	}
 	fmt.Println()
 
-	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow())
-	fmt.Printf("- k/v            : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention)
-	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
-	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
-	fmt.Println("- modelType      :", krn.ModelInfo().Type)
-	fmt.Println("- isGPT          :", krn.ModelInfo().IsGPTModel)
-	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
-	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
-	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
-	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
-	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
-	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache())
-	if n := krn.ModelConfig().PtrNGpuLayers; n != nil {
+	cfg := krn.ModelConfig()
+	mi := krn.ModelInfo()
+
+	fmt.Println("- contextWindow  :", cfg.ContextWindow())
+	fmt.Printf("- k/v            : %s/%s\\n", cfg.CacheTypeK, cfg.CacheTypeV)
+	fmt.Println("- flashAttention :", cfg.FlashAttention)
+	fmt.Println("- nBatch         :", cfg.NBatch())
+	fmt.Println("- nuBatch        :", cfg.NUBatch())
+	fmt.Println("- modelType      :", mi.Type)
+	fmt.Println("- isGPT          :", mi.IsGPTModel)
+	fmt.Println("- template       :", mi.Template.FileName)
+	fmt.Println("- grammar        :", cfg.DefaultParams.Grammar != "")
+	fmt.Println("- nSeqMax        :", cfg.NSeqMax())
+	fmt.Println("- vramTotal      :", mi.VRAMTotal/(1024*1024), "MiB")
+	fmt.Println("- slotMemory     :", mi.SlotMemory/(1024*1024), "MiB")
+	fmt.Println("- modelSize      :", mi.Size/(1000*1000), "MB")
+	fmt.Println("- imc            :", cfg.IncrementalCache())
+	if n := cfg.PtrNGpuLayers; n != nil {
 		fmt.Println("- nGPULayers     :", *n)
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
-
-	return krn, nil
 }
 
 const prompt = \`Analyze the attached trail cam picture and determine if there
@@ -1219,12 +1239,10 @@ None. Do not return any other characters.
  \`
 
 const systemPrompt = \`You are a helpful AI assistant. You are designed to help
-users indetify images and provide information in a helpful and accurate manner.
+users identify images and provide information in a helpful and accurate manner.
 Always follow the user's instructions carefully.\`
 
-func runVisionTest(krn *kronk.Kronk) error {
-	const imageLocation = "samples/deer"
-
+func classifyImages(krn *kronk.Kronk) error {
 	imageFiles, err := listImages(imageLocation)
 	if err != nil {
 		return fmt.Errorf("listImages: %w", err)
@@ -1233,74 +1251,77 @@ func runVisionTest(krn *kronk.Kronk) error {
 	fmt.Printf("\\n- Number of images: %d\\n", len(imageFiles))
 
 	if len(imageFiles) == 0 {
-		return fmt.Errorf("no images to processing")
+		return fmt.Errorf("no images to process")
 	}
 
 	// -------------------------------------------------------------------------
+	// Start a pool of workers. Each worker pulls image paths off the channel,
+	// runs inference, and prints the result.
 
-	const g = 4
-
-	ch := make(chan string, g)
+	ch := make(chan string)
 	var wg sync.WaitGroup
-	wg.Add(g)
+	wg.Add(numWorkers)
 
-	for gc := range g {
-		go func(gc int) {
+	for id := range numWorkers {
+		go func() {
 			defer func() {
-				fmt.Printf("g[%d]: SHUTTING DOWN G\\n", gc)
+				fmt.Printf("g[%d]: done\\n", id)
 				wg.Done()
 			}()
 
 			for imageFile := range ch {
-				traceID := uuid.NewString()
-
-				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				ctx = applog.SetTraceID(ctx, traceID)
-
-				imageData, err := readImage(imageFile)
-				if err != nil {
-					fmt.Printf("g[%d]: traceID %s: image %s: ERROR: read image: %s\\n", gc, traceID, imageFile, err)
-					cancel()
-					continue
-				}
-
-				d := model.D{
-					"messages": model.Messages(
-						model.TextMessage(model.RoleSystem, systemPrompt),
-						model.RawMediaMessage(prompt, imageData),
-					),
-					"enable_thinking": false,
-					"temperature":     1.0,
-					"top_p":           0.95,
-					"top_k":           64,
-					"max_tokens":      2048,
-				}
-
-				mdlResp, err := krn.Chat(ctx, d)
-				if err != nil {
-					fmt.Printf("g[%d]: traceID %s: image %s: ERROR: chat streaming: %s\\n", gc, traceID, imageFile, err)
-					cancel()
-					continue
-				}
-
-				cancel()
-
-				fmt.Printf("g[%d]: traceID %s: image %s: Resp: %s\\n", gc, traceID, imageFile, strings.Trim(mdlResp.Choices[0].Message.Content, "\\n"))
+				processImage(krn, id, imageFile)
 			}
-		}(gc)
+		}()
 	}
 
 	// -------------------------------------------------------------------------
+	// Send numRequests randomly chosen images through the pool, then close the
+	// channel and wait for the workers to drain.
 
-	for range 20 {
-		i := rand.IntN(len(imageFiles))
-		ch <- imageFiles[i]
+	for range numRequests {
+		ch <- imageFiles[rand.IntN(len(imageFiles))]
 	}
 
 	close(ch)
 	wg.Wait()
 
 	return nil
+}
+
+func processImage(krn *kronk.Kronk, workerID int, imageFile string) {
+	traceID := uuid.NewString()
+
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+
+	ctx = applog.SetTraceID(ctx, traceID)
+
+	imageData, err := os.ReadFile(imageFile)
+	if err != nil {
+		fmt.Printf("g[%d]: traceID %s: image %s: ERROR: read image: %s\\n", workerID, traceID, imageFile, err)
+		return
+	}
+
+	params := model.D{
+		"messages": model.Messages(
+			model.TextMessage(model.RoleSystem, systemPrompt),
+			model.RawMediaMessage(prompt, imageData),
+		),
+		"enable_thinking": false,
+		"temperature":     1.0,
+		"top_p":           0.95,
+		"top_k":           64,
+		"max_tokens":      2048,
+	}
+
+	resp, err := krn.Chat(ctx, params)
+	if err != nil {
+		fmt.Printf("g[%d]: traceID %s: image %s: ERROR: chat streaming: %s\\n", workerID, traceID, imageFile, err)
+		return
+	}
+
+	fmt.Printf("g[%d]: traceID %s: image %s: Resp: %s\\n", workerID, traceID, imageFile, strings.Trim(resp.Choices[0].Message.Content, "\\n"))
 }
 
 func listImages(imageLocation string) ([]string, error) {
@@ -1311,7 +1332,7 @@ func listImages(imageLocation string) ([]string, error) {
 
 	files := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == ".DS_Store" {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 
@@ -1319,19 +1340,6 @@ func listImages(imageLocation string) ([]string, error) {
 	}
 
 	return files, nil
-}
-
-func readImage(imageFile string) ([]byte, error) {
-	if _, err := os.Stat(imageFile); err != nil {
-		return nil, fmt.Errorf("error accessing file %q: %w", imageFile, err)
-	}
-
-	image, err := os.ReadFile(imageFile)
-	if err != nil {
-		return nil, fmt.Errorf("error reading file %q: %w", imageFile, err)
-	}
-
-	return image, nil
 }
 `;
 
@@ -1413,7 +1421,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)
@@ -1601,7 +1609,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)
@@ -2167,7 +2175,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource)
@@ -2719,7 +2727,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)
@@ -2900,7 +2908,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)
@@ -3249,7 +3257,7 @@ func installSystem() (models.Path, error) {
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
 	fmt.Println("Downloading model:", modelSource)
@@ -3458,7 +3466,7 @@ export default function DocsSDKExamples() {
 
           <div className="card" id="example-concurrency">
             <h3>Concurrency</h3>
-            <p className="doc-description">This example shows you how to create a concurrent chat application against an</p>
+            <p className="doc-description">This example shows you how to leverage Kronk's batch processing by running</p>
             <CodeBlock code={concurrencyExample} language="go" />
           </div>
 
