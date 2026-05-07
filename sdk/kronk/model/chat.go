@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
 	"strings"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 const streamChBuffer = 32
@@ -98,7 +96,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			return
 		}
 
-		d, mtmdCtx, object, err := m.prepareContext(prepCtx, d)
+		d, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
 			m.recordChatFailure(ctx, requestStart, err)
@@ -106,12 +104,12 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			return
 		}
 
+		// The per-request mtmd processing context is owned by the slot
+		// (created in startSlot, freed in freeSlotResources). The chat
+		// handler does not own one — it only uses m.mtmdMetaCtx for
+		// SupportVision/SupportAudio metadata reads.
 		defer func() {
 			if !batching {
-				if mtmdCtx != 0 {
-					mtmd.Free(mtmdCtx)
-				}
-
 				m.resetContext()
 			}
 		}()
@@ -132,7 +130,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 
 		prepSpan.End()
 
-		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, mtmdCtx, cache, requestStart) {
+		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, cache, requestStart) {
 			batching = true
 			return
 		}
@@ -191,26 +189,25 @@ func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, e
 }
 
 // prepareContext prepares the document for inference, handling both text-only
-// and media (vision/audio) paths. Returns the modified document, media context,
-// and object type.
-func (m *Model) prepareContext(ctx context.Context, d D) (D, mtmd.Context, string, error) {
+// and media (vision/audio) paths. Returns the modified document and object type.
+func (m *Model) prepareContext(ctx context.Context, d D) (D, string, error) {
 	if m.projFile == "" {
-		return m.prepareTextContext(d), 0, ObjectChatText, nil
+		return m.prepareTextContext(d), ObjectChatText, nil
 	}
 
 	// If the model supports media but this request has no media content,
 	// treat it as text so caching (IMC) can operate.
 	mediaType, _, _, _ := detectMediaContent(d)
 	if mediaType == MediaTypeNone {
-		return m.prepareTextContext(d), 0, ObjectChatText, nil
+		return m.prepareTextContext(d), ObjectChatText, nil
 	}
 
-	d, mtmdCtx, err := m.prepareMediaContext(ctx, d)
+	d, err := m.prepareMediaContext(ctx, d)
 	if err != nil {
-		return nil, 0, ObjectChatUnknown, err
+		return nil, ObjectChatUnknown, err
 	}
 
-	return d, mtmdCtx, ObjectChatMedia, nil
+	return d, ObjectChatMedia, nil
 }
 
 // prepareCacheAndPrompt handles cache processing and prompt creation. Returns
@@ -257,7 +254,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 // submitToBatchEngine attempts to submit the request to the batch engine.
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
-func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, mtmdCtx mtmd.Context, cache cacheResult, requestStart time.Time) bool {
+func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, cache cacheResult, requestStart time.Time) bool {
 	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
@@ -273,7 +270,6 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		prompt:        prompt,
 		media:         media,
 		params:        params,
-		mtmdCtx:       mtmdCtx,
 		ch:            ch,
 
 		imcSession:      cache.imcSession,
@@ -358,34 +354,33 @@ func (*Model) prepareTextContext(d D) D {
 	return d
 }
 
-func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, mtmd.Context, error) {
+func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, error) {
 	mediaType, isOpenAIFormat, msgs, err := detectMediaContent(d)
 	if err != nil {
-		return nil, 0, fmt.Errorf("prepare-media-context: %w", err)
+		return nil, fmt.Errorf("prepare-media-context: %w", err)
 	}
 
 	if mediaType != MediaTypeNone && m.projFile == "" {
-		return nil, 0, fmt.Errorf("prepare-media-context: media detected in request but model does not support media processing")
+		return nil, fmt.Errorf("prepare-media-context: media detected in request but model does not support media processing")
 	}
 
-	var mtmdCtx mtmd.Context
-
-	mtmdCtx, err = m.loadProjFile(ctx)
-	if err != nil {
-		return nil, 0, fmt.Errorf("prepare-media-context: unable to init projection: %w", err)
+	// The chat handler only needs metadata (vision/audio support), so we
+	// use the long-lived metadata-only mtmd context. Per-request
+	// processing contexts are created and freed by each slot.
+	if m.mtmdMetaCtx == 0 {
+		return nil, fmt.Errorf("prepare-media-context: model has no mtmd context loaded")
 	}
+	metaCtx := m.mtmdMetaCtx
 
 	switch mediaType {
 	case MediaTypeVision:
-		if !mtmd.SupportVision(mtmdCtx) {
-			mtmd.Free(mtmdCtx)
-			return nil, 0, fmt.Errorf("prepare-media-context: image/video detected but model does not support vision")
+		if !mtmd.SupportVision(metaCtx) {
+			return nil, fmt.Errorf("prepare-media-context: image/video detected but model does not support vision")
 		}
 
 	case MediaTypeAudio:
-		if !mtmd.SupportAudio(mtmdCtx) {
-			mtmd.Free(mtmdCtx)
-			return nil, 0, fmt.Errorf("prepare-media-context: audio detected but model does not support audio")
+		if !mtmd.SupportAudio(metaCtx) {
+			return nil, fmt.Errorf("prepare-media-context: audio detected but model does not support audio")
 		}
 	}
 
@@ -393,38 +388,14 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, mtmd.Context, 
 	case isOpenAIFormat:
 		d, err = toMediaMessage(d, msgs)
 		if err != nil {
-			return nil, 0, fmt.Errorf("prepare-media-context: unable to convert document to media message: %w", err)
+			return nil, fmt.Errorf("prepare-media-context: unable to convert document to media message: %w", err)
 		}
 
 	case mediaType != MediaTypeNone:
 		d = convertPlainBase64ToBytes(d)
 	}
 
-	return d, mtmdCtx, nil
-}
-
-func (m *Model) loadProjFile(ctx context.Context) (mtmd.Context, error) {
-	baseProjFile := path.Base(m.projFile)
-
-	m.log(context.Background(), "loading-prof-file", "status", "started", "proj", baseProjFile)
-	defer m.log(context.Background(), "loading-prof-file", "status", "completed", "proj", baseProjFile)
-
-	_, span := otel.AddSpan(ctx, "proj-file-load-time",
-		attribute.String("proj-file", baseProjFile),
-	)
-	defer span.End()
-
-	start := time.Now()
-	defer func() {
-		metrics.AddProjFileLoadTime(m.modelInfo.ID, time.Since(start))
-	}()
-
-	mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmd.ContextParamsDefault())
-	if err != nil {
-		return 0, err
-	}
-
-	return mtmdCtx, nil
+	return d, nil
 }
 
 func (m *Model) createPrompt(ctx context.Context, d D) (string, [][]byte, error) {

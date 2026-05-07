@@ -1836,7 +1836,7 @@ const (
 	modelSource    = "unsloth/Qwen3.5-0.8B-Q8_0"
 	imageLocation  = "samples/deer"
 	numWorkers     = 4
-	numRequests    = 20
+	numRequests    = 1500
 	requestTimeout = 60 * time.Second
 )
 
@@ -1910,6 +1910,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		model.WithIncrementalCache(false),
 		model.WithContextWindow(8*1024),
 		model.WithNSeqMax(2),
+		model.WithLog(kronk.FmtLogger),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)

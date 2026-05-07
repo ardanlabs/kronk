@@ -7,6 +7,7 @@ package applog
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -62,10 +63,12 @@ var DiscardLogger Logger = func(ctx context.Context, msg string, args ...any) {
 // FmtLogger provides a basic logger that writes to stdout. If a trace id
 // has been set on the context via SetTraceID it is included in the output.
 var FmtLogger Logger = func(ctx context.Context, msg string, args ...any) {
+	now := time.Now().Format(time.RFC3339Nano)
+
 	if traceID := GetTraceID(ctx); traceID != "" && traceID != NoTraceID {
-		fmt.Printf("KRONK: traceID: %s: %s:", traceID, msg)
+		fmt.Printf("KRONK: %s: INFO: %s: %s:", now, traceID, msg)
 	} else {
-		fmt.Printf("KRONK: %s:", msg)
+		fmt.Printf("KRONK: %s: %s:", now, msg)
 	}
 
 	for i := 0; i < len(args); i += 2 {

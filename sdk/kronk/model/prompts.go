@@ -116,14 +116,14 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		return "", errors.New("apply-jinja-template: no template found")
 	}
 
-	// Compile template once and reuse across all requests.
-	m.templateOnce.Do(func() {
-		tmpl, err := jinja.Compile(m.template.Script)
-		m.compiledTmpl = &compiledTemplate{tmpl: tmpl, err: err}
-	})
-
-	if m.compiledTmpl.err != nil {
-		return "", fmt.Errorf("apply-jinja-template: failed to parse template: %w", m.compiledTmpl.err)
+	// EXPERIMENT: recompile the template on every request to test the
+	// hypothesis that the shared compiled-template object is being scribbled
+	// by native code (purego) and corrupted in place. If errors disappear
+	// with this in place, the compiled template object is the corruption
+	// target. If errors persist, the corruption is elsewhere.
+	tmpl, err := jinja.Compile(m.template.Script)
+	if err != nil {
+		return "", fmt.Errorf("apply-jinja-template: failed to parse template: %w", err)
 	}
 
 	// Ensure add_generation_prompt is set (default true if not specified).
@@ -150,7 +150,7 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		d["eos_token"] = tokenText(m.vocab, llama.VocabEOS(m.vocab))
 	}
 
-	s, err := m.compiledTmpl.tmpl.Render(d)
+	s, err := tmpl.Render(d)
 	if err != nil {
 		return "", fmt.Errorf("apply-jinja-template: failed to execute template: %w", err)
 	}

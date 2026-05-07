@@ -326,9 +326,13 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 	}
 	s.bitmaps = nil
 
-	// Free mtmdCtx from the job if present.
-	if s.job != nil && s.job.mtmdCtx != 0 {
-		mtmd.Free(s.job.mtmdCtx)
-		s.job.mtmdCtx = 0
+	// Free the per-request mtmd context. This is created on demand in
+	// startSlot for media-bearing requests and lives only for the
+	// duration of one request, so any internal state mtmd accumulates
+	// (image_tokens, output buffer, bitmap registry, vision/audio
+	// support flags) cannot bleed into subsequent requests.
+	if s.mtmdCtx != 0 {
+		mtmd.Free(s.mtmdCtx)
+		s.mtmdCtx = 0
 	}
 }

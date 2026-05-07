@@ -70,6 +70,23 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		s.grammarSampler = NewGrammarSampler(e.model.vocab, job.params.Grammar)
 	}
 
+	// Create a fresh per-request mtmd context for any request that touches
+	// the mtmd pipeline (media-bearing requests, or IMC media cache builds
+	// for media-using sessions). Per-request lifetime keeps any internal
+	// mtmd state (image_tokens, output buffer, bitmap registry, vision
+	// support flags) bounded to a single request. The context is freed in
+	// freeSlotResources, which finishSlot calls on every exit path.
+	needsMTMD := e.model.projFile != "" && (job.imcMediaBuild ||
+		(job.object == ObjectChatMedia && len(job.media) > 0))
+	if needsMTMD {
+		mtmdCtx, err := mtmd.InitFromFile(e.model.projFile, e.model.model, mtmd.ContextParamsDefault())
+		if err != nil {
+			e.finishSlot(s, fmt.Errorf("start-slot: init per-request mtmd context: %w", err))
+			return
+		}
+		s.mtmdCtx = mtmdCtx
+	}
+
 	// IMC: restore externalized KV state from session.kvState, then decode
 	// any extension tokens. The slot's sequence was cleared in the previous
 	// finishSlot, so we always restore from RAM.
@@ -140,7 +157,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			imcDecodeStart := time.Now()
 
-			totalCached, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, job.mtmdCtx, skipTokens)
+			totalCached, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx, skipTokens)
 			if err != nil {
 				e.model.decodeMu.Lock()
 				if skipTokens > 0 {
@@ -166,9 +183,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			// Store whether this media build used M-RoPE so follow-up
 			// text-only requests on this session can use the correct position format.
-			if job.mtmdCtx != 0 && job.imcSession != nil {
+			if s.mtmdCtx != 0 && job.imcSession != nil {
 				e.model.cacheMu.Lock()
-				job.imcSession.useMRoPE = mtmd.DecodeUseMRope(job.mtmdCtx)
+				job.imcSession.useMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
 				e.model.cacheMu.Unlock()
 			}
 
@@ -377,7 +394,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			return
 		}
 
-	case e.slotNeedsMRoPE(job):
+	case e.slotNeedsMRoPE(s, job):
 		if !e.startSlotTextMRoPE(s, job, cacheIdx, buf) {
 			return
 		}
@@ -515,14 +532,14 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 
 // slotNeedsMRoPE returns true if the slot has cached media that was built with
 // M-RoPE 4D positions, meaning the suffix text must also use M-RoPE decoding.
-func (e *batchEngine) slotNeedsMRoPE(job *chatJob) bool {
+func (e *batchEngine) slotNeedsMRoPE(s *slot, job *chatJob) bool {
 	if !job.imcCacheHit {
 		return false
 	}
 
 	// For the initial media build, check the mtmdCtx directly.
-	if job.imcMediaBuild && job.mtmdCtx != 0 {
-		return mtmd.DecodeUseMRope(job.mtmdCtx)
+	if job.imcMediaBuild && s.mtmdCtx != 0 {
+		return mtmd.DecodeUseMRope(s.mtmdCtx)
 	}
 
 	// For follow-up requests, check the stored flag on the matched session.
@@ -588,7 +605,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d] is empty", i))
 				return false
 			}
-			s.bitmaps[i] = mtmd.BitmapInitFromBuf(job.mtmdCtx, &med[0], uint64(len(med)))
+			s.bitmaps[i] = mtmd.BitmapInitFromBuf(s.mtmdCtx, &med[0], uint64(len(med)))
 			if s.bitmaps[i] == 0 {
 				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d] could not be decoded by mtmd (BitmapInitFromBuf returned 0)", i))
 				return false
@@ -611,15 +628,15 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 
 	// Tokenize produces a sequence of chunks: text tokens and image patches.
 	input := mtmd.NewInputText(job.prompt, true, true)
-	if result := mtmd.Tokenize(job.mtmdCtx, s.inputChunks, input, s.bitmaps); result != 0 {
+	if result := mtmd.Tokenize(s.mtmdCtx, s.inputChunks, input, s.bitmaps); result != 0 {
 		err := fmt.Errorf("start-slot-media: tokenization failed with code %d", result)
 		e.finishSlot(s, err)
 		return false
 	}
 
 	// Set model-specific flags for positioning and attention.
-	s.useMRoPE = mtmd.DecodeUseMRope(job.mtmdCtx)
-	s.useNonCausal = mtmd.DecodeUseNonCausal(job.mtmdCtx, 0)
+	s.useMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
+	s.useNonCausal = mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
 
 	// Count total tokens across all chunks.
 	numChunks := mtmd.InputChunksSize(s.inputChunks)
@@ -648,8 +665,17 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	}
 
 	// Process first chunk. Media prefill is handled chunk-by-chunk in processBatch.
+	//
+	// addPrefillMediaChunk has two failure modes:
+	//   1. Cancellation/shutdown: returns false WITHOUT calling finishSlot
+	//      (s.job is still attached). Caller must finishSlot with cancel err.
+	//   2. Internal error (e.g., decode failure): calls finishSlot before
+	//      returning false, which resets the slot and nils s.job.
+	// We must distinguish so we don't dereference a nil s.job in case 2.
 	if !e.addPrefillMediaChunk(s, buf) {
-		e.finishSlot(s, e.slotCancelError(s))
+		if s.job != nil {
+			e.finishSlot(s, e.slotCancelError(s))
+		}
 		return false
 	}
 

@@ -124,7 +124,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			"slot", s.id, "chunk", s.chunkIdx, "tokens", nTokens)
 
 		// Step 1: Encode the image chunk (runs through vision encoder).
-		if err := mtmd.EncodeChunk(s.job.mtmdCtx, chunk); err != nil {
+		if err := mtmd.EncodeChunk(s.mtmdCtx, chunk); err != nil {
 			e.finishSlot(s, fmt.Errorf("encode image chunk failed: %w", err))
 			return false
 		}
@@ -132,7 +132,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 		// Step 2: Retrieve the computed embeddings.
 		nEmbd := llama.ModelNEmbdInp(e.model.model)
 		embedSize := nEmbd * int32(nTokens)
-		embd, err := mtmd.GetOutputEmbd(s.job.mtmdCtx, embedSize)
+		embd, err := mtmd.GetOutputEmbd(s.mtmdCtx, embedSize)
 		if err != nil {
 			e.finishSlot(s, fmt.Errorf("get image embeddings failed: %w", err))
 			return false
@@ -186,7 +186,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			"slot", s.id, "chunk", s.chunkIdx, "tokens", nTokens)
 
 		// Step 1: Encode the audio chunk (runs through audio encoder).
-		if err := mtmd.EncodeChunk(s.job.mtmdCtx, chunk); err != nil {
+		if err := mtmd.EncodeChunk(s.mtmdCtx, chunk); err != nil {
 			e.finishSlot(s, fmt.Errorf("encode audio chunk failed: %w", err))
 			return false
 		}
@@ -194,7 +194,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 		// Step 2: Retrieve the computed embeddings.
 		nEmbd := llama.ModelNEmbdInp(e.model.model)
 		embedSize := nEmbd * int32(nTokens)
-		embd, err := mtmd.GetOutputEmbd(s.job.mtmdCtx, embedSize)
+		embd, err := mtmd.GetOutputEmbd(s.mtmdCtx, embedSize)
 		if err != nil {
 			e.finishSlot(s, fmt.Errorf("get audio embeddings failed: %w", err))
 			return false

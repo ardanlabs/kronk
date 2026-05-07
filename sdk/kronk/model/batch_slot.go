@@ -34,11 +34,6 @@ type chatJob struct {
 	params Params   // Sampling and generation parameters
 
 	// -------------------------------------------------------------------------
-	// MTMD Context
-
-	mtmdCtx mtmd.Context // Multi-modal context for vision/audio processing
-
-	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
 
 	imcSession      *imcSession // Matched IMC session (the session-pool entry whose KV state will be restored into the assigned slot)
@@ -107,6 +102,7 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// MTMD Prefill (vision/audio requests)
 
+	mtmdCtx      mtmd.Context     // Per-request multimodal projector context (created in startSlot for media-bearing requests; freed in freeSlotResources). Zero for text-only requests and text-only models.
 	inputChunks  mtmd.InputChunks // Tokenized chunks (text + media interleaved)
 	chunkIdx     int              // Index of chunk currently being processed
 	chunkTokIdx  int              // Token index within current text chunk (for partial prefill)

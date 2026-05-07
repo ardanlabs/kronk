@@ -13,25 +13,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/attribute"
 )
 
 // modelLoadMu serializes model loading to prevent concurrent mutation of
 // process-level environment variables (e.g., GGML_OP_OFFLOAD_MIN_BATCH).
 var modelLoadMu sync.Mutex
-
-// compiledTemplate holds a pre-compiled Jinja template for reuse across requests.
-type compiledTemplate struct {
-	tmpl *jinja.Template
-	err  error
-}
 
 // imcSession holds the state for a single IMC (Incremental Message Cache)
 // session. Sessions are session-pool entries, sized 1:1 with the
@@ -91,18 +85,27 @@ type draftModel struct {
 
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
-	cfg               Config
-	log               applog.Logger
-	model             llama.Model
-	vocab             llama.Vocab
-	ctxParams         llama.ContextParams
-	lctx              llama.Context
-	mem               llama.Memory
-	batch             *batchEngine
-	template          Template
-	compiledTmpl      *compiledTemplate
-	templateOnce      sync.Once
-	projFile          string
+	cfg       Config
+	log       applog.Logger
+	model     llama.Model
+	vocab     llama.Vocab
+	ctxParams llama.ContextParams
+	lctx      llama.Context
+	mem       llama.Memory
+	batch     *batchEngine
+	template  Template
+	projFile  string
+	// mtmdMetaCtx is a single, long-lived multimodal projector context
+	// loaded in NewModel and freed in Unload. It is used ONLY for
+	// read-only metadata checks (SupportVision/SupportAudio) by chat
+	// handlers — never for Tokenize/Encode/Decode of actual requests.
+	// Per-request slots create their own short-lived mtmd context (via
+	// mtmd.InitFromFile in startSlot, freed in freeSlotResources) so
+	// that any internal accumulation inside an mtmd context is bounded
+	// to a single request and cannot bleed across requests.
+	// Zero when projFile == "" (text-only models) or for embed/rerank
+	// models.
+	mtmdMetaCtx       mtmd.Context
 	modelInfo         ModelInfo
 	activeStreams     atomic.Int32
 	unloaded          atomic.Bool
@@ -228,8 +231,31 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	// Generation models use the batch engine with a primary context.
 	nSlots := max(cfg.NSeqMax(), 1)
 
+	// Load a single, long-lived mtmd context used ONLY for metadata
+	// reads (SupportVision/SupportAudio) by chat handlers. Per-request
+	// processing contexts are created by each slot in startSlot and
+	// freed in freeSlotResources — see Model.mtmdMetaCtx for the
+	// rationale.
+	isGenerationModel := !(modelInfo.IsEmbedModel || modelInfo.IsRerankModel)
+	if isGenerationModel && m.projFile != "" {
+		l(ctx, "loading-prof-file", "status", "started", "proj", path.Base(m.projFile))
+
+		start := time.Now()
+
+		mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmd.ContextParamsDefault())
+		if err != nil {
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("init-mtmd-meta-context: %w", err)
+		}
+		m.mtmdMetaCtx = mtmdCtx
+
+		metrics.AddProjFileLoadTime(m.modelInfo.ID, time.Since(start))
+
+		l(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
+	}
+
 	switch {
-	case modelInfo.IsEmbedModel || modelInfo.IsRerankModel:
+	case !isGenerationModel:
 		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
 		if err != nil {
 			llama.ModelFree(mdl)
@@ -239,6 +265,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	default:
 		if err := initGenerationRuntime(ctx, &m, nSlots); err != nil {
+			if m.mtmdMetaCtx != 0 {
+				mtmd.Free(m.mtmdMetaCtx)
+			}
 			llama.ModelFree(mdl)
 			return nil, err
 		}
@@ -841,6 +870,15 @@ func (m *Model) Unload(ctx context.Context) error {
 		if err := sess.kvState.Close(); err != nil {
 			m.log(ctx, "unload", "status", "session-store-close-failed", "session", i, "err", err.Error())
 		}
+	}
+
+	// Free the long-lived metadata mtmd context before the model. mtmd
+	// holds references into the loaded llama model, so the order matters.
+	// Per-request slot mtmd contexts are freed in freeSlotResources during
+	// stop()/drainSlots; by the time we get here they are all gone.
+	if m.mtmdMetaCtx != 0 {
+		mtmd.Free(m.mtmdMetaCtx)
+		m.mtmdMetaCtx = 0
 	}
 
 	llama.ModelFree(m.model)
