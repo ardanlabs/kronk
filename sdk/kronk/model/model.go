@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
@@ -26,6 +27,13 @@ import (
 // modelLoadMu serializes model loading to prevent concurrent mutation of
 // process-level environment variables (e.g., GGML_OP_OFFLOAD_MIN_BATCH).
 var modelLoadMu sync.Mutex
+
+// compiledTemplate holds a pre-compiled Jinja template. Compiled once per
+// Model via Model.templateOnce / Model.compiledTmpl in applyJinjaTemplate.
+type compiledTemplate struct {
+	tmpl *jinja.Template
+	err  error
+}
 
 // imcSession holds the state for a single IMC (Incremental Message Cache)
 // session. Sessions are session-pool entries, sized 1:1 with the
@@ -85,16 +93,18 @@ type draftModel struct {
 
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
-	cfg       Config
-	log       applog.Logger
-	model     llama.Model
-	vocab     llama.Vocab
-	ctxParams llama.ContextParams
-	lctx      llama.Context
-	mem       llama.Memory
-	batch     *batchEngine
-	template  Template
-	projFile  string
+	cfg          Config
+	log          applog.Logger
+	model        llama.Model
+	vocab        llama.Vocab
+	ctxParams    llama.ContextParams
+	lctx         llama.Context
+	mem          llama.Memory
+	batch        *batchEngine
+	template     Template
+	compiledTmpl *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
+	templateOnce sync.Once         // Guards one-time compile of compiledTmpl.
+	projFile     string
 	// mtmdMetaCtx is a single, long-lived multimodal projector context
 	// loaded in NewModel and freed in Unload. It is used ONLY for
 	// read-only metadata checks (SupportVision/SupportAudio) by chat
@@ -691,7 +701,11 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 	llama.MemoryClear(dMem, true)
 
 	// Create greedy sampler for draft model (temperature=0 for speed).
-	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
+	// HEAP-CORRUPTION WORKAROUND: do NOT call SamplerChainDefaultParams
+	// (yzma FFI return-type mismatch overruns Go heap by 7 bytes). See
+	// detailed comment in toSampler in params.go.
+	// TODO: fix yzma's ffiSamplerChainParams type registration upstream.
+	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
 
 	// Create reusable batch for drafting (1 token at a time).
@@ -728,7 +742,11 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 // proposal distribution q(x) is consistent with the request's temperature,
 // top-k, and other settings.
 func buildDraftSampler(params Params) llama.Sampler {
-	chain := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
+	// HEAP-CORRUPTION WORKAROUND: do NOT call SamplerChainDefaultParams
+	// (yzma FFI return-type mismatch overruns Go heap by 7 bytes). See
+	// detailed comment in toSampler in params.go.
+	// TODO: fix yzma's ffiSamplerChainParams type registration upstream.
+	chain := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
 
 	// Build chain in the standard order: truncation → temperature → dist.
 	llama.SamplerChainAdd(chain, llama.SamplerInitTopK(params.TopK))

@@ -589,7 +589,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	}
 	fmt.Println()
 
-	fmt.Println("- contextWindow. :", krn.ModelConfig().ContextWindow())
+	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow())
 	fmt.Printf("- k/v            : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
 	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention)
 	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
@@ -1105,7 +1105,7 @@ import (
 const (
 	modelSource    = "unsloth/Qwen3.5-0.8B-Q8_0"
 	imageLocation  = "samples/deer"
-	numWorkers     = 4
+	numWorkers     = 2
 	numRequests    = 1500
 	requestTimeout = 60 * time.Second
 )

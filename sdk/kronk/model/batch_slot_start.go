@@ -628,7 +628,9 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 
 	// Tokenize produces a sequence of chunks: text tokens and image patches.
 	input := mtmd.NewInputText(job.prompt, true, true)
-	if result := mtmd.Tokenize(s.mtmdCtx, s.inputChunks, input, s.bitmaps); result != 0 {
+
+	result := mtmd.Tokenize(s.mtmdCtx, s.inputChunks, input, s.bitmaps)
+	if result != 0 {
 		err := fmt.Errorf("start-slot-media: tokenization failed with code %d", result)
 		e.finishSlot(s, err)
 		return false

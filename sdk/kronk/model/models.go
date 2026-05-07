@@ -537,6 +537,11 @@ func RawMediaMessage(text string, media []byte) []D {
 }
 
 // ImageMessage create a new media message.
+//
+// The image part is emitted before the text part inside the user turn. Many
+// multi-modal chat templates (e.g. Qwen2-Audio, Qwen-VL) were trained with
+// the media token preceding the user's question, and putting text first can
+// cause the model to ignore the media or produce nonsense output.
 func ImageMessage(text string, media []byte, typ string) []D {
 	encoded := base64.StdEncoding.EncodeToString(media)
 	url := fmt.Sprintf("data:image/%s;base64,%s", typ, encoded)
@@ -546,14 +551,14 @@ func ImageMessage(text string, media []byte, typ string) []D {
 			"role": "user",
 			"content": []D{
 				{
-					"type": "text",
-					"text": text,
-				},
-				{
 					"type": "image_url",
 					"image_url": D{
 						"url": url,
 					},
+				},
+				{
+					"type": "text",
+					"text": text,
 				},
 			},
 		},
@@ -561,6 +566,14 @@ func ImageMessage(text string, media []byte, typ string) []D {
 }
 
 // AudioMessage create a new media message.
+//
+// The audio is placed in its own user turn and the text question is placed
+// in a separate user turn that follows. Audio LLMs such as Qwen2-Audio were
+// trained with the audio token in a dedicated user turn (the chat template
+// embedded in those GGUFs is plain ChatML and concatenates content verbatim),
+// so packing the audio marker and the question into a single user message
+// produces nonsense output. Two consecutive user turns also remain valid
+// OpenAI-compatible JSON so the same value works over the HTTP API.
 func AudioMessage(text string, media []byte, typ string) []D {
 	encoded := base64.StdEncoding.EncodeToString(media)
 	data := fmt.Sprintf("data:audio/%s;base64,%s", typ, encoded)
@@ -570,10 +583,6 @@ func AudioMessage(text string, media []byte, typ string) []D {
 			"role": "user",
 			"content": []D{
 				{
-					"type": "text",
-					"text": text,
-				},
-				{
 					"type": "input_audio",
 					"input_audio": D{
 						"data": data,
@@ -581,10 +590,19 @@ func AudioMessage(text string, media []byte, typ string) []D {
 				},
 			},
 		},
+		{
+			"role":    "user",
+			"content": text,
+		},
 	}
 }
 
 // VideoMessage create a new media message.
+//
+// The video part is emitted before the text part inside the user turn. Many
+// multi-modal chat templates (e.g. Qwen2-Audio, Qwen-VL) were trained with
+// the media token preceding the user's question, and putting text first can
+// cause the model to ignore the media or produce nonsense output.
 func VideoMessage(text string, media []byte, typ string) []D {
 	encoded := base64.StdEncoding.EncodeToString(media)
 	url := fmt.Sprintf("data:video/%s;base64,%s", typ, encoded)
@@ -594,14 +612,14 @@ func VideoMessage(text string, media []byte, typ string) []D {
 			"role": "user",
 			"content": []D{
 				{
-					"type": "text",
-					"text": text,
-				},
-				{
 					"type": "video_url",
 					"video_url": D{
 						"url": url,
 					},
+				},
+				{
+					"type": "text",
+					"text": text,
 				},
 			},
 		},

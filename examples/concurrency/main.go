@@ -34,7 +34,7 @@ import (
 const (
 	modelSource    = "unsloth/Qwen3.5-0.8B-Q8_0"
 	imageLocation  = "samples/deer"
-	numWorkers     = 4
+	numWorkers     = 2
 	numRequests    = 1500
 	requestTimeout = 60 * time.Second
 )

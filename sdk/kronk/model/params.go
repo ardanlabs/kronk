@@ -770,7 +770,17 @@ func (m *Model) adjustParams(p Params) Params {
 }
 
 func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
-	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
+	// HEAP-CORRUPTION WORKAROUND: do NOT call llama.SamplerChainDefaultParams().
+	// yzma registers llama_sampler_chain_params with FFI return type
+	// TypePointer (8 bytes) but the Go SamplerChainParams struct is only
+	// 1 byte ({NoPerf uint8}). libffi writes 8 bytes from the return
+	// register into a 1-byte Go heap slot, scribbling 7 bytes of adjacent
+	// heap memory. Over many calls this occasionally lands on the
+	// long-lived compiled jinja template, producing
+	// `unknown binary operator "\x00"` on subsequent renders.
+	// Construct the params struct directly. C default is no_perf = true.
+	// TODO: fix yzma's ffiSamplerChainParams type registration upstream.
+	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
 
 	// NOTE: Grammar is NOT added to the sampler chain. The grammar sampler's
 	// accept() function crashes in llama.cpp when llama_sampler_chain_accept
