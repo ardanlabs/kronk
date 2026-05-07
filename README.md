@@ -164,6 +164,12 @@ make example-audio
 make example-chat
 ```
 
+[CONCURRENCY](examples/concurrency/main.go) - This example shows you how to leverage concurrency using vision models.
+
+```shell
+make example-concurrency
+```
+
 [EMBEDDING](examples/embedding/main.go) - This example shows you a basic program using Kronk to perform an embedding operation.
 
 ```shell

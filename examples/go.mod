@@ -6,6 +6,7 @@ replace github.com/ardanlabs/kronk => ../
 
 require (
 	github.com/ardanlabs/kronk v1.24.7
+	github.com/google/uuid v1.6.0
 	github.com/hybridgroup/yzma v1.13.0
 	github.com/marcboeker/go-duckdb/v2 v2.4.3
 )
@@ -70,7 +71,6 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.15 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect

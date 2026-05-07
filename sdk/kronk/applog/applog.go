@@ -63,9 +63,9 @@ var DiscardLogger Logger = func(ctx context.Context, msg string, args ...any) {
 // has been set on the context via SetTraceID it is included in the output.
 var FmtLogger Logger = func(ctx context.Context, msg string, args ...any) {
 	if traceID := GetTraceID(ctx); traceID != "" && traceID != NoTraceID {
-		fmt.Printf("traceID: %s: %s:", traceID, msg)
+		fmt.Printf("KRONK: traceID: %s: %s:", traceID, msg)
 	} else {
-		fmt.Printf("%s:", msg)
+		fmt.Printf("KRONK: %s:", msg)
 	}
 
 	for i := 0; i < len(args); i += 2 {

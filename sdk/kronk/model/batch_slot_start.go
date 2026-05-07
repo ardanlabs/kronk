@@ -407,6 +407,20 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	// Tokenize the prompt (cached messages already removed).
 	// Only add BOS if no cached tokens AND model metadata says to add BOS.
 	addBOS := cacheIdx == 0 && e.model.addBOSToken
+
+	// Guard against passing a prompt that still carries an unresolved media
+	// marker into libllama's tokenizer. That happens when a media-bearing
+	// request is mis-routed to the text path (e.g. media bytes failed to
+	// extract, template rendered the marker but the bitmap list is empty).
+	// Tokenizing a marker with parseSpecial=true can NULL-deref deep inside
+	// libllama, which is an uncatchable cgo SIGSEGV. Fail the slot cleanly
+	// instead so the caller gets an error and the process stays up.
+	if marker := mtmd.DefaultMarker(); marker != "" && strings.Contains(job.prompt, marker) {
+		err := fmt.Errorf("start-slot: prompt routed to text path still contains media marker %q (object=%s, media_count=%d) — refusing to tokenize to avoid libllama SIGSEGV", marker, job.object, len(job.media))
+		e.finishSlot(s, err)
+		return false
+	}
+
 	tokens := llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
 
 	// suffixTokens is the number of new tokens to process (not cached).

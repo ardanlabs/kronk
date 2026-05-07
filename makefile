@@ -825,6 +825,7 @@ grafana-browse:
 
 tidy:
 	go mod tidy
+	cd examples && go mod tidy
 
 deps-upgrade: bui-upgrade
 	go get -u -v ./...
@@ -847,8 +848,8 @@ example-audio:
 example-chat:
 	cd examples && go run ./chat/main.go
 
-example-chat-bug:
-	cd examples && CGO_ENABLED=1 go run -ldflags='-linkmode=external -extldflags "-Wl,-platform_version,macos,26.0,26.9"' ./chat/main.go
+example-concurrency:
+	cd examples && go run ./concurrency/main.go
 
 example-embedding:
 	cd examples && go run ./embedding/main.go

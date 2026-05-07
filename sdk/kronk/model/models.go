@@ -616,6 +616,30 @@ func DocumentArray(doc ...D) []D {
 	return msgs
 }
 
+// Messages combines individual messages (D) and message groups ([]D) into
+// a single []D suitable for use as the "messages" field on a request. This
+// lets you mix helpers like TextMessage (returns D) with helpers like
+// ImageMessage or RawMediaMessage (return []D) in a single call.
+//
+// Unsupported item types panic, which signals a programmer error at the
+// call site.
+func Messages(items ...any) []D {
+	msgs := make([]D, 0, len(items))
+
+	for _, item := range items {
+		switch v := item.(type) {
+		case D:
+			msgs = append(msgs, v)
+		case []D:
+			msgs = append(msgs, v...)
+		default:
+			panic(fmt.Sprintf("model.Messages: unsupported type %T", item))
+		}
+	}
+
+	return msgs
+}
+
 // MapToModelD converts a map[string]any to a D.
 func MapToModelD(m map[string]any) D {
 	d := make(D, len(m))

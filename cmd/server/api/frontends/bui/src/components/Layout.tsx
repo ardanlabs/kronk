@@ -110,6 +110,7 @@ const menuStructure: MenuCategory[] = [
             { page: 'docs-sdk-examples', label: 'Agent', hash: 'example-agent' },
             { page: 'docs-sdk-examples', label: 'Audio', hash: 'example-audio' },
             { page: 'docs-sdk-examples', label: 'Chat', hash: 'example-chat' },
+            { page: 'docs-sdk-examples', label: 'Concurrency', hash: 'example-concurrency' },
             { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
             { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
             { page: 'docs-sdk-examples', label: 'Pool', hash: 'example-pool' },
