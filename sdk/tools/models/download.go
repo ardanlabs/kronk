@@ -29,6 +29,7 @@ type Logger = applog.Logger
 //   - A direct HuggingFace URL ("https://huggingface.co/.../Qwen3-0.6B-Q8_0.gguf")
 //   - A canonical model id ("unsloth/Qwen3-0.6B-Q8_0")
 //   - A bare model id ("Qwen3-0.6B-Q8_0")
+//   - A "provider/repo:tag" quant selector ("unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")
 //
 // In every case the projection file (when applicable) is located
 // automatically through the resolver. Split (multi-file) models are

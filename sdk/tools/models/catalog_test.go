@@ -604,6 +604,391 @@ func TestModelsResolveSource_InvalidShorthand(t *testing.T) {
 	}
 }
 
+func TestSplitProviderRepoTag(t *testing.T) {
+	tests := []struct {
+		name                        string
+		in                          string
+		wantOK                      bool
+		wantProv, wantRepo, wantTag string
+	}{
+		{
+			name:     "valid",
+			in:       "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL",
+			wantOK:   true,
+			wantProv: "unsloth", wantRepo: "Qwen3.6-35B-A3B-GGUF", wantTag: "UD-Q4_K_XL",
+		},
+		{
+			name:     "valid-simple-quant",
+			in:       "ggml-org/embeddinggemma-300m-qat:Q8_0",
+			wantOK:   true,
+			wantProv: "ggml-org", wantRepo: "embeddinggemma-300m-qat", wantTag: "Q8_0",
+		},
+		{
+			name:   "no-colon",
+			in:     "unsloth/Qwen3-0.6B-Q8_0",
+			wantOK: false,
+		},
+		{
+			name:   "no-slash",
+			in:     "Qwen3-GGUF:Q4_K_M",
+			wantOK: false,
+		},
+		{
+			name:   "two-slashes",
+			in:     "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf",
+			wantOK: false,
+		},
+		{
+			name:   "two-slashes-with-tag",
+			in:     "unsloth/Qwen3-0.6B-GGUF/sub:Q8_0",
+			wantOK: false,
+		},
+		{
+			name:   "empty-tag",
+			in:     "unsloth/Qwen3-GGUF:",
+			wantOK: false,
+		},
+		{
+			name:   "empty-repo",
+			in:     "unsloth/:Q8_0",
+			wantOK: false,
+		},
+		{
+			name:   "empty-provider",
+			in:     "/repo:Q8_0",
+			wantOK: false,
+		},
+		{
+			name:   "double-colon",
+			in:     "unsloth/repo:Q8:0",
+			wantOK: false,
+		},
+		{
+			name:   "empty",
+			in:     "",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, repo, tag, ok := splitProviderRepoTag(tt.in)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if provider != tt.wantProv || repo != tt.wantRepo || tag != tt.wantTag {
+				t.Errorf("got (%q, %q, %q), want (%q, %q, %q)",
+					provider, repo, tag, tt.wantProv, tt.wantRepo, tt.wantTag)
+			}
+		})
+	}
+}
+
+func TestFileMatchesTag(t *testing.T) {
+	tests := []struct {
+		file, tag string
+		want      bool
+	}{
+		{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", "UD-Q4_K_XL", true},
+		{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", "Q4_K_XL", true},    // suffix still matches
+		{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", "Q4_K_M", false},    // distinct quants
+		{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", "ud-q4_k_xl", true}, // case-insensitive
+		{"Qwen2-Audio-7B.Q8_0.gguf", "Q8_0", true},              // dot separator
+		{"Qwen3-Q4_K_M-00001-of-00002.gguf", "Q4_K_M", true},    // split suffix stripped
+		{"Qwen3-Q8_0.gguf", "", false},
+		{"Qwen3-Q8_0.gguf", "9_0", false}, // partial without separator must not match
+	}
+
+	for _, tt := range tests {
+		got := fileMatchesTag(tt.file, tt.tag)
+		if got != tt.want {
+			t.Errorf("fileMatchesTag(%q, %q) = %v, want %v", tt.file, tt.tag, got, tt.want)
+		}
+	}
+}
+
+func TestSelectFilesByTag(t *testing.T) {
+	t.Run("exact-match", func(t *testing.T) {
+		siblings := []string{
+			"README.md",
+			"Qwen3.6-35B-A3B-Q4_K_M.gguf",
+			"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+			"mmproj-F16.gguf",
+		}
+		files, mmproj, ok := selectFilesByTag(siblings, "UD-Q4_K_XL")
+		if !ok {
+			t.Fatal("expected match")
+		}
+		if !reflect.DeepEqual(files, []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"}) {
+			t.Errorf("files = %v", files)
+		}
+		if mmproj != "mmproj-F16.gguf" {
+			t.Errorf("mmproj = %q", mmproj)
+		}
+	})
+
+	t.Run("prefers-ud-when-multiple", func(t *testing.T) {
+		siblings := []string{
+			"Qwen3-Q4_K_XL.gguf",
+			"Qwen3-UD-Q4_K_XL.gguf",
+		}
+		files, _, ok := selectFilesByTag(siblings, "Q4_K_XL")
+		if !ok {
+			t.Fatal("expected match")
+		}
+		if !reflect.DeepEqual(files, []string{"Qwen3-UD-Q4_K_XL.gguf"}) {
+			t.Errorf("files = %v, want [Qwen3-UD-Q4_K_XL.gguf]", files)
+		}
+	})
+
+	t.Run("no-match", func(t *testing.T) {
+		siblings := []string{
+			"Qwen3-Q5_K_M.gguf",
+			"Qwen3-Q8_0.gguf",
+		}
+		if _, _, ok := selectFilesByTag(siblings, "Q4_K_XL"); ok {
+			t.Fatal("expected no match")
+		}
+	})
+
+	t.Run("split-files", func(t *testing.T) {
+		siblings := []string{
+			"Llama-3.3-70B-Q8_0/Llama-3.3-70B-Q8_0-00001-of-00002.gguf",
+			"Llama-3.3-70B-Q8_0/Llama-3.3-70B-Q8_0-00002-of-00002.gguf",
+		}
+		files, _, ok := selectFilesByTag(siblings, "Q8_0")
+		if !ok {
+			t.Fatal("expected match")
+		}
+		want := []string{
+			"Llama-3.3-70B-Q8_0/Llama-3.3-70B-Q8_0-00001-of-00002.gguf",
+			"Llama-3.3-70B-Q8_0/Llama-3.3-70B-Q8_0-00002-of-00002.gguf",
+		}
+		if !reflect.DeepEqual(files, want) {
+			t.Errorf("files = %v, want %v", files, want)
+		}
+	})
+
+	t.Run("dot-separator-mradermacher", func(t *testing.T) {
+		siblings := []string{
+			"Qwen2-Audio-7B.Q8_0.gguf",
+			"Qwen2-Audio-7B.mmproj-f16.gguf",
+		}
+		files, mmproj, ok := selectFilesByTag(siblings, "Q8_0")
+		if !ok {
+			t.Fatal("expected match")
+		}
+		if !reflect.DeepEqual(files, []string{"Qwen2-Audio-7B.Q8_0.gguf"}) {
+			t.Errorf("files = %v", files)
+		}
+		if mmproj != "Qwen2-Audio-7B.mmproj-f16.gguf" {
+			t.Errorf("mmproj = %q", mmproj)
+		}
+	})
+
+	t.Run("empty-tag", func(t *testing.T) {
+		siblings := []string{"Qwen3-Q8_0.gguf"}
+		if _, _, ok := selectFilesByTag(siblings, ""); ok {
+			t.Fatal("expected no match for empty tag")
+		}
+	})
+}
+
+func TestResolver_TagForm_HFLookup(t *testing.T) {
+	// Tag form should hit ModelMeta directly (no SearchModels), pick the
+	// matching sibling, build correct download URLs, and persist the
+	// resulting catalog entry under the canonical id derived from the
+	// chosen file's basename.
+	hfc := &fakeHF{
+		metas: map[string][]string{
+			"unsloth/Qwen3.6-35B-A3B-GGUF": {
+				"Qwen3.6-35B-A3B-Q4_K_M.gguf",
+				"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+				"mmproj-F16.gguf",
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	rfile := filepath.Join(dir, "catalog.yaml")
+	mustWriteFile(t, rfile, "providers: []\nmodels: {}\n")
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+
+	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	wantCanonical := "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL"
+	if res.CanonicalID != wantCanonical {
+		t.Errorf("CanonicalID = %q, want %q", res.CanonicalID, wantCanonical)
+	}
+	if res.Provider != "unsloth" || res.Family != "Qwen3.6-35B-A3B-GGUF" {
+		t.Errorf("Provider/Family = %q/%q", res.Provider, res.Family)
+	}
+
+	wantURL := "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
+	if !reflect.DeepEqual(res.DownloadURLs, []string{wantURL}) {
+		t.Errorf("DownloadURLs = %v\nwant [%s]", res.DownloadURLs, wantURL)
+	}
+
+	wantProj := "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/mmproj-F16.gguf"
+	if res.DownloadProj != wantProj {
+		t.Errorf("DownloadProj = %q\nwant %q", res.DownloadProj, wantProj)
+	}
+
+	// Ensure we did NOT call SearchModels — only ModelMeta.
+	for _, c := range hfc.calls {
+		if strings.HasPrefix(c, "search:") {
+			t.Errorf("unexpected SearchModels call: %s", c)
+		}
+	}
+
+	// And the entry was persisted under the canonical id.
+	saved := loadResolved(t, rfile)
+	if _, ok := saved.Models[wantCanonical]; !ok {
+		t.Errorf("catalog missing %q; have %v", wantCanonical, mapKeys(saved.Models))
+	}
+}
+
+func TestResolver_TagForm_CacheHit(t *testing.T) {
+	// A pre-seeded entry whose family+tag match the request should serve
+	// from cache without any HF call.
+	hfc := &fakeHF{}
+	dir := t.TempDir()
+	rfile := filepath.Join(dir, "catalog.yaml")
+
+	cached := Catalog{
+		Providers: []string{"unsloth"},
+		Models: map[string]CatalogEntry{
+			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
+				Provider:   "unsloth",
+				Family:     "Qwen3.6-35B-A3B-GGUF",
+				Revision:   "main",
+				Files:      []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+				MMProj:     "mmproj-Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+				MMProjOrig: "mmproj-F16.gguf",
+			},
+		},
+	}
+	data, _ := yaml.Marshal(cached)
+	mustWriteFile(t, rfile, string(data))
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+
+	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !res.FromCache {
+		t.Error("expected FromCache=true")
+	}
+	if len(hfc.calls) > 0 {
+		t.Errorf("expected zero HF calls, got %v", hfc.calls)
+	}
+
+	wantURL := "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
+	if !reflect.DeepEqual(res.DownloadURLs, []string{wantURL}) {
+		t.Errorf("DownloadURLs = %v", res.DownloadURLs)
+	}
+}
+
+func TestResolver_TagForm_TagNotFound(t *testing.T) {
+	hfc := &fakeHF{
+		metas: map[string][]string{
+			"unsloth/Qwen3-GGUF": {
+				"Qwen3-Q4_K_M.gguf",
+				"Qwen3-Q8_0.gguf",
+			},
+		},
+	}
+	dir := t.TempDir()
+	rfile := filepath.Join(dir, "catalog.yaml")
+	mustWriteFile(t, rfile, "providers: []\nmodels: {}\n")
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+
+	_, err := r.Resolve(context.Background(), "unsloth/Qwen3-GGUF:UD-Q4_K_XL")
+	if err == nil {
+		t.Fatal("expected error for missing tag")
+	}
+	if !strings.Contains(err.Error(), "tag") {
+		t.Errorf("err = %v, want a 'tag' message", err)
+	}
+}
+
+func TestResolver_TagForm_RepoNotFound(t *testing.T) {
+	hfc := &fakeHF{
+		missing: map[string]bool{
+			"unsloth/Bogus-GGUF": true,
+		},
+	}
+	dir := t.TempDir()
+	rfile := filepath.Join(dir, "catalog.yaml")
+	mustWriteFile(t, rfile, "providers: []\nmodels: {}\n")
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+
+	_, err := r.Resolve(context.Background(), "unsloth/Bogus-GGUF:Q8_0")
+	if err == nil {
+		t.Fatal("expected error for missing repo")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("err = %v, want 'not found'", err)
+	}
+}
+
+func TestResolver_AllInputForms_ProduceSameDownloadURL(t *testing.T) {
+	// Every accepted input shape that points at a specific file must
+	// produce the same set of download URLs as the canonical id form.
+	const wantURL = "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
+
+	cached := Catalog{
+		Providers: []string{"unsloth"},
+		Models: map[string]CatalogEntry{
+			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
+				Provider: "unsloth",
+				Family:   "Qwen3.6-35B-A3B-GGUF",
+				Revision: "main",
+				Files:    []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+			},
+		},
+	}
+	data, _ := yaml.Marshal(cached)
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"canonical-id", "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL"},
+		{"canonical-id-with-gguf", "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+		{"tag-form", "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL"},
+		{"tag-form-with-gguf", "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL.gguf"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			rfile := filepath.Join(dir, "catalog.yaml")
+			mustWriteFile(t, rfile, string(data))
+
+			r := NewResolverWithClient(nil, rfile, &fakeHF{})
+
+			res, err := r.Resolve(context.Background(), tc.input)
+			if err != nil {
+				t.Fatalf("Resolve(%q): %v", tc.input, err)
+			}
+			if !reflect.DeepEqual(res.DownloadURLs, []string{wantURL}) {
+				t.Errorf("DownloadURLs = %v\nwant [%s]", res.DownloadURLs, wantURL)
+			}
+		})
+	}
+}
+
 // =============================================================================
 
 func mustWriteFile(t *testing.T, path, content string) {
@@ -611,6 +996,15 @@ func mustWriteFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func mapKeys(m map[string]CatalogEntry) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func loadResolved(t *testing.T, path string) Catalog {
