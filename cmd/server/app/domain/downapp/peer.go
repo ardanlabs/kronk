@@ -123,28 +123,31 @@ func (app PeerModelListResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-// peerModelsRaw mirrors the JSON shape returned by the peer's /v1/models
-// endpoint. Only the fields the BUI needs are decoded.
+// peerModelsRaw mirrors the JSON shape returned by the peer's
+// /download/models endpoint.
 type peerModelsRaw struct {
-	Data []struct {
+	Models []struct {
 		ID            string `json:"id"`
 		OwnedBy       string `json:"owned_by"`
 		ModelFamily   string `json:"model_family"`
 		Size          int64  `json:"size"`
 		Validated     bool   `json:"validated"`
 		HasProjection bool   `json:"has_projection"`
-	} `json:"data"`
+	} `json:"models"`
 }
 
-// fetchPeerModels fetches the list of models advertised by the peer at
-// host (in the form "ip:port") via its GET /v1/models endpoint.
+// fetchPeerModels fetches the list of physical models advertised by the
+// peer at host (in the form "ip:port") via its GET /download/models
+// endpoint. The peer is responsible for filtering out non-pullable
+// entries (e.g. extension/variant models from the model config) before
+// returning the list.
 func fetchPeerModels(ctx context.Context, host string) ([]PeerModelDetail, error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return nil, errors.New("downapp: fetch-peer-models: host is required")
 	}
 
-	url := fmt.Sprintf("http://%s/v1/models", host)
+	url := fmt.Sprintf("http://%s/download/models", host)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -167,8 +170,8 @@ func fetchPeerModels(ctx context.Context, host string) ([]PeerModelDetail, error
 		return nil, fmt.Errorf("downapp: fetch-peer-models: decode: %w", err)
 	}
 
-	out := make([]PeerModelDetail, len(raw.Data))
-	for i, m := range raw.Data {
+	out := make([]PeerModelDetail, len(raw.Models))
+	for i, m := range raw.Models {
 		out[i] = PeerModelDetail{
 			ID:            m.ID,
 			OwnedBy:       m.OwnedBy,

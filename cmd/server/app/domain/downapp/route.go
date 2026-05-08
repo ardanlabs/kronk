@@ -6,6 +6,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 // Config contains all the mandatory systems required by handlers.
@@ -13,6 +14,7 @@ type Config struct {
 	Log        *logger.Logger
 	ModelsPath string
 	Libs       *libs.Libs
+	Models     *models.Models
 }
 
 // Routes registers the download surface. Two surfaces are registered:
