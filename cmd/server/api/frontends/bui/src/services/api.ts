@@ -29,6 +29,7 @@ import type {
   LibsBundleActionResponse,
   LibsPeerBundleListResponse,
   LibsPeerPullEvent,
+  PeerModelListResponse,
 } from '../types';
 
 class ApiService {
@@ -648,6 +649,11 @@ class ApiService {
   async listPeerLibsBundles(host: string): Promise<LibsPeerBundleListResponse> {
     const params = new URLSearchParams({ host });
     return this.request<LibsPeerBundleListResponse>(`/download/libs/peer-bundles?${params.toString()}`);
+  }
+
+  async listPeerModels(host: string): Promise<PeerModelListResponse> {
+    const params = new URLSearchParams({ host });
+    return this.request<PeerModelListResponse>(`/download/models/peer-models?${params.toString()}`);
   }
 
   pullLibsFromPeer(

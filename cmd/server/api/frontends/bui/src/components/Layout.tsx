@@ -37,7 +37,8 @@ const menuStructure: MenuCategory[] = [
     items: [
       { page: 'model-list', label: 'List' },
       { page: 'model-ps', label: 'Running' },
-      { page: 'model-pull', label: 'Pull' },
+      { page: 'model-pull', label: 'HF Pull' },
+      { page: 'kms-pull', label: 'KMS Pull' },
     ],
   },
   {
@@ -551,7 +552,7 @@ export default function Layout({ children }: LayoutProps) {
             )}
             {showDownloadIndicator && (
               <div className="download-indicator">
-                <Link to={download.origin === 'catalog' ? routeMap['catalog-list'] : routeMap['model-pull']} className="download-indicator-link">
+                <Link to={download.origin === 'catalog' ? routeMap['kms-pull'] : routeMap['model-pull']} className="download-indicator-link">
                   <div className="download-indicator-header">
                     {isDownloading ? (
                       <span className="download-indicator-spinner" />

@@ -249,7 +249,7 @@ export default function ModelPull() {
   return (
     <div>
       <div className="page-header">
-        <h2>Pull Model</h2>
+        <h2>HF Pull Model</h2>
         <p>
           Identify the model with three fields. Each one maps to a segment of the HuggingFace
           file URL:

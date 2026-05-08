@@ -35,6 +35,7 @@ func Routes(app *web.App, cfg Config) {
 
 	app.HandlerFunc(http.MethodGet, version, "/download/libs/peer-bundles", api.listPeerLibsBundles)
 	app.HandlerFunc(http.MethodPost, version, "/download/libs/pull-from-peer", api.pullLibsFromPeer)
+	app.HandlerFunc(http.MethodGet, version, "/download/models/peer-models", api.listPeerModels)
 
 	// All publisher download requests funnel through the same catch-all
 	// so that model and library-bundle paths can coexist without GET/HEAD

@@ -3,14 +3,30 @@ package downapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
+
+// peerHTTPClient is the http.Client used for short JSON requests against
+// peer Kronk servers. The 30s timeout keeps the BUI snappy if a peer is
+// unreachable.
+var peerHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: 10 * time.Second,
+		}).DialContext,
+	},
+}
 
 // PeerBundleTagResponse describes a single bundle advertised by a peer
 // Kronk server. Size and SHA256 are only populated when the peer has
@@ -78,6 +94,108 @@ func toPeerPullEvent(p PeerPullEvent) string {
 		return fmt.Sprintf("data: {\"status\":%q}\n", err.Error())
 	}
 	return fmt.Sprintf("data: %s\n", string(d))
+}
+
+// =============================================================================
+
+// PeerModelDetail describes a single model advertised by a peer Kronk
+// server. The shape mirrors the relevant fields of toolapp.ListModelDetail
+// so the BUI can render the peer model grid the same way it renders the
+// local model list.
+type PeerModelDetail struct {
+	ID            string `json:"id"`
+	OwnedBy       string `json:"owned_by"`
+	ModelFamily   string `json:"model_family"`
+	Size          int64  `json:"size"`
+	Validated     bool   `json:"validated"`
+	HasProjection bool   `json:"has_projection"`
+}
+
+// PeerModelListResponse is the list of models returned by a peer
+// /v1/models query, surfaced to the BUI through /v1/download/models/peer-models.
+type PeerModelListResponse struct {
+	Models []PeerModelDetail `json:"models"`
+}
+
+// Encode implements the encoder interface.
+func (app PeerModelListResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// peerModelsRaw mirrors the JSON shape returned by the peer's /v1/models
+// endpoint. Only the fields the BUI needs are decoded.
+type peerModelsRaw struct {
+	Data []struct {
+		ID            string `json:"id"`
+		OwnedBy       string `json:"owned_by"`
+		ModelFamily   string `json:"model_family"`
+		Size          int64  `json:"size"`
+		Validated     bool   `json:"validated"`
+		HasProjection bool   `json:"has_projection"`
+	} `json:"data"`
+}
+
+// fetchPeerModels fetches the list of models advertised by the peer at
+// host (in the form "ip:port") via its GET /v1/models endpoint.
+func fetchPeerModels(ctx context.Context, host string) ([]PeerModelDetail, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return nil, errors.New("downapp: fetch-peer-models: host is required")
+	}
+
+	url := fmt.Sprintf("http://%s/v1/models", host)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("downapp: fetch-peer-models: build request: %w", err)
+	}
+
+	resp, err := peerHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("downapp: fetch-peer-models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("downapp: fetch-peer-models: peer returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var raw peerModelsRaw
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("downapp: fetch-peer-models: decode: %w", err)
+	}
+
+	out := make([]PeerModelDetail, len(raw.Data))
+	for i, m := range raw.Data {
+		out[i] = PeerModelDetail{
+			ID:            m.ID,
+			OwnedBy:       m.OwnedBy,
+			ModelFamily:   m.ModelFamily,
+			Size:          m.Size,
+			Validated:     m.Validated,
+			HasProjection: m.HasProjection,
+		}
+	}
+
+	return out, nil
+}
+
+// =============================================================================
+
+func (a *app) listPeerModels(ctx context.Context, r *http.Request) web.Encoder {
+	host := strings.TrimSpace(r.URL.Query().Get("host"))
+	if host == "" {
+		return errs.Errorf(errs.InvalidArgument, "host is required")
+	}
+
+	models, err := fetchPeerModels(ctx, host)
+	if err != nil {
+		return errs.New(errs.Internal, err)
+	}
+
+	return PeerModelListResponse{Models: models}
 }
 
 // =============================================================================
