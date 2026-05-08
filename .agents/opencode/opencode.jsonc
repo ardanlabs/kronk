@@ -41,9 +41,6 @@
         }
     },
     "model": "kronk/Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
-    "instructions": [
-        "agent.md"
-    ],
     "compaction": {
         "auto": false,
         "prune": false

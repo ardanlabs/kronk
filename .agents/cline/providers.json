@@ -6,7 +6,7 @@
             "settings": {
                 "provider": "kronk",
                 "apiKey": "123",
-                "model": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+                "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
                 "baseUrl": "http://localhost:11435/v1",
                 "headers": {},
                 "timeout": 30000,
@@ -21,7 +21,7 @@
             "settings": {
                 "provider": "openai",
                 "apiKey": "123",
-                "model": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+                "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
                 "baseUrl": "http://localhost:11435/v1",
                 "headers": {},
                 "timeout": 30000,

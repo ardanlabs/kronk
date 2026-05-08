@@ -195,13 +195,36 @@ install-docker:
 	docker pull docker.io/$(PROMTAIL) & \
 	wait;
 
-copy-agent-configs:
+copy-agent-configs: copy-agent-opencode copy-agent-kilo copy-agent-pi copy-agent-goose copy-agent-cline
+
+copy-agent-opencode:
 	mkdir -p $$HOME/.config/opencode
-	mkdir -p $$HOME/.config/kilo
 	cp .agents/opencode/opencode.jsonc $$HOME/.config/opencode/opencode.jsonc
-	cp .agents/opencode/agent.md $$HOME/.config/opencode/agent.md
+	cp .agents/opencode/AGENTS.md $$HOME/.config/opencode/AGENTS.md
+	cp .agents/opencode/auth.json $$HOME/.config/opencode/auth.json
+
+copy-agent-kilo:
+	mkdir -p $$HOME/.config/kilo
 	cp .agents/kilo/kilo.json $$HOME/.config/kilo/kilo.json
 	cp .agents/kilo/agent.md $$HOME/.config/kilo/agent.md
+
+copy-agent-pi:
+	mkdir -p $$HOME/.pi/agent
+	cp .agents/pi/models.json $$HOME/.pi/agent/models.json
+	cp .agents/pi/mcp.json $$HOME/.pi/agent/mcp.json
+	cp .agents/pi/AGENTS.md $$HOME/.pi/agent/AGENTS.md
+
+copy-agent-goose:
+	mkdir -p $$HOME/.config/goose/custom_providers
+	cp .agents/goose/config.yaml $$HOME/.config/goose/config.yaml
+	cp .agents/goose/custom_kronk.json $$HOME/.config/goose/custom_providers/custom_kronk.json
+
+copy-agent-cline:
+	mkdir -p "$$HOME/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings"
+	cp .agents/cline/cline_mcp_settings.json "$$HOME/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
+	cp .agents/cline/models.json "$$HOME/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/models.json"
+	cp .agents/cline/providers.json "$$HOME/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/providers.json"
+	cp .agents/cline/globalState.json "$$HOME/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/globalState.json"
 
 # ==============================================================================
 # Llama.cpp programs

@@ -1,0 +1,9 @@
+{
+    "mcpServers": {
+        "kronk": {
+            "url": "http://localhost:9000/mcp",
+            "lifecycle": "eager",
+            "directTools": true
+        }
+    }
+}

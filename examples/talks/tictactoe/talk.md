@@ -28,6 +28,8 @@ In this talk, Bill will show why self-hosted inference belongs in your Go applic
   - Drop in local inference as Player2
   - Use JSON Schema to constrain model output to legal moves
 
+---
+
 ### Basic Game Play Prompt
 
 - I want to write a simple tic-tac-toe game using only the Go standard library.
@@ -36,7 +38,7 @@ In this talk, Bill will show why self-hosted inference belongs in your Go applic
 - Allow 2 players to play against each other.
 - Add the code to a file name `examples/talks/tictactoe/main.go`
 
-- Paint the board exactly like this:
+- Paint the board exactly like this using the color green for the lines and white for the numbers:
 
 ```
 
@@ -50,15 +52,7 @@ Player X's turn. Enter a number (1-9):
 
 ```
 
-- Make sure there is a line space before and after rendering a new board.
-- Use the color green for the lines, red for X, and blue for O.
-- Clear the screen when rendering a new board.
-- When the game is over, clear the screen, render the final board, and show the outcome of the game.
-- Ask Player1 to go first.
-- Each player will choose a number that corresponds to a place on the board.
-- The first player uses `X` and the second player uses `O`.
-
-- The following board shows the first player selecting space number 5.
+- The following board shows the first player selecting space number 5. That `X` should be painted Red.
 
 ```
 1 | 2 | 3
@@ -70,7 +64,7 @@ Player X's turn. Enter a number (1-9):
 Player O's turn. Enter a number (1-9):
 ```
 
-- The following board shows the second player selecting space number 1.
+- The following board shows the second player selecting space number 1. That `O` should be painted Blue.
 
 ```
 O | 2 | 3
@@ -82,6 +76,15 @@ O | 2 | 3
 Player X's turn. Enter a number (1-9):
 ```
 
+## Rules To Follow
+
+- Make sure there is a line space before and after rendering a new board.
+- Use the color red for X, and blue for O.
+- Clear the screen when rendering a new board.
+- When the game is over, clear the screen, render the final board, and show the outcome of the game.
+- Ask Player1 to go first.
+- Each player will choose a number that corresponds to a place on the board.
+- The first player uses `X` and the second player uses `O`.
 - If the board is showing a number for that space, then that number is a valid move.
 - Always check for a winner or a draw after every move.
 - A draw would be all spaces having an `X` or an `O`.
