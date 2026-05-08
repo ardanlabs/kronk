@@ -400,6 +400,19 @@ export interface LibsPeerPullEvent {
   error?: string;
 }
 
+export interface PeerModelDetail {
+  id: string;
+  owned_by: string;
+  model_family: string;
+  size: number;
+  validated: boolean;
+  has_projection: boolean;
+}
+
+export interface PeerModelListResponse {
+  models: PeerModelDetail[];
+}
+
 export type RateWindow = 'day' | 'month' | 'year' | 'unlimited';
 
 export interface RateLimit {

@@ -203,11 +203,13 @@ func (r *Resolver) Providers() []string {
 	return rm.Providers
 }
 
-// Resolve maps an id to a Resolution. The id may be bare ("Qwen3-0.6B-Q8_0")
-// or include an explicit provider ("unsloth/Qwen3-0.6B-Q8_0"). Resolution
-// proceeds in order: resolver file (fast cache) → local disk → HF API
-// across the provider list. Local and HF hits are persisted to the
-// resolver file so subsequent lookups become cache hits.
+// Resolve maps an id to a Resolution. The id may be bare ("Qwen3-0.6B-Q8_0"),
+// include an explicit provider ("unsloth/Qwen3-0.6B-Q8_0"), or carry a
+// HuggingFace-style "provider/repo:tag" quant selector
+// ("unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL"). Resolution proceeds in
+// order: resolver file (fast cache) → local disk → HF API across the
+// provider list. Local and HF hits are persisted to the resolver file
+// so subsequent lookups become cache hits.
 func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -218,6 +220,12 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 	// "ggml-org/embeddinggemma-300m-qat-Q8_0.gguf") and treat them as
 	// canonical ids.
 	id = strings.TrimSuffix(id, ".gguf")
+
+	// "provider/repo:tag" form pins both the HuggingFace owner/repo and
+	// the desired quant variant — no SearchModels round-trip needed.
+	if provider, repo, tag, ok := splitProviderRepoTag(id); ok {
+		return r.resolveByTag(ctx, provider, repo, tag)
+	}
 
 	provider, modelID := splitProviderID(id)
 
@@ -310,6 +318,105 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 	return Resolution{}, fmt.Errorf("resolve: model %q not found in any of %v", id, providers)
 }
 
+// resolveByTag handles the "provider/repo:tag" input shape. It first tries
+// the catalog cache by (provider, family, tag); on a miss it calls
+// hfClient.ModelMeta directly (no SearchModels needed because the
+// repository is already pinned), picks the sibling file matching the tag
+// via selectFilesByTag, and persists the resulting entry under the
+// canonical id derived from the chosen file's basename.
+func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string) (Resolution, error) {
+	rm, err := r.Load()
+	if err != nil {
+		return Resolution{}, fmt.Errorf("resolve: %w", err)
+	}
+
+	online := hasNetwork()
+
+	if cached, ok := r.lookupCacheByTag(rm, provider, repo, tag); ok {
+		needsRepair := cached.MMProj != "" && cached.DownloadProj == ""
+		if !needsRepair || !online {
+			cached.FromCache = true
+			r.attachLocal(&cached)
+			return cached, nil
+		}
+	}
+
+	if !online {
+		return Resolution{}, fmt.Errorf("resolve: %s/%s:%s not cached and no network available", provider, repo, tag)
+	}
+
+	meta, err := r.hfClient.ModelMeta(ctx, provider, repo, "main")
+	if err != nil {
+		if isNotFound(err) {
+			return Resolution{}, fmt.Errorf("resolve: %s/%s not found", provider, repo)
+		}
+		return Resolution{}, fmt.Errorf("resolve: %s/%s: %w", provider, repo, err)
+	}
+
+	files, mmproj, ok := selectFilesByTag(meta.Siblings, tag)
+	if !ok {
+		return Resolution{}, fmt.Errorf("resolve: tag %q not found in %s/%s", tag, provider, repo)
+	}
+
+	modelID := extractModelID(files[0])
+	canonical := canonicalID(provider, modelID)
+
+	res := Resolution{
+		CanonicalID:  canonical,
+		Provider:     provider,
+		Family:       repo,
+		Revision:     "main",
+		Files:        files,
+		MMProj:       localProjName(mmproj, files),
+		MMProjOrig:   mmproj,
+		DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
+	}
+
+	if mmproj != "" {
+		res.DownloadProj = buildDownloadURL(provider, repo, "main", mmproj)
+	}
+
+	entry := r.buildEntry(provider, repo, "main", files, res.MMProj)
+	entry.MMProjOrig = mmproj
+
+	if rm.Models == nil {
+		rm.Models = map[string]CatalogEntry{}
+	}
+	rm.Models[canonical] = entry
+
+	if err := r.Save(rm); err != nil {
+		return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
+	}
+
+	r.attachLocal(&res)
+
+	return res, nil
+}
+
+// lookupCacheByTag scans the persisted catalog for an entry whose
+// provider+family match the request and whose first file's model id ends
+// with the requested tag (separated by "-" or ".").
+func (r *Resolver) lookupCacheByTag(rm Catalog, provider, repo, tag string) (Resolution, bool) {
+	for key, entry := range rm.Models {
+		if !strings.EqualFold(entry.Provider, provider) {
+			continue
+		}
+		if !strings.EqualFold(entry.Family, repo) {
+			continue
+		}
+		if len(entry.Files) == 0 {
+			continue
+		}
+		if !fileMatchesTag(entry.Files[0], tag) {
+			continue
+		}
+
+		return entryToResolution(key, entry), true
+	}
+
+	return Resolution{}, false
+}
+
 // =============================================================================
 
 // splitProviderID separates "provider/modelID" inputs. For bare ids the
@@ -320,6 +427,38 @@ func splitProviderID(id string) (provider, modelID string) {
 	}
 
 	return "", id
+}
+
+// splitProviderRepoTag parses "provider/repo:tag" inputs. The tag is a
+// quantization selector (e.g. "UD-Q4_K_XL", "Q8_0", "BF16") used to pick
+// the matching sibling file in repo. Returns ok=false when the input is
+// not in this exact shape — exactly one "/", a non-empty ":tag" suffix,
+// and no further "/" or ":" in any segment.
+func splitProviderRepoTag(id string) (provider, repo, tag string, ok bool) {
+	slash := strings.Index(id, "/")
+	if slash <= 0 || slash == len(id)-1 {
+		return "", "", "", false
+	}
+
+	rest := id[slash+1:]
+	if strings.Contains(rest, "/") {
+		return "", "", "", false
+	}
+
+	colon := strings.Index(rest, ":")
+	if colon <= 0 || colon == len(rest)-1 {
+		return "", "", "", false
+	}
+
+	provider = id[:slash]
+	repo = rest[:colon]
+	tag = rest[colon+1:]
+
+	if strings.ContainsAny(tag, ":/") {
+		return "", "", "", false
+	}
+
+	return provider, repo, tag, true
 }
 
 // canonicalID joins provider and modelID using "/".

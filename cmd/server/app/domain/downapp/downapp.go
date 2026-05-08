@@ -13,12 +13,14 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 type app struct {
 	log        *logger.Logger
 	modelsPath string
 	libs       *libs.Libs
+	models     *models.Models
 }
 
 func newApp(cfg Config) *app {
@@ -26,7 +28,61 @@ func newApp(cfg Config) *app {
 		log:        cfg.Log,
 		modelsPath: cfg.ModelsPath,
 		libs:       cfg.Libs,
+		models:     cfg.Models,
 	}
+}
+
+// modelDetail is a single physical model entry advertised by /download/models.
+type modelDetail struct {
+	ID            string `json:"id"`
+	OwnedBy       string `json:"owned_by"`
+	ModelFamily   string `json:"model_family"`
+	Size          int64  `json:"size"`
+	Validated     bool   `json:"validated"`
+	HasProjection bool   `json:"has_projection"`
+}
+
+// modelListResponse is the JSON shape returned by /download/models. Only
+// physical pullable models are included; extension/variant entries (those
+// whose id contains "/") are excluded because they are not real files on
+// disk and cannot be served by the publisher.
+type modelListResponse struct {
+	Models []modelDetail `json:"models"`
+}
+
+// handleListModels returns the list of physical models the publisher has
+// on disk and is willing to serve over /download. Extension/variant
+// models from the model config are intentionally excluded because they
+// are not standalone files.
+func (a *app) handleListModels(w http.ResponseWriter, r *http.Request) {
+	if a.models == nil {
+		http.Error(w, "models not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	files, err := a.models.Files()
+	if err != nil {
+		a.log.Error(r.Context(), "download-models", "status", "list error", "err", err)
+		http.Error(w, "list error", http.StatusInternalServerError)
+		return
+	}
+
+	out := modelListResponse{Models: make([]modelDetail, 0, len(files))}
+
+	for _, f := range files {
+		out.Models = append(out.Models, modelDetail{
+			ID:            f.ID,
+			OwnedBy:       f.OwnedBy,
+			ModelFamily:   f.ModelFamily,
+			Size:          f.Size,
+			Validated:     f.Validated,
+			HasProjection: f.HasProjection,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // bundleListResponse is the JSON shape returned by /download/libs.
@@ -165,6 +221,10 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "invalid libs path", http.StatusBadRequest)
+		return
+
+	case trimmed == "models":
+		a.handleListModels(w, r)
 		return
 	}
 

@@ -82,6 +82,63 @@ func selectFiles(siblings []string, modelID string) (files []string, mmproj stri
 	return files, mmproj, true
 }
 
+// selectFilesByTag picks the GGUF model files (and optional F16 mmproj)
+// from siblings whose model id (basename minus .gguf and any split
+// suffix) ends with "-<tag>" or ".<tag>" (case-insensitive). The
+// separator requirement prevents partial-tag matches — e.g. tag "Q4_K_M"
+// must not match "...UD-Q4_K_XL".
+//
+// When multiple candidates pass the suffix filter (e.g. "Qwen-Q4_K_XL"
+// and "Qwen-UD-Q4_K_XL" both match tag "Q4_K_XL"), the UD variant wins.
+// Split (multi-file) models are expanded via collectSplitParts.
+func selectFilesByTag(siblings []string, tag string) (files []string, mmproj string, ok bool) {
+	if tag == "" {
+		return nil, "", false
+	}
+
+	gguf, proj := classifySiblings(siblings)
+
+	var candidates []string
+	for _, f := range gguf {
+		if fileMatchesTag(f, tag) {
+			candidates = append(candidates, f)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, "", false
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return scoreCandidate(candidates[i]) > scoreCandidate(candidates[j])
+	})
+
+	target := candidates[0]
+
+	files = collectSplitParts(gguf, target)
+	if len(files) == 0 {
+		files = []string{target}
+	}
+	sort.Strings(files)
+
+	mmproj = pickF16Mmproj(proj, target)
+
+	return files, mmproj, true
+}
+
+// fileMatchesTag reports whether siblingModelID(file) ends with "-<tag>"
+// or ".<tag>" (case-insensitive). The leading separator anchors the
+// match so tags like "Q4_K_M" don't bleed into "Q4_K_XL" filenames.
+func fileMatchesTag(file, tag string) bool {
+	if tag == "" {
+		return false
+	}
+
+	id := strings.ToLower(siblingModelID(file))
+	t := strings.ToLower(tag)
+
+	return strings.HasSuffix(id, "-"+t) || strings.HasSuffix(id, "."+t)
+}
+
 // classifySiblings separates GGUF files from mmproj files. Non-GGUF
 // siblings are dropped.
 //

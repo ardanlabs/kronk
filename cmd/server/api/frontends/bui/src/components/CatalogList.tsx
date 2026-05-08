@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } fro
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
 import type { CatalogModelResponse, CatalogModelsResponse, CatalogCapabilities, VRAMCalculatorResponse } from '../types';
-import { ParamTooltip, labelWithTip } from './ParamTooltips';
+import { labelWithTip } from './ParamTooltips';
 import { extractContextInfo } from '../lib/context';
 import { formatBytes } from '../lib/format';
 import ResizablePanel from './ResizablePanel';
@@ -159,19 +159,6 @@ export default function CatalogList() {
   const [remoteVram, setRemoteVram] = useState<Record<string, VRAMCalculatorResponse>>({});
   const [remoteVramLoading, setRemoteVramLoading] = useState<string | null>(null);
   const [remoteVramError, setRemoteVramError] = useState<string | null>(null);
-
-  const [downloadServer, setDownloadServer] = useState<string>(() => {
-    return localStorage.getItem('kronk_download_server') || '';
-  });
-
-  const handleDownloadServerChange = (value: string) => {
-    setDownloadServer(value);
-    if (value) {
-      localStorage.setItem('kronk_download_server', value);
-    } else {
-      localStorage.removeItem('kronk_download_server');
-    }
-  };
 
   // ── Filter state ──────────────────────────────────────────────────────────
 
@@ -455,9 +442,10 @@ export default function CatalogList() {
     modelUrl: !modelInfo?.vram ? catalogModelUrl : undefined,
   });
   const contextInfo = extractContextInfo(modelInfo?.model_metadata);
+
   const handlePull = () => {
     if (!selectedId) return;
-    startCatalogDownload(selectedId, downloadServer || undefined);
+    startCatalogDownload(selectedId);
     setActiveSection('pull');
   };
 
@@ -986,23 +974,7 @@ export default function CatalogList() {
                   <div>
                     <h3 style={{ marginBottom: '16px' }}>Pull: {selectedId}</h3>
 
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '16px' }}>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label htmlFor="download-server" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600, color: 'var(--color-gray-600)', marginBottom: '4px' }}>
-                          Download Server
-                          <ParamTooltip text="Optional: specify a Kronk server on your local network that already has the model files. The pull will download from that server instead of HuggingFace, which is much faster." />
-                        </label>
-                        <input
-                          id="download-server"
-                          type="text"
-                          className="form-control"
-                          placeholder="192.168.0.246:11435"
-                          value={downloadServer}
-                          onChange={(e) => handleDownloadServerChange(e.target.value)}
-                          disabled={pulling}
-                          style={{ width: '220px', padding: '6px 8px', border: '1px solid var(--color-gray-300)', borderRadius: '4px', fontSize: '13px' }}
-                        />
-                      </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
                       <button
                         className="btn btn-primary"
                         onClick={handlePull}
@@ -1036,6 +1008,7 @@ export default function CatalogList() {
                     )}
                   </div>
                 )}
+
               </div>
             )}
         </div>

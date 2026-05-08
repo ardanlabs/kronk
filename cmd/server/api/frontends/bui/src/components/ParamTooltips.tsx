@@ -183,6 +183,7 @@ export const PARAM_TOOLTIPS = {
   peerLibsHost: 'Address of another Kronk server on the local network in the form ip:port. The peer must be running with download enabled. Useful in workshop environments where Internet access is slow or unavailable.',
   peerLibsConnect: 'Query the peer Kronk server for the list of library bundles it has installed and is willing to share.',
   peerLibsDownload: 'Download this library bundle from the peer over the local network. The peer builds a zip on demand on first request, sends it with a sha256 digest for integrity verification, and the zip is unpacked into the matching bundle directory on this server.',
+  peerKMSHost: 'Address of another Kronk server on the local network in the form ip:port. Connect to list the models that peer has downloaded and pull any of them into this server. The peer must be running with the download endpoint enabled.',
 } as const satisfies Record<string, string>;
 
 export type TooltipKey = keyof typeof PARAM_TOOLTIPS;

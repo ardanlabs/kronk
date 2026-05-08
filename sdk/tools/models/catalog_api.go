@@ -27,6 +27,7 @@ import (
 //
 //   - Bare id:            "Qwen3-0.6B-Q8_0"
 //   - Canonical id:       "unsloth/Qwen3-0.6B-Q8_0" (with or without ".gguf")
+//   - Provider/repo:tag:  "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL"
 //   - Owner/repo/file:    "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"
 //   - hf.co/ shorthand:   "hf.co/unsloth/Qwen3-0.6B-GGUF/..."
 //   - HF resolve URL:     "https://huggingface.co/owner/repo/resolve/main/file.gguf"
