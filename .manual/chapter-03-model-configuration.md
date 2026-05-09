@@ -446,6 +446,14 @@ substantial.
 
 ### 3.5 Flash Attention
 
+> **TL;DR (new to this?)** Flash Attention is a speed trick for the
+> **transformer attention layers** in an LLM — the part that figures out
+> "how much should each word pay attention to every other word." It works
+> by being clever about how it uses fast on-chip memory so it doesn't
+> have to write huge intermediate results to slower memory. It's on by
+> default. Most models support it; **hybrid models do not** (see the note
+> at the end of this section).
+
 Attention is the core mechanism that lets a model figure out which parts of
 your input are relevant to each other. For example, in the sentence "The cat
 sat on the mat because it was tired," attention is how the model connects
@@ -468,21 +476,36 @@ flash_attention: disabled  # Disable if causing issues
 flash_attention: auto      # Let llama.cpp decide
 ```
 
-_Note: Hybrid models (those combining attention and recurrent layers, such as
-Qwen3.5-35B-A3B) do not support flash attention. Kronk automatically
-disables it for these models. Additionally, quantized KV caches (`q8_0`, `q4_0`)
-require flash attention to function — so when flash attention is disabled for
-hybrid models, Kronk also forces the KV cache type to f16. These overrides
-happen regardless of your configuration settings._
+_Note: **Hybrid models** mix two kinds of layers: regular transformer
+attention layers _and_ a different kind (like Mamba or convolutional
+layers in models such as Jamba, Granite-Hybrid, or LFM2) that don't do
+attention at all — they have their own way of remembering past tokens.
+Flash Attention only knows how to speed up the attention layers, and the
+way llama.cpp is wired you can only turn Flash Attention on for the
+**whole model** at once, not layer-by-layer. So if you turn it on for a
+hybrid model, llama.cpp tries to apply the trick to layers that don't
+have attention, and things break or produce wrong answers. That's why
+Kronk detects hybrid models and automatically disables it. Additionally,
+quantized KV caches (`q8_0`, `q4_0`) require flash attention to
+function — so when flash attention is disabled for hybrid models, Kronk
+also forces the KV cache type to f16. These overrides happen regardless
+of your configuration settings._
 
 ### 3.6 Sliding Window Attention (SWA)
 
-Some models use a hybrid attention pattern that interleaves sliding window
-attention (SWA) layers with full global attention layers. In SWA layers, each
-token only attends to a small local window of recent tokens (e.g., 1024
-tokens) rather than the entire context. The global attention layers still see
-everything, which keeps the model coherent over long contexts while the SWA
-layers provide efficient local processing.
+Some models use a **mixed attention pattern** that interleaves sliding
+window attention (SWA) layers with full global attention layers. In SWA
+layers, each token only attends to a small local window of recent tokens
+(e.g., 1024 tokens) rather than the entire context. The global attention
+layers still see everything, which keeps the model coherent over long
+contexts while the SWA layers provide efficient local processing.
+
+> **Not the same as a "hybrid model".** SWA still uses transformer
+> attention in every layer — some layers just attend to a smaller window
+> than others. A "hybrid model" (Section 3.5) replaces some attention
+> layers entirely with a non-attention mechanism like Mamba or
+> convolutions. Flash Attention works fine with SWA; it does not work
+> with hybrid models.
 
 Models that use sliding window attention include:
 

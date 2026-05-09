@@ -1069,15 +1069,28 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
     cache_type_v: q8_0`}</code></pre>
           <p><strong>Recommendation:</strong> If you notice quality degradation (incoherent outputs, reasoning failures, or code bugs) with quantized cache, try <code>f16</code> first before adjusting other parameters. The VRAM cost is typically 25-50% more for the cache, but the quality improvement for sensitive workloads is substantial.</p>
           <h3 id="35-flash-attention">3.5 Flash Attention</h3>
+          <blockquote><strong>TL;DR (new to this?)</strong> Flash Attention is a speed trick for the</blockquote>
+          <blockquote><strong>transformer attention layers</strong> in an LLM — the part that figures out</blockquote>
+          <blockquote>"how much should each word pay attention to every other word." It works</blockquote>
+          <blockquote>by being clever about how it uses fast on-chip memory so it doesn't</blockquote>
+          <blockquote>have to write huge intermediate results to slower memory. It's on by</blockquote>
+          <blockquote>default. Most models support it; <strong>hybrid models do not</strong> (see the note</blockquote>
+          <blockquote>at the end of this section).</blockquote>
           <p>Attention is the core mechanism that lets a model figure out which parts of your input are relevant to each other. For example, in the sentence "The cat sat on the mat because it was tired," attention is how the model connects "it" back to "the cat." The standard attention algorithm needs to hold a large matrix of scores in memory — one score for every pair of tokens in your input. As context windows grow, this matrix grows quadratically and can become both slow and memory-hungry.</p>
           <p>Flash Attention is an optimized implementation that computes the same result but processes the matrix in small tiles that fit in the GPU's fast on-chip memory (SRAM) instead of slower VRAM. The result is lower memory usage and faster computation — especially noticeable with large context windows (32K+). It's enabled by default and should rarely need to be changed.</p>
           <p>Control whether Flash Attention is used:</p>
           <pre className="code-block"><code className="language-yaml">{`flash_attention: enabled   # Default: enabled
 flash_attention: disabled  # Disable if causing issues
 flash_attention: auto      # Let llama.cpp decide`}</code></pre>
-          <p>_Note: Hybrid models (those combining attention and recurrent layers, such as Qwen3.5-35B-A3B) do not support flash attention. Kronk automatically disables it for these models. Additionally, quantized KV caches (<code>q8_0</code>, <code>q4_0</code>) require flash attention to function — so when flash attention is disabled for hybrid models, Kronk also forces the KV cache type to f16. These overrides happen regardless of your configuration settings._</p>
+          <p>_Note: <strong>Hybrid models</strong> mix two kinds of layers: regular transformer attention layers <em>and</em> a different kind (like Mamba or convolutional layers in models such as Jamba, Granite-Hybrid, or LFM2) that don't do attention at all — they have their own way of remembering past tokens. Flash Attention only knows how to speed up the attention layers, and the way llama.cpp is wired you can only turn Flash Attention on for the <strong>whole model</strong> at once, not layer-by-layer. So if you turn it on for a hybrid model, llama.cpp tries to apply the trick to layers that don't have attention, and things break or produce wrong answers. That's why Kronk detects hybrid models and automatically disables it. Additionally, quantized KV caches (<code>q8_0</code>, <code>q4_0</code>) require flash attention to function — so when flash attention is disabled for hybrid models, Kronk also forces the KV cache type to f16. These overrides happen regardless of your configuration settings._</p>
           <h3 id="36-sliding-window-attention-swa">3.6 Sliding Window Attention (SWA)</h3>
-          <p>Some models use a hybrid attention pattern that interleaves sliding window attention (SWA) layers with full global attention layers. In SWA layers, each token only attends to a small local window of recent tokens (e.g., 1024 tokens) rather than the entire context. The global attention layers still see everything, which keeps the model coherent over long contexts while the SWA layers provide efficient local processing.</p>
+          <p>Some models use a <strong>mixed attention pattern</strong> that interleaves sliding window attention (SWA) layers with full global attention layers. In SWA layers, each token only attends to a small local window of recent tokens (e.g., 1024 tokens) rather than the entire context. The global attention layers still see everything, which keeps the model coherent over long contexts while the SWA layers provide efficient local processing.</p>
+          <blockquote><strong>Not the same as a "hybrid model".</strong> SWA still uses transformer</blockquote>
+          <blockquote>attention in every layer — some layers just attend to a smaller window</blockquote>
+          <blockquote>than others. A "hybrid model" (Section 3.5) replaces some attention</blockquote>
+          <blockquote>layers entirely with a non-attention mechanism like Mamba or</blockquote>
+          <blockquote>convolutions. Flash Attention works fine with SWA; it does not work</blockquote>
+          <blockquote>with hybrid models.</blockquote>
           <p>Models that use sliding window attention include:</p>
           <table className="flags-table">
             <thead>
