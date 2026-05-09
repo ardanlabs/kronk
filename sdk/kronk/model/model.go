@@ -216,6 +216,15 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	ctxParams := modelCtxParams(cfg, modelInfo)
 
+	// Reflect the KV cache types that llama.cpp will actually use back into
+	// cfg. When the user leaves CacheTypeK/V as GGMLTypeAuto, modelCtxParams
+	// lets llama_context_default_params() pick (typically f16). Surfacing
+	// those resolved values via ModelConfig() keeps user-facing diagnostics
+	// honest — krn.ModelConfig().CacheTypeK now reports "f16" instead of
+	// "auto" when no explicit value was set.
+	cfg.CacheTypeK = GGMLTypeFromYZMA(ctxParams.TypeK)
+	cfg.CacheTypeV = GGMLTypeFromYZMA(ctxParams.TypeV)
+
 	l(ctx, "MODEL-INFO", "values", modelInfo.String(), "addBOSToken", addBOSToken)
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 

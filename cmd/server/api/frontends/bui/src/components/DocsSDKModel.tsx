@@ -73,6 +73,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">RegisterParser appends a parser factory to the registry. Call once per parser at server bootstrap, before any models are loaded. Order matters: the catch-all parser (standard) must be registered last so the more specific parsers get first chance to claim.</p>
             </div>
 
+            <div className="doc-section" id="func-removeverifiedsentinel">
+              <h4>RemoveVerifiedSentinel</h4>
+              <pre className="code-block">
+                <code>func RemoveVerifiedSentinel(modelFile string) error</code>
+              </pre>
+              <p className="doc-description">RemoveVerifiedSentinel deletes the sentinel file for modelFile if it exists. Used by the model-removal paths so a deleted model doesn't leave behind a stale verified marker. A non-existent sentinel is not an error.</p>
+            </div>
+
             <div className="doc-section" id="func-newgrammarsampler">
               <h4>NewGrammarSampler</h4>
               <pre className="code-block">
@@ -1572,6 +1580,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
+                <li><a href="#func-removeverifiedsentinel">RemoveVerifiedSentinel</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>

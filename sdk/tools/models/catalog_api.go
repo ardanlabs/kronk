@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
@@ -318,22 +319,42 @@ func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log
 	}
 
 	// 1. Best-effort remove of any downloaded files under
-	//    <modelsPath>/<provider>/<family>/.
+	//    <modelsPath>/<provider>/<family>/. Each model file owns three
+	//    on-disk artifacts that must be cleaned together: the GGUF body,
+	//    the <dir>/sha/<base> hash file, and the <dir>/sha/<base>.verified
+	//    sentinel produced by CheckModel after a successful full re-hash.
+	//    Missing companions are normal and not errors.
 	dir := filepath.Join(m.modelsPath, entry.Provider, entry.Family)
+	removeCompanions := func(p string) {
+		shaFile := filepath.Join(filepath.Dir(p), "sha", filepath.Base(p))
+		if err := os.Remove(shaFile); err != nil && !os.IsNotExist(err) {
+			log(ctx, "remove-catalog-entry: sha", "path", shaFile, "ERROR", err)
+		}
+		if err := model.RemoveVerifiedSentinel(p); err != nil {
+			log(ctx, "remove-catalog-entry: verified-sentinel", "path", p, "ERROR", err)
+		}
+	}
+
 	for _, f := range entry.Files {
 		p := filepath.Join(dir, filepath.Base(f))
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			log(ctx, "remove-catalog-entry: file", "path", p, "ERROR", err)
 		}
+		removeCompanions(p)
 	}
 	if entry.MMProj != "" {
 		p := filepath.Join(dir, filepath.Base(entry.MMProj))
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			log(ctx, "remove-catalog-entry: mmproj", "path", p, "ERROR", err)
 		}
+		removeCompanions(p)
 	}
 
-	// Best-effort cleanup of the empty family/provider directories.
+	// Best-effort cleanup of the now-empty sha subdir, then the
+	// family/provider directories. os.Remove fails (silently here) if
+	// anything is still inside, which is the right behaviour when other
+	// models share the same family.
+	_ = os.Remove(filepath.Join(dir, "sha"))
 	_ = os.Remove(dir)
 	_ = os.Remove(filepath.Dir(dir))
 

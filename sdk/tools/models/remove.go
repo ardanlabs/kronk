@@ -1,11 +1,13 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
 // Remove remove the specified file from the models directory.
@@ -28,6 +30,13 @@ func (m *Models) Remove(mp Path, log applog.Logger) (err error) {
 		if err := os.Remove(shaFile); err != nil {
 			return fmt.Errorf("remove: unable to remove model: %q", shaFile)
 		}
+
+		// Best-effort cleanup of the verified-sentinel sibling. A missing
+		// sentinel is normal (older downloads, never-loaded models, or
+		// read-only mounts) and must not error the delete.
+		if err := model.RemoveVerifiedSentinel(modelFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove: unable to remove verified sentinel for %q: %w", modelFile, err)
+		}
 	}
 
 	if mp.ProjFile != "" {
@@ -41,6 +50,10 @@ func (m *Models) Remove(mp Path, log applog.Logger) (err error) {
 
 		if err := os.Remove(shaFile); err != nil {
 			return fmt.Errorf("remove: unable to remove model: %q", shaFile)
+		}
+
+		if err := model.RemoveVerifiedSentinel(mp.ProjFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove: unable to remove verified sentinel for %q: %w", mp.ProjFile, err)
 		}
 	}
 

@@ -640,6 +640,14 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 }
 
 func adjustContextWindow(cfg Config, model llama.Model) Config {
+
+	// User explicitly set the context window — honor it as-is.
+	if cfg.ContextWindow() > 0 {
+		return cfg
+	}
+
+	// Discover the model's max trained context window from GGUF metadata.
+	// Fall back to the package default if the key is missing or malformed.
 	modelCW := defContextWindow
 	v, found := searchModelMeta(model, "context_length")
 	if found {
@@ -649,9 +657,22 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 		}
 	}
 
-	if cfg.ContextWindow() <= 0 {
-		cw := modelCW
-		cfg.PtrContextWindow = &cw
+	// Cap the auto-picked context window at defContextWindow (8K). Many
+	// modern models advertise 128K–1M context in their GGUF metadata, but
+	// allocating that much KV by default tanks TPS as the conversation
+	// grows and bloats first-token latency. Users who actually want a
+	// large context can opt in via WithContextWindow.
+	pickedCW := min(modelCW, defContextWindow)
+
+	cfg.PtrContextWindow = &pickedCW
+
+	if cfg.Log != nil {
+		cfg.Log(context.Background(), "adjust-context-window",
+			"model-max", modelCW,
+			"default-cap", defContextWindow,
+			"picked", pickedCW,
+			"note", "auto-selected; override with WithContextWindow",
+		)
 	}
 
 	return cfg
