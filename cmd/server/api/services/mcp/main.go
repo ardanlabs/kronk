@@ -55,10 +55,10 @@ func run(ctx context.Context, log *logger.Logger) error {
 	cfg := struct {
 		conf.Version
 		Web struct {
-			DebugHost string `conf:"default:localhost:9010"`
+			DebugHost string `conf:"default:0.0.0.0:9010"`
 		}
 		MCP struct {
-			Host        string `conf:"default:localhost:9000"`
+			Host        string `conf:"default:0.0.0.0:9000"`
 			BraveAPIKey string `conf:"mask"`
 		}
 	}{

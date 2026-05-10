@@ -839,7 +839,7 @@ website:
 	$(OPEN_CMD) http://localhost:11435/
 
 statsviz:
-	$(OPEN_CMD) http://localhost:8090/debug/statsviz
+	$(OPEN_CMD) http://localhost:11445/debug/statsviz
 
 grafana-up:
 	docker compose -f zarf/docker/compose.yaml up grafana loki prometheus promtail tempo

@@ -21,7 +21,7 @@ func init() {
 
 	// Web settings
 	Cmd.Flags().String("api-host", "", "API host address (e.g., localhost:11435)")
-	Cmd.Flags().String("debug-host", "", "Debug host address (e.g., localhost:8090)")
+	Cmd.Flags().String("debug-host", "", "Debug host address (e.g., localhost:11445)")
 	Cmd.Flags().String("read-timeout", "", "HTTP read timeout (e.g., 30s)")
 	Cmd.Flags().String("write-timeout", "", "HTTP write timeout (e.g., 15m)")
 	Cmd.Flags().String("idle-timeout", "", "HTTP idle timeout (e.g., 1m)")

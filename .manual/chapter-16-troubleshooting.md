@@ -677,7 +677,7 @@ embedded mode back.
 **Error: `bind: address already in use`**
 
 Another process is already listening on the port Kronk is trying to
-bind. Default ports are `11435` (API), `8090` (debug), and `9000` (MCP).
+bind. Default ports are `11435` (API), `11445` (debug), and `9000` (MCP).
 
 **Solutions:**
 
@@ -755,19 +755,19 @@ curl http://localhost:11435/v1/models
 **Check Prometheus metrics:**
 
 ```shell
-curl http://localhost:8090/metrics
+curl http://localhost:11445/metrics
 ```
 
 **View goroutine stacks (for hangs):**
 
 ```shell
-curl http://localhost:8090/debug/pprof/goroutine?debug=2
+curl http://localhost:11445/debug/pprof/goroutine?debug=2
 ```
 
 **CPU profile (for slow inference):**
 
 ```shell
-curl http://localhost:8090/debug/pprof/profile?seconds=30 > cpu.prof
+curl http://localhost:11445/debug/pprof/profile?seconds=30 > cpu.prof
 go tool pprof cpu.prof
 ```
 

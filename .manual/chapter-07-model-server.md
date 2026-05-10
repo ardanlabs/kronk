@@ -116,7 +116,7 @@ underscores replacing hyphens.
 | Flag                     | Environment Variable             | Default           | Description                  |
 | ------------------------ | -------------------------------- | ----------------- | ---------------------------- |
 | `--api-host`             | `KRONK_WEB_API_HOST`             | `localhost:11435` | API host address             |
-| `--debug-host`           | `KRONK_WEB_DEBUG_HOST`           | `localhost:8090`  | Debug/pprof host address     |
+| `--debug-host`           | `KRONK_WEB_DEBUG_HOST`           | `localhost:11445`  | Debug/pprof host address     |
 | `--read-timeout`         | `KRONK_WEB_READ_TIMEOUT`         | `30s`             | HTTP read timeout            |
 | `--write-timeout`        | `KRONK_WEB_WRITE_TIMEOUT`        | `15m`             | HTTP write timeout           |
 | `--idle-timeout`         | `KRONK_WEB_IDLE_TIMEOUT`         | `1m`              | HTTP idle timeout            |

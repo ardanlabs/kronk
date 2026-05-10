@@ -30,7 +30,7 @@ from the main API for security.
 **Default Ports:**
 
 - Main API: `localhost:11435`
-- Debug server: `localhost:8090`
+- Debug server: `localhost:11445`
 
 **Configure Debug Host:**
 
@@ -52,21 +52,21 @@ The debug server exposes these endpoints:
 **Prometheus Metrics:**
 
 ```
-http://localhost:8090/metrics
+http://localhost:11445/metrics
 ```
 
 **pprof Profiling:**
 
-- `http://localhost:8090/debug/pprof/` - Index page
-- `http://localhost:8090/debug/pprof/profile` - CPU profile
-- `http://localhost:8090/debug/pprof/heap` - Heap profile
-- `http://localhost:8090/debug/pprof/goroutine` - Goroutine stacks
-- `http://localhost:8090/debug/pprof/trace` - Execution trace
+- `http://localhost:11445/debug/pprof/` - Index page
+- `http://localhost:11445/debug/pprof/profile` - CPU profile
+- `http://localhost:11445/debug/pprof/heap` - Heap profile
+- `http://localhost:11445/debug/pprof/goroutine` - Goroutine stacks
+- `http://localhost:11445/debug/pprof/trace` - Execution trace
 
 **Statsviz (Real-time Visualizations):**
 
 ```
-http://localhost:8090/debug/statsviz
+http://localhost:11445/debug/statsviz
 ```
 
 Provides live charts for memory, goroutines, GC, and more.
@@ -107,7 +107,7 @@ Kronk exposes detailed inference metrics in Prometheus format.
 **Fetch Metrics:**
 
 ```shell
-curl http://localhost:8090/metrics
+curl http://localhost:11445/metrics
 ```
 
 **Available Metrics:**
@@ -180,7 +180,7 @@ Resource manager (sdk/pool/resman):
 scrape_configs:
   - job_name: "kronk"
     static_configs:
-      - targets: ["localhost:8090"]
+      - targets: ["localhost:11445"]
     scrape_interval: 15s
 ```
 
@@ -340,26 +340,26 @@ Use Go's pprof tools for performance analysis.
 **Capture CPU Profile (30 seconds):**
 
 ```shell
-go tool pprof http://localhost:8090/debug/pprof/profile?seconds=30
+go tool pprof http://localhost:11445/debug/pprof/profile?seconds=30
 ```
 
 **Capture Heap Profile:**
 
 ```shell
-go tool pprof http://localhost:8090/debug/pprof/heap
+go tool pprof http://localhost:11445/debug/pprof/heap
 ```
 
 **View Goroutine Stacks:**
 
 ```shell
-curl http://localhost:8090/debug/pprof/goroutine?debug=2
+curl http://localhost:11445/debug/pprof/goroutine?debug=2
 ```
 
 **Generate Flame Graph:**
 
 ```shell
 go tool pprof -http=:8081 \
-  http://localhost:8090/debug/pprof/profile?seconds=30
+  http://localhost:11445/debug/pprof/profile?seconds=30
 ```
 
 Opens interactive web UI with flame graph visualization.
@@ -371,7 +371,7 @@ Statsviz provides live runtime visualizations in your browser.
 **Access Statsviz:**
 
 ```
-http://localhost:8090/debug/statsviz
+http://localhost:11445/debug/statsviz
 ```
 
 **Available Charts:**
@@ -415,7 +415,7 @@ export KRONK_INSECURE_LOGGING=true
 **Debug Server:**
 
 - `--debug-host` - Debug server address (env: `KRONK_WEB_DEBUG_HOST`,
-  default: `0.0.0.0:8090`)
+  default: `0.0.0.0:11445`)
 
 **Tracing:**
 

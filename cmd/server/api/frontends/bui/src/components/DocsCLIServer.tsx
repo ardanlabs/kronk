@@ -57,7 +57,7 @@ export default function DocsCLIServer() {
                 </tr>
                 <tr>
                   <td><code>--debug-host &lt;string&gt;</code></td>
-                  <td>Debug host address (e.g. <code>localhost:8090</code>)</td>
+                  <td>Debug host address (e.g. <code>localhost:11445</code>)</td>
                 </tr>
                 <tr>
                   <td><code>--read-timeout &lt;duration&gt;</code></td>

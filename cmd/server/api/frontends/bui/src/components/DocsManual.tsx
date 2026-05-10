@@ -3032,7 +3032,7 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--debug-host</code></td>
                 <td><code>KRONK_WEB_DEBUG_HOST</code></td>
-                <td><code>localhost:8090</code></td>
+                <td><code>localhost:11445</code></td>
                 <td>Debug/pprof host address</td>
               </tr>
               <tr>
@@ -5122,7 +5122,7 @@ print(response.content)`}</code></pre>
           <p><strong>Default Ports:</strong></p>
           <ul>
             <li>Main API: <code>localhost:11435</code></li>
-            <li>Debug server: <code>localhost:8090</code></li>
+            <li>Debug server: <code>localhost:11445</code></li>
           </ul>
           <p><strong>Configure Debug Host:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --debug-host localhost:9090`}</code></pre>
@@ -5132,17 +5132,17 @@ kronk server start`}</code></pre>
           <h3 id="142-debug-endpoints">14.2 Debug Endpoints</h3>
           <p>The debug server exposes these endpoints:</p>
           <p><strong>Prometheus Metrics:</strong></p>
-          <pre className="code-block"><code>{`http://localhost:8090/metrics`}</code></pre>
+          <pre className="code-block"><code>{`http://localhost:11445/metrics`}</code></pre>
           <p><strong>pprof Profiling:</strong></p>
           <ul>
-            <li><code>http://localhost:8090/debug/pprof/</code> - Index page</li>
-            <li><code>http://localhost:8090/debug/pprof/profile</code> - CPU profile</li>
-            <li><code>http://localhost:8090/debug/pprof/heap</code> - Heap profile</li>
-            <li><code>http://localhost:8090/debug/pprof/goroutine</code> - Goroutine stacks</li>
-            <li><code>http://localhost:8090/debug/pprof/trace</code> - Execution trace</li>
+            <li><code>http://localhost:11445/debug/pprof/</code> - Index page</li>
+            <li><code>http://localhost:11445/debug/pprof/profile</code> - CPU profile</li>
+            <li><code>http://localhost:11445/debug/pprof/heap</code> - Heap profile</li>
+            <li><code>http://localhost:11445/debug/pprof/goroutine</code> - Goroutine stacks</li>
+            <li><code>http://localhost:11445/debug/pprof/trace</code> - Execution trace</li>
           </ul>
           <p><strong>Statsviz (Real-time Visualizations):</strong></p>
-          <pre className="code-block"><code>{`http://localhost:8090/debug/statsviz`}</code></pre>
+          <pre className="code-block"><code>{`http://localhost:11445/debug/statsviz`}</code></pre>
           <p>Provides live charts for memory, goroutines, GC, and more.</p>
           <h3 id="143-health-check-endpoints">14.3 Health Check Endpoints</h3>
           <p>Available on the main API port (no authentication required):</p>
@@ -5161,7 +5161,7 @@ kronk server start`}</code></pre>
           <h3 id="144-prometheus-metrics">14.4 Prometheus Metrics</h3>
           <p>Kronk exposes detailed inference metrics in Prometheus format.</p>
           <p><strong>Fetch Metrics:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/metrics`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11445/metrics`}</code></pre>
           <p><strong>Available Metrics:</strong></p>
           <p>System metrics:</p>
           <ul>
@@ -5224,7 +5224,7 @@ kronk server start`}</code></pre>
 scrape_configs:
   - job_name: "kronk"
     static_configs:
-      - targets: ["localhost:8090"]
+      - targets: ["localhost:11445"]
     scrape_interval: 15s`}</code></pre>
           <p><strong>Grafana Dashboard Query Examples:</strong></p>
           <p>Average end-to-end time to first token:</p>
@@ -5328,19 +5328,19 @@ kronk server start`}</code></pre>
           <h3 id="149-pprof-profiling">14.9 pprof Profiling</h3>
           <p>Use Go's pprof tools for performance analysis.</p>
           <p><strong>Capture CPU Profile (30 seconds):</strong></p>
-          <pre className="code-block"><code className="language-shell">{`go tool pprof http://localhost:8090/debug/pprof/profile?seconds=30`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`go tool pprof http://localhost:11445/debug/pprof/profile?seconds=30`}</code></pre>
           <p><strong>Capture Heap Profile:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`go tool pprof http://localhost:8090/debug/pprof/heap`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`go tool pprof http://localhost:11445/debug/pprof/heap`}</code></pre>
           <p><strong>View Goroutine Stacks:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/debug/pprof/goroutine?debug=2`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
           <p><strong>Generate Flame Graph:</strong></p>
           <pre className="code-block"><code className="language-shell">{`go tool pprof -http=:8081 \\
-  http://localhost:8090/debug/pprof/profile?seconds=30`}</code></pre>
+  http://localhost:11445/debug/pprof/profile?seconds=30`}</code></pre>
           <p>Opens interactive web UI with flame graph visualization.</p>
           <h3 id="1410-statsviz-real-time-monitoring">14.10 Statsviz Real-Time Monitoring</h3>
           <p>Statsviz provides live runtime visualizations in your browser.</p>
           <p><strong>Access Statsviz:</strong></p>
-          <pre className="code-block"><code>{`http://localhost:8090/debug/statsviz`}</code></pre>
+          <pre className="code-block"><code>{`http://localhost:11445/debug/statsviz`}</code></pre>
           <p><strong>Available Charts:</strong></p>
           <ul>
             <li>Heap size and allocations</li>
@@ -5363,7 +5363,7 @@ kronk server start`}</code></pre>
           <h3 id="1412-configuration-reference">14.12 Configuration Reference</h3>
           <p><strong>Debug Server:</strong></p>
           <ul>
-            <li><code>--debug-host</code> - Debug server address (env: <code>KRONK_WEB_DEBUG_HOST</code>, default: <code>0.0.0.0:8090</code>)</li>
+            <li><code>--debug-host</code> - Debug server address (env: <code>KRONK_WEB_DEBUG_HOST</code>, default: <code>0.0.0.0:11445</code>)</li>
           </ul>
           <p><strong>Tracing:</strong></p>
           <ul>
@@ -6066,7 +6066,7 @@ export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>`}</code></pre>
           <p>Setting <code>KRONK_MCP_HOST</code> to a non-empty value tells <code>kronk server</code> to defer to an external MCP host instead of starting its own. Unset it (or run the standalone service via <code>make mcp-server</code>) if you want the embedded mode back.</p>
           <h3 id="1613-port-conflicts-filesystem">16.13 Port Conflicts &amp; Filesystem</h3>
           <p><strong>Error: &lt;code&gt;bind: address already in use&lt;/code&gt;</strong></p>
-          <p>Another process is already listening on the port Kronk is trying to bind. Default ports are <code>11435</code> (API), <code>8090</code> (debug), and <code>9000</code> (MCP).</p>
+          <p>Another process is already listening on the port Kronk is trying to bind. Default ports are <code>11435</code> (API), <code>11445</code> (debug), and <code>9000</code> (MCP).</p>
           <p><strong>Solutions:</strong></p>
           <pre className="code-block"><code className="language-shell">{`# Find the offending process
 lsof -i :11435
@@ -6098,11 +6098,11 @@ kronk model remove <provider/model-id> --local`}</code></pre>
           <p><strong>List loaded models:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p><strong>Check Prometheus metrics:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/metrics`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11445/metrics`}</code></pre>
           <p><strong>View goroutine stacks (for hangs):</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/debug/pprof/goroutine?debug=2`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
           <p><strong>CPU profile (for slow inference):</strong></p>
-          <pre className="code-block"><code className="language-shell">{`curl http://localhost:8090/debug/pprof/profile?seconds=30 > cpu.prof
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11445/debug/pprof/profile?seconds=30 > cpu.prof
 go tool pprof cpu.prof`}</code></pre>
           <p><strong>Report issues:</strong></p>
           <p>Include the following when reporting bugs:</p>
