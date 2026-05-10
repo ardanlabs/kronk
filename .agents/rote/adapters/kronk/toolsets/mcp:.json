@@ -1,0 +1,10 @@
+{
+  "name": "mcp:",
+  "tool_count": 2,
+  "confidence": 0.9,
+  "detection_method": "path_prefix",
+  "tools": [
+    "fuzzy_edit",
+    "web_search"
+  ]
+}

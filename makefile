@@ -95,7 +95,7 @@ install-gotooling:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	go install github.com/nix-community/gomod2nix@latest
 
-install-tooling:
+install-tooling: install-rote
 	brew list protobuf || brew install protobuf
 	brew list grpcurl || brew install grpcurl
 	brew list node || brew install node
@@ -195,19 +195,26 @@ install-docker:
 	docker pull docker.io/$(PROMTAIL) & \
 	wait;
 
-copy-agent-configs: copy-agent-opencode copy-agent-kilo copy-agent-pi copy-agent-goose
+copy-agent-configs: copy-agent-opencode copy-agent-kilo copy-agent-pi copy-agent-goose copy-agent-rote
+
+# Note on `rm -rf … skills && cp -r … skills`: cp -r nests the source dir
+# inside the destination when the destination already exists (so re-runs
+# would create skills/skills/…). Removing the destination first keeps the
+# copy idempotent and also prunes skills that were deleted in the repo.
 
 copy-agent-opencode:
 	mkdir -p $$HOME/.config/opencode
 	cp .agents/opencode/opencode.jsonc $$HOME/.config/opencode/opencode.jsonc
 	cp .agents/opencode/auth.json $$HOME/.config/opencode/auth.json
 	cp .agents/AGENTS.md $$HOME/.config/opencode/AGENTS.md
+	rm -rf $$HOME/.config/opencode/skills
 	cp -r .agents/skills $$HOME/.config/opencode/skills
 
 copy-agent-kilo:
 	mkdir -p $$HOME/.config/kilo
 	cp .agents/kilo/kilo.json $$HOME/.config/kilo/kilo.json
 	cp .agents/AGENTS.md $$HOME/.config/kilo/AGENTS.md
+	rm -rf $$HOME/.config/kilo/skills
 	cp -r .agents/skills $$HOME/.config/kilo/skills
 
 copy-agent-pi:
@@ -215,6 +222,7 @@ copy-agent-pi:
 	cp .agents/pi/models.json $$HOME/.pi/agent/models.json
 	cp .agents/pi/mcp.json $$HOME/.pi/agent/mcp.json
 	cp .agents/AGENTS.md $$HOME/.pi/AGENTS.md
+	rm -rf $$HOME/.pi/skills
 	cp -r .agents/skills $$HOME/.pi/skills
 
 copy-agent-goose:
@@ -222,6 +230,7 @@ copy-agent-goose:
 	cp .agents/goose/config.yaml $$HOME/.config/goose/config.yaml
 	cp .agents/goose/custom_kronk.json $$HOME/.config/goose/custom_providers/custom_kronk.json
 	cp .agents/AGENTS.md $$HOME/.config/goose/AGENTS.md
+	rm -rf $$HOME/.config/goose/skills
 	cp -r .agents/skills $$HOME/.config/goose/skills
 
 # ==============================================================================
@@ -950,3 +959,56 @@ debug-completions-qwen:
 
 debug-completions-gemma:
 	curl -s http://localhost:11434/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"gemma4:26b","stream":false,"messages":[{"role":"system","content":"You are a helpful assistant."},{"role":"user","content":"Please edit this file `sdk/kronk/model/yzma.go` using the `tool_go_code_editor` tool and add a comment to the top that says \"BILL WAS HERE\"."}],"tools":[{"type":"function","function":{"name":"tool_go_code_editor","description":"Edit Golang source code files including adding, replacing, and deleting lines.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Relative path and name of the Golang file"},"line_number":{"type":"integer","description":"The line number for the code change"},"type_change":{"type":"string","description":"The type of change to make: add, replace, delete"},"line_change":{"type":"string","description":"The text to add, replace, delete"}},"required":["path","line_number","type_change","line_change"]}}}]}' | python3 -m json.tool
+
+# ==============================================================================
+# Rote
+#
+# All targets related to the rote execution layer (https://www.modiqo.ai/).
+# Full documentation: .agents/rote/NOTES.md.
+#
+# Standard order on a fresh box:
+#   make install-rote        # installs the CLI (also pulled in by install-tooling)
+#   make copy-agent-rote     # mirrors the project's adapters into ~/.rote/,
+#                            # rebuilds the search index, and ensures the
+#                            # `playground` canvas exists. Also pulled in by
+#                            # `make copy-agent-configs`.
+
+# Install the rote CLI from the upstream installer. The script is idempotent
+# (re-run upgrades the binary without touching ~/.rote/), so we only skip it
+# when `rote` is already on PATH. The VS Code extension is NOT required —
+# this gives you the same ~/.rote/ state the extension would.
+install-rote:
+	@command -v rote >/dev/null 2>&1 \
+		&& echo "rote already installed at $$(command -v rote)" \
+		|| curl -fsSL https://getrote.dev/install | bash
+
+# Seed the user's ~/.rote/ tree with the project's rote artifacts (the kronk
+# adapter so far). See .agents/rote/NOTES.md §7 for what lives in this mirror
+# and why.
+#
+# What we mirror: manifest.json, tools.json, agent.md, config/, toolsets/.
+# What we exclude: runtime/ (per-execution scratch), index/ (Tantivy search
+# index — segment UUIDs change on every reindex, so committing them creates
+# binary noise on every diff). The index is rebuilt locally with
+# `rote adapter reindex` immediately after the rsync, producing a fully
+# usable adapter from a single make invocation.
+copy-agent-rote: rote-playground
+	mkdir -p $$HOME/.rote/adapters
+	rsync -a \
+		--exclude 'runtime/' \
+		--exclude 'index/' \
+		--exclude '.tantivy-*.lock' \
+		.agents/rote/adapters/kronk/ $$HOME/.rote/adapters/kronk/
+	rote adapter reindex kronk
+
+# Create the long-lived `playground` canvas (rote workspace) used for ad-hoc
+# exploration with the adapter. `rote init` is NOT idempotent — running it
+# twice on the same name exits 1 with a verbose error — so we guard with a
+# directory existence check. See .agents/rote/NOTES.md §8 step 3 for why
+# canvas creation is a make target rather than something agents do.
+rote-playground:
+	@if [ -d "$$HOME/.rote/rote/workspaces/playground" ]; then \
+		echo "playground canvas already exists at $$HOME/.rote/rote/workspaces/playground"; \
+	else \
+		rote init playground --seq && echo "playground canvas created"; \
+	fi

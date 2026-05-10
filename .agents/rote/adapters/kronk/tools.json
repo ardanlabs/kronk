@@ -1,0 +1,130 @@
+[
+  {
+    "name": "fuzzy_edit",
+    "description": "Edit a file by replacing old_string with new_string. Uses tiered fuzzy matching: exact match, line-ending normalization, then indentation-insensitive matching. Prefer this over the built-in edit tool for more reliable replacements.",
+    "method": "MCP",
+    "path": "mcp://fuzzy_edit",
+    "tags": [
+      "fuzzy",
+      "edit"
+    ],
+    "parameters": [
+      {
+        "name": "file_path",
+        "location": "body",
+        "required": true
+      },
+      {
+        "name": "old_string",
+        "location": "body",
+        "required": true
+      },
+      {
+        "name": "new_string",
+        "location": "body",
+        "required": true
+      }
+    ],
+    "hints": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "description": "Absolute path to the file to edit"
+        },
+        "old_string": {
+          "type": "string",
+          "description": "The text to find in the file (fuzzy whitespace matching is applied)"
+        },
+        "new_string": {
+          "type": "string",
+          "description": "The replacement text"
+        }
+      },
+      "required": [
+        "file_path",
+        "old_string",
+        "new_string"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "web_search",
+    "description": "Performs a web search for the given query. Returns a list of relevant web pages with titles, URLs, and descriptions. Use this for general information gathering, research, and finding specific web resources.",
+    "method": "MCP",
+    "path": "mcp://web_search",
+    "tags": [
+      "web",
+      "search"
+    ],
+    "parameters": [
+      {
+        "name": "query",
+        "location": "body",
+        "required": true
+      },
+      {
+        "name": "count",
+        "location": "body",
+        "required": false
+      },
+      {
+        "name": "country",
+        "location": "body",
+        "required": false
+      },
+      {
+        "name": "freshness",
+        "location": "body",
+        "required": false
+      },
+      {
+        "name": "safesearch",
+        "location": "body",
+        "required": false
+      }
+    ],
+    "hints": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Search query"
+        },
+        "count": {
+          "type": "integer",
+          "description": "Number of results to return (default 10, max 20)"
+        },
+        "country": {
+          "type": "string",
+          "description": "Country code for search context (e.g. US, GB, DE)"
+        },
+        "freshness": {
+          "type": "string",
+          "description": "Filter by freshness: pd (past day), pw (past week), pm (past month), py (past year)"
+        },
+        "safesearch": {
+          "type": "string",
+          "description": "Safe search filter: off, moderate, strict (default moderate)"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

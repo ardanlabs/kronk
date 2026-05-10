@@ -57,3 +57,10 @@ dist
 # DuckDB database files
 *.db
 *.db.wal
+
+# rote mirror under .agents/rote/ — exclude per-machine runtime state.
+# See .agents/rote/NOTES.md §7 for the rationale and canonical rsync command.
+.agents/rote/adapters/*/runtime/
+.agents/rote/adapters/*/index/
+.agents/rote/workspaces/*/responses/
+.agents/rote/secrets/

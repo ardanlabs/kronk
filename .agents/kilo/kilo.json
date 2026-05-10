@@ -37,14 +37,6 @@
             }
         }
     },
-    "mcp": {
-        "Kronk": {
-            "type": "remote",
-            "url": "http://localhost:9000/mcp",
-            "enabled": true,
-            "timeout": 60000
-        }
-    },
     "instructions": [
         "agent.md"
     ],

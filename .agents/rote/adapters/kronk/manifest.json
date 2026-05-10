@@ -1,0 +1,44 @@
+{
+  "id": "kronk",
+  "version": "1.0.0",
+  "name": "kronk-mcp",
+  "description": "kronk-mcp v1.0.0 (MCP adapter, reverse-engineered)",
+  "spec_type": "mcp",
+  "spec_version": "2024-11-05",
+  "spec_source": "mcp-introspection",
+  "base_url": "http://localhost:9000/mcp",
+  "fingerprint": "mcp_2nbBiUE3ACYdBH6YJX2LQQkHozmi",
+  "created_at": "2026-05-09T20:02:24.117186Z",
+  "updated_at": "2026-05-09T20:02:24.118809Z",
+  "statistics": {
+    "total_operations": 2,
+    "enabled_operations": 2,
+    "get_operations": 0,
+    "post_operations": 0,
+    "put_operations": 0,
+    "delete_operations": 0,
+    "parameters": 8,
+    "schemas": 2,
+    "toolsets": 1,
+    "enabled_toolsets": 1
+  },
+  "auth": {
+    "type": "none",
+    "description": null
+  },
+  "toolsets": {
+    "total": 1,
+    "enabled": 1,
+    "by_category": {},
+    "detection_method": "path_prefix",
+    "confidence": 0.9
+  },
+  "tags": [
+    "mcp",
+    "reverse-engineered"
+  ],
+  "additional_headers": {},
+  "enable_parameter_cleaning": true,
+  "operation_scope": "read-write",
+  "status": "ready"
+}

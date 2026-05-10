@@ -6,40 +6,43 @@
 - Double check tool call arguments before submitting.
 - Use go doc and gopls for API and doc inspection.
 
-# MCP Skills
+# Skills
 
-Load the `kronk-mcp` skill when you need to search the web or edit files. It provides detailed guidance on using the Kronk MCP tools.
+Load the `rote` skill **before** any external tool / API / MCP call. There
+is no other path — the raw Kronk MCP wiring has been removed from every
+agent host config (OpenCode, Kilo, Pi, Goose). All web research and all
+file edits flow through `rote` invoked from the Bash tool.
 
 ```
-skill({ name: "kronk-mcp" })
+skill({ name: "rote" })
 ```
 
 ## Tool Policy
 
-You have access to two MCP tools via the `kronk` MCP server:
+This project routes **every** external tool call through `rote`:
 
-### kronk_fuzzy_edit (file editing)
+- **File edits** → `rote kronk_call kronk_fuzzy_edit '{...}'`
+  (NEVER use the host's built-in `edit` tool — it is disabled.)
+- **Web research** → `rote kronk_call kronk_web_search '{...}'`
+  (NEVER use the host's built-in web-search tool, if any.)
+- **Future external services** → add a rote adapter
+  (`rote adapter new-from-mcp <id> <url>`), then call through rote.
+  Do not wire MCP servers directly into agent hosts.
 
-This is your **only** file editing tool. You MUST use `kronk_fuzzy_edit` for every file modification, no exceptions.
+Mandatory workflow before any rote call:
 
-The built-in `edit` tool is **disabled** and must never be called. If you attempt to use `edit`, it will fail. Always use `kronk_fuzzy_edit` instead.
+1. `rote init <task> --seq` — open a workspace.
+2. `rote kronk_probe "<intent>"` — discover the right tool by intent.
+3. `rote kronk_call <tool_name> '{json args}' -s` — execute.
+4. `rote @N '<jq query>'` — extract / filter results without spending agent
+   tokens.
 
-**Parameters:**
+Full guidance, including parameter schemas, the canvas → crystallize
+workflow, the workspace lifecycle, and the rote registry invite-code
+requirement, is in the [`rote`](skills/rote/SKILL.md) skill and in
+[`.agents/rote/NOTES.md`](rote/NOTES.md).
 
-- `file_path` (string, required): Absolute path to the file.
-- `old_string` (string, required): The text to find (fuzzy whitespace matching is applied).
-- `new_string` (string, required): The replacement text.
-
-**Matching tiers:** exact byte match -> line-ending normalization -> indentation-insensitive. Always `read` the file first, then provide the exact content you want to replace.
-
-### kronk_web_search (web research)
-
-Use this when you need external information, research, or up-to-date knowledge.
-
-**Parameters:**
-
-- `query` (string, required): Search query.
-- `count` (int, optional, default 10, max 20): Number of results.
-- `country` (string, optional): Country code (e.g. US, GB, DE).
-- `freshness` (string, optional): `pd` (past day), `pw` (past week), `pm` (past month), `py` (past year).
-- `safesearch` (string, optional): `off`, `moderate`, `strict` (default moderate).
+If `rote` is not installed, or the registry session is missing, **stop and
+ask the user** for an invite code from the project owner (Bill). Do not
+attempt to call Kronk directly via HTTP / MCP / curl — those paths have
+been removed by design.

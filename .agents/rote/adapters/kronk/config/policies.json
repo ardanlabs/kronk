@@ -1,0 +1,71 @@
+{
+  "version": "1.0",
+  "enabled": true,
+  "_metadata": {
+    "description": "MCP adapter defaults (extended timeouts for SSE streaming)",
+    "security_critical_fields": [
+      "rate_limits"
+    ],
+    "performance_tunable_fields": [
+      "timeouts"
+    ],
+    "cost_sensitive_fields": []
+  },
+  "rate_limits": {
+    "global": {
+      "requests_per_second": 1.0,
+      "requests_per_minute": 30,
+      "requests_per_hour": null,
+      "burst_capacity": 5
+    },
+    "per_toolset": null,
+    "per_tool": null,
+    "violation_behavior": "delay"
+  },
+  "timeouts": {
+    "connect_timeout_ms": 10000,
+    "request_timeout_ms": 30000,
+    "read_timeout_ms": 120000,
+    "per_tool": null
+  },
+  "retry": {
+    "enabled": true,
+    "max_attempts": 3,
+    "retry_on_status_codes": [
+      408,
+      429,
+      500,
+      502,
+      503,
+      504
+    ],
+    "backoff_strategy": "exponential",
+    "initial_delay_ms": 1000,
+    "max_delay_ms": 30000,
+    "jitter": true,
+    "per_tool": null
+  },
+  "circuit_breaker": {
+    "enabled": true,
+    "failure_threshold": 5,
+    "success_threshold": 2,
+    "timeout_seconds": 60,
+    "half_open_requests": 3,
+    "per_toolset": null
+  },
+  "logging": {
+    "enabled": true,
+    "log_level": "info",
+    "log_requests": true,
+    "log_responses": true,
+    "redact_fields": [
+      "authorization",
+      "api-key",
+      "password",
+      "token"
+    ],
+    "redact_patterns": [],
+    "sample_rate": 1.0,
+    "audit_critical_operations": null
+  }
+}
