@@ -1,0 +1,34 @@
+{
+    "providers": {
+        "kronk": {
+            "baseUrl": "http://127.0.0.1:11435/v1",
+            "api": "openai-completions",
+            "apiKey": "kronk",
+            "authHeader": true,
+            "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+            },
+            "models": [
+                {
+                    "id": "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT",
+                    "name": "Gemma4 26B-A4B UD-Q4_K_M",
+                    "reasoning": false,
+                    "input": ["text"],
+                    "contextWindow": 131072,
+                    "maxTokens": 65536,
+                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+                },
+                {
+                    "id": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
+                    "name": "Qwen3.6 35B-A3B UD-Q4_K_M",
+                    "reasoning": true,
+                    "input": ["text"],
+                    "contextWindow": 131072,
+                    "maxTokens": 65536,
+                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+                }
+            ]
+        }
+    }
+}
