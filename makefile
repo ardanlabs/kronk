@@ -980,10 +980,14 @@ agents-default-goose:
 # or any default-bundle target. Standard order for opting into rote:
 #
 #   make agents-rote-install        # installs the rote CLI
+#   make agents-rote-login          # one-time interactive registry login
+#                                   # (browser flow). Persisted on disk under
+#                                   # ~/.rote/, survives reboots; only needs
+#                                   # re-running after a wipe or token expiry.
 #   make agents-rote-seed           # seeds ~/.rote/ with the project's
 #                                   # adapters, rebuilds the search index,
-#                                   # and ensures the `playground` canvas
-#                                   # exists.
+#                                   # and ensures the `playground`
+#                                   # workspace exists.
 #   make agents-rote-<host>         # ships the rote-aware bundle for
 #                                   # the agent host you actually use.
 #
@@ -999,16 +1003,39 @@ agents-rote-install:
 		&& echo "rote already installed at $$(command -v rote)" \
 		|| curl -fsSL https://getrote.dev/install | bash
 
-# Create the long-lived `playground` canvas (rote workspace) used for ad-hoc
-# exploration with the adapter. `rote init` is NOT idempotent — running it
-# twice on the same name exits 1 with a verbose error — so we guard with a
-# directory existence check. See .agents/rote/NOTES.md §8 step 3 for why
-# canvas creation is a make target rather than something agents do.
-agents-rote-playground:
+# Run the rote registry login flow. Required after `agents-rote-install` on
+# a fresh box (or after `rm -rf ~/.rote`) before `agents-rote-seed` will
+# work — `rote init` (used by agents-rote-playground) refuses to run without
+# a registry session. Login state persists on disk under ~/.rote/secrets/
+# and ~/.rote/registry/, so this is one-time per machine until you wipe.
+# Modiqo's registry is invite-only — see .agents/rote/NOTES.md §3.
+agents-rote-login:
+	@rote whoami 2>&1 | grep -q "Not logged in" \
+		&& rote login \
+		|| echo "rote already logged in"
+
+# Internal: fail fast with a clear pointer when seed/playground are run
+# without a registry session, instead of letting `rote init` emit its
+# generic "rote requires login" error and a non-obvious make stack trace.
+agents-rote-login-check:
+	@rote whoami 2>&1 | grep -q "Not logged in" && { \
+		echo "rote is not logged in — run \`make agents-rote-login\` first."; \
+		echo "(invite-only registry; see .agents/rote/NOTES.md §3)"; \
+		exit 1; \
+	} || true
+
+# Create the long-lived `playground` workspace used for ad-hoc exploration
+# with the adapter. (Modiqo's docs sometimes call this a "canvas" — same
+# thing as a workspace, see .agents/rote/NOTES.md §1.) `rote init` is NOT
+# idempotent — running it twice on the same name exits 1 with a verbose
+# error — so we guard with a directory existence check. See
+# .agents/rote/NOTES.md §8 step 3 for why workspace creation is a make
+# target rather than something agents do.
+agents-rote-playground: agents-rote-login-check
 	@if [ -d "$$HOME/.rote/rote/workspaces/playground" ]; then \
-		echo "playground canvas already exists at $$HOME/.rote/rote/workspaces/playground"; \
+		echo "playground workspace already exists at $$HOME/.rote/rote/workspaces/playground"; \
 	else \
-		rote init playground --seq && echo "playground canvas created"; \
+		rote init playground --seq && echo "playground workspace created"; \
 	fi
 
 # Seed the user's ~/.rote/ tree with the project's rote artifacts (the kronk

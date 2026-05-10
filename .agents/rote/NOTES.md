@@ -5,6 +5,126 @@ This document is the developer reference for how Kronk uses
 coding agents (OpenCode, Amp, Kilo, Pi, Goose) and external
 tools/APIs/MCP services.
 
+## Architecture at a glance
+
+How an agent host (OpenCode is the worked example below; Kilo, Pi,
+Goose follow the same pattern) reaches Kronk's MCP tools through rote.
+
+### File map: source of truth → on-machine deployment
+
+```diagram
+╭───────────────────── REPO (source of truth) ─────────────────────╮
+│ .agents/rote/                                                    │
+│ ├── AGENTS.md                  ─┐                                │
+│ ├── opencode/                   │                                │
+│ │   ├── opencode.jsonc          │  shipped by                    │
+│ │   └── auth.json               │  `make agents-rote-opencode`   │
+│ └── skills/kronk-mcp/SKILL.md  ─┘                                │
+│ .agents/rote/adapters/kronk/                                     │
+│ ├── manifest.json              ─┐                                │
+│ ├── tools.json                  │  shipped by                    │
+│ ├── agent.md                    │  `make agents-rote-seed`       │
+│ ├── config/policies.json        │                                │
+│ └── toolsets/mcp:.json         ─┘                                │
+╰──────────────────────────────────────────────────────────────────╯
+                                  │
+                                  ▼
+╭──────────────── ON-MACHINE (deployed copies) ────────────────────╮
+│ ~/.config/opencode/                                              │
+│ ├── AGENTS.md                  loaded by OpenCode at startup     │
+│ ├── opencode.jsonc             NO mcp block — direct path gone   │
+│ ├── auth.json                                                    │
+│ └── skills/kronk-mcp/SKILL.md  discovered by skill name          │
+│                                                                  │
+│ ~/.rote/                                                         │
+│ ├── secrets/, registry/        login state, persisted on disk    │
+│ ├── adapters/kronk/                                              │
+│ │   ├── manifest.json, tools.json, agent.md, config/, toolsets/  │
+│ │   ├── index/                 Tantivy search index, local       │
+│ │   └── runtime/sessions/                                        │
+│ │       └── workspace_playground.json   ← the buggy cache file   │
+│ └── rote/workspaces/playground/                                  │
+│     └── .rote/responses/@N.json   cached tool responses          │
+╰──────────────────────────────────────────────────────────────────╯
+```
+
+### Call flow: a single web search, end to end
+
+```diagram
+╭─────────────╮
+│ User prompt │  "Search the web for X"
+╰──────┬──────╯
+       ▼
+╭─────────────────────────────────────────────────────────────╮
+│ OpenCode model                                              │
+│   reads: ~/.config/opencode/AGENTS.md                       │
+│   sees:  "MUST call skill({ name: 'kronk-mcp' })"           │
+│         + "NEVER curl/fetch localhost:9000 directly"        │
+│         + "On failure, STOP and report — don't improvise"   │
+╰──────┬──────────────────────────────────────────────────────╯
+       ▼
+╭─────────────────────────────────────────────────────────────╮
+│ skill({ name: "kronk-mcp" })                                │
+│   loads: ~/.config/opencode/skills/kronk-mcp/SKILL.md       │
+│   teaches the agent the rote workflow                       │
+╰──────┬──────────────────────────────────────────────────────╯
+       ▼
+╭─────────────────────────────────────────────────────────────╮
+│ Bash tool: rote kronk_probe "search the web"                │
+│   spawns: fresh `rote` process                              │
+│   reads:  ~/.rote/adapters/kronk/{tools.json, index/}       │
+│   does:   Tantivy semantic search (LOCAL, no server)        │
+│   returns: web_search ranked first                          │
+│   writes: ~/.rote/rote/workspaces/playground/...@N.json     │
+╰──────┬──────────────────────────────────────────────────────╯
+       ▼
+╭─────────────────────────────────────────────────────────────╮
+│ Bash tool: rm -f ~/.rote/.../workspace_playground.json &&   │
+│            rote kronk_call web_search '{...}' -s            │
+│   ① rm wipes cached Mcp-Session-Id (bug workaround, §11)    │
+│   ② fresh `rote` process opens HTTP to localhost:9000/mcp   │
+│   ③ POST initialize           → server returns Session-Id   │
+│   ④ POST notifications/initialized                          │
+│   ⑤ POST tools/call (web_search)                            │
+│   ⑥ kronk MCP → Brave Search API → response                 │
+│   ⑦ rote writes response to @N.json + caches new Session-Id │
+╰──────┬──────────────────────────────────────────────────────╯
+       ▼
+╭─────────────────────────────────────────────────────────────╮
+│ Bash tool: rote @N '.content[0].text'                       │
+│   reads cached response, extracts plain-text result         │
+╰──────┬──────────────────────────────────────────────────────╯
+       ▼
+╭───────────────╮
+│ Model summary │ ← agent presents real Brave results to user
+╰───────────────╯
+```
+
+### What each piece enforces
+
+| Component                                                | Enforces                                                                                                                                              |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opencode.jsonc` (no `mcp` block)                        | OpenCode's built-in MCP client can't reach kronk — no direct path exists at the host-config level.                                                    |
+| `AGENTS.md` (skill name + no-curl + no-hallucination)    | Model is instructed to load `kronk-mcp` exactly, forbidden from curl/wget/fetch to any MCP endpoint, forbidden from substituting training data on failure. |
+| `SKILL.md` `kronk-mcp` (renamed from `rote`)             | Wins skill discovery against the model's first instinct ("I need a kronk MCP skill").                                                                 |
+| `SKILL.md` MANDATORY `rm -f` prefix                      | Works around rote 0.14.1's cached-session bug — every `kronk_call` re-handshakes from scratch. See §11.                                               |
+| `~/.rote/adapters/kronk/` (manifest + tools.json + index) | Rote knows what's callable on kronk MCP without ever talking to it for discovery.                                                                     |
+| `~/.rote/rote/workspaces/playground/`                    | Holds `@N.json` responses for jq queries — the one long-lived workspace.                                                                              |
+| Kronk MCP server (`cmd/server/app/domain/mcpapp/`)       | Standard `modelcontextprotocol/go-sdk` Streamable HTTP server on port 9000, rate-limited per `policies.json`.                                         |
+
+### What's intentionally **not** wired
+
+- OpenCode does NOT speak MCP directly to kronk. The `mcp` block is
+  gone from `opencode.jsonc`.
+- Brave Search API key sits in kronk-server's env (`BRAVE_API_KEY`),
+  never in OpenCode, never in rote, never in agent context.
+- No flow crystallization is wired up — the workspace → flow → release
+  path exists in rote but we don't use it. We treat rote as a
+  skill-discoverable bash wrapper around kronk MCP, with the
+  workspace as a write-only response cache.
+
+---
+
 ## Canonical references
 
 | Resource                              | URL                                                               |
@@ -58,15 +178,19 @@ The five primitives form one closed loop:
 
 Key on-disk concepts:
 
-- **Workspace (canvas)** — `~/.rote/rote/workspaces/<name>/`. A
-  scratch area where each request is cached as `@1.json`, `@2.json`,
-  etc. Required for `probe`, `call`, `query`, `template` commands.
+- **Workspace** — `~/.rote/rote/workspaces/<name>/`. A scratch area
+  where each request is cached as `@1.json`, `@2.json`, etc. Required
+  for `probe`, `call`, `query`, `template` commands. (Modiqo's
+  marketing copy and conceptual diagrams call this a *canvas* — same
+  thing, the on-disk directory is the canvas. This document uses
+  *workspace* throughout for consistency with the CLI and filesystem
+  layout.)
 - **Adapter** — `~/.rote/adapters/<name>/`. Persistent typed catalog
   of an external service: manifest, tools list, search index,
   policies (rate limits, retries, timeouts), fingerprint.
 - **Flow** — `~/.rote/flows/<slug>/main.ts`. A crystallized,
   parameterized, lint-checked, releasable script generated from a
-  successful canvas trace.
+  successful workspace trace.
 
 ---
 
@@ -105,7 +229,7 @@ Per-bundle file layout (mirrored across both):
 ```
 
 The rote bundle additionally carries `NOTES.md`, `adapters/`, and
-`skills/rote/SKILL.md` — these have no counterpart in the default
+`skills/kronk-mcp/SKILL.md` — these have no counterpart in the default
 bundle.
 
 | Per-host file                       | Differs between bundles? | Where the difference is                                       |
@@ -201,8 +325,9 @@ contributors install only the host they actually use.
 | `make agents-default-pi`       | Same, for pi (`~/.pi/`).                                                                                                              |
 | `make agents-default-goose`    | Same, for goose (`~/.config/goose/`). Goose has no Kronk MCP wiring in either bundle (Kronk is goose's LLM provider).                 |
 | `make agents-rote-install`     | Installs the rote CLI from `getrote.dev/install`. No-op if `rote` is already on `PATH`.                                              |
-| `make agents-rote-playground`  | Idempotently creates the long-lived `playground` canvas at `~/.rote/rote/workspaces/playground/`. Safe to run repeatedly.            |
-| `make agents-rote-seed`        | rsyncs the project's adapters from `.agents/rote/adapters/` into `~/.rote/adapters/`, then `rote adapter reindex kronk`. Depends on `agents-rote-playground`. |
+| `make agents-rote-login`       | Runs the rote registry login flow if not already logged in. Login state persists under `~/.rote/secrets/` + `~/.rote/registry/`, so this is one-time per machine until a wipe. Invite-only — see §3. |
+| `make agents-rote-playground`  | Idempotently creates the long-lived `playground` workspace at `~/.rote/rote/workspaces/playground/`. Safe to run repeatedly. Requires login (depends on an internal `agents-rote-login-check` that fails fast with a pointer to `agents-rote-login` if you're not signed in). |
+| `make agents-rote-seed`        | rsyncs the project's adapters from `.agents/rote/adapters/` into `~/.rote/adapters/`, then `rote adapter reindex kronk`. Depends on `agents-rote-playground` (and therefore on login).                |
 | `make agents-rote-opencode`    | Ships `.agents/rote/opencode/` + the rote-aware `AGENTS.md` + the rote skill to `~/.config/opencode/`.                                |
 | `make agents-rote-kilo`        | Same, for kilo.                                                                                                                       |
 | `make agents-rote-pi`          | Same, for pi.                                                                                                                         |
@@ -221,10 +346,19 @@ make agents-default-<host>          # only the host you actually use
 _Rote-using contributors:_
 
 ```sh
-make agents-rote-install            # rote CLI (needs an invite code from Bill — see §3)
-make agents-rote-seed               # seeds ~/.rote/ and ensures the playground canvas exists
+make agents-rote-install            # rote CLI (idempotent)
+make agents-rote-login              # one-time browser flow — needs an invite code from Bill (§3)
+make agents-rote-seed               # seeds ~/.rote/ and ensures the playground workspace exists
 make agents-rote-<host>             # only the host you actually use
 ```
+
+The login step is one-time per machine. Credentials persist on disk under
+`~/.rote/secrets/` and `~/.rote/registry/`, so after the first run every
+new shell finds you signed in. You only need to repeat it after a full
+`rm -rf ~/.rote` wipe (see §6) or if Modiqo's registry token expires. If
+you skip login, `agents-rote-seed` fails fast via an internal
+`agents-rote-login-check` guard rather than emitting a confusing
+`rote requires login` error from inside `rote init`.
 
 Switching between bundles is just running the other `agents-<bundle>-<host>`
 target — every per-host target overwrites the same files in `~/.config/<host>/`,
@@ -350,7 +484,7 @@ check-ignore -v`.
 ```
 
 Always operate inside a workspace. There is one long-lived
-`playground` canvas for ad-hoc exploration; per-task workspaces are
+`playground` workspace for ad-hoc exploration; per-task workspaces are
 created when a flow's identity matters. **Workspaces are created by
 make targets, not by agents** — see _Behaviors and gotchas_ below.
 
@@ -358,11 +492,19 @@ make targets, not by agents** — see _Behaviors and gotchas_ below.
 # Discover the right tool by intent (local — no live server roundtrip)
 ( cd ~/.rote/rote/workspaces/playground && rote kronk_probe "search the web" )
 
-# Inspect probe results (MCP responses are double-wrapped — see gotchas)
+# Inspect probe results — probe wraps a JSON string in content[0].text,
+# so fromjson is appropriate here.
 rote @1 '.content[0].text | fromjson | .results[] | {name, score}'
 
-# Execute (BROKEN in v0.13.0 — see "Known issues")
+# Execute a tool call. The `rm -f` is mandatory — see "Behaviors and
+# gotchas" below for the rote 0.14.1 cached-session bug it works around.
+rm -f ~/.rote/adapters/kronk/runtime/sessions/workspace_playground.json
 rote kronk_call web_search '{"query":"go 1.24","count":3}' -s
+
+# Read the tool result. Tool responses wrap PLAIN TEXT in content[0].text
+# (no fromjson). Check (.is_error // false) for failure.
+rote @2 '(.is_error // false)'
+rote @2 '.content[0].text'
 
 # Crystallize a successful exploration
 rote flow template create --name <slug> --adapter adapter/kronk \
@@ -378,54 +520,19 @@ rote flow index --rebuild
 
 ## Behaviors and gotchas
 
-These have been verified empirically on rote v0.13.0 against
-Kronk's MCP server.
+Verified empirically on rote 0.14.1 against Kronk's MCP server.
 
 | Behavior                                                                                                | Notes                                                                                                                                                 |
 | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rote init` is **not idempotent**                                                                       | Second call exits 1 with verbose error. `make agents-rote-playground` guards with a directory check.                                                         |
+| `rote init` is **not idempotent**                                                                       | Second call exits 1 with verbose error. `make agents-rote-playground` guards with a directory check.                                                  |
 | `rote cd <name>` is **broken** on this machine                                                          | Errors with `command failed`. Workaround: `( cd ~/.rote/rote/workspaces/<name> && rote ... )` subshell. Each agent Bash call is a fresh shell anyway. |
 | Workspace path layout has no `vendor` subdir                                                            | Because rote was installed via the CLI installer, not in Cursor / Claude / HTTP-vendor mode.                                                          |
 | `rote ls` exit code lies                                                                                | Empty workspace prints `@@status\nerror: No responses yet` but exits 0. Real failures produce non-zero exit and a separate error line.                |
-| MCP tool responses are **double-wrapped**                                                               | Every result is `{ content: [ { type: "text", text: "<json string>" } ], is_error?: bool }`. Use `.content[0].text \| fromjson \| <real query>`.      |
-| The documented `-m / --mcp` unwrap flag on `rote @N` **does not work** in v0.13.0                       | Errors with `configuration error: invalid flag`. Use `fromjson` until upstream fixes it.                                                              |
-| Always check `.is_error` before trusting `.content[0].text`                                             | `is_error: true` means the tool itself failed even though the HTTP transport returned 200.                                                            |
+| MCP tool responses are wrapped                                                                          | Every result is `{ content: [ { type: "text", text: "<string>" } ], is_error?: bool }`. For Kronk's tools the `text` is **plain text**, not JSON — query with `.content[0].text`, do not pipe through `fromjson`. |
+| `is_error` is **omitted on success**                                                                    | The field is set to `true` on tool failure and absent otherwise. Use `(.is_error // false)` when checking.                                            |
 | `rote adapter new-from-mcp` writes per-host subagent files into `~/.claude/`, `~/.cursor/`, `~/.codex/` | Modiqo's auto-wiring for hosts they recognize. None go into Amp / OpenCode and none are mirrored into the repo.                                       |
 | Small models substitute literal arguments                                                               | OpenCode/Qwen3.6-35B once renamed `playground` to `test workspace`. Workspace creation is therefore a make target, never an agent action.             |
-
----
-
-## Known issues
-
-### `kronk_call` skips the MCP handshake (rote v0.13.0)
-
-**Symptom.** Every `rote kronk_call <tool>` returns
-`@@status ok: @N` but `.is_error` is `true` and `.content[0].text` is:
-
-```
-HTTP execution failed for web_search: MCP error:
-  {"code":0,"message":"method \"tools/call\" is invalid during session initialization"}
-```
-
-**Root cause — verified at the wire level.** rote v0.13.0 sends
-`tools/call` as a stateless one-shot HTTP POST with **no
-`initialize`, no `notifications/initialized`, no `Mcp-Session-Id`
-header**. The MCP spec mandates a session — every spec-compliant
-streamable-HTTP server will reject this exactly the way Kronk's
-`github.com/modelcontextprotocol/go-sdk` v1.6.0 does.
-
-The bug also affects introspection (`adapter new-from-mcp`), which
-sends `initialize` then jumps directly to `tools/list`, skipping
-`notifications/initialized` between them. Kronk's go-sdk happens to
-let this slide; stricter MCP servers will not.
-
-**Status.** Upstream issue to be filed with Modiqo. Until fixed,
-`rote kronk_probe` works (it's a local Tantivy lookup) but no kronk
-tool can actually be executed through rote.
-
-**Workaround.** Until the fix lands, agents fall back to host-native
-tools for the operations rote was supposed to broker. The rote-only
-architecture stays as the documented end state.
+| **rote caches `Mcp-Session-Id` per workspace and never re-handshakes**                                  | `~/.rote/adapters/kronk/runtime/sessions/workspace_<name>.json` holds `mcp_wire_session_id`. After any kronk-server lifecycle event (process restart, idle eviction) the cached ID is dead, every `kronk_call` returns `404 Not Found: session not found` in ~250 ms (no real roundtrip), and rote keeps reusing the dead ID forever. **Workaround**: precede every `kronk_call` with `rm -f ~/.rote/adapters/kronk/runtime/sessions/workspace_playground.json` (already baked into the SKILL.md and AGENTS.md examples). Costs ~600 ms per call for an extra `initialize` + `notifications/initialized` roundtrip; correctness wins. Upstream fix needed in rote — should drop the cached session and retry once on 404 from `tools/call`. |
 
 ---
 
@@ -438,5 +545,8 @@ architecture stays as the documented end state.
 - `~/.rote/adapters/<name>/agent.md` — the auto-generated subagent
   template. Has detailed write-guard, flow-lint, and release-gate
   workflows worth reading before crystallizing flows.
-- [`.agents/rote/skills/rote/SKILL.md`](./skills/rote/SKILL.md) — the
-  single project skill, shipped only by `make agents-rote-<host>`.
+- [`.agents/rote/skills/kronk-mcp/SKILL.md`](./skills/kronk-mcp/SKILL.md)
+  — the single project skill, shipped only by `make agents-rote-<host>`.
+  Named `kronk-mcp` (not `rote`) so the agent's first instinct when
+  reaching for "the kronk MCP skill" matches what's installed; the
+  skill body still teaches the rote workflow.

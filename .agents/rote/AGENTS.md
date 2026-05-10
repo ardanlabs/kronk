@@ -8,14 +8,30 @@
 
 # Skills
 
-Load the `rote` skill **before** any external tool / API / MCP call. There
-is no other path — the raw Kronk MCP wiring has been removed from every
-agent host config (OpenCode, Kilo, Pi, Goose). All web research and all
-file edits flow through `rote` invoked from the Bash tool.
+**Before any external tool / API / MCP call, you MUST call:**
 
 ```
-skill({ name: "rote" })
+skill({ name: "kronk-mcp" })
 ```
+
+The skill is named **exactly** `kronk-mcp`. Do not look for any other
+skill name. Do not load `rote`, `kronk`, `web-search`, or any
+similarly-named skill — they are either non-existent or stale and will
+mislead you. The `kronk-mcp` skill teaches the only legal path to the
+Kronk MCP service; internally it uses `rote` as the execution layer,
+but the skill name to load is `kronk-mcp`.
+
+The raw Kronk MCP wiring has been removed from every agent host config
+(OpenCode, Kilo, Pi, Goose). All web research and all file edits flow
+through commands documented inside the `kronk-mcp` skill, invoked from
+the Bash tool.
+
+You may **NOT** issue `curl`, `wget`, `fetch`, or any other HTTP request
+to `http://localhost:9000`, to any `/mcp` endpoint, or to any MCP server
+directly. The `kronk-mcp` skill provides the only sanctioned path. If
+the commands inside it fail, **stop and report the failure to the
+user** — do not improvise an alternative transport, do not hand-roll an
+MCP handshake, do not fall back to a different tool.
 
 ## Tool Policy
 
@@ -24,30 +40,25 @@ canonical workflow is:
 
 1. `( cd ~/.rote/rote/workspaces/playground && rote kronk_probe "<intent>" )`
    — discover the right tool by intent.
-2. `( cd ~/.rote/rote/workspaces/playground && rote kronk_call <tool> '{json args}' -s )`
-   — execute. Tool names are **bare** in the catalog: use `web_search`
-   or `fuzzy_edit`, **not** `kronk_web_search` or `kronk_fuzzy_edit`.
-3. `( cd ~/.rote/rote/workspaces/playground && rote @N '.content[0].text | fromjson | <jq>' )`
-   — extract / filter results. MCP responses are double-wrapped, so
-   always pipe through `fromjson`. Always check `.is_error` first.
+2. `( rm -f ~/.rote/adapters/kronk/runtime/sessions/workspace_playground.json && cd ~/.rote/rote/workspaces/playground && rote kronk_call <tool> '{json args}' -s )`
+   — execute. The `rm -f` is **mandatory** — it forces rote to
+   re-handshake with kronk on every call instead of reusing a cached
+   `Mcp-Session-Id` that the kronk-server may have evicted (process
+   restart, idle timeout). Without it you get `404 session not found`.
+   Tool names are **bare** in the catalog: use `web_search` or
+   `fuzzy_edit`, **not** `kronk_web_search` or `kronk_fuzzy_edit`.
+3. `( cd ~/.rote/rote/workspaces/playground && rote @N '.content[0].text' )`
+   — extract the result. MCP responses wrap the tool output as
+   `{ content: [{ type: "text", text: "<string>" }] }`. For Kronk's
+   tools the inner `text` is **plain text** (e.g. formatted search
+   results, an edit confirmation), not JSON — do **not** pipe through
+   `fromjson` for tool calls. On failure the response carries
+   `is_error: true`; on success the field is **omitted entirely**, so
+   treat absent as success or use `.is_error // false`.
 
 Do not call `rote init`. The `playground` workspace is created and
 maintained by `make agents-rote-playground`. If it is missing, ask the user
 to run `make agents-rote-seed`.
-
-### Current execution status (rote v0.13.0)
-
-`rote kronk_call` is **broken** in the installed version of rote — see
-[NOTES.md §9.1](rote/NOTES.md). It returns `is_error: true` because the
-MCP handshake is skipped. Until the upstream fix lands:
-
-- **File edits** → temporarily fall back to the host's built-in `edit`
-  tool (normally disabled by the rote-only architecture).
-- **Web research** → temporarily fall back to the host's built-in
-  web-search tool (if any).
-
-This is a temporary exception driven by the v0.13.0 bug. When the
-fix lands, all calls go back through rote without changes here.
 
 ### Adding a new external service
 
@@ -58,11 +69,10 @@ removed.
 
 ### Reference
 
-Full guidance, including parameter schemas, the canvas → crystallize
-workflow, the workspace lifecycle, the v0.13.0 known issue, and the
-rote registry invite-code requirement, is in the
-[`rote`](skills/rote/SKILL.md) skill and in
-[`.agents/rote/NOTES.md`](rote/NOTES.md).
+Full guidance, including parameter schemas, the workspace → crystallize
+workflow, the workspace lifecycle, and the rote registry invite-code
+requirement, is in the [`kronk-mcp`](skills/kronk-mcp/SKILL.md) skill
+and in [`.agents/rote/NOTES.md`](rote/NOTES.md).
 
 If `rote` is not installed, or the registry session is missing, **stop
 and ask the user** for an invite code from the project owner (Bill).

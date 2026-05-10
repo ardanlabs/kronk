@@ -1,6 +1,6 @@
 ---
-name: rote
-description: Use rote for ALL external tool/API/MCP access in this project. Load whenever you need to search the web, edit a file, or otherwise touch a Kronk MCP service. There is no other path — the raw MCP wiring has been removed from every agent host config.
+name: kronk-mcp
+description: The ONLY sanctioned path to the Kronk MCP service (web_search, fuzzy_edit, and any future tool). Internally uses rote as the execution layer — every command below is a `rote ...` invocation in Bash. Load whenever you need to search the web, edit a file, or otherwise touch Kronk MCP. The raw MCP wiring has been removed from every agent host config and direct curl/HTTP to localhost:9000 is forbidden.
 ---
 
 ## Why this skill exists
@@ -21,28 +21,6 @@ Rationale (full context in [`.agents/rote/NOTES.md`](../../rote/NOTES.md)):
 3. **Determinism + collective memory.** Flows are versioned, shareable,
    and survive across sessions and teammates.
 
-## Current execution status (rote v0.13.0)
-
-**`rote kronk_call` is broken in the installed version of rote.** See
-[NOTES.md §9.1](../../rote/NOTES.md). Until the upstream fix lands:
-
-| Capability                       | Status | Notes                                                  |
-| -------------------------------- | ------ | ------------------------------------------------------ |
-| `rote kronk_probe "<intent>"`    | ✅     | Local Tantivy lookup — works fine                      |
-| `rote adapter list/info`         | ✅     | Local manifest reads — works fine                      |
-| `rote kronk_call <tool> '{...}'` | ❌     | Returns `is_error: true` (MCP handshake skipped)       |
-| Crystallizing kronk-call flows   | ❌     | Blocked on `kronk_call`                                |
-
-**Fallback while broken.** When you need to actually edit a file or run
-a web search, use the host's built-in tools. This is a **temporary**
-exception — when the upstream fix lands, all calls go back through
-rote without changes to this skill.
-
-The "use rote first" preference still applies: always probe to discover
-the right tool by intent, then attempt the call. If the call returns
-`is_error: true` with the v0.13.0 handshake message, fall back; do not
-improvise other paths (no direct HTTP, no curl, no manual MCP).
-
 ## Hard rules
 
 - **NEVER** attempt to talk to `http://localhost:9000/mcp` directly.
@@ -62,20 +40,20 @@ improvise other paths (no direct HTTP, no curl, no manual MCP).
 ```bash
 rote --version              # confirm rote is installed (see NOTES.md §3)
 rote adapter list           # confirm `kronk` is registered
-ls ~/.rote/rote/workspaces/playground   # confirm the playground canvas exists
+ls ~/.rote/rote/workspaces/playground   # confirm the playground workspace exists
 ```
 
 If `kronk` is missing from `rote adapter list`, ask the user to run
 `make agents-rote-seed` from the repo root. That target seeds the
 adapter from `.agents/rote/adapters/kronk/`, rebuilds the search
-index, and ensures the `playground` canvas exists.
+index, and ensures the `playground` workspace exists.
 
 If `rote` itself is missing, ask the user to run `make agents-rote-install`
 (see [NOTES.md §3](../../rote/NOTES.md) for the install + invite story
 — Modiqo's registry is invite-only and the project owner Bill issues
 the invite codes). Do not improvise a fallback.
 
-If the playground canvas is missing, ask the user to run
+If the playground workspace is missing, ask the user to run
 `make agents-rote-playground`. Do **not** call `rote init` yourself.
 
 ## Per-task workflow
@@ -83,15 +61,14 @@ If the playground canvas is missing, ask the user to run
 ```diagram
 ╭───────────╮     ╭──────────╮     ╭──────────╮     ╭──────────╮     ╭──────────╮
 │ playground│────▶│  probe   │────▶│   call   │────▶│  query   │────▶│  export  │
-│ (already  │     │ (find    │     │ (execute │     │ (jq +    │     │ (flow,   │
-│  exists)  │     │  tool)   │     │  — see   │     │  fromjson│     │  reuse)  │
-│           │     │          │     │  status) │     │  unwrap) │     │          │
+│ (already  │     │ (find    │     │ (execute │     │ (jq on   │     │ (flow,   │
+│  exists)  │     │  tool)   │     │  via MCP)│     │ .content)│     │  reuse)  │
 ╰───────────╯     ╰──────────╯     ╰──────────╯     ╰──────────╯     ╰──────────╯
 ```
 
-### 1. Use the existing `playground` canvas
+### 1. Use the existing `playground` workspace
 
-The canvas at `~/.rote/rote/workspaces/playground/` is created and
+The workspace at `~/.rote/rote/workspaces/playground/` is created and
 maintained by `make agents-rote-playground` (or `make agents-rote-seed`,
 which depends on it). Do not call `rote init` yourself.
 
@@ -122,11 +99,23 @@ prefix only applies to the rote shorthand verbs (`kronk_probe`,
 
 ### 3. Execute with `call`
 
+**MANDATORY**: every `kronk_call` MUST be preceded by `rm -f` of the
+cached MCP session file. This forces rote to re-handshake with kronk
+on every call instead of reusing a cached `Mcp-Session-Id` that the
+server may have evicted (process restart, idle timeout, etc.). Without
+this, the second-and-later call after any kronk-server lifecycle event
+fails with `404 Not Found: session not found` and rote will keep
+retrying the dead session forever — see *Behaviors and gotchas* in
+[`.agents/rote/NOTES.md`](../../rote/NOTES.md). Cost is one extra
+~600 ms handshake per call; correctness wins.
+
 ```bash
-( cd ~/.rote/rote/workspaces/playground && \
+( rm -f ~/.rote/adapters/kronk/runtime/sessions/workspace_playground.json && \
+  cd ~/.rote/rote/workspaces/playground && \
     rote kronk_call web_search '{"query":"...", "count":5}' -s )
 
-( cd ~/.rote/rote/workspaces/playground && \
+( rm -f ~/.rote/adapters/kronk/runtime/sessions/workspace_playground.json && \
+  cd ~/.rote/rote/workspaces/playground && \
     rote kronk_call fuzzy_edit '{
       "file_path":"/abs/path/to/file.go",
       "old_string":"...",
@@ -137,46 +126,46 @@ prefix only applies to the rote shorthand verbs (`kronk_probe`,
 The response is cached as `@N.json` on disk. Costs zero agent tokens
 to re-read.
 
-⚠ **As of rote v0.13.0 these calls return `is_error: true`** — see
-"Current execution status" above. Use the fallback path until the
-upstream fix lands.
+**Do not omit the `rm -f`.** If you see a `404 session not found`
+error from a `kronk_call`, that means the rm step was skipped or
+something else re-cached the session ID — re-run the same call with
+the rm prefix and it will succeed.
 
 ### 4. Query cached responses with jq
 
-MCP responses are **double-wrapped** as
-`{ content: [{ type: "text", text: "<json string>" }], is_error?: bool }`.
-Always check `is_error` first, then unwrap the inner JSON with
-`fromjson` before applying your real query. The documented `-m / --mcp`
-unwrap flag does **not** work in v0.13.0.
+MCP responses are wrapped as
+`{ content: [{ type: "text", text: "<string>" }], is_error?: bool }`.
+
+- `is_error` is **omitted on success** and set to `true` on failure.
+  Use `(.is_error // false)` so missing-means-success works correctly.
+- For Kronk's tools the inner `text` is **plain text** — `web_search`
+  returns a formatted "Result 1: Title: ... URL: ..." block,
+  `fuzzy_edit` returns a confirmation string. Do **not** pipe through
+  `fromjson` for tool calls; it isn't JSON.
 
 ```bash
-# 1. Always check is_error first
-( cd ~/.rote/rote/workspaces/playground && rote @1 '.is_error' )
+# 1. Check whether the call failed (absent → success)
+( cd ~/.rote/rote/workspaces/playground && rote @1 '(.is_error // false)' )
 
-# 2. Unwrap the inner JSON, then query
-( cd ~/.rote/rote/workspaces/playground && \
-    rote @1 '.content[0].text | fromjson | .results | length' )
-
-( cd ~/.rote/rote/workspaces/playground && \
-    rote @1 '.content[0].text | fromjson | .results[].url' )
+# 2. Read the result text
+( cd ~/.rote/rote/workspaces/playground && rote @1 '.content[0].text' )
 
 # 3. Save to a template variable for chaining
 ( cd ~/.rote/rote/workspaces/playground && \
-    rote @1 '.content[0].text | fromjson | .results[0].id' -s some_id )
+    rote @1 '.content[0].text' -s search_results )
 ```
 
 ### 5. Chain calls with template variables
 
 ```bash
-( cd ~/.rote/rote/workspaces/playground && \
+( rm -f ~/.rote/adapters/kronk/runtime/sessions/workspace_playground.json && \
+  cd ~/.rote/rote/workspaces/playground && \
     rote kronk_call <next_tool> '{"id":"$some_id"}' -t -s )
 ```
 
 ### 6. Crystallize a successful exploration into a flow
 
 When the trace produces something useful and reusable, export it.
-(Crystallizing flows that depend on `kronk_call` is currently
-blocked by the v0.13.0 bug — see "Current execution status" above.)
 
 ```bash
 ( cd ~/.rote/rote/workspaces/playground && rote export flow.sh )
@@ -212,7 +201,7 @@ will either:
 - [`.agents/rote/NOTES.md`](../../rote/NOTES.md) — full project
   documentation: install (§3), makefile commands (§4), adapters (§5),
   mirror conventions (§6), per-task workflow (§7), behaviors and
-  gotchas (§8), known issues (§9).
+  gotchas (§8).
 - `~/.rote/adapters/kronk/agent.md` — auto-generated, in-depth
   subagent instructions for the kronk adapter (workspace lifecycle,
   write-guard, flow lint, release gates). Read this when working on

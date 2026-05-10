@@ -1,13 +1,61 @@
 package mcpapp
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// statusRecorder wraps http.ResponseWriter to capture the status code that
+// the SDK handler writes back, so the access log can include it.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+// peekJSONRPC pulls the JSON-RPC method (and tool name, when applicable) out
+// of an MCP request body without consuming it for the downstream handler.
+// Returns ("", "", "") for non-POST or non-JSON requests.
+func peekJSONRPC(r *http.Request) (rpcMethod, toolName, rpcID string, err error) {
+	if r.Method != http.MethodPost || r.Body == nil {
+		return "", "", "", nil
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return "", "", "", err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+
+	var env struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params struct {
+			Name string `json:"name"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		return "", "", "", nil // not JSON, leave body intact for handler
+	}
+
+	id := ""
+	if len(env.ID) > 0 {
+		id = string(env.ID)
+	}
+	return env.Method, env.Params.Name, id, nil
+}
 
 // Config holds the dependencies for the MCP handlers.
 type Config struct {
@@ -42,8 +90,38 @@ func Start(ctx context.Context, cfg Config) *App {
 	}, nil)
 
 	logged := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg.Log.Info(r.Context(), "mcp request", "method", r.Method, "path", r.URL.Path, "remoteaddr", r.RemoteAddr, "accept", r.Header.Get("Accept"), "session", r.Header.Get("Mcp-Session-Id"))
-		handler.ServeHTTP(w, r)
+		start := time.Now()
+
+		rpcMethod, toolName, rpcID, peekErr := peekJSONRPC(r)
+		if peekErr != nil {
+			cfg.Log.Error(r.Context(), "mcp request", "status", "body read failed", "err", peekErr)
+		}
+
+		cfg.Log.Info(r.Context(), "mcp request",
+			"http_method", r.Method,
+			"path", r.URL.Path,
+			"remoteaddr", r.RemoteAddr,
+			"accept", r.Header.Get("Accept"),
+			"session", r.Header.Get("Mcp-Session-Id"),
+			"rpc_method", rpcMethod,
+			"rpc_tool", toolName,
+			"rpc_id", rpcID,
+		)
+
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		handler.ServeHTTP(rec, r)
+
+		cfg.Log.Info(r.Context(), "mcp response",
+			"http_method", r.Method,
+			"path", r.URL.Path,
+			"session", r.Header.Get("Mcp-Session-Id"),
+			"resp_session", rec.Header().Get("Mcp-Session-Id"),
+			"rpc_method", rpcMethod,
+			"rpc_tool", toolName,
+			"rpc_id", rpcID,
+			"status", rec.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
 	})
 
 	mux := http.NewServeMux()
