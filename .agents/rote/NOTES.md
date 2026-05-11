@@ -25,7 +25,7 @@ Goose follow the same pattern) reaches Kronk's MCP tools through rote.
 │ ├── tools.json                  │  shipped by                    │
 │ ├── agent.md                    │  `make agents-rote-seed`       │
 │ ├── config/policies.json        │                                │
-│ └── toolsets/mcp:.json         ─┘                                │
+│ └── toolsets/mcp.json          ─┘                                │
 ╰──────────────────────────────────────────────────────────────────╯
                                   │
                                   ▼
