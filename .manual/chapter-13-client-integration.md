@@ -3,10 +3,14 @@
 ## Table of Contents
 
 - [13.1 Coding Agent Model Configuration](#131-coding-agent-model-configuration)
-- [13.2 Cline](#132-cline)
-- [13.3 Kilo Code](#133-kilo-code)
-- [13.4 OpenCode](#134-opencode)
-- [13.5 Goose](#135-goose)
+- [13.2 Agent Bundles in `.agents/`](#132-agent-bundles-in-agents)
+- [13.3 Default Bundle (Direct MCP)](#133-default-bundle-direct-mcp)
+  - [13.3.1 OpenCode](#1331-opencode)
+  - [13.3.2 Kilo Code](#1332-kilo-code)
+  - [13.3.3 Pi](#1333-pi)
+  - [13.3.4 Goose](#1334-goose)
+- [13.4 Rote Bundle (MCP via rote)](#134-rote-bundle-mcp-via-rote)
+- [13.5 Wiping Agent State](#135-wiping-agent-state)
 - [13.6 OpenWebUI](#136-openwebui)
 - [13.7 Python OpenAI SDK](#137-python-openai-sdk)
 - [13.8 curl and HTTP Clients](#138-curl-and-http-clients)
@@ -19,16 +23,9 @@ and tools. This chapter covers configuration for the CLI-style coding
 agents that talk to Kronk, plus a few general-purpose clients.
 
 Reference configuration files for each agent are provided in the `.agents/`
-directory at the project root. These files are ready to copy into each
-agent's CLI config directory.
-
-```
-.agents/
-├── cline/       # Cline (~/.cline)
-├── goose/       # Goose (~/.config/goose)
-├── kilo/        # Kilo Code (~/.config/kilo)
-└── opencode/    # OpenCode (~/.config/opencode)
-```
+directory at the project root. Each supported host has a ready-to-deploy
+bundle, installed via a `make` target — you do not hand-edit each host
+config.
 
 ### 13.1 Coding Agent Model Configuration
 
@@ -76,65 +73,124 @@ See `zarf/kms/model_config.yaml` for additional pre-configured examples.
   coding agents that accumulate tool results, file contents, and long
   conversations.
 
-**MCP Service:**
+**Kronk MCP Service:**
 
-The Kronk MCP service provides tools (like `web_search`) to coding agents.
-It starts automatically with the Kronk server on `http://localhost:9000/mcp`.
-All agent configs below reference this endpoint.
+The Kronk MCP service exposes two tools to coding agents:
 
-### 13.2 Cline
+- `web_search` — Brave-powered web search.
+- `fuzzy_edit` — fallback file editor for when the host's exact-match edit
+  tool misses on whitespace or line-ending drift.
 
-[Cline](https://cline.bot) is a coding agent that stores its state under
-`~/.cline/`.
+It starts automatically with the Kronk server on
+`http://localhost:9000/mcp`. Every bundle below wires this endpoint into
+the host (directly, or through rote).
 
-**Installation:**
+### 13.2 Agent Bundles in `.agents/`
 
-Copy the MCP settings file from `.agents/cline/` into Cline's settings
-directory:
-
-```bash
-cp .agents/cline/cline_mcp_settings.json \
-   ~/.cline/data/settings/cline_mcp_settings.json
-```
-
-This registers Kronk's MCP service so Cline can discover the
-`web_search` and other tools served from `http://localhost:9000/mcp`.
-
-**Connection settings:**
-
-Point Cline at the Kronk Web API:
+Two bundles ship in the repo. Pick one based on whether you want Kronk's
+MCP service wired directly into your agent host, or routed through the
+[rote](https://www.modiqo.ai/) execution layer.
 
 ```
-Base URL: http://localhost:11435/v1
-API Key: <your-kronk-token> or 123 if auth is disabled
-Model:   Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT
+.agents/
+├── default/        # Direct MCP — most contributors use this
+│   ├── AGENTS.md
+│   ├── opencode/
+│   ├── kilo/
+│   ├── pi/
+│   ├── goose/
+│   └── skills/
+│       ├── kronk-mcp/
+│       └── writing-go/
+└── rote/           # Same hosts, but MCP traffic goes through rote
+    ├── AGENTS.md
+    ├── adapters/kronk/
+    ├── opencode/
+    ├── kilo/
+    ├── pi/
+    ├── goose/
+    ├── skills/
+    └── NOTES.md
 ```
 
-The `.agents/cline/globalState.json` file is included as a reference for
-which fields Cline expects (model id, base URL, auto-approval settings).
-It is not meant to be copied wholesale — Cline manages this file itself.
+Both bundles ship four pieces to each host's config directory:
 
-Reference files: `.agents/cline/`
+1. The host's provider/MCP config (`opencode.jsonc`, `kilo.json`, etc.).
+2. An `AGENTS.md` file — house rules for the agent (mandatory skills,
+   editing policy, "never curl `localhost:9000` directly", etc.).
+3. A `skills/` tree — at minimum `kronk-mcp` (how to use Kronk's MCP
+   tools) and `writing-go` (Go toolchain workflow + post-edit chain).
+4. Per-host extras (e.g. `auth.json` for OpenCode, `custom_kronk.json`
+   for Goose).
 
-### 13.3 Kilo Code
+Supported hosts: **OpenCode**, **Kilo Code**, **Pi**, **Goose**. Cline is
+no longer supported.
 
-[Kilo Code](https://kilocode.ai) is a coding agent that reads its
-configuration from `~/.config/kilo/`.
+### 13.3 Default Bundle (Direct MCP)
 
-**Installation:**
+The default bundle wires Kronk's MCP server directly into each host so
+the agent can call `web_search` and `fuzzy_edit` over raw MCP. No extra
+runtime layer.
 
-Copy the config files from `.agents/kilo/` to Kilo's config directory:
+Install the bundle for the host you actually use:
 
-```bash
-cp .agents/kilo/agent.md  ~/.config/kilo/agent.md
-cp .agents/kilo/kilo.json ~/.config/kilo/kilo.json
+```shell
+make agents-default-opencode
+make agents-default-kilo
+make agents-default-pi
+make agents-default-goose
 ```
 
-The `kilo.json` configures Kronk as a custom provider with model definitions
-and MCP settings. The `agent.md` file provides custom instructions that tell
-the model to use Kronk's `kronk_fuzzy_edit` MCP tool for file edits.
+Each target creates the host's config directory if needed, copies the
+host config, drops in `AGENTS.md`, and refreshes the `skills/` tree.
+Re-running a target is idempotent.
 
-**Key settings in `kilo.json`:**
+#### 13.3.1 OpenCode
+
+Target: `make agents-default-opencode`
+
+Files installed under `~/.config/opencode/`:
+
+- `opencode.jsonc` — Kronk registered as a custom provider plus MCP
+  server entry.
+- `auth.json` — placeholder API key for local use.
+- `AGENTS.md` — house rules (skill loading policy, editing policy).
+- `skills/` — `kronk-mcp`, `writing-go`.
+
+Key settings in `opencode.jsonc`:
+
+```jsonc
+{
+  "model": "kronk/Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
+  "provider": {
+    "kronk": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://127.0.0.1:11435/v1" }
+    }
+  },
+  "mcp": {
+    "kronk": {
+      "type": "remote",
+      "url": "http://localhost:9000/mcp"
+    }
+  }
+}
+```
+
+OpenCode prefixes MCP tool names with the (lowercase) server name —
+`kronk_web_search`, `kronk_fuzzy_edit`.
+
+#### 13.3.2 Kilo Code
+
+Target: `make agents-default-kilo`
+
+Files installed under `~/.config/kilo/`:
+
+- `kilo.json` — Kronk provider, MCP entry, model definitions.
+- `AGENTS.md` — house rules.
+- `skills/` — `kronk-mcp`, `writing-go`.
+
+Key settings in `kilo.json`:
 
 ```json
 {
@@ -151,89 +207,106 @@ the model to use Kronk's `kronk_fuzzy_edit` MCP tool for file edits.
   "mcp": {
     "Kronk": {
       "type": "remote",
-      "url": "http://localhost:9000/mcp"
+      "url": "http://localhost:9000/mcp",
+      "enabled": true,
+      "timeout": 60000
     }
   }
 }
 ```
 
-_Note: Kilo prefixes MCP tool names with the server name (e.g., `Kronk`
-server → `Kronk_fuzzy_edit`). If you see tool name mismatches, check the
-MCP server key in `kilo.json`._
+Kilo prefixes MCP tool names with the server name (capitalized as
+configured) — `Kronk_web_search`, `Kronk_fuzzy_edit`.
 
-Reference files: `.agents/kilo/`
+#### 13.3.3 Pi
 
-### 13.4 OpenCode
+Target: `make agents-default-pi`
 
-[OpenCode](https://opencode.ai) is a terminal-based coding agent.
+Files installed under `~/.pi/`:
 
-**Installation:**
+- `agent/models.json` — Kronk provider + model definitions.
+- `agent/mcp.json` — Kronk MCP server entry (`directTools: true`).
+- `AGENTS.md` — house rules.
+- `skills/` — `kronk-mcp`, `writing-go`.
 
-Copy the config files from `.agents/opencode/` to your OpenCode config
-directory:
+Because Pi sets `directTools: true`, MCP tool names are exposed without
+the server prefix: `web_search`, `fuzzy_edit`.
 
-```bash
-cp .agents/opencode/agent.md       ~/.config/opencode/agent.md
-cp .agents/opencode/auth.json      ~/.config/opencode/auth.json
-cp .agents/opencode/opencode.jsonc ~/.config/opencode/opencode.jsonc
-```
+#### 13.3.4 Goose
 
-The `opencode.jsonc` configures Kronk as a custom provider. The `agent.md`
-file provides custom instructions that tell the model to use Kronk's
-`kronk_fuzzy_edit` MCP tool for file edits. The `auth.json` file provides
-a placeholder API key for local use.
+Target: `make agents-default-goose`
 
-**Key settings in `opencode.jsonc`:**
+Files installed under `~/.config/goose/`:
 
-```json
-{
-  "model": "kronk/Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
-  "provider": {
-    "kronk": {
-      "npm": "@ai-sdk/openai-compatible",
-      "options": {
-        "baseURL": "http://127.0.0.1:11435/v1"
-      }
-    }
-  },
-  "mcp": {
-    "kronk": {
-      "type": "remote",
-      "url": "http://localhost:9000/mcp"
-    }
-  }
-}
-```
+- `config.yaml` — selects Kronk provider/model and configures Goose
+  built-in extensions.
+- `custom_providers/custom_kronk.json` — Kronk provider definition
+  (OpenAI-compatible engine, `http://localhost:11435/v1`).
+- `AGENTS.md` — house rules.
+- `skills/` — `kronk-mcp`, `writing-go`.
 
-_Note: OpenCode prefixes MCP tool names with the server name in lowercase
-(e.g., `kronk` server → `kronk_fuzzy_edit`)._
-
-Reference files: `.agents/opencode/`
-
-### 13.5 Goose
-
-[Goose](https://block.github.io/goose/) is a terminal-based AI agent from
-Block.
-
-**Installation:**
-
-Copy the config from `.agents/goose/` to Goose's config directory:
-
-```bash
-cp .agents/goose/config.yaml       ~/.config/goose/config.yaml
-cp .agents/goose/custom_kronk.json ~/.config/goose/custom_providers/custom_kronk.json
-```
-
-**Key settings in `config.yaml`:**
+Key settings in `config.yaml`:
 
 ```yaml
 GOOSE_PROVIDER: kronk
-GOOSE_MODEL: Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT
+GOOSE_MODEL: gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT
 ```
 
-The `custom_kronk.json` file configures the Kronk provider connection.
+### 13.4 Rote Bundle (MCP via rote)
 
-Reference files: `.agents/goose/`
+The rote bundle replaces the host's direct MCP wiring with the
+[rote](https://www.modiqo.ai/) execution layer. The agent calls Kronk's
+MCP tools by shelling out to the `rote` CLI inside a `playground`
+workspace, instead of opening an MCP HTTP connection itself.
+
+Rote is **opt-in** — none of these targets are pulled in by
+`install-tooling` or any default-bundle target. Modiqo's registry is
+invite-only; see [.agents/rote/NOTES.md](../.agents/rote/NOTES.md) for
+the full architecture, file map, and call flow.
+
+**Standard install order:**
+
+```shell
+make agents-rote-install   # install the rote CLI
+make agents-rote-login     # one-time interactive registry login
+make agents-rote-seed      # seed ~/.rote/ with the kronk adapter
+                           # and create the playground workspace
+make agents-rote-<host>    # ship the rote-aware bundle for your host
+```
+
+Per-host targets:
+
+```shell
+make agents-rote-opencode
+make agents-rote-kilo
+make agents-rote-pi
+make agents-rote-goose
+```
+
+Each per-host target ships the same four pieces as the default bundle,
+but:
+
+- The host config has **no** `mcp` block (the direct path is removed
+  by design).
+- `AGENTS.md` and the `kronk-mcp` skill teach the agent to drive Kronk
+  via `rote kronk_probe` / `rote kronk_call` from Bash, inside the
+  `playground` workspace.
+
+If you don't have a Modiqo invite, use the default bundle.
+
+### 13.5 Wiping Agent State
+
+Use `make agents-wipe` when you want to verify a bundle in isolation,
+without leftovers from a previous install. It removes:
+
+- `~/.rote/` (workspaces, adapters, secrets, registry session, caches).
+- The `rote` binary on `PATH`, if installed.
+- `~/.config/opencode/`, `~/.config/kilo/`, `~/.pi/`, `~/.config/goose/`
+  in their entirety.
+
+Idempotent — safe to re-run on an already-clean machine. After wiping,
+re-install with `make agents-default-<host>` or
+`make agents-rote-<host>`.
 
 ### 13.6 OpenWebUI
 
@@ -241,23 +314,23 @@ OpenWebUI is a self-hosted chat interface that works with Kronk.
 
 **Configure OpenWebUI:**
 
-1. Open OpenWebUI settings
-2. Navigate to Connections → OpenAI API
+1. Open OpenWebUI settings.
+2. Navigate to Connections → OpenAI API.
 3. Set the base URL:
 
 ```
 http://localhost:11435/v1
 ```
 
-4. Set API key to your Kronk token (or any value if auth is disabled)
-5. Save and refresh models
+4. Set API key to your Kronk token (or any value if auth is disabled).
+5. Save and refresh models.
 
 **Features that work:**
 
-- Chat completions with streaming
-- Model selection from available models
-- System prompts
-- Conversation history
+- Chat completions with streaming.
+- Model selection from available models.
+- System prompts.
+- Conversation history.
 
 ### 13.7 Python OpenAI SDK
 
