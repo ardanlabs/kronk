@@ -1092,3 +1092,51 @@ agents-rote-goose:
 	cp .agents/rote/AGENTS.md $$HOME/.config/goose/AGENTS.md
 	rm -rf $$HOME/.config/goose/skills
 	cp -r .agents/rote/skills $$HOME/.config/goose/skills
+
+# ==============================================================================
+# Agents — Wipe
+#
+# Nuke every trace of every agent bundle this makefile knows how to install,
+# so the next `agents-default-<host>` or `agents-rote-<host>` runs against a
+# clean box. Use this when you want to verify a bundle in isolation —
+# without it you'd be testing one bundle layered over leftovers from the
+# other (or from a previous install of the same one), which has bitten us
+# before.
+#
+# What this removes (regardless of which bundle put it there):
+#   1. ~/.rote/                                 — workspaces, adapters,
+#                                                 secrets, registry session,
+#                                                 runtime caches. Per
+#                                                 .agents/rote/NOTES.md
+#                                                 §Update/uninstall.
+#   2. The `rote` binary on PATH                — installed by
+#                                                 agents-rote-install.
+#   3. Every host config dir we ever write to   — opencode, kilo, pi, goose.
+#                                                 We blow away the whole
+#                                                 directory (configs,
+#                                                 sessions, threads, the lot)
+#                                                 rather than cherry-picking
+#                                                 files, so anything either
+#                                                 bundle (default or rote)
+#                                                 ever dropped is gone.
+#
+# Idempotent: every step uses `rm -f`/`rm -rf`, so re-running on an
+# already-clean machine is a no-op.
+agents-wipe:
+	@echo "==> removing ~/.rote/"
+	rm -rf $$HOME/.rote
+	@echo "==> removing rote binary (if present)"
+	@if command -v rote >/dev/null 2>&1; then \
+		rm -f "$$(command -v rote)" && echo "removed $$(command -v rote 2>/dev/null || echo rote)"; \
+	else \
+		echo "rote binary not on PATH — skipping"; \
+	fi
+	@echo "==> removing opencode agent config"
+	rm -rf $$HOME/.config/opencode
+	@echo "==> removing kilo agent config"
+	rm -rf $$HOME/.config/kilo
+	@echo "==> removing pi agent config"
+	rm -rf $$HOME/.pi
+	@echo "==> removing goose agent config"
+	rm -rf $$HOME/.config/goose
+	@echo "==> done. machine is in a pre-install state; run agents-default-<host> or agents-rote-<host> to reinstall."
