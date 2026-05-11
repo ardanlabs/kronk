@@ -930,8 +930,8 @@ debug-completions-gemma:
 # raw MCP. Most contributors use this.
 #
 # Each target ships .agents/default/<host>/* plus the rote-free
-# AGENTS.md to the host's config directory. No skills shipped (the
-# only project skill, `rote`, ships with the rote bundle below).
+# AGENTS.md and the .agents/default/skills/ tree (kronk-mcp,
+# writing-go) to the host's config directory.
 #
 # Pick the target for the agent host you actually use:
 #
@@ -941,7 +941,8 @@ debug-completions-gemma:
 #   make agents-default-goose
 #
 # Note on `rm -rf … skills`: keeps the copy idempotent and also prunes
-# any rote skill left behind from a previous `agents-rote-<host>` run.
+# any rote skill left behind from a previous `agents-rote-<host>` run
+# before the default skill tree is laid down.
 
 agents-default-opencode:
 	mkdir -p $$HOME/.config/opencode
@@ -949,12 +950,14 @@ agents-default-opencode:
 	cp .agents/default/opencode/auth.json $$HOME/.config/opencode/auth.json
 	cp .agents/default/AGENTS.md $$HOME/.config/opencode/AGENTS.md
 	rm -rf $$HOME/.config/opencode/skills
+	cp -r .agents/default/skills $$HOME/.config/opencode/skills
 
 agents-default-kilo:
 	mkdir -p $$HOME/.config/kilo
 	cp .agents/default/kilo/kilo.json $$HOME/.config/kilo/kilo.json
 	cp .agents/default/AGENTS.md $$HOME/.config/kilo/AGENTS.md
 	rm -rf $$HOME/.config/kilo/skills
+	cp -r .agents/default/skills $$HOME/.config/kilo/skills
 
 agents-default-pi:
 	mkdir -p $$HOME/.pi/agent
@@ -962,6 +965,7 @@ agents-default-pi:
 	cp .agents/default/pi/mcp.json $$HOME/.pi/agent/mcp.json
 	cp .agents/default/AGENTS.md $$HOME/.pi/AGENTS.md
 	rm -rf $$HOME/.pi/skills
+	cp -r .agents/default/skills $$HOME/.pi/skills
 
 agents-default-goose:
 	mkdir -p $$HOME/.config/goose/custom_providers
@@ -969,6 +973,7 @@ agents-default-goose:
 	cp .agents/default/goose/custom_kronk.json $$HOME/.config/goose/custom_providers/custom_kronk.json
 	cp .agents/default/AGENTS.md $$HOME/.config/goose/AGENTS.md
 	rm -rf $$HOME/.config/goose/skills
+	cp -r .agents/default/skills $$HOME/.config/goose/skills
 
 # ==============================================================================
 # Agents — Rote bundle
