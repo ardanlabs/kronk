@@ -16,10 +16,10 @@ In this talk, Bill will show why self-hosted inference belongs in your Go applic
   - Small, capable models that run on a laptop (e.g. `Qwen3.5-0.8B-Q8_0`)
   - Quantization in plain English: trading a little quality for a lot of speed and memory
   - Picking the right model size for your machine
-- Doing It The Go Way
+- Where Kronk fits in as a FOSS Go SDK
   - The usual paths: CGO, Python, network hop to Ollama — and why they hurt
+- How Kronk Works
   - What "native Go inference" actually requires (GPU/CPU, batching, caching)
-  - Where Kronk fits in as a FOSS Go SDK
 
 ### Live Demo
 
