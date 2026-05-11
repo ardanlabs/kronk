@@ -143,7 +143,7 @@ func (d DraftModelConfig) MainGPU() int    { return intOr(d.PtrMainGPU, 0) }
 // devices are specified, the model is distributed across them according to the
 // SplitMode and TensorSplit configuration. Device names can be obtained from
 // the output of llama-bench --list-devices (e.g., "CUDA0", "CUDA1", "Metal").
-// When empty and Device is also empty, the default device selection is used.
+// When empty, the default device selection is used.
 //
 // FlashAttention controls Flash Attention mode. Flash Attention reduces memory
 // usage and speeds up attention computation, especially for large context windows.

@@ -47,7 +47,6 @@ func init() {
 	Cmd.Flags().String("pool-ttl", "", "Cache TTL duration (e.g., 5m, 1h)")
 
 	// Runtime settings
-	Cmd.Flags().String("device", "", "Device to use for inference (e.g., cuda, metal, rocm)")
 	Cmd.Flags().String("base-path", "", "Base path for kronk data")
 	Cmd.Flags().String("lib-path", "", "Path to llama library")
 	Cmd.Flags().String("lib-version", "", "Version of llama library")
