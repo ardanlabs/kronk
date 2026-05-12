@@ -525,6 +525,19 @@ func (m *Model) parseParams(d D) (Params, error) {
 		p.Grammar = grammar
 	}
 
+	// OpenAI-compatible response_format. Only applied when neither an explicit
+	// grammar nor a json_schema field has already been provided so the
+	// Kronk-native fields take precedence.
+	if val, exists := d["response_format"]; exists && p.Grammar == "" {
+		grammar, err := fromResponseFormat(val)
+		if err != nil {
+			return Params{}, fmt.Errorf("to-params: %w", err)
+		}
+		if grammar != "" {
+			p.Grammar = grammar
+		}
+	}
+
 	if val, exists := d["logprobs"]; exists {
 		logprobs, err := parseBool("logprobs", val)
 		if err != nil {

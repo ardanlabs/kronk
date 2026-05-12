@@ -76,6 +76,60 @@ func fromJSONSchema(schema any) (string, error) {
 	return gb.build(), nil
 }
 
+// fromResponseFormat converts the OpenAI-compatible "response_format" object
+// into an equivalent GBNF grammar string. It supports "text" (no constraint),
+// "json_object", and "json_schema" types. Returns ("", nil) when the format is
+// "text" or empty.
+func fromResponseFormat(rf any) (string, error) {
+	var rfMap map[string]any
+
+	switch v := rf.(type) {
+	case map[string]any:
+		rfMap = v
+
+	case D:
+		rfMap = map[string]any(v)
+
+	default:
+		return "", nil
+	}
+
+	formatType, _ := rfMap["type"].(string)
+
+	switch formatType {
+	case "", "text":
+		return "", nil
+
+	case "json_object":
+		return fromJSONSchema(map[string]any{"type": "object"})
+
+	case "json_schema":
+		var wrapper map[string]any
+
+		switch s := rfMap["json_schema"].(type) {
+		case map[string]any:
+			wrapper = s
+
+		case D:
+			wrapper = map[string]any(s)
+
+		default:
+			return "", fmt.Errorf("from-response-format: missing json_schema field")
+		}
+
+		// OpenAI's standard wraps the schema under a "schema" key. Accept the
+		// schema being passed directly as a fallback for lenient clients.
+		if schema, ok := wrapper["schema"]; ok {
+			return fromJSONSchema(schema)
+		}
+
+		return fromJSONSchema(wrapper)
+
+	default:
+		return "", fmt.Errorf("from-response-format: unsupported type %q", formatType)
+	}
+}
+
 // =============================================================================
 // Grammar builder for JSON Schema conversion.
 
