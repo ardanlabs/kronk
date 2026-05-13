@@ -115,12 +115,16 @@ func probeFootprints(t *testing.T, modelA, modelB string) (int64, int64) {
 // not both. Loading B after A must trigger reserveWithEviction's
 // budget-driven eviction loop, unload A, then admit B.
 func evictsOnSecondLoad(t *testing.T, modelA, modelB string, sizeA, sizeB int64) {
-	budget := max(sizeA, sizeB) + 64*MiB
-
-	// resman subtracts DefaultRAMHeadroomBytes from the RAM budget;
-	// inflate the snapshot so the *effective* budget after headroom
-	// matches our intended value.
-	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: budget + resman.DefaultRAMHeadroomBytes}
+	// Size the snapshot so the *effective* RAM budget (snapshot minus the
+	// resman's 5% headroom) is just large enough to hold the larger of
+	// the two models alone, with a 64 MiB slack for plan-time variance.
+	// Loading the second model must therefore push the pool over budget
+	// and trigger reserveWithEviction.
+	maxFootprint := max(sizeA, sizeB)
+	snap := resman.Snapshot{
+		UnifiedMemory: true,
+		RAMBytes:      maxFootprint*100/95 + 64*MiB,
+	}
 	cfg := pool.Config{
 		Log:           log,
 		ModelsInPool:  10, // cap is well above 2; budget drives eviction.
@@ -166,7 +170,7 @@ func evictsOnSecondLoad(t *testing.T, modelA, modelB string, sizeA, sizeB int64)
 // request up front; no eviction should run because there is no
 // reservation that could free enough budget.
 func rejectsInfeasibleRequest(t *testing.T, modelA string, sizeA int64) {
-	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA/2 + resman.DefaultRAMHeadroomBytes}
+	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA / 2}
 	cfg := pool.Config{
 		Log:           log,
 		ModelsInPool:  10,
@@ -201,7 +205,7 @@ func rejectsInfeasibleRequest(t *testing.T, modelA string, sizeA int64) {
 // returns its bytes to the budget so a re-acquire under the same tight
 // snapshot succeeds.
 func releaseRestoresBudget(t *testing.T, modelA string, sizeA int64) {
-	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA + 64*MiB + resman.DefaultRAMHeadroomBytes}
+	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA + 64*MiB}
 	cfg := pool.Config{
 		Log:           log,
 		ModelsInPool:  10,

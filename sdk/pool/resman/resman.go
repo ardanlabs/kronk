@@ -54,26 +54,6 @@ func New(cfg Config) (*Manager, error) {
 		headroom = 0
 	}
 
-	ramHeadroom := cfg.RAMHeadroomBytes
-	if ramHeadroom == 0 {
-		ramHeadroom = DefaultRAMHeadroomBytes
-
-		// Cap the default headroom at 1/16th of total RAM so it does not
-		// dominate the budget on small hosts (e.g. 16 GiB CI runners
-		// where the flat default would still leave too little room for
-		// a ~14 GiB model). Hosts with ≥32 GiB get the full
-		// DefaultRAMHeadroomBytes.
-		if cfg.Snapshot.RAMBytes > 0 {
-			if proportional := cfg.Snapshot.RAMBytes / 16; proportional < ramHeadroom {
-				ramHeadroom = proportional
-			}
-		}
-	}
-
-	if ramHeadroom < 0 {
-		ramHeadroom = 0
-	}
-
 	m := Manager{
 		budgetPercent: cfg.BudgetPercent,
 		headroomBytes: headroom,
@@ -102,7 +82,20 @@ func New(cfg Config) (*Manager, error) {
 	}
 
 	if m.ramTotal > 0 {
-		m.ramBudget = max(int64(float64(m.ramTotal)*float64(cfg.BudgetPercent)/100.0)-ramHeadroom, 0)
+		// Reserve a flat 5% of total RAM as headroom for allocator slop
+		// and out-of-band llama.cpp / OS allocations the VRAM
+		// calculator does not account for. Without this margin a
+		// reservation that fits "on paper" can leave the loader unable
+		// to back its buffers, aborting inside
+		// ggml_backend_buft_alloc_buffer. The percentage scales with
+		// the host so the same rule works on a 16 GiB CI runner and a
+		// 128 GiB workstation.
+		const ramHeadroomPercent = 5
+		effectivePercent := cfg.BudgetPercent - ramHeadroomPercent
+		if effectivePercent < 0 {
+			effectivePercent = 0
+		}
+		m.ramBudget = int64(float64(m.ramTotal) * float64(effectivePercent) / 100.0)
 	}
 
 	return &m, nil
