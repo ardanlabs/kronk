@@ -6,6 +6,17 @@ import "errors"
 const (
 	DefaultBudgetPercent = 80
 	DefaultHeadroomBytes = 256 << 20 // 256 MiB per GPU safety margin.
+
+	// DefaultRAMHeadroomBytes is a fixed safety margin subtracted from the
+	// system-RAM budget after applying BudgetPercent. It absorbs allocator
+	// slop and out-of-band llama.cpp / OS allocations that the VRAM
+	// calculator does not account for, so a reservation that fits "on
+	// paper" still leaves real headroom for the loader to back its
+	// buffers. Without this margin a second model can reserve the last
+	// few GiB of budget while a prior model is still resident, and
+	// llama.cpp aborts inside ggml_backend_buft_alloc_buffer when the
+	// allocator can no longer hand back a backend buffer.
+	DefaultRAMHeadroomBytes = 8 << 30 // 8 GiB system RAM safety margin.
 )
 
 // Sentinel errors returned by the manager.
@@ -61,10 +72,16 @@ type Snapshot struct {
 // HeadroomBytes is an additional per-GPU safety margin subtracted from the
 // budget after applying BudgetPercent. Defaults to DefaultHeadroomBytes
 // (256 MiB) when zero. Pass a negative number to opt out (clamped to zero).
+//
+// RAMHeadroomBytes is the analogous safety margin subtracted from the
+// system-RAM budget after applying BudgetPercent. Defaults to
+// DefaultRAMHeadroomBytes (8 GiB) when zero. Pass a negative number to
+// opt out (clamped to zero).
 type Config struct {
-	Snapshot      Snapshot
-	BudgetPercent int
-	HeadroomBytes int64
+	Snapshot         Snapshot
+	BudgetPercent    int
+	HeadroomBytes    int64
+	RAMHeadroomBytes int64
 }
 
 // PlanRequest describes a model that wants to be loaded.

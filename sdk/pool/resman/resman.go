@@ -54,6 +54,15 @@ func New(cfg Config) (*Manager, error) {
 		headroom = 0
 	}
 
+	ramHeadroom := cfg.RAMHeadroomBytes
+	if ramHeadroom == 0 {
+		ramHeadroom = DefaultRAMHeadroomBytes
+	}
+
+	if ramHeadroom < 0 {
+		ramHeadroom = 0
+	}
+
 	m := Manager{
 		budgetPercent: cfg.BudgetPercent,
 		headroomBytes: headroom,
@@ -82,7 +91,7 @@ func New(cfg Config) (*Manager, error) {
 	}
 
 	if m.ramTotal > 0 {
-		m.ramBudget = int64(float64(m.ramTotal) * float64(cfg.BudgetPercent) / 100.0)
+		m.ramBudget = max(int64(float64(m.ramTotal)*float64(cfg.BudgetPercent)/100.0)-ramHeadroom, 0)
 	}
 
 	return &m, nil
