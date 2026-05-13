@@ -58,12 +58,13 @@ func New(cfg Config) (*Manager, error) {
 	if ramHeadroom == 0 {
 		ramHeadroom = DefaultRAMHeadroomBytes
 
-		// Cap the default headroom at 1/8th of total RAM so it does not
+		// Cap the default headroom at 1/16th of total RAM so it does not
 		// dominate the budget on small hosts (e.g. 16 GiB CI runners
 		// where a flat 8 GiB headroom would shrink the usable budget by
-		// half). Big hosts still get the full DefaultRAMHeadroomBytes.
+		// half, leaving no room for a ~14 GiB model). Hosts with
+		// ≥128 GiB still get the full DefaultRAMHeadroomBytes.
 		if cfg.Snapshot.RAMBytes > 0 {
-			if proportional := cfg.Snapshot.RAMBytes / 8; proportional < ramHeadroom {
+			if proportional := cfg.Snapshot.RAMBytes / 16; proportional < ramHeadroom {
 				ramHeadroom = proportional
 			}
 		}
