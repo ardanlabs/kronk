@@ -16,7 +16,7 @@ const (
 	// few GiB of budget while a prior model is still resident, and
 	// llama.cpp aborts inside ggml_backend_buft_alloc_buffer when the
 	// allocator can no longer hand back a backend buffer.
-	DefaultRAMHeadroomBytes = 8 << 30 // 8 GiB system RAM safety margin.
+	DefaultRAMHeadroomBytes = 2 << 30 // 2 GiB system RAM safety margin.
 )
 
 // Sentinel errors returned by the manager.
@@ -75,7 +75,7 @@ type Snapshot struct {
 //
 // RAMHeadroomBytes is the analogous safety margin subtracted from the
 // system-RAM budget after applying BudgetPercent. Defaults to
-// DefaultRAMHeadroomBytes (8 GiB) when zero. Pass a negative number to
+// DefaultRAMHeadroomBytes (2 GiB) when zero. Pass a negative number to
 // opt out (clamped to zero).
 type Config struct {
 	Snapshot         Snapshot

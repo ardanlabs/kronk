@@ -118,9 +118,15 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		return Result{}, fmt.Errorf("build-from-metadata: failed to parse block_count: %w", err)
 	}
 
+	// head_count_kv is optional. Architectures without GQA (notably BERT
+	// encoders used for embeddings/reranking) omit the key entirely; the
+	// llama.cpp convention is to fall back to head_count in that case.
 	headCountKV, err := gguf.ParseInt64OrArrayAvg(metadata, arch+".attention.head_count_kv")
 	if err != nil {
-		return Result{}, fmt.Errorf("build-from-metadata: failed to parse head_count_kv: %w", err)
+		headCountKV, err = gguf.ParseInt64(metadata, arch+".attention.head_count")
+		if err != nil {
+			return Result{}, fmt.Errorf("build-from-metadata: failed to parse head_count_kv (and head_count fallback): %w", err)
+		}
 	}
 
 	keyLength, valueLength, err := gguf.ResolveKVLengths(metadata, arch)
