@@ -91,10 +91,7 @@ func New(cfg Config) (*Manager, error) {
 		// the host so the same rule works on a 16 GiB CI runner and a
 		// 128 GiB workstation.
 		const ramHeadroomPercent = 5
-		effectivePercent := cfg.BudgetPercent - ramHeadroomPercent
-		if effectivePercent < 0 {
-			effectivePercent = 0
-		}
+		effectivePercent := max(cfg.BudgetPercent-ramHeadroomPercent, 0)
 		m.ramBudget = int64(float64(m.ramTotal) * float64(effectivePercent) / 100.0)
 	}
 
