@@ -92,6 +92,29 @@ func TestHasQuantSuffix(t *testing.T) {
 	}
 }
 
+func TestExtractQuantTag(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"Qwen3.6-35B-A3B-UD-Q8_K_XL", "UD-Q8_K_XL"},
+		{"Qwen3.6-35B-A3B-UD-Q4_K_M", "UD-Q4_K_M"},
+		{"Qwen3.6-35B-A3B-Q4_K_M", "Q4_K_M"},
+		{"gemma-4-26B-A4B-it-UD-IQ3_M", "UD-IQ3_M"},
+		{"Llama-3.3-70B-Instruct-Q8_0-00001-of-00002", "Q8_0"},
+		{"some-model-BF16", "BF16"},
+		{"some-model-F16", "F16"},
+		{"Qwen2-Audio-7B.Q8_0", "Q8_0"},
+		{"Qwen3.6-35B-A3B", ""},
+		{"gemma-4-26B-A4B-it", ""},
+	}
+	for _, tt := range tests {
+		got := extractQuantTag(tt.in)
+		if got != tt.want {
+			t.Errorf("extractQuantTag(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestSelectFiles_ExactMatch(t *testing.T) {
 	siblings := []string{
 		"README.md",
@@ -852,6 +875,67 @@ func TestResolver_TagForm_HFLookup(t *testing.T) {
 	saved := loadResolved(t, rfile)
 	if _, ok := saved.Models[wantCanonical]; !ok {
 		t.Errorf("catalog missing %q; have %v", wantCanonical, mapKeys(saved.Models))
+	}
+}
+
+func TestResolver_TagForm_PinsExplicitRepo(t *testing.T) {
+	// Regression: when two repos under the same provider publish the
+	// same quant basename (e.g. ".../Qwen3.6-35B-A3B-GGUF" and the
+	// sibling ".../Qwen3.6-35B-A3B-MTP-GGUF" both ship
+	// "Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf"), an "owner/repo/file" input
+	// from the BUI Pull screen must land in the repo the user named.
+	// The fix routes those inputs through the "provider/repo:tag" form
+	// in ResolveSource so we hit ModelMeta on the explicit repo and
+	// never reach SearchModels (which could pick the wrong sibling).
+	hfc := &fakeHF{
+		metas: map[string][]string{
+			"unsloth/Qwen3.6-35B-A3B-GGUF": {
+				"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf",
+			},
+			"unsloth/Qwen3.6-35B-A3B-MTP-GGUF": {
+				"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf",
+				"mmproj-F16.gguf",
+			},
+		},
+		// If the resolver ever falls back to SearchModels, the MTP
+		// repo would be returned first and the test would fail.
+		search: map[string][]string{
+			"unsloth|Qwen3.6-35B-A3B": {
+				"unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+				"unsloth/Qwen3.6-35B-A3B-GGUF",
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	rfile := filepath.Join(dir, "catalog.yaml")
+	mustWriteFile(t, rfile, "providers: [unsloth]\nmodels: {}\n")
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+
+	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q8_K_XL")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if res.Family != "Qwen3.6-35B-A3B-GGUF" {
+		t.Errorf("Family = %q, want Qwen3.6-35B-A3B-GGUF (NOT the MTP sibling)", res.Family)
+	}
+
+	wantURL := "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf"
+	if !reflect.DeepEqual(res.DownloadURLs, []string{wantURL}) {
+		t.Errorf("DownloadURLs = %v\nwant [%s]", res.DownloadURLs, wantURL)
+	}
+
+	// Must have hit ModelMeta on the explicit repo only — never
+	// SearchModels, never the MTP repo.
+	for _, c := range hfc.calls {
+		if strings.HasPrefix(c, "search:") {
+			t.Errorf("unexpected SearchModels call: %s", c)
+		}
+		if strings.Contains(c, "MTP") {
+			t.Errorf("unexpected call against MTP sibling: %s", c)
+		}
 	}
 }
 

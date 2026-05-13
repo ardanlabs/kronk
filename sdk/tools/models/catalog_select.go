@@ -40,6 +40,26 @@ func hasQuantSuffix(modelID string) bool {
 	return quantSuffixRe.MatchString(clean)
 }
 
+// extractQuantTag returns just the quant tag portion of modelID
+// (e.g. "UD-Q8_K_XL" from "Qwen3.6-35B-A3B-UD-Q8_K_XL"), or "" when
+// modelID has no recognisable quant suffix. The leading "-" or "."
+// separator is stripped so the result can be used as the tag in the
+// "provider/repo:tag" resolver shape.
+func extractQuantTag(modelID string) string {
+	clean := resolverSplitSuffixRe.ReplaceAllString(modelID, "")
+	loc := quantSuffixRe.FindStringIndex(clean)
+	if loc == nil {
+		return ""
+	}
+
+	tag := clean[loc[0]:loc[1]]
+	if len(tag) > 0 && (tag[0] == '-' || tag[0] == '.') {
+		tag = tag[1:]
+	}
+
+	return tag
+}
+
 // selectFiles picks the GGUF model files (and optional F16 mmproj) that
 // match a requested modelID from a list of repo-relative sibling paths.
 //

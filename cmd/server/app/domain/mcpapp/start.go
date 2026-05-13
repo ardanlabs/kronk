@@ -85,9 +85,19 @@ func Start(ctx context.Context, cfg Config) *App {
 		Description: "Edit a file by replacing old_string with new_string. Uses tiered fuzzy matching: exact match, line-ending normalization, then indentation-insensitive matching. Prefer this over the built-in edit tool for more reliable replacements.",
 	}, api.fuzzyEdit)
 
+	// Run the streamable HTTP handler in stateless mode so we do not retain
+	// per-session state across requests. The server no longer validates the
+	// Mcp-Session-Id header, which means MCP clients that cache a session ID
+	// (Cline, Kilo, OpenCode, Goose, etc.) will continue to work cleanly even
+	// after the Kronk process restarts. Both tools we expose (web_search and
+	// fuzzy_edit) are simple request/response calls that do not need
+	// server->client requests, streaming, or stream resumption, so stateless
+	// is a safe, simple fit.
 	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return server
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: true,
+	})
 
 	logged := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

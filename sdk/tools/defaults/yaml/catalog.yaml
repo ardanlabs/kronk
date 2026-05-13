@@ -234,6 +234,24 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
+  unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL:
+    provider: unsloth
+    family: Qwen3.6-35B-A3B-GGUF
+    revision: main
+    files:
+      - Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
+    file_sizes:
+      - 38451182560
+    mmproj: mmproj-Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
+    mmproj_size: 899283680
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-13T13:43:46.248759Z
   unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
     provider: unsloth
     family: gemma-4-26B-A4B-it-GGUF

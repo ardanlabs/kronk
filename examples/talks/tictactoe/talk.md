@@ -42,6 +42,8 @@ In this talk, Bill will show why self-hosted inference belongs in your Go applic
 
 ```
 
+Score: X: 0 | O: 0 | Draws: 0
+
 1 | 2 | 3
 ----------
 4 | 5 | 6
@@ -52,9 +54,11 @@ Player X's turn. Enter a number (1-9):
 
 ```
 
-- The following board shows the first player selecting space number 5. That `X` should be painted Red.
+- The following board shows the first player selecting space number 5. That `X` should be painted Red (bold).
 
 ```
+Score: X: 0 | O: 0 | Draws: 0
+
 1 | 2 | 3
 ----------
 4 | X | 6
@@ -64,7 +68,7 @@ Player X's turn. Enter a number (1-9):
 Player O's turn. Enter a number (1-9):
 ```
 
-- The following board shows the second player selecting space number 1. That `O` should be painted Blue.
+- The following board shows the second player selecting space number 1. That `O` should be painted Green (bold).
 
 ```
 O | 2 | 3
@@ -79,9 +83,10 @@ Player X's turn. Enter a number (1-9):
 ## More Rules To Follow
 
 - Make sure there is a line space before and after rendering a new board.
-- Use the color red for X, and blue for O.
+- Score tracking: display `Score: X: <n> | O: <n> | Draws: <n>` above the board. Scores persist across games within the same program session.
+- Use the color red (bold) for X, and green (bold) for O.
 - Clear the screen when rendering a new board.
-- When the game is over, clear the screen, render the final board, and show the outcome of the game.
+- When the game is over, clear the screen, render the final board with winning cells blinking for 2 seconds, and show the outcome of the game.
 - Ask Player1 to go first.
 - Each player will choose a number that corresponds to a place on the board.
 - The first player uses `X` and the second player uses `O`.
@@ -94,6 +99,9 @@ Player X's turn. Enter a number (1-9):
 - Do not attempt to run the game yourself.
 - Compile the program to validate it compiles. Fix any errors that you find. Then remove the binary you created to validate the code.
 - Run go fmt to make sure the code is properly formatted.
+- Invalid input (occupied space, non-numeric, out of range): Print an error and re-prompt the same player.
+- Play again prompt: Accept `y`/`n` keys.
+- Colors: Use standard ANSI escape codes (`\033[32m` green, `\033[31m` red, `\033[37m` white). Bold text for X and O (`\033[1m`). Blinking for winning cells (`\033[5m`).
 
 ## Questions and Plan
 

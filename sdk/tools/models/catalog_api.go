@@ -77,7 +77,20 @@ func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, 
 			}, nil
 		}
 
-		id = fmt.Sprintf("%s/%s", owner, extractModelID(file))
+		// The user pinned a specific repo (owner/repo/file). Preserve
+		// that pin by routing through the "provider/repo:tag" form so
+		// the resolver does not search HF and accidentally land in a
+		// sibling repo (e.g. ".../Qwen3.6-35B-A3B-MTP-GGUF") that
+		// happens to publish the same quant basename. When the file
+		// lacks a recognisable quant suffix, fall back to the bare
+		// canonical id — this only affects unusual repos whose GGUFs
+		// don't follow the standard quant naming.
+		modelID := extractModelID(file)
+		if tag := extractQuantTag(modelID); tag != "" {
+			id = fmt.Sprintf("%s/%s:%s", owner, repo, tag)
+		} else {
+			id = fmt.Sprintf("%s/%s", owner, modelID)
+		}
 	}
 
 	res, err := NewResolver(m, rfile).Resolve(ctx, id)
