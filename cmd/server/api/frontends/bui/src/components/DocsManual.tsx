@@ -3311,7 +3311,7 @@ kronk server start`}</code></pre>
           <p><strong>Project Reference Configuration</strong></p>
           <p>The Kronk repository includes a comprehensive reference configuration with recommended settings for various models and use cases at <code>zarf/kms/model_config.yaml</code>. It includes:</p>
           <ul>
-            <li>Optimized configurations for coding agents (Cline, OpenCode)</li>
+            <li>Optimized configurations for coding agents (OpenCode)</li>
             <li>YaRN extended context examples</li>
             <li>IMC configuration for message caching</li>
             <li>Vision and audio model settings</li>
@@ -4918,10 +4918,19 @@ response = client.chat.completions.create(
           <hr />
           <p><em>Next: &lt;a href="#chapter-13-client-integration"&gt;Chapter 13: Client Integration&lt;/a&gt;</em></p>
           <h2 id="chapter-13-client-integration">Chapter 13: Client Integration</h2>
-          <p>Kronk's OpenAI-compatible API works with popular AI clients, coding agents, and tools. This chapter covers configuration for the CLI-style coding agents that talk to Kronk, plus a few general-purpose clients.</p>
-          <p>Reference configuration files for each agent are provided in the <code>.agents/</code> directory at the project root. Each supported host has a ready-to-deploy bundle, installed via a <code>make</code> target — you do not hand-edit each host config.</p>
-          <h3 id="131-coding-agent-model-configuration">13.1 Coding Agent Model Configuration</h3>
-          <p>All coding agents share the same Kronk server and model configuration. The model is configured in <code>model_config.yaml</code> (or the catalog) with an <code>/AGENT</code> suffix that the agent references as its model name.</p>
+          <p>Kronk's OpenAI-compatible API works with popular AI clients, coding agents, and tools. OpenCode is the only coding agent the project supports and ships configuration for. This chapter covers installing OpenCode, wiring it into Kronk via the bundles in <code>.agents/</code>, swapping out the model OpenCode uses, plus a few general-purpose clients (OpenWebUI, Python SDK, curl, LangChain).</p>
+          <h3 id="131-installing-opencode">13.1 Installing OpenCode</h3>
+          <p>Install OpenCode with the official installer:</p>
+          <pre className="code-block"><code className="language-shell">{`curl -fsSL https://opencode.ai/install | bash`}</code></pre>
+          <p>For other install options (Homebrew, npm, manual binaries, etc.) see the official download page:</p>
+          <p><a href="https://opencode.ai/download">https://opencode.ai/download</a></p>
+          <p>Verify the install:</p>
+          <pre className="code-block"><code className="language-shell">{`opencode --version`}</code></pre>
+          <p>Once OpenCode is on your <code>PATH</code>, install the Kronk bundle to wire it into the local Kronk server:</p>
+          <pre className="code-block"><code className="language-shell">{`make agents-default-opencode`}</code></pre>
+          <p>That target copies a ready-to-run config (provider, MCP, skills, <code>AGENTS.md</code>) into <code>~/.config/opencode/</code>. See section 13.4 for the details. To change which model OpenCode uses after install, see section 13.5.</p>
+          <h3 id="132-coding-agent-model-configuration">13.2 Coding Agent Model Configuration</h3>
+          <p>OpenCode and the Kronk server share the same model configuration. The model is configured in <code>model_config.yaml</code> (or the catalog) with an <code>/AGENT</code> suffix that OpenCode references as its model name.</p>
           <p><strong>Recommended Configuration:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
   context-window: 131072
@@ -4948,51 +4957,43 @@ response = client.chat.completions.create(
             <li><strong>&lt;code&gt;context-window: 131072&lt;/code&gt;</strong> — Large context windows are important for coding agents that accumulate tool results, file contents, and long conversations.</li>
           </ul>
           <p><strong>Kronk MCP Service:</strong></p>
-          <p>The Kronk MCP service exposes two tools to coding agents:</p>
+          <p>The Kronk MCP service exposes two tools to OpenCode:</p>
           <ul>
             <li><code>web_search</code> — Brave-powered web search.</li>
             <li><code>fuzzy_edit</code> — fallback file editor for when the host's exact-match edit tool misses on whitespace or line-ending drift.</li>
           </ul>
-          <p>It starts automatically with the Kronk server on <code>http://localhost:9000/mcp</code>. Every bundle below wires this endpoint into the host (directly, or through rote).</p>
-          <h3 id="132-agent-bundles-in-`agents`">13.2 Agent Bundles in `.agents/`</h3>
-          <p>Two bundles ship in the repo. Pick one based on whether you want Kronk's MCP service wired directly into your agent host, or routed through the <a href="https://www.modiqo.ai/">rote</a> execution layer.</p>
+          <p>It starts automatically with the Kronk server on <code>http://localhost:9000/mcp</code>. Both bundles below wire this endpoint into OpenCode (directly, or through rote).</p>
+          <h3 id="133-agent-bundles-in-`agents`">13.3 Agent Bundles in `.agents/`</h3>
+          <p>Two bundles ship in the repo. Pick one based on whether you want Kronk's MCP service wired directly into OpenCode, or routed through the <a href="https://www.modiqo.ai/">rote</a> execution layer.</p>
           <pre className="code-block"><code>{`.agents/
 ├── default/        # Direct MCP — most contributors use this
 │   ├── AGENTS.md
 │   ├── opencode/
-│   ├── kilo/
-│   ├── pi/
-│   ├── goose/
+│   │   ├── opencode.jsonc
+│   │   └── auth.json
 │   └── skills/
 │       ├── kronk-mcp/
 │       └── writing-go/
-└── rote/           # Same hosts, but MCP traffic goes through rote
+└── rote/           # Same host, but MCP traffic goes through rote
     ├── AGENTS.md
     ├── adapters/kronk/
     ├── opencode/
-    ├── kilo/
-    ├── pi/
-    ├── goose/
+    │   ├── opencode.jsonc
+    │   └── auth.json
     ├── skills/
     └── NOTES.md`}</code></pre>
-          <p>Both bundles ship four pieces to each host's config directory:</p>
+          <p>Both bundles ship four pieces to OpenCode's config directory (<code>~/.config/opencode/</code>):</p>
           <ol>
-            <li>The host's provider/MCP config (<code>opencode.jsonc</code>, <code>kilo.json</code>, etc.).</li>
-            <li>An <code>AGENTS.md</code> file — house rules for the agent (mandatory skills, editing policy, "never curl <code>localhost:9000</code> directly", etc.).</li>
-            <li>A <code>skills/</code> tree — at minimum <code>kronk-mcp</code> (how to use Kronk's MCP tools) and <code>writing-go</code> (Go toolchain workflow + post-edit chain).</li>
-            <li>Per-host extras (e.g. <code>auth.json</code> for OpenCode, <code>custom_kronk.json</code> for Goose).</li>
+            <li><code>opencode.jsonc</code> — provider/MCP config.</li>
+            <li><code>auth.json</code> — placeholder API key for local use.</li>
+            <li><code>AGENTS.md</code> — house rules for the agent (mandatory skills, editing policy, "never curl <code>localhost:9000</code> directly", etc.).</li>
+            <li><code>skills/</code> — at minimum <code>kronk-mcp</code> (how to use Kronk's MCP tools) and <code>writing-go</code> (Go toolchain workflow + post-edit chain).</li>
           </ol>
-          <p>Supported hosts: <strong>OpenCode</strong>, <strong>Kilo Code</strong>, <strong>Pi</strong>, <strong>Goose</strong>. Cline is no longer supported.</p>
-          <h3 id="133-default-bundle-direct-mcp">13.3 Default Bundle (Direct MCP)</h3>
-          <p>The default bundle wires Kronk's MCP server directly into each host so the agent can call <code>web_search</code> and <code>fuzzy_edit</code> over raw MCP. No extra runtime layer.</p>
-          <p>Install the bundle for the host you actually use:</p>
-          <pre className="code-block"><code className="language-shell">{`make agents-default-opencode
-make agents-default-kilo
-make agents-default-pi
-make agents-default-goose`}</code></pre>
-          <p>Each target creates the host's config directory if needed, copies the host config, drops in <code>AGENTS.md</code>, and refreshes the <code>skills/</code> tree. Re-running a target is idempotent.</p>
-          <h4 id="1331-opencode">13.3.1 OpenCode</h4>
-          <p>Target: <code>make agents-default-opencode</code></p>
+          <h3 id="134-default-bundle-direct-mcp">13.4 Default Bundle (Direct MCP)</h3>
+          <p>The default bundle wires Kronk's MCP server directly into OpenCode so the agent can call <code>web_search</code> and <code>fuzzy_edit</code> over raw MCP. No extra runtime layer.</p>
+          <p>Install the bundle:</p>
+          <pre className="code-block"><code className="language-shell">{`make agents-default-opencode`}</code></pre>
+          <p>The target creates <code>~/.config/opencode/</code> if needed, copies the host config, drops in <code>AGENTS.md</code>, and refreshes the <code>skills/</code> tree. Re-running it is idempotent.</p>
           <p>Files installed under <code>~/.config/opencode/</code>:</p>
           <ul>
             <li><code>opencode.jsonc</code> — Kronk registered as a custom provider plus MCP server entry.</li>
@@ -5002,11 +5003,15 @@ make agents-default-goose`}</code></pre>
           </ul>
           <p>Key settings in <code>opencode.jsonc</code>:</p>
           <pre className="code-block"><code className="language-jsonc">{`{
-  "model": "kronk/Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
+  "model": "kronk/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
   "provider": {
     "kronk": {
       "npm": "@ai-sdk/openai-compatible",
-      "options": { "baseURL": "http://127.0.0.1:11435/v1" }
+      "options": { "baseURL": "http://127.0.0.1:11435/v1" },
+      "models": {
+        "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": { ... },
+        "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": { ... }
+      }
     }
   },
   "mcp": {
@@ -5017,87 +5022,52 @@ make agents-default-goose`}</code></pre>
   }
 }`}</code></pre>
           <p>OpenCode prefixes MCP tool names with the (lowercase) server name — <code>kronk_web_search</code>, <code>kronk_fuzzy_edit</code>.</p>
-          <h4 id="1332-kilo-code">13.3.2 Kilo Code</h4>
-          <p>Target: <code>make agents-default-kilo</code></p>
-          <p>Files installed under <code>~/.config/kilo/</code>:</p>
+          <h3 id="135-changing-the-model-opencode-uses">13.5 Changing the Model OpenCode Uses</h3>
+          <p>Swapping the model OpenCode talks to has two parts: register the model on the Kronk side (so the server can serve it) and tell OpenCode to use it on the client side.</p>
+          <p><strong>1. Make sure the model is configured on the Kronk server.</strong></p>
+          <p>Add (or confirm) the model in <code>zarf/kms/model_config.yaml</code> with the <code>/AGENT</code> suffix. Use the recommended settings from section 13.2:</p>
+          <pre className="code-block"><code className="language-yaml">{`my-new-model-Q4_K_M/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95`}</code></pre>
+          <p>Restart the Kronk server (<code>make kronk-server</code>) so the new model is picked up.</p>
+          <p><strong>2. Point OpenCode at the new model.</strong></p>
+          <p>Edit <code>~/.config/opencode/opencode.jsonc</code> and update two places:</p>
           <ul>
-            <li><code>kilo.json</code> — Kronk provider, MCP entry, model definitions.</li>
-            <li><code>AGENTS.md</code> — house rules.</li>
-            <li><code>skills/</code> — <code>kronk-mcp</code>, <code>writing-go</code>.</li>
+            <li>The top-level <code>model</code> field — this is the active default. Format is <code>&lt;provider&gt;/&lt;model-name&gt;</code>, so for the Kronk provider: ```jsonc "model": "kronk/my-new-model-Q4_K_M/AGENT" ```</li>
+            <li>The <code>provider.kronk.models</code> map — add a new entry so OpenCode knows the model exists and what its limits are: ```jsonc "models": &#123; "my-new-model-Q4_K_M/AGENT": &#123; "name": "My New Model Q4_K_M", "limit": &#123; "context": 131072, "output": 65536 &#125; &#125; &#125; ```</li>
           </ul>
-          <p>Key settings in <code>kilo.json</code>:</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
-  "provider": {
-    "kronk": {
-      "npm": "@ai-sdk/openai-compatible",
-      "options": {
-        "baseURL": "http://localhost:11435/v1",
-        "apiKey": "123"
-      }
-    }
-  },
-  "mcp": {
-    "Kronk": {
-      "type": "remote",
-      "url": "http://localhost:9000/mcp",
-      "enabled": true,
-      "timeout": 60000
-    }
-  }
-}`}</code></pre>
-          <p>Kilo prefixes MCP tool names with the server name (capitalized as configured) — <code>Kronk_web_search</code>, <code>Kronk_fuzzy_edit</code>.</p>
-          <h4 id="1333-pi">13.3.3 Pi</h4>
-          <p>Target: <code>make agents-default-pi</code></p>
-          <p>Files installed under <code>~/.pi/</code>:</p>
-          <ul>
-            <li><code>agent/models.json</code> — Kronk provider + model definitions.</li>
-            <li><code>agent/mcp.json</code> — Kronk MCP server entry (<code>directTools: true</code>).</li>
-            <li><code>AGENTS.md</code> — house rules.</li>
-            <li><code>skills/</code> — <code>kronk-mcp</code>, <code>writing-go</code>.</li>
-          </ul>
-          <p>Because Pi sets <code>directTools: true</code>, MCP tool names are exposed without the server prefix: <code>web_search</code>, <code>fuzzy_edit</code>.</p>
-          <h4 id="1334-goose">13.3.4 Goose</h4>
-          <p>Target: <code>make agents-default-goose</code></p>
-          <p>Files installed under <code>~/.config/goose/</code>:</p>
-          <ul>
-            <li><code>config.yaml</code> — selects Kronk provider/model and configures Goose built-in extensions.</li>
-            <li><code>custom_providers/custom_kronk.json</code> — Kronk provider definition (OpenAI-compatible engine, <code>http://localhost:11435/v1</code>).</li>
-            <li><code>AGENTS.md</code> — house rules.</li>
-            <li><code>skills/</code> — <code>kronk-mcp</code>, <code>writing-go</code>.</li>
-          </ul>
-          <p>Key settings in <code>config.yaml</code>:</p>
-          <pre className="code-block"><code className="language-yaml">{`GOOSE_PROVIDER: kronk
-GOOSE_MODEL: gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT`}</code></pre>
-          <h3 id="134-rote-bundle-mcp-via-rote">13.4 Rote Bundle (MCP via rote)</h3>
-          <p>The rote bundle replaces the host's direct MCP wiring with the <a href="https://www.modiqo.ai/">rote</a> execution layer. The agent calls Kronk's MCP tools by shelling out to the <code>rote</code> CLI inside a <code>playground</code> workspace, instead of opening an MCP HTTP connection itself.</p>
-          <p>Rote is <strong>opt-in</strong> — none of these targets are pulled in by <code>install-tooling</code> or any default-bundle target. Modiqo's registry is invite-only; see <a href="../.agents/rote/NOTES.md">.agents/rote/NOTES.md</a> for the full architecture, file map, and call flow.</p>
+          <p>You can pre-register multiple models in the <code>models</code> map and switch between them inside OpenCode with the <code>/models</code> command — the top-level <code>model</code> field just sets the startup default.</p>
+          <p><strong>3. Re-shipping the bundle.</strong></p>
+          <p>If you want this to be the default for everyone using the bundle (not just your machine), make the same edits in <code>.agents/default/opencode/opencode.jsonc</code> (and <code>.agents/rote/opencode/opencode.jsonc</code> if you use rote), then re-run <code>make agents-default-opencode</code> (or <code>make agents-rote-opencode</code>) on each machine to push the new config into <code>~/.config/opencode/</code>.</p>
+          <h3 id="136-rote-bundle-mcp-via-rote">13.6 Rote Bundle (MCP via rote)</h3>
+          <p>The rote bundle replaces OpenCode's direct MCP wiring with the <a href="https://www.modiqo.ai/">rote</a> execution layer. The agent calls Kronk's MCP tools by shelling out to the <code>rote</code> CLI inside a <code>playground</code> workspace, instead of opening an MCP HTTP connection itself.</p>
+          <p>Rote is <strong>opt-in</strong> — none of these targets are pulled in by <code>install-tooling</code> or by <code>agents-default-opencode</code>. Modiqo's registry is invite-only; see <a href="../.agents/rote/NOTES.md">.agents/rote/NOTES.md</a> for the full architecture, file map, and call flow.</p>
           <p><strong>Standard install order:</strong></p>
           <pre className="code-block"><code className="language-shell">{`make agents-rote-install   # install the rote CLI
 make agents-rote-login     # one-time interactive registry login
 make agents-rote-seed      # seed ~/.rote/ with the kronk adapter
                            # and create the playground workspace
-make agents-rote-<host>    # ship the rote-aware bundle for your host`}</code></pre>
-          <p>Per-host targets:</p>
-          <pre className="code-block"><code className="language-shell">{`make agents-rote-opencode
-make agents-rote-kilo
-make agents-rote-pi
-make agents-rote-goose`}</code></pre>
-          <p>Each per-host target ships the same four pieces as the default bundle, but:</p>
+make agents-rote-opencode  # ship the rote-aware bundle for OpenCode`}</code></pre>
+          <p>The <code>agents-rote-opencode</code> target ships the same four pieces as the default bundle, but:</p>
           <ul>
             <li>The host config has <strong>no</strong> <code>mcp</code> block (the direct path is removed by design).</li>
             <li><code>AGENTS.md</code> and the <code>kronk-mcp</code> skill teach the agent to drive Kronk via <code>rote kronk_probe</code> / <code>rote kronk_call</code> from Bash, inside the <code>playground</code> workspace.</li>
           </ul>
           <p>If you don't have a Modiqo invite, use the default bundle.</p>
-          <h3 id="135-wiping-agent-state">13.5 Wiping Agent State</h3>
+          <h3 id="137-wiping-agent-state">13.7 Wiping Agent State</h3>
           <p>Use <code>make agents-wipe</code> when you want to verify a bundle in isolation, without leftovers from a previous install. It removes:</p>
           <ul>
             <li><code>~/.rote/</code> (workspaces, adapters, secrets, registry session, caches).</li>
             <li>The <code>rote</code> binary on <code>PATH</code>, if installed.</li>
-            <li><code>~/.config/opencode/</code>, <code>~/.config/kilo/</code>, <code>~/.pi/</code>, <code>~/.config/goose/</code> in their entirety.</li>
+            <li><code>~/.config/opencode/</code> in its entirety.</li>
           </ul>
-          <p>Idempotent — safe to re-run on an already-clean machine. After wiping, re-install with <code>make agents-default-&lt;host&gt;</code> or <code>make agents-rote-&lt;host&gt;</code>.</p>
-          <h3 id="136-openwebui">13.6 OpenWebUI</h3>
+          <p>Idempotent — safe to re-run on an already-clean machine. After wiping, re-install with <code>make agents-default-opencode</code> or <code>make agents-rote-opencode</code>.</p>
+          <h3 id="138-openwebui">13.8 OpenWebUI</h3>
           <p>OpenWebUI is a self-hosted chat interface that works with Kronk.</p>
           <p><strong>Configure OpenWebUI:</strong></p>
           <ol>
@@ -5117,7 +5087,7 @@ make agents-rote-goose`}</code></pre>
             <li>System prompts.</li>
             <li>Conversation history.</li>
           </ul>
-          <h3 id="137-python-openai-sdk">13.7 Python OpenAI SDK</h3>
+          <h3 id="139-python-openai-sdk">13.9 Python OpenAI SDK</h3>
           <p>Use the official OpenAI Python library with Kronk.</p>
           <p><strong>Installation:</strong></p>
           <pre className="code-block"><code className="language-shell">{`pip install openai`}</code></pre>
@@ -5141,7 +5111,7 @@ response = client.chat.completions.create(
 for chunk in response:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")`}</code></pre>
-          <h3 id="138-curl-and-http-clients">13.8 curl and HTTP Clients</h3>
+          <h3 id="1310-curl-and-http-clients">13.10 curl and HTTP Clients</h3>
           <p>Any HTTP client can call Kronk's REST API directly.</p>
           <p><strong>Basic Request:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
@@ -5159,7 +5129,7 @@ for chunk in response:
 data: {"id":"...","choices":[{"delta":{"content":"!"}}],...}
 
 data: [DONE]`}</code></pre>
-          <h3 id="139-langchain">13.9 LangChain</h3>
+          <h3 id="1311-langchain">13.11 LangChain</h3>
           <p>Use LangChain with Kronk via the OpenAI integration.</p>
           <p><strong>Installation:</strong></p>
           <pre className="code-block"><code className="language-shell">{`pip install langchain-openai`}</code></pre>
@@ -5446,7 +5416,7 @@ kronk server start`}</code></pre>
             <li><strong>&lt;code&gt;web_search&lt;/code&gt;</strong> — Powered by the <a href="https://brave.com/search/api/">Brave Search API</a>.</li>
             <li><strong>&lt;code&gt;fuzzy_edit&lt;/code&gt;</strong> — A tiered-fuzzy-matching file edit tool that is more reliable than the built-in <code>edit</code> tools used by most coding agents.</li>
           </ul>
-          <p>MCP is an open standard that lets AI agents call external tools over a simple JSON-RPC protocol. By running the MCP service, any MCP-compatible client (Cline, Kilo Code, OpenCode, Goose, Cursor, etc.) can discover and invoke tools served by Kronk.</p>
+          <p>MCP is an open standard that lets AI agents call external tools over a simple JSON-RPC protocol. By running the MCP service, any MCP-compatible client can discover and invoke tools served by Kronk. The project ships a ready-to-use config for OpenCode (see Chapter 13).</p>
           <h3 id="151-architecture">15.1 Architecture</h3>
           <p>The MCP service can run in two modes:</p>
           <p><strong>Embedded (default)</strong> — When the Kronk model server starts and no external MCP host is configured (<code>--mcp-host</code> is empty), it automatically starts an embedded MCP server on <code>localhost:9000</code>. No extra process is needed.</p>
@@ -5586,35 +5556,8 @@ make mcp-server`}</code></pre>
           </table>
           <h3 id="155-client-configuration">15.5 Client Configuration</h3>
           <p>The MCP service uses the Streamable HTTP transport. Configure your MCP-compatible client to connect to <code>http://localhost:9000/mcp</code>.</p>
-          <h4 id="cline">Cline</h4>
-          <p>Add the following to your Cline MCP settings (<code>~/.cline/data/settings/cline_mcp_settings.json</code>):</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "mcpServers": {
-    "Kronk": {
-      "autoApprove": ["web_search", "fuzzy_edit"],
-      "disabled": false,
-      "timeout": 60,
-      "type": "streamableHttp",
-      "url": "http://localhost:9000/mcp"
-    }
-  }
-}`}</code></pre>
-          <h4 id="kilo-code">Kilo Code</h4>
-          <p>Add the following to your Kilo Code MCP settings (inside <code>~/.config/kilo/kilo.json</code>):</p>
-          <pre className="code-block"><code className="language-json">{`{
-  "mcpServers": {
-    "Kronk": {
-      "type": "streamable-http",
-      "url": "http://localhost:9000/mcp",
-      "disabled": false,
-      "alwaysAllow": ["web_search", "fuzzy_edit"],
-      "timeout": 60
-    }
-  }
-}`}</code></pre>
-          <p>Kilo prefixes MCP tool names with the server key, so the tools are exposed to the model as <code>Kronk_web_search</code> and <code>Kronk_fuzzy_edit</code>.</p>
           <h4 id="opencode">OpenCode</h4>
-          <p>Inside <code>~/.config/opencode/opencode.jsonc</code>:</p>
+          <p>OpenCode is the only client this project ships a bundle for. Install it with <code>make agents-default-opencode</code> (see Chapter 13). The bundle drops this MCP entry into <code>~/.config/opencode/opencode.jsonc</code>:</p>
           <pre className="code-block"><code className="language-jsonc">{`{
   "mcp": {
     "kronk": {
@@ -5624,8 +5567,6 @@ make mcp-server`}</code></pre>
   }
 }`}</code></pre>
           <p>OpenCode lowercases the server prefix, so the tools are exposed as <code>kronk_web_search</code> and <code>kronk_fuzzy_edit</code>.</p>
-          <h4 id="goose">Goose</h4>
-          <p>Goose discovers tools from any MCP server it is configured against. Add an entry to your Goose configuration that points to <code>http://localhost:9000/mcp</code> using the streamable-HTTP transport. Both <code>web_search</code> and <code>fuzzy_edit</code> will appear in the tool list once the connection is established.</p>
           <h3 id="156-testing-with-curl">15.6 Testing with curl</h3>
           <p>You can test the MCP service manually using curl. See the makefile targets for convenience commands.</p>
           <p><strong>Initialize a session:</strong></p>
@@ -6081,7 +6022,7 @@ kronk model pull <provider/model-id>
 kronk model index --local`}</code></pre>
           <h3 id="1612-mcp-service-issues">16.12 MCP Service Issues</h3>
           <p><strong>Error: &lt;code&gt;/mcp&lt;/code&gt; returns 404</strong></p>
-          <p>The MCP endpoint is <code>http://localhost:9000/mcp</code> (no trailing slash). The client must use the Streamable HTTP transport — Cline calls it <code>streamableHttp</code>, Kilo Code uses <code>streamable-http</code>, and OpenCode/Goose both spell it <code>remote</code>.</p>
+          <p>The MCP endpoint is <code>http://localhost:9000/mcp</code> (no trailing slash). The client must use the Streamable HTTP transport — OpenCode spells it <code>remote</code> in <code>opencode.jsonc</code>.</p>
           <p><strong>Error: &lt;code&gt;web_search&lt;/code&gt; reports "missing Brave API key"</strong></p>
           <p>The Brave Search key is unset. Provide it before starting the server:</p>
           <pre className="code-block"><code className="language-shell">{`# Embedded mode (kronk server start)
@@ -6090,38 +6031,12 @@ export KRONK_MCP_BRAVEAPIKEY=<your-brave-api-key>
 # Standalone (make mcp-server)
 export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>`}</code></pre>
           <p><strong>Problem: model can't find the tool ("unknown tool kronk_fuzzy_edit")</strong></p>
-          <p>Each MCP-aware client prefixes tool names with the server key. Check that the prefix matches the key you used in the client config:</p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Client</th>
-                <th>Server key in config</th>
-                <th>Tool names exposed</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Cline</td>
-                <td><code>Kronk</code></td>
-                <td><code>web_search</code>, <code>fuzzy_edit</code></td>
-              </tr>
-              <tr>
-                <td>Kilo</td>
-                <td><code>Kronk</code></td>
-                <td><code>Kronk_web_search</code>, <code>Kronk_fuzzy_edit</code></td>
-              </tr>
-              <tr>
-                <td>OpenCode</td>
-                <td><code>kronk</code></td>
-                <td><code>kronk_web_search</code>, <code>kronk_fuzzy_edit</code></td>
-              </tr>
-              <tr>
-                <td>Goose</td>
-                <td>(lowercase)</td>
-                <td><code>kronk_web_search</code>, <code>kronk_fuzzy_edit</code></td>
-              </tr>
-            </tbody>
-          </table>
+          <p>OpenCode prefixes MCP tool names with the (lowercase) server key. With the shipped <code>opencode.jsonc</code> the server key is <code>kronk</code>, so the tools are exposed to the model as:</p>
+          <ul>
+            <li><code>kronk_web_search</code></li>
+            <li><code>kronk_fuzzy_edit</code></li>
+          </ul>
+          <p>If you renamed the server key in <code>opencode.jsonc</code>, the prefix changes to match.</p>
           <p><strong>Error: &lt;code&gt;fuzzy_edit&lt;/code&gt; returns "old_string not found in file (even with fuzzy matching)"</strong></p>
           <p>The search snippet is either absent from the file or matches more than once. Tighten the snippet to a unique block of lines, or break the edit into a smaller anchor that appears exactly once.</p>
           <p><strong>Problem: embedded MCP server is not starting</strong></p>
@@ -7683,15 +7598,17 @@ default:
             <div className="doc-index-section">
               <a href="#chapter-13-client-integration" className={`doc-index-header ${activeSection === 'chapter-13-client-integration' ? 'active' : ''}`}>Chapter 13: Client Integration</a>
               <ul>
-                <li><a href="#131-coding-agent-model-configuration" className={activeSection === '131-coding-agent-model-configuration' ? 'active' : ''}>13.1 Coding Agent Model Configuration</a></li>
-                <li><a href="#132-agent-bundles-in-`agents`" className={activeSection === '132-agent-bundles-in-`agents`' ? 'active' : ''}>13.2 Agent Bundles in `.agents/`</a></li>
-                <li><a href="#133-default-bundle-direct-mcp" className={activeSection === '133-default-bundle-direct-mcp' ? 'active' : ''}>13.3 Default Bundle (Direct MCP)</a></li>
-                <li><a href="#134-rote-bundle-mcp-via-rote" className={activeSection === '134-rote-bundle-mcp-via-rote' ? 'active' : ''}>13.4 Rote Bundle (MCP via rote)</a></li>
-                <li><a href="#135-wiping-agent-state" className={activeSection === '135-wiping-agent-state' ? 'active' : ''}>13.5 Wiping Agent State</a></li>
-                <li><a href="#136-openwebui" className={activeSection === '136-openwebui' ? 'active' : ''}>13.6 OpenWebUI</a></li>
-                <li><a href="#137-python-openai-sdk" className={activeSection === '137-python-openai-sdk' ? 'active' : ''}>13.7 Python OpenAI SDK</a></li>
-                <li><a href="#138-curl-and-http-clients" className={activeSection === '138-curl-and-http-clients' ? 'active' : ''}>13.8 curl and HTTP Clients</a></li>
-                <li><a href="#139-langchain" className={activeSection === '139-langchain' ? 'active' : ''}>13.9 LangChain</a></li>
+                <li><a href="#131-installing-opencode" className={activeSection === '131-installing-opencode' ? 'active' : ''}>13.1 Installing OpenCode</a></li>
+                <li><a href="#132-coding-agent-model-configuration" className={activeSection === '132-coding-agent-model-configuration' ? 'active' : ''}>13.2 Coding Agent Model Configuration</a></li>
+                <li><a href="#133-agent-bundles-in-`agents`" className={activeSection === '133-agent-bundles-in-`agents`' ? 'active' : ''}>13.3 Agent Bundles in `.agents/`</a></li>
+                <li><a href="#134-default-bundle-direct-mcp" className={activeSection === '134-default-bundle-direct-mcp' ? 'active' : ''}>13.4 Default Bundle (Direct MCP)</a></li>
+                <li><a href="#135-changing-the-model-opencode-uses" className={activeSection === '135-changing-the-model-opencode-uses' ? 'active' : ''}>13.5 Changing the Model OpenCode Uses</a></li>
+                <li><a href="#136-rote-bundle-mcp-via-rote" className={activeSection === '136-rote-bundle-mcp-via-rote' ? 'active' : ''}>13.6 Rote Bundle (MCP via rote)</a></li>
+                <li><a href="#137-wiping-agent-state" className={activeSection === '137-wiping-agent-state' ? 'active' : ''}>13.7 Wiping Agent State</a></li>
+                <li><a href="#138-openwebui" className={activeSection === '138-openwebui' ? 'active' : ''}>13.8 OpenWebUI</a></li>
+                <li><a href="#139-python-openai-sdk" className={activeSection === '139-python-openai-sdk' ? 'active' : ''}>13.9 Python OpenAI SDK</a></li>
+                <li><a href="#1310-curl-and-http-clients" className={activeSection === '1310-curl-and-http-clients' ? 'active' : ''}>13.10 curl and HTTP Clients</a></li>
+                <li><a href="#1311-langchain" className={activeSection === '1311-langchain' ? 'active' : ''}>13.11 LangChain</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

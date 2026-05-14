@@ -630,9 +630,8 @@ kronk model index --local
 **Error: `/mcp` returns 404**
 
 The MCP endpoint is `http://localhost:9000/mcp` (no trailing slash). The
-client must use the Streamable HTTP transport — Cline calls it
-`streamableHttp`, Kilo Code uses `streamable-http`, and OpenCode/Goose
-both spell it `remote`.
+client must use the Streamable HTTP transport — OpenCode spells it
+`remote` in `opencode.jsonc`.
 
 **Error: `web_search` reports "missing Brave API key"**
 
@@ -648,15 +647,15 @@ export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>
 
 **Problem: model can't find the tool ("unknown tool kronk_fuzzy_edit")**
 
-Each MCP-aware client prefixes tool names with the server key. Check
-that the prefix matches the key you used in the client config:
+OpenCode prefixes MCP tool names with the (lowercase) server key. With
+the shipped `opencode.jsonc` the server key is `kronk`, so the tools
+are exposed to the model as:
 
-| Client   | Server key in config | Tool names exposed                    |
-| -------- | -------------------- | ------------------------------------- |
-| Cline    | `Kronk`              | `web_search`, `fuzzy_edit`            |
-| Kilo     | `Kronk`              | `Kronk_web_search`, `Kronk_fuzzy_edit` |
-| OpenCode | `kronk`              | `kronk_web_search`, `kronk_fuzzy_edit` |
-| Goose    | (lowercase)          | `kronk_web_search`, `kronk_fuzzy_edit` |
+- `kronk_web_search`
+- `kronk_fuzzy_edit`
+
+If you renamed the server key in `opencode.jsonc`, the prefix changes
+to match.
 
 **Error: `fuzzy_edit` returns "old_string not found in file (even with
 fuzzy matching)"**

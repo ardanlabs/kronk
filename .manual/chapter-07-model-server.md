@@ -322,7 +322,7 @@ The Kronk repository includes a comprehensive reference configuration with
 recommended settings for various models and use cases at
 `zarf/kms/model_config.yaml`. It includes:
 
-- Optimized configurations for coding agents (Cline, OpenCode)
+- Optimized configurations for coding agents (OpenCode)
 - YaRN extended context examples
 - IMC configuration for message caching
 - Vision and audio model settings

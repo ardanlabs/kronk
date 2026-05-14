@@ -9,10 +9,7 @@
   - [web_search](#web_search)
   - [fuzzy_edit](#fuzzy_edit)
 - [15.5 Client Configuration](#155-client-configuration)
-  - [Cline](#cline)
-  - [Kilo Code](#kilo-code)
   - [OpenCode](#opencode)
-  - [Goose](#goose)
 - [15.6 Testing with curl](#156-testing-with-curl)
 
 ---
@@ -31,8 +28,8 @@ provided today:
 
 MCP is an open standard that lets AI agents call external tools over a
 simple JSON-RPC protocol. By running the MCP service, any MCP-compatible
-client (Cline, Kilo Code, OpenCode, Goose, Cursor, etc.) can discover
-and invoke tools served by Kronk.
+client can discover and invoke tools served by Kronk. The project ships
+a ready-to-use config for OpenCode (see Chapter 13).
 
 ### 15.1 Architecture
 
@@ -140,50 +137,11 @@ file is not modified.
 The MCP service uses the Streamable HTTP transport. Configure your
 MCP-compatible client to connect to `http://localhost:9000/mcp`.
 
-#### Cline
-
-Add the following to your Cline MCP settings
-(`~/.cline/data/settings/cline_mcp_settings.json`):
-
-```json
-{
-  "mcpServers": {
-    "Kronk": {
-      "autoApprove": ["web_search", "fuzzy_edit"],
-      "disabled": false,
-      "timeout": 60,
-      "type": "streamableHttp",
-      "url": "http://localhost:9000/mcp"
-    }
-  }
-}
-```
-
-#### Kilo Code
-
-Add the following to your Kilo Code MCP settings
-(inside `~/.config/kilo/kilo.json`):
-
-```json
-{
-  "mcpServers": {
-    "Kronk": {
-      "type": "streamable-http",
-      "url": "http://localhost:9000/mcp",
-      "disabled": false,
-      "alwaysAllow": ["web_search", "fuzzy_edit"],
-      "timeout": 60
-    }
-  }
-}
-```
-
-Kilo prefixes MCP tool names with the server key, so the tools are
-exposed to the model as `Kronk_web_search` and `Kronk_fuzzy_edit`.
-
 #### OpenCode
 
-Inside `~/.config/opencode/opencode.jsonc`:
+OpenCode is the only client this project ships a bundle for. Install
+it with `make agents-default-opencode` (see Chapter 13). The bundle
+drops this MCP entry into `~/.config/opencode/opencode.jsonc`:
 
 ```jsonc
 {
@@ -198,14 +156,6 @@ Inside `~/.config/opencode/opencode.jsonc`:
 
 OpenCode lowercases the server prefix, so the tools are exposed as
 `kronk_web_search` and `kronk_fuzzy_edit`.
-
-#### Goose
-
-Goose discovers tools from any MCP server it is configured against.
-Add an entry to your Goose configuration that points to
-`http://localhost:9000/mcp` using the streamable-HTTP transport. Both
-`web_search` and `fuzzy_edit` will appear in the tool list once the
-connection is established.
 
 ### 15.6 Testing with curl
 
