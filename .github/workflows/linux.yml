@@ -16,8 +16,13 @@ on:
       - "go.sum"
   workflow_dispatch:
 
+# Cancel any in-progress run for the same branch when a new commit
+# arrives. Using `head_ref || ref` collapses the duplicate runs that
+# otherwise fire from both the `push` and `pull_request` events on a PR
+# branch (they have different github.ref values and would not cancel
+# each other if grouped by ref alone).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
