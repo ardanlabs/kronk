@@ -39,12 +39,28 @@
 # ==============================================================================
 # CODING MODELS
 
+Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+
 Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
   nseq-max: 2
   sampling-parameters:
     temperature: 0.6
     top_k: 20
+    top_p: 0.95
+
+gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
     top_p: 0.95
 
 gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:

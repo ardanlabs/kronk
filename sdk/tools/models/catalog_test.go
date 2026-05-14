@@ -83,6 +83,8 @@ func TestHasQuantSuffix(t *testing.T) {
 		{"Llama-3.3-70B-Instruct-Q8_0-00001-of-00002", true},
 		{"Qwen2-Audio-7B.Q8_0", true},
 		{"Qwen2-Audio-7B.Q4_K_M", true},
+		{"Qwen3.6-35B-A3B-MXFP4_MOE", true},
+		{"Qwen3.6-35B-A3B-UD-MXFP4_MOE", true},
 	}
 	for _, tt := range tests {
 		got := hasQuantSuffix(tt.in)
@@ -104,6 +106,8 @@ func TestExtractQuantTag(t *testing.T) {
 		{"some-model-BF16", "BF16"},
 		{"some-model-F16", "F16"},
 		{"Qwen2-Audio-7B.Q8_0", "Q8_0"},
+		{"Qwen3.6-35B-A3B-MXFP4_MOE", "MXFP4_MOE"},
+		{"Qwen3.6-35B-A3B-UD-MXFP4_MOE", "UD-MXFP4_MOE"},
 		{"Qwen3.6-35B-A3B", ""},
 		{"gemma-4-26B-A4B-it", ""},
 	}
@@ -111,6 +115,61 @@ func TestExtractQuantTag(t *testing.T) {
 		got := extractQuantTag(tt.in)
 		if got != tt.want {
 			t.Errorf("extractQuantTag(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// TestExtractQuantTag_UnslothQwen3_6_35B_A3B asserts that every GGUF
+// model file published in the unsloth/Qwen3.6-35B-A3B-GGUF repository
+// (snapshot of https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/tree/main)
+// resolves to a non-empty quant tag via extractModelID + extractQuantTag.
+//
+// This is the path BUI's "Resolve" button takes: a missing tag forces
+// the bare-id fallback in ResolveSource which in turn fails the resolver
+// lookup. Adding the full file list locks the regex against every quant
+// family unsloth ships in this representative MoE repo (Q*, IQ*, UD-Q*,
+// UD-IQ*, BF16, MXFP4_MOE, including split parts).
+//
+// mmproj-* files are intentionally excluded — they are projection
+// companions, not model selections, and are filtered out earlier by
+// classifySiblings before any tag is extracted.
+func TestExtractQuantTag_UnslothQwen3_6_35B_A3B(t *testing.T) {
+	tests := []struct {
+		file string
+		want string
+	}{
+		{"BF16/Qwen3.6-35B-A3B-BF16-00001-of-00002.gguf", "BF16"},
+		{"BF16/Qwen3.6-35B-A3B-BF16-00002-of-00002.gguf", "BF16"},
+		{"Qwen3.6-35B-A3B-MXFP4_MOE.gguf", "MXFP4_MOE"},
+		{"Qwen3.6-35B-A3B-Q8_0.gguf", "Q8_0"},
+		{"Qwen3.6-35B-A3B-UD-IQ1_M.gguf", "UD-IQ1_M"},
+		{"Qwen3.6-35B-A3B-UD-IQ2_M.gguf", "UD-IQ2_M"},
+		{"Qwen3.6-35B-A3B-UD-IQ2_XXS.gguf", "UD-IQ2_XXS"},
+		{"Qwen3.6-35B-A3B-UD-IQ3_S.gguf", "UD-IQ3_S"},
+		{"Qwen3.6-35B-A3B-UD-IQ3_XXS.gguf", "UD-IQ3_XXS"},
+		{"Qwen3.6-35B-A3B-UD-IQ4_NL.gguf", "UD-IQ4_NL"},
+		{"Qwen3.6-35B-A3B-UD-IQ4_NL_XL.gguf", "UD-IQ4_NL_XL"},
+		{"Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "UD-IQ4_XS"},
+		{"Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf", "UD-Q2_K_XL"},
+		{"Qwen3.6-35B-A3B-UD-Q3_K_M.gguf", "UD-Q3_K_M"},
+		{"Qwen3.6-35B-A3B-UD-Q3_K_S.gguf", "UD-Q3_K_S"},
+		{"Qwen3.6-35B-A3B-UD-Q3_K_XL.gguf", "UD-Q3_K_XL"},
+		{"Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", "UD-Q4_K_M"},
+		{"Qwen3.6-35B-A3B-UD-Q4_K_S.gguf", "UD-Q4_K_S"},
+		{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", "UD-Q4_K_XL"},
+		{"Qwen3.6-35B-A3B-UD-Q5_K_M.gguf", "UD-Q5_K_M"},
+		{"Qwen3.6-35B-A3B-UD-Q5_K_S.gguf", "UD-Q5_K_S"},
+		{"Qwen3.6-35B-A3B-UD-Q5_K_XL.gguf", "UD-Q5_K_XL"},
+		{"Qwen3.6-35B-A3B-UD-Q6_K.gguf", "UD-Q6_K"},
+		{"Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf", "UD-Q6_K_XL"},
+		{"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf", "UD-Q8_K_XL"},
+	}
+
+	for _, tt := range tests {
+		modelID := extractModelID(tt.file)
+		got := extractQuantTag(modelID)
+		if got != tt.want {
+			t.Errorf("extractQuantTag(extractModelID(%q)) = %q, want %q", tt.file, got, tt.want)
 		}
 	}
 }

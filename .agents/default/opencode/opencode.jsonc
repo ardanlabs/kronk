@@ -8,6 +8,13 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
+                "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT": {
+                    "name": "Qwen3.6 35B-A3B UD-Q4_K_M",
+                    "limit": {
+                        "context": 131072,
+                        "output": 65536
+                    }
+                },
                 "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
                     "name": "Qwen3.6 35B-A3B UD-Q8_K_XL",
                     "limit": {
@@ -15,15 +22,15 @@
                         "output": 65536
                     }
                 },
-                "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
-                    "name": "Gemma4 26B-A4B UD-Q8_K_XL",
+                "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT": {
+                    "name": "Gemma4 26B-A4B UD-Q4_K_M",
                     "limit": {
                         "context": 131072,
                         "output": 65536
                     }
                 },
-                "NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q8_K_XL/AGENT": {
-                    "name": "NVIDIA Nemotron 3",
+                "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
+                    "name": "Gemma4 26B-A4B UD-Q8_K_XL",
                     "limit": {
                         "context": 131072,
                         "output": 65536
