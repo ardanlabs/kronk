@@ -84,6 +84,59 @@ function splitPaste(input: string): { provider: string; family: string; model: s
   return { provider, family, model: filename ? modelIDFromFilename(filename) : '' };
 }
 
+// formatTotalSize renders a byte count using the same GB/MB/KB scale the
+// server uses for HFRepoFile.size_str, so summed split totals match the
+// per-shard formatting users see elsewhere in the BUI.
+function formatTotalSize(bytes: number): string {
+  const gb = 1000 * 1000 * 1000;
+  const mb = 1000 * 1000;
+  const kb = 1000;
+  if (bytes >= gb) return `${(bytes / gb).toFixed(1)} GB`;
+  if (bytes >= mb) return `${(bytes / mb).toFixed(1)} MB`;
+  if (bytes >= kb) return `${(bytes / kb).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+// RepoFileRow is a collapsed picker row. Single-file entries map 1:1 to
+// the underlying HFRepoFile; split-shard groups collapse into one row
+// whose size is the sum of every shard.
+interface RepoFileRow {
+  label: string;     // path displayed in the Filename column
+  filename: string;  // representative shard passed to handlePickFile
+  sizeStr: string;   // formatted total (sum across shards for splits)
+  parts: number;     // shard count (1 for non-split entries)
+}
+
+// groupRepoFiles collapses "-NNNNN-of-NNNNN" split shards into one row
+// per logical model so the picker shows the real total size and a single
+// Select button. Selecting any shard already pulls the whole set via
+// modelIDFromFilename + the backend manifest, so the representative
+// filename can be any shard in the group.
+function groupRepoFiles(files: HFRepoFile[]): RepoFileRow[] {
+  const groups = new Map<string, HFRepoFile[]>();
+  for (const f of files) {
+    // Strip the split suffix while preserving the folder path so two
+    // different folders never collide into one group.
+    const key = f.filename.replace(/-\d+-of-\d+(\.gguf)$/i, '$1');
+    const existing = groups.get(key);
+    if (existing) existing.push(f);
+    else groups.set(key, [f]);
+  }
+
+  const rows: RepoFileRow[] = [];
+  for (const [key, group] of groups) {
+    if (group.length === 1) {
+      const f = group[0];
+      rows.push({ label: f.filename, filename: f.filename, sizeStr: f.size_str, parts: 1 });
+      continue;
+    }
+    group.sort((a, b) => a.filename.localeCompare(b.filename));
+    const total = group.reduce((s, f) => s + f.size, 0);
+    rows.push({ label: key, filename: group[0].filename, sizeStr: formatTotalSize(total), parts: group.length });
+  }
+  return rows;
+}
+
 // buildSource composes the source string sent to /v1/catalog/resolve
 // from the three fields. When Model is empty, the server returns the
 // repo file list so the user can pick. When all three are filled, the
@@ -394,44 +447,54 @@ export default function ModelPull() {
           </div>
         )}
 
-        {repoFiles && (
-          <div className="card" style={{ background: 'var(--bg-2, #1a1a1a)', marginTop: '12px' }}>
-            <div style={{ marginBottom: '12px' }}>
-              <strong>Pick a file from </strong>
-              <code>{provider.trim()}/{family.trim()}</code>
-              <span style={{ fontSize: '12px', opacity: 0.7, marginLeft: '8px' }}>
-                ({repoFiles.length} GGUF file{repoFiles.length === 1 ? '' : 's'})
-              </span>
+        {repoFiles && (() => {
+          const rows = groupRepoFiles(repoFiles);
+          return (
+            <div className="card" style={{ background: 'var(--bg-2, #1a1a1a)', marginTop: '12px' }}>
+              <div style={{ marginBottom: '12px' }}>
+                <strong>Pick a file from </strong>
+                <code>{provider.trim()}/{family.trim()}</code>
+                <span style={{ fontSize: '12px', opacity: 0.7, marginLeft: '8px' }}>
+                  ({rows.length} GGUF model{rows.length === 1 ? '' : 's'})
+                </span>
+              </div>
+              {rows.length === 0 ? (
+                <div style={{ opacity: 0.7 }}>No GGUF files found in this repository.</div>
+              ) : (
+                <table className="kv-table">
+                  <thead>
+                    <tr><th style={{ textAlign: 'left' }}>Filename</th><th>Size</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.label}>
+                        <td>
+                          <code style={{ wordBreak: 'break-all' }}>{r.label}</code>
+                          {r.parts > 1 && (
+                            <span style={{ fontSize: '11px', opacity: 0.7, marginLeft: '8px' }}>
+                              ({r.parts} shards)
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{r.sizeStr}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => handlePickFile(r.filename)}
+                            disabled={isResolving || isDownloading}
+                          >
+                            Select
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-            {repoFiles.length === 0 ? (
-              <div style={{ opacity: 0.7 }}>No GGUF files found in this repository.</div>
-            ) : (
-              <table className="kv-table">
-                <thead>
-                  <tr><th style={{ textAlign: 'left' }}>Filename</th><th>Size</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {repoFiles.map((f) => (
-                    <tr key={f.filename}>
-                      <td><code style={{ wordBreak: 'break-all' }}>{f.filename}</code></td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{f.size_str}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => handlePickFile(f.filename)}
-                          disabled={isResolving || isDownloading}
-                        >
-                          Select
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )}
+          );
+        })()}
 
         {resolved && (
           <div className="card" style={{ background: 'var(--bg-2, #1a1a1a)', marginTop: '12px' }}>
