@@ -1,4 +1,4 @@
-package qwen
+package xmlfunc
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-// stateMachine is a per-slot streaming state machine for Qwen models. It
-// recognizes:
+// stateMachine is a per-slot streaming state machine for the
+// <function=…><parameter=…> XML tool-call format. It recognizes:
 //
 //   - <think>…</think>       reasoning wrap
 //   - <tool_call>…</tool_call> JSON envelope (also <|tool_call>/<tool_call|>)

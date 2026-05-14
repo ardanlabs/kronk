@@ -2,7 +2,6 @@ package gemma
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -267,7 +266,7 @@ func parseGemmaArgs(raw string) map[string]any {
 			if len(trimVal) > 0 && (trimVal[0] == '[' || trimVal[0] == '{') {
 				jsonVal := strings.ReplaceAll(trimVal, "<|\"|>", "\"")
 				var parsed any
-				if err := json.Unmarshal([]byte(jsonVal), &parsed); err == nil {
+				if err := jsonrepair.Unmarshal(jsonVal, &parsed); err == nil {
 					args[key] = parsed
 					remaining = remaining[endQuote+len("<|\"|>"):]
 					continue
@@ -304,7 +303,7 @@ func parseGemmaArgs(raw string) map[string]any {
 			jsonVal := strings.ReplaceAll(raw, "<|\"|>", "\"")
 
 			var parsed any
-			if err := json.Unmarshal([]byte(jsonVal), &parsed); err == nil {
+			if err := jsonrepair.Unmarshal(jsonVal, &parsed); err == nil {
 				args[key] = parsed
 			} else {
 				args[key] = raw

@@ -100,7 +100,78 @@ func normalize(s string) (string, bool) {
 	s = quoteBareKeys(s)
 	s = fixMissingKeyCloseQuote(s)
 	s = normalizeBackslashControlChars(s)
+	s = normalizeInvalidStringEscapes(s)
 	return s, s != orig
+}
+
+// normalizeInvalidStringEscapes walks JSON strings and double-escapes any
+// backslash sequence that is not a valid JSON escape (one of
+// \" \\ \/ \b \f \n \r \t \uXXXX). Models sometimes emit content that
+// contains backslash sequences like \033 (ANSI escape codes) or \x1b
+// directly inside a JSON string value, which the standard parser rejects.
+// Doubling the backslash preserves the bytes verbatim — \033 becomes
+// \\033, which decodes to the literal four-character sequence \033 the
+// model intended to convey.
+//
+// The transformation only touches characters inside JSON strings; structural
+// bytes outside strings are passed through unchanged.
+func normalizeInvalidStringEscapes(s string) string {
+	// Quick scan: bail if there are no backslashes at all.
+	if !strings.ContainsRune(s, '\\') {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+
+	inString := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+
+		if !inString {
+			b.WriteByte(c)
+			if c == '"' {
+				inString = true
+			}
+			continue
+		}
+
+		// Inside a string.
+		if c == '"' {
+			inString = false
+			b.WriteByte(c)
+			continue
+		}
+
+		if c != '\\' {
+			b.WriteByte(c)
+			continue
+		}
+
+		// Backslash inside a string. Inspect the next byte.
+		if i+1 >= len(s) {
+			b.WriteByte(c)
+			continue
+		}
+
+		next := s[i+1]
+		switch next {
+		case '"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u':
+			// Valid JSON escape — preserve as-is.
+			b.WriteByte(c)
+			b.WriteByte(next)
+			i++
+		default:
+			// Invalid escape (e.g., \033, \x, \a). Double-escape the
+			// backslash so the JSON parser sees a literal backslash
+			// followed by the next character.
+			b.WriteString(`\\`)
+			b.WriteByte(next)
+			i++
+		}
+	}
+
+	return b.String()
 }
 
 // normalizeBackslashControlChars replaces a backslash followed by a raw

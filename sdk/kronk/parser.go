@@ -8,8 +8,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/glm"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gpt"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/mistral"
-	"github.com/ardanlabs/kronk/sdk/kronk/parsers/qwen"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/standard"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/xmlfunc"
 )
 
 // defaultParsersOnce guards default-parser registration so multiple
@@ -30,7 +30,7 @@ var defaultParsersOnce sync.Once
 //     claims any fingerprint, ensuring every model resolves to a
 //     parser even when the more specific parsers all decline.
 //
-// The middle four (qwen, gemma, glm, mistral) inspect architecture +
+// The middle four (xmlfunc, gemma, glm, mistral) inspect architecture +
 // template + name internally and do not overlap, so their relative
 // order is irrelevant.
 //
@@ -43,7 +43,7 @@ var defaultParsersOnce sync.Once
 func registerDefaultParsers() {
 	defaultParsersOnce.Do(func() {
 		model.RegisterParser(gpt.New) // template-only — must be first
-		model.RegisterParser(qwen.New)
+		model.RegisterParser(xmlfunc.New)
 		model.RegisterParser(gemma.New)
 		model.RegisterParser(glm.New)
 		model.RegisterParser(mistral.New)

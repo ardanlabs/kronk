@@ -1,8 +1,7 @@
-package qwen
+package xmlfunc
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -11,11 +10,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// parseQwenXML parses Qwen3-Coder style tool calls with XML-like tags.
+// parseXMLFunc parses tool calls written in the <function=…><parameter=…>
+// XML envelope.
 // Format: <function=get_weather>\n<parameter=location>\nNYC\n</parameter>\n</function>
 //
-// Direct port of the legacy parseQwenToolCall.
-func parseQwenXML(content string) []model.ResponseToolCall {
+// Parameter values that look like JSON (start with [, {, or ") are run
+// through jsonrepair so common model mistakes — invalid escape sequences
+// such as \033 ANSI codes, unescaped inner quotes — get coerced into
+// well-formed values instead of being stored as raw strings that fail
+// downstream schema validation.
+func parseXMLFunc(ctx context.Context, log applog.Logger, content string) []model.ResponseToolCall {
 	var toolCalls []model.ResponseToolCall
 
 	// NOTE: We intentionally do NOT convert literal \n to actual newlines here.
@@ -78,13 +82,16 @@ func parseQwenXML(content string) []model.ResponseToolCall {
 				args[paramName] = paramValue
 
 				var parsed any
-				if err := json.Unmarshal([]byte(paramValue), &parsed); err == nil {
+				if err := jsonrepair.Unmarshal(paramValue, &parsed); err == nil {
 					args[paramName] = parsed
+				} else if log != nil {
+					log(ctx, "jsonrepair", "status", "unmarshal-failed",
+						"format", "xml-parameter", "param", paramName, "error", err, "json", paramValue)
 				}
 
 			default:
 				var parsed any
-				if err := json.Unmarshal([]byte(paramValue), &parsed); err == nil {
+				if err := jsonrepair.Unmarshal(paramValue, &parsed); err == nil {
 					args[paramName] = parsed
 				} else {
 					args[paramName] = paramValue

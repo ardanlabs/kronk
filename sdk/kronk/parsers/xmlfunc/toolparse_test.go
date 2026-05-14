@@ -1,4 +1,4 @@
-package qwen
+package xmlfunc
 
 import (
 	"context"
@@ -35,10 +35,10 @@ func TestToolCall_DispatchJSON(t *testing.T) {
 	}
 }
 
-func TestParseQwenXML_PreservesEscapeSequences(t *testing.T) {
+func TestParseXMLFunc_PreservesEscapeSequences(t *testing.T) {
 	src := `fmt.Printf("hello\n")`
-	calls := parseQwenXML(
-		"<function=write>\n<parameter=code>\n" + src + "\n</parameter>\n</function>")
+	calls := parseXMLFunc(context.Background(), noopLog,
+		"<function=write>\n<parameter=code>\n"+src+"\n</parameter>\n</function>")
 	if len(calls) != 1 {
 		t.Fatalf("got %d calls, want 1", len(calls))
 	}
@@ -47,14 +47,32 @@ func TestParseQwenXML_PreservesEscapeSequences(t *testing.T) {
 	}
 }
 
-func TestParseQwenXML_NumericValueAsFloat(t *testing.T) {
-	calls := parseQwenXML(
+func TestParseXMLFunc_NumericValueAsFloat(t *testing.T) {
+	calls := parseXMLFunc(context.Background(), noopLog,
 		"<function=add>\n<parameter=n>\n42\n</parameter>\n</function>")
 	if len(calls) != 1 {
 		t.Fatalf("got %d calls, want 1", len(calls))
 	}
 	if got := calls[0].Function.Arguments["n"]; got != float64(42) {
 		t.Errorf("n = %v (%T), want float64(42)", got, got)
+	}
+}
+
+// TestParseXMLFunc_RepairsInvalidJSONEscape verifies that a parameter value
+// containing JSON with an invalid escape sequence (e.g. \033 ANSI codes)
+// is run through jsonrepair so the value is stored as a parsed array
+// rather than fall back to the raw string. Without the repair, downstream
+// schema validators reject the call as "expected array, got string".
+func TestParseXMLFunc_RepairsInvalidJSONEscape(t *testing.T) {
+	body := `[{"description":"Use \033[2J\033[H to clear screen."}]`
+	calls := parseXMLFunc(context.Background(), noopLog,
+		"<function=question>\n<parameter=questions>\n"+body+"\n</parameter>\n</function>")
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	got := calls[0].Function.Arguments["questions"]
+	if _, ok := got.([]any); !ok {
+		t.Errorf("questions = %T, want []any (got value: %v)", got, got)
 	}
 }
 
