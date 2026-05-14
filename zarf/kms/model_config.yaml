@@ -39,6 +39,14 @@
 # ==============================================================================
 # CODING MODELS
 
+NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q8_K_XL/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 20
+    top_p: 0.95
+
 Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
   nseq-max: 2

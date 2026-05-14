@@ -243,7 +243,7 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 // downloadSplits performs a complete workflow for downloading and installing
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
-func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURLs []string, projURL string) (Path, error) {
+func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURLs []string, projURL string) (result Path, retErr error) {
 	if len(modelURLs) == 0 {
 		return Path{}, fmt.Errorf("download-splits: no model URLs provided")
 	}
@@ -270,6 +270,20 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 			return
 		}
 
+		// Only mark validated when every shard (and any projection) for the
+		// model finished and matches its sha pointer. Marking validated after
+		// a partial split would let the next pull short-circuit on the index
+		// and never notice the missing bytes.
+		if retErr != nil {
+			log(ctx, "download-model: skipping mark-validated due to error", "model-id", modelID, "ERROR", retErr)
+			return
+		}
+
+		if err := m.verifySizesFromIndex(modelID); err != nil {
+			log(ctx, "download-model: skipping mark-validated, model is incomplete", "model-id", modelID, "ERROR", err)
+			return
+		}
+
 		// downloadModel performs SHA validation on every model and projection
 		// file as it is fetched, so the freshly downloaded entry can be marked
 		// as validated without a full index rebuild.
@@ -278,7 +292,7 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 		}
 	}()
 
-	result := Path{
+	result = Path{
 		ModelFiles: make([]string, len(modelURLs)),
 	}
 
@@ -302,21 +316,21 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 		if errOrg != nil {
 			log(ctx, "download-model:", "ERROR", errOrg, "model-file-url", modelURL)
 
+			// Only fall back to the previously installed copy when every shard
+			// (and any projection) on disk still matches its sha pointer. A
+			// partial split would otherwise be reported as "downloaded" and
+			// the next pull would short-circuit on the index instead of
+			// retrying the truncated shard.
 			if mp, err := m.FullPath(modelID); err == nil && len(mp.ModelFiles) > 0 {
-				size, err := fileSize(mp.ModelFiles[0])
-				if err != nil {
-					return Path{}, fmt.Errorf("download-model: unable to check file size of model: %w", err)
+				if vErr := verifyAllSizes(mp); vErr == nil {
+					log(ctx, "download-model: using installed version of model files")
+					return mp, nil
+				} else {
+					log(ctx, "download-model: previously installed copy is incomplete", "ERROR", vErr)
 				}
 
-				if size == 0 {
-					for _, f := range mp.ModelFiles {
-						os.Remove(f)
-					}
-					return Path{}, fmt.Errorf("download-model: unable to download file: %w", errOrg)
-				}
-
-				log(ctx, "download-model: using installed version of model files")
-				return mp, nil
+				// Don't blow away partial files here. A subsequent pull can
+				// re-attempt the affected shard via the getter.
 			}
 
 			return Path{}, fmt.Errorf("download-model: unable to download model file: %w", errOrg)
@@ -385,20 +399,23 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, modelFile
 		}
 
 		// Re-verify every recorded file (model splits and any projection) is
-		// still present on disk. A user may have deleted files manually, in
-		// which case we must fall through and re-download instead of trusting
-		// the stale index entry.
+		// still present on disk AND matches the size from its sha pointer.
+		// A user may have deleted files manually, or a previous split download
+		// may have left a truncated shard behind; in either case we must fall
+		// through and re-download instead of trusting the stale index entry.
 		filesPresent := hasFile
 		if filesPresent {
 			for _, mf := range mp.ModelFiles {
-				if _, err := os.Stat(mf); err != nil {
+				if err := model.CheckModel(mf, false); err != nil {
+					log(ctx, "download-model: index entry stale, re-downloading", "model-file", mf, "ERROR", err)
 					filesPresent = false
 					break
 				}
 			}
 		}
 		if filesPresent && projFileURL != "" && mp.ProjFile != "" {
-			if _, err := os.Stat(mp.ProjFile); err != nil {
+			if err := model.CheckModel(mp.ProjFile, false); err != nil {
+				log(ctx, "download-model: index entry stale, re-downloading projection", "proj-file", mp.ProjFile, "ERROR", err)
 				filesPresent = false
 			}
 		}
@@ -598,13 +615,42 @@ func (m *Models) modelFilePathAndName(modelFileURL string) (string, string, erro
 
 // =============================================================================
 
-func fileSize(filePath string) (int, error) {
-	info, err := os.Stat(filePath)
-	if err != nil {
-		return 0, err
+// verifyAllSizes confirms every shard (and the projection, if any) of the
+// supplied model entry exists on disk and its size matches the value
+// recorded in the companion sha pointer file. CheckModel is called with
+// checkSHA=false so the (very expensive) sha256 re-hash is skipped — for
+// detecting an interrupted download a size mismatch is all we need.
+func verifyAllSizes(mp Path) error {
+	for _, mf := range mp.ModelFiles {
+		if err := model.CheckModel(mf, false); err != nil {
+			return fmt.Errorf("verify-sizes: model-file[%s]: %w", filepath.Base(mf), err)
+		}
 	}
 
-	return int(info.Size()), nil
+	if mp.ProjFile != "" {
+		if err := model.CheckModel(mp.ProjFile, false); err != nil {
+			return fmt.Errorf("verify-sizes: proj-file[%s]: %w", filepath.Base(mp.ProjFile), err)
+		}
+	}
+
+	return nil
+}
+
+// verifySizesFromIndex resolves the model id back to its on-disk paths and
+// runs verifyAllSizes against them. Used by downloadSplits to gate the
+// "mark validated" defer so a partially-completed split does not get
+// stamped as valid in the index.
+func (m *Models) verifySizesFromIndex(modelID string) error {
+	mp, err := m.FullPath(modelID)
+	if err != nil {
+		return fmt.Errorf("verify-sizes-from-index: %w", err)
+	}
+
+	if len(mp.ModelFiles) == 0 {
+		return fmt.Errorf("verify-sizes-from-index: no model files recorded for %q", modelID)
+	}
+
+	return verifyAllSizes(mp)
 }
 
 func createProjFileName(modelFileName string) string {
