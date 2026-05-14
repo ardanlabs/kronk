@@ -99,6 +99,7 @@ install-tooling:
 	brew list protobuf || brew install protobuf
 	brew list grpcurl || brew install grpcurl
 	brew list node || brew install node
+	brew list rg || brew install rg
 
 # Install the kronk cli.
 install-kronk:

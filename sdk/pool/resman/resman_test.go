@@ -42,10 +42,9 @@ func snapshotSingle() resman.Snapshot {
 // exactly BudgetPercent of TotalBytes.
 func noHeadroom(snap resman.Snapshot, pct int) resman.Config {
 	return resman.Config{
-		Snapshot:         snap,
-		BudgetPercent:    pct,
-		HeadroomBytes:    -1, // negative is clamped to 0 in New.
-		RAMHeadroomBytes: -1, // negative is clamped to 0 in New.
+		Snapshot:      snap,
+		BudgetPercent: pct,
+		HeadroomBytes: -1, // negative is clamped to 0 in New.
 	}
 }
 
@@ -394,7 +393,7 @@ func Test_Reserve_RAMBudget(t *testing.T) {
 		Devices:  []resman.Device{{Name: "CUDA0", Type: "gpu_cuda", TotalBytes: 8 * GiB}},
 		RAMBytes: 10 * GiB,
 	}
-	m, err := resman.New(resman.Config{Snapshot: snap, BudgetPercent: 100, HeadroomBytes: -1, RAMHeadroomBytes: -1})
+	m, err := resman.New(resman.Config{Snapshot: snap, BudgetPercent: 100, HeadroomBytes: -1})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
