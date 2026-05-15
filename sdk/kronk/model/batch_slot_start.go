@@ -19,16 +19,21 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.active = true
 	s.job = job
 
-	// If the rendered prompt ends with "<think>\n", the template has already
-	// opened a reasoning block. Prime the parser and slot to start in
-	// reasoning mode so generated tokens are correctly classified until
-	// </think>. Setting reasonFlag ensures grammar sampling is skipped
-	// during the thinking phase.
+	// If the rendered prompt ends with "<think>" followed by any trailing
+	// whitespace, the template has already opened a reasoning block. Prime
+	// the parser and slot to start in reasoning mode so generated tokens
+	// are correctly classified until </think>. Setting reasonFlag ensures
+	// grammar sampling is skipped during the thinking phase.
+	//
+	// Templates differ in trailing whitespace after the <think> opener:
+	// Qwen emits exactly "<think>\n", Nemotron emits "<think>\n\n", and
+	// some custom templates may emit "<think>" with no newline. Accept
+	// any of these by trimming trailing ASCII whitespace before checking.
 	//
 	// Skip reasoning mode when grammar is specified — grammar constrains
 	// the output format, so free-form thinking is counterproductive and
 	// would consume max_tokens before producing any constrained content.
-	if strings.HasSuffix(job.prompt, "<think>\n") && job.params.Grammar == "" {
+	if strings.HasSuffix(strings.TrimRight(job.prompt, " \t\r\n"), "<think>") && job.params.Grammar == "" {
 		// Drive the state machine into reasoning mode by feeding the same
 		// marker the model would have emitted. Parsers that recognize
 		// <think> (standard, qwen, mistral, glm) flip to ChannelReasoning;
