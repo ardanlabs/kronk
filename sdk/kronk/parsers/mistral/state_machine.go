@@ -7,7 +7,8 @@ import (
 // stateMachine is a per-slot streaming state machine for Mistral and Devstral.
 //
 // Recognized markers:
-//   - <think>…</think>           reasoning wrap
+//   - <think>…</think>           reasoning wrap (Magistral/Devstral)
+//   - [THINK]…[/THINK]           reasoning wrap (Mistral Medium 3.5+)
 //   - [TOOL_CALLS]               opens a streaming tool-call buffer
 //
 // Once [TOOL_CALLS] is emitted, every subsequent token (until EOG) is
@@ -40,11 +41,11 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	}
 
 	switch content {
-	case "<think>":
+	case "<think>", "[THINK]":
 		sm.status = model.ChannelReasoning
 		return model.Result{}, false
 
-	case "</think>":
+	case "</think>", "[/THINK]":
 		sm.status = model.ChannelAnswer
 		return model.Result{}, false
 
