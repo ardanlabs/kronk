@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/spf13/cobra"
 )
 
@@ -104,7 +105,13 @@ func run(cmd *cobra.Command) error {
 	listInstalls, _ := cmd.Flags().GetBool("list-installs")
 	removeInstall, _ := cmd.Flags().GetBool("remove-install")
 
+	// Honor the persistent --base-path flag (falls back to KRONK_BASE_PATH
+	// env var inside GetBasePath) so local-mode installs land under the
+	// requested directory instead of the user's home.
+	basePath := client.GetBasePath(cmd)
+
 	opts := installOpts{
+		basePath:  basePath,
 		arch:      arch,
 		os:        opSys,
 		processor: processor,
@@ -123,7 +130,7 @@ func run(cmd *cobra.Command) error {
 	}
 
 	if local {
-		return runLocal(upgrade, version)
+		return runLocal(basePath, upgrade, version)
 	}
 	return runWeb(upgrade, version)
 }
