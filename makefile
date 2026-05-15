@@ -329,6 +329,8 @@ kronk-build: kronk-docs bui-build
 kronk-docs:
 	go run cmd/server/api/tooling/docs/*.go
 
+# export KRONK_LIB_VERSION=b9163 && \
+
 kronk-server:
 	. .env 2>/dev/null || true && \
 	export KRONK_DOWNLOAD_ENABLED=true && \

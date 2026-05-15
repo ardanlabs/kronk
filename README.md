@@ -54,10 +54,15 @@ Read the [Manual](./manual) to learn more about running the Kronk Model Server.
 
 Sometimes there are breaking changes to llama.cpp that require an update to yzma and Kronk. Here are some of the known compatible versions:
 
+As of May 15th, 2026 please use version b9163 until we can fix the problems with b9165+
+
+You can use this environment variable: `export KRONK_LIB_VERSION=b9163`
+
 | llama.cpp | yzma    | kronk  |
 | --------- | ------- | ------ |
 | b8864     | v1.12.0 | 1.23.1 |
 | b8865+    | v1.13.0 | 1.23.2 |
+| b9165+    | ??????? | ?????? |
 
 ## Owner Information
 
