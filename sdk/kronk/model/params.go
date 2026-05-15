@@ -739,10 +739,6 @@ func (m *Model) adjustParams(p Params) Params {
 		p.MinP = DefMinP
 	}
 
-	if p.ReasoningEffort == "" {
-		p.ReasoningEffort = DefReasoningEffort
-	}
-
 	if p.RepeatLastN <= 0 {
 		p.RepeatLastN = DefRepeatLastN
 	}
