@@ -22,13 +22,6 @@
                         "output": 65536
                     }
                 },
-                "NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q8_K_XL/AGENT": {
-                    "name": "NVIDIA Nemotron 3",
-                    "limit": {
-                        "context": 131072,
-                        "output": 65536
-                    }
-                },
             }
         }
     },
