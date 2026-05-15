@@ -548,6 +548,16 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="type-paramsadjuster">
+              <h4>ParamsAdjuster</h4>
+              <pre className="code-block">
+                <code>{`type ParamsAdjuster interface {
+	AdjustParams(p Params) Params
+}`}</code>
+              </pre>
+              <p className="doc-description">ParamsAdjuster is an optional interface a Parser may implement to coerce request Params into values its model lineage's chat template will accept. It is invoked at the end of Model.adjustParams, after global defaults have been applied. Use cases include clamping reasoning_effort to the subset of values a strict template (e.g. Mistral Medium 3.5) will validate.</p>
+            </div>
+
             <div className="doc-section" id="type-parser">
               <h4>Parser</h4>
               <pre className="code-block">
@@ -1615,6 +1625,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-modeltype">ModelType</a></li>
                 <li><a href="#type-option">Option</a></li>
                 <li><a href="#type-params">Params</a></li>
+                <li><a href="#type-paramsadjuster">ParamsAdjuster</a></li>
                 <li><a href="#type-parser">Parser</a></li>
                 <li><a href="#type-parserfactory">ParserFactory</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>

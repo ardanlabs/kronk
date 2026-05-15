@@ -98,6 +98,15 @@ type Parser interface {
 	ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
 }
 
+// ParamsAdjuster is an optional interface a Parser may implement to coerce
+// request Params into values its model lineage's chat template will accept.
+// It is invoked at the end of Model.adjustParams, after global defaults have
+// been applied. Use cases include clamping reasoning_effort to the subset of
+// values a strict template (e.g. Mistral Medium 3.5) will validate.
+type ParamsAdjuster interface {
+	AdjustParams(p Params) Params
+}
+
 // Fingerprint carries the model metadata that parser selection logic
 // inspects at Model.Load time.
 type Fingerprint struct {

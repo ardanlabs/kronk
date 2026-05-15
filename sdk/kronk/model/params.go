@@ -739,6 +739,10 @@ func (m *Model) adjustParams(p Params) Params {
 		p.MinP = DefMinP
 	}
 
+	if p.ReasoningEffort == "" {
+		p.ReasoningEffort = DefReasoningEffort
+	}
+
 	if p.RepeatLastN <= 0 {
 		p.RepeatLastN = DefRepeatLastN
 	}
@@ -773,6 +777,13 @@ func (m *Model) adjustParams(p Params) Params {
 
 	if p.XtcThreshold <= 0 {
 		p.XtcThreshold = DefXtcThreshold
+	}
+
+	// Give the selected parser a chance to coerce params into values its
+	// chat template will accept (e.g. Mistral Medium 3.5 only allows
+	// reasoning_effort in {none, high}).
+	if adj, ok := m.parser.(ParamsAdjuster); ok {
+		p = adj.AdjustParams(p)
 	}
 
 	return p
