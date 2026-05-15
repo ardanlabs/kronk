@@ -14,7 +14,8 @@ interface Props {
 }
 
 export default function DownloadInfoTable({ meta }: Props) {
-  const isSplit = meta.model_urls.length > 1;
+  const total = Math.max(meta.fileTotal || 0, meta.model_urls.length);
+  const isSplit = total > 1;
 
   return (
     <table className="flags-table">
@@ -25,18 +26,25 @@ export default function DownloadInfoTable({ meta }: Props) {
             <td><code>{meta.model_id}</code></td>
           </tr>
         )}
-        {meta.model_urls.length === 1 && (
+        {!isSplit && meta.model_urls.length === 1 && (
           <tr>
             <th>Model URL</th>
             <td><a href={meta.model_urls[0]} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(meta.model_urls[0])}</code></a></td>
           </tr>
         )}
-        {isSplit && meta.model_urls.map((url, i) => (
-          <tr key={url}>
-            <th>Split {i + 1} of {meta.model_urls.length}</th>
-            <td><a href={url} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(url)}</code></a></td>
-          </tr>
-        ))}
+        {isSplit && Array.from({ length: total }, (_, i) => {
+          const url = meta.model_urls[i];
+          return (
+            <tr key={url ?? `pending-${i}`}>
+              <th>Split {i + 1} of {total}</th>
+              <td>
+                {url
+                  ? <a href={url} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(url)}</code></a>
+                  : <em>pending…</em>}
+              </td>
+            </tr>
+          );
+        })}
         {meta.proj_url && (
           <tr>
             <th>Projection URL</th>
