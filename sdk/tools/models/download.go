@@ -190,20 +190,30 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 	// populate LocalPaths when every expected file is present, so the
 	// resolver already knows the on-disk layout via Family and we can
 	// build the Path directly without consulting the model index.
+	//
+	// attachLocal uses os.Stat only, which cannot distinguish a complete
+	// file from a partial download left behind by a cancelled pull. Run
+	// verifyAllSizes against the sha pointer files before short-circuiting;
+	// on a size mismatch fall through to the regular download path so the
+	// truncated shard (or projection) gets re-fetched.
 	if len(res.LocalPaths) > 0 {
-		log(ctx, "download-model: already installed", "provider", res.Provider, "family", res.Family)
-
-		if res.LocalProj != "" {
-			log(ctx, "download-projection: already installed", "provider", res.Provider, "family", res.Family)
-		}
-
 		mp := Path{
 			ModelFiles: append([]string(nil), res.LocalPaths...),
 			ProjFile:   res.LocalProj,
 			Downloaded: true,
 		}
 
-		return mp, nil
+		if vErr := verifyAllSizes(mp); vErr != nil {
+			log(ctx, "download-model: on-disk copy is incomplete, re-downloading", "provider", res.Provider, "family", res.Family, "ERROR", vErr)
+		} else {
+			log(ctx, "download-model: already installed", "provider", res.Provider, "family", res.Family)
+
+			if res.LocalProj != "" {
+				log(ctx, "download-projection: already installed", "provider", res.Provider, "family", res.Family)
+			}
+
+			return mp, nil
+		}
 	}
 
 	if len(res.DownloadURLs) == 0 {
