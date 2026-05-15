@@ -21,6 +21,7 @@ import (
 // install/list/listCombo/remove should be true when isInstallOp returns true;
 // runInstall* functions return an error otherwise.
 type installOpts struct {
+	basePath  string
 	arch      string
 	os        string
 	processor string
@@ -53,7 +54,7 @@ func runInstallLocal(opts installOpts) error {
 		return nil
 	}
 
-	lib, err := libs.New()
+	lib, err := libs.New(libs.WithBasePath(opts.basePath))
 	if err != nil {
 		return fmt.Errorf("libs: install: %w", err)
 	}

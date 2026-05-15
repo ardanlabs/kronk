@@ -30,10 +30,16 @@ func LibVersion(override string) string {
 	return libVersion
 }
 
-// BaseDir is the default base folder location for kronk files.
+// BaseDir is the default base folder location for kronk files. The supplied
+// override wins; otherwise the KRONK_BASE_PATH environment variable is
+// consulted; otherwise the location falls back to $HOME/.kronk.
 func BaseDir(override string) string {
 	if override != "" {
 		return override
+	}
+
+	if v := os.Getenv("KRONK_BASE_PATH"); v != "" {
+		return v
 	}
 
 	homeDir, err := os.UserHomeDir()
