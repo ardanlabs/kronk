@@ -11,10 +11,16 @@ function urlBaseName(url: string): string {
 
 interface Props {
   meta: DownloadMeta;
+  // urls, when provided, is the authoritative list of shard URLs known
+  // up front (e.g. from the resolver). It overrides the streamed
+  // model_urls so the row count always matches the true number of files
+  // even before the per-file SSE meta arrives.
+  urls?: string[];
 }
 
-export default function DownloadInfoTable({ meta }: Props) {
-  const total = Math.max(meta.fileTotal || 0, meta.model_urls.length);
+export default function DownloadInfoTable({ meta, urls }: Props) {
+  const shardUrls = urls && urls.length > 0 ? urls : meta.model_urls;
+  const total = shardUrls.length;
   const isSplit = total > 1;
 
   return (
@@ -26,14 +32,14 @@ export default function DownloadInfoTable({ meta }: Props) {
             <td><code>{meta.model_id}</code></td>
           </tr>
         )}
-        {!isSplit && meta.model_urls.length === 1 && (
+        {!isSplit && shardUrls.length === 1 && (
           <tr>
             <th>Model URL</th>
-            <td><a href={meta.model_urls[0]} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(meta.model_urls[0])}</code></a></td>
+            <td><a href={shardUrls[0]} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(shardUrls[0])}</code></a></td>
           </tr>
         )}
         {isSplit && Array.from({ length: total }, (_, i) => {
-          const url = meta.model_urls[i];
+          const url = shardUrls[i];
           return (
             <tr key={url ?? `pending-${i}`}>
               <th>Split {i + 1} of {total}</th>

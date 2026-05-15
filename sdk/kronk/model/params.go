@@ -711,6 +711,14 @@ func (m *Model) parseParams(d D) (Params, error) {
 	// "is true"/"is false" tests require a real bool, not a string.
 	d["enable_thinking"] = p.Thinking == ThinkingEnabled
 
+	// Mirror the resolved reasoning_effort back into d so any parser-level
+	// coercion (e.g. mistral coercing "medium" → "high" for templates that
+	// only accept {none, high}) is visible to the Jinja template, which
+	// reads d["reasoning_effort"] directly.
+	if p.ReasoningEffort != "" {
+		d["reasoning_effort"] = p.ReasoningEffort
+	}
+
 	return p, nil
 }
 
@@ -777,6 +785,13 @@ func (m *Model) adjustParams(p Params) Params {
 
 	if p.XtcThreshold <= 0 {
 		p.XtcThreshold = DefXtcThreshold
+	}
+
+	// Give the selected parser a chance to coerce params into values its
+	// chat template will accept (e.g. Mistral Medium 3.5 only allows
+	// reasoning_effort in {none, high}).
+	if adj, ok := m.parser.(ParamsAdjuster); ok {
+		p = adj.AdjustParams(p)
 	}
 
 	return p

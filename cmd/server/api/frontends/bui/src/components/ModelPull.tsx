@@ -582,7 +582,7 @@ export default function ModelPull() {
         )}
 
         {download && download.meta && (
-          <DownloadInfoTable meta={download.meta} />
+          <DownloadInfoTable meta={download.meta} urls={resolved?.download_urls} />
         )}
 
         {download && download.progress && isDownloading && (
