@@ -711,6 +711,14 @@ func (m *Model) parseParams(d D) (Params, error) {
 	// "is true"/"is false" tests require a real bool, not a string.
 	d["enable_thinking"] = p.Thinking == ThinkingEnabled
 
+	// Mirror the resolved reasoning_effort back into d so any parser-level
+	// coercion (e.g. mistral coercing "medium" → "high" for templates that
+	// only accept {none, high}) is visible to the Jinja template, which
+	// reads d["reasoning_effort"] directly.
+	if p.ReasoningEffort != "" {
+		d["reasoning_effort"] = p.ReasoningEffort
+	}
+
 	return p, nil
 }
 
