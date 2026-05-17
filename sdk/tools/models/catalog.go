@@ -104,6 +104,25 @@ type Resolution struct {
 	RepoFiles []hf.RepoFile
 }
 
+// VerifyLocal reports whether every model file (and any projection)
+// referenced by the resolution exists on disk at its canonical path and
+// has the size recorded in its companion sha pointer file. It returns
+// nil when the on-disk copy is complete and an error describing the
+// first missing or short file otherwise. Callers (notably the BUI
+// Resolve handler) use it to distinguish a fully installed model from
+// one whose download was cancelled or truncated, so the UI can offer to
+// resume the pull instead of locking the user out with "already
+// installed". The check is size-only (no sha256 re-hash) so it is cheap
+// enough to run on every Resolve request.
+func (r Resolution) VerifyLocal() error {
+	mp := Path{
+		ModelFiles: append([]string(nil), r.LocalPaths...),
+		ProjFile:   r.LocalProj,
+	}
+
+	return verifyAllSizes(mp)
+}
+
 // Resolver maps a model ID (bare or provider/id) to download URLs and
 // on-disk paths. It uses a YAML cache file ("catalog.yaml") for
 // previously-seen IDs and falls back to the HuggingFace API for new ones.

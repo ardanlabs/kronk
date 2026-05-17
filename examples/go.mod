@@ -5,10 +5,10 @@ go 1.26.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
-	github.com/ardanlabs/kronk v1.25.6
+	github.com/ardanlabs/kronk v1.25.7
 	github.com/duckdb/duckdb-go/v2 v2.10502.0
 	github.com/google/uuid v1.6.0
-	github.com/hybridgroup/yzma v1.13.0
+	github.com/hybridgroup/yzma v1.14.0
 )
 
 require (

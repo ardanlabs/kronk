@@ -194,9 +194,20 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		}
 	}
 
+	// Every expected model file (and the projection, when present) must
+	// exist on disk AND match the size recorded in its sha pointer file
+	// before we report the model as installed. attachLocal only does an
+	// os.Stat, so a partial download left behind by a cancelled pull
+	// would otherwise look identical to a completed install — the BUI
+	// would then disable the Pull button and the user could never resume.
 	installed := len(res.LocalPaths) > 0 && len(res.LocalPaths) == len(res.Files)
 	if installed && res.MMProj != "" && res.LocalProj == "" {
 		installed = false
+	}
+	if installed {
+		if err := res.VerifyLocal(); err != nil {
+			installed = false
+		}
 	}
 
 	return ResolveResponse{

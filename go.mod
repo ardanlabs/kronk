@@ -11,7 +11,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.6
-	github.com/hybridgroup/yzma v1.13.0
+	github.com/hybridgroup/yzma v1.14.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.6.0
 	github.com/open-policy-agent/opa v1.16.2

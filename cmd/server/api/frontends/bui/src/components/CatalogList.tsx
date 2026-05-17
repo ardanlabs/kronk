@@ -486,7 +486,13 @@ export default function CatalogList() {
     setConfirmingRemove(false);
   };
 
-  const isDownloaded = data?.find((m) => m.id === selectedId)?.downloaded ?? false;
+  // A model is "Already Downloaded" only when it is both present on disk
+  // AND has passed size validation. A cancelled or truncated pull leaves
+  // a partial GGUF on disk so `downloaded` is true while `validated` is
+  // false — in that case the Pull button must stay enabled so the user
+  // can resume the download (go-getter restarts from the existing bytes).
+  const selectedSummary = data?.find((m) => m.id === selectedId);
+  const isDownloaded = (selectedSummary?.downloaded ?? false) && (selectedSummary?.validated ?? false);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
