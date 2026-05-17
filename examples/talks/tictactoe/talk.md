@@ -41,11 +41,11 @@ short and direct — do not add features I haven't asked for.
 ```
 Score: X: 0 | O: 0 | Draws: 0
 
-1 | 2 | 3
-----------
-4 | 5 | 6
-----------
-7 | 8 | 9
+ 1 | 2 | 3
+-----------
+ 4 | 5 | 6
+-----------
+ 7 | 8 | 9
 
 Player X's turn. Enter a number (1-9):
 ```
