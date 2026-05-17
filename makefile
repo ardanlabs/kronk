@@ -1056,7 +1056,7 @@ agents-rote-opencode:
 #                                                 §Update/uninstall.
 #   2. The `rote` binary on PATH                — installed by
 #                                                 agents-rote-install.
-#   3. Every host config dir we ever write to   — opencode, kilo, pi, goose.
+#   3. Every host config dir we ever write to   — opencode
 #                                                 We blow away the whole
 #                                                 directory (configs,
 #                                                 sessions, threads, the lot)
@@ -1078,10 +1078,4 @@ agents-wipe:
 	fi
 	@echo "==> removing opencode agent config"
 	rm -rf $$HOME/.config/opencode
-	@echo "==> removing kilo agent config"
-	rm -rf $$HOME/.config/kilo
-	@echo "==> removing pi agent config"
-	rm -rf $$HOME/.pi
-	@echo "==> removing goose agent config"
-	rm -rf $$HOME/.config/goose
 	@echo "==> done. machine is in a pre-install state; run agents-default-<host> or agents-rote-<host> to reinstall."

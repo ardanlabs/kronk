@@ -1,21 +1,6 @@
 {
     "$schema": "https://opencode.ai/config.json",
     "provider": {
-        "ollama": {
-            "models": {
-                "gemma4:26b": {
-                    "name": "gemma4:26b"
-                },
-                "qwen3.6:35b": {
-                    "name": "qwen3.6:35b"
-                }
-            },
-            "name": "Ollama",
-            "npm": "@ai-sdk/openai-compatible",
-            "options": {
-                "baseURL": "http://127.0.0.1:11434/v1"
-            }
-        },
         "kronk": {
             "npm": "@ai-sdk/openai-compatible",
             "name": "Kronk (local)",
@@ -40,14 +25,25 @@
             }
         }
     },
-    "model": "kronk/Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT",
+    "model": "kronk/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "formatter": true,
+    "lsp": true,
     "compaction": {
         "auto": false,
         "prune": false
     },
     "autoupdate": false,
     "share": "disabled",
+    "mcp": {
+        "kronk": {
+            "type": "remote",
+            "url": "http://localhost:9000/mcp"
+        }
+    },
     "plugin": [
         "opencode-session-handoff"
+    ],
+    "instructions": [
+        "agent.md"
     ]
 }
