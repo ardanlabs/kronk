@@ -36,7 +36,7 @@ In this talk, Bill will show why self-hosted inference belongs in your Go applic
 - Do not overthink writing this game and be concise when writing or refactoring the code.
 - The game play can be in the terminal.
 - Allow 2 players to play against each other.
-- Add the code to a file name `examples/talks/tictactoe/main.go`
+- Add the code to a file name `tictactoe/main.go` in the current directory.
 
 - Paint the board exactly like this using the color green for the lines and white for the numbers:
 
