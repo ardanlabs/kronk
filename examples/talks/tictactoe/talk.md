@@ -32,16 +32,13 @@ In this talk, Bill will show why self-hosted inference belongs in your Go applic
 
 ### Tic-Tac-Toe
 
-- I want you to write a simple tic-tac-toe game using only the Go standard library.
-- Do not overthink writing this game and be concise when writing or refactoring the code.
-- The game play can be in the terminal.
-- Allow 2 players to play against each other.
-- Add the code to a file name `tictactoe/main.go` in the current directory.
+Write a 2-player terminal tic-tac-toe game in a single file
+`tictactoe/main.go` using only the Go standard library. Keep the code
+short and direct — do not add features I haven't asked for.
 
-- Paint the board exactly like this using the color green for the lines and white for the numbers:
+**Board layout** (green lines, white numbers, red bold X, green bold O):
 
 ```
-
 Score: X: 0 | O: 0 | Draws: 0
 
 1 | 2 | 3
@@ -51,60 +48,39 @@ Score: X: 0 | O: 0 | Draws: 0
 7 | 8 | 9
 
 Player X's turn. Enter a number (1-9):
-
 ```
 
-- The following board shows the first player selecting space number 5. That `X` should be painted Red (bold).
+Empty cells show their number (1–9). Taken cells show `X` or `O`.
 
+**Rules**
+
+- Player X goes first, then alternate.
+- A move is valid if the chosen cell still shows a number.
+- After each move, check for a winner (3 in a row: horizontal,
+  vertical, or diagonal) or a draw (board full).
+- On invalid input (non-numeric, out of range, or taken), print an
+  error and re-prompt the same player.
+- When a game ends, print the result, update the score, and ask
+  `Play again? (y/n)`. Scores persist across games in the session.
+- Clear the screen before every board render (ANSI `\033[2J\033[H`).
+- Print a blank line before and after each board render.
+- Use ANSI escape codes for color. Reset after each colored segment.
+
+**Required functions** — you MUST call these from the game loop, not
+re-inline the logic:
+
+```go
+// playerX prompts player X and returns the chosen 1-9 cell.
+func playerX(b *Board) int
+
+// playerO prompts player O and returns the chosen 1-9 cell.
+func playerO(b *Board) int
 ```
-Score: X: 0 | O: 0 | Draws: 0
 
-1 | 2 | 3
-----------
-4 | X | 6
-----------
-7 | 8 | 9
+**Finish**
 
-Player O's turn. Enter a number (1-9):
-```
+- Run `go build` to confirm it compiles, then delete the binary.
+- Run `gofmt -s -w` on the file.
+- Do not run the game.
 
-- The following board shows the second player selecting space number 1. That `O` should be painted Green (bold).
-
-```
-O | 2 | 3
-----------
-4 | X | 6
-----------
-7 | 8 | 9
-
-Player X's turn. Enter a number (1-9):
-```
-
-## More Rules To Follow
-
-- Make sure there is a line space before and after rendering a new board.
-- Score tracking: display `Score: X: <n> | O: <n> | Draws: <n>` above the board. Scores persist across games within the same program session.
-- Use the color red (bold) for X, and green (bold) for O.
-- Clear the screen when rendering a new board.
-- When the game is over, clear the screen, render the final board with winning cells blinking for 2 seconds, and show the outcome of the game.
-- Ask Player1 to go first.
-- Each player will choose a number that corresponds to a place on the board.
-- The first player uses `X` and the second player uses `O`.
-- If the board is showing a number for that space, then that number is a valid move.
-- Always check for a winner or a draw after every move.
-- A draw would be all spaces having an `X` or an `O`.
-- There is a winner when there are 3 `X`'s or 3 `O`'s in a straight horizontal, vertical, or diagonal line.
-- When a game is over announce the winner and give the user an option to play again for quit the game.
-- I need functions called playerX and playerO that is used when it's that player's turn to choose a space. I need to encapsulate that functionality.
-- Do not attempt to run the game yourself.
-- Compile the program to validate it compiles. Fix any errors that you find. Then remove the binary you created to validate the code.
-- Run go fmt to make sure the code is properly formatted.
-- Invalid input (occupied space, non-numeric, out of range): Print an error and re-prompt the same player.
-- Play again prompt: Accept `y`/`n` keys.
-- Colors: Use standard ANSI escape codes (`\033[32m` green, `\033[31m` red, `\033[37m` white). Bold text for X and O (`\033[1m`). Blinking for winning cells (`\033[5m`).
-
-## Questions and Plan
-
-Please ask me any questions you have before you start coding so I can make sure you understand what to do.
-
-Once all the questions are answered I want a plan of how you will implement the code. Once I approve that plan you can begin.
+Start coding now. No questions, no plan — just write the code.
