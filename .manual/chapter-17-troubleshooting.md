@@ -55,7 +55,7 @@ KRONK_PROCESSOR=vulkan kronk libs --local
 KRONK_PROCESSOR=cpu kronk libs --local
 ```
 
-See [Chapter 3: Processor Selection](chapter-03-model-configuration.md#32-processor-selection)
+See [Chapter 3: Processor Selection](#32-processor-selection)
 for details on how auto-detection works on each platform.
 
 **Problem: New library version causes crashes or bad output**
@@ -110,7 +110,7 @@ you depend on. Unset `KRONK_LIB_VERSION` once the upstream fix is released
 to resume tracking either the default version (CLI) or latest (server with
 `--allow-upgrade=true`).
 
-See [Chapter 2: Installing Libraries](chapter-02-installation.md#23-installing-libraries)
+See [Chapter 2: Installing Libraries](#23-installing-libraries)
 for the full compatibility matrix.
 
 **Error: "unknown device"**
@@ -255,7 +255,7 @@ Qwen/Qwen3-8B-Q8_0:
   cache-type-v: q8_0
 ```
 
-See [Chapter 3: VRAM Estimation](chapter-03-model-configuration.md#39-vram-estimation)
+See [Chapter 3: VRAM Estimation](#39-vram-estimation)
 for how to calculate whether a model fits in your hardware.
 
 **Error: "the context window is full"**
@@ -268,7 +268,7 @@ context window during inference.
 - Reduce input size (fewer messages, shorter prompts)
 - Increase `context-window` in model config (requires more VRAM)
 - Enable YaRN for extended context (see
-  [Chapter 7](chapter-07-yarn-extended-context.md))
+  [Chapter 7](#chapter-7-yarn-extended-context))
 
 **Error: "input tokens [N] exceed context window [M]"**
 
@@ -477,7 +477,7 @@ Qwen/Qwen3-8B-Q8_0:
 For MoE models on Apple Silicon, consider a dense model at lower
 quantization — the sequential memory access pattern is faster than MoE's
 scattered expert routing (see
-[Chapter 3: Model-Specific Tuning](chapter-03-model-configuration.md#310-model-specific-tuning)).
+[Chapter 3: Model-Specific Tuning](#310-model-specific-tuning)).
 
 ### 17.8 IMC Caching Issues
 
@@ -783,4 +783,4 @@ Include the following when reporting bugs:
 
 ---
 
-_Next: [Chapter 18: Developer Guide](chapter-18-developer-guide.md)_
+_Next: [Chapter 18: Developer Guide](#chapter-18-developer-guide)_

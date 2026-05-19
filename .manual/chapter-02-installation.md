@@ -382,7 +382,7 @@ The file includes a commented reference at the top listing every option. Here ar
 | `cache-type-v`        | KV cache value quantization                            | —       |
 | `sampling-parameters` | Nested block for temperature, top_p, top_k, min_p      | —       |
 
-For the complete list of options and detailed explanations, see [Chapter 3: Model Configuration](chapter-03-model-configuration.md).
+For the complete list of options and detailed explanations, see [Chapter 3: Model Configuration](#chapter-3-model-configuration).
 
 **Editing the File**
 

@@ -164,8 +164,8 @@ allocates its own KV cache partition proportional to the full context window.
 Each slot reserves its own KV cache partition, so increasing `NSeqMax`
 increases VRAM usage proportionally. IMC does not add extra sequences.
 For details on how slot memory is allocated and how to estimate total VRAM, see
-[Section 3.7 — Parallel Inference (NSeqMax)](chapter-03-model-configuration.md#37-parallel-inference-nseqmax)
-and [Section 3.10 — VRAM Estimation](chapter-03-model-configuration.md#310-vram-estimation).
+[Section 3.7 — Parallel Inference (NSeqMax)](#37-parallel-inference-nseqmax)
+and [Section 3.10 — VRAM Estimation](#310-vram-estimation).
 
 ### 4.5 Concurrency by Model Type
 
@@ -281,7 +281,7 @@ Qwen/Qwen3-8B-Q8_0:
 
 This configuration handles 8 concurrent requests, uses quantized KV cache to
 reduce memory, and caches conversations incrementally for faster prefill. Here is the
-VRAM estimate (see [Section 3.10 — VRAM Estimation](chapter-03-model-configuration.md#310-vram-estimation) for the full formula):
+VRAM estimate (see [Section 3.10 — VRAM Estimation](#310-vram-estimation) for the full formula):
 
 ```
 Model                   : Qwen3-8B-Q8_0
