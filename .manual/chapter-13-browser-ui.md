@@ -1,10 +1,10 @@
-# Chapter 12: Browser UI (BUI)
+# Chapter 13: Browser UI (BUI)
 
 ## Table of Contents
 
-- [12.1 Accessing the BUI](#121-accessing-the-bui)
-- [12.2 Sidebar Layout](#122-sidebar-layout)
-- [12.3 What the BUI Provides](#123-what-the-bui-provides)
+- [13.1 Accessing the BUI](#131-accessing-the-bui)
+- [13.2 Sidebar Layout](#132-sidebar-layout)
+- [13.3 What the BUI Provides](#133-what-the-bui-provides)
   - [Models](#models)
   - [Catalog](#catalog)
   - [Libraries](#libraries)
@@ -12,8 +12,8 @@
   - [Security](#security)
   - [Docs](#docs)
   - [Settings](#settings)
-- [12.4 Authentication](#124-authentication)
-- [12.5 Notes on Live State](#125-notes-on-live-state)
+- [13.4 Authentication](#134-authentication)
+- [13.5 Notes on Live State](#135-notes-on-live-state)
 
 ---
 
@@ -25,7 +25,7 @@ loaded model. This chapter is a high-level guide to what the BUI offers;
 it intentionally does not enumerate every tab, filter, or button so that
 the documentation stays accurate as the UI evolves.
 
-### 12.1 Accessing the BUI
+### 13.1 Accessing the BUI
 
 The BUI loads automatically when you open the server root in a browser:
 
@@ -36,7 +36,7 @@ http://localhost:11435
 It is bundled inside the `kronk` binary and served from the same address
 configured by `KRONK_WEB_API_HOST` (default `0.0.0.0:11435`).
 
-### 12.2 Sidebar Layout
+### 13.2 Sidebar Layout
 
 Navigation is grouped into the following top-level sections in the
 sidebar:
@@ -50,7 +50,7 @@ sidebar:
 - **Docs** — bundled documentation (Manual, SDK, CLI, Web API)
 - **Settings** — BUI preferences and the admin token
 
-### 12.3 What the BUI Provides
+### 13.3 What the BUI Provides
 
 #### Models
 
@@ -72,7 +72,7 @@ list and grown as you pull or resolve new models against HuggingFace.
 
 It mirrors `kronk catalog list`, `kronk catalog show`, and
 `kronk catalog remove`, plus model pulling via `kronk model pull`.
-There is no curated upstream catalog; Chapter 7 covers the catalog
+There is no curated upstream catalog; Chapter 8 covers the catalog
 model in detail.
 
 #### Libraries
@@ -104,7 +104,7 @@ Three interactive tools live under **Apps**:
 
 #### Security
 
-When authentication is enabled (Chapter 11), the Security area lets
+When authentication is enabled (Chapter 12), the Security area lets
 you list, create, and delete signing keys and create user tokens with
 chosen durations, endpoint scopes, and rate limits. These pages
 require an admin token configured under Settings; with auth disabled
@@ -128,15 +128,15 @@ Settings holds BUI-level preferences, including the API token used
 by the BUI when calling the Web API. Set this when running with
 `--auth-enabled` so the BUI can reach security-protected endpoints.
 
-### 12.4 Authentication
+### 13.4 Authentication
 
 The BUI talks to the same `/v1` API as any other client. When
 `--auth-enabled` is set on `kronk server start`, every BUI call must
 carry a valid bearer token — configure it under **Settings**. With
-auth disabled the BUI works without configuration. See Chapter 11 for
+auth disabled the BUI works without configuration. See Chapter 12 for
 key and token management.
 
-### 12.5 Notes on Live State
+### 13.5 Notes on Live State
 
 A few things the BUI deliberately does not do:
 
@@ -151,4 +151,4 @@ A few things the BUI deliberately does not do:
 
 ---
 
-_Next: [Chapter 13: Client Integration](#chapter-13-client-integration)_
+_Next: [Chapter 14: Client Integration](#chapter-14-client-integration)_

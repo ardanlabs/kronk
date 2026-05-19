@@ -1,14 +1,14 @@
-# Chapter 9: Request Parameters
+# Chapter 10: Request Parameters
 
 ## Table of Contents
 
-- [9.1 Sampling Parameters](#91-sampling-parameters)
-- [9.2 Repetition Control](#92-repetition-control)
-- [9.3 Advanced Sampling](#93-advanced-sampling)
-- [9.4 Generation Control](#94-generation-control)
-- [9.5 Grammar Constrained Output](#95-grammar-constrained-output)
-- [9.6 Logprobs (Token Probabilities)](#96-logprobs-token-probabilities)
-- [9.7 Parameter Reference](#97-parameter-reference)
+- [10.1 Sampling Parameters](#101-sampling-parameters)
+- [10.2 Repetition Control](#102-repetition-control)
+- [10.3 Advanced Sampling](#103-advanced-sampling)
+- [10.4 Generation Control](#104-generation-control)
+- [10.5 Grammar Constrained Output](#105-grammar-constrained-output)
+- [10.6 Logprobs (Token Probabilities)](#106-logprobs-token-probabilities)
+- [10.7 Parameter Reference](#107-parameter-reference)
 
 ---
 
@@ -16,7 +16,7 @@
 
 This chapter documents the request parameters available for controlling model output through both the SDK and REST API.
 
-### 9.1 Sampling Parameters
+### 10.1 Sampling Parameters
 
 These parameters control the randomness and diversity of generated text.
 
@@ -27,7 +27,7 @@ These parameters control the randomness and diversity of generated text.
 | Top-P       | `top_p`       | float32 | 0.9     | Nucleus sampling threshold. Only tokens with cumulative probability ≤ top_p are considered.             |
 | Min-P       | `min_p`       | float32 | 0.0     | Dynamic sampling threshold. Tokens with probability < min_p × max_probability are excluded.             |
 
-### 9.2 Repetition Control
+### 10.2 Repetition Control
 
 These parameters help prevent repetitive output.
 
@@ -47,7 +47,7 @@ DRY penalizes n-gram repetitions to prevent the model from repeating phrases.
 | DRY Allowed Length | `dry_allowed_length` | int32   | 2       | Minimum n-gram length to consider for penalties.                            |
 | DRY Penalty Last N | `dry_penalty_last_n` | int32   | 0       | Number of recent tokens to consider for DRY. 0 means all tokens.            |
 
-### 9.3 Advanced Sampling
+### 10.3 Advanced Sampling
 
 **XTC (eXtreme Token Culling):**
 
@@ -68,7 +68,7 @@ Adaptive-P dynamically adjusts the sampling threshold based on output probabilit
 | Adaptive-P Target | `adaptive_p_target` | float32 | 0.0     | Target probability threshold. 0 disables adaptive sampling. |
 | Adaptive-P Decay  | `adaptive_p_decay`  | float32 | 0.0     | Speed of threshold adjustment toward target.                |
 
-### 9.4 Generation Control
+### 10.4 Generation Control
 
 | Parameter        | JSON Key           | Type   | Default  | Description                                                                |
 | ---------------- | ------------------ | ------ | -------- | -------------------------------------------------------------------------- |
@@ -78,7 +78,7 @@ Adaptive-P dynamically adjusts the sampling threshold based on output probabilit
 | Stream           | `stream`           | bool   | false    | Stream response chunks via SSE.                                            |
 | Include Usage    | `include_usage`    | bool   | true     | Include token usage statistics in streaming responses.                     |
 
-### 9.5 Grammar Constrained Output
+### 10.5 Grammar Constrained Output
 
 Grammars force the model to only produce tokens that match a specified pattern, guaranteeing structured output.
 
@@ -169,7 +169,7 @@ d := model.D{
 
 **Important:** When using grammar constraints, set `enable_thinking: false` because the grammar applies from the first output token.
 
-### 9.6 Logprobs (Token Probabilities)
+### 10.6 Logprobs (Token Probabilities)
 
 Request log probabilities for generated tokens to understand model confidence
 or implement custom sampling strategies.
@@ -255,7 +255,7 @@ curl http://localhost:11435/v1/chat/completions \
 - Custom rejection sampling
 - Token-level analysis for debugging
 
-### 9.7 Parameter Reference
+### 10.7 Parameter Reference
 
 | Parameter          | JSON Key             | Type    | Default  | Description                          |
 | ------------------ | -------------------- | ------- | -------- | ------------------------------------ |

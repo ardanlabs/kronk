@@ -1,19 +1,19 @@
-# Chapter 14: Observability
+# Chapter 15: Observability
 
 ## Table of Contents
 
-- [14.1 Debug Server](#141-debug-server)
-- [14.2 Debug Endpoints](#142-debug-endpoints)
-- [14.3 Health Check Endpoints](#143-health-check-endpoints)
-- [14.4 Prometheus Metrics](#144-prometheus-metrics)
-- [14.5 Prometheus Integration](#145-prometheus-integration)
-- [14.6 Distributed Tracing with Tempo](#146-distributed-tracing-with-tempo)
-- [14.7 Tracing Architecture](#147-tracing-architecture)
-- [14.8 Tempo Setup with Docker](#148-tempo-setup-with-docker)
-- [14.9 pprof Profiling](#149-pprof-profiling)
-- [14.10 Statsviz Real-Time Monitoring](#1410-statsviz-real-time-monitoring)
-- [14.11 Logging](#1411-logging)
-- [14.12 Configuration Reference](#1412-configuration-reference)
+- [15.1 Debug Server](#151-debug-server)
+- [15.2 Debug Endpoints](#152-debug-endpoints)
+- [15.3 Health Check Endpoints](#153-health-check-endpoints)
+- [15.4 Prometheus Metrics](#154-prometheus-metrics)
+- [15.5 Prometheus Integration](#155-prometheus-integration)
+- [15.6 Distributed Tracing with Tempo](#156-distributed-tracing-with-tempo)
+- [15.7 Tracing Architecture](#157-tracing-architecture)
+- [15.8 Tempo Setup with Docker](#158-tempo-setup-with-docker)
+- [15.9 pprof Profiling](#159-pprof-profiling)
+- [15.10 Statsviz Real-Time Monitoring](#1510-statsviz-real-time-monitoring)
+- [15.11 Logging](#1511-logging)
+- [15.12 Configuration Reference](#1512-configuration-reference)
 
 ---
 
@@ -22,7 +22,7 @@
 Kronk provides comprehensive observability through distributed tracing,
 Prometheus metrics, pprof profiling, and real-time visualizations.
 
-### 14.1 Debug Server
+### 15.1 Debug Server
 
 Kronk runs a separate debug server for observability endpoints, isolated
 from the main API for security.
@@ -45,7 +45,7 @@ export KRONK_WEB_DEBUG_HOST=localhost:9090
 kronk server start
 ```
 
-### 14.2 Debug Endpoints
+### 15.2 Debug Endpoints
 
 The debug server exposes these endpoints:
 
@@ -71,7 +71,7 @@ http://localhost:11445/debug/statsviz
 
 Provides live charts for memory, goroutines, GC, and more.
 
-### 14.3 Health Check Endpoints
+### 15.3 Health Check Endpoints
 
 Available on the main API port (no authentication required):
 
@@ -100,7 +100,7 @@ curl http://localhost:11435/v1/readiness
 
 Returns 200 OK when the server is ready to accept requests.
 
-### 14.4 Prometheus Metrics
+### 15.4 Prometheus Metrics
 
 Kronk exposes detailed inference metrics in Prometheus format.
 
@@ -171,7 +171,7 @@ Resource manager (sdk/pool/resman):
 - `resman_reservation_bytes{model_id, kind="ram|vram", device}` — per-reservation memory commitment.
 - `resman_reserve_rejections_total{reason="no_capacity|unknown_device|invalid_plan|duplicate_key|no_gpus|other"}` — counter of `Reserve` rejections.
 
-### 14.5 Prometheus Integration
+### 15.5 Prometheus Integration
 
 **Example Prometheus Configuration:**
 
@@ -225,7 +225,7 @@ Error rate:
 rate(errors[5m]) / rate(requests[5m])
 ```
 
-### 14.6 Distributed Tracing with Tempo
+### 15.6 Distributed Tracing with Tempo
 
 Kronk supports OpenTelemetry tracing with Grafana Tempo integration.
 
@@ -266,7 +266,7 @@ Health check endpoints are automatically excluded from tracing:
 - `/v1/liveness`
 - `/v1/readiness`
 
-### 14.7 Tracing Architecture
+### 15.7 Tracing Architecture
 
 **Request Flow with Tracing:**
 
@@ -306,7 +306,7 @@ Client Request
 - Prefill and generation phases
 - Token streaming
 
-### 14.8 Tempo Setup with Docker
+### 15.8 Tempo Setup with Docker
 
 **Run Tempo Locally:**
 
@@ -333,7 +333,7 @@ docker run -d --name grafana \
 3. Set URL: `http://tempo:3200`
 4. Save and explore traces
 
-### 14.9 pprof Profiling
+### 15.9 pprof Profiling
 
 Use Go's pprof tools for performance analysis.
 
@@ -364,7 +364,7 @@ go tool pprof -http=:8081 \
 
 Opens interactive web UI with flame graph visualization.
 
-### 14.10 Statsviz Real-Time Monitoring
+### 15.10 Statsviz Real-Time Monitoring
 
 Statsviz provides live runtime visualizations in your browser.
 
@@ -385,7 +385,7 @@ http://localhost:11445/debug/statsviz
 Useful for real-time monitoring during load testing or debugging
 memory issues.
 
-### 14.11 Logging
+### 15.11 Logging
 
 Kronk logs structured JSON to stdout by default.
 
@@ -410,7 +410,7 @@ Never enable in production.
 export KRONK_INSECURE_LOGGING=true
 ```
 
-### 14.12 Configuration Reference
+### 15.12 Configuration Reference
 
 **Debug Server:**
 
@@ -435,4 +435,4 @@ export KRONK_INSECURE_LOGGING=true
 
 ---
 
-_Next: [Chapter 15: MCP Service](#chapter-15-mcp-service)_
+_Next: [Chapter 16: MCP Service](#chapter-16-mcp-service)_

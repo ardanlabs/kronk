@@ -167,7 +167,7 @@ kronk libs --local --upgrade
 > The standalone CLI defaults to the pinned default version so reinstalls
 > are reproducible. The model server takes the opposite default
 > (`--allow-upgrade=true`) so a long-running server picks up upstream
-> fixes; see Chapter 7 §7.3 for that flag.
+> fixes; see Chapter 8 §8.3 for that flag.
 
 **Pinning a Specific Library Version**
 

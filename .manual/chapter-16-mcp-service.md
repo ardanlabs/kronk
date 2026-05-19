@@ -1,16 +1,16 @@
-# Chapter 15: MCP Service
+# Chapter 16: MCP Service
 
 ## Table of Contents
 
-- [15.1 Architecture](#151-architecture)
-- [15.2 Prerequisites](#152-prerequisites)
-- [15.3 Configuration](#153-configuration)
-- [15.4 Available Tools](#154-available-tools)
+- [16.1 Architecture](#161-architecture)
+- [16.2 Prerequisites](#162-prerequisites)
+- [16.3 Configuration](#163-configuration)
+- [16.4 Available Tools](#164-available-tools)
   - [web_search](#web_search)
   - [fuzzy_edit](#fuzzy_edit)
-- [15.5 Client Configuration](#155-client-configuration)
+- [16.5 Client Configuration](#165-client-configuration)
   - [OpenCode](#opencode)
-- [15.6 Testing with curl](#156-testing-with-curl)
+- [16.6 Testing with curl](#166-testing-with-curl)
 
 ---
 
@@ -29,9 +29,9 @@ provided today:
 MCP is an open standard that lets AI agents call external tools over a
 simple JSON-RPC protocol. By running the MCP service, any MCP-compatible
 client can discover and invoke tools served by Kronk. The project ships
-a ready-to-use config for OpenCode (see Chapter 13).
+a ready-to-use config for OpenCode (see Chapter 14).
 
-### 15.1 Architecture
+### 16.1 Architecture
 
 The MCP service can run in two modes:
 
@@ -54,7 +54,7 @@ go run cmd/server/api/services/mcp/main.go
 
 Both modes serve the same MCP protocol on the same default port (`9000`).
 
-### 15.2 Prerequisites
+### 16.2 Prerequisites
 
 The `web_search` tool requires a Brave Search API key. Get a free key at
 [https://brave.com/search/api/](https://brave.com/search/api/).
@@ -62,7 +62,7 @@ The `web_search` tool requires a Brave Search API key. Get a free key at
 The `fuzzy_edit` tool needs no external credentials — it operates on the
 local filesystem and is available as soon as the MCP service starts.
 
-### 15.3 Configuration
+### 16.3 Configuration
 
 **Environment Variables:**
 
@@ -89,7 +89,7 @@ export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>
 make mcp-server
 ```
 
-### 15.4 Available Tools
+### 16.4 Available Tools
 
 #### web_search
 
@@ -132,7 +132,7 @@ file is not modified.
 | `old_string` | string | Yes      | Text to find in the file (fuzzy whitespace matching is applied)          |
 | `new_string` | string | Yes      | Replacement text                                                         |
 
-### 15.5 Client Configuration
+### 16.5 Client Configuration
 
 The MCP service uses the Streamable HTTP transport. Configure your
 MCP-compatible client to connect to `http://localhost:9000/mcp`.
@@ -140,7 +140,7 @@ MCP-compatible client to connect to `http://localhost:9000/mcp`.
 #### OpenCode
 
 OpenCode is the only client this project ships a bundle for. Install
-it with `make agents-default-opencode` (see Chapter 13). The bundle
+it with `make agents-default-opencode` (see Chapter 14). The bundle
 drops this MCP entry into `~/.config/opencode/opencode.jsonc`:
 
 ```jsonc
@@ -157,7 +157,7 @@ drops this MCP entry into `~/.config/opencode/opencode.jsonc`:
 OpenCode lowercases the server prefix, so the tools are exposed as
 `kronk_web_search` and `kronk_fuzzy_edit`.
 
-### 15.6 Testing with curl
+### 16.6 Testing with curl
 
 You can test the MCP service manually using curl. See the makefile targets
 for convenience commands.
@@ -184,4 +184,4 @@ make curl-mcp-web-search SESSIONID=<session-id>
 
 ---
 
-_Next: [Chapter 16: Troubleshooting](#chapter-16-troubleshooting)_
+_Next: [Chapter 17: Troubleshooting](#chapter-17-troubleshooting)_

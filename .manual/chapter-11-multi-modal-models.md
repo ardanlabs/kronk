@@ -1,17 +1,17 @@
-# Chapter 10: Multi-Modal Models
+# Chapter 11: Multi-Modal Models
 
 ## Table of Contents
 
-- [10.1 Overview](#101-overview)
-- [10.2 Vision Models](#102-vision-models)
-- [10.3 Audio Models](#103-audio-models)
-- [10.4 Plain Base64 Format](#104-plain-base64-format)
-- [10.5 Configuration for Multi-Modal Models](#105-configuration-for-multi-modal-models)
-- [10.6 Memory Requirements](#106-memory-requirements)
-- [10.7 IMC and Multi-Modal Caching](#107-imc-and-multi-modal-caching)
-- [10.8 Limitations](#108-limitations)
-- [10.9 Example: Image Analysis](#109-example-image-analysis)
-- [10.10 Example: Audio Transcription](#1010-example-audio-transcription)
+- [11.1 Overview](#111-overview)
+- [11.2 Vision Models](#112-vision-models)
+- [11.3 Audio Models](#113-audio-models)
+- [11.4 Plain Base64 Format](#114-plain-base64-format)
+- [11.5 Configuration for Multi-Modal Models](#115-configuration-for-multi-modal-models)
+- [11.6 Memory Requirements](#116-memory-requirements)
+- [11.7 IMC and Multi-Modal Caching](#117-imc-and-multi-modal-caching)
+- [11.8 Limitations](#118-limitations)
+- [11.9 Example: Image Analysis](#119-example-image-analysis)
+- [11.10 Example: Audio Transcription](#1110-example-audio-transcription)
 
 ---
 
@@ -20,7 +20,7 @@
 Kronk supports vision and audio models that can process images, video frames,
 and audio alongside text. This chapter covers how to use these models.
 
-### 10.1 Overview
+### 11.1 Overview
 
 Multi-modal models combine a language model with a media projector that
 converts images or audio into tokens the model can understand.
@@ -47,7 +47,7 @@ Example models from the seed catalog:
 - `mradermacher/Qwen2-Audio-7B.Q8_0` - Audio model
 - `ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0` - Vision + audio + video
 
-### 10.2 Vision Models
+### 11.2 Vision Models
 
 Vision models analyze images and answer questions about their content.
 
@@ -105,7 +105,7 @@ The `content` field is an array of content parts:
 - Base64 data URL: `data:image/jpeg;base64,/9j/4AAQSkZJRg...`
 - Base64 data URL: `data:image/png;base64,iVBORw0KGgo...`
 
-### 10.3 Audio Models
+### 11.3 Audio Models
 
 Audio models transcribe and understand spoken content.
 
@@ -148,7 +148,7 @@ curl http://localhost:11435/v1/chat/completions \
 - `data` - Base64-encoded audio data
 - `format` - Audio format (currently `wav` supported)
 
-### 10.4 Plain Base64 Format
+### 11.4 Plain Base64 Format
 
 For simpler integrations, Kronk also accepts plain base64 as the message
 content (without the structured OpenAI format):
@@ -171,7 +171,7 @@ Kronk auto-detects the media type from the binary header:
 - PNG: starts with `89 50 4E 47`
 - WAV: starts with `RIFF`
 
-### 10.5 Configuration for Multi-Modal Models
+### 11.5 Configuration for Multi-Modal Models
 
 Vision and audio models have specific configuration requirements:
 
@@ -188,7 +188,7 @@ unsloth/LFM2.5-VL-1.6B-Q8_0:
 - `nseq-max` controls batch parallelism (multiple slots in shared context)
 - Vision/audio models use the same batch engine as text models
 
-### 10.6 Memory Requirements
+### 11.6 Memory Requirements
 
 Vision and audio models require additional memory for the projector:
 
@@ -212,7 +212,7 @@ KV cache (8K):     ~0.6 GB
 Total:             ~9.3 GB
 ```
 
-### 10.7 IMC and Multi-Modal Caching
+### 11.7 IMC and Multi-Modal Caching
 
 IMC fully supports vision and audio models. Media embeddings (images, audio)
 are cached in the KV cache alongside text tokens. After each request, the
@@ -239,11 +239,11 @@ For example, in a multi-turn vision conversation:
 See [Chapter 5: Message Caching](chapter-05-message-caching.md) for full
 details on IMC's caching algorithm.
 
-### 10.8 Limitations
+### 11.8 Limitations
 
 - Processing time varies with image resolution and audio duration
 
-### 10.9 Example: Image Analysis
+### 11.9 Example: Image Analysis
 
 Complete example analyzing an image:
 
@@ -272,7 +272,7 @@ curl http://localhost:11435/v1/chat/completions \
   }'
 ```
 
-### 10.10 Example: Audio Transcription
+### 11.10 Example: Audio Transcription
 
 Complete example transcribing audio:
 
@@ -303,4 +303,4 @@ curl http://localhost:11435/v1/chat/completions \
 
 ---
 
-_Next: [Chapter 11: Security & Authentication](#chapter-11-security--authentication)_
+_Next: [Chapter 12: Security & Authentication](#chapter-12-security-authentication)_

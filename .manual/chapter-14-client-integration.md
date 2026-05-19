@@ -1,18 +1,18 @@
-# Chapter 13: Client Integration
+# Chapter 14: Client Integration
 
 ## Table of Contents
 
-- [13.1 Installing OpenCode](#131-installing-opencode)
-- [13.2 Coding Agent Model Configuration](#132-coding-agent-model-configuration)
-- [13.3 Agent Bundles in `.agents/`](#133-agent-bundles-in-agents)
-- [13.4 Default Bundle (Direct MCP)](#134-default-bundle-direct-mcp)
-- [13.5 Changing the Model OpenCode Uses](#135-changing-the-model-opencode-uses)
-- [13.6 Rote Bundle (MCP via rote)](#136-rote-bundle-mcp-via-rote)
-- [13.7 Wiping Agent State](#137-wiping-agent-state)
-- [13.8 OpenWebUI](#138-openwebui)
-- [13.9 Python OpenAI SDK](#139-python-openai-sdk)
-- [13.10 curl and HTTP Clients](#1310-curl-and-http-clients)
-- [13.11 LangChain](#1311-langchain)
+- [14.1 Installing OpenCode](#141-installing-opencode)
+- [14.2 Coding Agent Model Configuration](#142-coding-agent-model-configuration)
+- [14.3 Agent Bundles in `.agents/`](#143-agent-bundles-in-agents)
+- [14.4 Default Bundle (Direct MCP)](#144-default-bundle-direct-mcp)
+- [14.5 Changing the Model OpenCode Uses](#145-changing-the-model-opencode-uses)
+- [14.6 Rote Bundle (MCP via rote)](#146-rote-bundle-mcp-via-rote)
+- [14.7 Wiping Agent State](#147-wiping-agent-state)
+- [14.8 OpenWebUI](#148-openwebui)
+- [14.9 Python OpenAI SDK](#149-python-openai-sdk)
+- [14.10 curl and HTTP Clients](#1410-curl-and-http-clients)
+- [14.11 LangChain](#1411-langchain)
 
 ---
 
@@ -23,7 +23,7 @@ OpenCode, wiring it into Kronk via the bundles in `.agents/`, swapping
 out the model OpenCode uses, plus a few general-purpose clients
 (OpenWebUI, Python SDK, curl, LangChain).
 
-### 13.1 Installing OpenCode
+### 14.1 Installing OpenCode
 
 Install OpenCode with the official installer:
 
@@ -54,7 +54,7 @@ That target copies a ready-to-run config (provider, MCP, skills,
 details. To change which model OpenCode uses after install, see
 section 13.5.
 
-### 13.2 Coding Agent Model Configuration
+### 14.2 Coding Agent Model Configuration
 
 OpenCode and the Kronk server share the same model configuration. The
 model is configured in `model_config.yaml` (or the catalog) with an
@@ -112,7 +112,7 @@ It starts automatically with the Kronk server on
 `http://localhost:9000/mcp`. Both bundles below wire this endpoint into
 OpenCode (directly, or through rote).
 
-### 13.3 Agent Bundles in `.agents/`
+### 14.3 Agent Bundles in `.agents/`
 
 Two bundles ship in the repo. Pick one based on whether you want Kronk's
 MCP service wired directly into OpenCode, or routed through the
@@ -148,7 +148,7 @@ Both bundles ship four pieces to OpenCode's config directory
 4. `skills/` — at minimum `kronk-mcp` (how to use Kronk's MCP tools)
    and `writing-go` (Go toolchain workflow + post-edit chain).
 
-### 13.4 Default Bundle (Direct MCP)
+### 14.4 Default Bundle (Direct MCP)
 
 The default bundle wires Kronk's MCP server directly into OpenCode so
 the agent can call `web_search` and `fuzzy_edit` over raw MCP. No extra
@@ -199,7 +199,7 @@ Key settings in `opencode.jsonc`:
 OpenCode prefixes MCP tool names with the (lowercase) server name —
 `kronk_web_search`, `kronk_fuzzy_edit`.
 
-### 13.5 Changing the Model OpenCode Uses
+### 14.5 Changing the Model OpenCode Uses
 
 Swapping the model OpenCode talks to has two parts: register the model
 on the Kronk side (so the server can serve it) and tell OpenCode to use
@@ -260,7 +260,7 @@ just your machine), make the same edits in
 `make agents-default-opencode` (or `make agents-rote-opencode`) on
 each machine to push the new config into `~/.config/opencode/`.
 
-### 13.6 Rote Bundle (MCP via rote)
+### 14.6 Rote Bundle (MCP via rote)
 
 The rote bundle replaces OpenCode's direct MCP wiring with the
 [rote](https://www.modiqo.ai/) execution layer. The agent calls Kronk's
@@ -293,7 +293,7 @@ default bundle, but:
 
 If you don't have a Modiqo invite, use the default bundle.
 
-### 13.7 Wiping Agent State
+### 14.7 Wiping Agent State
 
 Use `make agents-wipe` when you want to verify a bundle in isolation,
 without leftovers from a previous install. It removes:
@@ -306,7 +306,7 @@ Idempotent — safe to re-run on an already-clean machine. After wiping,
 re-install with `make agents-default-opencode` or
 `make agents-rote-opencode`.
 
-### 13.8 OpenWebUI
+### 14.8 OpenWebUI
 
 OpenWebUI is a self-hosted chat interface that works with Kronk.
 
@@ -330,7 +330,7 @@ http://localhost:11435/v1
 - System prompts.
 - Conversation history.
 
-### 13.9 Python OpenAI SDK
+### 14.9 Python OpenAI SDK
 
 Use the official OpenAI Python library with Kronk.
 
@@ -364,7 +364,7 @@ for chunk in response:
         print(chunk.choices[0].delta.content, end="")
 ```
 
-### 13.10 curl and HTTP Clients
+### 14.10 curl and HTTP Clients
 
 Any HTTP client can call Kronk's REST API directly.
 
@@ -393,7 +393,7 @@ data: {"id":"...","choices":[{"delta":{"content":"!"}}],...}
 data: [DONE]
 ```
 
-### 13.11 LangChain
+### 14.11 LangChain
 
 Use LangChain with Kronk via the OpenAI integration.
 
@@ -421,4 +421,4 @@ print(response.content)
 
 ---
 
-_Next: [Chapter 14: Observability](chapter-14-observability.md)_
+_Next: [Chapter 15: Observability](chapter-15-observability.md)_

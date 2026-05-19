@@ -1,27 +1,27 @@
-# Chapter 16: Troubleshooting
+# Chapter 17: Troubleshooting
 
 ## Table of Contents
 
-- [16.1 Library Issues](#161-library-issues)
-- [16.2 Model Loading Failures](#162-model-loading-failures)
-- [16.3 Memory Errors](#163-memory-errors)
-- [16.4 Request Timeouts](#164-request-timeouts)
-- [16.5 Authentication Errors](#165-authentication-errors)
-- [16.6 Streaming Issues](#166-streaming-issues)
-- [16.7 Performance Issues](#167-performance-issues)
-- [16.8 IMC Caching Issues](#168-imc-caching-issues)
-- [16.9 Viewing Logs](#169-viewing-logs)
-- [16.10 Common Error Messages](#1610-common-error-messages)
-- [16.11 Catalog & Model Pull Issues](#1611-catalog--model-pull-issues)
-- [16.12 MCP Service Issues](#1612-mcp-service-issues)
-- [16.13 Port Conflicts & Filesystem](#1613-port-conflicts--filesystem)
-- [16.14 Getting Help](#1614-getting-help)
+- [17.1 Library Issues](#171-library-issues)
+- [17.2 Model Loading Failures](#172-model-loading-failures)
+- [17.3 Memory Errors](#173-memory-errors)
+- [17.4 Request Timeouts](#174-request-timeouts)
+- [17.5 Authentication Errors](#175-authentication-errors)
+- [17.6 Streaming Issues](#176-streaming-issues)
+- [17.7 Performance Issues](#177-performance-issues)
+- [17.8 IMC Caching Issues](#178-imc-caching-issues)
+- [17.9 Viewing Logs](#179-viewing-logs)
+- [17.10 Common Error Messages](#1710-common-error-messages)
+- [17.11 Catalog & Model Pull Issues](#1711-catalog--model-pull-issues)
+- [17.12 MCP Service Issues](#1712-mcp-service-issues)
+- [17.13 Port Conflicts & Filesystem](#1713-port-conflicts--filesystem)
+- [17.14 Getting Help](#1714-getting-help)
 
 ---
 
 This chapter covers common issues, their causes, and solutions.
 
-### 16.1 Library Issues
+### 17.1 Library Issues
 
 **Error: "unable to load library"**
 
@@ -173,7 +173,7 @@ Kronk uses it as-is. If it points at a non-empty directory without a
 will refuse mutating operations against it (errors will mention
 `read-only` or `ErrReadOnly`).
 
-### 16.2 Model Loading Failures
+### 17.2 Model Loading Failures
 
 **Error: "unable to load model"**
 
@@ -218,7 +218,7 @@ a rebuild from the BUI Models page.
 - `kronk model list` doesn't show a model you know is downloaded
 - After deleting model files outside of `kronk model remove`
 
-### 16.3 Memory Errors
+### 17.3 Memory Errors
 
 **Error: "unable to init context" or "unable to get memory"**
 
@@ -268,7 +268,7 @@ context window during inference.
 - Reduce input size (fewer messages, shorter prompts)
 - Increase `context-window` in model config (requires more VRAM)
 - Enable YaRN for extended context (see
-  [Chapter 6](chapter-06-yarn-extended-context.md))
+  [Chapter 7](chapter-07-yarn-extended-context.md))
 
 **Error: "input tokens [N] exceed context window [M]"**
 
@@ -281,7 +281,7 @@ before any generation can begin.
 - Increase `context-window`
 - If using IMC, the cached prefix counts toward the limit
 
-### 16.4 Request Timeouts
+### 17.4 Request Timeouts
 
 **Error: "context deadline exceeded"**
 
@@ -327,7 +327,7 @@ timeout was reached.
 - Increase `cache-slot-timeout` (default: 30 seconds) if requests need
   more time
 
-### 16.5 Authentication Errors
+### 17.5 Authentication Errors
 
 **Error: "unauthorized: no authorization header"**
 
@@ -394,7 +394,7 @@ kronk security token create \
   --endpoints "chat-completions:10000/day"
 ```
 
-### 16.6 Streaming Issues
+### 17.6 Streaming Issues
 
 **Problem: Streaming stops mid-response**
 
@@ -425,7 +425,7 @@ data: {"id":"...","choices":[{"delta":{"content":"Hello"}}],...}\n\n
 data: [DONE]\n\n
 ```
 
-### 16.7 Performance Issues
+### 17.7 Performance Issues
 
 **Problem: Slow time to first token (TTFT)**
 
@@ -479,7 +479,7 @@ quantization — the sequential memory access pattern is faster than MoE's
 scattered expert routing (see
 [Chapter 3: Model-Specific Tuning](chapter-03-model-configuration.md#310-model-specific-tuning)).
 
-### 16.8 IMC Caching Issues
+### 17.8 IMC Caching Issues
 
 **Problem: Every request triggers a full cache rebuild**
 
@@ -526,7 +526,7 @@ The RAM-to-VRAM restore (`StateSeqSetData`) failed for a session.
 triggers a full rebuild. If this happens frequently, reduce `nseq-max`
 or `context-window` to lower VRAM pressure.
 
-### 16.9 Viewing Logs
+### 17.9 Viewing Logs
 
 **Run server in foreground:**
 
@@ -560,7 +560,7 @@ debugging GPU issues, memory allocation failures, and decode errors.
 kronk server start --llama-log 0
 ```
 
-### 16.10 Common Error Messages
+### 17.10 Common Error Messages
 
 | Error                                        | Cause                            | Solution                               |
 | -------------------------------------------- | -------------------------------- | -------------------------------------- |
@@ -583,7 +583,7 @@ kronk server start --llama-log 0
 | `imc restore failed`                         | RAM→VRAM restore failed          | Auto-recovers; reduce VRAM pressure    |
 | `imc extend stale`                           | Concurrent cache modification    | Auto-retries; transient                |
 
-### 16.11 Catalog & Model Pull Issues
+### 17.11 Catalog & Model Pull Issues
 
 **Error: `huggingface 401` / `403` during `kronk model pull`**
 
@@ -625,7 +625,7 @@ kronk model pull <provider/model-id>
 kronk model index --local
 ```
 
-### 16.12 MCP Service Issues
+### 17.12 MCP Service Issues
 
 **Error: `/mcp` returns 404**
 
@@ -671,7 +671,7 @@ defer to an external MCP host instead of starting its own. Unset it (or
 run the standalone service via `make mcp-server`) if you want the
 embedded mode back.
 
-### 16.13 Port Conflicts & Filesystem
+### 17.13 Port Conflicts & Filesystem
 
 **Error: `bind: address already in use`**
 
@@ -731,7 +731,7 @@ kronk model remove <provider/model-id> --local
 Models live under `~/.kronk/models/`; check available space with
 `df -h ~/.kronk/models`.
 
-### 16.14 Getting Help
+### 17.14 Getting Help
 
 **Check server liveness:**
 
@@ -783,4 +783,4 @@ Include the following when reporting bugs:
 
 ---
 
-_Next: [Chapter 17: Developer Guide](chapter-17-developer-guide.md)_
+_Next: [Chapter 18: Developer Guide](chapter-18-developer-guide.md)_

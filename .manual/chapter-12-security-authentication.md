@@ -1,17 +1,17 @@
-# Chapter 11: Security & Authentication
+# Chapter 12: Security & Authentication
 
 ## Table of Contents
 
-- [11.1 Enabling Authentication](#111-enabling-authentication)
-- [11.2 Using the Admin Token](#112-using-the-admin-token)
-- [11.3 Key Management](#113-key-management)
-- [11.4 Creating User Tokens](#114-creating-user-tokens)
-- [11.5 Token Examples](#115-token-examples)
-- [11.6 Using Tokens in API Requests](#116-using-tokens-in-api-requests)
-- [11.7 Authorization Flow](#117-authorization-flow)
-- [11.8 Rate Limiting](#118-rate-limiting)
-- [11.9 Configuration Reference](#119-configuration-reference)
-- [11.10 Security Best Practices](#1110-security-best-practices)
+- [12.1 Enabling Authentication](#121-enabling-authentication)
+- [12.2 Using the Admin Token](#122-using-the-admin-token)
+- [12.3 Key Management](#123-key-management)
+- [12.4 Creating User Tokens](#124-creating-user-tokens)
+- [12.5 Token Examples](#125-token-examples)
+- [12.6 Using Tokens in API Requests](#126-using-tokens-in-api-requests)
+- [12.7 Authorization Flow](#127-authorization-flow)
+- [12.8 Rate Limiting](#128-rate-limiting)
+- [12.9 Configuration Reference](#129-configuration-reference)
+- [12.10 Security Best Practices](#1210-security-best-practices)
 
 ---
 
@@ -20,7 +20,7 @@
 Kronk provides JWT-based authentication and authorization with per-endpoint
 rate limiting. When enabled, all API requests require a valid token.
 
-### 11.1 Enabling Authentication
+### 12.1 Enabling Authentication
 
 **Start Server with Auth Enabled:**
 
@@ -46,7 +46,7 @@ On first startup with authentication enabled, Kronk automatically:
 
 The admin token is stored at `~/.kronk/keys/master.jwt`.
 
-### 11.2 Using the Admin Token
+### 12.2 Using the Admin Token
 
 The admin token is required for all security management operations.
 
@@ -62,7 +62,7 @@ export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)
 - Add and remove signing keys
 - Access all endpoints without rate limits
 
-### 11.3 Key Management
+### 12.3 Key Management
 
 Private keys sign JWT tokens. Multiple keys allow token rotation without
 invalidating all existing tokens.
@@ -108,7 +108,7 @@ kronk security key create --local
 kronk security key delete --keyid <keyid> --local
 ```
 
-### 11.4 Creating User Tokens
+### 12.4 Creating User Tokens
 
 Create tokens with specific endpoint access and optional rate limits.
 
@@ -145,7 +145,7 @@ kronk security token create \
 - `rerank` - Reranking API
 - `messages` - Anthropic Messages API
 
-### 11.5 Token Examples
+### 12.5 Token Examples
 
 **Unlimited Access to All Endpoints (24 hours):**
 
@@ -189,7 +189,7 @@ TOKEN:
 eyJhbGciOiJSUzI1NiIsImtpZCI6ImExYjJjM2Q0Li4uIiwidHlwIjoiSldUIn0...
 ```
 
-### 11.6 Using Tokens in API Requests
+### 12.6 Using Tokens in API Requests
 
 Pass the token in the `Authorization` header with the `Bearer` prefix.
 
@@ -232,7 +232,7 @@ response = client.chat.completions.create(
 )
 ```
 
-### 11.7 Authorization Flow
+### 12.7 Authorization Flow
 
 When a request arrives:
 
@@ -249,7 +249,7 @@ When a request arrives:
 - `403 Forbidden` - Token lacks access to the endpoint
 - `429 Too Many Requests` - Rate limit exceeded
 
-### 11.8 Rate Limiting
+### 12.8 Rate Limiting
 
 Rate limits are enforced per token (identified by the token's subject claim).
 
@@ -268,7 +268,7 @@ Counters persist across server restarts.
 
 Admin tokens (like `master.jwt`) bypass all rate limiting.
 
-### 11.9 Configuration Reference
+### 12.9 Configuration Reference
 
 **Deployment Modes:**
 
@@ -307,7 +307,7 @@ Auth can run in two modes:
 - `KRONK_WEB_API_HOST` - Server address for CLI web mode
   (default: `localhost:11435`)
 
-### 11.10 Security Best Practices
+### 12.10 Security Best Practices
 
 **Token Management:**
 
@@ -339,4 +339,4 @@ Auth can run in two modes:
 
 ---
 
-_Next: [Chapter 12: Browser UI (BUI)](#chapter-12-browser-ui-bui)_
+_Next: [Chapter 13: Browser UI (BUI)](#chapter-13-browser-ui-bui)_

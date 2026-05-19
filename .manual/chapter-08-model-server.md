@@ -1,18 +1,18 @@
-# Chapter 7: Model Server
+# Chapter 8: Model Server
 
 ## Table of Contents
 
-- [7.1 Starting the Server](#71-starting-the-server)
-- [7.2 Stopping the Server](#72-stopping-the-server)
-- [7.3 Server Configuration](#73-server-configuration)
-- [7.4 Model Caching](#74-model-caching)
-- [7.5 Resource Manager](#75-resource-manager)
-- [7.6 Model Config Files](#76-model-config-files)
-- [7.7 Catalog System](#77-catalog-system)
-- [7.8 Runtime Settings](#78-runtime-settings)
-- [7.9 Logging](#79-logging)
-- [7.10 Data Paths](#710-data-paths)
-- [7.11 Complete Example](#711-complete-example)
+- [8.1 Starting the Server](#81-starting-the-server)
+- [8.2 Stopping the Server](#82-stopping-the-server)
+- [8.3 Server Configuration](#83-server-configuration)
+- [8.4 Model Caching](#84-model-caching)
+- [8.5 Resource Manager](#85-resource-manager)
+- [8.6 Model Config Files](#86-model-config-files)
+- [8.7 Catalog System](#87-catalog-system)
+- [8.8 Runtime Settings](#88-runtime-settings)
+- [8.9 Logging](#89-logging)
+- [8.10 Data Paths](#810-data-paths)
+- [8.11 Complete Example](#811-complete-example)
 
 ---
 
@@ -69,7 +69,7 @@ Environment variables are useful for:
 - Setting defaults without repeating flags
 - Keeping secrets out of command history
 
-### 7.1 Starting the Server
+### 8.1 Starting the Server
 
 **Install the CLI** (if not already installed)
 
@@ -99,13 +99,13 @@ kronk server start -d
 kronk server start --api-host=0.0.0.0:9000
 ```
 
-### 7.2 Stopping the Server
+### 8.2 Stopping the Server
 
 ```shell
 kronk server stop
 ```
 
-### 7.3 Server Configuration
+### 8.3 Server Configuration
 
 Configuration can be set via command-line flags or environment variables. Every
 flag has a corresponding environment variable using the `KRONK_` prefix with
@@ -144,7 +144,7 @@ underscores replacing hyphens.
 | Flag                  | Environment Variable           | Default                       | Description                                                                                         |
 | --------------------- | ------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------- |
 | `--model-config-file` | `KRONK_POOL_MODEL_CONFIG_FILE` | `<base>/model_config.yaml`    | Path to per-model configuration overrides. Defaults to the file under your `--base-path`.           |
-| `--budget-percent`    | `KRONK_POOL_BUDGET_PERCENT`    | `80`                          | Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See [Section 7.5](#75-resource-manager). |
+| `--budget-percent`    | `KRONK_POOL_BUDGET_PERCENT`    | `80`                          | Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See [Section 7.5](#85-resource-manager). |
 | `--models-in-pool`   | `KRONK_POOL_MODELS_IN_POOL`   | `10`                          | Safety-net cap on the number of distinct models kept loaded, regardless of budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models. |
 | `--pool-ttl`         | `KRONK_POOL_TTL`               | `20m`                         | How long an unused model stays loaded                                                               |
 
@@ -174,7 +174,7 @@ kronk server start \
   --hf-token=hf_xxxxx
 ```
 
-### 7.4 Model Caching
+### 8.4 Model Caching
 
 The server maintains a pool of loaded models to avoid reload latency.
 
@@ -200,10 +200,10 @@ When a new model is requested and admitting it would exceed the budget,
 the resource manager evicts the coldest idle model in the pool to free
 room. If no idle model can be evicted (every loaded model has active
 streams), the request returns `server busy`. See
-[Section 7.5](#75-resource-manager) for the full admission and eviction
+[Section 7.5](#85-resource-manager) for the full admission and eviction
 model.
 
-### 7.5 Resource Manager
+### 8.5 Resource Manager
 
 Kronk's pool sits behind an in-memory **resource manager** (resman) that
 admits or rejects model loads based on a memory budget rather than a fixed
@@ -273,7 +273,7 @@ startup and after every reserve/release, including per-GPU
 `used/budget/free` and `ram-used/ram-budget`. These are the easiest way
 to confirm the manager is reasoning about the right hardware.
 
-### 7.6 Model Config Files
+### 8.6 Model Config Files
 
 The server reads per-model overrides from `~/.kronk/model_config.yaml` by
 default. Kronk seeds this file from an embedded default on first server
@@ -329,7 +329,7 @@ recommended settings for various models and use cases at
 - Detailed comments explaining each configuration option
 - Examples of YAML anchors for sharing common settings between variants
 
-### 7.7 Catalog System
+### 8.7 Catalog System
 
 The catalog (`~/.kronk/catalog.yaml`) is your **personal** catalog of
 models. On first run Kronk seeds it from an embedded starter list so you
@@ -384,7 +384,7 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0   # also removes downloaded files
 
 The same operations are available in the BUI's Catalog and Model views.
 
-### 7.8 Runtime Settings
+### 8.8 Runtime Settings
 
 **Processor Selection**
 
@@ -436,7 +436,7 @@ export KRONK_HF_TOKEN=hf_xxxxx
 kronk server start
 ```
 
-### 7.9 Logging
+### 8.9 Logging
 
 **llama.cpp Logging**
 
@@ -461,7 +461,7 @@ kronk server start --insecure-logging=true
 kronk server logs
 ```
 
-### 7.10 Data Paths
+### 8.10 Data Paths
 
 Default data locations:
 
@@ -492,7 +492,7 @@ kronk server start --base-path=/data/kronk
 
 `--base-path` shifts every file above to live under the new root.
 
-### 7.11 Complete Example
+### 8.11 Complete Example
 
 Production-ready server configuration:
 

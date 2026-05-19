@@ -1,34 +1,34 @@
-# Chapter 17: Developer Guide
+# Chapter 18: Developer Guide
 
 ## Table of Contents
 
-- [17.1 Quick Reference](#171-quick-reference)
-- [17.2 Build & Test Commands](#172-build-test-commands)
-- [17.3 Developer Setup](#173-developer-setup)
-- [17.4 Project Architecture](#174-project-architecture)
-- [17.5 BUI Frontend Development](#175-bui-frontend-development)
-- [17.6 Code Style Guidelines](#176-code-style-guidelines)
-- [17.7 SDK Internals](#177-sdk-internals)
-  - [17.7.1 Package Structure](#1771-package-structure)
-  - [17.7.2 Streaming Architecture](#1772-streaming-architecture)
-  - [17.7.3 Concurrency Strategy](#1773-concurrency-strategy)
-  - [17.7.4 Model Acquire/Release & Cleanup](#1774-model-acquirerelease-cleanup)
-  - [17.7.5 Batch Engine Internals](#1775-batch-engine-internals)
-  - [17.7.6 Context Pooling](#1776-context-pooling)
-  - [17.7.7 IMC Implementation Details](#1777-imc-implementation-details)
-  - [17.7.8 Tool Call Internals](#1778-tool-call-internals)
-  - [17.7.9 Logprobs Implementation](#1779-logprobs-implementation)
-- [17.8 Responses API Normalization](#178-responses-api-normalization)
-- [17.9 Goroutine Budget](#179-goroutine-budget)
-- [17.10 Request Tracing Spans](#1710-request-tracing-spans)
-- [17.11 Inference Code Path](#1711-inference-code-path)
+- [18.1 Quick Reference](#181-quick-reference)
+- [18.2 Build & Test Commands](#182-build-test-commands)
+- [18.3 Developer Setup](#183-developer-setup)
+- [18.4 Project Architecture](#184-project-architecture)
+- [18.5 BUI Frontend Development](#185-bui-frontend-development)
+- [18.6 Code Style Guidelines](#186-code-style-guidelines)
+- [18.7 SDK Internals](#187-sdk-internals)
+  - [17.7.1 Package Structure](#1871-package-structure)
+  - [17.7.2 Streaming Architecture](#1872-streaming-architecture)
+  - [17.7.3 Concurrency Strategy](#1873-concurrency-strategy)
+  - [17.7.4 Model Acquire/Release & Cleanup](#1874-model-acquirerelease-cleanup)
+  - [17.7.5 Batch Engine Internals](#1875-batch-engine-internals)
+  - [17.7.6 Context Pooling](#1876-context-pooling)
+  - [17.7.7 IMC Implementation Details](#1877-imc-implementation-details)
+  - [17.7.8 Tool Call Internals](#1878-tool-call-internals)
+  - [17.7.9 Logprobs Implementation](#1879-logprobs-implementation)
+- [18.8 Responses API Normalization](#188-responses-api-normalization)
+- [18.9 Goroutine Budget](#189-goroutine-budget)
+- [18.10 Request Tracing Spans](#1810-request-tracing-spans)
+- [18.11 Inference Code Path](#1811-inference-code-path)
 
 ---
 
 This chapter covers development workflows, build commands, and code
 conventions for contributors to the Kronk project.
 
-### 17.1 Quick Reference
+### 18.1 Quick Reference
 
 Here is a quick chart of some of the more important make commands.
 
@@ -49,7 +49,7 @@ Here is a quick chart of some of the more important make commands.
 | Post-edit checks | `gofmt -s -w <files> && go vet ./... && staticcheck ./...`   |
 | Developer setup  | `make setup` (configures git hooks)                          |
 
-### 17.2 Build & Test Commands
+### 18.2 Build & Test Commands
 
 **Install CLI locally:**
 
@@ -91,7 +91,7 @@ go test -v -count=1 -run TestName ./sdk/kronk/...
 The path can target any package (e.g. `./cmd/...` or a specific subpackage);
 `./sdk/kronk/...` is just where most inference tests live.
 
-### 17.3 Developer Setup
+### 18.3 Developer Setup
 
 Configure git hooks for automatic pre-commit checks:
 
@@ -118,9 +118,9 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
 ```
 
 A fresh checkout that skips `install-gotooling` will fail the `lint` and
-`vuln-check` steps of `make test` and the post-edit checks listed in §17.1.
+`vuln-check` steps of `make test` and the post-edit checks listed in §18.1.
 
-### 17.4 Project Architecture
+### 18.4 Project Architecture
 
 **Directory Structure:**
 
@@ -145,7 +145,7 @@ A fresh checkout that skips `install-gotooling` will fail the `lint` and
 Kronk uses [yzma](https://github.com/hybridgroup/yzma) (llama.cpp Go bindings)
 for local inference with GGUF models.
 
-### 17.5 BUI Frontend Development
+### 18.5 BUI Frontend Development
 
 The Browser UI is a React application located at:
 
@@ -260,7 +260,7 @@ make kronk-docs
 
 The generator takes no flags; it always rebuilds all three pipelines.
 
-### 17.6 Code Style Guidelines
+### 18.6 Code Style Guidelines
 
 **Package Comments:**
 
@@ -301,7 +301,7 @@ func New(cfg Config) *Server {
 
 Tests link against yzma (llama.cpp Go bindings), so they the
 installed libraries plus test models. Always go through `make test` (or
-`make test-only` for fast iteration) per §17.2.
+`make test-only` for fast iteration) per §18.2.
 
 **Post-edit Checks (per [AGENTS.md](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/AGENTS.md)):**
 
@@ -365,12 +365,12 @@ default:
 }
 ```
 
-### 17.7 SDK Internals
+### 18.7 SDK Internals
 
 This section documents implementation details for developers working on
 the Kronk SDK packages.
 
-#### 17.7.1 Package Structure
+#### 18.7.1 Package Structure
 
 **sdk/kronk/** - Public SDK API surface:
 
@@ -487,7 +487,7 @@ Key behaviors:
 - **Shutdown** — `Shutdown(ctx)` invalidates the cache and blocks until
   every entry has finished unloading (or `ctx` expires).
 
-#### 17.7.2 Streaming Architecture
+#### 18.7.2 Streaming Architecture
 
 **Two streaming primitives** (`concurrency.go`):
 
@@ -498,7 +498,7 @@ Key behaviors:
   event types.
 
 Both acquire the model on entry and release it from a `defer` when the
-user-facing channel closes (see §17.7.4) — the lifecycle is not hand-rolled
+user-facing channel closes (see §18.7.4) — the lifecycle is not hand-rolled
 in the per-API files.
 
 **Response Streaming Pattern** (`response.go`, `concurrency.go`):
@@ -520,18 +520,18 @@ in the per-API files.
 - When `FinishReasonPtr != nil`, skip text/reasoning deltas (they duplicate previous content)
 - Always process tool calls even with FinishReason set (may only arrive in final chunk)
 
-#### 17.7.3 Concurrency Strategy
+#### 18.7.3 Concurrency Strategy
 
 All concurrent requests on a single `Kronk` block on one semaphore; its
 capacity is fixed at `New()` time and depends on the model class.
-`acquireModel()` is the gate (see §17.7.4).
+`acquireModel()` is the gate (see §18.7.4).
 
 `NSeqMax` is the `nseq-max` knob from `model_config.yaml`, and behaves
 differently depending on model type:
 
 **Embedding and Reranking Models**:
 
-- `NSeqMax` controls the internal context pool size (see §17.7.6)
+- `NSeqMax` controls the internal context pool size (see §18.7.6)
 - Model weights are shared, only KV cache memory is multiplied
 - Inputs within a request are partitioned across pool contexts for parallel processing
 - Semaphore capacity = `NSeqMax`
@@ -539,7 +539,7 @@ differently depending on model type:
 **Text Inference Models** (chat, completion, vision, audio):
 
 - `NSeqMax` controls batch parallelism within the batch engine — the number
-  of concurrent slots (see §17.7.5)
+  of concurrent slots (see §18.7.5)
 - Only one `model.Model` instance is created with multiple slots
 - Semaphore capacity = `NSeqMax * queueDepth` (default `queueDepth=2`)
 - Why ×2: with `queueDepth=2`, one request can sit on the batch engine's
@@ -565,9 +565,9 @@ default:
 }
 ```
 
-#### 17.7.4 Model Acquire/Release & Cleanup
+#### 18.7.4 Model Acquire/Release & Cleanup
 
-The wrappers in `concurrency.go` (`streaming` / `streamingWith`, see §17.7.2)
+The wrappers in `concurrency.go` (`streaming` / `streamingWith`, see §18.7.2)
 are what call `acquireModel` and `releaseModel` — per-API files do not call
 them directly.
 
@@ -617,7 +617,7 @@ while a request is in flight — `releaseModel()` is only called from the
 streaming wrapper's `defer`, which fires after the user-facing channel
 closes.
 
-#### 17.7.5 Batch Engine Internals
+#### 18.7.5 Batch Engine Internals
 
 **ChatStreaming Decision Logic** ([chat.go:258-315](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go#L258-L315)):
 
@@ -627,7 +627,7 @@ data plus the resolved IMC fields from `cacheResult`) and unconditionally
 calls `m.batch.submit(&job)`. Returns:
 
 - `true` on successful submit; the caller sets `batching = true` in `chat.go`
-  so the non-batched cleanup defer is skipped (see §17.7.4).
+  so the non-batched cleanup defer is skipped (see §18.7.4).
 - `false` only on submit error. The error has already been streamed to the
   caller via `sendChatError` and any IMC pending reservation cleared.
 
@@ -639,7 +639,7 @@ return — vision/audio also runs through the batch engine.
 - `batchEngine` manages `nSlots` parallel `*slot` structs (slot type lives
   in [batch_slot.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go))
 - Constructed via `newBatchEngine(m, nSlots)` during model setup;
-  `nSlots = NSeqMax` (see §17.7.3)
+  `nSlots = NSeqMax` (see §18.7.3)
 - Queueing: `requestQ chan *chatJob` (buffered `nSlots*2`) is the public
   inbox; `pendingJobs` holds jobs already dequeued but unable to start
   because no slot was free, and is checked before reading `requestQ` again
@@ -663,16 +663,16 @@ always start at 0. IMC sessions are decoupled from slots: session state is
 externalized to RAM after each request and restored into any available slot
 on the next request via `StateSeqSetData`. `StateSeqGetData` captures raw KV
 bytes regardless of whether they originated from text tokens or media
-embeddings. Full IMC lifecycle is detailed in §17.7.7.
+embeddings. Full IMC lifecycle is detailed in §18.7.7.
 
-#### 17.7.6 Context Pooling
+#### 18.7.6 Context Pooling
 
 Kronk uses two distinct context strategies depending on the workload.
 
 **Text inference: single shared context.**
 
 - One `llama.Context` is created in `NewModel` and reused across requests.
-- KV cleanup splits by path (see §17.7.4):
+- KV cleanup splits by path (see §18.7.4):
   - Non-batched path → `resetContext()` runs `llama.Synchronize(m.lctx)` then
     `llama.MemoryClear(mem, true)`.
   - Batched path (text/IMC) → per-slot cleanup happens in
@@ -691,9 +691,9 @@ Kronk uses two distinct context strategies depending on the workload.
   index back.
 - Inputs within a single embed/rerank request are partitioned across pool
   contexts for parallel processing — this is the concurrency semantic
-  documented in §17.7.3 for embedding/reranking models.
+  documented in §18.7.3 for embedding/reranking models.
 
-#### 17.7.7 IMC Implementation Details
+#### 18.7.7 IMC Implementation Details
 
 **Key Functions:**
 
@@ -794,7 +794,7 @@ eviction of un-externalized sessions). The `pending` flag is the
 per-session in-flight latch that protects `kvState` from concurrent
 writers.
 
-#### 17.7.8 Tool Call Internals
+#### 18.7.8 Tool Call Internals
 
 **Processor state machine** ([processor.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor.go)):
 
@@ -858,14 +858,14 @@ stable contract for the OpenAI-compatible response wire format.
 - Custom type that marshals to a JSON string (OpenAI spec).
 - Unmarshals from either a string or an object for non-compliant clients.
 
-#### 17.7.9 Logprobs Implementation
+#### 18.7.9 Logprobs Implementation
 
 **Implementation** ([logprobs.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go)):
 
 - `extractLogprobs(lctx, vocab, sampledToken, iBatch, topK, buf)`: retrieves
   logits via `llama.GetLogitsIth(lctx, iBatch, nVocab)` and converts them
   to log probabilities. `iBatch` identifies which slot's logits row to read
-  when multiple slots are batched in one forward pass (see §17.7.5). `buf`
+  when multiple slots are batched in one forward pass (see §18.7.5). `buf`
   is a pre-allocated byte buffer reused across tokens to avoid per-token
   allocations during top-K decoding.
 - `logSoftmax()`: numerically stable log-softmax using the log-sum-exp trick.
@@ -883,9 +883,9 @@ disabled, this work is skipped entirely on the hot path.
 buffers, dry/xtc state). Reading logits after acceptance would no longer
 reflect the probability landscape for the token we're trying to score.
 
-This corresponds to step 12.1 of the request flow in §17.11.
+This corresponds to step 12.1 of the request flow in §18.11.
 
-### 17.8 Responses API Normalization
+### 18.8 Responses API Normalization
 
 The SDK's [response.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go)
 exposes the OpenAI Responses API on top of the same `model.Chat` engine that
@@ -915,7 +915,7 @@ function-call/output items).
 | `extractInputParams`        | Pulls Responses-only parameters (e.g. `Instructions`) into `inputParams` for downstream handling                                                                              |
 | `extractTools`              | Reads the (already-normalized) tool list out of the document                                                                                                                  |
 
-### 17.9 Goroutine Budget
+### 18.9 Goroutine Budget
 
 A running Kronk server typically shows ~25 baseline goroutines before any
 requests arrive. When requests are active, expect roughly 3-5 additional
@@ -960,7 +960,7 @@ captured every 10th request by the metrics middleware. It includes everything
 in the process, including Go runtime internals. After active requests complete,
 the count drops back to the baseline.
 
-### 17.10 Request Tracing Spans
+### 18.10 Request Tracing Spans
 
 Each chat completion request produces the following trace hierarchy.
 `prepare-request`, `queue-wait`, and `process-request` are sibling spans
@@ -970,7 +970,7 @@ under the request's root context — none is a child of another.
 POST /v1/chat/completions
 ├── prepare-request                          Validation, caching, prompt creation
 │   ├── process-cache                        Cache lookup/update (IMC, when enabled)
-│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§17.7.7 strategy 4)
+│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§18.7.7 strategy 4)
 │   │   ├── cache-tokenize-imc-extend        Hash-prefix extend (strategy 2)
 │   │   ├── cache-tokenize-imc-sysprompt-preserve  System-prompt preserve (strategy 3)
 │   │   ├── cache-tokenize-imc-scratch       Rebuild from scratch (strategy 5)
@@ -1012,7 +1012,7 @@ Additional spans that may appear at the top level:
 | `proj-file-load-time`   | Vision/audio requests     | Loading the multimodal projection file              |
 | `imc-media-cache-build` | Vision/audio IMC builds   | Media-IMC cache build (separate from the text path) |
 
-### 17.11 Inference Code Path
+### 18.11 Inference Code Path
 
 This section traces a `ChatStreaming` request end-to-end. Each step has a
 high-level description followed by a **Code:** sub-block listing the
@@ -1032,7 +1032,7 @@ unbounded processing.
 
 The kronk-level semaphore controls how many requests can be in-flight at
 once. The request blocks here until a slot opens up, providing backpressure
-when the system is under load. See §17.7.4 for the full acquire/release
+when the system is under load. See §18.7.4 for the full acquire/release
 contract.
 
 **Code:**
@@ -1050,7 +1050,7 @@ caller.
 
 **Code:**
 
-- `Model.ChatStreaming` ([model/chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go)) creates the response channel, wraps it with `wrapChannelForLogging` if `InsecureLogging` is on, increments the **model-level** `m.activeStreams` (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the `prepare-request` span (§17.10).
+- `Model.ChatStreaming` ([model/chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go)) creates the response channel, wraps it with `wrapChannelForLogging` if `InsecureLogging` is on, increments the **model-level** `m.activeStreams` (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the `prepare-request` span (§18.10).
 - `validateAndCloneDocument()` (`model/chat.go`) — validates the `messages` field, calls `parseParams()` to extract sampling parameters, shallow-clones the document.
 
 #### Step 4: Prepare the Context
@@ -1072,7 +1072,7 @@ request:
 
 If caching is enabled, the system checks whether any portion of the
 conversation is already in the KV cache to avoid redundant computation. The
-IMC algorithm picks one of **5 strategies** — see §17.7.7 for the full
+IMC algorithm picks one of **5 strategies** — see §18.7.7 for the full
 decision tree (pure cache hit, hash-prefix extend, system-prompt preserve,
 token-prefix fallback, or rebuild from scratch with LRU eviction).
 
@@ -1083,7 +1083,7 @@ names so templates can render tool results correctly.
 
 - `prepareCacheAndPrompt()` (`model/chat.go`):
   - `injectToolResponseNames()` — adds `name`/`tool_call_name` to `role:"tool"` messages by matching `tool_call_id`.
-  - `processCache()` (`model/caching.go`) → `processIMC()` ([model/caching_imc.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go)) — runs the §17.7.7 5-strategy selection across all `NSeqMax` sessions, tokenizes any extension tokens, and sets the `pending` flag on the chosen session.
+  - `processCache()` (`model/caching.go`) → `processIMC()` ([model/caching_imc.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go)) — runs the §18.7.7 5-strategy selection across all `NSeqMax` sessions, tokenizes any extension tokens, and sets the `pending` flag on the chosen session.
 
 #### Step 6: Apply the Chat Template
 
@@ -1106,7 +1106,7 @@ immediately rather than waiting for its next poll cycle.
 
 **Code:**
 
-- `submitToBatchEngine()` (`model/chat.go`) — builds the `chatJob` struct (request data, cache state, IMC fields) and calls `batch.submit()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)), which pushes onto `requestQ` and pokes `wakeCh`. The `queue-wait` span (§17.10) starts here.
+- `submitToBatchEngine()` (`model/chat.go`) — builds the `chatJob` struct (request data, cache state, IMC fields) and calls `batch.submit()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)), which pushes onto `requestQ` and pokes `wakeCh`. The `queue-wait` span (§18.10) starts here.
 
 #### Step 8: Assign to a Slot
 
@@ -1114,11 +1114,11 @@ The batch engine's processing loop wakes up and checks for pending work. It
 dequeues the job and assigns it to the first available processing slot. All
 IMC sessions (text and media) use first-available slot assignment. If all
 slots are busy, the longest-running slot is preempted after a configurable
-timeout (`cache-slot-timeout`, see §17.7.5).
+timeout (`cache-slot-timeout`, see §18.7.5).
 
 **Code:**
 
-- `processLoop()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)) — signal-based wake on `wakeCh` (§17.7.5); polls at 100µs when active, 5ms when idle.
+- `processLoop()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)) — signal-based wake on `wakeCh` (§18.7.5); polls at 100µs when active, 5ms when idle.
 - `processBatch()` clears the batch buffer, runs any pending slot preemption, prefills the draft model for speculative slots, adds 1 generation token per active slot, then continues text prefill via round-robin `addPrefillChunk()` and media prefill via `addPrefillMediaChunk()`.
 - `fillSlots()` ([model/batch_schedule.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_schedule.go)) dequeues the job and assigns it to a slot.
 
@@ -1144,11 +1144,11 @@ The assigned slot is prepared for this request:
 
 **Code:**
 
-- `startSlot()` ([model/batch_slot_start.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)) — resets the slot, ends the `queue-wait` span, and starts the `process-request` and `prefill` spans (§17.10).
+- `startSlot()` ([model/batch_slot_start.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)) — resets the slot, ends the `queue-wait` span, and starts the `process-request` and `prefill` spans (§18.10).
 - `toSampler()` builds the llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat); a separate grammar sampler is created if requested.
 - IMC KV restore: `StateSeqSetData` from `session.kvState`, then `decodeTokensIntoCache()` for extend, or `MemorySeqRm` for rebuild, or partial trim.
 - IMC KV snapshot: `StateSeqGetData` into `session.kvState` after build/extend.
-- `llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)` — `special=true` ensures ChatML markers are recognized (§17.7.7).
+- `llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)` — `special=true` ensures ChatML markers are recognized (§18.7.7).
 - Draft prompt assembly for speculative decoding.
 - First chunk added via `addPrefillChunk()`.
 
@@ -1201,7 +1201,7 @@ Each sampled token goes through a processing pipeline:
 
 1. **Logprobs extraction**: If requested, token log-probabilities are
    extracted from the model's logits before the sampler state is updated
-   (§17.7.9 explains why the order matters).
+   (§18.7.9 explains why the order matters).
 2. **End-of-generation check**: If the token is an EOG (end-of-generation)
    token, generation stops and the request moves to the finish phase.
 3. **UTF-8 assembly**: Tokens are converted to text bytes. Since a single
@@ -1220,12 +1220,12 @@ Each sampled token goes through a processing pipeline:
 **Code:**
 
 - `handleSampledToken()` (`model/batch_tokens.go`) drives the pipeline:
-  - `extractLogprobs()` ([model/logprobs.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go)) — `llama.GetLogitsIth` + log-softmax + top-k heap. Runs **before** `llama.SamplerAccept()` (§17.7.9).
+  - `extractLogprobs()` ([model/logprobs.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go)) — `llama.GetLogitsIth` + log-softmax + top-k heap. Runs **before** `llama.SamplerAccept()` (§18.7.9).
   - `llama.SamplerAccept()` (and grammar accept).
   - `llama.VocabIsEOG()` → if true, jump to `finishSlot()`.
   - `llama.TokenToPiece()` → buffer partial multi-byte codepoints, then `extractCompleteUTF8()` ([model/batch_utf8.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_utf8.go)).
   - First token: records `prefillDone=true`, computes TTFT, ends the `prefill` span, starts the `token-generation` span.
-  - Processor classification: `stepGPT()` for GPT-OSS, `stepStandard()` for everything else (§17.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers.
+  - Processor classification: `stepGPT()` for GPT-OSS, `stepStandard()` for everything else (§18.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers.
   - Counter increment: `reasonTokens` or `completionTokens`.
   - Max-tokens check: if `outputTokens >= maxTokens`, `finishSlot()`.
   - Accumulate into `finalContent` / `finalReasoning` / `finalTooling`.
@@ -1257,7 +1257,7 @@ finalized:
 
 - `finishSlot()` ([model/batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go)):
   - Flushes the UTF-8 buffer.
-  - Tool-call parse: GPT-OSS path calls `parseGPTToolCall()` directly ([batch_finish.go:177](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177)); all other models route through `parseToolCall` ([model/processor_parse.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go)) — see §17.7.8.
+  - Tool-call parse: GPT-OSS path calls `parseGPTToolCall()` directly ([batch_finish.go:177](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177)); all other models route through `parseToolCall` ([model/processor_parse.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go)) — see §18.7.8.
   - Metrics: TPS = `(outputTokens - 1) / elapsed`, TTFT, draft-acceptance rate.
   - `sendFinalResponse()` with usage, content, reasoning, tool calls, logprobs.
   - KV cleanup: `MemorySeqRm(mem, seqID, -1, -1)` clears the full VRAM sequence; the IMC prefix is already in RAM from Step 9.

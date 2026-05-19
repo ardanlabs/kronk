@@ -1,17 +1,17 @@
-# Chapter 8: API Endpoints
+# Chapter 9: API Endpoints
 
 ## Table of Contents
 
-- [8.1 Endpoint Overview](#81-endpoint-overview)
-- [8.2 Chat Completions](#82-chat-completions)
-- [8.3 Responses API](#83-responses-api)
-- [8.4 Embeddings](#84-embeddings)
-- [8.5 Reranking](#85-reranking)
-- [8.6 Tokenize](#86-tokenize)
-- [8.7 Tool Calling (Function Calling)](#87-tool-calling-function-calling)
-- [8.8 Models List](#88-models-list)
-- [8.9 Authentication](#89-authentication)
-- [8.10 Error Responses](#810-error-responses)
+- [9.1 Endpoint Overview](#91-endpoint-overview)
+- [9.2 Chat Completions](#92-chat-completions)
+- [9.3 Responses API](#93-responses-api)
+- [9.4 Embeddings](#94-embeddings)
+- [9.5 Reranking](#95-reranking)
+- [9.6 Tokenize](#96-tokenize)
+- [9.7 Tool Calling (Function Calling)](#97-tool-calling-function-calling)
+- [9.8 Models List](#98-models-list)
+- [9.9 Authentication](#99-authentication)
+- [9.10 Error Responses](#910-error-responses)
 
 ---
 
@@ -20,7 +20,7 @@
 Kronk provides an OpenAI-compatible REST API. This chapter documents the
 available endpoints and their usage.
 
-### 8.1 Endpoint Overview
+### 9.1 Endpoint Overview
 
 | Endpoint               | Method | Description                                |
 | ---------------------- | ------ | ------------------------------------------ |
@@ -32,7 +32,7 @@ available endpoints and their usage.
 | `/v1/tokenize`         | POST   | Tokenize text input                        |
 | `/v1/models`           | GET    | List available models                      |
 
-### 8.2 Chat Completions
+### 9.2 Chat Completions
 
 Generate chat responses using the familiar OpenAI format.
 
@@ -131,7 +131,7 @@ To disable thinking:
 }
 ```
 
-### 8.3 Responses API
+### 9.3 Responses API
 
 OpenAI's newer Responses API format, used by some clients.
 
@@ -168,7 +168,7 @@ event: response.completed
 data: {"type":"response.completed",...}
 ```
 
-### 8.4 Embeddings
+### 9.4 Embeddings
 
 Generate vector embeddings for text.
 
@@ -218,7 +218,7 @@ curl http://localhost:11435/v1/embeddings \
 }
 ```
 
-### 8.5 Reranking
+### 9.5 Reranking
 
 Score and reorder documents by relevance to a query.
 
@@ -267,7 +267,7 @@ curl http://localhost:11435/v1/rerank \
 }
 ```
 
-### 8.6 Tokenize
+### 9.6 Tokenize
 
 Get the token count for a text input. Works with any model type.
 
@@ -322,7 +322,7 @@ When `apply_template` is true, the token count will be higher than raw text
 because it includes template overhead (role markers, separators, and the
 generation prompt).
 
-### 8.7 Tool Calling (Function Calling)
+### 9.7 Tool Calling (Function Calling)
 
 Kronk supports OpenAI-compatible tool calling, allowing models to request
 function executions that you handle in your application.
@@ -438,7 +438,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"at
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \"Paris\"}"}}]}}]}
 ```
 
-### 8.8 Models List
+### 9.8 Models List
 
 Get available models.
 
@@ -470,7 +470,7 @@ curl http://localhost:11435/v1/models
 }
 ```
 
-### 8.9 Authentication
+### 9.9 Authentication
 
 When authentication is enabled, include the token in requests:
 
@@ -481,10 +481,10 @@ curl http://localhost:11435/v1/chat/completions \
   -d '{...}'
 ```
 
-See [Chapter 11: Security & Authentication](#chapter-11-security--authentication)
+See [Chapter 12: Security & Authentication](#chapter-12-security-authentication)
 for details on token management.
 
-### 8.10 Error Responses
+### 9.10 Error Responses
 
 Errors follow a standard format:
 

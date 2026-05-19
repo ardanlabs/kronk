@@ -259,7 +259,7 @@ queue waits, consider:
 2. Reducing `context-window` to fit more slots
 3. Using KV cache quantization (`cache-type-k`/`cache-type-v: q8_0`)
 
-See [Chapter 14: Observability](#chapter-14-observability) for details on
+See [Chapter 15: Observability](#chapter-15-observability) for details on
 tracing and metrics.
 
 ### 4.7 Example Configuration

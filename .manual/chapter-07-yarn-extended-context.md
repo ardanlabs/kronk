@@ -1,16 +1,16 @@
-# Chapter 6: YaRN Extended Context
+# Chapter 7: YaRN Extended Context
 
 ## Table of Contents
 
-- [6.1 Understanding Context Extension](#61-understanding-context-extension)
-- [6.2 When to Use YaRN](#62-when-to-use-yarn)
-- [6.3 Configuration](#63-configuration)
-- [6.4 Scaling Types](#64-scaling-types)
-- [6.5 Parameter Reference](#65-parameter-reference)
-- [6.6 Model-Specific Examples](#66-model-specific-examples)
-- [6.7 Memory Impact](#67-memory-impact)
-- [6.8 Quality Considerations](#68-quality-considerations)
-- [6.9 Example: Long Document Processing](#69-example-long-document-processing)
+- [7.1 Understanding Context Extension](#71-understanding-context-extension)
+- [7.2 When to Use YaRN](#72-when-to-use-yarn)
+- [7.3 Configuration](#73-configuration)
+- [7.4 Scaling Types](#74-scaling-types)
+- [7.5 Parameter Reference](#75-parameter-reference)
+- [7.6 Model-Specific Examples](#76-model-specific-examples)
+- [7.7 Memory Impact](#77-memory-impact)
+- [7.8 Quality Considerations](#78-quality-considerations)
+- [7.9 Example: Long Document Processing](#79-example-long-document-processing)
 
 ---
 
@@ -20,7 +20,7 @@ YaRN (Yet another RoPE extensioN) allows models to handle context windows
 beyond their native training length. This is essential for long documents,
 extended conversations, and complex agentic workflows.
 
-### 6.1 Understanding Context Extension
+### 7.1 Understanding Context Extension
 
 Language models are trained with a fixed context length (e.g., 8K, 32K tokens).
 RoPE (Rotary Position Embedding) encodes position information, but naive
@@ -34,7 +34,7 @@ Native Context:     32K tokens (training length)
 Extended Context:   131K tokens (4x extension with YaRN)
 ```
 
-### 6.2 When to Use YaRN
+### 7.2 When to Use YaRN
 
 **Good candidates for YaRN:**
 
@@ -48,7 +48,7 @@ Extended Context:   131K tokens (4x extension with YaRN)
 - Extensions beyond 4x (quality degrades significantly)
 - Models without RoPE (older architectures)
 
-### 6.3 Configuration
+### 7.3 Configuration
 
 **Basic YaRN Setup:**
 
@@ -78,7 +78,7 @@ Qwen/Qwen3-8B-Q8_0:
   yarn-orig-ctx: 32768      # Original training context
 ```
 
-### 6.4 Scaling Types
+### 7.4 Scaling Types
 
 Kronk supports three RoPE scaling methods:
 
@@ -108,7 +108,7 @@ rope-scaling-type: yarn
 Frequency-dependent interpolation with attention scaling. Maintains quality
 better at 2-4x extensions.
 
-### 6.5 Parameter Reference
+### 7.5 Parameter Reference
 
 | Parameter          | Default        | Description                                         |
 | ------------------ | -------------- | --------------------------------------------------- |
@@ -121,7 +121,7 @@ better at 2-4x extensions.
 | `yarn-beta-slow`   | 1.0            | High correction dimension                           |
 | `yarn-orig-ctx`    | model metadata | Original training context size                      |
 
-### 6.6 Model-Specific Examples
+### 7.6 Model-Specific Examples
 
 **Qwen3 (32K → 131K)**
 
@@ -147,7 +147,7 @@ unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
 
 4x extension from 8K to 32K is within the recommended range.
 
-### 6.7 Memory Impact
+### 7.7 Memory Impact
 
 Extended context significantly increases memory requirements:
 
@@ -180,7 +180,7 @@ nseq-max: 1 # Fewer concurrent requests
 offload-kqv: false
 ```
 
-### 6.8 Quality Considerations
+### 7.8 Quality Considerations
 
 **Extension ratio guidelines:**
 
@@ -196,7 +196,7 @@ offload-kqv: false
 3. Compare output quality
 4. Adjust if needed (reduce extension or try different parameters)
 
-### 6.9 Example: Long Document Processing
+### 7.9 Example: Long Document Processing
 
 Configuration for processing long documents:
 

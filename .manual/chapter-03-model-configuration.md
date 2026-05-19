@@ -87,7 +87,7 @@ Using q4_0 KV cache quantization can reduce costs further to roughly ¼ of f16.
 at that length.
 
 _Note: YaRN is a way to extend the natural size of context windows for
-small models. Kronk supports YaRN and talked about in Chapter 6._
+small models. Kronk supports YaRN and talked about in Chapter 7._
 
 #### Batch Size Configuration
 
@@ -1074,7 +1074,7 @@ Sampling parameters control the randomness and quality of generated text.
 These are set per-request in the API call.
 
 For most models you will want to touch these basic sampling parameters. There
-are [many more](chapter-09-request-parameters.md) which will be presented later.
+are [many more](chapter-10-request-parameters.md) which will be presented later.
 
 #### Temperature
 

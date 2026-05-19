@@ -316,7 +316,7 @@ Use "kronk [command] --help" for more information about a command.`}</code></pre
           <blockquote>The standalone CLI defaults to the pinned default version so reinstalls</blockquote>
           <blockquote>are reproducible. The model server takes the opposite default</blockquote>
           <blockquote>(<code>--allow-upgrade=true</code>) so a long-running server picks up upstream</blockquote>
-          <blockquote>fixes; see Chapter 7 §7.3 for that flag.</blockquote>
+          <blockquote>fixes; see Chapter 8 §8.3 for that flag.</blockquote>
           <p><strong>Pinning a Specific Library Version</strong></p>
           <p>Sometimes there are breaking changes to llama.cpp that require a matching version of yzma and Kronk. To ensure stability, you can install a specific library version:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --version=b8864 --local`}</code></pre>
@@ -712,7 +712,7 @@ curl http://localhost:11435/v1/chat/completions \\
           </table>
           <p>Using q4_0 KV cache quantization can reduce costs further to roughly ¼ of f16.</p>
           <p>128K context typically requires YaRN scaling for models not natively trained at that length.</p>
-          <p><em>Note: YaRN is a way to extend the natural size of context windows for small models. Kronk supports YaRN and talked about in Chapter 6.</em></p>
+          <p><em>Note: YaRN is a way to extend the natural size of context windows for small models. Kronk supports YaRN and talked about in Chapter 7.</em></p>
           <h4 id="batch-size-configuration">Batch Size Configuration</h4>
           <p>When you send a prompt to a model, the model doesn't process all your input tokens at once. It breaks them into smaller chunks and processes each chunk through the GPU in a series of steps called forward passes. These two parameters control the size of those chunks:</p>
           <ul>
@@ -1859,7 +1859,7 @@ Qwen/Qwen3-8B-Q8_0:
           <p>The <code>ndraft</code> parameter controls how many candidates to generate. Higher values increase the potential speedup but also increase wasted work when predictions are rejected. The default of 5 is a good starting point; tune based on your observed acceptance rates.</p>
           <h3 id="313-sampling-parameters">3.13 Sampling Parameters</h3>
           <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
-          <p>For most models you will want to touch these basic sampling parameters. There are <a href="chapter-09-request-parameters.md">many more</a> which will be presented later.</p>
+          <p>For most models you will want to touch these basic sampling parameters. There are <a href="chapter-10-request-parameters.md">many more</a> which will be presented later.</p>
           <h4 id="temperature">Temperature</h4>
           <p>Temperature controls how "random" the model's output is. At each step, the model produces a probability distribution over all possible next tokens. Temperature scales those probabilities — lower values sharpen the distribution (making the top choice dominant), higher values flatten it (giving lower-ranked tokens a better chance of being selected).</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -2114,7 +2114,7 @@ Request 3 (WAIT) ──▶│                                  │
             <li>Reducing <code>context-window</code> to fit more slots</li>
             <li>Using KV cache quantization (<code>cache-type-k</code>/<code>cache-type-v: q8_0</code>)</li>
           </ol>
-          <p>See <a href="#chapter-14-observability">Chapter 14: Observability</a> for details on tracing and metrics.</p>
+          <p>See <a href="#chapter-15-observability">Chapter 15: Observability</a> for details on tracing and metrics.</p>
           <h3 id="47-example-configuration">4.7 Example Configuration</h3>
           <p>The following config shows a high-throughput setup that balances concurrency, memory, and caching for a multi-user API server:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
@@ -2796,14 +2796,462 @@ Request 5 (text follow-up about the image):
             <li>When a new media message appears in the conversation, the cache is rebuilt through the mtmd pipeline (projection model encodes image/audio into embeddings)</li>
           </ul>
           <hr />
-          <h2 id="chapter-6-yarn-extended-context">Chapter 6: YaRN Extended Context</h2>
+          <h2 id="chapter-6-speculative-decoding-mtp">Chapter 6: Speculative Decoding &amp; MTP</h2>
+          <p>This chapter documents Kronk's speculative-decoding stack with a focus on the <strong>MTP (Multi-Token Prediction)</strong> drafter shipped in <a href="https://github.com/ardanlabs/kronk/pull/593">PR #593</a>. It assumes you have read the introductory speculative-decoding section in <a href="chapter-03-model-configuration.md#312-speculative-decoding">Chapter 3 §3.12</a>, which covers the conventional separate-GGUF drafter and the Leviathan-style verify math at a user level. This chapter goes deeper into the engine internals and explains the auto-detected MTP path that the separate-GGUF discussion does not cover.</p>
+          <h3 id="61-overview-the-two-draft-modes">6.1 Overview &amp; The Two Draft Modes</h3>
+          <p>Kronk supports two interchangeable sources of draft tokens for speculative decoding. The drafter sits behind a single <code>*draftModel</code> type (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go">model.go</a>), selected once at model load by <code>selectAndLoadDraft</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go">draft_mtp.go</a>).</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>When used</th>
+                <th>Drafter GGUF</th>
+                <th>Driver</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Separate-GGUF</strong></td>
+                <td><code>cfg.DraftModel != nil</code> (explicit user config — <code>draft-model:</code> block in YAML or <code>WithDraftModel</code>).</td>
+                <td>A second, smaller GGUF loaded into its own <code>llama_model</code>.</td>
+                <td><code>llama.DraftGenerate</code> token-only loop in <code>generateDraftTokens</code>.</td>
+              </tr>
+              <tr>
+                <td><strong>MTP</strong></td>
+                <td>Auto-enabled when the target GGUF carries a Multi-Token-Prediction head (<code>nextn_predict_layers &gt; 0</code>) and a few sanity gates pass.</td>
+                <td>None — the MTP head lives inside the TARGET GGUF; the draft context <strong>shares the target's &lt;code&gt;llama_model&lt;/code&gt;</strong>.</td>
+                <td>Bespoke <code>generateDraftTokensMTP</code> AR loop that feeds the head <code>(token_id, pre_norm_hidden_state)</code> per step.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>A model can have at most one drafter active. If the user configures <code>DraftModel</code> explicitly, that wins; the MTP head — even when present — is ignored on that load.</p>
+          <h3 id="62-separate-gguf-draft-recap">6.2 Separate-GGUF Draft (Recap)</h3>
+          <p>Configure via <code>draft-model:</code> in <code>model_config.yaml</code> (Chapter 3 §3.12 covers the YAML shape and field list).</p>
+          <p>Requirements:</p>
+          <ul>
+            <li>Draft and target share the same tokenizer (vocabulary).</li>
+            <li><code>nseq-max: 1</code> (single-slot) on the target.</li>
+            <li>Draft GGUF is downloaded locally.</li>
+          </ul>
+          <p>Runtime characteristics:</p>
+          <ul>
+            <li>Loaded by <code>loadDraftModel</code> in <code>batch_speculative.go</code>.</li>
+            <li>Tokens drafted by <code>generateDraftTokens</code> which delegates to <code>llama.DraftGenerate</code> — a tight FFI loop that does decode → sample → capture in one C call per step.</li>
+            <li>Verified by <code>verifySpeculativeTokens</code> using either greedy argmax (temperature = 0) or the sparse-candidate probabilistic verify (temperature &gt; 0); see <code>speculative_sparse.go</code>.</li>
+            <li>KV rollback on rejection is a single <code>MemorySeqRm</code> on the target.</li>
+          </ul>
+          <p>The remainder of the chapter is about the MTP path.</p>
+          <h3 id="63-mtp-drafts-multi-token-prediction">6.3 MTP Drafts (Multi-Token Prediction)</h3>
+          <p>MTP heads ship inside certain modern GGUFs (Qwen3.5 / Qwen3.6 architecture <code>qwen35</code>, <code>qwen35moe</code>, and future architectures that populate the same metadata key). The head is not a standalone language model — it is a few extra layers grafted onto the target that predict the <strong>next N tokens</strong> of the target's continuation in a single forward pass, given:</p>
+          <ol>
+            <li>The token id at position <code>t</code>.</li>
+            <li>The target's <strong>pre-norm hidden state</strong> at position <code>t</code> — i.e. the residual-stream activation immediately before the final layer norm.</li>
+          </ol>
+          <p>Because the head shares the target's weights and tokenizer, there is no extra file to download and no vocabulary mismatch to worry about. The trade-off is more invasive plumbing: every target <code>llama_decode</code> must <strong>mirror</strong> its pre-norm hidden buffer into the draft context, and the draft context's auto-regressive loop must feed back both the sampled token and the previously emitted hidden state on every step.</p>
+          <p>Reference: <code>common/speculative.cpp common_speculative_impl_draft_mtp</code> in upstream llama.cpp. Kronk's implementation lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go"><code>draft_mtp.go</code></a> (load), <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>batch_mtp.go</code></a> (mirror + AR loop), and integration changes in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>batch_engine.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>batch_slot.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>batch_slot_start.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go"><code>batch_prefill_text.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go"><code>batch_finish.go</code></a>, and the FFI bindings in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a>.</p>
+          <h3 id="64-auto-detection-`selectandloaddraft`">6.4 Auto-Detection: `selectAndLoadDraft`</h3>
+          <p><code>selectAndLoadDraft</code> runs once during model initialization (<code>initGenerationRuntime</code> in <code>model.go</code>) and decides which drafter, if any, to load. The decision tree:</p>
+          <pre className="code-block"><code className="language-diagram">{`                       ╭───────────────────────╮
+                       │ cfg.DraftModel != nil │──── yes ──▶  loadDraftModel  (separate-GGUF)
+                       ╰──────────┬────────────╯
+                                  │ no
+                                  ▼
+                       ╭───────────────────────╮
+                       │ mtpNextNLayers(target)│──── 0 ──▶  return (nil, nil) — no drafter
+                       ╰──────────┬────────────╯
+                                  │ > 0
+                                  ▼
+                       ╭───────────────────────╮
+                       │     MTPAvailable()    │──── false ──▶ skip (log reason: old llama.cpp)
+                       ╰──────────┬────────────╯
+                                  │ true
+                                  ▼
+                       ╭───────────────────────╮
+                       │ ctxParams.NSeqMax == 1│──── no ──▶ skip (log reason: multi-slot)
+                       ╰──────────┬────────────╯
+                                  │ yes
+                                  ▼
+                       loadDraftModelMTP  (auto-enabled)`}</code></pre>
+          <p><code>mtpNextNLayers</code> looks up the GGUF metadata key <code>&lt;arch&gt;.nextn_predict_layers</code> (a uint32). Kronk matches by the unique substring <code>nextn_predict_layers</code> so the same lookup works for every architecture variant without first reading <code>general.architecture</code>.</p>
+          <p><code>MTPAvailable()</code> probes whether the loaded llama.cpp library exports the three pre-norm symbols listed in §6.6. Older builds (pre <code>src/llama-ext.h</code>) won't have them — Kronk logs and starts up without MTP rather than crashing on a missing symbol mid-request.</p>
+          <h3 id="65-mtp-requirements-skip-reasons">6.5 MTP Requirements &amp; Skip Reasons</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Requirement</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Target GGUF has <code>nextn_predict_layers &gt; 0</code></td>
+                <td>No MTP head exists otherwise; nothing to load.</td>
+              </tr>
+              <tr>
+                <td>llama.cpp build exports pre-norm symbols</td>
+                <td>Kronk reads hidden states via <code>llama_get_embeddings_pre_norm&#123;,_ith&#125;</code> and toggles them on via <code>llama_set_embeddings_pre_norm</code>. See §6.6.</td>
+              </tr>
+              <tr>
+                <td><code>nseq-max: 1</code> on the target</td>
+                <td>MTP + multi-slot triggers a <code>GGML_ASSERT(logits != nullptr)</code> in <code>llama_sampler_sample</code> on the shared-batch decode that mixes one slot's MTP spec tokens with another slot's fresh prefill. Belt-and-suspenders gate in both <code>selectAndLoadDraft</code> and <code>loadDraftModelMTP</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>When any of those fail, <code>selectAndLoadDraft</code> logs the specific reason and returns <code>(nil, nil)</code>. The target still loads and serves traffic — just without speculation.</p>
+          <h3 id="66-pre-norm-hidden-state-plumbing">6.6 Pre-Norm Hidden-State Plumbing</h3>
+          <p>The MTP path needs three llama.cpp C symbols that yzma upstream does not yet bind. Kronk adds them locally in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a> via the <code>jupiterrider/ffi</code> package:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Go wrapper</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>llama_set_embeddings_pre_norm</code></td>
+                <td><code>SetEmbeddingsPreNorm(ctx, value, masked)</code></td>
+                <td>Toggle pre-norm extraction on a context. <code>masked=false</code> = dense (all rows); <code>masked=true</code> = sparse (logit-flagged rows only).</td>
+              </tr>
+              <tr>
+                <td><code>llama_get_embeddings_pre_norm</code></td>
+                <td><code>GetEmbeddingsPreNorm(ctx, nRows, nEmbd) []float32</code></td>
+                <td>Return the dense buffer produced by the most recent <code>llama_decode</code>. Used on the target.</td>
+              </tr>
+              <tr>
+                <td><code>llama_get_embeddings_pre_norm_ith</code></td>
+                <td><code>GetEmbeddingsPreNormIth(ctx, i, nEmbd) []float32</code></td>
+                <td>Return a single row by output-table index. Used on the draft (masked) context.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Two binding details worth highlighting:</p>
+          <ul>
+            <li><strong>Symbol probing is dual.</strong> Each prep tries the C-linkage name first and falls back to the Itanium C++ ABI mangled form (e.g. <code>_Z29llama_set_embeddings_pre_normP13llama_contextbb</code>) so kronk binds against llama.cpp builds compiled with or without <code>LLAMA_API</code> on these declarations.</li>
+            <li><strong>Best-effort init.</strong> <code>InitYzmaWorkarounds</code> never fails on a missing pre-norm symbol. The corresponding <code>ffi.Fun</code> stays zero-valued and <code>MTPAvailable()</code> returns false, gating §6.4.</li>
+          </ul>
+          <p>At load time <code>loadDraftModelMTP</code> sets:</p>
+          <ul>
+            <li><code>SetEmbeddingsPreNorm(targetCtx, true, false)</code> — dense, every row accessible by raw batch index. Required for the mirror step (§6.7), which reads arbitrary rows from each completed target batch.</li>
+            <li><code>SetEmbeddingsPreNorm(draftCtx, true, true)</code> — sparse, only logits-flagged rows stored. The draft only needs the single output row of each AR step.</li>
+          </ul>
+          <p>The flag is consumed at graph-build time, so it must be set <strong>before</strong> the first decode on either context.</p>
+          <h3 id="67-the-mirror-step-ar-draft-loop">6.7 The Mirror Step &amp; AR Draft Loop</h3>
+          <p>Two functions in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>batch_mtp.go</code></a> do the heavy lifting.</p>
+          <h4 id="mirror-`mirrortargetbatchtomtpdraft`">Mirror: `mirrorTargetBatchToMTPDraft`</h4>
+          <p>After every successful target <code>llama_decode</code> + <code>llama_synchronize</code>, the post-decode pass in <code>processBatch</code> calls the mirror to replay the slot's just-decoded range into the draft context with <code>batch.embd</code> populated from the target's pre-norm buffer.</p>
+          <p>Per-position alignment is <strong>shift-right-by-1</strong>, matching <code>common_speculative_impl_draft_mtp</code>:</p>
+          <pre className="code-block"><code>{`mirror[0]   : token = tgt[start+0],  embd = pendingH (slot's pre-batch h)
+mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
+          <p><code>pendingH</code> is a per-slot copy of the hidden row at the last committed target position. On the very first decode of a sequence, no <code>h</code> has been observed yet — that slot of the mirror batch is zeroed (the MTP head's first prediction at position 0 is on a BOS / instruction sentinel where exact <code>h</code> does not matter).</p>
+          <p>After the mirror succeeds, <code>pendingH</code> is updated to the last target-batch row so it's ready as the slot-0 input of the next mirror.</p>
+          <p>A few non-obvious correctness points enforced in the function:</p>
+          <ul>
+            <li><strong>Chunking by mirror capacity.</strong> The mirror batch is allocated at <code>NBatch</code> capacity. When <code>effectiveCount &gt; NBatch</code> the mirror is run in chunks, with <code>llama.Synchronize(draft)</code> <strong>inside the chunk loop</strong> before the next chunk overwrites <code>mirror.Embd</code>. Without the per-chunk sync, the next chunk's <code>copy()</code> into the Go-owned embd slice races the still-in-flight C read on async backends (Metal/CUDA) and corrupts the input.</li>
+            <li><strong>&lt;code&gt;effectiveCount&lt;/code&gt; is caller-provided.</strong> Prefill chunks and plain gen-token decodes mirror <code>targetBatchCount</code> positions; the spec path mirrors only <code>1 + accepted</code> rows so rejected draft tokens are never reflected into draft KV.</li>
+            <li><strong>&lt;code&gt;logits=true&lt;/code&gt; only on the last row.</strong> The mirror only needs the pre-norm row of the very last position (as the next <code>pendingH</code>), so only the last row is logits-flagged.</li>
+          </ul>
+          <h4 id="ar-draft-`generatedrafttokensmtp`">AR Draft: `generateDraftTokensMTP`</h4>
+          <p>The drafter runs an auto-regressive loop on the MTP context. Each iteration:</p>
+          <ol>
+            <li>Build a single-token batch with <code>(curToken, pos, seqIDs)</code> and copy <code>curEmbd</code> into the embd slot.</li>
+            <li><code>llama.Decode</code> + <code>llama.Synchronize</code> (async-backend safety again).</li>
+            <li><code>llama.SamplerSample(greedy, ctx, -1)</code> to pick the next draft token.</li>
+            <li><code>GetEmbeddingsPreNormIth(ctx, 0, nEmbd)</code> to read back the next hidden state.</li>
+            <li>EOG check; copy <code>nextEmbd</code> into <code>pendingH</code>; advance.</li>
+          </ol>
+          <p>The loop stops on <code>chooseNDraft(s, draft.nDraft)</code> rounds (see §6.10), or earlier on EOG or decode failure.</p>
+          <p><strong>Why MTP-only batches?</strong> <code>llama.BatchInit(N, embd, nSeqMax)</code> allocates <strong>either</strong> the token buffer <strong>or</strong> the embd buffer — never both — based on its <code>embd</code> arg. MTP needs both per position. Kronk works around this by calling <code>BatchInit(N, 0, 1)</code> to get a token-only batch (with <code>pos</code>, <code>seq_id</code>, and <code>logits</code> arrays sized to <code>N</code>) and then attaching a Go-allocated <code>[]float32</code> of size <code>N*nEmbd</code> as the embd buffer. The Go slice is pinned (<code>runtime.Pinner</code>) for the batch's lifetime and the <code>Batch.Embd</code> pointer is cleared <strong>before</strong> <code>BatchFree</code> so llama.cpp's unconditional <code>free(batch.embd)</code> doesn't <code>free()</code> a Go heap allocation.</p>
+          <p>These two MTP-only batches live on <code>draftModel</code>:</p>
+          <ul>
+            <li><code>draftBatchMTP</code> — capacity 1, used by <code>generateDraftTokensMTP</code> per step.</li>
+            <li><code>mirrorBatchMTP</code> — capacity <code>NBatch</code>, used by the mirror step.</li>
+          </ul>
+          <h3 id="68-verification-on-the-mtp-path">6.8 Verification on the MTP Path</h3>
+          <p><code>verifySpeculativeTokens</code> is shared between separate-GGUF and MTP, but the MTP path forces <strong>greedy verification</strong> unconditionally because the MTP head currently runs only greedy sampling (<code>SamplerInitGreedy</code>) and the AR loop does not capture sparse draft distributions. Running the probabilistic verify path without a draft distribution would fall through to <code>sampleFromProbs(target)</code> at every position and reject every draft token unconditionally.</p>
+          <p>To compensate, the greedy branch is taught — only on the MTP path (<code>mtpGreedy == true</code>) — to invoke the slot's <strong>full sampler</strong> at each position instead of taking the raw target argmax. That preserves the user's <code>temperature</code> / <code>top_k</code> / <code>top_p</code> shape on the emitted sequence. The mathematical guarantee of distribution-equivalent output (Leviathan et al., 2023) is lost on the MTP path — it is the standard approximation when the draft distribution is unavailable.</p>
+          <p><code>originalSampled</code> is also snapshotted before the verify loop, because <code>handleSampledToken</code> mutates <code>s.sampled</code> as each accepted draft token flows through the streaming pipeline. The hybrid re-decode path (§6.9) needs the <strong>original</strong> sampled token at the base position; using the mutated value would re-decode the wrong token and corrupt every subsequent round.</p>
+          <p>After verify, the MTP mirror runs again over <code>1 + accepted</code> rows to overwrite the AR-loop draft KV entries with target-derived hidden states. That update is what makes the next round's <code>pendingH</code> reflect reality.</p>
+          <p><code>rollbackDraft</code> for MTP is also different from the separate-GGUF path: it <code>MemorySeqRm</code>s the <strong>entire</strong> drafted range from the draft KV before the post-verify mirror runs. llama.cpp's transformer KV does not overwrite by <code>(seq, pos)</code> on re-decode — it appends another slot, leaving duplicate entries that corrupt subsequent attention. The mirror then writes the correct target-derived entries into clean slots.</p>
+          <h3 id="69-hybrid-target-rollback-snapshotrestore">6.9 Hybrid Target Rollback: Snapshot/Restore</h3>
+          <p>Hybrid target models (transformer + recurrent layers) introduce a problem the regular <code>MemorySeqRm</code> rollback cannot solve: the recurrent layer has been <strong>advanced through all &lt;code&gt;1+nDraft&lt;/code&gt; decoded positions</strong> and there is no per-position trim. A partial-rejection round would leave the recurrent state advanced past the accepted boundary, and the next <code>llama_decode</code> would fail with <code>-1</code>.</p>
+          <p>Two new helpers in <code>batch_speculative.go</code> solve this:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Helper</th>
+                <th>What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>captureTargetSpecSnapshot(s)</code></td>
+                <td>Sizes <code>s.specSnapshot</code> via <code>StateSeqGetSize</code> and reads the full per-sequence state with <code>StateSeqGetData</code>. Called <strong>before</strong> the spec batch is decoded.</td>
+              </tr>
+              <tr>
+                <td><code>restoreTargetSpecSnapshot(s)</code></td>
+                <td><code>StateSeqSetData</code> to rewind, then re-decode <code>(sampledAtBase + first accepted drafts)</code> so the seq ends at exactly <code>basePast + 1 + accepted</code> correct positions.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The snapshot buffer is lazy-grow / never-shrink on the slot (<code>s.specSnapshot</code>). Size scales with current KV occupancy, so the cost grows with context length. Dense / pure-attention targets skip this path entirely — <code>MemorySeqRm</code> is correct and much cheaper for them.</p>
+          <p>The captureTarget/restoreTarget hooks are gated on <code>e.model.modelInfo.Type == ModelTypeHybrid</code> so the dense fast path is untouched. If <code>captureTargetSpecSnapshot</code> errors, <code>verifySpeculativeTokens</code> clears <code>s.specSnapshot</code> and falls through to <code>MemorySeqRm</code>. The fallback is broken on hybrid partial-reject rounds, but full-accept rounds still work, and the next request begins with a fresh sequence anyway.</p>
+          <h3 id="610-adaptive-`ndraft`-acceptance-ema">6.10 Adaptive `nDraft` (Acceptance EMA)</h3>
+          <p>Drafting <code>N</code> tokens that all get rejected wastes a forward pass on the draft model. <code>chooseNDraft(s, maxDraft)</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a> scales down based on the slot's exponential moving average of acceptance rate (<code>specAccEMA</code>):</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>EMA range</th>
+                <th><code>nDraft</code></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>&lt; 0.30</code></td>
+                <td><code>min(1, max)</code></td>
+              </tr>
+              <tr>
+                <td><code>&lt; 0.50</code></td>
+                <td><code>min(1, max)</code></td>
+              </tr>
+              <tr>
+                <td><code>&lt; 0.70</code></td>
+                <td><code>min(2, max)</code></td>
+              </tr>
+              <tr>
+                <td><code>&lt; 0.85</code></td>
+                <td><code>min(3, max)</code></td>
+              </tr>
+              <tr>
+                <td><code>≥ 0.85</code></td>
+                <td><code>max</code> (configured)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>specAccEMA</code> is updated per spec round with the formula <code>0.9<em>old + 0.1</em>(accepted/nDraft)</code> and <strong>persists across requests</strong> on the slot, so a long quiet streak with poor acceptance keeps draft overhead low even when a new request begins on the same slot.</p>
+          <p>When the EMA collapses to ~0, <code>chooseNDraft</code> returns 0 and the spec path is bypassed for that round — but the draft-tokens / accepted / acceptance-rate fields are still emitted on the final slot log line so dashboards see a stable schema. See <code>finishSlot</code> and <code>sendFinalResponse</code>.</p>
+          <h3 id="611-per-slot-state-added-for-mtp">6.11 Per-Slot State Added for MTP</h3>
+          <p>PR #593 added the following fields to <code>slot</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>batch_slot.go</code></a>. All are reset in <code>slot.reset()</code> with lazy-grow / never-shrink buffer policy.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>pendingH []float32</code></td>
+                <td>Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.</td>
+              </tr>
+              <tr>
+                <td><code>targetBatchStart / Count / BasePos</code></td>
+                <td>Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live.</td>
+              </tr>
+              <tr>
+                <td><code>mtpHasBatch</code></td>
+                <td>True between <code>batch.Add()</code> and the post-decode mirror; cleared by the mirror.</td>
+              </tr>
+              <tr>
+                <td><code>mtpDisabledForRequest</code></td>
+                <td>Set at <code>startSlot</code> to disable MTP for this request (currently used as a diagnostic switch on IMC cache hits — see §6.16).</td>
+              </tr>
+              <tr>
+                <td><code>specSnapshot []byte</code></td>
+                <td>Pre-spec target state buffer for hybrid rollback (§6.9). Lazy-grow.</td>
+              </tr>
+              <tr>
+                <td><code>specRounds</code></td>
+                <td>Counter used to throttle per-round verify logging (logs first round, then every 32nd).</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="612-configuration">6.12 Configuration</h3>
+          <p>MTP is <strong>auto-enabled</strong> — you do not configure it. To get an MTP drafter:</p>
+          <ol>
+            <li>Pull a target GGUF that ships an MTP head (e.g. the Qwen3.6 MTP builds — the test suite uses <code>unsloth/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL.gguf</code>).</li>
+            <li>Configure the target with <code>nseq-max: 1</code>.</li>
+            <li>Do <strong>not</strong> set <code>draft-model:</code> on that entry (an explicit separate-GGUF draft wins over auto-detected MTP).</li>
+            <li>Make sure your llama.cpp library is recent enough to export the pre-norm API — Kronk's libs ship with a sufficiently new build by default; only matters for users running with a pinned older lib.</li>
+          </ol>
+          <p>Minimal <code>model_config.yaml</code> snippet:</p>
+          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL:
+  context-window: 8192
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: f16
+  cache-type-v: f16
+  nseq-max: 1
+  incremental-cache: true`}</code></pre>
+          <p>On a successful load you will see a log line like:</p>
+          <pre className="code-block"><code>{`draft-model-mtp status=loaded source=auto-detected nDraft=4 nextn-layers=1 nEmbd=2048 nCtx=8192`}</code></pre>
+          <p>The default <code>nDraft</code> for MTP is <code>4</code> (<code>defMTPNDraft</code> in <code>draft_mtp.go</code>) — conservative because MTP heads typically have high acceptance for the first 1–3 tokens and rapidly decay beyond that. The adaptive EMA in §6.10 scales further down when acceptance is poor.</p>
+          <h3 id="613-observability">6.13 Observability</h3>
+          <p>MTP-specific log events (all at the same level as the surrounding batch-engine logs):</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Where</th>
+                <th>When</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>draft-model-mtp status=loading / loaded</code></td>
+                <td><code>loadDraftModelMTP</code></td>
+                <td>Once at model startup.</td>
+              </tr>
+              <tr>
+                <td><code>draft-model-mtp status=auto-detect-skipped</code></td>
+                <td><code>selectAndLoadDraft</code></td>
+                <td>Once when the gate fails (no metadata, no pre-norm API, multi-slot).</td>
+              </tr>
+              <tr>
+                <td><code>speculative status=mtp-mirror-error</code></td>
+                <td><code>processBatch</code> / <code>verifySpeculativeTokens</code></td>
+                <td>Mirror decode failed; slot is finished or its draft KV is desync'd.</td>
+              </tr>
+              <tr>
+                <td><code>speculative status=mtp-imc-hit-diagnostic</code></td>
+                <td><code>startSlotText</code></td>
+                <td>Per-request diagnostic (see §6.16 — IMC interaction).</td>
+              </tr>
+              <tr>
+                <td><code>speculative status=verify-done</code></td>
+                <td><code>verifySpeculativeTokens</code></td>
+                <td>Throttled: first round + every 32nd. Carries <code>round</code>, <code>accepted</code>, <code>nDraft</code>, <code>acc_ema</code>.</td>
+              </tr>
+              <tr>
+                <td><code>speculative status=restore-error</code></td>
+                <td><code>verifySpeculativeTokens</code></td>
+                <td>Hybrid snapshot restore failed; falls back to broken <code>MemorySeqRm</code>.</td>
+              </tr>
+              <tr>
+                <td><code>speculative status=snapshot-error</code></td>
+                <td><code>processBatch</code></td>
+                <td>Hybrid snapshot capture failed; spec round will fall back to <code>MemorySeqRm</code> on rejection.</td>
+              </tr>
+              <tr>
+                <td><code>chat-completion ... draft_tokens=N ...</code></td>
+                <td><code>sendFinalResponse</code></td>
+                <td>Always present once the model has a drafter, even when speculation produced 0 tokens.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The <code>finishSlot</code> log line follows the same rule — <code>draft_tokens</code>, <code>draft_accepted_tokens</code>, and <code>acceptance_rate</code> fields are emitted whenever <code>e.model.draft != nil</code>, so log schemas stay stable across requests where the EMA collapsed mid-stream.</p>
+          <h3 id="614-code-map">6.14 Code Map</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Role for MTP</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go"><code>sdk/kronk/model/draft_mtp.go</code></a></td>
+                <td><code>mtpNextNLayers</code>, <code>loadDraftModelMTP</code>, <code>selectAndLoadDraft</code>. Sole source for MTP load + detect.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>sdk/kronk/model/batch_mtp.go</code></a></td>
+                <td><code>mirrorTargetBatchToMTPDraft</code>, <code>generateDraftTokensMTP</code>, helpers (<code>batchTokensAt</code>, <code>unsafeFloatSlice</code>, <code>mirrorBatchCapacity</code>).</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>sdk/kronk/model/yzma.go</code></a></td>
+                <td>FFI bindings for the three pre-norm symbols; <code>MTPAvailable</code>, <code>SetEmbeddingsPreNorm</code>, <code>GetEmbeddingsPreNorm&#123;,Ith&#125;</code>.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go"><code>sdk/kronk/model/model.go</code></a></td>
+                <td><code>draftModel</code> struct extended with MTP fields (<code>mtp</code>, <code>nEmbd</code>, MTP batches, pinned embd slices). <code>Unload</code> skips shared <code>ModelFree</code>.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>sdk/kronk/model/batch_slot.go</code></a></td>
+                <td><code>slot</code> struct extended with per-slot MTP state (<code>pendingH</code>, target-batch range, <code>mtpHasBatch</code>, <code>mtpDisabledForRequest</code>, <code>specSnapshot</code>, <code>specRounds</code>).</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>sdk/kronk/model/batch_slot_start.go</code></a></td>
+                <td>Skips separate-draft-prefill on MTP; diagnostic IMC-hit logging.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>sdk/kronk/model/batch_engine.go</code></a></td>
+                <td><code>processBatch</code> integration: claims slot's target-batch range at every add site, mirrors after every successful decode, dispatches MTP vs separate-GGUF draft generation.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go"><code>sdk/kronk/model/batch_prefill_text.go</code></a></td>
+                <td><code>addPrefillChunk</code> claims (or extends) the slot's MTP target-batch range so prefill rows get mirrored.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>sdk/kronk/model/batch_speculative.go</code></a></td>
+                <td>Greedy-only MTP verify path; <code>originalSampled</code> snapshot; hybrid snapshot/restore; post-verify mirror; throttled <code>verify-done</code> log; MTP-specific <code>rollbackDraft</code>.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go"><code>sdk/kronk/model/batch_finish.go</code></a></td>
+                <td>Always-emit draft metrics when a drafter is configured.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/params.go"><code>sdk/kronk/model/params.go</code></a></td>
+                <td>`top_p == 0</td>
+                <td></td>
+                <td>== 1<code> from the request is treated as unset so the model-config </code>top_p` survives.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="615-testing">6.15 Testing</h3>
+          <p>Test package: <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/tests/mtp"><code>sdk/kronk/tests/mtp/</code></a>.</p>
+          <p>The suite is a smoke test against the <code>unsloth/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL</code> target via <code>testlib.CfgMTPChat()</code>. A successful <code>Chat</code> and <code>ChatStreaming</code> response implicitly verifies that:</p>
+          <ul>
+            <li>The MTP draft context loaded (auto-detection passed).</li>
+            <li>Pre-norm extraction is wired correctly on both contexts.</li>
+            <li>The mirror step is in sync after every target decode.</li>
+            <li>Speculation produced valid drafts and the target accepted and emitted clean text.</li>
+          </ul>
+          <p><code>TestMain</code> skips the whole suite when the MTP model file is not downloaded, so contributors without the GGUF locally still get a green run.</p>
+          <p>Run from the project root:</p>
+          <pre className="code-block"><code className="language-shell">{`export RUN_IN_PARALLEL=yes
+export GITHUB_WORKSPACE=$(pwd)
+go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
+          <h3 id="616-known-limitations">6.16 Known Limitations</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Limitation</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>nseq-max: 1</code> only</td>
+                <td>See §6.5 — the shared-batch decode mixing one slot's MTP spec tokens with another slot's prefill triggers a <code>GGML_ASSERT</code> in <code>llama_sampler_sample</code>.</td>
+              </tr>
+              <tr>
+                <td>Greedy verify only</td>
+                <td>The MTP head's AR loop runs greedy sampling and does not capture sparse draft distributions; probabilistic verify would always reject. See §6.8.</td>
+              </tr>
+              <tr>
+                <td>IMC + MTP interaction is a measurement</td>
+                <td>IMC restores only the target KV; the draft context has no snapshot, so an IMC cache-hit request runs MTP against an empty / stale draft context. The original guard would have disabled MTP on IMC hits; PR #593 leaves it enabled and logs <code>mtp-imc-hit-diagnostic</code> to measure real-world acceptance. If acceptance collapses to ~0%, the safe-default disable will be restored.</td>
+              </tr>
+              <tr>
+                <td>No vision / audio</td>
+                <td>Speculative decoding in general is text-only in Kronk.</td>
+              </tr>
+              <tr>
+                <td><code>defMTPNDraft = 4</code> is a fixed cap</td>
+                <td>The adaptive EMA scales down from 4, but there is no per-model config to raise the ceiling for an exceptionally well-behaved MTP head.</td>
+              </tr>
+            </tbody>
+          </table>
+          <hr />
+          <h2 id="chapter-7-yarn-extended-context">Chapter 7: YaRN Extended Context</h2>
           <p>YaRN (Yet another RoPE extensioN) allows models to handle context windows beyond their native training length. This is essential for long documents, extended conversations, and complex agentic workflows.</p>
-          <h3 id="61-understanding-context-extension">6.1 Understanding Context Extension</h3>
+          <h3 id="71-understanding-context-extension">7.1 Understanding Context Extension</h3>
           <p>Language models are trained with a fixed context length (e.g., 8K, 32K tokens). RoPE (Rotary Position Embedding) encodes position information, but naive extension beyond training length causes quality degradation.</p>
           <p>YaRN applies frequency-dependent interpolation with attention scaling to maintain quality at extended lengths.</p>
           <pre className="code-block"><code>{`Native Context:     32K tokens (training length)
 Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
-          <h3 id="62-when-to-use-yarn">6.2 When to Use YaRN</h3>
+          <h3 id="72-when-to-use-yarn">7.2 When to Use YaRN</h3>
           <p><strong>Good candidates for YaRN:</strong></p>
           <ul>
             <li>Qwen3 models (trained at 32K, support 131K with YaRN)</li>
@@ -2816,7 +3264,7 @@ Extended Context:   131K tokens (4x extension with YaRN)`}</code></pre>
             <li>Extensions beyond 4x (quality degrades significantly)</li>
             <li>Models without RoPE (older architectures)</li>
           </ul>
-          <h3 id="63-configuration">6.3 Configuration</h3>
+          <h3 id="73-configuration">7.3 Configuration</h3>
           <p><strong>Basic YaRN Setup:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
 Qwen/Qwen3-8B-Q8_0:
@@ -2835,7 +3283,7 @@ Qwen/Qwen3-8B-Q8_0:
   yarn-beta-fast: 32.0      # Low correction dimension
   yarn-beta-slow: 1.0       # High correction dimension
   yarn-orig-ctx: 32768      # Original training context`}</code></pre>
-          <h3 id="64-scaling-types">6.4 Scaling Types</h3>
+          <h3 id="74-scaling-types">7.4 Scaling Types</h3>
           <p>Kronk supports three RoPE scaling methods:</p>
           <p><strong>None (Default)</strong></p>
           <pre className="code-block"><code className="language-yaml">{`rope-scaling-type: none`}</code></pre>
@@ -2846,7 +3294,7 @@ Qwen/Qwen3-8B-Q8_0:
           <p><strong>YaRN (Recommended)</strong></p>
           <pre className="code-block"><code className="language-yaml">{`rope-scaling-type: yarn`}</code></pre>
           <p>Frequency-dependent interpolation with attention scaling. Maintains quality better at 2-4x extensions.</p>
-          <h3 id="65-parameter-reference">6.5 Parameter Reference</h3>
+          <h3 id="75-parameter-reference">7.5 Parameter Reference</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2898,7 +3346,7 @@ Qwen/Qwen3-8B-Q8_0:
               </tr>
             </tbody>
           </table>
-          <h3 id="66-model-specific-examples">6.6 Model-Specific Examples</h3>
+          <h3 id="76-model-specific-examples">7.6 Model-Specific Examples</h3>
           <p><strong>Qwen3 (32K → 131K)</strong></p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
 Qwen/Qwen3-8B-Q8_0:
@@ -2912,7 +3360,7 @@ unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
   rope-scaling-type: yarn
   rope-freq-base: 10000`}</code></pre>
           <p>4x extension from 8K to 32K is within the recommended range.</p>
-          <h3 id="67-memory-impact">6.7 Memory Impact</h3>
+          <h3 id="77-memory-impact">7.7 Memory Impact</h3>
           <p>Extended context significantly increases memory requirements:</p>
           <pre className="code-block"><code>{`Qwen3-8B with F16 KV cache:
 
@@ -2933,7 +3381,7 @@ cache-type-v: q8_0`}</code></pre>
             <li>Keep KV cache on CPU (slower but saves VRAM):</li>
           </ol>
           <pre className="code-block"><code className="language-yaml">{`offload-kqv: false`}</code></pre>
-          <h3 id="68-quality-considerations">6.8 Quality Considerations</h3>
+          <h3 id="78-quality-considerations">7.8 Quality Considerations</h3>
           <p><strong>Extension ratio guidelines:</strong></p>
           <ul>
             <li>2x extension: Minimal quality loss</li>
@@ -2948,7 +3396,7 @@ cache-type-v: q8_0`}</code></pre>
             <li>Compare output quality</li>
             <li>Adjust if needed (reduce extension or try different parameters)</li>
           </ol>
-          <h3 id="69-example-long-document-processing">6.9 Example: Long Document Processing</h3>
+          <h3 id="79-example-long-document-processing">7.9 Example: Long Document Processing</h3>
           <p>Configuration for processing long documents:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
 Qwen/Qwen3-8B-Q8_0:
@@ -2961,7 +3409,7 @@ Qwen/Qwen3-8B-Q8_0:
   nseq-max: 1                # Single request (memory intensive)`}</code></pre>
           <p>This configuration can process documents up to ~50K tokens while leaving room for generation.</p>
           <hr />
-          <h2 id="chapter-7-model-server">Chapter 7: Model Server</h2>
+          <h2 id="chapter-8-model-server">Chapter 8: Model Server</h2>
           <p>The Kronk Model Server provides an OpenAI-compatible REST API for inference. This chapter covers server configuration, management, and the catalog system.</p>
           <p><strong>CLI Modes: Web vs Local</strong></p>
           <p>Most CLI commands communicate with a running server by default:</p>
@@ -2997,7 +3445,7 @@ kronk libs --local`}</code></pre>
             <li>Setting defaults without repeating flags</li>
             <li>Keeping secrets out of command history</li>
           </ul>
-          <h3 id="71-starting-the-server">7.1 Starting the Server</h3>
+          <h3 id="81-starting-the-server">8.1 Starting the Server</h3>
           <p><strong>Install the CLI</strong> (if not already installed)</p>
           <pre className="code-block"><code className="language-shell">{`go install github.com/ardanlabs/kronk/cmd/kronk@latest`}</code></pre>
           <p><strong>Basic Start</strong></p>
@@ -3008,9 +3456,9 @@ kronk libs --local`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start -d`}</code></pre>
           <p><strong>Custom Host/Port</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=0.0.0.0:9000`}</code></pre>
-          <h3 id="72-stopping-the-server">7.2 Stopping the Server</h3>
+          <h3 id="82-stopping-the-server">8.2 Stopping the Server</h3>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
-          <h3 id="73-server-configuration">7.3 Server Configuration</h3>
+          <h3 id="83-server-configuration">8.3 Server Configuration</h3>
           <p>Configuration can be set via command-line flags or environment variables. Every flag has a corresponding environment variable using the <code>KRONK_</code> prefix with underscores replacing hyphens.</p>
           <p><strong>Web Settings</strong></p>
           <table className="flags-table">
@@ -3150,7 +3598,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--budget-percent</code></td>
                 <td><code>KRONK_POOL_BUDGET_PERCENT</code></td>
                 <td><code>80</code></td>
-                <td>Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See <a href="#75-resource-manager">Section 7.5</a>.</td>
+                <td>Percentage (1..100) of detected GPU VRAM and system RAM the resource manager may commit to loaded models. See <a href="#85-resource-manager">Section 7.5</a>.</td>
               </tr>
               <tr>
                 <td><code>--models-in-pool</code></td>
@@ -3246,7 +3694,7 @@ kronk libs --local`}</code></pre>
   --pool-ttl=30m \\
   --model-config-file=./model_config.yaml \\
   --hf-token=hf_xxxxx`}</code></pre>
-          <h3 id="74-model-caching">7.4 Model Caching</h3>
+          <h3 id="84-model-caching">8.4 Model Caching</h3>
           <p>The server maintains a pool of loaded models to avoid reload latency.</p>
           <p><strong>Configuration</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
@@ -3258,8 +3706,8 @@ kronk libs --local`}</code></pre>
             <li><code>models-in-pool</code> - Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 10). The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models.</li>
             <li><code>pool-ttl</code> - How long an unused model stays loaded (default: 20m)</li>
           </ul>
-          <p>When a new model is requested and admitting it would exceed the budget, the resource manager evicts the coldest idle model in the pool to free room. If no idle model can be evicted (every loaded model has active streams), the request returns <code>server busy</code>. See <a href="#75-resource-manager">Section 7.5</a> for the full admission and eviction model.</p>
-          <h3 id="75-resource-manager">7.5 Resource Manager</h3>
+          <p>When a new model is requested and admitting it would exceed the budget, the resource manager evicts the coldest idle model in the pool to free room. If no idle model can be evicted (every loaded model has active streams), the request returns <code>server busy</code>. See <a href="#85-resource-manager">Section 7.5</a> for the full admission and eviction model.</p>
+          <h3 id="85-resource-manager">8.5 Resource Manager</h3>
           <p>Kronk's pool sits behind an in-memory <strong>resource manager</strong> (resman) that admits or rejects model loads based on a memory budget rather than a fixed model count. The manager is a pure accountant — it never queries the GPU or the OS at runtime; it works from a snapshot of detected devices taken once at server startup and from per-model VRAM predictions.</p>
           <p><strong>BudgetPercent</strong></p>
           <p><code>--budget-percent</code> (default <code>80</code>) is the single admission knob. It is applied independently to:</p>
@@ -3284,7 +3732,7 @@ kronk libs --local`}</code></pre>
           <p><code>--models-in-pool</code> (default <code>10</code>) is a hard upper bound on the number of distinct entries the pool will keep, independent of the byte budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob in normal operation. It exists so operators on small systems — or anyone debugging cache churn — can pin the maximum number of resident models with a single integer.</p>
           <p><strong>Inspecting current usage</strong></p>
           <p>The pool emits structured <code>resman-init</code> and <code>resman-usage</code> log lines on startup and after every reserve/release, including per-GPU <code>used/budget/free</code> and <code>ram-used/ram-budget</code>. These are the easiest way to confirm the manager is reasoning about the right hardware.</p>
-          <h3 id="76-model-config-files">7.6 Model Config Files</h3>
+          <h3 id="86-model-config-files">8.6 Model Config Files</h3>
           <p>The server reads per-model overrides from <code>~/.kronk/model_config.yaml</code> by default. Kronk seeds this file from an embedded default on first server start; your edits are preserved across upgrades.</p>
           <p>The file is a flat map keyed by canonical model id (<code>provider/modelID</code>, optionally with a <code>/variant</code> suffix). Each entry's keys map 1:1 to <code>model.Config</code> and use kebab-case:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
@@ -3318,7 +3766,7 @@ kronk server start`}</code></pre>
             <li>Detailed comments explaining each configuration option</li>
             <li>Examples of YAML anchors for sharing common settings between variants</li>
           </ul>
-          <h3 id="77-catalog-system">7.7 Catalog System</h3>
+          <h3 id="87-catalog-system">8.7 Catalog System</h3>
           <p>The catalog (<code>~/.kronk/catalog.yaml</code>) is your <strong>personal</strong> catalog of models. On first run Kronk seeds it from an embedded starter list so you have something to choose from immediately; the catalog grows as you pull models or resolve new IDs against HuggingFace.</p>
           <p>Each entry is a resolution cache — provider, family (HF repo), revision, file list, sizes, optional MMProj projection, and detected capabilities. Templates come from the GGUF metadata of the downloaded model itself and are not stored here.</p>
           <p><strong>List entries in the catalog</strong></p>
@@ -3337,7 +3785,7 @@ kronk server start`}</code></pre>
           <p><strong>Remove a catalog entry</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog remove unsloth/Qwen3-0.6B-Q8_0   # also removes downloaded files`}</code></pre>
           <p>The same operations are available in the BUI's Catalog and Model views.</p>
-          <h3 id="78-runtime-settings">7.8 Runtime Settings</h3>
+          <h3 id="88-runtime-settings">8.8 Runtime Settings</h3>
           <p><strong>Processor Selection</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --processor=cuda    # NVIDIA GPU
 kronk server start --processor=metal   # Apple Silicon
@@ -3380,7 +3828,7 @@ kronk server start --processor=cpu     # CPU only`}</code></pre>
           <p>Or via environment variable:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_HF_TOKEN=hf_xxxxx
 kronk server start`}</code></pre>
-          <h3 id="79-logging">7.9 Logging</h3>
+          <h3 id="89-logging">8.9 Logging</h3>
           <p><strong>llama.cpp Logging</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log=1    # Enable llama.cpp logs
 kronk server start --llama-log=0    # Disable (default)`}</code></pre>
@@ -3390,7 +3838,7 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <p><strong>Warning:</strong> This logs sensitive data. Never use in production.</p>
           <p><strong>View Server Logs</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server logs`}</code></pre>
-          <h3 id="710-data-paths">7.10 Data Paths</h3>
+          <h3 id="810-data-paths">8.10 Data Paths</h3>
           <p>Default data locations:</p>
           <pre className="code-block"><code>{`~/.kronk/
 ├── catalog.yaml                        # Personal catalog (resolution cache + provider list)
@@ -3406,7 +3854,7 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
           <p><strong>Custom Base Path</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --base-path=/data/kronk`}</code></pre>
           <p><code>--base-path</code> shifts every file above to live under the new root.</p>
-          <h3 id="711-complete-example">7.11 Complete Example</h3>
+          <h3 id="811-complete-example">8.11 Complete Example</h3>
           <p>Production-ready server configuration:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=0.0.0.0:11435 \\
@@ -3426,9 +3874,9 @@ unsloth/Qwen3-0.6B-Q8_0:
   cache-type-v: q8_0
   incremental-cache: true`}</code></pre>
           <hr />
-          <h2 id="chapter-8-api-endpoints">Chapter 8: API Endpoints</h2>
+          <h2 id="chapter-9-api-endpoints">Chapter 9: API Endpoints</h2>
           <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the available endpoints and their usage.</p>
-          <h3 id="81-endpoint-overview">8.1 Endpoint Overview</h3>
+          <h3 id="91-endpoint-overview">9.1 Endpoint Overview</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -3475,7 +3923,7 @@ unsloth/Qwen3-0.6B-Q8_0:
               </tr>
             </tbody>
           </table>
-          <h3 id="82-chat-completions">8.2 Chat Completions</h3>
+          <h3 id="92-chat-completions">9.2 Chat Completions</h3>
           <p>Generate chat responses using the familiar OpenAI format.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/chat/completions</code></p>
           <p><strong>Basic Request:</strong></p>
@@ -3544,7 +3992,7 @@ data: [DONE]`}</code></pre>
           <pre className="code-block"><code className="language-json">{`{
   "enable_thinking": false
 }`}</code></pre>
-          <h3 id="83-responses-api">8.3 Responses API</h3>
+          <h3 id="93-responses-api">9.3 Responses API</h3>
           <p>OpenAI's newer Responses API format, used by some clients.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/responses</code></p>
           <p><strong>Request:</strong></p>
@@ -3568,7 +4016,7 @@ data: {"type":"response.output_text.delta","delta":" answer",...}
 
 event: response.completed
 data: {"type":"response.completed",...}`}</code></pre>
-          <h3 id="84-embeddings">8.4 Embeddings</h3>
+          <h3 id="94-embeddings">9.4 Embeddings</h3>
           <p>Generate vector embeddings for text.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/embeddings</code></p>
           <p><strong>Request:</strong></p>
@@ -3603,7 +4051,7 @@ data: {"type":"response.completed",...}`}</code></pre>
     "total_tokens": 10
   }
 }`}</code></pre>
-          <h3 id="85-reranking">8.5 Reranking</h3>
+          <h3 id="95-reranking">9.5 Reranking</h3>
           <p>Score and reorder documents by relevance to a query.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/rerank</code></p>
           <p><strong>Request:</strong></p>
@@ -3641,7 +4089,7 @@ data: {"type":"response.completed",...}`}</code></pre>
     "total_tokens": 45
   }
 }`}</code></pre>
-          <h3 id="86-tokenize">8.6 Tokenize</h3>
+          <h3 id="96-tokenize">9.6 Tokenize</h3>
           <p>Get the token count for a text input. Works with any model type.</p>
           <p><strong>Endpoint:</strong> <code>POST /v1/tokenize</code></p>
           <p><strong>Parameters:</strong></p>
@@ -3706,7 +4154,7 @@ data: {"type":"response.completed",...}`}</code></pre>
   "tokens": 11
 }`}</code></pre>
           <p>When <code>apply_template</code> is true, the token count will be higher than raw text because it includes template overhead (role markers, separators, and the generation prompt).</p>
-          <h3 id="87-tool-calling-function-calling">8.7 Tool Calling (Function Calling)</h3>
+          <h3 id="97-tool-calling-function-calling">9.7 Tool Calling (Function Calling)</h3>
           <p>Kronk supports OpenAI-compatible tool calling, allowing models to request function executions that you handle in your application.</p>
           <p><strong>Request with Tools:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
@@ -3801,7 +4249,7 @@ data: {"type":"response.completed",...}`}</code></pre>
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ation\\":"}}]}}]}
 
 data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \\"Paris\\"}"}}]}}]}`}</code></pre>
-          <h3 id="88-models-list">8.8 Models List</h3>
+          <h3 id="98-models-list">9.8 Models List</h3>
           <p>Get available models.</p>
           <p><strong>Endpoint:</strong> <code>GET /v1/models</code></p>
           <p><strong>Request:</strong></p>
@@ -3822,14 +4270,14 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
     }
   ]
 }`}</code></pre>
-          <h3 id="89-authentication">8.9 Authentication</h3>
+          <h3 id="99-authentication">9.9 Authentication</h3>
           <p>When authentication is enabled, include the token in requests:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer your-token-here" \\
   -d '{...}'`}</code></pre>
-          <p>See <a href="#chapter-11-security--authentication">Chapter 11: Security & Authentication</a> for details on token management.</p>
-          <h3 id="810-error-responses">8.10 Error Responses</h3>
+          <p>See <a href="#chapter-12-security-authentication">Chapter 12: Security & Authentication</a> for details on token management.</p>
+          <h3 id="910-error-responses">9.10 Error Responses</h3>
           <p>Errors follow a standard format:</p>
           <pre className="code-block"><code className="language-json">{`{
   "error": {
@@ -3845,9 +4293,9 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
             <li><code>unauthenticated</code> - Missing or invalid authentication token</li>
           </ul>
           <hr />
-          <h2 id="chapter-9-request-parameters">Chapter 9: Request Parameters</h2>
+          <h2 id="chapter-10-request-parameters">Chapter 10: Request Parameters</h2>
           <p>This chapter documents the request parameters available for controlling model output through both the SDK and REST API.</p>
-          <h3 id="91-sampling-parameters">9.1 Sampling Parameters</h3>
+          <h3 id="101-sampling-parameters">10.1 Sampling Parameters</h3>
           <p>These parameters control the randomness and diversity of generated text.</p>
           <table className="flags-table">
             <thead>
@@ -3890,7 +4338,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
               </tr>
             </tbody>
           </table>
-          <h3 id="92-repetition-control">9.2 Repetition Control</h3>
+          <h3 id="102-repetition-control">10.2 Repetition Control</h3>
           <p>These parameters help prevent repetitive output.</p>
           <table className="flags-table">
             <thead>
@@ -3962,7 +4410,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
               </tr>
             </tbody>
           </table>
-          <h3 id="93-advanced-sampling">9.3 Advanced Sampling</h3>
+          <h3 id="103-advanced-sampling">10.3 Advanced Sampling</h3>
           <p><strong>XTC (eXtreme Token Culling):</strong></p>
           <p>XTC probabilistically removes high-probability tokens to increase diversity.</p>
           <table className="flags-table">
@@ -4028,7 +4476,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
               </tr>
             </tbody>
           </table>
-          <h3 id="94-generation-control">9.4 Generation Control</h3>
+          <h3 id="104-generation-control">10.4 Generation Control</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -4077,7 +4525,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" \
               </tr>
             </tbody>
           </table>
-          <h3 id="95-grammar-constrained-output">9.5 Grammar Constrained Output</h3>
+          <h3 id="105-grammar-constrained-output">10.5 Grammar Constrained Output</h3>
           <p>Grammars force the model to only produce tokens that match a specified pattern, guaranteeing structured output.</p>
           <p><strong>Built-in Presets:</strong></p>
           <table className="flags-table">
@@ -4172,7 +4620,7 @@ d := model.D{
     "enable_thinking": false,
 }`}</code></pre>
           <p><strong>Important:</strong> When using grammar constraints, set <code>enable_thinking: false</code> because the grammar applies from the first output token.</p>
-          <h3 id="96-logprobs-token-probabilities">9.6 Logprobs (Token Probabilities)</h3>
+          <h3 id="106-logprobs-token-probabilities">10.6 Logprobs (Token Probabilities)</h3>
           <p>Request log probabilities for generated tokens to understand model confidence or implement custom sampling strategies.</p>
           <p><strong>Request Parameters:</strong></p>
           <table className="flags-table">
@@ -4264,7 +4712,7 @@ d := model.D{
             <li>Custom rejection sampling</li>
             <li>Token-level analysis for debugging</li>
           </ul>
-          <h3 id="97-parameter-reference">9.7 Parameter Reference</h3>
+          <h3 id="107-parameter-reference">10.7 Parameter Reference</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -4447,9 +4895,9 @@ d := model.D{
             </tbody>
           </table>
           <hr />
-          <h2 id="chapter-10-multi-modal-models">Chapter 10: Multi-Modal Models</h2>
+          <h2 id="chapter-11-multi-modal-models">Chapter 11: Multi-Modal Models</h2>
           <p>Kronk supports vision and audio models that can process images, video frames, and audio alongside text. This chapter covers how to use these models.</p>
-          <h3 id="101-overview">10.1 Overview</h3>
+          <h3 id="111-overview">11.1 Overview</h3>
           <p>Multi-modal models combine a language model with a media projector that converts images or audio into tokens the model can understand.</p>
           <p><strong>Supported Media Types:</strong></p>
           <ul>
@@ -4466,7 +4914,7 @@ d := model.D{
             <li><code>mradermacher/Qwen2-Audio-7B.Q8_0</code> - Audio model</li>
             <li><code>ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0</code> - Vision + audio + video</li>
           </ul>
-          <h3 id="102-vision-models">10.2 Vision Models</h3>
+          <h3 id="112-vision-models">11.2 Vision Models</h3>
           <p>Vision models analyze images and answer questions about their content.</p>
           <p><strong>Download a Vision Model:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull unsloth/LFM2.5-VL-1.6B-Q8_0`}</code></pre>
@@ -4509,7 +4957,7 @@ d := model.D{
             <li>Base64 data URL: <code>data:image/jpeg;base64,/9j/4AAQSkZJRg...</code></li>
             <li>Base64 data URL: <code>data:image/png;base64,iVBORw0KGgo...</code></li>
           </ul>
-          <h3 id="103-audio-models">10.3 Audio Models</h3>
+          <h3 id="113-audio-models">11.3 Audio Models</h3>
           <p>Audio models transcribe and understand spoken content.</p>
           <p><strong>Download an Audio Model:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull mradermacher/Qwen2-Audio-7B.Q8_0`}</code></pre>
@@ -4542,7 +4990,7 @@ d := model.D{
             <li><code>data</code> - Base64-encoded audio data</li>
             <li><code>format</code> - Audio format (currently <code>wav</code> supported)</li>
           </ul>
-          <h3 id="104-plain-base64-format">10.4 Plain Base64 Format</h3>
+          <h3 id="114-plain-base64-format">11.4 Plain Base64 Format</h3>
           <p>For simpler integrations, Kronk also accepts plain base64 as the message content (without the structured OpenAI format):</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
@@ -4559,7 +5007,7 @@ d := model.D{
             <li>PNG: starts with <code>89 50 4E 47</code></li>
             <li>WAV: starts with <code>RIFF</code></li>
           </ul>
-          <h3 id="105-configuration-for-multi-modal-models">10.5 Configuration for Multi-Modal Models</h3>
+          <h3 id="115-configuration-for-multi-modal-models">11.5 Configuration for Multi-Modal Models</h3>
           <p>Vision and audio models have specific configuration requirements:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/LFM2.5-VL-1.6B-Q8_0:
   nubatch: 2048 # Higher for image token processing
@@ -4571,7 +5019,7 @@ d := model.D{
             <li><code>nseq-max</code> controls batch parallelism (multiple slots in shared context)</li>
             <li>Vision/audio models use the same batch engine as text models</li>
           </ul>
-          <h3 id="106-memory-requirements">10.6 Memory Requirements</h3>
+          <h3 id="116-memory-requirements">11.6 Memory Requirements</h3>
           <p>Vision and audio models require additional memory for the projector:</p>
           <p><strong>Vision Model Example (unsloth/LFM2.5-VL-1.6B-Q8_0):</strong></p>
           <pre className="code-block"><code>{`Model weights:     ~1.2 GB
@@ -4585,7 +5033,7 @@ Projector:         ~0.7 GB
 KV cache (8K):     ~0.6 GB
 ─────────────────────────
 Total:             ~9.3 GB`}</code></pre>
-          <h3 id="107-imc-and-multi-modal-caching">10.7 IMC and Multi-Modal Caching</h3>
+          <h3 id="117-imc-and-multi-modal-caching">11.7 IMC and Multi-Modal Caching</h3>
           <p>IMC fully supports vision and audio models. Media embeddings (images, audio) are cached in the KV cache alongside text tokens. After each request, the entire cached prefix — including media embeddings — is snapshotted to RAM via <code>StateSeqGetData</code> and the VRAM sequence is cleared. On the next request, the cached state is restored from RAM into any available slot, just like text-only sessions. Media is never re-encoded through the projection model unless the conversation cache is rebuilt from scratch.</p>
           <p>For example, in a multi-turn vision conversation:</p>
           <ol>
@@ -4594,11 +5042,11 @@ Total:             ~9.3 GB`}</code></pre>
             <li><strong>New image in conversation</strong>: If a new message contains media, IMC triggers a full rebuild through the mtmd pipeline to re-encode all media.</li>
           </ol>
           <p>See <a href="chapter-05-message-caching.md">Chapter 5: Message Caching</a> for full details on IMC's caching algorithm.</p>
-          <h3 id="108-limitations">10.8 Limitations</h3>
+          <h3 id="118-limitations">11.8 Limitations</h3>
           <ul>
             <li>Processing time varies with image resolution and audio duration</li>
           </ul>
-          <h3 id="109-example-image-analysis">10.9 Example: Image Analysis</h3>
+          <h3 id="119-example-image-analysis">11.9 Example: Image Analysis</h3>
           <p>Complete example analyzing an image:</p>
           <pre className="code-block"><code className="language-shell">{`# Encode image to base64
 IMAGE_B64=$(base64 -i photo.jpg)
@@ -4622,7 +5070,7 @@ curl http://localhost:11435/v1/chat/completions \\
     ],
     "max_tokens": 1024
   }'`}</code></pre>
-          <h3 id="1010-example-audio-transcription">10.10 Example: Audio Transcription</h3>
+          <h3 id="1110-example-audio-transcription">11.10 Example: Audio Transcription</h3>
           <p>Complete example transcribing audio:</p>
           <pre className="code-block"><code className="language-shell">{`# Encode audio to base64
 AUDIO_B64=$(base64 -i recording.wav)
@@ -4647,10 +5095,10 @@ curl http://localhost:11435/v1/chat/completions \\
     "max_tokens": 2048
   }'`}</code></pre>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-11-security--authentication"&gt;Chapter 11: Security & Authentication&lt;/a&gt;</em></p>
-          <h2 id="chapter-11-security-authentication">Chapter 11: Security &amp; Authentication</h2>
+          <p><em>Next: &lt;a href="#chapter-12-security-authentication"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
+          <h2 id="chapter-12-security-authentication">Chapter 12: Security &amp; Authentication</h2>
           <p>Kronk provides JWT-based authentication and authorization with per-endpoint rate limiting. When enabled, all API requests require a valid token.</p>
-          <h3 id="111-enabling-authentication">11.1 Enabling Authentication</h3>
+          <h3 id="121-enabling-authentication">12.1 Enabling Authentication</h3>
           <p><strong>Start Server with Auth Enabled:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --auth-enabled`}</code></pre>
           <p>Or via environment variable:</p>
@@ -4665,7 +5113,7 @@ kronk server start`}</code></pre>
             <li>Generates an additional signing key for user tokens</li>
           </ol>
           <p>The admin token is stored at <code>~/.kronk/keys/master.jwt</code>.</p>
-          <h3 id="112-using-the-admin-token">11.2 Using the Admin Token</h3>
+          <h3 id="122-using-the-admin-token">12.2 Using the Admin Token</h3>
           <p>The admin token is required for all security management operations.</p>
           <p><strong>Set the Token:</strong></p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)`}</code></pre>
@@ -4675,7 +5123,7 @@ kronk server start`}</code></pre>
             <li>Add and remove signing keys</li>
             <li>Access all endpoints without rate limits</li>
           </ul>
-          <h3 id="113-key-management">11.3 Key Management</h3>
+          <h3 id="123-key-management">12.3 Key Management</h3>
           <p>Private keys sign JWT tokens. Multiple keys allow token rotation without invalidating all existing tokens.</p>
           <p><strong>List Keys:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk security key list`}</code></pre>
@@ -4694,7 +5142,7 @@ a1b2c3d4-e5f6-7890-abcd-ef1234567890    2024-01-15T10:30:00Z`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk security key list --local
 kronk security key create --local
 kronk security key delete --keyid <keyid> --local`}</code></pre>
-          <h3 id="114-creating-user-tokens">11.4 Creating User Tokens</h3>
+          <h3 id="124-creating-user-tokens">12.4 Creating User Tokens</h3>
           <p>Create tokens with specific endpoint access and optional rate limits.</p>
           <p><strong>Basic Syntax:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
@@ -4725,7 +5173,7 @@ kronk security key delete --keyid <keyid> --local`}</code></pre>
             <li><code>rerank</code> - Reranking API</li>
             <li><code>messages</code> - Anthropic Messages API</li>
           </ul>
-          <h3 id="115-token-examples">11.5 Token Examples</h3>
+          <h3 id="125-token-examples">12.5 Token Examples</h3>
           <p><strong>Unlimited Access to All Endpoints (24 hours):</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 24h \\
@@ -4748,7 +5196,7 @@ kronk security key delete --keyid <keyid> --local`}</code></pre>
   Endpoints: map[chat-completions:{1000 day} embeddings:{0 unlimited}]
 TOKEN:
 eyJhbGciOiJSUzI1NiIsImtpZCI6ImExYjJjM2Q0Li4uIiwidHlwIjoiSldUIn0...`}</code></pre>
-          <h3 id="116-using-tokens-in-api-requests">11.6 Using Tokens in API Requests</h3>
+          <h3 id="126-using-tokens-in-api-requests">12.6 Using Tokens in API Requests</h3>
           <p>Pass the token in the <code>Authorization</code> header with the <code>Bearer</code> prefix.</p>
           <p><strong>curl Example:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
@@ -4777,7 +5225,7 @@ response = client.chat.completions.create(
     model="Qwen/Qwen3-8B-Q8_0",
     messages=[{"role": "user", "content": "Hello"}]
 )`}</code></pre>
-          <h3 id="117-authorization-flow">11.7 Authorization Flow</h3>
+          <h3 id="127-authorization-flow">12.7 Authorization Flow</h3>
           <p>When a request arrives:</p>
           <ol>
             <li><strong>Token Extraction</strong> - Bearer token parsed from Authorization header</li>
@@ -4793,7 +5241,7 @@ response = client.chat.completions.create(
             <li><code>403 Forbidden</code> - Token lacks access to the endpoint</li>
             <li><code>429 Too Many Requests</code> - Rate limit exceeded</li>
           </ul>
-          <h3 id="118-rate-limiting">11.8 Rate Limiting</h3>
+          <h3 id="128-rate-limiting">12.8 Rate Limiting</h3>
           <p>Rate limits are enforced per token (identified by the token's subject claim).</p>
           <p><strong>How Limits Work:</strong></p>
           <ul>
@@ -4805,7 +5253,7 @@ response = client.chat.completions.create(
           <p>Rate limit counters are stored in a BadgerDB database at <code>~/.kronk/badger/</code>. Counters persist across server restarts.</p>
           <p><strong>Bypassing Rate Limits:</strong></p>
           <p>Admin tokens (like <code>master.jwt</code>) bypass all rate limiting.</p>
-          <h3 id="119-configuration-reference">11.9 Configuration Reference</h3>
+          <h3 id="129-configuration-reference">12.9 Configuration Reference</h3>
           <p><strong>Deployment Modes:</strong></p>
           <p>Auth can run in two modes:</p>
           <ol>
@@ -4829,7 +5277,7 @@ response = client.chat.completions.create(
             <li><code>KRONK_TOKEN</code> - Token for CLI commands and API requests</li>
             <li><code>KRONK_WEB_API_HOST</code> - Server address for CLI web mode (default: <code>localhost:11435</code>)</li>
           </ul>
-          <h3 id="1110-security-best-practices">11.10 Security Best Practices</h3>
+          <h3 id="1210-security-best-practices">12.10 Security Best Practices</h3>
           <p><strong>Token Management:</strong></p>
           <ul>
             <li>Store admin tokens securely; treat <code>master.jwt</code> like a password</li>
@@ -4859,14 +5307,14 @@ response = client.chat.completions.create(
             <li>Monitor rate limit usage in logs</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-12-browser-ui-bui"&gt;Chapter 12: Browser UI (BUI)&lt;/a&gt;</em></p>
-          <h2 id="chapter-12-browser-ui-bui">Chapter 12: Browser UI (BUI)</h2>
+          <p><em>Next: &lt;a href="#chapter-13-browser-ui-bui"&gt;Chapter 13: Browser UI (BUI)&lt;/a&gt;</em></p>
+          <h2 id="chapter-13-browser-ui-bui">Chapter 13: Browser UI (BUI)</h2>
           <p>Kronk ships with a built-in Browser UI (BUI) served from the same port as the API. It is a thin client over the Web API and exposes the same operations the CLI provides — pulling libraries and models, browsing the catalog, managing tokens, and running interactive experiments against a loaded model. This chapter is a high-level guide to what the BUI offers; it intentionally does not enumerate every tab, filter, or button so that the documentation stays accurate as the UI evolves.</p>
-          <h3 id="121-accessing-the-bui">12.1 Accessing the BUI</h3>
+          <h3 id="131-accessing-the-bui">13.1 Accessing the BUI</h3>
           <p>The BUI loads automatically when you open the server root in a browser:</p>
           <pre className="code-block"><code>{`http://localhost:11435`}</code></pre>
           <p>It is bundled inside the <code>kronk</code> binary and served from the same address configured by <code>KRONK_WEB_API_HOST</code> (default <code>0.0.0.0:11435</code>).</p>
-          <h3 id="122-sidebar-layout">12.2 Sidebar Layout</h3>
+          <h3 id="132-sidebar-layout">13.2 Sidebar Layout</h3>
           <p>Navigation is grouped into the following top-level sections in the sidebar:</p>
           <ul>
             <li><strong>Home</strong> — landing page with a project banner and feature overview</li>
@@ -4878,13 +5326,13 @@ response = client.chat.completions.create(
             <li><strong>Docs</strong> — bundled documentation (Manual, SDK, CLI, Web API)</li>
             <li><strong>Settings</strong> — BUI preferences and the admin token</li>
           </ul>
-          <h3 id="123-what-the-bui-provides">12.3 What the BUI Provides</h3>
+          <h3 id="133-what-the-bui-provides">13.3 What the BUI Provides</h3>
           <h4 id="models">Models</h4>
           <p>The Models area lists every model file under <code>~/.kronk/models/</code> along with the currently running models and a page for pulling new ones by HuggingFace URL or canonical model id.</p>
           <p>It mirrors the CLI surface: <code>kronk model list</code>, <code>kronk model ps</code>, <code>kronk model pull</code>, <code>kronk model show</code>, and <code>kronk model remove</code>. Per- model details (configuration, sampling, template, GGUF metadata) are read-only views; persistent overrides live in <code>~/.kronk/model_config.yaml</code> (see Chapter 3).</p>
           <h4 id="catalog">Catalog</h4>
           <p>The Catalog area browses entries in <code>~/.kronk/catalog.yaml</code> — your <strong>personal</strong> catalog, seeded on first run from an embedded starter list and grown as you pull or resolve new models against HuggingFace.</p>
-          <p>It mirrors <code>kronk catalog list</code>, <code>kronk catalog show</code>, and <code>kronk catalog remove</code>, plus model pulling via <code>kronk model pull</code>. There is no curated upstream catalog; Chapter 7 covers the catalog model in detail.</p>
+          <p>It mirrors <code>kronk catalog list</code>, <code>kronk catalog show</code>, and <code>kronk catalog remove</code>, plus model pulling via <code>kronk model pull</code>. There is no curated upstream catalog; Chapter 8 covers the catalog model in detail.</p>
           <h4 id="libraries">Libraries</h4>
           <p>The Libraries area downloads and manages llama.cpp shared libraries under <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>. The active install used at runtime is selected via <code>KRONK_LIB_PATH</code>; the BUI can stage additional <code>(arch, os, processor)</code> bundles for other targets but does not hot-reload the active install. See Chapter 2 and the <code>kronk libs</code> CLI for the same operations.</p>
           <h4 id="apps">Apps</h4>
@@ -4895,7 +5343,7 @@ response = client.chat.completions.create(
             <li><strong>VRAM Calculator</strong> — a standalone estimator for the VRAM a model will consume given a chosen context window, slot count, KV cache precision, and other parameters. The same calculator is embedded in per-model detail views.</li>
           </ul>
           <h4 id="security">Security</h4>
-          <p>When authentication is enabled (Chapter 11), the Security area lets you list, create, and delete signing keys and create user tokens with chosen durations, endpoint scopes, and rate limits. These pages require an admin token configured under Settings; with auth disabled they remain accessible but are not meaningful.</p>
+          <p>When authentication is enabled (Chapter 12), the Security area lets you list, create, and delete signing keys and create user tokens with chosen durations, endpoint scopes, and rate limits. These pages require an admin token configured under Settings; with auth disabled they remain accessible but are not meaningful.</p>
           <h4 id="docs">Docs</h4>
           <p>The Docs area embeds the full Kronk documentation set so it is available offline next to the running server:</p>
           <ul>
@@ -4906,9 +5354,9 @@ response = client.chat.completions.create(
           </ul>
           <h4 id="settings">Settings</h4>
           <p>Settings holds BUI-level preferences, including the API token used by the BUI when calling the Web API. Set this when running with <code>--auth-enabled</code> so the BUI can reach security-protected endpoints.</p>
-          <h3 id="124-authentication">12.4 Authentication</h3>
-          <p>The BUI talks to the same <code>/v1</code> API as any other client. When <code>--auth-enabled</code> is set on <code>kronk server start</code>, every BUI call must carry a valid bearer token — configure it under <strong>Settings</strong>. With auth disabled the BUI works without configuration. See Chapter 11 for key and token management.</p>
-          <h3 id="125-notes-on-live-state">12.5 Notes on Live State</h3>
+          <h3 id="134-authentication">13.4 Authentication</h3>
+          <p>The BUI talks to the same <code>/v1</code> API as any other client. When <code>--auth-enabled</code> is set on <code>kronk server start</code>, every BUI call must carry a valid bearer token — configure it under <strong>Settings</strong>. With auth disabled the BUI works without configuration. See Chapter 12 for key and token management.</p>
+          <h3 id="135-notes-on-live-state">13.5 Notes on Live State</h3>
           <p>A few things the BUI deliberately does not do:</p>
           <ul>
             <li>It does not switch the active llama.cpp install in-process. Changing <code>KRONK_LIB_PATH</code> requires a server restart.</li>
@@ -4916,10 +5364,10 @@ response = client.chat.completions.create(
             <li>The Playground's loaded session is held in server memory; closing the browser tab does not unload the model. Use <strong>Unload Session</strong> before adjusting model configuration.</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-13-client-integration"&gt;Chapter 13: Client Integration&lt;/a&gt;</em></p>
-          <h2 id="chapter-13-client-integration">Chapter 13: Client Integration</h2>
+          <p><em>Next: &lt;a href="#chapter-14-client-integration"&gt;Chapter 14: Client Integration&lt;/a&gt;</em></p>
+          <h2 id="chapter-14-client-integration">Chapter 14: Client Integration</h2>
           <p>Kronk's OpenAI-compatible API works with popular AI clients, coding agents, and tools. OpenCode is the only coding agent the project supports and ships configuration for. This chapter covers installing OpenCode, wiring it into Kronk via the bundles in <code>.agents/</code>, swapping out the model OpenCode uses, plus a few general-purpose clients (OpenWebUI, Python SDK, curl, LangChain).</p>
-          <h3 id="131-installing-opencode">13.1 Installing OpenCode</h3>
+          <h3 id="141-installing-opencode">14.1 Installing OpenCode</h3>
           <p>Install OpenCode with the official installer:</p>
           <pre className="code-block"><code className="language-shell">{`curl -fsSL https://opencode.ai/install | bash`}</code></pre>
           <p>For other install options (Homebrew, npm, manual binaries, etc.) see the official download page:</p>
@@ -4929,7 +5377,7 @@ response = client.chat.completions.create(
           <p>Once OpenCode is on your <code>PATH</code>, install the Kronk bundle to wire it into the local Kronk server:</p>
           <pre className="code-block"><code className="language-shell">{`make agents-default-opencode`}</code></pre>
           <p>That target copies a ready-to-run config (provider, MCP, skills, <code>AGENTS.md</code>) into <code>~/.config/opencode/</code>. See section 13.4 for the details. To change which model OpenCode uses after install, see section 13.5.</p>
-          <h3 id="132-coding-agent-model-configuration">13.2 Coding Agent Model Configuration</h3>
+          <h3 id="142-coding-agent-model-configuration">14.2 Coding Agent Model Configuration</h3>
           <p>OpenCode and the Kronk server share the same model configuration. The model is configured in <code>model_config.yaml</code> (or the catalog) with an <code>/AGENT</code> suffix that OpenCode references as its model name.</p>
           <p><strong>Recommended Configuration:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
@@ -4963,7 +5411,7 @@ response = client.chat.completions.create(
             <li><code>fuzzy_edit</code> — fallback file editor for when the host's exact-match edit tool misses on whitespace or line-ending drift.</li>
           </ul>
           <p>It starts automatically with the Kronk server on <code>http://localhost:9000/mcp</code>. Both bundles below wire this endpoint into OpenCode (directly, or through rote).</p>
-          <h3 id="133-agent-bundles-in-`agents`">13.3 Agent Bundles in `.agents/`</h3>
+          <h3 id="143-agent-bundles-in-`agents`">14.3 Agent Bundles in `.agents/`</h3>
           <p>Two bundles ship in the repo. Pick one based on whether you want Kronk's MCP service wired directly into OpenCode, or routed through the <a href="https://www.modiqo.ai/">rote</a> execution layer.</p>
           <pre className="code-block"><code>{`.agents/
 ├── default/        # Direct MCP — most contributors use this
@@ -4989,7 +5437,7 @@ response = client.chat.completions.create(
             <li><code>AGENTS.md</code> — house rules for the agent (mandatory skills, editing policy, "never curl <code>localhost:9000</code> directly", etc.).</li>
             <li><code>skills/</code> — at minimum <code>kronk-mcp</code> (how to use Kronk's MCP tools) and <code>writing-go</code> (Go toolchain workflow + post-edit chain).</li>
           </ol>
-          <h3 id="134-default-bundle-direct-mcp">13.4 Default Bundle (Direct MCP)</h3>
+          <h3 id="144-default-bundle-direct-mcp">14.4 Default Bundle (Direct MCP)</h3>
           <p>The default bundle wires Kronk's MCP server directly into OpenCode so the agent can call <code>web_search</code> and <code>fuzzy_edit</code> over raw MCP. No extra runtime layer.</p>
           <p>Install the bundle:</p>
           <pre className="code-block"><code className="language-shell">{`make agents-default-opencode`}</code></pre>
@@ -5022,7 +5470,7 @@ response = client.chat.completions.create(
   }
 }`}</code></pre>
           <p>OpenCode prefixes MCP tool names with the (lowercase) server name — <code>kronk_web_search</code>, <code>kronk_fuzzy_edit</code>.</p>
-          <h3 id="135-changing-the-model-opencode-uses">13.5 Changing the Model OpenCode Uses</h3>
+          <h3 id="145-changing-the-model-opencode-uses">14.5 Changing the Model OpenCode Uses</h3>
           <p>Swapping the model OpenCode talks to has two parts: register the model on the Kronk side (so the server can serve it) and tell OpenCode to use it on the client side.</p>
           <p><strong>1. Make sure the model is configured on the Kronk server.</strong></p>
           <p>Add (or confirm) the model in <code>zarf/kms/model_config.yaml</code> with the <code>/AGENT</code> suffix. Use the recommended settings from section 13.2:</p>
@@ -5044,7 +5492,7 @@ response = client.chat.completions.create(
           <p>You can pre-register multiple models in the <code>models</code> map and switch between them inside OpenCode with the <code>/models</code> command — the top-level <code>model</code> field just sets the startup default.</p>
           <p><strong>3. Re-shipping the bundle.</strong></p>
           <p>If you want this to be the default for everyone using the bundle (not just your machine), make the same edits in <code>.agents/default/opencode/opencode.jsonc</code> (and <code>.agents/rote/opencode/opencode.jsonc</code> if you use rote), then re-run <code>make agents-default-opencode</code> (or <code>make agents-rote-opencode</code>) on each machine to push the new config into <code>~/.config/opencode/</code>.</p>
-          <h3 id="136-rote-bundle-mcp-via-rote">13.6 Rote Bundle (MCP via rote)</h3>
+          <h3 id="146-rote-bundle-mcp-via-rote">14.6 Rote Bundle (MCP via rote)</h3>
           <p>The rote bundle replaces OpenCode's direct MCP wiring with the <a href="https://www.modiqo.ai/">rote</a> execution layer. The agent calls Kronk's MCP tools by shelling out to the <code>rote</code> CLI inside a <code>playground</code> workspace, instead of opening an MCP HTTP connection itself.</p>
           <p>Rote is <strong>opt-in</strong> — none of these targets are pulled in by <code>install-tooling</code> or by <code>agents-default-opencode</code>. Modiqo's registry is invite-only; see <a href="../.agents/rote/NOTES.md">.agents/rote/NOTES.md</a> for the full architecture, file map, and call flow.</p>
           <p><strong>Standard install order:</strong></p>
@@ -5059,7 +5507,7 @@ make agents-rote-opencode  # ship the rote-aware bundle for OpenCode`}</code></p
             <li><code>AGENTS.md</code> and the <code>kronk-mcp</code> skill teach the agent to drive Kronk via <code>rote kronk_probe</code> / <code>rote kronk_call</code> from Bash, inside the <code>playground</code> workspace.</li>
           </ul>
           <p>If you don't have a Modiqo invite, use the default bundle.</p>
-          <h3 id="137-wiping-agent-state">13.7 Wiping Agent State</h3>
+          <h3 id="147-wiping-agent-state">14.7 Wiping Agent State</h3>
           <p>Use <code>make agents-wipe</code> when you want to verify a bundle in isolation, without leftovers from a previous install. It removes:</p>
           <ul>
             <li><code>~/.rote/</code> (workspaces, adapters, secrets, registry session, caches).</li>
@@ -5067,7 +5515,7 @@ make agents-rote-opencode  # ship the rote-aware bundle for OpenCode`}</code></p
             <li><code>~/.config/opencode/</code> in its entirety.</li>
           </ul>
           <p>Idempotent — safe to re-run on an already-clean machine. After wiping, re-install with <code>make agents-default-opencode</code> or <code>make agents-rote-opencode</code>.</p>
-          <h3 id="138-openwebui">13.8 OpenWebUI</h3>
+          <h3 id="148-openwebui">14.8 OpenWebUI</h3>
           <p>OpenWebUI is a self-hosted chat interface that works with Kronk.</p>
           <p><strong>Configure OpenWebUI:</strong></p>
           <ol>
@@ -5087,7 +5535,7 @@ make agents-rote-opencode  # ship the rote-aware bundle for OpenCode`}</code></p
             <li>System prompts.</li>
             <li>Conversation history.</li>
           </ul>
-          <h3 id="139-python-openai-sdk">13.9 Python OpenAI SDK</h3>
+          <h3 id="149-python-openai-sdk">14.9 Python OpenAI SDK</h3>
           <p>Use the official OpenAI Python library with Kronk.</p>
           <p><strong>Installation:</strong></p>
           <pre className="code-block"><code className="language-shell">{`pip install openai`}</code></pre>
@@ -5111,7 +5559,7 @@ response = client.chat.completions.create(
 for chunk in response:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")`}</code></pre>
-          <h3 id="1310-curl-and-http-clients">13.10 curl and HTTP Clients</h3>
+          <h3 id="1410-curl-and-http-clients">14.10 curl and HTTP Clients</h3>
           <p>Any HTTP client can call Kronk's REST API directly.</p>
           <p><strong>Basic Request:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
@@ -5129,7 +5577,7 @@ for chunk in response:
 data: {"id":"...","choices":[{"delta":{"content":"!"}}],...}
 
 data: [DONE]`}</code></pre>
-          <h3 id="1311-langchain">13.11 LangChain</h3>
+          <h3 id="1411-langchain">14.11 LangChain</h3>
           <p>Use LangChain with Kronk via the OpenAI integration.</p>
           <p><strong>Installation:</strong></p>
           <pre className="code-block"><code className="language-shell">{`pip install langchain-openai`}</code></pre>
@@ -5146,10 +5594,10 @@ llm = ChatOpenAI(
 response = llm.invoke("Explain quantum computing briefly.")
 print(response.content)`}</code></pre>
           <hr />
-          <p><em>Next: &lt;a href="chapter-14-observability.md"&gt;Chapter 14: Observability&lt;/a&gt;</em></p>
-          <h2 id="chapter-14-observability">Chapter 14: Observability</h2>
+          <p><em>Next: &lt;a href="chapter-15-observability.md"&gt;Chapter 15: Observability&lt;/a&gt;</em></p>
+          <h2 id="chapter-15-observability">Chapter 15: Observability</h2>
           <p>Kronk provides comprehensive observability through distributed tracing, Prometheus metrics, pprof profiling, and real-time visualizations.</p>
-          <h3 id="141-debug-server">14.1 Debug Server</h3>
+          <h3 id="151-debug-server">15.1 Debug Server</h3>
           <p>Kronk runs a separate debug server for observability endpoints, isolated from the main API for security.</p>
           <p><strong>Default Ports:</strong></p>
           <ul>
@@ -5161,7 +5609,7 @@ print(response.content)`}</code></pre>
           <p>Or via environment variable:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_WEB_DEBUG_HOST=localhost:9090
 kronk server start`}</code></pre>
-          <h3 id="142-debug-endpoints">14.2 Debug Endpoints</h3>
+          <h3 id="152-debug-endpoints">15.2 Debug Endpoints</h3>
           <p>The debug server exposes these endpoints:</p>
           <p><strong>Prometheus Metrics:</strong></p>
           <pre className="code-block"><code>{`http://localhost:11445/metrics`}</code></pre>
@@ -5176,7 +5624,7 @@ kronk server start`}</code></pre>
           <p><strong>Statsviz (Real-time Visualizations):</strong></p>
           <pre className="code-block"><code>{`http://localhost:11445/debug/statsviz`}</code></pre>
           <p>Provides live charts for memory, goroutines, GC, and more.</p>
-          <h3 id="143-health-check-endpoints">14.3 Health Check Endpoints</h3>
+          <h3 id="153-health-check-endpoints">15.3 Health Check Endpoints</h3>
           <p>Available on the main API port (no authentication required):</p>
           <p><strong>Liveness Check:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
@@ -5190,7 +5638,7 @@ kronk server start`}</code></pre>
           <p><strong>Readiness Check:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/readiness`}</code></pre>
           <p>Returns 200 OK when the server is ready to accept requests.</p>
-          <h3 id="144-prometheus-metrics">14.4 Prometheus Metrics</h3>
+          <h3 id="154-prometheus-metrics">15.4 Prometheus Metrics</h3>
           <p>Kronk exposes detailed inference metrics in Prometheus format.</p>
           <p><strong>Fetch Metrics:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11445/metrics`}</code></pre>
@@ -5250,7 +5698,7 @@ kronk server start`}</code></pre>
             <li><code>resman_reservation_bytes&#123;model_id, kind="ram|vram", device&#125;</code> — per-reservation memory commitment.</li>
             <li><code>resman_reserve_rejections_total&#123;reason="no_capacity|unknown_device|invalid_plan|duplicate_key|no_gpus|other"&#125;</code> — counter of <code>Reserve</code> rejections.</li>
           </ul>
-          <h3 id="145-prometheus-integration">14.5 Prometheus Integration</h3>
+          <h3 id="155-prometheus-integration">15.5 Prometheus Integration</h3>
           <p><strong>Example Prometheus Configuration:</strong></p>
           <pre className="code-block"><code className="language-yaml">{`# prometheus.yml
 scrape_configs:
@@ -5274,7 +5722,7 @@ scrape_configs:
           <pre className="code-block"><code className="language-promql">{`rate(requests[5m])`}</code></pre>
           <p>Error rate:</p>
           <pre className="code-block"><code className="language-promql">{`rate(errors[5m]) / rate(requests[5m])`}</code></pre>
-          <h3 id="146-distributed-tracing-with-tempo">14.6 Distributed Tracing with Tempo</h3>
+          <h3 id="156-distributed-tracing-with-tempo">15.6 Distributed Tracing with Tempo</h3>
           <p>Kronk supports OpenTelemetry tracing with Grafana Tempo integration.</p>
           <p><strong>Enable Tracing:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
@@ -5304,7 +5752,7 @@ kronk server start`}</code></pre>
             <li><code>/v1/liveness</code></li>
             <li><code>/v1/readiness</code></li>
           </ul>
-          <h3 id="147-tracing-architecture">14.7 Tracing Architecture</h3>
+          <h3 id="157-tracing-architecture">15.7 Tracing Architecture</h3>
           <p><strong>Request Flow with Tracing:</strong></p>
           <pre className="code-block"><code>{`Client Request
       │
@@ -5339,7 +5787,7 @@ kronk server start`}</code></pre>
             <li>Prefill and generation phases</li>
             <li>Token streaming</li>
           </ul>
-          <h3 id="148-tempo-setup-with-docker">14.8 Tempo Setup with Docker</h3>
+          <h3 id="158-tempo-setup-with-docker">15.8 Tempo Setup with Docker</h3>
           <p><strong>Run Tempo Locally:</strong></p>
           <pre className="code-block"><code className="language-shell">{`docker run -d --name tempo \\
   -p 3200:3200 \\
@@ -5357,7 +5805,7 @@ kronk server start`}</code></pre>
             <li>Set URL: <code>http://tempo:3200</code></li>
             <li>Save and explore traces</li>
           </ol>
-          <h3 id="149-pprof-profiling">14.9 pprof Profiling</h3>
+          <h3 id="159-pprof-profiling">15.9 pprof Profiling</h3>
           <p>Use Go's pprof tools for performance analysis.</p>
           <p><strong>Capture CPU Profile (30 seconds):</strong></p>
           <pre className="code-block"><code className="language-shell">{`go tool pprof http://localhost:11445/debug/pprof/profile?seconds=30`}</code></pre>
@@ -5369,7 +5817,7 @@ kronk server start`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`go tool pprof -http=:8081 \\
   http://localhost:11445/debug/pprof/profile?seconds=30`}</code></pre>
           <p>Opens interactive web UI with flame graph visualization.</p>
-          <h3 id="1410-statsviz-real-time-monitoring">14.10 Statsviz Real-Time Monitoring</h3>
+          <h3 id="1510-statsviz-real-time-monitoring">15.10 Statsviz Real-Time Monitoring</h3>
           <p>Statsviz provides live runtime visualizations in your browser.</p>
           <p><strong>Access Statsviz:</strong></p>
           <pre className="code-block"><code>{`http://localhost:11445/debug/statsviz`}</code></pre>
@@ -5382,7 +5830,7 @@ kronk server start`}</code></pre>
             <li>Memory by size class</li>
           </ul>
           <p>Useful for real-time monitoring during load testing or debugging memory issues.</p>
-          <h3 id="1411-logging">14.11 Logging</h3>
+          <h3 id="1511-logging">15.11 Logging</h3>
           <p>Kronk logs structured JSON to stdout by default.</p>
           <p><strong>Log Levels:</strong></p>
           <p>Logs include context like trace IDs, request details, and timing.</p>
@@ -5392,7 +5840,7 @@ kronk server start`}</code></pre>
           <p><strong>Warning:</strong> Insecure logging exposes user prompts and model responses. Never enable in production.</p>
           <p><strong>Environment Variable:</strong></p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_INSECURE_LOGGING=true`}</code></pre>
-          <h3 id="1412-configuration-reference">14.12 Configuration Reference</h3>
+          <h3 id="1512-configuration-reference">15.12 Configuration Reference</h3>
           <p><strong>Debug Server:</strong></p>
           <ul>
             <li><code>--debug-host</code> - Debug server address (env: <code>KRONK_WEB_DEBUG_HOST</code>, default: <code>0.0.0.0:11445</code>)</li>
@@ -5409,15 +5857,15 @@ kronk server start`}</code></pre>
             <li><code>--llama-log</code> - llama.cpp log level, 0=off, 1=on (env: <code>KRONK_LLAMA_LOG</code>, default: <code>1</code>)</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-15-mcp-service"&gt;Chapter 15: MCP Service&lt;/a&gt;</em></p>
-          <h2 id="chapter-15-mcp-service">Chapter 15: MCP Service</h2>
+          <p><em>Next: &lt;a href="#chapter-16-mcp-service"&gt;Chapter 16: MCP Service&lt;/a&gt;</em></p>
+          <h2 id="chapter-16-mcp-service">Chapter 16: MCP Service</h2>
           <p>Kronk includes a built-in <a href="https://modelcontextprotocol.io/">Model Context Protocol (MCP)</a> service that exposes tools to MCP-compatible clients. Two tools are provided today:</p>
           <ul>
             <li><strong>&lt;code&gt;web_search&lt;/code&gt;</strong> — Powered by the <a href="https://brave.com/search/api/">Brave Search API</a>.</li>
             <li><strong>&lt;code&gt;fuzzy_edit&lt;/code&gt;</strong> — A tiered-fuzzy-matching file edit tool that is more reliable than the built-in <code>edit</code> tools used by most coding agents.</li>
           </ul>
-          <p>MCP is an open standard that lets AI agents call external tools over a simple JSON-RPC protocol. By running the MCP service, any MCP-compatible client can discover and invoke tools served by Kronk. The project ships a ready-to-use config for OpenCode (see Chapter 13).</p>
-          <h3 id="151-architecture">15.1 Architecture</h3>
+          <p>MCP is an open standard that lets AI agents call external tools over a simple JSON-RPC protocol. By running the MCP service, any MCP-compatible client can discover and invoke tools served by Kronk. The project ships a ready-to-use config for OpenCode (see Chapter 14).</p>
+          <h3 id="161-architecture">16.1 Architecture</h3>
           <p>The MCP service can run in two modes:</p>
           <p><strong>Embedded (default)</strong> — When the Kronk model server starts and no external MCP host is configured (<code>--mcp-host</code> is empty), it automatically starts an embedded MCP server on <code>localhost:9000</code>. No extra process is needed.</p>
           <p><strong>Standalone</strong> — Run the MCP service as its own process for independent scaling or when you don't need the full model server:</p>
@@ -5425,10 +5873,10 @@ kronk server start`}</code></pre>
           <p>Or directly:</p>
           <pre className="code-block"><code className="language-shell">{`go run cmd/server/api/services/mcp/main.go`}</code></pre>
           <p>Both modes serve the same MCP protocol on the same default port (<code>9000</code>).</p>
-          <h3 id="152-prerequisites">15.2 Prerequisites</h3>
+          <h3 id="162-prerequisites">16.2 Prerequisites</h3>
           <p>The <code>web_search</code> tool requires a Brave Search API key. Get a free key at <a href="https://brave.com/search/api/">https://brave.com/search/api/</a>.</p>
           <p>The <code>fuzzy_edit</code> tool needs no external credentials — it operates on the local filesystem and is available as soon as the MCP service starts.</p>
-          <h3 id="153-configuration">15.3 Configuration</h3>
+          <h3 id="163-configuration">16.3 Configuration</h3>
           <p><strong>Environment Variables:</strong></p>
           <table className="flags-table">
             <thead>
@@ -5468,7 +5916,7 @@ kronk server start`}</code></pre>
           <p><strong>Standalone mode</strong> — Start the MCP service as a separate process:</p>
           <pre className="code-block"><code className="language-shell">{`export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>
 make mcp-server`}</code></pre>
-          <h3 id="154-available-tools">15.4 Available Tools</h3>
+          <h3 id="164-available-tools">16.4 Available Tools</h3>
           <h4 id="web_search">web_search</h4>
           <p>Performs a web search and returns a list of relevant web pages with titles, URLs, and descriptions.</p>
           <p><strong>Parameters:</strong></p>
@@ -5554,10 +6002,10 @@ make mcp-server`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="155-client-configuration">15.5 Client Configuration</h3>
+          <h3 id="165-client-configuration">16.5 Client Configuration</h3>
           <p>The MCP service uses the Streamable HTTP transport. Configure your MCP-compatible client to connect to <code>http://localhost:9000/mcp</code>.</p>
           <h4 id="opencode">OpenCode</h4>
-          <p>OpenCode is the only client this project ships a bundle for. Install it with <code>make agents-default-opencode</code> (see Chapter 13). The bundle drops this MCP entry into <code>~/.config/opencode/opencode.jsonc</code>:</p>
+          <p>OpenCode is the only client this project ships a bundle for. Install it with <code>make agents-default-opencode</code> (see Chapter 14). The bundle drops this MCP entry into <code>~/.config/opencode/opencode.jsonc</code>:</p>
           <pre className="code-block"><code className="language-jsonc">{`{
   "mcp": {
     "kronk": {
@@ -5567,7 +6015,7 @@ make mcp-server`}</code></pre>
   }
 }`}</code></pre>
           <p>OpenCode lowercases the server prefix, so the tools are exposed as <code>kronk_web_search</code> and <code>kronk_fuzzy_edit</code>.</p>
-          <h3 id="156-testing-with-curl">15.6 Testing with curl</h3>
+          <h3 id="166-testing-with-curl">16.6 Testing with curl</h3>
           <p>You can test the MCP service manually using curl. See the makefile targets for convenience commands.</p>
           <p><strong>Initialize a session:</strong></p>
           <pre className="code-block"><code className="language-shell">{`make curl-mcp-init`}</code></pre>
@@ -5577,10 +6025,10 @@ make mcp-server`}</code></pre>
           <p><strong>Call web_search:</strong></p>
           <pre className="code-block"><code className="language-shell">{`make curl-mcp-web-search SESSIONID=<session-id>`}</code></pre>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-16-troubleshooting"&gt;Chapter 16: Troubleshooting&lt;/a&gt;</em></p>
-          <h2 id="chapter-16-troubleshooting">Chapter 16: Troubleshooting</h2>
+          <p><em>Next: &lt;a href="#chapter-17-troubleshooting"&gt;Chapter 17: Troubleshooting&lt;/a&gt;</em></p>
+          <h2 id="chapter-17-troubleshooting">Chapter 17: Troubleshooting</h2>
           <p>This chapter covers common issues, their causes, and solutions.</p>
-          <h3 id="161-library-issues">16.1 Library Issues</h3>
+          <h3 id="171-library-issues">17.1 Library Issues</h3>
           <p><strong>Error: "unable to load library"</strong></p>
           <p>The llama.cpp shared libraries are missing or incompatible with your hardware.</p>
           <p><strong>Solution:</strong></p>
@@ -5649,7 +6097,7 @@ kronk libs --list-installs
 export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
 kronk server start`}</code></pre>
           <p>If <code>KRONK_LIB_PATH</code> points at a directory containing <code>version.json</code>, Kronk uses it as-is. If it points at a non-empty directory without a <code>version.json</code>, Kronk treats it as a read-only user-managed build and will refuse mutating operations against it (errors will mention <code>read-only</code> or <code>ErrReadOnly</code>).</p>
-          <h3 id="162-model-loading-failures">16.2 Model Loading Failures</h3>
+          <h3 id="172-model-loading-failures">17.2 Model Loading Failures</h3>
           <p><strong>Error: "unable to load model"</strong></p>
           <p>The model file is missing, corrupted, or incompatible.</p>
           <p><strong>Check model exists:</strong></p>
@@ -5672,7 +6120,7 @@ kronk model index --local`}</code></pre>
             <li><code>kronk model list</code> doesn't show a model you know is downloaded</li>
             <li>After deleting model files outside of <code>kronk model remove</code></li>
           </ul>
-          <h3 id="163-memory-errors">16.3 Memory Errors</h3>
+          <h3 id="173-memory-errors">17.3 Memory Errors</h3>
           <p><strong>Error: "unable to init context" or "unable to get memory"</strong></p>
           <p>Insufficient memory for the model plus its KV cache at the configured context window size.</p>
           <p><strong>Causes:</strong></p>
@@ -5699,7 +6147,7 @@ kronk model index --local`}</code></pre>
           <ul>
             <li>Reduce input size (fewer messages, shorter prompts)</li>
             <li>Increase <code>context-window</code> in model config (requires more VRAM)</li>
-            <li>Enable YaRN for extended context (see <a href="chapter-06-yarn-extended-context.md">Chapter 6</a>)</li>
+            <li>Enable YaRN for extended context (see <a href="chapter-07-yarn-extended-context.md">Chapter 7</a>)</li>
           </ul>
           <p><strong>Error: "input tokens [N] exceed context window [M]"</strong></p>
           <p>The prompt itself (after tokenization) is larger than the context window, before any generation can begin.</p>
@@ -5709,7 +6157,7 @@ kronk model index --local`}</code></pre>
             <li>Increase <code>context-window</code></li>
             <li>If using IMC, the cached prefix counts toward the limit</li>
           </ul>
-          <h3 id="164-request-timeouts">16.4 Request Timeouts</h3>
+          <h3 id="174-request-timeouts">17.4 Request Timeouts</h3>
           <p><strong>Error: "context deadline exceeded"</strong></p>
           <p>The request took longer than the configured HTTP timeout.</p>
           <p><strong>Causes:</strong></p>
@@ -5739,7 +6187,7 @@ export KRONK_WEB_WRITE_TIMEOUT=30m`}</code></pre>
             <li>Increase <code>nseq-max</code> to allow more concurrent sessions</li>
             <li>Increase <code>cache-slot-timeout</code> (default: 30 seconds) if requests need more time</li>
           </ul>
-          <h3 id="165-authentication-errors">16.5 Authentication Errors</h3>
+          <h3 id="175-authentication-errors">17.5 Authentication Errors</h3>
           <p><strong>Error: "unauthorized: no authorization header"</strong></p>
           <p>Authentication is enabled but no token was provided.</p>
           <p><strong>Solution:</strong></p>
@@ -5776,7 +6224,7 @@ kronk security token create \\
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 720h \\
   --endpoints "chat-completions:10000/day"`}</code></pre>
-          <h3 id="166-streaming-issues">16.6 Streaming Issues</h3>
+          <h3 id="176-streaming-issues">17.6 Streaming Issues</h3>
           <p><strong>Problem: Streaming stops mid-response</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -5795,7 +6243,7 @@ kronk security token create \\
           <p>Ensure your client handles Server-Sent Events (SSE) format. Each event is prefixed with <code>data: </code> and terminated by two newlines:</p>
           <pre className="code-block"><code>{`data: {"id":"...","choices":[{"delta":{"content":"Hello"}}],...}\\n\\n
 data: [DONE]\\n\\n`}</code></pre>
-          <h3 id="167-performance-issues">16.7 Performance Issues</h3>
+          <h3 id="177-performance-issues">17.7 Performance Issues</h3>
           <p><strong>Problem: Slow time to first token (TTFT)</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -5826,7 +6274,7 @@ nvidia-smi`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
   ngpu-layers: 0 # 0 = all layers on GPU (default)`}</code></pre>
           <p>For MoE models on Apple Silicon, consider a dense model at lower quantization — the sequential memory access pattern is faster than MoE's scattered expert routing (see <a href="chapter-03-model-configuration.md#310-model-specific-tuning">Chapter 3: Model-Specific Tuning</a>).</p>
-          <h3 id="168-imc-caching-issues">16.8 IMC Caching Issues</h3>
+          <h3 id="178-imc-caching-issues">17.8 IMC Caching Issues</h3>
           <p><strong>Problem: Every request triggers a full cache rebuild</strong></p>
           <p><strong>Causes:</strong></p>
           <ul>
@@ -5889,7 +6337,7 @@ nvidia-smi`}</code></pre>
           <p>The RAM-to-VRAM restore (<code>StateSeqSetData</code>) failed for a session.</p>
           <p><strong>Cause:</strong> Usually indicates the KV cache memory could not be allocated (VRAM pressure from other sessions or models).</p>
           <p><strong>Solution:</strong> The session is automatically reset and the next request triggers a full rebuild. If this happens frequently, reduce <code>nseq-max</code> or <code>context-window</code> to lower VRAM pressure.</p>
-          <h3 id="169-viewing-logs">16.9 Viewing Logs</h3>
+          <h3 id="179-viewing-logs">17.9 Viewing Logs</h3>
           <p><strong>Run server in foreground:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
           <p>All logs print to stdout with structured key-value format.</p>
@@ -5901,7 +6349,7 @@ nvidia-smi`}</code></pre>
           <p>Shows low-level inference engine messages from llama.cpp. Useful for debugging GPU issues, memory allocation failures, and decode errors.</p>
           <p><strong>Disable llama.cpp logging:</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --llama-log 0`}</code></pre>
-          <h3 id="1610-common-error-messages">16.10 Common Error Messages</h3>
+          <h3 id="1710-common-error-messages">17.10 Common Error Messages</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -6003,7 +6451,7 @@ nvidia-smi`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="1611-catalog-model-pull-issues">16.11 Catalog &amp; Model Pull Issues</h3>
+          <h3 id="1711-catalog-model-pull-issues">17.11 Catalog &amp; Model Pull Issues</h3>
           <p><strong>Error: &lt;code&gt;huggingface 401&lt;/code&gt; / &lt;code&gt;403&lt;/code&gt; during &lt;code&gt;kronk model pull&lt;/code&gt;</strong></p>
           <p>The repo is gated/private or the request was throttled.</p>
           <p><strong>Solution:</strong> export a HuggingFace token before pulling. The token must have read access to any gated repos you intend to use:</p>
@@ -6020,7 +6468,7 @@ kronk model pull <provider/model-id>`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk model remove <provider/model-id> --local
 kronk model pull <provider/model-id>
 kronk model index --local`}</code></pre>
-          <h3 id="1612-mcp-service-issues">16.12 MCP Service Issues</h3>
+          <h3 id="1712-mcp-service-issues">17.12 MCP Service Issues</h3>
           <p><strong>Error: &lt;code&gt;/mcp&lt;/code&gt; returns 404</strong></p>
           <p>The MCP endpoint is <code>http://localhost:9000/mcp</code> (no trailing slash). The client must use the Streamable HTTP transport — OpenCode spells it <code>remote</code> in <code>opencode.jsonc</code>.</p>
           <p><strong>Error: &lt;code&gt;web_search&lt;/code&gt; reports "missing Brave API key"</strong></p>
@@ -6041,7 +6489,7 @@ export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>`}</code></pre>
           <p>The search snippet is either absent from the file or matches more than once. Tighten the snippet to a unique block of lines, or break the edit into a smaller anchor that appears exactly once.</p>
           <p><strong>Problem: embedded MCP server is not starting</strong></p>
           <p>Setting <code>KRONK_MCP_HOST</code> to a non-empty value tells <code>kronk server</code> to defer to an external MCP host instead of starting its own. Unset it (or run the standalone service via <code>make mcp-server</code>) if you want the embedded mode back.</p>
-          <h3 id="1613-port-conflicts-filesystem">16.13 Port Conflicts &amp; Filesystem</h3>
+          <h3 id="1713-port-conflicts-filesystem">17.13 Port Conflicts &amp; Filesystem</h3>
           <p><strong>Error: &lt;code&gt;bind: address already in use&lt;/code&gt;</strong></p>
           <p>Another process is already listening on the port Kronk is trying to bind. Default ports are <code>11435</code> (API), <code>11445</code> (debug), and <code>9000</code> (MCP).</p>
           <p><strong>Solutions:</strong></p>
@@ -6067,7 +6515,7 @@ kronk server start -d`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk model list --local
 kronk model remove <provider/model-id> --local`}</code></pre>
           <p>Models live under <code>~/.kronk/models/</code>; check available space with <code>df -h ~/.kronk/models</code>.</p>
-          <h3 id="1614-getting-help">16.14 Getting Help</h3>
+          <h3 id="1714-getting-help">17.14 Getting Help</h3>
           <p><strong>Check server liveness:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
           <p><strong>Check server readiness (model loaded):</strong></p>
@@ -6092,10 +6540,10 @@ go tool pprof cpu.prof`}</code></pre>
             <li>Steps to reproduce</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="chapter-17-developer-guide.md"&gt;Chapter 17: Developer Guide&lt;/a&gt;</em></p>
-          <h2 id="chapter-17-developer-guide">Chapter 17: Developer Guide</h2>
+          <p><em>Next: &lt;a href="chapter-18-developer-guide.md"&gt;Chapter 18: Developer Guide&lt;/a&gt;</em></p>
+          <h2 id="chapter-18-developer-guide">Chapter 18: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
-          <h3 id="171-quick-reference">17.1 Quick Reference</h3>
+          <h3 id="181-quick-reference">18.1 Quick Reference</h3>
           <p>Here is a quick chart of some of the more important make commands.</p>
           <table className="flags-table">
             <thead>
@@ -6163,7 +6611,7 @@ go tool pprof cpu.prof`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="172-build-test-commands">17.2 Build &amp; Test Commands</h3>
+          <h3 id="182-build-test-commands">18.2 Build &amp; Test Commands</h3>
           <p><strong>Install CLI locally:</strong></p>
           <pre className="code-block"><code className="language-shell">{`make install-kronk`}</code></pre>
           <p>This is the canonical install path used everywhere in the docs. Internally it runs <code>go install ./cmd/kronk</code> with the project's build tags.</p>
@@ -6180,7 +6628,7 @@ make test`}</code></pre>
           <p><strong>Run a single test:</strong></p>
           <pre className="code-block"><code className="language-shell">{`go test -v -count=1 -run TestName ./sdk/kronk/...`}</code></pre>
           <p>The path can target any package (e.g. <code>./cmd/...</code> or a specific subpackage); <code>./sdk/kronk/...</code> is just where most inference tests live.</p>
-          <h3 id="173-developer-setup">17.3 Developer Setup</h3>
+          <h3 id="183-developer-setup">18.3 Developer Setup</h3>
           <p>Configure git hooks for automatic pre-commit checks:</p>
           <pre className="code-block"><code className="language-shell">{`make setup`}</code></pre>
           <p>This enables a pre-commit hook that automatically runs:</p>
@@ -6194,8 +6642,8 @@ make test`}</code></pre>
           <p><code>make setup</code> only configures git hooks. The lint/vuln/codegen toolchain is installed separately:</p>
           <pre className="code-block"><code className="language-shell">{`make install-gotooling   # staticcheck, govulncheck, protoc-gen-go(-grpc), gomod2nix
 make install-tooling     # brew: protobuf, grpcurl, node (only needed for codegen / BUI work)`}</code></pre>
-          <p>A fresh checkout that skips <code>install-gotooling</code> will fail the <code>lint</code> and <code>vuln-check</code> steps of <code>make test</code> and the post-edit checks listed in §17.1.</p>
-          <h3 id="174-project-architecture">17.4 Project Architecture</h3>
+          <p>A fresh checkout that skips <code>install-gotooling</code> will fail the <code>lint</code> and <code>vuln-check</code> steps of <code>make test</code> and the post-edit checks listed in §18.1.</p>
+          <h3 id="184-project-architecture">18.4 Project Architecture</h3>
           <p><strong>Directory Structure:</strong></p>
           <table className="flags-table">
             <thead>
@@ -6261,7 +6709,7 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
           </table>
           <p><strong>Core Technology:</strong></p>
           <p>Kronk uses <a href="https://github.com/hybridgroup/yzma">yzma</a> (llama.cpp Go bindings) for local inference with GGUF models.</p>
-          <h3 id="175-bui-frontend-development">17.5 BUI Frontend Development</h3>
+          <h3 id="185-bui-frontend-development">18.5 BUI Frontend Development</h3>
           <p>The Browser UI is a React application located at:</p>
           <pre className="code-block"><code>{`cmd/server/api/frontends/bui/src/`}</code></pre>
           <p><strong>Directory Structure (&lt;code&gt;src/&lt;/code&gt;):</strong></p>
@@ -6422,7 +6870,7 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
           <pre className="code-block"><code className="language-shell">{`make kronk-docs
 # equivalent to: go run cmd/server/api/tooling/docs/*.go`}</code></pre>
           <p>The generator takes no flags; it always rebuilds all three pipelines.</p>
-          <h3 id="176-code-style-guidelines">17.6 Code Style Guidelines</h3>
+          <h3 id="186-code-style-guidelines">18.6 Code Style Guidelines</h3>
           <p><strong>Package Comments:</strong></p>
           <pre className="code-block"><code className="language-go">{`// Package kronk provides the core inference API.`}</code></pre>
           <p><strong>Error Handling:</strong></p>
@@ -6446,7 +6894,7 @@ func New(cfg Config) *Server {
     // ...
 }`}</code></pre>
           <p><strong>Testing:</strong></p>
-          <p>Tests link against yzma (llama.cpp Go bindings), so they the installed libraries plus test models. Always go through <code>make test</code> (or <code>make test-only</code> for fast iteration) per §17.2.</p>
+          <p>Tests link against yzma (llama.cpp Go bindings), so they the installed libraries plus test models. Always go through <code>make test</code> (or <code>make test-only</code> for fast iteration) per §18.2.</p>
           <p><strong>Post-edit Checks (per &lt;a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/AGENTS.md"&gt;AGENTS.md&lt;/a&gt;):</strong></p>
           <p>After modifying any <code>.go</code> file, run on the changed files / package:</p>
           <pre className="code-block"><code className="language-shell">{`gofmt -s -w <changed files>
@@ -6493,9 +6941,9 @@ case "pending":
 default:
     // ...
 }`}</code></pre>
-          <h3 id="177-sdk-internals">17.7 SDK Internals</h3>
+          <h3 id="187-sdk-internals">18.7 SDK Internals</h3>
           <p>This section documents implementation details for developers working on the Kronk SDK packages.</p>
-          <h4 id="1771-package-structure">17.7.1 Package Structure</h4>
+          <h4 id="1871-package-structure">18.7.1 Package Structure</h4>
           <p><strong>sdk/kronk/</strong> - Public SDK API surface:</p>
           <table className="flags-table">
             <thead>
@@ -6806,13 +7254,13 @@ default:
             <li><strong>Active-stream protection</strong> — automatic TTL eviction of an entry with in-flight streams is rejected; the entry is re-inserted to keep it resident until the stream finishes.</li>
             <li><strong>Shutdown</strong> — <code>Shutdown(ctx)</code> invalidates the cache and blocks until every entry has finished unloading (or <code>ctx</code> expires).</li>
           </ul>
-          <h4 id="1772-streaming-architecture">17.7.2 Streaming Architecture</h4>
+          <h4 id="1872-streaming-architecture">18.7.2 Streaming Architecture</h4>
           <p><strong>Two streaming primitives</strong> (<code>concurrency.go</code>):</p>
           <ul>
             <li><code>streaming[T]</code> — 1:1 relay. Used by <code>ChatStreaming</code> to forward <code>model.ChatResponse</code> chunks straight to the caller.</li>
             <li><code>streamingWith[T, U]</code> — 1:N event transformation. Used by <code>ResponseStreaming</code> to fan out a single upstream chunk into multiple SSE event types.</li>
           </ul>
-          <p>Both acquire the model on entry and release it from a <code>defer</code> when the user-facing channel closes (see §17.7.4) — the lifecycle is not hand-rolled in the per-API files.</p>
+          <p>Both acquire the model on entry and release it from a <code>defer</code> when the user-facing channel closes (see §18.7.4) — the lifecycle is not hand-rolled in the per-API files.</p>
           <p><strong>Response Streaming Pattern</strong> (<code>response.go</code>, <code>concurrency.go</code>):</p>
           <ul>
             <li><code>streamProcessor</code> has three phases: <code>Start()</code>, <code>Process(chunk)</code>, <code>Complete(lastChunk)</code></li>
@@ -6827,19 +7275,19 @@ default:
             <li>When <code>FinishReasonPtr != nil</code>, skip text/reasoning deltas (they duplicate previous content)</li>
             <li>Always process tool calls even with FinishReason set (may only arrive in final chunk)</li>
           </ul>
-          <h4 id="1773-concurrency-strategy">17.7.3 Concurrency Strategy</h4>
-          <p>All concurrent requests on a single <code>Kronk</code> block on one semaphore; its capacity is fixed at <code>New()</code> time and depends on the model class. <code>acquireModel()</code> is the gate (see §17.7.4).</p>
+          <h4 id="1873-concurrency-strategy">18.7.3 Concurrency Strategy</h4>
+          <p>All concurrent requests on a single <code>Kronk</code> block on one semaphore; its capacity is fixed at <code>New()</code> time and depends on the model class. <code>acquireModel()</code> is the gate (see §18.7.4).</p>
           <p><code>NSeqMax</code> is the <code>nseq-max</code> knob from <code>model_config.yaml</code>, and behaves differently depending on model type:</p>
           <p><strong>Embedding and Reranking Models</strong>:</p>
           <ul>
-            <li><code>NSeqMax</code> controls the internal context pool size (see §17.7.6)</li>
+            <li><code>NSeqMax</code> controls the internal context pool size (see §18.7.6)</li>
             <li>Model weights are shared, only KV cache memory is multiplied</li>
             <li>Inputs within a request are partitioned across pool contexts for parallel processing</li>
             <li>Semaphore capacity = <code>NSeqMax</code></li>
           </ul>
           <p><strong>Text Inference Models</strong> (chat, completion, vision, audio):</p>
           <ul>
-            <li><code>NSeqMax</code> controls batch parallelism within the batch engine — the number of concurrent slots (see §17.7.5)</li>
+            <li><code>NSeqMax</code> controls batch parallelism within the batch engine — the number of concurrent slots (see §18.7.5)</li>
             <li>Only one <code>model.Model</code> instance is created with multiple slots</li>
             <li>Semaphore capacity = <code>NSeqMax * queueDepth</code> (default <code>queueDepth=2</code>)</li>
             <li>Why ×2: with <code>queueDepth=2</code>, one request can sit on the batch engine's request queue while another is in prefill/decode, smoothing throughput across acquire → prefill → decode → release. Increase to absorb bursty load; decrease to bound queued memory.</li>
@@ -6858,8 +7306,8 @@ case mi.IsEmbedModel || mi.IsRerankModel:
 default:
     semCapacity = max(cfg.NSeqMax(), 1) * queueDepth
 }`}</code></pre>
-          <h4 id="1774-model-acquirerelease-cleanup">17.7.4 Model Acquire/Release &amp; Cleanup</h4>
-          <p>The wrappers in <code>concurrency.go</code> (<code>streaming</code> / <code>streamingWith</code>, see §17.7.2) are what call <code>acquireModel</code> and <code>releaseModel</code> — per-API files do not call them directly.</p>
+          <h4 id="1874-model-acquirerelease-cleanup">18.7.4 Model Acquire/Release &amp; Cleanup</h4>
+          <p>The wrappers in <code>concurrency.go</code> (<code>streaming</code> / <code>streamingWith</code>, see §18.7.2) are what call <code>acquireModel</code> and <code>releaseModel</code> — per-API files do not call them directly.</p>
           <p><strong>Acquisition</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">acquire.go</a>):</p>
           <ol>
             <li><strong>Shutdown check</strong>: take <code>shutdown.Lock()</code>; if <code>shutdownFlag</code> is set, return <code>"acquire-model: kronk has been unloaded"</code>.</li>
@@ -6887,18 +7335,18 @@ default:
             <li><code>releaseModel()</code> runs after that, from the wrapper <code>defer</code>.</li>
           </ul>
           <p><strong>Key invariant:</strong> the semaphore guarantees the model is never released while a request is in flight — <code>releaseModel()</code> is only called from the streaming wrapper's <code>defer</code>, which fires after the user-facing channel closes.</p>
-          <h4 id="1775-batch-engine-internals">17.7.5 Batch Engine Internals</h4>
+          <h4 id="1875-batch-engine-internals">18.7.5 Batch Engine Internals</h4>
           <p><strong>ChatStreaming Decision Logic</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go#L258-L315">chat.go:258-315</a>):</p>
           <p>All chat requests — text and media (<code>ObjectChatText</code> and <code>ObjectChatMedia</code>) — flow through <code>submitToBatchEngine</code>. It builds a <code>chatJob</code> (carrying request data plus the resolved IMC fields from <code>cacheResult</code>) and unconditionally calls <code>m.batch.submit(&job)</code>. Returns:</p>
           <ul>
-            <li><code>true</code> on successful submit; the caller sets <code>batching = true</code> in <code>chat.go</code> so the non-batched cleanup defer is skipped (see §17.7.4).</li>
+            <li><code>true</code> on successful submit; the caller sets <code>batching = true</code> in <code>chat.go</code> so the non-batched cleanup defer is skipped (see §18.7.4).</li>
             <li><code>false</code> only on submit error. The error has already been streamed to the caller via <code>sendChatError</code> and any IMC pending reservation cleared.</li>
           </ul>
           <p>There is no longer an <code>m.batch == nil || object != ObjectChatText</code> early return — vision/audio also runs through the batch engine.</p>
           <p><strong>Batch Engine Architecture</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">batch_engine.go</a>):</p>
           <ul>
             <li><code>batchEngine</code> manages <code>nSlots</code> parallel <code>*slot</code> structs (slot type lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go">batch_slot.go</a>)</li>
-            <li>Constructed via <code>newBatchEngine(m, nSlots)</code> during model setup; <code>nSlots = NSeqMax</code> (see §17.7.3)</li>
+            <li>Constructed via <code>newBatchEngine(m, nSlots)</code> during model setup; <code>nSlots = NSeqMax</code> (see §18.7.3)</li>
             <li>Queueing: <code>requestQ chan <em>chatJob&lt;/code&gt; (buffered &lt;code&gt;nSlots</em>2</code>) is the public inbox; <code>pendingJobs</code> holds jobs already dequeued but unable to start because no slot was free, and is checked before reading <code>requestQ</code> again</li>
             <li>Each slot tracks: <code>seqID</code>, prompt tokens, decode state, sampler, response channel, logprobs, prefill state</li>
             <li>Signal-based wake: <code>wakeCh chan struct&#123;&#125;</code> (buffered size 1) is poked on every successful submit, eliminating up-to-1ms scheduling latency on request pickup</li>
@@ -6911,13 +7359,13 @@ default:
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
             <li><code>imcSession</code> = logical cached conversation branch (hash, tokens, KV state)</li>
           </ul>
-          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are decoupled from slots: session state is externalized to RAM after each request and restored into any available slot on the next request via <code>StateSeqSetData</code>. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings. Full IMC lifecycle is detailed in §17.7.7.</p>
-          <h4 id="1776-context-pooling">17.7.6 Context Pooling</h4>
+          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are decoupled from slots: session state is externalized to RAM after each request and restored into any available slot on the next request via <code>StateSeqSetData</code>. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings. Full IMC lifecycle is detailed in §18.7.7.</p>
+          <h4 id="1876-context-pooling">18.7.6 Context Pooling</h4>
           <p>Kronk uses two distinct context strategies depending on the workload.</p>
           <p><strong>Text inference: single shared context.</strong></p>
           <ul>
             <li>One <code>llama.Context</code> is created in <code>NewModel</code> and reused across requests.</li>
-            <li>KV cleanup splits by path (see §17.7.4):</li>
+            <li>KV cleanup splits by path (see §18.7.4):</li>
           </ul>
           <p>- Non-batched path → <code>resetContext()</code> runs <code>llama.Synchronize(m.lctx)</code> then <code>llama.MemoryClear(mem, true)</code>. - Batched path (text/IMC) → per-slot cleanup happens in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go">batch_finish.go</a>; <code>resetContext()</code> is skipped.</p>
           <ul>
@@ -6927,9 +7375,9 @@ default:
           <ul>
             <li><code>newContextPool(model, ctxParams, log, n)</code> creates <code>n = NSeqMax</code> parallel <code>llama.Context</code> instances. All share the same <code>llama.Model</code> (weights), so only KV cache memory is multiplied per context.</li>
             <li>Available context indices are tracked via a buffered <code>avail chan int</code>; callers acquire by receiving from the channel and release by sending the index back.</li>
-            <li>Inputs within a single embed/rerank request are partitioned across pool contexts for parallel processing — this is the concurrency semantic documented in §17.7.3 for embedding/reranking models.</li>
+            <li>Inputs within a single embed/rerank request are partitioned across pool contexts for parallel processing — this is the concurrency semantic documented in §18.7.3 for embedding/reranking models.</li>
           </ul>
-          <h4 id="1777-imc-implementation-details">17.7.7 IMC Implementation Details</h4>
+          <h4 id="1877-imc-implementation-details">18.7.7 IMC Implementation Details</h4>
           <p><strong>Key Functions:</strong></p>
           <p>The four entry points an agent will grep for live in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">caching_imc.go</a> and <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>:</p>
           <ul>
@@ -6987,7 +7435,7 @@ default:
     sysPromptTokens   int           // Token count of system prompt
 }`}</code></pre>
           <p><code>imcSessions</code> is sized 1:1 with execution slots at startup, but sessions are <strong>not</strong> bound to slots — <code>kvState</code> (a <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/session_store.go#L57-L97">SessionStore</a>) externalizes the cached KV bytes between requests so any matched session can run on any free slot. The <code>slotID</code>/<code>seqID</code> fields name the session pool entry and the KV sequence the session occupies while bytes are still resident in VRAM (used for KV-pressure eviction of un-externalized sessions). The <code>pending</code> flag is the per-session in-flight latch that protects <code>kvState</code> from concurrent writers.</p>
-          <h4 id="1778-tool-call-internals">17.7.8 Tool Call Internals</h4>
+          <h4 id="1878-tool-call-internals">18.7.8 Tool Call Internals</h4>
           <p><strong>Processor state machine</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor.go">processor.go</a>):</p>
           <p>A per-slot <code>processor</code> classifies streaming output token-by-token into one of four statuses (<code>processor.go:10-15</code>):</p>
           <table className="flags-table">
@@ -7078,10 +7526,10 @@ default:
             <li>Custom type that marshals to a JSON string (OpenAI spec).</li>
             <li>Unmarshals from either a string or an object for non-compliant clients.</li>
           </ul>
-          <h4 id="1779-logprobs-implementation">17.7.9 Logprobs Implementation</h4>
+          <h4 id="1879-logprobs-implementation">18.7.9 Logprobs Implementation</h4>
           <p><strong>Implementation</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go">logprobs.go</a>):</p>
           <ul>
-            <li><code>extractLogprobs(lctx, vocab, sampledToken, iBatch, topK, buf)</code>: retrieves logits via <code>llama.GetLogitsIth(lctx, iBatch, nVocab)</code> and converts them to log probabilities. <code>iBatch</code> identifies which slot's logits row to read when multiple slots are batched in one forward pass (see §17.7.5). <code>buf</code> is a pre-allocated byte buffer reused across tokens to avoid per-token allocations during top-K decoding.</li>
+            <li><code>extractLogprobs(lctx, vocab, sampledToken, iBatch, topK, buf)</code>: retrieves logits via <code>llama.GetLogitsIth(lctx, iBatch, nVocab)</code> and converts them to log probabilities. <code>iBatch</code> identifies which slot's logits row to read when multiple slots are batched in one forward pass (see §18.7.5). <code>buf</code> is a pre-allocated byte buffer reused across tokens to avoid per-token allocations during top-K decoding.</li>
             <li><code>logSoftmax()</code>: numerically stable log-softmax using the log-sum-exp trick.</li>
             <li><code>getTopKLogprobs()</code>: <code>container/heap</code> min-heap for O(n log k) top-k extraction.</li>
           </ul>
@@ -7089,8 +7537,8 @@ default:
           <p>The extraction path runs only when <code>params.TopLogprobs &gt; 0</code>. With logprobs disabled, this work is skipped entirely on the hot path.</p>
           <p><strong>Critical ordering — extract before &lt;code&gt;llama.SamplerAccept&lt;/code&gt;</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_tokens.go#L38-L57">batch_tokens.go:38, 57</a>):</p>
           <p><code>SamplerAccept</code> mutates sampler state (repetition history, penalty buffers, dry/xtc state). Reading logits after acceptance would no longer reflect the probability landscape for the token we're trying to score.</p>
-          <p>This corresponds to step 12.1 of the request flow in §17.11.</p>
-          <h3 id="178-responses-api-normalization">17.8 Responses API Normalization</h3>
+          <p>This corresponds to step 12.1 of the request flow in §18.11.</p>
+          <h3 id="188-responses-api-normalization">18.8 Responses API Normalization</h3>
           <p>The SDK's <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go">response.go</a> exposes the OpenAI Responses API on top of the same <code>model.Chat</code> engine that serves Chat Completions. To do that, the input document is normalized into a Chat-Completions-style <code>messages</code> array before <code>model.Chat</code> / <code>model.ChatStreaming</code> is invoked.</p>
           <p><strong>Owner</strong>: the SDK methods <code>Response</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go#L140">line 140</a>) and <code>ResponseStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go#L163">line 163</a>) call <code>convertInputToMessages(d)</code> themselves as the first step. Callers (CLI, MCP, server handlers) do not need to invoke it.</p>
           <p><strong>Why it exists</strong>: lets the SDK accept both the Chat-style <code>messages</code> payload and the Responses-style <code>input</code> payload (string, message list, or function-call/output items).</p>
@@ -7137,7 +7585,7 @@ default:
               </tr>
             </tbody>
           </table>
-          <h3 id="179-goroutine-budget">17.9 Goroutine Budget</h3>
+          <h3 id="189-goroutine-budget">18.9 Goroutine Budget</h3>
           <p>A running Kronk server typically shows ~25 baseline goroutines before any requests arrive. When requests are active, expect roughly 3-5 additional goroutines per in-flight request. For example, 3 concurrent requests for the same model will show ~40 goroutines total. This is normal.</p>
           <p><strong>Baseline goroutines (~25, always running):</strong></p>
           <table className="flags-table">
@@ -7230,12 +7678,12 @@ default:
             </tbody>
           </table>
           <p>The goroutine metric is a point-in-time snapshot from <code>runtime.NumGoroutine()</code> captured every 10th request by the metrics middleware. It includes everything in the process, including Go runtime internals. After active requests complete, the count drops back to the baseline.</p>
-          <h3 id="1710-request-tracing-spans">17.10 Request Tracing Spans</h3>
+          <h3 id="1810-request-tracing-spans">18.10 Request Tracing Spans</h3>
           <p>Each chat completion request produces the following trace hierarchy. <code>prepare-request</code>, <code>queue-wait</code>, and <code>process-request</code> are sibling spans under the request's root context — none is a child of another.</p>
           <pre className="code-block"><code>{`POST /v1/chat/completions
 ├── prepare-request                          Validation, caching, prompt creation
 │   ├── process-cache                        Cache lookup/update (IMC, when enabled)
-│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§17.7.7 strategy 4)
+│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§18.7.7 strategy 4)
 │   │   ├── cache-tokenize-imc-extend        Hash-prefix extend (strategy 2)
 │   │   ├── cache-tokenize-imc-sysprompt-preserve  System-prompt preserve (strategy 3)
 │   │   ├── cache-tokenize-imc-scratch       Rebuild from scratch (strategy 5)
@@ -7278,7 +7726,7 @@ default:
               </tr>
             </tbody>
           </table>
-          <h3 id="1711-inference-code-path">17.11 Inference Code Path</h3>
+          <h3 id="1811-inference-code-path">18.11 Inference Code Path</h3>
           <p>This section traces a <code>ChatStreaming</code> request end-to-end. Each step has a high-level description followed by a <strong>Code:</strong> sub-block listing the function calls and file locations the agent will navigate.</p>
           <h4 id="step-1-receive-the-request">Step 1: Receive the Request</h4>
           <p>The caller provides a document containing messages and sampling parameters. The SDK validates that the request's context has a deadline to prevent unbounded processing.</p>
@@ -7287,7 +7735,7 @@ default:
             <li><code>Kronk.ChatStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/chat.go">sdk/kronk/chat.go</a>) — validates the context deadline and wraps <code>Model.ChatStreaming</code> in a closure.</li>
           </ul>
           <h4 id="step-2-acquire-the-model">Step 2: Acquire the Model</h4>
-          <p>The kronk-level semaphore controls how many requests can be in-flight at once. The request blocks here until a slot opens up, providing backpressure when the system is under load. See §17.7.4 for the full acquire/release contract.</p>
+          <p>The kronk-level semaphore controls how many requests can be in-flight at once. The request blocks here until a slot opens up, providing backpressure when the system is under load. See §18.7.4 for the full acquire/release contract.</p>
           <p><strong>Code:</strong></p>
           <ul>
             <li><code>streaming()</code> / <code>streamingWith()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/concurrency.go">sdk/kronk/concurrency.go</a>) calls <code>acquireModel()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">sdk/kronk/acquire.go</a>) — checks the shutdown flag, increments the kronk-level <code>krn.activeStreams</code>, and blocks on the semaphore (with <code>ctx.Done</code> cancellation).</li>
@@ -7297,7 +7745,7 @@ default:
           <p>The request document is validated to ensure it contains properly structured messages. Sampling parameters (temperature, top_p, top_k, min_p, max_tokens, grammar, etc.) are extracted and resolved against model defaults. The document is shallow-cloned so downstream processing can modify it without affecting the caller.</p>
           <p><strong>Code:</strong></p>
           <ul>
-            <li><code>Model.ChatStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go">model/chat.go</a>) creates the response channel, wraps it with <code>wrapChannelForLogging</code> if <code>InsecureLogging</code> is on, increments the <strong>model-level</strong> <code>m.activeStreams</code> (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the <code>prepare-request</code> span (§17.10).</li>
+            <li><code>Model.ChatStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go">model/chat.go</a>) creates the response channel, wraps it with <code>wrapChannelForLogging</code> if <code>InsecureLogging</code> is on, increments the <strong>model-level</strong> <code>m.activeStreams</code> (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the <code>prepare-request</code> span (§18.10).</li>
             <li><code>validateAndCloneDocument()</code> (<code>model/chat.go</code>) — validates the <code>messages</code> field, calls <code>parseParams()</code> to extract sampling parameters, shallow-clones the document.</li>
           </ul>
           <h4 id="step-4-prepare-the-context">Step 4: Prepare the Context</h4>
@@ -7312,13 +7760,13 @@ default:
           </ul>
           <p>- Text path: <code>prepareTextContext()</code>. - Media path: <code>prepareMediaContext()</code> — loads the projection file via <code>mtmd.InitFromFile()</code> and converts the OpenAI media format to byte slices.</p>
           <h4 id="step-5-process-the-cache">Step 5: Process the Cache</h4>
-          <p>If caching is enabled, the system checks whether any portion of the conversation is already in the KV cache to avoid redundant computation. The IMC algorithm picks one of <strong>5 strategies</strong> — see §17.7.7 for the full decision tree (pure cache hit, hash-prefix extend, system-prompt preserve, token-prefix fallback, or rebuild from scratch with LRU eviction).</p>
+          <p>If caching is enabled, the system checks whether any portion of the conversation is already in the KV cache to avoid redundant computation. The IMC algorithm picks one of <strong>5 strategies</strong> — see §18.7.7 for the full decision tree (pure cache hit, hash-prefix extend, system-prompt preserve, token-prefix fallback, or rebuild from scratch with LRU eviction).</p>
           <p>Tool response messages are also enriched with their originating function names so templates can render tool results correctly.</p>
           <p><strong>Code:</strong></p>
           <ul>
             <li><code>prepareCacheAndPrompt()</code> (<code>model/chat.go</code>):</li>
           </ul>
-          <p>- <code>injectToolResponseNames()</code> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>. - <code>processCache()</code> (<code>model/caching.go</code>) → <code>processIMC()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">model/caching_imc.go</a>) — runs the §17.7.7 5-strategy selection across all <code>NSeqMax</code> sessions, tokenizes any extension tokens, and sets the <code>pending</code> flag on the chosen session.</p>
+          <p>- <code>injectToolResponseNames()</code> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>. - <code>processCache()</code> (<code>model/caching.go</code>) → <code>processIMC()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">model/caching_imc.go</a>) — runs the §18.7.7 5-strategy selection across all <code>NSeqMax</code> sessions, tokenizes any extension tokens, and sets the <code>pending</code> flag on the chosen session.</p>
           <h4 id="step-6-apply-the-chat-template">Step 6: Apply the Chat Template</h4>
           <p>The remaining (non-cached) messages are run through the model's Jinja2 chat template. This converts the structured message array into the exact prompt string the model expects, including any special tokens, role markers, and tool definitions. For media requests, raw media bytes are returned alongside the text prompt.</p>
           <p><strong>Code:</strong></p>
@@ -7329,13 +7777,13 @@ default:
           <p>The fully prepared request — prompt string, media bytes, sampling parameters, and cache state — is packaged into a job and placed on the batch engine's request queue. A wake signal is sent so the batch engine picks it up immediately rather than waiting for its next poll cycle.</p>
           <p><strong>Code:</strong></p>
           <ul>
-            <li><code>submitToBatchEngine()</code> (<code>model/chat.go</code>) — builds the <code>chatJob</code> struct (request data, cache state, IMC fields) and calls <code>batch.submit()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>), which pushes onto <code>requestQ</code> and pokes <code>wakeCh</code>. The <code>queue-wait</code> span (§17.10) starts here.</li>
+            <li><code>submitToBatchEngine()</code> (<code>model/chat.go</code>) — builds the <code>chatJob</code> struct (request data, cache state, IMC fields) and calls <code>batch.submit()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>), which pushes onto <code>requestQ</code> and pokes <code>wakeCh</code>. The <code>queue-wait</code> span (§18.10) starts here.</li>
           </ul>
           <h4 id="step-8-assign-to-a-slot">Step 8: Assign to a Slot</h4>
-          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to the first available processing slot. All IMC sessions (text and media) use first-available slot assignment. If all slots are busy, the longest-running slot is preempted after a configurable timeout (<code>cache-slot-timeout</code>, see §17.7.5).</p>
+          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to the first available processing slot. All IMC sessions (text and media) use first-available slot assignment. If all slots are busy, the longest-running slot is preempted after a configurable timeout (<code>cache-slot-timeout</code>, see §18.7.5).</p>
           <p><strong>Code:</strong></p>
           <ul>
-            <li><code>processLoop()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>) — signal-based wake on <code>wakeCh</code> (§17.7.5); polls at 100µs when active, 5ms when idle.</li>
+            <li><code>processLoop()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>) — signal-based wake on <code>wakeCh</code> (§18.7.5); polls at 100µs when active, 5ms when idle.</li>
             <li><code>processBatch()</code> clears the batch buffer, runs any pending slot preemption, prefills the draft model for speculative slots, adds 1 generation token per active slot, then continues text prefill via round-robin <code>addPrefillChunk()</code> and media prefill via <code>addPrefillMediaChunk()</code>.</li>
             <li><code>fillSlots()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_schedule.go">model/batch_schedule.go</a>) dequeues the job and assigns it to a slot.</li>
           </ul>
@@ -7350,11 +7798,11 @@ default:
           </ol>
           <p><strong>Code:</strong></p>
           <ul>
-            <li><code>startSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go">model/batch_slot_start.go</a>) — resets the slot, ends the <code>queue-wait</code> span, and starts the <code>process-request</code> and <code>prefill</code> spans (§17.10).</li>
+            <li><code>startSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go">model/batch_slot_start.go</a>) — resets the slot, ends the <code>queue-wait</code> span, and starts the <code>process-request</code> and <code>prefill</code> spans (§18.10).</li>
             <li><code>toSampler()</code> builds the llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat); a separate grammar sampler is created if requested.</li>
             <li>IMC KV restore: <code>StateSeqSetData</code> from <code>session.kvState</code>, then <code>decodeTokensIntoCache()</code> for extend, or <code>MemorySeqRm</code> for rebuild, or partial trim.</li>
             <li>IMC KV snapshot: <code>StateSeqGetData</code> into <code>session.kvState</code> after build/extend.</li>
-            <li><code>llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)</code> — <code>special=true</code> ensures ChatML markers are recognized (§17.7.7).</li>
+            <li><code>llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)</code> — <code>special=true</code> ensures ChatML markers are recognized (§18.7.7).</li>
             <li>Draft prompt assembly for speculative decoding.</li>
             <li>First chunk added via <code>addPrefillChunk()</code>.</li>
           </ul>
@@ -7386,7 +7834,7 @@ default:
           <h4 id="step-12-process-each-token">Step 12: Process Each Token</h4>
           <p>Each sampled token goes through a processing pipeline:</p>
           <ol>
-            <li><strong>Logprobs extraction</strong>: If requested, token log-probabilities are extracted from the model's logits before the sampler state is updated (§17.7.9 explains why the order matters).</li>
+            <li><strong>Logprobs extraction</strong>: If requested, token log-probabilities are extracted from the model's logits before the sampler state is updated (§18.7.9 explains why the order matters).</li>
             <li><strong>End-of-generation check</strong>: If the token is an EOG (end-of-generation) token, generation stops and the request moves to the finish phase.</li>
             <li><strong>UTF-8 assembly</strong>: Tokens are converted to text bytes. Since a single Unicode character can span multiple tokens, partial bytes are buffered until a complete codepoint is available.</li>
             <li><strong>Content classification</strong>: A state machine categorizes the output into reasoning (think tags), completion (regular response), or tool call content. This determines how the text is accumulated and streamed.</li>
@@ -7398,7 +7846,7 @@ default:
           <ul>
             <li><code>handleSampledToken()</code> (<code>model/batch_tokens.go</code>) drives the pipeline:</li>
           </ul>
-          <p>- <code>extractLogprobs()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go">model/logprobs.go</a>) — <code>llama.GetLogitsIth</code> + log-softmax + top-k heap. Runs <strong>before</strong> <code>llama.SamplerAccept()</code> (§17.7.9). - <code>llama.SamplerAccept()</code> (and grammar accept). - <code>llama.VocabIsEOG()</code> → if true, jump to <code>finishSlot()</code>. - <code>llama.TokenToPiece()</code> → buffer partial multi-byte codepoints, then <code>extractCompleteUTF8()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_utf8.go">model/batch_utf8.go</a>). - First token: records <code>prefillDone=true</code>, computes TTFT, ends the <code>prefill</code> span, starts the <code>token-generation</code> span. - Processor classification: <code>stepGPT()</code> for GPT-OSS, <code>stepStandard()</code> for everything else (§17.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers. - Counter increment: <code>reasonTokens</code> or <code>completionTokens</code>. - Max-tokens check: if <code>outputTokens &gt;= maxTokens</code>, <code>finishSlot()</code>. - Accumulate into <code>finalContent</code> / <code>finalReasoning</code> / <code>finalTooling</code>. - <code>sendDeltaResponse()</code> for non-tool content (tool content is buffered until parse).</p>
+          <p>- <code>extractLogprobs()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go">model/logprobs.go</a>) — <code>llama.GetLogitsIth</code> + log-softmax + top-k heap. Runs <strong>before</strong> <code>llama.SamplerAccept()</code> (§18.7.9). - <code>llama.SamplerAccept()</code> (and grammar accept). - <code>llama.VocabIsEOG()</code> → if true, jump to <code>finishSlot()</code>. - <code>llama.TokenToPiece()</code> → buffer partial multi-byte codepoints, then <code>extractCompleteUTF8()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_utf8.go">model/batch_utf8.go</a>). - First token: records <code>prefillDone=true</code>, computes TTFT, ends the <code>prefill</code> span, starts the <code>token-generation</code> span. - Processor classification: <code>stepGPT()</code> for GPT-OSS, <code>stepStandard()</code> for everything else (§18.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers. - Counter increment: <code>reasonTokens</code> or <code>completionTokens</code>. - Max-tokens check: if <code>outputTokens &gt;= maxTokens</code>, <code>finishSlot()</code>. - Accumulate into <code>finalContent</code> / <code>finalReasoning</code> / <code>finalTooling</code>. - <code>sendDeltaResponse()</code> for non-tool content (tool content is buffered until parse).</p>
           <h4 id="step-13-finish-the-request">Step 13: Finish the Request</h4>
           <p>When generation ends (EOG token, max tokens, or error), the request is finalized:</p>
           <ol>
@@ -7418,7 +7866,7 @@ default:
           <ul>
             <li><code>finishSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go">model/batch_finish.go</a>):</li>
           </ul>
-          <p>- Flushes the UTF-8 buffer. - Tool-call parse: GPT-OSS path calls <code>parseGPTToolCall()</code> directly (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177">batch_finish.go:177</a>); all other models route through <code>parseToolCall</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go">model/processor_parse.go</a>) — see §17.7.8. - Metrics: TPS = <code>(outputTokens - 1) / elapsed</code>, TTFT, draft-acceptance rate. - <code>sendFinalResponse()</code> with usage, content, reasoning, tool calls, logprobs. - KV cleanup: <code>MemorySeqRm(mem, seqID, -1, -1)</code> clears the full VRAM sequence; the IMC prefix is already in RAM from Step 9. - Frees the sampler, grammar sampler, MTMD bitmaps/chunks, and <code>mtmdCtx</code>. - Closes the job channel; the <code>streaming()</code> wrapper drains and closes the caller's channel. - Decrements the <strong>model-level</strong> <code>m.activeStreams</code>.</p>
+          <p>- Flushes the UTF-8 buffer. - Tool-call parse: GPT-OSS path calls <code>parseGPTToolCall()</code> directly (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177">batch_finish.go:177</a>); all other models route through <code>parseToolCall</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go">model/processor_parse.go</a>) — see §18.7.8. - Metrics: TPS = <code>(outputTokens - 1) / elapsed</code>, TTFT, draft-acceptance rate. - <code>sendFinalResponse()</code> with usage, content, reasoning, tool calls, logprobs. - KV cleanup: <code>MemorySeqRm(mem, seqID, -1, -1)</code> clears the full VRAM sequence; the IMC prefix is already in RAM from Step 9. - Frees the sampler, grammar sampler, MTMD bitmaps/chunks, and <code>mtmdCtx</code>. - Closes the job channel; the <code>streaming()</code> wrapper drains and closes the caller's channel. - Decrements the <strong>model-level</strong> <code>m.activeStreams</code>.</p>
           <h4 id="step-14-release-the-model">Step 14: Release the Model</h4>
           <p>The response channel is closed, signaling to the caller that streaming is complete. The kronk-level semaphore slot is released, allowing the next queued request to begin processing.</p>
           <p><strong>Code:</strong></p>
@@ -7499,179 +7947,200 @@ default:
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-6-yarn-extended-context" className={`doc-index-header ${activeSection === 'chapter-6-yarn-extended-context' ? 'active' : ''}`}>Chapter 6: YaRN Extended Context</a>
+              <a href="#chapter-6-speculative-decoding-mtp" className={`doc-index-header ${activeSection === 'chapter-6-speculative-decoding-mtp' ? 'active' : ''}`}>Chapter 6: Speculative Decoding &amp; MTP</a>
               <ul>
-                <li><a href="#61-understanding-context-extension" className={activeSection === '61-understanding-context-extension' ? 'active' : ''}>6.1 Understanding Context Extension</a></li>
-                <li><a href="#62-when-to-use-yarn" className={activeSection === '62-when-to-use-yarn' ? 'active' : ''}>6.2 When to Use YaRN</a></li>
-                <li><a href="#63-configuration" className={activeSection === '63-configuration' ? 'active' : ''}>6.3 Configuration</a></li>
-                <li><a href="#64-scaling-types" className={activeSection === '64-scaling-types' ? 'active' : ''}>6.4 Scaling Types</a></li>
-                <li><a href="#65-parameter-reference" className={activeSection === '65-parameter-reference' ? 'active' : ''}>6.5 Parameter Reference</a></li>
-                <li><a href="#66-model-specific-examples" className={activeSection === '66-model-specific-examples' ? 'active' : ''}>6.6 Model-Specific Examples</a></li>
-                <li><a href="#67-memory-impact" className={activeSection === '67-memory-impact' ? 'active' : ''}>6.7 Memory Impact</a></li>
-                <li><a href="#68-quality-considerations" className={activeSection === '68-quality-considerations' ? 'active' : ''}>6.8 Quality Considerations</a></li>
-                <li><a href="#69-example-long-document-processing" className={activeSection === '69-example-long-document-processing' ? 'active' : ''}>6.9 Example: Long Document Processing</a></li>
+                <li><a href="#61-overview-the-two-draft-modes" className={activeSection === '61-overview-the-two-draft-modes' ? 'active' : ''}>6.1 Overview &amp; The Two Draft Modes</a></li>
+                <li><a href="#62-separate-gguf-draft-recap" className={activeSection === '62-separate-gguf-draft-recap' ? 'active' : ''}>6.2 Separate-GGUF Draft (Recap)</a></li>
+                <li><a href="#63-mtp-drafts-multi-token-prediction" className={activeSection === '63-mtp-drafts-multi-token-prediction' ? 'active' : ''}>6.3 MTP Drafts (Multi-Token Prediction)</a></li>
+                <li><a href="#64-auto-detection-`selectandloaddraft`" className={activeSection === '64-auto-detection-`selectandloaddraft`' ? 'active' : ''}>6.4 Auto-Detection: `selectAndLoadDraft`</a></li>
+                <li><a href="#65-mtp-requirements-skip-reasons" className={activeSection === '65-mtp-requirements-skip-reasons' ? 'active' : ''}>6.5 MTP Requirements &amp; Skip Reasons</a></li>
+                <li><a href="#66-pre-norm-hidden-state-plumbing" className={activeSection === '66-pre-norm-hidden-state-plumbing' ? 'active' : ''}>6.6 Pre-Norm Hidden-State Plumbing</a></li>
+                <li><a href="#67-the-mirror-step-ar-draft-loop" className={activeSection === '67-the-mirror-step-ar-draft-loop' ? 'active' : ''}>6.7 The Mirror Step &amp; AR Draft Loop</a></li>
+                <li><a href="#68-verification-on-the-mtp-path" className={activeSection === '68-verification-on-the-mtp-path' ? 'active' : ''}>6.8 Verification on the MTP Path</a></li>
+                <li><a href="#69-hybrid-target-rollback-snapshotrestore" className={activeSection === '69-hybrid-target-rollback-snapshotrestore' ? 'active' : ''}>6.9 Hybrid Target Rollback: Snapshot/Restore</a></li>
+                <li><a href="#610-adaptive-`ndraft`-acceptance-ema" className={activeSection === '610-adaptive-`ndraft`-acceptance-ema' ? 'active' : ''}>6.10 Adaptive `nDraft` (Acceptance EMA)</a></li>
+                <li><a href="#611-per-slot-state-added-for-mtp" className={activeSection === '611-per-slot-state-added-for-mtp' ? 'active' : ''}>6.11 Per-Slot State Added for MTP</a></li>
+                <li><a href="#612-configuration" className={activeSection === '612-configuration' ? 'active' : ''}>6.12 Configuration</a></li>
+                <li><a href="#613-observability" className={activeSection === '613-observability' ? 'active' : ''}>6.13 Observability</a></li>
+                <li><a href="#614-code-map" className={activeSection === '614-code-map' ? 'active' : ''}>6.14 Code Map</a></li>
+                <li><a href="#615-testing" className={activeSection === '615-testing' ? 'active' : ''}>6.15 Testing</a></li>
+                <li><a href="#616-known-limitations" className={activeSection === '616-known-limitations' ? 'active' : ''}>6.16 Known Limitations</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-7-model-server" className={`doc-index-header ${activeSection === 'chapter-7-model-server' ? 'active' : ''}`}>Chapter 7: Model Server</a>
+              <a href="#chapter-7-yarn-extended-context" className={`doc-index-header ${activeSection === 'chapter-7-yarn-extended-context' ? 'active' : ''}`}>Chapter 7: YaRN Extended Context</a>
               <ul>
-                <li><a href="#71-starting-the-server" className={activeSection === '71-starting-the-server' ? 'active' : ''}>7.1 Starting the Server</a></li>
-                <li><a href="#72-stopping-the-server" className={activeSection === '72-stopping-the-server' ? 'active' : ''}>7.2 Stopping the Server</a></li>
-                <li><a href="#73-server-configuration" className={activeSection === '73-server-configuration' ? 'active' : ''}>7.3 Server Configuration</a></li>
-                <li><a href="#74-model-caching" className={activeSection === '74-model-caching' ? 'active' : ''}>7.4 Model Caching</a></li>
-                <li><a href="#75-resource-manager" className={activeSection === '75-resource-manager' ? 'active' : ''}>7.5 Resource Manager</a></li>
-                <li><a href="#76-model-config-files" className={activeSection === '76-model-config-files' ? 'active' : ''}>7.6 Model Config Files</a></li>
-                <li><a href="#77-catalog-system" className={activeSection === '77-catalog-system' ? 'active' : ''}>7.7 Catalog System</a></li>
-                <li><a href="#78-runtime-settings" className={activeSection === '78-runtime-settings' ? 'active' : ''}>7.8 Runtime Settings</a></li>
-                <li><a href="#79-logging" className={activeSection === '79-logging' ? 'active' : ''}>7.9 Logging</a></li>
-                <li><a href="#710-data-paths" className={activeSection === '710-data-paths' ? 'active' : ''}>7.10 Data Paths</a></li>
-                <li><a href="#711-complete-example" className={activeSection === '711-complete-example' ? 'active' : ''}>7.11 Complete Example</a></li>
+                <li><a href="#71-understanding-context-extension" className={activeSection === '71-understanding-context-extension' ? 'active' : ''}>7.1 Understanding Context Extension</a></li>
+                <li><a href="#72-when-to-use-yarn" className={activeSection === '72-when-to-use-yarn' ? 'active' : ''}>7.2 When to Use YaRN</a></li>
+                <li><a href="#73-configuration" className={activeSection === '73-configuration' ? 'active' : ''}>7.3 Configuration</a></li>
+                <li><a href="#74-scaling-types" className={activeSection === '74-scaling-types' ? 'active' : ''}>7.4 Scaling Types</a></li>
+                <li><a href="#75-parameter-reference" className={activeSection === '75-parameter-reference' ? 'active' : ''}>7.5 Parameter Reference</a></li>
+                <li><a href="#76-model-specific-examples" className={activeSection === '76-model-specific-examples' ? 'active' : ''}>7.6 Model-Specific Examples</a></li>
+                <li><a href="#77-memory-impact" className={activeSection === '77-memory-impact' ? 'active' : ''}>7.7 Memory Impact</a></li>
+                <li><a href="#78-quality-considerations" className={activeSection === '78-quality-considerations' ? 'active' : ''}>7.8 Quality Considerations</a></li>
+                <li><a href="#79-example-long-document-processing" className={activeSection === '79-example-long-document-processing' ? 'active' : ''}>7.9 Example: Long Document Processing</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-8-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-8-api-endpoints' ? 'active' : ''}`}>Chapter 8: API Endpoints</a>
+              <a href="#chapter-8-model-server" className={`doc-index-header ${activeSection === 'chapter-8-model-server' ? 'active' : ''}`}>Chapter 8: Model Server</a>
               <ul>
-                <li><a href="#81-endpoint-overview" className={activeSection === '81-endpoint-overview' ? 'active' : ''}>8.1 Endpoint Overview</a></li>
-                <li><a href="#82-chat-completions" className={activeSection === '82-chat-completions' ? 'active' : ''}>8.2 Chat Completions</a></li>
-                <li><a href="#83-responses-api" className={activeSection === '83-responses-api' ? 'active' : ''}>8.3 Responses API</a></li>
-                <li><a href="#84-embeddings" className={activeSection === '84-embeddings' ? 'active' : ''}>8.4 Embeddings</a></li>
-                <li><a href="#85-reranking" className={activeSection === '85-reranking' ? 'active' : ''}>8.5 Reranking</a></li>
-                <li><a href="#86-tokenize" className={activeSection === '86-tokenize' ? 'active' : ''}>8.6 Tokenize</a></li>
-                <li><a href="#87-tool-calling-function-calling" className={activeSection === '87-tool-calling-function-calling' ? 'active' : ''}>8.7 Tool Calling (Function Calling)</a></li>
-                <li><a href="#88-models-list" className={activeSection === '88-models-list' ? 'active' : ''}>8.8 Models List</a></li>
-                <li><a href="#89-authentication" className={activeSection === '89-authentication' ? 'active' : ''}>8.9 Authentication</a></li>
-                <li><a href="#810-error-responses" className={activeSection === '810-error-responses' ? 'active' : ''}>8.10 Error Responses</a></li>
+                <li><a href="#81-starting-the-server" className={activeSection === '81-starting-the-server' ? 'active' : ''}>8.1 Starting the Server</a></li>
+                <li><a href="#82-stopping-the-server" className={activeSection === '82-stopping-the-server' ? 'active' : ''}>8.2 Stopping the Server</a></li>
+                <li><a href="#83-server-configuration" className={activeSection === '83-server-configuration' ? 'active' : ''}>8.3 Server Configuration</a></li>
+                <li><a href="#84-model-caching" className={activeSection === '84-model-caching' ? 'active' : ''}>8.4 Model Caching</a></li>
+                <li><a href="#85-resource-manager" className={activeSection === '85-resource-manager' ? 'active' : ''}>8.5 Resource Manager</a></li>
+                <li><a href="#86-model-config-files" className={activeSection === '86-model-config-files' ? 'active' : ''}>8.6 Model Config Files</a></li>
+                <li><a href="#87-catalog-system" className={activeSection === '87-catalog-system' ? 'active' : ''}>8.7 Catalog System</a></li>
+                <li><a href="#88-runtime-settings" className={activeSection === '88-runtime-settings' ? 'active' : ''}>8.8 Runtime Settings</a></li>
+                <li><a href="#89-logging" className={activeSection === '89-logging' ? 'active' : ''}>8.9 Logging</a></li>
+                <li><a href="#810-data-paths" className={activeSection === '810-data-paths' ? 'active' : ''}>8.10 Data Paths</a></li>
+                <li><a href="#811-complete-example" className={activeSection === '811-complete-example' ? 'active' : ''}>8.11 Complete Example</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-9-request-parameters" className={`doc-index-header ${activeSection === 'chapter-9-request-parameters' ? 'active' : ''}`}>Chapter 9: Request Parameters</a>
+              <a href="#chapter-9-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-9-api-endpoints' ? 'active' : ''}`}>Chapter 9: API Endpoints</a>
               <ul>
-                <li><a href="#91-sampling-parameters" className={activeSection === '91-sampling-parameters' ? 'active' : ''}>9.1 Sampling Parameters</a></li>
-                <li><a href="#92-repetition-control" className={activeSection === '92-repetition-control' ? 'active' : ''}>9.2 Repetition Control</a></li>
-                <li><a href="#93-advanced-sampling" className={activeSection === '93-advanced-sampling' ? 'active' : ''}>9.3 Advanced Sampling</a></li>
-                <li><a href="#94-generation-control" className={activeSection === '94-generation-control' ? 'active' : ''}>9.4 Generation Control</a></li>
-                <li><a href="#95-grammar-constrained-output" className={activeSection === '95-grammar-constrained-output' ? 'active' : ''}>9.5 Grammar Constrained Output</a></li>
-                <li><a href="#96-logprobs-token-probabilities" className={activeSection === '96-logprobs-token-probabilities' ? 'active' : ''}>9.6 Logprobs (Token Probabilities)</a></li>
-                <li><a href="#97-parameter-reference" className={activeSection === '97-parameter-reference' ? 'active' : ''}>9.7 Parameter Reference</a></li>
+                <li><a href="#91-endpoint-overview" className={activeSection === '91-endpoint-overview' ? 'active' : ''}>9.1 Endpoint Overview</a></li>
+                <li><a href="#92-chat-completions" className={activeSection === '92-chat-completions' ? 'active' : ''}>9.2 Chat Completions</a></li>
+                <li><a href="#93-responses-api" className={activeSection === '93-responses-api' ? 'active' : ''}>9.3 Responses API</a></li>
+                <li><a href="#94-embeddings" className={activeSection === '94-embeddings' ? 'active' : ''}>9.4 Embeddings</a></li>
+                <li><a href="#95-reranking" className={activeSection === '95-reranking' ? 'active' : ''}>9.5 Reranking</a></li>
+                <li><a href="#96-tokenize" className={activeSection === '96-tokenize' ? 'active' : ''}>9.6 Tokenize</a></li>
+                <li><a href="#97-tool-calling-function-calling" className={activeSection === '97-tool-calling-function-calling' ? 'active' : ''}>9.7 Tool Calling (Function Calling)</a></li>
+                <li><a href="#98-models-list" className={activeSection === '98-models-list' ? 'active' : ''}>9.8 Models List</a></li>
+                <li><a href="#99-authentication" className={activeSection === '99-authentication' ? 'active' : ''}>9.9 Authentication</a></li>
+                <li><a href="#910-error-responses" className={activeSection === '910-error-responses' ? 'active' : ''}>9.10 Error Responses</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-10-multi-modal-models" className={`doc-index-header ${activeSection === 'chapter-10-multi-modal-models' ? 'active' : ''}`}>Chapter 10: Multi-Modal Models</a>
+              <a href="#chapter-10-request-parameters" className={`doc-index-header ${activeSection === 'chapter-10-request-parameters' ? 'active' : ''}`}>Chapter 10: Request Parameters</a>
               <ul>
-                <li><a href="#101-overview" className={activeSection === '101-overview' ? 'active' : ''}>10.1 Overview</a></li>
-                <li><a href="#102-vision-models" className={activeSection === '102-vision-models' ? 'active' : ''}>10.2 Vision Models</a></li>
-                <li><a href="#103-audio-models" className={activeSection === '103-audio-models' ? 'active' : ''}>10.3 Audio Models</a></li>
-                <li><a href="#104-plain-base64-format" className={activeSection === '104-plain-base64-format' ? 'active' : ''}>10.4 Plain Base64 Format</a></li>
-                <li><a href="#105-configuration-for-multi-modal-models" className={activeSection === '105-configuration-for-multi-modal-models' ? 'active' : ''}>10.5 Configuration for Multi-Modal Models</a></li>
-                <li><a href="#106-memory-requirements" className={activeSection === '106-memory-requirements' ? 'active' : ''}>10.6 Memory Requirements</a></li>
-                <li><a href="#107-imc-and-multi-modal-caching" className={activeSection === '107-imc-and-multi-modal-caching' ? 'active' : ''}>10.7 IMC and Multi-Modal Caching</a></li>
-                <li><a href="#108-limitations" className={activeSection === '108-limitations' ? 'active' : ''}>10.8 Limitations</a></li>
-                <li><a href="#109-example-image-analysis" className={activeSection === '109-example-image-analysis' ? 'active' : ''}>10.9 Example: Image Analysis</a></li>
-                <li><a href="#1010-example-audio-transcription" className={activeSection === '1010-example-audio-transcription' ? 'active' : ''}>10.10 Example: Audio Transcription</a></li>
+                <li><a href="#101-sampling-parameters" className={activeSection === '101-sampling-parameters' ? 'active' : ''}>10.1 Sampling Parameters</a></li>
+                <li><a href="#102-repetition-control" className={activeSection === '102-repetition-control' ? 'active' : ''}>10.2 Repetition Control</a></li>
+                <li><a href="#103-advanced-sampling" className={activeSection === '103-advanced-sampling' ? 'active' : ''}>10.3 Advanced Sampling</a></li>
+                <li><a href="#104-generation-control" className={activeSection === '104-generation-control' ? 'active' : ''}>10.4 Generation Control</a></li>
+                <li><a href="#105-grammar-constrained-output" className={activeSection === '105-grammar-constrained-output' ? 'active' : ''}>10.5 Grammar Constrained Output</a></li>
+                <li><a href="#106-logprobs-token-probabilities" className={activeSection === '106-logprobs-token-probabilities' ? 'active' : ''}>10.6 Logprobs (Token Probabilities)</a></li>
+                <li><a href="#107-parameter-reference" className={activeSection === '107-parameter-reference' ? 'active' : ''}>10.7 Parameter Reference</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-11-security-authentication" className={`doc-index-header ${activeSection === 'chapter-11-security-authentication' ? 'active' : ''}`}>Chapter 11: Security &amp; Authentication</a>
+              <a href="#chapter-11-multi-modal-models" className={`doc-index-header ${activeSection === 'chapter-11-multi-modal-models' ? 'active' : ''}`}>Chapter 11: Multi-Modal Models</a>
               <ul>
-                <li><a href="#111-enabling-authentication" className={activeSection === '111-enabling-authentication' ? 'active' : ''}>11.1 Enabling Authentication</a></li>
-                <li><a href="#112-using-the-admin-token" className={activeSection === '112-using-the-admin-token' ? 'active' : ''}>11.2 Using the Admin Token</a></li>
-                <li><a href="#113-key-management" className={activeSection === '113-key-management' ? 'active' : ''}>11.3 Key Management</a></li>
-                <li><a href="#114-creating-user-tokens" className={activeSection === '114-creating-user-tokens' ? 'active' : ''}>11.4 Creating User Tokens</a></li>
-                <li><a href="#115-token-examples" className={activeSection === '115-token-examples' ? 'active' : ''}>11.5 Token Examples</a></li>
-                <li><a href="#116-using-tokens-in-api-requests" className={activeSection === '116-using-tokens-in-api-requests' ? 'active' : ''}>11.6 Using Tokens in API Requests</a></li>
-                <li><a href="#117-authorization-flow" className={activeSection === '117-authorization-flow' ? 'active' : ''}>11.7 Authorization Flow</a></li>
-                <li><a href="#118-rate-limiting" className={activeSection === '118-rate-limiting' ? 'active' : ''}>11.8 Rate Limiting</a></li>
-                <li><a href="#119-configuration-reference" className={activeSection === '119-configuration-reference' ? 'active' : ''}>11.9 Configuration Reference</a></li>
-                <li><a href="#1110-security-best-practices" className={activeSection === '1110-security-best-practices' ? 'active' : ''}>11.10 Security Best Practices</a></li>
+                <li><a href="#111-overview" className={activeSection === '111-overview' ? 'active' : ''}>11.1 Overview</a></li>
+                <li><a href="#112-vision-models" className={activeSection === '112-vision-models' ? 'active' : ''}>11.2 Vision Models</a></li>
+                <li><a href="#113-audio-models" className={activeSection === '113-audio-models' ? 'active' : ''}>11.3 Audio Models</a></li>
+                <li><a href="#114-plain-base64-format" className={activeSection === '114-plain-base64-format' ? 'active' : ''}>11.4 Plain Base64 Format</a></li>
+                <li><a href="#115-configuration-for-multi-modal-models" className={activeSection === '115-configuration-for-multi-modal-models' ? 'active' : ''}>11.5 Configuration for Multi-Modal Models</a></li>
+                <li><a href="#116-memory-requirements" className={activeSection === '116-memory-requirements' ? 'active' : ''}>11.6 Memory Requirements</a></li>
+                <li><a href="#117-imc-and-multi-modal-caching" className={activeSection === '117-imc-and-multi-modal-caching' ? 'active' : ''}>11.7 IMC and Multi-Modal Caching</a></li>
+                <li><a href="#118-limitations" className={activeSection === '118-limitations' ? 'active' : ''}>11.8 Limitations</a></li>
+                <li><a href="#119-example-image-analysis" className={activeSection === '119-example-image-analysis' ? 'active' : ''}>11.9 Example: Image Analysis</a></li>
+                <li><a href="#1110-example-audio-transcription" className={activeSection === '1110-example-audio-transcription' ? 'active' : ''}>11.10 Example: Audio Transcription</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-12-browser-ui-bui" className={`doc-index-header ${activeSection === 'chapter-12-browser-ui-bui' ? 'active' : ''}`}>Chapter 12: Browser UI (BUI)</a>
+              <a href="#chapter-12-security-authentication" className={`doc-index-header ${activeSection === 'chapter-12-security-authentication' ? 'active' : ''}`}>Chapter 12: Security &amp; Authentication</a>
               <ul>
-                <li><a href="#121-accessing-the-bui" className={activeSection === '121-accessing-the-bui' ? 'active' : ''}>12.1 Accessing the BUI</a></li>
-                <li><a href="#122-sidebar-layout" className={activeSection === '122-sidebar-layout' ? 'active' : ''}>12.2 Sidebar Layout</a></li>
-                <li><a href="#123-what-the-bui-provides" className={activeSection === '123-what-the-bui-provides' ? 'active' : ''}>12.3 What the BUI Provides</a></li>
-                <li><a href="#124-authentication" className={activeSection === '124-authentication' ? 'active' : ''}>12.4 Authentication</a></li>
-                <li><a href="#125-notes-on-live-state" className={activeSection === '125-notes-on-live-state' ? 'active' : ''}>12.5 Notes on Live State</a></li>
+                <li><a href="#121-enabling-authentication" className={activeSection === '121-enabling-authentication' ? 'active' : ''}>12.1 Enabling Authentication</a></li>
+                <li><a href="#122-using-the-admin-token" className={activeSection === '122-using-the-admin-token' ? 'active' : ''}>12.2 Using the Admin Token</a></li>
+                <li><a href="#123-key-management" className={activeSection === '123-key-management' ? 'active' : ''}>12.3 Key Management</a></li>
+                <li><a href="#124-creating-user-tokens" className={activeSection === '124-creating-user-tokens' ? 'active' : ''}>12.4 Creating User Tokens</a></li>
+                <li><a href="#125-token-examples" className={activeSection === '125-token-examples' ? 'active' : ''}>12.5 Token Examples</a></li>
+                <li><a href="#126-using-tokens-in-api-requests" className={activeSection === '126-using-tokens-in-api-requests' ? 'active' : ''}>12.6 Using Tokens in API Requests</a></li>
+                <li><a href="#127-authorization-flow" className={activeSection === '127-authorization-flow' ? 'active' : ''}>12.7 Authorization Flow</a></li>
+                <li><a href="#128-rate-limiting" className={activeSection === '128-rate-limiting' ? 'active' : ''}>12.8 Rate Limiting</a></li>
+                <li><a href="#129-configuration-reference" className={activeSection === '129-configuration-reference' ? 'active' : ''}>12.9 Configuration Reference</a></li>
+                <li><a href="#1210-security-best-practices" className={activeSection === '1210-security-best-practices' ? 'active' : ''}>12.10 Security Best Practices</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-13-client-integration" className={`doc-index-header ${activeSection === 'chapter-13-client-integration' ? 'active' : ''}`}>Chapter 13: Client Integration</a>
+              <a href="#chapter-13-browser-ui-bui" className={`doc-index-header ${activeSection === 'chapter-13-browser-ui-bui' ? 'active' : ''}`}>Chapter 13: Browser UI (BUI)</a>
               <ul>
-                <li><a href="#131-installing-opencode" className={activeSection === '131-installing-opencode' ? 'active' : ''}>13.1 Installing OpenCode</a></li>
-                <li><a href="#132-coding-agent-model-configuration" className={activeSection === '132-coding-agent-model-configuration' ? 'active' : ''}>13.2 Coding Agent Model Configuration</a></li>
-                <li><a href="#133-agent-bundles-in-`agents`" className={activeSection === '133-agent-bundles-in-`agents`' ? 'active' : ''}>13.3 Agent Bundles in `.agents/`</a></li>
-                <li><a href="#134-default-bundle-direct-mcp" className={activeSection === '134-default-bundle-direct-mcp' ? 'active' : ''}>13.4 Default Bundle (Direct MCP)</a></li>
-                <li><a href="#135-changing-the-model-opencode-uses" className={activeSection === '135-changing-the-model-opencode-uses' ? 'active' : ''}>13.5 Changing the Model OpenCode Uses</a></li>
-                <li><a href="#136-rote-bundle-mcp-via-rote" className={activeSection === '136-rote-bundle-mcp-via-rote' ? 'active' : ''}>13.6 Rote Bundle (MCP via rote)</a></li>
-                <li><a href="#137-wiping-agent-state" className={activeSection === '137-wiping-agent-state' ? 'active' : ''}>13.7 Wiping Agent State</a></li>
-                <li><a href="#138-openwebui" className={activeSection === '138-openwebui' ? 'active' : ''}>13.8 OpenWebUI</a></li>
-                <li><a href="#139-python-openai-sdk" className={activeSection === '139-python-openai-sdk' ? 'active' : ''}>13.9 Python OpenAI SDK</a></li>
-                <li><a href="#1310-curl-and-http-clients" className={activeSection === '1310-curl-and-http-clients' ? 'active' : ''}>13.10 curl and HTTP Clients</a></li>
-                <li><a href="#1311-langchain" className={activeSection === '1311-langchain' ? 'active' : ''}>13.11 LangChain</a></li>
+                <li><a href="#131-accessing-the-bui" className={activeSection === '131-accessing-the-bui' ? 'active' : ''}>13.1 Accessing the BUI</a></li>
+                <li><a href="#132-sidebar-layout" className={activeSection === '132-sidebar-layout' ? 'active' : ''}>13.2 Sidebar Layout</a></li>
+                <li><a href="#133-what-the-bui-provides" className={activeSection === '133-what-the-bui-provides' ? 'active' : ''}>13.3 What the BUI Provides</a></li>
+                <li><a href="#134-authentication" className={activeSection === '134-authentication' ? 'active' : ''}>13.4 Authentication</a></li>
+                <li><a href="#135-notes-on-live-state" className={activeSection === '135-notes-on-live-state' ? 'active' : ''}>13.5 Notes on Live State</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-14-observability" className={`doc-index-header ${activeSection === 'chapter-14-observability' ? 'active' : ''}`}>Chapter 14: Observability</a>
+              <a href="#chapter-14-client-integration" className={`doc-index-header ${activeSection === 'chapter-14-client-integration' ? 'active' : ''}`}>Chapter 14: Client Integration</a>
               <ul>
-                <li><a href="#141-debug-server" className={activeSection === '141-debug-server' ? 'active' : ''}>14.1 Debug Server</a></li>
-                <li><a href="#142-debug-endpoints" className={activeSection === '142-debug-endpoints' ? 'active' : ''}>14.2 Debug Endpoints</a></li>
-                <li><a href="#143-health-check-endpoints" className={activeSection === '143-health-check-endpoints' ? 'active' : ''}>14.3 Health Check Endpoints</a></li>
-                <li><a href="#144-prometheus-metrics" className={activeSection === '144-prometheus-metrics' ? 'active' : ''}>14.4 Prometheus Metrics</a></li>
-                <li><a href="#145-prometheus-integration" className={activeSection === '145-prometheus-integration' ? 'active' : ''}>14.5 Prometheus Integration</a></li>
-                <li><a href="#146-distributed-tracing-with-tempo" className={activeSection === '146-distributed-tracing-with-tempo' ? 'active' : ''}>14.6 Distributed Tracing with Tempo</a></li>
-                <li><a href="#147-tracing-architecture" className={activeSection === '147-tracing-architecture' ? 'active' : ''}>14.7 Tracing Architecture</a></li>
-                <li><a href="#148-tempo-setup-with-docker" className={activeSection === '148-tempo-setup-with-docker' ? 'active' : ''}>14.8 Tempo Setup with Docker</a></li>
-                <li><a href="#149-pprof-profiling" className={activeSection === '149-pprof-profiling' ? 'active' : ''}>14.9 pprof Profiling</a></li>
-                <li><a href="#1410-statsviz-real-time-monitoring" className={activeSection === '1410-statsviz-real-time-monitoring' ? 'active' : ''}>14.10 Statsviz Real-Time Monitoring</a></li>
-                <li><a href="#1411-logging" className={activeSection === '1411-logging' ? 'active' : ''}>14.11 Logging</a></li>
-                <li><a href="#1412-configuration-reference" className={activeSection === '1412-configuration-reference' ? 'active' : ''}>14.12 Configuration Reference</a></li>
+                <li><a href="#141-installing-opencode" className={activeSection === '141-installing-opencode' ? 'active' : ''}>14.1 Installing OpenCode</a></li>
+                <li><a href="#142-coding-agent-model-configuration" className={activeSection === '142-coding-agent-model-configuration' ? 'active' : ''}>14.2 Coding Agent Model Configuration</a></li>
+                <li><a href="#143-agent-bundles-in-`agents`" className={activeSection === '143-agent-bundles-in-`agents`' ? 'active' : ''}>14.3 Agent Bundles in `.agents/`</a></li>
+                <li><a href="#144-default-bundle-direct-mcp" className={activeSection === '144-default-bundle-direct-mcp' ? 'active' : ''}>14.4 Default Bundle (Direct MCP)</a></li>
+                <li><a href="#145-changing-the-model-opencode-uses" className={activeSection === '145-changing-the-model-opencode-uses' ? 'active' : ''}>14.5 Changing the Model OpenCode Uses</a></li>
+                <li><a href="#146-rote-bundle-mcp-via-rote" className={activeSection === '146-rote-bundle-mcp-via-rote' ? 'active' : ''}>14.6 Rote Bundle (MCP via rote)</a></li>
+                <li><a href="#147-wiping-agent-state" className={activeSection === '147-wiping-agent-state' ? 'active' : ''}>14.7 Wiping Agent State</a></li>
+                <li><a href="#148-openwebui" className={activeSection === '148-openwebui' ? 'active' : ''}>14.8 OpenWebUI</a></li>
+                <li><a href="#149-python-openai-sdk" className={activeSection === '149-python-openai-sdk' ? 'active' : ''}>14.9 Python OpenAI SDK</a></li>
+                <li><a href="#1410-curl-and-http-clients" className={activeSection === '1410-curl-and-http-clients' ? 'active' : ''}>14.10 curl and HTTP Clients</a></li>
+                <li><a href="#1411-langchain" className={activeSection === '1411-langchain' ? 'active' : ''}>14.11 LangChain</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-15-mcp-service" className={`doc-index-header ${activeSection === 'chapter-15-mcp-service' ? 'active' : ''}`}>Chapter 15: MCP Service</a>
+              <a href="#chapter-15-observability" className={`doc-index-header ${activeSection === 'chapter-15-observability' ? 'active' : ''}`}>Chapter 15: Observability</a>
               <ul>
-                <li><a href="#151-architecture" className={activeSection === '151-architecture' ? 'active' : ''}>15.1 Architecture</a></li>
-                <li><a href="#152-prerequisites" className={activeSection === '152-prerequisites' ? 'active' : ''}>15.2 Prerequisites</a></li>
-                <li><a href="#153-configuration" className={activeSection === '153-configuration' ? 'active' : ''}>15.3 Configuration</a></li>
-                <li><a href="#154-available-tools" className={activeSection === '154-available-tools' ? 'active' : ''}>15.4 Available Tools</a></li>
-                <li><a href="#155-client-configuration" className={activeSection === '155-client-configuration' ? 'active' : ''}>15.5 Client Configuration</a></li>
-                <li><a href="#156-testing-with-curl" className={activeSection === '156-testing-with-curl' ? 'active' : ''}>15.6 Testing with curl</a></li>
+                <li><a href="#151-debug-server" className={activeSection === '151-debug-server' ? 'active' : ''}>15.1 Debug Server</a></li>
+                <li><a href="#152-debug-endpoints" className={activeSection === '152-debug-endpoints' ? 'active' : ''}>15.2 Debug Endpoints</a></li>
+                <li><a href="#153-health-check-endpoints" className={activeSection === '153-health-check-endpoints' ? 'active' : ''}>15.3 Health Check Endpoints</a></li>
+                <li><a href="#154-prometheus-metrics" className={activeSection === '154-prometheus-metrics' ? 'active' : ''}>15.4 Prometheus Metrics</a></li>
+                <li><a href="#155-prometheus-integration" className={activeSection === '155-prometheus-integration' ? 'active' : ''}>15.5 Prometheus Integration</a></li>
+                <li><a href="#156-distributed-tracing-with-tempo" className={activeSection === '156-distributed-tracing-with-tempo' ? 'active' : ''}>15.6 Distributed Tracing with Tempo</a></li>
+                <li><a href="#157-tracing-architecture" className={activeSection === '157-tracing-architecture' ? 'active' : ''}>15.7 Tracing Architecture</a></li>
+                <li><a href="#158-tempo-setup-with-docker" className={activeSection === '158-tempo-setup-with-docker' ? 'active' : ''}>15.8 Tempo Setup with Docker</a></li>
+                <li><a href="#159-pprof-profiling" className={activeSection === '159-pprof-profiling' ? 'active' : ''}>15.9 pprof Profiling</a></li>
+                <li><a href="#1510-statsviz-real-time-monitoring" className={activeSection === '1510-statsviz-real-time-monitoring' ? 'active' : ''}>15.10 Statsviz Real-Time Monitoring</a></li>
+                <li><a href="#1511-logging" className={activeSection === '1511-logging' ? 'active' : ''}>15.11 Logging</a></li>
+                <li><a href="#1512-configuration-reference" className={activeSection === '1512-configuration-reference' ? 'active' : ''}>15.12 Configuration Reference</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-16-troubleshooting" className={`doc-index-header ${activeSection === 'chapter-16-troubleshooting' ? 'active' : ''}`}>Chapter 16: Troubleshooting</a>
+              <a href="#chapter-16-mcp-service" className={`doc-index-header ${activeSection === 'chapter-16-mcp-service' ? 'active' : ''}`}>Chapter 16: MCP Service</a>
               <ul>
-                <li><a href="#161-library-issues" className={activeSection === '161-library-issues' ? 'active' : ''}>16.1 Library Issues</a></li>
-                <li><a href="#162-model-loading-failures" className={activeSection === '162-model-loading-failures' ? 'active' : ''}>16.2 Model Loading Failures</a></li>
-                <li><a href="#163-memory-errors" className={activeSection === '163-memory-errors' ? 'active' : ''}>16.3 Memory Errors</a></li>
-                <li><a href="#164-request-timeouts" className={activeSection === '164-request-timeouts' ? 'active' : ''}>16.4 Request Timeouts</a></li>
-                <li><a href="#165-authentication-errors" className={activeSection === '165-authentication-errors' ? 'active' : ''}>16.5 Authentication Errors</a></li>
-                <li><a href="#166-streaming-issues" className={activeSection === '166-streaming-issues' ? 'active' : ''}>16.6 Streaming Issues</a></li>
-                <li><a href="#167-performance-issues" className={activeSection === '167-performance-issues' ? 'active' : ''}>16.7 Performance Issues</a></li>
-                <li><a href="#168-imc-caching-issues" className={activeSection === '168-imc-caching-issues' ? 'active' : ''}>16.8 IMC Caching Issues</a></li>
-                <li><a href="#169-viewing-logs" className={activeSection === '169-viewing-logs' ? 'active' : ''}>16.9 Viewing Logs</a></li>
-                <li><a href="#1610-common-error-messages" className={activeSection === '1610-common-error-messages' ? 'active' : ''}>16.10 Common Error Messages</a></li>
-                <li><a href="#1611-catalog-model-pull-issues" className={activeSection === '1611-catalog-model-pull-issues' ? 'active' : ''}>16.11 Catalog &amp; Model Pull Issues</a></li>
-                <li><a href="#1612-mcp-service-issues" className={activeSection === '1612-mcp-service-issues' ? 'active' : ''}>16.12 MCP Service Issues</a></li>
-                <li><a href="#1613-port-conflicts-filesystem" className={activeSection === '1613-port-conflicts-filesystem' ? 'active' : ''}>16.13 Port Conflicts &amp; Filesystem</a></li>
-                <li><a href="#1614-getting-help" className={activeSection === '1614-getting-help' ? 'active' : ''}>16.14 Getting Help</a></li>
+                <li><a href="#161-architecture" className={activeSection === '161-architecture' ? 'active' : ''}>16.1 Architecture</a></li>
+                <li><a href="#162-prerequisites" className={activeSection === '162-prerequisites' ? 'active' : ''}>16.2 Prerequisites</a></li>
+                <li><a href="#163-configuration" className={activeSection === '163-configuration' ? 'active' : ''}>16.3 Configuration</a></li>
+                <li><a href="#164-available-tools" className={activeSection === '164-available-tools' ? 'active' : ''}>16.4 Available Tools</a></li>
+                <li><a href="#165-client-configuration" className={activeSection === '165-client-configuration' ? 'active' : ''}>16.5 Client Configuration</a></li>
+                <li><a href="#166-testing-with-curl" className={activeSection === '166-testing-with-curl' ? 'active' : ''}>16.6 Testing with curl</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-17-developer-guide" className={`doc-index-header ${activeSection === 'chapter-17-developer-guide' ? 'active' : ''}`}>Chapter 17: Developer Guide</a>
+              <a href="#chapter-17-troubleshooting" className={`doc-index-header ${activeSection === 'chapter-17-troubleshooting' ? 'active' : ''}`}>Chapter 17: Troubleshooting</a>
               <ul>
-                <li><a href="#171-quick-reference" className={activeSection === '171-quick-reference' ? 'active' : ''}>17.1 Quick Reference</a></li>
-                <li><a href="#172-build-test-commands" className={activeSection === '172-build-test-commands' ? 'active' : ''}>17.2 Build &amp; Test Commands</a></li>
-                <li><a href="#173-developer-setup" className={activeSection === '173-developer-setup' ? 'active' : ''}>17.3 Developer Setup</a></li>
-                <li><a href="#174-project-architecture" className={activeSection === '174-project-architecture' ? 'active' : ''}>17.4 Project Architecture</a></li>
-                <li><a href="#175-bui-frontend-development" className={activeSection === '175-bui-frontend-development' ? 'active' : ''}>17.5 BUI Frontend Development</a></li>
-                <li><a href="#176-code-style-guidelines" className={activeSection === '176-code-style-guidelines' ? 'active' : ''}>17.6 Code Style Guidelines</a></li>
-                <li><a href="#177-sdk-internals" className={activeSection === '177-sdk-internals' ? 'active' : ''}>17.7 SDK Internals</a></li>
-                <li><a href="#178-responses-api-normalization" className={activeSection === '178-responses-api-normalization' ? 'active' : ''}>17.8 Responses API Normalization</a></li>
-                <li><a href="#179-goroutine-budget" className={activeSection === '179-goroutine-budget' ? 'active' : ''}>17.9 Goroutine Budget</a></li>
-                <li><a href="#1710-request-tracing-spans" className={activeSection === '1710-request-tracing-spans' ? 'active' : ''}>17.10 Request Tracing Spans</a></li>
-                <li><a href="#1711-inference-code-path" className={activeSection === '1711-inference-code-path' ? 'active' : ''}>17.11 Inference Code Path</a></li>
+                <li><a href="#171-library-issues" className={activeSection === '171-library-issues' ? 'active' : ''}>17.1 Library Issues</a></li>
+                <li><a href="#172-model-loading-failures" className={activeSection === '172-model-loading-failures' ? 'active' : ''}>17.2 Model Loading Failures</a></li>
+                <li><a href="#173-memory-errors" className={activeSection === '173-memory-errors' ? 'active' : ''}>17.3 Memory Errors</a></li>
+                <li><a href="#174-request-timeouts" className={activeSection === '174-request-timeouts' ? 'active' : ''}>17.4 Request Timeouts</a></li>
+                <li><a href="#175-authentication-errors" className={activeSection === '175-authentication-errors' ? 'active' : ''}>17.5 Authentication Errors</a></li>
+                <li><a href="#176-streaming-issues" className={activeSection === '176-streaming-issues' ? 'active' : ''}>17.6 Streaming Issues</a></li>
+                <li><a href="#177-performance-issues" className={activeSection === '177-performance-issues' ? 'active' : ''}>17.7 Performance Issues</a></li>
+                <li><a href="#178-imc-caching-issues" className={activeSection === '178-imc-caching-issues' ? 'active' : ''}>17.8 IMC Caching Issues</a></li>
+                <li><a href="#179-viewing-logs" className={activeSection === '179-viewing-logs' ? 'active' : ''}>17.9 Viewing Logs</a></li>
+                <li><a href="#1710-common-error-messages" className={activeSection === '1710-common-error-messages' ? 'active' : ''}>17.10 Common Error Messages</a></li>
+                <li><a href="#1711-catalog-model-pull-issues" className={activeSection === '1711-catalog-model-pull-issues' ? 'active' : ''}>17.11 Catalog &amp; Model Pull Issues</a></li>
+                <li><a href="#1712-mcp-service-issues" className={activeSection === '1712-mcp-service-issues' ? 'active' : ''}>17.12 MCP Service Issues</a></li>
+                <li><a href="#1713-port-conflicts-filesystem" className={activeSection === '1713-port-conflicts-filesystem' ? 'active' : ''}>17.13 Port Conflicts &amp; Filesystem</a></li>
+                <li><a href="#1714-getting-help" className={activeSection === '1714-getting-help' ? 'active' : ''}>17.14 Getting Help</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#chapter-18-developer-guide" className={`doc-index-header ${activeSection === 'chapter-18-developer-guide' ? 'active' : ''}`}>Chapter 18: Developer Guide</a>
+              <ul>
+                <li><a href="#181-quick-reference" className={activeSection === '181-quick-reference' ? 'active' : ''}>18.1 Quick Reference</a></li>
+                <li><a href="#182-build-test-commands" className={activeSection === '182-build-test-commands' ? 'active' : ''}>18.2 Build &amp; Test Commands</a></li>
+                <li><a href="#183-developer-setup" className={activeSection === '183-developer-setup' ? 'active' : ''}>18.3 Developer Setup</a></li>
+                <li><a href="#184-project-architecture" className={activeSection === '184-project-architecture' ? 'active' : ''}>18.4 Project Architecture</a></li>
+                <li><a href="#185-bui-frontend-development" className={activeSection === '185-bui-frontend-development' ? 'active' : ''}>18.5 BUI Frontend Development</a></li>
+                <li><a href="#186-code-style-guidelines" className={activeSection === '186-code-style-guidelines' ? 'active' : ''}>18.6 Code Style Guidelines</a></li>
+                <li><a href="#187-sdk-internals" className={activeSection === '187-sdk-internals' ? 'active' : ''}>18.7 SDK Internals</a></li>
+                <li><a href="#188-responses-api-normalization" className={activeSection === '188-responses-api-normalization' ? 'active' : ''}>18.8 Responses API Normalization</a></li>
+                <li><a href="#189-goroutine-budget" className={activeSection === '189-goroutine-budget' ? 'active' : ''}>18.9 Goroutine Budget</a></li>
+                <li><a href="#1810-request-tracing-spans" className={activeSection === '1810-request-tracing-spans' ? 'active' : ''}>18.10 Request Tracing Spans</a></li>
+                <li><a href="#1811-inference-code-path" className={activeSection === '1811-inference-code-path' ? 'active' : ''}>18.11 Inference Code Path</a></li>
               </ul>
             </div>
           </div>
