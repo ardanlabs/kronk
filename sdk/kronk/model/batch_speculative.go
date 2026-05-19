@@ -685,7 +685,7 @@ func (e *batchEngine) restoreTargetSpecSnapshot(s *slot, basePast llama.Pos, sam
 	defer llama.BatchFree(rebatch)
 
 	rebatch.Add(sampledAtBase, basePast, s.seqIDs, accepted == 0)
-	for i := 0; i < accepted; i++ {
+	for i := range accepted {
 		isLast := i == accepted-1
 		rebatch.Add(draftTokens[i], basePast+llama.Pos(1+i), s.seqIDs, isLast)
 	}

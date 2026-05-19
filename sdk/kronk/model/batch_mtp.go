@@ -145,10 +145,7 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 	}
 
 	for chunkStart := 0; chunkStart < effectiveCount; chunkStart += maxPer {
-		chunkEnd := chunkStart + maxPer
-		if chunkEnd > effectiveCount {
-			chunkEnd = effectiveCount
-		}
+		chunkEnd := min(chunkStart+maxPer, effectiveCount)
 		chunkLen := chunkEnd - chunkStart
 
 		mirror.NTokens = 0
