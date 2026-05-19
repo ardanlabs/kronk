@@ -879,9 +879,5 @@ func localProjName(hfMMProj string, modelFiles []string) string {
 		return ""
 	}
 
-	first := modelFiles[0]
-	ext := filepath.Ext(first)
-	modelID := strings.TrimSuffix(filepath.Base(first), ext)
-
-	return fmt.Sprintf("mmproj-%s%s", modelID, ext)
+	return fmt.Sprintf("mmproj-%s.gguf", extractModelID(modelFiles[0]))
 }

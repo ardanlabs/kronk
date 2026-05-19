@@ -65,7 +65,7 @@ func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, 
 		// No filename — the input only identifies the repository. Return
 		// the GGUF file list so the caller can pick one.
 		if file == "" {
-			files, ferr := listRepoGGUFs(ctx, owner, repo)
+			files, ferr := listRepoGGUFsFn(ctx, owner, repo)
 			if ferr != nil {
 				return Resolution{}, fmt.Errorf("resolve-source: list %s/%s: %w", owner, repo, ferr)
 			}
@@ -80,11 +80,10 @@ func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, 
 		// The user pinned a specific repo (owner/repo/file). Preserve
 		// that pin by routing through the "provider/repo:tag" form so
 		// the resolver does not search HF and accidentally land in a
-		// sibling repo (e.g. ".../Qwen3.6-35B-A3B-MTP-GGUF") that
-		// happens to publish the same quant basename. When the file
-		// lacks a recognisable quant suffix, fall back to the bare
-		// canonical id — this only affects unusual repos whose GGUFs
-		// don't follow the standard quant naming.
+		// sibling repo that happens to publish the same quant basename.
+		// When the file lacks a recognisable quant suffix, fall back
+		// to the bare canonical id — this only affects unusual repos
+		// whose GGUFs don't follow the standard quant naming.
 		modelID := extractModelID(file)
 		if tag := extractQuantTag(modelID); tag != "" {
 			id = fmt.Sprintf("%s/%s:%s", owner, repo, tag)
@@ -118,6 +117,12 @@ func needsParse(source string) bool {
 	// has exactly one and stays on the resolver path.
 	return strings.Count(source, "/") >= 2
 }
+
+// listRepoGGUFsFn is the package-level GGUF lister. It defaults to
+// listRepoGGUFs and is overridable by tests so the tree/repo URL → file
+// list path can be exercised hermetically without an HF round-trip.
+// Test-only seam — do not reassign in production code.
+var listRepoGGUFsFn = listRepoGGUFs
 
 // listRepoGGUFs returns the GGUF files in a HuggingFace repository at
 // the default revision. Used by ResolveSource when the input does not

@@ -564,6 +564,7 @@ func TestModelsResolveSource_AcceptedInputForms(t *testing.T) {
 		name  string
 		input string
 	}{
+		{"bare-id", "Qwen3-0.6B-Q8_0"},
 		{"canonical-id", "unsloth/Qwen3-0.6B-Q8_0"},
 		{"canonical-id-with-gguf", "unsloth/Qwen3-0.6B-Q8_0.gguf"},
 		{"owner-repo-file", "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"},
@@ -624,6 +625,69 @@ func TestModelsResolveSource_InvalidShorthand(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "parse") {
 		t.Errorf("err = %v, want 'parse' substring", err)
+	}
+}
+
+// TestModelsResolveSource_RepoOnlyReturnsRepoFiles exercises the input
+// forms that identify a repository without pinning a file (tree URL,
+// bare repo URL). Both must skip the resolver entirely and return a
+// Resolution carrying RepoFiles for the BUI picker. listRepoGGUFsFn is
+// swapped to a hermetic stub so the test does not hit huggingface.co.
+func TestModelsResolveSource_RepoOnlyReturnsRepoFiles(t *testing.T) {
+	want := []hf.RepoFile{
+		{Filename: "Qwen3-0.6B-Q4_K_M.gguf", Size: 100},
+		{Filename: "Qwen3-0.6B-Q8_0.gguf", Size: 200},
+	}
+
+	var gotOwner, gotRepo string
+	var calls int
+
+	prev := listRepoGGUFsFn
+	listRepoGGUFsFn = func(_ context.Context, owner, repo string) ([]hf.RepoFile, error) {
+		calls++
+		gotOwner, gotRepo = owner, repo
+		return want, nil
+	}
+	t.Cleanup(func() { listRepoGGUFsFn = prev })
+
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"tree-url", "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/tree/main"},
+		{"repo-url", "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			calls = 0
+
+			res, err := m.ResolveSource(context.Background(), tc.input)
+			if err != nil {
+				t.Fatalf("ResolveSource(%q): %v", tc.input, err)
+			}
+
+			if calls != 1 {
+				t.Errorf("listRepoGGUFsFn calls = %d, want 1", calls)
+			}
+			if gotOwner != "unsloth" || gotRepo != "Qwen3-0.6B-GGUF" {
+				t.Errorf("listRepoGGUFsFn args = (%q, %q), want (unsloth, Qwen3-0.6B-GGUF)", gotOwner, gotRepo)
+			}
+			if res.Provider != "unsloth" || res.Family != "Qwen3-0.6B-GGUF" {
+				t.Errorf("Resolution provider/family = %q/%q, want unsloth/Qwen3-0.6B-GGUF", res.Provider, res.Family)
+			}
+			if !reflect.DeepEqual(res.RepoFiles, want) {
+				t.Errorf("RepoFiles = %v, want %v", res.RepoFiles, want)
+			}
+			if res.CanonicalID != "" || len(res.DownloadURLs) != 0 {
+				t.Errorf("repo-only input must not produce a resolved download: canonical=%q urls=%v", res.CanonicalID, res.DownloadURLs)
+			}
+		})
 	}
 }
 
