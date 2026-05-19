@@ -847,9 +847,10 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 	}
 
 	return vram.Config{
-		ContextWindow:   contextWindow,
-		BytesPerElement: bpe,
-		Slots:           slots,
+		ContextWindow:     contextWindow,
+		BytesPerElement:   bpe,
+		Slots:             slots,
+		ExpertLayersOnGPU: rmc.ToKronkConfig().ExpertLayersOnGPU(),
 	}
 }
 
