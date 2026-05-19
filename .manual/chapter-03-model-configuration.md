@@ -1074,7 +1074,7 @@ Sampling parameters control the randomness and quality of generated text.
 These are set per-request in the API call.
 
 For most models you will want to touch these basic sampling parameters. There
-are [many more](chapter-10-request-parameters.md) which will be presented later.
+are [many more](#chapter-10-request-parameters) which will be presented later.
 
 #### Temperature
 

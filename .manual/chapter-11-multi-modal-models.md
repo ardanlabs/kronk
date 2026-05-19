@@ -236,7 +236,7 @@ For example, in a multi-turn vision conversation:
 3. **New image in conversation**: If a new message contains media, IMC
    triggers a full rebuild through the mtmd pipeline to re-encode all media.
 
-See [Chapter 5: Message Caching](chapter-05-message-caching.md) for full
+See [Chapter 5: Message Caching](#chapter-5-message-caching) for full
 details on IMC's caching algorithm.
 
 ### 11.8 Limitations

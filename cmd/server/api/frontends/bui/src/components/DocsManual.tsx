@@ -491,7 +491,7 @@ Qwen/Qwen3-8B-Q8_0/YARN:
               </tr>
             </tbody>
           </table>
-          <p>For the complete list of options and detailed explanations, see <a href="chapter-03-model-configuration.md">Chapter 3: Model Configuration</a>.</p>
+          <p>For the complete list of options and detailed explanations, see <a href="#chapter-3-model-configuration">Chapter 3: Model Configuration</a>.</p>
           <p><strong>Editing the File</strong></p>
           <p>Open the file in any text editor:</p>
           <pre className="code-block"><code className="language-shell">{`# macOS
@@ -1859,7 +1859,7 @@ Qwen/Qwen3-8B-Q8_0:
           <p>The <code>ndraft</code> parameter controls how many candidates to generate. Higher values increase the potential speedup but also increase wasted work when predictions are rejected. The default of 5 is a good starting point; tune based on your observed acceptance rates.</p>
           <h3 id="313-sampling-parameters">3.13 Sampling Parameters</h3>
           <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
-          <p>For most models you will want to touch these basic sampling parameters. There are <a href="chapter-10-request-parameters.md">many more</a> which will be presented later.</p>
+          <p>For most models you will want to touch these basic sampling parameters. There are <a href="#chapter-10-request-parameters">many more</a> which will be presented later.</p>
           <h4 id="temperature">Temperature</h4>
           <p>Temperature controls how "random" the model's output is. At each step, the model produces a probability distribution over all possible next tokens. Temperature scales those probabilities — lower values sharpen the distribution (making the top choice dominant), higher values flatten it (giving lower-ranked tokens a better chance of being selected).</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -2027,7 +2027,7 @@ Slot 3  →  seqID = 3  →  KV cache partition 3`}</code></pre>
           <p>When all slots and queue positions are occupied, new requests block until a slot becomes available or the request's context is cancelled. If a queued request waits longer than <code>CacheSlotTimeout</code> (default: 30 seconds), the engine preempts the longest-running slot — cancelling that in-flight request with a "preempted by queued request" error — and assigns the slot to the waiting request. If the engine is shutting down, queued requests receive an immediate error. This backpressure and preemption mechanism prevents any single request from starving others indefinitely.</p>
           <h4 id="memory-and-caching">Memory and Caching</h4>
           <p>Adding slots increases throughput but costs memory. Each additional slot allocates its own KV cache partition proportional to the full context window.</p>
-          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. IMC does not add extra sequences. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="chapter-03-model-configuration.md#37-parallel-inference-nseqmax">Section 3.7 — Parallel Inference (NSeqMax)</a> and <a href="chapter-03-model-configuration.md#310-vram-estimation">Section 3.10 — VRAM Estimation</a>.</p>
+          <p>Each slot reserves its own KV cache partition, so increasing <code>NSeqMax</code> increases VRAM usage proportionally. IMC does not add extra sequences. For details on how slot memory is allocated and how to estimate total VRAM, see <a href="#37-parallel-inference-nseqmax">Section 3.7 — Parallel Inference (NSeqMax)</a> and <a href="#310-vram-estimation">Section 3.10 — VRAM Estimation</a>.</p>
           <h3 id="45-concurrency-by-model-type">4.5 Concurrency by Model Type</h3>
           <p>Not all model types achieve concurrency the same way. Text inference models (including vision and audio) use the batch engine described in the previous sections, where multiple slots share a single model context and their tokens are combined into one decode call. Embedding and reranking models take a different approach — they create a pool of independent contexts that each process requests separately. The table below summarizes the distinction, and the diagrams that follow show the request flow for each approach.</p>
           <table className="flags-table">
@@ -2126,7 +2126,7 @@ Qwen/Qwen3-8B-Q8_0:
   cache-type-k: q8_0
   cache-type-v: q8_0
   incremental-cache: true`}</code></pre>
-          <p>This configuration handles 8 concurrent requests, uses quantized KV cache to reduce memory, and caches conversations incrementally for faster prefill. Here is the VRAM estimate (see <a href="chapter-03-model-configuration.md#310-vram-estimation">Section 3.10 — VRAM Estimation</a> for the full formula):</p>
+          <p>This configuration handles 8 concurrent requests, uses quantized KV cache to reduce memory, and caches conversations incrementally for faster prefill. Here is the VRAM estimate (see <a href="#310-vram-estimation">Section 3.10 — VRAM Estimation</a> for the full formula):</p>
           <pre className="code-block"><code>{`Model                   : Qwen3-8B-Q8_0
 Model Weights           : ~9 GB
 Context Window (n_ctx)  : 8,192
@@ -2797,7 +2797,7 @@ Request 5 (text follow-up about the image):
           </ul>
           <hr />
           <h2 id="chapter-6-speculative-decoding-mtp">Chapter 6: Speculative Decoding &amp; MTP</h2>
-          <p>This chapter documents Kronk's speculative-decoding stack with a focus on the <strong>MTP (Multi-Token Prediction)</strong> drafter shipped in <a href="https://github.com/ardanlabs/kronk/pull/593">PR #593</a>. It assumes you have read the introductory speculative-decoding section in <a href="chapter-03-model-configuration.md#312-speculative-decoding">Chapter 3 §3.12</a>, which covers the conventional separate-GGUF drafter and the Leviathan-style verify math at a user level. This chapter goes deeper into the engine internals and explains the auto-detected MTP path that the separate-GGUF discussion does not cover.</p>
+          <p>This chapter documents Kronk's speculative-decoding stack with a focus on the <strong>MTP (Multi-Token Prediction)</strong> drafter shipped in <a href="https://github.com/ardanlabs/kronk/pull/593">PR #593</a>. It assumes you have read the introductory speculative-decoding section in <a href="#312-speculative-decoding">Chapter 3 §3.12</a>, which covers the conventional separate-GGUF drafter and the Leviathan-style verify math at a user level. This chapter goes deeper into the engine internals and explains the auto-detected MTP path that the separate-GGUF discussion does not cover.</p>
           <h3 id="61-overview-the-two-draft-modes">6.1 Overview &amp; The Two Draft Modes</h3>
           <p>Kronk supports two interchangeable sources of draft tokens for speculative decoding. The drafter sits behind a single <code>*draftModel</code> type (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go">model.go</a>), selected once at model load by <code>selectAndLoadDraft</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go">draft_mtp.go</a>).</p>
           <table className="flags-table">
@@ -5041,7 +5041,7 @@ Total:             ~9.3 GB`}</code></pre>
             <li><strong>Follow-up requests</strong> (text-only): The cached state is restored from RAM into any available slot. Only new text tokens are decoded — the image embeddings are preserved in the restored KV state without re-encoding.</li>
             <li><strong>New image in conversation</strong>: If a new message contains media, IMC triggers a full rebuild through the mtmd pipeline to re-encode all media.</li>
           </ol>
-          <p>See <a href="chapter-05-message-caching.md">Chapter 5: Message Caching</a> for full details on IMC's caching algorithm.</p>
+          <p>See <a href="#chapter-5-message-caching">Chapter 5: Message Caching</a> for full details on IMC's caching algorithm.</p>
           <h3 id="118-limitations">11.8 Limitations</h3>
           <ul>
             <li>Processing time varies with image resolution and audio duration</li>
@@ -5594,7 +5594,7 @@ llm = ChatOpenAI(
 response = llm.invoke("Explain quantum computing briefly.")
 print(response.content)`}</code></pre>
           <hr />
-          <p><em>Next: &lt;a href="chapter-15-observability.md"&gt;Chapter 15: Observability&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="#chapter-15-observability"&gt;Chapter 15: Observability&lt;/a&gt;</em></p>
           <h2 id="chapter-15-observability">Chapter 15: Observability</h2>
           <p>Kronk provides comprehensive observability through distributed tracing, Prometheus metrics, pprof profiling, and real-time visualizations.</p>
           <h3 id="151-debug-server">15.1 Debug Server</h3>
@@ -6049,7 +6049,7 @@ KRONK_PROCESSOR=vulkan kronk libs --local
 
 # For CPU only
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
-          <p>See <a href="chapter-03-model-configuration.md#32-processor-selection">Chapter 3: Processor Selection</a> for details on how auto-detection works on each platform.</p>
+          <p>See <a href="#32-processor-selection">Chapter 3: Processor Selection</a> for details on how auto-detection works on each platform.</p>
           <p><strong>Problem: New library version causes crashes or bad output</strong></p>
           <p>The standalone <code>kronk libs</code> CLI installs the well-known default version of llama.cpp by default, which is conservative and changes only when the Kronk release bumps it. The model server (<code>kronk server start</code>) defaults to <code>--allow-upgrade=true</code> and tracks the latest llama.cpp release, so a long-running server can pick up a regression — crashes during model loading, decode errors, or degraded output quality. When this happens, pin the library to a known-good version using <code>KRONK_LIB_VERSION</code> (or <code>--version</code> on the CLI).</p>
           <p><strong>Pin to a specific version:</strong></p>
@@ -6068,7 +6068,7 @@ kronk server start`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk libs --version`}</code></pre>
           <p>This shows the installed version, architecture, OS, processor, and the latest available version. The CLI will only upgrade past the installed version when you pass <code>--upgrade</code>; otherwise it sticks to the well-known default version (or whatever is on disk if it is already newer).</p>
           <p><strong>When to pin:</strong> Pin whenever a new llama.cpp release breaks something you depend on. Unset <code>KRONK_LIB_VERSION</code> once the upstream fix is released to resume tracking either the default version (CLI) or latest (server with <code>--allow-upgrade=true</code>).</p>
-          <p>See <a href="chapter-02-installation.md#23-installing-libraries">Chapter 2: Installing Libraries</a> for the full compatibility matrix.</p>
+          <p>See <a href="#23-installing-libraries">Chapter 2: Installing Libraries</a> for the full compatibility matrix.</p>
           <p><strong>Error: "unknown device"</strong></p>
           <p>The specified GPU device is not recognized by the loaded library.</p>
           <p><strong>Causes:</strong></p>
@@ -6140,14 +6140,14 @@ kronk model index --local`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
   cache-type-k: q8_0 # ~50% less KV cache memory vs f16
   cache-type-v: q8_0`}</code></pre>
-          <p>See <a href="chapter-03-model-configuration.md#39-vram-estimation">Chapter 3: VRAM Estimation</a> for how to calculate whether a model fits in your hardware.</p>
+          <p>See <a href="#39-vram-estimation">Chapter 3: VRAM Estimation</a> for how to calculate whether a model fits in your hardware.</p>
           <p><strong>Error: "the context window is full"</strong></p>
           <p>The total token count (input + cached + generated) exceeds the configured context window during inference.</p>
           <p><strong>Solutions:</strong></p>
           <ul>
             <li>Reduce input size (fewer messages, shorter prompts)</li>
             <li>Increase <code>context-window</code> in model config (requires more VRAM)</li>
-            <li>Enable YaRN for extended context (see <a href="chapter-07-yarn-extended-context.md">Chapter 7</a>)</li>
+            <li>Enable YaRN for extended context (see <a href="#chapter-7-yarn-extended-context">Chapter 7</a>)</li>
           </ul>
           <p><strong>Error: "input tokens [N] exceed context window [M]"</strong></p>
           <p>The prompt itself (after tokenization) is larger than the context window, before any generation can begin.</p>
@@ -6273,7 +6273,7 @@ nvidia-smi`}</code></pre>
           <p>Ensure all layers are on GPU (default):</p>
           <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
   ngpu-layers: 0 # 0 = all layers on GPU (default)`}</code></pre>
-          <p>For MoE models on Apple Silicon, consider a dense model at lower quantization — the sequential memory access pattern is faster than MoE's scattered expert routing (see <a href="chapter-03-model-configuration.md#310-model-specific-tuning">Chapter 3: Model-Specific Tuning</a>).</p>
+          <p>For MoE models on Apple Silicon, consider a dense model at lower quantization — the sequential memory access pattern is faster than MoE's scattered expert routing (see <a href="#310-model-specific-tuning">Chapter 3: Model-Specific Tuning</a>).</p>
           <h3 id="178-imc-caching-issues">17.8 IMC Caching Issues</h3>
           <p><strong>Problem: Every request triggers a full cache rebuild</strong></p>
           <p><strong>Causes:</strong></p>
@@ -6540,7 +6540,7 @@ go tool pprof cpu.prof`}</code></pre>
             <li>Steps to reproduce</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="chapter-18-developer-guide.md"&gt;Chapter 18: Developer Guide&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="#chapter-18-developer-guide"&gt;Chapter 18: Developer Guide&lt;/a&gt;</em></p>
           <h2 id="chapter-18-developer-guide">Chapter 18: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
           <h3 id="181-quick-reference">18.1 Quick Reference</h3>

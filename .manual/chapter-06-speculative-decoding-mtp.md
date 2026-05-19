@@ -25,7 +25,7 @@ This chapter documents Kronk's speculative-decoding stack with a focus
 on the **MTP (Multi-Token Prediction)** drafter shipped in
 [PR #593](https://github.com/ardanlabs/kronk/pull/593). It assumes you
 have read the introductory speculative-decoding section in
-[Chapter 3 §3.12](chapter-03-model-configuration.md#312-speculative-decoding),
+[Chapter 3 §3.12](#312-speculative-decoding),
 which covers the conventional separate-GGUF drafter and the
 Leviathan-style verify math at a user level. This chapter goes deeper
 into the engine internals and explains the auto-detected MTP path
