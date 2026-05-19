@@ -36,6 +36,7 @@ var (
 	MPAudio         models.Path
 	MPEmbed         models.Path
 	MPRerank        models.Path
+	MPMTP           models.Path
 )
 
 // Setup initializes the test environment. Call from each package's TestMain.
@@ -67,6 +68,7 @@ func Setup() {
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "Qwen2-Audio-7B.Q8_0", &MPAudio)
 	resolveModel(mdls, "Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
+	resolveModel(mdls, "mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL", &MPMTP)
 
 	printInfo(mdls)
 
@@ -337,6 +339,24 @@ func CfgHybridChat() model.Config {
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
 		PtrNSeqMax:       new(2),
+	}
+}
+
+// CfgMTPChat returns a chat config for the Qwen3.6-35B-A3B MTP target.
+// The MTP drafter auto-enables based on the GGUF's nextn_predict_layers
+// metadata, so no explicit DraftModel block is needed. NSeqMax=1 is
+// required: MTP is incompatible with multi-slot (mixing one slot's MTP
+// spec tokens with another slot's fresh prefill triggers an llama.cpp
+// GGML_ASSERT in llama_sampler_sample).
+func CfgMTPChat() model.Config {
+	return model.Config{
+		ModelFiles:       MPMTP.ModelFiles,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(1),
 	}
 }
 

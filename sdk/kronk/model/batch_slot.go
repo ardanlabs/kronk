@@ -148,6 +148,53 @@ type slot struct {
 	draftTokensBuf    []llama.Token // Owned copy of generated draft tokens
 	draftCachedTokens []llama.Token // Prompt tokens in this slot's draft KV cache (persists across requests)
 
+	// -------------------------------------------------------------------------
+	// MTP (Multi-Token Prediction) per-slot state — populated only when
+	// e.model.draft != nil && e.model.draft.mtp.
+
+	// pendingH is a copy of the pre-norm hidden-state row from the
+	// most-recently committed target position for this slot's sequence.
+	// It is used as the embd input at slot 0 of the next "mirror"
+	// batch into the MTP draft context (shift-right-by-1 alignment per
+	// common_speculative.cpp). Lazy-grow, never-shrink — sized to the
+	// model's embedding width on first use. Zero-length when no target
+	// decode has produced a hidden row yet for this slot (e.g., very
+	// first prefill chunk — slot 0 of that mirror batch is then zeroed).
+	pendingH []float32
+
+	// targetBatchStart / targetBatchCount / targetBatchBasePos record
+	// the slot's contiguous range inside the shared target batch and the
+	// sequence position of its first token, captured during batch
+	// assembly so that the MTP mirror step (run AFTER llama_decode
+	// succeeds) can find the just-decoded rows and replay them into the
+	// draft KV with batch.embd populated.
+	//
+	// Set in three places in batch_engine.go:
+	//   - addPrefillChunk    (prefill chunks)
+	//   - normal gen-token add
+	//   - spec verify add    (1 sampled + nDraft drafted)
+	//
+	// For spec batches, the mirror runs after verify resolves the
+	// accepted count, so only count = 1 + accepted rows are mirrored.
+	targetBatchStart   int32
+	targetBatchCount   int32
+	targetBatchBasePos llama.Pos
+
+	// mtpHasBatch is true between batch.Add() and the post-decode mirror
+	// step, signaling that the slot contributed rows to the most-recent
+	// target decode and is awaiting an MTP mirror. Cleared by the
+	// mirror step.
+	mtpHasBatch bool
+
+	// mtpDisabledForRequest is set true at startSlot when the request
+	// hit IMC cache. MTP requires the draft KV to track the entire
+	// sequence to make useful proposals, but IMC restores ONLY the
+	// target KV — there is no draft snapshot. Running MTP against an
+	// empty (or partial) draft context produces near-zero acceptance
+	// for the whole request, which is worse than no speculation.
+	// Cleared in slot.reset().
+	mtpDisabledForRequest bool
+
 	// Sparse candidate-based speculative decoding fields.
 	draftSampler         llama.Sampler            // Per-slot sampler for draft model (non-greedy)
 	specDraftDistsSparse [][]candidateEntry       // Sparse draft distributions per drafted token
@@ -202,6 +249,18 @@ func (s *slot) reset() {
 	s.specAcceptedTotal = 0
 	s.draftTokensBuf = s.draftTokensBuf[:0]
 	// Note: draftCachedTokens persists across requests for incremental draft KV reuse.
+
+	// MTP per-request state. pendingH capacity is retained (lazy-grow,
+	// never-shrink) but its length is reset because a new request begins
+	// a fresh sequence — the hidden state from the previous request's
+	// last position is no longer the natural predecessor of the new
+	// request's first token.
+	s.pendingH = s.pendingH[:0]
+	s.targetBatchStart = 0
+	s.targetBatchCount = 0
+	s.targetBatchBasePos = 0
+	s.mtpHasBatch = false
+	s.mtpDisabledForRequest = false
 	if s.draftSampler != 0 {
 		llama.SamplerFree(s.draftSampler)
 		s.draftSampler = 0

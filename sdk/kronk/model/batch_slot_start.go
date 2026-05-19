@@ -479,7 +479,33 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		draftSlotHasMedia = job.imcSession.hasMedia
 		e.model.cacheMu.RUnlock()
 	}
-	if e.model.draft != nil && !draftSlotHasMedia {
+	// MTP draft: skip the separate draft-prefill path. MTP populates the
+	// draft KV by mirroring the TARGET's prefill chunks (each target
+	// decode emits a pre-norm hidden buffer that we replay into the
+	// draft with batch.embd populated — see batch_mtp.go). The mirror
+	// step also advances draft.draftNPast in lock-step with the target,
+	// so the draftPrefillNeeded / draftPromptTokens scaffolding used by
+	// the separate-GGUF path would only cause a redundant (and broken,
+	// because it can't supply embd) re-prefill.
+	if e.model.draft != nil && e.model.draft.mtp {
+		// Clear any stale draftPromptTokens from a previous non-MTP slot
+		// reuse; mtpHasBatch / pendingH are reset in slot.reset().
+		s.draftPromptTokens = nil
+		s.draftPrefillNeeded = false
+
+		// IMC cache-hit requests skip target prefill, so the MTP draft
+		// context never gets the cached prefix mirrored into its KV (no
+		// pre-norm rows are produced for tokens restored from disk/RAM).
+		// Running MTP against an empty / partial draft context produces
+		// near-zero acceptance; disable speculation for the whole
+		// request and fall back to plain target generation.
+		if job.imcCacheHit {
+			s.mtpDisabledForRequest = true
+			e.model.log(job.ctx, "speculative", "status", "mtp-disabled-imc-hit",
+				"slot", s.id, "id", job.id)
+		}
+	}
+	if e.model.draft != nil && !e.model.draft.mtp && !draftSlotHasMedia {
 		draft := e.model.draft
 		var needed int
 		var cachedLen int

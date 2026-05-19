@@ -666,7 +666,17 @@ func (m *Model) parseParams(d D) (Params, error) {
 		if err != nil {
 			return Params{}, err
 		}
-		p.TopP = topP
+		// Treat top_p == 0 and top_p == 1 from the request as "unset".
+		// top_p == 0 is invalid in llama.cpp and top_p == 1 keeps every
+		// token (a no-op nucleus filter). Many clients hard-code
+		// top_p = 1 as a default, which would otherwise defeat any
+		// per-model tuning in the YAML config. Skipping the assignment
+		// here preserves the model config's configured top_p (already
+		// in p.TopP via m.cfg.DefaultParams) — the model config remains
+		// free to set top_p = 1.0 explicitly to disable nucleus sampling.
+		if topP != 0 && topP != 1 {
+			p.TopP = topP
+		}
 	}
 
 	if val, exists := d["xtc_min_keep"]; exists {
