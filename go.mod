@@ -11,7 +11,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.6
-	github.com/hybridgroup/yzma v1.14.0
+	github.com/hybridgroup/yzma v1.14.1
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.6.0
 	github.com/open-policy-agent/opa v1.16.2
@@ -39,7 +39,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.11.0 // indirect
 	cloud.google.com/go/monitoring v1.29.0 // indirect
-	cloud.google.com/go/storage v1.62.1 // indirect
+	cloud.google.com/go/storage v1.62.2 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.32.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.56.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.56.0 // indirect

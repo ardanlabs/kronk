@@ -16,8 +16,8 @@ cloud.google.com/go/longrunning v0.13.0 h1:dUfqF8y0bHOeZzF5+tKPZ6RBCeEEDOejvwGwE
 cloud.google.com/go/longrunning v0.13.0/go.mod h1:8nqFBPOO1U/XkhWl0I19AMZEphrHi73VNABIpKYaTwM=
 cloud.google.com/go/monitoring v1.29.0 h1:AHhDsFaSax1/4k+qlIDX/SDGe6hggnfXJ9dkgD9qBPY=
 cloud.google.com/go/monitoring v1.29.0/go.mod h1:72NOVjJXHY/HBfoLT0+qlCZBT059+9VXLeAnL2PeeVM=
-cloud.google.com/go/storage v1.62.1 h1:Os0G3XbUbjZumkpDUf2Y0rLoXJTCF1kU2kWUujKYXD8=
-cloud.google.com/go/storage v1.62.1/go.mod h1:cpYz/kRVZ+UQAF1uHeea10/9ewcRbxGoGNKsS9daSXA=
+cloud.google.com/go/storage v1.62.2 h1:WgR4U9n7bIzXkkVnwPKKE8bkaKUNsHG+0MAAlh9DGU4=
+cloud.google.com/go/storage v1.62.2/go.mod h1:cpYz/kRVZ+UQAF1uHeea10/9ewcRbxGoGNKsS9daSXA=
 cloud.google.com/go/trace v1.16.0 h1:GmQovzFc5F0CNfl0VLgL64aoTtu7xsM0YajW2GlG9+E=
 cloud.google.com/go/trace v1.16.0/go.mod h1:r+bdAn16dKLSV1G2D5v3e58IlQlizfxWrUfjx7kM7X0=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.32.0 h1:rIkQfkCOVKc1OiRCNcSDD8ml5RJlZbH/Xsq7lbpynwc=
@@ -165,8 +165,8 @@ github.com/hashicorp/go-getter v1.8.6 h1:9sQboWULaydVphxc4S64oAI4YqpuCk7nPmvbk13
 github.com/hashicorp/go-getter v1.8.6/go.mod h1:nVH12eOV2P58dIiL3rsU6Fh3wLeJEKBOJzhMmzlSWoo=
 github.com/hashicorp/go-version v1.9.0 h1:CeOIz6k+LoN3qX9Z0tyQrPtiB1DFYRPfCIBtaXPSCnA=
 github.com/hashicorp/go-version v1.9.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
-github.com/hybridgroup/yzma v1.14.0 h1:40G9wxRG356mqLsIMBWCzJnksxIIVm+cCtdXVMe0Rdw=
-github.com/hybridgroup/yzma v1.14.0/go.mod h1:DAsHYcX7ze7iFZH6PT57oCuqaVd/AXdALhjnOSgWbaE=
+github.com/hybridgroup/yzma v1.14.1 h1:EMSy9ONR8WMljsWwKLDt8gEYJPOEyxZkBtCHxNWxOjQ=
+github.com/hybridgroup/yzma v1.14.1/go.mod h1:DAsHYcX7ze7iFZH6PT57oCuqaVd/AXdALhjnOSgWbaE=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/jupiterrider/ffi v0.7.0 h1:RKsl6Ascal+3kyAqR5Qcbp83LceQMLc1VZbPfHWoNzs=

@@ -5,10 +5,10 @@ go 1.26.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
-	github.com/ardanlabs/kronk v1.25.7
+	github.com/ardanlabs/kronk v1.25.8
 	github.com/duckdb/duckdb-go/v2 v2.10502.0
 	github.com/google/uuid v1.6.0
-	github.com/hybridgroup/yzma v1.14.0
+	github.com/hybridgroup/yzma v1.14.1
 )
 
 require (
@@ -19,7 +19,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.11.0 // indirect
 	cloud.google.com/go/monitoring v1.29.0 // indirect
-	cloud.google.com/go/storage v1.62.1 // indirect
+	cloud.google.com/go/storage v1.62.2 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.32.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.56.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.56.0 // indirect
