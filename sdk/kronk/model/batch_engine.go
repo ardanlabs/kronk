@@ -200,14 +200,28 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
 	e.batch.Clear()
 
+	// MTP: every iteration starts with no slot having claimed a target
+	// batch range. The add sites (prefill / gen / spec) re-claim it as
+	// they push to e.batch, and the post-decode mirror step consumes it.
+	mtpDraft := e.model.draft != nil && e.model.draft.mtp
+	if mtpDraft {
+		for _, s := range e.slots {
+			s.mtpHasBatch = false
+			s.targetBatchCount = 0
+		}
+	}
+
 	// Prefill draft model for slots that just completed target prefill.
+	// Use the slot's per-request job context so log entries carry the
+	// current request UUID instead of the long-running batch loop's UUID,
+	// which is stale once a slot is reused for a new request.
 	if e.model.draft != nil {
 		for _, s := range e.slots {
 			if !s.active || !s.prefillDone || !s.draftPrefillNeeded {
 				continue
 			}
 
-			if err := e.prefillDraft(ctx, s); err != nil {
+			if err := e.prefillDraft(s.job.ctx, s); err != nil {
 				e.finishSlot(s, err)
 			}
 		}
@@ -251,8 +265,19 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		// Speculative decoding: generate draft tokens and add them all
 		// to the shared batch for verification in a single forward pass.
 		// Only for text slots that completed draft prefill (draftNPast > 0).
-		if e.model.draft != nil && !s.draftPrefillNeeded && s.draftNPast > 0 {
-			draftTokens := e.generateDraftTokens(s)
+		// MTP path is additionally skipped when mtpDisabledForRequest
+		// (IMC cache-hit, see batch_slot_start.go).
+		mtpUsable := e.model.draft != nil && e.model.draft.mtp && !s.mtpDisabledForRequest
+		canSpec := e.model.draft != nil && !s.draftPrefillNeeded && s.draftNPast > 0 &&
+			(!e.model.draft.mtp || mtpUsable)
+		if canSpec {
+			var draftTokens []llama.Token
+			switch {
+			case e.model.draft.mtp:
+				draftTokens = e.generateDraftTokensMTP(s)
+			default:
+				draftTokens = e.generateDraftTokens(s)
+			}
 			if len(draftTokens) > 0 {
 				s.specBasePast = s.nPast
 				s.specBaseBatch = e.batch.NTokens
@@ -264,9 +289,35 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 					e.batch.Add(tok, s.nPast+llama.Pos(1+i), s.seqIDs, true)
 				}
 
-				e.model.log(s.job.ctx, "speculative", "status", "batch-add",
-					"slot", s.id, "sampled_plus_drafts", 1+len(draftTokens),
-					"batch_offset", s.specBaseBatch, "target_nPast", s.nPast)
+				// MTP: claim the slot's range in the target batch so the
+				// post-verify mirror knows where the pre-norm rows live.
+				// targetBatchCount is the FULL spec range (1+nDraft);
+				// verifySpec rewrites it to 1+accepted before mirroring.
+				if mtpDraft {
+					s.targetBatchStart = s.specBaseBatch
+					s.targetBatchBasePos = s.specBasePast
+					s.targetBatchCount = int32(1 + len(draftTokens))
+					s.mtpHasBatch = true
+				}
+
+				// Hybrid target models need a state snapshot BEFORE the
+				// spec decode so verifySpeculativeTokens can roll back
+				// a partial rejection. MemorySeqRm can trim the
+				// transformer KV but cannot rewind the per-sequence
+				// recurrent state; without snapshot/restore the next
+				// llama_decode fails with -1 on the leftover advanced
+				// recurrent state. No-op for dense / pure-attention
+				// targets (those rollback fine via MemorySeqRm).
+				if e.model.modelInfo.Type == ModelTypeHybrid {
+					if err := e.captureTargetSpecSnapshot(s); err != nil {
+						e.model.log(s.job.ctx, "speculative", "status", "snapshot-error",
+							"slot", s.id, "err", err)
+						// Clear specSnapshot length so verify falls back
+						// to MemorySeqRm (which will likely fail on a
+						// partial reject, but full-accept rounds still work).
+						s.specSnapshot = s.specSnapshot[:0]
+					}
+				}
 
 				// Don't advance nPast here — verification handles it.
 				s.iBatch = -1
@@ -275,6 +326,13 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		s.iBatch = e.batch.NTokens
+		// MTP: claim the slot's single-token range in the target batch.
+		if mtpDraft {
+			s.targetBatchStart = s.iBatch
+			s.targetBatchBasePos = s.nPast
+			s.targetBatchCount = 1
+			s.mtpHasBatch = true
+		}
 		e.batch.Add(s.sampled, s.nPast, s.seqIDs, true)
 		s.nPast++
 	}
@@ -395,9 +453,27 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		// Speculative path: verify draft tokens against target predictions.
+		// verifySpeculativeTokens (for MTP) also runs the post-verify
+		// mirror once the accepted count is known.
 		if s.specDraftTokens != nil {
 			e.verifySpeculativeTokens(s, buf)
 			continue
+		}
+
+		// MTP non-spec path (prefill chunk or plain gen): mirror BEFORE
+		// processSlotToken because handleSampledToken may finishSlot →
+		// reset(), which would clear mtpHasBatch. Mirror only needs the
+		// just-decoded target pre-norm buffer (still valid here). Skip
+		// for MTP-disabled requests (IMC hit) — without the mirror
+		// pendingH stays empty and generateDraftTokensMTP short-circuits,
+		// so we'd just be paying decode cost for nothing.
+		if mtpDraft && s.mtpHasBatch && !s.mtpDisabledForRequest {
+			if err := e.mirrorTargetBatchToMTPDraft(s, int(s.targetBatchCount)); err != nil {
+				e.model.log(s.job.ctx, "speculative", "status", "mtp-mirror-error",
+					"slot", s.id, "err", err)
+				e.finishSlot(s, fmt.Errorf("mtp mirror: %w", err))
+				continue
+			}
 		}
 
 		if s.iBatch < 0 {

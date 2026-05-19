@@ -61,12 +61,20 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"id", jobID,
 			"total_prompt", nPrompt,
 			"output_tokens", outputTokens,
-			"time", elapsed.String(),
+			"elapsed", elapsed.String(),
 			"active_streams", remaining,
 		}
 
-		if draftTokens > 0 {
-			rate := float64(draftAcceptedTokens) / float64(draftTokens)
+		// When a draft model is configured, always emit draft metrics so
+		// the log schema stays stable for scrapers/dashboards even when
+		// speculation was disabled mid-request (chooseNDraft returned 0
+		// due to a collapsed acceptance EMA). Models without a draft
+		// model omit the fields entirely.
+		if e.model.draft != nil {
+			var rate float64
+			if draftTokens > 0 {
+				rate = float64(draftAcceptedTokens) / float64(draftTokens)
+			}
 			args = append(args,
 				"draft_tokens", draftTokens,
 				"draft_accepted_tokens", draftAcceptedTokens,

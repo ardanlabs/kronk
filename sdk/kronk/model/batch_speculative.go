@@ -282,6 +282,26 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	temperature := s.job.params.Temperature
 	greedy := temperature == 0
 
+	// MTP: the MTP draft head currently runs only greedy sampling
+	// (generateDraftTokensMTP uses SamplerInitGreedy) and does NOT
+	// capture sparse or dense draft distributions. If we entered the
+	// probabilistic verify path with no draft distribution, every
+	// position would fall through to sampleFromProbs(target) and
+	// reject the draft token unconditionally, giving 0% acceptance.
+	//
+	// Force greedy verification on the MTP path so we instead match
+	// the draft's argmax proposal against the target's sampled token
+	// at the same position. The greedy branch below is taught to use
+	// the slot's full sampler (when mtpGreedy is set) so the user's
+	// temperature / top-k / top-p still shape the emitted sequence —
+	// this loses the rigorous speculative-sampling distribution
+	// guarantee but is the standard approximation when the draft
+	// distribution is unavailable.
+	mtpGreedy := e.model.draft != nil && e.model.draft.mtp
+	if mtpGreedy {
+		greedy = true
+	}
+
 	// Determine whether to use sparse candidate-based verification.
 	useSparse := !greedy && draftDistsSparse != nil
 
@@ -289,9 +309,14 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	// which sets s.job to nil.
 	ctx := s.job.ctx
 
-	e.model.log(ctx, "speculative", "status", "verify-start",
-		"slot", s.id, "nDraft", nDraft, "basePast", basePast, "baseBatch", baseBatch,
-		"temperature", temperature, "useSparse", useSparse)
+	// Snapshot s.sampled BEFORE the verify loop. handleSampledToken
+	// inside the loop mutates s.sampled to each accepted draft token,
+	// but the hybrid re-decode path (restoreTargetSpecSnapshot) needs
+	// the ORIGINAL token that was at position basePast in the spec
+	// batch — otherwise it re-decodes the wrong token there and the
+	// subsequent rounds sample from a context that doesn't match what
+	// the streaming pipeline actually emitted.
+	originalSampled := s.sampled
 
 	// Clear speculative state.
 	s.specDraftTokens = nil
@@ -313,24 +338,38 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	for i := range nDraft {
 		draftToken := draftTokens[i]
 
-		// Greedy verification: accept if draft token matches target's argmax.
-		// No softmax needed — just find the highest logit.
+		// Greedy verification: accept if draft token matches the target's
+		// chosen token at this position. For temperature==0 we use
+		// argmax (no softmax needed). For the MTP path (which forced
+		// greedy because the draft distribution is unavailable) we
+		// instead invoke the slot's full sampler so the user's
+		// temperature / top-k / top-p still shape the emitted sequence.
 		if greedy {
-			targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(i), nVocab)
-			if err != nil {
-				var fallbackToken llama.Token
+			var targetTok llama.Token
+			switch {
+			case mtpGreedy:
 				switch {
 				case s.grammarSampler != nil && s.reasonFlag == 0:
-					fallbackToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(i))
+					targetTok = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(i))
 				default:
-					fallbackToken = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
+					targetTok = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
 				}
-				bonusToken = fallbackToken
-				break
+			default:
+				targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(i), nVocab)
+				if err != nil {
+					switch {
+					case s.grammarSampler != nil && s.reasonFlag == 0:
+						targetTok = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(i))
+					default:
+						targetTok = llama.SamplerSample(s.sampler, e.model.lctx, baseBatch+int32(i))
+					}
+					bonusToken = targetTok
+					break
+				}
+				targetTok = argmax(targetLogits)
 			}
 
-			targetArgmax := argmax(targetLogits)
-			if draftToken == targetArgmax {
+			if draftToken == targetTok {
 				accepted++
 				s.specAcceptedTotal++
 				s.nPast = basePast + llama.Pos(1+i)
@@ -344,7 +383,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 				continue
 			}
 
-			bonusToken = targetArgmax
+			bonusToken = targetTok
 			break
 		}
 
@@ -482,11 +521,38 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 		}
 	}
 
-	// Rollback rejected draft tokens from target KV cache.
+	// Roll back rejected draft positions from the target KV cache.
+	//
+	// Hybrid models (transformer + recurrent layers) need a state
+	// restore here, NOT a MemorySeqRm: the recurrent layer's per-seq
+	// state has been advanced through all 1+nDraft decoded positions
+	// and there is no per-position trim. Restore from the pre-spec
+	// snapshot taken at batch-add time, then re-decode the
+	// (sampled + accepted drafts) prefix so the seq is left at exactly
+	// basePast + 1 + accepted positions of correct state.
+	//
+	// For dense / pure-attention targets the simple MemorySeqRm path
+	// is used — much cheaper than a snapshot/restore + re-decode and
+	// fully correct because there is no recurrent state to rewind.
 	rollbackFrom := basePast + llama.Pos(1+accepted)
 	rollbackTo := basePast + llama.Pos(1+nDraft)
+	hybridRestore := e.model.modelInfo.Type == ModelTypeHybrid && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
 
-	if rollbackFrom < rollbackTo {
+	switch {
+	case hybridRestore:
+		if err := e.restoreTargetSpecSnapshot(s, basePast, originalSampled, draftTokens, accepted); err != nil {
+			e.model.log(ctx, "speculative", "status", "restore-error",
+				"slot", s.id, "accepted", accepted, "err", err)
+			// Fall through to the MemorySeqRm path even though it's
+			// broken on hybrid — best-effort, and the next request
+			// will start from a fresh sequence anyway because we'll
+			// likely fail the slot below.
+			e.model.decodeMu.Lock()
+			llama.MemorySeqRm(e.model.mem, s.seqID, rollbackFrom, rollbackTo)
+			e.model.decodeMu.Unlock()
+		}
+
+	case rollbackFrom < rollbackTo:
 		e.model.decodeMu.Lock()
 		llama.MemorySeqRm(e.model.mem, s.seqID, rollbackFrom, rollbackTo)
 		e.model.decodeMu.Unlock()
@@ -495,12 +561,44 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	// Rollback draft KV to match.
 	e.rollbackDraft(ctx, s, accepted, nDraft)
 
+	// MTP: mirror the accepted prefix [basePast..basePast+accepted]
+	// (1+accepted positions) from the target's just-decoded pre-norm
+	// buffer into the draft KV. This OVERWRITES the AR-loop entries
+	// the MTP draft wrote during generateDraftTokensMTP with the
+	// target-derived hidden states, and updates s.pendingH to
+	// h(basePast+accepted) for the next draft round.
+	if e.model.draft != nil && e.model.draft.mtp && s.mtpHasBatch && !s.mtpDisabledForRequest {
+		if err := e.mirrorTargetBatchToMTPDraft(s, 1+accepted); err != nil {
+			e.model.log(ctx, "speculative", "status", "mtp-mirror-error",
+				"slot", s.id, "accepted", accepted, "err", err)
+			// Fall through: clear mtpHasBatch and let the next iteration
+			// start fresh. The slot's draft KV may be in a partially
+			// updated state; the next prefill or gen mirror will resync.
+			s.mtpHasBatch = false
+		}
+	}
+
 	// Set nPast after s.sampled + accepted drafts.
 	s.nPast = basePast + llama.Pos(1+accepted)
 
-	e.model.log(ctx, "speculative", "status", "verify-done",
-		"slot", s.id, "accepted", accepted, "nDraft", nDraft,
-		"target_nPast", s.nPast, "draft_nPast", s.draftNPast)
+	// Throttle per-round verify-done logging. The final slot-finished
+	// line carries the per-request rollup, so steady-state INFO output
+	// only needs a periodic summary to show acceptance drift and
+	// nPast progression. First round is always logged so the start of
+	// each request is anchored; afterwards every 32 rounds.
+	s.specRounds++
+	if s.specRounds == 1 || s.specRounds%32 == 0 {
+		// Compute the EMA value as it will be after the deferred update
+		// so the logged trend reflects the round we just completed.
+		emaAfter := s.specAccEMA
+		if nDraft > 0 {
+			emaAfter = 0.9*s.specAccEMA + 0.1*(float64(accepted)/float64(nDraft))
+		}
+		e.model.log(ctx, "speculative", "status", "verify-done",
+			"slot", s.id, "round", s.specRounds, "accepted", accepted, "nDraft", nDraft,
+			"target_nPast", s.nPast, "draft_nPast", s.draftNPast,
+			"acc_ema", fmt.Sprintf("%.2f", emaAfter))
+	}
 
 	// Process the bonus token through the streaming pipeline.
 	e.handleSampledToken(s, bonusToken, baseBatch+int32(accepted), buf)
@@ -510,6 +608,99 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	}
 
 	s.iBatch = -1
+}
+
+// captureTargetSpecSnapshot saves the target context's per-sequence
+// state for s.seqID into s.specSnapshot. This is the prerequisite for
+// recovering from a partial-rejection spec round on a hybrid target —
+// the per-seq recurrent state has no per-position trim, so the only
+// way to roll back is to restore a pre-spec snapshot and re-decode the
+// accepted prefix.
+//
+// Buffer is lazy-grow / never-shrink. Required size scales with the
+// sequence's current KV occupancy and is queried via StateSeqGetSize
+// each round (a cheap C call). Net per-spec-round overhead is the cost
+// of two memcpys of the seq state (~10ms for a 27B Q8 model with a few
+// hundred context tokens at first; grows with context length).
+func (e *batchEngine) captureTargetSpecSnapshot(s *slot) error {
+	size := llama.StateSeqGetSize(e.model.lctx, s.seqID)
+	if size == 0 {
+		return fmt.Errorf("state-seq-get-size returned 0 for seq %d", s.seqID)
+	}
+
+	switch {
+	case uint64(cap(s.specSnapshot)) < size:
+		s.specSnapshot = make([]byte, size)
+	default:
+		s.specSnapshot = s.specSnapshot[:size]
+	}
+
+	e.model.decodeMu.Lock()
+	n := llama.StateSeqGetData(e.model.lctx, s.specSnapshot, s.seqID)
+	e.model.decodeMu.Unlock()
+
+	if n != size {
+		s.specSnapshot = s.specSnapshot[:0]
+		return fmt.Errorf("state-seq-get-data short read: got %d want %d for seq %d", n, size, s.seqID)
+	}
+	return nil
+}
+
+// restoreTargetSpecSnapshot rewinds the target context to the pre-spec
+// state captured in s.specSnapshot, then re-decodes the accepted prefix
+// (s.sampled + the first `accepted` draft tokens) at positions
+// [basePast .. basePast+accepted] so the seq state is left consistent
+// with s.nPast == basePast + 1 + accepted.
+//
+// Called only for hybrid targets on partial rejection — dense / pure-
+// attention targets use MemorySeqRm and skip this path entirely.
+//
+// On success the target's KV+recurrent state is exactly as it was
+// before the spec batch, plus the accepted prefix re-applied. Failure
+// to restore or re-decode leaves the slot in an inconsistent state and
+// the caller logs / continues; the slot will be cleared on the next
+// finishSlot.
+func (e *batchEngine) restoreTargetSpecSnapshot(s *slot, basePast llama.Pos, sampledAtBase llama.Token, draftTokens []llama.Token, accepted int) error {
+	e.model.decodeMu.Lock()
+	n := llama.StateSeqSetData(e.model.lctx, s.specSnapshot, s.seqID)
+	e.model.decodeMu.Unlock()
+	if n == 0 {
+		return fmt.Errorf("state-seq-set-data returned 0 for seq %d", s.seqID)
+	}
+
+	// Re-decode the accepted prefix into the now-rewound seq. The
+	// re-batch is small (1 + accepted tokens, capped at nDraft+1)
+	// so BatchInit/BatchFree per round is negligible. logits=true
+	// only on the LAST position because verifySpeculativeTokens
+	// already sampled and emitted its accepted tokens from the
+	// original spec batch's logits; we don't need them again here.
+	//
+	// sampledAtBase is the ORIGINAL s.sampled captured before the
+	// verify loop ran — not the current s.sampled, which has been
+	// overwritten by handleSampledToken as each accepted draft was
+	// emitted. Using the current value would re-decode the wrong
+	// token at position basePast and corrupt every subsequent round.
+	count := 1 + accepted
+	rebatch := llama.BatchInit(int32(count), 0, 1)
+	defer llama.BatchFree(rebatch)
+
+	rebatch.Add(sampledAtBase, basePast, s.seqIDs, accepted == 0)
+	for i := range accepted {
+		isLast := i == accepted-1
+		rebatch.Add(draftTokens[i], basePast+llama.Pos(1+i), s.seqIDs, isLast)
+	}
+
+	e.model.decodeMu.Lock()
+	ret, err := llama.Decode(e.model.lctx, rebatch)
+	if err == nil && ret == 0 {
+		llama.Synchronize(e.model.lctx)
+	}
+	e.model.decodeMu.Unlock()
+
+	if err != nil || ret != 0 {
+		return fmt.Errorf("re-decode of accepted prefix failed: %w", decodeError(ret, err))
+	}
+	return nil
 }
 
 // argmax returns the token with the highest logit value.
@@ -592,6 +783,25 @@ func sampleFromProbs(probs []float32) llama.Token {
 func (e *batchEngine) rollbackDraft(ctx context.Context, s *slot, accepted, nDraft int) {
 	draft := e.model.draft
 	if draft == nil {
+		return
+	}
+
+	// MTP: clear the ENTIRE drafted range from draft KV. The post-verify
+	// mirror that runs next in verifySpeculativeTokens re-decodes
+	// positions [base..base+accepted] from the target's pre-norm buffer,
+	// and llama.cpp's transformer KV does NOT overwrite by (seq, pos)
+	// when llama_decode is called on a position that already has an
+	// entry — it just appends another KV slot, leaving duplicate
+	// entries that corrupt subsequent attention.
+	//
+	// So for MTP we must remove ALL AR-loop entries first, then let the
+	// mirror write the correct target-derived entries into clean slots.
+	if draft.mtp {
+		draftBasePast := s.draftNPast - llama.Pos(nDraft)
+		if draftBasePast < s.draftNPast {
+			llama.MemorySeqRm(draft.mem, s.seqID, draftBasePast, s.draftNPast)
+		}
+		s.draftNPast = draftBasePast
 		return
 	}
 

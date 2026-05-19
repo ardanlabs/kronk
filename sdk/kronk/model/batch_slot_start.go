@@ -479,7 +479,43 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		draftSlotHasMedia = job.imcSession.hasMedia
 		e.model.cacheMu.RUnlock()
 	}
-	if e.model.draft != nil && !draftSlotHasMedia {
+	// MTP draft: skip the separate draft-prefill path. MTP populates the
+	// draft KV by mirroring the TARGET's prefill chunks (each target
+	// decode emits a pre-norm hidden buffer that we replay into the
+	// draft with batch.embd populated — see batch_mtp.go). The mirror
+	// step also advances draft.draftNPast in lock-step with the target,
+	// so the draftPrefillNeeded / draftPromptTokens scaffolding used by
+	// the separate-GGUF path would only cause a redundant (and broken,
+	// because it can't supply embd) re-prefill.
+	if e.model.draft != nil && e.model.draft.mtp {
+		// Clear any stale draftPromptTokens from a previous non-MTP slot
+		// reuse; mtpHasBatch / pendingH are reset in slot.reset().
+		s.draftPromptTokens = nil
+		s.draftPrefillNeeded = false
+
+		// DIAGNOSTIC (temporary): the safe-default below would disable
+		// MTP on every IMC cache hit because the draft KV has no
+		// pre-norm rows for the restored prefix. We're leaving MTP
+		// ENABLED on IMC hits to measure the actual acceptance rate
+		// when running against a stale draft context. If acceptance
+		// collapses to ~0% as expected, we'll need to extend IMC to
+		// snapshot/restore the draft seq state alongside the target.
+		// If acceptance holds, the disable was over-conservative and
+		// can be removed permanently.
+		//
+		// Original guard (re-enable to restore safe behavior):
+		//   if job.imcCacheHit {
+		//       s.mtpDisabledForRequest = true
+		//       e.model.log(job.ctx, "speculative", "status", "mtp-disabled-imc-hit",
+		//           "slot", s.id, "id", job.id)
+		//   }
+		if job.imcCacheHit {
+			e.model.log(job.ctx, "speculative", "status", "mtp-imc-hit-diagnostic",
+				"slot", s.id, "id", job.id,
+				"note", "MTP left enabled on IMC hit to measure acceptance against stale draft KV")
+		}
+	}
+	if e.model.draft != nil && !e.model.draft.mtp && !draftSlotHasMedia {
 		draft := e.model.draft
 		var needed int
 		var cachedLen int

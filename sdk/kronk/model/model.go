@@ -64,6 +64,21 @@ type imcSession struct {
 // draftModel holds resources for the draft model used in speculative decoding.
 // The draft model is a smaller, faster model that generates candidate tokens
 // for the target model to verify in a single forward pass.
+//
+// Two operating modes are supported:
+//
+//   - Separate-GGUF draft (mtp == false): a distinct, smaller GGUF loaded
+//     into its own llama_model + context. Token-only decode loop (no
+//     hidden-state plumbing). Uses llama.DraftGenerate.
+//
+//   - MTP draft (mtp == true): an MTP (multi-token-prediction) head living
+//     inside the TARGET GGUF (Qwen3.5 / Qwen3.6 architecture qwen35). The
+//     llama_model pointer is SHARED with the target — there is no extra
+//     file. The MTP head takes (token_id, pre_norm_hidden_state) per
+//     position, so every target llama_decode must be mirrored into the
+//     draft context with batch.embd populated from
+//     llama_get_embeddings_pre_norm. See loadDraftModelMTP and the
+//     batch_mtp.go mirroring helpers.
 type draftModel struct {
 	model        llama.Model
 	vocab        llama.Vocab
@@ -75,6 +90,33 @@ type draftModel struct {
 	nDraft       int
 	promptBuf    []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf     []llama.Token // Reusable buffer for generateDraftTokens output
+
+	// MTP-only fields. When mtp == true the draft context shares its
+	// llama_model with the target (Unload must skip the ModelFree).
+	mtp   bool
+	nEmbd int // model embedding width; size of one pre-norm hidden row
+
+	// MTP batches carry pre-norm hidden-state vectors alongside token
+	// ids. llama_batch_init allocates EITHER the token buffer OR the
+	// embd buffer (depending on the embd arg) — never both. MTP needs
+	// both, so we call BatchInit(N, 0, 1) to get a token-only batch
+	// and then attach a Go-allocated embd buffer below.
+	//
+	//   draftBatchMTP   : AR per-step draft decode (capacity 1 token).
+	//   mirrorBatchMTP  : mirror a target batch into the draft KV
+	//                     (capacity nBatch).
+	//
+	// The embd buffers are Go-owned ([]float32) and pinned via
+	// runtime.Pinner so the GC can't relocate them while the C side
+	// reads through Batch.Embd. Pins are released and Batch.Embd is
+	// nilled out before BatchFree (which would otherwise free() Go
+	// memory and crash).
+	draftBatchMTP   llama.Batch
+	mirrorBatchMTP  llama.Batch
+	draftEmbdSlice  []float32      // Go-owned backing for draftBatchMTP.Embd  (size 1*nEmbd)
+	mirrorEmbdSlice []float32      // Go-owned backing for mirrorBatchMTP.Embd (size NBatch*nEmbd)
+	draftEmbdPin    runtime.Pinner // Keeps draftEmbdSlice[0] address stable while the batch is alive.
+	mirrorEmbdPin   runtime.Pinner // Keeps mirrorEmbdSlice[0] address stable while the batch is alive.
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).
@@ -596,20 +638,19 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	m.batch = newBatchEngine(m, nSlots)
 	m.batch.start(ctx)
 
-	// Initialize draft model for speculative decoding if configured.
-	if m.cfg.DraftModel != nil {
-		draft, err := loadDraftModel(ctx, m.log, m.cfg, m.model, m.ctxParams)
-		if err != nil {
-			m.batch.stop(ctx)
-			m.batch.freeBatch()
-			llama.Free(lctx)
-			return fmt.Errorf("load-draft-model: %w", err)
-		}
-		m.draft = draft
-		m.log(ctx, "draft-model", "status", "loaded",
-			"nDraft", draft.nDraft, "devices", m.cfg.DraftModel.Devices,
-			"nCtx", llama.NCtx(draft.lctx))
+	// Initialize draft model for speculative decoding. selectAndLoadDraft
+	// picks between an explicit separate-GGUF draft (cfg.DraftModel) and
+	// an auto-detected MTP head living inside the target GGUF
+	// (nextn_predict_layers > 0, qwen35 architecture). Returns (nil, nil)
+	// when no draft applies.
+	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams)
+	if err != nil {
+		m.batch.stop(ctx)
+		m.batch.freeBatch()
+		llama.Free(lctx)
+		return fmt.Errorf("load-draft-model: %w", err)
 	}
+	m.draft = draft
 
 	return nil
 }
@@ -865,8 +906,26 @@ func (m *Model) Unload(ctx context.Context) error {
 		llama.SamplerFree(m.draft.sampler)
 		llama.BatchFree(m.draft.batch)
 		llama.BatchFree(m.draft.prefillBatch)
+		// MTP-specific batches; zero values are safe no-ops if the draft
+		// was a separate-GGUF (mtp == false) and these were never alloc'd.
+		// llama_batch_free unconditionally calls free() on Batch.Embd —
+		// our MTP Embd pointers reference Go-owned slices (pinned via
+		// runtime.Pinner), so detach them before BatchFree and unpin
+		// after so the Go GC can reclaim the backing arrays.
+		if m.draft.mtp {
+			m.draft.draftBatchMTP.Embd = nil
+			m.draft.mirrorBatchMTP.Embd = nil
+			llama.BatchFree(m.draft.draftBatchMTP)
+			llama.BatchFree(m.draft.mirrorBatchMTP)
+			m.draft.draftEmbdPin.Unpin()
+			m.draft.mirrorEmbdPin.Unpin()
+		}
 		llama.Free(m.draft.lctx)
-		llama.ModelFree(m.draft.model)
+		// MTP shares the target's llama_model — the target's Unload path
+		// owns its lifetime. Skip ModelFree to avoid double-free.
+		if !m.draft.mtp {
+			llama.ModelFree(m.draft.model)
+		}
 		m.draft = nil
 		m.log(ctx, "unload", "status", "draft-model-freed")
 	}
@@ -968,7 +1027,11 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 
 func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, streaming bool, usage Usage) {
 	args := []any{"status", "final", "id", id, "tokens", usage.OutputTokens, "object", object, "tooling", len(respToolCalls) > 0, "reasoning", finalReasoning.Len(), "content", finalContent.Len()}
-	if usage.DraftTokens > 0 {
+	// When a draft model is configured, always emit draft metrics so the
+	// log schema stays stable for scrapers/dashboards even when
+	// speculation was disabled mid-request (collapsed acceptance EMA).
+	// Models without a draft model omit the fields entirely.
+	if m.draft != nil {
 		args = append(args, "draft_tokens", usage.DraftTokens, "draft_accepted_tokens", usage.DraftAcceptedTokens, "acceptance_rate", fmt.Sprintf("%.2f", usage.DraftAcceptanceRate))
 	}
 	m.log(ctx, "chat-completion", args...)

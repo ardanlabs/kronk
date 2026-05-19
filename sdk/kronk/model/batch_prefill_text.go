@@ -42,6 +42,20 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 
 	chunkSize := min(remaining, availableInBatch, chunkLimit)
 
+	// MTP: claim (or extend) the slot's range in the target batch so
+	// the post-decode mirror knows where this chunk's pre-norm rows
+	// live. addPrefillChunk may be called multiple times per
+	// processBatch iteration (round-robin tray fill), so we only set
+	// start/basePos on the FIRST call this iteration; subsequent calls
+	// just accumulate count.
+	mtpDraft := e.model.draft != nil && e.model.draft.mtp
+	if mtpDraft && !s.mtpHasBatch {
+		s.targetBatchStart = e.batch.NTokens
+		s.targetBatchBasePos = s.nPast
+		s.targetBatchCount = 0
+		s.mtpHasBatch = true
+	}
+
 	// Add chunk of tokens to batch.
 	for i := range chunkSize {
 		tok := s.prefillTokens[s.nPrefilled+i]
@@ -50,6 +64,9 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 		s.nPast++
 	}
 	s.nPrefilled += chunkSize
+	if mtpDraft {
+		s.targetBatchCount += int32(chunkSize)
+	}
 
 	prefillDuration := time.Since(prefillStart)
 	metrics.AddPrefillTime(e.model.modelInfo.ID, "text", prefillDuration)

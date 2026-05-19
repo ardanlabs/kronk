@@ -57,12 +57,76 @@ export default function DocsSDKModel() {
               <p className="doc-description">CheckModel is check if the downloaded model is valid based on it's sha file. If no sha file exists, this check will return with no error.</p>
             </div>
 
+            <div className="doc-section" id="func-detectmodeltypefromfiles">
+              <h4>DetectModelTypeFromFiles</h4>
+              <pre className="code-block">
+                <code>func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error)</code>
+              </pre>
+              <p className="doc-description">DetectModelTypeFromFiles loads a model from the given GGUF files, determines the architecture type, and immediately frees the model. It returns the ModelType, the raw general.architecture string from the GGUF metadata, and any error encountered during loading.</p>
+            </div>
+
+            <div className="doc-section" id="func-getembeddingsprenorm">
+              <h4>GetEmbeddingsPreNorm</h4>
+              <pre className="code-block">
+                <code>func GetEmbeddingsPreNorm(ctx llama.Context, nRows, nEmbd int) []float32</code>
+              </pre>
+              <p className="doc-description">GetEmbeddingsPreNorm returns the dense pre-norm hidden-state buffer produced by the most recent llama_decode on ctx. nRows is the number of rows the caller expects (typically batch.NTokens for an unmasked context); nEmbd is the model's embedding width (llama.ModelNEmbd). Returns nil when the binding isn't loaded, the context is zero, or the underlying C call returned NULL (no pre-norm buffer available — usually means SetEmbeddingsPreNorm wasn't enabled before the decode). The returned slice aliases C-owned memory; the caller MUST NOT retain it past the next decode/synchronize call. Copy out rows that need to survive.</p>
+            </div>
+
+            <div className="doc-section" id="func-getembeddingsprenormith">
+              <h4>GetEmbeddingsPreNormIth</h4>
+              <pre className="code-block">
+                <code>func GetEmbeddingsPreNormIth(ctx llama.Context, i int32, nEmbd int) []float32</code>
+              </pre>
+              <p className="doc-description">GetEmbeddingsPreNormIth returns the pre-norm hidden-state row for the ith output of the most recent llama_decode on ctx. nEmbd is the model's embedding width. On a masked context (ctx_dft for MTP) i indexes through the output_ids table, so it must correspond to a batch position whose logits flag was set. On an unmasked context (ctx_tgt) i is the raw batch position. Returns nil when the binding isn't loaded, the context is zero, or the row isn't available. The returned slice aliases C-owned memory; don't retain past the next decode/synchronize.</p>
+            </div>
+
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
                 <code>func InitYzmaWorkarounds(libPath string) error</code>
               </pre>
-              <p className="doc-description">InitYzmaWorkarounds loads the mtmd library and preps our fixed FFI functions. This is safe to call multiple times; it only initializes once.</p>
+              <p className="doc-description">InitYzmaWorkarounds loads the llama library and preps our extra FFI functions that yzma upstream doesn't bind yet. Safe to call multiple times; only the first call does any work. Pre-norm bindings are BEST-EFFORT: if the loaded llama library doesn't export them (older build, e.g. b9222), the corresponding ffi.Fun stays zero-valued and MTPAvailable() returns false. Init never fails on a missing pre-norm symbol so kronk still boots and can serve non-MTP models.</p>
+            </div>
+
+            <div className="doc-section" id="func-mtpavailable">
+              <h4>MTPAvailable</h4>
+              <pre className="code-block">
+                <code>func MTPAvailable() bool</code>
+              </pre>
+              <p className="doc-description">MTPAvailable reports whether the loaded llama library exports the three pre-norm hidden-state symbols required for MTP speculative decoding. Older llama.cpp builds (pre src/llama-ext.h pre-norm API) won't have them; the MTP auto-detect path checks this and skips silently when false, so kronk still starts up — it just runs without MTP speculation.</p>
+            </div>
+
+            <div className="doc-section" id="func-newmodel">
+              <h4>NewModel</h4>
+              <pre className="code-block">
+                <code>func NewModel(ctx context.Context, cfg Config) (*Model, error)</code>
+              </pre>
+              <p className="doc-description">NewModel loads a model from the GGUF files specified in cfg and returns a *Model ready to serve requests. It validates the configuration, builds llama.cpp model parameters, applies NUMA settings, performs the actual GGUF load (serialized via a process-wide mutex to guard the GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics, retrieves the chat template, and initializes the per-model runtime — either a context pool for embed/rerank models or a batch engine plus parser plugin and optional draft model for generation models. The returned *Model owns the underlying llama.Model, llama.Context, KV memory, batch engine, and (when configured) draft model; release them via Model.Unload when finished.</p>
+            </div>
+
+            <div className="doc-section" id="func-parseggmltype">
+              <h4>ParseGGMLType</h4>
+              <pre className="code-block">
+                <code>func ParseGGMLType(s string) (GGMLType, error)</code>
+              </pre>
+              <p className="doc-description">ParseGGMLType parses a string into a GGMLType. Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".</p>
+            </div>
+
+            <div className="doc-section" id="func-parseropescalingtype">
+              <h4>ParseRopeScalingType</h4>
+              <pre className="code-block">
+                <code>func ParseRopeScalingType(s string) (RopeScalingType, error)</code>
+              </pre>
+              <p className="doc-description">ParseRopeScalingType parses a string into a RopeScalingType. Supported values: "none", "linear", "yarn".</p>
+            </div>
+
+            <div className="doc-section" id="func-parsesplitmode">
+              <h4>ParseSplitMode</h4>
+              <pre className="code-block">
+                <code>func ParseSplitMode(s string) (SplitMode, error)</code>
+              </pre>
+              <p className="doc-description">ParseSplitMode parses a string into a SplitMode. Supported values: "none", "layer", "row", "expert-parallel", "tensor-parallel".</p>
             </div>
 
             <div className="doc-section" id="func-registerparser">
@@ -81,52 +145,20 @@ export default function DocsSDKModel() {
               <p className="doc-description">RemoveVerifiedSentinel deletes the sentinel file for modelFile if it exists. Used by the model-removal paths so a deleted model doesn't leave behind a stale verified marker. A non-existent sentinel is not an error.</p>
             </div>
 
+            <div className="doc-section" id="func-setembeddingsprenorm">
+              <h4>SetEmbeddingsPreNorm</h4>
+              <pre className="code-block">
+                <code>func SetEmbeddingsPreNorm(ctx llama.Context, value, masked bool)</code>
+              </pre>
+              <p className="doc-description">SetEmbeddingsPreNorm enables (or disables) pre-norm hidden-state extraction on the given context. - value == true: the next llama_decode will produce a pre-norm embedding buffer accessible via GetEmbeddingsPreNorm / GetEmbeddingsPreNormIth. - masked == false: rows are stored densely, indexed by raw batch position. Used on the target context (caller wants every row). - masked == true: rows are stored only for batch positions whose logits flag is non-zero, indexed via the output_ids table. Used on the MTP draft context (caller only needs the output rows). Mirrors llama_set_embeddings_pre_norm in src/llama-ext.h.</p>
+            </div>
+
             <div className="doc-section" id="func-newgrammarsampler">
               <h4>NewGrammarSampler</h4>
               <pre className="code-block">
                 <code>func NewGrammarSampler(vocab llama.Vocab, grammar string) *grammarSampler</code>
               </pre>
               <p className="doc-description">NewGrammarSampler creates a grammar sampler that will be managed separately from the main sampler chain.</p>
-            </div>
-
-            <div className="doc-section" id="func-parseggmltype">
-              <h4>ParseGGMLType</h4>
-              <pre className="code-block">
-                <code>func ParseGGMLType(s string) (GGMLType, error)</code>
-              </pre>
-              <p className="doc-description">ParseGGMLType parses a string into a GGMLType. Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".</p>
-            </div>
-
-            <div className="doc-section" id="func-newmodel">
-              <h4>NewModel</h4>
-              <pre className="code-block">
-                <code>func NewModel(ctx context.Context, cfg Config) (*Model, error)</code>
-              </pre>
-              <p className="doc-description">NewModel loads a model from the GGUF files specified in cfg and returns a *Model ready to serve requests. It validates the configuration, builds llama.cpp model parameters, applies NUMA settings, performs the actual GGUF load (serialized via a process-wide mutex to guard the GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics, retrieves the chat template, and initializes the per-model runtime — either a context pool for embed/rerank models or a batch engine plus parser plugin and optional draft model for generation models. The returned *Model owns the underlying llama.Model, llama.Context, KV memory, batch engine, and (when configured) draft model; release them via Model.Unload when finished.</p>
-            </div>
-
-            <div className="doc-section" id="func-detectmodeltypefromfiles">
-              <h4>DetectModelTypeFromFiles</h4>
-              <pre className="code-block">
-                <code>func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error)</code>
-              </pre>
-              <p className="doc-description">DetectModelTypeFromFiles loads a model from the given GGUF files, determines the architecture type, and immediately frees the model. It returns the ModelType, the raw general.architecture string from the GGUF metadata, and any error encountered during loading.</p>
-            </div>
-
-            <div className="doc-section" id="func-parseropescalingtype">
-              <h4>ParseRopeScalingType</h4>
-              <pre className="code-block">
-                <code>func ParseRopeScalingType(s string) (RopeScalingType, error)</code>
-              </pre>
-              <p className="doc-description">ParseRopeScalingType parses a string into a RopeScalingType. Supported values: "none", "linear", "yarn".</p>
-            </div>
-
-            <div className="doc-section" id="func-parsesplitmode">
-              <h4>ParseSplitMode</h4>
-              <pre className="code-block">
-                <code>func ParseSplitMode(s string) (SplitMode, error)</code>
-              </pre>
-              <p className="doc-description">ParseSplitMode parses a string into a SplitMode. Supported values: "none", "layer", "row", "expert-parallel", "tensor-parallel".</p>
             </div>
           </div>
 
@@ -1588,15 +1620,19 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
-                <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
-                <li><a href="#func-registerparser">RegisterParser</a></li>
-                <li><a href="#func-removeverifiedsentinel">RemoveVerifiedSentinel</a></li>
-                <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
-                <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
-                <li><a href="#func-newmodel">NewModel</a></li>
                 <li><a href="#func-detectmodeltypefromfiles">DetectModelTypeFromFiles</a></li>
+                <li><a href="#func-getembeddingsprenorm">GetEmbeddingsPreNorm</a></li>
+                <li><a href="#func-getembeddingsprenormith">GetEmbeddingsPreNormIth</a></li>
+                <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
+                <li><a href="#func-mtpavailable">MTPAvailable</a></li>
+                <li><a href="#func-newmodel">NewModel</a></li>
+                <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsesplitmode">ParseSplitMode</a></li>
+                <li><a href="#func-registerparser">RegisterParser</a></li>
+                <li><a href="#func-removeverifiedsentinel">RemoveVerifiedSentinel</a></li>
+                <li><a href="#func-setembeddingsprenorm">SetEmbeddingsPreNorm</a></li>
+                <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
