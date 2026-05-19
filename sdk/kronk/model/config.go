@@ -22,7 +22,7 @@ Low VRAM (<8GB)						512			256–512		Avoid OOM
 High VRAM (24GB+)					4096+		1024+		Maximize parallelism
 
 Key principles:
-- NUBatch ≤ NBatch always (you already enforce this at line 139)
+- NUBatch ≤ NBatch always (enforced in adjustConfig)
 - NUBatch primarily affects prompt processing speed; keep it ≤512 for stability on most consumer GPUs
 - NBatch closer to ContextWindow improves throughput but uses more VRAM
 - Powers of 2 are slightly more efficient on most hardware
