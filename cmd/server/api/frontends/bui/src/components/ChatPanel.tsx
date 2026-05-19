@@ -622,64 +622,6 @@ export default function ChatPanel({
             />
           </div>
         )}
-        {moeFit?.isMoe && modelVRAM && (
-          <div className="chat-settings" style={{ flexDirection: 'column', gap: '8px', padding: '12px', background: 'var(--color-gray-50)', borderRadius: '6px', margin: '0 0 8px' }}>
-            <div style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              🧩 MoE Model
-              {modelVRAM.moe && (
-                <span style={{ fontWeight: 400, fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                  ({modelVRAM.moe.expert_count} experts, top-{modelVRAM.moe.expert_used_count} active{modelVRAM.moe.has_shared_experts ? ', shared experts' : ''})
-                </span>
-              )}
-            </div>
-            {modelVRAM.weights && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                <span>Always-active weights (GPU):</span>
-                <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.weights.always_active_bytes)}</span>
-                {(modelVRAM.model_weights_gpu ?? 0) > 0 && (
-                  <>
-                    <span>Expert weights (GPU):</span>
-                    <span style={{ fontWeight: 500 }}>{formatBytes((modelVRAM.model_weights_gpu ?? 0) - modelVRAM.weights.always_active_bytes)}</span>
-                  </>
-                )}
-                {(modelVRAM.model_weights_cpu ?? 0) > 0 && (
-                  <>
-                    <span>Expert weights (CPU):</span>
-                    <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.model_weights_cpu ?? 0)}</span>
-                  </>
-                )}
-                <span>KV cache:</span>
-                <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.slot_memory)}</span>
-                {(modelVRAM.compute_buffer_est ?? 0) > 0 && (
-                  <>
-                    <span>Compute buffer (est.):</span>
-                    <span style={{ fontWeight: 500 }}>~{formatBytes(modelVRAM.compute_buffer_est ?? 0)}</span>
-                  </>
-                )}
-                <span style={{ fontWeight: 600 }}>Total estimated VRAM:</span>
-                <span style={{ fontWeight: 600 }}>{formatBytes(modelVRAM.total_vram)}</span>
-              </div>
-            )}
-            {!modelVRAM.weights && modelVRAM.total_vram > 0 && (
-              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                Total VRAM: {formatBytes(modelVRAM.total_vram)}
-              </div>
-            )}
-            {moeFit?.fit?.status && devicesInfo && (
-              <div className={`playground-vram-fit playground-vram-fit--${moeFit.fit.status}`}>
-                {VRAM_FIT_TEXT[moeFit.fit.status]}
-                <span className="playground-vram-fit-detail">
-                  {' '}({formatBytes(devicesInfo.gpuVramBytes)} available
-                  {moeFit.fit.status !== 'fits' && `, ${formatBytes(moeFit.fit.cpuExperts)} needed with CPU experts`}
-                  {moeFit.fit.status === 'fits' && `, ${formatBytes(moeFit.fit.allGPU)} needed`})
-                </span>
-              </div>
-            )}
-            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.4, marginTop: '4px' }}>
-              💡 {PARAM_TOOLTIPS.moeTipBatch} {PARAM_TOOLTIPS.moeTipFlashAttention}
-            </div>
-          </div>
-        )}
         {showAdvanced && (
           <div className="chat-settings">
             <div className="chat-advanced-settings">
@@ -943,6 +885,67 @@ export default function ChatPanel({
           </div>
         )}
         </>
+      )}
+
+      {moeFit?.isMoe && modelVRAM && (
+        <details className="chat-moe-info">
+          <summary style={{ fontWeight: 600, fontSize: '13px', cursor: 'pointer', padding: '6px 12px', background: 'var(--color-gray-50)', borderRadius: '6px', margin: '0 0 8px', listStyle: 'revert' }}>
+            🧩 MoE Model
+            {modelVRAM.moe && (
+              <span style={{ fontWeight: 400, fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: '6px' }}>
+                ({modelVRAM.moe.expert_count} experts, top-{modelVRAM.moe.expert_used_count} active{modelVRAM.moe.has_shared_experts ? ', shared experts' : ''})
+              </span>
+            )}
+          </summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: 'var(--color-gray-50)', borderRadius: '6px', margin: '0 0 8px' }}>
+            {modelVRAM.weights && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                <span>Always-active weights (GPU):</span>
+                <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.weights.always_active_bytes)}</span>
+                {(modelVRAM.model_weights_gpu ?? 0) > 0 && (
+                  <>
+                    <span>Expert weights (GPU):</span>
+                    <span style={{ fontWeight: 500 }}>{formatBytes((modelVRAM.model_weights_gpu ?? 0) - modelVRAM.weights.always_active_bytes)}</span>
+                  </>
+                )}
+                {(modelVRAM.model_weights_cpu ?? 0) > 0 && (
+                  <>
+                    <span>Expert weights (CPU):</span>
+                    <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.model_weights_cpu ?? 0)}</span>
+                  </>
+                )}
+                <span>KV cache:</span>
+                <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.slot_memory)}</span>
+                {(modelVRAM.compute_buffer_est ?? 0) > 0 && (
+                  <>
+                    <span>Compute buffer (est.):</span>
+                    <span style={{ fontWeight: 500 }}>~{formatBytes(modelVRAM.compute_buffer_est ?? 0)}</span>
+                  </>
+                )}
+                <span style={{ fontWeight: 600 }}>Total estimated VRAM:</span>
+                <span style={{ fontWeight: 600 }}>{formatBytes(modelVRAM.total_vram)}</span>
+              </div>
+            )}
+            {!modelVRAM.weights && modelVRAM.total_vram > 0 && (
+              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                Total VRAM: {formatBytes(modelVRAM.total_vram)}
+              </div>
+            )}
+            {moeFit?.fit?.status && devicesInfo && (
+              <div className={`playground-vram-fit playground-vram-fit--${moeFit.fit.status}`}>
+                {VRAM_FIT_TEXT[moeFit.fit.status]}
+                <span className="playground-vram-fit-detail">
+                  {' '}({formatBytes(devicesInfo.gpuVramBytes)} available
+                  {moeFit.fit.status !== 'fits' && `, ${formatBytes(moeFit.fit.cpuExperts)} needed with CPU experts`}
+                  {moeFit.fit.status === 'fits' && `, ${formatBytes(moeFit.fit.allGPU)} needed`})
+                </span>
+              </div>
+            )}
+            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.4, marginTop: '4px' }}>
+              💡 {PARAM_TOOLTIPS.moeTipBatch} {PARAM_TOOLTIPS.moeTipFlashAttention}
+            </div>
+          </div>
+        </details>
       )}
 
       {error && <div className="alert alert-error">{error}</div>}
