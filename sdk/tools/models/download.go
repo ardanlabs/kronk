@@ -23,6 +23,20 @@ import (
 // Logger represents a logger for capturing events.
 type Logger = applog.Logger
 
+// downloadFn is the package-level downloader function. It defaults to
+// downloader.Download and is overridable by tests so download paths
+// can be exercised hermetically without network. Test-only seam — do
+// not reassign in production code.
+var downloadFn = downloader.Download
+
+// hasNetworkFn is the package-level network probe used by download
+// flows. It defaults to hasNetwork and is overridable by tests for the
+// same reason as downloadFn.
+var hasNetworkFn = hasNetwork
+
+// =============================================================================
+// Public API
+
 // Download performs a complete workflow for downloading and installing the
 // specified model. The input may be:
 //
@@ -97,19 +111,13 @@ func (m *Models) DownloadURLs(ctx context.Context, log applog.Logger, modelURLs 
 		log(ctx, "download: unable to persist resolver entry", "ERROR", perr)
 	}
 
-	// Best-effort GGUF head cache so the catalog detail screen
-	// renders without an HF round-trip.
-	if len(mp.ModelFiles) > 0 {
-		if provider, family, _, _, ok := hf.ParseURL(hf.NormalizeDownloadURL(modelURLs[0])); ok {
-			modelID := extractModelID(filepath.Base(mp.ModelFiles[0]))
-			if err := m.CacheGGUFHeadFromFile(provider, family, modelID, mp.ModelFiles[0]); err != nil {
-				log(ctx, "download: unable to cache gguf head", "ERROR", err)
-			}
-		}
-	}
+	m.cacheGGUFHeadBestEffort(ctx, log, modelURLs[0], mp)
 
 	return mp, nil
 }
+
+// =============================================================================
+// Internal entry points
 
 // downloadByURL downloads the file at modelURL as-is and best-effort
 // resolves a companion projection file by deriving the canonical id
@@ -127,47 +135,9 @@ func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL 
 		log(ctx, "download: unable to persist resolver entry", "ERROR", perr)
 	}
 
-	// Best-effort GGUF head cache so the catalog detail screen
-	// renders without an HF round-trip.
-	if len(mp.ModelFiles) > 0 {
-		if provider, family, _, _, ok := hf.ParseURL(hf.NormalizeDownloadURL(modelURL)); ok {
-			modelID := extractModelID(filepath.Base(mp.ModelFiles[0]))
-			if err := m.CacheGGUFHeadFromFile(provider, family, modelID, mp.ModelFiles[0]); err != nil {
-				log(ctx, "download: unable to cache gguf head", "ERROR", err)
-			}
-		}
-	}
+	m.cacheGGUFHeadBestEffort(ctx, log, modelURL, mp)
 
 	return mp, nil
-}
-
-// lookupProjForURL parses a HuggingFace URL into provider/<modelID> and
-// asks the resolver for the matching projection file. Returns an empty
-// string when the URL cannot be parsed or no projection is found.
-func (m *Models) lookupProjForURL(ctx context.Context, modelURL string) string {
-	provider, _, _, file, ok := hf.ParseURL(hf.NormalizeDownloadURL(modelURL))
-	if !ok || provider == "" || file == "" {
-		return ""
-	}
-
-	rfile, err := defaults.CatalogFile("", m.basePath)
-	if err != nil {
-		return ""
-	}
-
-	canonical := fmt.Sprintf("%s/%s", provider, extractModelID(file))
-
-	res, err := NewResolver(m, rfile).Resolve(ctx, canonical)
-	if err != nil {
-		return ""
-	}
-
-	return res.DownloadProj
-}
-
-// isURL reports whether input is a direct HTTP(S) URL.
-func isURL(input string) bool {
-	return strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://")
 }
 
 // downloadByID resolves a bare model id ("Qwen3-0.6B-Q8_0") or canonical
@@ -250,6 +220,58 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 	return mp, nil
 }
 
+// lookupProjForURL parses a HuggingFace URL into provider/<modelID> and
+// asks the resolver for the matching projection file. Returns an empty
+// string when the URL cannot be parsed or no projection is found.
+func (m *Models) lookupProjForURL(ctx context.Context, modelURL string) string {
+	provider, _, _, file, ok := hf.ParseURL(hf.NormalizeDownloadURL(modelURL))
+	if !ok || provider == "" || file == "" {
+		return ""
+	}
+
+	rfile, err := defaults.CatalogFile("", m.basePath)
+	if err != nil {
+		return ""
+	}
+
+	canonical := fmt.Sprintf("%s/%s", provider, extractModelID(file))
+
+	res, err := NewResolver(m, rfile).Resolve(ctx, canonical)
+	if err != nil {
+		return ""
+	}
+
+	return res.DownloadProj
+}
+
+// cacheGGUFHeadBestEffort populates the GGUF head cache from the first
+// downloaded model file so the BUI catalog detail screen renders
+// without an HF round-trip. Best-effort — failures are logged but do
+// not affect the download outcome.
+func (m *Models) cacheGGUFHeadBestEffort(ctx context.Context, log applog.Logger, sourceURL string, mp Path) {
+	if len(mp.ModelFiles) == 0 {
+		return
+	}
+
+	provider, family, _, _, ok := hf.ParseURL(hf.NormalizeDownloadURL(sourceURL))
+	if !ok {
+		return
+	}
+
+	modelID := extractModelID(filepath.Base(mp.ModelFiles[0]))
+	if err := m.CacheGGUFHeadFromFile(provider, family, modelID, mp.ModelFiles[0]); err != nil {
+		log(ctx, "download: unable to cache gguf head", "ERROR", err)
+	}
+}
+
+// isURL reports whether input is a direct HTTP(S) URL.
+func isURL(input string) bool {
+	return strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://")
+}
+
+// =============================================================================
+// Orchestration: split download + index/validation lifecycle
+
 // downloadSplits performs a complete workflow for downloading and installing
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
@@ -258,14 +280,13 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 		return Path{}, fmt.Errorf("download-splits: no model URLs provided")
 	}
 
-	modelFileName, err := extractFileName(modelURLs[0])
+	mLoc0, err := newLocator(hf.NormalizeDownloadURL(modelURLs[0]))
 	if err != nil {
-		return Path{}, fmt.Errorf("download-splits: unable to extract file name: %w", err)
+		return Path{}, fmt.Errorf("download-splits: unable to derive model id: %w", err)
 	}
+	modelID := mLoc0.ModelID
 
-	modelID := extractModelID(modelFileName)
-
-	if !hasNetwork() {
+	if !hasNetworkFn() {
 		mp, err := m.FullPath(modelID)
 		if err != nil {
 			return Path{}, fmt.Errorf("download-splits: no network available: %w", err)
@@ -274,33 +295,7 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 		return mp, nil
 	}
 
-	defer func() {
-		if err := m.BuildIndex(log, false); err != nil {
-			log(ctx, "download-model: unable to create index", "ERROR", err)
-			return
-		}
-
-		// Only mark validated when every shard (and any projection) for the
-		// model finished and matches its sha pointer. Marking validated after
-		// a partial split would let the next pull short-circuit on the index
-		// and never notice the missing bytes.
-		if retErr != nil {
-			log(ctx, "download-model: skipping mark-validated due to error", "model-id", modelID, "ERROR", retErr)
-			return
-		}
-
-		if err := m.verifySizesFromIndex(modelID); err != nil {
-			log(ctx, "download-model: skipping mark-validated, model is incomplete", "model-id", modelID, "ERROR", err)
-			return
-		}
-
-		// downloadModel performs SHA validation on every model and projection
-		// file as it is fetched, so the freshly downloaded entry can be marked
-		// as validated without a full index rebuild.
-		if err := m.MarkValidated(modelID); err != nil {
-			log(ctx, "download-model: unable to mark model validated", "ERROR", err)
-		}
-	}()
+	defer m.markValidatedAfterSplits(ctx, log, modelID, &retErr)
 
 	result = Path{
 		ModelFiles: make([]string, len(modelURLs)),
@@ -308,23 +303,44 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 
 	projURL = hf.NormalizeDownloadURL(projURL)
 
+	var projLoc *Locator
+	if projURL != "" {
+		pl, err := newLocator(projURL)
+		if err != nil {
+			return Path{}, fmt.Errorf("download-splits: unable to parse proj url: %w", err)
+		}
+		projLoc = &pl
+	}
+
 	for i, modelURL := range modelURLs {
 		modelURL = hf.NormalizeDownloadURL(modelURL)
 
-		if i > 0 {
-			projURL = ""
+		mLoc, err := newLocator(modelURL)
+		if err != nil {
+			return Path{}, fmt.Errorf("download-splits: unable to parse model url[%d]: %w", i, err)
 		}
 
-		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] model-id[%s] file[%d/%d]", modelURL, projURL, modelID, i+1, len(modelURLs)))
+		// Only the first shard carries a projection — drop after.
+		pLoc := projLoc
+		if i > 0 {
+			pLoc = nil
+		}
+
+		logProjURL := ""
+		if pLoc != nil {
+			logProjURL = pLoc.RawURL
+		}
+
+		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] model-id[%s] file[%d/%d]", mLoc.RawURL, logProjURL, modelID, i+1, len(modelURLs)))
 		log(ctx, "download-model: waiting to check model status...")
 
 		progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
 			log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
 		}
 
-		mp, errOrg := m.downloadModel(ctx, log, modelURL, projURL, progress)
+		mp, errOrg := m.downloadModel(ctx, log, mLoc, pLoc, progress)
 		if errOrg != nil {
-			log(ctx, "download-model:", "ERROR", errOrg, "model-file-url", modelURL)
+			log(ctx, "download-model:", "ERROR", errOrg, "model-file-url", mLoc.RawURL)
 
 			// Only fall back to the previously installed copy when every shard
 			// (and any projection) on disk still matches its sha pointer. A
@@ -335,9 +351,8 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 				if vErr := verifyAllSizes(mp); vErr == nil {
 					log(ctx, "download-model: using installed version of model files")
 					return mp, nil
-				} else {
-					log(ctx, "download-model: previously installed copy is incomplete", "ERROR", vErr)
 				}
+				log(ctx, "download-model: previously installed copy is incomplete", "ERROR", verifyAllSizes(mp))
 
 				// Don't blow away partial files here. A subsequent pull can
 				// re-attempt the affected shard via the getter.
@@ -375,157 +390,94 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 	return result, nil
 }
 
+// markValidatedAfterSplits rebuilds the index and, when the split download
+// completed cleanly and every recorded shard still matches its sha pointer,
+// stamps the model entry as Validated so subsequent loads skip re-hashing.
+// This is the deferred tail of downloadSplits — pulled out so the orchestration
+// loop reads as a straight line.
+func (m *Models) markValidatedAfterSplits(ctx context.Context, log applog.Logger, modelID string, retErr *error) {
+	if err := m.BuildIndex(log, false); err != nil {
+		log(ctx, "download-model: unable to create index", "ERROR", err)
+		return
+	}
+
+	// Only mark validated when every shard (and any projection) for the
+	// model finished and matches its sha pointer. Marking validated after
+	// a partial split would let the next pull short-circuit on the index
+	// and never notice the missing bytes.
+	if *retErr != nil {
+		log(ctx, "download-model: skipping mark-validated due to error", "model-id", modelID, "ERROR", *retErr)
+		return
+	}
+
+	if err := m.verifySizesFromIndex(modelID); err != nil {
+		log(ctx, "download-model: skipping mark-validated, model is incomplete", "model-id", modelID, "ERROR", err)
+		return
+	}
+
+	// downloadModel performs SHA validation on every model and projection
+	// file as it is fetched, so the freshly downloaded entry can be marked
+	// as validated without a full index rebuild.
+	if err := m.MarkValidated(modelID); err != nil {
+		log(ctx, "download-model: unable to mark model validated", "ERROR", err)
+	}
+}
+
 // =============================================================================
+// Per-model download — state-machine style
 
-func (m *Models) downloadModel(ctx context.Context, log applog.Logger, modelFileURL string, projFileURL string, progress downloader.ProgressFunc) (Path, error) {
-	// Validate the URL is the correct HF download URL.
-	if !strings.Contains(modelFileURL, "/resolve/") {
-		return Path{}, fmt.Errorf("download-model: invalid model download url, missing /resolve/: %s", modelFileURL)
+// downloadModel pulls a single model file (and optional projection) using
+// the supplied Locators. The high-level flow:
+//
+//  1. checkValidatedIndex  → fast path on validated, complete index entry
+//  2. pull(body) + verify  → download the model file, sha-check it
+//  3. tryReuseProjFromURLName → optimization 1
+//  4. tryReuseProjFromSHA     → optimization 2
+//  5. pull(proj) + verify  → fall-through proj download
+//
+// Each step is a small named helper so the lifecycle is readable top-to-bottom.
+func (m *Models) downloadModel(ctx context.Context, log applog.Logger, mLoc Locator, projLoc *Locator, progress downloader.ProgressFunc) (Path, error) {
+	if !strings.Contains(mLoc.RawURL, "/resolve/") {
+		return Path{}, fmt.Errorf("download-model: invalid model download url, missing /resolve/: %s", mLoc.RawURL)
+	}
+	if projLoc != nil && !strings.Contains(projLoc.RawURL, "/resolve/") {
+		return Path{}, fmt.Errorf("download-model: invalid proj download url, missing /resolve/: %s", projLoc.RawURL)
 	}
 
-	// If we have a proj file, then check that URL as well.
-	if projFileURL != "" {
-		if !strings.Contains(projFileURL, "/resolve/") {
-			return Path{}, fmt.Errorf("download-model: invalid proj download url, missing /resolve/: %s", projFileURL)
-		}
+	if mp, hit := m.checkValidatedIndex(ctx, log, mLoc, projLoc); hit {
+		return mp, nil
 	}
 
-	// Check the index to see if this model has already been downloaded and
-	// is validated.
-
-	modelFileName, err := extractFileName(modelFileURL)
-	if err != nil {
-		return Path{}, fmt.Errorf("download-model: unable to extract file name: %w", err)
-	}
-
-	mp, found := m.loadIndex()[extractModelID(modelFileName)]
-	if found && mp.Validated {
-		hasFile := false
-		for _, mf := range mp.ModelFiles {
-			if filepath.Base(mf) == modelFileName {
-				hasFile = true
-				break
-			}
-		}
-
-		// Re-verify every recorded file (model splits and any projection) is
-		// still present on disk AND matches the size from its sha pointer.
-		// A user may have deleted files manually, or a previous split download
-		// may have left a truncated shard behind; in either case we must fall
-		// through and re-download instead of trusting the stale index entry.
-		filesPresent := hasFile
-		if filesPresent {
-			for _, mf := range mp.ModelFiles {
-				if err := model.CheckModel(mf, false); err != nil {
-					log(ctx, "download-model: index entry stale, re-downloading", "model-file", mf, "ERROR", err)
-					filesPresent = false
-					break
-				}
-			}
-		}
-		if filesPresent && projFileURL != "" && mp.ProjFile != "" {
-			if err := model.CheckModel(mp.ProjFile, false); err != nil {
-				log(ctx, "download-model: index entry stale, re-downloading projection", "proj-file", mp.ProjFile, "ERROR", err)
-				filesPresent = false
-			}
-		}
-		if filesPresent && projFileURL != "" && mp.ProjFile == "" {
-			filesPresent = false
-		}
-
-		if filesPresent {
-			mp.Downloaded = false
-			return mp, nil
-		}
-	}
-
-	// -------------------------------------------------------------------------
-
-	// Download the model sha file.
-	if _, err := m.pullShaFile(modelFileURL, progress); err != nil {
-		return Path{}, fmt.Errorf("download-model: unable to download sha file: %w", err)
-	}
-
-	// Download the model file.
-	modelFileName, downloadedMF, err := m.pullFile(ctx, modelFileURL, progress)
+	modelFileName, downloadedMF, err := m.downloadModelFile(ctx, mLoc, progress)
 	if err != nil {
 		return Path{}, err
 	}
 
-	// Check the model file matches what is in the sha file.
-	if err := model.CheckModel(modelFileName, true); err != nil {
-		return Path{}, fmt.Errorf("download-model: unable to check model: %w", err)
-	}
-
-	// If there is no proj file we are done.
-	if projFileURL == "" {
+	if projLoc == nil {
 		return Path{ModelFiles: []string{modelFileName}, Downloaded: downloadedMF}, nil
 	}
 
-	// -------------------------------------------------------------------------
-
 	projFileName := createProjFileName(modelFileName)
 
-	// projFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen3-8B-Q8_0.gguf
-	// shaFileName:  /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha/mmproj-Qwen3-8B-Q8_0.gguf
+	if mp, hit, err := m.tryReuseProjFromURLName(ctx, log, *projLoc, modelFileName, projFileName, downloadedMF); err != nil {
+		return Path{}, err
+	} else if hit {
+		return mp, nil
+	}
+
+	// Pull the projection's sha pointer first so we can compare against any
+	// existing local proj's sha and skip the body download on a match.
 	shaFileName := filepath.Join(filepath.Dir(projFileName), "sha", filepath.Base(projFileName))
 
-	// -------------------------------------------------------------------------
-	// Optimization 1: Check if the projection file from the URL already exists.
-
-	urlProjFileName, err := extractFileName(projFileURL)
-	if err != nil {
-		return Path{}, fmt.Errorf("download-model: unable to extract proj file name: %w", err)
-	}
-
-	urlProjFilePath := filepath.Join(filepath.Dir(projFileName), urlProjFileName)
-	urlShaFilePath := filepath.Join(filepath.Dir(projFileName), "sha", urlProjFileName)
-
-	if _, err := os.Stat(urlProjFilePath); err == nil {
-		log(ctx, "download-model: found existing proj file by URL name, copying", "src", urlProjFileName, "dst", filepath.Base(projFileName))
-
-		if err := copyFile(urlProjFilePath, projFileName); err != nil {
-			return Path{}, fmt.Errorf("download-model: unable to copy proj file: %w", err)
-		}
-
-		if _, err := os.Stat(urlShaFilePath); err == nil {
-			if err := copyFile(urlShaFilePath, shaFileName); err != nil {
-				return Path{}, fmt.Errorf("download-model: unable to copy proj sha file: %w", err)
-			}
-		}
-
-		if err := model.CheckModel(projFileName, true); err == nil {
-			log(ctx, "download-model: skipping proj download, using existing file")
-			return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: downloadedMF}, nil
-		}
-	}
-
-	// -------------------------------------------------------------------------
-	// Optimization 2: Download sha file and check if any existing projection
-	// file matches by comparing sha values.
-
-	orgShaFileName, err := m.pullShaFile(projFileURL, progress)
+	orgShaFileName, _, err := m.pull(context.Background(), *projLoc, pullSha, progress)
 	if err != nil {
 		return Path{}, fmt.Errorf("download-model: unable to download sha file: %w", err)
 	}
 
-	existingProj, existingSha, found := m.findMatchingProjBySha(orgShaFileName)
-	if found {
-		log(ctx, "download-model: found existing proj file by SHA match, copying", "src", filepath.Base(existingProj), "dst", filepath.Base(projFileName))
-
-		if err := copyFile(existingProj, projFileName); err != nil {
-			return Path{}, fmt.Errorf("download-model: unable to copy proj file: %w", err)
-		}
-		if err := copyFile(existingSha, shaFileName); err != nil {
-			return Path{}, fmt.Errorf("download-model: unable to copy proj sha file: %w", err)
-		}
-
-		os.Remove(orgShaFileName)
-
-		if err := model.CheckModel(projFileName, true); err == nil {
-			log(ctx, "download-model: skipping proj download, using existing file")
-			return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: downloadedMF}, nil
-		}
+	if mp, hit, err := m.tryReuseProjFromSHA(ctx, log, orgShaFileName, modelFileName, projFileName, shaFileName, downloadedMF); err != nil {
+		return Path{}, err
+	} else if hit {
+		return mp, nil
 	}
 
 	// Rename the downloaded sha file to match our naming convention.
@@ -533,10 +485,7 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, modelFile
 		return Path{}, fmt.Errorf("download-model: unable to rename projector sha file: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-	// No existing projection file found, download it.
-
-	orjProjFile, downloadedPF, err := m.pullFile(ctx, projFileURL, progress)
+	orjProjFile, _, err := m.pull(ctx, *projLoc, pullBody, progress)
 	if err != nil {
 		return Path{}, err
 	}
@@ -549,81 +498,265 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, modelFile
 		return Path{}, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
-	return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: downloadedMF && downloadedPF}, nil
+	// Downloaded is true when the model body was freshly fetched OR the
+	// projection body was freshly fetched. Reuse paths above return earlier
+	// preserving the model-body flag verbatim.
+	return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: true}, nil
 }
 
-func (m *Models) pullShaFile(modelFileURL string, progress downloader.ProgressFunc) (string, error) {
-	// modelFileURL: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
-	// rawFileURL:   Qwen/Qwen3-8B-GGUF/raw/main/Qwen3-8B-Q8_0.gguf
-	rawFileURL := strings.Replace(modelFileURL, "resolve", "raw", 1)
-
-	modelFilePath, modelFileName, err := m.modelFilePathAndName(modelFileURL)
-	if err != nil {
-		return "", err
+// checkValidatedIndex returns an existing Path when the index already has a
+// validated entry for this model AND every recorded file still passes the
+// size check (size mismatch = caller may have deleted the file or a prior
+// split download truncated a shard). On a miss the second return is false
+// and the caller falls through to the regular pull path.
+func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLoc Locator, projLoc *Locator) (Path, bool) {
+	mp, found := m.loadIndex()[mLoc.ModelID]
+	if !found || !mp.Validated {
+		return Path{}, false
 	}
 
-	// /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
-	// /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/sha
-	shaDest := filepath.Join(modelFilePath, "sha")
-	shaFile := filepath.Join(shaDest, filepath.Base(modelFileName))
-
-	if !hasNetwork() {
-		return shaFile, nil
+	hasFile := false
+	for _, mf := range mp.ModelFiles {
+		if filepath.Base(mf) == mLoc.UpstreamFile {
+			hasFile = true
+			break
+		}
+	}
+	if !hasFile {
+		return Path{}, false
 	}
 
-	if _, err := downloader.Download(context.Background(), rawFileURL, shaDest, progress, 0); err != nil {
-		return "", fmt.Errorf("pull-sha-file: unable to download sha: %w", err)
+	// Re-verify every recorded file (model splits and any projection) is
+	// still present on disk AND matches the size from its sha pointer.
+	for _, mf := range mp.ModelFiles {
+		if err := model.CheckModel(mf, false); err != nil {
+			log(ctx, "download-model: index entry stale, re-downloading", "model-file", mf, "ERROR", err)
+			return Path{}, false
+		}
 	}
 
-	return shaFile, nil
+	if projLoc != nil {
+		if mp.ProjFile == "" {
+			return Path{}, false
+		}
+		if err := model.CheckModel(mp.ProjFile, false); err != nil {
+			log(ctx, "download-model: index entry stale, re-downloading projection", "proj-file", mp.ProjFile, "ERROR", err)
+			return Path{}, false
+		}
+	}
+
+	mp.Downloaded = false
+	return mp, true
 }
 
-func (m *Models) pullFile(ctx context.Context, fileURL string, progress downloader.ProgressFunc) (string, bool, error) {
-	modelFilePath, modelFileName, err := m.modelFilePathAndName(fileURL)
-	if err != nil {
-		return "", false, fmt.Errorf("pull-sha-file: unable to extract file-path: %w", err)
+// downloadModelFile fetches the model body and its sha pointer, verifies
+// the body against the pointer, and returns the on-disk path of the body.
+// The boolean indicates whether the body was freshly downloaded (false
+// when the getter no-op'd because the file already existed at the expected
+// size).
+func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress downloader.ProgressFunc) (string, bool, error) {
+	if _, _, err := m.pull(context.Background(), mLoc, pullSha, progress); err != nil {
+		return "", false, fmt.Errorf("download-model: unable to download sha file: %w", err)
 	}
 
-	downloaded, err := downloader.Download(ctx, fileURL, modelFilePath, progress, downloader.SizeIntervalMB100)
+	modelFileName, downloaded, err := m.pull(ctx, mLoc, pullBody, progress)
 	if err != nil {
-		return "", false, fmt.Errorf("pull-sha-file: unable to download model: %w", err)
+		return "", false, err
+	}
+
+	if err := model.CheckModel(modelFileName, true); err != nil {
+		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
 	return modelFileName, downloaded, nil
 }
 
-func (m *Models) modelFilePathAndName(modelFileURL string) (string, string, error) {
-	mURL, err := url.Parse(modelFileURL)
-	if err != nil {
-		return "", "", fmt.Errorf("model-file-path-and-name: unable to parse fileURL: %w", err)
+// tryReuseProjFromURLName is optimization 1: if a previous download landed
+// the projection under its upstream basename, copy it into place under the
+// canonical mmproj-<modelID> name instead of re-fetching the body. Misses
+// when the URL-name file is absent or fails its sha re-check.
+func (m *Models) tryReuseProjFromURLName(ctx context.Context, log applog.Logger, projLoc Locator, modelFileName, projFileName string, downloadedMF bool) (Path, bool, error) {
+	urlProjFileName := projLoc.UpstreamFile
+	urlProjFilePath := filepath.Join(filepath.Dir(projFileName), urlProjFileName)
+	urlShaFilePath := filepath.Join(filepath.Dir(projFileName), "sha", urlProjFileName)
+	shaFileName := filepath.Join(filepath.Dir(projFileName), "sha", filepath.Base(projFileName))
+
+	if _, err := os.Stat(urlProjFilePath); err != nil {
+		return Path{}, false, nil
 	}
 
-	// Strip the /download prefix used by Kronk download server URLs.
-	urlPath := strings.TrimPrefix(mURL.Path, "/download")
+	log(ctx, "download-model: found existing proj file by URL name, copying", "src", urlProjFileName, "dst", filepath.Base(projFileName))
 
-	parts := strings.Split(urlPath, "/")
-	if len(parts) < 3 {
-		return "", "", fmt.Errorf("model-file-path-and-name: invalid huggingface url: %q", mURL.Path)
+	if err := copyFile(urlProjFilePath, projFileName); err != nil {
+		return Path{}, false, fmt.Errorf("download-model: unable to copy proj file: %w", err)
 	}
 
-	fileName, err := extractFileName(modelFileURL)
-	if err != nil {
-		return "", "", fmt.Errorf("model-file-path-and-name: unable to extract file name: %w", err)
+	if _, err := os.Stat(urlShaFilePath); err == nil {
+		if err := copyFile(urlShaFilePath, shaFileName); err != nil {
+			return Path{}, false, fmt.Errorf("download-model: unable to copy proj sha file: %w", err)
+		}
 	}
 
-	modelFilePath := filepath.Join(m.modelsPath, parts[1], parts[2])
-	modelFileName := filepath.Join(modelFilePath, fileName)
+	if err := model.CheckModel(projFileName, true); err != nil {
+		// Copied file failed verification — fall through to regular download.
+		return Path{}, false, nil
+	}
 
-	// modelFileURL:  Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
-	// parts:         huggingface.co, Qwen, Qwen3-8B-GGUF, resolve, main, Qwen3-8B-Q8_0.gguf
-	// fileName:      Qwen3-8B-Q8_0.gguf
-	// modelFilePath: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF
-	// modelFileName: /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
+	log(ctx, "download-model: skipping proj download, using existing file")
+	return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: downloadedMF}, true, nil
+}
 
-	return modelFilePath, modelFileName, nil
+// tryReuseProjFromSHA is optimization 2: after pulling the projection's
+// sha pointer, scan the local sha directory for any existing mmproj file
+// whose pointer contents are identical. On a match, copy that proj into
+// place instead of fetching the body — useful when the user has the same
+// projection installed under another model id.
+func (m *Models) tryReuseProjFromSHA(ctx context.Context, log applog.Logger, orgShaFileName, modelFileName, projFileName, shaFileName string, downloadedMF bool) (Path, bool, error) {
+	existingProj, existingSha, found := m.findMatchingProjBySha(orgShaFileName)
+	if !found {
+		return Path{}, false, nil
+	}
+
+	log(ctx, "download-model: found existing proj file by SHA match, copying", "src", filepath.Base(existingProj), "dst", filepath.Base(projFileName))
+
+	if err := copyFile(existingProj, projFileName); err != nil {
+		return Path{}, false, fmt.Errorf("download-model: unable to copy proj file: %w", err)
+	}
+	if err := copyFile(existingSha, shaFileName); err != nil {
+		return Path{}, false, fmt.Errorf("download-model: unable to copy proj sha file: %w", err)
+	}
+
+	os.Remove(orgShaFileName)
+
+	if err := model.CheckModel(projFileName, true); err != nil {
+		// Copied file failed verification — fall through to regular download.
+		return Path{}, false, nil
+	}
+
+	log(ctx, "download-model: skipping proj download, using existing file")
+	return Path{ModelFiles: []string{modelFileName}, ProjFile: projFileName, Downloaded: downloadedMF}, true, nil
 }
 
 // =============================================================================
+// Pull (collapsed pullFile + pullShaFile)
+
+// pullKind selects which artifact of a HuggingFace file pull operates on.
+// pullBody fetches the model bytes at the resolve URL. pullSha fetches the
+// LFS sha pointer at the matching raw URL into a "sha" sibling directory
+// and returns its on-disk path.
+type pullKind int
+
+const (
+	pullBody pullKind = iota
+	pullSha
+)
+
+// pull is the single artifact fetcher behind both model-body and sha
+// downloads. The artifact kind controls (a) which URL transform to apply,
+// (b) which destination directory to write to, and (c) the progress
+// interval. The sha variant additionally short-circuits to the expected
+// on-disk path when there is no network, so partial-offline flows can
+// proceed against locally-present pointer files.
+func (m *Models) pull(ctx context.Context, loc Locator, kind pullKind, progress downloader.ProgressFunc) (string, bool, error) {
+	modelDir := loc.ModelDir(m)
+	modelPath := loc.ModelPath(m)
+
+	var destDir, destFile, srcURL string
+	var interval int64
+
+	switch kind {
+	case pullSha:
+		destDir = filepath.Join(modelDir, "sha")
+		destFile = filepath.Join(destDir, filepath.Base(modelPath))
+		srcURL = strings.Replace(loc.RawURL, "resolve", "raw", 1)
+		interval = 0
+
+		// Offline: trust the sha already on disk; downloads of the body
+		// will pick it up via the standard CheckModel path.
+		if !hasNetworkFn() {
+			return destFile, false, nil
+		}
+
+	case pullBody:
+		destDir = modelDir
+		destFile = modelPath
+		srcURL = loc.RawURL
+		interval = downloader.SizeIntervalMB100
+
+	default:
+		return "", false, fmt.Errorf("pull: unknown kind %d", kind)
+	}
+
+	src, err := withDestFilename(srcURL, filepath.Base(destFile))
+	if err != nil {
+		return "", false, fmt.Errorf("pull: %w", err)
+	}
+
+	downloaded, err := downloadFn(ctx, src, destDir, progress, interval)
+	if err != nil {
+		return "", false, fmt.Errorf("pull: unable to download: %w", err)
+	}
+
+	return destFile, downloaded, nil
+}
+
+// =============================================================================
+// Locator — URL → on-disk-name derivation, done once per file.
+
+// Locator captures every name that derives from a single HuggingFace
+// download URL: the owner/repo, the upstream filename, and the model
+// id used for index lookups. One parse — downstream code reads fields
+// rather than re-parsing the URL in five places.
+type Locator struct {
+	RawURL       string // the normalized HF resolve URL passed in
+	Owner        string // first path segment ("Qwen")
+	Repo         string // second path segment ("Qwen3-8B-GGUF")
+	UpstreamFile string // url basename ("Qwen3-8B-Q8_0.gguf")
+	ModelID      string // extractModelID(UpstreamFile) — matches the index key
+}
+
+// newLocator parses a HuggingFace download URL into a Locator. Accepts
+// the optional kronk "/download" prefix used by mirror-download URLs.
+func newLocator(rawURL string) (Locator, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return Locator{}, fmt.Errorf("locator: parse: %w", err)
+	}
+
+	urlPath := strings.TrimPrefix(u.Path, "/download")
+	parts := strings.Split(urlPath, "/")
+	if len(parts) < 3 {
+		return Locator{}, fmt.Errorf("locator: invalid huggingface url: %q", u.Path)
+	}
+
+	// urlPath like "/owner/repo/resolve/main/file": after the leading
+	// empty segment, owner=parts[1], repo=parts[2], file=path.Base.
+	owner := parts[1]
+	repo := parts[2]
+	upstream := path.Base(u.Path)
+
+	return Locator{
+		RawURL:       rawURL,
+		Owner:        owner,
+		Repo:         repo,
+		UpstreamFile: upstream,
+		ModelID:      extractModelID(upstream),
+	}, nil
+}
+
+// ModelDir returns the on-disk directory where this model's files live:
+// <modelsPath>/<owner>/<repo>.
+func (l Locator) ModelDir(m *Models) string {
+	return filepath.Join(m.modelsPath, l.Owner, l.Repo)
+}
+
+// ModelPath returns the on-disk path of the model body file.
+func (l Locator) ModelPath(m *Models) string {
+	return filepath.Join(l.ModelDir(m), l.UpstreamFile)
+}
+
+// =============================================================================
+// Index/size verification
 
 // verifyAllSizes confirms every shard (and the projection, if any) of the
 // supplied model entry exists on disk and its size matches the value
@@ -663,6 +796,9 @@ func (m *Models) verifySizesFromIndex(modelID string) error {
 	return verifyAllSizes(mp)
 }
 
+// =============================================================================
+// Naming helpers
+
 func createProjFileName(modelFileName string) string {
 	modelID := extractModelID(modelFileName)
 	profFileName := fmt.Sprintf("mmproj-%s%s", modelID, filepath.Ext(modelFileName))
@@ -695,19 +831,33 @@ func extractModelID(modelFileName string) string {
 	return name
 }
 
-func extractFileName(modelFileURL string) (string, error) {
-	u, err := url.Parse(modelFileURL)
+// withDestFilename returns rawURL with a "?filename=<destName>" query
+// parameter attached when destName differs from the URL's own basename.
+// go-getter consumes this hint client-side (it strips the parameter
+// before issuing the HTTP request) and writes the response body to the
+// requested filename from byte zero — avoiding the bad UX of a
+// multi-GB download appearing under its upstream name and only being
+// renamed after the transfer completes. When destName already matches
+// the URL basename the original URL is returned unchanged.
+func withDestFilename(rawURL, destName string) (string, error) {
+	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("extract-file-name: parse error: %w", err)
+		return "", fmt.Errorf("with-dest-filename: parse: %w", err)
 	}
 
-	name := path.Base(u.Path)
+	if path.Base(u.Path) == destName {
+		return rawURL, nil
+	}
 
-	// modelFileURL: Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0.gguf
-	// name:         Qwen3-8B-Q8_0.gguf
+	q := u.Query()
+	q.Set("filename", destName)
+	u.RawQuery = q.Encode()
 
-	return name, nil
+	return u.String(), nil
 }
+
+// =============================================================================
+// Misc helpers
 
 func hasNetwork() bool {
 	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 5*time.Second)
