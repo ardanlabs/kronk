@@ -61,7 +61,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"id", jobID,
 			"total_prompt", nPrompt,
 			"output_tokens", outputTokens,
-			"time", elapsed.String(),
+			"elapsed", elapsed.String(),
 			"active_streams", remaining,
 		}
 

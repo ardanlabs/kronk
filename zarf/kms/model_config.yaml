@@ -54,31 +54,3 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     temperature: 1.0
     top_k: 64
     top_p: 0.95
-
-# MTP diagnostic profile for Qwen3.6-27B (hybrid: Gated DeltaNet + Gated Attention).
-# Goal: isolate whether the 0% draft acceptance is caused by stochastic-sampling
-# miscalibration (peaky MTP head vs. wide target distribution at T=0.8 + reasoning
-# traces) or by partial-mid-sequence MemorySeqRm corrupting the draft's recurrent
-# state after the first rejection.
-#
-#   - enable_thinking=false  removes the reasoning trace, which is the hardest
-#                            text to draft and where MTP heads are weakest.
-#   - top_k=1                forces effective greedy decoding (argmax) so the
-#                            speculative-sampling acceptance rule becomes a
-#                            strict token-match instead of min(1, p_t/q_d).
-#                            (We cannot set temperature:0 in YAML because
-#                            SamplingConfig.WithDefaults overwrites zeros.)
-#   - temperature=0.01       sharp, near-greedy distribution to back up top_k=1.
-#
-# Expected outcomes:
-#   acceptance jumps to 30-60%  → sampler/distribution mismatch is dominant.
-#   acceptance stays near 0%    → draft KV corruption on rejection is the cause
-#                                  (rollbackDraft uses MemorySeqRm with no
-#                                  snapshot/restore for hybrid drafts).
-mtp-Qwen3.6-27B-UD-Q8_K_XL:
-  context-window: 32768
-  sampling-parameters:
-    enable_thinking: "false"
-    top_k: 1
-    top_p: 1.0
-    temperature: 0.01

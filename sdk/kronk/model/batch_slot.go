@@ -141,6 +141,7 @@ type slot struct {
 	specDraftedTotal   int           // Total draft tokens generated across all speculative steps
 	specAcceptedTotal  int           // Total draft tokens accepted across all speculative steps
 	specAccEMA         float64       // Exponential moving average of acceptance rate (persists across requests)
+	specRounds         int           // Verify rounds completed this request (used to throttle per-round logging)
 
 	// Per-slot owned buffers for speculative decoding. Avoids shared buffer
 	// corruption when multiple slots generate draft tokens in the same
@@ -195,6 +196,22 @@ type slot struct {
 	// Cleared in slot.reset().
 	mtpDisabledForRequest bool
 
+	// specSnapshot holds a snapshot of the target context's per-sequence
+	// state taken right before a speculative batch is decoded. It is
+	// required for HYBRID target models (transformer + recurrent layers):
+	// MemorySeqRm can trim the transformer KV but cannot rewind the
+	// per-sequence recurrent state, so a partial-rejection round would
+	// leave the recurrent layer advanced past the accepted boundary
+	// and the next llama_decode fails with -1. The snapshot lets
+	// verifySpeculativeTokens restore the pre-spec state and re-decode
+	// only the accepted prefix.
+	//
+	// Allocated lazy-grow / never-shrink. The buffer is sized via
+	// llama.StateSeqGetSize before each snapshot — the required size
+	// scales with current KV occupancy. Length is reset to the actual
+	// snapshot bytes; cap is retained across requests.
+	specSnapshot []byte
+
 	// Sparse candidate-based speculative decoding fields.
 	draftSampler         llama.Sampler            // Per-slot sampler for draft model (non-greedy)
 	specDraftDistsSparse [][]candidateEntry       // Sparse draft distributions per drafted token
@@ -247,6 +264,7 @@ func (s *slot) reset() {
 	s.specBaseBatch = 0
 	s.specDraftedTotal = 0
 	s.specAcceptedTotal = 0
+	s.specRounds = 0
 	s.draftTokensBuf = s.draftTokensBuf[:0]
 	// Note: draftCachedTokens persists across requests for incremental draft KV reuse.
 

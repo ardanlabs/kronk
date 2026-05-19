@@ -300,9 +300,24 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 					s.mtpHasBatch = true
 				}
 
-				e.model.log(s.job.ctx, "speculative", "status", "batch-add",
-					"slot", s.id, "sampled_plus_drafts", 1+len(draftTokens),
-					"batch_offset", s.specBaseBatch, "target_nPast", s.nPast)
+				// Hybrid target models need a state snapshot BEFORE the
+				// spec decode so verifySpeculativeTokens can roll back
+				// a partial rejection. MemorySeqRm can trim the
+				// transformer KV but cannot rewind the per-sequence
+				// recurrent state; without snapshot/restore the next
+				// llama_decode fails with -1 on the leftover advanced
+				// recurrent state. No-op for dense / pure-attention
+				// targets (those rollback fine via MemorySeqRm).
+				if e.model.modelInfo.Type == ModelTypeHybrid {
+					if err := e.captureTargetSpecSnapshot(s); err != nil {
+						e.model.log(s.job.ctx, "speculative", "status", "snapshot-error",
+							"slot", s.id, "err", err)
+						// Clear specSnapshot length so verify falls back
+						// to MemorySeqRm (which will likely fail on a
+						// partial reject, but full-accept rounds still work).
+						s.specSnapshot = s.specSnapshot[:0]
+					}
+				}
 
 				// Don't advance nPast here — verification handles it.
 				s.iBatch = -1
