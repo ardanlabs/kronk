@@ -62,13 +62,26 @@ var DiscardLogger Logger = func(ctx context.Context, msg string, args ...any) {
 
 // FmtLogger provides a basic logger that writes to stdout. If a trace id
 // has been set on the context via SetTraceID it is included in the output.
+//
+// Progress-style messages may start with '\r' so successive log lines
+// overwrite the same terminal row. When that's the case we hoist the
+// carriage return to the very beginning of the output (so the KRONK
+// prefix prints at column 0 of the refreshed line, not the tail of the
+// previous one) and append the ANSI "erase to end of line" sequence so
+// shorter updates don't leave trailing garbage from longer prior writes.
 var FmtLogger Logger = func(ctx context.Context, msg string, args ...any) {
 	now := time.Now().Format(time.RFC3339Nano)
 
+	cr := ""
+	if len(msg) > 0 && msg[0] == '\r' {
+		cr = "\r"
+		msg = msg[1:]
+	}
+
 	if traceID := GetTraceID(ctx); traceID != "" && traceID != NoTraceID {
-		fmt.Printf("KRONK: %s: INFO: %s: %s:", now, traceID, msg)
+		fmt.Printf("%sKRONK: %s: INFO: %s: %s:", cr, now, traceID, msg)
 	} else {
-		fmt.Printf("KRONK: %s: %s:", now, msg)
+		fmt.Printf("%sKRONK: %s: %s:", cr, now, msg)
 	}
 
 	for i := 0; i < len(args); i += 2 {
@@ -77,7 +90,12 @@ var FmtLogger Logger = func(ctx context.Context, msg string, args ...any) {
 		}
 	}
 
-	if len(msg) > 0 && msg[0] != '\r' {
+	switch cr {
+	case "":
 		fmt.Println()
+	default:
+		// Erase from cursor to end of line so a shorter progress update
+		// doesn't leave stale characters from the previous longer line.
+		fmt.Print("\x1b[K")
 	}
 }
