@@ -530,6 +530,14 @@ export interface ChatUsage {
   draft_tokens?: number;
   draft_accepted_tokens?: number;
   draft_acceptance_rate?: number;
+  // Fraction of output_tokens emitted via speculation (rounds + accepted drafts).
+  // Together with draft_acceptance_rate this distinguishes "MTP ran the whole
+  // request at high acceptance" from "MTP ran for a few rounds then was disabled
+  // and the rest was target-only".
+  draft_coverage?: number;
+  // Empty when MTP stayed enabled. Otherwise one of: "imc-hit",
+  // "hybrid-restore", "mirror-error".
+  draft_disable_reason?: string;
 }
 
 export interface ChatStreamResponse {

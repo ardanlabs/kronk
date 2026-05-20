@@ -493,26 +493,20 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		s.draftPromptTokens = nil
 		s.draftPrefillNeeded = false
 
-		// DIAGNOSTIC (temporary): the safe-default below would disable
-		// MTP on every IMC cache hit because the draft KV has no
-		// pre-norm rows for the restored prefix. We're leaving MTP
-		// ENABLED on IMC hits to measure the actual acceptance rate
-		// when running against a stale draft context. If acceptance
-		// collapses to ~0% as expected, we'll need to extend IMC to
-		// snapshot/restore the draft seq state alongside the target.
-		// If acceptance holds, the disable was over-conservative and
-		// can be removed permanently.
-		//
-		// Original guard (re-enable to restore safe behavior):
-		//   if job.imcCacheHit {
-		//       s.mtpDisabledForRequest = true
-		//       e.model.log(job.ctx, "speculative", "status", "mtp-disabled-imc-hit",
-		//           "slot", s.id, "id", job.id)
-		//   }
+		// Disable MTP for this request when IMC restored the target
+		// prefix from cache: IMC only snapshots/restores the TARGET
+		// seq state, so the draft KV has no pre-norm rows for the
+		// restored prefix and pendingH is empty. Running MTP in that
+		// state produces near-zero acceptance and poisons specAccEMA
+		// (which persists across requests on the slot). Until IMC is
+		// extended to snapshot/restore the draft seq + pendingH, fall
+		// back to target-only decoding for the remainder of the
+		// request.
 		if job.imcCacheHit {
-			e.model.log(job.ctx, "speculative", "status", "mtp-imc-hit-diagnostic",
-				"slot", s.id, "id", job.id,
-				"note", "MTP left enabled on IMC hit to measure acceptance against stale draft KV")
+			s.mtpDisabledForRequest = true
+			s.mtpDisableReason = "imc-hit"
+			e.model.log(job.ctx, "speculative", "status", "mtp-disabled-imc-hit",
+				"slot", s.id, "id", job.id)
 		}
 	}
 	if e.model.draft != nil && !e.model.draft.mtp && !draftSlotHasMedia {

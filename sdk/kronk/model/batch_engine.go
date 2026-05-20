@@ -340,7 +340,32 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Continue prefill for text-only slots using round-robin allocation.
 	// Pull NUBatch tokens from each slot in turn to prevent one slot from
 	// starving others by consuming the entire tray.
+	//
+	// MTP correctness constraint: addPrefillChunk records a slot's pre-norm
+	// range as a single (targetBatchStart, targetBatchCount) tuple, which
+	// assumes the slot's rows in e.batch are contiguous. If two or more
+	// slots are prefilling and the outer loop runs a second pass, the
+	// rows of any one slot become interleaved with another slot's rows
+	// and the mirror step would copy the wrong pre-norm hidden states
+	// into the draft KV. To keep the recorded range contiguous, cap the
+	// outer loop at one pass when MTP is active and more than one slot
+	// is prefilling. Single-slot prefill keeps looping (rows are
+	// trivially contiguous), so single-request prefill throughput is
+	// unaffected.
 	chunkLimit := e.model.cfg.NUBatch()
+	mtpLimitOnePass := false
+	if mtpDraft {
+		nPrefillSlots := 0
+		for _, s := range e.slots {
+			if s.active && s.prefillTokens != nil {
+				nPrefillSlots++
+				if nPrefillSlots > 1 {
+					mtpLimitOnePass = true
+					break
+				}
+			}
+		}
+	}
 	for {
 		before := e.batch.NTokens
 		for _, s := range e.slots {
@@ -363,6 +388,12 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 		// Stop when no tokens were added (all slots done or tray full).
 		if e.batch.NTokens == before {
+			break
+		}
+
+		// MTP multi-slot prefill: only one pass to keep each slot's rows
+		// contiguous in e.batch (see comment above).
+		if mtpLimitOnePass {
 			break
 		}
 	}

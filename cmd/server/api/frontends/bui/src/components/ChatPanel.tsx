@@ -1055,7 +1055,7 @@ export default function ChatPanel({
                 Output: {msg.usage.output_tokens} | 
                 TPS: {msg.usage.tokens_per_second.toFixed(2)}
                 {(msg.usage.draft_tokens ?? 0) > 0 && (
-                  <> | DMAR: {((msg.usage.draft_acceptance_rate ?? (msg.usage.draft_accepted_tokens ?? 0) / (msg.usage.draft_tokens ?? 1)) * 100).toFixed(2)}%</>
+                  <> | DMAR: {((msg.usage.draft_acceptance_rate ?? (msg.usage.draft_accepted_tokens ?? 0) / (msg.usage.draft_tokens ?? 1)) * 100).toFixed(2)}% | COV: {((msg.usage.draft_coverage ?? 0) * 100).toFixed(0)}%{msg.usage.draft_disable_reason ? ` (off: ${msg.usage.draft_disable_reason})` : ''}</>
                 )}
                 {(msg.usage.time_to_first_token_ms ?? 0) > 0 && (
                   <> | TTFT: {msg.usage.time_to_first_token_ms!.toFixed(0)}ms</>

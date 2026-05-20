@@ -147,12 +147,15 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// batch and prefillBatch remain zero because MTP doesn't use them,
 	// but they're kept allocated for type-uniformity with the
 	// separate-GGUF draft (BatchFree on a zero struct is harmless).
-	nVocab := int(llama.VocabNTokens(llama.ModelGetVocab(targetModel)))
-
-	draftProbs := make([][]float32, nDraft)
-	for i := range draftProbs {
-		draftProbs[i] = make([]float32, nVocab)
-	}
+	//
+	// Note: draftBuf, draftProbs, targetProbs, and adjusted are
+	// intentionally left nil/empty for MTP. verifySpeculativeTokens
+	// forces greedy verification on the MTP path (the MTP head does
+	// not produce per-token distributions), so the probabilistic
+	// sampling branches that read those buffers are unreachable. The
+	// lazy sortIndices / filterBuf scratch buffers stay zero for the
+	// same reason. Skipping the full-vocab allocations avoids ~1-2 MB
+	// of unused memory per drafter on large-vocab models.
 
 	// Construct the *draftModel BEFORE pinning so the runtime.Pinner
 	// fields stay at their final addresses. runtime.Pinner is invalid
@@ -176,10 +179,6 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		draftEmbdSlice:  make([]float32, nEmbd),
 		mirrorEmbdSlice: make([]float32, int(params.NBatch)*nEmbd),
 		nDraft:          nDraft,
-		draftBuf:        make([]llama.Token, 0, nDraft),
-		draftProbs:      draftProbs,
-		targetProbs:     make([]float32, nVocab),
-		adjusted:        make([]float32, nVocab),
 	}
 
 	// Pin the Go-owned embd buffers and attach them to the batches.

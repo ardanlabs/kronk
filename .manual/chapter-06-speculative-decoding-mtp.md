@@ -424,12 +424,12 @@ draft model. `chooseNDraft(s, maxDraft)` in
 scales down based on the slot's exponential moving average of
 acceptance rate (`specAccEMA`):
 
-| EMA range  | `nDraft`         |
-| ---------- | ---------------- |
-| `< 0.30`   | `min(1, max)`    |
-| `< 0.50`   | `min(1, max)`    |
-| `< 0.70`   | `min(2, max)`    |
-| `< 0.85`   | `min(3, max)`    |
+| EMA range  | `nDraft`           |
+| ---------- | ------------------ |
+| `< 0.30`   | `0` (spec bypassed) |
+| `< 0.50`   | `min(1, max)`      |
+| `< 0.70`   | `min(2, max)`      |
+| `< 0.85`   | `min(3, max)`      |
 | `≥ 0.85`   | `max` (configured) |
 
 `specAccEMA` is updated per spec round with the formula
@@ -455,7 +455,7 @@ buffer policy.
 | `pendingH []float32`                                  | Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.                                            |
 | `targetBatchStart / Count / BasePos`                  | Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live. |
 | `mtpHasBatch`                                         | True between `batch.Add()` and the post-decode mirror; cleared by the mirror.                                                              |
-| `mtpDisabledForRequest`                               | Set at `startSlot` to disable MTP for this request (currently used as a diagnostic switch on IMC cache hits — see §6.16).                  |
+| `mtpDisabledForRequest`                               | Disables MTP for the remainder of the current request. Set at `startSlot` on IMC cache hits (the IMC restore covers only the target seq, so the draft KV would be stale — see §6.16), and set inside `finalizeSpeculativeTokens` after a hybrid restore re-decode or a post-rollback mirror failure (in those cases the draft KV is wiped and the slot continues target-only). Cleared by `slot.reset()` when the slot is recycled for the next request. |
 | `specSnapshot []byte`                                 | Pre-spec target state buffer for hybrid rollback (§6.9). Lazy-grow.                                                                        |
 | `specRounds`                                          | Counter used to throttle per-round verify logging (logs first round, then every 32nd).                                                     |
 | `specPendingFinalize bool`                            | Gates Phase B (§6.8). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips. |
@@ -515,8 +515,10 @@ batch-engine logs):
 | ---------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------ |
 | `draft-model-mtp status=loading / loaded`      | `loadDraftModelMTP`                | Once at model startup.                                                                     |
 | `draft-model-mtp status=auto-detect-skipped`   | `selectAndLoadDraft`               | Once when the gate fails (no metadata, no pre-norm API, multi-slot).                       |
-| `speculative status=mtp-mirror-error`          | `processBatch` / `verifySpeculativeTokens` | Mirror decode failed; slot is finished or its draft KV is desync'd.                |
-| `speculative status=mtp-imc-hit-diagnostic`    | `startSlotText`                    | Per-request diagnostic (see §6.16 — IMC interaction).                                      |
+| `speculative status=mtp-mirror-error`          | `processBatch` / `finalizeSpeculativeTokens` | Mirror decode failed. In `processBatch` (non-spec path) the slot is finished; in `finalizeSpeculativeTokens` (post-verify path) MTP is disabled for the rest of the request via `mtp-disabled-mirror-error`. |
+| `speculative status=mtp-disabled-imc-hit`      | `startSlotText`                    | MTP disabled for this request because the prompt hit IMC cache — the draft KV has no rows for the restored prefix. Slot continues target-only; next request on the slot can use MTP again. |
+| `speculative status=mtp-disabled-hybrid-restore` | `finalizeSpeculativeTokens`      | MTP disabled for the remainder of the request after a successful hybrid restore re-decode. The target's pre-norm buffer now reflects the rebatch's rows, so the original `targetBatchStart` indices would mirror wrong rows. The draft seq is wiped and the slot continues target-only. |
+| `speculative status=mtp-disabled-mirror-error` | `finalizeSpeculativeTokens`        | MTP disabled for the remainder of the request after the post-verify mirror failed. `rollbackDraft` had already cleared the entire drafted range from the draft KV, so the accepted prefix can't be reconstructed by a later mirror. Draft seq is wiped; slot continues target-only. |
 | `speculative status=verify-done`               | `verifySpeculativeTokens`          | Throttled: first round + every 32nd. Carries `round`, `accepted`, `nDraft`, `acc_ema`.    |
 | `speculative status=restore-error`             | `verifySpeculativeTokens`          | Hybrid snapshot restore failed; falls back to broken `MemorySeqRm`.                        |
 | `speculative status=snapshot-error`            | `processBatch`                     | Hybrid snapshot capture failed; spec round will fall back to `MemorySeqRm` on rejection.   |
@@ -532,11 +534,11 @@ requests where the EMA collapsed mid-stream.
 | File                                                                                                                                         | Role for MTP                                                                                                                       |
 | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | [`sdk/kronk/model/draft_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go)                     | `mtpNextNLayers`, `loadDraftModelMTP`, `selectAndLoadDraft`. Sole source for MTP load + detect.                                    |
-| [`sdk/kronk/model/batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)                     | `mirrorTargetBatchToMTPDraft`, `generateDraftTokensMTP`, helpers (`batchTokensAt`, `unsafeFloatSlice`, `mirrorBatchCapacity`).     |
+| [`sdk/kronk/model/batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)                     | `mirrorTargetBatchToMTPDraft`, `generateDraftTokensMTP`, helpers (`batchTokensAt`, `mirrorBatchCapacity`).                         |
 | [`sdk/kronk/model/yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go)                               | FFI bindings for the three pre-norm symbols; `MTPAvailable`, `SetEmbeddingsPreNorm`, `GetEmbeddingsPreNorm{,Ith}`.                 |
 | [`sdk/kronk/model/model.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go)                             | `draftModel` struct extended with MTP fields (`mtp`, `nEmbd`, MTP batches, pinned embd slices). `Unload` skips shared `ModelFree`. |
 | [`sdk/kronk/model/batch_slot.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go)                   | `slot` struct extended with per-slot MTP state (`pendingH`, target-batch range, `mtpHasBatch`, `mtpDisabledForRequest`, `specSnapshot`, `specRounds`). |
-| [`sdk/kronk/model/batch_slot_start.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)       | Skips separate-draft-prefill on MTP; diagnostic IMC-hit logging.                                                                   |
+| [`sdk/kronk/model/batch_slot_start.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)       | Skips separate-draft-prefill on MTP; disables MTP for the request on IMC cache hits (draft KV would be stale).                     |
 | [`sdk/kronk/model/batch_engine.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)               | `processBatch` integration: claims slot's target-batch range at every add site, mirrors after every successful decode, dispatches MTP vs separate-GGUF draft generation. |
 | [`sdk/kronk/model/batch_prefill_text.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go)   | `addPrefillChunk` claims (or extends) the slot's MTP target-batch range so prefill rows get mirrored.                              |
 | [`sdk/kronk/model/batch_speculative.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go)     | Greedy-only MTP verify path; `originalSampled` snapshot; hybrid snapshot/restore; post-verify mirror; throttled `verify-done` log; MTP-specific `rollbackDraft`. |
@@ -575,7 +577,9 @@ go test -v -count=1 ./sdk/kronk/tests/mtp/...
 | Limitation                                          | Why                                                                                                                                                                   |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Greedy verify only                                  | The MTP head's AR loop runs greedy sampling and does not capture sparse draft distributions; probabilistic verify would always reject. See §6.8.                      |
-| IMC + MTP interaction is a measurement              | IMC restores only the target KV; the draft context has no snapshot, so an IMC cache-hit request runs MTP against an empty / stale draft context. The original guard would have disabled MTP on IMC hits; PR #593 leaves it enabled and logs `mtp-imc-hit-diagnostic` to measure real-world acceptance. If acceptance collapses to ~0%, the safe-default disable will be restored. |
+| IMC + MTP: MTP disabled on cache hits                | IMC restores only the target seq state; the draft context has no snapshot, so an IMC cache-hit request would otherwise run MTP against a stale draft KV (and no `pendingH`). The slot disables MTP for the rest of the request (`mtp-disabled-imc-hit`) and falls back to plain target decoding. The next request on the same slot can use MTP again. Lifting this would require extending IMC to snapshot/restore the draft seq + `pendingH` alongside the target seq. |
+| Multi-slot MTP prefill: one chunk per slot per round | `addPrefillChunk` records a slot's pre-norm range as a single `(start, count)` tuple, which requires the slot's rows in `e.batch` to be contiguous. With ≥2 prefilling slots, the outer round-robin loop in `processBatch` is capped at one pass so each slot contributes at most one chunk per target decode. Long multi-slot prefills therefore take more decode rounds than they would on the non-MTP path. Single-slot prefill is unaffected (rows are trivially contiguous and the loop keeps filling the tray). |
+| Hybrid + MTP: MTP disabled after partial-reject restore | On a hybrid target, partial rejection runs `restoreTargetSpecSnapshot`, which re-decodes a small rebatch on the target context. After that re-decode the target's pre-norm and logit buffers are indexed against the rebatch, not the original shared `e.batch`, so the mirror's `targetBatchStart` would read wrong rows. The slot disables MTP for the rest of the request (`mtp-disabled-hybrid-restore`) and continues target-only. A restore-aware mirror that takes explicit tokens + rebatch-local row indices would lift this. |
 | No vision / audio                                   | Speculative decoding in general is text-only in Kronk.                                                                                                                |
 | `defMTPNDraft = 4` is a fixed cap                   | The adaptive EMA scales down from 4, but there is no per-model config to raise the ceiling for an exceptionally well-behaved MTP head.                                |
 | Hybrid targets: f16 KV cache + no Flash Attention   | [config.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/config.go) forces `cache-type-k/v: f16` and `flash-attention: disabled` for any hybrid model — quantized KV requires FA and llama.cpp's hybrid arch does not yet support FA. Throughput on hybrid + MTP is significantly lower than dense / MoE targets even at `nseq-max: 1`. Unrelated to multi-slot. |

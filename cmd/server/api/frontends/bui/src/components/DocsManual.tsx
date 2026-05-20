@@ -3044,7 +3044,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
             <tbody>
               <tr>
                 <td><code>&lt; 0.30</code></td>
-                <td><code>min(1, max)</code></td>
+                <td><code>0</code> (spec bypassed)</td>
               </tr>
               <tr>
                 <td><code>&lt; 0.50</code></td>
@@ -3090,7 +3090,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><code>mtpDisabledForRequest</code></td>
-                <td>Set at <code>startSlot</code> to disable MTP for this request (currently used as a diagnostic switch on IMC cache hits — see §6.16).</td>
+                <td>Disables MTP for the remainder of the current request. Set at <code>startSlot</code> on IMC cache hits (the IMC restore covers only the target seq, so the draft KV would be stale — see §6.16), and set inside <code>finalizeSpeculativeTokens</code> after a hybrid restore re-decode or a post-rollback mirror failure (in those cases the draft KV is wiped and the slot continues target-only). Cleared by <code>slot.reset()</code> when the slot is recycled for the next request.</td>
               </tr>
               <tr>
                 <td><code>specSnapshot []byte</code></td>
@@ -3161,13 +3161,23 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><code>speculative status=mtp-mirror-error</code></td>
-                <td><code>processBatch</code> / <code>verifySpeculativeTokens</code></td>
-                <td>Mirror decode failed; slot is finished or its draft KV is desync'd.</td>
+                <td><code>processBatch</code> / <code>finalizeSpeculativeTokens</code></td>
+                <td>Mirror decode failed. In <code>processBatch</code> (non-spec path) the slot is finished; in <code>finalizeSpeculativeTokens</code> (post-verify path) MTP is disabled for the rest of the request via <code>mtp-disabled-mirror-error</code>.</td>
               </tr>
               <tr>
-                <td><code>speculative status=mtp-imc-hit-diagnostic</code></td>
+                <td><code>speculative status=mtp-disabled-imc-hit</code></td>
                 <td><code>startSlotText</code></td>
-                <td>Per-request diagnostic (see §6.16 — IMC interaction).</td>
+                <td>MTP disabled for this request because the prompt hit IMC cache — the draft KV has no rows for the restored prefix. Slot continues target-only; next request on the slot can use MTP again.</td>
+              </tr>
+              <tr>
+                <td><code>speculative status=mtp-disabled-hybrid-restore</code></td>
+                <td><code>finalizeSpeculativeTokens</code></td>
+                <td>MTP disabled for the remainder of the request after a successful hybrid restore re-decode. The target's pre-norm buffer now reflects the rebatch's rows, so the original <code>targetBatchStart</code> indices would mirror wrong rows. The draft seq is wiped and the slot continues target-only.</td>
+              </tr>
+              <tr>
+                <td><code>speculative status=mtp-disabled-mirror-error</code></td>
+                <td><code>finalizeSpeculativeTokens</code></td>
+                <td>MTP disabled for the remainder of the request after the post-verify mirror failed. <code>rollbackDraft</code> had already cleared the entire drafted range from the draft KV, so the accepted prefix can't be reconstructed by a later mirror. Draft seq is wiped; slot continues target-only.</td>
               </tr>
               <tr>
                 <td><code>speculative status=verify-done</code></td>
@@ -3207,7 +3217,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>sdk/kronk/model/batch_mtp.go</code></a></td>
-                <td><code>mirrorTargetBatchToMTPDraft</code>, <code>generateDraftTokensMTP</code>, helpers (<code>batchTokensAt</code>, <code>unsafeFloatSlice</code>, <code>mirrorBatchCapacity</code>).</td>
+                <td><code>mirrorTargetBatchToMTPDraft</code>, <code>generateDraftTokensMTP</code>, helpers (<code>batchTokensAt</code>, <code>mirrorBatchCapacity</code>).</td>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>sdk/kronk/model/yzma.go</code></a></td>
@@ -3223,7 +3233,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>sdk/kronk/model/batch_slot_start.go</code></a></td>
-                <td>Skips separate-draft-prefill on MTP; diagnostic IMC-hit logging.</td>
+                <td>Skips separate-draft-prefill on MTP; disables MTP for the request on IMC cache hits (draft KV would be stale).</td>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>sdk/kronk/model/batch_engine.go</code></a></td>
@@ -3277,8 +3287,16 @@ go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
                 <td>The MTP head's AR loop runs greedy sampling and does not capture sparse draft distributions; probabilistic verify would always reject. See §6.8.</td>
               </tr>
               <tr>
-                <td>IMC + MTP interaction is a measurement</td>
-                <td>IMC restores only the target KV; the draft context has no snapshot, so an IMC cache-hit request runs MTP against an empty / stale draft context. The original guard would have disabled MTP on IMC hits; PR #593 leaves it enabled and logs <code>mtp-imc-hit-diagnostic</code> to measure real-world acceptance. If acceptance collapses to ~0%, the safe-default disable will be restored.</td>
+                <td>IMC + MTP: MTP disabled on cache hits</td>
+                <td>IMC restores only the target seq state; the draft context has no snapshot, so an IMC cache-hit request would otherwise run MTP against a stale draft KV (and no <code>pendingH</code>). The slot disables MTP for the rest of the request (<code>mtp-disabled-imc-hit</code>) and falls back to plain target decoding. The next request on the same slot can use MTP again. Lifting this would require extending IMC to snapshot/restore the draft seq + <code>pendingH</code> alongside the target seq.</td>
+              </tr>
+              <tr>
+                <td>Multi-slot MTP prefill: one chunk per slot per round</td>
+                <td><code>addPrefillChunk</code> records a slot's pre-norm range as a single <code>(start, count)</code> tuple, which requires the slot's rows in <code>e.batch</code> to be contiguous. With ≥2 prefilling slots, the outer round-robin loop in <code>processBatch</code> is capped at one pass so each slot contributes at most one chunk per target decode. Long multi-slot prefills therefore take more decode rounds than they would on the non-MTP path. Single-slot prefill is unaffected (rows are trivially contiguous and the loop keeps filling the tray).</td>
+              </tr>
+              <tr>
+                <td>Hybrid + MTP: MTP disabled after partial-reject restore</td>
+                <td>On a hybrid target, partial rejection runs <code>restoreTargetSpecSnapshot</code>, which re-decodes a small rebatch on the target context. After that re-decode the target's pre-norm and logit buffers are indexed against the rebatch, not the original shared <code>e.batch</code>, so the mirror's <code>targetBatchStart</code> would read wrong rows. The slot disables MTP for the rest of the request (<code>mtp-disabled-hybrid-restore</code>) and continues target-only. A restore-aware mirror that takes explicit tokens + rebatch-local row indices would lift this.</td>
               </tr>
               <tr>
                 <td>No vision / audio</td>

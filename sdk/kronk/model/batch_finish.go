@@ -47,6 +47,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		outputTokens := s.reasonTokens + s.completionTokens
 		draftTokens := s.specDraftedTotal
 		draftAcceptedTokens := s.specAcceptedTotal
+		// Coverage = (1 bonus per spec round) + accepted drafts. Each
+		// spec round emits one bonus token plus its accepted drafts;
+		// every other output token came from the plain target path.
+		draftCoveredTokens := s.specRounds + draftAcceptedTokens
+		disableReason := s.mtpDisableReason
 
 		s.span.End()
 		e.freeSlotResources(s)
@@ -75,11 +80,19 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			if draftTokens > 0 {
 				rate = float64(draftAcceptedTokens) / float64(draftTokens)
 			}
+			var coverage float64
+			if outputTokens > 0 {
+				coverage = float64(draftCoveredTokens) / float64(outputTokens)
+			}
 			args = append(args,
 				"draft_tokens", draftTokens,
 				"draft_accepted_tokens", draftAcceptedTokens,
 				"draft_acceptance_rate", fmt.Sprintf("%.2f", rate),
+				"draft_coverage", fmt.Sprintf("%.2f", coverage),
 			)
+			if disableReason != "" {
+				args = append(args, "draft_disable_reason", disableReason)
+			}
 		}
 
 		e.model.log(ctx, "batch-engine", args...)
@@ -139,10 +152,14 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
 			DraftTokens:         s.specDraftedTotal,
 			DraftAcceptedTokens: s.specAcceptedTotal,
+			DraftDisableReason:  s.mtpDisableReason,
 		}
 
 		if usage.DraftTokens > 0 {
 			usage.DraftAcceptanceRate = float64(usage.DraftAcceptedTokens) / float64(usage.DraftTokens)
+		}
+		if outputTokens > 0 && e.model.draft != nil {
+			usage.DraftCoverage = float64(s.specRounds+s.specAcceptedTotal) / float64(outputTokens)
 		}
 
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
@@ -229,10 +246,14 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
 		DraftTokens:         s.specDraftedTotal,
 		DraftAcceptedTokens: s.specAcceptedTotal,
+		DraftDisableReason:  s.mtpDisableReason,
 	}
 
 	if usage.DraftTokens > 0 {
 		usage.DraftAcceptanceRate = float64(usage.DraftAcceptedTokens) / float64(usage.DraftTokens)
+	}
+	if outputTokens > 0 && e.model.draft != nil {
+		usage.DraftCoverage = float64(s.specRounds+s.specAcceptedTotal) / float64(outputTokens)
 	}
 
 	// Add span attributes and end span.

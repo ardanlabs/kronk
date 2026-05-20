@@ -916,8 +916,15 @@ func withDestFilename(rawURL, destName string) (string, error) {
 // =============================================================================
 // Misc helpers
 
+// hasNetwork probes the only host Kronk actually needs to reach for
+// model downloads. TCP/443 is essentially never blocked on networks
+// that have any internet at all, and resolving + connecting to
+// huggingface.co exercises exactly the path the subsequent download
+// will take — unlike a TCP/53 dial to a public DNS server, which is
+// blocked on many ISPs, hotels, and corporate networks even when
+// HTTPS works fine.
 func hasNetwork() bool {
-	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 5*time.Second)
+	conn, err := net.DialTimeout("tcp", "huggingface.co:443", 3*time.Second)
 	if err != nil {
 		return false
 	}

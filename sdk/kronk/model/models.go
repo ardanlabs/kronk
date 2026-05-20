@@ -800,6 +800,18 @@ func (c Choice) FinishReason() string {
 }
 
 // Usage provides details usage information for the request.
+//
+// DraftAcceptanceRate is the ratio of accepted drafts to total drafts
+// across the spec rounds that actually ran. It is "quality per round"
+// and says nothing about how much of the request used speculation.
+// DraftCoverage is the complementary "how much" metric: the fraction
+// of emitted output positions produced through speculation. Together
+// they distinguish "MTP ran the whole request at 94%" from "MTP ran
+// for 4 rounds at 94% then was disabled and the rest was target-only"
+// — the second case shows high DraftAcceptanceRate but low
+// DraftCoverage. DraftDisableReason explains the latter case
+// ("imc-hit", "hybrid-restore", "mirror-error", or empty if MTP was
+// never disabled).
 type Usage struct {
 	PromptTokens        int     `json:"prompt_tokens"`
 	ReasoningTokens     int     `json:"reasoning_tokens"`
@@ -811,6 +823,8 @@ type Usage struct {
 	DraftTokens         int     `json:"draft_tokens,omitempty"`
 	DraftAcceptedTokens int     `json:"draft_accepted_tokens,omitempty"`
 	DraftAcceptanceRate float64 `json:"draft_acceptance_rate,omitempty"`
+	DraftCoverage       float64 `json:"draft_coverage,omitempty"`
+	DraftDisableReason  string  `json:"draft_disable_reason,omitempty"`
 }
 
 // TopLogprob represents a single token with its log probability.

@@ -342,12 +342,12 @@ func CfgHybridChat() model.Config {
 	}
 }
 
-// CfgMTPChat returns a chat config for the Qwen3.6-35B-A3B MTP target.
-// The MTP drafter auto-enables based on the GGUF's nextn_predict_layers
-// metadata, so no explicit DraftModel block is needed. NSeqMax=1 is
-// required: MTP is incompatible with multi-slot (mixing one slot's MTP
-// spec tokens with another slot's fresh prefill triggers an llama.cpp
-// GGML_ASSERT in llama_sampler_sample).
+// CfgMTPChat returns a single-slot chat config for the Qwen3.6-35B-A3B
+// MTP target. The MTP drafter auto-enables based on the GGUF's
+// nextn_predict_layers metadata, so no explicit DraftModel block is
+// needed. Use CfgMTPChatMultiSlot for the multi-slot variant that
+// exercises the Pass 2A/2B split and the multi-slot prefill
+// contiguity constraint in processBatch.
 func CfgMTPChat() model.Config {
 	return model.Config{
 		ModelFiles:       MPMTP.ModelFiles,
@@ -357,6 +357,33 @@ func CfgMTPChat() model.Config {
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
 		PtrNSeqMax:       new(1),
+	}
+}
+
+// CfgMTPChatMultiSlot returns a multi-slot chat config for the
+// Qwen3.6-35B-A3B MTP target. NSeqMax=2 exercises code paths that are
+// trivially unreachable at NSeqMax=1:
+//
+//   - The Pass 2A / Pass 2B split in processBatch (Phase A read-only
+//     verify across spec slots, then Phase B finalize) — multi-slot
+//     hybrid + MTP could otherwise crash inside llama_sampler_sample
+//     when one slot's hybrid restore wiped another slot's logits.
+//
+//   - The "one prefill chunk per slot per round" cap in processBatch
+//     that keeps each slot's pre-norm rows contiguous in e.batch so
+//     mirrorTargetBatchToMTPDraft mirrors the right rows.
+//
+// Hybrid target requires f16 KV and disabled flash-attention (see
+// config.go), inherited from the single-slot config.
+func CfgMTPChatMultiSlot() model.Config {
+	return model.Config{
+		ModelFiles:       MPMTP.ModelFiles,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(2),
 	}
 }
 

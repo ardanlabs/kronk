@@ -1032,7 +1032,10 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	// speculation was disabled mid-request (collapsed acceptance EMA).
 	// Models without a draft model omit the fields entirely.
 	if m.draft != nil {
-		args = append(args, "draft_tokens", usage.DraftTokens, "draft_accepted_tokens", usage.DraftAcceptedTokens, "acceptance_rate", fmt.Sprintf("%.2f", usage.DraftAcceptanceRate))
+		args = append(args, "draft_tokens", usage.DraftTokens, "draft_accepted_tokens", usage.DraftAcceptedTokens, "acceptance_rate", fmt.Sprintf("%.2f", usage.DraftAcceptanceRate), "draft_coverage", fmt.Sprintf("%.2f", usage.DraftCoverage))
+		if usage.DraftDisableReason != "" {
+			args = append(args, "draft_disable_reason", usage.DraftDisableReason)
+		}
 	}
 	m.log(ctx, "chat-completion", args...)
 

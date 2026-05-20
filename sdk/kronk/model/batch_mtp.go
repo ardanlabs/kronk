@@ -23,15 +23,6 @@ func batchTokensAt(b llama.Batch, start, count int) []llama.Token {
 	return all[start : start+count]
 }
 
-// unsafeFloatSlice aliases a C float* as a length-n Go []float32.
-// Returns nil for nil pointer.
-func unsafeFloatSlice(p *float32, n int) []float32 {
-	if p == nil || n <= 0 {
-		return nil
-	}
-	return unsafe.Slice(p, n)
-}
-
 // MTP (Multi-Token Prediction) speculative decoding implementation.
 //
 // Reference: common/speculative.cpp common_speculative_impl_draft_mtp in
@@ -273,11 +264,11 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 		batch.Add(curToken, pos, seqIDs, true)
 
 		// Write the embd row for this single-token batch. Slot 0 of
-		// draftBatchMTP.Embd is the only row.
-		if batch.Embd != nil {
-			dst := unsafeFloatSlice(batch.Embd, nEmbd)
-			copy(dst, curEmbd)
-		}
+		// draftBatchMTP.Embd is the only row, and Embd was pinned at
+		// loadDraftModelMTP to point at draftEmbdSlice — we copy into
+		// the pinned slice directly to avoid synthesizing a Go slice
+		// from the C pointer every iteration.
+		copy(draft.draftEmbdSlice, curEmbd)
 
 		ret, err := llama.Decode(draft.lctx, batch)
 		if err != nil || ret != 0 {

@@ -193,8 +193,22 @@ type slot struct {
 	// target KV — there is no draft snapshot. Running MTP against an
 	// empty (or partial) draft context produces near-zero acceptance
 	// for the whole request, which is worse than no speculation.
-	// Cleared in slot.reset().
+	// Also set inside finalizeSpeculativeTokens after a hybrid restore
+	// re-decode or a post-rollback mirror failure. Cleared in
+	// slot.reset().
 	mtpDisabledForRequest bool
+
+	// mtpDisableReason is a short, machine-friendly label describing
+	// why MTP was disabled for the current request. Surfaced in the
+	// final per-request Usage block (DraftDisableReason) and the
+	// chat-completion log line so an operator can immediately see why
+	// a request with a high DMAR also had low draft coverage. Empty
+	// while MTP is still active. Cleared in slot.reset(). Possible
+	// values mirror the speculative-log status names:
+	//   "imc-hit"          — IMC cache hit at startSlot.
+	//   "hybrid-restore"   — post-restore mirror would read stale rows.
+	//   "mirror-error"     — post-verify mirror failed; draft KV wiped.
+	mtpDisableReason string
 
 	// specSnapshot holds a snapshot of the target context's per-sequence
 	// state taken right before a speculative batch is decoded. It is
@@ -301,6 +315,7 @@ func (s *slot) reset() {
 	s.targetBatchBasePos = 0
 	s.mtpHasBatch = false
 	s.mtpDisabledForRequest = false
+	s.mtpDisableReason = ""
 	if s.draftSampler != 0 {
 		llama.SamplerFree(s.draftSampler)
 		s.draftSampler = 0
