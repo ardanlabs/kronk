@@ -377,7 +377,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 		return Resolution{}, fmt.Errorf("resolve: tag %q not found in %s/%s", tag, provider, repo)
 	}
 
-	modelID := extractModelID(files[0])
+	modelID := catalogModelID(repo, files[0])
 	canonical := canonicalID(provider, modelID)
 
 	res := Resolution{
@@ -386,7 +386,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 		Family:       repo,
 		Revision:     "main",
 		Files:        files,
-		MMProj:       localProjName(mmproj, files),
+		MMProj:       localProjName(repo, mmproj, files),
 		MMProjOrig:   mmproj,
 		DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
 	}
@@ -511,7 +511,7 @@ func (r *Resolver) buildEntry(provider, family, revision string, files []string,
 		sizes := make([]int64, len(files))
 		var any bool
 		for i, f := range files {
-			if fi, err := os.Stat(filepath.Join(dir, filepath.Base(f))); err == nil {
+			if fi, err := os.Stat(filepath.Join(dir, diskName(family, f))); err == nil {
 				sizes[i] = fi.Size()
 				any = true
 			}
@@ -705,7 +705,7 @@ func (r *Resolver) attachLocal(res *Resolution) {
 
 	var local []string
 	for _, f := range res.Files {
-		p := filepath.Join(dir, filepath.Base(f))
+		p := filepath.Join(dir, diskName(res.Family, f))
 		if _, err := os.Stat(p); err == nil {
 			local = append(local, p)
 		}
@@ -761,7 +761,7 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID stri
 			Family:       repo,
 			Revision:     "main",
 			Files:        files,
-			MMProj:       localProjName(mmproj, files),
+			MMProj:       localProjName(repo, mmproj, files),
 			MMProjOrig:   mmproj,
 			DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
 		}
@@ -836,7 +836,7 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 	var mmproj, mmprojOrig string
 	if projURL != "" {
 		if _, _, _, file, parsed := hf.ParseURL(hf.NormalizeDownloadURL(projURL)); parsed {
-			mmproj = localProjName(file, files)
+			mmproj = localProjName(repo, file, files)
 			mmprojOrig = file
 		}
 	}
@@ -857,7 +857,7 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 		rm.Models = map[string]CatalogEntry{}
 	}
 
-	modelID := extractModelID(files[0])
+	modelID := catalogModelID(repo, files[0])
 	canonical := canonicalID(provider, modelID)
 
 	entry := r.buildEntry(provider, repo, revision, files, mmproj)
@@ -873,11 +873,28 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 
 // localProjName returns the on-disk projection filename that downloadModel
 // produces by renaming the HuggingFace source file to "mmproj-<modelID>.gguf".
-// Returns "" when there is no projection.
-func localProjName(hfMMProj string, modelFiles []string) string {
+// family is the HF repo segment (e.g. "Qwen3.6-35B-A3B-MTP-GGUF") and is
+// threaded in so the rename prefix rules pick up the same prefix the
+// downloader applies to model files. Returns "" when there is no projection.
+func localProjName(family, hfMMProj string, modelFiles []string) string {
 	if hfMMProj == "" || len(modelFiles) == 0 {
 		return ""
 	}
 
-	return fmt.Sprintf("mmproj-%s.gguf", extractModelID(modelFiles[0]))
+	return fmt.Sprintf("mmproj-%s.gguf", catalogModelID(family, modelFiles[0]))
+}
+
+// diskName returns the on-disk basename for an upstream HF file name,
+// after applying any repo-specific rename rules (e.g. the "mtp-" prefix
+// for files coming from a sibling MTP repo).
+func diskName(family, file string) string {
+	return applyMTPPrefix(family, filepath.Base(file))
+}
+
+// catalogModelID returns the model id derived from the on-disk filename
+// for a catalog entry — i.e. the key under which the index records the
+// model on disk. Use this anywhere catalog metadata (which stores
+// upstream HF names) needs to be mapped to the index key.
+func catalogModelID(family, file string) string {
+	return extractModelID(diskName(family, file))
 }

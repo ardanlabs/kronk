@@ -517,7 +517,7 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 
 	hasFile := false
 	for _, mf := range mp.ModelFiles {
-		if filepath.Base(mf) == mLoc.UpstreamFile {
+		if filepath.Base(mf) == mLoc.DiskFile {
 			hasFile = true
 			break
 		}
@@ -576,7 +576,7 @@ func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress d
 // canonical mmproj-<modelID> name instead of re-fetching the body. Misses
 // when the URL-name file is absent or fails its sha re-check.
 func (m *Models) tryReuseProjFromURLName(ctx context.Context, log applog.Logger, projLoc Locator, modelFileName, projFileName string, downloadedMF bool) (Path, bool, error) {
-	urlProjFileName := projLoc.UpstreamFile
+	urlProjFileName := projLoc.DiskFile
 	urlProjFilePath := filepath.Join(filepath.Dir(projFileName), urlProjFileName)
 	urlShaFilePath := filepath.Join(filepath.Dir(projFileName), "sha", urlProjFileName)
 	shaFileName := filepath.Join(filepath.Dir(projFileName), "sha", filepath.Base(projFileName))
@@ -704,15 +704,17 @@ func (m *Models) pull(ctx context.Context, loc Locator, kind pullKind, progress 
 // Locator — URL → on-disk-name derivation, done once per file.
 
 // Locator captures every name that derives from a single HuggingFace
-// download URL: the owner/repo, the upstream filename, and the model
-// id used for index lookups. One parse — downstream code reads fields
-// rather than re-parsing the URL in five places.
+// download URL: the owner/repo, the upstream filename, the on-disk
+// filename after any rename rules, and the model id used for index
+// lookups. One parse — downstream code reads fields rather than
+// re-parsing the URL in five places.
 type Locator struct {
 	RawURL       string // the normalized HF resolve URL passed in
 	Owner        string // first path segment ("Qwen")
 	Repo         string // second path segment ("Qwen3-8B-GGUF")
 	UpstreamFile string // url basename ("Qwen3-8B-Q8_0.gguf")
-	ModelID      string // extractModelID(UpstreamFile) — matches the index key
+	DiskFile     string // upstream after applyRenamePrefix ("mtp-..." for MTP repos)
+	ModelID      string // extractModelID(DiskFile) — matches the index key
 }
 
 // newLocator parses a HuggingFace download URL into a Locator. Accepts
@@ -734,13 +736,15 @@ func newLocator(rawURL string) (Locator, error) {
 	owner := parts[1]
 	repo := parts[2]
 	upstream := path.Base(u.Path)
+	disk := applyRenamePrefix(repo, upstream)
 
 	return Locator{
 		RawURL:       rawURL,
 		Owner:        owner,
 		Repo:         repo,
 		UpstreamFile: upstream,
-		ModelID:      extractModelID(upstream),
+		DiskFile:     disk,
+		ModelID:      extractModelID(disk),
 	}, nil
 }
 
@@ -750,9 +754,10 @@ func (l Locator) ModelDir(m *Models) string {
 	return filepath.Join(m.modelsPath, l.Owner, l.Repo)
 }
 
-// ModelPath returns the on-disk path of the model body file.
+// ModelPath returns the on-disk path of the model body file, after any
+// rename rules (e.g. "mtp-" prefix) have been applied.
 func (l Locator) ModelPath(m *Models) string {
-	return filepath.Join(l.ModelDir(m), l.UpstreamFile)
+	return filepath.Join(l.ModelDir(m), l.DiskFile)
 }
 
 // =============================================================================
@@ -813,6 +818,58 @@ func createProjFileName(modelFileName string) string {
 	// name:          /Users/bill/.kronk/models/Qwen/Qwen3-8B-GGUF/mmproj-Qwen3-8B-Q8_0.gguf
 
 	return name
+}
+
+// =============================================================================
+// Repo-based file rename rules
+//
+// Some HuggingFace sibling repos publish a GGUF whose upstream filename
+// collides with another repo (e.g. unsloth/Qwen3.6-35B-A3B-MTP-GGUF and
+// unsloth/Qwen3.6-35B-A3B-GGUF both ship "Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf").
+// To keep on-disk paths and model ids unambiguous, the downloader writes
+// files from rule-matching repos with a prefix applied to the filename.
+
+// renamePrefixRule prepends prefix to a filename when the upstream repo
+// segment matches repoPattern AND the filename does not already encode
+// the prefix marker (case-insensitive substring check). The marker
+// keeps the rule idempotent: a re-download never produces "mtp-mtp-".
+type renamePrefixRule struct {
+	repoPattern *regexp.Regexp
+	prefix      string // includes any separator, e.g. "mtp-"
+	marker      string // lowercase substring; if present in fileName the rename is a no-op
+}
+
+var renamePrefixRules = []renamePrefixRule{
+	{
+		repoPattern: regexp.MustCompile(`(?i)(^|[-_])mtp([-_]|$)`),
+		prefix:      "mtp-",
+		marker:      "mtp",
+	},
+}
+
+// applyRenamePrefix walks renamePrefixRules and returns fileName with
+// the first matching rule's prefix prepended. When no rule matches, or
+// the marker is already present in fileName, the original name is
+// returned unchanged.
+func applyRenamePrefix(repoSegment, fileName string) string {
+	lower := strings.ToLower(fileName)
+	for _, r := range renamePrefixRules {
+		if !r.repoPattern.MatchString(repoSegment) {
+			continue
+		}
+		if strings.Contains(lower, r.marker) {
+			return fileName
+		}
+		return r.prefix + fileName
+	}
+	return fileName
+}
+
+// applyMTPPrefix is the MTP-specific convenience wrapper around
+// applyRenamePrefix. Kept as a named function because callers in catalog
+// helpers read more clearly when the intent is spelled out.
+func applyMTPPrefix(repoSegment, fileName string) string {
+	return applyRenamePrefix(repoSegment, fileName)
 }
 
 var splitPattern = regexp.MustCompile(`-\d+-of-\d+$`)

@@ -27,7 +27,7 @@ func (m *Models) GGUFHead(ctx context.Context, entry CatalogEntry) ([]byte, erro
 		return nil, fmt.Errorf("gguf-head: catalog entry has no files")
 	}
 
-	modelID := extractModelID(entry.Files[0])
+	modelID := catalogModelID(entry.Family, entry.Files[0])
 
 	cacheFile, err := ggufCacheFile(m.basePath, entry.Provider, entry.Family, modelID)
 	if err != nil {
@@ -39,7 +39,7 @@ func (m *Models) GGUFHead(ctx context.Context, entry CatalogEntry) ([]byte, erro
 	}
 
 	// Try the local file before the network.
-	localFile := filepath.Join(m.modelsPath, entry.Provider, entry.Family, filepath.Base(entry.Files[0]))
+	localFile := filepath.Join(m.modelsPath, entry.Provider, entry.Family, diskName(entry.Family, entry.Files[0]))
 	if data, err := gguf.ReadHeaderBytes(localFile); err == nil && gguf.IsValidHeaderBytes(data) {
 		_ = gguf.WriteHeaderBytes(cacheFile, data)
 		return data, nil

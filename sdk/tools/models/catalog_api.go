@@ -84,7 +84,7 @@ func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, 
 		// When the file lacks a recognisable quant suffix, fall back
 		// to the bare canonical id — this only affects unusual repos
 		// whose GGUFs don't follow the standard quant naming.
-		modelID := extractModelID(file)
+		modelID := catalogModelID(repo, file)
 		if tag := extractQuantTag(modelID); tag != "" {
 			id = fmt.Sprintf("%s/%s:%s", owner, repo, tag)
 		} else {
@@ -354,7 +354,7 @@ func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log
 	}
 
 	for _, f := range entry.Files {
-		p := filepath.Join(dir, filepath.Base(f))
+		p := filepath.Join(dir, diskName(entry.Family, f))
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			log(ctx, "remove-catalog-entry: file", "path", p, "ERROR", err)
 		}
@@ -378,7 +378,7 @@ func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log
 
 	// 2. Remove the GGUF cache for this entry.
 	if len(entry.Files) > 0 {
-		modelID := extractModelID(entry.Files[0])
+		modelID := catalogModelID(entry.Family, entry.Files[0])
 		if err := m.RemoveGGUFHeadCache(entry.Provider, entry.Family, modelID); err != nil {
 			log(ctx, "remove-catalog-entry: gguf-cache", "ERROR", err)
 		}
