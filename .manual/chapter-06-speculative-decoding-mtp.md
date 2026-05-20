@@ -128,12 +128,7 @@ any, to load. The decision tree:
                        ╰──────────┬────────────╯
                                   │ true
                                   ▼
-                       ╭───────────────────────╮
-                       │ ctxParams.NSeqMax == 1│──── no ──▶ skip (log reason: multi-slot)
-                       ╰──────────┬────────────╯
-                                  │ yes
-                                  ▼
-                       loadDraftModelMTP  (auto-enabled)
+                       loadDraftModelMTP  (auto-enabled; inherits NSeqMax)
 ```
 
 `mtpNextNLayers` looks up the GGUF metadata key
@@ -146,17 +141,34 @@ the three pre-norm symbols listed in §6.6. Older builds (pre
 `src/llama-ext.h`) won't have them — Kronk logs and starts up without
 MTP rather than crashing on a missing symbol mid-request.
 
+The historical `NSeqMax == 1` gate (present through earlier revisions
+of PR #593) has been removed: the draft context inherits `NSeqMax`
+from the target and hosts as many sequences as the target does. The
+three-pass post-decode in `processBatch` (§6.8) makes the spec verify
+path multi-slot safe.
+
 ### 6.5 MTP Requirements & Skip Reasons
 
 | Requirement                                   | Why                                                                                                                                            |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Target GGUF has `nextn_predict_layers > 0`    | No MTP head exists otherwise; nothing to load.                                                                                                 |
 | llama.cpp build exports pre-norm symbols      | Kronk reads hidden states via `llama_get_embeddings_pre_norm{,_ith}` and toggles them on via `llama_set_embeddings_pre_norm`. See §6.6.        |
-| `nseq-max: 1` on the target                   | MTP + multi-slot triggers a `GGML_ASSERT(logits != nullptr)` in `llama_sampler_sample` on the shared-batch decode that mixes one slot's MTP spec tokens with another slot's fresh prefill. Belt-and-suspenders gate in both `selectAndLoadDraft` and `loadDraftModelMTP`. |
 
 When any of those fail, `selectAndLoadDraft` logs the specific reason
 and returns `(nil, nil)`. The target still loads and serves traffic —
 just without speculation.
+
+**Multi-slot is supported.** Earlier revisions of PR #593 gated MTP
+on `nseq-max == 1` because mixing one slot's MTP spec tokens with
+another slot's fresh prefill in the same shared batch tripped a
+`GGML_ASSERT(logits != nullptr)` in `llama_sampler_sample`. The fix
+landed in two pieces: (1) the post-decode dispatch in `processBatch`
+is now three-pass (non-spec → spec read → spec mutate) so logits are
+read by every slot before any mutating restore can wipe the buffer,
+and (2) `verifySpeculativeTokens` was split into `verifySpeculativeTokens`
+(Phase A — read-only on target logits) and `finalizeSpeculativeTokens`
+(Phase B — rollback, hybrid restore, draft KV rollback, MTP mirror,
+bonus-token streaming). See §6.8.
 
 ### 6.6 Pre-Norm Hidden-State Plumbing
 
@@ -311,6 +323,65 @@ slot, leaving duplicate entries that corrupt subsequent attention.
 The mirror then writes the correct target-derived entries into clean
 slots.
 
+#### Multi-slot safety: three-pass `processBatch` + Phase A / Phase B split
+
+When `nseq-max > 1` and two or more spec slots verify in the same
+shared batch, the original monolithic `verifySpeculativeTokens` could
+corrupt the target context's logit buffer for one slot while a peer
+was still trying to read it. The hybrid `restoreTargetSpecSnapshot`
+(§6.9) re-decodes a small batch on the target context, and that
+re-decode **replaces the per-context logit buffer with logits for
+only the re-decoded rows** — every other slot's batch rows return
+`nullptr` from `llama_get_logits_ith`, crashing
+`llama_sampler_sample` (`GGML_ASSERT(logits != nullptr)` at
+`llama-sampler.cpp:850`).
+
+The fix has two parts:
+
+1. **`verifySpeculativeTokens` is split** in
+   [batch_speculative.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go):
+   - **Phase A (`verifySpeculativeTokens`) — read-only.** Runs the
+     verify loop (logit reads, accept / reject, per-accepted
+     `handleSampledToken`), samples the bonus token, updates the
+     acceptance EMA. Stashes `accepted`, `bonusToken`, and
+     `originalSampled` on the slot via new `specPending*` fields and
+     sets `specPendingFinalize = true`. Does NOT touch target KV,
+     draft KV, `s.nPast`, or `s.iBatch`. `s.specDraftTokens` is
+     deliberately retained for Phase B.
+   - **Phase B (`finalizeSpeculativeTokens`) — mutating.** Runs the
+     rollback (hybrid restore or `MemorySeqRm`), draft KV rollback,
+     MTP mirror, sets `s.nPast`, emits the throttled `verify-done`
+     log, streams the bonus token, sets `s.iBatch = -1`, and clears
+     the pending fields. Early-returns silently when
+     `specPendingFinalize` is false (Phase A short-circuited on EOG).
+
+2. **`processBatch` post-decode is three-pass** in
+   [batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go):
+
+| Pass | Slots                                                        | Work                                                                                                          |
+| ---- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| 1    | Non-spec (`s.specDraftTokens == nil`)                         | MTP mirror (if applicable) + `processSlotToken`. Target logit buffer is fully intact.                          |
+| 2A   | Spec (`s.specDraftTokens != nil`)                             | Phase A — `verifySpeculativeTokens`. Pure reads on the target logit buffer, so all spec slots run safely back to back. |
+| 2B   | Spec with `specPendingFinalize == true`                       | Phase B — `finalizeSpeculativeTokens`. Hybrid restores can wipe the logit buffer here; by this point every other spec slot has already consumed its logits. |
+
+EOG handling: when `handleSampledToken` inside Phase A finishes the
+slot (`finishSlot` → `reset`), the `specPending*` fields stay
+defaulted and Phase B's first-line guard skips the slot. The
+deferred EMA update in Phase A still fires once via `defer` so the
+EMA is updated exactly once per round.
+
+Under `nseq-max == 1` the ordering Phase A → Phase B for a single
+spec slot is functionally identical to the old monolithic
+`verifySpeculativeTokens`, so this split has no behavioral effect on
+the single-slot path.
+
+A subtle logprobs note: Phase B's bonus-token `handleSampledToken`
+runs **after** any hybrid restore. The restore's re-decode marks
+`logits = true` only on the last re-decoded position
+(`basePast + accepted`), which is exactly the bonus token's iBatch
+position, so logprob extraction at that site still works on the
+hybrid path.
+
 ### 6.9 Hybrid Target Rollback: Snapshot/Restore
 
 Hybrid target models (transformer + recurrent layers) introduce a
@@ -338,6 +409,12 @@ untouched. If `captureTargetSpecSnapshot` errors, `verifySpeculativeTokens`
 clears `s.specSnapshot` and falls through to `MemorySeqRm`. The fallback
 is broken on hybrid partial-reject rounds, but full-accept rounds still
 work, and the next request begins with a fresh sequence anyway.
+
+**Multi-slot interaction.** `restoreTargetSpecSnapshot`'s re-decode
+invalidates the target's per-context logit buffer for every other
+batch row. With `nseq-max > 1` this is benign because the restore
+only runs in Pass 2B (`finalizeSpeculativeTokens`), after every other
+spec slot has read its logits in Pass 2A. See §6.8.
 
 ### 6.10 Adaptive `nDraft` (Acceptance EMA)
 
@@ -381,6 +458,10 @@ buffer policy.
 | `mtpDisabledForRequest`                               | Set at `startSlot` to disable MTP for this request (currently used as a diagnostic switch on IMC cache hits — see §6.16).                  |
 | `specSnapshot []byte`                                 | Pre-spec target state buffer for hybrid rollback (§6.9). Lazy-grow.                                                                        |
 | `specRounds`                                          | Counter used to throttle per-round verify logging (logs first round, then every 32nd).                                                     |
+| `specPendingFinalize bool`                            | Gates Phase B (§6.8). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips. |
+| `specPendingAccepted int`                             | Phase A → Phase B hand-off: accepted draft count.                                                                                          |
+| `specPendingBonusToken llama.Token`                   | Phase A → Phase B hand-off: bonus token sampled at `baseBatch + accepted`.                                                                  |
+| `specPendingOriginalSampled llama.Token`              | Phase A → Phase B hand-off: snapshot of `s.sampled` taken before any `handleSampledToken` mutated it. Hybrid restore needs this for the re-decode at `basePast`. |
 
 ### 6.12 Configuration
 
@@ -390,23 +471,26 @@ drafter:
 1. Pull a target GGUF that ships an MTP head (e.g. the Qwen3.6 MTP
    builds — the test suite uses
    `unsloth/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL.gguf`).
-2. Configure the target with `nseq-max: 1`.
+2. Pick `nseq-max` per your concurrency target. Both single-slot
+   (`nseq-max: 1`) and multi-slot (`nseq-max: 2+`) are supported; the
+   draft context inherits `NSeqMax` from the target and hosts the
+   same number of sequences.
 3. Do **not** set `draft-model:` on that entry (an explicit
    separate-GGUF draft wins over auto-detected MTP).
 4. Make sure your llama.cpp library is recent enough to export the
    pre-norm API — Kronk's libs ship with a sufficiently new build by
    default; only matters for users running with a pinned older lib.
 
-Minimal `model_config.yaml` snippet:
+Minimal `model_config.yaml` snippet (multi-slot):
 
 ```yaml
-unsloth/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL:
-  context-window: 8192
+mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
+  context-window: 131072
   nbatch: 2048
   nubatch: 512
   cache-type-k: f16
   cache-type-v: f16
-  nseq-max: 1
+  nseq-max: 2
   incremental-cache: true
 ```
 
@@ -490,10 +574,10 @@ go test -v -count=1 ./sdk/kronk/tests/mtp/...
 
 | Limitation                                          | Why                                                                                                                                                                   |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nseq-max: 1` only                                  | See §6.5 — the shared-batch decode mixing one slot's MTP spec tokens with another slot's prefill triggers a `GGML_ASSERT` in `llama_sampler_sample`.                  |
 | Greedy verify only                                  | The MTP head's AR loop runs greedy sampling and does not capture sparse draft distributions; probabilistic verify would always reject. See §6.8.                      |
 | IMC + MTP interaction is a measurement              | IMC restores only the target KV; the draft context has no snapshot, so an IMC cache-hit request runs MTP against an empty / stale draft context. The original guard would have disabled MTP on IMC hits; PR #593 leaves it enabled and logs `mtp-imc-hit-diagnostic` to measure real-world acceptance. If acceptance collapses to ~0%, the safe-default disable will be restored. |
 | No vision / audio                                   | Speculative decoding in general is text-only in Kronk.                                                                                                                |
 | `defMTPNDraft = 4` is a fixed cap                   | The adaptive EMA scales down from 4, but there is no per-model config to raise the ceiling for an exceptionally well-behaved MTP head.                                |
+| Hybrid targets: f16 KV cache + no Flash Attention   | [config.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/config.go) forces `cache-type-k/v: f16` and `flash-attention: disabled` for any hybrid model — quantized KV requires FA and llama.cpp's hybrid arch does not yet support FA. Throughput on hybrid + MTP is significantly lower than dense / MoE targets even at `nseq-max: 1`. Unrelated to multi-slot. |
 
 ---

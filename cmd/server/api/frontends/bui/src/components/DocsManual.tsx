@@ -2866,14 +2866,10 @@ Request 5 (text follow-up about the image):
                        ╰──────────┬────────────╯
                                   │ true
                                   ▼
-                       ╭───────────────────────╮
-                       │ ctxParams.NSeqMax == 1│──── no ──▶ skip (log reason: multi-slot)
-                       ╰──────────┬────────────╯
-                                  │ yes
-                                  ▼
-                       loadDraftModelMTP  (auto-enabled)`}</code></pre>
+                       loadDraftModelMTP  (auto-enabled; inherits NSeqMax)`}</code></pre>
           <p><code>mtpNextNLayers</code> looks up the GGUF metadata key <code>&lt;arch&gt;.nextn_predict_layers</code> (a uint32). Kronk matches by the unique substring <code>nextn_predict_layers</code> so the same lookup works for every architecture variant without first reading <code>general.architecture</code>.</p>
           <p><code>MTPAvailable()</code> probes whether the loaded llama.cpp library exports the three pre-norm symbols listed in §6.6. Older builds (pre <code>src/llama-ext.h</code>) won't have them — Kronk logs and starts up without MTP rather than crashing on a missing symbol mid-request.</p>
+          <p>The historical <code>NSeqMax == 1</code> gate (present through earlier revisions of PR #593) has been removed: the draft context inherits <code>NSeqMax</code> from the target and hosts as many sequences as the target does. The three-pass post-decode in <code>processBatch</code> (§6.8) makes the spec verify path multi-slot safe.</p>
           <h3 id="65-mtp-requirements-skip-reasons">6.5 MTP Requirements &amp; Skip Reasons</h3>
           <table className="flags-table">
             <thead>
@@ -2891,13 +2887,10 @@ Request 5 (text follow-up about the image):
                 <td>llama.cpp build exports pre-norm symbols</td>
                 <td>Kronk reads hidden states via <code>llama_get_embeddings_pre_norm&#123;,_ith&#125;</code> and toggles them on via <code>llama_set_embeddings_pre_norm</code>. See §6.6.</td>
               </tr>
-              <tr>
-                <td><code>nseq-max: 1</code> on the target</td>
-                <td>MTP + multi-slot triggers a <code>GGML_ASSERT(logits != nullptr)</code> in <code>llama_sampler_sample</code> on the shared-batch decode that mixes one slot's MTP spec tokens with another slot's fresh prefill. Belt-and-suspenders gate in both <code>selectAndLoadDraft</code> and <code>loadDraftModelMTP</code>.</td>
-              </tr>
             </tbody>
           </table>
           <p>When any of those fail, <code>selectAndLoadDraft</code> logs the specific reason and returns <code>(nil, nil)</code>. The target still loads and serves traffic — just without speculation.</p>
+          <p><strong>Multi-slot is supported.</strong> Earlier revisions of PR #593 gated MTP on <code>nseq-max == 1</code> because mixing one slot's MTP spec tokens with another slot's fresh prefill in the same shared batch tripped a <code>GGML_ASSERT(logits != nullptr)</code> in <code>llama_sampler_sample</code>. The fix landed in two pieces: (1) the post-decode dispatch in <code>processBatch</code> is now three-pass (non-spec → spec read → spec mutate) so logits are read by every slot before any mutating restore can wipe the buffer, and (2) <code>verifySpeculativeTokens</code> was split into <code>verifySpeculativeTokens</code> (Phase A — read-only on target logits) and <code>finalizeSpeculativeTokens</code> (Phase B — rollback, hybrid restore, draft KV rollback, MTP mirror, bonus-token streaming). See §6.8.</p>
           <h3 id="66-pre-norm-hidden-state-plumbing">6.6 Pre-Norm Hidden-State Plumbing</h3>
           <p>The MTP path needs three llama.cpp C symbols that yzma upstream does not yet bind. Kronk adds them locally in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a> via the <code>jupiterrider/ffi</code> package:</p>
           <table className="flags-table">
@@ -2974,6 +2967,47 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
           <p><code>originalSampled</code> is also snapshotted before the verify loop, because <code>handleSampledToken</code> mutates <code>s.sampled</code> as each accepted draft token flows through the streaming pipeline. The hybrid re-decode path (§6.9) needs the <strong>original</strong> sampled token at the base position; using the mutated value would re-decode the wrong token and corrupt every subsequent round.</p>
           <p>After verify, the MTP mirror runs again over <code>1 + accepted</code> rows to overwrite the AR-loop draft KV entries with target-derived hidden states. That update is what makes the next round's <code>pendingH</code> reflect reality.</p>
           <p><code>rollbackDraft</code> for MTP is also different from the separate-GGUF path: it <code>MemorySeqRm</code>s the <strong>entire</strong> drafted range from the draft KV before the post-verify mirror runs. llama.cpp's transformer KV does not overwrite by <code>(seq, pos)</code> on re-decode — it appends another slot, leaving duplicate entries that corrupt subsequent attention. The mirror then writes the correct target-derived entries into clean slots.</p>
+          <h4 id="multi-slot-safety-three-pass-`processbatch`-+-phase-a-phase-b-split">Multi-slot safety: three-pass `processBatch` + Phase A / Phase B split</h4>
+          <p>When <code>nseq-max &gt; 1</code> and two or more spec slots verify in the same shared batch, the original monolithic <code>verifySpeculativeTokens</code> could corrupt the target context's logit buffer for one slot while a peer was still trying to read it. The hybrid <code>restoreTargetSpecSnapshot</code> (§6.9) re-decodes a small batch on the target context, and that re-decode <strong>replaces the per-context logit buffer with logits for only the re-decoded rows</strong> — every other slot's batch rows return <code>nullptr</code> from <code>llama_get_logits_ith</code>, crashing <code>llama_sampler_sample</code> (<code>GGML_ASSERT(logits != nullptr)</code> at <code>llama-sampler.cpp:850</code>).</p>
+          <p>The fix has two parts:</p>
+          <ol>
+            <li><strong>&lt;code&gt;verifySpeculativeTokens&lt;/code&gt; is split</strong> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go">batch_speculative.go</a>: verify loop (logit reads, accept / reject, per-accepted <code>handleSampledToken</code>), samples the bonus token, updates the acceptance EMA. Stashes <code>accepted</code>, <code>bonusToken</code>, and <code>originalSampled</code> on the slot via new <code>specPending*</code> fields and sets <code>specPendingFinalize = true</code>. Does NOT touch target KV, draft KV, <code>s.nPast</code>, or <code>s.iBatch</code>. <code>s.specDraftTokens</code> is deliberately retained for Phase B. rollback (hybrid restore or <code>MemorySeqRm</code>), draft KV rollback, MTP mirror, sets <code>s.nPast</code>, emits the throttled <code>verify-done</code> log, streams the bonus token, sets <code>s.iBatch = -1</code>, and clears the pending fields. Early-returns silently when <code>specPendingFinalize</code> is false (Phase A short-circuited on EOG).
+              <ul>
+                <li><strong>Phase A (&lt;code&gt;verifySpeculativeTokens&lt;/code&gt;) — read-only.</strong> Runs the</li>
+                <li><strong>Phase B (&lt;code&gt;finalizeSpeculativeTokens&lt;/code&gt;) — mutating.</strong> Runs the</li>
+              </ul>
+            </li>
+            <li><strong>&lt;code&gt;processBatch&lt;/code&gt; post-decode is three-pass</strong> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">batch_engine.go</a>:</li>
+          </ol>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Pass</th>
+                <th>Slots</th>
+                <th>Work</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>Non-spec (<code>s.specDraftTokens == nil</code>)</td>
+                <td>MTP mirror (if applicable) + <code>processSlotToken</code>. Target logit buffer is fully intact.</td>
+              </tr>
+              <tr>
+                <td>2A</td>
+                <td>Spec (<code>s.specDraftTokens != nil</code>)</td>
+                <td>Phase A — <code>verifySpeculativeTokens</code>. Pure reads on the target logit buffer, so all spec slots run safely back to back.</td>
+              </tr>
+              <tr>
+                <td>2B</td>
+                <td>Spec with <code>specPendingFinalize == true</code></td>
+                <td>Phase B — <code>finalizeSpeculativeTokens</code>. Hybrid restores can wipe the logit buffer here; by this point every other spec slot has already consumed its logits.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>EOG handling: when <code>handleSampledToken</code> inside Phase A finishes the slot (<code>finishSlot</code> → <code>reset</code>), the <code>specPending*</code> fields stay defaulted and Phase B's first-line guard skips the slot. The deferred EMA update in Phase A still fires once via <code>defer</code> so the EMA is updated exactly once per round.</p>
+          <p>Under <code>nseq-max == 1</code> the ordering Phase A → Phase B for a single spec slot is functionally identical to the old monolithic <code>verifySpeculativeTokens</code>, so this split has no behavioral effect on the single-slot path.</p>
+          <p>A subtle logprobs note: Phase B's bonus-token <code>handleSampledToken</code> runs <strong>after</strong> any hybrid restore. The restore's re-decode marks <code>logits = true</code> only on the last re-decoded position (<code>basePast + accepted</code>), which is exactly the bonus token's iBatch position, so logprob extraction at that site still works on the hybrid path.</p>
           <h3 id="69-hybrid-target-rollback-snapshotrestore">6.9 Hybrid Target Rollback: Snapshot/Restore</h3>
           <p>Hybrid target models (transformer + recurrent layers) introduce a problem the regular <code>MemorySeqRm</code> rollback cannot solve: the recurrent layer has been <strong>advanced through all &lt;code&gt;1+nDraft&lt;/code&gt; decoded positions</strong> and there is no per-position trim. A partial-rejection round would leave the recurrent state advanced past the accepted boundary, and the next <code>llama_decode</code> would fail with <code>-1</code>.</p>
           <p>Two new helpers in <code>batch_speculative.go</code> solve this:</p>
@@ -2997,6 +3031,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
           </table>
           <p>The snapshot buffer is lazy-grow / never-shrink on the slot (<code>s.specSnapshot</code>). Size scales with current KV occupancy, so the cost grows with context length. Dense / pure-attention targets skip this path entirely — <code>MemorySeqRm</code> is correct and much cheaper for them.</p>
           <p>The captureTarget/restoreTarget hooks are gated on <code>e.model.modelInfo.Type == ModelTypeHybrid</code> so the dense fast path is untouched. If <code>captureTargetSpecSnapshot</code> errors, <code>verifySpeculativeTokens</code> clears <code>s.specSnapshot</code> and falls through to <code>MemorySeqRm</code>. The fallback is broken on hybrid partial-reject rounds, but full-accept rounds still work, and the next request begins with a fresh sequence anyway.</p>
+          <p><strong>Multi-slot interaction.</strong> <code>restoreTargetSpecSnapshot</code>'s re-decode invalidates the target's per-context logit buffer for every other batch row. With <code>nseq-max &gt; 1</code> this is benign because the restore only runs in Pass 2B (<code>finalizeSpeculativeTokens</code>), after every other spec slot has read its logits in Pass 2A. See §6.8.</p>
           <h3 id="610-adaptive-`ndraft`-acceptance-ema">6.10 Adaptive `nDraft` (Acceptance EMA)</h3>
           <p>Drafting <code>N</code> tokens that all get rejected wastes a forward pass on the draft model. <code>chooseNDraft(s, maxDraft)</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a> scales down based on the slot's exponential moving average of acceptance rate (<code>specAccEMA</code>):</p>
           <table className="flags-table">
@@ -3065,24 +3100,40 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
                 <td><code>specRounds</code></td>
                 <td>Counter used to throttle per-round verify logging (logs first round, then every 32nd).</td>
               </tr>
+              <tr>
+                <td><code>specPendingFinalize bool</code></td>
+                <td>Gates Phase B (§6.8). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips.</td>
+              </tr>
+              <tr>
+                <td><code>specPendingAccepted int</code></td>
+                <td>Phase A → Phase B hand-off: accepted draft count.</td>
+              </tr>
+              <tr>
+                <td><code>specPendingBonusToken llama.Token</code></td>
+                <td>Phase A → Phase B hand-off: bonus token sampled at <code>baseBatch + accepted</code>.</td>
+              </tr>
+              <tr>
+                <td><code>specPendingOriginalSampled llama.Token</code></td>
+                <td>Phase A → Phase B hand-off: snapshot of <code>s.sampled</code> taken before any <code>handleSampledToken</code> mutated it. Hybrid restore needs this for the re-decode at <code>basePast</code>.</td>
+              </tr>
             </tbody>
           </table>
           <h3 id="612-configuration">6.12 Configuration</h3>
           <p>MTP is <strong>auto-enabled</strong> — you do not configure it. To get an MTP drafter:</p>
           <ol>
             <li>Pull a target GGUF that ships an MTP head (e.g. the Qwen3.6 MTP builds — the test suite uses <code>unsloth/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL.gguf</code>).</li>
-            <li>Configure the target with <code>nseq-max: 1</code>.</li>
+            <li>Pick <code>nseq-max</code> per your concurrency target. Both single-slot (<code>nseq-max: 1</code>) and multi-slot (<code>nseq-max: 2+</code>) are supported; the draft context inherits <code>NSeqMax</code> from the target and hosts the same number of sequences.</li>
             <li>Do <strong>not</strong> set <code>draft-model:</code> on that entry (an explicit separate-GGUF draft wins over auto-detected MTP).</li>
             <li>Make sure your llama.cpp library is recent enough to export the pre-norm API — Kronk's libs ship with a sufficiently new build by default; only matters for users running with a pinned older lib.</li>
           </ol>
-          <p>Minimal <code>model_config.yaml</code> snippet:</p>
-          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL:
-  context-window: 8192
+          <p>Minimal <code>model_config.yaml</code> snippet (multi-slot):</p>
+          <pre className="code-block"><code className="language-yaml">{`mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
+  context-window: 131072
   nbatch: 2048
   nubatch: 512
   cache-type-k: f16
   cache-type-v: f16
-  nseq-max: 1
+  nseq-max: 2
   incremental-cache: true`}</code></pre>
           <p>On a successful load you will see a log line like:</p>
           <pre className="code-block"><code>{`draft-model-mtp status=loaded source=auto-detected nDraft=4 nextn-layers=1 nEmbd=2048 nCtx=8192`}</code></pre>
@@ -3222,10 +3273,6 @@ go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td><code>nseq-max: 1</code> only</td>
-                <td>See §6.5 — the shared-batch decode mixing one slot's MTP spec tokens with another slot's prefill triggers a <code>GGML_ASSERT</code> in <code>llama_sampler_sample</code>.</td>
-              </tr>
-              <tr>
                 <td>Greedy verify only</td>
                 <td>The MTP head's AR loop runs greedy sampling and does not capture sparse draft distributions; probabilistic verify would always reject. See §6.8.</td>
               </tr>
@@ -3240,6 +3287,10 @@ go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
               <tr>
                 <td><code>defMTPNDraft = 4</code> is a fixed cap</td>
                 <td>The adaptive EMA scales down from 4, but there is no per-model config to raise the ceiling for an exceptionally well-behaved MTP head.</td>
+              </tr>
+              <tr>
+                <td>Hybrid targets: f16 KV cache + no Flash Attention</td>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/config.go">config.go</a> forces <code>cache-type-k/v: f16</code> and <code>flash-attention: disabled</code> for any hybrid model — quantized KV requires FA and llama.cpp's hybrid arch does not yet support FA. Throughput on hybrid + MTP is significantly lower than dense / MoE targets even at <code>nseq-max: 1</code>. Unrelated to multi-slot.</td>
               </tr>
             </tbody>
           </table>

@@ -212,6 +212,24 @@ type slot struct {
 	// snapshot bytes; cap is retained across requests.
 	specSnapshot []byte
 
+	// Pending-finalize fields populated by Phase A of speculative verify
+	// (verifySpeculativeTokens) and consumed by Phase B
+	// (finalizeSpeculativeTokens). The split exists because Phase B may
+	// re-decode on the target context (hybrid restoreTargetSpecSnapshot),
+	// which wipes the per-context logit buffer for every other slot's
+	// rows. Running all spec slots through Phase A first lets every slot
+	// read its logits before any restore mutates them; then a second
+	// pass runs the per-slot Phase B in any order.
+	//
+	// specPendingFinalize gates Phase B. It is true between a successful
+	// Phase A and the matching Phase B. EOG inside Phase A returns
+	// without setting it, so Phase B is skipped for finished slots.
+	// Cleared at the top of Phase B and by slot.reset().
+	specPendingFinalize        bool
+	specPendingAccepted        int
+	specPendingBonusToken      llama.Token
+	specPendingOriginalSampled llama.Token
+
 	// Sparse candidate-based speculative decoding fields.
 	draftSampler         llama.Sampler            // Per-slot sampler for draft model (non-greedy)
 	specDraftDistsSparse [][]candidateEntry       // Sparse draft distributions per drafted token
@@ -265,6 +283,10 @@ func (s *slot) reset() {
 	s.specDraftedTotal = 0
 	s.specAcceptedTotal = 0
 	s.specRounds = 0
+	s.specPendingFinalize = false
+	s.specPendingAccepted = 0
+	s.specPendingBonusToken = 0
+	s.specPendingOriginalSampled = 0
 	s.draftTokensBuf = s.draftTokensBuf[:0]
 	// Note: draftCachedTokens persists across requests for incremental draft KV reuse.
 

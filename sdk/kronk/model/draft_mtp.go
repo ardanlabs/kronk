@@ -64,20 +64,16 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 
 	// Build context params for the MTP draft context. We inherit thread
 	// layout, KV cache types, and offload behavior from the target so
-	// the MTP head runs on the same backend. NCtx / NBatch / NUbatch
-	// are inherited so the drafter can score the same prompts the
-	// target sees. NSeqMax is forced to 1 — MTP+multi-slot triggers a
-	// GGML_ASSERT(logits != nullptr) in llama_sampler_sample on the
-	// shared-batch decode that mixes one slot's MTP spec tokens with
-	// another slot's fresh prefill. The caller (selectAndLoadDraft)
-	// also gates MTP on the target being NSeqMax==1; this is a
-	// belt-and-suspenders setting.
+	// the MTP head runs on the same backend. NCtx / NBatch / NUbatch /
+	// NSeqMax are inherited so the drafter can host the same number of
+	// concurrent sequences the target serves and score the same prompts
+	// the target sees.
 	params := llama.ContextDefaultParams()
 	params.CtxType = llama.ContextTypeMTP
 	params.NCtx = targetCtxParams.NCtx
 	params.NBatch = targetCtxParams.NBatch
 	params.NUbatch = targetCtxParams.NUbatch
-	params.NSeqMax = 1
+	params.NSeqMax = targetCtxParams.NSeqMax
 	params.NThreads = targetCtxParams.NThreads
 	params.NThreadsBatch = targetCtxParams.NThreadsBatch
 	params.FlashAttentionType = targetCtxParams.FlashAttentionType
@@ -242,13 +238,6 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 	if !MTPAvailable() {
 		log(ctx, "draft-model-mtp", "status", "auto-detect-skipped",
 			"reason", "llama library does not export pre-norm hidden-state APIs (llama_set_embeddings_pre_norm / llama_get_embeddings_pre_norm / _ith); upgrade llama.cpp to a build that includes src/llama-ext.h")
-		return nil, nil
-	}
-
-	if targetCtxParams.NSeqMax > 1 {
-		log(ctx, "draft-model-mtp", "status", "auto-detect-skipped",
-			"reason", "MTP requires nseq-max=1, target is multi-slot",
-			"target-nseq-max", targetCtxParams.NSeqMax)
 		return nil, nil
 	}
 
