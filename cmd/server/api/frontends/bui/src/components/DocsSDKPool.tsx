@@ -26,7 +26,7 @@ export default function DocsSDKPool() {
     <div>
       <div className="page-header">
         <h2>Pool Package</h2>
-        <p>Package pool manages a pool of kronk APIs for specific models. Used by the model server to manage the number of models that are maintained in memory at any given time.</p>
+        <p>Package pool manages a pool of kronk APIs for specific llama models. Used by the model server to manage the number of models that are maintained in memory at any given time.</p>
       </div>
 
       <div className="doc-layout">
@@ -46,7 +46,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func HumanBytes(n int64) string</code>
               </pre>
-              <p className="doc-description">HumanBytes formats a byte count using decimal (SI) units. The output is short and stable for log scraping (e.g. "12.9GB", "256MB", "0B").</p>
+              <p className="doc-description">HumanBytes formats a byte count using decimal (SI) units. It aliases the core helper so existing callers of pool.HumanBytes keep working.</p>
             </div>
 
             <div className="doc-section" id="func-new">
@@ -54,7 +54,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func New(cfg Config) (*Pool, error)</code>
               </pre>
-              <p className="doc-description">New constructs the manager for use.</p>
+              <p className="doc-description">New constructs the pool for use.</p>
             </div>
           </div>
 
@@ -75,7 +75,7 @@ export default function DocsSDKPool() {
 	InsecureLogging bool
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents setting for the kronk manager. BudgetPercent: Percentage (1..100) of detected GPU VRAM and system RAM that the pool's resource manager is allowed to commit to loaded models. Defaults to defaultBudgetPercent (80) when zero. This is the primary admission knob. ModelsInPool: Safety-net cap on the number of distinct entries the pool will keep, independent of the byte budget. Defaults to 10 when zero. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob; lower it on small systems where you want a tighter hard ceiling on resident models. TTL: Defines the time an existing model can live in the pool without being used. Defaults to 5 minutes if the value is 0. Snapshot: Optional resource snapshot used to construct the resource manager. When nil the pool calls devices.List() at construction time. Tests use this to inject a deterministic device topology. InsecureLogging: When true, logs potentially sensitive data such as message content and detailed model configuration.</p>
+              <p className="doc-description">Config represents settings for the pool. BudgetPercent: Percentage (1..100) of detected GPU VRAM and system RAM that the pool's resource manager is allowed to commit to loaded models. Defaults to defaultBudgetPercent (80) when zero. This is the primary admission knob. ModelsInPool: Safety-net cap on the number of distinct entries the pool will keep, independent of the byte budget. Defaults to 10 when zero. TTL: Defines the time an existing model can live in the pool without being used. Defaults to 5 minutes if the value is 0. Snapshot: Optional resource snapshot used to construct the resource manager. When nil the pool calls devices.List() at construction time. Tests use this to inject a deterministic device topology. InsecureLogging: When true, logs potentially sensitive data such as message content and detailed model configuration.</p>
             </div>
 
             <div className="doc-section" id="type-modeldetail">
@@ -104,7 +104,7 @@ export default function DocsSDKPool() {
 	// Has unexported fields.
 }`}</code>
               </pre>
-              <p className="doc-description">Pool manages a set of Kronk APIs for use. It maintains a pool of these APIs and will unload over time if not in use.</p>
+              <p className="doc-description">Pool manages a set of Kronk APIs for use. It maintains a pool of these APIs and will unload them over time if not in use.</p>
             </div>
           </div>
 
@@ -116,7 +116,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error)</code>
               </pre>
-              <p className="doc-description">AquireCustom will provide a kronk API for a model using a pre-built config. This bypasses the normal catalog resolution path. The key should use format &lt;modelID&gt;/playground/&lt;session_id&gt; so that ModelStatus() can still match playground sessions to locally installed models.</p>
+              <p className="doc-description">AquireCustom will provide a kronk API for a model using a pre-built config. This bypasses the normal catalog resolution path. The key should use format &lt;modelID&gt;/playground/&lt;session_id&gt; so that ModelStatus can still match playground sessions to locally installed models.</p>
             </div>
 
             <div className="doc-section" id="method-pool-aquiremodel">
@@ -140,7 +140,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) Invalidate(key string)</code>
               </pre>
-              <p className="doc-description">Invalidate removes a single entry from the pool, triggering unload. This is fire-and-forget: the otter eviction callback runs asynchronously, so the resource manager's reservation may not be released by the time this returns. Callers that need a consistent post-eviction view of the pool (e.g. the BUI Unload button refreshing the budget panel) should use InvalidateSync instead.</p>
+              <p className="doc-description">Invalidate removes a single entry from the pool, triggering unload. This is fire-and-forget: the eviction callback runs asynchronously, so the resource manager's reservation may not be released by the time this returns. Callers that need a consistent post-eviction view of the pool should use InvalidateSync instead.</p>
             </div>
 
             <div className="doc-section" id="method-pool-invalidatesync">
@@ -148,7 +148,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) InvalidateSync(ctx context.Context, key string) error</code>
               </pre>
-              <p className="doc-description">InvalidateSync invalidates a cache entry and waits for the eviction callback to release the underlying resource manager reservation. After it returns successfully the budget endpoint, ModelStatus, and any other consumer of resman.Usage will reflect the unload. Returns nil on success, ctx.Err() if the context is cancelled, or a timeout error if the eviction callback fails to complete within maxWait.</p>
+              <p className="doc-description">InvalidateSync invalidates a cache entry and waits for the eviction callback to release the underlying resource manager reservation.</p>
             </div>
 
             <div className="doc-section" id="method-pool-modelconfig">
@@ -164,7 +164,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) ModelStatus() ([]ModelDetail, error)</code>
               </pre>
-              <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the otter cache) and in-flight loads (memory reservations made by AquireModel that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests.</p>
+              <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests.</p>
             </div>
 
             <div className="doc-section" id="method-pool-resourcemanager">
@@ -172,7 +172,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) ResourceManager() *resman.Manager</code>
               </pre>
-              <p className="doc-description">ResourceManager returns the pool's underlying resource manager. Useful for surfacing budget/usage data via observability endpoints.</p>
+              <p className="doc-description">ResourceManager returns the pool's underlying resource manager.</p>
             </div>
 
             <div className="doc-section" id="method-pool-shutdown">
@@ -211,9 +211,9 @@ export default function DocsSDKPool() {
             <div className="doc-section" id="var-errserverbusy">
               <h4>ErrServerBusy</h4>
               <pre className="code-block">
-                <code>{`var ErrServerBusy = errors.New("server busy: all model slots have active requests")`}</code>
+                <code>{`var ErrServerBusy = core.ErrServerBusy`}</code>
               </pre>
-              <p className="doc-description">ErrServerBusy is returned when all model slots are occupied with active streams.</p>
+              <p className="doc-description">ErrServerBusy is returned when all model slots are occupied with active streams. It aliases the core sentinel so errors.Is works across both packages.</p>
             </div>
           </div>
         </div>
