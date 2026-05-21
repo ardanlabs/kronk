@@ -3,7 +3,7 @@ package bucky
 import (
 	"context"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/applog"
 )
 
 // Logger provides a function for logging messages from different APIs.

@@ -15,7 +15,7 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/bucky/pkg/download"
-	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
