@@ -3064,7 +3064,23 @@ Request 5 (text follow-up about the image):
               </tr>
               <tr>
                 <td><code>speculative status=mtp-disabled-imc-hit</code></td>
-                <td>MTP disabled for this request because the prompt hit IMC cache; the next request on the slot can use MTP again. (See §6.7.)</td>
+                <td>MTP disabled for this request because the IMC cache hit didn't carry a draft-seq snapshot (no draft state on the matched session, or the restore returned 0 bytes). MTP-aware IMC builds — the default since this fix — snapshot the draft seq state and pendingH alongside the target so cache hits keep MTP running. (See §6.7.)</td>
+              </tr>
+              <tr>
+                <td><code>start-slot status=imc-draft-snapshot-done</code></td>
+                <td>The cache-build path snapshotted both the target seq state and the MTP draft seq state into the session. Carries <code>snapshot_bytes</code>, <code>kv_alloc</code>, <code>buf_action</code>, <code>pending_h</code>.</td>
+              </tr>
+              <tr>
+                <td><code>start-slot status=imc-draft-restore-done</code></td>
+                <td>A cache hit restored both the target seq and the MTP draft seq state from the session, plus the slot's <code>pendingH</code>. Carries <code>restored_bytes</code>, <code>pending_h</code>, <code>elapsed</code>.</td>
+              </tr>
+              <tr>
+                <td><code>start-slot status=imc-draft-restore-failed</code></td>
+                <td>The session had a draft snapshot but <code>StateSeqSetData(draft)</code> returned 0 bytes. The slot continues target-only; MTP is disabled for this request via <code>mtp-disabled-imc-hit</code>.</td>
+              </tr>
+              <tr>
+                <td><code>start-slot status=imc-draft-restore-skip-empty</code></td>
+                <td>The session has no draft snapshot (e.g., built before this fix or build-time draft snapshot failed). MTP is disabled for this request via <code>mtp-disabled-imc-hit</code>.</td>
               </tr>
               <tr>
                 <td><code>speculative status=mtp-disabled-mirror-error</code></td>
@@ -3117,8 +3133,8 @@ Request 5 (text follow-up about the image):
                 <td>The MTP path always runs greedy verification, so strict Leviathan-style distribution equivalence at <code>temperature &gt; 0</code> is not guaranteed. The full slot sampler (temperature / top-k / top-p) is still applied at each accepted position, so output shape is preserved.</td>
               </tr>
               <tr>
-                <td>MTP + IMC: MTP disabled on cache hits</td>
-                <td>If an incoming request hits the Incremental Message Cache, MTP is disabled for that request — IMC restores the target sequence state but does not carry the draft sequence state with it. The slot falls back to plain target decoding; the next request on the same slot can use MTP again.</td>
+                <td>MTP + IMC: draft state must come from an MTP-aware build</td>
+                <td>IMC cache hits keep MTP running by restoring the draft seq KV + <code>pendingH</code> snapshotted alongside the target during the cache build. Sessions whose cache was built before this fix (no draft snapshot on disk/RAM) fall back to disabling MTP for the cache-hit request only — they re-enable on the next request once the cache is rebuilt by an MTP-aware path.</td>
               </tr>
               <tr>
                 <td>MTP + hybrid targets: f16 KV cache + no Flash Attention required</td>
@@ -7958,7 +7974,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><code>mtpDisabledForRequest</code></td>
-                <td>Disables MTP for the remainder of the current request. Set at <code>startSlot</code> on IMC cache hits (the IMC restore covers only the target seq, so the draft KV would be stale), and set inside <code>finalizeSpeculativeTokens</code> after a post-rollback mirror failure (the draft KV is wiped and the slot continues target-only). Cleared by <code>slot.reset()</code> when the slot is recycled for the next request.</td>
+                <td>Disables MTP for the remainder of the current request. Set at <code>startSlot</code> on IMC cache hits where the matched session has no draft-seq snapshot (or the draft restore returned 0 bytes) — MTP-aware IMC builds snapshot both target and draft seqs so this failsafe rarely fires on freshly-built caches. Also set inside <code>finalizeSpeculativeTokens</code> after a post-rollback mirror failure (the draft KV is wiped and the slot continues target-only). Cleared by <code>slot.reset()</code> when the slot is recycled for the next request.</td>
               </tr>
               <tr>
                 <td><code>verifyH []float32</code></td>
@@ -8005,7 +8021,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>sdk/kronk/model/batch_mtp.go</code></a></td>
-                <td><code>mirrorTargetBatchToMTPDraft</code>, <code>generateDraftTokensMTP</code>, helpers (<code>batchTokensAt</code>, <code>mirrorBatchCapacity</code>).</td>
+                <td><code>mirrorTargetBatchToMTPDraft</code>, <code>generateDraftTokensMTP</code>, <code>decodeTokensIntoCacheMTP</code> (IMC cache build with mirror), <code>mirrorBuildChunkToMTPDraft</code>, helpers (<code>batchTokensAt</code>, <code>mirrorBatchCapacity</code>).</td>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>sdk/kronk/model/yzma.go</code></a></td>
@@ -8021,7 +8037,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>sdk/kronk/model/batch_slot_start.go</code></a></td>
-                <td>Skips separate-draft-prefill on MTP; disables MTP for the request on IMC cache hits (draft KV would be stale).</td>
+                <td>Skips separate-draft-prefill on MTP; dispatches the MTP-aware <code>decodeTokensIntoCacheMTP</code> during IMC cache build so draft KV is populated in lock-step; snapshots/restores the draft seq + pendingH alongside the target so cache hits keep MTP running. Only disables MTP for a cache-hit request when the matched session has no draft snapshot.</td>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>sdk/kronk/model/batch_engine.go</code></a></td>

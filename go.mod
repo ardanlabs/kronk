@@ -3,7 +3,7 @@ module github.com/ardanlabs/kronk
 go 1.26.0
 
 require (
-	github.com/ardanlabs/bucky v0.0.0-20260521065745-3fc727c866c6
+	github.com/ardanlabs/bucky v0.0.0-20260521110425-bdd40bcc3c4e
 	github.com/ardanlabs/conf/v3 v3.12.0
 	github.com/ardanlabs/jinja v1.4.0
 	github.com/arl/statsviz v0.8.0
@@ -146,5 +146,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
-replace github.com/ardanlabs/bucky => /Users/bill/code/go/src/github.com/ardanlabs/bucky

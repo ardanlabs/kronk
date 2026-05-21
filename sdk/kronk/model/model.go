@@ -52,6 +52,8 @@ type imcSession struct {
 	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
 	cachedMsgCount    int           // Number of messages cached
 	kvState           SessionStore  // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
+	draftKVState      SessionStore  // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
+	pendingH          []float32     // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
 	lastUsed          time.Time     // Last access time (for eviction)
 	pending           bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
@@ -652,6 +654,25 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	}
 	m.draft = draft
 
+	// Initialize per-session draft KV state stores once we know MTP is
+	// enabled. The stores externalize the MTP draft seq state alongside
+	// the target's kvState during IMC cache build, so cache hits on
+	// later requests restore both seqs in lock-step and MTP can keep
+	// running. Non-MTP / no-draft / non-IMC paths leave draftKVState
+	// nil, which the snapshot/restore code paths skip.
+	if m.cfg.IncrementalCache() && m.draft != nil && m.draft.mtp {
+		for _, sess := range m.imcSessions {
+			store, err := newSessionStore(m.cfg)
+			if err != nil {
+				m.batch.stop(ctx)
+				m.batch.freeBatch()
+				llama.Free(lctx)
+				return fmt.Errorf("init-generation-runtime: draft session-store: %w", err)
+			}
+			sess.draftKVState = store
+		}
+	}
+
 	return nil
 }
 
@@ -950,11 +971,18 @@ func (m *Model) Unload(ctx context.Context) error {
 	// The RAM impl is a no-op; the disk impl removes its file. Errors
 	// are logged and otherwise ignored — the model is going away.
 	for i, sess := range m.imcSessions {
-		if sess == nil || sess.kvState == nil {
+		if sess == nil {
 			continue
 		}
-		if err := sess.kvState.Close(); err != nil {
-			m.log(ctx, "unload", "status", "session-store-close-failed", "session", i, "err", err.Error())
+		if sess.kvState != nil {
+			if err := sess.kvState.Close(); err != nil {
+				m.log(ctx, "unload", "status", "session-store-close-failed", "session", i, "err", err.Error())
+			}
+		}
+		if sess.draftKVState != nil {
+			if err := sess.draftKVState.Close(); err != nil {
+				m.log(ctx, "unload", "status", "draft-session-store-close-failed", "session", i, "err", err.Error())
+			}
 		}
 	}
 
