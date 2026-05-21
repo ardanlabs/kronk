@@ -27,10 +27,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// Compile-time assertion that *kronk.Kronk satisfies loader.Handle, so
-// the generic core can hold it directly without runtime type checks.
-var _ loader.Handle = (*kronk.Kronk)(nil)
-
 // ErrServerBusy is returned when all model slots are occupied with
 // active streams. It aliases the core sentinel so errors.Is works
 // across both packages.

@@ -7,6 +7,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -22,12 +23,6 @@ import (
 	"github.com/hashicorp/go-getter"
 	"go.yaml.in/yaml/v2"
 )
-
-// Compile-time assertion that *Models satisfies backend.Catalog. The
-// whisper implementation is structurally compatible with the
-// cross-backend interface and consumers can dispatch by kind via the
-// backend registry.
-var _ backend.Catalog = (*Models)(nil)
 
 var (
 	localFolder = "bucky-models"
@@ -280,9 +275,7 @@ type CatalogEntry struct {
 // short name.
 func Catalog() map[string]CatalogEntry {
 	out := make(map[string]CatalogEntry, len(catalog))
-	for k, v := range catalog {
-		out[k] = v
-	}
+	maps.Copy(out, catalog)
 	return out
 }
 

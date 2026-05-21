@@ -152,7 +152,7 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 	}
 
 	if l.insecureLogging {
-		cfg.PtrInsecureLogging = newBool(true)
+		cfg.PtrInsecureLogging = new(true)
 	}
 
 	cfg.Log = l.log
@@ -308,8 +308,10 @@ func gpuDevices(in []string) []string {
 
 // newBool returns a pointer to the supplied bool. Used to populate
 // model.Config's *bool fields without inline addressable temporaries.
+//
+//go:fix inline
 func newBool(b bool) *bool {
-	return &b
+	return new(b)
 }
 
 // humanBytes is a local copy of core.HumanBytes used in plan logging.

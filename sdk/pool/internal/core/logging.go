@@ -149,9 +149,6 @@ func (c *Core[H]) PublishMetrics() {
 	metrics.SetPoolItemsInPool(items)
 
 	// Inflight = tickets held but not yet visible in the cache.
-	inflight := c.activeTicketCount() - items
-	if inflight < 0 {
-		inflight = 0
-	}
+	inflight := max(c.activeTicketCount()-items, 0)
 	metrics.SetPoolInflightLoads(inflight)
 }

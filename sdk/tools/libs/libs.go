@@ -20,11 +20,6 @@ import (
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
-// Compile-time assertion that *Libs satisfies backend.LibsManager. The
-// llama implementation is structurally compatible with the cross-backend
-// interface and consumers can dispatch by kind via the backend registry.
-var _ backend.LibsManager = (*Libs)(nil)
-
 const (
 	versionFile = "version.json"
 	localFolder = "libraries"
