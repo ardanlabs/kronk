@@ -106,15 +106,13 @@ func WithOnSegment(fn func(Segment)) TranscribeOption {
 
 // Transcribe runs the whisper.cpp pipeline on the provided 16 kHz
 // mono float32 PCM samples and returns the decoded text along with
-// per-segment metadata. The call blocks for the duration of the
-// underlying whisper_full invocation.
+// per-segment metadata.
 //
-// Transcribe is not safe to call concurrently against the same
-// Model — the sdk/bucky wrapper provides the per-handle backpressure
-// that guarantees serialization.
+// Transcribe acquires a whisper.State from the model's internal
+// pool, so up to Config.NSeqMax goroutines may run Transcribe in
+// parallel against the same Model. The acquired state is released
+// back to the pool when Transcribe returns.
 func (m *Model) Transcribe(ctx context.Context, samples []float32, opts ...TranscribeOption) (Transcription, error) {
-	_ = ctx
-
 	if m.handle == 0 {
 		return Transcription{}, fmt.Errorf("transcribe: model has been unloaded")
 	}
@@ -133,11 +131,17 @@ func (m *Model) Transcribe(ctx context.Context, samples []float32, opts ...Trans
 	}
 	defer refs.KeepAlive()
 
-	if err := whisper.Full(m.handle, params, samples); err != nil {
+	ps, err := m.pool.acquire(ctx)
+	if err != nil {
+		return Transcription{}, fmt.Errorf("transcribe: %w", err)
+	}
+	defer m.pool.release(ps)
+
+	if err := whisper.FullWithState(m.handle, ps.state, params, samples); err != nil {
 		return Transcription{}, fmt.Errorf("transcribe: %w", err)
 	}
 
-	return collectTranscription(m.handle, tcfg.OnSegment), nil
+	return collectTranscription(ps.state, tcfg.OnSegment), nil
 }
 
 // =============================================================================
@@ -182,22 +186,22 @@ func (m *Model) buildFullParams(tcfg TranscribeConfig) (whisper.WhisperFullParam
 	return params, refs, nil
 }
 
-func collectTranscription(handle whisper.Context, onSegment func(Segment)) Transcription {
-	n := whisper.FullNSegments(handle)
+func collectTranscription(state whisper.State, onSegment func(Segment)) Transcription {
+	n := whisper.FullNSegmentsFromState(state)
 
 	out := Transcription{
 		Segments: make([]Segment, 0, n),
-		Language: whisper.LangStr(whisper.FullLangID(handle)),
+		Language: whisper.LangStr(whisper.FullLangIDFromState(state)),
 	}
 
 	var sb strings.Builder
 	for i := range n {
 		seg := Segment{
 			Index:        i,
-			StartMs:      whisper.FullGetSegmentT0(handle, i) * 10,
-			EndMs:        whisper.FullGetSegmentT1(handle, i) * 10,
-			Text:         whisper.FullGetSegmentText(handle, i),
-			NoSpeechProb: whisper.FullGetSegmentNoSpeechProb(handle, i),
+			StartMs:      whisper.FullGetSegmentT0FromState(state, i) * 10,
+			EndMs:        whisper.FullGetSegmentT1FromState(state, i) * 10,
+			Text:         whisper.FullGetSegmentTextFromState(state, i),
+			NoSpeechProb: whisper.FullGetSegmentNoSpeechProbFromState(state, i),
 		}
 		out.Segments = append(out.Segments, seg)
 		sb.WriteString(seg.Text)

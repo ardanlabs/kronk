@@ -24,17 +24,21 @@ type ModelInfo struct {
 
 // =============================================================================
 
-// Model owns a single whisper.Context and exposes the low-level
-// transcribe / language-detect primitives that the high-level
-// sdk/bucky package layers concurrency on top of.
+// Model owns a single whisper.Context (the model weights) plus an
+// internal statePool that allocates Config.NSeqMax whisper.State
+// instances against that context. Each state carries its own mel
+// spectrogram, KV cache, and compute buffer, so concurrent
+// transcribe / language-detect calls can run in parallel against one
+// set of shared weights.
 //
-// The whisper.Context itself is single-stream so concurrency
-// guarantees are the caller's responsibility; Model only serializes
-// its own lifecycle (load / Unload).
+// This mirrors how sdk/kronk/model handles embedding and rerank
+// concurrency: one llama.Model + NSeqMax llama.Context instances
+// behind a small pool.
 type Model struct {
 	cfg       Config
 	handle    whisper.Context
 	modelInfo ModelInfo
+	pool      *statePool
 
 	shutdown     sync.Mutex
 	shutdownFlag bool
@@ -65,9 +69,16 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		return nil, fmt.Errorf("new-model: init model %q: %w", cfg.ModelPath, err)
 	}
 
+	pool, err := newStatePool(ctx, handle, cfg.Log, cfg.NSeqMax)
+	if err != nil {
+		whisper.Free(handle)
+		return nil, fmt.Errorf("new-model: %w", err)
+	}
+
 	m := Model{
 		cfg:    cfg,
 		handle: handle,
+		pool:   pool,
 		modelInfo: ModelInfo{
 			ID:             cfg.ModelPath,
 			Type:           whisper.ModelTypeReadable(handle),
@@ -85,6 +96,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		"multilingual", m.modelInfo.IsMultilingual,
 		"use-gpu", cfg.UseGPU,
 		"flash-attn", cfg.FlashAttn,
+		"n-seq-max", cfg.NSeqMax,
 	)
 
 	return &m, nil
@@ -101,8 +113,9 @@ func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
 }
 
-// Unload releases the underlying whisper context. Unload is
-// single-use per Model; subsequent calls return an error.
+// Unload releases the state pool followed by the underlying whisper
+// context. Unload is single-use per Model; subsequent calls return
+// an error.
 //
 // The supplied ctx is accepted for parity with sdk/kronk.Model.Unload
 // — whisper has no in-flight requests to drain at this layer because
@@ -115,6 +128,11 @@ func (m *Model) Unload(ctx context.Context) error {
 
 	if m.shutdownFlag {
 		return fmt.Errorf("unload: already unloaded")
+	}
+
+	if m.pool != nil {
+		m.pool.close()
+		m.pool = nil
 	}
 
 	whisper.Free(m.handle)

@@ -34,8 +34,6 @@ github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883 h1:bvNMNQO63//z+xNg
 github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883/go.mod h1:rCTlJbsFo29Kk6CurOXKm700vrz8f0KW0JNfpkRJY/8=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0/go.mod h1:t2tdKJDJF9BV14lnkjHmOQgcvEKgtqs5a1N3LNdJhGE=
-github.com/ardanlabs/bucky v0.0.0-20260521065745-3fc727c866c6 h1:Odu5xaxnzfBJlmgaYaR4eSbGIr9agH35KMchrclwznY=
-github.com/ardanlabs/bucky v0.0.0-20260521065745-3fc727c866c6/go.mod h1:tfCAAKN7x8AlJ0LTcf83Rw2JV/gKySFYGedp8cSwnNk=
 github.com/ardanlabs/conf/v3 v3.12.0 h1:8tdFT7WslYR4q9wOY/fwyYN20I+4JhMCcEgzWc73Hj0=
 github.com/ardanlabs/conf/v3 v3.12.0/go.mod h1:XlL9P0quWP4m1weOVFmlezabinbZLI05niDof/+Ochk=
 github.com/ardanlabs/jinja v1.4.0 h1:9iE0/wF4zhcws1CYZCWqJTQP8YuhC4FjycBGzCTuOFw=
@@ -161,6 +159,7 @@ github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF2
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0/go.mod h1:Hyl3n6Twe1hvtd9XUXDec4pTvgMSEixRuQKPTMH2bNs=
 github.com/hajimehoshi/go-mp3 v0.3.4 h1:NUP7pBYH8OguP4diaTZ9wJbUbk3tC0KlfzsEpWmYj68=
 github.com/hajimehoshi/go-mp3 v0.3.4/go.mod h1:fRtZraRFcWb0pu7ok0LqyFhCUrPeMsGRSVop0eemFmo=
+github.com/hajimehoshi/oto/v2 v2.3.1/go.mod h1:seWLbgHH7AyUMYKfKYT9pg7PhUu9/SisyJvNTT+ASQo=
 github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.72 h1:vTCWu1wbdYo7PEZFem/rlr01+Un+wwVmI7wiegFdRLk=
 github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.72/go.mod h1:Vn+BBgKQHVQYdVQ4NZDICE1Brb+JfaONyDHr3q07oQc=
 github.com/hashicorp/go-cleanhttp v0.5.2 h1:035FKYIWjmULyFRBKPs8TBQoi0x6d9G4xc9neXJWAZQ=
@@ -173,6 +172,8 @@ github.com/hybridgroup/yzma v1.14.1 h1:EMSy9ONR8WMljsWwKLDt8gEYJPOEyxZkBtCHxNWxO
 github.com/hybridgroup/yzma v1.14.1/go.mod h1:DAsHYcX7ze7iFZH6PT57oCuqaVd/AXdALhjnOSgWbaE=
 github.com/icza/bitio v1.1.0 h1:ysX4vtldjdi3Ygai5m1cWy4oLkhWTAi+SyO6HC8L9T0=
 github.com/icza/bitio v1.1.0/go.mod h1:0jGnlLAx8MKMr9VGnn/4YrvZiprkvBelsVIbA9Jjr9A=
+github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6 h1:8UsGZ2rr2ksmEru6lToqnXgA8Mz1DP11X4zSJ159C3k=
+github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6/go.mod h1:xQig96I1VNBDIWGCdTt54nHt6EeI639SmHycLYL7FkA=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/jupiterrider/ffi v0.7.0 h1:RKsl6Ascal+3kyAqR5Qcbp83LceQMLc1VZbPfHWoNzs=
@@ -312,6 +313,7 @@ golang.org/x/oauth2 v0.36.0 h1:peZ/1z27fi9hUOFCAZaHyrpWG5lwe0RJEEEeH0ThlIs=
 golang.org/x/oauth2 v0.36.0/go.mod h1:YDBUJMTkDnJS+A4BP4eZBjCqtokkg1hODuPjwiGPO7Q=
 golang.org/x/sync v0.20.0 h1:e0PTpb7pjO8GAtTs2dQ6jYa5BWYlMuX047Dco/pItO4=
 golang.org/x/sync v0.20.0/go.mod h1:9xrNwdLfx4jkKbNva9FpL6vEN7evnE43NNNJQ2LF3+0=
+golang.org/x/sys v0.0.0-20220712014510-0a85c31ab51e/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.44.0 h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=
 golang.org/x/sys v0.44.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/text v0.37.0 h1:Cqjiwd9eSg8e0QAkyCaQTNHFIIzWtidPahFWR83rTrc=

@@ -35,12 +35,10 @@ func LangMaxID() int32 {
 // along with the per-language probability vector (length
 // LangMaxID()+1) when withProbs is true.
 //
-// DetectLanguage is not safe to call concurrently against the same
-// Model — the sdk/bucky wrapper provides the per-handle backpressure
-// that guarantees serialization.
+// DetectLanguage acquires a whisper.State from the model's internal
+// pool, so up to Config.NSeqMax goroutines may run DetectLanguage in
+// parallel against the same Model.
 func (m *Model) DetectLanguage(ctx context.Context, samples []float32, withProbs bool) (string, []float32, error) {
-	_ = ctx
-
 	if m.handle == 0 {
 		return "", nil, fmt.Errorf("detect-language: model has been unloaded")
 	}
@@ -63,17 +61,23 @@ func (m *Model) DetectLanguage(ctx context.Context, samples []float32, withProbs
 		params.NThreads = m.cfg.NThreads
 	}
 
-	if err := whisper.Full(m.handle, params, samples); err != nil {
+	ps, err := m.pool.acquire(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("detect-language: %w", err)
+	}
+	defer m.pool.release(ps)
+
+	if err := whisper.FullWithState(m.handle, ps.state, params, samples); err != nil {
 		return "", nil, fmt.Errorf("detect-language: %w", err)
 	}
 
 	var probs []float32
 	if withProbs {
 		probs = make([]float32, whisper.LangMaxID()+1)
-		if id := whisper.LangAutoDetect(m.handle, 0, params.NThreads, probs); id < 0 {
-			return "", nil, fmt.Errorf("detect-language: whisper_lang_auto_detect returned %d", id)
+		if id := whisper.LangAutoDetectWithState(m.handle, ps.state, 0, params.NThreads, probs); id < 0 {
+			return "", nil, fmt.Errorf("detect-language: whisper_lang_auto_detect_with_state returned %d", id)
 		}
 	}
 
-	return whisper.LangStr(whisper.FullLangID(m.handle)), probs, nil
+	return whisper.LangStr(whisper.FullLangIDFromState(ps.state)), probs, nil
 }
