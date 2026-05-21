@@ -129,7 +129,9 @@ type streamState struct {
 	started      bool
 	blockStarted bool
 	blockIndex   int
+	inputTokens  int
 	outputTokens int
+	finishReason string
 }
 
 func (s *streamState) processChunk(resp model.ChatResponse) error {
@@ -194,8 +196,22 @@ func (s *streamState) processChunk(resp model.ChatResponse) error {
 		}
 	}
 
+	// Usage is only populated on the final chunk produced by chatResponseFinal.
+	// Capture both PromptTokens (cache-inclusive input count from nPrompt =
+	// cacheIdx + suffixTokens) and CompletionTokens so the closing
+	// message_delta event can report accurate cumulative usage. Without this,
+	// only message_start carried input_tokens — and on the first chunk
+	// resp.Usage is nil, so input_tokens was always reported as 0.
 	if resp.Usage != nil {
+		s.inputTokens = resp.Usage.PromptTokens
 		s.outputTokens = resp.Usage.CompletionTokens
+	}
+
+	// Capture the model's finish reason from the final chunk so finish() can
+	// emit the correct Anthropic stop_reason instead of hard-coding "end_turn"
+	// for every request (which masked tool_use completions).
+	if fr := choice.FinishReason(); fr != "" {
+		s.finishReason = fr
 	}
 
 	return nil
@@ -208,13 +224,29 @@ func (s *streamState) finish() error {
 		}
 	}
 
-	stopReason := "end_turn"
-
-	if err := s.sendMessageDelta(stopReason); err != nil {
+	if err := s.sendMessageDelta(toAnthropicStopReason(s.finishReason)); err != nil {
 		return err
 	}
 
 	return s.sendMessageStop()
+}
+
+// toAnthropicStopReason maps a model.FinishReason* value to the Anthropic
+// stop_reason string. Mirrors the mapping used by toMessagesResponse for the
+// non-streaming path so streaming and non-streaming agree.
+func toAnthropicStopReason(finishReason string) string {
+	switch finishReason {
+	case model.FinishReasonTool:
+		return "tool_use"
+	case model.FinishReasonStop:
+		return "end_turn"
+	case "":
+		// No finish reason ever observed (e.g., client disconnect). Default
+		// to end_turn so we still emit a syntactically valid message_delta.
+		return "end_turn"
+	default:
+		return finishReason
+	}
 }
 
 func (s *streamState) sendEvent(eventType string, data any) error {
@@ -234,6 +266,19 @@ func (s *streamState) sendEvent(eventType string, data any) error {
 }
 
 func (s *streamState) sendMessageStart(resp model.ChatResponse) error {
+	// resp here is the first chunk produced by chatResponseDelta, which does
+	// not populate Usage — PromptTokens is only known after the model layer
+	// runs startSlot* and is currently only emitted on the final chunk via
+	// chatResponseFinal. As a result message_start.usage.input_tokens is
+	// reported as 0. The real cache-inclusive count is surfaced later in the
+	// closing message_delta event (see sendMessageDelta + processChunk).
+	//
+	// Clients that read input_tokens from message_delta (the cumulative
+	// usage) will see the correct value; clients that read only from
+	// message_start will see 0. Fully fixing message_start.input_tokens
+	// requires the SDK to populate Usage{PromptTokens: nPrompt} on the
+	// first streamed delta, since nPrompt is known in startSlot before
+	// generation begins.
 	var inputTokens int
 	if resp.Usage != nil {
 		inputTokens = resp.Usage.PromptTokens
@@ -323,6 +368,7 @@ func (s *streamState) sendMessageDelta(stopReason string) error {
 			StopReason: stopReason,
 		},
 		Usage: DeltaUsage{
+			InputTokens:  s.inputTokens,
 			OutputTokens: s.outputTokens,
 		},
 	}

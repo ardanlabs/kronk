@@ -548,8 +548,12 @@ type MessageDelta struct {
 	StopSequence *string `json:"stop_sequence,omitempty"`
 }
 
-// DeltaUsage contains just output tokens for the delta.
+// DeltaUsage contains the cumulative token usage for the message at the end
+// of the stream. Anthropic clients read input_tokens from message_delta to get
+// the final, cache-inclusive prompt token count, since message_start fires
+// before the model has computed it.
 type DeltaUsage struct {
+	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 }
 
@@ -585,15 +589,12 @@ func toMessagesResponse(resp model.ChatResponse) *MessagesResponse {
 		}
 	}
 
-	stopReason := "end_turn"
+	var stopReason string
 	switch {
 	case len(resp.Choices) > 0:
-		switch resp.Choices[0].FinishReason() {
-		case model.FinishReasonTool:
-			stopReason = "tool_use"
-		case model.FinishReasonStop:
-			stopReason = "end_turn"
-		}
+		stopReason = toAnthropicStopReason(resp.Choices[0].FinishReason())
+	default:
+		stopReason = toAnthropicStopReason("")
 	}
 
 	var usage Usage
