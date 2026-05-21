@@ -6,6 +6,8 @@ import ModelPull from './components/ModelPull';
 import KMSPull from './components/KMSPull';
 import CatalogList from './components/CatalogList';
 import LibsPull from './components/LibsPull';
+import BuckyLibs from './components/BuckyLibs';
+import BuckyModels from './components/BuckyModels';
 import SecurityKeyList from './components/SecurityKeyList';
 import SecurityKeyCreate from './components/SecurityKeyCreate';
 import SecurityKeyDelete from './components/SecurityKeyDelete';
@@ -54,6 +56,8 @@ export type Page =
   | 'kms-pull'
   | 'catalog-list'
   | 'libs-pull'
+  | 'bucky-libs'
+  | 'bucky-model-list'
   | 'security-key-list'
   | 'security-key-create'
   | 'security-key-delete'
@@ -90,6 +94,8 @@ export const routeMap: Record<Page, string> = {
   'kms-pull': '/models/kms-pull',
   'catalog-list': '/catalog',
   'libs-pull': '/libs/pull',
+  'bucky-libs': '/bucky/libs',
+  'bucky-model-list': '/bucky/models',
   'security-key-list': '/security/keys',
   'security-key-create': '/security/keys/create',
   'security-key-delete': '/security/keys/delete',
@@ -188,6 +194,8 @@ function App() {
                 <Route path="/models/kms-pull" element={<KMSPull />} />
                 <Route path="/catalog" element={<CatalogList />} />
                 <Route path="/libs/pull" element={<LibsPull />} />
+                <Route path="/bucky/libs" element={<BuckyLibs />} />
+                <Route path="/bucky/models" element={<BuckyModels />} />
                 <Route path="/security/keys" element={<SecurityKeyList />} />
                 <Route path="/security/keys/create" element={<SecurityKeyCreate />} />
                 <Route path="/security/keys/delete" element={<SecurityKeyDelete />} />
