@@ -14,12 +14,12 @@ import (
 //
 // DetectLanguage participates in the per-handle backpressure
 // semaphore and blocks until a slot is available.
-func (w *Whisper) DetectLanguage(ctx context.Context, samples []float32, withProbs bool) (string, []float32, error) {
-	m, err := w.acquireModel(ctx)
+func (b *Bucky) DetectLanguage(ctx context.Context, samples []float32, withProbs bool) (string, []float32, error) {
+	m, err := b.acquireModel(ctx)
 	if err != nil {
 		return "", nil, fmt.Errorf("detect-language: %w", err)
 	}
-	defer w.releaseModel()
+	defer b.releaseModel()
 
 	return m.DetectLanguage(ctx, samples, withProbs)
 }

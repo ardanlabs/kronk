@@ -166,7 +166,7 @@ func Test_PooledTranscribe(t *testing.T) {
 // until wg signals completion, returning the maximum value seen.
 // It runs on the test goroutine so a missed peak is impossible —
 // the polling loop exits only when every parallel call has returned.
-func pollPeakActiveStreams(w *bucky.Whisper, wg *sync.WaitGroup) int {
+func pollPeakActiveStreams(w *bucky.Bucky, wg *sync.WaitGroup) int {
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()

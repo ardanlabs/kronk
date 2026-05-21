@@ -7,16 +7,16 @@ import (
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 )
 
-func (w *Whisper) acquireModel(ctx context.Context) (*model.Model, error) {
+func (b *Bucky) acquireModel(ctx context.Context) (*model.Model, error) {
 	err := func() error {
-		w.shutdown.Lock()
-		defer w.shutdown.Unlock()
+		b.shutdown.Lock()
+		defer b.shutdown.Unlock()
 
-		if w.shutdownFlag {
+		if b.shutdownFlag {
 			return fmt.Errorf("acquire-model: whisper has been unloaded")
 		}
 
-		w.activeStreams.Add(1)
+		b.activeStreams.Add(1)
 		return nil
 	}()
 
@@ -27,16 +27,16 @@ func (w *Whisper) acquireModel(ctx context.Context) (*model.Model, error) {
 	// Acquire backpressure slot.
 	select {
 	case <-ctx.Done():
-		w.activeStreams.Add(-1)
+		b.activeStreams.Add(-1)
 		return nil, ctx.Err()
 
-	case w.sem <- struct{}{}:
+	case b.sem <- struct{}{}:
 	}
 
-	return w.model, nil
+	return b.model, nil
 }
 
-func (w *Whisper) releaseModel() {
-	<-w.sem
-	w.activeStreams.Add(-1)
+func (b *Bucky) releaseModel() {
+	<-b.sem
+	b.activeStreams.Add(-1)
 }

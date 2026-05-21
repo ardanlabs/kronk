@@ -814,7 +814,7 @@ func installSystem() (buckymodels.Path, error) {
 	return mp, nil
 }
 
-func newWhisper(mp buckymodels.Path) (*bucky.Whisper, error) {
+func newWhisper(mp buckymodels.Path) (*bucky.Bucky, error) {
 	fmt.Println("Initializing bucky / whisper.cpp")
 
 	if err := bucky.Init(); err != nil {
@@ -863,7 +863,7 @@ func loadSamples(path string) ([]float32, error) {
 
 // =============================================================================
 
-func transcribe(w *bucky.Whisper, samples []float32) error {
+func transcribe(w *bucky.Bucky, samples []float32) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -890,7 +890,7 @@ func transcribe(w *bucky.Whisper, samples []float32) error {
 	return nil
 }
 
-func detectLanguage(w *bucky.Whisper, samples []float32) error {
+func detectLanguage(w *bucky.Bucky, samples []float32) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

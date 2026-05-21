@@ -2,7 +2,7 @@
 // runtime test packages under sdk/bucky/tests. It mirrors the role
 // sdk/kronk/tests/testlib plays for the llama runtime: one-shot
 // initialization, model resolution against the bucky catalog, and a
-// WithWhisper helper that owns the *bucky.Whisper lifecycle.
+// WithWhisper helper that owns the *bucky.Bucky lifecycle.
 package testlib
 
 import (
@@ -94,7 +94,7 @@ func printInfo(mdls *buckymodels.Models) {
 
 // WithWhisper creates a Whisper handle for the duration of fn,
 // handling cleanup. Mirrors testlib.WithModel in sdk/kronk/tests.
-func WithWhisper(t *testing.T, cfg model.Config, fn func(t *testing.T, w *bucky.Whisper)) {
+func WithWhisper(t *testing.T, cfg model.Config, fn func(t *testing.T, w *bucky.Bucky)) {
 	t.Helper()
 
 	w, err := bucky.New(model.WithConfig(cfg))

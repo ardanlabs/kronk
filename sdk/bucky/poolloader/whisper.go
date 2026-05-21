@@ -3,7 +3,7 @@
 // generic pool core.
 //
 // It owns the model.bin path resolution against the whisper catalog
-// and the construction of a *bucky.Whisper handle. The pool core
+// and the construction of a *bucky.Bucky handle. The pool core
 // invokes it for every load/unload/display operation, leaving the
 // cache, eviction, and budget logic entirely backend-agnostic in
 // sdk/pool/internal/core.
@@ -27,7 +27,7 @@ import (
 // is conservative for every model up through large-v3.
 const whisperOverhead int64 = 200 * 1000 * 1000
 
-// Whisper is the loader.Loader[*bucky.Whisper] implementation for the
+// Whisper is the loader.Loader[*bucky.Bucky] implementation for the
 // whisper.cpp backend. It is constructed by sdk/pool and any future
 // programs that want to build a pool around whisper models manually.
 type Whisper struct {
@@ -90,7 +90,7 @@ func (w *Whisper) Plan(ctx context.Context, req loader.LoadRequest) (resman.Plan
 }
 
 // Load implements loader.Loader.Load for the whisper backend.
-func (w *Whisper) Load(ctx context.Context, req loader.LoadRequest) (*bucky.Whisper, error) {
+func (w *Whisper) Load(ctx context.Context, req loader.LoadRequest) (*bucky.Bucky, error) {
 	cfg, err := w.resolveConfig(req)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
@@ -122,7 +122,7 @@ func (w *Whisper) Load(ctx context.Context, req loader.LoadRequest) (*bucky.Whis
 // time per handle, so KVCache is zero and Slots is one. VRAMTotal is
 // the file size plus the same overhead Plan used so the observability
 // figure tracks the budget reservation.
-func (w *Whisper) Display(h *bucky.Whisper, modelID string) loader.Display {
+func (w *Whisper) Display(h *bucky.Bucky, modelID string) loader.Display {
 	_ = h
 
 	out := loader.Display{

@@ -14,14 +14,14 @@ import (
 )
 
 func TestSuite(t *testing.T) {
-	testlib.WithWhisper(t, testlib.CfgTinyEn(), func(t *testing.T, w *bucky.Whisper) {
+	testlib.WithWhisper(t, testlib.CfgTinyEn(), func(t *testing.T, w *bucky.Bucky) {
 		t.Run("Transcribe", func(t *testing.T) { testTranscribe(t, w) })
 		t.Run("TranscribeOnSegment", func(t *testing.T) { testTranscribeOnSegment(t, w) })
 		t.Run("DetectLanguage", func(t *testing.T) { testDetectLanguage(t, w) })
 	})
 }
 
-func testTranscribe(t *testing.T, w *bucky.Whisper) {
+func testTranscribe(t *testing.T, w *bucky.Bucky) {
 	if testlib.RunInParallel {
 		t.Parallel()
 	}
@@ -70,7 +70,7 @@ func testTranscribe(t *testing.T, w *bucky.Whisper) {
 	}
 }
 
-func testTranscribeOnSegment(t *testing.T, w *bucky.Whisper) {
+func testTranscribeOnSegment(t *testing.T, w *bucky.Bucky) {
 	if testlib.RunInParallel {
 		t.Parallel()
 	}
@@ -99,7 +99,7 @@ func testTranscribeOnSegment(t *testing.T, w *bucky.Whisper) {
 	}
 }
 
-func testDetectLanguage(t *testing.T, w *bucky.Whisper) {
+func testDetectLanguage(t *testing.T, w *bucky.Bucky) {
 	if testlib.RunInParallel {
 		t.Parallel()
 	}

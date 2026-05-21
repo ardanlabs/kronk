@@ -11,12 +11,12 @@ import (
 // mono float32 PCM samples and returns the decoded text along with
 // per-segment metadata. The call participates in the per-handle
 // backpressure semaphore and blocks until a slot is available.
-func (w *Whisper) Transcribe(ctx context.Context, samples []float32, opts ...model.TranscribeOption) (model.Transcription, error) {
-	m, err := w.acquireModel(ctx)
+func (b *Bucky) Transcribe(ctx context.Context, samples []float32, opts ...model.TranscribeOption) (model.Transcription, error) {
+	m, err := b.acquireModel(ctx)
 	if err != nil {
 		return model.Transcription{}, fmt.Errorf("transcribe: %w", err)
 	}
-	defer w.releaseModel()
+	defer b.releaseModel()
 
 	return m.Transcribe(ctx, samples, opts...)
 }
