@@ -17,7 +17,7 @@ import (
 func runWeb(args []string) error {
 	modelID := args[0]
 
-	url, err := client.DefaultURL(fmt.Sprintf("/v1/models/%s", modelID))
+	url, err := client.DefaultURL(fmt.Sprintf("/v1/kronk/models/%s", modelID))
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
 	}

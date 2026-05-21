@@ -23,9 +23,8 @@ libraries root (default: ~/.kronk/bucky-libraries/).
 
 MODES
 
-  Web Mode (default): Reserved for a future server-wiring step. The
-    model server does not yet expose whisper endpoints; running this
-    command without --local returns an error.
+  Web Mode (default): Installs through the model server at
+    /v1/bucky/libs/pull.
   Local Mode (--local): Direct download without requiring a server.
 
 The command auto-detects your system architecture (amd64/arm64),
@@ -42,22 +41,22 @@ HARDWARE BACKENDS
 EXAMPLES
 
   # Install the default whisper.cpp libraries for the current host.
-  kronk bucky libs --local
+  kronk bucky libs
 
   # Install a specific whisper.cpp version.
-  kronk bucky libs --local --version=v1.7.0
+  kronk bucky libs --version=v1.7.0
 
   # List supported (arch, os, processor) combinations.
-  kronk bucky libs --local --list-combinations
+  kronk bucky libs --list-combinations
 
   # Install a Linux/CUDA bundle alongside the active install.
-  kronk bucky libs --local --install --arch=amd64 --os=linux --processor=cuda
+  kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
 
   # List installed library bundles.
-  kronk bucky libs --local --list-installs
+  kronk bucky libs --list-installs
 
   # Remove an install.
-  kronk bucky libs --local --remove-install --arch=amd64 --os=linux --processor=cuda
+  kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda
 
   # Switch to a previously installed bundle by setting KRONK_BUCKY_LIB_PATH.
   export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda
@@ -73,7 +72,7 @@ ENVIRONMENT VARIABLES
 }
 
 func init() {
-	Cmd.Flags().Bool("local", false, "Run without the model server (currently required; web mode lands with the server-wiring step)")
+	Cmd.Flags().Bool("local", false, "Run without the model server")
 	Cmd.Flags().String("version", "", "Download a specific whisper.cpp version instead of the default")
 
 	Cmd.Flags().Bool("install", false, "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)")
@@ -94,10 +93,6 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command) error {
 	local, _ := cmd.Flags().GetBool("local")
-	if !local {
-		return fmt.Errorf("bucky libs: web mode not yet implemented; pass --local to run against local files")
-	}
-
 	version, _ := cmd.Flags().GetString("version")
 
 	tripleInstall, _ := cmd.Flags().GetBool("install")
@@ -120,8 +115,14 @@ func run(cmd *cobra.Command) error {
 	}
 
 	if opts.isInstallOp() {
-		return runInstall(opts)
+		if local {
+			return runInstallLocal(opts)
+		}
+		return runInstallWeb(opts)
 	}
 
-	return runDefault(version)
+	if local {
+		return runDefaultLocal(version)
+	}
+	return runDefaultWeb(version)
 }

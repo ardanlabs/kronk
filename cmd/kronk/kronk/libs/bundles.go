@@ -115,7 +115,7 @@ func runInstallWeb(opts installOpts) error {
 		if err := opts.requireTriple(); err != nil {
 			return err
 		}
-		return webMutateInstall(http.MethodDelete, "/v1/libs/installs", opts)
+		return webMutateInstall(http.MethodDelete, "/v1/kronk/libs/installs", opts)
 
 	case opts.install:
 		if err := opts.requireTriple(); err != nil {
@@ -128,7 +128,7 @@ func runInstallWeb(opts installOpts) error {
 }
 
 func webListCombinations() error {
-	body, err := webGet("/v1/libs/combinations")
+	body, err := webGet("/v1/kronk/libs/combinations")
 	if err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func webListCombinations() error {
 }
 
 func webListInstalls() error {
-	body, err := webGet("/v1/libs/installs")
+	body, err := webGet("/v1/kronk/libs/installs")
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func webPullInstall(opts installOpts) error {
 		q.Set("version", opts.version)
 	}
 
-	url, err := client.DefaultURL("/v1/libs/pull")
+	url, err := client.DefaultURL("/v1/kronk/libs/pull")
 	if err != nil {
 		return fmt.Errorf("libs: default url: %w", err)
 	}

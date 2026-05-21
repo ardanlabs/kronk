@@ -2,8 +2,12 @@
 package remove
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/bucky"
@@ -21,12 +25,17 @@ basename without extension.
 
 MODES
 
-  Web Mode (default): Reserved for a future server-wiring step.
-  Local Mode (--local): Removes the model file from disk directly.
+  Web Mode (default): Removes the model through the model server at
+    /v1/bucky/models/{model}.
+  Local Mode (--local): Removes the model file from disk directly
+    without contacting a server.
 
 EXAMPLES
 
-  # Remove the tiny English model.
+  # Remove the tiny English model from a running server.
+  kronk bucky model remove tiny.en
+
+  # Remove the tiny English model in-process.
   kronk bucky model remove --local tiny.en
 
 ENVIRONMENT VARIABLES
@@ -37,7 +46,7 @@ ENVIRONMENT VARIABLES
 }
 
 func init() {
-	Cmd.Flags().Bool("local", false, "Run without the model server (currently required; web mode lands with the server-wiring step)")
+	Cmd.Flags().Bool("local", false, "Run without the model server")
 }
 
 func main(cmd *cobra.Command, args []string) {
@@ -49,10 +58,50 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command, modelID string) error {
 	local, _ := cmd.Flags().GetBool("local")
-	if !local {
-		return fmt.Errorf("bucky model remove: web mode not yet implemented; pass --local to run against local files")
+	if local {
+		return runLocal(cmd, modelID)
+	}
+	return runWeb(modelID)
+}
+
+func runWeb(modelID string) error {
+	base, err := client.DefaultURL("/v1/bucky/models")
+	if err != nil {
+		return fmt.Errorf("default-url: %w", err)
 	}
 
+	full := fmt.Sprintf("%s/%s", base, url.PathEscape(modelID))
+
+	fmt.Println("URL:", full)
+
+	fmt.Printf("\nAre you sure you want to remove %q? (y/n): ", modelID)
+
+	var response string
+	fmt.Scanln(&response)
+
+	if response != "y" && response != "Y" {
+		fmt.Println("Remove cancelled")
+		return nil
+	}
+
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	if err := cln.Do(ctx, http.MethodDelete, full, nil, nil); err != nil {
+		return fmt.Errorf("remove-bucky-model: %w", err)
+	}
+
+	fmt.Println("Remove complete")
+
+	return nil
+}
+
+func runLocal(cmd *cobra.Command, modelID string) error {
 	mdls, err := models.NewWithPaths(client.GetBasePath(cmd))
 	if err != nil {
 		return fmt.Errorf("bucky model remove: new: %w", err)

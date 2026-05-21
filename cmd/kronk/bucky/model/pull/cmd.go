@@ -4,10 +4,12 @@ package pull
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/spf13/cobra"
@@ -25,19 +27,21 @@ The argument may be:
   - A full ggml filename        ("ggml-tiny.bin")
   - A fully qualified URL       (any go-getter-compatible URL)
 
-Use "kronk bucky model catalog --local" to list the bundled short names.
+Use "kronk bucky model catalog" to list the bundled short names.
 
 MODES
 
-  Web Mode (default): Reserved for a future server-wiring step.
-  Local Mode (--local): Downloads directly to the bucky models root.
+  Web Mode (default): Downloads through the model server at
+    /v1/bucky/models/pull.
+  Local Mode (--local): Downloads in-process directly to the bucky
+    models root.
 
 EXAMPLES
 
-  # Download the tiny English model.
-  kronk bucky model pull --local tiny.en
+  # Download the tiny English model via a running server.
+  kronk bucky model pull tiny.en
 
-  # Download by full filename.
+  # Download in-process by full filename.
   kronk bucky model pull --local ggml-base.bin
 
   # Download from a custom URL.
@@ -51,7 +55,7 @@ ENVIRONMENT VARIABLES
 }
 
 func init() {
-	Cmd.Flags().Bool("local", false, "Run without the model server (currently required; web mode lands with the server-wiring step)")
+	Cmd.Flags().Bool("local", false, "Run without the model server")
 }
 
 func main(cmd *cobra.Command, args []string) {
@@ -63,10 +67,47 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command, source string) error {
 	local, _ := cmd.Flags().GetBool("local")
-	if !local {
-		return fmt.Errorf("bucky model pull: web mode not yet implemented; pass --local to run against local files")
+	if local {
+		return runLocal(cmd, source)
+	}
+	return runWeb(source)
+}
+
+func runWeb(source string) error {
+	url, err := client.DefaultURL("/v1/bucky/models/pull")
+	if err != nil {
+		return fmt.Errorf("default-url: %w", err)
 	}
 
+	fmt.Println("URL:", url)
+
+	body := client.D{
+		"source": source,
+	}
+
+	cln := client.NewSSE[toolapp.PullResponse](
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	ch := make(chan toolapp.PullResponse)
+	if err := cln.Do(ctx, http.MethodPost, url, body, ch); err != nil {
+		return fmt.Errorf("do: unable to download whisper model: %w", err)
+	}
+
+	for ver := range ch {
+		fmt.Print(ver.Status)
+	}
+
+	fmt.Println()
+
+	return nil
+}
+
+func runLocal(cmd *cobra.Command, source string) error {
 	mdls, err := models.NewWithPaths(client.GetBasePath(cmd))
 	if err != nil {
 		return fmt.Errorf("bucky model pull: new: %w", err)

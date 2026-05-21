@@ -11,6 +11,8 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/pool"
+	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
+	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -58,6 +60,8 @@ type Config struct {
 	Pool            *pool.Pool
 	Libs            *libs.Libs
 	Models          *models.Models
+	BuckyLibs       *buckylibs.Libs
+	BuckyModels     *buckymodels.Models
 	DownloadEnabled bool
 }
 

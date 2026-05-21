@@ -32,11 +32,13 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	toolapp.Routes(app, toolapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
-		Libs:       cfg.Libs,
-		Models:     cfg.Models,
+		Log:         cfg.Log,
+		AuthClient:  cfg.AuthClient,
+		Pool:        cfg.Pool,
+		Libs:        cfg.Libs,
+		Models:      cfg.Models,
+		BuckyLibs:   cfg.BuckyLibs,
+		BuckyModels: cfg.BuckyModels,
 	})
 
 	chatapp.Routes(app, chatapp.Config{

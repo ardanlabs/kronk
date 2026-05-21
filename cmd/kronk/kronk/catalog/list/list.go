@@ -16,7 +16,7 @@ import (
 )
 
 func runWeb() error {
-	url, err := client.DefaultURL("/v1/catalog")
+	url, err := client.DefaultURL("/v1/kronk/catalog")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
 	}

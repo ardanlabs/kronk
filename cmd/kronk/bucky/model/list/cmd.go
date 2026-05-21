@@ -2,13 +2,15 @@
 package list
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"os"
-	"path/filepath"
-	"sort"
-	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/spf13/cobra"
@@ -23,8 +25,10 @@ var Cmd = &cobra.Command{
 
 MODES
 
-  Web Mode (default): Reserved for a future server-wiring step.
-  Local Mode (--local): Lists model files on disk.
+  Web Mode (default): Lists installed models reported by the model
+    server at /v1/bucky/models.
+  Local Mode (--local): Lists model files on disk in-process without
+    contacting a server.
 
 ENVIRONMENT VARIABLES
 
@@ -34,7 +38,7 @@ ENVIRONMENT VARIABLES
 }
 
 func init() {
-	Cmd.Flags().Bool("local", false, "Run without the model server (currently required; web mode lands with the server-wiring step)")
+	Cmd.Flags().Bool("local", false, "Run without the model server")
 }
 
 func main(cmd *cobra.Command, args []string) {
@@ -46,10 +50,49 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command) error {
 	local, _ := cmd.Flags().GetBool("local")
-	if !local {
-		return fmt.Errorf("bucky model list: web mode not yet implemented; pass --local to run against local files")
+	if local {
+		return runLocal(cmd)
+	}
+	return runWeb()
+}
+
+func runWeb() error {
+	url, err := client.DefaultURL("/v1/bucky/models")
+	if err != nil {
+		return fmt.Errorf("default-url: %w", err)
 	}
 
+	fmt.Println("URL:", url)
+
+	cln := client.New(
+		client.FmtLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	var resp toolapp.BuckyModelsResponse
+	if err := cln.Do(ctx, http.MethodGet, url, nil, &resp); err != nil {
+		return fmt.Errorf("do: unable to get bucky model list: %w", err)
+	}
+
+	if len(resp.Models) == 0 {
+		fmt.Println("no models installed")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "NAME\tSIZE\tPATH")
+	for _, m := range resp.Models {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", m.ID, humanSize(m.Size), m.Path)
+	}
+	w.Flush()
+
+	return nil
+}
+
+func runLocal(cmd *cobra.Command) error {
 	mdls, err := models.NewWithPaths(client.GetBasePath(cmd))
 	if err != nil {
 		return fmt.Errorf("bucky model list: new: %w", err)
@@ -59,45 +102,22 @@ func run(cmd *cobra.Command) error {
 		return fmt.Errorf("bucky model list: build index: %w", err)
 	}
 
-	entries, err := os.ReadDir(mdls.Path())
+	files, err := mdls.Files()
 	if err != nil {
-		return fmt.Errorf("bucky model list: read models directory: %w", err)
+		return fmt.Errorf("bucky model list: files: %w", err)
 	}
 
-	type row struct {
-		name string
-		file string
-		size int64
-	}
-
-	rows := make([]row, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".bin") {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		short := strings.TrimSuffix(strings.TrimPrefix(name, "ggml-"), ".bin")
-		rows = append(rows, row{name: short, file: filepath.Join(mdls.Path(), name), size: info.Size()})
-	}
-
-	if len(rows) == 0 {
+	if len(files) == 0 {
 		fmt.Println("no models installed")
 		return nil
 	}
 
-	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
-
-	fmt.Printf("%-25s %-10s %s\n", "NAME", "SIZE", "PATH")
-	for _, r := range rows {
-		fmt.Printf("%-25s %-10s %s\n", r.name, humanSize(r.size), r.file)
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "NAME\tSIZE\tPATH")
+	for _, f := range files {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", f.ID, humanSize(f.Size), f.Path)
 	}
+	w.Flush()
 
 	return nil
 }

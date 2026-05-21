@@ -5,13 +5,13 @@
 // predict it:
 //
 //	kronk bucky libs    — install/upgrade whisper.cpp libraries
-//	kronk bucky model   — manage local whisper models (list, pull, remove)
+//	kronk bucky model   — manage local whisper models (catalog, list,
+//	                      pull, remove)
 //
 // Whisper has no chat / generation surface, so there is no "bucky run"
-// verb. Every bucky verb takes a --local flag mirroring the llama tree;
-// web mode (no --local) is a stub today because the model server does
-// not yet expose whisper endpoints — it will be wired in the
-// server-wiring step.
+// verb. Every bucky verb takes a --local flag mirroring the llama
+// tree; the default web mode talks to the model server's
+// /v1/bucky/libs/... and /v1/bucky/models/... endpoints.
 package bucky
 
 import (
@@ -34,28 +34,28 @@ shared libraries and download whisper GGML models.
 COMMANDS
 
   libs    Install or upgrade whisper.cpp libraries
-  model   Manage local whisper models (list, pull, remove)
+  model   Manage local whisper models (catalog, list, pull, remove)
 
 EXAMPLES
 
   # Install the default whisper.cpp libraries for the current host.
-  kronk bucky libs --local
+  kronk bucky libs
 
   # Install a Linux/CUDA bundle alongside the active install.
-  kronk bucky libs --local --install --arch=amd64 --os=linux --processor=cuda
+  kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
 
   # Download the tiny English whisper model.
-  kronk bucky model pull --local tiny.en
+  kronk bucky model pull tiny.en
 
   # List downloaded whisper models.
-  kronk bucky model list --local
+  kronk bucky model list
 
 NOTES
 
   Whisper has no chat / generation surface, so there is no "bucky run"
-  verb. The bucky verbs accept a --local flag mirroring the llama tree;
-  web mode is a stub until the server-wiring step adds whisper
-  endpoints, so --local is currently required.`,
+  verb. The bucky verbs accept a --local flag mirroring the llama
+  tree; the default web mode talks to the model server's whisper
+  endpoints.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

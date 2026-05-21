@@ -73,11 +73,11 @@ class ApiService {
   }
 
   async listModels(): Promise<ListModelInfoResponse> {
-    return this.request<ListModelInfoResponse>('/models');
+    return this.request<ListModelInfoResponse>('/kronk/models');
   }
 
   async rebuildModelIndex(): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/models/index`, {
+    const response = await fetch(`${this.baseUrl}/kronk/models/index`, {
       method: 'POST',
     });
     if (!response.ok) {
@@ -86,7 +86,7 @@ class ApiService {
   }
 
   async listRunningModels(): Promise<ModelDetailsResponse> {
-    return this.request<ModelDetailsResponse>('/models/ps');
+    return this.request<ModelDetailsResponse>('/kronk/models/ps');
   }
 
   async getPoolBudget(): Promise<PoolBudgetResponse> {
@@ -94,22 +94,22 @@ class ApiService {
   }
 
   async unloadModel(id: string): Promise<void> {
-    await this.request('/models/unload', {
+    await this.request('/kronk/models/unload', {
       method: 'POST',
       body: JSON.stringify({ id }),
     });
   }
 
   async showModel(id: string): Promise<ModelInfoResponse> {
-    return this.request<ModelInfoResponse>(`/models/${encodeURIComponent(id)}`);
+    return this.request<ModelInfoResponse>(`/kronk/models/${encodeURIComponent(id)}`);
   }
 
   async getLibsVersion(): Promise<VersionResponse> {
-    return this.request<VersionResponse>('/libs');
+    return this.request<VersionResponse>('/kronk/libs');
   }
 
   async pullModelAsync(modelUrl: string): Promise<AsyncPullResponse> {
-    const response = await fetch(`${this.baseUrl}/models/pull`, {
+    const response = await fetch(`${this.baseUrl}/kronk/models/pull`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_url: modelUrl, async: true }),
@@ -130,7 +130,7 @@ class ApiService {
   ): () => void {
     const controller = new AbortController();
 
-    fetch(`${this.baseUrl}/models/pull/${encodeURIComponent(sessionId)}`, {
+    fetch(`${this.baseUrl}/kronk/models/pull/${encodeURIComponent(sessionId)}`, {
       method: 'GET',
       signal: controller.signal,
     })
@@ -207,7 +207,7 @@ class ApiService {
       body.download_server = downloadServer;
     }
 
-    fetch(`${this.baseUrl}/models/pull`, {
+    fetch(`${this.baseUrl}/kronk/models/pull`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -270,27 +270,27 @@ class ApiService {
   }
 
   async removeModel(id: string): Promise<void> {
-    await this.request(`/models/${encodeURIComponent(id)}`, {
+    await this.request(`/kronk/models/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
   }
 
   async listCatalog(): Promise<CatalogModelsResponse> {
-    return this.request<CatalogModelsResponse>('/catalog');
+    return this.request<CatalogModelsResponse>('/kronk/catalog');
   }
 
   async showCatalogModel(id: string): Promise<CatalogModelResponse> {
-    return this.request<CatalogModelResponse>(`/catalog/${encodeURIComponent(id)}`);
+    return this.request<CatalogModelResponse>(`/kronk/catalog/${encodeURIComponent(id)}`);
   }
 
   async removeCatalogModel(id: string): Promise<void> {
-    await this.request(`/catalog/${encodeURIComponent(id)}`, {
+    await this.request(`/kronk/catalog/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
   }
 
   async reconcileCatalog(): Promise<void> {
-    await this.request('/catalog/reconcile', {
+    await this.request('/kronk/catalog/reconcile', {
       method: 'POST',
     });
   }
@@ -326,7 +326,7 @@ class ApiService {
       params.set('processor', opts.processor);
     }
     const qs = params.toString();
-    const url = qs ? `${this.baseUrl}/libs/pull?${qs}` : `${this.baseUrl}/libs/pull`;
+    const url = qs ? `${this.baseUrl}/kronk/libs/pull?${qs}` : `${this.baseUrl}/kronk/libs/pull`;
 
     fetch(url, {
       method: 'POST',
@@ -487,14 +487,14 @@ class ApiService {
   }
 
   async lookupHuggingFace(input: string): Promise<HFLookupResponse> {
-    return this.request<HFLookupResponse>('/catalog/lookup', {
+    return this.request<HFLookupResponse>('/kronk/catalog/lookup', {
       method: 'POST',
       body: JSON.stringify({ input }),
     });
   }
 
   async resolveSource(source: string): Promise<ResolveSourceResponse> {
-    return this.request<ResolveSourceResponse>('/catalog/resolve', {
+    return this.request<ResolveSourceResponse>('/kronk/catalog/resolve', {
       method: 'POST',
       body: JSON.stringify({ source }),
     });
@@ -505,7 +505,7 @@ class ApiService {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    return this.request<VRAMCalculatorResponse>('/models/vram', {
+    return this.request<VRAMCalculatorResponse>('/kronk/models/vram', {
       method: 'POST',
       headers,
       body: JSON.stringify(request),
@@ -634,16 +634,16 @@ class ApiService {
   }
 
   async getLibsCombinations(): Promise<LibsCombinationsResponse> {
-    return this.request<LibsCombinationsResponse>('/libs/combinations');
+    return this.request<LibsCombinationsResponse>('/kronk/libs/combinations');
   }
 
   async listLibsInstalls(): Promise<LibsBundleListResponse> {
-    return this.request<LibsBundleListResponse>('/libs/installs');
+    return this.request<LibsBundleListResponse>('/kronk/libs/installs');
   }
 
   async removeLibsInstall(arch: string, os: string, processor: string): Promise<LibsBundleActionResponse> {
     const params = new URLSearchParams({ arch, os, processor });
-    return this.request<LibsBundleActionResponse>(`/libs/installs?${params.toString()}`, { method: 'DELETE' });
+    return this.request<LibsBundleActionResponse>(`/kronk/libs/installs?${params.toString()}`, { method: 'DELETE' });
   }
 
   async listPeerLibsBundles(host: string): Promise<LibsPeerBundleListResponse> {
