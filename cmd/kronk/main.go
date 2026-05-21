@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/catalog"
+	"github.com/ardanlabs/kronk/cmd/kronk/bucky"
 	"github.com/ardanlabs/kronk/cmd/kronk/devices"
-	"github.com/ardanlabs/kronk/cmd/kronk/libs"
-	"github.com/ardanlabs/kronk/cmd/kronk/model"
-	"github.com/ardanlabs/kronk/cmd/kronk/run"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/catalog"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/libs"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/run"
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
 	k "github.com/ardanlabs/kronk/sdk/kronk"
@@ -43,6 +44,7 @@ COMMANDS
   libs      Install/upgrade llama.cpp libraries
   security  Manage API keys and JWT tokens
   run       Run a model directly for interactive chat (no server needed)
+  bucky     Whisper (whisper.cpp) backend: libs and model management
 
 QUICK START
   # Download a model (e.g., Qwen3-8B)
@@ -88,11 +90,18 @@ func init() {
 
 	rootCmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, libraries, catalog, model_config)")
 
-	rootCmd.AddCommand(server.Cmd)
+	// Llama (kronk) backend verbs mount at the top level so the
+	// existing CLI surface is unchanged.
 	rootCmd.AddCommand(libs.Cmd)
 	rootCmd.AddCommand(model.Cmd)
 	rootCmd.AddCommand(catalog.Cmd)
-	rootCmd.AddCommand(security.Cmd)
 	rootCmd.AddCommand(run.Cmd)
+
+	// Whisper (bucky) backend verbs mount under "bucky".
+	rootCmd.AddCommand(bucky.Cmd)
+
+	// Cross-backend verbs.
+	rootCmd.AddCommand(server.Cmd)
+	rootCmd.AddCommand(security.Cmd)
 	rootCmd.AddCommand(devices.Cmd)
 }

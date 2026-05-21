@@ -107,22 +107,32 @@ install-kronk:
 	go install ./cmd/kronk
 	@echo
 
-# Use this to install or update llama.cpp to the latest version. Used by
-# the local `make test` target so developers exercise the newest llama.cpp
-# bundle before bumping the well-known defaultVersion in
-# sdk/tools/libs/libs.go for a release.
+# Use this to install or update llama.cpp + whisper.cpp to the latest
+# version. Used by the local `make test` target so developers exercise
+# the newest bundles before bumping the well-known defaultVersion in
+# sdk/tools/libs/libs.go (llama) for a release. The bucky / whisper
+# install pins to the bundled default version — sdk/tools/bucky/libs has
+# no --upgrade equivalent.
 install-libraries: install-kronk
-	@echo "========== INSTALL LIBRARIES (latest) =========="
+	@echo "========== INSTALL LLAMA LIBRARIES (latest) =========="
 	kronk libs --local --upgrade
 	@echo
+	@echo "========== INSTALL WHISPER LIBRARIES =========="
+	kronk bucky libs --local
+	@echo
 
-# Use this to install the well-known defaultVersion of llama.cpp baked into
-# the SDK. This mirrors what CI does so `make test-gh` reproduces the GH
-# workflow locally. Bumping defaultVersion in sdk/tools/libs/libs.go is what
+# Use this to install the well-known defaultVersion of llama.cpp +
+# whisper.cpp baked into the SDK. This mirrors what CI does so
+# `make test-gh` reproduces the GH workflow locally. Bumping
+# defaultVersion in sdk/tools/libs/libs.go (llama) and
+# download.DefaultWhisperVersion in github.com/ardanlabs/bucky is what
 # rolls both this target and the CI workflow forward.
 install-libraries-gh: install-kronk
-	@echo "========== INSTALL LIBRARIES (defaultVersion) =========="
+	@echo "========== INSTALL LLAMA LIBRARIES (defaultVersion) =========="
 	kronk libs --local
+	@echo
+	@echo "========== INSTALL WHISPER LIBRARIES (defaultVersion) =========="
+	kronk bucky libs --local
 	@echo
 
 # Use this to install the test GH models.
@@ -135,6 +145,8 @@ install-test-gh-models: install-kronk
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
+	@echo
+	kronk bucky model pull --local "tiny.en"
 	@echo
 
 # Use this to install the test models.
@@ -155,6 +167,8 @@ install-test-models: install-kronk
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
+	@echo
+	kronk bucky model pull --local "tiny.en"
 	@echo
 
 # Use this to install models for the class.
@@ -177,6 +191,8 @@ install-class-models: install-kronk
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
+	@echo
+	kronk bucky model pull --local "tiny.en"
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.9.2
