@@ -20,4 +20,10 @@ const (
 	// KindLlama identifies the llama.cpp backend implemented by
 	// sdk/tools/libs (libraries) and sdk/tools/models (catalog).
 	KindLlama = "llama"
+
+	// KindWhisper identifies the whisper.cpp backend implemented by
+	// sdk/tools/bucky/libs (libraries) and sdk/tools/bucky/models
+	// (catalog). The underlying FFI bindings and download primitives
+	// live in github.com/ardanlabs/bucky.
+	KindWhisper = "whisper"
 )
