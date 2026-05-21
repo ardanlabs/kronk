@@ -1293,6 +1293,10 @@ func imcResetSession(s *imcSession) {
 	// avoiding the per-turn ~GB allocation that previously dominated
 	// the IMC benchmark's B/op number.
 	s.kvState.Reset()
+	if s.draftKVState != nil {
+		s.draftKVState.Reset()
+	}
+	s.pendingH = s.pendingH[:0]
 	s.lastUsed = time.Time{}
 	s.pending = false
 	s.hasMedia = false

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"unsafe"
 
@@ -352,4 +353,177 @@ func (d *draftModel) mirrorBatchCapacity() int32 {
 		return 0
 	}
 	return int32(len(d.mirrorEmbdSlice) / d.nEmbd)
+}
+
+// decodeTokensIntoCacheMTP is the MTP-aware analogue of
+// Model.decodeTokensIntoCache. It decodes a tokens slice into the
+// target seq's KV (just like the plain version) AND mirrors each
+// just-decoded chunk into the MTP draft seq's KV via
+// mirrorBuildChunkToMTPDraft. After this call returns, both the
+// target and draft KV caches hold the cached prefix at positions
+// [startPos .. startPos+len(tokens)), and s.pendingH carries the
+// pre-norm hidden row of the last cached position so the next MTP
+// draft round (or the post-snapshot restore on a later request) can
+// condition correctly on the prefix.
+//
+// Holds e.model.decodeMu for the entire loop. Other speculative /
+// processBatch paths already serialize draft access via the single
+// processBatch loop, so holding decodeMu here is sufficient.
+func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tokens []llama.Token, startPos int) error {
+	nBatch := int(e.model.ctxParams.NBatch)
+	if nBatch <= 0 {
+		nBatch = e.model.cfg.NBatch()
+	}
+
+	nTokens := len(tokens)
+	if nTokens == 0 {
+		return nil
+	}
+
+	e.model.log(ctx, "cache", "status", "decoding tokens into cache (mtp-mirror)",
+		"seq", s.seqID, "tokens", nTokens, "start_pos", startPos, "nbatch", nBatch)
+
+	batchSize := int32(min(nBatch, nTokens))
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	batch := llama.BatchInit(batchSize, 0, 1)
+	defer llama.BatchFree(batch)
+
+	seqIDs := []llama.SeqId{s.seqID}
+
+	e.model.decodeMu.Lock()
+	defer e.model.decodeMu.Unlock()
+
+	for i := 0; i < nTokens; i += nBatch {
+		end := min(i+nBatch, nTokens)
+		batch.Clear()
+		for j := i; j < end; j++ {
+			pos := llama.Pos(startPos + j)
+			batch.Add(tokens[j], pos, seqIDs, false)
+		}
+
+		if _, err := llama.Decode(e.model.lctx, batch); err != nil {
+			return fmt.Errorf("imc-mtp: target decode at pos %d: %w", startPos+i, err)
+		}
+		llama.Synchronize(e.model.lctx)
+
+		// Mirror the just-decoded chunk into the MTP draft seq KV.
+		// Failure here means the draft seq is partially-populated; the
+		// caller treats that as a build failure and clears both seqs.
+		if err := e.mirrorBuildChunkToMTPDraft(s, tokens[i:end], llama.Pos(startPos+i)); err != nil {
+			return fmt.Errorf("imc-mtp: mirror at pos %d: %w", startPos+i, err)
+		}
+	}
+
+	e.model.log(ctx, "cache", "status", "finished (decoding tokens into cache (mtp-mirror))",
+		"seq", s.seqID, "tokens", nTokens, "nbatch", nBatch)
+
+	return nil
+}
+
+// mirrorBuildChunkToMTPDraft mirrors a freshly-decoded standalone
+// target batch (NOT e.batch) into the MTP draft seq KV. Used by the
+// IMC cache-build path where the target decode happens outside of
+// processBatch with its own local batch.
+//
+// PRECONDITIONS
+//   - llama.Decode(target, <local batch with these tokens>) has just
+//     succeeded and llama.Synchronize(target) has been called.
+//   - len(tokens) matches the row count of the target's just-decoded
+//     pre-norm buffer (rows are read at indices [0..len(tokens))).
+//   - basePos is the absolute sequence position of tokens[0].
+//
+// On success the draft seq KV holds positions
+// [basePos .. basePos+len(tokens)), s.draftNPast is advanced to that
+// end, and s.pendingH is updated to the pre-norm row of the last
+// decoded position. On failure the draft seq may be partially
+// advanced; the caller should treat the build as failed and clear
+// both seqs.
+func (e *batchEngine) mirrorBuildChunkToMTPDraft(s *slot, tokens []llama.Token, basePos llama.Pos) error {
+	draft := e.model.draft
+	if draft == nil || !draft.mtp {
+		return nil
+	}
+
+	nTokens := len(tokens)
+	if nTokens == 0 {
+		return nil
+	}
+
+	nEmbd := draft.nEmbd
+	mirror := draft.mirrorBatchMTP
+
+	embd := GetEmbeddingsPreNorm(e.model.lctx, nTokens, nEmbd)
+	if embd == nil {
+		return fmt.Errorf("mtp-build-mirror: target pre-norm buffer is nil (SetEmbeddingsPreNorm may not have been enabled)")
+	}
+
+	maxPer := int(draft.mirrorBatchCapacity())
+	if maxPer <= 0 {
+		return fmt.Errorf("mtp-build-mirror: mirror batch has zero capacity")
+	}
+
+	seqIDs := s.seqIDs
+
+	for chunkStart := 0; chunkStart < nTokens; chunkStart += maxPer {
+		chunkEnd := min(chunkStart+maxPer, nTokens)
+		chunkLen := chunkEnd - chunkStart
+
+		mirror.NTokens = 0
+
+		for k := range chunkLen {
+			pos := basePos + llama.Pos(chunkStart+k)
+			// Only mark the very last row (across the whole effective
+			// range) with logits=true so the masked draft ctx stores
+			// its pre-norm row for the final position — that row is
+			// what we read into s.pendingH below as the carry-over
+			// for the next decode.
+			isLast := chunkStart+k == nTokens-1
+			mirror.Add(tokens[chunkStart+k], pos, seqIDs, isLast)
+
+			// Shift-right-by-1 embd alignment per the reference MTP
+			// impl: slot 0 of the very first chunk uses s.pendingH
+			// (or zero if empty); subsequent slots use the previous
+			// position's pre-norm row from the just-decoded target.
+			dst := draft.mirrorEmbdSlice[k*nEmbd : (k+1)*nEmbd]
+			srcGlobal := chunkStart + k - 1
+			switch {
+			case srcGlobal < 0:
+				if len(s.pendingH) == nEmbd {
+					copy(dst, s.pendingH)
+				} else {
+					for i := range dst {
+						dst[i] = 0
+					}
+				}
+			default:
+				copy(dst, embd[srcGlobal*nEmbd:(srcGlobal+1)*nEmbd])
+			}
+		}
+
+		ret, err := llama.Decode(draft.lctx, mirror)
+		if err != nil || ret != 0 {
+			return fmt.Errorf("mtp-build-mirror: draft decode at chunk [%d..%d): %w",
+				chunkStart, chunkEnd, decodeError(ret, err))
+		}
+
+		// Synchronize inside the loop so the next chunk's per-row
+		// copy() into mirror.Embd does not race the in-flight decode
+		// on async backends (Metal/CUDA).
+		llama.Synchronize(draft.lctx)
+	}
+
+	// Update pendingH to the last row of the just-decoded target batch
+	// (so the NEXT mirror or draft step sees it as "the previous
+	// position's h"), and advance draft nPast to end-of-chunk.
+	if cap(s.pendingH) < nEmbd {
+		s.pendingH = make([]float32, nEmbd)
+	} else {
+		s.pendingH = s.pendingH[:nEmbd]
+	}
+	copy(s.pendingH, embd[(nTokens-1)*nEmbd:nTokens*nEmbd])
+	s.draftNPast = basePos + llama.Pos(nTokens)
+
+	return nil
 }
