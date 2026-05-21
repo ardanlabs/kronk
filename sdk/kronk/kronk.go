@@ -16,7 +16,7 @@ import (
 // TODO: Verify latest version of llama.cpp and update default.
 
 // Version contains the current version of the kronk package.
-const Version = "1.25.9"
+const Version = "1.26.0"
 
 // =============================================================================
 
