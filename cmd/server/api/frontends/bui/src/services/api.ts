@@ -30,6 +30,10 @@ import type {
   LibsPeerBundleListResponse,
   LibsPeerPullEvent,
   PeerModelListResponse,
+  BuckyCatalogResponse,
+  BuckyModelsResponse,
+  BuckyModelActionResponse,
+  BuckyModelDetails,
 } from '../types';
 
 class ApiService {
@@ -644,6 +648,189 @@ class ApiService {
   async removeLibsInstall(arch: string, os: string, processor: string): Promise<LibsBundleActionResponse> {
     const params = new URLSearchParams({ arch, os, processor });
     return this.request<LibsBundleActionResponse>(`/kronk/libs/installs?${params.toString()}`, { method: 'DELETE' });
+  }
+
+  async getBuckyLibsVersion(): Promise<VersionResponse> {
+    return this.request<VersionResponse>('/bucky/libs');
+  }
+
+  async getBuckyLibsCombinations(): Promise<LibsCombinationsResponse> {
+    return this.request<LibsCombinationsResponse>('/bucky/libs/combinations');
+  }
+
+  async listBuckyLibsInstalls(): Promise<LibsBundleListResponse> {
+    return this.request<LibsBundleListResponse>('/bucky/libs/installs');
+  }
+
+  async removeBuckyLibsInstall(arch: string, os: string, processor: string): Promise<LibsBundleActionResponse> {
+    const params = new URLSearchParams({ arch, os, processor });
+    return this.request<LibsBundleActionResponse>(`/bucky/libs/installs?${params.toString()}`, { method: 'DELETE' });
+  }
+
+  pullBuckyLibs(
+    onMessage: (data: VersionResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+    opts?: {
+      version?: string;
+      arch?: string;
+      os?: string;
+      processor?: string;
+    }
+  ): () => void {
+    const controller = new AbortController();
+
+    const params = new URLSearchParams();
+    if (opts?.version) {
+      params.set('version', opts.version);
+    }
+    if (opts?.arch) {
+      params.set('arch', opts.arch);
+    }
+    if (opts?.os) {
+      params.set('os', opts.os);
+    }
+    if (opts?.processor) {
+      params.set('processor', opts.processor);
+    }
+    const qs = params.toString();
+    const url = qs ? `${this.baseUrl}/bucky/libs/pull?${qs}` : `${this.baseUrl}/bucky/libs/pull`;
+
+    fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          onError(`HTTP ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+            try {
+              const data = JSON.parse(jsonStr) as VersionResponse;
+              onMessage(data);
+              if (data.status === 'complete') {
+                onComplete();
+                return;
+              }
+            } catch {
+              onError('Failed to parse response');
+            }
+          }
+        }
+
+        onComplete();
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError('Connection error');
+        }
+      });
+
+    return () => controller.abort();
+  }
+
+  async listBuckyModels(): Promise<BuckyModelsResponse> {
+    return this.request<BuckyModelsResponse>('/bucky/models');
+  }
+
+  async listBuckyCatalog(): Promise<BuckyCatalogResponse> {
+    return this.request<BuckyCatalogResponse>('/bucky/models/catalog');
+  }
+
+  async getBuckyModelDetails(id: string): Promise<BuckyModelDetails> {
+    return this.request<BuckyModelDetails>(`/bucky/models/${encodeURIComponent(id)}/details`);
+  }
+
+  async removeBuckyModel(id: string): Promise<BuckyModelActionResponse> {
+    return this.request<BuckyModelActionResponse>(`/bucky/models/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  pullBuckyModel(
+    source: string,
+    onMessage: (data: PullResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+  ): () => void {
+    const controller = new AbortController();
+
+    fetch(`${this.baseUrl}/bucky/models/pull`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const msg = await this.parseErrorMessage(response);
+          onError(msg);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+            try {
+              const data = JSON.parse(jsonStr) as PullResponse;
+              onMessage(data);
+              if (data.status && data.status.startsWith('downloaded')) {
+                onComplete();
+                return;
+              }
+            } catch {
+              onError('Failed to parse response');
+            }
+          }
+        }
+
+        onComplete();
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError('Connection error');
+        }
+      });
+
+    return () => controller.abort();
   }
 
   async listPeerLibsBundles(host: string): Promise<LibsPeerBundleListResponse> {

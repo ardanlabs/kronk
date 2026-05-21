@@ -925,3 +925,51 @@ export interface DevicesResponse {
   max_devices: number;
   system_ram_bytes: number;
 }
+
+// =============================================================================
+// Bucky (whisper) models
+
+export interface BuckyCatalogEntry {
+  id: string;
+  url: string;
+  size: string;
+  notes: string;
+}
+
+export interface BuckyCatalogResponse {
+  models: BuckyCatalogEntry[];
+}
+
+export interface BuckyModelEntry {
+  id: string;
+  path: string;
+  size: number;
+  modified: string;
+}
+
+export interface BuckyModelsResponse {
+  models: BuckyModelEntry[];
+}
+
+export interface BuckyModelActionResponse {
+  status: string;
+  id: string;
+}
+
+export interface BuckyModelDetails {
+  id: string;
+  model_type: string;
+  is_multilingual: boolean;
+  quantization: string;
+  qnt_version: number;
+  n_vocab: number;
+  n_audio_ctx: number;
+  n_audio_state: number;
+  n_audio_head: number;
+  n_audio_layer: number;
+  n_text_ctx: number;
+  n_text_state: number;
+  n_text_head: number;
+  n_text_layer: number;
+  n_mels: number;
+}

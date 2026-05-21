@@ -81,8 +81,8 @@ export default function LibsPull() {
   return (
     <div>
       <div className="page-header">
-        <h2>Manage Libs</h2>
-        <p>Download, update, and manage Kronk libraries</p>
+        <h2>Llama.cpp Libs</h2>
+        <p>Download, update, and manage llama.cpp libraries</p>
       </div>
 
       <div className="card">

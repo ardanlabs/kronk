@@ -2,19 +2,25 @@
 
 Paste this into a new Amp thread to start step 7.
 
-**IMPORTANT — step 6 scope changed.** Step 6 only restructured the CLI
-(`cmd/kronk/{kronk,bucky}/...`); the server / HTTP wiring (transcription
-endpoint, whisper libs/models endpoints) was explicitly deferred to a
-later step. See `.release/bucky-integration-status.md` → "Step 6 — what
-changed" for the canonical layout and the new CLI verbs.
+**Update (post-step-6).** The earlier note that "server wiring is
+deferred" was stale. Whisper libs and models endpoints (including
+`GET /v1/bucky/models/{model}/details` returning the parsed ggml
+header) are already wired in
+`cmd/server/app/domain/toolapp/route.go`. The BUI surfaces for
+**Bucky → Models** and **Bucky → Libs** have shipped
+(`BuckyModels.tsx`, `BuckyLibs.tsx`, `Layout.tsx` restructure). See
+`.release/bucky-integration-status.md` → "What landed after step 6"
+for the full endpoint + component list.
 
-Step 7 should therefore focus on:
+What remains for step 7:
 
-1. **Manual chapters** — fully landable today; CLI verbs exist
-   (`kronk bucky libs`, `kronk bucky model pull/list/remove/catalog`).
-2. **BUI surface** — only the parts that do not require a whisper
-   server endpoint. Anything that needs an HTTP transcription / whisper
-   libs-pull endpoint should be deferred to the server-wiring step.
+1. **Manual chapters** — chapters 1 / 2 / 8 / 9 / 13 still need whisper
+   coverage (Section B below).
+2. **Transcription endpoint + BUI view** — `POST /v1/bucky/transcribe`
+   is still missing. Once it lands, the transcription view in the BUI
+   can follow.
+3. **Cross-backend `/v1/bucky/models/ps` + unified ModelPs** — the
+   "Running" top-level menu currently shows only the kronk PS endpoint.
 
 ---
 
@@ -45,34 +51,39 @@ backend today.
 
 ### A. Browser UI
 
-Today the BUI's library/model/catalog pages are implicitly llama-only.
-Step 7 introduces backend-kind awareness and adds a whisper surface
-wherever a backend kind matters.
+Most of the BUI surface for Bucky has already landed:
 
-Pages / components to touch (verify against the live tree before
-editing):
+- **Layout** — `Layout.tsx` is now multi-backend: top-level "Kronk"
+  (Models / Catalog / Libs) and "Bucky" (Models / Libs), with
+  "Running" pulled out to its own top-level entry. Top-level header
+  click navigates to the first sub-page.
+- **Libs** — `BuckyLibs.tsx` mirrors `LibsPull.tsx` minus the
+  Allow-Upgrade toggle and the Peer Bundle section, talking to
+  `/v1/bucky/libs*`. Uses `KRONK_BUCKY_LIB_PATH` and
+  `~/.kronk/bucky-libraries` in its hints.
+- **Models** — `BuckyModels.tsx` is a sortable table joining
+  `/v1/bucky/models/catalog` with `/v1/bucky/models`, with a
+  click-to-expand details panel that lazily calls
+  `getBuckyModelDetails(id)` against
+  `GET /v1/bucky/models/{model}/details`.
 
-- **Library install / status** — `LibsPull.tsx`, `DocsCLILibs.tsx`,
-  any `LibsStatus.tsx` if present. The BUI must let users pick the
-  llama backend or the whisper backend and trigger the appropriate
-  download via the step-6 server endpoint.
-- **Model catalog browse / pull / remove** —
-  `CatalogList.tsx`, `ModelList.tsx`, `ModelCard.tsx`,
-  `ModelPull.tsx`, `ModelRemove.tsx`, `ModelPs.tsx`. Show whisper
-  models from the bucky catalog (short names: `tiny`, `tiny.en`,
-  `base`, `base.en`, `small`, `medium`, `large-v3`, etc.) alongside
-  llama models. Tag each row with its backend kind so users
-  understand which engine will load the file.
-- **Model playground** — `ModelPlayground.tsx`. Decide whether
-  whisper models get a dedicated audio-upload playground panel or
-  link out to a separate transcription view. Whisper is single-turn
-  and has no chat surface — do not force it into the chat UI.
-- **Transcription view (new)** — at minimum: a file/drop input
+What still needs UI work:
+
+- **Transcription view (new)** — depends on the new
+  `POST /v1/bucky/transcribe` endpoint. At minimum: a file/drop input
   accepting wav / mp3 / flac, language hint dropdown driven by
   `bucky.LangStr(0..LangMaxID())`, transcript output area, optional
-  per-segment timestamp display. Call the step-6 server endpoint.
-- **Tooltips / labels** — every new form field must use the
-  type-safe tooltip system per
+  per-segment timestamp display.
+- **Cross-backend Running** — `ModelPs.tsx` currently calls
+  `/v1/kronk/models/ps` only. Once a `/v1/bucky/models/ps` exists
+  (returning `Whisper.ActiveStreams()` rows), merge the two and tag
+  each row with backend kind.
+- **Model playground** — Whisper models are single-turn and do not
+  belong in the chat surface. If a whisper-aware playground entry is
+  wanted, link it to the new transcription view rather than forcing
+  whisper into the chat panel.
+- **Tooltips / labels** — every new form field must use the type-safe
+  tooltip system per
   `cmd/server/api/frontends/bui/src/components/AGENTS.md` (add new
   entries to `PARAM_TOOLTIPS` in `ParamTooltips.tsx`; use
   `FieldLabel` for `<label>` and `labelWithTip` for table rows).

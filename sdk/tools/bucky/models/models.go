@@ -192,6 +192,9 @@ func (m *Models) Download(ctx context.Context, log applog.Logger, source string)
 		if err := m.refreshIndex(log); err != nil {
 			log(ctx, "download-model: refresh index", "ERROR", err)
 		}
+		if err := m.cacheHeaderFromFile(extractModelID(fileName), dest); err != nil {
+			log(ctx, "download-model: cache header", "ERROR", err)
+		}
 		return mp, nil
 	}
 
@@ -212,6 +215,10 @@ func (m *Models) Download(ctx context.Context, log applog.Logger, source string)
 
 	if err := m.refreshIndex(log); err != nil {
 		log(ctx, "download-model: refresh index", "ERROR", err)
+	}
+
+	if err := m.cacheHeaderFromFile(extractModelID(fileName), dest); err != nil {
+		log(ctx, "download-model: cache header", "ERROR", err)
 	}
 
 	return Path{
@@ -241,6 +248,9 @@ func (m *Models) FullPath(modelID string) (Path, error) {
 // index is rebuilt after the file has been removed.
 func (m *Models) Remove(mp Path, log applog.Logger) error {
 	for _, modelFile := range mp.ModelFiles {
+		if err := m.removeHeaderCache(extractModelID(modelFile)); err != nil {
+			log(context.Background(), "remove: header cache", "ERROR", err)
+		}
 		if err := os.Remove(modelFile); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove: unable to remove model: %q: %w", modelFile, err)
 		}
@@ -267,8 +277,9 @@ func SupportedModels() []string {
 
 // CatalogEntry describes a single bundled whisper model.
 type CatalogEntry struct {
-	URL  string
-	Size string
+	URL   string
+	Size  string
+	Notes string
 }
 
 // Catalog returns a copy of the bundled whisper catalog map keyed by
@@ -340,15 +351,15 @@ func parseURLPath(raw string) string {
 // table maintained in github.com/ardanlabs/bucky/cmd/model.go so
 // short-name input works against both surfaces.
 var catalog = map[string]CatalogEntry{
-	"tiny":           {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin", Size: "75 MB"},
-	"tiny.en":        {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin", Size: "75 MB"},
-	"base":           {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin", Size: "142 MB"},
-	"base.en":        {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin", Size: "142 MB"},
-	"small":          {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin", Size: "466 MB"},
-	"small.en":       {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin", Size: "466 MB"},
-	"medium":         {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin", Size: "1.5 GB"},
-	"medium.en":      {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin", Size: "1.5 GB"},
-	"large-v3":       {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin", Size: "2.9 GB"},
-	"large-v3-turbo": {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin", Size: "1.5 GB"},
-	"silero-vad":     {URL: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin", Size: "0.9 MB"},
+	"tiny":           {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin", Size: "75 MB", Notes: "multilingual, fastest, lowest accuracy"},
+	"tiny.en":        {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin", Size: "75 MB", Notes: "english-only, fastest"},
+	"base":           {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin", Size: "142 MB", Notes: "multilingual, fast"},
+	"base.en":        {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin", Size: "142 MB", Notes: "english-only, fast"},
+	"small":          {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin", Size: "466 MB", Notes: "multilingual, balanced"},
+	"small.en":       {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin", Size: "466 MB", Notes: "english-only, balanced"},
+	"medium":         {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin", Size: "1.5 GB", Notes: "multilingual, accurate"},
+	"medium.en":      {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin", Size: "1.5 GB", Notes: "english-only, accurate"},
+	"large-v3":       {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin", Size: "2.9 GB", Notes: "multilingual, highest accuracy"},
+	"large-v3-turbo": {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin", Size: "1.5 GB", Notes: "multilingual, near-large accuracy at small/medium speed"},
+	"silero-vad":     {URL: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin", Size: "0.9 MB", Notes: "voice-activity detector, pairs with any whisper model"},
 }

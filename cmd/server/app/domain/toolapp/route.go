@@ -74,6 +74,7 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/bucky/models", api.listBuckyModels, auth)
 	app.HandlerFunc(http.MethodGet, version, "/bucky/models/catalog", api.listBuckyCatalog, auth)
 	app.HandlerFunc(http.MethodPost, version, "/bucky/models/pull", api.pullBuckyModel, authAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/bucky/models/{model}/details", api.detailsBuckyModel, auth)
 	app.HandlerFunc(http.MethodDelete, version, "/bucky/models/{model}", api.removeBuckyModel, authAdmin)
 
 	// -------------------------------------------------------------------------

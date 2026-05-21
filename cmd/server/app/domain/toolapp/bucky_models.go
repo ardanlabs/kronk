@@ -38,9 +38,10 @@ func (b BuckyModelsResponse) Encode() ([]byte, string, error) {
 // BuckyCatalogEntry describes a single bundled whisper model that
 // callers may pull by short name.
 type BuckyCatalogEntry struct {
-	ID   string `json:"id"`
-	URL  string `json:"url"`
-	Size string `json:"size"`
+	ID    string `json:"id"`
+	URL   string `json:"url"`
+	Size  string `json:"size"`
+	Notes string `json:"notes"`
 }
 
 // BuckyCatalogResponse is the bundled short-name table returned by the
@@ -74,6 +75,32 @@ type BuckyModelActionResponse struct {
 
 // Encode implements the encoder interface.
 func (b BuckyModelActionResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(b)
+	return data, "application/json", err
+}
+
+// BuckyModelDetails carries the parsed ggml header for a single
+// whisper model. Returned by /v1/bucky/models/{model}/details.
+type BuckyModelDetails struct {
+	ID             string `json:"id"`
+	ModelType      string `json:"model_type"`
+	IsMultilingual bool   `json:"is_multilingual"`
+	Quantization   string `json:"quantization"`
+	QntVersion     int32  `json:"qnt_version"`
+	NVocab         int32  `json:"n_vocab"`
+	NAudioCtx      int32  `json:"n_audio_ctx"`
+	NAudioState    int32  `json:"n_audio_state"`
+	NAudioHead     int32  `json:"n_audio_head"`
+	NAudioLayer    int32  `json:"n_audio_layer"`
+	NTextCtx       int32  `json:"n_text_ctx"`
+	NTextState     int32  `json:"n_text_state"`
+	NTextHead      int32  `json:"n_text_head"`
+	NTextLayer     int32  `json:"n_text_layer"`
+	NMels          int32  `json:"n_mels"`
+}
+
+// Encode implements the encoder interface.
+func (b BuckyModelDetails) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(b)
 	return data, "application/json", err
 }
@@ -112,9 +139,10 @@ func (a *app) listBuckyCatalog(ctx context.Context, r *http.Request) web.Encoder
 	for i, id := range ids {
 		entry := cat[id]
 		out.Models[i] = BuckyCatalogEntry{
-			ID:   id,
-			URL:  entry.URL,
-			Size: entry.Size,
+			ID:    id,
+			URL:   entry.URL,
+			Size:  entry.Size,
+			Notes: entry.Notes,
 		}
 	}
 
@@ -227,4 +255,31 @@ func (a *app) removeBuckyModel(ctx context.Context, r *http.Request) web.Encoder
 	}
 
 	return BuckyModelActionResponse{Status: "removed", ID: modelID}
+}
+
+func (a *app) detailsBuckyModel(ctx context.Context, r *http.Request) web.Encoder {
+	modelID := web.Param(r, "model")
+
+	h, err := a.buckyModels.CatalogHeader(ctx, modelID)
+	if err != nil {
+		return errs.Errorf(errs.Internal, "failed to read bucky model header: %s", err)
+	}
+
+	return BuckyModelDetails{
+		ID:             modelID,
+		ModelType:      h.ModelType(),
+		IsMultilingual: h.IsMultilingual(),
+		Quantization:   h.QuantizationName(),
+		QntVersion:     h.QntVersion,
+		NVocab:         h.NVocab,
+		NAudioCtx:      h.NAudioCtx,
+		NAudioState:    h.NAudioState,
+		NAudioHead:     h.NAudioHead,
+		NAudioLayer:    h.NAudioLayer,
+		NTextCtx:       h.NTextCtx,
+		NTextState:     h.NTextState,
+		NTextHead:      h.NTextHead,
+		NTextLayer:     h.NTextLayer,
+		NMels:          h.NMels,
+	}
 }

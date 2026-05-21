@@ -231,7 +231,7 @@ export default function ModelList() {
     <div>
       <div className="page-header-with-action">
         <div>
-          <h2>Models</h2>
+          <h2>GGUF Models</h2>
           <p className="page-description">List of all models available in the system. Click a model to view details.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>

@@ -32,6 +32,11 @@ const menuStructure: MenuCategory[] = [
     items: [{ page: 'settings', label: 'API Token' }],
   },
   {
+    id: 'running',
+    label: 'Running',
+    items: [{ page: 'model-ps', label: 'Models' }],
+  },
+  {
     id: 'kronk',
     label: 'Kronk',
     subcategories: [
@@ -40,7 +45,6 @@ const menuStructure: MenuCategory[] = [
         label: 'Models',
         items: [
           { page: 'model-list', label: 'List' },
-          { page: 'model-ps', label: 'Running' },
           { page: 'model-pull', label: 'HF Pull' },
           { page: 'kms-pull', label: 'KMS Pull' },
         ],
@@ -194,6 +198,11 @@ const categoryIcons: Record<string, JSX.Element> = {
       <circle cx="8" cy="6" r="2" fill="currentColor" stroke="none" />
       <circle cx="16" cy="12" r="2" fill="currentColor" stroke="none" />
       <circle cx="12" cy="18" r="2" fill="currentColor" stroke="none" />
+    </svg>
+  ),
+  running: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 12 7 12 10 4 14 20 17 12 21 12" />
     </svg>
   ),
   kronk: (
@@ -451,17 +460,18 @@ export default function Layout({ children }: LayoutProps) {
     }
 
     if (item.hash) {
+      const isHashActive = currentPage === item.page && location.hash === `#${item.hash}`;
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault();
         navigate(`${path}#${item.hash}`);
       };
-      
+
       return (
         <a
           key={`${item.page}-${item.hash}`}
           href={`${path}#${item.hash}`}
           onClick={handleClick}
-          className="menu-item"
+          className={`menu-item ${isHashActive ? 'active' : ''}`}
         >
           {item.label}
         </a>
@@ -489,7 +499,7 @@ export default function Layout({ children }: LayoutProps) {
         if (firstPage) navigate(firstPage);
       } else {
         toggleCategory(category.id);
-        if (isSubmenu && !isExpanded) {
+        if (!isExpanded) {
           const firstPage = getFirstPage(category);
           if (firstPage) navigate(firstPage);
         }

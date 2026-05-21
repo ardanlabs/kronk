@@ -19,8 +19,12 @@ Working branch: `bill/bucky` of <https://github.com/ardanlabs/kronk>.
 | 3 | Concurrency wrapper (sdk/bucky.Whisper, sem, ActiveStreams, Unload drain) | ✅ Done |
 | 4 | Init / log policy + libs/models catalog wiring | ✅ Done |
 | 5 | Tests under sdk/bucky/tests/ | ✅ Done |
-| 6 | CLI (`cmd/kronk/...`) restructure for multi-backend | ✅ Done (CLI only — server wiring deferred) |
-| 7 | BUI + manual chapters | ❌ Not started |
+| 6 | CLI (`cmd/kronk/...`) restructure for multi-backend | ✅ Done |
+| 6a | Server wiring — `/v1/bucky/libs*` + `/v1/bucky/models*` (incl. `…/{model}/details`) | ✅ Done |
+| 7 | BUI surfaces for libs + models | ✅ Done |
+| 7m | Manual chapters (1, 2, 8, 9, 13) | ⬜ In progress |
+| 8 | Transcription endpoint `POST /v1/bucky/transcribe` + BUI view | ❌ Not started |
+| 9 | Cross-backend `/v1/bucky/models/ps` + unified ModelPs view | ❌ Not started |
 
 ---
 
@@ -119,36 +123,31 @@ Library + model prerequisites for running tests:
 ## External dependency state — IMPORTANT
 
 `sdk/bucky` depends on `github.com/ardanlabs/bucky` for the FFI
-bindings. Two FFI additions made during steps 2/3 live **on Bill's
-local working tree** of bucky (in `/Users/bill/code/go/src/github.com/ardanlabs/bucky`)
-but are **not yet pushed to origin/main**:
+bindings. The two FFI additions made during steps 2/3 —
+`pkg/whisper/logs.go` (`LogSet` / `LogSilent` / `LogNormal`) and
+`pkg/whisper/lang.go` (`LangAutoDetectWithState`) — are **now on
+`origin/main`** of bucky (verified against `bdd40bc`, May 2026).
 
-- `pkg/whisper/logs.go` — `LogSet`, `LogSilent`, `LogNormal` (uses
-  `purego.NewCallback`; bucky now has purego as a direct dep).
-- `pkg/whisper/lang.go` — `LangAutoDetectWithState` wrapping
-  `whisper_lang_auto_detect_with_state`.
-
-Until these are pushed, both `go.mod` files in kronk carry a temporary
-local replace directive:
+The temporary local replace directive in kronk's `go.mod` can be
+dropped at any time:
 
 ```
 replace github.com/ardanlabs/bucky => /Users/bill/code/go/src/github.com/ardanlabs/bucky
 ```
 
-(applied in `go.mod` and `examples/go.mod`).
+To drop it:
+
+```bash
+go get github.com/ardanlabs/bucky@main
+# then remove the replace line from go.mod (examples/go.mod has no
+# bucky replace today).
+```
 
 **Check at the start of any new bucky thread:**
 
 ```bash
 git -C /Users/bill/code/go/src/github.com/ardanlabs/bucky log --oneline -5 origin/main
 git -C /Users/bill/code/go/src/github.com/ardanlabs/bucky status
-```
-
-If `LangAutoDetectWithState` / `LogSet` are now on `origin/main`, run:
-
-```bash
-go get github.com/ardanlabs/bucky@main
-# then remove the replace lines from go.mod + examples/go.mod
 ```
 
 ---
@@ -244,16 +243,106 @@ go run ./cmd/kronk bucky model list                      # lists installed model
 
 ---
 
+## What landed after step 6 (server + BUI)
+
+### Server endpoints (already wired in `cmd/server/app/domain/toolapp/route.go`)
+
+```
+GET    /v1/bucky/libs                          listBuckyLibs
+POST   /v1/bucky/libs/pull                     pullBuckyLibs            (streaming SSE)
+GET    /v1/bucky/libs/combinations             listBuckyLibsCombinations
+GET    /v1/bucky/libs/installs                 listBuckyLibsInstalls
+DELETE /v1/bucky/libs/installs                 removeBuckyLibsInstall
+
+GET    /v1/bucky/models                        listBuckyModels
+GET    /v1/bucky/models/catalog                listBuckyCatalog
+POST   /v1/bucky/models/pull                   pullBuckyModel           (streaming SSE)
+GET    /v1/bucky/models/{model}/details        detailsBuckyModel        (parsed ggml header)
+DELETE /v1/bucky/models/{model}                removeBuckyModel
+```
+
+`detailsBuckyModel` returns the parsed `Header` produced by
+`sdk/tools/bucky/models/header.go` (ModelType, IsMultilingual,
+QuantizationName, all `n_*` fields). The 3-tier lookup is:
+per-id `.header_cache/<id>.hdr` → on-disk model file → HTTP Range
+`bytes=0-47` against the catalog URL, with write-through caching.
+`Download` and `Remove` keep the cache consistent automatically.
+
+`bucky_libs.go` mirrors the llama libs surface but with no
+"allow-upgrade" knob (bucky's `libs` package has no such toggle) and
+no peer-download endpoint. A version override goes through
+`DownloadFor(arch, os, processor, version)` against the active triple
+when the caller does not supply a full triple.
+
+### BUI surfaces
+
+- `cmd/server/api/frontends/bui/src/components/BuckyLibs.tsx` — mirrors
+  `LibsPull.tsx` minus the "Allow Upgrade" toggle and the Peer Bundle
+  section. Uses `KRONK_BUCKY_LIB_PATH` and `~/.kronk/bucky-libraries`
+  in activation hints.
+- `cmd/server/api/frontends/bui/src/components/BuckyModels.tsx` —
+  sortable table joining `/v1/bucky/models/catalog` with
+  `/v1/bucky/models`. Columns: Name, Size, Notes, Installed, Status,
+  Actions. Row click expands a `DetailsPanel` that lazily calls
+  `getBuckyModelDetails(id)` and caches per-id in component state.
+  Pull/Remove buttons stopPropagation so they don't toggle the panel.
+- `cmd/server/api/frontends/bui/src/components/Layout.tsx` — restructured
+  into top-level "Kronk" (Models / Catalog / Libs subcats) and "Bucky"
+  (Models / Libs subcats). "Running" was moved out of kronk/Models to
+  its own top-level category and currently points only at the existing
+  `ModelPs` page (kronk-only until step 9 lands).
+- Page header renames: ModelList → "GGUF Models", LibsPull → "Llama.cpp
+  Libs", ModelPull → "HF Pull GGUF Model", KMSPull → "KMS Pull GGUF
+  Model", BuckyLibs → "Whisper.cpp Libs".
+
+### SDK additions
+
+- `sdk/tools/bucky/models/header.go` — `Header` struct (magic `0x67676d6c`
+  + 11 int32 fields), `ReadHeader(path)`, `FetchHeader(ctx, url)`,
+  `(*Models).Header(id)`, `(*Models).CatalogHeader(ctx, id)`. Cache lives
+  under `<modelsPath>/.header_cache/<id>.hdr`. `BuildIndex` already
+  ignores it because it only walks top-level `.bin` files.
+- `Header.ModelType()` / `IsMultilingual()` / `QuantizationName()`
+  derive readable labels from the raw fields.
+- `CatalogEntry` gained a `Notes` string field; all 11 bundled entries
+  populated with lowercase notes (multilingual/english-only, fastest/
+  fast/balanced/accurate, etc.). Plumbed through `BuckyCatalogEntry`
+  JSON so the BUI Notes column renders.
+
+Empirical timings (throwaway probe):
+
+- `tiny.en` local read: ~530µs.
+- `base` / `large-v3-turbo` first remote fetch: ~330–400ms.
+- Second fetch: ~100µs (cache hit).
+- HF returns `206 + 48 bytes` to a Range request; values match
+  whisper.cpp `WHISPER_LOG_INFO` exactly.
+
+---
+
 ## What's still TODO
 
-- **Server wiring (last step in the integration sequence).** Bucky is
-  registered in `sdk/tools/backend` under `KindWhisper`, but the HTTP
-  server still hosts only the llama backend. Unifying the server to
-  dispatch by model kind (and adding a transcription endpoint) is the
-  final step.
+- **Manual chapters 1 / 2 / 8 / 9 / 13** — document the whisper backend,
+  the new CLI verbs, the SDK split (`sdk/kronk` vs `sdk/bucky`), the
+  on-disk layout (`~/.kronk/bucky-libraries`, `~/.kronk/bucky-models`),
+  the new BUI tabs, and a "coming soon" line in the API chapter for the
+  transcription endpoint. See `.release/bucky-step-7-handoff.md`
+  Section B.
 
-- **Step 7 — BUI + Manual.** The Browser UI library/model pages have no
-  whisper tab. Manual chapters 1/2/8/9/13 need updates so users know
-  about the whisper backend, how to install it, and what the API
-  surface is. The new CLI verbs to document are listed under "Step 6 —
-  what changed" above. See `.release/bucky-step-7-handoff.md`.
+- **Transcription endpoint.** `POST /v1/bucky/transcribe` — multipart
+  audio (wav/mp3/flac), optional language hint, streams JSON segments.
+  Backed by `sdk/bucky.Whisper` (loader, semaphore sized 1:1 with
+  NSeqMax, `ActiveStreams()` observable). Once it lands, add a BUI
+  transcription view (file/drop input, language dropdown driven by
+  `bucky.LangStr(0..LangMaxID())`, transcript output with optional
+  per-segment timestamps).
+
+- **Cross-backend "running models" surface.** `Running` top-level menu
+  exists but currently shows only `/v1/kronk/models/ps`. Add
+  `/v1/bucky/models/ps` (or equivalent) that reports
+  `Whisper.ActiveStreams()` per the design canon, then rewire
+  `ModelPs.tsx` to merge both and tag each row with backend kind.
+
+- **Peer download for bucky (deferred).** There is no
+  `/v1/bucky/libs/peer-*` or `/v1/bucky/models/peer-*` endpoint, which
+  is why `BuckyLibs.tsx` omits the peer section. If peer transfer is
+  later wanted for bucky, mirror the kronk download endpoints.

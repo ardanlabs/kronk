@@ -278,7 +278,7 @@ export default function KMSPull() {
   return (
     <div>
       <div className="page-header">
-        <h2>KMS Pull Model</h2>
+        <h2>KMS Pull GGUF Model</h2>
         <p className="page-description">
           Connect to another Kronk server on your local network to browse the models it has
           downloaded, and pull any of those models into this server. The peer must be running
