@@ -2,9 +2,9 @@
 package catalog
 
 import (
-	"github.com/ardanlabs/kronk/cmd/kronk/catalog/list"
-	"github.com/ardanlabs/kronk/cmd/kronk/catalog/remove"
-	"github.com/ardanlabs/kronk/cmd/kronk/catalog/show"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/catalog/list"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/catalog/remove"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/catalog/show"
 	"github.com/spf13/cobra"
 )
 

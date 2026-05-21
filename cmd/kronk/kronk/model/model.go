@@ -2,13 +2,13 @@
 package model
 
 import (
-	"github.com/ardanlabs/kronk/cmd/kronk/model/index"
-	"github.com/ardanlabs/kronk/cmd/kronk/model/list"
-	"github.com/ardanlabs/kronk/cmd/kronk/model/ps"
-	"github.com/ardanlabs/kronk/cmd/kronk/model/pull"
-	"github.com/ardanlabs/kronk/cmd/kronk/model/remove"
-	"github.com/ardanlabs/kronk/cmd/kronk/model/resolve"
-	"github.com/ardanlabs/kronk/cmd/kronk/model/show"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/index"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/list"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/ps"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/pull"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/remove"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/resolve"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/show"
 	"github.com/spf13/cobra"
 )
 
