@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -176,15 +177,10 @@ func (m *Models) FileInformation(modelID string) (FileInfo, error) {
 
 // =============================================================================
 
-// Path returns file path information about a model.
-type Path struct {
-	ModelFiles           []string `yaml:"model_files"`
-	ProjFile             string   `yaml:"proj_file"`
-	Downloaded           bool     `yaml:"downloaded"`
-	Validated            bool     `yaml:"validated"`
-	TokenizerFingerprint string   `yaml:"tokenizer_fingerprint,omitempty"`
-	FileSizes            []int64  `yaml:"file_sizes,omitempty"`
-}
+// Path returns file path information about a model. It is an alias for
+// backend.ModelPath so cross-backend code can consume the same value
+// type returned by every backend's Catalog implementation.
+type Path = backend.ModelPath
 
 // FullPath locates the physical location on disk and returns the full path.
 //

@@ -8,7 +8,9 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -65,6 +67,23 @@ func Init(opts ...InitOption) error {
 	var o initOptions
 	for _, opt := range opts {
 		opt(&o)
+	}
+
+	// Register the llama backend with the cross-backend registry so
+	// CLI / server code that dispatches by kind can construct llama
+	// libs and catalogs without importing the concrete packages
+	// directly. Registration is idempotent; subsequent Init calls (or
+	// other backends registering themselves) compose cleanly.
+	if err := backend.Register(backend.Backend{
+		Kind: backend.KindLlama,
+		NewLibs: func() (backend.LibsManager, error) {
+			return libs.New()
+		},
+		NewCatalog: func(basePath string) (backend.Catalog, error) {
+			return models.NewWithPaths(basePath)
+		},
+	}); err != nil {
+		return fmt.Errorf("init: register llama backend: %w", err)
 	}
 
 	// NOTE: This is the only place where the sdk/kronk is reaching for a
