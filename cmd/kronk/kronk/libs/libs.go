@@ -17,7 +17,7 @@ import (
 )
 
 func runWeb(upgrade bool, version string) error {
-	url, err := client.DefaultURL("/v1/libs/pull")
+	url, err := client.DefaultURL("/v1/kronk/libs/pull")
 	if err != nil {
 		return fmt.Errorf("libs: default: %w", err)
 	}

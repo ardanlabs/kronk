@@ -17,7 +17,7 @@ import (
 )
 
 func runWeb(source string, projURL string) error {
-	url, err := client.DefaultURL("/v1/models/pull")
+	url, err := client.DefaultURL("/v1/kronk/models/pull")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
 	}

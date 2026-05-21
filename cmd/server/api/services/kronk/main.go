@@ -28,6 +28,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/pool"
+	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
+	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -302,6 +304,34 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	// -------------------------------------------------------------------------
+	// Bucky (whisper) Libs + Models
+	//
+	// The server does not host the whisper runtime yet; these handles
+	// exist purely so the BUI / clients can manage whisper.cpp library
+	// installs and downloaded whisper models through the /v1/bucky/*
+	// endpoints. bucky.Init is therefore not called here — it only runs
+	// when something actually loads a whisper model.
+
+	buckyLibs, err := buckylibs.New(
+		buckylibs.WithBasePath(cfg.BasePath),
+		buckylibs.WithLibPath(os.Getenv("KRONK_BUCKY_LIB_PATH")),
+	)
+	if err != nil {
+		return fmt.Errorf("unable to create bucky libs api: %w", err)
+	}
+
+	log.Info(ctx, "startup", "status", "bucky libs ready", "libPath", buckyLibs.LibsPath(), "arch", buckyLibs.Arch(), "os", buckyLibs.OS(), "processor", buckyLibs.Processor())
+
+	buckyModels, err := buckymodels.NewWithPaths(cfg.BasePath)
+	if err != nil {
+		return fmt.Errorf("unable to create bucky models api: %w", err)
+	}
+
+	if err := buckyModels.BuildIndex(log.Info, false); err != nil {
+		log.Info(ctx, "startup", "WARNING", "bucky build index", "ERROR", err)
+	}
+
+	// -------------------------------------------------------------------------
 	// Model Config
 
 	modelConfigFile, err := defaults.ModelConfigFile(cfg.Pool.ModelConfigFile, cfg.BasePath)
@@ -395,6 +425,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Pool:            p,
 		Libs:            libs,
 		Models:          models,
+		BuckyLibs:       buckyLibs,
+		BuckyModels:     buckyModels,
 		DownloadEnabled: cfg.Download.Enabled,
 	}
 
