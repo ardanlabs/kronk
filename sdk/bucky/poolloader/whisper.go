@@ -13,8 +13,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/bucky"
-	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/bucky/model"
 	"github.com/ardanlabs/kronk/sdk/pool/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
@@ -97,7 +98,7 @@ func (w *Whisper) Load(ctx context.Context, req loader.LoadRequest) (*bucky.Whis
 
 	cfg.Log = w.log
 
-	handle, err := bucky.NewWithContext(ctx, bucky.WithConfig(cfg))
+	handle, err := bucky.NewWithContext(ctx, model.WithConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("load: unable to create whisper handle: %w", err)
 	}
@@ -122,14 +123,14 @@ func (w *Whisper) Load(ctx context.Context, req loader.LoadRequest) (*bucky.Whis
 // the file size plus the same overhead Plan used so the observability
 // figure tracks the budget reservation.
 func (w *Whisper) Display(h *bucky.Whisper, modelID string) loader.Display {
+	_ = h
+
 	out := loader.Display{
 		Slots: 1,
 	}
 
 	if size, err := w.modelSize(modelID); err == nil {
 		out.VRAMTotal = size + whisperOverhead
-	} else {
-		out.VRAMTotal = h.ModelInfo().Size
 	}
 
 	return out
@@ -137,28 +138,28 @@ func (w *Whisper) Display(h *bucky.Whisper, modelID string) loader.Display {
 
 // =============================================================================
 
-// resolveConfig produces a bucky.Config for the request. When the
+// resolveConfig produces a model.Config for the request. When the
 // caller has supplied a pre-built config via req.Custom it is used
 // as-is. Otherwise the catalog is consulted to resolve the model
 // file path and a default Config is constructed around it.
-func (w *Whisper) resolveConfig(req loader.LoadRequest) (bucky.Config, error) {
+func (w *Whisper) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 	if req.Custom != nil {
-		cfg, ok := req.Custom.(bucky.Config)
+		cfg, ok := req.Custom.(model.Config)
 		if !ok {
-			return bucky.Config{}, fmt.Errorf("resolve-config: custom config is %T, want bucky.Config", req.Custom)
+			return model.Config{}, fmt.Errorf("resolve-config: custom config is %T, want model.Config", req.Custom)
 		}
 		return cfg, nil
 	}
 
 	path, err := w.models.FullPath(req.ModelID)
 	if err != nil {
-		return bucky.Config{}, fmt.Errorf("resolve-config: full-path: %w", err)
+		return model.Config{}, fmt.Errorf("resolve-config: full-path: %w", err)
 	}
 	if len(path.ModelFiles) == 0 {
-		return bucky.Config{}, fmt.Errorf("resolve-config: model-id[%s]: no model files on disk", req.ModelID)
+		return model.Config{}, fmt.Errorf("resolve-config: model-id[%s]: no model files on disk", req.ModelID)
 	}
 
-	cfg := bucky.Config{
+	cfg := model.Config{
 		ModelPath: path.ModelFiles[0],
 		UseGPU:    true,
 	}

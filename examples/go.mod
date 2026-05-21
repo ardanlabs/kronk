@@ -5,8 +5,14 @@ go 1.26.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
+<<<<<<< HEAD
 	github.com/ardanlabs/kronk v1.25.9
 	github.com/duckdb/duckdb-go/v2 v2.10503.0
+=======
+	github.com/ardanlabs/bucky v0.0.0-20260521065745-3fc727c866c6
+	github.com/ardanlabs/kronk v1.25.8
+	github.com/duckdb/duckdb-go/v2 v2.10502.0
+>>>>>>> afd8e4e1 (basic api and example)
 	github.com/google/uuid v1.6.0
 	github.com/hybridgroup/yzma v1.14.1
 )
@@ -69,14 +75,19 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
+	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
 	github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.72 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-getter v1.8.6 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
+	github.com/icza/bitio v1.1.0 // indirect
 	github.com/jupiterrider/ffi v0.7.0 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/maypok86/otter/v2 v2.3.0 // indirect
+	github.com/mewkiz/flac v1.0.13 // indirect
+	github.com/mewkiz/pkg v0.0.0-20260331151047-10214ccde7de // indirect
+	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pierrec/lz4/v4 v4.1.26 // indirect

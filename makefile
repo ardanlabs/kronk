@@ -838,6 +838,9 @@ example-agent:
 example-audio:
 	cd examples && go run ./audio/main.go
 
+example-bucky:
+	cd examples && go run ./bucky/main.go
+
 example-chat:
 	cd examples && go run ./chat/main.go
 

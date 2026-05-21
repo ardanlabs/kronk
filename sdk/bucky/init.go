@@ -30,7 +30,8 @@ var (
 )
 
 type initOptions struct {
-	libPath string
+	libPath  string
+	logLevel LogLevel
 }
 
 // InitOption represents options for configuring Init.
@@ -40,6 +41,16 @@ type InitOption func(*initOptions)
 func WithInitLibPath(libPath string) InitOption {
 	return func(o *initOptions) {
 		o.libPath = libPath
+	}
+}
+
+// WithLogLevel sets the log level for the whisper.cpp / ggml C-side
+// logger. Defaults to LogSilent so the noisy whisper_init_* and
+// ggml_metal_* lines do not bleed into application output. Pass
+// LogNormal to restore whisper.cpp's default stderr logger.
+func WithLogLevel(logLevel LogLevel) InitOption {
+	return func(o *initOptions) {
+		o.logLevel = logLevel
 	}
 }
 
@@ -106,6 +117,21 @@ func Init(opts ...InitOption) error {
 
 	if err := whisper.Load(libPath); err != nil {
 		return fmt.Errorf("init: unable to load whisper library: %w", err)
+	}
+
+	// Install the log callback BEFORE any further C-side work so the
+	// stream of whisper_init_* / ggml_metal_* lines emitted by the
+	// first model load follows the requested policy. Mirrors the
+	// silencer kronk wires up around llama.Init.
+	if o.logLevel < 1 || o.logLevel > 2 {
+		o.logLevel = LogSilent
+	}
+
+	switch o.logLevel {
+	case LogSilent:
+		whisper.LogSet(whisper.LogSilent())
+	default:
+		whisper.LogSet(whisper.LogNormal)
 	}
 
 	libraryLocation = libPath

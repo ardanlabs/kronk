@@ -3,12 +3,11 @@ package bucky
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/ardanlabs/bucky/pkg/whisper"
+	"github.com/ardanlabs/kronk/sdk/bucky/model"
 )
 
 // Version contains the current version of the bucky SDK package.
@@ -16,113 +15,65 @@ const Version = "0.1.0"
 
 // =============================================================================
 
-// ModelInfo summarizes the static properties of a loaded whisper
-// model. It is populated from whisper.Context accessor calls at
-// construction time and never mutated thereafter.
-type ModelInfo struct {
-	ID             string
-	Type           string
-	IsMultilingual bool
-	NVocab         int32
-	NTextCtx       int32
-	NAudioCtx      int32
-	NMels          int32
-	Size           int64
-}
-
-// =============================================================================
-
 // Whisper provides a concurrently safe API for using whisper.cpp.
-// Each Whisper owns one whisper.Context. The context itself is
-// single-stream, so concurrency is bounded by a semaphore sized at
-// construction time from Config.NSeqMax * Config.QueueDepth.
+// Each Whisper owns one model.Model (which in turn owns one
+// whisper.Context). The whisper context is single-stream so
+// concurrent transcribes are bounded by a per-handle semaphore sized
+// at construction time from Config.NSeqMax * Config.QueueDepth.
 type Whisper struct {
-	cfg           Config
-	handle        whisper.Context
+	cfg           model.Config
+	model         *model.Model
 	sem           chan struct{}
 	activeStreams atomic.Int32
 	shutdown      sync.Mutex
 	shutdownFlag  bool
-	modelInfo     ModelInfo
+	modelInfo     model.ModelInfo
 }
 
 // New provides the ability to use a whisper model in a concurrently
 // safe way.
-func New(opts ...Option) (*Whisper, error) {
+func New(opts ...model.Option) (*Whisper, error) {
 	return NewWithContext(context.Background(), opts...)
 }
 
 // NewWithContext provides the ability to use a whisper model in a
 // concurrently safe way. The context is used to support logging trace
 // ids during model loading.
-func NewWithContext(ctx context.Context, opts ...Option) (*Whisper, error) {
+func NewWithContext(ctx context.Context, opts ...model.Option) (*Whisper, error) {
 	if libraryLocation == "" {
 		return nil, fmt.Errorf("new: the Init() function has not been called")
 	}
 
-	cfg := NewConfig(opts...).withDefaults()
-
-	if cfg.ModelPath == "" {
-		return nil, fmt.Errorf("new: model path is required")
-	}
-
 	// -------------------------------------------------------------------------
 
-	cp := whisper.ContextDefaultParams()
-	if cfg.UseGPU {
-		cp.UseGPU = 1
-	} else {
-		cp.UseGPU = 0
-	}
-	if cfg.FlashAttn {
-		cp.FlashAttn = 1
-	}
-	cp.GPUDevice = cfg.GPUDevice
+	cfg := model.NewConfig(opts...)
 
-	handle, err := whisper.InitFromFileWithParams(cfg.ModelPath, cp)
+	mdl, err := model.NewModel(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("new: init model %q: %w", cfg.ModelPath, err)
+		return nil, err
 	}
 
-	// -------------------------------------------------------------------------
-
-	semCapacity := max(cfg.NSeqMax, 1) * cfg.QueueDepth
+	resolved := mdl.Config()
+	semCapacity := max(resolved.NSeqMax, 1) * max(resolved.QueueDepth, 1)
 
 	w := Whisper{
-		cfg:    cfg,
-		handle: handle,
-		sem:    make(chan struct{}, semCapacity),
-		modelInfo: ModelInfo{
-			ID:             cfg.ModelPath,
-			Type:           whisper.ModelTypeReadable(handle),
-			IsMultilingual: whisper.IsMultilingual(handle),
-			NVocab:         whisper.NVocab(handle),
-			NTextCtx:       whisper.NTextCtx(handle),
-			NAudioCtx:      whisper.NAudioCtx(handle),
-			NMels:          whisper.ModelNMels(handle),
-		},
+		cfg:       resolved,
+		model:     mdl,
+		sem:       make(chan struct{}, semCapacity),
+		modelInfo: mdl.ModelInfo(),
 	}
-
-	cfg.Log(ctx, "bucky-new",
-		"model", cfg.ModelPath,
-		"model-type", w.modelInfo.Type,
-		"multilingual", w.modelInfo.IsMultilingual,
-		"use-gpu", cfg.UseGPU,
-		"flash-attn", cfg.FlashAttn,
-		"sem-capacity", semCapacity,
-	)
 
 	return &w, nil
 }
 
-// Config returns a copy of the configuration the handle was built
-// with.
-func (w *Whisper) Config() Config {
+// ModelConfig returns a copy of the resolved configuration being
+// used.
+func (w *Whisper) ModelConfig() model.Config {
 	return w.cfg
 }
 
 // ModelInfo returns the static information about the loaded model.
-func (w *Whisper) ModelInfo() ModelInfo {
+func (w *Whisper) ModelInfo() model.ModelInfo {
 	return w.modelInfo
 }
 
@@ -132,37 +83,13 @@ func (w *Whisper) ActiveStreams() int {
 }
 
 // SystemInfo returns the whisper.cpp system info string parsed into a
-// key/value map for observability output. The format mirrors
-// sdk/kronk's SystemInfo.
+// key/value map for observability output.
 func (w *Whisper) SystemInfo() map[string]string {
-	result := make(map[string]string)
-
-	for part := range strings.SplitSeq(whisper.PrintSystemInfo(), "|") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-
-		if idx := strings.Index(part, "="); idx != -1 {
-			part = strings.TrimSpace(part[:idx])
-		}
-
-		switch kv := strings.SplitN(part, ":", 2); len(kv) {
-		case 2:
-			key := strings.TrimSpace(kv[0])
-			value := strings.TrimSpace(kv[1])
-			result[key] = value
-		default:
-			result[part] = "on"
-		}
-	}
-
-	return result
+	return model.SystemInfo()
 }
 
-// Unload releases the underlying whisper context. It blocks until
-// outstanding transcribes drain or the supplied context expires.
-// Subsequent calls fail; Unload is single-use per handle.
+// Unload will close down the loaded model. You should call this only
+// when you are completely done using Whisper.
 func (w *Whisper) Unload(ctx context.Context) error {
 	if _, exists := ctx.Deadline(); !exists {
 		var cancel context.CancelFunc
@@ -199,8 +126,9 @@ func (w *Whisper) Unload(ctx context.Context) error {
 
 	// -------------------------------------------------------------------------
 
-	whisper.Free(w.handle)
-	w.handle = 0
+	if err := w.model.Unload(ctx); err != nil {
+		return fmt.Errorf("unload: failed to unload model, model-id[%s]: %w", w.model.ModelInfo().ID, err)
+	}
 
 	return nil
 }
