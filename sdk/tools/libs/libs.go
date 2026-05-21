@@ -14,10 +14,16 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
+
+// Compile-time assertion that *Libs satisfies backend.LibsManager. The
+// llama implementation is structurally compatible with the cross-backend
+// interface and consumers can dispatch by kind via the backend registry.
+var _ backend.LibsManager = (*Libs)(nil)
 
 const (
 	versionFile = "version.json"
@@ -38,13 +44,10 @@ var ErrReadOnly = errors.New("libs: install path is read-only (no version.json)"
 type Logger = applog.Logger
 
 // VersionTag represents information about the installed version of llama.cpp.
-type VersionTag struct {
-	Version   string `json:"version"`
-	Arch      string `json:"arch"`
-	OS        string `json:"os"`
-	Processor string `json:"processor"`
-	Latest    string `json:"-"`
-}
+// It is an alias for backend.VersionTag so cross-backend code that
+// dispatches by kind can consume the same value type returned by every
+// backend's LibsManager implementation.
+type VersionTag = backend.VersionTag
 
 // =============================================================================
 

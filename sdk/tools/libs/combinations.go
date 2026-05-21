@@ -1,14 +1,15 @@
 package libs
 
+import "github.com/ardanlabs/kronk/sdk/tools/backend"
+
 // Combination represents a single supported (architecture, operating system,
 // processor) triple for a precompiled llama.cpp library bundle. Values match
 // the strings accepted by the upstream download package and by the
 // KRONK_ARCH, KRONK_OS, and KRONK_PROCESSOR environment variables.
-type Combination struct {
-	Arch      string `json:"arch"`
-	OS        string `json:"os"`
-	Processor string `json:"processor"`
-}
+//
+// It is an alias for backend.Combination so the same value type travels
+// across every backend that satisfies backend.LibsManager.
+type Combination = backend.Combination
 
 // supportedCombinations lists every (os, arch, processor) triple that the
 // upstream hybridgroup/yzma download package can resolve to a precompiled
@@ -71,4 +72,18 @@ func IsSupported(arch string, opSys string, processor string) bool {
 		}
 	}
 	return false
+}
+
+// SupportedCombinations is the method form of the package-level
+// SupportedCombinations function. It exists so *Libs satisfies
+// backend.LibsManager and shared dispatch code can ask any registered
+// backend for its build matrix.
+func (lib *Libs) SupportedCombinations() []Combination {
+	return SupportedCombinations()
+}
+
+// IsSupported is the method form of the package-level IsSupported
+// function. It exists so *Libs satisfies backend.LibsManager.
+func (lib *Libs) IsSupported(arch string, opSys string, processor string) bool {
+	return IsSupported(arch, opSys, processor)
 }

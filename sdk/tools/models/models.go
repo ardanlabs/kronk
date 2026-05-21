@@ -13,9 +13,15 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
+
+// Compile-time assertion that *Models satisfies backend.Catalog. The
+// llama implementation is structurally compatible with the cross-backend
+// interface and consumers can dispatch by kind via the backend registry.
+var _ backend.Catalog = (*Models)(nil)
 
 var (
 	localFolder = "models"
