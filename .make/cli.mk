@@ -131,13 +131,6 @@ bucky-libs-remove-install-local:
 
 # ------------------------------------------------------------------------------
 
-bucky-model-catalog:
-	go run cmd/kronk/main.go bucky model catalog
-
-bucky-model-catalog-local:
-	go run cmd/kronk/main.go bucky model catalog --local
-
-
 bucky-model-list:
 	go run cmd/kronk/main.go bucky model list
 
