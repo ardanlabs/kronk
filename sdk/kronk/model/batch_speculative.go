@@ -354,6 +354,29 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	s.specDraftProbs = nil
 	s.specDraftDistsSparse = nil
 
+	// MTP: copy the slot's pre-norm hidden-state rows out of the target
+	// context's per-context buffer NOW, before any Phase B side-effect
+	// can invalidate it. On hybrid targets a partial-rejection round
+	// runs restoreTargetSpecSnapshot in Phase B, which re-decodes a
+	// small rebatch on the target context and overwrites the per-
+	// context pre-norm buffer with rows indexed against the rebatch.
+	// Capturing the rows here decouples Phase B's MTP mirror from that
+	// restore so MTP keeps running across partial rejections on hybrid
+	// targets instead of being disabled for the rest of the request.
+	if e.model.draft != nil && e.model.draft.mtp && s.mtpHasBatch && !s.mtpDisabledForRequest {
+		if err := e.captureVerifyPreNorm(s, 1+nDraft); err != nil {
+			e.model.log(ctx, "speculative", "status", "verify-prenorm-capture-error",
+				"slot", s.id, "err", err)
+			// Capture failure leaves verifyH empty; Phase B's mirror
+			// will fall back to the live target buffer. That is safe on
+			// dense / pure-attention targets (no restore happens) and
+			// the hybrid restore path's own failure handling below
+			// will still trigger the mtpDisabledForRequest failsafe
+			// if needed.
+			s.verifyH = s.verifyH[:0]
+		}
+	}
+
 	accepted := 0
 	var bonusToken llama.Token
 
@@ -635,20 +658,6 @@ func (e *batchEngine) finalizeSpeculativeTokens(s *slot, buf []byte) {
 	hybridRestore := e.model.modelInfo.Type == ModelTypeHybrid && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
 	mtpActive := e.model.draft != nil && e.model.draft.mtp && s.mtpHasBatch && !s.mtpDisabledForRequest
 
-	// hybridRestoreRan is set true once restoreTargetSpecSnapshot has
-	// re-decoded the (sampledAtBase + accepted drafts) rebatch on the
-	// target context. After that re-decode, the target's per-context
-	// logit and pre-norm buffers are indexed against the REBATCH rows,
-	// not the original shared e.batch rows. The MTP mirror below uses
-	// s.targetBatchStart from the original e.batch, so running it
-	// after a restore would read the wrong pre-norm rows (the issue
-	// is benign only for slot 0 of a single-slot decode where
-	// baseBatch==0 and the indices happen to coincide; for any other
-	// layout it is corrupting). We therefore disable MTP for the rest
-	// of the request when restore ran, instead of trying to mirror
-	// against stale indices.
-	hybridRestoreRan := false
-
 	switch {
 	case hybridRestore:
 		if err := e.restoreTargetSpecSnapshot(s, basePast, originalSampled, draftTokens, accepted); err != nil {
@@ -661,8 +670,6 @@ func (e *batchEngine) finalizeSpeculativeTokens(s *slot, buf []byte) {
 			e.model.decodeMu.Lock()
 			llama.MemorySeqRm(e.model.mem, s.seqID, rollbackFrom, rollbackTo)
 			e.model.decodeMu.Unlock()
-		} else {
-			hybridRestoreRan = true
 		}
 
 	case rollbackFrom < rollbackTo:
@@ -677,22 +684,16 @@ func (e *batchEngine) finalizeSpeculativeTokens(s *slot, buf []byte) {
 	e.rollbackDraft(ctx, s, accepted, nDraft)
 
 	// MTP: mirror the accepted prefix [basePast..basePast+accepted]
-	// (1+accepted positions) from the target's just-decoded pre-norm
-	// buffer into the draft KV. This OVERWRITES the AR-loop entries
-	// the MTP draft wrote during generateDraftTokensMTP with the
-	// target-derived hidden states, and updates s.pendingH to
-	// h(basePast+accepted) for the next draft round.
-	switch {
-	case mtpActive && hybridRestoreRan:
-		// The target's pre-norm buffer is now indexed against the
-		// rebatch decoded inside restoreTargetSpecSnapshot, not the
-		// original shared e.batch, so mirroring with s.targetBatchStart
-		// would read the wrong rows. Disable MTP for the remainder of
-		// the request and clear the draft seq so the slot continues
-		// target-only with a clean draft KV.
-		e.disableMTPForRequestSpec(ctx, s, "hybrid-restore", accepted)
-
-	case mtpActive:
+	// (1+accepted positions) into the draft KV. The mirror reads the
+	// target's pre-norm hidden states from s.verifyH (captured in
+	// Phase A before any side-effect from this Pass 2B) instead of
+	// the live target pre-norm buffer, so the mirror is safe to run
+	// AFTER restoreTargetSpecSnapshot's re-decode on a hybrid target.
+	// The mirror OVERWRITES the AR-loop entries the MTP draft wrote
+	// during generateDraftTokensMTP with the target-derived hidden
+	// states, and updates s.pendingH to h(basePast+accepted) for the
+	// next draft round.
+	if mtpActive {
 		if err := e.mirrorTargetBatchToMTPDraft(s, 1+accepted); err != nil {
 			// rollbackDraft above already removed the entire drafted
 			// range from the draft KV; a failed mirror leaves the
@@ -981,25 +982,63 @@ func (e *batchEngine) rollbackDraft(ctx context.Context, s *slot, accepted, nDra
 		"draft_kv_end", draftKVEnd, "draft_nPast", s.draftNPast)
 }
 
+// captureVerifyPreNorm copies the slot's contiguous range of pre-norm
+// hidden-state rows out of the target context's per-context pre-norm
+// buffer into s.verifyH. Called from verifySpeculativeTokens (Phase A)
+// before any Phase B side-effect can mutate the live buffer — notably
+// before any other slot's restoreTargetSpecSnapshot re-decodes a small
+// rebatch on the target context and overwrites the pre-norm buffer.
+//
+// The slot's range is [s.targetBatchStart .. s.targetBatchStart+count),
+// where count = 1 + nDraft (the slot's contribution to the spec batch).
+// Phase B's mirrorTargetBatchToMTPDraft reads from s.verifyH and clears
+// it after consumption.
+func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {
+	if count <= 0 {
+		s.verifyH = s.verifyH[:0]
+		return nil
+	}
+
+	draft := e.model.draft
+	nEmbd := draft.nEmbd
+	totalRows := int(e.batch.NTokens)
+	start := int(s.targetBatchStart)
+
+	if start < 0 || start+count > totalRows {
+		s.verifyH = s.verifyH[:0]
+		return fmt.Errorf("verify-prenorm-capture: slot range [%d..%d) out of target batch (size %d)",
+			start, start+count, totalRows)
+	}
+
+	embd := GetEmbeddingsPreNorm(e.model.lctx, totalRows, nEmbd)
+	if embd == nil {
+		s.verifyH = s.verifyH[:0]
+		return fmt.Errorf("verify-prenorm-capture: target pre-norm buffer is nil (SetEmbeddingsPreNorm may not be enabled)")
+	}
+
+	need := count * nEmbd
+	switch {
+	case cap(s.verifyH) < need:
+		s.verifyH = make([]float32, need)
+	default:
+		s.verifyH = s.verifyH[:need]
+	}
+	copy(s.verifyH, embd[start*nEmbd:(start+count)*nEmbd])
+	return nil
+}
+
 // disableMTPForRequestSpec disables MTP for the remainder of the
 // current request after a speculative-finalize step left the draft
 // state inconsistent with the target. Called from finalizeSpeculativeTokens
-// on two paths:
+// when the post-verify mirror fails: rollbackDraft already cleared the
+// entire drafted range from the draft KV, and no later step in the
+// request can reconstruct the missing accepted prefix.
 //
-//   - hybrid restore success: restoreTargetSpecSnapshot re-decoded a
-//     small rebatch on the target context, so the target's pre-norm
-//     and logit buffers are indexed against the rebatch rather than
-//     the original shared e.batch — the mirror would read wrong rows.
-//
-//   - post-rollback mirror failure: rollbackDraft already cleared the
-//     entire drafted range from the draft KV, and no later step in
-//     the request can reconstruct the missing accepted prefix.
-//
-// In both cases we wipe the draft seq (so the slot's draft KV is
-// clean), reset draft state, set mtpDisabledForRequest, and let the
-// slot continue target-only for the rest of the request. The slot
-// reset at the next finishSlot clears mtpDisabledForRequest so the
-// next request on this slot can use MTP again.
+// In that case we wipe the draft seq (so the slot's draft KV is clean),
+// reset draft state, set mtpDisabledForRequest, and let the slot
+// continue target-only for the rest of the request. The slot reset at
+// the next finishSlot clears mtpDisabledForRequest so the next request
+// on this slot can use MTP again.
 func (e *batchEngine) disableMTPForRequestSpec(ctx context.Context, s *slot, reason string, accepted int) {
 	draft := e.model.draft
 

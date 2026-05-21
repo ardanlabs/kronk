@@ -193,9 +193,8 @@ type slot struct {
 	// target KV — there is no draft snapshot. Running MTP against an
 	// empty (or partial) draft context produces near-zero acceptance
 	// for the whole request, which is worse than no speculation.
-	// Also set inside finalizeSpeculativeTokens after a hybrid restore
-	// re-decode or a post-rollback mirror failure. Cleared in
-	// slot.reset().
+	// Also set inside finalizeSpeculativeTokens after a post-rollback
+	// mirror failure. Cleared in slot.reset().
 	mtpDisabledForRequest bool
 
 	// mtpDisableReason is a short, machine-friendly label describing
@@ -205,10 +204,28 @@ type slot struct {
 	// a request with a high DMAR also had low draft coverage. Empty
 	// while MTP is still active. Cleared in slot.reset(). Possible
 	// values mirror the speculative-log status names:
-	//   "imc-hit"          — IMC cache hit at startSlot.
-	//   "hybrid-restore"   — post-restore mirror would read stale rows.
-	//   "mirror-error"     — post-verify mirror failed; draft KV wiped.
+	//   "imc-hit"      — IMC cache hit at startSlot.
+	//   "mirror-error" — post-verify mirror failed; draft KV wiped.
 	mtpDisableReason string
+
+	// verifyH is a slot-local cache of the target context's pre-norm
+	// hidden-state rows for the slot's just-decoded spec batch range.
+	// Captured at the top of verifySpeculativeTokens (Phase A) BEFORE
+	// any other slot's Phase B can re-decode on the target context
+	// (notably restoreTargetSpecSnapshot on hybrid targets) and
+	// invalidate the per-context pre-norm buffer.
+	//
+	// Layout: row-major, (1+nDraft) rows of nEmbd floats. Row k is the
+	// pre-norm hidden state of the target batch position
+	// s.targetBatchStart+k. finalizeSpeculativeTokens'
+	// mirrorTargetBatchToMTPDraft reads from this buffer instead of the
+	// live target pre-norm buffer so the mirror is safe to run AFTER a
+	// hybrid restoreTargetSpecSnapshot re-decode.
+	//
+	// Lazy-grow / never-shrink. Length is set to actual bytes per
+	// capture; cap is retained across requests. Cleared by the mirror
+	// after consumption and by slot.reset().
+	verifyH []float32
 
 	// specSnapshot holds a snapshot of the target context's per-sequence
 	// state taken right before a speculative batch is decoded. It is
@@ -310,6 +327,7 @@ func (s *slot) reset() {
 	// last position is no longer the natural predecessor of the new
 	// request's first token.
 	s.pendingH = s.pendingH[:0]
+	s.verifyH = s.verifyH[:0]
 	s.targetBatchStart = 0
 	s.targetBatchCount = 0
 	s.targetBatchBasePos = 0

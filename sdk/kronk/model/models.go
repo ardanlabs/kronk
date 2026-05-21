@@ -810,8 +810,7 @@ func (c Choice) FinishReason() string {
 // for 4 rounds at 94% then was disabled and the rest was target-only"
 // — the second case shows high DraftAcceptanceRate but low
 // DraftCoverage. DraftDisableReason explains the latter case
-// ("imc-hit", "hybrid-restore", "mirror-error", or empty if MTP was
-// never disabled).
+// ("imc-hit", "mirror-error", or empty if MTP was never disabled).
 type Usage struct {
 	PromptTokens        int     `json:"prompt_tokens"`
 	ReasoningTokens     int     `json:"reasoning_tokens"`

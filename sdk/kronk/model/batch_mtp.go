@@ -83,25 +83,46 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 	nEmbd := draft.nEmbd
 	mirror := draft.mirrorBatchMTP
 
-	// Read the dense pre-norm buffer from the target. Rows are indexed
-	// by raw target-batch position because we called
-	// SetEmbeddingsPreNorm(target, true, false) (masked=false).
+	// Choose pre-norm source. Phase A of speculative verify captures
+	// the slot's pre-norm rows into s.verifyH BEFORE any Phase B side-
+	// effect (notably restoreTargetSpecSnapshot on hybrid targets)
+	// re-decodes on the target context and overwrites the per-context
+	// pre-norm buffer. When verifyH is populated we read from it; the
+	// rows are already sliced to [s.targetBatchStart .. start+1+nDraft).
 	//
-	// We only need rows [start .. start+effectiveCount) from the target
-	// batch — the rest is either a different slot (n/a under nseq-max=1
-	// but defensive) or rejected spec tokens that should not be mirrored.
-	totalRows := int(e.batch.NTokens)
-	embd := GetEmbeddingsPreNorm(e.model.lctx, totalRows, nEmbd)
-	if embd == nil {
-		s.mtpHasBatch = false
-		return fmt.Errorf("mtp-mirror: target pre-norm buffer is nil (SetEmbeddingsPreNorm may not have been enabled)")
-	}
-
+	// For non-spec paths (prefill/gen mirror in Pass 1), verifyH is
+	// empty and we read the live target pre-norm buffer indexed by
+	// raw target-batch position (SetEmbeddingsPreNorm was called with
+	// masked=false at load).
+	//
+	// preNormRow returns the pre-norm row for slot-relative index k
+	// (0 ≤ k < effectiveCount).
 	start := int(s.targetBatchStart)
-	if start < 0 || start+effectiveCount > totalRows {
-		s.mtpHasBatch = false
-		return fmt.Errorf("mtp-mirror: slot batch range [%d..%d) out of target batch (size %d)",
-			start, start+effectiveCount, totalRows)
+	var preNormRow func(k int) []float32
+
+	switch {
+	case len(s.verifyH) >= effectiveCount*nEmbd:
+		src := s.verifyH
+		preNormRow = func(k int) []float32 {
+			return src[k*nEmbd : (k+1)*nEmbd]
+		}
+
+	default:
+		totalRows := int(e.batch.NTokens)
+		embd := GetEmbeddingsPreNorm(e.model.lctx, totalRows, nEmbd)
+		if embd == nil {
+			s.mtpHasBatch = false
+			return fmt.Errorf("mtp-mirror: target pre-norm buffer is nil (SetEmbeddingsPreNorm may not have been enabled)")
+		}
+		if start < 0 || start+effectiveCount > totalRows {
+			s.mtpHasBatch = false
+			return fmt.Errorf("mtp-mirror: slot batch range [%d..%d) out of target batch (size %d)",
+				start, start+effectiveCount, totalRows)
+		}
+		preNormRow = func(k int) []float32 {
+			absRow := start + k
+			return embd[absRow*nEmbd : (absRow+1)*nEmbd]
+		}
 	}
 
 	// The mirror batch must hold (token id, embd row) for each position.
@@ -157,7 +178,7 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 
 			// Write the embd row for this mirror slot.
 			dst := draft.mirrorEmbdSlice[k*nEmbd : (k+1)*nEmbd]
-			srcGlobal := chunkStart + k - 1 // index in the slot's pre-norm window
+			srcGlobal := chunkStart + k - 1 // slot-relative index of previous position
 			switch {
 			case srcGlobal < 0:
 				// Slot 0 of the very first chunk: use s.pendingH if we
@@ -170,11 +191,10 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 					}
 				}
 			default:
-				// Use h from the target's pre-norm row at (start +
-				// srcGlobal) — i.e., the row of the previous position
-				// in the original target batch.
-				src := embd[(start+srcGlobal)*nEmbd : (start+srcGlobal+1)*nEmbd]
-				copy(dst, src)
+				// Use h from the slot's pre-norm row at index srcGlobal
+				// (the row of the previous position in the slot's
+				// captured window).
+				copy(dst, preNormRow(srcGlobal))
 			}
 		}
 
@@ -199,13 +219,17 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 	// target hidden state (so the NEXT mirror or draft step sees it as
 	// "the previous position's h").
 	s.draftNPast = s.targetBatchBasePos + llama.Pos(effectiveCount)
-	lastTargetRow := start + effectiveCount - 1
 	if cap(s.pendingH) < nEmbd {
 		s.pendingH = make([]float32, nEmbd)
 	} else {
 		s.pendingH = s.pendingH[:nEmbd]
 	}
-	copy(s.pendingH, embd[lastTargetRow*nEmbd:(lastTargetRow+1)*nEmbd])
+	copy(s.pendingH, preNormRow(effectiveCount-1))
+
+	// verifyH (if it was the source) has been fully consumed. Reset
+	// length so the next slot.reset() / Phase A capture starts clean;
+	// retain cap for the next request on this slot.
+	s.verifyH = s.verifyH[:0]
 
 	s.mtpHasBatch = false
 	return nil
