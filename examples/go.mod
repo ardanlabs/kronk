@@ -4,6 +4,8 @@ go 1.26.0
 
 replace github.com/ardanlabs/kronk => ../
 
+replace github.com/ardanlabs/bucky => /Users/bill/code/go/src/github.com/ardanlabs/bucky
+
 require (
 <<<<<<< HEAD
 	github.com/ardanlabs/kronk v1.25.9

@@ -54,7 +54,12 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Whisper, error)
 	}
 
 	resolved := mdl.Config()
-	semCapacity := max(resolved.NSeqMax, 1) * max(resolved.QueueDepth, 1)
+
+	// Whisper has no batch engine, so the outer semaphore is sized
+	// 1:1 with the model's state pool. This matches sdk/kronk's
+	// rule for embedding / rerank models (semCapacity = NSeqMax),
+	// not the text-generation rule (NSeqMax * QueueDepth).
+	semCapacity := max(resolved.NSeqMax, 1)
 
 	w := Whisper{
 		cfg:       resolved,

@@ -39,16 +39,12 @@ type Config struct {
 	// value means whisper.cpp's own default (typically min(4, ncpu)).
 	NThreads int32
 
-	// NSeqMax bounds the number of concurrent transcribe sequences
-	// allowed against a single handle. The whisper context itself is
-	// single-stream so this is effectively the depth of the
-	// per-handle semaphore. Values <= 0 collapse to 1.
+	// NSeqMax sizes the model's internal whisper.State pool. Each
+	// pooled state owns its own mel spectrogram, KV cache, and
+	// compute buffer, so NSeqMax goroutines can run concurrent
+	// transcribe / language-detect calls against the same Model.
+	// Values <= 0 collapse to 1.
 	NSeqMax int
-
-	// QueueDepth multiplies NSeqMax to give the effective semaphore
-	// capacity, matching the kronk discipline. Values <= 0 collapse
-	// to 2.
-	QueueDepth int
 
 	// Log is the logger the model uses for diagnostic output.
 	// Defaults to applog.DiscardLogger when nil.
@@ -59,9 +55,6 @@ type Config struct {
 func (cfg Config) WithDefaults() Config {
 	if cfg.NSeqMax <= 0 {
 		cfg.NSeqMax = 1
-	}
-	if cfg.QueueDepth <= 0 {
-		cfg.QueueDepth = 2
 	}
 	if cfg.Log == nil {
 		cfg.Log = applog.DiscardLogger
@@ -104,11 +97,10 @@ func WithGPUDevice(v int32) Option { return func(c *Config) { c.GPUDevice = v } 
 // WithNThreads sets the default thread count for Transcribe.
 func WithNThreads(v int32) Option { return func(c *Config) { c.NThreads = v } }
 
-// WithNSeqMax sets the per-handle max concurrent sequence count.
+// WithNSeqMax sets the size of the model's internal whisper.State
+// pool — the number of goroutines that may run Transcribe /
+// DetectLanguage concurrently against one Model.
 func WithNSeqMax(v int) Option { return func(c *Config) { c.NSeqMax = v } }
-
-// WithQueueDepth multiplies NSeqMax to size the per-handle semaphore.
-func WithQueueDepth(v int) Option { return func(c *Config) { c.QueueDepth = v } }
 
 // WithLog sets the logger the model and its operations use.
 func WithLog(v applog.Logger) Option { return func(c *Config) { c.Log = v } }
