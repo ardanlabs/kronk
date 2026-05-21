@@ -34,7 +34,7 @@ export default function DocsSDKPool() {
           <div className="card">
             <h3>Import</h3>
             <pre className="code-block">
-              <code>import "github.com/ardanlabs/kronk/sdk/pool"</code>
+              <code>import "github.com/ardanlabs/kronk/sdk/kronk/pool"</code>
             </pre>
           </div>
 
@@ -66,16 +66,25 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>{`type Config struct {
 	Log             kronk.Logger
-	BasePath        string
+	Models          *models.Models
+	Resman          *resman.Manager
 	ModelConfigFile string
 	ModelsInPool    int
-	BudgetPercent   int
 	TTL             time.Duration
-	Snapshot        *resman.Snapshot
 	InsecureLogging bool
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents settings for the pool. BudgetPercent: Percentage (1..100) of detected GPU VRAM and system RAM that the pool's resource manager is allowed to commit to loaded models. Defaults to defaultBudgetPercent (80) when zero. This is the primary admission knob. ModelsInPool: Safety-net cap on the number of distinct entries the pool will keep, independent of the byte budget. Defaults to 10 when zero. TTL: Defines the time an existing model can live in the pool without being used. Defaults to 5 minutes if the value is 0. Snapshot: Optional resource snapshot used to construct the resource manager. When nil the pool calls devices.List() at construction time. Tests use this to inject a deterministic device topology. InsecureLogging: When true, logs potentially sensitive data such as message content and detailed model configuration.</p>
+              <p className="doc-description">Config represents settings for the kronk (llama) pool. Models is the pre-built catalog the pool consults for path / size resolution. Required. Resman is the shared resource manager. Building it outside the pool lets every backend (kronk, bucky, …) charge the same byte budget. Required. ModelConfigFile is the optional per-model override file. Empty means no overrides. ModelsInPool is the safety-net cap on the number of distinct entries the pool keeps, independent of the byte budget. Defaults to 10 when zero. TTL is the time an existing model can live in the pool without being used. Defaults to 5 minutes when zero. InsecureLogging, when true, logs potentially sensitive data such as message content and detailed model configuration.</p>
+            </div>
+
+            <div className="doc-section" id="type-llama">
+              <h4>Llama</h4>
+              <pre className="code-block">
+                <code>{`type Llama struct {
+	// Has unexported fields.
+}`}</code>
+              </pre>
+              <p className="doc-description">Llama is the loader.Loader[*kronk.Kronk] implementation for the llama.cpp backend. It is constructed by sdk/pool and any future programs that want to build a pool around llama models manually.</p>
             </div>
 
             <div className="doc-section" id="type-modeldetail">
@@ -110,6 +119,46 @@ export default function DocsSDKPool() {
 
           <div className="card" id="methods">
             <h3>Methods</h3>
+
+            <div className="doc-section" id="method-llama-display">
+              <h4>Llama.Display</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display</code>
+              </pre>
+              <p className="doc-description">Display implements loader.Loader.Display for the llama backend. It returns the KV cache and total VRAM values to surface in BUI/observability output for a loaded model. Both this path and the SDK-internal calculateVRAMDiag route through vram.FromFiles, so the two computations are byte-identical for any well-formed local model. The dedicated lookup is retained so a hypothetical resman-side failure (e.g. an index miss) cleanly falls back to the values the SDK stored at load time rather than zeroing out the BUI display.</p>
+            </div>
+
+            <div className="doc-section" id="method-llama-load">
+              <h4>Llama.Load</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk, error)</code>
+              </pre>
+              <p className="doc-description">Load implements loader.Loader.Load for the llama backend.</p>
+            </div>
+
+            <div className="doc-section" id="method-llama-modelconfig">
+              <h4>Llama.ModelConfig</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) ModelConfig() map[string]models.ModelConfig</code>
+              </pre>
+              <p className="doc-description">ModelConfig returns the loaded per-model configuration overrides.</p>
+            </div>
+
+            <div className="doc-section" id="method-llama-models">
+              <h4>Llama.Models</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) Models() *models.Models</code>
+              </pre>
+              <p className="doc-description">Models returns the underlying models system. Pool wrappers expose this for catalog-flavored APIs (ModelStatus, ModelConfig lookup).</p>
+            </div>
+
+            <div className="doc-section" id="method-llama-plan">
+              <h4>Llama.Plan</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRequest, error)</code>
+              </pre>
+              <p className="doc-description">Plan implements loader.Loader.Plan for the llama backend. It charges the predicted VRAM and system-RAM footprints to the resman independently so MoE models — whose routed experts can live on either side depending on the runtime placement — are accounted for accurately. Charging only the GPU side silently drops the CPU-resident expert weights, producing under-counts of the real resident footprint and exposing the pool to OOM on multi-load scenarios.</p>
+            </div>
 
             <div className="doc-section" id="method-pool-aquirecustom">
               <h4>Pool.AquireCustom</h4>
@@ -211,7 +260,7 @@ export default function DocsSDKPool() {
             <div className="doc-section" id="var-errserverbusy">
               <h4>ErrServerBusy</h4>
               <pre className="code-block">
-                <code>{`var ErrServerBusy = core.ErrServerBusy`}</code>
+                <code>{`var ErrServerBusy = engine.ErrServerBusy`}</code>
               </pre>
               <p className="doc-description">ErrServerBusy is returned when all model slots are occupied with active streams. It aliases the core sentinel so errors.Is works across both packages.</p>
             </div>
@@ -231,6 +280,7 @@ export default function DocsSDKPool() {
               <a href="#types" className="doc-index-header">Types</a>
               <ul>
                 <li><a href="#type-config">Config</a></li>
+                <li><a href="#type-llama">Llama</a></li>
                 <li><a href="#type-modeldetail">ModelDetail</a></li>
                 <li><a href="#type-pool">Pool</a></li>
               </ul>
@@ -238,6 +288,11 @@ export default function DocsSDKPool() {
             <div className="doc-index-section">
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
+                <li><a href="#method-llama-display">Llama.Display</a></li>
+                <li><a href="#method-llama-load">Llama.Load</a></li>
+                <li><a href="#method-llama-modelconfig">Llama.ModelConfig</a></li>
+                <li><a href="#method-llama-models">Llama.Models</a></li>
+                <li><a href="#method-llama-plan">Llama.Plan</a></li>
                 <li><a href="#method-pool-aquirecustom">Pool.AquireCustom</a></li>
                 <li><a href="#method-pool-aquiremodel">Pool.AquireModel</a></li>
                 <li><a href="#method-pool-getexisting">Pool.GetExisting</a></li>

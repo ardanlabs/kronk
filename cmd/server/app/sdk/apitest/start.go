@@ -140,12 +140,12 @@ func New(t *testing.T, testName string) *Test {
 
 	p, err := pool.New(pool.Config{
 		Log:             log.Info,
+		KronkModels:     models,
 		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
+		BudgetPercent:   95,
 		ModelsInPool:    1,
 		TTL:             5 * time.Minute,
-		BudgetPercent:   95,
 	})
-
 	if err != nil {
 		t.Fatal(err)
 	}

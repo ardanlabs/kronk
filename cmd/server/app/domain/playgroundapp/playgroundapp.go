@@ -59,7 +59,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "missing model_id")
 	}
 
-	baseCfg, err := a.models.KronkResolvedConfig(req.ModelID, a.pool.ModelConfig())
+	baseCfg, err := a.models.KronkResolvedConfig(req.ModelID, a.pool.Kronk.ModelConfig())
 	if err != nil {
 		return errs.New(errs.Internal, fmt.Errorf("resolving model config: %w", err))
 	}
@@ -98,10 +98,10 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	switch {
 	case req.HasOverrides():
 		cacheKey = fmt.Sprintf("%s/playground/%s", req.ModelID, sessionID)
-		krn, err = a.pool.AquireCustom(ctx, cacheKey, cfg)
+		krn, err = a.pool.Kronk.AquireCustom(ctx, cacheKey, cfg)
 	default:
 		cacheKey = req.ModelID
-		krn, err = a.pool.AquireModel(ctx, req.ModelID)
+		krn, err = a.pool.Kronk.AquireModel(ctx, req.ModelID)
 	}
 	if err != nil {
 		return errs.New(errs.Internal, err)
@@ -177,7 +177,7 @@ func (a *app) deleteSession(ctx context.Context, r *http.Request) web.Encoder {
 
 	a.mu.Unlock()
 
-	if krn, found := a.pool.GetExisting(entry.cacheKey); found && krn.ActiveStreams() > 0 {
+	if krn, found := a.pool.Kronk.GetExisting(entry.cacheKey); found && krn.ActiveStreams() > 0 {
 		a.mu.Lock()
 		entry.pendingDelete = true
 		a.sessions[id] = entry
@@ -186,7 +186,7 @@ func (a *app) deleteSession(ctx context.Context, r *http.Request) web.Encoder {
 		return SessionDeleteResponse{Status: "unloaded"}
 	}
 
-	a.pool.Invalidate(entry.cacheKey)
+	a.pool.Kronk.Invalidate(entry.cacheKey)
 
 	a.mu.Lock()
 	delete(a.sessions, id)
@@ -223,7 +223,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 		return errs.Errorf(errs.InvalidArgument, "session is being deleted")
 	}
 
-	krn, found := a.pool.GetExisting(entry.cacheKey)
+	krn, found := a.pool.Kronk.GetExisting(entry.cacheKey)
 	if !found {
 		a.mu.Lock()
 		delete(a.sessions, sessionID)
@@ -246,7 +246,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 		if ctx.Err() == context.DeadlineExceeded {
 			a.log.Info(ctx, "playground-chat-timeout", "session-id", sessionID, "cache-key", entry.cacheKey)
 			if entry.custom {
-				a.pool.Invalidate(entry.cacheKey)
+				a.pool.Kronk.Invalidate(entry.cacheKey)
 			}
 			a.mu.Lock()
 			delete(a.sessions, sessionID)
@@ -299,9 +299,9 @@ func (a *app) cleanupLoop() {
 			a.mu.Unlock()
 
 			for _, p := range pending {
-				krn, found := a.pool.GetExisting(p.cacheKey)
+				krn, found := a.pool.Kronk.GetExisting(p.cacheKey)
 				if !found || krn.ActiveStreams() == 0 {
-					a.pool.Invalidate(p.cacheKey)
+					a.pool.Kronk.Invalidate(p.cacheKey)
 					a.mu.Lock()
 					delete(a.sessions, p.id)
 					a.mu.Unlock()
@@ -324,7 +324,7 @@ func (a *app) cleanupLoop() {
 			a.mu.Unlock()
 
 			for _, c := range stale {
-				if _, found := a.pool.GetExisting(c.cacheKey); !found {
+				if _, found := a.pool.Kronk.GetExisting(c.cacheKey); !found {
 					a.mu.Lock()
 					delete(a.sessions, c.id)
 					a.mu.Unlock()

@@ -42,7 +42,7 @@ func (a *app) rerank(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "model name must be a string")
 	}
 
-	krn, err := a.pool.AquireModel(ctx, modelID)
+	krn, err := a.pool.Kronk.AquireModel(ctx, modelID)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}

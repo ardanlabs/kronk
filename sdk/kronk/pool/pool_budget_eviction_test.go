@@ -7,12 +7,37 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/pool"
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 )
 
 // MiB is a readable byte-size constant for sizing synthetic snapshots.
 const MiB int64 = 1 << 20
+
+// newSyntheticPool builds a pool wired to a resman seeded with the
+// supplied synthetic snapshot at 100% budget. Test-specific Models
+// come from the global testModels initialized by initKronk.
+func newSyntheticPool(t *testing.T, snap resman.Snapshot) *pool.Pool {
+	t.Helper()
+	rm, err := resman.New(resman.Config{
+		Snapshot:      snap,
+		BudgetPercent: 100,
+	})
+	if err != nil {
+		t.Fatalf("resman.New: %v", err)
+	}
+	mgr, err := pool.New(pool.Config{
+		Log:          log,
+		Models:       testModels,
+		Resman:       rm,
+		ModelsInPool: 10,
+		TTL:          5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("pool.New: %v", err)
+	}
+	return mgr
+}
 
 // probeRAMBudget is sized far above any realistic CI model footprint so
 // the probe phase never triggers eviction; the real reservation bytes
@@ -68,18 +93,7 @@ func probeFootprints(t *testing.T, modelA, modelB string) (int64, int64) {
 	t.Helper()
 
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: probeRAMBudget}
-	cfg := pool.Config{
-		Log:           log,
-		ModelsInPool:  10,
-		TTL:           5 * time.Minute,
-		BudgetPercent: 100,
-		Snapshot:      &snap,
-	}
-
-	mgr, err := pool.New(cfg)
-	if err != nil {
-		t.Fatalf("probe: new pool: %v", err)
-	}
+	mgr := newSyntheticPool(t, snap)
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -125,18 +139,8 @@ func evictsOnSecondLoad(t *testing.T, modelA, modelB string, sizeA, sizeB int64)
 		UnifiedMemory: true,
 		RAMBytes:      maxFootprint*100/95 + 64*MiB,
 	}
-	cfg := pool.Config{
-		Log:           log,
-		ModelsInPool:  10, // cap is well above 2; budget drives eviction.
-		TTL:           5 * time.Minute,
-		BudgetPercent: 100,
-		Snapshot:      &snap,
-	}
-
-	mgr, err := pool.New(cfg)
-	if err != nil {
-		t.Fatalf("new pool: %v", err)
-	}
+	// ModelsInPool cap is well above 2; budget drives eviction.
+	mgr := newSyntheticPool(t, snap)
 	defer mgr.Shutdown(context.Background())
 
 	ctx := context.Background()
@@ -171,21 +175,10 @@ func evictsOnSecondLoad(t *testing.T, modelA, modelB string, sizeA, sizeB int64)
 // reservation that could free enough budget.
 func rejectsInfeasibleRequest(t *testing.T, modelA string, sizeA int64) {
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA / 2}
-	cfg := pool.Config{
-		Log:           log,
-		ModelsInPool:  10,
-		TTL:           5 * time.Minute,
-		BudgetPercent: 100,
-		Snapshot:      &snap,
-	}
-
-	mgr, err := pool.New(cfg)
-	if err != nil {
-		t.Fatalf("new pool: %v", err)
-	}
+	mgr := newSyntheticPool(t, snap)
 	defer mgr.Shutdown(context.Background())
 
-	_, err = mgr.AquireModel(context.Background(), modelA)
+	_, err := mgr.AquireModel(context.Background(), modelA)
 	if err == nil {
 		t.Fatal("expected error for infeasible request, got nil")
 	}
@@ -206,18 +199,7 @@ func rejectsInfeasibleRequest(t *testing.T, modelA string, sizeA int64) {
 // snapshot succeeds.
 func releaseRestoresBudget(t *testing.T, modelA string, sizeA int64) {
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA + 64*MiB}
-	cfg := pool.Config{
-		Log:           log,
-		ModelsInPool:  10,
-		TTL:           5 * time.Minute,
-		BudgetPercent: 100,
-		Snapshot:      &snap,
-	}
-
-	mgr, err := pool.New(cfg)
-	if err != nil {
-		t.Fatalf("new pool: %v", err)
-	}
+	mgr := newSyntheticPool(t, snap)
 	defer mgr.Shutdown(context.Background())
 
 	ctx := context.Background()

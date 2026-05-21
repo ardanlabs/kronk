@@ -1,7 +1,7 @@
 // Package loader defines the contracts each Kronk inference backend must
 // satisfy to plug into the generic pool core.
 //
-// The pool core (sdk/pool/internal/core) handles caching, eviction,
+// The pool core (sdk/pool/core) handles caching, eviction,
 // budget reservation, and concurrent-load deduplication generically over
 // any handle type. The Loader interface defined here is the seam: a
 // backend provides Plan + Load + Display, and the core does the rest.
@@ -13,7 +13,7 @@ package loader
 import (
 	"context"
 
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 )
 
 // Handle is a backend-specific live model handle the pool tracks in its

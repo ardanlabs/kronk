@@ -11,12 +11,47 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/pool"
+	"github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-var log model.Logger
+var (
+	log        model.Logger
+	testModels *models.Models
+)
+
+// newTestResman returns a fresh resource manager wired to the host's
+// detected device topology with a generous (95%) budget. Each test gets
+// its own manager so leaked reservations from one subtest never bleed
+// into another.
+func newTestResman(t *testing.T) *resman.Manager {
+	t.Helper()
+	rm, err := resman.New(resman.Config{
+		Snapshot:      resman.FromDevices(devices.List()),
+		BudgetPercent: 95,
+	})
+	if err != nil {
+		t.Fatalf("resman.New: %v", err)
+	}
+	return rm
+}
+
+// withTestDeps fills in Models + Resman on a Config so callers can
+// keep their existing literals focused on the knob under test.
+func withTestDeps(t *testing.T, cfg pool.Config) pool.Config {
+	t.Helper()
+	if cfg.Models == nil {
+		cfg.Models = testModels
+	}
+	if cfg.Resman == nil {
+		cfg.Resman = newTestResman(t)
+	}
+	return cfg
+}
 
 // newTestLogger returns a kronk.Logger backed by slog that writes to w.
 func newTestLogger(w io.Writer) kronk.Logger {
@@ -40,7 +75,7 @@ func newManager(t *testing.T) {
 			Log: log,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -54,7 +89,7 @@ func newManager(t *testing.T) {
 			TTL:          10 * time.Minute,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -71,7 +106,7 @@ func acquireModel(t *testing.T) {
 		TTL:          5 * time.Minute,
 	}
 
-	mgr, err := pool.New(cfg)
+	mgr, err := pool.New(withTestDeps(t, cfg))
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -122,7 +157,7 @@ func shutdown(t *testing.T) {
 			Log: log,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -142,7 +177,7 @@ func shutdown(t *testing.T) {
 			TTL:          5 * time.Minute,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -170,7 +205,7 @@ func shutdown(t *testing.T) {
 			TTL:          5 * time.Minute,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -199,7 +234,7 @@ func shutdown(t *testing.T) {
 			TTL:          5 * time.Minute,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -226,7 +261,7 @@ func shutdown(t *testing.T) {
 			TTL:          5 * time.Minute,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -274,7 +309,7 @@ func eviction(t *testing.T) {
 			TTL:          500 * time.Millisecond,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -307,7 +342,7 @@ func eviction(t *testing.T) {
 			TTL:          5 * time.Minute,
 		}
 
-		mgr, err := pool.New(cfg)
+		mgr, err := pool.New(withTestDeps(t, cfg))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -358,6 +393,15 @@ func initKronk(t *testing.T) model.Logger {
 	if err := kronk.Init(); err != nil {
 		t.Fatalf("installation invalid: %s", err)
 	}
+
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatalf("models.New: %v", err)
+	}
+	if err := mdls.BuildIndex(kronk.FmtLogger, false); err != nil {
+		t.Fatalf("models.BuildIndex: %v", err)
+	}
+	testModels = mdls
 
 	var b bytes.Buffer
 	log := newTestLogger(&b)

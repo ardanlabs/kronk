@@ -1,13 +1,12 @@
-// Package poolloader provides the whisper-backed loader.Loader
-// implementation that plugs the bucky / whisper.cpp runtime into the
-// generic pool core.
-//
-// It owns the model.bin path resolution against the whisper catalog
-// and the construction of a *bucky.Bucky handle. The pool core
-// invokes it for every load/unload/display operation, leaving the
-// cache, eviction, and budget logic entirely backend-agnostic in
-// sdk/pool/internal/core.
-package poolloader
+// This file provides the whisper-backed loader.Loader implementation
+// that plugs the bucky / whisper.cpp runtime into the generic pool
+// core. It owns the model.bin path resolution against the whisper
+// catalog and the construction of a *bucky.Bucky handle. The pool
+// core invokes it for every load/unload/display operation, leaving
+// the cache, eviction, and budget logic entirely backend-agnostic in
+// sdk/pool/core.
+
+package pool
 
 import (
 	"context"
@@ -16,8 +15,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
-	"github.com/ardanlabs/kronk/sdk/pool/loader"
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 )
 
@@ -36,8 +35,8 @@ type Whisper struct {
 	resman *resman.Manager
 }
 
-// New constructs a whisper loader.
-func New(log applog.Logger, mdls *models.Models, rm *resman.Manager) *Whisper {
+// newWhisper constructs a whisper loader.
+func newWhisper(log applog.Logger, mdls *models.Models, rm *resman.Manager) *Whisper {
 	w := Whisper{
 		log:    log,
 		models: mdls,

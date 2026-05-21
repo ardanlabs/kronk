@@ -1,4 +1,4 @@
-package core
+package engine
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
-	"github.com/ardanlabs/kronk/sdk/pool/loader"
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 )
 
 // Acquire returns the cached handle for req.Key, loading it if
@@ -19,7 +19,7 @@ import (
 // "error" metrics labels matching the prior pool behavior. Callers
 // (Pool wrappers) typically log additional backend-specific fields
 // after Acquire returns.
-func (c *Core[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error) {
+func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error) {
 	var zero H
 	start := time.Now()
 
@@ -129,7 +129,7 @@ func (c *Core[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 // On success it returns the ticket and the resolved plan. On failure
 // it returns ErrServerBusy if no idle victims remain, or a wrapped
 // error from the resource manager / context.
-func (c *Core[H]) reserveWithEviction(ctx context.Context, newKey string, req resman.PlanRequest) (resman.Ticket, resman.LoadPlan, error) {
+func (c *Pool[H]) reserveWithEviction(ctx context.Context, newKey string, req resman.PlanRequest) (resman.Ticket, resman.LoadPlan, error) {
 	const maxAttempts = 64
 
 	c.log(ctx, "reserve",
@@ -246,7 +246,7 @@ func (c *Core[H]) reserveWithEviction(ctx context.Context, newKey string, req re
 // it asks for more bytes than the relevant budget would hold even if
 // every other reservation were released. The core must refuse to evict
 // in that case; otherwise it would gut the cache for nothing.
-func (c *Core[H]) checkRequestFitsBudget(newKey string, req resman.PlanRequest) error {
+func (c *Pool[H]) checkRequestFitsBudget(newKey string, req resman.PlanRequest) error {
 	usage := c.resman.Usage()
 
 	if req.RAMBytes > 0 && usage.RAMBudget > 0 && req.RAMBytes > usage.RAMBudget {

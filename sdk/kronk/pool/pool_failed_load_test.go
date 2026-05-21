@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/pool"
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 )
 
 // Test_FailedLoadReleasesReservation verifies that when kronk.NewWithContext
@@ -44,7 +44,7 @@ func Test_FailedLoadReleasesReservation(t *testing.T) {
 		TTL:          5 * time.Minute,
 	}
 
-	mgr, err := pool.New(cfg)
+	mgr, err := pool.New(withTestDeps(t, cfg))
 	if err != nil {
 		t.Fatalf("pool.New: %v", err)
 	}

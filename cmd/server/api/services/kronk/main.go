@@ -25,6 +25,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/pool"
@@ -306,11 +307,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Bucky (whisper) Libs + Models
 	//
-	// The server does not host the whisper runtime yet; these handles
-	// exist purely so the BUI / clients can manage whisper.cpp library
-	// installs and downloaded whisper models through the /v1/bucky/*
-	// endpoints. bucky.Init is therefore not called here — it only runs
-	// when something actually loads a whisper model.
+	// The server exposes both the /v1/bucky/* admin endpoints (library
+	// installs + downloaded whisper model management) and the
+	// /v1/audio/transcriptions inference endpoint. bucky.Init wires up
+	// the whisper.cpp shared library so the bucky pool can load
+	// models on demand; failure is non-fatal so the admin endpoints
+	// still work when the runtime library has not been downloaded yet.
 
 	buckyLibs, err := buckylibs.New(
 		buckylibs.WithBasePath(cfg.BasePath),
@@ -350,28 +352,39 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}
 
+	if err := bucky.Init(bucky.WithInitLibPath(buckyLibs.LibsPath())); err != nil {
+		log.Info(ctx, "startup", "WARNING", "bucky init failed, running in degraded mode (use BUI to download whisper libraries)", "ERROR", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// Pool
+	//
+	// One call to pool.New constructs the shared resource manager and
+	// every enabled backend pool (kronk + bucky). The resman is
+	// shared so VRAM/RAM budgeting is unified across backends.
+
 	p, err := pool.New(pool.Config{
 		Log:             log.Info,
-		BasePath:        cfg.BasePath,
+		KronkModels:     models,
+		BuckyModels:     buckyModels,
 		ModelConfigFile: modelConfigFile,
 		BudgetPercent:   cfg.Pool.BudgetPercent,
 		ModelsInPool:    cfg.Pool.ModelsInPool,
 		TTL:             cfg.Pool.TTL,
 		InsecureLogging: cfg.InsecureLogging,
 	})
-
 	if err != nil {
-		return fmt.Errorf("initializing kronk manager: %w", err)
+		return fmt.Errorf("initializing pool: %w", err)
 	}
 
 	defer func() {
-		log.Info(ctx, "shutdown", "status", "shutting down kronk")
+		log.Info(ctx, "shutdown", "status", "shutting down pool")
 
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
 		defer cancel()
 
 		if err := p.Shutdown(ctx); err != nil {
-			log.Error(ctx, "kronk manager", "ERROR", err)
+			log.Error(ctx, "pool", "ERROR", err)
 		}
 	}()
 

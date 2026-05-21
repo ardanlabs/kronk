@@ -57,7 +57,7 @@ func Run() error {
 	packages := make(map[string]string)
 	packages["kronk"] = "github.com/ardanlabs/kronk/sdk/kronk"
 	packages["model"] = "github.com/ardanlabs/kronk/sdk/kronk/model"
-	packages["pool"] = "github.com/ardanlabs/kronk/sdk/pool"
+	packages["pool"] = "github.com/ardanlabs/kronk/sdk/kronk/pool"
 
 	outputDir := "cmd/server/api/frontends/bui/src/components"
 

@@ -51,7 +51,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	// Add extension models from the model config that aren't already present.
 	// Extension models use "/" in their ID (e.g., "model/FMC") and inherit
 	// from a base model.
-	modelConfig := a.pool.ModelConfig()
+	modelConfig := a.pool.Kronk.ModelConfig()
 	for modelID := range modelConfig {
 		if _, exists := existing[modelID]; exists {
 			continue
@@ -108,7 +108,7 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) resolvedModelConfig(modelID string) models.ModelConfig {
 	cfg := a.models.AnalysisDefaults(modelID)
 
-	if override, ok := a.pool.ModelConfig()[modelID]; ok {
+	if override, ok := a.pool.Kronk.ModelConfig()[modelID]; ok {
 		models.MergeModelConfig(&cfg, override)
 	}
 
@@ -373,7 +373,7 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
-	models, err := a.pool.ModelStatus()
+	models, err := a.pool.Kronk.ModelStatus()
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
@@ -384,7 +384,7 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) poolBudget(ctx context.Context, r *http.Request) web.Encoder {
-	rm := a.pool.ResourceManager()
+	rm := a.pool.Resman
 	if rm == nil {
 		return errs.Errorf(errs.Internal, "resource manager not available")
 	}
@@ -411,7 +411,7 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	a.log.Info(ctx, "tool-unload", "modelID", req.ID)
 
-	krn, exists := a.pool.GetExisting(req.ID)
+	krn, exists := a.pool.Kronk.GetExisting(req.ID)
 	if !exists {
 		return errs.Errorf(errs.NotFound, "model %q is not loaded", req.ID)
 	}
@@ -425,7 +425,7 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 	// /pool/budget refresh races the async unload and the user sees
 	// stale "Used" / "Free in Budget" numbers until they manually hit
 	// the Refresh button.
-	if err := a.pool.InvalidateSync(ctx, req.ID); err != nil {
+	if err := a.pool.Kronk.InvalidateSync(ctx, req.ID); err != nil {
 		return errs.Errorf(errs.Internal, "unload: %s", err)
 	}
 

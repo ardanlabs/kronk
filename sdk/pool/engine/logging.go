@@ -1,17 +1,17 @@
-package core
+package engine
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 )
 
 // LogResmanInit emits a one-time summary of the resource manager's
 // configuration and detected hardware. Useful for confirming the pool
 // is reasoning about the right machine at startup.
-func (c *Core[H]) LogResmanInit(ctx context.Context) {
+func (c *Pool[H]) LogResmanInit(ctx context.Context) {
 	u := c.resman.Usage()
 
 	args := []any{
@@ -37,7 +37,7 @@ func (c *Core[H]) LogResmanInit(ctx context.Context) {
 // LogResmanUsage emits the manager's current per-device and RAM
 // accounting. Called at key transitions (after reserve, after release,
 // on eviction) so logs correlate with the budget at that moment.
-func (c *Core[H]) LogResmanUsage(ctx context.Context, op string, extra ...any) {
+func (c *Pool[H]) LogResmanUsage(ctx context.Context, op string, extra ...any) {
 	u := c.resman.Usage()
 
 	args := make([]any, 0, 6+len(u.Devices)*2+len(extra))
@@ -106,7 +106,7 @@ func HumanBytes(n int64) string {
 // snapshot. Cheap (one Usage() call + a few Set() operations) and
 // called after every Reserve/Release event so dashboards see fresh
 // data without a separate scraper goroutine.
-func (c *Core[H]) PublishMetrics() {
+func (c *Pool[H]) PublishMetrics() {
 	u := c.resman.Usage()
 
 	pu := metrics.ResmanUsage{

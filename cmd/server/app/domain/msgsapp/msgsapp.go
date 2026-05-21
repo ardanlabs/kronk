@@ -42,7 +42,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "missing max_tokens field")
 	}
 
-	krn, err := a.pool.AquireModel(ctx, req.Model)
+	krn, err := a.pool.Kronk.AquireModel(ctx, req.Model)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}

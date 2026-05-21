@@ -1,4 +1,4 @@
-package core
+package engine
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/maypok86/otter/v2"
 )
 
@@ -85,7 +85,7 @@ func selectEvictionVictim(reason string, req resman.PlanRequest, idleColdestFirs
 //
 // In both cases the choice respects: never evict newKey itself, and
 // never evict an entry with active streams.
-func (c *Core[H]) evictOneIdle(ctx context.Context, newKey, reason string, req resman.PlanRequest) error {
+func (c *Pool[H]) evictOneIdle(ctx context.Context, newKey, reason string, req resman.PlanRequest) error {
 	const pollInterval = 25 * time.Millisecond
 	const maxWait = 60 * time.Second
 
@@ -161,7 +161,7 @@ func (c *Core[H]) evictOneIdle(ctx context.Context, newKey, reason string, req r
 // from the cache (TTL expiry, capacity overflow, explicit
 // invalidation, or replacement). It unloads the handle, releases the
 // reservation, and decrements the counter.
-func (c *Core[H]) eviction(event otter.DeletionEvent[string, H]) {
+func (c *Pool[H]) eviction(event otter.DeletionEvent[string, H]) {
 	const unloadTimeout = 5 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), unloadTimeout)
 	defer cancel()

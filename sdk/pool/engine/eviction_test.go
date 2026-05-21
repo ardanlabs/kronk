@@ -1,9 +1,9 @@
-package core
+package engine
 
 import (
 	"testing"
 
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 )
 
 const GiB int64 = 1 << 30

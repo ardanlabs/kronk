@@ -2,6 +2,7 @@
 package build
 
 import (
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/chatapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/checkapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/downapp"
@@ -48,6 +49,12 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	embedapp.Routes(app, embedapp.Config{
+		Log:        cfg.Log,
+		AuthClient: cfg.AuthClient,
+		Pool:       cfg.Pool,
+	})
+
+	audioapp.Routes(app, audioapp.Config{
 		Log:        cfg.Log,
 		AuthClient: cfg.AuthClient,
 		Pool:       cfg.Pool,

@@ -155,6 +155,13 @@ curl-kronk-rerank:
 		"return_documents": true \
     }'
 
+curl-kronk-transcribe:
+	curl -i -X POST http://localhost:11435/v1/audio/transcriptions \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+	 -F file=@examples/samples/jfk.wav \
+	 -F model=tiny.en \
+	 -F response_format=verbose_json
+
 curl-kronk-responses:
 	curl -i -X POST http://localhost:11435/v1/responses \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \

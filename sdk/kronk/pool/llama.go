@@ -1,12 +1,12 @@
-// Package poolloader provides the llama-backed loader.Loader
-// implementation that plugs the llama runtime (sdk/kronk + yzma) into
-// the generic pool core.
-//
-// It owns the GGUF-driven memory prediction, model.Config resolution,
-// and *kronk.Kronk construction. The pool core invokes it for every
-// load/unload/display operation, leaving the cache, eviction, and
-// budget logic entirely backend-agnostic in sdk/pool/internal/core.
-package poolloader
+// This file provides the llama-backed loader.Loader implementation
+// that plugs the llama runtime (sdk/kronk + yzma) into the generic
+// pool core. It owns the GGUF-driven memory prediction, model.Config
+// resolution, and *kronk.Kronk construction. The pool core invokes
+// it for every load/unload/display operation, leaving the cache,
+// eviction, and budget logic entirely backend-agnostic in
+// sdk/pool/core.
+
+package pool
 
 import (
 	"context"
@@ -18,8 +18,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
-	"github.com/ardanlabs/kronk/sdk/pool/loader"
-	"github.com/ardanlabs/kronk/sdk/pool/resman"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -34,10 +34,10 @@ type Llama struct {
 	insecureLogging bool
 }
 
-// New constructs a llama loader.
+// newLlama constructs a llama loader.
 //
 // modelConfig may be nil; an empty map will be used.
-func New(log applog.Logger, mdls *models.Models, modelConfig map[string]models.ModelConfig, rm *resman.Manager, insecureLogging bool) *Llama {
+func newLlama(log applog.Logger, mdls *models.Models, modelConfig map[string]models.ModelConfig, rm *resman.Manager, insecureLogging bool) *Llama {
 	if modelConfig == nil {
 		modelConfig = map[string]models.ModelConfig{}
 	}
