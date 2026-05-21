@@ -1707,7 +1707,31 @@ unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
   swa-full: true
   incremental-cache: true`}</code></pre>
           <h3 id="312-speculative-decoding">3.12 Speculative Decoding</h3>
-          <p>Speculative decoding uses a small, fast "draft" model to predict candidate tokens, then verifies them against the full "target" model in a single forward pass. When the draft model's predictions match the target's, multiple tokens are accepted per decode step — improving throughput without changing output quality. The output distribution is mathematically guaranteed to match the target model exactly, regardless of draft quality (Leviathan et al., 2023).</p>
+          <p>Speculative decoding uses a small, fast source of draft tokens to predict candidates ahead of the target model, then verifies them in a single target forward pass. When the drafts match what the target would have produced, multiple tokens are accepted per decode step — improving throughput without changing output quality.</p>
+          <p>Kronk supports two interchangeable sources of draft tokens:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Drafter</th>
+                <th>How enabled</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Separate-GGUF</strong></td>
+                <td>A second, smaller GGUF you download and configure</td>
+                <td>Explicit <code>draft-model:</code> block in <code>model_config.yaml</code> (or <code>model.Config.DraftModel</code> from the SDK)</td>
+              </tr>
+              <tr>
+                <td><strong>MTP</strong></td>
+                <td>A Multi-Token-Prediction head baked into the target GGUF</td>
+                <td>Auto-enabled when the target GGUF ships an MTP head; no extra configuration</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>A model can have at most one drafter active. If you set <code>draft-model:</code> explicitly, that wins — the MTP head, even when present, is ignored on that load.</p>
+          <p>For the user-facing operation guide (when to choose each mode, how to read acceptance metrics, observability), see <a href="#chapter-6-speculative-decoding--mtp">Chapter 6: Speculative Decoding & MTP</a>.</p>
           <h4 id="how-it-works">How It Works</h4>
           <table className="flags-table">
             <thead>
@@ -1719,7 +1743,7 @@ unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
             <tbody>
               <tr>
                 <td>1. Draft</td>
-                <td>The draft model generates N candidate tokens (default 5)</td>
+                <td>The drafter generates N candidate tokens (default 5 for separate-GGUF, 4 for MTP)</td>
               </tr>
               <tr>
                 <td>2. Batch</td>
@@ -1739,7 +1763,7 @@ unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
               </tr>
             </tbody>
           </table>
-          <p>The speedup depends on the draft model's acceptance rate. Higher acceptance means more tokens per forward pass.</p>
+          <p>The speedup depends on the drafter's acceptance rate. Higher acceptance means more tokens per forward pass.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1762,15 +1786,15 @@ unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
               </tr>
             </tbody>
           </table>
-          <h4 id="requirements">Requirements</h4>
+          <h4 id="separate-gguf-draft">Separate-GGUF Draft</h4>
+          <p>Requirements:</p>
           <ul>
             <li>Draft and target models must share the <strong>same vocabulary</strong> (same tokenizer)</li>
             <li><code>n_seq_max</code> must be <code>1</code> (single-slot mode only)</li>
             <li>The draft model must be downloaded and available locally</li>
             <li>Only text generation is supported (not vision/audio)</li>
           </ul>
-          <h4 id="configuration">Configuration</h4>
-          <p>Speculative decoding is configured via the <code>draft-model</code> block under a target model entry in <code>model_config.yaml</code> (or via <code>model.Config.DraftModel</code> when you embed the SDK directly):</p>
+          <p>Configured via the <code>draft-model</code> block under a target model entry in <code>model_config.yaml</code> (or via <code>model.Config.DraftModel</code> when you embed the SDK directly):</p>
           <pre className="code-block"><code className="language-yaml">{`# In ~/.kronk/model_config.yaml
 Qwen/Qwen3-8B-Q8_0:
   context-window: 32768
@@ -1857,6 +1881,27 @@ Qwen/Qwen3-8B-Q8_0:
           <h4 id="performance-characteristics">Performance Characteristics</h4>
           <p>Speculative decoding helps most when the target model is large relative to the draft. For dense models where the target is already fast (e.g., 8B at 33+ TPS), the overhead of running a draft model may not provide a net speedup. MoE models with large parameter counts but sparse activation (e.g., 30B-A3B) are better candidates, but only when using a high-quality draft.</p>
           <p>The <code>ndraft</code> parameter controls how many candidates to generate. Higher values increase the potential speedup but also increase wasted work when predictions are rejected. The default of 5 is a good starting point; tune based on your observed acceptance rates.</p>
+          <h4 id="mtp-multi-token-prediction">MTP (Multi-Token Prediction)</h4>
+          <p>Some modern target GGUFs (Qwen3.5 / Qwen3.6 architectures, and other architectures that adopt the same metadata key) ship a Multi-Token Prediction head baked into the same file as the target weights. The head is not a standalone language model — it is a few extra layers grafted onto the target that predict the next N tokens of the target's continuation. Because the head shares the target's weights and tokenizer, there is no separate file to download and no vocabulary mismatch to worry about.</p>
+          <p>MTP is <strong>auto-enabled</strong> — there is no MTP block in <code>model_config.yaml</code>. Kronk turns it on when:</p>
+          <ul>
+            <li>The target GGUF metadata contains <code>nextn_predict_layers &gt; 0</code>.</li>
+            <li>The loaded llama.cpp library is recent enough to expose the pre-norm hidden-state API (the libraries Kronk ships with are current; this matters only if you pin an older library).</li>
+            <li>You have <strong>not</strong> set <code>draft-model:</code> on the same entry (an explicit separate-GGUF draft always wins).</li>
+          </ul>
+          <p>Both single-slot (<code>nseq-max: 1</code>) and multi-slot (<code>nseq-max: 2+</code>) are supported.</p>
+          <p>Minimal <code>model_config.yaml</code> snippet for a Qwen3.6 MTP target:</p>
+          <pre className="code-block"><code className="language-yaml">{`mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: f16
+  cache-type-v: f16
+  nseq-max: 2
+  incremental-cache: true`}</code></pre>
+          <p>On a successful load the server logs a line like:</p>
+          <pre className="code-block"><code>{`draft-model-mtp status=loaded source=auto-detected nDraft=4 nextn-layers=1 nEmbd=2048 nCtx=8192`}</code></pre>
+          <p>The default <code>nDraft</code> for MTP is <code>4</code>, which is conservative because MTP heads typically have high acceptance for the first 1–3 tokens and decay rapidly beyond that. See Chapter 6 for the full operation guide, including the adaptive throttle, observability events, and known limitations.</p>
           <h3 id="313-sampling-parameters">3.13 Sampling Parameters</h3>
           <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
           <p>For most models you will want to touch these basic sampling parameters. There are <a href="#chapter-10-request-parameters">many more</a> which will be presented later.</p>
@@ -2797,518 +2842,299 @@ Request 5 (text follow-up about the image):
           </ul>
           <hr />
           <h2 id="chapter-6-speculative-decoding-mtp">Chapter 6: Speculative Decoding &amp; MTP</h2>
-          <p>This chapter documents Kronk's speculative-decoding stack with a focus on the <strong>MTP (Multi-Token Prediction)</strong> drafter shipped in <a href="https://github.com/ardanlabs/kronk/pull/593">PR #593</a>. It assumes you have read the introductory speculative-decoding section in <a href="#312-speculative-decoding">Chapter 3 §3.12</a>, which covers the conventional separate-GGUF drafter and the Leviathan-style verify math at a user level. This chapter goes deeper into the engine internals and explains the auto-detected MTP path that the separate-GGUF discussion does not cover.</p>
-          <h3 id="61-overview-the-two-draft-modes">6.1 Overview &amp; The Two Draft Modes</h3>
-          <p>Kronk supports two interchangeable sources of draft tokens for speculative decoding. The drafter sits behind a single <code>*draftModel</code> type (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go">model.go</a>), selected once at model load by <code>selectAndLoadDraft</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go">draft_mtp.go</a>).</p>
+          <p>This chapter is the user-facing operation guide for speculative decoding in Kronk. It assumes you have read the introductory speculative-decoding section in <a href="#312-speculative-decoding">Chapter 3 §3.12</a>, which covers both draft modes at the configuration level and shows the <code>model_config.yaml</code> shapes. This chapter focuses on <strong>when to choose each mode</strong>, <strong>how to read the acceptance metrics</strong>, and <strong>what to look for in the logs</strong>. The engine internals (FFI plumbing, mirror step, three-pass dispatch, hybrid snapshot/restore) live in <a href="#1812-mtp-internals">Chapter 18 §18.12</a>.</p>
+          <h3 id="61-overview-—-the-two-draft-modes">6.1 Overview — The Two Draft Modes</h3>
+          <p>Kronk supports two interchangeable sources of draft tokens for speculative decoding. The drafter is selected once at model load and behaves the same way to a caller:</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Mode</th>
                 <th>When used</th>
-                <th>Drafter GGUF</th>
-                <th>Driver</th>
+                <th>Drafter origin</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td><strong>Separate-GGUF</strong></td>
-                <td><code>cfg.DraftModel != nil</code> (explicit user config — <code>draft-model:</code> block in YAML or <code>WithDraftModel</code>).</td>
-                <td>A second, smaller GGUF loaded into its own <code>llama_model</code>.</td>
-                <td><code>llama.DraftGenerate</code> token-only loop in <code>generateDraftTokens</code>.</td>
+                <td>You explicitly configure a <code>draft-model:</code> block on the target entry.</td>
+                <td>A second, smaller GGUF you download separately.</td>
               </tr>
               <tr>
                 <td><strong>MTP</strong></td>
-                <td>Auto-enabled when the target GGUF carries a Multi-Token-Prediction head (<code>nextn_predict_layers &gt; 0</code>) and a few sanity gates pass.</td>
-                <td>None — the MTP head lives inside the TARGET GGUF; the draft context <strong>shares the target's &lt;code&gt;llama_model&lt;/code&gt;</strong>.</td>
-                <td>Bespoke <code>generateDraftTokensMTP</code> AR loop that feeds the head <code>(token_id, pre_norm_hidden_state)</code> per step.</td>
+                <td>Auto-enabled when the target GGUF ships a Multi-Token-Prediction head and the platform supports it.</td>
+                <td>The MTP head shipped inside the target GGUF — no extra download.</td>
               </tr>
             </tbody>
           </table>
-          <p>A model can have at most one drafter active. If the user configures <code>DraftModel</code> explicitly, that wins; the MTP head — even when present — is ignored on that load.</p>
-          <h3 id="62-separate-gguf-draft-recap">6.2 Separate-GGUF Draft (Recap)</h3>
-          <p>Configure via <code>draft-model:</code> in <code>model_config.yaml</code> (Chapter 3 §3.12 covers the YAML shape and field list).</p>
-          <p>Requirements:</p>
+          <p>A model can have at most one drafter active. If you configure <code>draft-model:</code> explicitly, that wins — the MTP head, even when present, is ignored on that load. If neither is available, the target serves traffic without speculation; nothing else changes.</p>
+          <p>Behavior an operator can rely on for both modes:</p>
           <ul>
-            <li>Draft and target share the same tokenizer (vocabulary).</li>
-            <li><code>nseq-max: 1</code> (single-slot) on the target.</li>
-            <li>Draft GGUF is downloaded locally.</li>
+            <li>The user-facing API (<code>/v1/chat/completions</code>, the Responses API, the SDK) does not change. Speculation is invisible to the caller.</li>
+            <li>The same <code>draft_tokens</code>, <code>draft_accepted_tokens</code>, and <code>acceptance_rate</code> fields appear on every final log line and in the usage payload once a drafter is configured, even when speculation produces zero tokens in a round.</li>
+            <li>A failed drafter never blocks a request. If draft generation fails mid-stream, the slot continues target-only and the request still completes correctly.</li>
           </ul>
-          <p>Runtime characteristics:</p>
-          <ul>
-            <li>Loaded by <code>loadDraftModel</code> in <code>batch_speculative.go</code>.</li>
-            <li>Tokens drafted by <code>generateDraftTokens</code> which delegates to <code>llama.DraftGenerate</code> — a tight FFI loop that does decode → sample → capture in one C call per step.</li>
-            <li>Verified by <code>verifySpeculativeTokens</code> using either greedy argmax (temperature = 0) or the sparse-candidate probabilistic verify (temperature &gt; 0); see <code>speculative_sparse.go</code>.</li>
-            <li>KV rollback on rejection is a single <code>MemorySeqRm</code> on the target.</li>
-          </ul>
-          <p>The remainder of the chapter is about the MTP path.</p>
-          <h3 id="63-mtp-drafts-multi-token-prediction">6.3 MTP Drafts (Multi-Token Prediction)</h3>
-          <p>MTP heads ship inside certain modern GGUFs (Qwen3.5 / Qwen3.6 architecture <code>qwen35</code>, <code>qwen35moe</code>, and future architectures that populate the same metadata key). The head is not a standalone language model — it is a few extra layers grafted onto the target that predict the <strong>next N tokens</strong> of the target's continuation in a single forward pass, given:</p>
-          <ol>
-            <li>The token id at position <code>t</code>.</li>
-            <li>The target's <strong>pre-norm hidden state</strong> at position <code>t</code> — i.e. the residual-stream activation immediately before the final layer norm.</li>
-          </ol>
-          <p>Because the head shares the target's weights and tokenizer, there is no extra file to download and no vocabulary mismatch to worry about. The trade-off is more invasive plumbing: every target <code>llama_decode</code> must <strong>mirror</strong> its pre-norm hidden buffer into the draft context, and the draft context's auto-regressive loop must feed back both the sampled token and the previously emitted hidden state on every step.</p>
-          <p>Reference: <code>common/speculative.cpp common_speculative_impl_draft_mtp</code> in upstream llama.cpp. Kronk's implementation lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go"><code>draft_mtp.go</code></a> (load), <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>batch_mtp.go</code></a> (mirror + AR loop), and integration changes in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>batch_engine.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>batch_slot.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>batch_slot_start.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go"><code>batch_prefill_text.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go"><code>batch_finish.go</code></a>, and the FFI bindings in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a>.</p>
-          <h3 id="64-auto-detection-`selectandloaddraft`">6.4 Auto-Detection: `selectAndLoadDraft`</h3>
-          <p><code>selectAndLoadDraft</code> runs once during model initialization (<code>initGenerationRuntime</code> in <code>model.go</code>) and decides which drafter, if any, to load. The decision tree:</p>
-          <pre className="code-block"><code className="language-diagram">{`                       ╭───────────────────────╮
-                       │ cfg.DraftModel != nil │──── yes ──▶  loadDraftModel  (separate-GGUF)
-                       ╰──────────┬────────────╯
-                                  │ no
-                                  ▼
-                       ╭───────────────────────╮
-                       │ mtpNextNLayers(target)│──── 0 ──▶  return (nil, nil) — no drafter
-                       ╰──────────┬────────────╯
-                                  │ > 0
-                                  ▼
-                       ╭───────────────────────╮
-                       │     MTPAvailable()    │──── false ──▶ skip (log reason: old llama.cpp)
-                       ╰──────────┬────────────╯
-                                  │ true
-                                  ▼
-                       loadDraftModelMTP  (auto-enabled; inherits NSeqMax)`}</code></pre>
-          <p><code>mtpNextNLayers</code> looks up the GGUF metadata key <code>&lt;arch&gt;.nextn_predict_layers</code> (a uint32). Kronk matches by the unique substring <code>nextn_predict_layers</code> so the same lookup works for every architecture variant without first reading <code>general.architecture</code>.</p>
-          <p><code>MTPAvailable()</code> probes whether the loaded llama.cpp library exports the three pre-norm symbols listed in §6.6. Older builds (pre <code>src/llama-ext.h</code>) won't have them — Kronk logs and starts up without MTP rather than crashing on a missing symbol mid-request.</p>
-          <p>The historical <code>NSeqMax == 1</code> gate (present through earlier revisions of PR #593) has been removed: the draft context inherits <code>NSeqMax</code> from the target and hosts as many sequences as the target does. The three-pass post-decode in <code>processBatch</code> (§6.8) makes the spec verify path multi-slot safe.</p>
-          <h3 id="65-mtp-requirements-skip-reasons">6.5 MTP Requirements &amp; Skip Reasons</h3>
+          <h3 id="62-when-to-use-a-separate-draft-model">6.2 When to Use a Separate Draft Model</h3>
+          <p>A separate draft model is the classic speculative-decoding setup: a small, fast sibling of the target that proposes the next few tokens, and the target verifies them in a single forward pass.</p>
+          <p><strong>The conceptual model.</strong> Think of the target as the authoritative writer and the draft as a fast typist who tries to anticipate the next few words. When the typist guesses right, the target accepts those words "for free" — they cost only one verification pass instead of one forward pass per token. When the typist guesses wrong, the target corrects the mistake and the wasted draft work is the price of the attempt. Net throughput depends entirely on how often the typist is right.</p>
+          <h4 id="picking-a-draft-model">Picking a draft model</h4>
+          <p>The draft must share the target's tokenizer (same vocabulary). Within that constraint, the best practical choice is almost always <strong>a quantized version of the same architecture</strong> rather than a smaller dense model from a different family:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Requirement</th>
+                <th>Target Model</th>
+                <th>Recommended Draft</th>
                 <th>Why</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Target GGUF has <code>nextn_predict_layers &gt; 0</code></td>
-                <td>No MTP head exists otherwise; nothing to load.</td>
+                <td>Qwen3-8B-Q8_0</td>
+                <td>Qwen3-0.6B-Q8_0</td>
+                <td>Same Qwen3 family; same tokenizer; small enough to be cheap.</td>
               </tr>
               <tr>
-                <td>llama.cpp build exports pre-norm symbols</td>
-                <td>Kronk reads hidden states via <code>llama_get_embeddings_pre_norm&#123;,_ith&#125;</code> and toggles them on via <code>llama_set_embeddings_pre_norm</code>. See §6.6.</td>
+                <td>Qwen3.5-35B-A3B-Q8_K_XL</td>
+                <td>Qwen3.5-35B-A3B-UD-Q2_K_XL</td>
+                <td>Same MoE architecture at lower quantization — much higher acceptance than a smaller dense model.</td>
               </tr>
             </tbody>
           </table>
-          <p>When any of those fail, <code>selectAndLoadDraft</code> logs the specific reason and returns <code>(nil, nil)</code>. The target still loads and serves traffic — just without speculation.</p>
-          <p><strong>Multi-slot is supported.</strong> Earlier revisions of PR #593 gated MTP on <code>nseq-max == 1</code> because mixing one slot's MTP spec tokens with another slot's fresh prefill in the same shared batch tripped a <code>GGML_ASSERT(logits != nullptr)</code> in <code>llama_sampler_sample</code>. The fix landed in two pieces: (1) the post-decode dispatch in <code>processBatch</code> is now three-pass (non-spec → spec read → spec mutate) so logits are read by every slot before any mutating restore can wipe the buffer, and (2) <code>verifySpeculativeTokens</code> was split into <code>verifySpeculativeTokens</code> (Phase A — read-only on target logits) and <code>finalizeSpeculativeTokens</code> (Phase B — rollback, hybrid restore, draft KV rollback, MTP mirror, bonus-token streaming). See §6.8.</p>
-          <h3 id="66-pre-norm-hidden-state-plumbing">6.6 Pre-Norm Hidden-State Plumbing</h3>
-          <p>The MTP path needs three llama.cpp C symbols that yzma upstream does not yet bind. Kronk adds them locally in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a> via the <code>jupiterrider/ffi</code> package:</p>
+          <p>The second pattern (same architecture, lower quant) is usually the winner on MoE targets because the draft sees the same weight structure the target uses to make decisions, just rounded down. A tiny dense model from another family will tokenize the same words but reason very differently, and acceptance suffers accordingly.</p>
+          <h4 id="when-a-separate-draft-is-the-right-choice">When a separate draft is the right choice</h4>
+          <ul>
+            <li>The target ships <strong>no MTP head</strong>, so MTP is not an option.</li>
+            <li>You want <strong>predictable behavior across architectures</strong> — a separate draft works the same way regardless of what the target is.</li>
+            <li>You have a <strong>known-good draft</strong> you trust more than an auto-detected head — for example, a quantized sibling you have already benchmarked on your workload.</li>
+            <li>You need <strong>single-slot semantics</strong> (<code>nseq-max: 1</code>) anyway. Separate-GGUF drafts only work at single-slot today, so this constraint is a no-op for you.</li>
+            <li>You are running at <strong>temperature near zero</strong> on a large MoE target. This is the sweet spot for separate-GGUF speculation: low temperature drives acceptance up, and the MoE target's sparse activation makes verification cheap.</li>
+          </ul>
+          <h4 id="when-a-separate-draft-is-the-wrong-choice">When a separate draft is the wrong choice</h4>
+          <ul>
+            <li>The target is <strong>small and already fast</strong> (e.g. an 8B dense model at 30+ TPS on your hardware). Drafting overhead can erase the win or go net negative.</li>
+            <li>Your workload is <strong>highly creative or reasoning-heavy</strong> at high temperature. Acceptance collapses and the adaptive throttle (§6.4) will gate speculation off anyway — you are paying the draft load cost for nothing.</li>
+            <li>You cannot find a draft that shares the target's tokenizer. There is no workaround; speculation requires vocabulary parity.</li>
+            <li>You need <strong>multi-slot batching</strong> on this entry. Use MTP, or run without speculation.</li>
+          </ul>
+          <h4 id="reading-the-acceptance-signal">Reading the acceptance signal</h4>
+          <p>Speculative decoding is a throughput bet, and the metric that matters is the running <strong>acceptance rate</strong>. It shows up in every final response log line as <code>acceptance_rate=</code> along with <code>draft_tokens=</code> and <code>draft_accepted_tokens=</code>. Rules of thumb:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Symbol</th>
-                <th>Go wrapper</th>
-                <th>Purpose</th>
+                <th>Acceptance</th>
+                <th>Interpretation</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><code>llama_set_embeddings_pre_norm</code></td>
-                <td><code>SetEmbeddingsPreNorm(ctx, value, masked)</code></td>
-                <td>Toggle pre-norm extraction on a context. <code>masked=false</code> = dense (all rows); <code>masked=true</code> = sparse (logit-flagged rows only).</td>
+                <td>&gt; 0.70</td>
+                <td>Strong win. Speculation is clearly paying off; the target is doing meaningfully fewer forward passes than tokens generated.</td>
               </tr>
               <tr>
-                <td><code>llama_get_embeddings_pre_norm</code></td>
-                <td><code>GetEmbeddingsPreNorm(ctx, nRows, nEmbd) []float32</code></td>
-                <td>Return the dense buffer produced by the most recent <code>llama_decode</code>. Used on the target.</td>
+                <td>0.50–0.70</td>
+                <td>Net positive on most workloads. Worth keeping enabled.</td>
               </tr>
               <tr>
-                <td><code>llama_get_embeddings_pre_norm_ith</code></td>
-                <td><code>GetEmbeddingsPreNormIth(ctx, i, nEmbd) []float32</code></td>
-                <td>Return a single row by output-table index. Used on the draft (masked) context.</td>
-              </tr>
-            </tbody>
-          </table>
-          <p>Two binding details worth highlighting:</p>
-          <ul>
-            <li><strong>Symbol probing is dual.</strong> Each prep tries the C-linkage name first and falls back to the Itanium C++ ABI mangled form (e.g. <code>_Z29llama_set_embeddings_pre_normP13llama_contextbb</code>) so kronk binds against llama.cpp builds compiled with or without <code>LLAMA_API</code> on these declarations.</li>
-            <li><strong>Best-effort init.</strong> <code>InitYzmaWorkarounds</code> never fails on a missing pre-norm symbol. The corresponding <code>ffi.Fun</code> stays zero-valued and <code>MTPAvailable()</code> returns false, gating §6.4.</li>
-          </ul>
-          <p>At load time <code>loadDraftModelMTP</code> sets:</p>
-          <ul>
-            <li><code>SetEmbeddingsPreNorm(targetCtx, true, false)</code> — dense, every row accessible by raw batch index. Required for the mirror step (§6.7), which reads arbitrary rows from each completed target batch.</li>
-            <li><code>SetEmbeddingsPreNorm(draftCtx, true, true)</code> — sparse, only logits-flagged rows stored. The draft only needs the single output row of each AR step.</li>
-          </ul>
-          <p>The flag is consumed at graph-build time, so it must be set <strong>before</strong> the first decode on either context.</p>
-          <h3 id="67-the-mirror-step-ar-draft-loop">6.7 The Mirror Step &amp; AR Draft Loop</h3>
-          <p>Two functions in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>batch_mtp.go</code></a> do the heavy lifting.</p>
-          <h4 id="mirror-`mirrortargetbatchtomtpdraft`">Mirror: `mirrorTargetBatchToMTPDraft`</h4>
-          <p>After every successful target <code>llama_decode</code> + <code>llama_synchronize</code>, the post-decode pass in <code>processBatch</code> calls the mirror to replay the slot's just-decoded range into the draft context with <code>batch.embd</code> populated from the target's pre-norm buffer.</p>
-          <p>Per-position alignment is <strong>shift-right-by-1</strong>, matching <code>common_speculative_impl_draft_mtp</code>:</p>
-          <pre className="code-block"><code>{`mirror[0]   : token = tgt[start+0],  embd = pendingH (slot's pre-batch h)
-mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
-          <p><code>pendingH</code> is a per-slot copy of the hidden row at the last committed target position. On the very first decode of a sequence, no <code>h</code> has been observed yet — that slot of the mirror batch is zeroed (the MTP head's first prediction at position 0 is on a BOS / instruction sentinel where exact <code>h</code> does not matter).</p>
-          <p>After the mirror succeeds, <code>pendingH</code> is updated to the last target-batch row so it's ready as the slot-0 input of the next mirror.</p>
-          <p>A few non-obvious correctness points enforced in the function:</p>
-          <ul>
-            <li><strong>Chunking by mirror capacity.</strong> The mirror batch is allocated at <code>NBatch</code> capacity. When <code>effectiveCount &gt; NBatch</code> the mirror is run in chunks, with <code>llama.Synchronize(draft)</code> <strong>inside the chunk loop</strong> before the next chunk overwrites <code>mirror.Embd</code>. Without the per-chunk sync, the next chunk's <code>copy()</code> into the Go-owned embd slice races the still-in-flight C read on async backends (Metal/CUDA) and corrupts the input.</li>
-            <li><strong>&lt;code&gt;effectiveCount&lt;/code&gt; is caller-provided.</strong> Prefill chunks and plain gen-token decodes mirror <code>targetBatchCount</code> positions; the spec path mirrors only <code>1 + accepted</code> rows so rejected draft tokens are never reflected into draft KV.</li>
-            <li><strong>&lt;code&gt;logits=true&lt;/code&gt; only on the last row.</strong> The mirror only needs the pre-norm row of the very last position (as the next <code>pendingH</code>), so only the last row is logits-flagged.</li>
-          </ul>
-          <h4 id="ar-draft-`generatedrafttokensmtp`">AR Draft: `generateDraftTokensMTP`</h4>
-          <p>The drafter runs an auto-regressive loop on the MTP context. Each iteration:</p>
-          <ol>
-            <li>Build a single-token batch with <code>(curToken, pos, seqIDs)</code> and copy <code>curEmbd</code> into the embd slot.</li>
-            <li><code>llama.Decode</code> + <code>llama.Synchronize</code> (async-backend safety again).</li>
-            <li><code>llama.SamplerSample(greedy, ctx, -1)</code> to pick the next draft token.</li>
-            <li><code>GetEmbeddingsPreNormIth(ctx, 0, nEmbd)</code> to read back the next hidden state.</li>
-            <li>EOG check; copy <code>nextEmbd</code> into <code>pendingH</code>; advance.</li>
-          </ol>
-          <p>The loop stops on <code>chooseNDraft(s, draft.nDraft)</code> rounds (see §6.10), or earlier on EOG or decode failure.</p>
-          <p><strong>Why MTP-only batches?</strong> <code>llama.BatchInit(N, embd, nSeqMax)</code> allocates <strong>either</strong> the token buffer <strong>or</strong> the embd buffer — never both — based on its <code>embd</code> arg. MTP needs both per position. Kronk works around this by calling <code>BatchInit(N, 0, 1)</code> to get a token-only batch (with <code>pos</code>, <code>seq_id</code>, and <code>logits</code> arrays sized to <code>N</code>) and then attaching a Go-allocated <code>[]float32</code> of size <code>N*nEmbd</code> as the embd buffer. The Go slice is pinned (<code>runtime.Pinner</code>) for the batch's lifetime and the <code>Batch.Embd</code> pointer is cleared <strong>before</strong> <code>BatchFree</code> so llama.cpp's unconditional <code>free(batch.embd)</code> doesn't <code>free()</code> a Go heap allocation.</p>
-          <p>These two MTP-only batches live on <code>draftModel</code>:</p>
-          <ul>
-            <li><code>draftBatchMTP</code> — capacity 1, used by <code>generateDraftTokensMTP</code> per step.</li>
-            <li><code>mirrorBatchMTP</code> — capacity <code>NBatch</code>, used by the mirror step.</li>
-          </ul>
-          <h3 id="68-verification-on-the-mtp-path">6.8 Verification on the MTP Path</h3>
-          <p><code>verifySpeculativeTokens</code> is shared between separate-GGUF and MTP, but the MTP path forces <strong>greedy verification</strong> unconditionally because the MTP head currently runs only greedy sampling (<code>SamplerInitGreedy</code>) and the AR loop does not capture sparse draft distributions. Running the probabilistic verify path without a draft distribution would fall through to <code>sampleFromProbs(target)</code> at every position and reject every draft token unconditionally.</p>
-          <p>To compensate, the greedy branch is taught — only on the MTP path (<code>mtpGreedy == true</code>) — to invoke the slot's <strong>full sampler</strong> at each position instead of taking the raw target argmax. That preserves the user's <code>temperature</code> / <code>top_k</code> / <code>top_p</code> shape on the emitted sequence. The mathematical guarantee of distribution-equivalent output (Leviathan et al., 2023) is lost on the MTP path — it is the standard approximation when the draft distribution is unavailable.</p>
-          <p><code>originalSampled</code> is also snapshotted before the verify loop, because <code>handleSampledToken</code> mutates <code>s.sampled</code> as each accepted draft token flows through the streaming pipeline. The hybrid re-decode path (§6.9) needs the <strong>original</strong> sampled token at the base position; using the mutated value would re-decode the wrong token and corrupt every subsequent round.</p>
-          <p>After verify, the MTP mirror runs again over <code>1 + accepted</code> rows to overwrite the AR-loop draft KV entries with target-derived hidden states. That update is what makes the next round's <code>pendingH</code> reflect reality.</p>
-          <p><code>rollbackDraft</code> for MTP is also different from the separate-GGUF path: it <code>MemorySeqRm</code>s the <strong>entire</strong> drafted range from the draft KV before the post-verify mirror runs. llama.cpp's transformer KV does not overwrite by <code>(seq, pos)</code> on re-decode — it appends another slot, leaving duplicate entries that corrupt subsequent attention. The mirror then writes the correct target-derived entries into clean slots.</p>
-          <h4 id="multi-slot-safety-three-pass-`processbatch`-+-phase-a-phase-b-split">Multi-slot safety: three-pass `processBatch` + Phase A / Phase B split</h4>
-          <p>When <code>nseq-max &gt; 1</code> and two or more spec slots verify in the same shared batch, the original monolithic <code>verifySpeculativeTokens</code> could corrupt the target context's logit buffer for one slot while a peer was still trying to read it. The hybrid <code>restoreTargetSpecSnapshot</code> (§6.9) re-decodes a small batch on the target context, and that re-decode <strong>replaces the per-context logit buffer with logits for only the re-decoded rows</strong> — every other slot's batch rows return <code>nullptr</code> from <code>llama_get_logits_ith</code>, crashing <code>llama_sampler_sample</code> (<code>GGML_ASSERT(logits != nullptr)</code> at <code>llama-sampler.cpp:850</code>).</p>
-          <p>The fix has two parts:</p>
-          <ol>
-            <li><strong>&lt;code&gt;verifySpeculativeTokens&lt;/code&gt; is split</strong> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go">batch_speculative.go</a>: verify loop (logit reads, accept / reject, per-accepted <code>handleSampledToken</code>), samples the bonus token, updates the acceptance EMA. Stashes <code>accepted</code>, <code>bonusToken</code>, and <code>originalSampled</code> on the slot via new <code>specPending*</code> fields and sets <code>specPendingFinalize = true</code>. Does NOT touch target KV, draft KV, <code>s.nPast</code>, or <code>s.iBatch</code>. <code>s.specDraftTokens</code> is deliberately retained for Phase B. rollback (hybrid restore or <code>MemorySeqRm</code>), draft KV rollback, MTP mirror, sets <code>s.nPast</code>, emits the throttled <code>verify-done</code> log, streams the bonus token, sets <code>s.iBatch = -1</code>, and clears the pending fields. Early-returns silently when <code>specPendingFinalize</code> is false (Phase A short-circuited on EOG).
-              <ul>
-                <li><strong>Phase A (&lt;code&gt;verifySpeculativeTokens&lt;/code&gt;) — read-only.</strong> Runs the</li>
-                <li><strong>Phase B (&lt;code&gt;finalizeSpeculativeTokens&lt;/code&gt;) — mutating.</strong> Runs the</li>
-              </ul>
-            </li>
-            <li><strong>&lt;code&gt;processBatch&lt;/code&gt; post-decode is three-pass</strong> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">batch_engine.go</a>:</li>
-          </ol>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Pass</th>
-                <th>Slots</th>
-                <th>Work</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>1</td>
-                <td>Non-spec (<code>s.specDraftTokens == nil</code>)</td>
-                <td>MTP mirror (if applicable) + <code>processSlotToken</code>. Target logit buffer is fully intact.</td>
+                <td>0.30–0.50</td>
+                <td>Marginal. The adaptive throttle (§6.4) will already be scaling <code>nDraft</code> down.</td>
               </tr>
               <tr>
-                <td>2A</td>
-                <td>Spec (<code>s.specDraftTokens != nil</code>)</td>
-                <td>Phase A — <code>verifySpeculativeTokens</code>. Pure reads on the target logit buffer, so all spec slots run safely back to back.</td>
-              </tr>
-              <tr>
-                <td>2B</td>
-                <td>Spec with <code>specPendingFinalize == true</code></td>
-                <td>Phase B — <code>finalizeSpeculativeTokens</code>. Hybrid restores can wipe the logit buffer here; by this point every other spec slot has already consumed its logits.</td>
+                <td>&lt; 0.30</td>
+                <td>Speculation is bypassed for that round. Check temperature, draft choice, and task type.</td>
               </tr>
             </tbody>
           </table>
-          <p>EOG handling: when <code>handleSampledToken</code> inside Phase A finishes the slot (<code>finishSlot</code> → <code>reset</code>), the <code>specPending*</code> fields stay defaulted and Phase B's first-line guard skips the slot. The deferred EMA update in Phase A still fires once via <code>defer</code> so the EMA is updated exactly once per round.</p>
-          <p>Under <code>nseq-max == 1</code> the ordering Phase A → Phase B for a single spec slot is functionally identical to the old monolithic <code>verifySpeculativeTokens</code>, so this split has no behavioral effect on the single-slot path.</p>
-          <p>A subtle logprobs note: Phase B's bonus-token <code>handleSampledToken</code> runs <strong>after</strong> any hybrid restore. The restore's re-decode marks <code>logits = true</code> only on the last re-decoded position (<code>basePast + accepted</code>), which is exactly the bonus token's iBatch position, so logprob extraction at that site still works on the hybrid path.</p>
-          <h3 id="69-hybrid-target-rollback-snapshotrestore">6.9 Hybrid Target Rollback: Snapshot/Restore</h3>
-          <p>Hybrid target models (transformer + recurrent layers) introduce a problem the regular <code>MemorySeqRm</code> rollback cannot solve: the recurrent layer has been <strong>advanced through all &lt;code&gt;1+nDraft&lt;/code&gt; decoded positions</strong> and there is no per-position trim. A partial-rejection round would leave the recurrent state advanced past the accepted boundary, and the next <code>llama_decode</code> would fail with <code>-1</code>.</p>
-          <p>Two new helpers in <code>batch_speculative.go</code> solve this:</p>
+          <h3 id="63-when-mtp-is-used">6.3 When MTP Is Used</h3>
+          <p>MTP (Multi-Token Prediction) is the second draft mode, auto-enabled by Kronk when the target GGUF itself ships an MTP head. You do not configure it; Kronk decides at model-load time.</p>
+          <p><strong>Conceptually</strong>, the MTP head is a small set of extra layers grafted onto the target that predict the <strong>next N tokens</strong> of the target's continuation given the most recent token and the target's own internal state. Because the head ships inside the same GGUF as the target and uses the target's tokenizer:</p>
+          <ul>
+            <li>There is <strong>nothing extra to download</strong>.</li>
+            <li>There is <strong>no risk of a vocabulary mismatch</strong>.</li>
+            <li>The drafter is always perfectly architecture-matched to the target.</li>
+          </ul>
+          <p>Kronk turns MTP on when all of these hold:</p>
+          <ul>
+            <li>The target GGUF metadata declares <code>nextn_predict_layers &gt; 0</code>. This is the marker for "this file ships an MTP head."</li>
+            <li>The loaded llama.cpp library exposes the pre-norm hidden-state API that the MTP path needs. Kronk's shipped libraries are current enough; this matters only if you pin an older library.</li>
+            <li>You have <strong>not</strong> set a <code>draft-model:</code> block on this entry. Explicit config always wins.</li>
+          </ul>
+          <p>Both single-slot (<code>nseq-max: 1</code>) and multi-slot (<code>nseq-max: 2+</code>) loads are supported.</p>
+          <h4 id="when-mtp-is-the-right-choice">When MTP is the right choice</h4>
+          <ul>
+            <li>The target is a Qwen3.5 / Qwen3.6 family GGUF (or any future architecture that adopts the same metadata key) and you do not want to manage a second GGUF download.</li>
+            <li>You want <strong>multi-slot batching</strong> on a target that has an MTP head. This is the only way to get speculation under <code>nseq-max &gt; 1</code> today.</li>
+            <li>You are running a target where the in-file MTP head is known to have high first-token acceptance, and you are fine with the greedy-verify trade-off (see §6.7).</li>
+          </ul>
+          <h4 id="when-mtp-is-the-wrong-choice">When MTP is the wrong choice</h4>
+          <ul>
+            <li>The target does not ship an MTP head — there is nothing to enable.</li>
+            <li>You require strict Leviathan-style distribution equivalence at <code>temperature &gt; 0</code>. The MTP path runs greedy verify; see §6.7.</li>
+            <li>You are hitting IMC cache often and the MTP-disabled-on-cache-hit behavior in §6.7 is removing most of your speculation opportunity. In that case a separate-GGUF draft, which is unaffected by IMC, may serve you better.</li>
+          </ul>
+          <h3 id="64-acceptance-`ndraft`-and-the-adaptive-throttle">6.4 Acceptance, `nDraft`, and the Adaptive Throttle</h3>
+          <p>Both modes generate <code>nDraft</code> candidate tokens per round and pay a fixed verification cost on the target. If acceptance is high, the win scales with <code>nDraft</code>. If acceptance is low, every wasted draft token costs you a target forward pass that produced nothing.</p>
+          <p>To avoid burning forward passes when acceptance collapses (a long creative passage at high temperature, an unusual prompt the draft hasn't seen), Kronk runs an <strong>adaptive throttle</strong> on every slot. It tracks an exponential moving average of the slot's recent acceptance rate and scales <code>nDraft</code> for the next round accordingly:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Helper</th>
-                <th>What it does</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>captureTargetSpecSnapshot(s)</code></td>
-                <td>Sizes <code>s.specSnapshot</code> via <code>StateSeqGetSize</code> and reads the full per-sequence state with <code>StateSeqGetData</code>. Called <strong>before</strong> the spec batch is decoded.</td>
-              </tr>
-              <tr>
-                <td><code>restoreTargetSpecSnapshot(s)</code></td>
-                <td><code>StateSeqSetData</code> to rewind, then re-decode <code>(sampledAtBase + first accepted drafts)</code> so the seq ends at exactly <code>basePast + 1 + accepted</code> correct positions.</td>
-              </tr>
-            </tbody>
-          </table>
-          <p>The snapshot buffer is lazy-grow / never-shrink on the slot (<code>s.specSnapshot</code>). Size scales with current KV occupancy, so the cost grows with context length. Dense / pure-attention targets skip this path entirely — <code>MemorySeqRm</code> is correct and much cheaper for them.</p>
-          <p>The captureTarget/restoreTarget hooks are gated on <code>e.model.modelInfo.Type == ModelTypeHybrid</code> so the dense fast path is untouched. If <code>captureTargetSpecSnapshot</code> errors, <code>verifySpeculativeTokens</code> clears <code>s.specSnapshot</code> and falls through to <code>MemorySeqRm</code>. The fallback is broken on hybrid partial-reject rounds, but full-accept rounds still work, and the next request begins with a fresh sequence anyway.</p>
-          <p><strong>Multi-slot interaction.</strong> <code>restoreTargetSpecSnapshot</code>'s re-decode invalidates the target's per-context logit buffer for every other batch row. With <code>nseq-max &gt; 1</code> this is benign because the restore only runs in Pass 2B (<code>finalizeSpeculativeTokens</code>), after every other spec slot has read its logits in Pass 2A. See §6.8.</p>
-          <h3 id="610-adaptive-`ndraft`-acceptance-ema">6.10 Adaptive `nDraft` (Acceptance EMA)</h3>
-          <p>Drafting <code>N</code> tokens that all get rejected wastes a forward pass on the draft model. <code>chooseNDraft(s, maxDraft)</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a> scales down based on the slot's exponential moving average of acceptance rate (<code>specAccEMA</code>):</p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>EMA range</th>
-                <th><code>nDraft</code></th>
+                <th>Recent acceptance EMA</th>
+                <th><code>nDraft</code> used next round</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td><code>&lt; 0.30</code></td>
-                <td><code>0</code> (spec bypassed)</td>
+                <td><code>0</code> — speculation bypassed for this round</td>
               </tr>
               <tr>
                 <td><code>&lt; 0.50</code></td>
-                <td><code>min(1, max)</code></td>
+                <td><code>min(1, configured max)</code></td>
               </tr>
               <tr>
                 <td><code>&lt; 0.70</code></td>
-                <td><code>min(2, max)</code></td>
+                <td><code>min(2, configured max)</code></td>
               </tr>
               <tr>
                 <td><code>&lt; 0.85</code></td>
-                <td><code>min(3, max)</code></td>
+                <td><code>min(3, configured max)</code></td>
               </tr>
               <tr>
                 <td><code>≥ 0.85</code></td>
-                <td><code>max</code> (configured)</td>
+                <td><code>configured max</code></td>
               </tr>
             </tbody>
           </table>
-          <p><code>specAccEMA</code> is updated per spec round with the formula <code>0.9<em>old + 0.1</em>(accepted/nDraft)</code> and <strong>persists across requests</strong> on the slot, so a long quiet streak with poor acceptance keeps draft overhead low even when a new request begins on the same slot.</p>
-          <p>When the EMA collapses to ~0, <code>chooseNDraft</code> returns 0 and the spec path is bypassed for that round — but the draft-tokens / accepted / acceptance-rate fields are still emitted on the final slot log line so dashboards see a stable schema. See <code>finishSlot</code> and <code>sendFinalResponse</code>.</p>
-          <h3 id="611-per-slot-state-added-for-mtp">6.11 Per-Slot State Added for MTP</h3>
-          <p>PR #593 added the following fields to <code>slot</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>batch_slot.go</code></a>. All are reset in <code>slot.reset()</code> with lazy-grow / never-shrink buffer policy.</p>
+          <p>Two operator-visible consequences:</p>
+          <ul>
+            <li>A slot whose acceptance falls into the gutter (<code>&lt; 0.30</code>) will skip speculation entirely for that round. You will still see the <code>draft_tokens=0</code> / <code>draft_accepted_tokens=0</code> / <code>acceptance_rate=...</code> fields on the final log line — they are emitted on every request the moment the model has any drafter configured, so log schemas stay stable.</li>
+            <li>The EMA <strong>persists across requests on the same slot</strong>. If a slot has been seeing poor acceptance, it will start the next request cautiously rather than re-paying the discovery cost.</li>
+          </ul>
+          <p>The default <code>nDraft</code> is <strong>5 for separate-GGUF drafts</strong> and <strong>4 for MTP</strong> (MTP heads typically have high acceptance for the first 1–3 tokens and decay rapidly beyond that, so a lower cap is safer).</p>
+          <h3 id="65-configuration-recap">6.5 Configuration Recap</h3>
+          <p>There is nothing speculative-decoding-specific to configure in this chapter. The YAML shapes live in <a href="#312-speculative-decoding">Chapter 3 §3.12</a>:</p>
+          <ul>
+            <li><strong>Separate-GGUF</strong> — add a <code>draft-model:</code> block under the target entry in <code>model_config.yaml</code> (or set <code>model.Config.DraftModel</code> from the SDK). Requires <code>nseq-max: 1</code>.</li>
+            <li><strong>MTP</strong> — do nothing. Pull a target GGUF that ships an MTP head, and make sure you have not set <code>draft-model:</code> on that entry.</li>
+          </ul>
+          <h3 id="66-observability">6.6 Observability</h3>
+          <p>Kronk emits a consistent set of log events for both draft modes. Operators should be able to answer "is speculation actually helping?" from logs alone.</p>
+          <p><strong>Always-present fields on the final response log line:</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Field</th>
-                <th>Purpose</th>
+                <th>Meaning</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><code>pendingH []float32</code></td>
-                <td>Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.</td>
+                <td><code>draft_tokens</code></td>
+                <td>Total candidate tokens proposed by the drafter during the request.</td>
               </tr>
               <tr>
-                <td><code>targetBatchStart / Count / BasePos</code></td>
-                <td>Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live.</td>
+                <td><code>draft_accepted_tokens</code></td>
+                <td>Of those, how many the target accepted.</td>
               </tr>
               <tr>
-                <td><code>mtpHasBatch</code></td>
-                <td>True between <code>batch.Add()</code> and the post-decode mirror; cleared by the mirror.</td>
-              </tr>
-              <tr>
-                <td><code>mtpDisabledForRequest</code></td>
-                <td>Disables MTP for the remainder of the current request. Set at <code>startSlot</code> on IMC cache hits (the IMC restore covers only the target seq, so the draft KV would be stale — see §6.16), and set inside <code>finalizeSpeculativeTokens</code> after a hybrid restore re-decode or a post-rollback mirror failure (in those cases the draft KV is wiped and the slot continues target-only). Cleared by <code>slot.reset()</code> when the slot is recycled for the next request.</td>
-              </tr>
-              <tr>
-                <td><code>specSnapshot []byte</code></td>
-                <td>Pre-spec target state buffer for hybrid rollback (§6.9). Lazy-grow.</td>
-              </tr>
-              <tr>
-                <td><code>specRounds</code></td>
-                <td>Counter used to throttle per-round verify logging (logs first round, then every 32nd).</td>
-              </tr>
-              <tr>
-                <td><code>specPendingFinalize bool</code></td>
-                <td>Gates Phase B (§6.8). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips.</td>
-              </tr>
-              <tr>
-                <td><code>specPendingAccepted int</code></td>
-                <td>Phase A → Phase B hand-off: accepted draft count.</td>
-              </tr>
-              <tr>
-                <td><code>specPendingBonusToken llama.Token</code></td>
-                <td>Phase A → Phase B hand-off: bonus token sampled at <code>baseBatch + accepted</code>.</td>
-              </tr>
-              <tr>
-                <td><code>specPendingOriginalSampled llama.Token</code></td>
-                <td>Phase A → Phase B hand-off: snapshot of <code>s.sampled</code> taken before any <code>handleSampledToken</code> mutated it. Hybrid restore needs this for the re-decode at <code>basePast</code>.</td>
+                <td><code>acceptance_rate</code></td>
+                <td><code>draft_accepted_tokens / draft_tokens</code>, or 0 when no drafts were run.</td>
               </tr>
             </tbody>
           </table>
-          <h3 id="612-configuration">6.12 Configuration</h3>
-          <p>MTP is <strong>auto-enabled</strong> — you do not configure it. To get an MTP drafter:</p>
-          <ol>
-            <li>Pull a target GGUF that ships an MTP head (e.g. the Qwen3.6 MTP builds — the test suite uses <code>unsloth/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL.gguf</code>).</li>
-            <li>Pick <code>nseq-max</code> per your concurrency target. Both single-slot (<code>nseq-max: 1</code>) and multi-slot (<code>nseq-max: 2+</code>) are supported; the draft context inherits <code>NSeqMax</code> from the target and hosts the same number of sequences.</li>
-            <li>Do <strong>not</strong> set <code>draft-model:</code> on that entry (an explicit separate-GGUF draft wins over auto-detected MTP).</li>
-            <li>Make sure your llama.cpp library is recent enough to export the pre-norm API — Kronk's libs ship with a sufficiently new build by default; only matters for users running with a pinned older lib.</li>
-          </ol>
-          <p>Minimal <code>model_config.yaml</code> snippet (multi-slot):</p>
-          <pre className="code-block"><code className="language-yaml">{`mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
-  context-window: 131072
-  nbatch: 2048
-  nubatch: 512
-  cache-type-k: f16
-  cache-type-v: f16
-  nseq-max: 2
-  incremental-cache: true`}</code></pre>
-          <p>On a successful load you will see a log line like:</p>
-          <pre className="code-block"><code>{`draft-model-mtp status=loaded source=auto-detected nDraft=4 nextn-layers=1 nEmbd=2048 nCtx=8192`}</code></pre>
-          <p>The default <code>nDraft</code> for MTP is <code>4</code> (<code>defMTPNDraft</code> in <code>draft_mtp.go</code>) — conservative because MTP heads typically have high acceptance for the first 1–3 tokens and rapidly decay beyond that. The adaptive EMA in §6.10 scales further down when acceptance is poor.</p>
-          <h3 id="613-observability">6.13 Observability</h3>
-          <p>MTP-specific log events (all at the same level as the surrounding batch-engine logs):</p>
+          <p>These fields are emitted whenever the model has any drafter configured — even on requests where the adaptive throttle bypassed speculation — so dashboards and log parsers see a stable schema.</p>
+          <p><strong>MTP-specific log events:</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Event</th>
-                <th>Where</th>
                 <th>When</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td><code>draft-model-mtp status=loading / loaded</code></td>
-                <td><code>loadDraftModelMTP</code></td>
-                <td>Once at model startup.</td>
+                <td>Once at model startup when the MTP head is auto-detected and loaded.</td>
               </tr>
               <tr>
                 <td><code>draft-model-mtp status=auto-detect-skipped</code></td>
-                <td><code>selectAndLoadDraft</code></td>
-                <td>Once when the gate fails (no metadata, no pre-norm API, multi-slot).</td>
+                <td>Once at model startup when MTP could not be enabled (no metadata, no pre-norm API).</td>
               </tr>
               <tr>
                 <td><code>speculative status=mtp-mirror-error</code></td>
-                <td><code>processBatch</code> / <code>finalizeSpeculativeTokens</code></td>
-                <td>Mirror decode failed. In <code>processBatch</code> (non-spec path) the slot is finished; in <code>finalizeSpeculativeTokens</code> (post-verify path) MTP is disabled for the rest of the request via <code>mtp-disabled-mirror-error</code>.</td>
+                <td>An MTP draft step failed. The slot continues target-only for the remainder of the request.</td>
               </tr>
               <tr>
                 <td><code>speculative status=mtp-disabled-imc-hit</code></td>
-                <td><code>startSlotText</code></td>
-                <td>MTP disabled for this request because the prompt hit IMC cache — the draft KV has no rows for the restored prefix. Slot continues target-only; next request on the slot can use MTP again.</td>
+                <td>MTP disabled for this request because the prompt hit IMC cache; the next request on the slot can use MTP again. (See §6.7.)</td>
               </tr>
               <tr>
                 <td><code>speculative status=mtp-disabled-hybrid-restore</code></td>
-                <td><code>finalizeSpeculativeTokens</code></td>
-                <td>MTP disabled for the remainder of the request after a successful hybrid restore re-decode. The target's pre-norm buffer now reflects the rebatch's rows, so the original <code>targetBatchStart</code> indices would mirror wrong rows. The draft seq is wiped and the slot continues target-only.</td>
+                <td>MTP disabled for the remainder of the request after a hybrid-target rollback. The slot continues target-only.</td>
               </tr>
               <tr>
                 <td><code>speculative status=mtp-disabled-mirror-error</code></td>
-                <td><code>finalizeSpeculativeTokens</code></td>
-                <td>MTP disabled for the remainder of the request after the post-verify mirror failed. <code>rollbackDraft</code> had already cleared the entire drafted range from the draft KV, so the accepted prefix can't be reconstructed by a later mirror. Draft seq is wiped; slot continues target-only.</td>
-              </tr>
-              <tr>
-                <td><code>speculative status=verify-done</code></td>
-                <td><code>verifySpeculativeTokens</code></td>
-                <td>Throttled: first round + every 32nd. Carries <code>round</code>, <code>accepted</code>, <code>nDraft</code>, <code>acc_ema</code>.</td>
-              </tr>
-              <tr>
-                <td><code>speculative status=restore-error</code></td>
-                <td><code>verifySpeculativeTokens</code></td>
-                <td>Hybrid snapshot restore failed; falls back to broken <code>MemorySeqRm</code>.</td>
-              </tr>
-              <tr>
-                <td><code>speculative status=snapshot-error</code></td>
-                <td><code>processBatch</code></td>
-                <td>Hybrid snapshot capture failed; spec round will fall back to <code>MemorySeqRm</code> on rejection.</td>
-              </tr>
-              <tr>
-                <td><code>chat-completion ... draft_tokens=N ...</code></td>
-                <td><code>sendFinalResponse</code></td>
-                <td>Always present once the model has a drafter, even when speculation produced 0 tokens.</td>
+                <td>MTP disabled for the remainder of the request after a post-verify mirror failure. The slot continues target-only.</td>
               </tr>
             </tbody>
           </table>
-          <p>The <code>finishSlot</code> log line follows the same rule — <code>draft_tokens</code>, <code>draft_accepted_tokens</code>, and <code>acceptance_rate</code> fields are emitted whenever <code>e.model.draft != nil</code>, so log schemas stay stable across requests where the EMA collapsed mid-stream.</p>
-          <h3 id="614-code-map">6.14 Code Map</h3>
+          <p><strong>Shared speculative-decoding log events:</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>File</th>
-                <th>Role for MTP</th>
+                <th>Event</th>
+                <th>When</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go"><code>sdk/kronk/model/draft_mtp.go</code></a></td>
-                <td><code>mtpNextNLayers</code>, <code>loadDraftModelMTP</code>, <code>selectAndLoadDraft</code>. Sole source for MTP load + detect.</td>
+                <td><code>speculative status=verify-done</code></td>
+                <td>Throttled per slot: first verify round, then every 32nd. Carries <code>round</code>, <code>accepted</code>, <code>nDraft</code>, and <code>acc_ema</code> fields.</td>
               </tr>
               <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>sdk/kronk/model/batch_mtp.go</code></a></td>
-                <td><code>mirrorTargetBatchToMTPDraft</code>, <code>generateDraftTokensMTP</code>, helpers (<code>batchTokensAt</code>, <code>mirrorBatchCapacity</code>).</td>
+                <td><code>speculative status=restore-error</code></td>
+                <td>Hybrid snapshot restore failed during partial-reject rollback.</td>
               </tr>
               <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>sdk/kronk/model/yzma.go</code></a></td>
-                <td>FFI bindings for the three pre-norm symbols; <code>MTPAvailable</code>, <code>SetEmbeddingsPreNorm</code>, <code>GetEmbeddingsPreNorm&#123;,Ith&#125;</code>.</td>
-              </tr>
-              <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go"><code>sdk/kronk/model/model.go</code></a></td>
-                <td><code>draftModel</code> struct extended with MTP fields (<code>mtp</code>, <code>nEmbd</code>, MTP batches, pinned embd slices). <code>Unload</code> skips shared <code>ModelFree</code>.</td>
-              </tr>
-              <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>sdk/kronk/model/batch_slot.go</code></a></td>
-                <td><code>slot</code> struct extended with per-slot MTP state (<code>pendingH</code>, target-batch range, <code>mtpHasBatch</code>, <code>mtpDisabledForRequest</code>, <code>specSnapshot</code>, <code>specRounds</code>).</td>
-              </tr>
-              <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>sdk/kronk/model/batch_slot_start.go</code></a></td>
-                <td>Skips separate-draft-prefill on MTP; disables MTP for the request on IMC cache hits (draft KV would be stale).</td>
-              </tr>
-              <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>sdk/kronk/model/batch_engine.go</code></a></td>
-                <td><code>processBatch</code> integration: claims slot's target-batch range at every add site, mirrors after every successful decode, dispatches MTP vs separate-GGUF draft generation.</td>
-              </tr>
-              <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go"><code>sdk/kronk/model/batch_prefill_text.go</code></a></td>
-                <td><code>addPrefillChunk</code> claims (or extends) the slot's MTP target-batch range so prefill rows get mirrored.</td>
-              </tr>
-              <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>sdk/kronk/model/batch_speculative.go</code></a></td>
-                <td>Greedy-only MTP verify path; <code>originalSampled</code> snapshot; hybrid snapshot/restore; post-verify mirror; throttled <code>verify-done</code> log; MTP-specific <code>rollbackDraft</code>.</td>
-              </tr>
-              <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go"><code>sdk/kronk/model/batch_finish.go</code></a></td>
-                <td>Always-emit draft metrics when a drafter is configured.</td>
-              </tr>
-              <tr>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/params.go"><code>sdk/kronk/model/params.go</code></a></td>
-                <td>`top_p == 0</td>
-                <td></td>
-                <td>== 1<code> from the request is treated as unset so the model-config </code>top_p` survives.</td>
+                <td><code>speculative status=snapshot-error</code></td>
+                <td>Hybrid snapshot capture failed before a spec round.</td>
               </tr>
             </tbody>
           </table>
-          <h3 id="615-testing">6.15 Testing</h3>
-          <p>Test package: <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/tests/mtp"><code>sdk/kronk/tests/mtp/</code></a>.</p>
-          <p>The suite is a smoke test against the <code>unsloth/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL</code> target via <code>testlib.CfgMTPChat()</code>. A successful <code>Chat</code> and <code>ChatStreaming</code> response implicitly verifies that:</p>
-          <ul>
-            <li>The MTP draft context loaded (auto-detection passed).</li>
-            <li>Pre-norm extraction is wired correctly on both contexts.</li>
-            <li>The mirror step is in sync after every target decode.</li>
-            <li>Speculation produced valid drafts and the target accepted and emitted clean text.</li>
-          </ul>
-          <p><code>TestMain</code> skips the whole suite when the MTP model file is not downloaded, so contributors without the GGUF locally still get a green run.</p>
-          <p>Run from the project root:</p>
-          <pre className="code-block"><code className="language-shell">{`export RUN_IN_PARALLEL=yes
-export GITHUB_WORKSPACE=$(pwd)
-go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
-          <h3 id="616-known-limitations">6.16 Known Limitations</h3>
+          <h3 id="67-known-limitations">6.7 Known Limitations</h3>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Limitation</th>
-                <th>Why</th>
+                <th>Notes</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Greedy verify only</td>
-                <td>The MTP head's AR loop runs greedy sampling and does not capture sparse draft distributions; probabilistic verify would always reject. See §6.8.</td>
+                <td>Separate-GGUF: single-slot only</td>
+                <td><code>nseq-max</code> must be <code>1</code> on the target entry. If you need multi-slot speculation, use MTP on a target that ships the head.</td>
               </tr>
               <tr>
-                <td>IMC + MTP: MTP disabled on cache hits</td>
-                <td>IMC restores only the target seq state; the draft context has no snapshot, so an IMC cache-hit request would otherwise run MTP against a stale draft KV (and no <code>pendingH</code>). The slot disables MTP for the rest of the request (<code>mtp-disabled-imc-hit</code>) and falls back to plain target decoding. The next request on the same slot can use MTP again. Lifting this would require extending IMC to snapshot/restore the draft seq + <code>pendingH</code> alongside the target seq.</td>
+                <td>MTP: greedy verify only</td>
+                <td>The MTP path always runs greedy verification, so strict Leviathan-style distribution equivalence at <code>temperature &gt; 0</code> is not guaranteed. The full slot sampler (temperature / top-k / top-p) is still applied at each accepted position, so output shape is preserved.</td>
               </tr>
               <tr>
-                <td>Multi-slot MTP prefill: one chunk per slot per round</td>
-                <td><code>addPrefillChunk</code> records a slot's pre-norm range as a single <code>(start, count)</code> tuple, which requires the slot's rows in <code>e.batch</code> to be contiguous. With ≥2 prefilling slots, the outer round-robin loop in <code>processBatch</code> is capped at one pass so each slot contributes at most one chunk per target decode. Long multi-slot prefills therefore take more decode rounds than they would on the non-MTP path. Single-slot prefill is unaffected (rows are trivially contiguous and the loop keeps filling the tray).</td>
+                <td>MTP + IMC: MTP disabled on cache hits</td>
+                <td>If an incoming request hits the Incremental Message Cache, MTP is disabled for that request — IMC restores the target sequence state but does not carry the draft sequence state with it. The slot falls back to plain target decoding; the next request on the same slot can use MTP again.</td>
               </tr>
               <tr>
-                <td>Hybrid + MTP: MTP disabled after partial-reject restore</td>
-                <td>On a hybrid target, partial rejection runs <code>restoreTargetSpecSnapshot</code>, which re-decodes a small rebatch on the target context. After that re-decode the target's pre-norm and logit buffers are indexed against the rebatch, not the original shared <code>e.batch</code>, so the mirror's <code>targetBatchStart</code> would read wrong rows. The slot disables MTP for the rest of the request (<code>mtp-disabled-hybrid-restore</code>) and continues target-only. A restore-aware mirror that takes explicit tokens + rebatch-local row indices would lift this.</td>
+                <td>MTP + hybrid targets: MTP disabled after a partial-reject rollback</td>
+                <td>On a hybrid (transformer + recurrent) target, a partial-reject round triggers a snapshot/restore that invalidates the MTP draft state. The slot disables MTP for the remainder of the request and continues target-only.</td>
               </tr>
               <tr>
-                <td>No vision / audio</td>
-                <td>Speculative decoding in general is text-only in Kronk.</td>
+                <td>MTP + hybrid targets: f16 KV cache + no Flash Attention required</td>
+                <td>Kronk forces <code>cache-type-k/v: f16</code> and disables Flash Attention on hybrid models. Throughput on hybrid + MTP is meaningfully lower than dense / MoE targets regardless of <code>nseq-max</code>.</td>
               </tr>
               <tr>
-                <td><code>defMTPNDraft = 4</code> is a fixed cap</td>
-                <td>The adaptive EMA scales down from 4, but there is no per-model config to raise the ceiling for an exceptionally well-behaved MTP head.</td>
+                <td>MTP: <code>nDraft</code> ceiling is fixed at 4</td>
+                <td>The adaptive throttle scales down from 4 but there is no per-model knob to raise the ceiling on exceptionally well-behaved MTP heads.</td>
               </tr>
               <tr>
-                <td>Hybrid targets: f16 KV cache + no Flash Attention</td>
-                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/config.go">config.go</a> forces <code>cache-type-k/v: f16</code> and <code>flash-attention: disabled</code> for any hybrid model — quantized KV requires FA and llama.cpp's hybrid arch does not yet support FA. Throughput on hybrid + MTP is significantly lower than dense / MoE targets even at <code>nseq-max: 1</code>. Unrelated to multi-slot.</td>
+                <td>Speculative decoding is text-only</td>
+                <td>Neither draft mode applies to vision or audio requests.</td>
               </tr>
             </tbody>
           </table>
@@ -7942,6 +7768,298 @@ default:
           <ul>
             <li><code>releaseModel()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">sdk/kronk/acquire.go</a>) — drains a slot from the kronk-level semaphore (<code>&lt;-krn.sem</code>) and decrements <code>krn.activeStreams</code> (the kronk-level counter; the model-level one was already decremented in Step 13).</li>
           </ul>
+          <h3 id="1812-mtp-internals">18.12 MTP Internals</h3>
+          <p>This section documents the engine internals of the MTP (Multi-Token Prediction) drafter shipped in <a href="https://github.com/ardanlabs/kronk/pull/593">PR #593</a>. The user-facing operation guide lives in <a href="#chapter-6-speculative-decoding--mtp">Chapter 6</a>; the configuration surface lives in <a href="#312-speculative-decoding">Chapter 3 §3.12</a>. This section is the only place that goes inside the FFI bindings, mirror step, three-pass dispatch, and hybrid snapshot/restore.</p>
+          <p>The drafter sits behind a single <code>*draftModel</code> type (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go">model.go</a>), selected once at model load by <code>selectAndLoadDraft</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go">draft_mtp.go</a>). In separate-GGUF mode it loads a second <code>llama_model</code>; in MTP mode it shares the target's <code>llama_model</code> and binds an MTP head that lives inside the target GGUF.</p>
+          <p>Reference: <code>common/speculative.cpp common_speculative_impl_draft_mtp</code> in upstream llama.cpp. Kronk's implementation lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go"><code>draft_mtp.go</code></a> (load), <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>batch_mtp.go</code></a> (mirror + AR loop), and integration changes in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>batch_engine.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>batch_slot.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>batch_slot_start.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go"><code>batch_prefill_text.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go"><code>batch_finish.go</code></a>, and the FFI bindings in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a>.</p>
+          <h4 id="18121-auto-detection">18.12.1 Auto-detection</h4>
+          <p><code>selectAndLoadDraft</code> runs once during model initialization (<code>initGenerationRuntime</code> in <code>model.go</code>) and decides which drafter, if any, to load:</p>
+          <pre className="code-block"><code className="language-diagram">{`                       ╭───────────────────────╮
+                       │ cfg.DraftModel != nil │──── yes ──▶  loadDraftModel  (separate-GGUF)
+                       ╰──────────┬────────────╯
+                                  │ no
+                                  ▼
+                       ╭───────────────────────╮
+                       │ mtpNextNLayers(target)│──── 0 ──▶  return (nil, nil) — no drafter
+                       ╰──────────┬────────────╯
+                                  │ > 0
+                                  ▼
+                       ╭───────────────────────╮
+                       │     MTPAvailable()    │──── false ──▶ skip (log reason: old llama.cpp)
+                       ╰──────────┬────────────╯
+                                  │ true
+                                  ▼
+                       loadDraftModelMTP  (auto-enabled; inherits NSeqMax)`}</code></pre>
+          <p><code>mtpNextNLayers</code> looks up the GGUF metadata key <code>&lt;arch&gt;.nextn_predict_layers</code> (a uint32). Kronk matches by the unique substring <code>nextn_predict_layers</code> so the same lookup works for every architecture variant without first reading <code>general.architecture</code>.</p>
+          <p><code>MTPAvailable()</code> probes whether the loaded llama.cpp library exports the three pre-norm symbols listed in §18.12.2. Older builds (pre <code>src/llama-ext.h</code>) won't have them — Kronk logs and starts up without MTP rather than crashing on a missing symbol mid-request.</p>
+          <p>The historical <code>NSeqMax == 1</code> gate (present through earlier revisions of PR #593) has been removed: the draft context inherits <code>NSeqMax</code> from the target and hosts as many sequences as the target does. The three-pass post-decode in <code>processBatch</code> (§18.12.5) makes the spec verify path multi-slot safe.</p>
+          <p>When any of the gates fail, <code>selectAndLoadDraft</code> logs the specific reason and returns <code>(nil, nil)</code>. The target still loads and serves traffic — just without speculation.</p>
+          <h4 id="18122-pre-norm-hidden-state-plumbing">18.12.2 Pre-Norm Hidden-State Plumbing</h4>
+          <p>The MTP path needs three llama.cpp C symbols that yzma upstream does not yet bind. Kronk adds them locally in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a> via the <code>jupiterrider/ffi</code> package:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Go wrapper</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>llama_set_embeddings_pre_norm</code></td>
+                <td><code>SetEmbeddingsPreNorm(ctx, value, masked)</code></td>
+                <td>Toggle pre-norm extraction on a context. <code>masked=false</code> = dense (all rows); <code>masked=true</code> = sparse (logit-flagged rows only).</td>
+              </tr>
+              <tr>
+                <td><code>llama_get_embeddings_pre_norm</code></td>
+                <td><code>GetEmbeddingsPreNorm(ctx, nRows, nEmbd) []float32</code></td>
+                <td>Return the dense buffer produced by the most recent <code>llama_decode</code>. Used on the target.</td>
+              </tr>
+              <tr>
+                <td><code>llama_get_embeddings_pre_norm_ith</code></td>
+                <td><code>GetEmbeddingsPreNormIth(ctx, i, nEmbd) []float32</code></td>
+                <td>Return a single row by output-table index. Used on the draft (masked) context.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Two binding details worth highlighting:</p>
+          <ul>
+            <li><strong>Symbol probing is dual.</strong> Each prep tries the C-linkage name first and falls back to the Itanium C++ ABI mangled form (e.g. <code>_Z29llama_set_embeddings_pre_normP13llama_contextbb</code>) so kronk binds against llama.cpp builds compiled with or without <code>LLAMA_API</code> on these declarations.</li>
+            <li><strong>Best-effort init.</strong> <code>InitYzmaWorkarounds</code> never fails on a missing pre-norm symbol. The corresponding <code>ffi.Fun</code> stays zero-valued and <code>MTPAvailable()</code> returns false, gating §18.12.1.</li>
+          </ul>
+          <p>At load time <code>loadDraftModelMTP</code> sets:</p>
+          <ul>
+            <li><code>SetEmbeddingsPreNorm(targetCtx, true, false)</code> — dense, every row accessible by raw batch index. Required for the mirror step (§18.12.3), which reads arbitrary rows from each completed target batch.</li>
+            <li><code>SetEmbeddingsPreNorm(draftCtx, true, true)</code> — sparse, only logits-flagged rows stored. The draft only needs the single output row of each AR step.</li>
+          </ul>
+          <p>The flag is consumed at graph-build time, so it must be set <strong>before</strong> the first decode on either context.</p>
+          <h4 id="18123-mirror-step-and-ar-draft-loop">18.12.3 Mirror Step and AR Draft Loop</h4>
+          <p>Two functions in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>batch_mtp.go</code></a> do the heavy lifting.</p>
+          <h5>Mirror: `mirrorTargetBatchToMTPDraft`</h5>
+          <p>After every successful target <code>llama_decode</code> + <code>llama_synchronize</code>, the post-decode pass in <code>processBatch</code> calls the mirror to replay the slot's just-decoded range into the draft context with <code>batch.embd</code> populated from the target's pre-norm buffer.</p>
+          <p>Per-position alignment is <strong>shift-right-by-1</strong>, matching <code>common_speculative_impl_draft_mtp</code>:</p>
+          <pre className="code-block"><code>{`mirror[0]   : token = tgt[start+0],  embd = pendingH (slot's pre-batch h)
+mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
+          <p><code>pendingH</code> is a per-slot copy of the hidden row at the last committed target position. On the very first decode of a sequence, no <code>h</code> has been observed yet — that slot of the mirror batch is zeroed (the MTP head's first prediction at position 0 is on a BOS / instruction sentinel where exact <code>h</code> does not matter).</p>
+          <p>After the mirror succeeds, <code>pendingH</code> is updated to the last target-batch row so it's ready as the slot-0 input of the next mirror.</p>
+          <p>A few non-obvious correctness points enforced in the function:</p>
+          <ul>
+            <li><strong>Chunking by mirror capacity.</strong> The mirror batch is allocated at <code>NBatch</code> capacity. When <code>effectiveCount &gt; NBatch</code> the mirror is run in chunks, with <code>llama.Synchronize(draft)</code> <strong>inside the chunk loop</strong> before the next chunk overwrites <code>mirror.Embd</code>. Without the per-chunk sync, the next chunk's <code>copy()</code> into the Go-owned embd slice races the still-in-flight C read on async backends (Metal/CUDA) and corrupts the input.</li>
+            <li><strong>&lt;code&gt;effectiveCount&lt;/code&gt; is caller-provided.</strong> Prefill chunks and plain gen-token decodes mirror <code>targetBatchCount</code> positions; the spec path mirrors only <code>1 + accepted</code> rows so rejected draft tokens are never reflected into draft KV.</li>
+            <li><strong>&lt;code&gt;logits=true&lt;/code&gt; only on the last row.</strong> The mirror only needs the pre-norm row of the very last position (as the next <code>pendingH</code>), so only the last row is logits-flagged.</li>
+          </ul>
+          <h5>AR Draft: `generateDraftTokensMTP`</h5>
+          <p>The drafter runs an auto-regressive loop on the MTP context. Each iteration:</p>
+          <ol>
+            <li>Build a single-token batch with <code>(curToken, pos, seqIDs)</code> and copy <code>curEmbd</code> into the embd slot.</li>
+            <li><code>llama.Decode</code> + <code>llama.Synchronize</code> (async-backend safety again).</li>
+            <li><code>llama.SamplerSample(greedy, ctx, -1)</code> to pick the next draft token.</li>
+            <li><code>GetEmbeddingsPreNormIth(ctx, 0, nEmbd)</code> to read back the next hidden state.</li>
+            <li>EOG check; copy <code>nextEmbd</code> into <code>pendingH</code>; advance.</li>
+          </ol>
+          <p>The loop stops on <code>chooseNDraft(s, draft.nDraft)</code> rounds (see §18.12.4 acceptance scaling), or earlier on EOG or decode failure.</p>
+          <p><strong>Why MTP-only batches?</strong> <code>llama.BatchInit(N, embd, nSeqMax)</code> allocates <strong>either</strong> the token buffer <strong>or</strong> the embd buffer — never both — based on its <code>embd</code> arg. MTP needs both per position. Kronk works around this by calling <code>BatchInit(N, 0, 1)</code> to get a token-only batch (with <code>pos</code>, <code>seq_id</code>, and <code>logits</code> arrays sized to <code>N</code>) and then attaching a Go-allocated <code>[]float32</code> of size <code>N*nEmbd</code> as the embd buffer. The Go slice is pinned (<code>runtime.Pinner</code>) for the batch's lifetime and the <code>Batch.Embd</code> pointer is cleared <strong>before</strong> <code>BatchFree</code> so llama.cpp's unconditional <code>free(batch.embd)</code> doesn't <code>free()</code> a Go heap allocation.</p>
+          <p>These two MTP-only batches live on <code>draftModel</code>:</p>
+          <ul>
+            <li><code>draftBatchMTP</code> — capacity 1, used by <code>generateDraftTokensMTP</code> per step.</li>
+            <li><code>mirrorBatchMTP</code> — capacity <code>NBatch</code>, used by the mirror step.</li>
+          </ul>
+          <h4 id="18124-verification-on-the-mtp-path">18.12.4 Verification on the MTP Path</h4>
+          <p><code>verifySpeculativeTokens</code> is shared between separate-GGUF and MTP, but the MTP path forces <strong>greedy verification</strong> unconditionally because the MTP head currently runs only greedy sampling (<code>SamplerInitGreedy</code>) and the AR loop does not capture sparse draft distributions. Running the probabilistic verify path without a draft distribution would fall through to <code>sampleFromProbs(target)</code> at every position and reject every draft token unconditionally.</p>
+          <p>To compensate, the greedy branch is taught — only on the MTP path (<code>mtpGreedy == true</code>) — to invoke the slot's <strong>full sampler</strong> at each position instead of taking the raw target argmax. That preserves the user's <code>temperature</code> / <code>top_k</code> / <code>top_p</code> shape on the emitted sequence. The mathematical guarantee of distribution-equivalent output (Leviathan et al., 2023) is lost on the MTP path — it is the standard approximation when the draft distribution is unavailable.</p>
+          <p><code>originalSampled</code> is also snapshotted before the verify loop, because <code>handleSampledToken</code> mutates <code>s.sampled</code> as each accepted draft token flows through the streaming pipeline. The hybrid re-decode path (§18.12.6) needs the <strong>original</strong> sampled token at the base position; using the mutated value would re-decode the wrong token and corrupt every subsequent round.</p>
+          <p>After verify, the MTP mirror runs again over <code>1 + accepted</code> rows to overwrite the AR-loop draft KV entries with target-derived hidden states. That update is what makes the next round's <code>pendingH</code> reflect reality.</p>
+          <p><code>rollbackDraft</code> for MTP is also different from the separate-GGUF path: it <code>MemorySeqRm</code>s the <strong>entire</strong> drafted range from the draft KV before the post-verify mirror runs. llama.cpp's transformer KV does not overwrite by <code>(seq, pos)</code> on re-decode — it appends another slot, leaving duplicate entries that corrupt subsequent attention. The mirror then writes the correct target-derived entries into clean slots.</p>
+          <p><strong>Adaptive &lt;code&gt;nDraft&lt;/code&gt; (acceptance EMA).</strong> <code>chooseNDraft(s, maxDraft)</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a> scales <code>nDraft</code> down based on the slot's exponential moving average of acceptance rate (<code>specAccEMA</code>). The EMA formula is <code>0.9<em>old + 0.1</em>(accepted/nDraft)</code> and persists across requests on the slot. The user-visible buckets (<code>&lt; 0.30</code> → 0, <code>&lt; 0.50</code> → 1, etc.) are documented in Chapter 6 §6.4.</p>
+          <p>When the EMA collapses to ~0, <code>chooseNDraft</code> returns 0 and the spec path is bypassed for that round — but the draft-tokens / accepted / acceptance-rate fields are still emitted on the final slot log line so dashboards see a stable schema. See <code>finishSlot</code> and <code>sendFinalResponse</code>.</p>
+          <h4 id="18125-three-pass-`processbatch`-and-phase-a-phase-b-split">18.12.5 Three-pass `processBatch` and Phase A / Phase B Split</h4>
+          <p>When <code>nseq-max &gt; 1</code> and two or more spec slots verify in the same shared batch, the original monolithic <code>verifySpeculativeTokens</code> could corrupt the target context's logit buffer for one slot while a peer was still trying to read it. The hybrid <code>restoreTargetSpecSnapshot</code> (§18.12.6) re-decodes a small batch on the target context, and that re-decode <strong>replaces the per-context logit buffer with logits for only the re-decoded rows</strong> — every other slot's batch rows return <code>nullptr</code> from <code>llama_get_logits_ith</code>, crashing <code>llama_sampler_sample</code> (<code>GGML_ASSERT(logits != nullptr)</code> at <code>llama-sampler.cpp:850</code>).</p>
+          <p>The fix has two parts:</p>
+          <ol>
+            <li><strong>&lt;code&gt;verifySpeculativeTokens&lt;/code&gt; is split</strong> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go">batch_speculative.go</a>: verify loop (logit reads, accept / reject, per-accepted <code>handleSampledToken</code>), samples the bonus token, updates the acceptance EMA. Stashes <code>accepted</code>, <code>bonusToken</code>, and <code>originalSampled</code> on the slot via new <code>specPending*</code> fields and sets <code>specPendingFinalize = true</code>. Does NOT touch target KV, draft KV, <code>s.nPast</code>, or <code>s.iBatch</code>. <code>s.specDraftTokens</code> is deliberately retained for Phase B. rollback (hybrid restore or <code>MemorySeqRm</code>), draft KV rollback, MTP mirror, sets <code>s.nPast</code>, emits the throttled <code>verify-done</code> log, streams the bonus token, sets <code>s.iBatch = -1</code>, and clears the pending fields. Early-returns silently when <code>specPendingFinalize</code> is false (Phase A short-circuited on EOG).
+              <ul>
+                <li><strong>Phase A (&lt;code&gt;verifySpeculativeTokens&lt;/code&gt;) — read-only.</strong> Runs the</li>
+                <li><strong>Phase B (&lt;code&gt;finalizeSpeculativeTokens&lt;/code&gt;) — mutating.</strong> Runs the</li>
+              </ul>
+            </li>
+            <li><strong>&lt;code&gt;processBatch&lt;/code&gt; post-decode is three-pass</strong> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">batch_engine.go</a>:</li>
+          </ol>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Pass</th>
+                <th>Slots</th>
+                <th>Work</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>Non-spec (<code>s.specDraftTokens == nil</code>)</td>
+                <td>MTP mirror (if applicable) + <code>processSlotToken</code>. Target logit buffer is fully intact.</td>
+              </tr>
+              <tr>
+                <td>2A</td>
+                <td>Spec (<code>s.specDraftTokens != nil</code>)</td>
+                <td>Phase A — <code>verifySpeculativeTokens</code>. Pure reads on the target logit buffer, so all spec slots run safely back to back.</td>
+              </tr>
+              <tr>
+                <td>2B</td>
+                <td>Spec with <code>specPendingFinalize == true</code></td>
+                <td>Phase B — <code>finalizeSpeculativeTokens</code>. Hybrid restores can wipe the logit buffer here; by this point every other spec slot has already consumed its logits.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>EOG handling: when <code>handleSampledToken</code> inside Phase A finishes the slot (<code>finishSlot</code> → <code>reset</code>), the <code>specPending*</code> fields stay defaulted and Phase B's first-line guard skips the slot. The deferred EMA update in Phase A still fires once via <code>defer</code> so the EMA is updated exactly once per round.</p>
+          <p>Under <code>nseq-max == 1</code> the ordering Phase A → Phase B for a single spec slot is functionally identical to the old monolithic <code>verifySpeculativeTokens</code>, so this split has no behavioral effect on the single-slot path.</p>
+          <p>A subtle logprobs note: Phase B's bonus-token <code>handleSampledToken</code> runs <strong>after</strong> any hybrid restore. The restore's re-decode marks <code>logits = true</code> only on the last re-decoded position (<code>basePast + accepted</code>), which is exactly the bonus token's iBatch position, so logprob extraction at that site still works on the hybrid path.</p>
+          <h4 id="18126-hybrid-target-rollback">18.12.6 Hybrid Target Rollback</h4>
+          <p>Hybrid target models (transformer + recurrent layers) introduce a problem the regular <code>MemorySeqRm</code> rollback cannot solve: the recurrent layer has been <strong>advanced through all &lt;code&gt;1+nDraft&lt;/code&gt; decoded positions</strong> and there is no per-position trim. A partial-rejection round would leave the recurrent state advanced past the accepted boundary, and the next <code>llama_decode</code> would fail with <code>-1</code>.</p>
+          <p>Two helpers in <code>batch_speculative.go</code> solve this:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Helper</th>
+                <th>What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>captureTargetSpecSnapshot(s)</code></td>
+                <td>Sizes <code>s.specSnapshot</code> via <code>StateSeqGetSize</code> and reads the full per-sequence state with <code>StateSeqGetData</code>. Called <strong>before</strong> the spec batch is decoded.</td>
+              </tr>
+              <tr>
+                <td><code>restoreTargetSpecSnapshot(s)</code></td>
+                <td><code>StateSeqSetData</code> to rewind, then re-decode <code>(sampledAtBase + first accepted drafts)</code> so the seq ends at exactly <code>basePast + 1 + accepted</code> correct positions.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The snapshot buffer is lazy-grow / never-shrink on the slot (<code>s.specSnapshot</code>). Size scales with current KV occupancy, so the cost grows with context length. Dense / pure-attention targets skip this path entirely — <code>MemorySeqRm</code> is correct and much cheaper for them.</p>
+          <p>The captureTarget/restoreTarget hooks are gated on <code>e.model.modelInfo.Type == ModelTypeHybrid</code> so the dense fast path is untouched. If <code>captureTargetSpecSnapshot</code> errors, <code>verifySpeculativeTokens</code> clears <code>s.specSnapshot</code> and falls through to <code>MemorySeqRm</code>. The fallback is broken on hybrid partial-reject rounds, but full-accept rounds still work, and the next request begins with a fresh sequence anyway.</p>
+          <p><strong>Multi-slot interaction.</strong> <code>restoreTargetSpecSnapshot</code>'s re-decode invalidates the target's per-context logit buffer for every other batch row. With <code>nseq-max &gt; 1</code> this is benign because the restore only runs in Pass 2B (<code>finalizeSpeculativeTokens</code>), after every other spec slot has read its logits in Pass 2A. See §18.12.5.</p>
+          <h4 id="18127-per-slot-mtp-state">18.12.7 Per-Slot MTP State</h4>
+          <p>PR #593 added the following fields to <code>slot</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>batch_slot.go</code></a>. All are reset in <code>slot.reset()</code> with lazy-grow / never-shrink buffer policy.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>pendingH []float32</code></td>
+                <td>Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.</td>
+              </tr>
+              <tr>
+                <td><code>targetBatchStart / Count / BasePos</code></td>
+                <td>Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live.</td>
+              </tr>
+              <tr>
+                <td><code>mtpHasBatch</code></td>
+                <td>True between <code>batch.Add()</code> and the post-decode mirror; cleared by the mirror.</td>
+              </tr>
+              <tr>
+                <td><code>mtpDisabledForRequest</code></td>
+                <td>Disables MTP for the remainder of the current request. Set at <code>startSlot</code> on IMC cache hits (the IMC restore covers only the target seq, so the draft KV would be stale), and set inside <code>finalizeSpeculativeTokens</code> after a hybrid restore re-decode or a post-rollback mirror failure (in those cases the draft KV is wiped and the slot continues target-only). Cleared by <code>slot.reset()</code> when the slot is recycled for the next request.</td>
+              </tr>
+              <tr>
+                <td><code>specSnapshot []byte</code></td>
+                <td>Pre-spec target state buffer for hybrid rollback (§18.12.6). Lazy-grow.</td>
+              </tr>
+              <tr>
+                <td><code>specRounds</code></td>
+                <td>Counter used to throttle per-round verify logging (logs first round, then every 32nd).</td>
+              </tr>
+              <tr>
+                <td><code>specPendingFinalize bool</code></td>
+                <td>Gates Phase B (§18.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips.</td>
+              </tr>
+              <tr>
+                <td><code>specPendingAccepted int</code></td>
+                <td>Phase A → Phase B hand-off: accepted draft count.</td>
+              </tr>
+              <tr>
+                <td><code>specPendingBonusToken llama.Token</code></td>
+                <td>Phase A → Phase B hand-off: bonus token sampled at <code>baseBatch + accepted</code>.</td>
+              </tr>
+              <tr>
+                <td><code>specPendingOriginalSampled llama.Token</code></td>
+                <td>Phase A → Phase B hand-off: snapshot of <code>s.sampled</code> taken before any <code>handleSampledToken</code> mutated it. Hybrid restore needs this for the re-decode at <code>basePast</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="18128-code-map">18.12.8 Code Map</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Role for MTP</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go"><code>sdk/kronk/model/draft_mtp.go</code></a></td>
+                <td><code>mtpNextNLayers</code>, <code>loadDraftModelMTP</code>, <code>selectAndLoadDraft</code>. Sole source for MTP load + detect.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>sdk/kronk/model/batch_mtp.go</code></a></td>
+                <td><code>mirrorTargetBatchToMTPDraft</code>, <code>generateDraftTokensMTP</code>, helpers (<code>batchTokensAt</code>, <code>mirrorBatchCapacity</code>).</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>sdk/kronk/model/yzma.go</code></a></td>
+                <td>FFI bindings for the three pre-norm symbols; <code>MTPAvailable</code>, <code>SetEmbeddingsPreNorm</code>, <code>GetEmbeddingsPreNorm&#123;,Ith&#125;</code>.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go"><code>sdk/kronk/model/model.go</code></a></td>
+                <td><code>draftModel</code> struct extended with MTP fields (<code>mtp</code>, <code>nEmbd</code>, MTP batches, pinned embd slices). <code>Unload</code> skips shared <code>ModelFree</code>.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>sdk/kronk/model/batch_slot.go</code></a></td>
+                <td><code>slot</code> struct extended with per-slot MTP state (<code>pendingH</code>, target-batch range, <code>mtpHasBatch</code>, <code>mtpDisabledForRequest</code>, <code>specSnapshot</code>, <code>specRounds</code>).</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>sdk/kronk/model/batch_slot_start.go</code></a></td>
+                <td>Skips separate-draft-prefill on MTP; disables MTP for the request on IMC cache hits (draft KV would be stale).</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>sdk/kronk/model/batch_engine.go</code></a></td>
+                <td><code>processBatch</code> integration: claims slot's target-batch range at every add site, mirrors after every successful decode, dispatches MTP vs separate-GGUF draft generation.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go"><code>sdk/kronk/model/batch_prefill_text.go</code></a></td>
+                <td><code>addPrefillChunk</code> claims (or extends) the slot's MTP target-batch range so prefill rows get mirrored.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>sdk/kronk/model/batch_speculative.go</code></a></td>
+                <td>Greedy-only MTP verify path; <code>originalSampled</code> snapshot; hybrid snapshot/restore; post-verify mirror; throttled <code>verify-done</code> log; MTP-specific <code>rollbackDraft</code>.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go"><code>sdk/kronk/model/batch_finish.go</code></a></td>
+                <td>Always-emit draft metrics when a drafter is configured.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/params.go"><code>sdk/kronk/model/params.go</code></a></td>
+                <td>`top_p == 0</td>
+                <td></td>
+                <td>== 1<code> from the request is treated as unset so the model-config </code>top_p` survives.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="18129-testing">18.12.9 Testing</h4>
+          <p>Test package: <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/tests/mtp"><code>sdk/kronk/tests/mtp/</code></a>.</p>
+          <p>The suite is a smoke test against the <code>unsloth/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL</code> target via <code>testlib.CfgMTPChat()</code>. A successful <code>Chat</code> and <code>ChatStreaming</code> response implicitly verifies that:</p>
+          <ul>
+            <li>The MTP draft context loaded (auto-detection passed).</li>
+            <li>Pre-norm extraction is wired correctly on both contexts.</li>
+            <li>The mirror step is in sync after every target decode.</li>
+            <li>Speculation produced valid drafts and the target accepted and emitted clean text.</li>
+          </ul>
+          <p><code>TestMain</code> skips the whole suite when the MTP model file is not downloaded, so contributors without the GGUF locally still get a green run.</p>
+          <p>Run from the project root:</p>
+          <pre className="code-block"><code className="language-shell">{`export RUN_IN_PARALLEL=yes
+export GITHUB_WORKSPACE=$(pwd)
+go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
         </div>
 
         <nav className="doc-sidebar">
@@ -8018,22 +8136,13 @@ default:
             <div className="doc-index-section">
               <a href="#chapter-6-speculative-decoding-mtp" className={`doc-index-header ${activeSection === 'chapter-6-speculative-decoding-mtp' ? 'active' : ''}`}>Chapter 6: Speculative Decoding &amp; MTP</a>
               <ul>
-                <li><a href="#61-overview-the-two-draft-modes" className={activeSection === '61-overview-the-two-draft-modes' ? 'active' : ''}>6.1 Overview &amp; The Two Draft Modes</a></li>
-                <li><a href="#62-separate-gguf-draft-recap" className={activeSection === '62-separate-gguf-draft-recap' ? 'active' : ''}>6.2 Separate-GGUF Draft (Recap)</a></li>
-                <li><a href="#63-mtp-drafts-multi-token-prediction" className={activeSection === '63-mtp-drafts-multi-token-prediction' ? 'active' : ''}>6.3 MTP Drafts (Multi-Token Prediction)</a></li>
-                <li><a href="#64-auto-detection-`selectandloaddraft`" className={activeSection === '64-auto-detection-`selectandloaddraft`' ? 'active' : ''}>6.4 Auto-Detection: `selectAndLoadDraft`</a></li>
-                <li><a href="#65-mtp-requirements-skip-reasons" className={activeSection === '65-mtp-requirements-skip-reasons' ? 'active' : ''}>6.5 MTP Requirements &amp; Skip Reasons</a></li>
-                <li><a href="#66-pre-norm-hidden-state-plumbing" className={activeSection === '66-pre-norm-hidden-state-plumbing' ? 'active' : ''}>6.6 Pre-Norm Hidden-State Plumbing</a></li>
-                <li><a href="#67-the-mirror-step-ar-draft-loop" className={activeSection === '67-the-mirror-step-ar-draft-loop' ? 'active' : ''}>6.7 The Mirror Step &amp; AR Draft Loop</a></li>
-                <li><a href="#68-verification-on-the-mtp-path" className={activeSection === '68-verification-on-the-mtp-path' ? 'active' : ''}>6.8 Verification on the MTP Path</a></li>
-                <li><a href="#69-hybrid-target-rollback-snapshotrestore" className={activeSection === '69-hybrid-target-rollback-snapshotrestore' ? 'active' : ''}>6.9 Hybrid Target Rollback: Snapshot/Restore</a></li>
-                <li><a href="#610-adaptive-`ndraft`-acceptance-ema" className={activeSection === '610-adaptive-`ndraft`-acceptance-ema' ? 'active' : ''}>6.10 Adaptive `nDraft` (Acceptance EMA)</a></li>
-                <li><a href="#611-per-slot-state-added-for-mtp" className={activeSection === '611-per-slot-state-added-for-mtp' ? 'active' : ''}>6.11 Per-Slot State Added for MTP</a></li>
-                <li><a href="#612-configuration" className={activeSection === '612-configuration' ? 'active' : ''}>6.12 Configuration</a></li>
-                <li><a href="#613-observability" className={activeSection === '613-observability' ? 'active' : ''}>6.13 Observability</a></li>
-                <li><a href="#614-code-map" className={activeSection === '614-code-map' ? 'active' : ''}>6.14 Code Map</a></li>
-                <li><a href="#615-testing" className={activeSection === '615-testing' ? 'active' : ''}>6.15 Testing</a></li>
-                <li><a href="#616-known-limitations" className={activeSection === '616-known-limitations' ? 'active' : ''}>6.16 Known Limitations</a></li>
+                <li><a href="#61-overview-—-the-two-draft-modes" className={activeSection === '61-overview-—-the-two-draft-modes' ? 'active' : ''}>6.1 Overview — The Two Draft Modes</a></li>
+                <li><a href="#62-when-to-use-a-separate-draft-model" className={activeSection === '62-when-to-use-a-separate-draft-model' ? 'active' : ''}>6.2 When to Use a Separate Draft Model</a></li>
+                <li><a href="#63-when-mtp-is-used" className={activeSection === '63-when-mtp-is-used' ? 'active' : ''}>6.3 When MTP Is Used</a></li>
+                <li><a href="#64-acceptance-`ndraft`-and-the-adaptive-throttle" className={activeSection === '64-acceptance-`ndraft`-and-the-adaptive-throttle' ? 'active' : ''}>6.4 Acceptance, `nDraft`, and the Adaptive Throttle</a></li>
+                <li><a href="#65-configuration-recap" className={activeSection === '65-configuration-recap' ? 'active' : ''}>6.5 Configuration Recap</a></li>
+                <li><a href="#66-observability" className={activeSection === '66-observability' ? 'active' : ''}>6.6 Observability</a></li>
+                <li><a href="#67-known-limitations" className={activeSection === '67-known-limitations' ? 'active' : ''}>6.7 Known Limitations</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -8210,6 +8319,7 @@ default:
                 <li><a href="#189-goroutine-budget" className={activeSection === '189-goroutine-budget' ? 'active' : ''}>18.9 Goroutine Budget</a></li>
                 <li><a href="#1810-request-tracing-spans" className={activeSection === '1810-request-tracing-spans' ? 'active' : ''}>18.10 Request Tracing Spans</a></li>
                 <li><a href="#1811-inference-code-path" className={activeSection === '1811-inference-code-path' ? 'active' : ''}>18.11 Inference Code Path</a></li>
+                <li><a href="#1812-mtp-internals" className={activeSection === '1812-mtp-internals' ? 'active' : ''}>18.12 MTP Internals</a></li>
               </ul>
             </div>
           </div>

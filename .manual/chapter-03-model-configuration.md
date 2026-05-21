@@ -976,24 +976,37 @@ unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
 
 ### 3.12 Speculative Decoding
 
-Speculative decoding uses a small, fast "draft" model to predict candidate
-tokens, then verifies them against the full "target" model in a single forward
-pass. When the draft model's predictions match the target's, multiple tokens
-are accepted per decode step — improving throughput without changing output
-quality. The output distribution is mathematically guaranteed to match the
-target model exactly, regardless of draft quality (Leviathan et al., 2023).
+Speculative decoding uses a small, fast source of draft tokens to predict
+candidates ahead of the target model, then verifies them in a single target
+forward pass. When the drafts match what the target would have produced,
+multiple tokens are accepted per decode step — improving throughput without
+changing output quality.
+
+Kronk supports two interchangeable sources of draft tokens:
+
+| Mode              | Drafter                                                              | How enabled                                                                                          |
+| ----------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Separate-GGUF** | A second, smaller GGUF you download and configure                    | Explicit `draft-model:` block in `model_config.yaml` (or `model.Config.DraftModel` from the SDK)     |
+| **MTP**           | A Multi-Token-Prediction head baked into the target GGUF             | Auto-enabled when the target GGUF ships an MTP head; no extra configuration                          |
+
+A model can have at most one drafter active. If you set `draft-model:`
+explicitly, that wins — the MTP head, even when present, is ignored on
+that load.
+
+For the user-facing operation guide (when to choose each mode, how to read
+acceptance metrics, observability), see [Chapter 6: Speculative Decoding & MTP](#chapter-6-speculative-decoding--mtp).
 
 #### How It Works
 
 | Step      | What Happens                                                                                       |
 | --------- | -------------------------------------------------------------------------------------------------- |
-| 1. Draft  | The draft model generates N candidate tokens (default 5)                                           |
+| 1. Draft  | The drafter generates N candidate tokens (default 5 for separate-GGUF, 4 for MTP)                  |
 | 2. Batch  | All candidates plus the last accepted token are decoded by the target model in one forward pass    |
 | 3. Verify | Each candidate is accepted with probability `min(1, p_target / q_draft)`                           |
 | 4. Reject | On rejection, a corrective token is sampled from the target and remaining candidates are discarded |
 | 5. Bonus  | If all candidates are accepted, a bonus token is sampled from the target                           |
 
-The speedup depends on the draft model's acceptance rate. Higher acceptance
+The speedup depends on the drafter's acceptance rate. Higher acceptance
 means more tokens per forward pass.
 
 | Factor              | Effect on Acceptance Rate                                                                                                     |
@@ -1002,18 +1015,18 @@ means more tokens per forward pass.
 | Temperature         | Lower temperatures yield higher acceptance. At 0.8, expect ~30% of steps to accept zero draft tokens.                         |
 | Task type           | Predictable text (boilerplate, common patterns) accepts more often than creative or reasoning-heavy output.                   |
 
-#### Requirements
+#### Separate-GGUF Draft
+
+Requirements:
 
 - Draft and target models must share the **same vocabulary** (same tokenizer)
 - `n_seq_max` must be `1` (single-slot mode only)
 - The draft model must be downloaded and available locally
 - Only text generation is supported (not vision/audio)
 
-#### Configuration
-
-Speculative decoding is configured via the `draft-model` block under a
-target model entry in `model_config.yaml` (or via `model.Config.DraftModel`
-when you embed the SDK directly):
+Configured via the `draft-model` block under a target model entry in
+`model_config.yaml` (or via `model.Config.DraftModel` when you embed the
+SDK directly):
 
 ```yaml
 # In ~/.kronk/model_config.yaml
@@ -1067,6 +1080,55 @@ The `ndraft` parameter controls how many candidates to generate. Higher values
 increase the potential speedup but also increase wasted work when predictions
 are rejected. The default of 5 is a good starting point; tune based on your
 observed acceptance rates.
+
+#### MTP (Multi-Token Prediction)
+
+Some modern target GGUFs (Qwen3.5 / Qwen3.6 architectures, and other
+architectures that adopt the same metadata key) ship a Multi-Token
+Prediction head baked into the same file as the target weights. The head
+is not a standalone language model — it is a few extra layers grafted
+onto the target that predict the next N tokens of the target's
+continuation. Because the head shares the target's weights and
+tokenizer, there is no separate file to download and no vocabulary
+mismatch to worry about.
+
+MTP is **auto-enabled** — there is no MTP block in `model_config.yaml`.
+Kronk turns it on when:
+
+- The target GGUF metadata contains `nextn_predict_layers > 0`.
+- The loaded llama.cpp library is recent enough to expose the
+  pre-norm hidden-state API (the libraries Kronk ships with are
+  current; this matters only if you pin an older library).
+- You have **not** set `draft-model:` on the same entry (an explicit
+  separate-GGUF draft always wins).
+
+Both single-slot (`nseq-max: 1`) and multi-slot (`nseq-max: 2+`) are
+supported.
+
+Minimal `model_config.yaml` snippet for a Qwen3.6 MTP target:
+
+```yaml
+mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: f16
+  cache-type-v: f16
+  nseq-max: 2
+  incremental-cache: true
+```
+
+On a successful load the server logs a line like:
+
+```
+draft-model-mtp status=loaded source=auto-detected nDraft=4 nextn-layers=1 nEmbd=2048 nCtx=8192
+```
+
+The default `nDraft` for MTP is `4`, which is conservative because MTP
+heads typically have high acceptance for the first 1–3 tokens and decay
+rapidly beyond that. See Chapter 6 for the full operation guide,
+including the adaptive throttle, observability events, and known
+limitations.
 
 ### 3.13 Sampling Parameters
 
