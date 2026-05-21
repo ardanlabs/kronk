@@ -252,8 +252,8 @@ speculation — so dashboards and log parsers see a stable schema.
 | `draft-model-mtp status=auto-detect-skipped`     | Once at model startup when MTP could not be enabled (no metadata, no pre-norm API).                                                             |
 | `speculative status=mtp-mirror-error`            | An MTP draft step failed. The slot continues target-only for the remainder of the request.                                                      |
 | `speculative status=mtp-disabled-imc-hit`        | MTP disabled for this request because the prompt hit IMC cache; the next request on the slot can use MTP again. (See §6.7.)                     |
-| `speculative status=mtp-disabled-hybrid-restore` | MTP disabled for the remainder of the request after a hybrid-target rollback. The slot continues target-only.                                   |
 | `speculative status=mtp-disabled-mirror-error`   | MTP disabled for the remainder of the request after a post-verify mirror failure. The slot continues target-only.                               |
+| `speculative status=verify-prenorm-capture-error` | Phase A failed to capture the slot's pre-norm rows into `verifyH`. Phase B's mirror falls back to the live target buffer; on hybrid targets this may force a `mirror-error` disable if a restore also ran. |
 
 **Shared speculative-decoding log events:**
 
@@ -270,7 +270,6 @@ speculation — so dashboards and log parsers see a stable schema.
 | Separate-GGUF: single-slot only                     | `nseq-max` must be `1` on the target entry. If you need multi-slot speculation, use MTP on a target that ships the head.                              |
 | MTP: greedy verify only                             | The MTP path always runs greedy verification, so strict Leviathan-style distribution equivalence at `temperature > 0` is not guaranteed. The full slot sampler (temperature / top-k / top-p) is still applied at each accepted position, so output shape is preserved. |
 | MTP + IMC: MTP disabled on cache hits               | If an incoming request hits the Incremental Message Cache, MTP is disabled for that request — IMC restores the target sequence state but does not carry the draft sequence state with it. The slot falls back to plain target decoding; the next request on the same slot can use MTP again. |
-| MTP + hybrid targets: MTP disabled after a partial-reject rollback | On a hybrid (transformer + recurrent) target, a partial-reject round triggers a snapshot/restore that invalidates the MTP draft state. The slot disables MTP for the remainder of the request and continues target-only. |
 | MTP + hybrid targets: f16 KV cache + no Flash Attention required | Kronk forces `cache-type-k/v: f16` and disables Flash Attention on hybrid models. Throughput on hybrid + MTP is meaningfully lower than dense / MoE targets regardless of `nseq-max`. |
 | MTP: `nDraft` ceiling is fixed at 4                 | The adaptive throttle scales down from 4 but there is no per-model knob to raise the ceiling on exceptionally well-behaved MTP heads.                  |
 | Speculative decoding is text-only                   | Neither draft mode applies to vision or audio requests.                                                                                              |

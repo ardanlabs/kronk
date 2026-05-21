@@ -1627,6 +1627,18 @@ batch row. With `nseq-max > 1` this is benign because the restore
 only runs in Pass 2B (`finalizeSpeculativeTokens`), after every other
 spec slot has read its logits in Pass 2A. See §18.12.5.
 
+**MTP mirror interaction.** The same re-decode also overwrites the
+target's per-context **pre-norm** buffer with rows indexed against the
+small rebatch, not the original shared `e.batch`. Phase B's MTP mirror
+(`mirrorTargetBatchToMTPDraft`) would then read the wrong pre-norm
+rows. To decouple the mirror from the restore, Phase A
+(`verifySpeculativeTokens`) copies the slot's pre-norm rows into a
+slot-local `s.verifyH` buffer via `captureVerifyPreNorm` **before** any
+Phase B side-effect can mutate the live buffer. Phase B's mirror reads
+from `s.verifyH` when populated, so MTP keeps running across partial
+rejections on hybrid targets instead of being disabled for the rest of
+the request.
+
 #### 18.12.7 Per-Slot MTP State
 
 PR #593 added the following fields to `slot` in
@@ -1639,7 +1651,8 @@ buffer policy.
 | `pendingH []float32`                                  | Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.                                            |
 | `targetBatchStart / Count / BasePos`                  | Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live. |
 | `mtpHasBatch`                                         | True between `batch.Add()` and the post-decode mirror; cleared by the mirror.                                                              |
-| `mtpDisabledForRequest`                               | Disables MTP for the remainder of the current request. Set at `startSlot` on IMC cache hits (the IMC restore covers only the target seq, so the draft KV would be stale), and set inside `finalizeSpeculativeTokens` after a hybrid restore re-decode or a post-rollback mirror failure (in those cases the draft KV is wiped and the slot continues target-only). Cleared by `slot.reset()` when the slot is recycled for the next request. |
+| `mtpDisabledForRequest`                               | Disables MTP for the remainder of the current request. Set at `startSlot` on IMC cache hits (the IMC restore covers only the target seq, so the draft KV would be stale), and set inside `finalizeSpeculativeTokens` after a post-rollback mirror failure (the draft KV is wiped and the slot continues target-only). Cleared by `slot.reset()` when the slot is recycled for the next request. |
+| `verifyH []float32`                                   | Slot-local cache of the target's pre-norm hidden-state rows for the just-decoded spec batch range (1+nDraft rows of nEmbd floats). Captured at the top of `verifySpeculativeTokens` (Phase A) BEFORE any Phase B side-effect (notably `restoreTargetSpecSnapshot`'s re-decode on a hybrid target) can invalidate the per-context pre-norm buffer. `mirrorTargetBatchToMTPDraft` reads from this buffer when populated and clears it after consumption. Lazy-grow / never-shrink. |
 | `specSnapshot []byte`                                 | Pre-spec target state buffer for hybrid rollback (§18.12.6). Lazy-grow.                                                                    |
 | `specRounds`                                          | Counter used to throttle per-round verify logging (logs first round, then every 32nd).                                                     |
 | `specPendingFinalize bool`                            | Gates Phase B (§18.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips. |
