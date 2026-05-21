@@ -34,6 +34,8 @@ github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883 h1:bvNMNQO63//z+xNg
 github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883/go.mod h1:rCTlJbsFo29Kk6CurOXKm700vrz8f0KW0JNfpkRJY/8=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0/go.mod h1:t2tdKJDJF9BV14lnkjHmOQgcvEKgtqs5a1N3LNdJhGE=
+github.com/ardanlabs/bucky v0.0.0-20260519052158-6b1adf27cbf8 h1:3edRA4zTF74EdVkGkhX+gXLYc9TaTq6cACx9S4zZu3g=
+github.com/ardanlabs/bucky v0.0.0-20260519052158-6b1adf27cbf8/go.mod h1:5KoYOayUY2sFR5uujM4DtnsiNit2I8jZQl1iQKN5EtE=
 github.com/ardanlabs/conf/v3 v3.12.0 h1:8tdFT7WslYR4q9wOY/fwyYN20I+4JhMCcEgzWc73Hj0=
 github.com/ardanlabs/conf/v3 v3.12.0/go.mod h1:XlL9P0quWP4m1weOVFmlezabinbZLI05niDof/+Ochk=
 github.com/ardanlabs/jinja v1.4.0 h1:9iE0/wF4zhcws1CYZCWqJTQP8YuhC4FjycBGzCTuOFw=

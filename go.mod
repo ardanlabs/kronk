@@ -3,6 +3,7 @@ module github.com/ardanlabs/kronk
 go 1.26.0
 
 require (
+	github.com/ardanlabs/bucky v0.0.0-20260519052158-6b1adf27cbf8
 	github.com/ardanlabs/conf/v3 v3.12.0
 	github.com/ardanlabs/jinja v1.4.0
 	github.com/arl/statsviz v0.8.0
