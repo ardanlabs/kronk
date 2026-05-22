@@ -32,6 +32,8 @@ In this talk, Bill will show why self-hosted inference belongs in your Go applic
 
 ### Tic-Tac-Toe
 
+Use the writing-go skill to perform this work.
+
 Write a 2-player terminal tic-tac-toe game in a single file
 `tictactoe/main.go` using only the Go standard library. Keep the code
 short and direct — do not add features I haven't asked for.
