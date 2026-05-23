@@ -865,6 +865,34 @@ func applyRenamePrefix(repoSegment, fileName string) string {
 	return fileName
 }
 
+// repoMatchesRenameRule reports whether repoSegment matches any active
+// rename-prefix rule (e.g. the unsloth "*-MTP-GGUF" sibling repos). The
+// catalog resolver uses this to de-prioritize sibling repos during HF
+// search so a bare model id never silently resolves to the renamed
+// variant.
+func repoMatchesRenameRule(repoSegment string) bool {
+	for _, r := range renamePrefixRules {
+		if r.repoPattern.MatchString(repoSegment) {
+			return true
+		}
+	}
+	return false
+}
+
+// modelIDCarriesRenameMarker reports whether modelID already encodes a
+// rename-rule marker (e.g. starts with "mtp-"). When true, the resolver
+// should prefer sibling repos that match the same marker rather than
+// de-prioritize them.
+func modelIDCarriesRenameMarker(modelID string) bool {
+	lower := strings.ToLower(modelID)
+	for _, r := range renamePrefixRules {
+		if strings.HasPrefix(lower, r.marker+"-") || strings.HasPrefix(lower, r.marker+"_") {
+			return true
+		}
+	}
+	return false
+}
+
 // applyMTPPrefix is the MTP-specific convenience wrapper around
 // applyRenamePrefix. Kept as a named function because callers in catalog
 // helpers read more clearly when the intent is spelled out.

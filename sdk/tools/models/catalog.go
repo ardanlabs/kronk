@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -257,6 +258,7 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 
 	online := hasNetwork()
 
+	var preferredFamily string
 	if cached, ok := r.lookupCache(rm, provider, modelID); ok {
 		// Self-heal: pre-MMProjOrig entries (or those persisted from a
 		// local-disk discovery before HF was reachable) carry the local
@@ -270,6 +272,11 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 			r.attachLocal(&cached)
 			return cached, nil
 		}
+
+		// Remember the cached repo so the HF search below can prefer it
+		// over any sibling repos that happen to surface ahead of it in
+		// the search results.
+		preferredFamily = cached.Family
 	}
 
 	// 2. HuggingFace search. If a provider was given, search only that
@@ -287,7 +294,7 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 
 	if online {
 		for _, p := range providers {
-			res, ok, err := r.resolveAtProvider(ctx, p, modelID)
+			res, ok, err := r.resolveAtProvider(ctx, p, modelID, preferredFamily)
 			if err != nil {
 				return Resolution{}, fmt.Errorf("resolve: provider %q: %w", p, err)
 			}
@@ -725,7 +732,12 @@ func (r *Resolver) attachLocal(res *Resolution) {
 // resolveAtProvider searches a single provider for the model. The bool is
 // true on a successful match; false (with nil error) means the provider
 // has no matching repo and the caller should try the next one.
-func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID string) (Resolution, bool, error) {
+//
+// preferredFamily, when non-empty, is the HF repo name a prior cache
+// entry already resolved to. It is moved to the front of the search
+// results so a self-heal repair cannot silently flip the model to a
+// different sibling repo.
+func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, preferredFamily string) (Resolution, bool, error) {
 	searchTerm := stripQuantSuffix(modelID)
 
 	repos, err := r.hfClient.SearchModels(ctx, provider, searchTerm)
@@ -735,6 +747,8 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID stri
 		}
 		return Resolution{}, false, err
 	}
+
+	repos = orderRepos(repos, modelID, preferredFamily)
 
 	for _, ownerRepo := range repos {
 		owner, repo, ok := splitOwnerRepo(ownerRepo)
@@ -774,6 +788,61 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID stri
 	}
 
 	return Resolution{}, false, nil
+}
+
+// orderRepos returns repos sorted so the most likely correct candidate
+// is tried first by resolveAtProvider. The ordering rules, highest
+// priority first:
+//
+//  1. Any repo whose name matches preferredFamily (case-insensitive).
+//     Used when a cached entry already pinned the right repo and the
+//     resolver is only revisiting HF to fill in a missing field.
+//  2. Repos that do NOT match any download rename rule (e.g. the
+//     "*-MTP-GGUF" siblings). This prevents a bare-name pull like
+//     "unsloth/Qwen3.5-0.8B-Q8_0" from silently resolving to a sibling
+//     repo whose file would be written to disk under a renamed id.
+//  3. Repos that DO match a rename rule come last, unless the requested
+//     modelID itself carries the marker (e.g. "mtp-Foo-Q8_0"), in which
+//     case those repos are promoted to the front instead.
+//
+// Sorting is stable so the upstream HF result order is preserved within
+// each priority tier.
+func orderRepos(repos []string, modelID, preferredFamily string) []string {
+	if len(repos) <= 1 {
+		return repos
+	}
+
+	out := slices.Clone(repos)
+	wantMarker := modelIDCarriesRenameMarker(modelID)
+
+	rank := func(ownerRepo string) int {
+		_, repo, ok := splitOwnerRepo(ownerRepo)
+		if !ok {
+			return 3
+		}
+
+		if preferredFamily != "" && strings.EqualFold(repo, preferredFamily) {
+			return 0
+		}
+
+		marked := repoMatchesRenameRule(repo)
+		switch {
+		case wantMarker && marked:
+			return 1
+		case wantMarker && !marked:
+			return 2
+		case !wantMarker && !marked:
+			return 1
+		default:
+			return 2
+		}
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		return rank(out[i]) < rank(out[j])
+	})
+
+	return out
 }
 
 // =============================================================================
