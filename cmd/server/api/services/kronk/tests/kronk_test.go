@@ -82,6 +82,11 @@ func Test_API(t *testing.T) {
 	test.Run(t, rerank200(tokens), "rerank-200")
 
 	// -------------------------------------------------------------------------
+	// Model: tiny.en (whisper / bucky)
+
+	test.Run(t, audioTranscriptions200(t, tokens), "audio-transcriptions-200")
+
+	// -------------------------------------------------------------------------
 	// Auth tests (don't require model loading, use invalid tokens)
 
 	test.Run(t, chatEndpoint401(tokens), "chatEndpoint-401")
@@ -90,6 +95,7 @@ func Test_API(t *testing.T) {
 	test.Run(t, embed401(tokens), "embedding-401")
 	test.Run(t, rerank401(tokens), "rerank-401")
 	test.Run(t, tokenize401(tokens), "tokenize-401")
+	test.Run(t, audioTranscriptions401(t, tokens), "audio-transcriptions-401")
 }
 
 // =============================================================================
@@ -208,6 +214,22 @@ func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	}
 
 	tokens["tokenize"] = token
+
+	// -------------------------------------------------------------------------
+
+	endpoints = map[string]auth.RateLimit{
+		"transcriptions": {
+			Limit:  0,
+			Window: auth.RateUnlimited,
+		},
+	}
+
+	token, err = sec.GenerateToken(false, endpoints, 60*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokens["transcriptions"] = token
 
 	return tokens
 }

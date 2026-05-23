@@ -1606,19 +1606,20 @@ func loadSamples(path string) ([]float32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode %q: %w", path, err)
 	}
+
 	return samples, nil
 }
 
 // =============================================================================
 
-func transcribe(w *bucky.Bucky, samples []float32) error {
+func transcribe(b *bucky.Bucky, samples []float32) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	fmt.Println("\\nTranscribing...")
 	start := time.Now()
 
-	tr, err := w.Transcribe(ctx, samples,
+	tr, err := b.Transcribe(ctx, samples,
 		model.WithLanguage("en"),
 		model.WithOnSegment(func(seg model.Segment) {
 			fmt.Printf("  segment %2d [%6dms → %6dms] %s\\n",
@@ -2833,7 +2834,8 @@ func main() {
 }
 
 func run() error {
-	if err := installSystem(); err != nil {
+	mdls, err := installSystem()
+	if err != nil {
 		return fmt.Errorf("unable to install system: %w", err)
 	}
 
@@ -2847,6 +2849,7 @@ func run() error {
 
 	cfg := pool.Config{
 		Log:           kronk.FmtLogger,
+		KronkModels:   mdls,
 		BudgetPercent: 80,
 		TTL:           cacheTTL,
 	}
@@ -2888,7 +2891,7 @@ func run() error {
 	return nil
 }
 
-func installSystem() error {
+func installSystem() (*models.Models, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
@@ -2896,28 +2899,32 @@ func installSystem() error {
 		libs.WithVersion(defaults.LibVersion("")),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return fmt.Errorf("unable to install llama.cpp: %w", err)
+		return nil, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
 
 	mdls, err := models.New()
 	if err != nil {
-		return fmt.Errorf("unable to create models system: %w", err)
+		return nil, fmt.Errorf("unable to create models system: %w", err)
 	}
 
 	for _, src := range []string{questionModel, visionModel} {
 		fmt.Println("Downloading model:", src)
 		if _, err := mdls.Download(ctx, kronk.FmtLogger, src); err != nil {
-			return fmt.Errorf("unable to install model %q: %w", src, err)
+			return nil, fmt.Errorf("unable to install model %q: %w", src, err)
 		}
 	}
 
-	return nil
+	if err := mdls.BuildIndex(kronk.FmtLogger, false); err != nil {
+		return nil, fmt.Errorf("unable to build model index: %w", err)
+	}
+
+	return mdls, nil
 }
 
 func acquireAndAsk(p *pool.Pool) error {
@@ -2926,7 +2933,7 @@ func acquireAndAsk(p *pool.Pool) error {
 
 	fmt.Println("\\nAcquiring question model:", questionModel)
 
-	krn, err := p.AquireModel(ctx, questionModel)
+	krn, err := p.Kronk.AquireModel(ctx, questionModel)
 	if err != nil {
 		return fmt.Errorf("acquire model: %w", err)
 	}
@@ -2961,7 +2968,7 @@ func acquireAndSee(p *pool.Pool) error {
 
 	fmt.Println("\\nAcquiring vision model:", visionModel)
 
-	krn, err := p.AquireModel(ctx, visionModel)
+	krn, err := p.Kronk.AquireModel(ctx, visionModel)
 	if err != nil {
 		return fmt.Errorf("acquire model: %w", err)
 	}
@@ -3026,7 +3033,7 @@ func streamResponse(ch <-chan model.ChatResponse) error {
 }
 
 func printStatus(p *pool.Pool, label string) {
-	details, err := p.ModelStatus()
+	details, err := p.Kronk.ModelStatus()
 	if err != nil {
 		fmt.Printf("\\nModelStatus error: %v\\n", err)
 		return

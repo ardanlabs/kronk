@@ -15,9 +15,12 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/pool"
+	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
+	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -132,15 +135,42 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	// -------------------------------------------------------------------------
-	// Init Kronk
+	// Bucky (whisper) Libs + Models
+	//
+	// Mirrors the production wiring in cmd/server/api/services/kronk/main.go
+	// so the /v1/audio/transcriptions endpoint is reachable in tests
+	// when the whisper library and a whisper model (e.g. tiny.en)
+	// have been installed under ~/.kronk.
+
+	buckyLibs, err := buckylibs.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buckyModels, err := buckymodels.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := buckyModels.BuildIndex(log.Info, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// -------------------------------------------------------------------------
+	// Init Kronk + Bucky
 
 	if err := kronk.Init(); err != nil {
 		t.Fatal(err)
 	}
 
+	if err := bucky.Init(bucky.WithInitLibPath(buckyLibs.LibsPath())); err != nil {
+		log.Info(ctx, "startup", "WARNING", "bucky init failed, audio transcription tests will fail", "ERROR", err)
+	}
+
 	p, err := pool.New(pool.Config{
 		Log:             log.Info,
 		KronkModels:     models,
+		BuckyModels:     buckyModels,
 		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
 		BudgetPercent:   95,
 		ModelsInPool:    1,
@@ -174,12 +204,14 @@ func New(t *testing.T, testName string) *Test {
 	// -------------------------------------------------------------------------
 
 	cfgMux := mux.Config{
-		Build:      "test",
-		Log:        log,
-		AuthClient: authClient,
-		Pool:       p,
-		Libs:       libs,
-		Models:     models,
+		Build:       "test",
+		Log:         log,
+		AuthClient:  authClient,
+		Pool:        p,
+		Libs:        libs,
+		Models:      models,
+		BuckyLibs:   buckyLibs,
+		BuckyModels: buckyModels,
 	}
 
 	mux := mux.WebAPI(cfgMux,

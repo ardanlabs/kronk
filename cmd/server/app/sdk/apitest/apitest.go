@@ -72,7 +72,11 @@ func (at *Test) Run(t *testing.T, table []Table, testName string, options ...Opt
 				r := httptest.NewRequest(tt.Method, tt.URL, nil)
 				w := httptest.NewRecorder()
 
-				if tt.Input != nil {
+				switch {
+				case tt.RawBody != nil:
+					r = httptest.NewRequest(tt.Method, tt.URL, bytes.NewBuffer(tt.RawBody))
+
+				case tt.Input != nil:
 					d, err := json.Marshal(tt.Input)
 					if err != nil {
 						t.Fatalf("Should be able to marshal the model : %s", err)

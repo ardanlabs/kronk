@@ -50,8 +50,10 @@ jobs:
         id: cache-models
         uses: actions/cache/restore@v5
         with:
-          path: ~/.kronk/models
-          key: ${{ runner.os }}-models-v3
+          path: |
+            ~/.kronk/models
+            ~/.kronk/bucky-models
+          key: ${{ runner.os }}-models-v4
       - name: Install kronk command
         run: go install ./cmd/kronk
       - name: Install Libs
@@ -59,9 +61,14 @@ jobs:
         # the well-known defaultVersion baked into sdk/tools/libs/libs.go.
         # Bumping defaultVersion in code rolls CI forward; CI never
         # silently tracks llama.cpp's latest tag.
+        #
+        # `kronk bucky libs --local` does the same for the whisper.cpp
+        # backend used by the bucky pool and the
+        # /v1/audio/transcriptions endpoint.
         run: |
           mkdir -p $HOME/.kronk/libraries
           kronk libs --local
+          kronk bucky libs --local
       - name: Download test models
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
@@ -70,6 +77,7 @@ jobs:
           kronk model pull --local Qwen/Qwen3-8B-Q8_0
           kronk model pull --local ggml-org/embeddinggemma-300m-qat-Q8_0
           kronk model pull --local gpustack/bge-reranker-v2-m3-Q8_0
+          kronk bucky model pull --local tiny.en
       - name: Install static analysis tools
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@latest
@@ -94,11 +102,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh cache delete "${{ runner.os }}-models-v3" --repo ${{ github.repository }} || true
+          gh cache delete "${{ runner.os }}-models-v4" --repo ${{ github.repository }} || true
       - name: Save models cache
         if: github.ref == 'refs/heads/main' && steps.cache-models.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@v5
         with:
-          path: ~/.kronk/models
-          key: ${{ runner.os }}-models-v3
+          path: |
+            ~/.kronk/models
+            ~/.kronk/bucky-models
+          key: ${{ runner.os }}-models-v4

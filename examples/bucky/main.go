@@ -143,19 +143,20 @@ func loadSamples(path string) ([]float32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode %q: %w", path, err)
 	}
+
 	return samples, nil
 }
 
 // =============================================================================
 
-func transcribe(w *bucky.Bucky, samples []float32) error {
+func transcribe(b *bucky.Bucky, samples []float32) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	fmt.Println("\nTranscribing...")
 	start := time.Now()
 
-	tr, err := w.Transcribe(ctx, samples,
+	tr, err := b.Transcribe(ctx, samples,
 		model.WithLanguage("en"),
 		model.WithOnSegment(func(seg model.Segment) {
 			fmt.Printf("  segment %2d [%6dms → %6dms] %s\n",
