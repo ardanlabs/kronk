@@ -34,6 +34,7 @@ import type {
   BuckyModelsResponse,
   BuckyModelActionResponse,
   BuckyModelDetails,
+  TranscriptionResponse,
 } from '../types';
 
 class ApiService {
@@ -918,6 +919,41 @@ class ApiService {
       });
 
     return () => controller.abort();
+  }
+
+  async transcribe(
+    modelID: string,
+    file: Blob,
+    opts: {
+      filename?: string;
+      language?: string;
+      translate?: boolean;
+      prompt?: string;
+      token?: string;
+    } = {},
+  ): Promise<TranscriptionResponse> {
+    const form = new FormData();
+    form.append('model', modelID);
+    form.append('file', file, opts.filename || 'audio');
+    form.append('response_format', 'verbose_json');
+    if (opts.language) form.append('language', opts.language);
+    if (opts.translate) form.append('translate', 'true');
+    if (opts.prompt) form.append('prompt', opts.prompt);
+
+    const headers: Record<string, string> = {};
+    if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
+
+    const response = await fetch(`${this.baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers,
+      body: form,
+    });
+
+    if (!response.ok) {
+      throw new Error(await this.parseErrorMessage(response));
+    }
+
+    return response.json();
   }
 
 }

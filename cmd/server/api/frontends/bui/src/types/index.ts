@@ -974,3 +974,22 @@ export interface BuckyModelDetails {
   n_text_layer: number;
   n_mels: number;
 }
+
+// =============================================================================
+// Audio transcription / translation
+
+export interface TranscriptionSegment {
+  id: number;
+  start: number;
+  end: number;
+  text: string;
+  no_speech_prob: number;
+}
+
+export interface TranscriptionResponse {
+  task: string;
+  language: string;
+  duration: number;
+  text: string;
+  segments: TranscriptionSegment[];
+}

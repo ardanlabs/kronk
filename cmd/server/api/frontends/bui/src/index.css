@@ -5467,6 +5467,227 @@ button.autotest-detail-log-header:focus-visible {
     color: var(--color-gray-500);
 }
 
+/* ========================================================================== */
+/* Translator (Bucky → Apps → Translator)                                     */
+
+.translator-page {
+    padding: 24px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.translator-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, 420px) 1fr;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+@media (max-width: 900px) {
+    .translator-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.translator-card {
+    background: var(--color-gray-50);
+    border: 1px solid var(--color-gray-300);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.translator-card h3 {
+    margin: 0 0 4px 0;
+    font-size: 15px;
+    color: var(--color-gray-800);
+}
+
+.translator-card label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-gray-700);
+    margin: 4px 0 2px 0;
+}
+
+.translator-textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    background: var(--color-white);
+    color: var(--color-gray-900);
+}
+
+.translator-textarea:focus {
+    outline: none;
+    border-color: var(--color-light-blue);
+    box-shadow: 0 0 0 3px rgba(134, 213, 228, 0.2);
+}
+
+.translator-drop {
+    border: 2px dashed var(--color-gray-300);
+    border-radius: 8px;
+    padding: 32px 24px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--color-white);
+    color: var(--color-gray-600);
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.translator-drop:hover,
+.translator-drop-over {
+    background: rgba(134, 213, 228, 0.08);
+    border-color: var(--color-light-blue);
+    color: var(--color-gray-800);
+}
+
+.translator-drop-icon {
+    font-size: 28px;
+    margin-bottom: 6px;
+}
+
+.translator-mic-row {
+    display: flex;
+    gap: 8px;
+}
+
+.translator-input-preview {
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+    padding: 10px;
+    background: var(--color-white);
+}
+
+.translator-input-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.translator-input-source {
+    background: var(--color-gray-200);
+    color: var(--color-gray-700);
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.translator-audio {
+    width: 100%;
+}
+
+.translator-submit-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+}
+
+.translator-result {
+    margin-top: 16px;
+}
+
+.translator-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.translator-result-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.translator-text {
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 0;
+    max-height: 360px;
+    overflow: auto;
+    color: var(--color-gray-900);
+}
+
+.translator-meta {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.translator-meta td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--color-gray-200);
+    vertical-align: top;
+}
+
+.translator-meta td:first-child {
+    color: var(--color-gray-600);
+    width: 180px;
+    white-space: nowrap;
+}
+
+.translator-meta tr:last-child td {
+    border-bottom: none;
+}
+
+.translator-segments {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 6px;
+}
+
+.translator-segments th,
+.translator-segments td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--color-gray-200);
+    text-align: left;
+    vertical-align: top;
+}
+
+.translator-segments th {
+    background: var(--color-gray-100);
+    color: var(--color-gray-600);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--color-light-blue, #2196f3);
+    cursor: pointer;
+    padding: 0;
+    font-size: 13px;
+    text-decoration: underline;
+}
+
+.btn-link:hover {
+    color: var(--color-gray-800);
+}
+
 @media print {
     .app {
         height: auto;

@@ -86,6 +86,11 @@ const menuStructure: MenuCategory[] = [
         label: 'Libs',
         items: [{ page: 'bucky-libs', label: 'Manage' }],
       },
+      {
+        id: 'bucky-apps',
+        label: 'Apps',
+        items: [{ page: 'translator', label: 'Translator' }],
+      },
     ],
   },
   {

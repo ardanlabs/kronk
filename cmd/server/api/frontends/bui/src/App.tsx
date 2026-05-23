@@ -14,6 +14,7 @@ import SecurityKeyDelete from './components/SecurityKeyDelete';
 import SecurityTokenCreate from './components/SecurityTokenCreate';
 import Settings from './components/Settings';
 import Chat from './components/Chat';
+import Translator from './components/Translator';
 import DocsSDK from './components/DocsSDK';
 import DocsSDKKronk from './components/DocsSDKKronk';
 import DocsSDKModel from './components/DocsSDKModel';
@@ -58,6 +59,7 @@ export type Page =
   | 'libs-pull'
   | 'bucky-libs'
   | 'bucky-model-list'
+  | 'translator'
   | 'security-key-list'
   | 'security-key-create'
   | 'security-key-delete'
@@ -96,6 +98,7 @@ export const routeMap: Record<Page, string> = {
   'libs-pull': '/libs/pull',
   'bucky-libs': '/bucky/libs',
   'bucky-model-list': '/bucky/models',
+  'translator': '/bucky/translator',
   'security-key-list': '/security/keys',
   'security-key-create': '/security/keys/create',
   'security-key-delete': '/security/keys/delete',
@@ -196,6 +199,7 @@ function App() {
                 <Route path="/libs/pull" element={<LibsPull />} />
                 <Route path="/bucky/libs" element={<BuckyLibs />} />
                 <Route path="/bucky/models" element={<BuckyModels />} />
+                <Route path="/bucky/translator" element={<Translator />} />
                 <Route path="/security/keys" element={<SecurityKeyList />} />
                 <Route path="/security/keys/create" element={<SecurityKeyCreate />} />
                 <Route path="/security/keys/delete" element={<SecurityKeyDelete />} />

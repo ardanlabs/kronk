@@ -5,7 +5,7 @@ go 1.26.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
-	github.com/ardanlabs/bucky v0.0.0-20260521065745-3fc727c866c6
+	github.com/ardanlabs/bucky v1.0.0
 	github.com/ardanlabs/kronk v1.25.9
 	github.com/duckdb/duckdb-go/v2 v2.10503.0
 	github.com/google/uuid v1.6.0
