@@ -326,14 +326,6 @@ func gpuDevices(in []string) []string {
 	return out
 }
 
-// newBool returns a pointer to the supplied bool. Used to populate
-// model.Config's *bool fields without inline addressable temporaries.
-//
-//go:fix inline
-func newBool(b bool) *bool {
-	return new(b)
-}
-
 // humanBytes is a local copy of core.HumanBytes used in plan logging.
 // Duplicated to avoid pulling the internal core package into the
 // loader's import graph.
