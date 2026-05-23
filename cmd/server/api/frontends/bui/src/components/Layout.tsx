@@ -138,7 +138,8 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-manual', label: 'Observability', hash: 'chapter-15-observability' },
           { page: 'docs-manual', label: 'MCP Service', hash: 'chapter-16-mcp-service' },
           { page: 'docs-manual', label: 'Troubleshooting', hash: 'chapter-17-troubleshooting' },
-          { page: 'docs-manual', label: 'Developer Guide', hash: 'chapter-18-developer-guide' },
+          { page: 'docs-manual', label: 'Bucky (Audio Transcription)', hash: 'chapter-18-bucky' },
+          { page: 'docs-manual', label: 'Developer Guide', hash: 'chapter-19-developer-guide' },
         ],
       },
       {

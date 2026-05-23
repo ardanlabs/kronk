@@ -393,6 +393,20 @@ data: {"id":"...","choices":[{"delta":{"content":"!"}}],...}
 data: [DONE]
 ```
 
+**Audio Transcription (Bucky):**
+
+```shell
+curl -X POST http://localhost:11435/v1/audio/transcriptions \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -F file=@samples/jfk.wav \
+  -F model=tiny.en \
+  -F response_format=json
+```
+
+See [Chapter 18 §18.7](chapter-18-bucky.md#187-api-endpoint) for the
+full form-field reference and supported response formats
+(`json`, `verbose_json`, `text`, `srt`, `vtt`).
+
 ### 14.11 LangChain
 
 Use LangChain with Kronk via the OpenAI integration.

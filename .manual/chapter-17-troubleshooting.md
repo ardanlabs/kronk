@@ -731,6 +731,11 @@ kronk model remove <provider/model-id> --local
 Models live under `~/.kronk/models/`; check available space with
 `df -h ~/.kronk/models`.
 
+**Audio (Bucky):** whisper-specific failure modes (missing libraries,
+degraded init, English-only model rejecting a language hint,
+multipart upload size, etc.) are documented in
+[Chapter 18 §18.10](chapter-18-bucky.md#1810-troubleshooting).
+
 ### 17.14 Getting Help
 
 **Check server liveness:**
@@ -783,4 +788,4 @@ Include the following when reporting bugs:
 
 ---
 
-_Next: [Chapter 18: Developer Guide](#chapter-18-developer-guide)_
+_Next: [Chapter 18: Bucky (Audio Transcription)](chapter-18-bucky.md)_

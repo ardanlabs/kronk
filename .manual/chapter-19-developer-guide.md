@@ -1,44 +1,51 @@
-# Chapter 18: Developer Guide
+# Chapter 19: Developer Guide
 
 ## Table of Contents
 
-- [18.1 Quick Reference](#181-quick-reference)
-- [18.2 Build & Test Commands](#182-build-test-commands)
-- [18.3 Developer Setup](#183-developer-setup)
-- [18.4 Project Architecture](#184-project-architecture)
-- [18.5 BUI Frontend Development](#185-bui-frontend-development)
-- [18.6 Code Style Guidelines](#186-code-style-guidelines)
-- [18.7 SDK Internals](#187-sdk-internals)
-  - [17.7.1 Package Structure](#1871-package-structure)
-  - [17.7.2 Streaming Architecture](#1872-streaming-architecture)
-  - [17.7.3 Concurrency Strategy](#1873-concurrency-strategy)
-  - [17.7.4 Model Acquire/Release & Cleanup](#1874-model-acquirerelease-cleanup)
-  - [17.7.5 Batch Engine Internals](#1875-batch-engine-internals)
-  - [17.7.6 Context Pooling](#1876-context-pooling)
-  - [17.7.7 IMC Implementation Details](#1877-imc-implementation-details)
-  - [17.7.8 Tool Call Internals](#1878-tool-call-internals)
-  - [17.7.9 Logprobs Implementation](#1879-logprobs-implementation)
-- [18.8 Responses API Normalization](#188-responses-api-normalization)
-- [18.9 Goroutine Budget](#189-goroutine-budget)
-- [18.10 Request Tracing Spans](#1810-request-tracing-spans)
-- [18.11 Inference Code Path](#1811-inference-code-path)
-- [18.12 MTP Internals](#1812-mtp-internals)
-  - [18.12.1 Auto-detection](#18121-auto-detection)
-  - [18.12.2 Pre-Norm Hidden-State Plumbing](#18122-pre-norm-hidden-state-plumbing)
-  - [18.12.3 Mirror Step and AR Draft Loop](#18123-mirror-step-and-ar-draft-loop)
-  - [18.12.4 Verification on the MTP Path](#18124-verification-on-the-mtp-path)
-  - [18.12.5 Three-pass `processBatch` and Phase A / Phase B Split](#18125-three-pass-processbatch-and-phase-a--phase-b-split)
-  - [18.12.6 Hybrid Target Rollback](#18126-hybrid-target-rollback)
-  - [18.12.7 Per-Slot MTP State](#18127-per-slot-mtp-state)
-  - [18.12.8 Code Map](#18128-code-map)
-  - [18.12.9 Testing](#18129-testing)
+- [19.1 Quick Reference](#191-quick-reference)
+- [19.2 Build & Test Commands](#192-build-test-commands)
+- [19.3 Developer Setup](#193-developer-setup)
+- [19.4 Project Architecture](#194-project-architecture)
+- [19.5 BUI Frontend Development](#195-bui-frontend-development)
+- [19.6 Code Style Guidelines](#196-code-style-guidelines)
+- [19.7 SDK Internals](#197-sdk-internals)
+  - [19.7.1 Package Structure](#1971-package-structure)
+  - [19.7.2 Streaming Architecture](#1972-streaming-architecture)
+  - [19.7.3 Concurrency Strategy](#1973-concurrency-strategy)
+  - [19.7.4 Model Acquire/Release & Cleanup](#1974-model-acquirerelease-cleanup)
+  - [19.7.5 Batch Engine Internals](#1975-batch-engine-internals)
+  - [19.7.6 Context Pooling](#1976-context-pooling)
+  - [19.7.7 IMC Implementation Details](#1977-imc-implementation-details)
+  - [19.7.8 Tool Call Internals](#1978-tool-call-internals)
+  - [19.7.9 Logprobs Implementation](#1979-logprobs-implementation)
+- [19.8 Responses API Normalization](#198-responses-api-normalization)
+- [19.9 Goroutine Budget](#199-goroutine-budget)
+- [19.10 Request Tracing Spans](#1910-request-tracing-spans)
+- [19.11 Inference Code Path](#1911-inference-code-path)
+- [19.12 MTP Internals](#1912-mtp-internals)
+  - [19.12.1 Auto-detection](#19121-auto-detection)
+  - [19.12.2 Pre-Norm Hidden-State Plumbing](#19122-pre-norm-hidden-state-plumbing)
+  - [19.12.3 Mirror Step and AR Draft Loop](#19123-mirror-step-and-ar-draft-loop)
+  - [19.12.4 Verification on the MTP Path](#19124-verification-on-the-mtp-path)
+  - [19.12.5 Three-pass `processBatch` and Phase A / Phase B Split](#19125-three-pass-processbatch-and-phase-a--phase-b-split)
+  - [19.12.6 Hybrid Target Rollback](#19126-hybrid-target-rollback)
+  - [19.12.7 Per-Slot MTP State](#19127-per-slot-mtp-state)
+  - [19.12.8 Code Map](#19128-code-map)
+  - [19.12.9 Testing](#19129-testing)
+- [19.13 Bucky Internals](#1913-bucky-internals)
+  - [19.13.1 Package Layout](#19131-package-layout)
+  - [19.13.2 Handle, Semaphore, and `whisper.State` Pool](#19132-handle-semaphore-and-whisperstate-pool)
+  - [19.13.3 Init, Load, and Degraded Mode](#19133-init-load-and-degraded-mode)
+  - [19.13.4 Pool Integration (Shared `resman`)](#19134-pool-integration-shared-resman)
+  - [19.13.5 `audioapp` HTTP Handler](#19135-audioapp-http-handler)
+  - [19.13.6 Tests](#19136-tests)
 
 ---
 
 This chapter covers development workflows, build commands, and code
 conventions for contributors to the Kronk project.
 
-### 18.1 Quick Reference
+### 19.1 Quick Reference
 
 Here is a quick chart of some of the more important make commands.
 
@@ -59,7 +66,7 @@ Here is a quick chart of some of the more important make commands.
 | Post-edit checks | `gofmt -s -w <files> && go vet ./... && staticcheck ./...`   |
 | Developer setup  | `make setup` (configures git hooks)                          |
 
-### 18.2 Build & Test Commands
+### 19.2 Build & Test Commands
 
 **Install CLI locally:**
 
@@ -101,7 +108,7 @@ go test -v -count=1 -run TestName ./sdk/kronk/...
 The path can target any package (e.g. `./cmd/...` or a specific subpackage);
 `./sdk/kronk/...` is just where most inference tests live.
 
-### 18.3 Developer Setup
+### 19.3 Developer Setup
 
 Configure git hooks for automatic pre-commit checks:
 
@@ -128,9 +135,9 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
 ```
 
 A fresh checkout that skips `install-gotooling` will fail the `lint` and
-`vuln-check` steps of `make test` and the post-edit checks listed in §18.1.
+`vuln-check` steps of `make test` and the post-edit checks listed in §19.1.
 
-### 18.4 Project Architecture
+### 19.4 Project Architecture
 
 **Directory Structure:**
 
@@ -155,7 +162,7 @@ A fresh checkout that skips `install-gotooling` will fail the `lint` and
 Kronk uses [yzma](https://github.com/hybridgroup/yzma) (llama.cpp Go bindings)
 for local inference with GGUF models.
 
-### 18.5 BUI Frontend Development
+### 19.5 BUI Frontend Development
 
 The Browser UI is a React application located at:
 
@@ -270,7 +277,7 @@ make kronk-docs
 
 The generator takes no flags; it always rebuilds all three pipelines.
 
-### 18.6 Code Style Guidelines
+### 19.6 Code Style Guidelines
 
 **Package Comments:**
 
@@ -311,7 +318,7 @@ func New(cfg Config) *Server {
 
 Tests link against yzma (llama.cpp Go bindings), so they the
 installed libraries plus test models. Always go through `make test` (or
-`make test-only` for fast iteration) per §18.2.
+`make test-only` for fast iteration) per §19.2.
 
 **Post-edit Checks (per [AGENTS.md](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/AGENTS.md)):**
 
@@ -375,12 +382,12 @@ default:
 }
 ```
 
-### 18.7 SDK Internals
+### 19.7 SDK Internals
 
 This section documents implementation details for developers working on
 the Kronk SDK packages.
 
-#### 18.7.1 Package Structure
+#### 19.7.1 Package Structure
 
 **sdk/kronk/** - Public SDK API surface:
 
@@ -497,7 +504,7 @@ Key behaviors:
 - **Shutdown** — `Shutdown(ctx)` invalidates the cache and blocks until
   every entry has finished unloading (or `ctx` expires).
 
-#### 18.7.2 Streaming Architecture
+#### 19.7.2 Streaming Architecture
 
 **Two streaming primitives** (`concurrency.go`):
 
@@ -508,7 +515,7 @@ Key behaviors:
   event types.
 
 Both acquire the model on entry and release it from a `defer` when the
-user-facing channel closes (see §18.7.4) — the lifecycle is not hand-rolled
+user-facing channel closes (see §19.7.4) — the lifecycle is not hand-rolled
 in the per-API files.
 
 **Response Streaming Pattern** (`response.go`, `concurrency.go`):
@@ -530,18 +537,18 @@ in the per-API files.
 - When `FinishReasonPtr != nil`, skip text/reasoning deltas (they duplicate previous content)
 - Always process tool calls even with FinishReason set (may only arrive in final chunk)
 
-#### 18.7.3 Concurrency Strategy
+#### 19.7.3 Concurrency Strategy
 
 All concurrent requests on a single `Kronk` block on one semaphore; its
 capacity is fixed at `New()` time and depends on the model class.
-`acquireModel()` is the gate (see §18.7.4).
+`acquireModel()` is the gate (see §19.7.4).
 
 `NSeqMax` is the `nseq-max` knob from `model_config.yaml`, and behaves
 differently depending on model type:
 
 **Embedding and Reranking Models**:
 
-- `NSeqMax` controls the internal context pool size (see §18.7.6)
+- `NSeqMax` controls the internal context pool size (see §19.7.6)
 - Model weights are shared, only KV cache memory is multiplied
 - Inputs within a request are partitioned across pool contexts for parallel processing
 - Semaphore capacity = `NSeqMax`
@@ -549,7 +556,7 @@ differently depending on model type:
 **Text Inference Models** (chat, completion, vision, audio):
 
 - `NSeqMax` controls batch parallelism within the batch engine — the number
-  of concurrent slots (see §18.7.5)
+  of concurrent slots (see §19.7.5)
 - Only one `model.Model` instance is created with multiple slots
 - Semaphore capacity = `NSeqMax * queueDepth` (default `queueDepth=2`)
 - Why ×2: with `queueDepth=2`, one request can sit on the batch engine's
@@ -575,9 +582,9 @@ default:
 }
 ```
 
-#### 18.7.4 Model Acquire/Release & Cleanup
+#### 19.7.4 Model Acquire/Release & Cleanup
 
-The wrappers in `concurrency.go` (`streaming` / `streamingWith`, see §18.7.2)
+The wrappers in `concurrency.go` (`streaming` / `streamingWith`, see §19.7.2)
 are what call `acquireModel` and `releaseModel` — per-API files do not call
 them directly.
 
@@ -627,7 +634,7 @@ while a request is in flight — `releaseModel()` is only called from the
 streaming wrapper's `defer`, which fires after the user-facing channel
 closes.
 
-#### 18.7.5 Batch Engine Internals
+#### 19.7.5 Batch Engine Internals
 
 **ChatStreaming Decision Logic** ([chat.go:258-315](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go#L258-L315)):
 
@@ -637,7 +644,7 @@ data plus the resolved IMC fields from `cacheResult`) and unconditionally
 calls `m.batch.submit(&job)`. Returns:
 
 - `true` on successful submit; the caller sets `batching = true` in `chat.go`
-  so the non-batched cleanup defer is skipped (see §18.7.4).
+  so the non-batched cleanup defer is skipped (see §19.7.4).
 - `false` only on submit error. The error has already been streamed to the
   caller via `sendChatError` and any IMC pending reservation cleared.
 
@@ -649,7 +656,7 @@ return — vision/audio also runs through the batch engine.
 - `batchEngine` manages `nSlots` parallel `*slot` structs (slot type lives
   in [batch_slot.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go))
 - Constructed via `newBatchEngine(m, nSlots)` during model setup;
-  `nSlots = NSeqMax` (see §18.7.3)
+  `nSlots = NSeqMax` (see §19.7.3)
 - Queueing: `requestQ chan *chatJob` (buffered `nSlots*2`) is the public
   inbox; `pendingJobs` holds jobs already dequeued but unable to start
   because no slot was free, and is checked before reading `requestQ` again
@@ -673,16 +680,16 @@ always start at 0. IMC sessions are decoupled from slots: session state is
 externalized to RAM after each request and restored into any available slot
 on the next request via `StateSeqSetData`. `StateSeqGetData` captures raw KV
 bytes regardless of whether they originated from text tokens or media
-embeddings. Full IMC lifecycle is detailed in §18.7.7.
+embeddings. Full IMC lifecycle is detailed in §19.7.7.
 
-#### 18.7.6 Context Pooling
+#### 19.7.6 Context Pooling
 
 Kronk uses two distinct context strategies depending on the workload.
 
 **Text inference: single shared context.**
 
 - One `llama.Context` is created in `NewModel` and reused across requests.
-- KV cleanup splits by path (see §18.7.4):
+- KV cleanup splits by path (see §19.7.4):
   - Non-batched path → `resetContext()` runs `llama.Synchronize(m.lctx)` then
     `llama.MemoryClear(mem, true)`.
   - Batched path (text/IMC) → per-slot cleanup happens in
@@ -701,9 +708,9 @@ Kronk uses two distinct context strategies depending on the workload.
   index back.
 - Inputs within a single embed/rerank request are partitioned across pool
   contexts for parallel processing — this is the concurrency semantic
-  documented in §18.7.3 for embedding/reranking models.
+  documented in §19.7.3 for embedding/reranking models.
 
-#### 18.7.7 IMC Implementation Details
+#### 19.7.7 IMC Implementation Details
 
 **Key Functions:**
 
@@ -804,7 +811,7 @@ eviction of un-externalized sessions). The `pending` flag is the
 per-session in-flight latch that protects `kvState` from concurrent
 writers.
 
-#### 18.7.8 Tool Call Internals
+#### 19.7.8 Tool Call Internals
 
 **Processor state machine** ([processor.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor.go)):
 
@@ -868,14 +875,14 @@ stable contract for the OpenAI-compatible response wire format.
 - Custom type that marshals to a JSON string (OpenAI spec).
 - Unmarshals from either a string or an object for non-compliant clients.
 
-#### 18.7.9 Logprobs Implementation
+#### 19.7.9 Logprobs Implementation
 
 **Implementation** ([logprobs.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go)):
 
 - `extractLogprobs(lctx, vocab, sampledToken, iBatch, topK, buf)`: retrieves
   logits via `llama.GetLogitsIth(lctx, iBatch, nVocab)` and converts them
   to log probabilities. `iBatch` identifies which slot's logits row to read
-  when multiple slots are batched in one forward pass (see §18.7.5). `buf`
+  when multiple slots are batched in one forward pass (see §19.7.5). `buf`
   is a pre-allocated byte buffer reused across tokens to avoid per-token
   allocations during top-K decoding.
 - `logSoftmax()`: numerically stable log-softmax using the log-sum-exp trick.
@@ -893,9 +900,9 @@ disabled, this work is skipped entirely on the hot path.
 buffers, dry/xtc state). Reading logits after acceptance would no longer
 reflect the probability landscape for the token we're trying to score.
 
-This corresponds to step 12.1 of the request flow in §18.11.
+This corresponds to step 12.1 of the request flow in §19.11.
 
-### 18.8 Responses API Normalization
+### 19.8 Responses API Normalization
 
 The SDK's [response.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go)
 exposes the OpenAI Responses API on top of the same `model.Chat` engine that
@@ -925,7 +932,7 @@ function-call/output items).
 | `extractInputParams`        | Pulls Responses-only parameters (e.g. `Instructions`) into `inputParams` for downstream handling                                                                              |
 | `extractTools`              | Reads the (already-normalized) tool list out of the document                                                                                                                  |
 
-### 18.9 Goroutine Budget
+### 19.9 Goroutine Budget
 
 A running Kronk server typically shows ~25 baseline goroutines before any
 requests arrive. When requests are active, expect roughly 3-5 additional
@@ -970,7 +977,7 @@ captured every 10th request by the metrics middleware. It includes everything
 in the process, including Go runtime internals. After active requests complete,
 the count drops back to the baseline.
 
-### 18.10 Request Tracing Spans
+### 19.10 Request Tracing Spans
 
 Each chat completion request produces the following trace hierarchy.
 `prepare-request`, `queue-wait`, and `process-request` are sibling spans
@@ -980,7 +987,7 @@ under the request's root context — none is a child of another.
 POST /v1/chat/completions
 ├── prepare-request                          Validation, caching, prompt creation
 │   ├── process-cache                        Cache lookup/update (IMC, when enabled)
-│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§18.7.7 strategy 4)
+│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§19.7.7 strategy 4)
 │   │   ├── cache-tokenize-imc-extend        Hash-prefix extend (strategy 2)
 │   │   ├── cache-tokenize-imc-sysprompt-preserve  System-prompt preserve (strategy 3)
 │   │   ├── cache-tokenize-imc-scratch       Rebuild from scratch (strategy 5)
@@ -1022,7 +1029,7 @@ Additional spans that may appear at the top level:
 | `proj-file-load-time`   | Vision/audio requests     | Loading the multimodal projection file              |
 | `imc-media-cache-build` | Vision/audio IMC builds   | Media-IMC cache build (separate from the text path) |
 
-### 18.11 Inference Code Path
+### 19.11 Inference Code Path
 
 This section traces a `ChatStreaming` request end-to-end. Each step has a
 high-level description followed by a **Code:** sub-block listing the
@@ -1042,7 +1049,7 @@ unbounded processing.
 
 The kronk-level semaphore controls how many requests can be in-flight at
 once. The request blocks here until a slot opens up, providing backpressure
-when the system is under load. See §18.7.4 for the full acquire/release
+when the system is under load. See §19.7.4 for the full acquire/release
 contract.
 
 **Code:**
@@ -1060,7 +1067,7 @@ caller.
 
 **Code:**
 
-- `Model.ChatStreaming` ([model/chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go)) creates the response channel, wraps it with `wrapChannelForLogging` if `InsecureLogging` is on, increments the **model-level** `m.activeStreams` (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the `prepare-request` span (§18.10).
+- `Model.ChatStreaming` ([model/chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go)) creates the response channel, wraps it with `wrapChannelForLogging` if `InsecureLogging` is on, increments the **model-level** `m.activeStreams` (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the `prepare-request` span (§19.10).
 - `validateAndCloneDocument()` (`model/chat.go`) — validates the `messages` field, calls `parseParams()` to extract sampling parameters, shallow-clones the document.
 
 #### Step 4: Prepare the Context
@@ -1082,7 +1089,7 @@ request:
 
 If caching is enabled, the system checks whether any portion of the
 conversation is already in the KV cache to avoid redundant computation. The
-IMC algorithm picks one of **5 strategies** — see §18.7.7 for the full
+IMC algorithm picks one of **5 strategies** — see §19.7.7 for the full
 decision tree (pure cache hit, hash-prefix extend, system-prompt preserve,
 token-prefix fallback, or rebuild from scratch with LRU eviction).
 
@@ -1093,7 +1100,7 @@ names so templates can render tool results correctly.
 
 - `prepareCacheAndPrompt()` (`model/chat.go`):
   - `injectToolResponseNames()` — adds `name`/`tool_call_name` to `role:"tool"` messages by matching `tool_call_id`.
-  - `processCache()` (`model/caching.go`) → `processIMC()` ([model/caching_imc.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go)) — runs the §18.7.7 5-strategy selection across all `NSeqMax` sessions, tokenizes any extension tokens, and sets the `pending` flag on the chosen session.
+  - `processCache()` (`model/caching.go`) → `processIMC()` ([model/caching_imc.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go)) — runs the §19.7.7 5-strategy selection across all `NSeqMax` sessions, tokenizes any extension tokens, and sets the `pending` flag on the chosen session.
 
 #### Step 6: Apply the Chat Template
 
@@ -1116,7 +1123,7 @@ immediately rather than waiting for its next poll cycle.
 
 **Code:**
 
-- `submitToBatchEngine()` (`model/chat.go`) — builds the `chatJob` struct (request data, cache state, IMC fields) and calls `batch.submit()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)), which pushes onto `requestQ` and pokes `wakeCh`. The `queue-wait` span (§18.10) starts here.
+- `submitToBatchEngine()` (`model/chat.go`) — builds the `chatJob` struct (request data, cache state, IMC fields) and calls `batch.submit()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)), which pushes onto `requestQ` and pokes `wakeCh`. The `queue-wait` span (§19.10) starts here.
 
 #### Step 8: Assign to a Slot
 
@@ -1124,11 +1131,11 @@ The batch engine's processing loop wakes up and checks for pending work. It
 dequeues the job and assigns it to the first available processing slot. All
 IMC sessions (text and media) use first-available slot assignment. If all
 slots are busy, the longest-running slot is preempted after a configurable
-timeout (`cache-slot-timeout`, see §18.7.5).
+timeout (`cache-slot-timeout`, see §19.7.5).
 
 **Code:**
 
-- `processLoop()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)) — signal-based wake on `wakeCh` (§18.7.5); polls at 100µs when active, 5ms when idle.
+- `processLoop()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)) — signal-based wake on `wakeCh` (§19.7.5); polls at 100µs when active, 5ms when idle.
 - `processBatch()` clears the batch buffer, runs any pending slot preemption, prefills the draft model for speculative slots, adds 1 generation token per active slot, then continues text prefill via round-robin `addPrefillChunk()` and media prefill via `addPrefillMediaChunk()`.
 - `fillSlots()` ([model/batch_schedule.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_schedule.go)) dequeues the job and assigns it to a slot.
 
@@ -1154,11 +1161,11 @@ The assigned slot is prepared for this request:
 
 **Code:**
 
-- `startSlot()` ([model/batch_slot_start.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)) — resets the slot, ends the `queue-wait` span, and starts the `process-request` and `prefill` spans (§18.10).
+- `startSlot()` ([model/batch_slot_start.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)) — resets the slot, ends the `queue-wait` span, and starts the `process-request` and `prefill` spans (§19.10).
 - `toSampler()` builds the llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat); a separate grammar sampler is created if requested.
 - IMC KV restore: `StateSeqSetData` from `session.kvState`, then `decodeTokensIntoCache()` for extend, or `MemorySeqRm` for rebuild, or partial trim.
 - IMC KV snapshot: `StateSeqGetData` into `session.kvState` after build/extend.
-- `llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)` — `special=true` ensures ChatML markers are recognized (§18.7.7).
+- `llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)` — `special=true` ensures ChatML markers are recognized (§19.7.7).
 - Draft prompt assembly for speculative decoding.
 - First chunk added via `addPrefillChunk()`.
 
@@ -1211,7 +1218,7 @@ Each sampled token goes through a processing pipeline:
 
 1. **Logprobs extraction**: If requested, token log-probabilities are
    extracted from the model's logits before the sampler state is updated
-   (§18.7.9 explains why the order matters).
+   (§19.7.9 explains why the order matters).
 2. **End-of-generation check**: If the token is an EOG (end-of-generation)
    token, generation stops and the request moves to the finish phase.
 3. **UTF-8 assembly**: Tokens are converted to text bytes. Since a single
@@ -1230,12 +1237,12 @@ Each sampled token goes through a processing pipeline:
 **Code:**
 
 - `handleSampledToken()` (`model/batch_tokens.go`) drives the pipeline:
-  - `extractLogprobs()` ([model/logprobs.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go)) — `llama.GetLogitsIth` + log-softmax + top-k heap. Runs **before** `llama.SamplerAccept()` (§18.7.9).
+  - `extractLogprobs()` ([model/logprobs.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go)) — `llama.GetLogitsIth` + log-softmax + top-k heap. Runs **before** `llama.SamplerAccept()` (§19.7.9).
   - `llama.SamplerAccept()` (and grammar accept).
   - `llama.VocabIsEOG()` → if true, jump to `finishSlot()`.
   - `llama.TokenToPiece()` → buffer partial multi-byte codepoints, then `extractCompleteUTF8()` ([model/batch_utf8.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_utf8.go)).
   - First token: records `prefillDone=true`, computes TTFT, ends the `prefill` span, starts the `token-generation` span.
-  - Processor classification: `stepGPT()` for GPT-OSS, `stepStandard()` for everything else (§18.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers.
+  - Processor classification: `stepGPT()` for GPT-OSS, `stepStandard()` for everything else (§19.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers.
   - Counter increment: `reasonTokens` or `completionTokens`.
   - Max-tokens check: if `outputTokens >= maxTokens`, `finishSlot()`.
   - Accumulate into `finalContent` / `finalReasoning` / `finalTooling`.
@@ -1267,7 +1274,7 @@ finalized:
 
 - `finishSlot()` ([model/batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go)):
   - Flushes the UTF-8 buffer.
-  - Tool-call parse: GPT-OSS path calls `parseGPTToolCall()` directly ([batch_finish.go:177](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177)); all other models route through `parseToolCall` ([model/processor_parse.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go)) — see §18.7.8.
+  - Tool-call parse: GPT-OSS path calls `parseGPTToolCall()` directly ([batch_finish.go:177](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177)); all other models route through `parseToolCall` ([model/processor_parse.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go)) — see §19.7.8.
   - Metrics: TPS = `(outputTokens - 1) / elapsed`, TTFT, draft-acceptance rate.
   - `sendFinalResponse()` with usage, content, reasoning, tool calls, logprobs.
   - KV cleanup: `MemorySeqRm(mem, seqID, -1, -1)` clears the full VRAM sequence; the IMC prefix is already in RAM from Step 9.
@@ -1285,7 +1292,7 @@ queued request to begin processing.
 
 - `releaseModel()` ([sdk/kronk/acquire.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go)) — drains a slot from the kronk-level semaphore (`<-krn.sem`) and decrements `krn.activeStreams` (the kronk-level counter; the model-level one was already decremented in Step 13).
 
-### 18.12 MTP Internals
+### 19.12 MTP Internals
 
 This section documents the engine internals of the MTP (Multi-Token
 Prediction) drafter shipped in
@@ -1318,7 +1325,7 @@ in upstream llama.cpp. Kronk's implementation lives in
 and the FFI bindings in
 [`yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go).
 
-#### 18.12.1 Auto-detection
+#### 19.12.1 Auto-detection
 
 `selectAndLoadDraft` runs once during model initialization
 (`initGenerationRuntime` in `model.go`) and decides which drafter, if
@@ -1349,21 +1356,21 @@ substring `nextn_predict_layers` so the same lookup works for every
 architecture variant without first reading `general.architecture`.
 
 `MTPAvailable()` probes whether the loaded llama.cpp library exports
-the three pre-norm symbols listed in §18.12.2. Older builds (pre
+the three pre-norm symbols listed in §19.12.2. Older builds (pre
 `src/llama-ext.h`) won't have them — Kronk logs and starts up without
 MTP rather than crashing on a missing symbol mid-request.
 
 The historical `NSeqMax == 1` gate (present through earlier revisions
 of PR #593) has been removed: the draft context inherits `NSeqMax`
 from the target and hosts as many sequences as the target does. The
-three-pass post-decode in `processBatch` (§18.12.5) makes the spec
+three-pass post-decode in `processBatch` (§19.12.5) makes the spec
 verify path multi-slot safe.
 
 When any of the gates fail, `selectAndLoadDraft` logs the specific
 reason and returns `(nil, nil)`. The target still loads and serves
 traffic — just without speculation.
 
-#### 18.12.2 Pre-Norm Hidden-State Plumbing
+#### 19.12.2 Pre-Norm Hidden-State Plumbing
 
 The MTP path needs three llama.cpp C symbols that yzma upstream does
 not yet bind. Kronk adds them locally in
@@ -1385,13 +1392,13 @@ Two binding details worth highlighting:
   on these declarations.
 - **Best-effort init.** `InitYzmaWorkarounds` never fails on a missing
   pre-norm symbol. The corresponding `ffi.Fun` stays zero-valued and
-  `MTPAvailable()` returns false, gating §18.12.1.
+  `MTPAvailable()` returns false, gating §19.12.1.
 
 At load time `loadDraftModelMTP` sets:
 
 - `SetEmbeddingsPreNorm(targetCtx, true, false)` — dense, every row
   accessible by raw batch index. Required for the mirror step
-  (§18.12.3), which reads arbitrary rows from each completed target
+  (§19.12.3), which reads arbitrary rows from each completed target
   batch.
 - `SetEmbeddingsPreNorm(draftCtx, true, true)` — sparse, only
   logits-flagged rows stored. The draft only needs the single output
@@ -1400,7 +1407,7 @@ At load time `loadDraftModelMTP` sets:
 The flag is consumed at graph-build time, so it must be set **before**
 the first decode on either context.
 
-#### 18.12.3 Mirror Step and AR Draft Loop
+#### 19.12.3 Mirror Step and AR Draft Loop
 
 Two functions in [`batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)
 do the heavy lifting.
@@ -1461,7 +1468,7 @@ iteration:
 5. EOG check; copy `nextEmbd` into `pendingH`; advance.
 
 The loop stops on `chooseNDraft(s, draft.nDraft)` rounds (see
-§18.12.4 acceptance scaling), or earlier on EOG or decode failure.
+§19.12.4 acceptance scaling), or earlier on EOG or decode failure.
 
 **Why MTP-only batches?** `llama.BatchInit(N, embd, nSeqMax)` allocates
 **either** the token buffer **or** the embd buffer — never both —
@@ -1480,7 +1487,7 @@ These two MTP-only batches live on `draftModel`:
   step.
 - `mirrorBatchMTP` — capacity `NBatch`, used by the mirror step.
 
-#### 18.12.4 Verification on the MTP Path
+#### 19.12.4 Verification on the MTP Path
 
 `verifySpeculativeTokens` is shared between separate-GGUF and MTP, but
 the MTP path forces **greedy verification** unconditionally because
@@ -1501,7 +1508,7 @@ standard approximation when the draft distribution is unavailable.
 `originalSampled` is also snapshotted before the verify loop, because
 `handleSampledToken` mutates `s.sampled` as each accepted draft token
 flows through the streaming pipeline. The hybrid re-decode path
-(§18.12.6) needs the **original** sampled token at the base position;
+(§19.12.6) needs the **original** sampled token at the base position;
 using the mutated value would re-decode the wrong token and corrupt
 every subsequent round.
 
@@ -1533,13 +1540,13 @@ acceptance-rate fields are still emitted on the final slot log line
 so dashboards see a stable schema. See `finishSlot` and
 `sendFinalResponse`.
 
-#### 18.12.5 Three-pass `processBatch` and Phase A / Phase B Split
+#### 19.12.5 Three-pass `processBatch` and Phase A / Phase B Split
 
 When `nseq-max > 1` and two or more spec slots verify in the same
 shared batch, the original monolithic `verifySpeculativeTokens` could
 corrupt the target context's logit buffer for one slot while a peer
 was still trying to read it. The hybrid `restoreTargetSpecSnapshot`
-(§18.12.6) re-decodes a small batch on the target context, and that
+(§19.12.6) re-decodes a small batch on the target context, and that
 re-decode **replaces the per-context logit buffer with logits for
 only the re-decoded rows** — every other slot's batch rows return
 `nullptr` from `llama_get_logits_ith`, crashing
@@ -1592,7 +1599,7 @@ runs **after** any hybrid restore. The restore's re-decode marks
 position, so logprob extraction at that site still works on the
 hybrid path.
 
-#### 18.12.6 Hybrid Target Rollback
+#### 19.12.6 Hybrid Target Rollback
 
 Hybrid target models (transformer + recurrent layers) introduce a
 problem the regular `MemorySeqRm` rollback cannot solve: the
@@ -1625,7 +1632,7 @@ begins with a fresh sequence anyway.
 invalidates the target's per-context logit buffer for every other
 batch row. With `nseq-max > 1` this is benign because the restore
 only runs in Pass 2B (`finalizeSpeculativeTokens`), after every other
-spec slot has read its logits in Pass 2A. See §18.12.5.
+spec slot has read its logits in Pass 2A. See §19.12.5.
 
 **MTP mirror interaction.** The same re-decode also overwrites the
 target's per-context **pre-norm** buffer with rows indexed against the
@@ -1639,7 +1646,7 @@ from `s.verifyH` when populated, so MTP keeps running across partial
 rejections on hybrid targets instead of being disabled for the rest of
 the request.
 
-#### 18.12.7 Per-Slot MTP State
+#### 19.12.7 Per-Slot MTP State
 
 PR #593 added the following fields to `slot` in
 [`batch_slot.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go).
@@ -1653,14 +1660,14 @@ buffer policy.
 | `mtpHasBatch`                                         | True between `batch.Add()` and the post-decode mirror; cleared by the mirror.                                                              |
 | `mtpDisabledForRequest`                               | Disables MTP for the remainder of the current request. Set at `startSlot` on IMC cache hits where the matched session has no draft-seq snapshot (or the draft restore returned 0 bytes) — MTP-aware IMC builds snapshot both target and draft seqs so this failsafe rarely fires on freshly-built caches. Also set inside `finalizeSpeculativeTokens` after a post-rollback mirror failure (the draft KV is wiped and the slot continues target-only). Cleared by `slot.reset()` when the slot is recycled for the next request. |
 | `verifyH []float32`                                   | Slot-local cache of the target's pre-norm hidden-state rows for the just-decoded spec batch range (1+nDraft rows of nEmbd floats). Captured at the top of `verifySpeculativeTokens` (Phase A) BEFORE any Phase B side-effect (notably `restoreTargetSpecSnapshot`'s re-decode on a hybrid target) can invalidate the per-context pre-norm buffer. `mirrorTargetBatchToMTPDraft` reads from this buffer when populated and clears it after consumption. Lazy-grow / never-shrink. |
-| `specSnapshot []byte`                                 | Pre-spec target state buffer for hybrid rollback (§18.12.6). Lazy-grow.                                                                    |
+| `specSnapshot []byte`                                 | Pre-spec target state buffer for hybrid rollback (§19.12.6). Lazy-grow.                                                                    |
 | `specRounds`                                          | Counter used to throttle per-round verify logging (logs first round, then every 32nd).                                                     |
-| `specPendingFinalize bool`                            | Gates Phase B (§18.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips. |
+| `specPendingFinalize bool`                            | Gates Phase B (§19.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips. |
 | `specPendingAccepted int`                             | Phase A → Phase B hand-off: accepted draft count.                                                                                          |
 | `specPendingBonusToken llama.Token`                   | Phase A → Phase B hand-off: bonus token sampled at `baseBatch + accepted`.                                                                  |
 | `specPendingOriginalSampled llama.Token`              | Phase A → Phase B hand-off: snapshot of `s.sampled` taken before any `handleSampledToken` mutated it. Hybrid restore needs this for the re-decode at `basePast`. |
 
-#### 18.12.8 Code Map
+#### 19.12.8 Code Map
 
 | File                                                                                                                                         | Role for MTP                                                                                                                       |
 | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -1676,7 +1683,7 @@ buffer policy.
 | [`sdk/kronk/model/batch_finish.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go)               | Always-emit draft metrics when a drafter is configured.                                                                            |
 | [`sdk/kronk/model/params.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/params.go)                           | `top_p == 0 || == 1` from the request is treated as unset so the model-config `top_p` survives.                                    |
 
-#### 18.12.9 Testing
+#### 19.12.9 Testing
 
 Test package: [`sdk/kronk/tests/mtp/`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/tests/mtp).
 
@@ -1702,3 +1709,151 @@ export RUN_IN_PARALLEL=yes
 export GITHUB_WORKSPACE=$(pwd)
 go test -v -count=1 ./sdk/kronk/tests/mtp/...
 ```
+
+### 19.13 Bucky Internals
+
+This section is the developer-facing companion to
+[Chapter 18: Bucky (Audio Transcription)](chapter-18-bucky.md). It
+covers the code layout, concurrency model, lifecycle, and HTTP plumbing
+of the whisper.cpp backend.
+
+#### 19.13.1 Package Layout
+
+| Package                                                                                                                                  | Role                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`sdk/bucky`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky)                                                       | High-level handle (`*Bucky`). Owns one model + outer semaphore. Mirrors the role `sdk/kronk` plays for llama.                                 |
+| [`sdk/bucky/model`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/model)                                           | Low-level whisper.cpp wrapper: `Config`, `Model`, `Transcribe`, `DetectLanguage`, `statePool`, language helpers, ggml-header info.            |
+| [`sdk/bucky/pool`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool)                                             | Multi-model `engine.Pool[*Bucky]` cache, shared `resman.Manager` reservations, `ModelStatus` aggregation (loaded + loading).                  |
+| [`sdk/tools/bucky/libs`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/libs)                                 | Cross-platform whisper.cpp shared-library installer (triples, default bundle resolution, prebuilt-archive downloader).                        |
+| [`sdk/tools/bucky/models`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/models)                             | Bundled whisper catalog, GGML downloader, ggml-header parser, on-disk index for `bucky-models/`.                                              |
+| [`cmd/kronk/bucky`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/kronk/bucky)                                           | CLI: `kronk bucky libs` and `kronk bucky model {catalog,list,pull,remove}`. Each verb has a `--local` and a `--web` mode.                     |
+| [`cmd/server/app/domain/audioapp`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp)             | HTTP handler for `POST /v1/audio/transcriptions` (multipart upload, format dispatch).                                                         |
+| [`cmd/server/app/domain/toolapp`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp)               | HTTP handlers for `/v1/bucky/libs/*` and `/v1/bucky/models/*` admin endpoints (`bucky_libs.go`, `bucky_models.go`).                           |
+
+#### 19.13.2 Handle, Semaphore, and `whisper.State` Pool
+
+There are **two** concurrency gates in front of a transcribe:
+
+1. **Outer semaphore** (`Bucky.sem`) sized at construction time to
+   `max(NSeqMax, 1)`. Sized 1:1 with NSeqMax to match the embedding
+   /rerank rule in `sdk/kronk` — whisper has no batch engine, so
+   `NSeqMax * QueueDepth` would over-subscribe.
+2. **Inner `statePool`** ([`sdk/bucky/model/pool.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/model/pool.go))
+   of `NSeqMax` `whisper.State` instances. The model weights live
+   once in the shared `whisper.Context`; each `State` owns its own
+   mel spectrogram, KV cache, and compute buffer.
+
+`Bucky.Transcribe` flow:
+
+```diagram
+caller ─▶ acquireModel(ctx)
+            ├─ shutdown check + activeStreams++
+            └─ block on b.sem (outer semaphore)
+        ─▶ model.Transcribe
+            ├─ buildFullParams (StringRefs.KeepAlive defer)
+            ├─ statePool.acquire (block on internal pool channel)
+            ├─ whisper.FullWithState (the actual decode)
+            ├─ statePool.release
+            └─ collectTranscription
+        ─▶ releaseModel
+            └─ release b.sem + activeStreams--
+```
+
+The state pool's `release` is intentionally bare — `whisper_full_with_state`
+resets the state internally on the next call, so no explicit clear is
+needed.
+
+`Unload` ([`sdk/bucky/bucky.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/bucky.go))
+takes the shutdown mutex, sets `shutdownFlag`, then polls
+`activeStreams` at 100 ms until either it reaches zero or the
+context expires. The default deadline is 5 s if the caller didn't
+set one. Subsequent acquires fail fast with
+`whisper has been unloaded`.
+
+#### 19.13.3 Init, Load, and Degraded Mode
+
+`bucky.Init` ([`sdk/bucky/init.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/init.go))
+does three things in order:
+
+1. **Registers** the whisper backend with the cross-backend registry
+   under `backend.KindWhisper`, including `NewLibs` and `NewCatalog`
+   factories. This happens **before** the shared-library load so the
+   CLI / BUI / server can construct libs + catalog managers even when
+   the `.so`/`.dylib`/`.dll` is missing.
+2. **Adjusts** `LD_LIBRARY_PATH` (POSIX) or `PATH` (Windows) so the
+   dynamic loader can find sibling deps next to `libwhisper`.
+3. **Loads** `libwhisper` via `whisper.Load(libPath)`, then installs
+   the C-side log callback (`LogSilent` by default to suppress the
+   noisy `whisper_init_*` / `ggml_metal_*` lines).
+
+`Init` is idempotent and re-entrant: failures **do not** set
+`initDone`, so the server can call it again after the user downloads
+the missing libraries through the BUI without restarting.
+
+In `cmd/server/api/services/kronk/main.go` an `Init` failure logs a
+warning ("bucky init failed, running in degraded mode…") instead of
+aborting startup. The `/v1/audio/transcriptions` endpoint will fail
+until a successful re-init, but `/v1/bucky/libs/*` and
+`/v1/bucky/models/*` stay live so libraries / models can be downloaded.
+
+#### 19.13.4 Pool Integration (Shared `resman`)
+
+`sdk/bucky/pool` constructs a `engine.Pool[*bucky.Bucky]` ([`sdk/bucky/pool/pool.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool/pool.go))
+using the **same** `resman.Manager` instance the kronk pool uses.
+That single shared manager is what unifies VRAM / RAM accounting
+across backends:
+
+- Whisper loads the entire context into memory at once, so a pool
+  reservation total (`VRAMBytes + RAMBytes`) is a faithful proxy for
+  the live footprint — unlike llama.cpp's mmap + paged-experts model.
+- `Pool.ModelStatus` reports both **loaded** entries (from
+  `engine.Coldest`) and **loading** entries (`resman.Usage` filtered
+  by `engine.HasTicket` so this pool only surfaces its own
+  in-flight reservations, not the llama pool's).
+- The pool loader lives in [`sdk/bucky/pool/whisper.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool/whisper.go);
+  it resolves the model file via the bucky catalog, charges the
+  resman, calls `bucky.New`, and on eviction calls `Bucky.Unload`.
+
+Defaults: `ModelsInPool = 10`, `TTL = 5m` (`sdk/bucky/pool/pool.go`).
+
+#### 19.13.5 `audioapp` HTTP Handler
+
+`audioapp.transcriptions` ([`cmd/server/app/domain/audioapp/audioapp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp/audioapp.go))
+is a thin OpenAI-compatible wrapper:
+
+1. `ParseMultipartForm(25 << 20)` — 25 MB cap matching OpenAI.
+2. Read form fields (`model`, `file`, `language`, `prompt`,
+   `translate`, `response_format`, `timestamp_granularities[]`).
+3. `audio.Decode` ([`github.com/ardanlabs/bucky/pkg/audio`](https://github.com/ardanlabs/bucky/tree/main/pkg/audio))
+   converts the upload to 16 kHz mono float32 PCM. Anything `audio.Decode`
+   can read is accepted; everything else returns `InvalidArgument`.
+4. `pool.Bucky.AquireModel(ctx, modelID)` triggers a load if cold.
+5. **English-only guard** — when `ModelInfo().IsMultilingual` is
+   false and the caller passed a non-empty / non-`en` language, the
+   request is rejected before any decode work.
+6. `Bucky.Transcribe` runs under a 30-minute per-request timeout.
+7. Format dispatch: `text` and `srt` / `vtt` emit `rawResponse` blobs;
+   `json` and `verbose_json` go through `jsonResponse`.
+
+Word-level timestamps are not yet plumbed from whisper.cpp, so when
+`timestamp_granularities[]=word` is set the handler emits `words: []`
+to keep the response shape compatible.
+
+#### 19.13.6 Tests
+
+| Test                                                                                                                                          | Scope                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [`sdk/bucky/tests/transcribe`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/tests/transcribe)                          | SDK-level: `Bucky.Transcribe` (greedy + `OnSegment`) and pool concurrency.                         |
+| [`sdk/bucky/init_test.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/init_test.go)                                  | `Init` idempotency, degraded-mode fallback, log-level wiring.                                      |
+| [`cmd/server/api/services/kronk/tests/audio_test.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/services/kronk/tests/audio_test.go) | End-to-end HTTP: `POST /v1/audio/transcriptions` with every supported `response_format`.           |
+
+Tests follow the repo's standard env-var contract:
+
+```shell
+export RUN_IN_PARALLEL=yes
+export GITHUB_WORKSPACE=$(pwd)
+go test -v -count=1 ./sdk/bucky/tests/transcribe/...
+```
+
+The transcribe tests skip themselves when no whisper model is on
+disk, so contributors without a pulled model still get a green run.

@@ -48,7 +48,7 @@ provides:
 
 - **Text Generation** - Chat completions and streaming responses with reasoning support.
 - **Vision** - Image understanding and analysis.
-- **Audio** - Speech-to-text and audio understanding.
+- **Audio** - Speech-to-text transcription via the **Bucky** subsystem (whisper.cpp). See [Chapter 18: Bucky (Audio Transcription)](chapter-18-bucky.md).
 - **Embeddings** - Vector embeddings for semantic search and RAG.
 - **Reranking** - Document relevance scoring.
 

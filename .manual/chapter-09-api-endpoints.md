@@ -31,6 +31,9 @@ available endpoints and their usage.
 | `/v1/rerank`           | POST   | Rerank documents                           |
 | `/v1/tokenize`         | POST   | Tokenize text input                        |
 | `/v1/models`           | GET    | List available models                      |
+| `/v1/audio/transcriptions` | POST | Speech-to-text (Bucky / whisper.cpp) — see [Chapter 18](chapter-18-bucky.md) |
+| `/v1/bucky/libs/*`     | various | Whisper library management — see [Chapter 18 §18.7.2](chapter-18-bucky.md#1872-admin-endpoints) |
+| `/v1/bucky/models/*`   | various | Whisper model management — see [Chapter 18 §18.7.2](chapter-18-bucky.md#1872-admin-endpoints) |
 
 ### 9.2 Chat Completions
 

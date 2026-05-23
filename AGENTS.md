@@ -4,7 +4,7 @@ Your name is Dave and developers will use your name when interacting with you.
 
 The manual has been split into separate chapter files in the `.manual/` directory. Read only the chapters relevant to your task. Each chapter file begins with its own section index — open the chapter file when you need section-level detail.
 
-You will want to look at `Chapter 18: Developer Guide` for detailed information about the project structure, code, and workflows.
+You will want to look at `Chapter 19: Developer Guide` for detailed information about the project structure, code, and workflows.
 
 ## Basic Rules
 
@@ -58,4 +58,5 @@ Open a chapter file to see its section-level table of contents.
 | [Chapter 15: Observability](.manual/chapter-15-observability.md)                       | Debug server, Prometheus metrics, pprof profiling, tracing                                                                                   |
 | [Chapter 16: MCP Service](.manual/chapter-16-mcp-service.md)                           | Brave Search, MCP configuration, OpenCode client setup, curl testing                                                                         |
 | [Chapter 17: Troubleshooting](.manual/chapter-17-troubleshooting.md)                   | Common issues, error messages, debugging tips                                                                                                |
-| [Chapter 18: Developer Guide](.manual/chapter-18-developer-guide.md)                   | Build commands, project architecture, BUI development, code style, SDK internals, MTP engine internals                                       |
+| [Chapter 18: Bucky (Audio Transcription)](.manual/chapter-18-bucky.md)                 | whisper.cpp-based transcription: install/libs, model catalog, server/pool config, CLI, BUI, API endpoint, SDK quick-start, languages, troubleshooting |
+| [Chapter 19: Developer Guide](.manual/chapter-19-developer-guide.md)                   | Build commands, project architecture, BUI development, code style, SDK internals, MTP engine internals, Bucky internals                      |

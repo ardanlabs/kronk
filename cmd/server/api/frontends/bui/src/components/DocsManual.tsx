@@ -86,7 +86,7 @@ export default function DocsManual() {
           <ul>
             <li><strong>Text Generation</strong> - Chat completions and streaming responses with reasoning support.</li>
             <li><strong>Vision</strong> - Image understanding and analysis.</li>
-            <li><strong>Audio</strong> - Speech-to-text and audio understanding.</li>
+            <li><strong>Audio</strong> - Speech-to-text transcription via the <strong>Bucky</strong> subsystem (whisper.cpp). See <a href="chapter-18-bucky.md">Chapter 18: Bucky (Audio Transcription)</a>.</li>
             <li><strong>Embeddings</strong> - Vector embeddings for semantic search and RAG.</li>
             <li><strong>Reranking</strong> - Document relevance scoring.</li>
           </ul>
@@ -374,6 +374,7 @@ kronk libs --list-installs
 # Remove an install
 kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</code></pre>
           <p>In web mode (the default — no <code>--local</code>) the same commands are dispatched through the running server. Activate any installed bundle by exporting <code>KRONK_LIB_PATH</code> to its folder and restarting the server.</p>
+          <p><strong>Audio (Bucky):</strong> if you also plan to use speech-to-text, install the whisper.cpp libraries with the parallel <code>kronk bucky libs</code> command. The flags mirror <code>kronk libs</code> and the bundle lands under <code>~/.kronk/bucky-libraries/</code>. See <a href="chapter-18-bucky.md">Chapter 18: Bucky</a>.</p>
           <h3 id="24-downloading-your-first-model">2.4 Downloading Your First Model</h3>
           <p>Kronk maintains your <strong>personal catalog</strong> at <code>~/.kronk/catalog.yaml</code>. On first run it is seeded from an embedded starter list so you have something to choose from immediately; the catalog grows as you pull more models or resolve new IDs against HuggingFace.</p>
           <p>List entries in the catalog:</p>
@@ -388,6 +389,7 @@ kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</
           <p>Download a model (recommended starter: Qwen3-0.6B-Q8_0):</p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull Qwen3-0.6B-Q8_0 --local`}</code></pre>
           <p>Models are stored in <code>~/.kronk/models/&lt;provider&gt;/&lt;family&gt;/</code> by default. After the pull completes the catalog entry is updated with the resolved provider, family, revision, and file sizes so subsequent lookups don't need to hit HuggingFace.</p>
+          <p><strong>Audio (Bucky):</strong> whisper models live in a separate flat layout at <code>~/.kronk/bucky-models/ggml-&lt;name&gt;.bin</code> and are pulled with <code>kronk bucky model pull &lt;name&gt;</code> (e.g. <code>tiny.en</code>). See <a href="chapter-18-bucky.md#183-model-catalog-pull">Chapter 18 §18.3</a>.</p>
           <h3 id="25-starting-the-server">2.5 Starting the Server</h3>
           <p>Start the Kronk Model Server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
@@ -3639,6 +3641,7 @@ kronk libs --local`}</code></pre>
           <p><code>--models-in-pool</code> (default <code>10</code>) is a hard upper bound on the number of distinct entries the pool will keep, independent of the byte budget. The default is set higher than typical concurrent use (1-3 models) so the budget remains the primary admission knob in normal operation. It exists so operators on small systems — or anyone debugging cache churn — can pin the maximum number of resident models with a single integer.</p>
           <p><strong>Inspecting current usage</strong></p>
           <p>The pool emits structured <code>resman-init</code> and <code>resman-usage</code> log lines on startup and after every reserve/release, including per-GPU <code>used/budget/free</code> and <code>ram-used/ram-budget</code>. These are the easiest way to confirm the manager is reasoning about the right hardware.</p>
+          <p><strong>Bucky shares this budget.</strong> The whisper (Bucky) pool is constructed with the <strong>same</strong> <code>resman.Manager</code> instance as the llama pool, so whisper model loads contend with LLM loads against one unified budget. If <code>bucky.Init</code> fails at startup (missing whisper libraries) the server runs in <strong>degraded mode</strong>: <code>/v1/audio/transcriptions</code> returns errors until libraries are installed, but <code>/v1/bucky/libs/<em>&lt;/code&gt; and &lt;code&gt;/v1/bucky/models/</em></code> stay live so the BUI can download them without a restart. See <a href="chapter-18-bucky.md#184-server-pool-configuration">Chapter 18 §18.4</a>.</p>
           <h3 id="86-model-config-files">8.6 Model Config Files</h3>
           <p>The server reads per-model overrides from <code>~/.kronk/model_config.yaml</code> by default. Kronk seeds this file from an embedded default on first server start; your edits are preserved across upgrades.</p>
           <p>The file is a flat map keyed by canonical model id (<code>provider/modelID</code>, optionally with a <code>/variant</code> suffix). Each entry's keys map 1:1 to <code>model.Config</code> and use kebab-case:</p>
@@ -3827,6 +3830,21 @@ unsloth/Qwen3-0.6B-Q8_0:
                 <td><code>/v1/models</code></td>
                 <td>GET</td>
                 <td>List available models</td>
+              </tr>
+              <tr>
+                <td><code>/v1/audio/transcriptions</code></td>
+                <td>POST</td>
+                <td>Speech-to-text (Bucky / whisper.cpp) — see <a href="chapter-18-bucky.md">Chapter 18</a></td>
+              </tr>
+              <tr>
+                <td><code>/v1/bucky/libs/*</code></td>
+                <td>various</td>
+                <td>Whisper library management — see <a href="chapter-18-bucky.md#1872-admin-endpoints">Chapter 18 §18.7.2</a></td>
+              </tr>
+              <tr>
+                <td><code>/v1/bucky/models/*</code></td>
+                <td>various</td>
+                <td>Whisper model management — see <a href="chapter-18-bucky.md#1872-admin-endpoints">Chapter 18 §18.7.2</a></td>
               </tr>
             </tbody>
           </table>
@@ -5242,12 +5260,14 @@ response = client.chat.completions.create(
           <p>It mirrors <code>kronk catalog list</code>, <code>kronk catalog show</code>, and <code>kronk catalog remove</code>, plus model pulling via <code>kronk model pull</code>. There is no curated upstream catalog; Chapter 8 covers the catalog model in detail.</p>
           <h4 id="libraries">Libraries</h4>
           <p>The Libraries area downloads and manages llama.cpp shared libraries under <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>. The active install used at runtime is selected via <code>KRONK_LIB_PATH</code>; the BUI can stage additional <code>(arch, os, processor)</code> bundles for other targets but does not hot-reload the active install. See Chapter 2 and the <code>kronk libs</code> CLI for the same operations.</p>
+          <p>The same screen also exposes the <strong>whisper (Bucky)</strong> libraries under <code>~/.kronk/bucky-libraries/</code>, selected at runtime via <code>KRONK_BUCKY_LIB_PATH</code>. See <a href="chapter-18-bucky.md#182-installation-libraries">Chapter 18 §18.2</a>.</p>
           <h4 id="apps">Apps</h4>
-          <p>Three interactive tools live under <strong>Apps</strong>:</p>
+          <p>Four interactive tools live under <strong>Apps</strong>:</p>
           <ul>
             <li><strong>Chat</strong> — a multi-turn chat interface with model selection, system prompt, and full sampling controls. Useful for ad-hoc conversations against any loaded model.</li>
             <li><strong>Model Playground</strong> — an interactive bench for exercising a model under specific configuration (context window, batch sizes, cache mode, sampling parameters) and for running automated sweeps. It lets you load a session, send chat messages, inspect rendered prompts, and probe tool-calling behaviour against a configurable set of tool definitions.</li>
             <li><strong>VRAM Calculator</strong> — a standalone estimator for the VRAM a model will consume given a chosen context window, slot count, KV cache precision, and other parameters. The same calculator is embedded in per-model detail views.</li>
+            <li><strong>Translator</strong> — a speech-to-text workbench backed by Bucky (whisper.cpp). Upload or record audio, pick a whisper model and language (or auto-detect), choose response format, and view the transcript with per-segment timestamps. See <a href="chapter-18-bucky.md#186-bui-usage">Chapter 18 §18.6</a>.</li>
           </ul>
           <h4 id="security">Security</h4>
           <p>When authentication is enabled (Chapter 12), the Security area lets you list, create, and delete signing keys and create user tokens with chosen durations, endpoint scopes, and rate limits. These pages require an admin token configured under Settings; with auth disabled they remain accessible but are not meaningful.</p>
@@ -5484,6 +5504,13 @@ for chunk in response:
 data: {"id":"...","choices":[{"delta":{"content":"!"}}],...}
 
 data: [DONE]`}</code></pre>
+          <p><strong>Audio Transcription (Bucky):</strong></p>
+          <pre className="code-block"><code className="language-shell">{`curl -X POST http://localhost:11435/v1/audio/transcriptions \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -F file=@samples/jfk.wav \\
+  -F model=tiny.en \\
+  -F response_format=json`}</code></pre>
+          <p>See <a href="chapter-18-bucky.md#187-api-endpoint">Chapter 18 §18.7</a> for the full form-field reference and supported response formats (<code>json</code>, <code>verbose_json</code>, <code>text</code>, <code>srt</code>, <code>vtt</code>).</p>
           <h3 id="1411-langchain">14.11 LangChain</h3>
           <p>Use LangChain with Kronk via the OpenAI integration.</p>
           <p><strong>Installation:</strong></p>
@@ -6422,6 +6449,7 @@ kronk server start -d`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk model list --local
 kronk model remove <provider/model-id> --local`}</code></pre>
           <p>Models live under <code>~/.kronk/models/</code>; check available space with <code>df -h ~/.kronk/models</code>.</p>
+          <p><strong>Audio (Bucky):</strong> whisper-specific failure modes (missing libraries, degraded init, English-only model rejecting a language hint, multipart upload size, etc.) are documented in <a href="chapter-18-bucky.md#1810-troubleshooting">Chapter 18 §18.10</a>.</p>
           <h3 id="1714-getting-help">17.14 Getting Help</h3>
           <p><strong>Check server liveness:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
@@ -6447,10 +6475,510 @@ go tool pprof cpu.prof`}</code></pre>
             <li>Steps to reproduce</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="#chapter-18-developer-guide"&gt;Chapter 18: Developer Guide&lt;/a&gt;</em></p>
-          <h2 id="chapter-18-developer-guide">Chapter 18: Developer Guide</h2>
+          <p><em>Next: &lt;a href="chapter-18-bucky.md"&gt;Chapter 18: Bucky (Audio Transcription)&lt;/a&gt;</em></p>
+          <h2 id="chapter-18-bucky-audio-transcription">Chapter 18: Bucky (Audio Transcription)</h2>
+          <p>This chapter is the user-facing operation guide for <strong>Bucky</strong>, the audio transcription subsystem in Kronk. Bucky wraps <a href="https://github.com/ggerganov/whisper.cpp"><code>whisper.cpp</code></a> (via the <code>github.com/ardanlabs/bucky</code> FFI bindings) and exposes it through the same SDK / server / CLI / BUI surfaces as the core LLM stack.</p>
+          <p>For developer-level internals (package layout, the per-handle semaphore, the <code>whisper.State</code> pool, lifecycle, and tests) see the <em>Bucky Internals</em> section in <a href="chapter-19-developer-guide.md">Chapter 19: Developer Guide</a>.</p>
+          <h3 id="181-overview">18.1 Overview</h3>
+          <p>Bucky is a peer of the llama (kronk) backend. It is a separate backend kind in the cross-backend registry (<code>backend.KindWhisper</code>) and ships its own:</p>
+          <ul>
+            <li>SDK package — <code>sdk/bucky</code> (high-level handle) and <code>sdk/bucky/model</code> (low-level model + transcribe primitives).</li>
+            <li>Tools — <code>sdk/tools/bucky/libs</code> (shared-library installer) and <code>sdk/tools/bucky/models</code> (whisper GGML model catalog).</li>
+            <li>Pool — <code>sdk/bucky/pool</code>, sharing the unified <code>resman.Manager</code> with the llama pool so VRAM / RAM accounting is one budget across the whole host.</li>
+            <li>CLI — the <code>kronk bucky …</code> sub-command tree.</li>
+            <li>HTTP — the OpenAI-compatible <code>/v1/audio/transcriptions</code> endpoint plus <code>/v1/bucky/libs/<em>&lt;/code&gt; and &lt;code&gt;/v1/bucky/models/</em></code> admin endpoints.</li>
+            <li>BUI — the <strong>Translator</strong> component, plus library and model management screens.</li>
+          </ul>
+          <pre className="code-block"><code className="language-diagram">{`╭──────────────╮  multipart   ╭──────────────╮   acquire   ╭───────────────╮
+│  Client /    │ ───────────▶ │  audioapp    │ ──────────▶ │  bucky.Pool   │
+│  BUI / curl  │              │  handler     │             │  (resman'd)   │
+╰──────────────╯              ╰──────┬───────╯             ╰───────┬───────╯
+                                     │ audio.Decode                │
+                                     ▼                             ▼
+                              ╭──────────────╮              ╭───────────────╮
+                              │  float32 PCM │              │ *bucky.Bucky  │
+                              │  16 kHz mono │              │ + model.Model │
+                              ╰──────┬───────╯              ╰───────┬───────╯
+                                     │                              │ Transcribe
+                                     ╰─────────────────────────────▶│ (per-handle
+                                                                    │  semaphore)
+                                                                    ▼
+                                                             ╭───────────────╮
+                                                             │ whisper.cpp   │
+                                                             │ (FFI)         │
+                                                             ╰───────────────╯`}</code></pre>
+          <p>A request flows: client → multipart upload → <code>audioapp.transcriptions</code> handler → <code>audio.Decode</code> to 16 kHz mono float32 PCM → <code>pool.Bucky.AquireModel</code> → <code>Bucky.Transcribe</code> → whisper.cpp → formatted response (<code>json</code>, <code>verbose_json</code>, <code>text</code>, <code>srt</code>, or <code>vtt</code>).</p>
+          <p>The whisper context is single-stream, so concurrency comes from NSeqMax-sized <code>whisper.State</code> pools per model handle and a per-handle semaphore in front of them. Multiple models share the host through the unified <code>resman</code>.</p>
+          <h3 id="182-installation-libraries">18.2 Installation &amp; Libraries</h3>
+          <p>Bucky uses <strong>prebuilt</strong> whisper.cpp shared libraries, downloaded into the bucky libraries root. The default root is <code>~/.kronk/bucky-libraries/</code> and the active install is selected by <code>KRONK_BUCKY_LIB_PATH</code> (falls back to the default platform triple if unset).</p>
+          <p>The whisper backend is registered with the cross-backend registry even when the shared library is missing, so the server can boot in <strong>degraded mode</strong> — the BUI / CLI can still download libraries and the server will become functional once <code>bucky.Init</code> succeeds.</p>
+          <h4 id="1821-library-bundles">18.2.1 Library Bundles</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Processor</th>
+                <th>Platforms</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>cpu</code></td>
+                <td>linux, darwin, windows (all archs)</td>
+                <td>Works everywhere. No GPU offload.</td>
+              </tr>
+              <tr>
+                <td><code>metal</code></td>
+                <td>darwin (universal slice)</td>
+                <td>Apple Silicon GPU offload via Metal.</td>
+              </tr>
+              <tr>
+                <td><code>cuda</code></td>
+                <td>linux, windows (amd64)</td>
+                <td>NVIDIA GPU offload. Requires a CUDA-capable host.</td>
+              </tr>
+              <tr>
+                <td><code>vulkan</code></td>
+                <td>linux (amd64)</td>
+                <td>Cross-platform GPU offload via Vulkan.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="1822-installing-via-the-cli">18.2.2 Installing via the CLI</h4>
+          <pre className="code-block"><code className="language-sh">{`# Install the default whisper.cpp libraries for the current host.
+kronk bucky libs
+
+# Install a specific whisper.cpp version.
+kronk bucky libs --version=v1.7.0
+
+# List supported (arch, os, processor) combinations.
+kronk bucky libs --list-combinations
+
+# Install a Linux/CUDA bundle alongside the active install.
+kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
+
+# List installed library bundles.
+kronk bucky libs --list-installs
+
+# Remove an install.
+kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</code></pre>
+          <p>Every <code>bucky libs</code> verb honors <code>--local</code> to bypass the model server and download directly. The default web mode talks to the server's <code>/v1/bucky/libs/*</code> endpoints.</p>
+          <p>To switch between installed bundles point <code>KRONK_BUCKY_LIB_PATH</code> at the bundle directory and restart the server:</p>
+          <pre className="code-block"><code className="language-sh">{`export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda`}</code></pre>
+          <h4 id="1823-installing-via-the-bui">18.2.3 Installing via the BUI</h4>
+          <p>The BUI's <strong>Whisper Libraries</strong> screen exposes the same operations: list combinations, install / remove a triple, and view the currently active bundle. After installing a bundle, restart the server (or wait for the auto-init retry) so the bucky backend can load the shared library.</p>
+          <h4 id="1824-environment-variables">18.2.4 Environment Variables</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>KRONK_BUCKY_LIB_PATH</code></td>
+                <td>Whisper library directory the server loads at startup.</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_ARCH</code></td>
+                <td>Architecture override for CLI install ops: <code>amd64</code>, <code>arm64</code>.</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_OS</code></td>
+                <td>OS override for CLI install ops: <code>linux</code>, <code>darwin</code>, <code>windows</code>.</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_PROCESSOR</code></td>
+                <td>Processor override: <code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>vulkan</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="183-model-catalog-pull">18.3 Model Catalog &amp; Pull</h3>
+          <p>Whisper models are single GGML <code>.bin</code> files stored flat under the bucky models root (default <code>~/.kronk/bucky-models/</code>). On-disk filenames follow the upstream HuggingFace mirror convention: <code>ggml-&lt;name&gt;.bin</code>. The short name strips the <code>ggml-</code> prefix and <code>.bin</code> suffix, so <code>ggml-tiny.en.bin</code> ↔ <code>tiny.en</code>.</p>
+          <h4 id="1831-bundled-catalog">18.3.1 Bundled Catalog</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Short name</th>
+                <th>Size</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>tiny</code></td>
+                <td>75 MB</td>
+                <td>multilingual, fastest, lowest accuracy</td>
+              </tr>
+              <tr>
+                <td><code>tiny.en</code></td>
+                <td>75 MB</td>
+                <td>english-only, fastest</td>
+              </tr>
+              <tr>
+                <td><code>base</code></td>
+                <td>142 MB</td>
+                <td>multilingual, fast</td>
+              </tr>
+              <tr>
+                <td><code>base.en</code></td>
+                <td>142 MB</td>
+                <td>english-only, fast</td>
+              </tr>
+              <tr>
+                <td><code>small</code></td>
+                <td>466 MB</td>
+                <td>multilingual, balanced</td>
+              </tr>
+              <tr>
+                <td><code>small.en</code></td>
+                <td>466 MB</td>
+                <td>english-only, balanced</td>
+              </tr>
+              <tr>
+                <td><code>medium</code></td>
+                <td>1.5 GB</td>
+                <td>multilingual, accurate</td>
+              </tr>
+              <tr>
+                <td><code>medium.en</code></td>
+                <td>1.5 GB</td>
+                <td>english-only, accurate</td>
+              </tr>
+              <tr>
+                <td><code>large-v3</code></td>
+                <td>2.9 GB</td>
+                <td>multilingual, highest accuracy</td>
+              </tr>
+              <tr>
+                <td><code>large-v3-turbo</code></td>
+                <td>1.5 GB</td>
+                <td>multilingual, near-large accuracy at small/medium speed</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The English-only (<code>.en</code>) variants are noticeably more accurate per byte for English audio but reject any non-English language hint at request time (see <a href="#1871-post-v1audiotranscriptions">§18.7.1</a>).</p>
+          <h4 id="1832-pulling-and-removing">18.3.2 Pulling and Removing</h4>
+          <pre className="code-block"><code className="language-sh">{`# List the bundled catalog.
+kronk bucky model catalog
+
+# Download the tiny English model.
+kronk bucky model pull tiny.en
+
+# List installed models with size and ggml header summary.
+kronk bucky model list
+
+# Remove a model.
+kronk bucky model remove tiny.en`}</code></pre>
+          <p><code>pull</code> accepts a short name, a full ggml filename (<code>ggml-tiny.bin</code>), or a bare basename without extension. <code>--local</code> bypasses the model server.</p>
+          <h4 id="1833-on-disk-layout">18.3.3 On-Disk Layout</h4>
+          <pre className="code-block"><code className="language-diagram">{`~/.kronk/
+├── bucky-libraries/
+│   ├── darwin/arm64/metal/        ← active on Apple Silicon
+│   ├── linux/amd64/cuda/          ← installed alongside (selected via KRONK_BUCKY_LIB_PATH)
+│   └── linux/amd64/cpu/
+└── bucky-models/
+    ├── ggml-tiny.en.bin
+    ├── ggml-base.bin
+    └── ggml-large-v3-turbo.bin`}</code></pre>
+          <h3 id="184-server-pool-configuration">18.4 Server &amp; Pool Configuration</h3>
+          <p>There is no per-model config file for whisper — Bucky discovers every <code>.bin</code> under the models root, parses its ggml header, and serves it under its short-name ID. The server-side wiring lives in <code>cmd/server/api/services/kronk/main.go</code>:</p>
+          <ol>
+            <li><code>buckylibs.New(...)</code> resolves the active library bundle.</li>
+            <li><code>buckymodels.NewWithPaths(...)</code> builds the on-disk index.</li>
+            <li><code>bucky.Init(bucky.WithInitLibPath(...))</code> loads the whisper.cpp shared library. On failure the server logs a warning and runs in <strong>degraded mode</strong> — <code>/v1/bucky/libs/<em>&lt;/code&gt; and &lt;code&gt;/v1/bucky/models/</em></code> stay live so libraries can be downloaded, but <code>/v1/audio/transcriptions</code> will fail until a successful re-init.</li>
+            <li>The bucky pool is constructed with the <strong>shared</strong> <code>resman.Manager</code> so its memory reservations contend with the llama pool's.</li>
+          </ol>
+          <p>Per-pool defaults:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Setting</th>
+                <th>Default</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>ModelsInPool</code></td>
+                <td><code>10</code></td>
+                <td><code>sdk/bucky/pool.defaultModelsInPool</code></td>
+              </tr>
+              <tr>
+                <td><code>TTL</code></td>
+                <td><code>5m</code></td>
+                <td><code>sdk/bucky/pool.defaultTTL</code></td>
+              </tr>
+              <tr>
+                <td><code>NSeqMax</code></td>
+                <td><code>1</code></td>
+                <td><code>sdk/bucky/model.Config</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The pool's per-handle semaphore is sized <strong>1:1</strong> with <code>NSeqMax</code>, matching the embedding / rerank rule in <code>sdk/kronk</code> (not the text-generation <code>NSeqMax * QueueDepth</code> rule), because whisper has no batch engine and each transcribe owns one <code>whisper.State</code> from acquire to release.</p>
+          <p><code>Pool.ModelStatus()</code> returns both <strong>loaded</strong> entries (from the engine cache) and <strong>loading</strong> entries (in-flight reservations the engine holds a ticket for in <code>resman</code>) so the BUI can show "loading…" for a cold model.</p>
+          <h3 id="185-cli-commands">18.5 CLI Commands</h3>
+          <p>The <code>kronk bucky</code> tree mirrors the top-level llama verbs but targets whisper. There is no <code>bucky run</code> because whisper has no chat / generation surface.</p>
+          <pre className="code-block"><code>{`kronk bucky
+├── libs                              # install / upgrade whisper.cpp libraries
+└── model
+    ├── catalog                       # list the bundled catalog
+    ├── list                          # list installed models
+    ├── pull   <name|filename|url>    # download a model
+    └── remove <name>                 # remove a model from disk`}</code></pre>
+          <p>Every verb takes <code>--local</code> to bypass the model server.</p>
+          <h3 id="186-bui-usage">18.6 BUI Usage</h3>
+          <p>The BUI surfaces three Bucky-related screens:</p>
+          <ol>
+            <li><strong>Whisper Libraries</strong> — list / install / remove library bundles (same operations as <code>kronk bucky libs</code>).</li>
+            <li><strong>Whisper Models</strong> — browse the bundled catalog, pull, list, and remove local models, view ggml header details.</li>
+            <li><strong>Translator</strong> — the user-facing transcription workbench. Upload or record audio, pick a model, pick a language (or auto-detect), choose response format, and view the transcript (text and per- segment timestamps).</li>
+          </ol>
+          <p>The Translator panel uses the <code>/v1/audio/transcriptions</code> endpoint behind the scenes and exposes the same fields that endpoint accepts.</p>
+          <h3 id="187-api-endpoint">18.7 API Endpoint</h3>
+          <h4 id="1871-`post-v1audiotranscriptions`">18.7.1 `POST /v1/audio/transcriptions`</h4>
+          <p>OpenAI-compatible. <code>multipart/form-data</code> upload, <strong>25 MB</strong> max body.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>file</code></td>
+                <td>file</td>
+                <td>Audio file (any format <code>bucky/pkg/audio</code> can decode to 16 kHz mono float32).</td>
+              </tr>
+              <tr>
+                <td><code>model</code></td>
+                <td>string</td>
+                <td><strong>Required.</strong> Bucky model ID (short name, e.g. <code>tiny.en</code>).</td>
+              </tr>
+              <tr>
+                <td><code>language</code></td>
+                <td>string</td>
+                <td>BCP-47 / ISO 639-1 language hint. Empty → auto-detect.</td>
+              </tr>
+              <tr>
+                <td><code>prompt</code></td>
+                <td>string</td>
+                <td>Initial decoder bias prompt.</td>
+              </tr>
+              <tr>
+                <td><code>translate</code></td>
+                <td>bool</td>
+                <td>When <code>true</code>, translate source audio to English.</td>
+              </tr>
+              <tr>
+                <td><code>response_format</code></td>
+                <td>string</td>
+                <td><code>json</code> (default), <code>verbose_json</code>, <code>text</code>, <code>srt</code>, <code>vtt</code>.</td>
+              </tr>
+              <tr>
+                <td><code>timestamp_granularities[]</code></td>
+                <td>string</td>
+                <td><code>word</code> is accepted but currently emits an empty <code>words: []</code> array.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Behavior notes:</p>
+          <ul>
+            <li>The handler rejects requests against an English-only model (e.g. <code>tiny.en</code>) when <code>language</code> is set to anything other than <code>""</code> or <code>"en"</code>.</li>
+            <li>The handler caps each request at a 30-minute internal deadline.</li>
+            <li><code>verbose_json</code> includes <code>segments[]</code> with <code>start</code>, <code>end</code>, <code>text</code>, and <code>no_speech_prob</code>. Word-level timestamps are not yet plumbed through from whisper.cpp, so the <code>words: []</code> field is intentionally empty when <code>timestamp_granularities[]=word</code> is requested.</li>
+          </ul>
+          <p>Example:</p>
+          <pre className="code-block"><code className="language-sh">{`curl -X POST http://localhost:8080/v1/audio/transcriptions \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -F file=@samples/jfk.wav \\
+  -F model=tiny.en \\
+  -F response_format=json`}</code></pre>
+          <h4 id="1872-admin-endpoints">18.7.2 Admin Endpoints</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET  /v1/bucky/libs</code></td>
+                <td>Current install + supported combinations.</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/bucky/libs/pull</code></td>
+                <td>Install / upgrade a library bundle.</td>
+              </tr>
+              <tr>
+                <td><code>GET  /v1/bucky/models</code></td>
+                <td>List downloaded whisper models.</td>
+              </tr>
+              <tr>
+                <td><code>GET  /v1/bucky/models/catalog</code></td>
+                <td>List the bundled catalog.</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/bucky/models/pull</code></td>
+                <td>Download a whisper model.</td>
+              </tr>
+              <tr>
+                <td><code>GET  /v1/bucky/models/&#123;model&#125;/details</code></td>
+                <td>ggml header + on-disk details for one model.</td>
+              </tr>
+              <tr>
+                <td><code>DELETE /v1/bucky/models/&#123;model&#125;</code></td>
+                <td>Remove a model from disk.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>These are the endpoints the BUI screens and the <code>--web</code> mode of the <code>kronk bucky</code> CLI talk to.</p>
+          <h3 id="188-sdk-quick-start">18.8 SDK Quick Start</h3>
+          <p>A minimal Go program. The fully worked example is in <a href="../examples/bucky/main.go"><code>examples/bucky/main.go</code></a>, runnable with <code>make example-bucky</code>.</p>
+          <pre className="code-block"><code className="language-go">{`package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+
+    "github.com/ardanlabs/bucky/pkg/audio"
+    "github.com/ardanlabs/kronk/sdk/bucky"
+    "github.com/ardanlabs/kronk/sdk/bucky/model"
+    buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
+    buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // 1. Make sure the whisper.cpp shared libs and a model are present.
+    lib, _ := buckylibs.New()
+    lib.Download(ctx, bucky.FmtLogger)
+
+    mdls, _ := buckymodels.New()
+    mp, _ := mdls.Download(ctx, bucky.FmtLogger, "tiny.en")
+
+    // 2. Initialize the whisper backend (loads the shared library).
+    if err := bucky.Init(); err != nil {
+        fmt.Fprintln(os.Stderr, err); os.Exit(1)
+    }
+
+    // 3. Construct a handle for one model.
+    b, _ := bucky.New(
+        model.WithModelPath(mp.ModelFiles[0]),
+        model.WithUseGPU(true),
+    )
+    defer b.Unload(ctx)
+
+    // 4. Decode audio to 16 kHz mono float32 PCM and transcribe.
+    f, _ := os.Open("samples/jfk.wav")
+    defer f.Close()
+    samples, _ := audio.Decode(f)
+
+    tr, _ := b.Transcribe(ctx, samples, model.WithLanguage("en"))
+    fmt.Println(tr.Text)
+}`}</code></pre>
+          <p>Key SDK entry points:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>bucky.Init(opts...)</code></td>
+                <td>Register backend + load whisper.cpp shared library.</td>
+              </tr>
+              <tr>
+                <td><code>bucky.New(opts...)</code></td>
+                <td>Construct a concurrently-safe <code>*Bucky</code> handle for one model.</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.Transcribe(...)</code></td>
+                <td>Transcribe 16 kHz mono float32 PCM.</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.DetectLanguage(...)</code></td>
+                <td>Run language detection only.</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.ActiveStreams()</code></td>
+                <td>In-flight transcribe count (observability).</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.SystemInfo()</code></td>
+                <td>Parsed <code>whisper.cpp</code> system info string.</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.Unload(ctx)</code></td>
+                <td>Wait for active streams to drain and unload the model.</td>
+              </tr>
+              <tr>
+                <td><code>bucky.LangID/LangStr/LangMaxID</code></td>
+                <td>Language code ↔ id helpers.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="189-supported-languages">18.9 Supported Languages</h3>
+          <p><code>whisper.cpp</code> supports ~99 languages. Bucky exposes the full set through <code>bucky.LangID</code> / <code>bucky.LangStr</code> / <code>bucky.LangMaxID</code>, and the BUI Translator includes a shortlist of common ones plus an <strong>Auto-detect</strong> option (<code>language=""</code>).</p>
+          <p>Pass the BCP-47 / ISO 639-1 short code (<code>en</code>, <code>de</code>, <code>fr</code>, …) in the <code>language</code> form field or in <code>model.WithLanguage(...)</code>. Empty string means auto-detect.</p>
+          <p>The <strong>English-only</strong> model variants (<code>tiny.en</code>, <code>base.en</code>, <code>small.en</code>, <code>medium.en</code>) reject any non-<code>en</code> language hint. Use the multilingual variants for non-English audio.</p>
+          <h3 id="1810-troubleshooting">18.10 Troubleshooting</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Symptom</th>
+                <th>Likely cause / fix</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Server logs <code>bucky init failed, running in degraded mode …</code></td>
+                <td>Whisper libraries not installed for the active triple. Run <code>kronk bucky libs</code> (or use the BUI), then restart the server.</td>
+              </tr>
+              <tr>
+                <td><code>/v1/audio/transcriptions</code> returns <code>unknown model "&lt;id&gt;"</code></td>
+                <td>Model not pulled. Run <code>kronk bucky model pull &lt;id&gt;</code> (or use the BUI), then retry.</td>
+              </tr>
+              <tr>
+                <td><code>model[&lt;id&gt;] is english-only but language[&lt;code&gt;] was requested</code></td>
+                <td>You hit an <code>.en</code> model with a non-English <code>language</code> hint. Switch to a multilingual model (<code>tiny</code>, <code>base</code>, <code>small</code>, <code>medium</code>, <code>large-v3</code>).</td>
+              </tr>
+              <tr>
+                <td><code>transcribe: empty samples</code></td>
+                <td>The uploaded file decoded to zero samples — usually a corrupt file or a format <code>bucky/pkg/audio</code> cannot decode. Re-encode to 16 kHz mono WAV.</td>
+              </tr>
+              <tr>
+                <td><code>parse multipart form: …</code> with 413 / size errors</td>
+                <td>The upload exceeded 25 MB. Split the audio or down-sample to 16 kHz mono before upload.</td>
+              </tr>
+              <tr>
+                <td>GPU model loads but inference is suspiciously slow</td>
+                <td>Confirm the active bundle matches your hardware (<code>echo $KRONK_BUCKY_LIB_PATH</code>). A <code>cpu</code> bundle will silently work on a GPU host.</td>
+              </tr>
+              <tr>
+                <td><code>unload: cannot unload, too many active-streams[n]</code></td>
+                <td>A shutdown raced a long transcribe. Increase the unload context deadline, or wait for in-flight requests to finish.</td>
+              </tr>
+              <tr>
+                <td>Whisper noise (<code>whisper_init_<em>&lt;/code&gt;, &lt;code&gt;ggml_metal_</em></code>) bleeds into stdout</td>
+                <td>Bucky installs <code>LogSilent</code> by default. If you forced <code>LogNormal</code> via <code>bucky.WithLogLevel(LogNormal)</code>, switch it back.</td>
+              </tr>
+            </tbody>
+          </table>
+          <hr />
+          <p><em>Next: &lt;a href="chapter-19-developer-guide.md"&gt;Chapter 19: Developer Guide&lt;/a&gt;</em></p>
+          <h2 id="chapter-19-developer-guide">Chapter 19: Developer Guide</h2>
           <p>This chapter covers development workflows, build commands, and code conventions for contributors to the Kronk project.</p>
-          <h3 id="181-quick-reference">18.1 Quick Reference</h3>
+          <h3 id="191-quick-reference">19.1 Quick Reference</h3>
           <p>Here is a quick chart of some of the more important make commands.</p>
           <table className="flags-table">
             <thead>
@@ -6518,7 +7046,7 @@ go tool pprof cpu.prof`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h3 id="182-build-test-commands">18.2 Build &amp; Test Commands</h3>
+          <h3 id="192-build-test-commands">19.2 Build &amp; Test Commands</h3>
           <p><strong>Install CLI locally:</strong></p>
           <pre className="code-block"><code className="language-shell">{`make install-kronk`}</code></pre>
           <p>This is the canonical install path used everywhere in the docs. Internally it runs <code>go install ./cmd/kronk</code> with the project's build tags.</p>
@@ -6535,7 +7063,7 @@ make test`}</code></pre>
           <p><strong>Run a single test:</strong></p>
           <pre className="code-block"><code className="language-shell">{`go test -v -count=1 -run TestName ./sdk/kronk/...`}</code></pre>
           <p>The path can target any package (e.g. <code>./cmd/...</code> or a specific subpackage); <code>./sdk/kronk/...</code> is just where most inference tests live.</p>
-          <h3 id="183-developer-setup">18.3 Developer Setup</h3>
+          <h3 id="193-developer-setup">19.3 Developer Setup</h3>
           <p>Configure git hooks for automatic pre-commit checks:</p>
           <pre className="code-block"><code className="language-shell">{`make setup`}</code></pre>
           <p>This enables a pre-commit hook that automatically runs:</p>
@@ -6549,8 +7077,8 @@ make test`}</code></pre>
           <p><code>make setup</code> only configures git hooks. The lint/vuln/codegen toolchain is installed separately:</p>
           <pre className="code-block"><code className="language-shell">{`make install-gotooling   # staticcheck, govulncheck, protoc-gen-go(-grpc), gomod2nix
 make install-tooling     # brew: protobuf, grpcurl, node (only needed for codegen / BUI work)`}</code></pre>
-          <p>A fresh checkout that skips <code>install-gotooling</code> will fail the <code>lint</code> and <code>vuln-check</code> steps of <code>make test</code> and the post-edit checks listed in §18.1.</p>
-          <h3 id="184-project-architecture">18.4 Project Architecture</h3>
+          <p>A fresh checkout that skips <code>install-gotooling</code> will fail the <code>lint</code> and <code>vuln-check</code> steps of <code>make test</code> and the post-edit checks listed in §19.1.</p>
+          <h3 id="194-project-architecture">19.4 Project Architecture</h3>
           <p><strong>Directory Structure:</strong></p>
           <table className="flags-table">
             <thead>
@@ -6616,7 +7144,7 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
           </table>
           <p><strong>Core Technology:</strong></p>
           <p>Kronk uses <a href="https://github.com/hybridgroup/yzma">yzma</a> (llama.cpp Go bindings) for local inference with GGUF models.</p>
-          <h3 id="185-bui-frontend-development">18.5 BUI Frontend Development</h3>
+          <h3 id="195-bui-frontend-development">19.5 BUI Frontend Development</h3>
           <p>The Browser UI is a React application located at:</p>
           <pre className="code-block"><code>{`cmd/server/api/frontends/bui/src/`}</code></pre>
           <p><strong>Directory Structure (&lt;code&gt;src/&lt;/code&gt;):</strong></p>
@@ -6777,7 +7305,7 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
           <pre className="code-block"><code className="language-shell">{`make kronk-docs
 # equivalent to: go run cmd/server/api/tooling/docs/*.go`}</code></pre>
           <p>The generator takes no flags; it always rebuilds all three pipelines.</p>
-          <h3 id="186-code-style-guidelines">18.6 Code Style Guidelines</h3>
+          <h3 id="196-code-style-guidelines">19.6 Code Style Guidelines</h3>
           <p><strong>Package Comments:</strong></p>
           <pre className="code-block"><code className="language-go">{`// Package kronk provides the core inference API.`}</code></pre>
           <p><strong>Error Handling:</strong></p>
@@ -6801,7 +7329,7 @@ func New(cfg Config) *Server {
     // ...
 }`}</code></pre>
           <p><strong>Testing:</strong></p>
-          <p>Tests link against yzma (llama.cpp Go bindings), so they the installed libraries plus test models. Always go through <code>make test</code> (or <code>make test-only</code> for fast iteration) per §18.2.</p>
+          <p>Tests link against yzma (llama.cpp Go bindings), so they the installed libraries plus test models. Always go through <code>make test</code> (or <code>make test-only</code> for fast iteration) per §19.2.</p>
           <p><strong>Post-edit Checks (per &lt;a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/AGENTS.md"&gt;AGENTS.md&lt;/a&gt;):</strong></p>
           <p>After modifying any <code>.go</code> file, run on the changed files / package:</p>
           <pre className="code-block"><code className="language-shell">{`gofmt -s -w <changed files>
@@ -6848,9 +7376,9 @@ case "pending":
 default:
     // ...
 }`}</code></pre>
-          <h3 id="187-sdk-internals">18.7 SDK Internals</h3>
+          <h3 id="197-sdk-internals">19.7 SDK Internals</h3>
           <p>This section documents implementation details for developers working on the Kronk SDK packages.</p>
-          <h4 id="1871-package-structure">18.7.1 Package Structure</h4>
+          <h4 id="1971-package-structure">19.7.1 Package Structure</h4>
           <p><strong>sdk/kronk/</strong> - Public SDK API surface:</p>
           <table className="flags-table">
             <thead>
@@ -7161,13 +7689,13 @@ default:
             <li><strong>Active-stream protection</strong> — automatic TTL eviction of an entry with in-flight streams is rejected; the entry is re-inserted to keep it resident until the stream finishes.</li>
             <li><strong>Shutdown</strong> — <code>Shutdown(ctx)</code> invalidates the cache and blocks until every entry has finished unloading (or <code>ctx</code> expires).</li>
           </ul>
-          <h4 id="1872-streaming-architecture">18.7.2 Streaming Architecture</h4>
+          <h4 id="1972-streaming-architecture">19.7.2 Streaming Architecture</h4>
           <p><strong>Two streaming primitives</strong> (<code>concurrency.go</code>):</p>
           <ul>
             <li><code>streaming[T]</code> — 1:1 relay. Used by <code>ChatStreaming</code> to forward <code>model.ChatResponse</code> chunks straight to the caller.</li>
             <li><code>streamingWith[T, U]</code> — 1:N event transformation. Used by <code>ResponseStreaming</code> to fan out a single upstream chunk into multiple SSE event types.</li>
           </ul>
-          <p>Both acquire the model on entry and release it from a <code>defer</code> when the user-facing channel closes (see §18.7.4) — the lifecycle is not hand-rolled in the per-API files.</p>
+          <p>Both acquire the model on entry and release it from a <code>defer</code> when the user-facing channel closes (see §19.7.4) — the lifecycle is not hand-rolled in the per-API files.</p>
           <p><strong>Response Streaming Pattern</strong> (<code>response.go</code>, <code>concurrency.go</code>):</p>
           <ul>
             <li><code>streamProcessor</code> has three phases: <code>Start()</code>, <code>Process(chunk)</code>, <code>Complete(lastChunk)</code></li>
@@ -7182,19 +7710,19 @@ default:
             <li>When <code>FinishReasonPtr != nil</code>, skip text/reasoning deltas (they duplicate previous content)</li>
             <li>Always process tool calls even with FinishReason set (may only arrive in final chunk)</li>
           </ul>
-          <h4 id="1873-concurrency-strategy">18.7.3 Concurrency Strategy</h4>
-          <p>All concurrent requests on a single <code>Kronk</code> block on one semaphore; its capacity is fixed at <code>New()</code> time and depends on the model class. <code>acquireModel()</code> is the gate (see §18.7.4).</p>
+          <h4 id="1973-concurrency-strategy">19.7.3 Concurrency Strategy</h4>
+          <p>All concurrent requests on a single <code>Kronk</code> block on one semaphore; its capacity is fixed at <code>New()</code> time and depends on the model class. <code>acquireModel()</code> is the gate (see §19.7.4).</p>
           <p><code>NSeqMax</code> is the <code>nseq-max</code> knob from <code>model_config.yaml</code>, and behaves differently depending on model type:</p>
           <p><strong>Embedding and Reranking Models</strong>:</p>
           <ul>
-            <li><code>NSeqMax</code> controls the internal context pool size (see §18.7.6)</li>
+            <li><code>NSeqMax</code> controls the internal context pool size (see §19.7.6)</li>
             <li>Model weights are shared, only KV cache memory is multiplied</li>
             <li>Inputs within a request are partitioned across pool contexts for parallel processing</li>
             <li>Semaphore capacity = <code>NSeqMax</code></li>
           </ul>
           <p><strong>Text Inference Models</strong> (chat, completion, vision, audio):</p>
           <ul>
-            <li><code>NSeqMax</code> controls batch parallelism within the batch engine — the number of concurrent slots (see §18.7.5)</li>
+            <li><code>NSeqMax</code> controls batch parallelism within the batch engine — the number of concurrent slots (see §19.7.5)</li>
             <li>Only one <code>model.Model</code> instance is created with multiple slots</li>
             <li>Semaphore capacity = <code>NSeqMax * queueDepth</code> (default <code>queueDepth=2</code>)</li>
             <li>Why ×2: with <code>queueDepth=2</code>, one request can sit on the batch engine's request queue while another is in prefill/decode, smoothing throughput across acquire → prefill → decode → release. Increase to absorb bursty load; decrease to bound queued memory.</li>
@@ -7213,8 +7741,8 @@ case mi.IsEmbedModel || mi.IsRerankModel:
 default:
     semCapacity = max(cfg.NSeqMax(), 1) * queueDepth
 }`}</code></pre>
-          <h4 id="1874-model-acquirerelease-cleanup">18.7.4 Model Acquire/Release &amp; Cleanup</h4>
-          <p>The wrappers in <code>concurrency.go</code> (<code>streaming</code> / <code>streamingWith</code>, see §18.7.2) are what call <code>acquireModel</code> and <code>releaseModel</code> — per-API files do not call them directly.</p>
+          <h4 id="1974-model-acquirerelease-cleanup">19.7.4 Model Acquire/Release &amp; Cleanup</h4>
+          <p>The wrappers in <code>concurrency.go</code> (<code>streaming</code> / <code>streamingWith</code>, see §19.7.2) are what call <code>acquireModel</code> and <code>releaseModel</code> — per-API files do not call them directly.</p>
           <p><strong>Acquisition</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">acquire.go</a>):</p>
           <ol>
             <li><strong>Shutdown check</strong>: take <code>shutdown.Lock()</code>; if <code>shutdownFlag</code> is set, return <code>"acquire-model: kronk has been unloaded"</code>.</li>
@@ -7242,18 +7770,18 @@ default:
             <li><code>releaseModel()</code> runs after that, from the wrapper <code>defer</code>.</li>
           </ul>
           <p><strong>Key invariant:</strong> the semaphore guarantees the model is never released while a request is in flight — <code>releaseModel()</code> is only called from the streaming wrapper's <code>defer</code>, which fires after the user-facing channel closes.</p>
-          <h4 id="1875-batch-engine-internals">18.7.5 Batch Engine Internals</h4>
+          <h4 id="1975-batch-engine-internals">19.7.5 Batch Engine Internals</h4>
           <p><strong>ChatStreaming Decision Logic</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go#L258-L315">chat.go:258-315</a>):</p>
           <p>All chat requests — text and media (<code>ObjectChatText</code> and <code>ObjectChatMedia</code>) — flow through <code>submitToBatchEngine</code>. It builds a <code>chatJob</code> (carrying request data plus the resolved IMC fields from <code>cacheResult</code>) and unconditionally calls <code>m.batch.submit(&job)</code>. Returns:</p>
           <ul>
-            <li><code>true</code> on successful submit; the caller sets <code>batching = true</code> in <code>chat.go</code> so the non-batched cleanup defer is skipped (see §18.7.4).</li>
+            <li><code>true</code> on successful submit; the caller sets <code>batching = true</code> in <code>chat.go</code> so the non-batched cleanup defer is skipped (see §19.7.4).</li>
             <li><code>false</code> only on submit error. The error has already been streamed to the caller via <code>sendChatError</code> and any IMC pending reservation cleared.</li>
           </ul>
           <p>There is no longer an <code>m.batch == nil || object != ObjectChatText</code> early return — vision/audio also runs through the batch engine.</p>
           <p><strong>Batch Engine Architecture</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">batch_engine.go</a>):</p>
           <ul>
             <li><code>batchEngine</code> manages <code>nSlots</code> parallel <code>*slot</code> structs (slot type lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go">batch_slot.go</a>)</li>
-            <li>Constructed via <code>newBatchEngine(m, nSlots)</code> during model setup; <code>nSlots = NSeqMax</code> (see §18.7.3)</li>
+            <li>Constructed via <code>newBatchEngine(m, nSlots)</code> during model setup; <code>nSlots = NSeqMax</code> (see §19.7.3)</li>
             <li>Queueing: <code>requestQ chan <em>chatJob&lt;/code&gt; (buffered &lt;code&gt;nSlots</em>2</code>) is the public inbox; <code>pendingJobs</code> holds jobs already dequeued but unable to start because no slot was free, and is checked before reading <code>requestQ</code> again</li>
             <li>Each slot tracks: <code>seqID</code>, prompt tokens, decode state, sampler, response channel, logprobs, prefill state</li>
             <li>Signal-based wake: <code>wakeCh chan struct&#123;&#125;</code> (buffered size 1) is poked on every successful submit, eliminating up-to-1ms scheduling latency on request pickup</li>
@@ -7266,13 +7794,13 @@ default:
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
             <li><code>imcSession</code> = logical cached conversation branch (hash, tokens, KV state)</li>
           </ul>
-          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are decoupled from slots: session state is externalized to RAM after each request and restored into any available slot on the next request via <code>StateSeqSetData</code>. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings. Full IMC lifecycle is detailed in §18.7.7.</p>
-          <h4 id="1876-context-pooling">18.7.6 Context Pooling</h4>
+          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are decoupled from slots: session state is externalized to RAM after each request and restored into any available slot on the next request via <code>StateSeqSetData</code>. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings. Full IMC lifecycle is detailed in §19.7.7.</p>
+          <h4 id="1976-context-pooling">19.7.6 Context Pooling</h4>
           <p>Kronk uses two distinct context strategies depending on the workload.</p>
           <p><strong>Text inference: single shared context.</strong></p>
           <ul>
             <li>One <code>llama.Context</code> is created in <code>NewModel</code> and reused across requests.</li>
-            <li>KV cleanup splits by path (see §18.7.4):</li>
+            <li>KV cleanup splits by path (see §19.7.4):</li>
           </ul>
           <p>- Non-batched path → <code>resetContext()</code> runs <code>llama.Synchronize(m.lctx)</code> then <code>llama.MemoryClear(mem, true)</code>. - Batched path (text/IMC) → per-slot cleanup happens in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go">batch_finish.go</a>; <code>resetContext()</code> is skipped.</p>
           <ul>
@@ -7282,9 +7810,9 @@ default:
           <ul>
             <li><code>newContextPool(model, ctxParams, log, n)</code> creates <code>n = NSeqMax</code> parallel <code>llama.Context</code> instances. All share the same <code>llama.Model</code> (weights), so only KV cache memory is multiplied per context.</li>
             <li>Available context indices are tracked via a buffered <code>avail chan int</code>; callers acquire by receiving from the channel and release by sending the index back.</li>
-            <li>Inputs within a single embed/rerank request are partitioned across pool contexts for parallel processing — this is the concurrency semantic documented in §18.7.3 for embedding/reranking models.</li>
+            <li>Inputs within a single embed/rerank request are partitioned across pool contexts for parallel processing — this is the concurrency semantic documented in §19.7.3 for embedding/reranking models.</li>
           </ul>
-          <h4 id="1877-imc-implementation-details">18.7.7 IMC Implementation Details</h4>
+          <h4 id="1977-imc-implementation-details">19.7.7 IMC Implementation Details</h4>
           <p><strong>Key Functions:</strong></p>
           <p>The four entry points an agent will grep for live in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">caching_imc.go</a> and <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>:</p>
           <ul>
@@ -7342,7 +7870,7 @@ default:
     sysPromptTokens   int           // Token count of system prompt
 }`}</code></pre>
           <p><code>imcSessions</code> is sized 1:1 with execution slots at startup, but sessions are <strong>not</strong> bound to slots — <code>kvState</code> (a <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/session_store.go#L57-L97">SessionStore</a>) externalizes the cached KV bytes between requests so any matched session can run on any free slot. The <code>slotID</code>/<code>seqID</code> fields name the session pool entry and the KV sequence the session occupies while bytes are still resident in VRAM (used for KV-pressure eviction of un-externalized sessions). The <code>pending</code> flag is the per-session in-flight latch that protects <code>kvState</code> from concurrent writers.</p>
-          <h4 id="1878-tool-call-internals">18.7.8 Tool Call Internals</h4>
+          <h4 id="1978-tool-call-internals">19.7.8 Tool Call Internals</h4>
           <p><strong>Processor state machine</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor.go">processor.go</a>):</p>
           <p>A per-slot <code>processor</code> classifies streaming output token-by-token into one of four statuses (<code>processor.go:10-15</code>):</p>
           <table className="flags-table">
@@ -7433,10 +7961,10 @@ default:
             <li>Custom type that marshals to a JSON string (OpenAI spec).</li>
             <li>Unmarshals from either a string or an object for non-compliant clients.</li>
           </ul>
-          <h4 id="1879-logprobs-implementation">18.7.9 Logprobs Implementation</h4>
+          <h4 id="1979-logprobs-implementation">19.7.9 Logprobs Implementation</h4>
           <p><strong>Implementation</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go">logprobs.go</a>):</p>
           <ul>
-            <li><code>extractLogprobs(lctx, vocab, sampledToken, iBatch, topK, buf)</code>: retrieves logits via <code>llama.GetLogitsIth(lctx, iBatch, nVocab)</code> and converts them to log probabilities. <code>iBatch</code> identifies which slot's logits row to read when multiple slots are batched in one forward pass (see §18.7.5). <code>buf</code> is a pre-allocated byte buffer reused across tokens to avoid per-token allocations during top-K decoding.</li>
+            <li><code>extractLogprobs(lctx, vocab, sampledToken, iBatch, topK, buf)</code>: retrieves logits via <code>llama.GetLogitsIth(lctx, iBatch, nVocab)</code> and converts them to log probabilities. <code>iBatch</code> identifies which slot's logits row to read when multiple slots are batched in one forward pass (see §19.7.5). <code>buf</code> is a pre-allocated byte buffer reused across tokens to avoid per-token allocations during top-K decoding.</li>
             <li><code>logSoftmax()</code>: numerically stable log-softmax using the log-sum-exp trick.</li>
             <li><code>getTopKLogprobs()</code>: <code>container/heap</code> min-heap for O(n log k) top-k extraction.</li>
           </ul>
@@ -7444,8 +7972,8 @@ default:
           <p>The extraction path runs only when <code>params.TopLogprobs &gt; 0</code>. With logprobs disabled, this work is skipped entirely on the hot path.</p>
           <p><strong>Critical ordering — extract before &lt;code&gt;llama.SamplerAccept&lt;/code&gt;</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_tokens.go#L38-L57">batch_tokens.go:38, 57</a>):</p>
           <p><code>SamplerAccept</code> mutates sampler state (repetition history, penalty buffers, dry/xtc state). Reading logits after acceptance would no longer reflect the probability landscape for the token we're trying to score.</p>
-          <p>This corresponds to step 12.1 of the request flow in §18.11.</p>
-          <h3 id="188-responses-api-normalization">18.8 Responses API Normalization</h3>
+          <p>This corresponds to step 12.1 of the request flow in §19.11.</p>
+          <h3 id="198-responses-api-normalization">19.8 Responses API Normalization</h3>
           <p>The SDK's <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go">response.go</a> exposes the OpenAI Responses API on top of the same <code>model.Chat</code> engine that serves Chat Completions. To do that, the input document is normalized into a Chat-Completions-style <code>messages</code> array before <code>model.Chat</code> / <code>model.ChatStreaming</code> is invoked.</p>
           <p><strong>Owner</strong>: the SDK methods <code>Response</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go#L140">line 140</a>) and <code>ResponseStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go#L163">line 163</a>) call <code>convertInputToMessages(d)</code> themselves as the first step. Callers (CLI, MCP, server handlers) do not need to invoke it.</p>
           <p><strong>Why it exists</strong>: lets the SDK accept both the Chat-style <code>messages</code> payload and the Responses-style <code>input</code> payload (string, message list, or function-call/output items).</p>
@@ -7492,7 +8020,7 @@ default:
               </tr>
             </tbody>
           </table>
-          <h3 id="189-goroutine-budget">18.9 Goroutine Budget</h3>
+          <h3 id="199-goroutine-budget">19.9 Goroutine Budget</h3>
           <p>A running Kronk server typically shows ~25 baseline goroutines before any requests arrive. When requests are active, expect roughly 3-5 additional goroutines per in-flight request. For example, 3 concurrent requests for the same model will show ~40 goroutines total. This is normal.</p>
           <p><strong>Baseline goroutines (~25, always running):</strong></p>
           <table className="flags-table">
@@ -7585,12 +8113,12 @@ default:
             </tbody>
           </table>
           <p>The goroutine metric is a point-in-time snapshot from <code>runtime.NumGoroutine()</code> captured every 10th request by the metrics middleware. It includes everything in the process, including Go runtime internals. After active requests complete, the count drops back to the baseline.</p>
-          <h3 id="1810-request-tracing-spans">18.10 Request Tracing Spans</h3>
+          <h3 id="1910-request-tracing-spans">19.10 Request Tracing Spans</h3>
           <p>Each chat completion request produces the following trace hierarchy. <code>prepare-request</code>, <code>queue-wait</code>, and <code>process-request</code> are sibling spans under the request's root context — none is a child of another.</p>
           <pre className="code-block"><code>{`POST /v1/chat/completions
 ├── prepare-request                          Validation, caching, prompt creation
 │   ├── process-cache                        Cache lookup/update (IMC, when enabled)
-│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§18.7.7 strategy 4)
+│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§19.7.7 strategy 4)
 │   │   ├── cache-tokenize-imc-extend        Hash-prefix extend (strategy 2)
 │   │   ├── cache-tokenize-imc-sysprompt-preserve  System-prompt preserve (strategy 3)
 │   │   ├── cache-tokenize-imc-scratch       Rebuild from scratch (strategy 5)
@@ -7633,7 +8161,7 @@ default:
               </tr>
             </tbody>
           </table>
-          <h3 id="1811-inference-code-path">18.11 Inference Code Path</h3>
+          <h3 id="1911-inference-code-path">19.11 Inference Code Path</h3>
           <p>This section traces a <code>ChatStreaming</code> request end-to-end. Each step has a high-level description followed by a <strong>Code:</strong> sub-block listing the function calls and file locations the agent will navigate.</p>
           <h4 id="step-1-receive-the-request">Step 1: Receive the Request</h4>
           <p>The caller provides a document containing messages and sampling parameters. The SDK validates that the request's context has a deadline to prevent unbounded processing.</p>
@@ -7642,7 +8170,7 @@ default:
             <li><code>Kronk.ChatStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/chat.go">sdk/kronk/chat.go</a>) — validates the context deadline and wraps <code>Model.ChatStreaming</code> in a closure.</li>
           </ul>
           <h4 id="step-2-acquire-the-model">Step 2: Acquire the Model</h4>
-          <p>The kronk-level semaphore controls how many requests can be in-flight at once. The request blocks here until a slot opens up, providing backpressure when the system is under load. See §18.7.4 for the full acquire/release contract.</p>
+          <p>The kronk-level semaphore controls how many requests can be in-flight at once. The request blocks here until a slot opens up, providing backpressure when the system is under load. See §19.7.4 for the full acquire/release contract.</p>
           <p><strong>Code:</strong></p>
           <ul>
             <li><code>streaming()</code> / <code>streamingWith()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/concurrency.go">sdk/kronk/concurrency.go</a>) calls <code>acquireModel()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">sdk/kronk/acquire.go</a>) — checks the shutdown flag, increments the kronk-level <code>krn.activeStreams</code>, and blocks on the semaphore (with <code>ctx.Done</code> cancellation).</li>
@@ -7652,7 +8180,7 @@ default:
           <p>The request document is validated to ensure it contains properly structured messages. Sampling parameters (temperature, top_p, top_k, min_p, max_tokens, grammar, etc.) are extracted and resolved against model defaults. The document is shallow-cloned so downstream processing can modify it without affecting the caller.</p>
           <p><strong>Code:</strong></p>
           <ul>
-            <li><code>Model.ChatStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go">model/chat.go</a>) creates the response channel, wraps it with <code>wrapChannelForLogging</code> if <code>InsecureLogging</code> is on, increments the <strong>model-level</strong> <code>m.activeStreams</code> (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the <code>prepare-request</code> span (§18.10).</li>
+            <li><code>Model.ChatStreaming</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go">model/chat.go</a>) creates the response channel, wraps it with <code>wrapChannelForLogging</code> if <code>InsecureLogging</code> is on, increments the <strong>model-level</strong> <code>m.activeStreams</code> (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the <code>prepare-request</code> span (§19.10).</li>
             <li><code>validateAndCloneDocument()</code> (<code>model/chat.go</code>) — validates the <code>messages</code> field, calls <code>parseParams()</code> to extract sampling parameters, shallow-clones the document.</li>
           </ul>
           <h4 id="step-4-prepare-the-context">Step 4: Prepare the Context</h4>
@@ -7667,13 +8195,13 @@ default:
           </ul>
           <p>- Text path: <code>prepareTextContext()</code>. - Media path: <code>prepareMediaContext()</code> — loads the projection file via <code>mtmd.InitFromFile()</code> and converts the OpenAI media format to byte slices.</p>
           <h4 id="step-5-process-the-cache">Step 5: Process the Cache</h4>
-          <p>If caching is enabled, the system checks whether any portion of the conversation is already in the KV cache to avoid redundant computation. The IMC algorithm picks one of <strong>5 strategies</strong> — see §18.7.7 for the full decision tree (pure cache hit, hash-prefix extend, system-prompt preserve, token-prefix fallback, or rebuild from scratch with LRU eviction).</p>
+          <p>If caching is enabled, the system checks whether any portion of the conversation is already in the KV cache to avoid redundant computation. The IMC algorithm picks one of <strong>5 strategies</strong> — see §19.7.7 for the full decision tree (pure cache hit, hash-prefix extend, system-prompt preserve, token-prefix fallback, or rebuild from scratch with LRU eviction).</p>
           <p>Tool response messages are also enriched with their originating function names so templates can render tool results correctly.</p>
           <p><strong>Code:</strong></p>
           <ul>
             <li><code>prepareCacheAndPrompt()</code> (<code>model/chat.go</code>):</li>
           </ul>
-          <p>- <code>injectToolResponseNames()</code> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>. - <code>processCache()</code> (<code>model/caching.go</code>) → <code>processIMC()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">model/caching_imc.go</a>) — runs the §18.7.7 5-strategy selection across all <code>NSeqMax</code> sessions, tokenizes any extension tokens, and sets the <code>pending</code> flag on the chosen session.</p>
+          <p>- <code>injectToolResponseNames()</code> — adds <code>name</code>/<code>tool_call_name</code> to <code>role:"tool"</code> messages by matching <code>tool_call_id</code>. - <code>processCache()</code> (<code>model/caching.go</code>) → <code>processIMC()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">model/caching_imc.go</a>) — runs the §19.7.7 5-strategy selection across all <code>NSeqMax</code> sessions, tokenizes any extension tokens, and sets the <code>pending</code> flag on the chosen session.</p>
           <h4 id="step-6-apply-the-chat-template">Step 6: Apply the Chat Template</h4>
           <p>The remaining (non-cached) messages are run through the model's Jinja2 chat template. This converts the structured message array into the exact prompt string the model expects, including any special tokens, role markers, and tool definitions. For media requests, raw media bytes are returned alongside the text prompt.</p>
           <p><strong>Code:</strong></p>
@@ -7684,13 +8212,13 @@ default:
           <p>The fully prepared request — prompt string, media bytes, sampling parameters, and cache state — is packaged into a job and placed on the batch engine's request queue. A wake signal is sent so the batch engine picks it up immediately rather than waiting for its next poll cycle.</p>
           <p><strong>Code:</strong></p>
           <ul>
-            <li><code>submitToBatchEngine()</code> (<code>model/chat.go</code>) — builds the <code>chatJob</code> struct (request data, cache state, IMC fields) and calls <code>batch.submit()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>), which pushes onto <code>requestQ</code> and pokes <code>wakeCh</code>. The <code>queue-wait</code> span (§18.10) starts here.</li>
+            <li><code>submitToBatchEngine()</code> (<code>model/chat.go</code>) — builds the <code>chatJob</code> struct (request data, cache state, IMC fields) and calls <code>batch.submit()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>), which pushes onto <code>requestQ</code> and pokes <code>wakeCh</code>. The <code>queue-wait</code> span (§19.10) starts here.</li>
           </ul>
           <h4 id="step-8-assign-to-a-slot">Step 8: Assign to a Slot</h4>
-          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to the first available processing slot. All IMC sessions (text and media) use first-available slot assignment. If all slots are busy, the longest-running slot is preempted after a configurable timeout (<code>cache-slot-timeout</code>, see §18.7.5).</p>
+          <p>The batch engine's processing loop wakes up and checks for pending work. It dequeues the job and assigns it to the first available processing slot. All IMC sessions (text and media) use first-available slot assignment. If all slots are busy, the longest-running slot is preempted after a configurable timeout (<code>cache-slot-timeout</code>, see §19.7.5).</p>
           <p><strong>Code:</strong></p>
           <ul>
-            <li><code>processLoop()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>) — signal-based wake on <code>wakeCh</code> (§18.7.5); polls at 100µs when active, 5ms when idle.</li>
+            <li><code>processLoop()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go">model/batch_engine.go</a>) — signal-based wake on <code>wakeCh</code> (§19.7.5); polls at 100µs when active, 5ms when idle.</li>
             <li><code>processBatch()</code> clears the batch buffer, runs any pending slot preemption, prefills the draft model for speculative slots, adds 1 generation token per active slot, then continues text prefill via round-robin <code>addPrefillChunk()</code> and media prefill via <code>addPrefillMediaChunk()</code>.</li>
             <li><code>fillSlots()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_schedule.go">model/batch_schedule.go</a>) dequeues the job and assigns it to a slot.</li>
           </ul>
@@ -7705,11 +8233,11 @@ default:
           </ol>
           <p><strong>Code:</strong></p>
           <ul>
-            <li><code>startSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go">model/batch_slot_start.go</a>) — resets the slot, ends the <code>queue-wait</code> span, and starts the <code>process-request</code> and <code>prefill</code> spans (§18.10).</li>
+            <li><code>startSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go">model/batch_slot_start.go</a>) — resets the slot, ends the <code>queue-wait</code> span, and starts the <code>process-request</code> and <code>prefill</code> spans (§19.10).</li>
             <li><code>toSampler()</code> builds the llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat); a separate grammar sampler is created if requested.</li>
             <li>IMC KV restore: <code>StateSeqSetData</code> from <code>session.kvState</code>, then <code>decodeTokensIntoCache()</code> for extend, or <code>MemorySeqRm</code> for rebuild, or partial trim.</li>
             <li>IMC KV snapshot: <code>StateSeqGetData</code> into <code>session.kvState</code> after build/extend.</li>
-            <li><code>llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)</code> — <code>special=true</code> ensures ChatML markers are recognized (§18.7.7).</li>
+            <li><code>llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)</code> — <code>special=true</code> ensures ChatML markers are recognized (§19.7.7).</li>
             <li>Draft prompt assembly for speculative decoding.</li>
             <li>First chunk added via <code>addPrefillChunk()</code>.</li>
           </ul>
@@ -7741,7 +8269,7 @@ default:
           <h4 id="step-12-process-each-token">Step 12: Process Each Token</h4>
           <p>Each sampled token goes through a processing pipeline:</p>
           <ol>
-            <li><strong>Logprobs extraction</strong>: If requested, token log-probabilities are extracted from the model's logits before the sampler state is updated (§18.7.9 explains why the order matters).</li>
+            <li><strong>Logprobs extraction</strong>: If requested, token log-probabilities are extracted from the model's logits before the sampler state is updated (§19.7.9 explains why the order matters).</li>
             <li><strong>End-of-generation check</strong>: If the token is an EOG (end-of-generation) token, generation stops and the request moves to the finish phase.</li>
             <li><strong>UTF-8 assembly</strong>: Tokens are converted to text bytes. Since a single Unicode character can span multiple tokens, partial bytes are buffered until a complete codepoint is available.</li>
             <li><strong>Content classification</strong>: A state machine categorizes the output into reasoning (think tags), completion (regular response), or tool call content. This determines how the text is accumulated and streamed.</li>
@@ -7753,7 +8281,7 @@ default:
           <ul>
             <li><code>handleSampledToken()</code> (<code>model/batch_tokens.go</code>) drives the pipeline:</li>
           </ul>
-          <p>- <code>extractLogprobs()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go">model/logprobs.go</a>) — <code>llama.GetLogitsIth</code> + log-softmax + top-k heap. Runs <strong>before</strong> <code>llama.SamplerAccept()</code> (§18.7.9). - <code>llama.SamplerAccept()</code> (and grammar accept). - <code>llama.VocabIsEOG()</code> → if true, jump to <code>finishSlot()</code>. - <code>llama.TokenToPiece()</code> → buffer partial multi-byte codepoints, then <code>extractCompleteUTF8()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_utf8.go">model/batch_utf8.go</a>). - First token: records <code>prefillDone=true</code>, computes TTFT, ends the <code>prefill</code> span, starts the <code>token-generation</code> span. - Processor classification: <code>stepGPT()</code> for GPT-OSS, <code>stepStandard()</code> for everything else (§18.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers. - Counter increment: <code>reasonTokens</code> or <code>completionTokens</code>. - Max-tokens check: if <code>outputTokens &gt;= maxTokens</code>, <code>finishSlot()</code>. - Accumulate into <code>finalContent</code> / <code>finalReasoning</code> / <code>finalTooling</code>. - <code>sendDeltaResponse()</code> for non-tool content (tool content is buffered until parse).</p>
+          <p>- <code>extractLogprobs()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go">model/logprobs.go</a>) — <code>llama.GetLogitsIth</code> + log-softmax + top-k heap. Runs <strong>before</strong> <code>llama.SamplerAccept()</code> (§19.7.9). - <code>llama.SamplerAccept()</code> (and grammar accept). - <code>llama.VocabIsEOG()</code> → if true, jump to <code>finishSlot()</code>. - <code>llama.TokenToPiece()</code> → buffer partial multi-byte codepoints, then <code>extractCompleteUTF8()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_utf8.go">model/batch_utf8.go</a>). - First token: records <code>prefillDone=true</code>, computes TTFT, ends the <code>prefill</code> span, starts the <code>token-generation</code> span. - Processor classification: <code>stepGPT()</code> for GPT-OSS, <code>stepStandard()</code> for everything else (§19.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers. - Counter increment: <code>reasonTokens</code> or <code>completionTokens</code>. - Max-tokens check: if <code>outputTokens &gt;= maxTokens</code>, <code>finishSlot()</code>. - Accumulate into <code>finalContent</code> / <code>finalReasoning</code> / <code>finalTooling</code>. - <code>sendDeltaResponse()</code> for non-tool content (tool content is buffered until parse).</p>
           <h4 id="step-13-finish-the-request">Step 13: Finish the Request</h4>
           <p>When generation ends (EOG token, max tokens, or error), the request is finalized:</p>
           <ol>
@@ -7773,18 +8301,18 @@ default:
           <ul>
             <li><code>finishSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go">model/batch_finish.go</a>):</li>
           </ul>
-          <p>- Flushes the UTF-8 buffer. - Tool-call parse: GPT-OSS path calls <code>parseGPTToolCall()</code> directly (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177">batch_finish.go:177</a>); all other models route through <code>parseToolCall</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go">model/processor_parse.go</a>) — see §18.7.8. - Metrics: TPS = <code>(outputTokens - 1) / elapsed</code>, TTFT, draft-acceptance rate. - <code>sendFinalResponse()</code> with usage, content, reasoning, tool calls, logprobs. - KV cleanup: <code>MemorySeqRm(mem, seqID, -1, -1)</code> clears the full VRAM sequence; the IMC prefix is already in RAM from Step 9. - Frees the sampler, grammar sampler, MTMD bitmaps/chunks, and <code>mtmdCtx</code>. - Closes the job channel; the <code>streaming()</code> wrapper drains and closes the caller's channel. - Decrements the <strong>model-level</strong> <code>m.activeStreams</code>.</p>
+          <p>- Flushes the UTF-8 buffer. - Tool-call parse: GPT-OSS path calls <code>parseGPTToolCall()</code> directly (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177">batch_finish.go:177</a>); all other models route through <code>parseToolCall</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go">model/processor_parse.go</a>) — see §19.7.8. - Metrics: TPS = <code>(outputTokens - 1) / elapsed</code>, TTFT, draft-acceptance rate. - <code>sendFinalResponse()</code> with usage, content, reasoning, tool calls, logprobs. - KV cleanup: <code>MemorySeqRm(mem, seqID, -1, -1)</code> clears the full VRAM sequence; the IMC prefix is already in RAM from Step 9. - Frees the sampler, grammar sampler, MTMD bitmaps/chunks, and <code>mtmdCtx</code>. - Closes the job channel; the <code>streaming()</code> wrapper drains and closes the caller's channel. - Decrements the <strong>model-level</strong> <code>m.activeStreams</code>.</p>
           <h4 id="step-14-release-the-model">Step 14: Release the Model</h4>
           <p>The response channel is closed, signaling to the caller that streaming is complete. The kronk-level semaphore slot is released, allowing the next queued request to begin processing.</p>
           <p><strong>Code:</strong></p>
           <ul>
             <li><code>releaseModel()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go">sdk/kronk/acquire.go</a>) — drains a slot from the kronk-level semaphore (<code>&lt;-krn.sem</code>) and decrements <code>krn.activeStreams</code> (the kronk-level counter; the model-level one was already decremented in Step 13).</li>
           </ul>
-          <h3 id="1812-mtp-internals">18.12 MTP Internals</h3>
+          <h3 id="1912-mtp-internals">19.12 MTP Internals</h3>
           <p>This section documents the engine internals of the MTP (Multi-Token Prediction) drafter shipped in <a href="https://github.com/ardanlabs/kronk/pull/593">PR #593</a>. The user-facing operation guide lives in <a href="#chapter-6-speculative-decoding--mtp">Chapter 6</a>; the configuration surface lives in <a href="#312-speculative-decoding">Chapter 3 §3.12</a>. This section is the only place that goes inside the FFI bindings, mirror step, three-pass dispatch, and hybrid snapshot/restore.</p>
           <p>The drafter sits behind a single <code>*draftModel</code> type (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go">model.go</a>), selected once at model load by <code>selectAndLoadDraft</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go">draft_mtp.go</a>). In separate-GGUF mode it loads a second <code>llama_model</code>; in MTP mode it shares the target's <code>llama_model</code> and binds an MTP head that lives inside the target GGUF.</p>
           <p>Reference: <code>common/speculative.cpp common_speculative_impl_draft_mtp</code> in upstream llama.cpp. Kronk's implementation lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go"><code>draft_mtp.go</code></a> (load), <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>batch_mtp.go</code></a> (mirror + AR loop), and integration changes in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>batch_engine.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>batch_slot.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>batch_slot_start.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go"><code>batch_prefill_text.go</code></a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go"><code>batch_finish.go</code></a>, and the FFI bindings in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a>.</p>
-          <h4 id="18121-auto-detection">18.12.1 Auto-detection</h4>
+          <h4 id="19121-auto-detection">19.12.1 Auto-detection</h4>
           <p><code>selectAndLoadDraft</code> runs once during model initialization (<code>initGenerationRuntime</code> in <code>model.go</code>) and decides which drafter, if any, to load:</p>
           <pre className="code-block"><code className="language-diagram">{`                       ╭───────────────────────╮
                        │ cfg.DraftModel != nil │──── yes ──▶  loadDraftModel  (separate-GGUF)
@@ -7803,10 +8331,10 @@ default:
                                   ▼
                        loadDraftModelMTP  (auto-enabled; inherits NSeqMax)`}</code></pre>
           <p><code>mtpNextNLayers</code> looks up the GGUF metadata key <code>&lt;arch&gt;.nextn_predict_layers</code> (a uint32). Kronk matches by the unique substring <code>nextn_predict_layers</code> so the same lookup works for every architecture variant without first reading <code>general.architecture</code>.</p>
-          <p><code>MTPAvailable()</code> probes whether the loaded llama.cpp library exports the three pre-norm symbols listed in §18.12.2. Older builds (pre <code>src/llama-ext.h</code>) won't have them — Kronk logs and starts up without MTP rather than crashing on a missing symbol mid-request.</p>
-          <p>The historical <code>NSeqMax == 1</code> gate (present through earlier revisions of PR #593) has been removed: the draft context inherits <code>NSeqMax</code> from the target and hosts as many sequences as the target does. The three-pass post-decode in <code>processBatch</code> (§18.12.5) makes the spec verify path multi-slot safe.</p>
+          <p><code>MTPAvailable()</code> probes whether the loaded llama.cpp library exports the three pre-norm symbols listed in §19.12.2. Older builds (pre <code>src/llama-ext.h</code>) won't have them — Kronk logs and starts up without MTP rather than crashing on a missing symbol mid-request.</p>
+          <p>The historical <code>NSeqMax == 1</code> gate (present through earlier revisions of PR #593) has been removed: the draft context inherits <code>NSeqMax</code> from the target and hosts as many sequences as the target does. The three-pass post-decode in <code>processBatch</code> (§19.12.5) makes the spec verify path multi-slot safe.</p>
           <p>When any of the gates fail, <code>selectAndLoadDraft</code> logs the specific reason and returns <code>(nil, nil)</code>. The target still loads and serves traffic — just without speculation.</p>
-          <h4 id="18122-pre-norm-hidden-state-plumbing">18.12.2 Pre-Norm Hidden-State Plumbing</h4>
+          <h4 id="19122-pre-norm-hidden-state-plumbing">19.12.2 Pre-Norm Hidden-State Plumbing</h4>
           <p>The MTP path needs three llama.cpp C symbols that yzma upstream does not yet bind. Kronk adds them locally in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go"><code>yzma.go</code></a> via the <code>jupiterrider/ffi</code> package:</p>
           <table className="flags-table">
             <thead>
@@ -7837,15 +8365,15 @@ default:
           <p>Two binding details worth highlighting:</p>
           <ul>
             <li><strong>Symbol probing is dual.</strong> Each prep tries the C-linkage name first and falls back to the Itanium C++ ABI mangled form (e.g. <code>_Z29llama_set_embeddings_pre_normP13llama_contextbb</code>) so kronk binds against llama.cpp builds compiled with or without <code>LLAMA_API</code> on these declarations.</li>
-            <li><strong>Best-effort init.</strong> <code>InitYzmaWorkarounds</code> never fails on a missing pre-norm symbol. The corresponding <code>ffi.Fun</code> stays zero-valued and <code>MTPAvailable()</code> returns false, gating §18.12.1.</li>
+            <li><strong>Best-effort init.</strong> <code>InitYzmaWorkarounds</code> never fails on a missing pre-norm symbol. The corresponding <code>ffi.Fun</code> stays zero-valued and <code>MTPAvailable()</code> returns false, gating §19.12.1.</li>
           </ul>
           <p>At load time <code>loadDraftModelMTP</code> sets:</p>
           <ul>
-            <li><code>SetEmbeddingsPreNorm(targetCtx, true, false)</code> — dense, every row accessible by raw batch index. Required for the mirror step (§18.12.3), which reads arbitrary rows from each completed target batch.</li>
+            <li><code>SetEmbeddingsPreNorm(targetCtx, true, false)</code> — dense, every row accessible by raw batch index. Required for the mirror step (§19.12.3), which reads arbitrary rows from each completed target batch.</li>
             <li><code>SetEmbeddingsPreNorm(draftCtx, true, true)</code> — sparse, only logits-flagged rows stored. The draft only needs the single output row of each AR step.</li>
           </ul>
           <p>The flag is consumed at graph-build time, so it must be set <strong>before</strong> the first decode on either context.</p>
-          <h4 id="18123-mirror-step-and-ar-draft-loop">18.12.3 Mirror Step and AR Draft Loop</h4>
+          <h4 id="19123-mirror-step-and-ar-draft-loop">19.12.3 Mirror Step and AR Draft Loop</h4>
           <p>Two functions in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go"><code>batch_mtp.go</code></a> do the heavy lifting.</p>
           <h5>Mirror: `mirrorTargetBatchToMTPDraft`</h5>
           <p>After every successful target <code>llama_decode</code> + <code>llama_synchronize</code>, the post-decode pass in <code>processBatch</code> calls the mirror to replay the slot's just-decoded range into the draft context with <code>batch.embd</code> populated from the target's pre-norm buffer.</p>
@@ -7869,23 +8397,23 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
             <li><code>GetEmbeddingsPreNormIth(ctx, 0, nEmbd)</code> to read back the next hidden state.</li>
             <li>EOG check; copy <code>nextEmbd</code> into <code>pendingH</code>; advance.</li>
           </ol>
-          <p>The loop stops on <code>chooseNDraft(s, draft.nDraft)</code> rounds (see §18.12.4 acceptance scaling), or earlier on EOG or decode failure.</p>
+          <p>The loop stops on <code>chooseNDraft(s, draft.nDraft)</code> rounds (see §19.12.4 acceptance scaling), or earlier on EOG or decode failure.</p>
           <p><strong>Why MTP-only batches?</strong> <code>llama.BatchInit(N, embd, nSeqMax)</code> allocates <strong>either</strong> the token buffer <strong>or</strong> the embd buffer — never both — based on its <code>embd</code> arg. MTP needs both per position. Kronk works around this by calling <code>BatchInit(N, 0, 1)</code> to get a token-only batch (with <code>pos</code>, <code>seq_id</code>, and <code>logits</code> arrays sized to <code>N</code>) and then attaching a Go-allocated <code>[]float32</code> of size <code>N*nEmbd</code> as the embd buffer. The Go slice is pinned (<code>runtime.Pinner</code>) for the batch's lifetime and the <code>Batch.Embd</code> pointer is cleared <strong>before</strong> <code>BatchFree</code> so llama.cpp's unconditional <code>free(batch.embd)</code> doesn't <code>free()</code> a Go heap allocation.</p>
           <p>These two MTP-only batches live on <code>draftModel</code>:</p>
           <ul>
             <li><code>draftBatchMTP</code> — capacity 1, used by <code>generateDraftTokensMTP</code> per step.</li>
             <li><code>mirrorBatchMTP</code> — capacity <code>NBatch</code>, used by the mirror step.</li>
           </ul>
-          <h4 id="18124-verification-on-the-mtp-path">18.12.4 Verification on the MTP Path</h4>
+          <h4 id="19124-verification-on-the-mtp-path">19.12.4 Verification on the MTP Path</h4>
           <p><code>verifySpeculativeTokens</code> is shared between separate-GGUF and MTP, but the MTP path forces <strong>greedy verification</strong> unconditionally because the MTP head currently runs only greedy sampling (<code>SamplerInitGreedy</code>) and the AR loop does not capture sparse draft distributions. Running the probabilistic verify path without a draft distribution would fall through to <code>sampleFromProbs(target)</code> at every position and reject every draft token unconditionally.</p>
           <p>To compensate, the greedy branch is taught — only on the MTP path (<code>mtpGreedy == true</code>) — to invoke the slot's <strong>full sampler</strong> at each position instead of taking the raw target argmax. That preserves the user's <code>temperature</code> / <code>top_k</code> / <code>top_p</code> shape on the emitted sequence. The mathematical guarantee of distribution-equivalent output (Leviathan et al., 2023) is lost on the MTP path — it is the standard approximation when the draft distribution is unavailable.</p>
-          <p><code>originalSampled</code> is also snapshotted before the verify loop, because <code>handleSampledToken</code> mutates <code>s.sampled</code> as each accepted draft token flows through the streaming pipeline. The hybrid re-decode path (§18.12.6) needs the <strong>original</strong> sampled token at the base position; using the mutated value would re-decode the wrong token and corrupt every subsequent round.</p>
+          <p><code>originalSampled</code> is also snapshotted before the verify loop, because <code>handleSampledToken</code> mutates <code>s.sampled</code> as each accepted draft token flows through the streaming pipeline. The hybrid re-decode path (§19.12.6) needs the <strong>original</strong> sampled token at the base position; using the mutated value would re-decode the wrong token and corrupt every subsequent round.</p>
           <p>After verify, the MTP mirror runs again over <code>1 + accepted</code> rows to overwrite the AR-loop draft KV entries with target-derived hidden states. That update is what makes the next round's <code>pendingH</code> reflect reality.</p>
           <p><code>rollbackDraft</code> for MTP is also different from the separate-GGUF path: it <code>MemorySeqRm</code>s the <strong>entire</strong> drafted range from the draft KV before the post-verify mirror runs. llama.cpp's transformer KV does not overwrite by <code>(seq, pos)</code> on re-decode — it appends another slot, leaving duplicate entries that corrupt subsequent attention. The mirror then writes the correct target-derived entries into clean slots.</p>
           <p><strong>Adaptive &lt;code&gt;nDraft&lt;/code&gt; (acceptance EMA).</strong> <code>chooseNDraft(s, maxDraft)</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go"><code>batch_speculative.go</code></a> scales <code>nDraft</code> down based on the slot's exponential moving average of acceptance rate (<code>specAccEMA</code>). The EMA formula is <code>0.9<em>old + 0.1</em>(accepted/nDraft)</code> and persists across requests on the slot. The user-visible buckets (<code>&lt; 0.30</code> → 0, <code>&lt; 0.50</code> → 1, etc.) are documented in Chapter 6 §6.4.</p>
           <p>When the EMA collapses to ~0, <code>chooseNDraft</code> returns 0 and the spec path is bypassed for that round — but the draft-tokens / accepted / acceptance-rate fields are still emitted on the final slot log line so dashboards see a stable schema. See <code>finishSlot</code> and <code>sendFinalResponse</code>.</p>
-          <h4 id="18125-three-pass-`processbatch`-and-phase-a-phase-b-split">18.12.5 Three-pass `processBatch` and Phase A / Phase B Split</h4>
-          <p>When <code>nseq-max &gt; 1</code> and two or more spec slots verify in the same shared batch, the original monolithic <code>verifySpeculativeTokens</code> could corrupt the target context's logit buffer for one slot while a peer was still trying to read it. The hybrid <code>restoreTargetSpecSnapshot</code> (§18.12.6) re-decodes a small batch on the target context, and that re-decode <strong>replaces the per-context logit buffer with logits for only the re-decoded rows</strong> — every other slot's batch rows return <code>nullptr</code> from <code>llama_get_logits_ith</code>, crashing <code>llama_sampler_sample</code> (<code>GGML_ASSERT(logits != nullptr)</code> at <code>llama-sampler.cpp:850</code>).</p>
+          <h4 id="19125-three-pass-`processbatch`-and-phase-a-phase-b-split">19.12.5 Three-pass `processBatch` and Phase A / Phase B Split</h4>
+          <p>When <code>nseq-max &gt; 1</code> and two or more spec slots verify in the same shared batch, the original monolithic <code>verifySpeculativeTokens</code> could corrupt the target context's logit buffer for one slot while a peer was still trying to read it. The hybrid <code>restoreTargetSpecSnapshot</code> (§19.12.6) re-decodes a small batch on the target context, and that re-decode <strong>replaces the per-context logit buffer with logits for only the re-decoded rows</strong> — every other slot's batch rows return <code>nullptr</code> from <code>llama_get_logits_ith</code>, crashing <code>llama_sampler_sample</code> (<code>GGML_ASSERT(logits != nullptr)</code> at <code>llama-sampler.cpp:850</code>).</p>
           <p>The fix has two parts:</p>
           <ol>
             <li><strong>&lt;code&gt;verifySpeculativeTokens&lt;/code&gt; is split</strong> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go">batch_speculative.go</a>: verify loop (logit reads, accept / reject, per-accepted <code>handleSampledToken</code>), samples the bonus token, updates the acceptance EMA. Stashes <code>accepted</code>, <code>bonusToken</code>, and <code>originalSampled</code> on the slot via new <code>specPending*</code> fields and sets <code>specPendingFinalize = true</code>. Does NOT touch target KV, draft KV, <code>s.nPast</code>, or <code>s.iBatch</code>. <code>s.specDraftTokens</code> is deliberately retained for Phase B. rollback (hybrid restore or <code>MemorySeqRm</code>), draft KV rollback, MTP mirror, sets <code>s.nPast</code>, emits the throttled <code>verify-done</code> log, streams the bonus token, sets <code>s.iBatch = -1</code>, and clears the pending fields. Early-returns silently when <code>specPendingFinalize</code> is false (Phase A short-circuited on EOG).
@@ -7925,7 +8453,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
           <p>EOG handling: when <code>handleSampledToken</code> inside Phase A finishes the slot (<code>finishSlot</code> → <code>reset</code>), the <code>specPending*</code> fields stay defaulted and Phase B's first-line guard skips the slot. The deferred EMA update in Phase A still fires once via <code>defer</code> so the EMA is updated exactly once per round.</p>
           <p>Under <code>nseq-max == 1</code> the ordering Phase A → Phase B for a single spec slot is functionally identical to the old monolithic <code>verifySpeculativeTokens</code>, so this split has no behavioral effect on the single-slot path.</p>
           <p>A subtle logprobs note: Phase B's bonus-token <code>handleSampledToken</code> runs <strong>after</strong> any hybrid restore. The restore's re-decode marks <code>logits = true</code> only on the last re-decoded position (<code>basePast + accepted</code>), which is exactly the bonus token's iBatch position, so logprob extraction at that site still works on the hybrid path.</p>
-          <h4 id="18126-hybrid-target-rollback">18.12.6 Hybrid Target Rollback</h4>
+          <h4 id="19126-hybrid-target-rollback">19.12.6 Hybrid Target Rollback</h4>
           <p>Hybrid target models (transformer + recurrent layers) introduce a problem the regular <code>MemorySeqRm</code> rollback cannot solve: the recurrent layer has been <strong>advanced through all &lt;code&gt;1+nDraft&lt;/code&gt; decoded positions</strong> and there is no per-position trim. A partial-rejection round would leave the recurrent state advanced past the accepted boundary, and the next <code>llama_decode</code> would fail with <code>-1</code>.</p>
           <p>Two helpers in <code>batch_speculative.go</code> solve this:</p>
           <table className="flags-table">
@@ -7948,9 +8476,9 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
           </table>
           <p>The snapshot buffer is lazy-grow / never-shrink on the slot (<code>s.specSnapshot</code>). Size scales with current KV occupancy, so the cost grows with context length. Dense / pure-attention targets skip this path entirely — <code>MemorySeqRm</code> is correct and much cheaper for them.</p>
           <p>The captureTarget/restoreTarget hooks are gated on <code>e.model.modelInfo.Type == ModelTypeHybrid</code> so the dense fast path is untouched. If <code>captureTargetSpecSnapshot</code> errors, <code>verifySpeculativeTokens</code> clears <code>s.specSnapshot</code> and falls through to <code>MemorySeqRm</code>. The fallback is broken on hybrid partial-reject rounds, but full-accept rounds still work, and the next request begins with a fresh sequence anyway.</p>
-          <p><strong>Multi-slot interaction.</strong> <code>restoreTargetSpecSnapshot</code>'s re-decode invalidates the target's per-context logit buffer for every other batch row. With <code>nseq-max &gt; 1</code> this is benign because the restore only runs in Pass 2B (<code>finalizeSpeculativeTokens</code>), after every other spec slot has read its logits in Pass 2A. See §18.12.5.</p>
+          <p><strong>Multi-slot interaction.</strong> <code>restoreTargetSpecSnapshot</code>'s re-decode invalidates the target's per-context logit buffer for every other batch row. With <code>nseq-max &gt; 1</code> this is benign because the restore only runs in Pass 2B (<code>finalizeSpeculativeTokens</code>), after every other spec slot has read its logits in Pass 2A. See §19.12.5.</p>
           <p><strong>MTP mirror interaction.</strong> The same re-decode also overwrites the target's per-context <strong>pre-norm</strong> buffer with rows indexed against the small rebatch, not the original shared <code>e.batch</code>. Phase B's MTP mirror (<code>mirrorTargetBatchToMTPDraft</code>) would then read the wrong pre-norm rows. To decouple the mirror from the restore, Phase A (<code>verifySpeculativeTokens</code>) copies the slot's pre-norm rows into a slot-local <code>s.verifyH</code> buffer via <code>captureVerifyPreNorm</code> <strong>before</strong> any Phase B side-effect can mutate the live buffer. Phase B's mirror reads from <code>s.verifyH</code> when populated, so MTP keeps running across partial rejections on hybrid targets instead of being disabled for the rest of the request.</p>
-          <h4 id="18127-per-slot-mtp-state">18.12.7 Per-Slot MTP State</h4>
+          <h4 id="19127-per-slot-mtp-state">19.12.7 Per-Slot MTP State</h4>
           <p>PR #593 added the following fields to <code>slot</code> in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go"><code>batch_slot.go</code></a>. All are reset in <code>slot.reset()</code> with lazy-grow / never-shrink buffer policy.</p>
           <table className="flags-table">
             <thead>
@@ -7982,7 +8510,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><code>specSnapshot []byte</code></td>
-                <td>Pre-spec target state buffer for hybrid rollback (§18.12.6). Lazy-grow.</td>
+                <td>Pre-spec target state buffer for hybrid rollback (§19.12.6). Lazy-grow.</td>
               </tr>
               <tr>
                 <td><code>specRounds</code></td>
@@ -7990,7 +8518,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><code>specPendingFinalize bool</code></td>
-                <td>Gates Phase B (§18.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips.</td>
+                <td>Gates Phase B (§19.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips.</td>
               </tr>
               <tr>
                 <td><code>specPendingAccepted int</code></td>
@@ -8006,7 +8534,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h4 id="18128-code-map">18.12.8 Code Map</h4>
+          <h4 id="19128-code-map">19.12.8 Code Map</h4>
           <table className="flags-table">
             <thead>
               <tr>
@@ -8063,7 +8591,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <h4 id="18129-testing">18.12.9 Testing</h4>
+          <h4 id="19129-testing">19.12.9 Testing</h4>
           <p>Test package: <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/tests/mtp"><code>sdk/kronk/tests/mtp/</code></a>.</p>
           <p>The suite is a smoke test against the <code>unsloth/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL</code> target via <code>testlib.CfgMTPChat()</code>. A successful <code>Chat</code> and <code>ChatStreaming</code> response implicitly verifies that:</p>
           <ul>
@@ -8077,6 +8605,128 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`export RUN_IN_PARALLEL=yes
 export GITHUB_WORKSPACE=$(pwd)
 go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
+          <h3 id="1913-bucky-internals">19.13 Bucky Internals</h3>
+          <p>This section is the developer-facing companion to <a href="chapter-18-bucky.md">Chapter 18: Bucky (Audio Transcription)</a>. It covers the code layout, concurrency model, lifecycle, and HTTP plumbing of the whisper.cpp backend.</p>
+          <h4 id="19131-package-layout">19.13.1 Package Layout</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Package</th>
+                <th>Role</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky"><code>sdk/bucky</code></a></td>
+                <td>High-level handle (<code>*Bucky</code>). Owns one model + outer semaphore. Mirrors the role <code>sdk/kronk</code> plays for llama.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/model"><code>sdk/bucky/model</code></a></td>
+                <td>Low-level whisper.cpp wrapper: <code>Config</code>, <code>Model</code>, <code>Transcribe</code>, <code>DetectLanguage</code>, <code>statePool</code>, language helpers, ggml-header info.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool"><code>sdk/bucky/pool</code></a></td>
+                <td>Multi-model <code>engine.Pool[*Bucky]</code> cache, shared <code>resman.Manager</code> reservations, <code>ModelStatus</code> aggregation (loaded + loading).</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/libs"><code>sdk/tools/bucky/libs</code></a></td>
+                <td>Cross-platform whisper.cpp shared-library installer (triples, default bundle resolution, prebuilt-archive downloader).</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/models"><code>sdk/tools/bucky/models</code></a></td>
+                <td>Bundled whisper catalog, GGML downloader, ggml-header parser, on-disk index for <code>bucky-models/</code>.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/kronk/bucky"><code>cmd/kronk/bucky</code></a></td>
+                <td>CLI: <code>kronk bucky libs</code> and <code>kronk bucky model &#123;catalog,list,pull,remove&#125;</code>. Each verb has a <code>--local</code> and a <code>--web</code> mode.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp"><code>cmd/server/app/domain/audioapp</code></a></td>
+                <td>HTTP handler for <code>POST /v1/audio/transcriptions</code> (multipart upload, format dispatch).</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"><code>cmd/server/app/domain/toolapp</code></a></td>
+                <td>HTTP handlers for <code>/v1/bucky/libs/<em>&lt;/code&gt; and &lt;code&gt;/v1/bucky/models/</em></code> admin endpoints (<code>bucky_libs.go</code>, <code>bucky_models.go</code>).</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="19132-handle-semaphore-and-`whisperstate`-pool">19.13.2 Handle, Semaphore, and `whisper.State` Pool</h4>
+          <p>There are <strong>two</strong> concurrency gates in front of a transcribe:</p>
+          <ol>
+            <li><strong>Outer semaphore</strong> (<code>Bucky.sem</code>) sized at construction time to <code>max(NSeqMax, 1)</code>. Sized 1:1 with NSeqMax to match the embedding /rerank rule in <code>sdk/kronk</code> — whisper has no batch engine, so <code>NSeqMax * QueueDepth</code> would over-subscribe.</li>
+            <li><strong>Inner &lt;code&gt;statePool&lt;/code&gt;</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/model/pool.go"><code>sdk/bucky/model/pool.go</code></a>) of <code>NSeqMax</code> <code>whisper.State</code> instances. The model weights live once in the shared <code>whisper.Context</code>; each <code>State</code> owns its own mel spectrogram, KV cache, and compute buffer.</li>
+          </ol>
+          <p><code>Bucky.Transcribe</code> flow:</p>
+          <pre className="code-block"><code className="language-diagram">{`caller ─▶ acquireModel(ctx)
+            ├─ shutdown check + activeStreams++
+            └─ block on b.sem (outer semaphore)
+        ─▶ model.Transcribe
+            ├─ buildFullParams (StringRefs.KeepAlive defer)
+            ├─ statePool.acquire (block on internal pool channel)
+            ├─ whisper.FullWithState (the actual decode)
+            ├─ statePool.release
+            └─ collectTranscription
+        ─▶ releaseModel
+            └─ release b.sem + activeStreams--`}</code></pre>
+          <p>The state pool's <code>release</code> is intentionally bare — <code>whisper_full_with_state</code> resets the state internally on the next call, so no explicit clear is needed.</p>
+          <p><code>Unload</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/bucky.go"><code>sdk/bucky/bucky.go</code></a>) takes the shutdown mutex, sets <code>shutdownFlag</code>, then polls <code>activeStreams</code> at 100 ms until either it reaches zero or the context expires. The default deadline is 5 s if the caller didn't set one. Subsequent acquires fail fast with <code>whisper has been unloaded</code>.</p>
+          <h4 id="19133-init-load-and-degraded-mode">19.13.3 Init, Load, and Degraded Mode</h4>
+          <p><code>bucky.Init</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/init.go"><code>sdk/bucky/init.go</code></a>) does three things in order:</p>
+          <ol>
+            <li><strong>Registers</strong> the whisper backend with the cross-backend registry under <code>backend.KindWhisper</code>, including <code>NewLibs</code> and <code>NewCatalog</code> factories. This happens <strong>before</strong> the shared-library load so the CLI / BUI / server can construct libs + catalog managers even when the <code>.so</code>/<code>.dylib</code>/<code>.dll</code> is missing.</li>
+            <li><strong>Adjusts</strong> <code>LD_LIBRARY_PATH</code> (POSIX) or <code>PATH</code> (Windows) so the dynamic loader can find sibling deps next to <code>libwhisper</code>.</li>
+            <li><strong>Loads</strong> <code>libwhisper</code> via <code>whisper.Load(libPath)</code>, then installs the C-side log callback (<code>LogSilent</code> by default to suppress the noisy <code>whisper_init_<em>&lt;/code&gt; / &lt;code&gt;ggml_metal_</em></code> lines).</li>
+          </ol>
+          <p><code>Init</code> is idempotent and re-entrant: failures <strong>do not</strong> set <code>initDone</code>, so the server can call it again after the user downloads the missing libraries through the BUI without restarting.</p>
+          <p>In <code>cmd/server/api/services/kronk/main.go</code> an <code>Init</code> failure logs a warning ("bucky init failed, running in degraded mode…") instead of aborting startup. The <code>/v1/audio/transcriptions</code> endpoint will fail until a successful re-init, but <code>/v1/bucky/libs/<em>&lt;/code&gt; and &lt;code&gt;/v1/bucky/models/</em></code> stay live so libraries / models can be downloaded.</p>
+          <h4 id="19134-pool-integration-shared-`resman`">19.13.4 Pool Integration (Shared `resman`)</h4>
+          <p><code>sdk/bucky/pool</code> constructs a <code>engine.Pool[*bucky.Bucky]</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool/pool.go"><code>sdk/bucky/pool/pool.go</code></a>) using the <strong>same</strong> <code>resman.Manager</code> instance the kronk pool uses. That single shared manager is what unifies VRAM / RAM accounting across backends:</p>
+          <ul>
+            <li>Whisper loads the entire context into memory at once, so a pool reservation total (<code>VRAMBytes + RAMBytes</code>) is a faithful proxy for the live footprint — unlike llama.cpp's mmap + paged-experts model.</li>
+            <li><code>Pool.ModelStatus</code> reports both <strong>loaded</strong> entries (from <code>engine.Coldest</code>) and <strong>loading</strong> entries (<code>resman.Usage</code> filtered by <code>engine.HasTicket</code> so this pool only surfaces its own in-flight reservations, not the llama pool's).</li>
+            <li>The pool loader lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool/whisper.go"><code>sdk/bucky/pool/whisper.go</code></a>; it resolves the model file via the bucky catalog, charges the resman, calls <code>bucky.New</code>, and on eviction calls <code>Bucky.Unload</code>.</li>
+          </ul>
+          <p>Defaults: <code>ModelsInPool = 10</code>, <code>TTL = 5m</code> (<code>sdk/bucky/pool/pool.go</code>).</p>
+          <h4 id="19135-`audioapp`-http-handler">19.13.5 `audioapp` HTTP Handler</h4>
+          <p><code>audioapp.transcriptions</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp/audioapp.go"><code>cmd/server/app/domain/audioapp/audioapp.go</code></a>) is a thin OpenAI-compatible wrapper:</p>
+          <ol>
+            <li><code>ParseMultipartForm(25 &lt;&lt; 20)</code> — 25 MB cap matching OpenAI.</li>
+            <li>Read form fields (<code>model</code>, <code>file</code>, <code>language</code>, <code>prompt</code>, <code>translate</code>, <code>response_format</code>, <code>timestamp_granularities[]</code>).</li>
+            <li><code>audio.Decode</code> (<a href="https://github.com/ardanlabs/bucky/tree/main/pkg/audio"><code>github.com/ardanlabs/bucky/pkg/audio</code></a>) converts the upload to 16 kHz mono float32 PCM. Anything <code>audio.Decode</code> can read is accepted; everything else returns <code>InvalidArgument</code>.</li>
+            <li><code>pool.Bucky.AquireModel(ctx, modelID)</code> triggers a load if cold.</li>
+            <li><strong>English-only guard</strong> — when <code>ModelInfo().IsMultilingual</code> is false and the caller passed a non-empty / non-<code>en</code> language, the request is rejected before any decode work.</li>
+            <li><code>Bucky.Transcribe</code> runs under a 30-minute per-request timeout.</li>
+            <li>Format dispatch: <code>text</code> and <code>srt</code> / <code>vtt</code> emit <code>rawResponse</code> blobs; <code>json</code> and <code>verbose_json</code> go through <code>jsonResponse</code>.</li>
+          </ol>
+          <p>Word-level timestamps are not yet plumbed from whisper.cpp, so when <code>timestamp_granularities[]=word</code> is set the handler emits <code>words: []</code> to keep the response shape compatible.</p>
+          <h4 id="19136-tests">19.13.6 Tests</h4>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Test</th>
+                <th>Scope</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/tests/transcribe"><code>sdk/bucky/tests/transcribe</code></a></td>
+                <td>SDK-level: <code>Bucky.Transcribe</code> (greedy + <code>OnSegment</code>) and pool concurrency.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/init_test.go"><code>sdk/bucky/init_test.go</code></a></td>
+                <td><code>Init</code> idempotency, degraded-mode fallback, log-level wiring.</td>
+              </tr>
+              <tr>
+                <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/services/kronk/tests/audio_test.go"><code>cmd/server/api/services/kronk/tests/audio_test.go</code></a></td>
+                <td>End-to-end HTTP: <code>POST /v1/audio/transcriptions</code> with every supported <code>response_format</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Tests follow the repo's standard env-var contract:</p>
+          <pre className="code-block"><code className="language-shell">{`export RUN_IN_PARALLEL=yes
+export GITHUB_WORKSPACE=$(pwd)
+go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
+          <p>The transcribe tests skip themselves when no whisper model is on disk, so contributors without a pulled model still get a green run.</p>
         </div>
 
         <nav className="doc-sidebar">
@@ -8323,20 +8973,36 @@ go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-18-developer-guide" className={`doc-index-header ${activeSection === 'chapter-18-developer-guide' ? 'active' : ''}`}>Chapter 18: Developer Guide</a>
+              <a href="#chapter-18-bucky-audio-transcription" className={`doc-index-header ${activeSection === 'chapter-18-bucky-audio-transcription' ? 'active' : ''}`}>Chapter 18: Bucky (Audio Transcription)</a>
               <ul>
-                <li><a href="#181-quick-reference" className={activeSection === '181-quick-reference' ? 'active' : ''}>18.1 Quick Reference</a></li>
-                <li><a href="#182-build-test-commands" className={activeSection === '182-build-test-commands' ? 'active' : ''}>18.2 Build &amp; Test Commands</a></li>
-                <li><a href="#183-developer-setup" className={activeSection === '183-developer-setup' ? 'active' : ''}>18.3 Developer Setup</a></li>
-                <li><a href="#184-project-architecture" className={activeSection === '184-project-architecture' ? 'active' : ''}>18.4 Project Architecture</a></li>
-                <li><a href="#185-bui-frontend-development" className={activeSection === '185-bui-frontend-development' ? 'active' : ''}>18.5 BUI Frontend Development</a></li>
-                <li><a href="#186-code-style-guidelines" className={activeSection === '186-code-style-guidelines' ? 'active' : ''}>18.6 Code Style Guidelines</a></li>
-                <li><a href="#187-sdk-internals" className={activeSection === '187-sdk-internals' ? 'active' : ''}>18.7 SDK Internals</a></li>
-                <li><a href="#188-responses-api-normalization" className={activeSection === '188-responses-api-normalization' ? 'active' : ''}>18.8 Responses API Normalization</a></li>
-                <li><a href="#189-goroutine-budget" className={activeSection === '189-goroutine-budget' ? 'active' : ''}>18.9 Goroutine Budget</a></li>
-                <li><a href="#1810-request-tracing-spans" className={activeSection === '1810-request-tracing-spans' ? 'active' : ''}>18.10 Request Tracing Spans</a></li>
-                <li><a href="#1811-inference-code-path" className={activeSection === '1811-inference-code-path' ? 'active' : ''}>18.11 Inference Code Path</a></li>
-                <li><a href="#1812-mtp-internals" className={activeSection === '1812-mtp-internals' ? 'active' : ''}>18.12 MTP Internals</a></li>
+                <li><a href="#181-overview" className={activeSection === '181-overview' ? 'active' : ''}>18.1 Overview</a></li>
+                <li><a href="#182-installation-libraries" className={activeSection === '182-installation-libraries' ? 'active' : ''}>18.2 Installation &amp; Libraries</a></li>
+                <li><a href="#183-model-catalog-pull" className={activeSection === '183-model-catalog-pull' ? 'active' : ''}>18.3 Model Catalog &amp; Pull</a></li>
+                <li><a href="#184-server-pool-configuration" className={activeSection === '184-server-pool-configuration' ? 'active' : ''}>18.4 Server &amp; Pool Configuration</a></li>
+                <li><a href="#185-cli-commands" className={activeSection === '185-cli-commands' ? 'active' : ''}>18.5 CLI Commands</a></li>
+                <li><a href="#186-bui-usage" className={activeSection === '186-bui-usage' ? 'active' : ''}>18.6 BUI Usage</a></li>
+                <li><a href="#187-api-endpoint" className={activeSection === '187-api-endpoint' ? 'active' : ''}>18.7 API Endpoint</a></li>
+                <li><a href="#188-sdk-quick-start" className={activeSection === '188-sdk-quick-start' ? 'active' : ''}>18.8 SDK Quick Start</a></li>
+                <li><a href="#189-supported-languages" className={activeSection === '189-supported-languages' ? 'active' : ''}>18.9 Supported Languages</a></li>
+                <li><a href="#1810-troubleshooting" className={activeSection === '1810-troubleshooting' ? 'active' : ''}>18.10 Troubleshooting</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#chapter-19-developer-guide" className={`doc-index-header ${activeSection === 'chapter-19-developer-guide' ? 'active' : ''}`}>Chapter 19: Developer Guide</a>
+              <ul>
+                <li><a href="#191-quick-reference" className={activeSection === '191-quick-reference' ? 'active' : ''}>19.1 Quick Reference</a></li>
+                <li><a href="#192-build-test-commands" className={activeSection === '192-build-test-commands' ? 'active' : ''}>19.2 Build &amp; Test Commands</a></li>
+                <li><a href="#193-developer-setup" className={activeSection === '193-developer-setup' ? 'active' : ''}>19.3 Developer Setup</a></li>
+                <li><a href="#194-project-architecture" className={activeSection === '194-project-architecture' ? 'active' : ''}>19.4 Project Architecture</a></li>
+                <li><a href="#195-bui-frontend-development" className={activeSection === '195-bui-frontend-development' ? 'active' : ''}>19.5 BUI Frontend Development</a></li>
+                <li><a href="#196-code-style-guidelines" className={activeSection === '196-code-style-guidelines' ? 'active' : ''}>19.6 Code Style Guidelines</a></li>
+                <li><a href="#197-sdk-internals" className={activeSection === '197-sdk-internals' ? 'active' : ''}>19.7 SDK Internals</a></li>
+                <li><a href="#198-responses-api-normalization" className={activeSection === '198-responses-api-normalization' ? 'active' : ''}>19.8 Responses API Normalization</a></li>
+                <li><a href="#199-goroutine-budget" className={activeSection === '199-goroutine-budget' ? 'active' : ''}>19.9 Goroutine Budget</a></li>
+                <li><a href="#1910-request-tracing-spans" className={activeSection === '1910-request-tracing-spans' ? 'active' : ''}>19.10 Request Tracing Spans</a></li>
+                <li><a href="#1911-inference-code-path" className={activeSection === '1911-inference-code-path' ? 'active' : ''}>19.11 Inference Code Path</a></li>
+                <li><a href="#1912-mtp-internals" className={activeSection === '1912-mtp-internals' ? 'active' : ''}>19.12 MTP Internals</a></li>
+                <li><a href="#1913-bucky-internals" className={activeSection === '1913-bucky-internals' ? 'active' : ''}>19.13 Bucky Internals</a></li>
               </ul>
             </div>
           </div>

@@ -115,7 +115,7 @@ Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about
 
 ### SDK
 
-The Kronk SDK allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio).
+The Kronk SDK allows you to write applications that can diectly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio). The Bucky SDK provides the same surface for speech-to-text via whisper.cpp — see the [Bucky chapter](.manual/chapter-18-bucky.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./images/project/sdk-dark.png">
@@ -161,6 +161,12 @@ make example-agent
 
 ```shell
 make example-audio
+```
+
+[BUCKY](examples/bucky/main.go) - This example shows you how to transcribe an audio file with the bucky SDK (whisper.cpp under the hood). See the manual chapter [Bucky (Audio Transcription)](.manual/chapter-18-bucky.md) for the full subsystem reference.
+
+```shell
+make example-bucky
 ```
 
 [CHAT](examples/chat/main.go) - This example shows you how to chat with the chat-completion api.

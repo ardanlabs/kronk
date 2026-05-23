@@ -255,6 +255,11 @@ In web mode (the default — no `--local`) the same commands are dispatched
 through the running server. Activate any installed bundle by exporting
 `KRONK_LIB_PATH` to its folder and restarting the server.
 
+**Audio (Bucky):** if you also plan to use speech-to-text, install the
+whisper.cpp libraries with the parallel `kronk bucky libs` command. The
+flags mirror `kronk libs` and the bundle lands under
+`~/.kronk/bucky-libraries/`. See [Chapter 18: Bucky](chapter-18-bucky.md).
+
 ### 2.4 Downloading Your First Model
 
 Kronk maintains your **personal catalog** at `~/.kronk/catalog.yaml`. On
@@ -292,6 +297,11 @@ Models are stored in `~/.kronk/models/<provider>/<family>/` by default.
 After the pull completes the catalog entry is updated with the resolved
 provider, family, revision, and file sizes so subsequent lookups don't
 need to hit HuggingFace.
+
+**Audio (Bucky):** whisper models live in a separate flat layout at
+`~/.kronk/bucky-models/ggml-<name>.bin` and are pulled with
+`kronk bucky model pull <name>` (e.g. `tiny.en`). See
+[Chapter 18 §18.3](chapter-18-bucky.md#183-model-catalog-pull).
 
 ### 2.5 Starting the Server
 

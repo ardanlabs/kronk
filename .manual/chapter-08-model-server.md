@@ -273,6 +273,15 @@ startup and after every reserve/release, including per-GPU
 `used/budget/free` and `ram-used/ram-budget`. These are the easiest way
 to confirm the manager is reasoning about the right hardware.
 
+**Bucky shares this budget.** The whisper (Bucky) pool is constructed
+with the **same** `resman.Manager` instance as the llama pool, so
+whisper model loads contend with LLM loads against one unified budget.
+If `bucky.Init` fails at startup (missing whisper libraries) the
+server runs in **degraded mode**: `/v1/audio/transcriptions` returns
+errors until libraries are installed, but `/v1/bucky/libs/*` and
+`/v1/bucky/models/*` stay live so the BUI can download them without a
+restart. See [Chapter 18 §18.4](chapter-18-bucky.md#184-server-pool-configuration).
+
 ### 8.6 Model Config Files
 
 The server reads per-model overrides from `~/.kronk/model_config.yaml` by

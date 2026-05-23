@@ -3,6 +3,7 @@ package transcribe_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -150,13 +151,28 @@ func Test_PooledTranscribe(t *testing.T) {
 	t.Logf("peak ActiveStreams observed: %d", peak)
 
 	// Concurrency check 2: wall-clock speedup vs baseline.
-	threshold := time.Duration(float64(baseline) * concurrencyFactor)
-	t.Logf("parallel wall-clock: %s, baseline: %s, threshold: %s (factor %.2fx)",
-		parallelElapsed, baseline, threshold, concurrencyFactor)
-	if parallelElapsed > threshold {
-		t.Errorf("parallel wall-clock %s exceeded %.2fx baseline (%s); "+
-			"expected concurrent execution but the pool appears to be serializing",
-			parallelElapsed, concurrencyFactor, threshold)
+	//
+	// This check is meaningful only when there is spare compute for
+	// the parallel run to consume — i.e. on a GPU. On CPU-only
+	// hardware a single Transcribe already saturates every core, so
+	// running NSeqMax in parallel takes ~NSeqMax × baseline even
+	// when the pool is genuinely concurrent. Check 1 (peak
+	// ActiveStreams) is the authoritative signal in that case.
+	//
+	// GitHub Actions runners have no GPU, so skip the wall-clock
+	// assertion there and rely on the in-flight ActiveStreams probe.
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Logf("parallel wall-clock: %s, baseline: %s (GITHUB_ACTIONS=true: skipping CPU-bound wall-clock check)",
+			parallelElapsed, baseline)
+	} else {
+		threshold := time.Duration(float64(baseline) * concurrencyFactor)
+		t.Logf("parallel wall-clock: %s, baseline: %s, threshold: %s (factor %.2fx)",
+			parallelElapsed, baseline, threshold, concurrencyFactor)
+		if parallelElapsed > threshold {
+			t.Errorf("parallel wall-clock %s exceeded %.2fx baseline (%s); "+
+				"expected concurrent execution but the pool appears to be serializing",
+				parallelElapsed, concurrencyFactor, threshold)
+		}
 	}
 
 	t.Logf("All %d concurrent transcribe requests completed successfully", numInstances)

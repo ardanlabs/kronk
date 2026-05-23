@@ -84,9 +84,13 @@ stage additional `(arch, os, processor)` bundles for other targets but
 does not hot-reload the active install. See Chapter 2 and the
 `kronk libs` CLI for the same operations.
 
+The same screen also exposes the **whisper (Bucky)** libraries under
+`~/.kronk/bucky-libraries/`, selected at runtime via
+`KRONK_BUCKY_LIB_PATH`. See [Chapter 18 §18.2](chapter-18-bucky.md#182-installation-libraries).
+
 #### Apps
 
-Three interactive tools live under **Apps**:
+Four interactive tools live under **Apps**:
 
 - **Chat** — a multi-turn chat interface with model selection, system
   prompt, and full sampling controls. Useful for ad-hoc conversations
@@ -101,6 +105,11 @@ Three interactive tools live under **Apps**:
   will consume given a chosen context window, slot count, KV cache
   precision, and other parameters. The same calculator is embedded in
   per-model detail views.
+- **Translator** — a speech-to-text workbench backed by Bucky
+  (whisper.cpp). Upload or record audio, pick a whisper model and
+  language (or auto-detect), choose response format, and view the
+  transcript with per-segment timestamps. See
+  [Chapter 18 §18.6](chapter-18-bucky.md#186-bui-usage).
 
 #### Security
 
