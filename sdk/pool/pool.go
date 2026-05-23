@@ -63,9 +63,9 @@ type Pool struct {
 	Bucky  *buckypool.Pool
 }
 
-// Re-exports so observability code (BUI, toolapp) does not have to
-// pull in the kronk sub-package just to format byte counts or talk
-// about model status entries.
+// ModelDetail re-exports so observability code (BUI, toolapp) does not
+// have to pull in the kronk sub-package just to format byte counts or
+// talk about model status entries.
 type ModelDetail = kronkpool.ModelDetail
 
 const (

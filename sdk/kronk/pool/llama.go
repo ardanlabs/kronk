@@ -109,13 +109,29 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		TensorSplit: cfg.TensorSplit,
 	}
 
-	// Map the calculator's GPU/CPU split onto resman buckets. On
-	// systems with GPUs and the standard full-offload mode we charge
-	// VRAM and system RAM independently so MoE expert offload is
-	// reflected in the budget. On CPU-only systems (or when the user
-	// explicitly requested NGpuLayers=-1) the entire footprint is
-	// system RAM.
+	// Map the calculator's GPU/CPU split onto resman buckets.
+	//
+	// Unified memory (Apple Silicon Metal) is special-cased first.
+	// The GPU and CPU share one physical pool, and llama.cpp mmaps
+	// the GGUF — so even an MoE model with "experts on CPU" will
+	// eventually have every page resident in the same shared pool
+	// once exercised. Charging only the planner's TotalVRAM (which
+	// drops the always-inactive expert weights) would let the
+	// resman admit far more concurrent models than the box can
+	// actually hold, then OOM when the experts page in. We instead
+	// charge the full loaded footprint:
+	//
+	//   model_bytes + KV cache + compute buffer
+	//
+	// to the system RAM bucket.
+	//
+	// Discrete-GPU systems keep the existing MoE-aware split so
+	// expert-offload-to-CPU and per-GPU tensor splits are still
+	// accounted for accurately.
 	switch {
+	case l.resman.UnifiedMemory():
+		planReq.VRAMBytes = 0
+		planReq.RAMBytes = result.UnifiedFootprint()
 	case l.resman.HasGPUs() && cfg.NGpuLayers() != -1:
 		planReq.VRAMBytes = result.TotalVRAM
 		planReq.RAMBytes = result.TotalSystemRAMEst
@@ -223,7 +239,11 @@ func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
 
 	if v, err := l.models.CalculateVRAM(modelID, vramCfg); err == nil {
 		out.KVCache = v.SlotMemory
-		out.VRAMTotal = v.TotalVRAM
+		if l.resman.UnifiedMemory() {
+			out.VRAMTotal = v.UnifiedFootprint()
+		} else {
+			out.VRAMTotal = v.TotalVRAM
+		}
 		return out
 	}
 

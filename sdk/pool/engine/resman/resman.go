@@ -142,6 +142,18 @@ func (m *Manager) HasGPUs() bool {
 	return len(m.devices) > 0
 }
 
+// UnifiedMemory reports whether the manager was built against a
+// unified-memory snapshot (Apple Silicon Metal). Callers use this to
+// switch their reservation/display math: on unified-memory systems
+// the GPU and CPU share one physical pool, so charging the
+// MoE-split-aware planner totals (TotalVRAM/TotalSystemRAMEst
+// separately) misrepresents the real footprint. Both planner and
+// observability paths should instead use a single combined "loaded
+// footprint" figure (model bytes + KV cache + compute buffer).
+func (m *Manager) UnifiedMemory() bool {
+	return m.unifiedMemory
+}
+
 // Reserve atomically plans and commits a reservation. On success it returns a
 // ticket that must be passed to Release when the model is unloaded. On
 // failure the manager state is unchanged.

@@ -31,10 +31,21 @@ export default function ModelPs() {
 
   useEffect(() => {
     loadAll();
+
+    // Auto-refresh every 5 seconds so the table reflects new loads,
+    // reservations released by TTL eviction, and active-stream
+    // changes without the user clicking Refresh. The polling lives
+    // inside this useEffect so it stops when the user navigates
+    // away.
+    const id = window.setInterval(() => {
+      loadAll(true);
+    }, 5000);
+
+    return () => window.clearInterval(id);
   }, []);
 
-  const loadAll = async () => {
-    setLoading(true);
+  const loadAll = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const [modelsResp, budgetResp] = await Promise.all([
@@ -46,7 +57,7 @@ export default function ModelPs() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load running models');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -71,7 +82,7 @@ export default function ModelPs() {
           <h2>Running Models</h2>
           <p className="page-description">Models currently loaded in cache and the pool's resource budget</p>
         </div>
-        <button className="btn btn-primary" onClick={loadAll} disabled={loading}>
+        <button className="btn btn-primary" onClick={() => loadAll()} disabled={loading}>
           Refresh
         </button>
       </div>
@@ -175,8 +186,14 @@ export default function ModelPs() {
                     <tr>
                       <th>{labelWithTip('Key', 'budgetReservationKey')}</th>
                       <th style={{ textAlign: 'right' }}>{labelWithTip('Total', 'budgetReservationTotal')}</th>
-                      <th style={{ textAlign: 'right' }}>{labelWithTip('VRAM', 'budgetReservationVRAM')}</th>
-                      <th style={{ textAlign: 'right' }}>{labelWithTip('System', 'budgetReservationSystem')}</th>
+                      {budget.unified_memory ? (
+                        <th style={{ textAlign: 'right' }}>{labelWithTip('Unified Memory', 'budgetReservationUnified')}</th>
+                      ) : (
+                        <>
+                          <th style={{ textAlign: 'right' }}>{labelWithTip('VRAM', 'budgetReservationVRAM')}</th>
+                          <th style={{ textAlign: 'right' }}>{labelWithTip('System', 'budgetReservationSystem')}</th>
+                        </>
+                      )}
                       <th>{labelWithTip('Per-Device', 'budgetReservationPerDevice')}</th>
                     </tr>
                   </thead>
@@ -187,8 +204,16 @@ export default function ModelPs() {
                         <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                           {formatBytes(r.vram_bytes + r.ram_bytes)}
                         </td>
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(r.vram_bytes)}</td>
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(r.ram_bytes)}</td>
+                        {budget.unified_memory ? (
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {formatBytes(r.vram_bytes + r.ram_bytes)}
+                          </td>
+                        ) : (
+                          <>
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(r.vram_bytes)}</td>
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(r.ram_bytes)}</td>
+                          </>
+                        )}
                         <td>
                           {r.per.length === 0
                             ? '—'
@@ -221,6 +246,7 @@ export default function ModelPs() {
                 <thead>
                   <tr>
                     <th>{labelWithTip('ID', 'runningModelID')}</th>
+                    <th>{labelWithTip('Backend', 'runningModelBackend')}</th>
                     <th>{labelWithTip('Status', 'runningModelStatus')}</th>
                     <th>{labelWithTip('Owner', 'runningModelOwner')}</th>
                     <th>{labelWithTip('Family', 'runningModelFamily')}</th>
@@ -239,6 +265,7 @@ export default function ModelPs() {
                     return (
                       <tr key={model.id} style={isLoading ? { opacity: 0.7, fontStyle: 'italic' } : undefined}>
                         <td>{model.id}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{model.backend || '—'}</td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           {isLoading ? (
                             <span style={{ color: 'var(--text-muted, #888)' }}>Loading…</span>
@@ -250,7 +277,7 @@ export default function ModelPs() {
                         <td>{model.model_family || '—'}</td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{model.size > 0 ? formatBytes(model.size) : '—'}</td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(model.vram_total)}</td>
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{isLoading ? '—' : formatBytes(model.kv_cache)}</td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{isLoading || model.kv_cache === 0 ? '—' : formatBytes(model.kv_cache)}</td>
                         <td style={{ textAlign: 'right' }}>{isLoading ? '—' : model.slots}</td>
                         <td style={{ whiteSpace: 'nowrap' }}>{isLoading ? '—' : formatDate(model.expires_at)}</td>
                         <td style={{ textAlign: 'right' }}>{isLoading ? '—' : model.active_streams}</td>
@@ -277,7 +304,7 @@ export default function ModelPs() {
                 {data.length > 1 && (
                   <tfoot>
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total:</td>
+                      <td colSpan={6} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total:</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatBytes(data.reduce((sum, m) => sum + m.vram_total, 0))}</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatBytes(data.reduce((sum, m) => sum + (m.status === 'loading' ? 0 : m.kv_cache), 0))}</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{data.reduce((sum, m) => sum + (m.status === 'loading' ? 0 : m.slots), 0)}</td>

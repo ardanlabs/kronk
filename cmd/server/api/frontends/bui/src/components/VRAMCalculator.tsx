@@ -1,283 +1,187 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { api } from '../services/api';
 import { useToken } from '../contexts/TokenContext';
 import type { VRAMCalculatorResponse, HFRepoFile } from '../types';
 import { VRAMCalculatorPanel, useVRAMState } from './vram';
+import { EXPERTS_ALL_ON_GPU } from './vram/constants';
+import {
+  stripGGUF,
+  modelIDFromFilename,
+  isQuantOnly,
+  isMMProjFile,
+  matchesQuant,
+  splitPaste,
+  groupRepoFiles,
+  isSplitFilename,
+} from '../lib/hf';
 
-/** Regex matching the "-NNNNN-of-NNNNN" suffix on split GGUF files. */
-const splitSuffixRe = /-\d+-of-\d+\.gguf$/i;
-
-/**
- * Normalize a user-entered shorthand into a canonical HuggingFace URL.
- *
- *   "owner/repo"          → "https://huggingface.co/owner/repo/tree/main"
- *   "owner/repo:Q4_K_M"   → "https://huggingface.co/owner/repo/tree/main"  (tag used for auto-select only)
- *
- * Full URLs (already containing huggingface.co or /resolve/ etc.) are returned as-is.
- * The optional tag (after the colon) is returned separately so the caller can
- * use it for pre-selection.
- */
-function normalizeInput(raw: string): { url: string; tag: string } {
-  const trimmed = raw.trim();
-
-  // Already a full URL — pass through.
-  if (/^https?:\/\//i.test(trimmed)) {
-    return { url: trimmed, tag: '' };
-  }
-
-  // Strip bare host prefixes.
-  let stripped = trimmed;
-  for (const prefix of ['huggingface.co/', 'hf.co/']) {
-    if (stripped.toLowerCase().startsWith(prefix)) {
-      stripped = stripped.slice(prefix.length);
-      break;
+// buildModelURL composes the HuggingFace URL the VRAM endpoint accepts.
+// For split shards the calculator wants the folder URL so the server
+// sums every shard in the group; for everything else it wants the
+// single-file resolve URL.
+function buildModelURL(provider: string, family: string, filename: string): string {
+  const p = provider.trim();
+  const f = family.trim();
+  if (isSplitFilename(filename)) {
+    const slashIdx = filename.lastIndexOf('/');
+    const folder = slashIdx >= 0 ? filename.slice(0, slashIdx) : '';
+    if (folder) {
+      return `https://huggingface.co/${p}/${f}/tree/main/${folder}`;
     }
+    return `https://huggingface.co/${p}/${f}/tree/main`;
   }
-
-  // If it already contains markers of a full path, wrap and return.
-  if (stripped.includes('/resolve/') || stripped.includes('/blob/') || stripped.includes('/tree/')) {
-    return { url: 'https://huggingface.co/' + stripped, tag: '' };
-  }
-
-  const parts = stripped.split('/');
-  if (parts.length < 2) {
-    return { url: trimmed, tag: '' };
-  }
-
-  const owner = parts[0];
-  let repo = parts[1];
-  let tag = '';
-
-  // Handle owner/repo:TAG shorthand.
-  const colonIdx = repo.indexOf(':');
-  if (colonIdx >= 0) {
-    tag = repo.slice(colonIdx + 1);
-    repo = repo.slice(0, colonIdx);
-  }
-
-  if (parts.length > 2) {
-    // owner/repo/file.gguf — specific file short form.
-    const filename = parts.slice(2).join('/');
-    return { url: `https://huggingface.co/${owner}/${repo}/resolve/main/${filename}`, tag: '' };
-  }
-
-  // owner/repo or owner/repo:TAG — folder listing.
-  return { url: `https://huggingface.co/${owner}/${repo}/tree/main`, tag };
-}
-
-/** Extract the filename portion from a HuggingFace URL or short-form path. */
-function extractFilename(url: string): string {
-  const trimmed = url.trim();
-
-  // Full URL: .../resolve/main/path/file.gguf or .../blob/main/path/file.gguf
-  for (const marker of ['/resolve/main/', '/blob/main/']) {
-    const idx = trimmed.indexOf(marker);
-    if (idx >= 0) return trimmed.slice(idx + marker.length);
-  }
-
-  // Short form: owner/repo/file.gguf → skip first two segments.
-  const stripped = trimmed
-    .replace(/^https?:\/\/huggingface\.co\//, '')
-    .replace(/^https?:\/\/hf\.co\//, '')
-    .replace(/^huggingface\.co\//, '')
-    .replace(/^hf\.co\//, '');
-  const parts = stripped.split('/');
-  if (parts.length > 2) return parts.slice(2).join('/');
-
-  return '';
-}
-
-/** Build a model URL from owner/repo extracted from the original URL plus a filename. */
-function buildModelUrl(originalUrl: string, filename: string, isFolder = false): string {
-  const trimmed = originalUrl.trim();
-  const pathPrefix = isFolder ? '/tree/main/' : '/resolve/main/';
-
-  // If the original was a full HuggingFace URL, reconstruct with the new filename.
-  for (const marker of ['/resolve/main/', '/blob/main/', '/tree/main']) {
-    const idx = trimmed.indexOf(marker);
-    if (idx >= 0) return trimmed.slice(0, idx) + pathPrefix + filename;
-  }
-
-  // Strip any known prefixes to get owner/repo.
-  const stripped = trimmed
-    .replace(/^https?:\/\/huggingface\.co\//, '')
-    .replace(/^https?:\/\/hf\.co\//, '')
-    .replace(/^huggingface\.co\//, '')
-    .replace(/^hf\.co\//, '');
-  const parts = stripped.split('/');
-  if (parts.length >= 2) {
-    return parts[0] + '/' + parts[1] + '/' + filename;
-  }
-
-  return filename;
-}
-
-/** A display row in the file selector — either a single file or a collapsed split folder. */
-interface DisplayRow {
-  /** Display name shown in the table. */
-  label: string;
-  /** The filename used for selection (first shard for splits, full path for singles). */
-  filename: string;
-  /** Human-readable total size. */
-  sizeStr: string;
-  /** True when this row represents a multi-file split model. */
-  isSplit: boolean;
-  /** Number of split parts (1 for non-split). */
-  parts: number;
-  /** For split models, the folder path within the repo (e.g. "Model-Q8_0"). */
-  folderPath: string;
-}
-
-/** Collapse split model shards into a single folder row, keeping singles as-is. */
-function collapseRepoFiles(files: HFRepoFile[]): DisplayRow[] {
-  const splitGroups = new Map<string, { files: HFRepoFile[]; dir: string }>();
-  const singles: HFRepoFile[] = [];
-
-  for (const f of files) {
-    if (f.filename.toLowerCase().includes('mmproj')) continue;
-    if (splitSuffixRe.test(f.filename)) {
-      // Derive the group key by stripping the split suffix: "Model-Q8-00001-of-00002.gguf" → "Model-Q8"
-      const base = f.filename.replace(/-\d+-of-\d+\.gguf$/i, '');
-      const existing = splitGroups.get(base);
-      if (existing) {
-        existing.files.push(f);
-      } else {
-        // Use the directory portion (if any) as the folder label.
-        const slashIdx = f.filename.lastIndexOf('/');
-        const dir = slashIdx >= 0 ? f.filename.slice(0, slashIdx) : '';
-        splitGroups.set(base, { files: [f], dir });
-      }
-    } else {
-      singles.push(f);
-    }
-  }
-
-  const rows: DisplayRow[] = [];
-
-  for (const [base, group] of splitGroups) {
-    const totalSize = group.files.reduce((sum, f) => sum + f.size, 0);
-    // Use the directory if files live in a subfolder, otherwise derive from base name.
-    const folder = group.dir || base.split('/').pop() || base;
-    // Sort shards so we always pick the first one as the representative.
-    group.files.sort((a, b) => a.filename.localeCompare(b.filename));
-    rows.push({
-      label: `📁 ${folder} (${group.files.length} parts)`,
-      filename: group.files[0].filename,
-      sizeStr: formatTotalSize(totalSize),
-      isSplit: true,
-      parts: group.files.length,
-      folderPath: folder,
-    });
-  }
-
-  for (const f of singles) {
-    rows.push({
-      label: f.filename,
-      filename: f.filename,
-      sizeStr: f.size_str,
-      isSplit: false,
-      parts: 1,
-      folderPath: '',
-    });
-  }
-
-  return rows;
-}
-
-function formatTotalSize(bytes: number): string {
-  const gb = 1000 * 1000 * 1000;
-  const mb = 1000 * 1000;
-  if (bytes >= gb) return `${(bytes / gb).toFixed(1)} GB`;
-  if (bytes >= mb) return `${(bytes / mb).toFixed(1)} MB`;
-  return `${(bytes / 1000).toFixed(1)} KB`;
+  return `https://huggingface.co/${p}/${f}/resolve/main/${filename}`;
 }
 
 export default function VRAMCalculator() {
   const { token } = useToken();
-  const [modelUrl, setModelUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [lookingUp, setLookingUp] = useState(false);
+
+  const [provider, setProvider] = useState('');
+  const [family, setFamily] = useState('');
+  const [model, setModel] = useState('');
+
+  const [repoFiles, setRepoFiles] = useState<HFRepoFile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [isResolving, setIsResolving] = useState(false);
+  const [loading, setLoading] = useState(false);
+
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
-  const [calculatedModelUrl, setCalculatedModelUrl] = useState('');
-  const [repoFiles, setRepoFiles] = useState<HFRepoFile[]>([]);
-  const [selectedFilename, setSelectedFilename] = useState('');
-  const [lookupUrl, setLookupUrl] = useState('');
+  const [calculatedModelLabel, setCalculatedModelLabel] = useState('');
   const cachedKeyRef = useRef('');
 
   const { controlsProps, resultsProps } = useVRAMState({
     serverResponse: result,
     enableHardwareOverrides: true,
-    modelUrl: calculatedModelUrl || undefined,
+    modelUrl: calculatedModelLabel || undefined,
     authToken: token || undefined,
   });
 
-  const displayRows = useMemo(() => collapseRepoFiles(repoFiles), [repoFiles]);
+  const canResolve = provider.trim().length > 0 && family.trim().length > 0;
 
-  const handleLookup = useCallback(async () => {
-    const trimmed = modelUrl.trim();
-    if (!trimmed) {
-      setError('Please enter a model URL');
+  // runCalculate handles all of:
+  //
+  //   - Model blank             → browse files (show picker)
+  //   - Model is a quant tag    → lookup repo, match the quant
+  //   - Model is a full basename → try local model id first, then HF
+  //
+  // The Model-filled paths end by invoking calculateOne() with the
+  // selected filename so a single code path performs the final HF
+  // calculateVRAM call.
+  const runCalculate = useCallback(async (modelOverride?: string) => {
+    if (isResolving || loading) return;
+
+    const p = provider.trim();
+    const f = family.trim();
+    const m = stripGGUF((modelOverride ?? model).trim());
+
+    if (!p || !f) {
+      setError('Provider and Family are required');
       return;
     }
 
-    setLookingUp(true);
     setError(null);
-    setRepoFiles([]);
-    setSelectedFilename('');
     setResult(null);
-    setCalculatedModelUrl('');
+    setRepoFiles(null);
     cachedKeyRef.current = '';
 
-    try {
-      const { url: normalized, tag } = normalizeInput(trimmed);
-      const lookupResult = await api.lookupHuggingFace(normalized);
-      const files: HFRepoFile[] = lookupResult.repo_files ?? [];
-      setRepoFiles(files);
-      setLookupUrl(normalized);
-
-      // Pre-select the file if the URL pointed to a specific model.
-      const inputFilename = extractFilename(normalized);
-      if (inputFilename && files.some((f) => f.filename === inputFilename)) {
-        setSelectedFilename(inputFilename);
-      } else if (tag) {
-        // Shorthand with tag (e.g. owner/repo:Q4_K_M) — find matching file.
-        const lowerTag = tag.toLowerCase();
-        const match = files.find((f) => f.filename.toLowerCase().includes(lowerTag));
-        if (match) {
-          setSelectedFilename(match.filename);
-        }
+    // Model blank → browse the repo so the user can pick a file.
+    if (!m) {
+      setIsResolving(true);
+      try {
+        const lookup = await api.lookupHuggingFace(`${p}/${f}`);
+        setRepoFiles(lookup.repo_files ?? []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIsResolving(false);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lookup failed');
-    } finally {
-      setLookingUp(false);
-    }
-  }, [modelUrl]);
-
-  const performCalculation = useCallback(async (urlOverride?: string) => {
-    let calcUrl: string;
-    if (urlOverride) {
-      calcUrl = urlOverride;
-    } else if (selectedFilename) {
-      // For split models, send a folder URL so the backend sums all shards.
-      const selectedRow = displayRows.find((r) => r.filename === selectedFilename);
-      if (selectedRow?.isSplit && selectedRow.folderPath) {
-        calcUrl = buildModelUrl(lookupUrl || modelUrl, selectedRow.folderPath, true);
-      } else {
-        calcUrl = buildModelUrl(lookupUrl || modelUrl, selectedFilename);
-      }
-    } else {
-      calcUrl = modelUrl.trim();
-    }
-
-    if (!calcUrl) {
-      setError('Please select a model file');
       return;
     }
 
+    // Quant-only shortcut: lookup the repo and pick the matching file.
+    if (isQuantOnly(m)) {
+      setIsResolving(true);
+      try {
+        const lookup = await api.lookupHuggingFace(`${p}/${f}`);
+        const matches = (lookup.repo_files ?? []).filter(
+          (file) => !isMMProjFile(file.filename) && matchesQuant(file.filename, m),
+        );
+
+        if (matches.length === 0) {
+          setError(`No GGUF file matching quant "${m}" found in ${p}/${f}`);
+          return;
+        }
+
+        // Deduplicate split shards: every shard maps to the same model id.
+        const uniqueIDs = new Set(matches.map((file) => modelIDFromFilename(file.filename)));
+
+        if (uniqueIDs.size > 1) {
+          setRepoFiles(matches);
+          return;
+        }
+
+        const pick = matches[0];
+        setModel(modelIDFromFilename(pick.filename));
+        await calculateOne(pick.filename);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIsResolving(false);
+      }
+      return;
+    }
+
+    // Model is a full basename. Try the local model id first so users
+    // who already have the model installed get an instant answer with
+    // no HuggingFace round trip; fall back to HF on not-found.
+    setLoading(true);
+    const localID = `${p}/${m}`;
+    try {
+      const response = await api.calculateVRAM(
+        {
+          model_id: localID,
+          context_window: controlsProps.contextWindow,
+          bytes_per_element: controlsProps.bytesPerElement,
+          slots: controlsProps.slots,
+          expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
+        },
+        token || undefined,
+      );
+      setResult(response);
+      setCalculatedModelLabel(localID);
+      setLoading(false);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (!/not found|no such model|404/i.test(msg)) {
+        setError(msg);
+        setLoading(false);
+        return;
+      }
+      // Not installed locally — fall through to HF.
+    } finally {
+      setLoading(false);
+    }
+
+    await calculateOne(`${m}.gguf`);
+  }, [isResolving, loading, provider, family, model, controlsProps, token]);
+
+  // calculateOne resolves a specific filename to the HF URL the
+  // calculateVRAM endpoint understands and stores the result. Split
+  // shards collapse to the folder URL so the server sums every shard.
+  const calculateOne = useCallback(async (filename: string) => {
+    const p = provider.trim();
+    const f = family.trim();
+    if (!p || !f) {
+      setError('Provider and Family are required');
+      return;
+    }
+
+    const url = buildModelURL(p, f, filename);
+    const label = `${p}/${f}/${filename}`;
     const cacheKey = [
-      calcUrl,
+      url,
       controlsProps.contextWindow,
       controlsProps.bytesPerElement,
       controlsProps.slots,
@@ -287,26 +191,27 @@ export default function VRAMCalculator() {
       controlsProps.deviceCount,
       controlsProps.tensorSplit,
     ].join('|');
+
     if (cacheKey === cachedKeyRef.current && result) {
       return;
     }
 
     setLoading(true);
     setError(null);
-    setResult(null);
 
     try {
       const response = await api.calculateVRAM(
         {
-          model_url: calcUrl,
+          model_url: url,
           context_window: controlsProps.contextWindow,
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
+          expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
         },
-        token || undefined
+        token || undefined,
       );
       setResult(response);
-      setCalculatedModelUrl(calcUrl);
+      setCalculatedModelLabel(label);
       cachedKeyRef.current = cacheKey;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate VRAM');
@@ -314,76 +219,46 @@ export default function VRAMCalculator() {
     } finally {
       setLoading(false);
     }
-  }, [modelUrl, lookupUrl, selectedFilename, displayRows, controlsProps, token, result]);
+  }, [provider, family, controlsProps, token, result]);
 
-  const handleCalculate = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // If no lookup was done yet, do lookup + auto-calculate if a specific file was provided.
-    if (repoFiles.length === 0) {
-      const trimmed = modelUrl.trim();
-      if (!trimmed) {
-        setError('Please enter a model URL');
-        return;
-      }
-
-      setLookingUp(true);
-      setError(null);
-
-      try {
-        const { url: normalized, tag } = normalizeInput(trimmed);
-        const lookupResult = await api.lookupHuggingFace(normalized);
-        const files: HFRepoFile[] = lookupResult.repo_files ?? [];
-        setRepoFiles(files);
-        setLookupUrl(normalized);
-
-        const inputFilename = extractFilename(normalized);
-        if (inputFilename && files.some((f) => f.filename === inputFilename)) {
-          setSelectedFilename(inputFilename);
-          setLookingUp(false);
-          await performCalculation(normalized);
-          return;
-        }
-
-        // Shorthand with tag — auto-select and calculate if matched.
-        if (tag) {
-          const lowerTag = tag.toLowerCase();
-          const match = files.find((f) => f.filename.toLowerCase().includes(lowerTag));
-          if (match) {
-            setSelectedFilename(match.filename);
-            setLookingUp(false);
-            await performCalculation(buildModelUrl(normalized, match.filename));
-            return;
-          }
-        }
-
-        // No specific file — show the list for selection.
-        if (files.length > 0) {
-          setLookingUp(false);
-          return;
-        }
-
-        // No files found, try direct calculation.
-        setLookingUp(false);
-        await performCalculation(normalized);
-      } catch {
-        setLookingUp(false);
-        await performCalculation(normalizeInput(trimmed).url);
-      }
-      return;
-    }
-
-    await performCalculation();
+  const handlePickFile = (filename: string) => {
+    setModel(modelIDFromFilename(filename));
+    setRepoFiles(null);
+    void calculateOne(filename);
   };
 
-  const handleFileSelect = (filename: string) => {
-    setSelectedFilename(filename);
-    cachedKeyRef.current = '';
+  const handleProviderPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text');
+    const split = splitPaste(text);
+    if (!split) return;
+
+    e.preventDefault();
+    setProvider(split.provider);
+    setFamily(split.family);
+    setModel(split.model);
+  };
+
+  const handleFieldKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && canResolve) {
+      e.preventDefault();
+      void runCalculate();
+    }
+  };
+
+  const handleClear = () => {
+    setRepoFiles(null);
+    setError(null);
     setResult(null);
+    setCalculatedModelLabel('');
+    cachedKeyRef.current = '';
+  };
+
+  const handleCalculateClick = () => {
+    void runCalculate();
   };
 
   return (
-    <div className="page">
+    <div>
       <div className="page-header-with-action">
         <div>
           <h2>VRAM Calculator</h2>
@@ -401,98 +276,224 @@ export default function VRAMCalculator() {
         </a>
       </div>
 
-      <form onSubmit={handleCalculate} className="form-card">
+      <div className="page-header">
+        <p>
+          Identify the model with three fields. Each one maps to a segment of the HuggingFace
+          file URL:
+        </p>
+
+        {/*
+          Layout uses fixed character positions inside a <pre> so the
+          underline brackets and labels line up with the URL segments
+          above them.
+        */}
+        <pre
+          style={{
+            fontSize: '14px',
+            lineHeight: '1.4',
+            padding: '12px 14px',
+            background: 'var(--bg-2, #1a1a1a)',
+            border: '1px solid var(--border, #333)',
+            borderRadius: '4px',
+            margin: '8px 0',
+            overflowX: 'auto',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            color: 'var(--text, #e5e5e5)',
+          }}
+        >
+          <span style={{ opacity: 0.85 }}>https://huggingface.co/</span>
+          <span style={{ color: 'var(--accent, #60a5fa)', fontWeight: 600 }}>unsloth</span>
+          <span style={{ opacity: 0.85 }}>/</span>
+          <span style={{ color: 'var(--success, #4ade80)', fontWeight: 600 }}>Qwen3.6-27B-GGUF</span>
+          <span style={{ opacity: 0.85 }}>/blob/main/</span>
+          <span style={{ color: 'var(--warning, #fbbf24)', fontWeight: 600 }}>Qwen3.6-27B-Q4_K_M</span>
+          <span style={{ opacity: 0.85 }}>.gguf</span>
+          {'\n'}
+          {'                       '}
+          <span style={{ color: 'var(--accent, #60a5fa)' }}>└─────┘</span>
+          {' '}
+          <span style={{ color: 'var(--success, #4ade80)' }}>└──────────────┘</span>
+          {'           '}
+          <span style={{ color: 'var(--warning, #fbbf24)' }}>└────────────────┘</span>
+          {'\n'}
+          {'                      '}
+          <span style={{ color: 'var(--accent, #60a5fa)', fontWeight: 600 }}>Provider</span>
+          {'      '}
+          <span style={{ color: 'var(--success, #4ade80)', fontWeight: 600 }}>Family</span>
+          {'                      '}
+          <span style={{ color: 'var(--warning, #fbbf24)', fontWeight: 600 }}>Model</span>
+        </pre>
+
+        <ul style={{ margin: '4px 0 0 0', paddingLeft: '20px', fontSize: '13px' }}>
+          <li>
+            <strong>Model is optional.</strong> Leave it blank and click <em>Browse files</em> to
+            see every GGUF in the repo and pick one.
+          </li>
+          <li>
+            <strong>Quant shortcut.</strong> The Model field also accepts just a quant tag
+            (e.g. <code>Q4_K_M</code>, <code>Q8_0</code>, <code>BF16</code>) — we'll find the
+            matching file in the repo for you.
+          </li>
+          <li>
+            <strong>Local models.</strong> When the full basename is filled and the model is
+            already installed, the calculator uses the on-disk file and skips HuggingFace.
+          </li>
+          <li>
+            <strong>Paste anything.</strong> Pasting a full HuggingFace URL or{' '}
+            <code>owner/repo[/file.gguf]</code> shorthand into the Provider field auto-splits
+            it across all three fields.
+          </li>
+        </ul>
+      </div>
+
+      <div className="card">
         <div className="form-group">
-                  <label htmlFor="modelUrl">                    
-                    Ex. <code>Qwen/Qwen3-8B-GGUF</code> (shorthand for model folder)<br/>
-                    Ex. <code>Qwen/Qwen3-8B-GGUF:Q4_K_M</code> (shorthand for specific model)<br/>
-                    Ex. <code>https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/tree/main (folder)</code><br/>
-                    Ex. <code>https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf (specific mode)</code><br/><br/>
-                    Model URL, shorthand, or folder for split models
-                  </label>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              id="modelUrl"
-              type="text"
-              value={modelUrl}
-              onChange={(e) => {
-                setModelUrl(e.target.value);
-                // Reset file list when URL changes so user can re-lookup.
-                if (repoFiles.length > 0) {
-                  setRepoFiles([]);
-                  setSelectedFilename('');
-                  setResult(null);
-                  cachedKeyRef.current = '';
-                }
-              }}
-              placeholder="Qwen/Qwen3-8B-GGUF:Q4_K_M"
-              className="form-input"
-              style={{ flex: 1 }}
-            />
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={lookingUp}
-              onClick={handleLookup}
-            >
-              {lookingUp ? 'Looking up…' : 'Lookup'}
-            </button>
-          </div>
-          <small className="form-hint">
-            Enter a shorthand (owner/repo or owner/repo:TAG), full HuggingFace URL, or folder URL for split models
-          </small>
+          <label htmlFor="provider">Provider <span style={{ opacity: 0.6 }}>(required)</span></label>
+          <input
+            type="text"
+            id="provider"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+            onPaste={handleProviderPaste}
+            onKeyDown={handleFieldKey}
+            placeholder="unsloth"
+            disabled={isResolving || loading}
+          />
         </div>
 
-        {displayRows.length > 0 && (
-          <div className="form-group">
-            <label htmlFor="modelFileSelect" style={{ fontWeight: 600 }}>
-              Select a model file
-            </label>
-            <select
-              id="modelFileSelect"
-              value={selectedFilename}
-              onChange={(e) => handleFileSelect(e.target.value)}
-              className="form-input"
+        <div className="form-group">
+          <label htmlFor="family">Family <span style={{ opacity: 0.6 }}>(required)</span></label>
+          <input
+            type="text"
+            id="family"
+            value={family}
+            onChange={(e) => setFamily(e.target.value)}
+            onKeyDown={handleFieldKey}
+            placeholder="Qwen3-0.6B-GGUF"
+            disabled={isResolving || loading}
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="model">
+            Model <span style={{ opacity: 0.6 }}>(optional — full basename, just a quant tag, or blank)</span>
+          </label>
+          <input
+            type="text"
+            id="model"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            onKeyDown={handleFieldKey}
+            placeholder="Qwen3-0.6B-Q8_0   ·   Q4_K_M   ·   (blank)"
+            disabled={isResolving || loading}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleCalculateClick}
+            disabled={isResolving || loading || !canResolve}
+          >
+            {isResolving
+              ? 'Looking up…'
+              : loading
+                ? 'Calculating…'
+                : model.trim()
+                  ? 'Calculate VRAM'
+                  : 'Browse files'}
+          </button>
+          {(repoFiles || result || error) && !loading && !isResolving && (
+            <button
+              type="button"
+              className="btn"
+              onClick={handleClear}
+              disabled={isResolving}
             >
-              <option value="">— Choose a file —</option>
-              {displayRows.map((row) => (
-                <option key={row.filename} value={row.filename}>
-                  {row.label} ({row.sizeStr})
-                </option>
-              ))}
-            </select>
+              Clear
+            </button>
+          )}
+        </div>
+
+        {error && (
+          <div className="status-box">
+            <div className="status-line error">{error}</div>
           </div>
         )}
 
-        <VRAMCalculatorPanel
-          controlsProps={controlsProps}
-          resultsProps={resultsProps}
-          variant="form"
-          hideResults
-        />
+        {repoFiles && (() => {
+          const rows = groupRepoFiles(repoFiles);
+          return (
+            <div className="card" style={{ background: 'var(--bg-2, #1a1a1a)', marginTop: '12px' }}>
+              <div style={{ marginBottom: '12px' }}>
+                <strong>Pick a file from </strong>
+                <code>{provider.trim()}/{family.trim()}</code>
+                <span style={{ fontSize: '12px', opacity: 0.7, marginLeft: '8px' }}>
+                  ({rows.length} GGUF model{rows.length === 1 ? '' : 's'})
+                </span>
+              </div>
+              {rows.length === 0 ? (
+                <div style={{ opacity: 0.7 }}>No GGUF files found in this repository.</div>
+              ) : (
+                <table className="kv-table">
+                  <thead>
+                    <tr><th style={{ textAlign: 'left' }}>Filename</th><th>Size</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.label}>
+                        <td>
+                          <code style={{ wordBreak: 'break-all' }}>{r.label}</code>
+                          {r.parts > 1 && (
+                            <span style={{ fontSize: '11px', opacity: 0.7, marginLeft: '8px' }}>
+                              ({r.parts} shards)
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{r.sizeStr}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => handlePickFile(r.filename)}
+                            disabled={isResolving || loading}
+                          >
+                            Select
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          );
+        })()}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-          <button type="submit" className="btn btn-primary" disabled={loading || lookingUp || !selectedFilename}>
-            {loading ? 'Calculating...' : 'Calculate VRAM'}
-          </button>
+        <div style={{ marginTop: '16px' }}>
+          <VRAMCalculatorPanel
+            controlsProps={controlsProps}
+            resultsProps={resultsProps}
+            variant="form"
+            hideResults
+          />
         </div>
-      </form>
+      </div>
 
-      {(loading || lookingUp) && (
+      {(loading || isResolving) && (
         <div className="vram-loading-banner">
           <span className="vram-loading-spinner" />
-          <span>{lookingUp ? 'Looking up repository…' : 'Fetching model header (up to 16 MB)…'}</span>
+          <span>{isResolving ? 'Looking up repository…' : 'Fetching model header (up to 16 MB)…'}</span>
         </div>
       )}
-
-      {error && <div className="alert alert-error">{error}</div>}
 
       {resultsProps && (
         <VRAMCalculatorPanel
           controlsProps={controlsProps}
           resultsProps={resultsProps}
           hideControls
-          modelUrl={calculatedModelUrl}
+          modelUrl={calculatedModelLabel}
         />
       )}
     </div>

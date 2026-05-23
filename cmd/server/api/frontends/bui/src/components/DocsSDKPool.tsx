@@ -92,6 +92,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>{`type ModelDetail struct {
 	ID            string
+	Backend       string
 	OwnedBy       string
 	ModelFamily   string
 	Size          int64
@@ -103,7 +104,7 @@ export default function DocsSDKPool() {
 	Status        string
 }`}</code>
               </pre>
-              <p className="doc-description">ModelDetail provides details for the models in the pool.</p>
+              <p className="doc-description">ModelDetail provides details for the models in the pool. Backend identifies which pool produced the entry ("kronk" for llama.cpp models, "bucky" for whisper models). The BUI uses it to tag rows and tailor the unload path.</p>
             </div>
 
             <div className="doc-section" id="type-pool">

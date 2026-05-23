@@ -71,6 +71,7 @@ export default function VRAMCalculatorPanel({
           tensorSplit={resultsProps.tensorSplit}
           isHardwareOverridden={resultsProps.isHardwareOverridden}
           modelUrl={modelUrl}
+          recomputing={resultsProps.recomputing}
         />
       )}
     </>

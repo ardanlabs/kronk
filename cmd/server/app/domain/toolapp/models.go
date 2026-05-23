@@ -373,14 +373,24 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
-	models, err := a.pool.Kronk.ModelStatus()
+	kronkModels, err := a.pool.Kronk.ModelStatus()
 	if err != nil {
 		return errs.New(errs.Internal, err)
 	}
 
-	a.log.Info(ctx, "models", "len", len(models))
+	resp := toModelDetails(kronkModels)
 
-	return toModelDetails(models)
+	if a.pool.Bucky != nil {
+		buckyModels, err := a.pool.Bucky.ModelStatus()
+		if err != nil {
+			return errs.New(errs.Internal, err)
+		}
+		resp = append(resp, fromBuckyDetails(buckyModels)...)
+	}
+
+	a.log.Info(ctx, "models", "len", len(resp), "kronk", len(kronkModels), "bucky", len(resp)-len(kronkModels))
+
+	return resp
 }
 
 func (a *app) poolBudget(ctx context.Context, r *http.Request) web.Encoder {
@@ -411,25 +421,42 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	a.log.Info(ctx, "tool-unload", "modelID", req.ID)
 
-	krn, exists := a.pool.Kronk.GetExisting(req.ID)
-	if !exists {
-		return errs.Errorf(errs.NotFound, "model %q is not loaded", req.ID)
+	// Look in the kronk pool first, then bucky. The two pools never
+	// share a cache key in practice (whisper short names like
+	// "tiny.en" don't collide with llama model ids), but checking
+	// kronk first matches the historical behavior of this endpoint.
+	if krn, exists := a.pool.Kronk.GetExisting(req.ID); exists {
+		if n := krn.ActiveStreams(); n > 0 {
+			return errs.Errorf(errs.FailedPrecondition, "model has %d active stream(s); cannot unload", n)
+		}
+
+		// Wait for the eviction callback to release the resource
+		// manager reservation before returning. Otherwise the BUI's
+		// follow-up /pool/budget refresh races the async unload and
+		// the user sees stale "Used" / "Free in Budget" numbers
+		// until they manually hit the Refresh button.
+		if err := a.pool.Kronk.InvalidateSync(ctx, req.ID); err != nil {
+			return errs.Errorf(errs.Internal, "unload: %s", err)
+		}
+
+		return UnloadResponse{Status: "unloaded", ID: req.ID}
 	}
 
-	if n := krn.ActiveStreams(); n > 0 {
-		return errs.Errorf(errs.FailedPrecondition, "model has %d active stream(s); cannot unload", n)
+	if a.pool.Bucky != nil {
+		if b, exists := a.pool.Bucky.GetExisting(req.ID); exists {
+			if n := b.ActiveStreams(); n > 0 {
+				return errs.Errorf(errs.FailedPrecondition, "model has %d active stream(s); cannot unload", n)
+			}
+
+			if err := a.pool.Bucky.InvalidateSync(ctx, req.ID); err != nil {
+				return errs.Errorf(errs.Internal, "unload: %s", err)
+			}
+
+			return UnloadResponse{Status: "unloaded", ID: req.ID}
+		}
 	}
 
-	// Wait for the eviction callback to release the resource manager
-	// reservation before returning. Otherwise the BUI's follow-up
-	// /pool/budget refresh races the async unload and the user sees
-	// stale "Used" / "Free in Budget" numbers until they manually hit
-	// the Refresh button.
-	if err := a.pool.Kronk.InvalidateSync(ctx, req.ID); err != nil {
-		return errs.Errorf(errs.Internal, "unload: %s", err)
-	}
-
-	return UnloadResponse{Status: "unloaded", ID: req.ID}
+	return errs.Errorf(errs.NotFound, "model %q is not loaded", req.ID)
 }
 
 // =============================================================================

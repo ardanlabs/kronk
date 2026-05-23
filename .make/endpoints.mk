@@ -12,7 +12,7 @@ curl-kronk-chat:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "gpt-oss-20b-Q8_0", \
+	 	"model": "unsloth/gpt-oss-20b-Q8_0", \
 		"stream": true, \
 		"messages": [ \
 			{ \
@@ -28,7 +28,7 @@ curl-kronk-chat-load:
 		-H "Authorization: Bearer ${KRONK_TOKEN}" \
 		-H "Content-Type: application/json" \
 		-d '{ \
-			"model": "gpt-oss-20b-Q8_0", \
+			"model": "unsloth/gpt-oss-20b-Q8_0", \
 			"stream": true, \
 			"messages": [ \
 				{ \
@@ -47,7 +47,7 @@ curl-kronk-chat-image:
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
-	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+	 	"model": "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0", \
 		"messages": [ \
 			{ \
 				"role": "user", \
@@ -66,7 +66,7 @@ curl-kronk-chat-openai-image:
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
-	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+	 	"model": "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0", \
 		"messages": [ \
 			{ \
 				"role": "user", \
@@ -84,7 +84,7 @@ curl-kronk-chat-gpt:
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
-	 	"model": "gpt-oss-20b-Q8_0", \
+	 	"model": "unsloth/gpt-oss-20b-Q8_0", \
 		"messages": [ \
 			{ \
 				"role": "user", \
@@ -98,7 +98,7 @@ curl-kronk-chat-tool:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "Qwen3-8B-Q8_0", \
+	 	"model": "Qwen/Qwen3-8B-Q8_0", \
 		"stream": true, \
 		"messages": [ \
 			{ \
@@ -133,7 +133,7 @@ curl-kronk-embeddings:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "embeddinggemma-300m-qat-Q8_0", \
+	 	"model": "ggml-org/embeddinggemma-300m-qat-Q8_0", \
   		"input": "Why is the sky blue?" \
     }'
 
@@ -142,7 +142,7 @@ curl-kronk-rerank:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "bge-reranker-v2-m3-Q8_0", \
+	 	"model": "gpustack/bge-reranker-v2-m3-Q8_0", \
   		"query": "What is the capital of France?", \
 		"documents": [ \
 			"Paris is the capital and largest city of France.", \
@@ -168,7 +168,7 @@ curl-kronk-responses:
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
-	 	"model": "cerebras_qwen3-coder-reap-25b-a3b-q8_0", \
+	 	"model": "bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
 		"input": "Hello model" \
     }'
 
@@ -178,7 +178,7 @@ curl-kronk-responses-image:
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
-	 	"model": "Qwen2.5-VL-3B-Instruct-Q8_0", \
+	 	"model": "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0", \
 		"input": [ \
 			{ \
 				"type": "input_text", \
@@ -196,7 +196,7 @@ curl-kronk-tool-response:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-		"model": "Qwen3-8B-Q8_0", \
+		"model": "Qwen/Qwen3-8B-Q8_0", \
 		"max_tokens": 32768, \
 		"temperature": 0.1, \
 		"top_p": 0.1, \
@@ -252,7 +252,7 @@ curl-tokenize:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "Qwen3-8B-Q8_0", \
+	 	"model": "Qwen/Qwen3-8B-Q8_0", \
 		"input": "The quick brown fox jumps over the lazy dog" \
     }'
 
@@ -261,7 +261,7 @@ curl-tokenize-template:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "Qwen3-8B-Q8_0", \
+	 	"model": "Qwen/Qwen3-8B-Q8_0", \
 		"input": "The quick brown fox jumps over the lazy dog", \
 		"apply_template": true \
     }'

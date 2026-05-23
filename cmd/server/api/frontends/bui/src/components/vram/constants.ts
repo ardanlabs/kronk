@@ -21,6 +21,14 @@ export const BYTES_PER_ELEMENT_OPTIONS = [
 
 export const SLOT_OPTIONS = [1, 2, 3, 4, 5];
 
+// EXPERTS_ALL_ON_GPU mirrors the Go sentinel `model.ExpertsAllOnGPU`
+// (math.MaxInt32). The vram calculator treats any value greater than
+// or equal to the model's block_count as "all expert layers on GPU",
+// matching the runtime's default behavior. Using a sentinel lets the
+// BUI request the "all on GPU" default before block_count is known
+// from the first server response.
+export const EXPERTS_ALL_ON_GPU = 2147483647;
+
 export const VRAM_FORMULA_CONTENT = `VRAM CALCULATION FORMULA
 
 Total VRAM ≈ Model Weights (GPU) + KV Cache (if on GPU) + Compute Buffer

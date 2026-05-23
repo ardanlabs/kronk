@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
+	buckypool "github.com/ardanlabs/kronk/sdk/bucky/pool"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -354,8 +355,13 @@ func formatMetadataValue(key string, value string) string {
 // =============================================================================
 
 // ModelDetail provides details for the models in the cache.
+//
+// Backend distinguishes kronk (llama.cpp) entries from bucky
+// (whisper) entries so the BUI can label rows and route Unload to the
+// right pool.
 type ModelDetail struct {
 	ID            string    `json:"id"`
+	Backend       string    `json:"backend"`
 	OwnedBy       string    `json:"owned_by"`
 	ModelFamily   string    `json:"model_family"`
 	Size          int64     `json:"size"`
@@ -382,6 +388,7 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 	for i, model := range models {
 		details[i] = ModelDetail{
 			ID:            model.ID,
+			Backend:       model.Backend,
 			OwnedBy:       model.OwnedBy,
 			ModelFamily:   model.ModelFamily,
 			Size:          model.Size,
@@ -391,6 +398,44 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 			ExpiresAt:     model.ExpiresAt,
 			ActiveStreams: model.ActiveStreams,
 			Status:        model.Status,
+		}
+	}
+
+	return details
+}
+
+// fromBuckyDetails converts bucky pool ModelDetail entries into the
+// shared API response shape. Whisper has no separate KV/Slots concept,
+// so KVCache stays zero and Slots is reported as 1 for parity with
+// kronk's display. OwnedBy is set to "ggml" because every bundled
+// whisper file is the GGML/ggerganov-hosted conversion. ModelFamily
+// surfaces the whisper architecture ("tiny", "base", "small", …) plus
+// an .en suffix when the model is english-only.
+func fromBuckyDetails(models []buckypool.ModelDetail) ModelDetailsResponse {
+	details := make(ModelDetailsResponse, len(models))
+
+	for i, m := range models {
+		family := m.ModelType
+		if family != "" && !m.Multilingual {
+			family += ".en"
+		}
+
+		slots := 0
+		if m.Status == buckypool.ModelStatusLoaded {
+			slots = 1
+		}
+
+		details[i] = ModelDetail{
+			ID:            m.ID,
+			Backend:       m.Backend,
+			OwnedBy:       "ggml",
+			ModelFamily:   family,
+			Size:          m.Size,
+			VRAMTotal:     m.VRAMTotal,
+			Slots:         slots,
+			ExpiresAt:     m.ExpiresAt,
+			ActiveStreams: m.ActiveStreams,
+			Status:        m.Status,
 		}
 	}
 

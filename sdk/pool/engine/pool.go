@@ -238,6 +238,14 @@ func (c *Pool[H]) hasTicket(key string) bool {
 	return ok
 }
 
+// HasTicket reports whether this engine currently owns a reservation
+// for key. Backend wrappers use this to filter the shared resman's
+// Reservations slice down to entries that belong to this pool so they
+// don't surface another backend's in-flight loads as their own.
+func (c *Pool[H]) HasTicket(key string) bool {
+	return c.hasTicket(key)
+}
+
 // activeTicketCount returns the number of currently tracked tickets.
 // Used by metrics publishing to compute inflight loads.
 func (c *Pool[H]) activeTicketCount() int {

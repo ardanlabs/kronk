@@ -6,6 +6,7 @@ package vram
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 )
@@ -146,6 +147,24 @@ func Calculate(input Input) Result {
 	switch {
 	case input.Weights != nil && input.MoE != nil && input.MoE.IsMoE:
 
+		// The GGUF analyzer's per-tensor byte accounting does not
+		// survive some non-standard quantizations (notably the MXFP4
+		// packing used by gpt-oss), so Weights.ExpertBytesTotal can
+		// undercount what's actually on disk by an order of magnitude.
+		// Fall back to "file size minus always-active" as the honest
+		// expert footprint and rescale the per-layer breakdown so
+		// expert-offload math still produces sensible numbers. For
+		// well-analyzed models (most quants) the rescale factor is 1
+		// and behavior is unchanged.
+		expertsTotal := input.Weights.ExpertBytesTotal
+		if t := input.ModelSizeBytes - input.Weights.AlwaysActiveBytes; t > expertsTotal {
+			expertsTotal = t
+		}
+		perLayerExpert := input.Weights.ExpertBytesByLayer
+		if expertsTotal != input.Weights.ExpertBytesTotal && len(perLayerExpert) > 0 {
+			perLayerExpert = scaledPerLayer(perLayerExpert, input.Weights.ExpertBytesTotal, expertsTotal)
+		}
+
 		// Always-active weights are split proportionally by GPU layers.
 		// When all layers are on GPU, all always-active weights stay on GPU.
 		if gpuLayers >= input.BlockCount {
@@ -155,14 +174,14 @@ func Calculate(input Input) Result {
 		}
 
 		// Expert weights are split by ExpertLayersOnGPU (expert offloading).
-		if input.ExpertLayersOnGPU > 0 && len(input.Weights.ExpertBytesByLayer) > 0 {
-			blockCount := int64(len(input.Weights.ExpertBytesByLayer))
+		if input.ExpertLayersOnGPU > 0 && len(perLayerExpert) > 0 {
+			blockCount := int64(len(perLayerExpert))
 			startLayer := max(blockCount-input.ExpertLayersOnGPU, 0)
 			for i := startLayer; i < blockCount; i++ {
-				expertsGPU += input.Weights.ExpertBytesByLayer[i]
+				expertsGPU += perLayerExpert[i]
 			}
 		}
-		expertsCPU = max(0, input.Weights.ExpertBytesTotal-expertsGPU)
+		expertsCPU = max(0, expertsTotal-expertsGPU)
 
 		modelWeightsGPU = alwaysActiveGPU + expertsGPU
 		modelWeightsCPU = alwaysActiveCPU + expertsCPU
@@ -452,6 +471,20 @@ func AutoFit(input Input, constraints FitConstraints) (gpuLayers int64, expertLa
 
 // =============================================================================
 
+// UnifiedFootprint returns the bytes a model occupies once every page of
+// the GGUF is resident in unified memory. This is the value the resman
+// reserves and the BUI displays on Apple Silicon (and any future
+// unified-memory platform), where the MoE-aware GPU/CPU split that
+// Calculate produces does not correspond to a real physical separation.
+//
+// The formula intentionally uses the raw model bytes (Input.ModelSizeBytes)
+// rather than ModelWeightsGPU+ModelWeightsCPU so a model whose GGUF
+// analyzer is missing the MoE expert breakdown still reserves the full
+// file. SlotMemory and ComputeBufferEst round out the live footprint.
+func (r Result) UnifiedFootprint() int64 {
+	return r.Input.ModelSizeBytes + r.SlotMemory + r.ComputeBufferEst
+}
+
 // clampGPULayers returns the effective number of GPU layers. A zero value
 // (the default) or -1 means all layers on GPU, preserving backward
 // compatibility with callers that don't set GPULayers.
@@ -461,6 +494,35 @@ func clampGPULayers(gpuLayers, blockCount int64) int64 {
 	}
 
 	return gpuLayers
+}
+
+// scaledPerLayer rescales perLayer so its sum equals newTotal. Used
+// when the analyzer's per-tensor byte accounting undercounts the file
+// (unrecognised quantizations) but the per-layer ratios are still
+// meaningful. When origTotal is zero perLayer is returned unchanged so
+// the caller can decide what to do.
+//
+// The intermediate b*newTotal product can exceed int64 for large MoE
+// models (e.g. ~800 MiB per-layer * ~36 GB total ≈ 3e19), so the
+// multiplication is performed with math/big to avoid silent overflow.
+func scaledPerLayer(perLayer []int64, origTotal, newTotal int64) []int64 {
+	if len(perLayer) == 0 || origTotal <= 0 || origTotal == newTotal {
+		return perLayer
+	}
+
+	bigNew := big.NewInt(newTotal)
+	bigOrig := big.NewInt(origTotal)
+	tmp := new(big.Int)
+
+	scaled := make([]int64, len(perLayer))
+	for i, b := range perLayer {
+		tmp.SetInt64(b)
+		tmp.Mul(tmp, bigNew)
+		tmp.Quo(tmp, bigOrig)
+		scaled[i] = tmp.Int64()
+	}
+
+	return scaled
 }
 
 // splitByGPULayers splits totalBytes proportionally between GPU and CPU based

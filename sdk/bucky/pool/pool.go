@@ -148,3 +148,72 @@ func (p *Pool) Invalidate(key string) {
 func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 	return p.engine.InvalidateSync(ctx, key)
 }
+
+// ModelStatus returns information about the bucky models currently
+// represented in the pool. Loaded models come from the engine cache;
+// in-flight loads come from the shared resman, filtered by
+// engine.HasTicket so this pool does not surface another backend's
+// reservations.
+//
+// VRAMTotal on each entry reports the bytes the resman has actually
+// charged for the model (model weights + planner overhead). Bucky
+// loads the entire whisper context into memory at once, so unlike
+// llama.cpp's mmap-and-page-experts model the reservation total is a
+// faithful proxy for the live memory footprint.
+func (p *Pool) ModelStatus() ([]ModelDetail, error) {
+	files, err := p.models.Files()
+	if err != nil {
+		return nil, fmt.Errorf("model-status: files: %w", err)
+	}
+
+	sizeByID := make(map[string]int64, len(files))
+	for _, f := range files {
+		sizeByID[f.ID] = f.Size
+	}
+
+	usage := p.resman.Usage()
+	reservedByKey := make(map[string]int64, len(usage.Reservations))
+	for _, r := range usage.Reservations {
+		reservedByKey[r.Key] = r.VRAMBytes + r.RAMBytes
+	}
+
+	ps := make([]ModelDetail, 0)
+	loaded := make(map[string]struct{})
+
+	for entry := range p.engine.Coldest() {
+		b := entry.Value
+		mi := b.ModelInfo()
+
+		ps = append(ps, ModelDetail{
+			ID:            entry.Key,
+			Backend:       "bucky",
+			Size:          sizeByID[entry.Key],
+			VRAMTotal:     reservedByKey[entry.Key],
+			ExpiresAt:     entry.ExpiresAt(),
+			ActiveStreams: b.ActiveStreams(),
+			Status:        ModelStatusLoaded,
+			ModelType:     mi.Type,
+			Multilingual:  mi.IsMultilingual,
+		})
+		loaded[entry.Key] = struct{}{}
+	}
+
+	for _, r := range usage.Reservations {
+		if _, ok := loaded[r.Key]; ok {
+			continue
+		}
+		if !p.engine.HasTicket(r.Key) {
+			continue
+		}
+
+		ps = append(ps, ModelDetail{
+			ID:        r.Key,
+			Backend:   "bucky",
+			Size:      sizeByID[r.Key],
+			VRAMTotal: r.VRAMBytes + r.RAMBytes,
+			Status:    ModelStatusLoading,
+		})
+	}
+
+	return ps, nil
+}

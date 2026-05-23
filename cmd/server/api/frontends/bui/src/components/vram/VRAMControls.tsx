@@ -84,7 +84,11 @@ function ExpertLayersSlider({
   onExpertLayersOnGPUChange?: (v: number) => void;
   variant?: 'form' | 'compact';
 }) {
-  const layers = expertLayersOnGPU ?? 0;
+  // Clamp the slider's displayed value to blockCount so the "all on GPU"
+  // sentinel (math.MaxInt32) used as the initial state still renders as
+  // a real slider position. The server already treats any value greater
+  // than or equal to blockCount as "all on GPU".
+  const layers = Math.min(expertLayersOnGPU ?? blockCount, blockCount);
 
   const label = variant === 'compact'
     ? `Experts on GPU (${layers}/${blockCount} layers)`
@@ -92,7 +96,7 @@ function ExpertLayersSlider({
 
   const hint = layers === 0
     ? 'All expert weights on CPU (always-active weights remain on GPU)'
-    : layers === blockCount
+    : layers >= blockCount
       ? 'All expert weights on GPU'
       : `Expert weights from top ${layers} layers on GPU, rest on CPU — always-active weights remain on GPU`;
 

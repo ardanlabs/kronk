@@ -42,6 +42,7 @@ export interface ListModelInfoResponse {
 
 export interface ModelDetail {
   id: string;
+  backend: string;
   owned_by: string;
   model_family: string;
   size: number;

@@ -45,5 +45,10 @@
     ],
     "instructions": [
         "agent.md"
-    ]
+    ],
+    "agent": {
+        "title": {
+            "disable": true
+        }
+    },
 }

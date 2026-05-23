@@ -243,6 +243,7 @@ entries:
 
 			ps = append(ps, ModelDetail{
 				ID:            entry.Key,
+				Backend:       "kronk",
 				OwnedBy:       mi.OwnedBy,
 				ModelFamily:   mi.ModelFamily,
 				Size:          mi.Size,
@@ -263,8 +264,16 @@ entries:
 	// loading and is not yet in the cache). Without this, the
 	// "Active Reservations" panel and the "Running Models" grid
 	// disagree during the SHA-verify + GGUF-read window.
+	//
+	// The resman is shared across backends, so filter by
+	// p.engine.HasTicket to only surface kronk's own in-flight loads.
+	// Without this guard, bucky reservations leak in as fake "loading"
+	// kronk entries with no size/owner/family populated.
 	for _, r := range p.resman.Usage().Reservations {
 		if _, ok := loadedKeys[r.Key]; ok {
+			continue
+		}
+		if !p.engine.HasTicket(r.Key) {
 			continue
 		}
 
@@ -283,6 +292,7 @@ entries:
 
 		ps = append(ps, ModelDetail{
 			ID:          r.Key,
+			Backend:     "kronk",
 			OwnedBy:     ownedBy,
 			ModelFamily: modelFamily,
 			Size:        size,

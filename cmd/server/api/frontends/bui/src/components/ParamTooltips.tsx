@@ -162,9 +162,11 @@ export const PARAM_TOOLTIPS = {
   budgetReservationVRAM: 'Bytes charged against discrete GPU VRAM budgets. Zero on systems with no GPU and on Apple Silicon unified memory (where the GPU shares the system pool).',
   budgetReservationSystem: 'Bytes charged against the system-memory budget. On unified-memory systems (Apple Silicon Metal) the entire model footprint is charged here because the GPU and CPU share one physical pool.',
   budgetReservationPerDevice: 'Per-device byte allocation for this reservation. Populated when the reservation was split across multiple GPUs via tensor-split. Empty (—) when the reservation is on a single device or on system memory.',
+  budgetReservationUnified: 'Bytes charged against the unified memory budget. On Apple Silicon the GPU (Metal) and CPU share a single physical pool, so the resman tracks one combined number instead of splitting VRAM from system memory (which would double-count the same bytes).',
 
   // Running models grid tooltips
   runningModelID: 'Cache key for the loaded model. Catalog models use the model ID directly; playground/custom sessions use modelID/playground/<session-id>.',
+  runningModelBackend: 'Which pool owns this entry. "kronk" is the llama.cpp pool (chat / embed / rerank / vision / audio LLMs); "bucky" is the whisper.cpp pool (speech-to-text via /v1/audio/transcriptions). Both pools share the same resource manager.',
   runningModelOwner: 'Publisher namespace from the model file path (e.g. unsloth, google, meta-llama).',
   runningModelFamily: 'Model family / repo name as it appears in the catalog.',
   runningModelSize: 'On-disk size of the GGUF file(s) backing this model.',

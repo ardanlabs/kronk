@@ -15,8 +15,13 @@ const (
 )
 
 // ModelDetail provides details for the models in the pool.
+//
+// Backend identifies which pool produced the entry ("kronk" for
+// llama.cpp models, "bucky" for whisper models). The BUI uses it to
+// tag rows and tailor the unload path.
 type ModelDetail struct {
 	ID            string
+	Backend       string
 	OwnedBy       string
 	ModelFamily   string
 	Size          int64

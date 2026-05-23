@@ -32,6 +32,8 @@ interface VRAMResultsProps {
   tensorSplit?: string;
   isHardwareOverridden?: boolean;
   modelUrl?: string;
+  /** True while a debounced recompute is in flight after a control change. */
+  recomputing?: boolean;
 }
 
 export default function VRAMResults({
@@ -62,6 +64,7 @@ export default function VRAMResults({
   tensorSplit,
   isHardwareOverridden,
   modelUrl,
+  recomputing,
 }: VRAMResultsProps) {
   const isMoE = moe?.is_moe === true && weights != null;
   const kvOnCPU = kvCacheOnCPU ?? false;
@@ -132,8 +135,17 @@ export default function VRAMResults({
     <div className="vram-results">
       <div className="vram-hero" style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: '180px' }}>
-          <div className="vram-hero-label">{labelWithTip('Total Estimated VRAM', 'totalEstimatedVRAM')}</div>
-          <div className="vram-hero-value">
+          <div className="vram-hero-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {labelWithTip('Total Estimated VRAM', 'totalEstimatedVRAM')}
+            {recomputing && <span className="vram-loading-spinner" aria-label="Recomputing" />}
+          </div>
+          <div
+            className="vram-hero-value"
+            style={{
+              opacity: recomputing ? 0.45 : 1,
+              transition: 'opacity 120ms ease-out',
+            }}
+          >
             {formatBytes(totalVram)}
             {effectiveGpuCapacity > 0 && (
               <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(effectiveGpuCapacity)}</span>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { VRAMCalculatorResponse, DeviceInfo, PerDeviceVRAM, VRAMRequest } from '../../types';
 import { api } from '../../services/api';
 import { useDevicesInfo } from './devices';
+import { EXPERTS_ALL_ON_GPU } from './constants';
 
 export interface UseVRAMStateOptions {
   initialContextWindow?: number;
@@ -108,6 +109,8 @@ export interface VRAMResultsState {
   gpuDevices: DeviceInfo[];
   tensorSplit: string;
   isHardwareOverridden: boolean;
+  /** True while a debounced recompute is in flight after a control change. */
+  recomputing: boolean;
 }
 
 function viewFromResponse(resp: VRAMCalculatorResponse): VRAMResultView {
@@ -146,7 +149,11 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   const [bytesPerElement, setBytesPerElement] = useState(initialBytesPerElement);
   const [slots, setSlots] = useState(initialSlots);
   const [gpuLayers, setGpuLayers] = useState(0);
-  const [expertLayersOnGPU, setExpertLayersOnGPU] = useState(0);
+  // Default to the "all experts on GPU" sentinel so the first request
+  // mirrors the runtime baseline. After the first response the seed
+  // effect below replaces this with the actual block_count, and the
+  // slider then drives real 0..blockCount values.
+  const [expertLayersOnGPU, setExpertLayersOnGPU] = useState<number>(EXPERTS_ALL_ON_GPU);
   const [kvCacheOnCPU, setKvCacheOnCPU] = useState(false);
   const [deviceCount, setDeviceCount] = useState(1);
   const [tensorSplit, setTensorSplit] = useState('');
@@ -245,6 +252,12 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   // produced by the recompute effect below.
   const [liveResponse, setLiveResponse] = useState<VRAMCalculatorResponse | null>(serverResponse ?? null);
 
+  // recomputing is true between the moment a control changes and the
+  // moment the matching server response lands. The BUI uses this to
+  // dim the VRAM total / show a small spinner so the user knows the
+  // displayed number lags the slider by a network round-trip.
+  const [recomputing, setRecomputing] = useState(false);
+
   useEffect(() => {
     if (serverResponse) setLiveResponse(serverResponse);
   }, [serverResponse]);
@@ -271,6 +284,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     }
 
     const id = ++latestRequestIdRef.current;
+    setRecomputing(true);
 
     const handle = setTimeout(async () => {
       const req: VRAMRequest = {
@@ -289,9 +303,13 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
         const resp = await api.calculateVRAM(req, authToken);
         if (latestRequestIdRef.current === id) {
           setLiveResponse(resp);
+          setRecomputing(false);
         }
       } catch {
         // Ignore transient errors; the previous result remains visible.
+        if (latestRequestIdRef.current === id) {
+          setRecomputing(false);
+        }
       }
     }, RECOMPUTE_DEBOUNCE_MS);
 
@@ -421,6 +439,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     gpuDevices: effectiveGpuDevices,
     tensorSplit,
     isHardwareOverridden,
+    recomputing,
   } : null;
 
   return {
