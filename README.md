@@ -8,11 +8,9 @@ https://kronkai.com
 
 # Kronk
 
-This project lets you use Go for hardware accelerated local inference with llama.cpp directly integrated into your applications via the [yzma](https://github.com/hybridgroup/yzma) module. Kronk provides a high-level API that feels similar to using an OpenAI compatible API.
+This project lets you use Go for hardware accelerated local inference with llama.cpp and whisper.cpp directly integrated into your Go applications via the [yzma](https://github.com/hybridgroup/yzma) and [bucky](https://github.com/ardanlabs/bucky) modules. Kronk provides a high-level API that feels similar to using an OpenAI compatible API.
 
-This project also provides a model server for chat completions, responses, messages, embeddings, and reranking. The server is compatible with OpenWebUI, OpenCode, and the Claude Code project.
-
-Here is the current [catalog](https://github.com/ardanlabs/kronk_catalogs) of models that have been verified to work with Kronk.
+This project also provides a model server for chat completions, responses, messages, embeddings, reranking, and audio transcription. The server is compatible with OpenWebUI, OpenCode, and the Claude Code project.
 
 To see all the documentation, clone the project and run the Kronk Model Server:
 
