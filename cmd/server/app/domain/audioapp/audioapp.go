@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ardanlabs/bucky/pkg/audio"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
@@ -72,11 +71,6 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 
 	a.log.Info(ctx, "transcribe", "model", modelID, "filename", hdr.Filename, "size", hdr.Size, "language", language, "response-format", respFmt)
 
-	samples, err := audio.Decode(file)
-	if err != nil {
-		return errs.New(errs.InvalidArgument, fmt.Errorf("decode audio: %w", err))
-	}
-
 	b, err := a.pool.Bucky.AquireModel(ctx, modelID)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
@@ -100,12 +94,12 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 
-	tr, err := b.Transcribe(ctx, samples, opts...)
+	tr, err := b.TranscribeFile(ctx, file, opts...)
 	if err != nil {
 		return errs.New(errs.Internal, fmt.Errorf("transcribe: %w", err))
 	}
 
-	duration := float64(len(samples)) / 16000.0
+	duration := tr.Duration
 
 	switch respFmt {
 	case "text":

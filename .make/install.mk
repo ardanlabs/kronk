@@ -20,6 +20,7 @@ install-tooling:
 	brew list grpcurl || brew install grpcurl
 	brew list node || brew install node
 	brew list rg || brew install rg
+	brew list ffmpeg || brew install ffmpeg
 
 # Install the kronk cli.
 install-kronk:
