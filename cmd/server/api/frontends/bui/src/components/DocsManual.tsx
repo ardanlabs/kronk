@@ -68,7 +68,12 @@ export default function DocsManual() {
         <div className="doc-content manual-content">
           <h2 id="chapter-1-introduction">Chapter 1: Introduction</h2>
           <h3 id="11-what-is-kronk">1.1 What is Kronk</h3>
-          <p>Kronk is a Go SDK and Model Server for running local inference with open-source GGUF models. Built on top of llama.cpp via the <a href="https://github.com/hybridgroup/yzma">yzma</a> Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference for text generation, vision, audio, embeddings, and reranking. Kronk is being designed to be your personal engine for running open source models locally.</p>
+          <p>Kronk is a Go SDK and Model Server for running local inference with open-source models. It's built on top of two best-in-class C++ inference engines (llama.cpp and whisper.cpp).</p>
+          <ul>
+            <li><strong>llama.cpp</strong> — for GGUF text, vision, embedding, and reranking models.</li>
+            <li><strong>whisper.cpp</strong> — for GGML speech-to-text models, exposed through Kronk's <strong>Bucky</strong> subsystem. See <a href="chapter-18-bucky.md">Chapter 18: Bucky (Audio Transcription)</a>.</li>
+          </ul>
+          <p>Together these give Kronk hardware-accelerated inference for text generation, vision, audio transcription, embeddings, and reranking — all from a single Go process, with no Python and no CGO build chain. Kronk is being designed to be your personal engine for running open source models locally.</p>
           <p><strong>The SDK is the foundation.</strong></p>
           <p>The Kronk Model Server is built entirely on top of the SDK — we "dog food" our own library. Everything the model server can do is available to you as a SDK developer to help you write your own applications.</p>
           <p><strong>You don't need a model server.</strong></p>

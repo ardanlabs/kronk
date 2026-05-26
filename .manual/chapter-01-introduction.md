@@ -12,16 +12,23 @@
 ### 1.1 What is Kronk
 
 Kronk is a Go SDK and Model Server for running local inference with open-source
-GGUF models. Built on top of llama.cpp via the [yzma](https://github.com/hybridgroup/yzma)
-Go bindings (a non-CGO FFI layer), Kronk provides hardware-accelerated inference
-for text generation, vision, audio, embeddings, and reranking. Kronk is being
-designed to be your personal engine for running open source models locally.
+models. It's built on top of two best-in-class C++ inference engines (llama.cpp
+and whisper.cpp).
+
+- **llama.cpp** — for GGUF text, vision, embedding, and reranking models.
+- **whisper.cpp** — for GGML speech-to-text models, exposed through Kronk's
+  **Bucky** subsystem. See [Chapter 18: Bucky (Audio Transcription)](chapter-18-bucky.md).
+
+Together these give Kronk hardware-accelerated inference for text generation,
+vision, audio transcription, embeddings, and reranking — all from a single Go
+process, with no Python and no CGO build chain. Kronk is being designed to be
+your personal engine for running open source models locally.
 
 **The SDK is the foundation.**
 
-The Kronk Model Server is built entirely on top
-of the SDK — we "dog food" our own library. Everything the model server can do
-is available to you as a SDK developer to help you write your own applications.
+The Kronk Model Server is built entirely on top of the SDK — we "dog food" our
+own library. Everything the model server can do is available to you as a SDK
+developer to help you write your own applications.
 
 **You don't need a model server.**
 
@@ -97,14 +104,14 @@ functionality and the Model Server is one application built on top of it.
 
 **Layer Breakdown:**
 
-| Layer           | Component                            | Purpose                                    |
-| --------------- | ------------------------------------ | ------------------------------------------ |
-| **Application** | Kronk Model Server                   | REST API server (or your own app)          |
-| **SDK Tools**   | Models, Libs, Downloader, Devices    | High-level APIs for common tasks           |
-| **SDK Core**    | Kronk SDK API, Model SDK API         | Model loading, inference, pooling, caching |
-| **Bindings**    | yzma (non-CGO FFI via purego)        | Go bindings to llama.cpp without CGO       |
-| **Engine**      | llama.cpp                            | Hardware-accelerated inference             |
-| **Hardware**    | Metal, CUDA, Vulkan, CPU             | GPU/CPU acceleration                       |
+| Layer           | Component                         | Purpose                                    |
+| --------------- | --------------------------------- | ------------------------------------------ |
+| **Application** | Kronk Model Server                | REST API server (or your own app)          |
+| **SDK Tools**   | Models, Libs, Downloader, Devices | High-level APIs for common tasks           |
+| **SDK Core**    | Kronk SDK API, Model SDK API      | Model loading, inference, pooling, caching |
+| **Bindings**    | yzma (non-CGO FFI via purego)     | Go bindings to llama.cpp without CGO       |
+| **Engine**      | llama.cpp                         | Hardware-accelerated inference             |
+| **Hardware**    | Metal, CUDA, Vulkan, CPU          | GPU/CPU acceleration                       |
 
 Your application sits at the same level as the Kronk Model Server. You have access
 to the exact same SDK APIs. Whether you're building a CLI tool, a web service,
