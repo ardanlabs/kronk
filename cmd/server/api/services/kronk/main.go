@@ -324,6 +324,13 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "bucky libs ready", "libPath", buckyLibs.LibsPath(), "arch", buckyLibs.Arch(), "os", buckyLibs.OS(), "processor", buckyLibs.Processor())
 
+	ctx, cancel = context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	if _, err := buckyLibs.Download(ctx, log.Info); err != nil {
+		log.Info(ctx, "startup", "WARNING", "unable to install whisper.cpp, running in degraded mode", "ERROR", err)
+	}
+
 	buckyModels, err := buckymodels.NewWithPaths(cfg.BasePath)
 	if err != nil {
 		return fmt.Errorf("unable to create bucky models api: %w", err)
