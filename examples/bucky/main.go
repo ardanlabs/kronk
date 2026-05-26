@@ -42,7 +42,7 @@ func run() error {
 		return fmt.Errorf("install system: %w", err)
 	}
 
-	w, err := newWhisper(mp)
+	w, err := newBucky(mp)
 	if err != nil {
 		return fmt.Errorf("new whisper: %w", err)
 	}
@@ -99,7 +99,7 @@ func installSystem() (buckymodels.Path, error) {
 	return mp, nil
 }
 
-func newWhisper(mp buckymodels.Path) (*bucky.Bucky, error) {
+func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {
 	fmt.Println("Initializing bucky / whisper.cpp")
 
 	if err := bucky.Init(); err != nil {
@@ -110,7 +110,7 @@ func newWhisper(mp buckymodels.Path) (*bucky.Bucky, error) {
 		return nil, fmt.Errorf("no model files on disk")
 	}
 
-	w, err := bucky.New(
+	b, err := bucky.New(
 		model.WithModelPath(mp.ModelFiles[0]),
 		model.WithUseGPU(true),
 		model.WithLog(bucky.FmtLogger),
@@ -119,7 +119,7 @@ func newWhisper(mp buckymodels.Path) (*bucky.Bucky, error) {
 		return nil, fmt.Errorf("create whisper handle: %w", err)
 	}
 
-	mi := w.ModelInfo()
+	mi := b.ModelInfo()
 	fmt.Println("- model           :", mi.ID)
 	fmt.Println("- model type      :", mi.Type)
 	fmt.Println("- multilingual    :", mi.IsMultilingual)
@@ -127,9 +127,9 @@ func newWhisper(mp buckymodels.Path) (*bucky.Bucky, error) {
 	fmt.Println("- audio-ctx       :", mi.NAudioCtx)
 	fmt.Println("- mels            :", mi.NMels)
 	fmt.Println("- vocab           :", mi.NVocab)
-	fmt.Println("- active-streams  :", w.ActiveStreams())
+	fmt.Println("- active-streams  :", b.ActiveStreams())
 
-	return w, nil
+	return b, nil
 }
 
 func loadSamples(path string) ([]float32, error) {

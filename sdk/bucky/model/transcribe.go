@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/ardanlabs/bucky/pkg/whisper"
@@ -20,10 +21,12 @@ type Segment struct {
 // Transcription is the full result of a Transcribe call. Text is the
 // concatenation of Segment.Text trimmed of leading and trailing
 // whitespace. Language is the language code whisper.cpp detected (or
-// the hint that was passed in).
+// the hint that was passed in). Duration is the length of the
+// transcribed audio in seconds.
 type Transcription struct {
 	Text     string
 	Language string
+	Duration float64
 	Segments []Segment
 }
 
@@ -141,7 +144,21 @@ func (m *Model) Transcribe(ctx context.Context, samples []float32, opts ...Trans
 		return Transcription{}, fmt.Errorf("transcribe: %w", err)
 	}
 
-	return collectTranscription(ps.state, tcfg.OnSegment), nil
+	tr := collectTranscription(ps.state, tcfg.OnSegment)
+	tr.Duration = float64(len(samples)) / float64(whisper.SampleRate)
+	return tr, nil
+}
+
+// TranscribeFile is a convenience wrapper that decodes audio from r
+// via Decode and then runs Transcribe on the resulting samples. It is
+// intended for HTTP handlers and CLI callers that have an io.Reader
+// (form upload, file on disk) rather than pre-decoded PCM.
+func (m *Model) TranscribeFile(ctx context.Context, r io.Reader, opts ...TranscribeOption) (Transcription, error) {
+	samples, err := Decode(ctx, r)
+	if err != nil {
+		return Transcription{}, fmt.Errorf("transcribe-file: %w", err)
+	}
+	return m.Transcribe(ctx, samples, opts...)
 }
 
 // =============================================================================

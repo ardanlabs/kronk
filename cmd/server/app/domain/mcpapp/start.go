@@ -85,18 +85,21 @@ func Start(ctx context.Context, cfg Config) *App {
 		Description: "Edit a file by replacing old_string with new_string. Uses tiered fuzzy matching: exact match, line-ending normalization, then indentation-insensitive matching. Prefer this over the built-in edit tool for more reliable replacements.",
 	}, api.fuzzyEdit)
 
-	// Run the streamable HTTP handler in stateless mode so we do not retain
-	// per-session state across requests. The server no longer validates the
-	// Mcp-Session-Id header, which means MCP clients that cache a session ID
-	// (Cline, Kilo, OpenCode, Goose, etc.) will continue to work cleanly even
-	// after the Kronk process restarts. Both tools we expose (web_search and
-	// fuzzy_edit) are simple request/response calls that do not need
-	// server->client requests, streaming, or stream resumption, so stateless
-	// is a safe, simple fit.
+	// Run the streamable HTTP handler in stateful mode with an in-memory
+	// event store. Sessions are tracked via the Mcp-Session-Id header and
+	// SSE replay buffers live only in process memory, so any time the Kronk
+	// service is restarted (deploy, crash, config change) every existing
+	// session ID is forgotten. The MCP spec accounts for this: the server
+	// will respond to a stale session ID with HTTP 404, and a spec-compliant
+	// client (Cline, Kilo, OpenCode, Goose, etc.) is required to react by
+	// sending a fresh InitializeRequest without a session ID and continuing
+	// with the new ID the server returns. Clients that cache a session ID
+	// across our restarts and refuse to re-initialize on 404 are not
+	// behaving per the spec and will need to reconnect manually.
 	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{
-		Stateless: true,
+		EventStore: mcp.NewMemoryEventStore(nil),
 	})
 
 	logged := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

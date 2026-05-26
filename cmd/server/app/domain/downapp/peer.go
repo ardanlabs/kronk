@@ -19,12 +19,19 @@ import (
 // peerHTTPClient is the http.Client used for short JSON requests against
 // peer Kronk servers. The 30s timeout keeps the BUI snappy if a peer is
 // unreachable.
-var peerHTTPClient = &http.Client{
+var peerHTTPClient = http.Client{
 	Timeout: 30 * time.Second,
 	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
-			Timeout: 10 * time.Second,
+			Timeout:   10 * time.Second,
+			KeepAlive: 15 * time.Second,
 		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
 	},
 }
 
