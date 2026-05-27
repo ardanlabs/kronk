@@ -135,6 +135,20 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		d["add_generation_prompt"] = true
 	}
 
+	// Ensure preserve_thinking is set (default true if not specified).
+	// Qwen3.6+ chat templates read this flag to decide whether to keep
+	// <think>...</think> blocks on historical assistant turns. The default
+	// Qwen3 template behavior is to strip reasoning from all assistant turns
+	// except the most recent, which causes the templated token sequence to
+	// shift every turn and invalidates the IMC cache (triggering full
+	// rebuilds). Setting preserve_thinking=true keeps prior reasoning intact
+	// so re-tokenization is byte-identical across turns. Templates that do
+	// not reference this variable (every non-Qwen3.6 model) silently ignore
+	// it, so setting it unconditionally is safe.
+	if _, ok := d["preserve_thinking"]; !ok {
+		d["preserve_thinking"] = true
+	}
+
 	// Provide bos_token and eos_token from the model vocabulary. Templates
 	// like gemma-4 require these to produce a valid prompt. When the tokenizer
 	// already prepends BOS (addBOSToken=true), we set bos_token to empty to
