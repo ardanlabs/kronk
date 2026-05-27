@@ -21,6 +21,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 var (
@@ -117,6 +118,24 @@ func Init(opts ...InitOption) error {
 
 	if err := whisper.Load(libPath); err != nil {
 		return fmt.Errorf("init: unable to load whisper library: %w", err)
+	}
+
+	// Skip ggml backend registration when the llama side already populated
+	// the shared registry from its own lib directory. Without this guard,
+	// libggml-*.{so,dylib,dll} files in the bucky lib dir get dlopen'd a
+	// second time (different absolute paths => the dynamic linker treats
+	// them as new images) and each backend's static ggml_backend_register
+	// constructor publishes a duplicate Vulkan0 / Vulkan1 / CPU entry. The
+	// resman snapshot then rejects the load with "duplicate device name".
+	//
+	// llama.LibPath() == "" means llama.Load was never called in this
+	// process, so the GGMLBackendDeviceCount ffi binding is unresolved and
+	// would segfault if called. In that case we definitely need to register
+	// the backends ourselves.
+	if llama.LibPath() == "" || llama.GGMLBackendDeviceCount() == 0 {
+		if err := whisper.Init(libPath); err != nil {
+			return fmt.Errorf("init: unable to init whisper library: %w", err)
+		}
 	}
 
 	// Install the log callback BEFORE any further C-side work so the

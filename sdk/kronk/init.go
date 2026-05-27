@@ -133,7 +133,20 @@ func Init(opts ...InitOption) error {
 	}
 
 	libraryLocation = libPath
-	llama.Init()
+
+	// Inline of llama.Init so we can gate GGMLBackendLoadAllFromPath on
+	// the registry being empty. If bucky/whisper was initialized first
+	// from a sibling lib directory, its libggml-*.{so,dylib,dll} files
+	// have already self-registered via different absolute paths; calling
+	// load-all from the kronk lib dir here would dlopen a second copy of
+	// each backend and publish duplicate Vulkan0 / Vulkan1 / CPU entries
+	// that the resman snapshot rejects with "duplicate device name".
+	llama.BackendInit()
+	if llama.GGMLBackendDeviceCount() == 0 {
+		if err := llama.GGMLBackendLoadAllFromPath(libPath); err != nil {
+			return fmt.Errorf("init: unable to load ggml backends: %w", err)
+		}
+	}
 
 	if err := model.InitYzmaWorkarounds(libPath); err != nil {
 		return fmt.Errorf("unable to init yzma workarounds: %w", err)
