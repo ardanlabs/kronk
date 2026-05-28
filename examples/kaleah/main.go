@@ -195,14 +195,6 @@ func chat(krn *kronk.Kronk) error {
 	}
 }
 
-func readCodeChunk() (string, error) {
-	data, err := os.ReadFile("code.chunk")
-	if err != nil {
-		return "", fmt.Errorf("read code.chunk: %w", err)
-	}
-	return string(data), nil
-}
-
 func userInput(messages []model.D) ([]model.D, error) {
 	fmt.Print("\nUSER> ")
 
