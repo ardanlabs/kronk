@@ -5,12 +5,10 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -21,13 +19,9 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const (
-	codeFile = "code.chunk"
-)
-
 // modelSource is the model to download. It may be a HuggingFace URL,
 // a canonical "provider/modelID", or a bare model id.
-var modelSource = "unsloth/Qwen3-0.6B-Q8_0"
+var modelSource = "unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL"
 
 func main() {
 	if err := run(); err != nil {
@@ -104,6 +98,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
+		model.WithContextWindow(131072),
 	)
 
 	if err != nil {
@@ -143,22 +138,22 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
 
-	var systemPrompt = `You are a helpful AI assistant specialized in code analysis. You have access to two tools:
-	1. tool_read_file - Read the contents of any file
-	2. tool_find_function - Search for a specific function by name in a JavaScript/jQuery file and return its body
-	The default file is code.chunk (a 5000-line jQuery source file). When the user asks about a function:
-	- Use tool_find_function to locate the function
-	- Present the function code clearly to the user
-	- If the tool cannot find the function, suggest alternatives or offer to read the file manually`
+	var systemPrompt = `You will be given a large computer program and asked questions
+	about the code in that program. We want to see how well you can return
+	exact code blocks that you see.`
+
+	// WRITE SOME CODE / FUNCTION READS THE FILE
+	code, err := os.ReadFile("kaleah/code.chunk")
+	if err != nil {
+		return fmt.Errorf("chat: read code.chunk: %w", err)
+	}
 
 	messages = append(messages,
 		model.TextMessage(model.RoleSystem, systemPrompt),
+		// USER MESSAGE WITH THE CONTEXT OF THE FILE
+		model.TextMessage("user", "Here is the code to analyze:\n\n"+string(code)),
 	)
 
-	// Register available tools
-	tools := make(map[string]Tool)
-	RegisterReadFile(tools)
-	RegisterFindFunction(tools)
 	for {
 		var err error
 		messages, err = userInput(messages)
@@ -173,15 +168,10 @@ func chat(krn *kronk.Kronk) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 
-			toolDocs := []model.D{
-				RegisterReadFile(nil),
-				RegisterFindFunction(nil),
-			}
-
 			d := model.D{
-				"messages":   messages,
-				"tools":      toolDocs,
-				"max_tokens": 4096,
+				"messages":        messages,
+				"max_tokens":      4096,
+				"enable_thinking": false,
 			}
 
 			ch, err := performChat(ctx, krn, d)
@@ -190,7 +180,7 @@ func chat(krn *kronk.Kronk) error {
 				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
 			}
 
-			messages, err = modelResponse(krn, messages, ch, tools)
+			messages, err = modelResponse(krn, messages, ch)
 
 			if err != nil {
 				return nil, fmt.Errorf("run: model response: %w", err)
@@ -203,6 +193,14 @@ func chat(krn *kronk.Kronk) error {
 			return fmt.Errorf("run: unable to perform chat: %w", err)
 		}
 	}
+}
+
+func readCodeChunk() (string, error) {
+	data, err := os.ReadFile("code.chunk")
+	if err != nil {
+		return "", fmt.Errorf("read code.chunk: %w", err)
+	}
+	return string(data), nil
 }
 
 func userInput(messages []model.D) ([]model.D, error) {
@@ -237,12 +235,12 @@ func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (<-chan model
 	return ch, nil
 }
 
-func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatResponse, tools map[string]Tool) ([]model.D, error) {
+func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatResponse) ([]model.D, error) {
 	fmt.Print("\nMODEL> ")
 
 	var lr model.ChatResponse
-
 	var content strings.Builder
+	var reasoning strings.Builder
 
 loop:
 	for resp := range ch {
@@ -257,37 +255,9 @@ loop:
 			return messages, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 		case model.FinishReasonStop:
 			break loop
-		case model.FinishReasonTool:
-			fmt.Println()
-			fmt.Printf("\033[92mModel is calling tools:\033[0m\n")
-
-			for _, tool := range resp.Choices[0].Delta.ToolCalls {
-				fmt.Printf("\033[92m  Tool: %s\033[0m\n", tool.Function.Name)
-
-				var args map[string]any
-
-				argsJSON, _ := json.Marshal(tool.Function.Arguments)
-
-				if err := json.Unmarshal(argsJSON, &args); err != nil {
-					fmt.Printf("  Error parsing args: %v\n", err)
-					continue
-				}
-
-				if toolFn, ok := tools[tool.Function.Name]; ok {
-					toolResult := toolFn.Call(context.Background(), tool)
-					contentMap, _ := toolResult["content"].(string)
-					var resultData map[string]any
-					json.Unmarshal([]byte(contentMap), &resultData)
-					fmt.Printf("  \033[90mResult: %v\033[0m\n\n", resultData)
-					messages = append(messages, toolResult)
-				} else {
-					fmt.Printf("  \033[91mTool not found: %s\033[0m\n", tool.Function.Name)
-				}
-			}
-
-			break loop
 		default:
 			if resp.Choices[0].Delta.Reasoning != "" {
+				reasoning.WriteString(resp.Choices[0].Delta.Reasoning)
 				fmt.Printf("\033[91m%s\033[0m", resp.Choices[0].Delta.Reasoning)
 				continue
 			}
@@ -305,241 +275,4 @@ loop:
 	fmt.Printf("\n\033[90mTokens: %d input, %d output | TPS: %.2f\033[0m\n",
 		lr.Usage.PromptTokens, lr.Usage.CompletionTokens, lr.Usage.TokensPerSecond)
 	return messages, nil
-}
-
-type Tool interface {
-	Call(ctx context.Context, toolCall model.ResponseToolCall) model.D
-}
-
-func toolSuccessResponse(toolID string, toolName string, keyValues ...any) model.D {
-	data := make(map[string]any, len(keyValues)/2)
-
-	for i := 0; i < len(keyValues); i += 2 {
-		data[keyValues[i].(string)] = keyValues[i+1]
-	}
-
-	return toolResponse(toolID, toolName, data, "SUCCESS")
-}
-
-func toolErrorResponse(toolID string, toolName string, err error) model.D {
-	data := map[string]any{"error": err.Error()}
-
-	return toolResponse(toolID, toolName, data, "FAILED")
-}
-
-func toolResponse(toolID string, toolName string, data map[string]any, status string) model.D {
-	info := struct {
-		Status string         `json:"status"`
-		Data   map[string]any `json:"data"`
-	}{
-		Status: status,
-		Data:   data,
-	}
-
-	content, err := json.Marshal(info)
-
-	if err != nil {
-		return model.D{
-			"role":         "tool",
-			"name":         toolName,
-			"tool_call_id": toolID,
-			"content":      `{"status": "FAILED", "data": "error marshaling tool response"}`,
-		}
-	}
-
-	return model.D{
-		"role":         "tool",
-		"name":         toolName,
-		"tool_call_id": toolID,
-		"content":      string(content),
-	}
-}
-
-type ReadFile struct {
-	name string
-}
-
-func RegisterReadFile(tools map[string]Tool) model.D {
-	rf := ReadFile{name: "tool_read_file"}
-
-	tools[rf.name] = &rf
-
-	return rf.toolDocuments()
-}
-
-func (rf *ReadFile) toolDocuments() model.D {
-	return model.D{
-		"type": "function",
-		"function": model.D{
-			"name":        rf.name,
-			"description": "Read the contents of a given file path. Returns the full file content.",
-			"parameters": model.D{
-				"type": "object",
-				"properties": model.D{
-					"path": model.D{
-						"type":        "string",
-						"description": "The relative path of a file in the working directory.",
-					},
-				},
-				"required": []string{"path"},
-			},
-		},
-	}
-}
-
-func (rf *ReadFile) Call(ctx context.Context, toolCall model.ResponseToolCall) (resp model.D) {
-	defer func() {
-		if r := recover(); r != nil {
-			resp = toolErrorResponse(toolCall.ID, toolCall.Function.Name, fmt.Errorf("%s", r))
-		}
-	}()
-
-	path, _ := toolCall.Function.Arguments["path"].(string)
-
-	if path == "" {
-		path = codeFile
-	}
-
-	content, err := os.ReadFile(path)
-
-	if err != nil {
-		return toolErrorResponse(toolCall.ID, toolCall.Function.Name, err)
-	}
-
-	return toolSuccessResponse(toolCall.ID, toolCall.Function.Name, "file_contents", string(content))
-}
-
-type FindFunction struct {
-	name string
-}
-
-func RegisterFindFunction(tools map[string]Tool) model.D {
-	ff := FindFunction{name: "tool_find_function"}
-
-	tools[ff.name] = &ff
-
-	return ff.toolDocuments()
-}
-
-func (ff *FindFunction) toolDocuments() model.D {
-	return model.D{
-		"type": "function",
-		"function": model.D{
-			"name":        ff.name,
-			"description": "Search for a function by name in a JavaScript/jQuery source file. Returns the function definition with line numbers, and its full body.",
-			"parameters": model.D{
-				"type": "object",
-				"properties": model.D{
-					"path": model.D{
-						"type":        "string",
-						"description": "The relative path of the JavaScript source file to search in. Defaults to code.chunk.",
-					},
-					"function_name": model.D{
-						"type":        "string",
-						"description": "The exact or partial name of the function to find.",
-					},
-				},
-				"required": []string{"function_name"},
-			},
-		},
-	}
-}
-
-func (ff *FindFunction) Call(ctx context.Context, toolCall model.ResponseToolCall) (resp model.D) {
-	defer func() {
-		if r := recover(); r != nil {
-			resp = toolErrorResponse(toolCall.ID, ff.name, fmt.Errorf("%v", r))
-		}
-	}()
-
-	path, _ := toolCall.Function.Arguments["path"].(string)
-
-	funcName, _ := toolCall.Function.Arguments["function_name"].(string)
-
-	if path == "" {
-		path = codeFile
-	}
-
-	if funcName == "" {
-		return toolErrorResponse(toolCall.ID, ff.name, fmt.Errorf("function_name is required"))
-	}
-
-	content, err := os.ReadFile(path)
-
-	if err != nil {
-		return toolErrorResponse(toolCall.ID, ff.name, err)
-	}
-
-	lines := strings.Split(string(content), "\n")
-
-	var funcLineNum int
-
-	var funcLine string
-
-	found := false
-
-	patterns := []string{
-		`(?m)^function\s+` + regexp.QuoteMeta(funcName) + `\s*\(`,
-		`(?m)^\s+\` + regexp.QuoteMeta(funcName) + `:\s*function\s*\(`,
-		`(?m)^\s+\` + regexp.QuoteMeta(funcName) + `:\s*function\s*\(\)\s*\{`,
-		`(?m)^\s+var\s+` + regexp.QuoteMeta(funcName) + `\s*=\s*function\s*\(`,
-		`(?m)^\s+(?:this\.|\$\.)?` + regexp.QuoteMeta(funcName) + `\s*=\s*function\s*\(`,
-	}
-
-	for _, pat := range patterns {
-		re := regexp.MustCompile(pat)
-		for i, line := range lines {
-			if re.MatchString(line) {
-				funcLineNum = i + 1
-				funcLine = line
-				found = true
-				break
-			}
-		}
-		if found {
-			break
-		}
-	}
-	if !found {
-		return toolSuccessResponse(toolCall.ID, ff.name,
-			"found", false,
-			"message", fmt.Sprintf("Function '%s' not found in %s", funcName, path),
-		)
-	}
-	funcBody, totalLines := extractFunctionBody(lines, funcLineNum-1)
-	return toolSuccessResponse(toolCall.ID, ff.name,
-		"found", true,
-		"function_name", funcName,
-		"file", path,
-		"line", funcLineNum,
-		"total_lines", totalLines,
-		"signature", funcLine,
-		"body", strings.Join(funcBody, "\n"),
-	)
-}
-
-func extractFunctionBody(lines []string, startIdx int) ([]string, int) {
-	var body []string
-
-	depth := 0
-
-	inBody := false
-
-	for i := startIdx; i < len(lines); i++ {
-		line := lines[i]
-		body = append(body, line)
-		for _, ch := range line {
-			switch ch {
-			case '{':
-				depth++
-				inBody = true
-			case '}':
-				depth--
-				if inBody && depth == 0 {
-					return body, i - startIdx + 1
-				}
-			}
-		}
-	}
-	return body, len(lines) - startIdx
 }
