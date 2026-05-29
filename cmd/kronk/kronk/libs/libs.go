@@ -68,7 +68,6 @@ func runLocal(basePath string, upgrade bool, version string) error {
 
 	libs, err := libs.New(
 		libs.WithBasePath(basePath),
-		libs.WithLibPath(""),
 		libs.WithVersion(v),
 		libs.WithAllowUpgrade(upgrade),
 	)
