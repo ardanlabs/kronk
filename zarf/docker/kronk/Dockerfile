@@ -385,13 +385,6 @@ ARG BUILDPLATFORM
 ARG TARGETOS
 ARG TARGETARCH
 
-# Re-declare KRONK_VERSION inside this stage so the `go build` step below
-# can consume it via -ldflags. The global ARG at the top of the file only
-# scopes to FROM lines; stages that USE the value must re-declare. The
-# default mirrors the global ARG so a `docker build` without `--build-arg
-# KRONK_VERSION=...` still stamps a sensible value into the binary.
-ARG KRONK_VERSION="dev"
-
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Build dependencies: curl + ca-certificates to fetch toolchains, git for
@@ -508,10 +501,11 @@ RUN --mount=type=cache,target=/root/.npm \
 # binary; the llama.cpp shared libraries are loaded at runtime via dlopen
 # (purego) so CGO is not required for kronk itself.
 #
-# KRONK_VERSION is stamped into github.com/ardanlabs/kronk/sdk/kronk.Version
-# at link time via -X. That symbol is a `var` (not a `const`) precisely so
-# the linker can override it; an empty/unset ARG falls back to the package
-# default ("dev"), matching what a local `go build ./cmd/kronk` produces.
+# The CLI's reported version comes from the `Version` constant in
+# sdk/kronk/kronk.go — there is no link-time override. The KRONK_VERSION
+# build-arg flows only into the OCI image labels (set in the runtime
+# stages below) so the image metadata can encode the variant / SHA / tag
+# combo that produced it.
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/root/go/pkg/mod \
     CGO_ENABLED=0 \
@@ -519,7 +513,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     GOARCH=${TARGETARCH} \
     go build \
         -trimpath \
-        -ldflags="-s -w -X github.com/ardanlabs/kronk/sdk/kronk.Version=${KRONK_VERSION}" \
+        -ldflags="-s -w" \
         -o /out/kronk \
         ./cmd/kronk
 

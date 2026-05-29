@@ -1913,45 +1913,35 @@ keep the BuildKit cache hot across runs; the runner-level free-disk step
 reclaims ~25 GB up front so the all-backends + rocm builds don't run out of
 space.
 
-#### 19.14.3 Version Stamping
+#### 19.14.3 Version Constant & Release Guard
 
-The CLI's reported version is the value of
-[`sdk/kronk.Version`](../sdk/kronk/kronk.go) — a `var` (not a `const`)
-defaulting to `"dev"`, so the linker can override it at build time. The
-Dockerfile's [`go build`](../zarf/docker/kronk/Dockerfile) step injects the
-`KRONK_VERSION` build-arg via:
+The CLI's reported version is the value of the
+[`Version` constant in `sdk/kronk/kronk.go`](../sdk/kronk/kronk.go) — a
+plain `const string` with no link-time override.
+[`sdk/bucky.Version`](../sdk/bucky/bucky.go) is `const Version =
+kronk.Version` so the two SDKs always report the same string. Bumping the
+version is therefore part of the same commit that prepares a `v<X.Y.Z>`
+release tag.
 
-```
--ldflags "-s -w -X github.com/ardanlabs/kronk/sdk/kronk.Version=${KRONK_VERSION}"
-```
+Both the release and Docker workflows enforce this with a shared guard:
+[`.github/scripts/check-version.sh`](../.github/scripts/check-version.sh)
+parses `const Version` out of `sdk/kronk/kronk.go`, strips the leading `v`
+from the pushed tag (`$GITHUB_REF`), and fails the workflow when the two
+don't match — before any binary, archive, or container image is produced.
 
-The Docker workflow computes `KRONK_VERSION` as:
+- [`release.yaml`](../.github/workflows/release.yaml) runs the script
+  immediately before `goreleaser`.
+- [`docker.yml`](../.github/workflows/docker.yml) runs it in the `plan`
+  job, gated on `startsWith(github.ref, 'refs/tags/v')`.
 
-- `pr-<shortsha>-<variant>` for PRs / `workflow_dispatch` (not pushed),
-- `main-<shortsha>-<variant>` for `main` branch pushes, and
-- `<git tag>-<variant>` for tagged releases (e.g. `v1.26.5-cuda`).
+The `KRONK_VERSION` build-arg consumed by the Dockerfile is purely
+cosmetic: it flows into the OCI image labels (`org.opencontainers.image
+.version`) so registry metadata can encode the variant / SHA / tag combo
+that produced an image. The kronk binary inside that image still reports
+the value of `const Version`, not `KRONK_VERSION`.
 
-`sdk/bucky.Version` mirrors `kronk.Version` (`var Version = kronk.Version`)
-and is also `var` for the same reason — Go disallows initialising a `const`
-from a `var`.
+Release checklist when cutting `v<X.Y.Z>`:
 
-The release pipeline ([`.goreleaser.yaml`](../.goreleaser.yaml)) also stamps
-the version into the binaries it ships, so the Homebrew cask and the GitHub
-release archives report the released tag — its `ldflags:` block passes
-`-X github.com/ardanlabs/kronk/sdk/kronk.Version=v{{.Version}}` where
-`{{.Version}}` is the git tag with the leading `v` stripped (re-added in the
-template so `kronk --version` matches the published tag exactly).
-
-The only path that produces a `kronk version dev` binary is a direct
-`go install ./cmd/kronk@latest` / `go build` without ldflags. If you want a
-real version on hand-built local binaries too, add a `makefile` target that
-sets `KRONK_VERSION` from `git describe`:
-
-```make
-KRONK_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-
-kronk-build:
-	go build -trimpath \
-	    -ldflags "-s -w -X github.com/ardanlabs/kronk/sdk/kronk.Version=$(KRONK_VERSION)" \
-	    -o ./bin/kronk ./cmd/kronk
-```
+1. Bump `const Version` in [`sdk/kronk/kronk.go`](../sdk/kronk/kronk.go).
+2. Commit, then tag the same commit `v<X.Y.Z>` and push.
+3. CI's tag-guard step refuses the release if step 1 was forgotten.

@@ -19,6 +19,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Guard: the pushed tag must match `const Version` in
+      # sdk/kronk/kronk.go. Fails the release before any artifacts are
+      # produced. See .github/scripts/check-version.sh.
+      - name: Check tag matches sdk/kronk.Version
+        run: ./.github/scripts/check-version.sh
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"

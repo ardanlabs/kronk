@@ -13,16 +13,13 @@ builds:
     goarch:
       - amd64
       - arm64
-    # Mirror the link-time version stamping done by the Docker workflow
-    # (.github/workflows/docker.yml) and the Dockerfile. Without -X, the
-    # `sdk/kronk.Version` var keeps its "dev" default and every binary
-    # shipped via the release archives / Homebrew cask would print
-    # `kronk version dev`. {{.Version}} is the git tag with the leading
-    # `v` stripped (e.g. tag `v1.26.5` → `1.26.5`); prefix it back so the
-    # CLI matches the published tag.
+    # No link-time -X override for sdk/kronk.Version — it is a `const`
+    # and must be bumped in the same commit that prepares the release
+    # tag. The release workflow runs .github/scripts/check-version.sh
+    # before invoking goreleaser, so any tag/constant mismatch fails
+    # the pipeline before binaries are produced.
     ldflags:
       - -s -w
-      - -X github.com/ardanlabs/kronk/sdk/kronk.Version=v{{.Version}}
     # `-trimpath` makes the resulting binary reproducible across build
     # machines by stripping absolute module/source paths from the
     # embedded debug info — matching what the Dockerfile builder uses.

@@ -11,10 +11,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 )
 
-// Version contains the current version of the bucky SDK package. Mirrors
-// kronk.Version (which is itself link-time stamped — see sdk/kronk/kronk.go),
-// so this must also be a `var` rather than a `const`.
-var Version = kronk.Version
+// Version contains the current version of the bucky SDK package.
+const Version = kronk.Version
 
 // =============================================================================
 
