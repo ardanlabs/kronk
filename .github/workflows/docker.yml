@@ -74,6 +74,11 @@ concurrency:
 env:
   GHCR_IMAGE: ghcr.io/ardanlabs/kronk
   DH_IMAGE: ardanlabs/kronk
+  # Registry-backed BuildKit cache. Stored as OCI artifacts alongside
+  # the runtime images in GHCR — no 10 GB per-repo GHA quota to fight,
+  # and the cache survives independently of the (90-day-by-default)
+  # `actions/cache` entries. One tag per (variant, arch) scope.
+  BUILDCACHE_IMAGE: ghcr.io/ardanlabs/kronk-buildcache
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -268,8 +273,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Always log in to GHCR — even on the PR / workflow_dispatch path,
+      # so the registry-backed BuildKit cache (BUILDCACHE_IMAGE) can be
+      # pulled. The default `GITHUB_TOKEN` for PRs from the same repo
+      # has package:read; PRs from forks will silently miss the cache
+      # and rebuild from scratch (still correct, just slower).
       - name: Log in to GHCR
-        if: needs.plan.outputs.push == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -285,6 +294,11 @@ jobs:
 
       # PR / workflow_dispatch path: build, no push. Validates the
       # Dockerfile compiles and produces a runnable image for this arch.
+      #
+      # READ from the registry cache but do NOT write to it on this path.
+      # PR validation builds don't need to refresh the cache, and writing
+      # them would mean any PR could overwrite the trunk-seeded layers.
+      # Push builds (below) seed the cache for future PRs to consume.
       - name: Build (no push)
         if: needs.plan.outputs.push != 'true'
         uses: docker/build-push-action@v6
@@ -298,11 +312,14 @@ jobs:
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
-          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}-${{ matrix.arch }}
+          cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
 
       # Push event path: build & push by digest only. Final tags get
       # applied by the `merge` job once both arches are available.
+      #
+      # `image-manifest=true` writes the cache as an OCI image manifest
+      # (rather than the default OCI image index) so GHCR's UI renders
+      # the tags as proper packages instead of unknown artifacts.
       - name: Build & push by digest
         if: needs.plan.outputs.push == 'true'
         id: build
@@ -318,8 +335,8 @@ jobs:
           outputs: |
             type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
             type=image,name=${{ env.DH_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}-${{ matrix.arch }}
+          cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }},mode=max,image-manifest=true,compression=zstd
 
       - name: Export digest
         if: needs.plan.outputs.push == 'true'

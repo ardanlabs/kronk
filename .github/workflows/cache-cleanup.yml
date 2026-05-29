@@ -1,0 +1,174 @@
+name: Cache cleanup
+
+# Periodically prune stale build caches so the repo never bumps into
+# GitHub Actions' 10 GB GHA-cache quota or accumulates dead OCI artifacts
+# from the registry-backed BuildKit cache.
+#
+# Two scopes get cleaned:
+#
+#   1. GHA cache (actions/cache + buildx `type=gha` exports). Anything
+#      older than CUTOFF_DAYS is deleted via `gh cache delete`. GitHub
+#      also evicts unused entries after 7 days of inactivity, but that
+#      timer resets on every read — busy hot scopes never expire on
+#      their own. This job enforces an absolute age cap.
+#
+#   2. GHCR image tags under BUILDCACHE_IMAGE (registry-backed BuildKit
+#      cache used by docker.yml). Untagged manifests cost nothing to
+#      keep around, but stale named tags pile up as variants/arches
+#      come and go. Tags older than CUTOFF_DAYS that aren't currently
+#      referenced are deleted via the GHCR packages API.
+#
+# Triggered:
+#   - Daily at 04:17 UTC (cron). Off-peak to avoid contending with the
+#     hourly main-push builds.
+#   - Manually via workflow_dispatch (with optional dry-run override).
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List what would be deleted without deleting it"
+        type: boolean
+        default: false
+      cutoff_days:
+        description: "Delete entries older than N days"
+        default: "15"
+        required: false
+
+permissions:
+  actions: write       # gh cache list / delete
+  packages: write      # delete GHCR package versions
+  contents: read
+
+env:
+  BUILDCACHE_PACKAGE: kronk-buildcache
+  # Kept in sync with docker.yml's BUILDCACHE_IMAGE namespace.
+  ORG: ardanlabs
+
+jobs:
+  prune-gha-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete GHA cache entries older than the cutoff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          CUTOFF_DAYS: ${{ github.event.inputs.cutoff_days || '15' }}
+        run: |
+          set -euo pipefail
+
+          cutoff_epoch=$(date -u -d "${CUTOFF_DAYS} days ago" +%s)
+          echo "Pruning GHA cache entries created before $(date -u -d "@${cutoff_epoch}" --iso-8601=seconds) (>${CUTOFF_DAYS}d old)"
+          echo "Dry run: ${DRY_RUN}"
+
+          # `gh cache list` doesn't auto-paginate, but each non-dry-run
+          # iteration shrinks the pool by deleting oldest-first, so the
+          # next request returns the next batch. In dry-run mode nothing
+          # shrinks, so we bail after a single pass (sample only).
+          deleted=0
+          kept=0
+          while :; do
+            batch="$(gh cache list \
+              --repo "${GH_REPO}" \
+              --limit 100 \
+              --order asc \
+              --sort created_at \
+              --json id,key,createdAt,sizeInBytes \
+              2>/dev/null || echo '[]')"
+
+            count=$(echo "${batch}" | jq 'length')
+            if [[ "${count}" -eq 0 ]]; then
+              break
+            fi
+
+            # Process this page.
+            while IFS=$'\t' read -r id key created size; do
+              created_epoch=$(date -u -d "${created}" +%s)
+              if (( created_epoch >= cutoff_epoch )); then
+                kept=$((kept + 1))
+                continue
+              fi
+              size_mb=$(( size / 1024 / 1024 ))
+              if [[ "${DRY_RUN}" == "true" ]]; then
+                echo "[dry-run] would delete id=${id} key=${key} created=${created} size=${size_mb}MiB"
+              else
+                echo "Deleting id=${id} key=${key} created=${created} size=${size_mb}MiB"
+                gh cache delete "${id}" --repo "${GH_REPO}" || \
+                  echo "  (skipped — already gone or in use)"
+              fi
+              deleted=$((deleted + 1))
+            done < <(echo "${batch}" | jq -r '.[] | [.id, .key, .createdAt, .sizeInBytes] | @tsv')
+
+            # Stop paging when the last entry on this page is already
+            # inside the retention window (everything newer than that
+            # is too), or when we're in dry-run mode (the pool didn't
+            # shrink, so the next request would return the same batch).
+            last_created=$(echo "${batch}" | jq -r '.[-1].createdAt')
+            last_epoch=$(date -u -d "${last_created}" +%s)
+            if (( last_epoch >= cutoff_epoch )) || [[ "${DRY_RUN}" == "true" ]]; then
+              break
+            fi
+          done
+
+          echo "Done. deleted=${deleted} kept(within-window)=${kept}"
+
+  prune-registry-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete GHCR buildcache tags older than the cutoff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          CUTOFF_DAYS: ${{ github.event.inputs.cutoff_days || '15' }}
+        run: |
+          set -euo pipefail
+
+          cutoff_epoch=$(date -u -d "${CUTOFF_DAYS} days ago" +%s)
+          echo "Pruning ${BUILDCACHE_PACKAGE} package versions updated before $(date -u -d "@${cutoff_epoch}" --iso-8601=seconds) (>${CUTOFF_DAYS}d old)"
+          echo "Dry run: ${DRY_RUN}"
+
+          # Package-versions API returns one entry per OCI manifest.
+          # We collect every page first (deletes-while-paginating would
+          # shift indices), then delete in a second pass. `gh api
+          # --paginate` follows `Link: next` headers automatically.
+          # If the package doesn't exist yet (first run, before any
+          # cache has been pushed), gh exits non-zero — swallow that
+          # and treat it as an empty list.
+          all="$(gh api --paginate \
+            "/orgs/${ORG}/packages/container/${BUILDCACHE_PACKAGE}/versions?per_page=100" \
+            2>/dev/null || echo '[]')"
+
+          # `--paginate` concatenates page arrays into one stream of
+          # JSON arrays; flatten back to a single array.
+          stale="$(echo "${all}" | jq -c --argjson cutoff "${cutoff_epoch}" '
+            [ .[] | select((.updated_at | fromdateiso8601) < $cutoff) ]
+          ')"
+
+          deleted=0
+          kept=$(echo "${all}" | jq 'length - (
+            [ .[] | select((.updated_at | fromdateiso8601) < '"${cutoff_epoch}"') ] | length
+          )')
+
+          # Process substitution (not a pipe) so `deleted` increments
+          # survive past the loop.
+          while IFS=$'\t' read -r vid updated tags; do
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete version=${vid} updated=${updated} tags=[${tags}]"
+            else
+              echo "Deleting version=${vid} updated=${updated} tags=[${tags}]"
+              gh api \
+                --method DELETE \
+                "/orgs/${ORG}/packages/container/${BUILDCACHE_PACKAGE}/versions/${vid}" \
+                || echo "  (skipped — already gone or last version of package)"
+            fi
+            deleted=$((deleted + 1))
+          done < <(echo "${stale}" | jq -r '.[] | [
+            .id,
+            .updated_at,
+            ((.metadata.container.tags // []) | join(","))
+          ] | @tsv')
+
+          echo "Done. deleted=${deleted} kept(within-window)=${kept}"
