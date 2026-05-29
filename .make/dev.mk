@@ -115,6 +115,8 @@ deps-upgrade: bui-upgrade
 	go mod tidy
 	cd examples && go get -u -v ./...
 	cd examples && go mod tidy
+
+build-deps-upgrade: deps-upgrade
 	./zarf/docker/kronk/upgrade-pins.sh
 
 yzma-latest:
