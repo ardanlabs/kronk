@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/ardanlabs/bucky/pkg/download"
@@ -26,6 +27,14 @@ import (
 const (
 	versionFile = "version.json"
 	localFolder = "bucky-libraries"
+
+	// defaultVersion is the well-known working version of whisper.cpp used
+	// when no explicit version is provided and AllowUpgrade is false.
+	// This pin is owned by Kronk and intentionally overrides whatever
+	// github.com/ardanlabs/bucky/pkg/download.DefaultWhisperVersion ships
+	// with, because the bucky module may not be bumped in lockstep with
+	// upstream whisper.cpp releases.
+	defaultVersion = "v1.8.5"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance
@@ -54,12 +63,13 @@ type Combination = backend.Combination
 
 // Options represents the configuration options for Libs.
 type Options struct {
-	LibPath   string
-	BasePath  string
-	Arch      string
-	OS        string
-	Processor string
-	Version   string
+	LibPath      string
+	BasePath     string
+	Arch         string
+	OS           string
+	Processor    string
+	Version      string
+	AllowUpgrade bool
 }
 
 // Option is a function that configures Options.
@@ -121,6 +131,16 @@ func WithVersion(version string) Option {
 	}
 }
 
+// WithAllowUpgrade sets whether library upgrades are allowed. When
+// true, Download will track the latest whisper.cpp release published
+// by bucky-builder. The default is false, which pins to the
+// well-known default version.
+func WithAllowUpgrade(allow bool) Option {
+	return func(o *Options) {
+		o.AllowUpgrade = allow
+	}
+}
+
 // =============================================================================
 
 // Libs manages the whisper.cpp library system. Each Libs instance
@@ -136,13 +156,14 @@ func WithVersion(version string) Option {
 // same libraries root are discoverable through List, Remove, and
 // InstalledFor.
 type Libs struct {
-	root      string
-	path      string
-	arch      string
-	os        string
-	processor string
-	version   string
-	readOnly  bool
+	root         string
+	path         string
+	arch         string
+	os           string
+	processor    string
+	version      string
+	readOnly     bool
+	AllowUpgrade bool
 }
 
 // New constructs a Libs with system defaults and applies any provided
@@ -189,13 +210,14 @@ func New(opts ...Option) (*Libs, error) {
 	}
 
 	lib := Libs{
-		root:      root,
-		path:      path,
-		arch:      arch,
-		os:        opSys,
-		processor: processor,
-		version:   options.Version,
-		readOnly:  readOnly,
+		root:         root,
+		path:         path,
+		arch:         arch,
+		os:           opSys,
+		processor:    processor,
+		version:      options.Version,
+		readOnly:     readOnly,
+		AllowUpgrade: options.AllowUpgrade,
 	}
 
 	return &lib, nil
@@ -333,14 +355,27 @@ func (lib *Libs) List() ([]VersionTag, error) {
 	return out, nil
 }
 
-// Download resolves the right whisper.cpp version for the active
-// triple and lays it down on disk. When no override was supplied via
-// WithVersion the well-known default
-// (github.com/ardanlabs/bucky/pkg/download.DefaultWhisperVersion) is
-// used. A read-only install path is honored as-is; nothing is
-// downloaded or mutated. When the network is unreachable the
-// currently installed version is returned; if nothing is installed
-// and no network is available the call fails.
+// Download performs a complete workflow for downloading and installing
+// whisper.cpp. The version that gets installed is selected according to
+// the following matrix, evaluated in order. The first matching row wins:
+//
+//	# | Override (WithVersion) | AllowUpgrade | On-disk version          | Action
+//	--+------------------------+--------------+--------------------------+-----------------------------
+//	1 | set                    | any          | any                      | install the override version
+//	2 | unset                  | true         | any                      | install latest from bucky-builder
+//	3 | unset                  | false        | none                     | install defaultVersion
+//	4 | unset                  | false        | <= defaultVersion        | install defaultVersion
+//	5 | unset                  | false        | >  defaultVersion        | keep on-disk version
+//
+// Additional rules independent of the matrix:
+//   - A read-only install path (user-supplied directory without a
+//     version.json) is always honored as-is; nothing is downloaded or
+//     mutated. See WithLibPath.
+//   - When the network is unreachable the currently installed version is
+//     returned. If nothing is installed and no network is available the
+//     call fails.
+//   - If the desired version is already installed for the active (arch,
+//     os, processor) triple, no download occurs.
 func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 	if lib.readOnly {
 		tag, err := lib.InstalledVersion()
@@ -360,12 +395,26 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 		return vt, nil
 	}
 
-	version := lib.version
-	if version == "" {
-		version = download.DefaultWhisperVersion
+	installed, _ := lib.InstalledVersion()
+
+	// For matrix row 2 we need the latest version published by
+	// bucky-builder. For all other rows the network lookup is
+	// unnecessary, so skip it.
+	var latest string
+	if lib.version == "" && lib.AllowUpgrade {
+		v, err := download.WhisperLatestVersion()
+		if err != nil {
+			if installed.Version == "" {
+				return VersionTag{}, fmt.Errorf("download-libraries: error retrieving latest version: %w", err)
+			}
+
+			log(ctx, "download-libraries: unable to check latest version, using installed version", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "current", installed.Version)
+			return installed, nil
+		}
+		latest = v
 	}
 
-	installed, _ := lib.InstalledVersion()
+	version := chooseVersion(lib.version, lib.AllowUpgrade, installed.Version, latest, defaultVersion)
 
 	log(ctx, "download-libraries: check whisper.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "requested", version, "current", installed.Version)
 
@@ -626,6 +675,69 @@ func resolveProcessor(opt string, fallback string) (string, error) {
 }
 
 // =============================================================================
+
+// chooseVersion implements the Download policy matrix as a pure function.
+// See Download for the full matrix and exception rules. Inputs:
+//
+//   - override: explicit version pin (lib.version), or "" if unset.
+//   - allowUpgrade: whether to track the latest published version.
+//   - installed: the version currently on disk, or "" if nothing is
+//     installed (or version.json is unreadable).
+//   - latest: the latest version reported by bucky-builder; only
+//     consulted when override is unset and allowUpgrade is true.
+//   - def: the well-known default version baked into Kronk.
+//
+// Returns the version string that should end up installed.
+func chooseVersion(override string, allowUpgrade bool, installed string, latest string, def string) string {
+	switch {
+	case override != "":
+		// Matrix row 1: an explicit override always wins.
+		return override
+	case allowUpgrade:
+		// Matrix row 2: track the latest published version.
+		return latest
+	case installed != "" && versionGreater(installed, def):
+		// Matrix row 5: never downgrade past what is on disk.
+		return installed
+	default:
+		// Matrix rows 3-4: pin to the well-known default version.
+		return def
+	}
+}
+
+// versionGreater reports whether v1 is greater than v2. Versions are
+// expected to be whisper.cpp release tags like "v1.8.4". It strips a
+// single leading non-digit character (covering "v<num>" tags) and
+// compares the suffixes; when both are purely numeric it does a
+// numeric comparison, otherwise it falls back to lexicographic
+// comparison (which is correct for same-shape dotted versions).
+func versionGreater(v1, v2 string) bool {
+	if v1 == "" || v2 == "" {
+		return false
+	}
+
+	stripPrefix := func(s string) string {
+		if len(s) > 0 && (s[0] < '0' || s[0] > '9') {
+			return s[1:]
+		}
+		return s
+	}
+
+	n1 := stripPrefix(v1)
+	n2 := stripPrefix(v2)
+
+	if n1 == n2 {
+		return false
+	}
+
+	if i1, e1 := strconv.Atoi(n1); e1 == nil {
+		if i2, e2 := strconv.Atoi(n2); e2 == nil {
+			return i1 > i2
+		}
+	}
+
+	return n1 > n2
+}
 
 func hasNetwork() bool {
 	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 5*time.Second)
