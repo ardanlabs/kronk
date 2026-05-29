@@ -197,7 +197,29 @@ func New(opts ...Option) (*Libs, error) {
 		return nil, err
 	}
 
-	processor, err := resolveProcessor(options.Processor, tag.Processor)
+	// rocm has no upstream whisper.cpp bundle (see combinations.go),
+	// so a host that auto-detects (or is forced into) rocm would
+	// otherwise resolve to a non-existent install directory and bucky
+	// would degrade to "no library found". Fall back to vulkan when it
+	// is supported on this triple — it works on every ROCm-capable AMD
+	// GPU via the RADV ICD shipped by mesa-vulkan-drivers, so the
+	// substitution is transparent and keeps GPU-accelerated
+	// transcription working on both the `:rocm` and `:all` container
+	// images and native ROCm installs. The IsSupported(rocm) guard
+	// auto-disables this shim if upstream ever publishes a rocm
+	// whisper bundle.
+	processorOpt := options.Processor
+	if processorOpt == "rocm" {
+		if !IsSupported(arch, opSys, "rocm") {
+			if IsSupported(arch, opSys, "vulkan") {
+				processorOpt = "vulkan"
+			} else {
+				processorOpt = "cpu"
+			}
+		}
+	}
+
+	processor, err := resolveProcessor(processorOpt, tag.Processor)
 	if err != nil {
 		return nil, err
 	}

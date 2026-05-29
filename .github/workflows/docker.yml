@@ -10,6 +10,13 @@ name: Docker
 #   jetson   — NVIDIA Jetson L4T base (linux/arm64 only, --target=runtime-jetson)
 #   all      — bundles cpu+cuda+vulkan+rocm into a single image
 #
+# Every variant also bakes in matching whisper.cpp (bucky) shared libraries
+# for audio transcription via /v1/audio/transcriptions. The bucky processor
+# list is decoupled from the llama list because upstream whisper.cpp has no
+# rocm build — the rocm variant ships the vulkan bucky bundle and the
+# container entrypoint redirects KRONK_BUCKY_LIB_PATH at it on ROCm hosts.
+# See the BUCKY_PROCESSORS map in the plan job below.
+#
 # Multi-arch images (cpu / cuda / vulkan / all) are built natively on
 # `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64) runners, then
 # stitched into a single manifest with `docker buildx imagetools create`.
@@ -175,6 +182,21 @@ jobs:
             [jetson]="cuda"
             [all]="cpu cuda vulkan rocm"
           )
+          # Whitespace-separated processor lists fed to BUCKY_PROCESSORS
+          # in the Dockerfile. The upstream whisper.cpp build matrix has
+          # NO rocm bundle (see sdk/tools/bucky/libs/combinations.go), so
+          # the rocm variant gets the vulkan bucky bundle instead — the
+          # container entrypoint (zarf/docker/kronk/entrypoint.sh) points
+          # KRONK_BUCKY_LIB_PATH at it on ROCm hosts so transcription
+          # stays GPU-accelerated via RADV.
+          declare -A BUCKY_PROCESSORS=(
+            [cpu]="cpu"
+            [cuda]="cuda"
+            [vulkan]="vulkan"
+            [rocm]="vulkan"
+            [jetson]="cuda"
+            [all]="cpu cuda vulkan"
+          )
 
           # -------------------------------------------------------------------
           # Variant selection
@@ -200,19 +222,23 @@ jobs:
               fi
               ;;
             pull_request)
-              # Default = cpu. Label `build all` overrides. Otherwise
-              # collect every `build <variant>` label present.
+              # cpu is always built — it exercises the most-shared
+              # Dockerfile path (default runtime stage, no GPU apt
+              # conditionals) so a regression there is most likely to
+              # be caught by a single, cheap matrix entry. Label
+              # `build all` expands to every variant; otherwise each
+              # `build <variant>` label adds that variant on top of
+              # cpu.
+              CHOSEN=(cpu)
               if echo "$PR_LABELS" | jq -e 'any(. == "build all")' >/dev/null; then
                 CHOSEN=("${ALL_VARIANTS[@]}")
               else
                 for v in "${ALL_VARIANTS[@]}"; do
+                  [[ "$v" == "cpu" ]] && continue
                   if echo "$PR_LABELS" | jq -e --arg n "build $v" 'any(. == $n)' >/dev/null; then
                     CHOSEN+=("$v")
                   fi
                 done
-                if [[ ${#CHOSEN[@]} -eq 0 ]]; then
-                  CHOSEN=(cpu)
-                fi
               fi
               ;;
           esac
@@ -230,8 +256,9 @@ jobs:
                 --arg platform "linux/$a" \
                 --arg target "${TARGET[$v]}" \
                 --arg processors "${PROCESSORS[$v]}" \
+                --arg bucky_processors "${BUCKY_PROCESSORS[$v]}" \
                 --arg runner "$RUNNER" \
-                '{variant:$variant, arch:$arch, platform:$platform, target:$target, processors:$processors, runner:$runner}')
+                '{variant:$variant, arch:$arch, platform:$platform, target:$target, processors:$processors, bucky_processors:$bucky_processors, runner:$runner}')
               INCLUDE=$(echo "$INCLUDE" | jq -c --argjson i "$ITEM" '. + [$i]')
             done
           done
@@ -327,6 +354,7 @@ jobs:
           load: false
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
+            BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
 
@@ -347,6 +375,7 @@ jobs:
           target: ${{ matrix.target }}
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
+            BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           outputs: |
             type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true

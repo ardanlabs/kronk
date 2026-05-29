@@ -1872,7 +1872,7 @@ Three GitHub Actions workflows live under [`.github/workflows/`](../.github/work
 | -------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
 | [`linux.yml`](../.github/workflows/linux.yml)     | PRs + push to `main` (Go/mod paths)       | `go vet`, `staticcheck`, `govulncheck`, `go fix -diff`, plus the SDK and HTTP tests against pulled models (cached across runs). |
 | [`release.yaml`](../.github/workflows/release.yaml)  | Push of tag `v*`                          | Runs `goreleaser` to produce per-OS/arch archives, checksums, and refresh the Homebrew cask in `ardanlabs/homebrew-kronk`. |
-| [`docker.yml`](../.github/workflows/docker.yml)    | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds (and on push events: publishes) the six container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). |
+| [`docker.yml`](../.github/workflows/docker.yml)    | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds (and on push events: publishes) the six container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). Every variant bakes in both llama.cpp and matching whisper.cpp (bucky) shared libraries plus `ffmpeg` for transcription. |
 
 #### 19.14.2 Container Image Build & Publish
 
@@ -1880,14 +1880,21 @@ The Docker workflow is matrix-driven; the `plan` job synthesises the build
 matrix at runtime from the event type (and from any `build <variant>` PR
 labels). Six variants are produced:
 
-| Variant  | `LLAMA_PROCESSORS`     | Platforms                    | Dockerfile target |
-| -------- | ---------------------- | ---------------------------- | ----------------- |
-| `cpu`    | `cpu`                  | `linux/amd64`, `linux/arm64` | `runtime`         |
-| `cuda`   | `cuda`                 | `linux/amd64`, `linux/arm64` | `runtime`         |
-| `vulkan` | `vulkan`               | `linux/amd64`, `linux/arm64` | `runtime`         |
-| `rocm`   | `rocm`                 | `linux/amd64` only           | `runtime`         |
-| `jetson` | `cuda`                 | `linux/arm64` only           | `runtime-jetson`  |
-| `all`    | `cpu cuda vulkan rocm` | `linux/amd64`, `linux/arm64` | `runtime`         |
+| Variant  | `LLAMA_PROCESSORS`     | `BUCKY_PROCESSORS` | Platforms                    | Dockerfile target |
+| -------- | ---------------------- | ------------------ | ---------------------------- | ----------------- |
+| `cpu`    | `cpu`                  | `cpu`              | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `cuda`   | `cuda`                 | `cuda`             | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `vulkan` | `vulkan`               | `vulkan`           | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `rocm`   | `rocm`                 | `vulkan` ¹         | `linux/amd64` only           | `runtime`         |
+| `jetson` | `cuda`                 | `cuda`             | `linux/arm64` only           | `runtime-jetson`  |
+| `all`    | `cpu cuda vulkan rocm` | `cpu cuda vulkan`  | `linux/amd64`, `linux/arm64` | `runtime`         |
+
+¹ Upstream whisper.cpp has no rocm build target
+([combinations.go](../sdk/tools/bucky/libs/combinations.go)), so the rocm
+variant ships the vulkan bucky bundle and the container entrypoint
+([entrypoint.sh](../zarf/docker/kronk/entrypoint.sh)) sets
+`KRONK_BUCKY_LIB_PATH` to point at it on ROCm hosts so transcription stays
+GPU-accelerated via the RADV Vulkan driver.
 
 Multi-arch images are built **natively** on `ubuntu-24.04` (amd64) and
 `ubuntu-24.04-arm` (arm64) runners — never under QEMU. Each per-arch job

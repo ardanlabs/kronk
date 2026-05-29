@@ -134,9 +134,13 @@ Use "kronk [command] --help" for more information about a command.
 ### 2.3 Docker / OCI Container
 
 Pre-built multi-arch container images are published to GHCR and Docker Hub on
-every release. They bundle the kronk binary, the BUI, and one or more
-llama.cpp processor backends — so the image is offline-ready after the first
-pull. Six variants are produced; pick the one that matches your hardware:
+every release. They bundle the kronk binary, the BUI, one or more
+llama.cpp processor backends for LLM inference, the matching whisper.cpp
+(bucky) backend for audio transcription via `/v1/audio/transcriptions`,
+and `ffmpeg` for decoding non-PCM audio uploads — so the image is
+offline-ready after the first pull (models still need to be downloaded
+separately into the persisted `/kronk` volume). Six variants are produced;
+pick the one that matches your hardware:
 
 | Tag suffix | Hardware target                                 | Platforms                    |
 | ---------- | ----------------------------------------------- | ---------------------------- |
@@ -181,8 +185,17 @@ named volume.
 
 The header comment of [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile)
 documents every `docker run` invocation (AMD ROCm; Vulkan on AMD / NVIDIA /
-Intel; Jetson; specific-card device passthrough; etc.) and lists the full
-host-OS × GPU compatibility matrix.
+Intel; Jetson; specific-card device passthrough; etc.), the audio
+transcription workflow (pulling a whisper model, hitting
+`/v1/audio/transcriptions`), and lists the full host-OS × GPU compatibility
+matrix. See also [Chapter 18: Bucky](chapter-18-bucky.md) for full transcription
+documentation.
+
+The `:rocm` image is a special case: the upstream whisper.cpp build
+matrix has no rocm bundle, so the rocm image ships the **vulkan** bucky
+bundle instead and the container entrypoint transparently points
+`KRONK_BUCKY_LIB_PATH` at it on ROCm hosts. Transcription therefore
+stays GPU-accelerated on AMD GPUs via the RADV Vulkan driver.
 
 ### 2.4 Installing Libraries
 

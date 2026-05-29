@@ -133,24 +133,25 @@ jobs:
           # Package-versions API returns one entry per OCI manifest.
           # We collect every page first (deletes-while-paginating would
           # shift indices), then delete in a second pass. `gh api
-          # --paginate` follows `Link: next` headers automatically.
-          # If the package doesn't exist yet (first run, before any
-          # cache has been pushed), gh exits non-zero — swallow that
-          # and treat it as an empty list.
+          # --paginate` follows `Link: next` headers automatically and
+          # emits ONE top-level JSON array PER PAGE on stdout — `jq -s
+          # 'add // []'` slurps the resulting stream of arrays and
+          # concatenates them into a single flat array (and yields `[]`
+          # when the package doesn't exist yet — first run, before any
+          # cache has been pushed — so the downstream jq filters work
+          # uniformly).
           all="$(gh api --paginate \
             "/orgs/${ORG}/packages/container/${BUILDCACHE_PACKAGE}/versions?per_page=100" \
-            2>/dev/null || echo '[]')"
+            2>/dev/null | jq -s 'add // []')"
 
-          # `--paginate` concatenates page arrays into one stream of
-          # JSON arrays; flatten back to a single array.
           stale="$(echo "${all}" | jq -c --argjson cutoff "${cutoff_epoch}" '
             [ .[] | select((.updated_at | fromdateiso8601) < $cutoff) ]
           ')"
 
           deleted=0
-          kept=$(echo "${all}" | jq 'length - (
-            [ .[] | select((.updated_at | fromdateiso8601) < '"${cutoff_epoch}"') ] | length
-          )')
+          kept="$(echo "${all}" | jq --argjson cutoff "${cutoff_epoch}" '
+            length - ([ .[] | select((.updated_at | fromdateiso8601) < $cutoff) ] | length)
+          ')"
 
           # Process substitution (not a pipe) so `deleted` increments
           # survive past the loop.

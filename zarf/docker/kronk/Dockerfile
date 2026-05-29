@@ -6,8 +6,23 @@
 #
 # Produces a slim Linux container that runs the `kronk` server. Built
 # llama.cpp shared libraries for one or more processor backends (cpu / cuda /
-# vulkan / rocm) are baked into the image at build time so the resulting
-# container is offline-ready.
+# vulkan / rocm) AND whisper.cpp (bucky) shared libraries (cpu / cuda /
+# vulkan) are baked into the image at build time so the resulting container
+# is offline-ready for both LLM inference and audio transcription.
+#
+# Bucky's `/v1/audio/transcriptions` endpoint relies on the host `ffmpeg`
+# binary for non-PCM uploads (WebM/Opus, MP4/AAC, OGG, M4A — most browser
+# recordings). `ffmpeg` is installed in every runtime stage so the BUI
+# Translator works without extra setup. Whisper models are NOT baked in
+# (same rationale as LLM models — too large); pull them on first use with
+# `kronk bucky model pull <name>` or via the BUI's Whisper Models screen.
+# Models land under /kronk/bucky-models/ which is part of the persisted
+# /kronk volume.
+#
+# The upstream whisper.cpp build matrix has no rocm bundle. On the `:rocm`
+# image, the bucky SDK transparently substitutes the vulkan bundle (which
+# works on every ROCm-capable AMD GPU via RADV) so transcription keeps
+# working there too — see sdk/tools/bucky/libs/libs.go::New.
 #
 # The image is multi-arch (linux/amd64, linux/arm64) and runs on macOS,
 # Linux, and Windows hosts via Docker Desktop or any OCI runtime that
@@ -63,10 +78,24 @@
 # Build invocations
 # -----------------------------------------------------------------------------
 #
+# Every variant below pairs LLAMA_PROCESSORS with a matching
+# BUCKY_PROCESSORS so the image only carries the whisper.cpp bundles it
+# can actually use. The pairings (also encoded in .github/workflows/
+# docker.yml) are:
+#
+#   :cpu     → LLAMA=cpu                  BUCKY=cpu
+#   :cuda    → LLAMA=cuda                 BUCKY=cuda
+#   :vulkan  → LLAMA=vulkan               BUCKY=vulkan
+#   :rocm    → LLAMA=rocm                 BUCKY=vulkan   (no whisper-rocm bundle exists; entrypoint redirects to vulkan)
+#   :jetson  → LLAMA=cuda                 BUCKY=cuda
+#   :all     → LLAMA=cpu cuda vulkan rocm BUCKY=cpu cuda vulkan
+#
 # Default (all backends bundled, both arches):
 #
 #   docker buildx build \
 #       --platform linux/amd64,linux/arm64 \
+#       --build-arg LLAMA_PROCESSORS="cpu cuda vulkan rocm" \
+#       --build-arg BUCKY_PROCESSORS="cpu cuda vulkan" \
 #       -f zarf/docker/kronk/Dockerfile \
 #       -t ghcr.io/ardanlabs/kronk:latest \
 #       -t ghcr.io/ardanlabs/kronk:all \
@@ -77,6 +106,7 @@
 #   docker buildx build \
 #       --platform linux/amd64,linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cpu" \
+#       --build-arg BUCKY_PROCESSORS="cpu" \
 #       -t ghcr.io/ardanlabs/kronk:cpu \
 #       -f zarf/docker/kronk/Dockerfile .
 #
@@ -85,6 +115,7 @@
 #   docker buildx build \
 #       --platform linux/amd64,linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cuda" \
+#       --build-arg BUCKY_PROCESSORS="cuda" \
 #       -t ghcr.io/ardanlabs/kronk:cuda \
 #       -f zarf/docker/kronk/Dockerfile .
 #
@@ -93,17 +124,22 @@
 #   docker buildx build \
 #       --platform linux/amd64 \
 #       --build-arg LLAMA_PROCESSORS="vulkan" \
+#       --build-arg BUCKY_PROCESSORS="vulkan" \
 #       -t ghcr.io/ardanlabs/kronk:vulkan \
 #       -f zarf/docker/kronk/Dockerfile .
 #
 # ROCm (amd64 only — combinations.go has no arm64 rocm bundle). The
 # build-time ROCm runtime install is gated on `rocm` appearing in
 # LLAMA_PROCESSORS, so only the `:rocm` (and any multi-backend image
-# that includes rocm) carries the extra ~2 GB of ROCm packages:
+# that includes rocm) carries the extra ~2 GB of ROCm packages. Bucky
+# uses `vulkan` here because there is no whisper-rocm bundle; the
+# entrypoint shim sets KRONK_BUCKY_LIB_PATH to the vulkan path at
+# container start time:
 #
 #   docker buildx build \
 #       --platform linux/amd64 \
 #       --build-arg LLAMA_PROCESSORS="rocm" \
+#       --build-arg BUCKY_PROCESSORS="vulkan" \
 #       -t ghcr.io/ardanlabs/kronk:rocm \
 #       -f zarf/docker/kronk/Dockerfile .
 #
@@ -115,6 +151,7 @@
 #   docker buildx build \
 #       --platform linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cuda" \
+#       --build-arg BUCKY_PROCESSORS="cuda" \
 #       --target runtime-jetson \
 #       -t ghcr.io/ardanlabs/kronk:jetson \
 #       -f zarf/docker/kronk/Dockerfile .
@@ -343,6 +380,31 @@
 #
 #   curl http://localhost:11435/v1/liveness
 #
+# -----------------------------------------------------------------------------
+# Audio transcription (Bucky / whisper.cpp)
+# -----------------------------------------------------------------------------
+#
+# Every image bakes in the whisper.cpp shared libraries for its matching
+# processor, plus `ffmpeg` for decoding non-PCM uploads. Whisper models are
+# NOT included — pull one into the persisted /kronk volume on first use:
+#
+#   # CLI inside a running container:
+#   docker exec -it <ctr> kronk bucky model pull tiny.en
+#
+#   # Or from the BUI (http://localhost:11435 → Whisper Models).
+#
+# Once a model is pulled, transcribe an audio file:
+#
+#   curl -X POST http://localhost:11435/v1/audio/transcriptions \
+#       -F file=@samples/jfk.wav \
+#       -F model=tiny.en \
+#       -F response_format=json
+#
+# On ROCm hosts running the `:rocm` image, the entrypoint shim
+# (zarf/docker/kronk/entrypoint.sh) auto-sets KRONK_BUCKY_LIB_PATH to the
+# vulkan bundle (RADV) so transcription stays GPU-accelerated even though
+# whisper.cpp has no upstream rocm build.
+#
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -356,6 +418,19 @@ ARG LLAMA_PROCESSORS="cpu cuda vulkan rocm"
 # Optional pin for a specific llama.cpp release. Empty string lets kronk
 # choose its baked-in `defaultVersion` (see sdk/tools/libs/libs.go).
 ARG LLAMA_VERSION=""
+
+# Space-separated list of whisper.cpp (bucky) processor backends to bundle.
+# Any value from `kronk bucky libs --list-combinations` for the target arch
+# is valid. The upstream build matrix only publishes cpu / cuda / vulkan
+# for linux (no rocm — see sdk/tools/bucky/libs/combinations.go); metal is
+# darwin-only. On ROCm hosts the bucky SDK transparently substitutes the
+# vulkan bundle (see sdk/tools/bucky/libs/libs.go::New), so transcription
+# keeps working on the `:rocm` and `:all` images too.
+ARG BUCKY_PROCESSORS="cpu cuda vulkan"
+
+# Optional pin for a specific whisper.cpp release. Empty string lets kronk
+# choose its baked-in `defaultVersion` (see sdk/tools/bucky/libs/libs.go).
+ARG BUCKY_VERSION=""
 
 # Free-form tag string written into the OCI image labels. CI should set this
 # from `git describe` or the release tag.
@@ -388,15 +463,15 @@ ARG TARGETARCH
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Build dependencies: curl + ca-certificates to fetch toolchains, git for
-# any go modules that need it, build-essential for any pure-Go modules
-# that still shell out, xz-utils for the Node tarball, jq to parse the
-# go.dev release JSON when resolving the Go tarball sha256.
+# any go modules that need it, xz-utils for the Node tarball, jq to parse
+# the go.dev release JSON when resolving the Go tarball sha256. No C
+# toolchain — kronk is built with CGO_ENABLED=0 and all native libs are
+# loaded at runtime via purego.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         git \
-        build-essential \
         jq \
         xz-utils \
     && apt-get clean \
@@ -580,6 +655,64 @@ RUN set -eux; \
     kronk libs --local --list-installs || true
 
 # =============================================================================
+# Stage 2b — bucky-libs-fetcher
+#
+# Mirror of stage 2 but for whisper.cpp (bucky) bundles. Runs the freshly
+# built kronk binary and uses `kronk bucky libs --local --install` to
+# download every requested processor bundle for the target architecture.
+# Output lands under /kronk/bucky-libraries/linux/<TARGETARCH>/<processor>/
+# ready to be copied into the runtime stages. Runs in parallel with the
+# llama libs-fetcher under BuildKit.
+# =============================================================================
+
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS bucky-libs-fetcher
+
+ARG TARGETARCH
+ARG BUCKY_PROCESSORS
+ARG BUCKY_VERSION
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/kronk /usr/local/bin/kronk
+RUN chmod +x /usr/local/bin/kronk && /usr/local/bin/kronk --help >/dev/null
+
+# Same KRONK_BASE_PATH convention as the llama libs-fetcher; the bucky
+# install lands under /kronk/bucky-libraries directly (see
+# sdk/tools/bucky/libs/libs.go::localFolder).
+ENV KRONK_BASE_PATH=/kronk
+
+# Install one bundle per requested processor. Same warn-and-continue
+# pattern as the llama fetcher so multi-arch builds with a default
+# processor list still produce usable images on every arch.
+RUN set -eux; \
+    mkdir -p /kronk; \
+    for processor in ${BUCKY_PROCESSORS}; do \
+        echo ">>> Installing whisper.cpp libs: linux/${TARGETARCH}/${processor}"; \
+        if [ -n "${BUCKY_VERSION}" ]; then \
+            kronk bucky libs --local --install \
+                --arch="${TARGETARCH}" \
+                --os=linux \
+                --processor="${processor}" \
+                --version="${BUCKY_VERSION}" \
+                || echo "WARNING: skipping unsupported triple linux/${TARGETARCH}/${processor}"; \
+        else \
+            kronk bucky libs --local --install \
+                --arch="${TARGETARCH}" \
+                --os=linux \
+                --processor="${processor}" \
+                || echo "WARNING: skipping unsupported triple linux/${TARGETARCH}/${processor}"; \
+        fi; \
+    done; \
+    echo ">>> Installed whisper bundles:"; \
+    kronk bucky libs --local --list-installs || true
+
+# =============================================================================
 # Stage 3 — runtime
 #
 # The slimmest viable runtime image. Ubuntu 24.04 is required because
@@ -611,7 +744,7 @@ ARG ROCM_KEY_FINGERPRINT="CA8BB4727A47B4D09B4EE8969386B48A1A693C5C"
 
 LABEL org.opencontainers.image.source="https://github.com/ardanlabs/kronk" \
       org.opencontainers.image.title="kronk" \
-      org.opencontainers.image.description="Local LLM inference SDK and server CLI" \
+      org.opencontainers.image.description="Local LLM inference and audio transcription SDK and server CLI" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="Ardan Labs" \
       org.opencontainers.image.version="${KRONK_VERSION}" \
@@ -620,12 +753,19 @@ LABEL org.opencontainers.image.source="https://github.com/ardanlabs/kronk" \
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Runtime shared library dependencies for the bundled llama.cpp backends.
-# `curl` is included so the HEALTHCHECK below can probe /v1/liveness.
+# Runtime shared library dependencies for the bundled llama.cpp and
+# whisper.cpp backends. `curl` is included so the HEALTHCHECK below can
+# probe /v1/liveness. `ffmpeg` is required by bucky's audio decoder
+# (sdk/bucky/model/decode.go) to transcode any upload that isn't
+# WAV/MP3/FLAC (WebM/Opus, MP4/AAC, OGG, M4A — i.e. most browser
+# recordings) into 16 kHz mono PCM before whisper.cpp sees it. Without
+# it `/v1/audio/transcriptions` returns "unsupported format" for those
+# inputs.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        ffmpeg \
         libcurl4 \
         libgomp1 \
         libnuma1 \
@@ -721,6 +861,12 @@ COPY --from=builder /out/kronk /usr/local/bin/kronk
 # Pre-baked llama.cpp bundles for the target arch.
 COPY --from=libs-fetcher /kronk/libraries /kronk/libraries
 
+# Pre-baked whisper.cpp (bucky) bundles for the target arch. The server
+# auto-selects the bundle matching the detected processor via
+# defaults.Processor() / devices.DetectGPU() — same path as the llama
+# side — and falls through to KRONK_BUCKY_LIB_PATH when set.
+COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
+
 # Default model config — overridable by bind-mounting another file at the
 # path referenced by KRONK_POOL_MODEL_CONFIG_FILE below.
 COPY zarf/kms/model_config.yaml /etc/kronk/model_config.yaml
@@ -728,8 +874,10 @@ COPY zarf/kms/model_config.yaml /etc/kronk/model_config.yaml
 # Persistent state lives under /kronk. Models are huge and must be mounted;
 # libraries are baked above; catalog/keys/logs land under /kronk too. All
 # subcommands honor KRONK_BASE_PATH (set below) so this is the single
-# source of truth for kronk's on-disk layout.
-RUN mkdir -p /kronk/models /kronk/catalog /kronk/keys \
+# source of truth for kronk's on-disk layout. `bucky-models` is the
+# whisper.cpp model root (default `~/.kronk/bucky-models/` per
+# sdk/tools/bucky/models/models.go).
+RUN mkdir -p /kronk/models /kronk/bucky-models /kronk/catalog /kronk/keys \
  && chown -R kronk:kronk /kronk /etc/kronk
 
 USER kronk:kronk
@@ -837,7 +985,7 @@ ARG LIBSTDCXX_VERSION="14.2.0-4ubuntu2~22.04"
 
 LABEL org.opencontainers.image.source="https://github.com/ardanlabs/kronk" \
       org.opencontainers.image.title="kronk" \
-      org.opencontainers.image.description="Local LLM inference SDK and server CLI (Jetson L4T runtime)" \
+      org.opencontainers.image.description="Local LLM inference and audio transcription SDK and server CLI (Jetson L4T runtime)" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="Ardan Labs" \
       org.opencontainers.image.version="${KRONK_VERSION}" \
@@ -865,6 +1013,7 @@ RUN set -eux; \
     add-apt-repository -y ppa:ubuntu-toolchain-r/test; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+        ffmpeg \
         libcurl4 \
         libgomp1 \
         libnuma1 \
@@ -899,11 +1048,18 @@ COPY --from=builder /out/kronk /usr/local/bin/kronk
 # TARGETARCH so this resolves to /kronk/libraries/linux/arm64/cuda/).
 COPY --from=libs-fetcher /kronk/libraries /kronk/libraries
 
+# Pre-baked whisper.cpp (bucky) bundles for arm64. Default
+# BUCKY_PROCESSORS="cpu cuda vulkan" all have arm64 entries in the
+# upstream matrix (sdk/tools/bucky/libs/combinations.go), so the server
+# can transcribe on Jetson out of the box.
+COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
+
 # Default model config — overridable by bind-mounting another file at the
 # path referenced by KRONK_POOL_MODEL_CONFIG_FILE below.
 COPY zarf/kms/model_config.yaml /etc/kronk/model_config.yaml
 
-RUN mkdir -p /kronk/models /kronk/catalog /kronk/keys \
+# `bucky-models` is the whisper.cpp model root (see runtime stage above).
+RUN mkdir -p /kronk/models /kronk/bucky-models /kronk/catalog /kronk/keys \
  && chown -R kronk:kronk /kronk /etc/kronk
 
 USER kronk:kronk
