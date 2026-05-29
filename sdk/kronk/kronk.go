@@ -15,8 +15,12 @@ import (
 
 // TODO: Verify latest version of llama.cpp and update default.
 
-// Version contains the current version of the kronk package.
-const Version = "1.26.6"
+// Version contains the current version of the kronk package. It is a `var`
+// (not a `const`) so the kronk binary build can stamp it at link time via
+// `-ldflags "-X github.com/ardanlabs/kronk/sdk/kronk.Version=<value>"` —
+// see zarf/docker/kronk/Dockerfile and .github/workflows/docker.yml. The
+// "dev" default is what unbuilt / local `go run` callers see.
+var Version = "dev"
 
 // =============================================================================
 

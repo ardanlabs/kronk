@@ -1,6 +1,6 @@
 module github.com/ardanlabs/kronk/examples
 
-go 1.26.0
+go 1.26.3
 
 replace github.com/ardanlabs/kronk => ../
 

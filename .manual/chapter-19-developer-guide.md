@@ -39,6 +39,10 @@
   - [19.13.4 Pool Integration (Shared `resman`)](#19134-pool-integration-shared-resman)
   - [19.13.5 `audioapp` HTTP Handler](#19135-audioapp-http-handler)
   - [19.13.6 Tests](#19136-tests)
+- [19.14 Continuous Integration](#1914-continuous-integration)
+  - [19.14.1 Workflows](#19141-workflows)
+  - [19.14.2 Container Image Build & Publish](#19142-container-image-build--publish)
+  - [19.14.3 Version Stamping](#19143-version-stamping)
 
 ---
 
@@ -1857,3 +1861,97 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...
 
 The transcribe tests skip themselves when no whisper model is on
 disk, so contributors without a pulled model still get a green run.
+
+### 19.14 Continuous Integration
+
+#### 19.14.1 Workflows
+
+Three GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
+
+| Workflow             | Triggers                                  | Purpose                                                                              |
+| -------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| [`linux.yml`](../.github/workflows/linux.yml)     | PRs + push to `main` (Go/mod paths)       | `go vet`, `staticcheck`, `govulncheck`, `go fix -diff`, plus the SDK and HTTP tests against pulled models (cached across runs). |
+| [`release.yaml`](../.github/workflows/release.yaml)  | Push of tag `v*`                          | Runs `goreleaser` to produce per-OS/arch archives, checksums, and refresh the Homebrew cask in `ardanlabs/homebrew-kronk`. |
+| [`docker.yml`](../.github/workflows/docker.yml)    | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds (and on push events: publishes) the six container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). |
+
+#### 19.14.2 Container Image Build & Publish
+
+The Docker workflow is matrix-driven; the `plan` job synthesises the build
+matrix at runtime from the event type (and from any `build <variant>` PR
+labels). Six variants are produced:
+
+| Variant  | `LLAMA_PROCESSORS`     | Platforms                    | Dockerfile target |
+| -------- | ---------------------- | ---------------------------- | ----------------- |
+| `cpu`    | `cpu`                  | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `cuda`   | `cuda`                 | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `vulkan` | `vulkan`               | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `rocm`   | `rocm`                 | `linux/amd64` only           | `runtime`         |
+| `jetson` | `cuda`                 | `linux/arm64` only           | `runtime-jetson`  |
+| `all`    | `cpu cuda vulkan rocm` | `linux/amd64`, `linux/arm64` | `runtime`         |
+
+Multi-arch images are built **natively** on `ubuntu-24.04` (amd64) and
+`ubuntu-24.04-arm` (arm64) runners — never under QEMU. Each per-arch job
+pushes its image to GHCR + Docker Hub by **digest only** (no human-readable
+tag yet) and uploads a tiny artifact containing that digest. A downstream
+`merge` job per variant collects the arch-specific digests and stitches them
+into the final multi-arch manifest with `docker buildx imagetools create`,
+applying the human-readable tags at that step.
+
+Event → tag mapping:
+
+| Event                | Variants                                                | Push? | Tags applied                                                       |
+| -------------------- | ------------------------------------------------------- | ----- | ------------------------------------------------------------------ |
+| PR (no labels)       | `cpu`                                                   | no    | —                                                                  |
+| PR + label `build all`  | all 6                                                   | no    | —                                                                  |
+| PR + label `build <v>`  | that variant                                            | no    | —                                                                  |
+| Push to `main`       | all 6                                                   | yes   | `main-<shortsha>-<variant>`                                        |
+| Push to tag `v*`     | all 6                                                   | yes   | `<tag>-<variant>` + `latest-<variant>`; plus `latest` → cpu image  |
+| `workflow_dispatch`  | input `variants` (default `all`, or comma-separated)    | no    | —                                                                  |
+
+Per-`(variant, arch)` GHA cache scopes (`type=gha,scope=<variant>-<arch>`)
+keep the BuildKit cache hot across runs; the runner-level free-disk step
+reclaims ~25 GB up front so the all-backends + rocm builds don't run out of
+space.
+
+#### 19.14.3 Version Stamping
+
+The CLI's reported version is the value of
+[`sdk/kronk.Version`](../sdk/kronk/kronk.go) — a `var` (not a `const`)
+defaulting to `"dev"`, so the linker can override it at build time. The
+Dockerfile's [`go build`](../zarf/docker/kronk/Dockerfile) step injects the
+`KRONK_VERSION` build-arg via:
+
+```
+-ldflags "-s -w -X github.com/ardanlabs/kronk/sdk/kronk.Version=${KRONK_VERSION}"
+```
+
+The Docker workflow computes `KRONK_VERSION` as:
+
+- `pr-<shortsha>-<variant>` for PRs / `workflow_dispatch` (not pushed),
+- `main-<shortsha>-<variant>` for `main` branch pushes, and
+- `<git tag>-<variant>` for tagged releases (e.g. `v1.26.5-cuda`).
+
+`sdk/bucky.Version` mirrors `kronk.Version` (`var Version = kronk.Version`)
+and is also `var` for the same reason — Go disallows initialising a `const`
+from a `var`.
+
+The release pipeline ([`.goreleaser.yaml`](../.goreleaser.yaml)) also stamps
+the version into the binaries it ships, so the Homebrew cask and the GitHub
+release archives report the released tag — its `ldflags:` block passes
+`-X github.com/ardanlabs/kronk/sdk/kronk.Version=v{{.Version}}` where
+`{{.Version}}` is the git tag with the leading `v` stripped (re-added in the
+template so `kronk --version` matches the published tag exactly).
+
+The only path that produces a `kronk version dev` binary is a direct
+`go install ./cmd/kronk@latest` / `go build` without ldflags. If you want a
+real version on hand-built local binaries too, add a `makefile` target that
+sets `KRONK_VERSION` from `git describe`:
+
+```make
+KRONK_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
+kronk-build:
+	go build -trimpath \
+	    -ldflags "-s -w -X github.com/ardanlabs/kronk/sdk/kronk.Version=$(KRONK_VERSION)" \
+	    -o ./bin/kronk ./cmd/kronk
+```

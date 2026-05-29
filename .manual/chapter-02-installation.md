@@ -4,13 +4,14 @@
 
 - [2.1 Prerequisites](#21-prerequisites)
 - [2.2 Installing the CLI](#22-installing-the-cli)
-- [2.3 Installing Libraries](#23-installing-libraries)
-- [2.4 Downloading Your First Model](#24-downloading-your-first-model)
-- [2.5 Starting the Server](#25-starting-the-server)
-- [2.6 Model Configuration File](#26-model-configuration-file)
-- [2.7 Verifying the Installation](#27-verifying-the-installation)
-- [2.8 Quick Start Summary](#28-quick-start-summary)
-- [2.9 NixOS Setup](#29-nixos-setup)
+- [2.3 Docker / OCI Container](#23-docker--oci-container)
+- [2.4 Installing Libraries](#24-installing-libraries)
+- [2.5 Downloading Your First Model](#25-downloading-your-first-model)
+- [2.6 Starting the Server](#26-starting-the-server)
+- [2.7 Model Configuration File](#27-model-configuration-file)
+- [2.8 Verifying the Installation](#28-verifying-the-installation)
+- [2.9 Quick Start Summary](#29-quick-start-summary)
+- [2.10 NixOS Setup](#210-nixos-setup)
 
 ---
 
@@ -130,7 +131,60 @@ Flags:
 Use "kronk [command] --help" for more information about a command.
 ```
 
-### 2.3 Installing Libraries
+### 2.3 Docker / OCI Container
+
+Pre-built multi-arch container images are published to GHCR and Docker Hub on
+every release. They bundle the kronk binary, the BUI, and one or more
+llama.cpp processor backends — so the image is offline-ready after the first
+pull. Six variants are produced; pick the one that matches your hardware:
+
+| Tag suffix | Hardware target                                 | Platforms                    |
+| ---------- | ----------------------------------------------- | ---------------------------- |
+| `-cpu`     | Any host, no GPU acceleration (smallest image)  | `linux/amd64`, `linux/arm64` |
+| `-cuda`    | NVIDIA GPUs (Linux + Windows-WSL2)              | `linux/amd64`, `linux/arm64` |
+| `-vulkan`  | Vendor-neutral GPU (AMD / NVIDIA / Intel)       | `linux/amd64`, `linux/arm64` |
+| `-rocm`    | AMD GPUs via ROCm                               | `linux/amd64`                |
+| `-jetson`  | NVIDIA Jetson Orin / Xavier (JetPack 6+)        | `linux/arm64`                |
+| `-all`     | Bundles cpu + cuda + vulkan + rocm in one image | `linux/amd64`, `linux/arm64` |
+
+Tag scheme:
+
+- `:vX.Y.Z-<variant>` — immutable, tied to a released version (recommended for production).
+- `:latest-<variant>` — floats to the latest release of that variant.
+- `:latest` — alias of `:latest-cpu` (the only variant guaranteed to run anywhere).
+- `:main-<shortsha>-<variant>` — bleeding-edge builds from `main`.
+
+Pull and run (CPU on any host):
+
+```shell
+docker pull ghcr.io/ardanlabs/kronk:latest
+# or: docker pull ardanlabs/kronk:latest
+
+docker run --rm \
+    -p 11435:11435 \
+    -v kronk-data:/kronk \
+    ghcr.io/ardanlabs/kronk:latest
+```
+
+NVIDIA GPU (requires `nvidia-container-toolkit` on the host):
+
+```shell
+docker run --rm --gpus all \
+    -p 11435:11435 \
+    -v kronk-data:/kronk \
+    ghcr.io/ardanlabs/kronk:latest-cuda
+```
+
+The `/kronk` volume persists models, libraries, catalog data, keys, and
+badger state across container restarts — keep it on a host bind-mount or a
+named volume.
+
+The header comment of [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile)
+documents every `docker run` invocation (AMD ROCm; Vulkan on AMD / NVIDIA /
+Intel; Jetson; specific-card device passthrough; etc.) and lists the full
+host-OS × GPU compatibility matrix.
+
+### 2.4 Installing Libraries
 
 Before running inference, you need the llama.cpp libraries for your machine. Kronk auto-detects your hardware and downloads the appropriate binaries.
 
@@ -260,7 +314,7 @@ whisper.cpp libraries with the parallel `kronk bucky libs` command. The
 flags mirror `kronk libs` and the bundle lands under
 `~/.kronk/bucky-libraries/`. See [Chapter 18: Bucky](chapter-18-bucky.md).
 
-### 2.4 Downloading Your First Model
+### 2.5 Downloading Your First Model
 
 Kronk maintains your **personal catalog** at `~/.kronk/catalog.yaml`. On
 first run it is seeded from an embedded starter list so you have something
@@ -303,7 +357,7 @@ need to hit HuggingFace.
 `kronk bucky model pull <name>` (e.g. `tiny.en`). See
 [Chapter 18 §18.3](chapter-18-bucky.md#183-model-catalog-pull).
 
-### 2.5 Starting the Server
+### 2.6 Starting the Server
 
 Start the Kronk Model Server:
 
@@ -333,7 +387,7 @@ kronk server start -d
 kronk server stop
 ```
 
-### 2.6 Model Configuration File
+### 2.7 Model Configuration File
 
 When Kronk starts the server for the first time, it automatically installs a default `model_config.yaml` file in the `~/.kronk/` directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.
 
@@ -440,7 +494,7 @@ you're embedding the SDK directly).
 - Use YAML anchors (`&name` and `<<: *name`) to share common settings between variants. The default file includes examples of this pattern.
 - The `--model-config` server flag lets you point to an alternative config file for testing without modifying your main one.
 
-### 2.7 Verifying the Installation
+### 2.8 Verifying the Installation
 
 **Test via curl**
 
@@ -469,7 +523,7 @@ curl http://localhost:11435/v1/chat/completions \
 
 Open `http://localhost:11435` in your browser and navigate to the `Apps/Chat` app. Select the model you want to try and chat away.
 
-### 2.8 Quick Start Summary
+### 2.9 Quick Start Summary
 
 ```shell
 # 1. Install Kronk
@@ -490,7 +544,7 @@ curl http://localhost:11435/v1/chat/completions \
   -d '{"model": "Qwen3-0.6B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
-### 2.9 NixOS Setup
+### 2.10 NixOS Setup
 
 NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared
 libraries and binaries cannot be found in standard paths like `/usr/lib`. Kronk

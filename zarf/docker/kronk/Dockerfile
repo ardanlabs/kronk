@@ -334,10 +334,10 @@
 #      want, e.g. `--device=/dev/dri/renderD128`. The container then
 #      literally only sees that card and no env-var filtering is needed.
 #
-# Sanity check the filtering inside the container (the `:vulkan` image
-# does not ship vulkan-tools; run a throwaway Ubuntu container with
-# vulkan-tools installed and the same --device/--group-add flags to
-# confirm enumeration before launching kronk).
+# Sanity check the filtering inside the container — every Kronk image
+# ships `vulkan-tools`, so run `vulkaninfo --summary` (or
+# `docker exec <ctr> vulkaninfo --summary`) to confirm enumeration
+# before launching kronk.
 #
 # Liveness check:
 #
@@ -375,38 +375,61 @@ ARG KRONK_VERSION="dev"
 # compiles the kronk binary with the BUI assets embedded.
 # =============================================================================
 
-FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS builder
+# Base image is pinned by digest for reproducible builds. To bump, run:
+#   docker buildx imagetools inspect ubuntu:24.04
+# and copy the index digest from the `Digest:` line. The same digest is
+# reused for the libs-fetcher and runtime stages below.
+FROM --platform=$BUILDPLATFORM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS builder
 
 ARG BUILDPLATFORM
 ARG TARGETOS
 ARG TARGETARCH
 
+# Re-declare KRONK_VERSION inside this stage so the `go build` step below
+# can consume it via -ldflags. The global ARG at the top of the file only
+# scopes to FROM lines; stages that USE the value must re-declare. The
+# default mirrors the global ARG so a `docker build` without `--build-arg
+# KRONK_VERSION=...` still stamps a sensible value into the binary.
+ARG KRONK_VERSION="dev"
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Build dependencies: curl + ca-certificates to fetch toolchains, git for
 # any go modules that need it, build-essential for any pure-Go modules
-# that still shell out, xz-utils for the Node tarball.
+# that still shell out, xz-utils for the Node tarball, jq to parse the
+# go.dev release JSON when resolving the Go tarball sha256.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         git \
         build-essential \
+        jq \
         xz-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22 from the official binary distribution (NodeSource was
 # considered but pulls in a setup script we'd rather not run).
+#
+# Tarballs are pinned by sha256 — bump in lockstep with NODE_VERSION.
+# Discover hashes for a new version with:
+#   curl -fsSL https://nodejs.org/dist/v<VER>/SHASUMS256.txt \
+#       | grep -E 'linux-(x64|arm64)\.tar\.xz$'
 ENV NODE_VERSION=22.11.0
+ARG NODE_SHA256_X64="83bf07dd343002a26211cf1fcd46a9d9534219aad42ee02847816940bf610a72"
+ARG NODE_SHA256_ARM64="6031d04b98f59ff0f7cb98566f65b115ecd893d3b7870821171708cdbaf7ae6e"
 RUN set -eux; \
     case "$(uname -m)" in \
-        x86_64)  NODE_ARCH=x64 ;; \
-        aarch64) NODE_ARCH=arm64 ;; \
+        x86_64)  NODE_ARCH=x64;   NODE_SHA256="${NODE_SHA256_X64}" ;; \
+        aarch64) NODE_ARCH=arm64; NODE_SHA256="${NODE_SHA256_ARM64}" ;; \
         *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
-        | tar -xJ -C /usr/local --strip-components=1
+    curl -fsSL -o /tmp/node.tar.xz \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"; \
+    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c -; \
+    tar -xJ -C /usr/local --strip-components=1 -f /tmp/node.tar.xz; \
+    rm /tmp/node.tar.xz
 RUN node --version && npm --version
 
 WORKDIR /src
@@ -418,6 +441,17 @@ COPY go.mod go.sum ./
 
 # Install the Go toolchain version pinned in go.mod so the builder always
 # matches what developers use locally.
+#
+# The Go version is dynamic (parsed from go.mod), so we can't ARG-pin a
+# single sha256. Instead we fetch go.dev's release metadata JSON (which
+# lists sha256 per filename) and verify the tarball before unpacking.
+# Two defensive checks:
+#   1. The extracted sha256 must be 64 hex chars — otherwise jq found
+#      nothing (e.g. version doesn't exist) and returned `null` / empty,
+#      and sha256sum -c silently exits 0 on a malformed line.
+#   2. sha256sum --strict makes any malformed line an error.
+# Still trusts the TLS chain to go.dev — full PGP verification would
+# require fetching Google's signing key out-of-band.
 RUN set -eux; \
     GO_VERSION="$(awk '/^go [0-9]/ {print $2; exit}' go.mod)"; \
     case "$(uname -m)" in \
@@ -425,8 +459,18 @@ RUN set -eux; \
         aarch64) GO_ARCH=arm64 ;; \
         *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
-        | tar -xz -C /usr/local
+    GO_TARBALL="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
+    GO_SHA256="$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' \
+        | jq -r --arg v "go${GO_VERSION}" --arg f "${GO_TARBALL}" \
+            '.[] | select(.version==$v) | .files[] | select(.filename==$f) | .sha256')"; \
+    if ! printf '%s' "${GO_SHA256}" | grep -qE '^[0-9a-f]{64}$'; then \
+        echo "Go SHA256 lookup failed for ${GO_TARBALL} (got: '${GO_SHA256}')" >&2; \
+        exit 1; \
+    fi; \
+    curl -fsSL -o "/tmp/${GO_TARBALL}" "https://go.dev/dl/${GO_TARBALL}"; \
+    echo "${GO_SHA256}  /tmp/${GO_TARBALL}" | sha256sum --strict -c -; \
+    tar -xz -C /usr/local -f "/tmp/${GO_TARBALL}"; \
+    rm "/tmp/${GO_TARBALL}"
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOTOOLCHAIN=local
 
@@ -463,6 +507,11 @@ RUN --mount=type=cache,target=/root/.npm \
 # Cross-compile the kronk binary. CGO_ENABLED=0 produces a fully static
 # binary; the llama.cpp shared libraries are loaded at runtime via dlopen
 # (purego) so CGO is not required for kronk itself.
+#
+# KRONK_VERSION is stamped into github.com/ardanlabs/kronk/sdk/kronk.Version
+# at link time via -X. That symbol is a `var` (not a `const`) precisely so
+# the linker can override it; an empty/unset ARG falls back to the package
+# default ("dev"), matching what a local `go build ./cmd/kronk` produces.
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/root/go/pkg/mod \
     CGO_ENABLED=0 \
@@ -470,7 +519,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     GOARCH=${TARGETARCH} \
     go build \
         -trimpath \
-        -ldflags="-s -w" \
+        -ldflags="-s -w -X github.com/ardanlabs/kronk/sdk/kronk.Version=${KRONK_VERSION}" \
         -o /out/kronk \
         ./cmd/kronk
 
@@ -489,7 +538,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # `kronk libs` is network-bound, not CPU-bound.
 # =============================================================================
 
-FROM ubuntu:24.04 AS libs-fetcher
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS libs-fetcher
 
 ARG TARGETARCH
 ARG LLAMA_PROCESSORS
@@ -545,14 +594,26 @@ RUN set -eux; \
 # driver libraries surfaced via NVIDIA_* / LD_LIBRARY_PATH.
 # =============================================================================
 
-FROM ubuntu:24.04 AS runtime
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS runtime
 
 ARG KRONK_VERSION
 ARG LLAMA_PROCESSORS
+# TARGETARCH is auto-provided by BuildKit; declared here so the ROCm
+# install block below can gate on architecture (ROCm has no upstream
+# arm64 build).
+ARG TARGETARCH
 # ROCm version installed when LLAMA_PROCESSORS contains `rocm`. Pin to a
 # specific patch release for reproducibility; bump in lockstep with the
 # llama.cpp ROCm bundle if upstream advances its build target.
 ARG ROCM_VERSION="6.4.3"
+
+# Expected fingerprint of AMD's ROCm apt repo signing key. Verified
+# after fetching rocm.gpg.key over HTTPS; build fails loudly if AMD
+# rotates keys. Discover the current fingerprint with:
+#   curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
+#       | gpg --show-keys --with-colons \
+#       | awk -F: '/^fpr:/ {print $10; exit}'
+ARG ROCM_KEY_FINGERPRINT="CA8BB4727A47B4D09B4EE8969386B48A1A693C5C"
 
 LABEL org.opencontainers.image.source="https://github.com/ardanlabs/kronk" \
       org.opencontainers.image.title="kronk" \
@@ -584,24 +645,38 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install ROCm runtime (HIP runtime, rocBLAS, hipBLAS, rocminfo) when
-# `rocm` is present in LLAMA_PROCESSORS. AMD has no equivalent of the
-# NVIDIA Container Toolkit — the host kernel module is exposed via
-# /dev/kfd + /dev/dri but the userspace HIP/HSA libraries that
-# llama.cpp's ROCm bundle dlopens must live inside the container.
-# Adds ~2 GB to images that bundle the ROCm backend; zero impact on
-# images that do not (e.g. `:cpu`, `:cuda`, `:vulkan`).
+# `rocm` is present in LLAMA_PROCESSORS AND the target arch is amd64.
+# AMD publishes no upstream arm64 ROCm bundle and the apt repo is
+# `[arch=amd64]`, so attempting to install on arm64 fails. Gating here
+# lets a multi-arch build (`--platform linux/amd64,linux/arm64`) with
+# the default `LLAMA_PROCESSORS="cpu cuda vulkan rocm"` succeed on
+# both arches — arm64 simply omits the rocm bundle.
+#
+# AMD has no equivalent of the NVIDIA Container Toolkit — the host
+# kernel module is exposed via /dev/kfd + /dev/dri but the userspace
+# HIP/HSA libraries that llama.cpp's ROCm bundle dlopens must live
+# inside the container. Adds ~2 GB to images that bundle the ROCm
+# backend; zero impact on images that do not (e.g. `:cpu`, `:cuda`,
+# `:vulkan`).
 #
 # `rocminfo` doubles as the GPU detection probe for `DetectGPU()` (see
 # sdk/tools/devices/gpu_detect_linux.go), so installing it lets the
 # server auto-pick `--processor=rocm` instead of falling back to cpu.
 RUN set -eux; \
-    if echo " ${LLAMA_PROCESSORS} " | grep -q ' rocm '; then \
+    if [ "${TARGETARCH}" = "amd64" ] && echo " ${LLAMA_PROCESSORS} " | grep -q ' rocm '; then \
         apt-get update; \
-        apt-get install -y --no-install-recommends \
-            gnupg \
-            wget; \
-        wget -qO- https://repo.radeon.com/rocm/rocm.gpg.key \
-            | gpg --dearmor > /usr/share/keyrings/rocm-archive-keyring.gpg; \
+        apt-get install -y --no-install-recommends gnupg; \
+        curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key -o /tmp/rocm.gpg.key; \
+        ACTUAL_FPR="$(gpg --show-keys --with-colons /tmp/rocm.gpg.key \
+            | awk -F: '/^fpr:/ {print $10; exit}')"; \
+        if [ "${ACTUAL_FPR}" != "${ROCM_KEY_FINGERPRINT}" ]; then \
+            echo "ROCm key fingerprint mismatch:" >&2; \
+            echo "  expected ${ROCM_KEY_FINGERPRINT}" >&2; \
+            echo "  got      ${ACTUAL_FPR}" >&2; \
+            exit 1; \
+        fi; \
+        gpg --dearmor < /tmp/rocm.gpg.key > /usr/share/keyrings/rocm-archive-keyring.gpg; \
+        rm /tmp/rocm.gpg.key; \
         echo "deb [arch=amd64 signed-by=/usr/share/keyrings/rocm-archive-keyring.gpg] \
             https://repo.radeon.com/rocm/apt/${ROCM_VERSION} noble main" \
             > /etc/apt/sources.list.d/rocm.list; \
@@ -615,6 +690,7 @@ RUN set -eux; \
             rocminfo; \
         echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf; \
         ldconfig; \
+        apt-get purge -y --auto-remove gnupg; \
         apt-get clean; \
         rm -rf /var/lib/apt/lists/*; \
     fi
@@ -625,7 +701,25 @@ RUN set -eux; \
 # hosts (set when the host installs mesa-vulkan-drivers / ROCm). On
 # hosts where the render GID differs, callers should fall back to the
 # numeric form: --group-add "$(getent group render | cut -d: -f3)".
-RUN groupadd --system --gid 110 render || true
+#
+# Fail loudly if GID 110 is already taken by some other group — silent
+# fallback would mean `--group-add render` mysteriously stops granting
+# /dev/dri/renderD* access on that build of the image.
+RUN getent group render >/dev/null || groupadd --system --gid 110 render
+
+# Non-root runtime user. UID/GID 10001 is well above the Debian/Ubuntu
+# system-uid range (<1000) and unlikely to collide with host users.
+# Supplementary groups:
+#   - render (GID 110) → /dev/dri/renderD* for AMD/Intel/Vulkan GPUs
+#   - video  (GID 44)  → /dev/dri/card*, /dev/kfd for ROCm
+# Callers using a bind mount on /kronk must `chown 10001:10001` the
+# host directory (or use a named volume, which inherits the image's
+# ownership of /kronk automatically).
+RUN groupadd --system --gid 10001 kronk \
+ && useradd  --system --uid 10001 --gid 10001 \
+        --groups render,video \
+        --home-dir /kronk --shell /usr/sbin/nologin \
+        kronk
 
 # kronk binary.
 COPY --from=builder /out/kronk /usr/local/bin/kronk
@@ -641,16 +735,25 @@ COPY zarf/kms/model_config.yaml /etc/kronk/model_config.yaml
 # libraries are baked above; catalog/keys/logs land under /kronk too. All
 # subcommands honor KRONK_BASE_PATH (set below) so this is the single
 # source of truth for kronk's on-disk layout.
-RUN mkdir -p /kronk/models /kronk/catalog /kronk/keys
+RUN mkdir -p /kronk/models /kronk/catalog /kronk/keys \
+ && chown -R kronk:kronk /kronk /etc/kronk
+
+USER kronk:kronk
 
 # -----------------------------------------------------------------------------
 # Runtime configuration
 # -----------------------------------------------------------------------------
 ENV KRONK_BASE_PATH=/kronk \
     KRONK_WEB_API_HOST=0.0.0.0:11435 \
-    KRONK_DOWNLOAD_ENABLED=true \
+    KRONK_DOWNLOAD_ENABLED=false \
     KRONK_INSECURE_LOGGING=false \
     KRONK_POOL_MODEL_CONFIG_FILE=/etc/kronk/model_config.yaml
+
+# Note on KRONK_DOWNLOAD_ENABLED: defaults to `false` for a security-
+# conscious production posture (no outbound model fetches from the
+# server process). Dev images / docker-compose stacks that want the
+# browser UI's "download library/model" buttons to work should override
+# at run time with `-e KRONK_DOWNLOAD_ENABLED=true`.
 
 # NVIDIA GPU passthrough hints — honoured by the NVIDIA Container Runtime
 # when the user runs with `--gpus all` (or equivalent). Harmless on hosts
@@ -658,7 +761,10 @@ ENV KRONK_BASE_PATH=/kronk \
 # bundled the ROCm backend (the conditional install above also wires it
 # into ld.so.conf.d, but exporting it here covers callers that bypass
 # the dynamic linker cache, e.g. dlopen with absolute paths).
-ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib \
+# /usr/local/cuda/lib64 is included so dlopen() of explicit CUDA libs
+# (libcudart, libcublas, ...) resolves when the NVIDIA Container
+# Runtime injects them under that prefix instead of /usr/local/nvidia.
+ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/opt/rocm/lib \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     NVIDIA_VISIBLE_DEVICES=all \
     PATH=/opt/rocm/bin:${PATH}
@@ -681,7 +787,17 @@ ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib 
 #        KRONK_WEB_DEBUG_HOST if you want to keep it local-only.
 EXPOSE 11435 11445
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+# kronk traps SIGINT and SIGTERM for graceful shutdown
+# (cmd/server/api/services/kronk/main.go). Docker sends SIGTERM by
+# default; declaring STOPSIGNAL makes that contract explicit and
+# survives base-image changes that might one day flip the default.
+STOPSIGNAL SIGTERM
+
+# --start-period is generous (60s) because cold container starts on
+# GPU hosts can spend the first several seconds enumerating Vulkan
+# ICDs / probing nvidia-smi / loading badger. Start-period failures
+# don't count against --retries, so erring high is essentially free.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://127.0.0.1:11435/v1/liveness || exit 1
 
 ENTRYPOINT ["/usr/local/bin/kronk"]
@@ -711,9 +827,19 @@ CMD ["server", "start", "--base-path", "/kronk"]
 # alongside the real Tegra one.
 # =============================================================================
 
-FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime AS runtime-jetson
+# Pinned by digest for reproducibility. To bump, run:
+#   docker buildx imagetools inspect nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
+FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime@sha256:49853e9fe2a0305efa51fcbb3426eea1bca658085f2d26bb40347711434849b1 AS runtime-jetson
 
 ARG KRONK_VERSION
+
+# Pinned libstdc++6 version from ppa:ubuntu-toolchain-r/test for jammy.
+# Bump when llama.cpp's prebuilt CUDA bundle starts requiring a newer
+# GLIBCXX symbol than what jammy's stock libstdc++6 (12.x) exports.
+# To discover the current candidate version, run inside a transient
+# jammy container with the PPA added:
+#   apt-cache policy libstdc++6 | head -20
+ARG LIBSTDCXX_VERSION="14.2.0-4ubuntu2~22.04"
 
 LABEL org.opencontainers.image.source="https://github.com/ardanlabs/kronk" \
       org.opencontainers.image.title="kronk" \
@@ -727,31 +853,50 @@ LABEL org.opencontainers.image.source="https://github.com/ardanlabs/kronk" \
 ENV DEBIAN_FRONTEND=noninteractive
 
 # L4T r36 ships Ubuntu 22.04 (jammy) — its bundled libstdc++6 is older
-# than what the llama.cpp prebuilt CUDA bundle expects. Add the test
-# toolchain PPA and upgrade libstdc++6 to satisfy the GLIBCXX symbol
-# requirements (the same workaround yzma's INSTALL.md documents for
-# Jetson Vulkan installs).
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+# than what the llama.cpp prebuilt CUDA bundle expects. We add the
+# `ubuntu-toolchain-r/test` PPA only at build time, install a PINNED
+# libstdc++6 version (see LIBSTDCXX_VERSION arg above), then purge
+# software-properties-common + gnupg and remove the PPA's apt source
+# so the final image carries neither the rolling test repo nor the
+# tooling that added it. Reproducibility comes from the version pin;
+# supply-chain surface stays small. Same trick yzma's INSTALL.md
+# documents for Jetson Vulkan installs.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         gnupg \
-        software-properties-common \
-    && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
+        software-properties-common; \
+    add-apt-repository -y ppa:ubuntu-toolchain-r/test; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         libcurl4 \
         libgomp1 \
         libnuma1 \
         libopenblas0 \
-        libstdc++6 \
+        "libstdc++6=${LIBSTDCXX_VERSION}" \
         libvulkan1 \
-        tzdata \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+        tzdata; \
+    apt-get purge -y --auto-remove software-properties-common gnupg; \
+    rm -f /etc/apt/sources.list.d/ubuntu-toolchain-r-*.list \
+          /etc/apt/sources.list.d/ubuntu-toolchain-r-ubuntu-*.list \
+          /etc/apt/trusted.gpg.d/ubuntu-toolchain-r-*.gpg; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
 # `render` group for /dev/dri/renderD* on Jetson (matches the host GID).
-RUN groupadd --system --gid 110 render || true
+# Fail loudly if GID 110 is already taken — see equivalent comment in
+# the default runtime stage above.
+RUN getent group render >/dev/null || groupadd --system --gid 110 render
+
+# Non-root runtime user (see the same block in the default runtime
+# stage above for the rationale and bind-mount caveat).
+RUN groupadd --system --gid 10001 kronk \
+ && useradd  --system --uid 10001 --gid 10001 \
+        --groups render,video \
+        --home-dir /kronk --shell /usr/sbin/nologin \
+        kronk
 
 # kronk binary.
 COPY --from=builder /out/kronk /usr/local/bin/kronk
@@ -764,7 +909,10 @@ COPY --from=libs-fetcher /kronk/libraries /kronk/libraries
 # path referenced by KRONK_POOL_MODEL_CONFIG_FILE below.
 COPY zarf/kms/model_config.yaml /etc/kronk/model_config.yaml
 
-RUN mkdir -p /kronk/models /kronk/catalog /kronk/keys
+RUN mkdir -p /kronk/models /kronk/catalog /kronk/keys \
+ && chown -R kronk:kronk /kronk /etc/kronk
+
+USER kronk:kronk
 
 # -----------------------------------------------------------------------------
 # Runtime configuration
@@ -776,10 +924,13 @@ RUN mkdir -p /kronk/models /kronk/catalog /kronk/keys
 # probe — neither matches the Linux DetectGPU() switch).
 ENV KRONK_BASE_PATH=/kronk \
     KRONK_WEB_API_HOST=0.0.0.0:11435 \
-    KRONK_DOWNLOAD_ENABLED=true \
+    KRONK_DOWNLOAD_ENABLED=false \
     KRONK_INSECURE_LOGGING=false \
     KRONK_POOL_MODEL_CONFIG_FILE=/etc/kronk/model_config.yaml \
     KRONK_PROCESSOR=cuda
+
+# See note on KRONK_DOWNLOAD_ENABLED in the default runtime stage.
+# Override at run time with `-e KRONK_DOWNLOAD_ENABLED=true` for dev.
 
 # NVIDIA Container Runtime hints. On Jetson the toolkit injects Tegra
 # driver libraries from /usr/lib/aarch64-linux-gnu/tegra/ — adding that
@@ -794,7 +945,10 @@ ENV LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/tegra:/usr/local/cuda/lib64 \
 
 EXPOSE 11435 11445
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+# See default-runtime STOPSIGNAL/HEALTHCHECK comments for rationale.
+STOPSIGNAL SIGTERM
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://127.0.0.1:11435/v1/liveness || exit 1
 
 ENTRYPOINT ["/usr/local/bin/kronk"]

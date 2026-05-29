@@ -1,0 +1,448 @@
+name: Docker
+
+# Build (and on push: publish) the kronk container image variants defined in
+# zarf/docker/kronk/Dockerfile. Six variants are produced:
+#
+#   cpu      — minimal, runs on any host (all arches)
+#   cuda     — NVIDIA CUDA runtime baked in
+#   vulkan   — vendor-neutral GPU via Vulkan
+#   rocm     — AMD ROCm runtime (linux/amd64 only — upstream has no arm64 build)
+#   jetson   — NVIDIA Jetson L4T base (linux/arm64 only, --target=runtime-jetson)
+#   all      — bundles cpu+cuda+vulkan+rocm into a single image
+#
+# Multi-arch images (cpu / cuda / vulkan / all) are built natively on
+# `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64) runners, then
+# stitched into a single manifest with `docker buildx imagetools create`.
+# This avoids the ~5x slowdown of QEMU emulation for arm64 builds. Rocm
+# and jetson skip the manifest merge step because they're single-arch.
+#
+# ┌────────────────────┬─────────────────────────────────────────────────────┐
+# │ Event              │ Behaviour                                           │
+# ├────────────────────┼─────────────────────────────────────────────────────┤
+# │ pull_request       │ Build the `cpu` variant only (no push) by default.  │
+# │                    │ Add a label `build all` to build everything, or     │
+# │                    │ `build <variant>` (e.g. `build cuda`) for a subset. │
+# ├────────────────────┼─────────────────────────────────────────────────────┤
+# │ push → main        │ Build & push all variants as                        │
+# │                    │   <registry>/ardanlabs/kronk:main-<shortsha>-<v>    │
+# ├────────────────────┼─────────────────────────────────────────────────────┤
+# │ push → tag v*      │ Build & push all variants as                        │
+# │                    │   <registry>/ardanlabs/kronk:<tag>-<v>              │
+# │                    │   <registry>/ardanlabs/kronk:latest-<v>             │
+# │                    │ Plus a floating <registry>/ardanlabs/kronk:latest   │
+# │                    │ pointing at the cpu image.                          │
+# ├────────────────────┼─────────────────────────────────────────────────────┤
+# │ workflow_dispatch  │ Manual run. `variants` input ("all" or comma list)  │
+# │                    │ picks the subset to build (no push).                │
+# └────────────────────┴─────────────────────────────────────────────────────┘
+#
+# The kronk binary embedded in the image has its version string stamped at
+# link time via `-ldflags "-X .../sdk/kronk.Version=<value>"` — see
+# zarf/docker/kronk/Dockerfile and sdk/kronk/kronk.go.
+
+on:
+  pull_request:
+    branches: [main]
+    # `labeled`/`unlabeled` lets reviewers expand the PR build matrix by
+    # adding a `build <variant>` label after the PR is open, without
+    # needing to push an empty commit.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "cmd/server/api/frontends/bui/**"
+      - "zarf/docker/kronk/**"
+      - "zarf/kms/**"
+      - ".github/workflows/docker.yml"
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      variants:
+        description: "Comma-separated variants to build, or 'all'."
+        default: "all"
+        required: false
+
+# Cancel superseded runs on the same PR / branch. Tag pushes get a unique
+# group so simultaneously-pushed tags don't cancel each other.
+concurrency:
+  group: docker-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  GHCR_IMAGE: ghcr.io/ardanlabs/kronk
+  DH_IMAGE: ardanlabs/kronk
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # plan
+  #
+  # Decides which (variant, arch) pairs to build for this event and emits a
+  # JSON matrix consumed by the `build` job. Also produces the version
+  # string that gets stamped into the binary and used as the image tag
+  # prefix.
+  # ---------------------------------------------------------------------------
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      push: ${{ steps.plan.outputs.push }}
+      is_tag: ${{ steps.plan.outputs.is_tag }}
+      version: ${{ steps.plan.outputs.version }}
+      variants: ${{ steps.plan.outputs.variants }}
+    steps:
+      - name: Compute matrix
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          DISPATCH_VARIANTS: ${{ github.event.inputs.variants }}
+        run: |
+          set -euo pipefail
+
+          # -------------------------------------------------------------------
+          # Version + push policy
+          # -------------------------------------------------------------------
+          IS_TAG=false
+          if [[ "$EVENT" == "push" && "$REF" == refs/tags/v* ]]; then
+            VERSION="${REF#refs/tags/}"     # e.g. v1.26.4
+            PUSH=true
+            IS_TAG=true
+          elif [[ "$EVENT" == "push" && "$REF" == "refs/heads/main" ]]; then
+            VERSION="main-${SHA:0:7}"       # e.g. main-abc1234
+            PUSH=true
+          else
+            # pull_request or workflow_dispatch — build only, no push.
+            VERSION="pr-${SHA:0:7}"
+            PUSH=false
+          fi
+
+          # -------------------------------------------------------------------
+          # Variant catalogue. Keep in sync with the table in the header
+          # comment above and with zarf/docker/kronk/Dockerfile.
+          # -------------------------------------------------------------------
+          ALL_VARIANTS=(cpu cuda vulkan rocm jetson all)
+
+          declare -A PLATFORMS=(
+            [cpu]="amd64 arm64"
+            [cuda]="amd64 arm64"
+            [vulkan]="amd64 arm64"
+            [rocm]="amd64"
+            [jetson]="arm64"
+            [all]="amd64 arm64"
+          )
+          declare -A TARGET=(
+            [cpu]=runtime
+            [cuda]=runtime
+            [vulkan]=runtime
+            [rocm]=runtime
+            [jetson]=runtime-jetson
+            [all]=runtime
+          )
+          # Whitespace-separated processor lists fed to LLAMA_PROCESSORS in
+          # the Dockerfile. The "all" variant intentionally omits jetson
+          # because Jetson uses a different runtime base image entirely.
+          declare -A PROCESSORS=(
+            [cpu]="cpu"
+            [cuda]="cuda"
+            [vulkan]="vulkan"
+            [rocm]="rocm"
+            [jetson]="cuda"
+            [all]="cpu cuda vulkan rocm"
+          )
+
+          # -------------------------------------------------------------------
+          # Variant selection
+          # -------------------------------------------------------------------
+          CHOSEN=()
+          case "$EVENT" in
+            push)
+              CHOSEN=("${ALL_VARIANTS[@]}")
+              ;;
+            workflow_dispatch)
+              if [[ -z "$DISPATCH_VARIANTS" || "$DISPATCH_VARIANTS" == "all" ]]; then
+                CHOSEN=("${ALL_VARIANTS[@]}")
+              else
+                IFS=',' read -ra REQ <<< "$DISPATCH_VARIANTS"
+                for v in "${REQ[@]}"; do
+                  v="$(echo "$v" | xargs)" # trim
+                  if [[ -n "${PLATFORMS[$v]:-}" ]]; then
+                    CHOSEN+=("$v")
+                  else
+                    echo "::warning::Unknown variant '$v' — ignoring"
+                  fi
+                done
+              fi
+              ;;
+            pull_request)
+              # Default = cpu. Label `build all` overrides. Otherwise
+              # collect every `build <variant>` label present.
+              if echo "$PR_LABELS" | jq -e 'any(. == "build all")' >/dev/null; then
+                CHOSEN=("${ALL_VARIANTS[@]}")
+              else
+                for v in "${ALL_VARIANTS[@]}"; do
+                  if echo "$PR_LABELS" | jq -e --arg n "build $v" 'any(. == $n)' >/dev/null; then
+                    CHOSEN+=("$v")
+                  fi
+                done
+                if [[ ${#CHOSEN[@]} -eq 0 ]]; then
+                  CHOSEN=(cpu)
+                fi
+              fi
+              ;;
+          esac
+
+          # -------------------------------------------------------------------
+          # Expand (variant) → (variant, arch) matrix entries
+          # -------------------------------------------------------------------
+          INCLUDE='[]'
+          for v in "${CHOSEN[@]}"; do
+            for a in ${PLATFORMS[$v]}; do
+              RUNNER=$([[ "$a" == "arm64" ]] && echo "ubuntu-24.04-arm" || echo "ubuntu-24.04")
+              ITEM=$(jq -nc \
+                --arg variant "$v" \
+                --arg arch "$a" \
+                --arg platform "linux/$a" \
+                --arg target "${TARGET[$v]}" \
+                --arg processors "${PROCESSORS[$v]}" \
+                --arg runner "$RUNNER" \
+                '{variant:$variant, arch:$arch, platform:$platform, target:$target, processors:$processors, runner:$runner}')
+              INCLUDE=$(echo "$INCLUDE" | jq -c --argjson i "$ITEM" '. + [$i]')
+            done
+          done
+          MATRIX=$(jq -nc --argjson inc "$INCLUDE" '{include:$inc}')
+          VARIANTS_JSON=$(printf '%s\n' "${CHOSEN[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+
+          {
+            echo "matrix=$MATRIX"
+            echo "push=$PUSH"
+            echo "is_tag=$IS_TAG"
+            echo "version=$VERSION"
+            echo "variants=$VARIANTS_JSON"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "::group::Plan"
+          echo "event=$EVENT  ref=$REF  push=$PUSH  is_tag=$IS_TAG  version=$VERSION"
+          echo "chosen variants: ${CHOSEN[*]}"
+          echo "$MATRIX" | jq .
+          echo "::endgroup::"
+
+  # ---------------------------------------------------------------------------
+  # build
+  #
+  # One job per (variant, arch). On push events the per-arch image is
+  # pushed by digest only — no human-readable tag yet. The `merge` job
+  # combines arch-specific digests into the final multi-arch manifest.
+  # On PR / workflow_dispatch events we just build (no push) to validate
+  # the Dockerfile.
+  # ---------------------------------------------------------------------------
+  build:
+    needs: plan
+    if: needs.plan.outputs.matrix != '{"include":[]}'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Free disk space
+        # `docker/build-push-action` on the all-backends image easily
+        # consumes >30 GB across BuildKit cache + layers. The hosted
+        # runners ship with ~14 GB free out of the box; reclaiming the
+        # preinstalled toolchains buys another ~25 GB.
+        run: |
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: needs.plan.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: needs.plan.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # PR / workflow_dispatch path: build, no push. Validates the
+      # Dockerfile compiles and produces a runnable image for this arch.
+      - name: Build (no push)
+        if: needs.plan.outputs.push != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: zarf/docker/kronk/Dockerfile
+          platforms: ${{ matrix.platform }}
+          target: ${{ matrix.target }}
+          push: false
+          load: false
+          build-args: |
+            LLAMA_PROCESSORS=${{ matrix.processors }}
+            KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
+          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}-${{ matrix.arch }}
+
+      # Push event path: build & push by digest only. Final tags get
+      # applied by the `merge` job once both arches are available.
+      - name: Build & push by digest
+        if: needs.plan.outputs.push == 'true'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: zarf/docker/kronk/Dockerfile
+          platforms: ${{ matrix.platform }}
+          target: ${{ matrix.target }}
+          build-args: |
+            LLAMA_PROCESSORS=${{ matrix.processors }}
+            KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
+          outputs: |
+            type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+            type=image,name=${{ env.DH_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}-${{ matrix.arch }}
+
+      - name: Export digest
+        if: needs.plan.outputs.push == 'true'
+        run: |
+          mkdir -p /tmp/digests
+          digest='${{ steps.build.outputs.digest }}'
+          # Use the bare hex part as the filename so the merge job can
+          # reconstruct `<image>@sha256:<digest>` references unambiguously.
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: needs.plan.outputs.push == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.variant }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # merge
+  #
+  # Per-variant: assemble the multi-arch manifest from the per-arch digests
+  # uploaded by `build`, and apply the human-readable tags. Single-arch
+  # variants (rocm, jetson) still go through here — `imagetools create`
+  # happily wraps a single platform.
+  # ---------------------------------------------------------------------------
+  merge:
+    needs: [plan, build]
+    if: needs.plan.outputs.push == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.plan.outputs.variants) }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests for this variant
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.variant }}-*
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create and push manifests
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
+          IS_TAG: ${{ needs.plan.outputs.is_tag }}
+        run: |
+          set -euo pipefail
+
+          # Build the list of per-arch digest references for both
+          # registries. The artifact layout is
+          # /tmp/digests/digests-<variant>-<arch>/<hexdigest>.
+          GHCR_REFS=()
+          DH_REFS=()
+          for dir in /tmp/digests/digests-"${VARIANT}"-*; do
+            [[ -d "$dir" ]] || continue
+            for f in "$dir"/*; do
+              [[ -e "$f" ]] || continue
+              d=$(basename "$f")
+              GHCR_REFS+=("${GHCR_IMAGE}@sha256:${d}")
+              DH_REFS+=("${DH_IMAGE}@sha256:${d}")
+            done
+          done
+
+          if [[ ${#GHCR_REFS[@]} -eq 0 ]]; then
+            echo "::error::No digests found for variant=${VARIANT}"
+            exit 1
+          fi
+
+          # Determine the tag set for this variant.
+          #   main push  → <version>-<variant>     (e.g. main-abc1234-cpu)
+          #   tag push   → <version>-<variant>     (e.g. v1.26.4-cpu)
+          #              + latest-<variant>
+          #              + latest (cpu only — see issue/PR discussion)
+          TAGS=("${VERSION}-${VARIANT}")
+          if [[ "$IS_TAG" == "true" ]]; then
+            TAGS+=("latest-${VARIANT}")
+            if [[ "$VARIANT" == "cpu" ]]; then
+              TAGS+=("latest")
+            fi
+          fi
+
+          echo "::group::Manifest plan"
+          echo "variant=${VARIANT}"
+          echo "tags=${TAGS[*]}"
+          printf '  GHCR ref: %s\n' "${GHCR_REFS[@]}"
+          printf '  DH   ref: %s\n' "${DH_REFS[@]}"
+          echo "::endgroup::"
+
+          for TAG in "${TAGS[@]}"; do
+            echo ">>> ${GHCR_IMAGE}:${TAG}"
+            docker buildx imagetools create \
+              -t "${GHCR_IMAGE}:${TAG}" "${GHCR_REFS[@]}"
+
+            echo ">>> ${DH_IMAGE}:${TAG}"
+            docker buildx imagetools create \
+              -t "${DH_IMAGE}:${TAG}" "${DH_REFS[@]}"
+          done
+
+      - name: Inspect published images
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          docker buildx imagetools inspect "${GHCR_IMAGE}:${VERSION}-${VARIANT}" || true
+          docker buildx imagetools inspect "${DH_IMAGE}:${VERSION}-${VARIANT}" || true

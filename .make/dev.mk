@@ -115,6 +115,7 @@ deps-upgrade: bui-upgrade
 	go mod tidy
 	cd examples && go get -u -v ./...
 	cd examples && go mod tidy
+	./zarf/docker/kronk/upgrade-pins.sh
 
 yzma-latest:
 	GOPROXY=direct go get github.com/hybridgroup/yzma@main
