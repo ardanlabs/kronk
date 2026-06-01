@@ -26,7 +26,8 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b9453"
+	// https://github.com/ggml-org/llama.cpp/issues/23986
+	defaultVersion = "b9432"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
