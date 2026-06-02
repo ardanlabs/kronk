@@ -1,0 +1,20 @@
+# Models pulled by the setup-kronk composite action for CI integration
+# tests (api/service tests and sdk tests in linux.yml). Each line is:
+#
+#   <backend> <model-id>
+#
+# where backend is `kronk` (LLM/embed/rerank, pulled via `kronk model pull`)
+# or `bucky` (audio transcription, pulled via `kronk bucky model pull`).
+#
+# Blank lines and lines starting with `#` are ignored.
+#
+# This file is hashed into the models-cache key — adding, removing, or
+# renaming a model automatically invalidates the cache on the next run,
+# so the test environment never silently goes stale against the test
+# expectations. Do NOT add comments at the end of model lines.
+
+kronk unsloth/Qwen3.5-0.8B-Q8_0
+kronk Qwen/Qwen3-8B-Q8_0
+kronk ggml-org/embeddinggemma-300m-qat-Q8_0
+kronk gpustack/bge-reranker-v2-m3-Q8_0
+bucky tiny.en

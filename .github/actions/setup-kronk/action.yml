@@ -1,16 +1,29 @@
 name: Set up Kronk test environment
 description: >
-  Frees disk space, installs Go pinned to go.mod, restores the shared
-  models cache, builds the kronk CLI, installs the llama.cpp + whisper.cpp
-  libraries and (on cache miss) pulls every model required by the
-  integration tests. Re-used from the parallel test jobs in linux.yml so
-  api-tests and sdk-tests start from an identical environment and share
-  setup-go's Go module + build cache via the common cache key.
+  Frees disk space, installs Go pinned to .go-version, restores the
+  shared libraries + models caches, builds the kronk CLI, installs the
+  llama.cpp + whisper.cpp libraries and (on cache miss) pulls every
+  model listed in .github/test-models.txt. Re-used from the parallel
+  test jobs in linux.yml so api-tests and sdk-tests start from an
+  identical environment and share setup-go's Go module + build cache
+  via the common cache key.
+
+inputs:
+  models-cache-key:
+    description: >
+      The cache key for the kronk + bucky model directories. Callers
+      should bake hashFiles('.github/test-models.txt') into the key so
+      that adding or changing a required model automatically
+      invalidates the cache instead of silently reusing a stale set.
+    required: true
 
 outputs:
-  cache-hit:
+  models-cache-hit:
     description: "Whether the models cache was a hit."
     value: ${{ steps.cache-models.outputs.cache-hit }}
+  models-cache-key:
+    description: "The resolved models-cache key (echoed back so the caller can re-use it for the save step)."
+    value: ${{ inputs.models-cache-key }}
 
 runs:
   using: composite
@@ -29,20 +42,34 @@ runs:
     # version for govulncheck. The .go-version file is also picked up
     # automatically by asdf, mise, goenv, gvm, and direnv's use_go.
     # setup-go's cache key includes the resolved Go version, so all jobs
-    # using this file share the same cache.
+    # using this file share the same Go module + build cache.
     - name: Install Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
       with:
         go-version-file: .go-version
 
+    # Native llama.cpp + whisper.cpp library cache. Keyed on the version
+    # constants in their installer packages, so a defaultVersion bump in
+    # code invalidates this cache without bumping any cache-key suffix
+    # by hand. Separate from the models cache because libs change far
+    # less often.
+    - name: Restore libraries cache
+      id: cache-libs
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+      with:
+        path: |
+          ~/.kronk/libraries
+          ~/.kronk/bucky-libraries
+        key: ${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}
+
     - name: Restore models cache
       id: cache-models
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
       with:
         path: |
           ~/.kronk/models
           ~/.kronk/bucky-models
-        key: ${{ runner.os }}-models-v4
+        key: ${{ inputs.models-cache-key }}
 
     - name: Install kronk command
       shell: bash
@@ -57,6 +84,9 @@ runs:
       # `kronk bucky libs --local` does the same for the whisper.cpp
       # backend used by the bucky pool and the
       # /v1/audio/transcriptions endpoint.
+      #
+      # Both commands are idempotent: on a libraries cache hit they
+      # re-detect the on-disk version and short-circuit.
       shell: bash
       run: |
         mkdir -p $HOME/.kronk/libraries
@@ -66,10 +96,29 @@ runs:
     - name: Download test models
       if: steps.cache-models.outputs.cache-hit != 'true'
       shell: bash
+      # The model list lives in .github/test-models.txt (one
+      # `<backend> <model-id>` per line). The same file is hashed into
+      # the cache key by the caller, so any change here forces a
+      # download on the next run instead of silently reusing a stale
+      # cache that's missing the new entry.
       run: |
+        set -euo pipefail
         mkdir -p $HOME/.kronk/models
-        kronk model pull --local unsloth/Qwen3.5-0.8B-Q8_0
-        kronk model pull --local Qwen/Qwen3-8B-Q8_0
-        kronk model pull --local ggml-org/embeddinggemma-300m-qat-Q8_0
-        kronk model pull --local gpustack/bge-reranker-v2-m3-Q8_0
-        kronk bucky model pull --local tiny.en
+        while IFS= read -r line || [[ -n "$line" ]]; do
+          # Strip comments / blanks.
+          line="${line%%#*}"
+          line="${line#"${line%%[![:space:]]*}"}"
+          line="${line%"${line##*[![:space:]]}"}"
+          [[ -z "$line" ]] && continue
+          # shellcheck disable=SC2086  # intentional word-splitting on the space.
+          set -- $line
+          backend="$1"; model="$2"
+          case "$backend" in
+            kronk) kronk model pull --local "$model" ;;
+            bucky) kronk bucky model pull --local "$model" ;;
+            *)
+              echo "::error file=.github/test-models.txt::Unknown backend '$backend' (expected 'kronk' or 'bucky')"
+              exit 1
+              ;;
+          esac
+        done <.github/test-models.txt

@@ -5,19 +5,44 @@ on:
     tags:
       - "v*"
 
+# Tag pushes only — branch protection on `v*` tags + the `production`
+# environment below mean the HOMEBREW_TAP_GITHUB_TOKEN can only ever
+# fire under maintainer-approved circumstances.
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Gated environment so the Homebrew tap PAT only unlocks for
+    # maintainer-approved runs. Configure required reviewers + tag
+    # pattern restrictions on this environment in the repo's
+    # Settings > Environments page.
+    environment: release
     permissions:
-      contents: write
+      contents: write      # goreleaser publishes GitHub release assets
+      id-token: write      # actions/attest-build-provenance (SLSA OIDC)
+      attestations: write  # actions/attest-build-provenance (write attestations)
+    env:
+      GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      # Same drift guard the linux.yml `static` job runs — catches the
+      # case where someone bumps go.mod/.go-version without the other.
+      # Cheap to run again here so a tag push can never publish binaries
+      # built against an unintended toolchain.
+      - name: Check Go version pin
+        run: ./.github/scripts/check-go-version.sh
+
+      # CI's pinned toolchain (matches the linux.yml static + test jobs
+      # so the release binary is built with the same compiler we tested
+      # against).
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version-file: go.mod
+          go-version-file: .go-version
 
       # Guard: the pushed tag must match `const Version` in
       # sdk/kronk/kronk.go. Fails the release before any artifacts are
@@ -25,10 +50,30 @@ jobs:
       - name: Check tag matches sdk/kronk.Version
         run: ./.github/scripts/check-version.sh
 
-      - uses: goreleaser/goreleaser-action@v7
+      # syft is installed up-front so goreleaser's `sboms:` section can
+      # invoke it as its SBOM generator (see .goreleaser.yaml).
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0
+
+      - uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89  # v7
+        id: goreleaser
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      # SLSA build provenance for every artifact GoReleaser produced.
+      # `actions/attest-build-provenance` resolves to a glob over
+      # dist/checksums.txt-listed paths; we pass the binary tarballs/zips
+      # and the checksums file itself so any consumer can verify with
+      # `gh attestation verify` or `cosign verify-attestation`.
+      - name: Attest release artifacts (SLSA)
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a  # v3
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+            dist/*.sbom.json

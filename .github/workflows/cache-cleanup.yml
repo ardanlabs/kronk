@@ -136,13 +136,19 @@ jobs:
           # --paginate` follows `Link: next` headers automatically and
           # emits ONE top-level JSON array PER PAGE on stdout — `jq -s
           # 'add // []'` slurps the resulting stream of arrays and
-          # concatenates them into a single flat array (and yields `[]`
-          # when the package doesn't exist yet — first run, before any
-          # cache has been pushed — so the downstream jq filters work
-          # uniformly).
-          all="$(gh api --paginate \
+          # concatenates them into a single flat array.
+          #
+          # `gh api` itself exits non-zero on 404 (e.g. first run, before
+          # any cache has been pushed and the package therefore doesn't
+          # exist yet) — `set -euo pipefail` would otherwise abort the
+          # workflow. Treat any error from the listing as "nothing to
+          # prune" and continue with an empty array.
+          if ! all="$(gh api --paginate \
             "/orgs/${ORG}/packages/container/${BUILDCACHE_PACKAGE}/versions?per_page=100" \
-            2>/dev/null | jq -s 'add // []')"
+            2>/dev/null | jq -s 'add // []')"; then
+            echo "Package versions API returned an error — assuming no cache to prune yet."
+            all='[]'
+          fi
 
           stale="$(echo "${all}" | jq -c --argjson cutoff "${cutoff_epoch}" '
             [ .[] | select((.updated_at | fromdateiso8601) < $cutoff) ]

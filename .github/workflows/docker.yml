@@ -1,7 +1,7 @@
 name: Docker
 
 # Build (and on push: publish) the kronk container image variants defined in
-# zarf/docker/kronk/Dockerfile. Six variants are produced:
+# zarf/docker/kronk/Dockerfile. Five variants are produced:
 #
 #   cpu      — minimal, runs on any host (all arches)
 #   cuda     — NVIDIA CUDA runtime baked in
@@ -19,8 +19,10 @@ name: Docker
 # Multi-arch images (cpu / cuda / vulkan / all) are built natively on
 # `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64) runners, then
 # stitched into a single manifest with `docker buildx imagetools create`.
-# This avoids the ~5x slowdown of QEMU emulation for arm64 builds. Rocm
-# skips the manifest merge step because they're single-arch.
+# This avoids the ~5x slowdown of QEMU emulation for arm64 builds. The
+# single-arch `rocm` variant still goes through `merge`; `imagetools
+# create` happily wraps a single platform manifest under the same tag
+# scheme so consumers can pull `rocm` by tag without caring about arch.
 #
 # ┌────────────────────┬─────────────────────────────────────────────────────┐
 # │ Event              │ Behaviour                                           │
@@ -112,7 +114,7 @@ jobs:
     steps:
       # Needed for the tag-vs-constant guard below. Sparse to keep the
       # planner cheap — only the script and the one file it inspects.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           sparse-checkout: |
             .github/scripts
@@ -136,6 +138,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABEL_NAME: ${{ github.event.label.name }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_ACTOR: ${{ github.event.sender.login }}
           DISPATCH_VARIANTS: ${{ github.event.inputs.variants }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -227,11 +230,51 @@ jobs:
               PR_FILES="$(gh api --paginate \
                 "/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" \
                 --jq '.[].filename')"
-              if ! grep -Eq '(\.go$|^go\.(mod|sum)$|^cmd/server/api/frontends/bui/|^zarf/docker/kronk/|^zarf/kms/|^\.github/workflows/docker\.yml$)' <<<"$PR_FILES"; then
+              if ! grep -Eq '(\.go$|^go\.(mod|sum)$|^\.go-version$|^\.dockerignore$|^cmd/server/api/frontends/bui/|^zarf/docker/kronk/|^zarf/kms/|^\.github/workflows/docker\.yml$)' <<<"$PR_FILES"; then
                 echo "Skipping: PR diff touches no Docker-relevant paths"
                 PR_RELEVANT=false
               fi
             fi
+          fi
+
+          # -------------------------------------------------------------------
+          # Build-label permission gate
+          #
+          # `build *` labels expand the matrix to expensive multi-arch
+          # variants, so they're restricted to users with `write`,
+          # `maintain`, or `admin` permission on the repo. The
+          # label-guard.yml workflow handles the user-visible cleanup
+          # (removes the label, posts a comment), but its cleanup
+          # actions use GITHUB_TOKEN, which does NOT trigger downstream
+          # workflow runs — so we can't rely on it to cancel an
+          # in-flight build via an `unlabeled` event. Instead, replicate
+          # the check here and strip the unauthorized label from
+          # PR_LABELS so the matrix never sees it.
+          #
+          # Only the `labeled` action needs to be gated: every other
+          # `build *` label on the PR was already vetted when it was
+          # applied (each label application fires its own `labeled`
+          # event, including labels applied at PR-creation time).
+          # -------------------------------------------------------------------
+          if [[ "$EVENT" == "pull_request" \
+             && "$ACTION" == "labeled" \
+             && "$PR_LABEL_NAME" == build\ * \
+             && "$PR_ACTOR" != "github-actions[bot]" ]]; then
+            ENCODED_ACTOR="$(jq -rn --arg s "$PR_ACTOR" '$s|@uri')"
+            PERMISSION="$(gh api \
+              "/repos/$GITHUB_REPOSITORY/collaborators/$ENCODED_ACTOR/permission" \
+              --jq '.permission' 2>/dev/null || echo none)"
+            PERMISSION="${PERMISSION:-none}"
+            case "$PERMISSION" in
+              admin|maintain|write)
+                echo "Authorized build label '$PR_LABEL_NAME' from $PR_ACTOR (permission=$PERMISSION)"
+                ;;
+              *)
+                echo "::warning::Ignoring unauthorized build label '$PR_LABEL_NAME' from '$PR_ACTOR' (permission=$PERMISSION)"
+                PR_LABELS="$(jq -c --arg n "$PR_LABEL_NAME" \
+                  'map(select(. != $n))' <<<"$PR_LABELS")"
+                ;;
+            esac
           fi
 
           # -------------------------------------------------------------------
@@ -351,10 +394,10 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache/CodeQL || true
           df -h /
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
 
       # Always log in to GHCR — even on the PR / workflow_dispatch path,
       # so the registry-backed BuildKit cache (BUILDCACHE_IMAGE) can be
@@ -362,7 +405,7 @@ jobs:
       # has package:read; PRs from forks will silently miss the cache
       # and rebuild from scratch (still correct, just slower).
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -370,7 +413,7 @@ jobs:
 
       - name: Log in to Docker Hub
         if: needs.plan.outputs.push == 'true'
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -378,25 +421,48 @@ jobs:
       # PR / workflow_dispatch path: build, no push. Validates the
       # Dockerfile compiles and produces a runnable image for this arch.
       #
+      # The cpu/amd64 PR build additionally loads the resulting image
+      # into the local Docker daemon so the smoke-test step below can
+      # `docker run` it. Loading is restricted to a single (variant,
+      # arch) pair so we don't pay the cost on every matrix entry — cpu
+      # is the most-shared Dockerfile path and amd64 is the only arch
+      # whose local daemon matches the runner's host arch.
+      #
       # READ from the registry cache but do NOT write to it on this path.
       # PR validation builds don't need to refresh the cache, and writing
       # them would mean any PR could overwrite the trunk-seeded layers.
       # Push builds (below) seed the cache for future PRs to consume.
       - name: Build (no push)
         if: needs.plan.outputs.push != 'true'
-        uses: docker/build-push-action@v7
+        id: build_nopush
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
         with:
           context: .
           file: zarf/docker/kronk/Dockerfile
           platforms: ${{ matrix.platform }}
           target: ${{ matrix.target }}
           push: false
-          load: false
+          load: ${{ matrix.variant == 'cpu' && matrix.arch == 'amd64' }}
+          tags: ${{ matrix.variant == 'cpu' && matrix.arch == 'amd64' && 'kronk-smoke:latest' || '' }}
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
+
+      # Smoke test: prove the cpu/amd64 image actually starts and the
+      # entrypoint resolves the kronk binary. Catches breakage like a
+      # missing shared library or a bad ENTRYPOINT path that the build
+      # alone would not detect. Runs only on the (cpu, amd64, no-push)
+      # path — see `load:` above.
+      - name: Smoke test cpu/amd64 image
+        if: >-
+          needs.plan.outputs.push != 'true'
+          && matrix.variant == 'cpu'
+          && matrix.arch == 'amd64'
+        run: |
+          docker run --rm kronk-smoke:latest kronk --version
+          docker run --rm kronk-smoke:latest kronk --help
 
       # Push event path: build & push by digest only. Final tags get
       # applied by the `merge` job once both arches are available.
@@ -426,7 +492,7 @@ jobs:
       - name: Build & push by digest to GHCR
         if: needs.plan.outputs.push == 'true'
         id: build_ghcr
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
         with:
           context: .
           file: zarf/docker/kronk/Dockerfile
@@ -443,7 +509,7 @@ jobs:
       - name: Build & push by digest to Docker Hub
         if: needs.plan.outputs.push == 'true'
         id: build_dh
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
         with:
           context: .
           file: zarf/docker/kronk/Dockerfile
@@ -473,7 +539,7 @@ jobs:
 
       - name: Upload GHCR digest
         if: needs.plan.outputs.push == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: digests-ghcr-${{ matrix.variant }}-${{ matrix.arch }}
           path: /tmp/digests/ghcr/*
@@ -482,7 +548,7 @@ jobs:
 
       - name: Upload Docker Hub digest
         if: needs.plan.outputs.push == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: digests-dh-${{ matrix.variant }}-${{ matrix.arch }}
           path: /tmp/digests/dh/*
@@ -493,9 +559,11 @@ jobs:
   # merge
   #
   # Per-variant: assemble the multi-arch manifest from the per-arch digests
-  # uploaded by `build`, and apply the human-readable tags. Single-arch
-  # variants (rocm) still go through here — `imagetools create`
-  # happily wraps a single platform.
+  # uploaded by `build`, apply the human-readable tags, and then sign
+  # every published tag with cosign keyless (OIDC). The single-arch
+  # `rocm` variant still goes through here — `imagetools create` happily
+  # wraps a single platform under the same tag scheme so consumers can
+  # pull `rocm` without caring about arch.
   # ---------------------------------------------------------------------------
   merge:
     needs: [plan, build]
@@ -508,36 +576,54 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write   # cosign keyless signing exchanges this OIDC token for a Fulcio cert
     steps:
+      # `merge-multiple: true` extracts every matching artifact's
+      # contents flat into `path/`, regardless of how many artifacts
+      # match. Without it, download-artifact@v8 has an asymmetry that
+      # bit us once already: with 2+ matches it creates per-artifact
+      # subdirectories (path/<artifact_name>/<file>), but with exactly
+      # 1 match it silently extracts straight into path/ (no subdir,
+      # see actions/download-artifact src/download-artifact.ts: the
+      # `artifacts.length === 1` branch). The single-arch rocm variant
+      # has only one matching artifact, so the merge step then found
+      # nothing under the expected subdir and called `imagetools
+      # create` with an empty source ref. Flattening everything makes
+      # the layout uniform across variants — collisions can't happen
+      # because each artifact's only file is named with its unique
+      # image digest.
       - name: Download GHCR digests for this variant
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           path: /tmp/digests/ghcr
           pattern: digests-ghcr-${{ matrix.variant }}-*
+          merge-multiple: true
 
       - name: Download Docker Hub digests for this variant
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           path: /tmp/digests/dh
           pattern: digests-dh-${{ matrix.variant }}-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Create and push manifests
+        id: merge_manifests
         env:
           VERSION: ${{ needs.plan.outputs.version }}
           VARIANT: ${{ matrix.variant }}
@@ -545,32 +631,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Build per-registry lists of per-arch digest references. Each
-          # registry was pushed to in its own buildx invocation (see the
-          # `build` job), so the digests are different per registry —
-          # the artifacts are split accordingly:
-          #   /tmp/digests/ghcr/digests-ghcr-<variant>-<arch>/<hexdigest>
-          #   /tmp/digests/dh/digests-dh-<variant>-<arch>/<hexdigest>
+          # Build per-registry lists of per-arch digest references.
+          # Layout (flattened by `merge-multiple: true` on the download
+          # steps above):
+          #   /tmp/digests/ghcr/<hexdigest>   (one file per arch)
+          #   /tmp/digests/dh/<hexdigest>     (one file per arch)
           collect_refs() {
-            local root="$1" image="$2" pattern="$3"
-            local refs=()
-            local dir f d
-            for dir in "$root"/$pattern; do
-              [[ -d "$dir" ]] || continue
-              for f in "$dir"/*; do
-                [[ -e "$f" ]] || continue
-                d=$(basename "$f")
-                refs+=("${image}@sha256:${d}")
-              done
+            local dir="$1" image="$2"
+            local f d
+            for f in "$dir"/*; do
+              [[ -f "$f" ]] || continue
+              d=$(basename "$f")
+              printf '%s@sha256:%s\n' "$image" "$d"
             done
-            printf '%s\n' "${refs[@]}"
           }
 
-          mapfile -t GHCR_REFS < <(collect_refs /tmp/digests/ghcr "$GHCR_IMAGE" "digests-ghcr-${VARIANT}-*")
-          mapfile -t DH_REFS   < <(collect_refs /tmp/digests/dh   "$DH_IMAGE"   "digests-dh-${VARIANT}-*")
+          mapfile -t GHCR_REFS < <(collect_refs /tmp/digests/ghcr "$GHCR_IMAGE")
+          mapfile -t DH_REFS   < <(collect_refs /tmp/digests/dh   "$DH_IMAGE")
 
-          if [[ ${#GHCR_REFS[@]} -eq 0 || ${#DH_REFS[@]} -eq 0 ]]; then
+          if (( ${#GHCR_REFS[@]} == 0 || ${#DH_REFS[@]} == 0 )); then
             echo "::error::No digests found for variant=${VARIANT} (ghcr=${#GHCR_REFS[@]}, dh=${#DH_REFS[@]})"
+            ls -laR /tmp/digests || true
             exit 1
           fi
 
@@ -594,15 +675,56 @@ jobs:
           printf '  DH   ref: %s\n' "${DH_REFS[@]}"
           echo "::endgroup::"
 
+          # Write the published-tag list to GITHUB_OUTPUT so the cosign
+          # step below can iterate exactly the same set of tags without
+          # re-deriving them.
+          SIGN_REFS=()
           for TAG in "${TAGS[@]}"; do
             echo ">>> ${GHCR_IMAGE}:${TAG}"
             docker buildx imagetools create \
               -t "${GHCR_IMAGE}:${TAG}" "${GHCR_REFS[@]}"
+            SIGN_REFS+=("${GHCR_IMAGE}:${TAG}")
 
             echo ">>> ${DH_IMAGE}:${TAG}"
             docker buildx imagetools create \
               -t "${DH_IMAGE}:${TAG}" "${DH_REFS[@]}"
+            SIGN_REFS+=("${DH_IMAGE}:${TAG}")
           done
+          # Newline-separated for the GITHUB_OUTPUT multiline syntax.
+          {
+            echo 'sign_refs<<EOF'
+            printf '%s\n' "${SIGN_REFS[@]}"
+            echo 'EOF'
+          } >>"$GITHUB_OUTPUT"
+
+      # Install cosign for keyless signing. Pinned to the v3 commit SHA
+      # so a malicious tag rewrite upstream can't substitute a hostile
+      # binary into a signing-capable workflow.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac  # v3
+
+      # Keyless sign every <registry>:<tag> we just published. cosign
+      # exchanges the workflow's OIDC token (id-token: write granted on
+      # this job) for a short-lived Fulcio cert tied to the workflow
+      # identity, signs the manifest, and records the signature +
+      # rekor transparency-log entry in the same registry as the image.
+      # Consumers verify with:
+      #
+      #   cosign verify <ref> \
+      #     --certificate-identity-regexp \
+      #       'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: Sign published manifests (cosign keyless)
+        env:
+          SIGN_REFS: ${{ steps.merge_manifests.outputs.sign_refs }}
+          COSIGN_YES: "true"
+        run: |
+          set -euo pipefail
+          while IFS= read -r ref; do
+            [[ -z "$ref" ]] && continue
+            echo ">>> cosign sign $ref"
+            cosign sign --recursive "$ref"
+          done <<<"$SIGN_REFS"
 
       - name: Inspect published images
         env:

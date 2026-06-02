@@ -50,6 +50,17 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# Generate an SBOM (CycloneDX-flavored SPDX JSON) for every archive
+# GoReleaser produces. The release workflow installs syft up-front and
+# attaches SLSA build provenance over both the archives AND these SBOM
+# files, so a consumer can verify the SBOM provenance via
+# `gh attestation verify dist/<archive>.sbom.json`.
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - "${artifact}.sbom.json"
+
 # NOTE: GoReleaser deprecated `brews:` in favor of `homebrew_casks:` (v2.10).
 # Per the GoReleaser maintainer, casks generated this way work on both macOS
 # and Linuxbrew, so this is the recommended path going forward.

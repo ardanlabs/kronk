@@ -1,0 +1,157 @@
+name: Label Guard
+
+# Polices `build *` labels, which expand the Docker workflow's build
+# matrix (see .github/workflows/docker.yml) and trigger expensive
+# multi-arch image builds.
+#
+# Two rules:
+#
+#   1. On PRs — only users with `write`, `maintain`, or `admin`
+#      permission may apply a `build *` label. Unauthorized applications
+#      are removed with an explanatory comment.
+#   2. On issues — `build *` labels are PR-only. Any application is
+#      removed regardless of who applied it, with a comment explaining
+#      the label is meant for pull requests.
+#
+# IMPORTANT: this workflow is a cleanup pass — it removes the offending
+# label and notifies the user — but it does NOT itself stop the Docker
+# build that the unauthorized label kicked off. GitHub Actions does not
+# fire downstream workflow runs for events caused by `GITHUB_TOKEN`, so
+# the label removal here will NOT trigger an `unlabeled` event on
+# docker.yml. The authoritative gate lives in docker.yml's planner,
+# which performs the same permission check and strips unauthorized
+# `build *` labels from the variant list before expanding the matrix.
+#
+# `pull_request_target` (not `pull_request`) is required so the PR job
+# runs in the BASE repo's context with write permissions, which lets it
+# police labels on PRs from forks. We never check out or execute
+# PR-author code here — only call GitHub APIs with `github.event.label`
+# / `github.event.sender` data — so the usual `pull_request_target`
+# pwn-the-CI risk doesn't apply.
+
+on:
+  pull_request_target:
+    types: [labeled]
+  issues:
+    types: [labeled]
+
+# Both PR labels and PR comments are exposed via the `issues` REST
+# endpoints (gh's `pr comment` and `pr edit --add-label` both call
+# /repos/:owner/:repo/issues/:n/...). `issues: write` is therefore
+# sufficient for everything this workflow does — `pull-requests: write`
+# would be a strict superset and is intentionally NOT granted.
+permissions:
+  issues: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # guard-pr
+  #
+  # Removes `build *` labels applied by users who don't have at least
+  # `write` permission on the repo.
+  # ---------------------------------------------------------------------------
+  guard-pr:
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      startsWith(github.event.label.name, 'build ')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce label permission
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          ACTOR: ${{ github.event.sender.login }}
+        run: |
+          set -euo pipefail
+
+          # GitHub Actions itself can apply labels via workflows (e.g.
+          # automation that promotes a draft PR). Don't fight bots — the
+          # `github-actions[bot]` actor is implicitly trusted because it
+          # can only act through workflows that already require write
+          # access to merge.
+          if [[ "$ACTOR" == "github-actions[bot]" ]]; then
+            echo "Allowing label from github-actions[bot]"
+            exit 0
+          fi
+
+          # The collaborators/permission endpoint reports a legacy base
+          # permission of `admin`, `write`, `read`, or `none`. `maintain`
+          # maps to `write` and `triage` maps to `read`, so we only need
+          # to whitelist `admin` and `write` — but we keep `maintain` in
+          # the case for defence-in-depth in case the API ever surfaces
+          # the finer-grained role.
+          #
+          # Fail-closed: if the API call fails (e.g. 404 for a
+          # non-collaborator fork contributor, transient error), treat
+          # the actor as having `none` so the label is removed.
+          ENCODED_ACTOR="$(jq -rn --arg s "$ACTOR" '$s|@uri')"
+          PERMISSION="$(gh api \
+            "/repos/$REPO/collaborators/$ENCODED_ACTOR/permission" \
+            --jq '.permission' 2>/dev/null || echo none)"
+          PERMISSION="${PERMISSION:-none}"
+
+          echo "Actor=$ACTOR  permission=$PERMISSION  label=$LABEL_NAME"
+
+          case "$PERMISSION" in
+            admin|maintain|write)
+              echo "Authorized — leaving label in place."
+              exit 0
+              ;;
+          esac
+
+          echo "::warning::Removing '$LABEL_NAME' applied by '$ACTOR' (permission=$PERMISSION)"
+
+          # URL-encode spaces in the label name — `build cpu` becomes
+          # `build%20cpu` on the REST path.
+          ENCODED_LABEL="$(jq -rn --arg s "$LABEL_NAME" '$s|@uri')"
+          gh api --method DELETE \
+            "/repos/$REPO/issues/$PR_NUMBER/labels/$ENCODED_LABEL"
+
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body \
+            "🚫 The \`$LABEL_NAME\` label triggers expensive multi-arch Docker
+          builds and is restricted to repository maintainers (write
+          permission or higher). The label has been removed.
+
+          If you need this build variant exercised on your PR, please
+          ping a maintainer to apply the label for you."
+
+  # ---------------------------------------------------------------------------
+  # guard-issue
+  #
+  # `build *` labels are PR-only. Remove them from any issue regardless
+  # of who applied them — no permission check needed.
+  #
+  # `!github.event.issue.pull_request` defensively skips PR-shaped
+  # issue payloads — GitHub generally separates the events but the
+  # extra guard is cheap and prevents accidental PR label removal if
+  # payload behaviour ever changes.
+  # ---------------------------------------------------------------------------
+  guard-issue:
+    if: >-
+      github.event_name == 'issues' &&
+      !github.event.issue.pull_request &&
+      startsWith(github.event.label.name, 'build ')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove build label from issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          ACTOR: ${{ github.event.sender.login }}
+        run: |
+          set -euo pipefail
+
+          echo "::warning::Removing '$LABEL_NAME' from issue #$ISSUE_NUMBER (applied by '$ACTOR')"
+
+          ENCODED_LABEL="$(jq -rn --arg s "$LABEL_NAME" '$s|@uri')"
+          gh api --method DELETE \
+            "/repos/$REPO/issues/$ISSUE_NUMBER/labels/$ENCODED_LABEL"
+
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body \
+            "🚫 The \`$LABEL_NAME\` label controls Docker build variants
+          and only applies to pull requests. It has been removed from
+          this issue."

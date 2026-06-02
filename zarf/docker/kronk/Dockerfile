@@ -504,16 +504,20 @@ WORKDIR /src
 
 # -----------------------------------------------------------------------------
 # Pre-cache Go modules (separate layer so source edits don't bust the cache).
+# .go-version is copied alongside go.mod/go.sum because the next RUN reads it.
 # -----------------------------------------------------------------------------
-COPY go.mod go.sum ./
+COPY .go-version go.mod go.sum ./
 
-# Install the Go toolchain version pinned in go.mod so the builder always
-# matches what developers use locally.
+# Install the Go toolchain version pinned in /.go-version so the builder
+# matches CI exactly (the linux.yml + release.yaml jobs read the same
+# file). go.mod's `go` directive stays at the minimum LANGUAGE version
+# required for the code, while /.go-version is the exact toolchain
+# everyone — CI, release, and this image — actually builds with.
 #
-# The Go version is dynamic (parsed from go.mod), so we can't ARG-pin a
-# single sha256. Instead we fetch go.dev's release metadata JSON (which
-# lists sha256 per filename) and verify the tarball before unpacking.
-# Two defensive checks:
+# The Go version is dynamic (read from /.go-version), so we can't
+# ARG-pin a single sha256. Instead we fetch go.dev's release metadata
+# JSON (which lists sha256 per filename) and verify the tarball before
+# unpacking. Two defensive checks:
 #   1. The extracted sha256 must be 64 hex chars — otherwise jq found
 #      nothing (e.g. version doesn't exist) and returned `null` / empty,
 #      and sha256sum -c silently exits 0 on a malformed line.
@@ -521,7 +525,11 @@ COPY go.mod go.sum ./
 # Still trusts the TLS chain to go.dev — full PGP verification would
 # require fetching Google's signing key out-of-band.
 RUN set -eux; \
-    GO_VERSION="$(awk '/^go [0-9]/ {print $2; exit}' go.mod)"; \
+    GO_VERSION="$(tr -d '[:space:]' <.go-version)"; \
+    if ! printf '%s' "${GO_VERSION}" | grep -qE '^[0-9]+\.[0-9]+(\.[0-9]+)?$'; then \
+        echo ".go-version contains an unexpected value: '${GO_VERSION}'" >&2; \
+        exit 1; \
+    fi; \
     case "$(uname -m)" in \
         x86_64)  GO_ARCH=amd64 ;; \
         aarch64) GO_ARCH=arm64 ;; \
