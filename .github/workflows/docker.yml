@@ -314,7 +314,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Always log in to GHCR — even on the PR / workflow_dispatch path,
       # so the registry-backed BuildKit cache (BUILDCACHE_IMAGE) can be
@@ -322,7 +322,7 @@ jobs:
       # has package:read; PRs from forks will silently miss the cache
       # and rebuild from scratch (still correct, just slower).
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -330,7 +330,7 @@ jobs:
 
       - name: Log in to Docker Hub
         if: needs.plan.outputs.push == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -344,7 +344,7 @@ jobs:
       # Push builds (below) seed the cache for future PRs to consume.
       - name: Build (no push)
         if: needs.plan.outputs.push != 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: zarf/docker/kronk/Dockerfile
@@ -367,7 +367,7 @@ jobs:
       - name: Build & push by digest
         if: needs.plan.outputs.push == 'true'
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: zarf/docker/kronk/Dockerfile
@@ -394,7 +394,7 @@ jobs:
 
       - name: Upload digest
         if: needs.plan.outputs.push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ matrix.variant }}-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -422,23 +422,23 @@ jobs:
       packages: write
     steps:
       - name: Download digests for this variant
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           pattern: digests-${{ matrix.variant }}-*
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
