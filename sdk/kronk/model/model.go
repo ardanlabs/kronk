@@ -258,7 +258,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	ctxParams := modelCtxParams(cfg, modelInfo)
+	ctxParams := modelCtxParams(cfg, modelInfo, mdl)
 
 	// Reflect the KV cache types that llama.cpp will actually use back into
 	// cfg. When the user leaves CacheTypeK/V as GGMLTypeAuto, modelCtxParams
@@ -557,8 +557,8 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l
 	typeKName := GGMLTypeFromYZMA(ctxParams.TypeK).String()
 	typeVName := GGMLTypeFromYZMA(ctxParams.TypeV).String()
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%s]\nNBatch[%d]\nNCtx[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
-		ctxParams.Embeddings, faName, ctxParams.NBatch, ctxParams.NCtx,
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%s]\nNBatch[%d]\nNCtx[%d]\nNOutputsMax[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+		ctxParams.Embeddings, faName, ctxParams.NBatch, ctxParams.NCtx, ctxParams.NOutputsMax,
 		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch,
 		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType,
 		ctxParams.RopeFreqBase, ctxParams.RopeFreqScale, ctxParams.RopeScalingType,

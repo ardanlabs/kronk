@@ -307,7 +307,73 @@ Flags:
   -v, --version            version for kronk
 
 Use "kronk [command] --help" for more information about a command.`}</code></pre>
-          <h3 id="23-installing-libraries">2.3 Installing Libraries</h3>
+          <h3 id="23-docker-oci-container">2.3 Docker / OCI Container</h3>
+          <p>Pre-built multi-arch container images are published to GHCR and Docker Hub on every release. They bundle the kronk binary, the BUI, one or more llama.cpp processor backends for LLM inference, the matching whisper.cpp (bucky) backend for audio transcription via <code>/v1/audio/transcriptions</code>, and <code>ffmpeg</code> for decoding non-PCM audio uploads — so the image is offline-ready after the first pull (models still need to be downloaded separately into the persisted <code>/kronk</code> volume). Six variants are produced; pick the one that matches your hardware:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Tag suffix</th>
+                <th>Hardware target</th>
+                <th>Platforms</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>-cpu</code></td>
+                <td>Any host, no GPU acceleration (smallest image)</td>
+                <td><code>linux/amd64</code>, <code>linux/arm64</code></td>
+              </tr>
+              <tr>
+                <td><code>-cuda</code></td>
+                <td>NVIDIA GPUs (Linux + Windows-WSL2)</td>
+                <td><code>linux/amd64</code>, <code>linux/arm64</code></td>
+              </tr>
+              <tr>
+                <td><code>-vulkan</code></td>
+                <td>Vendor-neutral GPU (AMD / NVIDIA / Intel)</td>
+                <td><code>linux/amd64</code>, <code>linux/arm64</code></td>
+              </tr>
+              <tr>
+                <td><code>-rocm</code></td>
+                <td>AMD GPUs via ROCm</td>
+                <td><code>linux/amd64</code></td>
+              </tr>
+              <tr>
+                <td><code>-jetson</code></td>
+                <td>NVIDIA Jetson Orin / Xavier (JetPack 6+)</td>
+                <td><code>linux/arm64</code></td>
+              </tr>
+              <tr>
+                <td><code>-all</code></td>
+                <td>Bundles cpu + cuda + vulkan + rocm in one image</td>
+                <td><code>linux/amd64</code>, <code>linux/arm64</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Tag scheme:</p>
+          <ul>
+            <li><code>:vX.Y.Z-&lt;variant&gt;</code> — immutable, tied to a released version (recommended for production).</li>
+            <li><code>:latest-&lt;variant&gt;</code> — floats to the latest release of that variant.</li>
+            <li><code>:latest</code> — alias of <code>:latest-cpu</code> (the only variant guaranteed to run anywhere).</li>
+            <li><code>:main-&lt;shortsha&gt;-&lt;variant&gt;</code> — bleeding-edge builds from <code>main</code>.</li>
+          </ul>
+          <p>Pull and run (CPU on any host):</p>
+          <pre className="code-block"><code className="language-shell">{`docker pull ghcr.io/ardanlabs/kronk:latest
+# or: docker pull ardanlabs/kronk:latest
+
+docker run --rm \\
+    -p 11435:11435 \\
+    -v kronk-data:/kronk \\
+    ghcr.io/ardanlabs/kronk:latest`}</code></pre>
+          <p>NVIDIA GPU (requires <code>nvidia-container-toolkit</code> on the host):</p>
+          <pre className="code-block"><code className="language-shell">{`docker run --rm --gpus all \\
+    -p 11435:11435 \\
+    -v kronk-data:/kronk \\
+    ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>
+          <p>The <code>/kronk</code> volume persists models, libraries, catalog data, keys, and badger state across container restarts — keep it on a host bind-mount or a named volume.</p>
+          <p>The header comment of <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a> documents every <code>docker run</code> invocation (AMD ROCm; Vulkan on AMD / NVIDIA / Intel; Jetson; specific-card device passthrough; etc.), the audio transcription workflow (pulling a whisper model, hitting <code>/v1/audio/transcriptions</code>), and lists the full host-OS × GPU compatibility matrix. See also <a href="chapter-18-bucky.md">Chapter 18: Bucky</a> for full transcription documentation.</p>
+          <p>The <code>:rocm</code> image is a special case: the upstream whisper.cpp build matrix has no rocm bundle, so the rocm image ships the <strong>vulkan</strong> bucky bundle instead and the container entrypoint transparently points <code>KRONK_BUCKY_LIB_PATH</code> at it on ROCm hosts. Transcription therefore stays GPU-accelerated on AMD GPUs via the RADV Vulkan driver.</p>
+          <h3 id="24-installing-libraries">2.4 Installing Libraries</h3>
           <p>Before running inference, you need the llama.cpp libraries for your machine. Kronk auto-detects your hardware and downloads the appropriate binaries.</p>
           <p><strong>Option A: Via the Server</strong></p>
           <p>Start the server and use the BUI to download libraries:</p>
@@ -380,7 +446,7 @@ kronk libs --list-installs
 kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</code></pre>
           <p>In web mode (the default — no <code>--local</code>) the same commands are dispatched through the running server. Activate any installed bundle by exporting <code>KRONK_LIB_PATH</code> to its folder and restarting the server.</p>
           <p><strong>Audio (Bucky):</strong> if you also plan to use speech-to-text, install the whisper.cpp libraries with the parallel <code>kronk bucky libs</code> command. The flags mirror <code>kronk libs</code> and the bundle lands under <code>~/.kronk/bucky-libraries/</code>. See <a href="chapter-18-bucky.md">Chapter 18: Bucky</a>.</p>
-          <h3 id="24-downloading-your-first-model">2.4 Downloading Your First Model</h3>
+          <h3 id="25-downloading-your-first-model">2.5 Downloading Your First Model</h3>
           <p>Kronk maintains your <strong>personal catalog</strong> at <code>~/.kronk/catalog.yaml</code>. On first run it is seeded from an embedded starter list so you have something to choose from immediately; the catalog grows as you pull more models or resolve new IDs against HuggingFace.</p>
           <p>List entries in the catalog:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local`}</code></pre>
@@ -395,7 +461,7 @@ kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</
           <pre className="code-block"><code className="language-shell">{`kronk model pull Qwen3-0.6B-Q8_0 --local`}</code></pre>
           <p>Models are stored in <code>~/.kronk/models/&lt;provider&gt;/&lt;family&gt;/</code> by default. After the pull completes the catalog entry is updated with the resolved provider, family, revision, and file sizes so subsequent lookups don't need to hit HuggingFace.</p>
           <p><strong>Audio (Bucky):</strong> whisper models live in a separate flat layout at <code>~/.kronk/bucky-models/ggml-&lt;name&gt;.bin</code> and are pulled with <code>kronk bucky model pull &lt;name&gt;</code> (e.g. <code>tiny.en</code>). See <a href="chapter-18-bucky.md#183-model-catalog-pull">Chapter 18 §18.3</a>.</p>
-          <h3 id="25-starting-the-server">2.5 Starting the Server</h3>
+          <h3 id="26-starting-the-server">2.6 Starting the Server</h3>
           <p>Start the Kronk Model Server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
           <p>The server starts on <code>http://localhost:11435</code> by default. You'll see output like:</p>
@@ -407,7 +473,7 @@ BUI: http://localhost:11435`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start -d`}</code></pre>
           <p><strong>Stopping the Server</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
-          <h3 id="26-model-configuration-file">2.6 Model Configuration File</h3>
+          <h3 id="27-model-configuration-file">2.7 Model Configuration File</h3>
           <p>When Kronk starts the server for the first time, it automatically installs a default <code>model_config.yaml</code> file in the <code>~/.kronk/</code> directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.</p>
           <p><strong>How It Works</strong></p>
           <p>The default configuration is embedded inside the Kronk CLI binary. On first server start, if <code>~/.kronk/model_config.yaml</code> does not already exist, Kronk writes the embedded default to that path. Once the file exists, Kronk never overwrites it — your edits are preserved across upgrades.</p>
@@ -523,7 +589,7 @@ kronk server start`}</code></pre>
             <li>Use YAML anchors (<code>&name</code> and <code>&lt;&lt;: *name</code>) to share common settings between variants. The default file includes examples of this pattern.</li>
             <li>The <code>--model-config</code> server flag lets you point to an alternative config file for testing without modifying your main one.</li>
           </ul>
-          <h3 id="27-verifying-the-installation">2.7 Verifying the Installation</h3>
+          <h3 id="28-verifying-the-installation">2.8 Verifying the Installation</h3>
           <p><strong>Test via curl</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p>You should see a list of available models.</p>
@@ -538,7 +604,7 @@ kronk server start`}</code></pre>
   }'`}</code></pre>
           <p><strong>Test via BUI</strong></p>
           <p>Open <code>http://localhost:11435</code> in your browser and navigate to the <code>Apps/Chat</code> app. Select the model you want to try and chat away.</p>
-          <h3 id="28-quick-start-summary">2.8 Quick Start Summary</h3>
+          <h3 id="29-quick-start-summary">2.9 Quick Start Summary</h3>
           <pre className="code-block"><code className="language-shell">{`# 1. Install Kronk
 go install github.com/ardanlabs/kronk/cmd/kronk@latest
 
@@ -555,7 +621,7 @@ kronk model pull Qwen3-0.6B-Q8_0 --local
 curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{"model": "Qwen3-0.6B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
-          <h3 id="29-nixos-setup">2.9 NixOS Setup</h3>
+          <h3 id="210-nixos-setup">2.10 NixOS Setup</h3>
           <p>NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared libraries and binaries cannot be found in standard paths like <code>/usr/lib</code>. Kronk requires llama.cpp shared libraries at runtime, which means on NixOS you need to provide them through Nix rather than using the built-in <code>kronk libs</code> downloader.</p>
           <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for development and build packages for producing a standalone <code>kronk</code> binary, each per GPU backend.</p>
           <p><strong>Prerequisites</strong></p>
@@ -3549,7 +3615,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--lib-path</code></td>
                 <td><code>KRONK_LIB_PATH</code></td>
                 <td><em>(empty)</em></td>
-                <td>Override path Kronk loads llama.cpp libraries from. Empty resolves the default per-triple folder under the libraries root (<code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>). A directory containing a <code>version.json</code> is used as-is. A non-empty directory without a <code>version.json</code> is treated as a read-only user-managed build. See chapter 2.3 for full semantics.</td>
+                <td>Override path Kronk loads llama.cpp libraries from. Empty resolves the default per-triple folder under the libraries root (<code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>). A directory containing a <code>version.json</code> is used as-is. A non-empty directory without a <code>version.json</code> is treated as a read-only user-managed build. See chapter 2.4 for full semantics.</td>
               </tr>
               <tr>
                 <td><code>--lib-version</code></td>
@@ -3765,7 +3831,7 @@ kronk server start --llama-log=0    # Disable (default)`}</code></pre>
 └── models/                             # Downloaded model files
     ├── .index.yaml                     # Local file index (validated state per model)
     └── <provider>/<family>/<file>.gguf`}</code></pre>
-          <p>Each <code>(arch, os, processor)</code> library install lives in its own folder. The runtime loads the folder for the detected triple by default; set <code>KRONK_LIB_PATH</code> to a different triple folder (and restart) to switch active install. See chapter 2.3 for <code>KRONK_LIB_PATH</code> semantics and the install-management commands.</p>
+          <p>Each <code>(arch, os, processor)</code> library install lives in its own folder. The runtime loads the folder for the detected triple by default; set <code>KRONK_LIB_PATH</code> to a different triple folder (and restart) to switch active install. See chapter 2.4 for <code>KRONK_LIB_PATH</code> semantics and the install-management commands.</p>
           <p><strong>Custom Base Path</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --base-path=/data/kronk`}</code></pre>
           <p><code>--base-path</code> shifts every file above to live under the new root.</p>
@@ -8732,6 +8798,158 @@ go test -v -count=1 ./sdk/kronk/tests/mtp/...`}</code></pre>
 export GITHUB_WORKSPACE=$(pwd)
 go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
           <p>The transcribe tests skip themselves when no whisper model is on disk, so contributors without a pulled model still get a green run.</p>
+          <h3 id="1914-continuous-integration">19.14 Continuous Integration</h3>
+          <h4 id="19141-workflows">19.14.1 Workflows</h4>
+          <p>Three GitHub Actions workflows live under <a href="../.github/workflows/"><code>.github/workflows/</code></a>:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Workflow</th>
+                <th>Triggers</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="../.github/workflows/linux.yml"><code>linux.yml</code></a></td>
+                <td>PRs + push to <code>main</code> (Go/mod paths)</td>
+                <td><code>go vet</code>, <code>staticcheck</code>, <code>govulncheck</code>, <code>go fix -diff</code>, plus the SDK and HTTP tests against pulled models (cached across runs).</td>
+              </tr>
+              <tr>
+                <td><a href="../.github/workflows/release.yaml"><code>release.yaml</code></a></td>
+                <td>Push of tag <code>v*</code></td>
+                <td>Runs <code>goreleaser</code> to produce per-OS/arch archives, checksums, and refresh the Homebrew cask in <code>ardanlabs/homebrew-kronk</code>.</td>
+              </tr>
+              <tr>
+                <td><a href="../.github/workflows/docker.yml"><code>docker.yml</code></a></td>
+                <td>PRs, push to <code>main</code>, push of tag <code>v*</code>, <code>workflow_dispatch</code></td>
+                <td>Builds (and on push events: publishes) the six container variants defined in <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a>. Every variant bakes in both llama.cpp and matching whisper.cpp (bucky) shared libraries plus <code>ffmpeg</code> for transcription.</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 id="19142-container-image-build-publish">19.14.2 Container Image Build &amp; Publish</h4>
+          <p>The Docker workflow is matrix-driven; the <code>plan</code> job synthesises the build matrix at runtime from the event type (and from any <code>build &lt;variant&gt;</code> PR labels). Six variants are produced:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Variant</th>
+                <th><code>LLAMA_PROCESSORS</code></th>
+                <th><code>BUCKY_PROCESSORS</code></th>
+                <th>Platforms</th>
+                <th>Dockerfile target</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>cpu</code></td>
+                <td><code>cpu</code></td>
+                <td><code>cpu</code></td>
+                <td><code>linux/amd64</code>, <code>linux/arm64</code></td>
+                <td><code>runtime</code></td>
+              </tr>
+              <tr>
+                <td><code>cuda</code></td>
+                <td><code>cuda</code></td>
+                <td><code>cuda</code></td>
+                <td><code>linux/amd64</code>, <code>linux/arm64</code></td>
+                <td><code>runtime</code></td>
+              </tr>
+              <tr>
+                <td><code>vulkan</code></td>
+                <td><code>vulkan</code></td>
+                <td><code>vulkan</code></td>
+                <td><code>linux/amd64</code>, <code>linux/arm64</code></td>
+                <td><code>runtime</code></td>
+              </tr>
+              <tr>
+                <td><code>rocm</code></td>
+                <td><code>rocm</code></td>
+                <td><code>vulkan</code> ¹</td>
+                <td><code>linux/amd64</code> only</td>
+                <td><code>runtime</code></td>
+              </tr>
+              <tr>
+                <td><code>jetson</code></td>
+                <td><code>cuda</code></td>
+                <td><code>cuda</code></td>
+                <td><code>linux/arm64</code> only</td>
+                <td><code>runtime-jetson</code></td>
+              </tr>
+              <tr>
+                <td><code>all</code></td>
+                <td><code>cpu cuda vulkan rocm</code></td>
+                <td><code>cpu cuda vulkan</code></td>
+                <td><code>linux/amd64</code>, <code>linux/arm64</code></td>
+                <td><code>runtime</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>¹ Upstream whisper.cpp has no rocm build target (<a href="../sdk/tools/bucky/libs/combinations.go">combinations.go</a>), so the rocm variant ships the vulkan bucky bundle and the container entrypoint (<a href="../zarf/docker/kronk/entrypoint.sh">entrypoint.sh</a>) sets <code>KRONK_BUCKY_LIB_PATH</code> to point at it on ROCm hosts so transcription stays GPU-accelerated via the RADV Vulkan driver.</p>
+          <p>Multi-arch images are built <strong>natively</strong> on <code>ubuntu-24.04</code> (amd64) and <code>ubuntu-24.04-arm</code> (arm64) runners — never under QEMU. Each per-arch job pushes its image to GHCR + Docker Hub by <strong>digest only</strong> (no human-readable tag yet) and uploads a tiny artifact containing that digest. A downstream <code>merge</code> job per variant collects the arch-specific digests and stitches them into the final multi-arch manifest with <code>docker buildx imagetools create</code>, applying the human-readable tags at that step.</p>
+          <p>Event → tag mapping:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Variants</th>
+                <th>Push?</th>
+                <th>Tags applied</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>PR (no labels)</td>
+                <td><code>cpu</code></td>
+                <td>no</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>PR + label <code>build all</code></td>
+                <td>all 6</td>
+                <td>no</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>PR + label <code>build &lt;v&gt;</code></td>
+                <td>that variant</td>
+                <td>no</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>Push to <code>main</code></td>
+                <td>all 6</td>
+                <td>yes</td>
+                <td><code>main-&lt;shortsha&gt;-&lt;variant&gt;</code></td>
+              </tr>
+              <tr>
+                <td>Push to tag <code>v*</code></td>
+                <td>all 6</td>
+                <td>yes</td>
+                <td><code>&lt;tag&gt;-&lt;variant&gt;</code> + <code>latest-&lt;variant&gt;</code>; plus <code>latest</code> → cpu image</td>
+              </tr>
+              <tr>
+                <td><code>workflow_dispatch</code></td>
+                <td>input <code>variants</code> (default <code>all</code>, or comma-separated)</td>
+                <td>no</td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Per-<code>(variant, arch)</code> GHA cache scopes (<code>type=gha,scope=&lt;variant&gt;-&lt;arch&gt;</code>) keep the BuildKit cache hot across runs; the runner-level free-disk step reclaims ~25 GB up front so the all-backends + rocm builds don't run out of space.</p>
+          <h4 id="19143-version-constant-release-guard">19.14.3 Version Constant &amp; Release Guard</h4>
+          <p>The CLI's reported version is the value of the <a href="../sdk/kronk/kronk.go"><code>Version</code> constant in <code>sdk/kronk/kronk.go</code></a> — a plain <code>const string</code> with no link-time override. <a href="../sdk/bucky/bucky.go"><code>sdk/bucky.Version</code></a> is <code>const Version = kronk.Version</code> so the two SDKs always report the same string. Bumping the version is therefore part of the same commit that prepares a <code>v&lt;X.Y.Z&gt;</code> release tag.</p>
+          <p>Both the release and Docker workflows enforce this with a shared guard: <a href="../.github/scripts/check-version.sh"><code>.github/scripts/check-version.sh</code></a> parses <code>const Version</code> out of <code>sdk/kronk/kronk.go</code>, strips the leading <code>v</code> from the pushed tag (<code>$GITHUB_REF</code>), and fails the workflow when the two don't match — before any binary, archive, or container image is produced.</p>
+          <ul>
+            <li><a href="../.github/workflows/release.yaml"><code>release.yaml</code></a> runs the script immediately before <code>goreleaser</code>.</li>
+            <li><a href="../.github/workflows/docker.yml"><code>docker.yml</code></a> runs it in the <code>plan</code> job, gated on <code>startsWith(github.ref, 'refs/tags/v')</code>.</li>
+          </ul>
+          <p>The <code>KRONK_VERSION</code> build-arg consumed by the Dockerfile is purely cosmetic: it flows into the OCI image labels (<code>org.opencontainers.image .version</code>) so registry metadata can encode the variant / SHA / tag combo that produced an image. The kronk binary inside that image still reports the value of <code>const Version</code>, not <code>KRONK_VERSION</code>.</p>
+          <p>Release checklist when cutting <code>v&lt;X.Y.Z&gt;</code>:</p>
+          <ol>
+            <li>Bump <code>const Version</code> in <a href="../sdk/kronk/kronk.go"><code>sdk/kronk/kronk.go</code></a>.</li>
+            <li>Commit, then tag the same commit <code>v&lt;X.Y.Z&gt;</code> and push.</li>
+            <li>CI's tag-guard step refuses the release if step 1 was forgotten.</li>
+          </ol>
         </div>
 
         <nav className="doc-sidebar">
@@ -8750,13 +8968,14 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
               <ul>
                 <li><a href="#21-prerequisites" className={activeSection === '21-prerequisites' ? 'active' : ''}>2.1 Prerequisites</a></li>
                 <li><a href="#22-installing-the-cli" className={activeSection === '22-installing-the-cli' ? 'active' : ''}>2.2 Installing the CLI</a></li>
-                <li><a href="#23-installing-libraries" className={activeSection === '23-installing-libraries' ? 'active' : ''}>2.3 Installing Libraries</a></li>
-                <li><a href="#24-downloading-your-first-model" className={activeSection === '24-downloading-your-first-model' ? 'active' : ''}>2.4 Downloading Your First Model</a></li>
-                <li><a href="#25-starting-the-server" className={activeSection === '25-starting-the-server' ? 'active' : ''}>2.5 Starting the Server</a></li>
-                <li><a href="#26-model-configuration-file" className={activeSection === '26-model-configuration-file' ? 'active' : ''}>2.6 Model Configuration File</a></li>
-                <li><a href="#27-verifying-the-installation" className={activeSection === '27-verifying-the-installation' ? 'active' : ''}>2.7 Verifying the Installation</a></li>
-                <li><a href="#28-quick-start-summary" className={activeSection === '28-quick-start-summary' ? 'active' : ''}>2.8 Quick Start Summary</a></li>
-                <li><a href="#29-nixos-setup" className={activeSection === '29-nixos-setup' ? 'active' : ''}>2.9 NixOS Setup</a></li>
+                <li><a href="#23-docker-oci-container" className={activeSection === '23-docker-oci-container' ? 'active' : ''}>2.3 Docker / OCI Container</a></li>
+                <li><a href="#24-installing-libraries" className={activeSection === '24-installing-libraries' ? 'active' : ''}>2.4 Installing Libraries</a></li>
+                <li><a href="#25-downloading-your-first-model" className={activeSection === '25-downloading-your-first-model' ? 'active' : ''}>2.5 Downloading Your First Model</a></li>
+                <li><a href="#26-starting-the-server" className={activeSection === '26-starting-the-server' ? 'active' : ''}>2.6 Starting the Server</a></li>
+                <li><a href="#27-model-configuration-file" className={activeSection === '27-model-configuration-file' ? 'active' : ''}>2.7 Model Configuration File</a></li>
+                <li><a href="#28-verifying-the-installation" className={activeSection === '28-verifying-the-installation' ? 'active' : ''}>2.8 Verifying the Installation</a></li>
+                <li><a href="#29-quick-start-summary" className={activeSection === '29-quick-start-summary' ? 'active' : ''}>2.9 Quick Start Summary</a></li>
+                <li><a href="#210-nixos-setup" className={activeSection === '210-nixos-setup' ? 'active' : ''}>2.10 NixOS Setup</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -9008,6 +9227,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 <li><a href="#1911-inference-code-path" className={activeSection === '1911-inference-code-path' ? 'active' : ''}>19.11 Inference Code Path</a></li>
                 <li><a href="#1912-mtp-internals" className={activeSection === '1912-mtp-internals' ? 'active' : ''}>19.12 MTP Internals</a></li>
                 <li><a href="#1913-bucky-internals" className={activeSection === '1913-bucky-internals' ? 'active' : ''}>19.13 Bucky Internals</a></li>
+                <li><a href="#1914-continuous-integration" className={activeSection === '1914-continuous-integration' ? 'active' : ''}>19.14 Continuous Integration</a></li>
               </ul>
             </div>
           </div>

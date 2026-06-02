@@ -6,10 +6,10 @@ replace github.com/ardanlabs/kronk => ../
 
 require (
 	github.com/ardanlabs/bucky v1.0.3
-	github.com/ardanlabs/kronk v1.26.5
+	github.com/ardanlabs/kronk v1.26.6
 	github.com/duckdb/duckdb-go/v2 v2.10503.1
 	github.com/google/uuid v1.6.0
-	github.com/hybridgroup/yzma v1.14.1
+	github.com/hybridgroup/yzma v1.15.0
 )
 
 require (
@@ -117,7 +117,7 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/api v0.282.0 // indirect
+	google.golang.org/api v0.283.0 // indirect
 	google.golang.org/genproto v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect

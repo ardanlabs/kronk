@@ -674,7 +674,7 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 	return cfg
 }
 
-func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
+func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
 
 	if mi.IsEmbedModel || mi.IsRerankModel {
@@ -718,6 +718,41 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	}
 
 	ctxParams.NSeqMax = uint32(totalSeqs)
+
+	// NOutputsMax caps how many logits-flagged rows llama.cpp reserves
+	// per ubatch. The default (0) reserves n_batch rows, which is
+	// wasteful for server-style decoding where only a handful of tokens
+	// per slot ever need logits. Capping at the actual upper bound
+	// frees significant VRAM at large -ub / MTP. See ggml-org/llama.cpp
+	// PR 23861 (1.2 GB saved at -ub 2048 with MTP).
+	//
+	// Embed / rerank models pool logits across the whole prompt, so
+	// leave NOutputsMax at 0 (= n_batch) to avoid clipping the pooled
+	// outputs.
+	if !mi.IsEmbedModel && !mi.IsRerankModel {
+		// Plain decode and IMC prefill mark logits on at most one token
+		// per slot per ubatch (last prompt token during prefill, sampled
+		// token during decode).
+		perSlot := 1
+
+		// Speculative decoding queues 1 + nDraft logits-flagged rows
+		// per slot in the verification batch (sampled token + drafted
+		// candidates). Two drafter sources to account for:
+		//
+		//   1. Explicit separate-GGUF drafter (cfg.DraftModel) —
+		//      validate-config enforces nSeqMax == 1 in this branch.
+		//   2. Auto-detected MTP drafter — the target GGUF carries an
+		//      MTP head (nextn_predict_layers > 0) and the running
+		//      llama.cpp build exports the pre-norm APIs.
+		switch {
+		case cfg.DraftModel != nil:
+			perSlot = 1 + cfg.DraftModel.NDraft
+		case mtpNextNLayers(mdl) > 0 && MTPAvailable():
+			perSlot = 1 + defMTPNDraft
+		}
+
+		ctxParams.NOutputsMax = uint32(nSeqMax * perSlot)
+	}
 
 	// Enable unified KV cache so all sequences share one pool of
 	// ContextWindow * NSeqMax tokens. Each slot is gated to ContextWindow

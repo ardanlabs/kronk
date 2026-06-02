@@ -28,6 +28,8 @@ var modelSource = "mradermacher/Qwen2-Audio-7B.Q8_0"
 const audioFile = "samples/jfk.wav"
 
 func main() {
+	fmt.Print("\nBe aware that llama.cpp broke audio models starting at version b9433\nhttps://github.com/ggml-org/llama.cpp/issues/23986\n\n")
+
 	if err := run(); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
 		os.Exit(1)
