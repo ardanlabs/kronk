@@ -2197,15 +2197,38 @@ digests.
    (OIDC). `id-token: write` is granted on this job only; cosign
    exchanges the workflow's OIDC token for a short-lived Fulcio cert
    tied to the workflow identity, signs the manifest, and records the
-   signature + Rekor log entry in the same registry as the image.
+   signature + Rekor log entry.
+
+   - **GHCR** signatures are stored co-located with the image
+     (default cosign layout).
+   - **Docker Hub** signatures are redirected to the sibling repo
+     [`ardanlabs/kronk-signatures`](https://hub.docker.com/r/ardanlabs/kronk-signatures)
+     via `COSIGN_REPOSITORY` so they don't pollute the `ardanlabs/kronk`
+     tag list with `sha256-*.sig` entries. That repo must exist and be
+     public for keyless verification to work.
+
+   > **Sync note.** If you change the signing layout (rename the
+   > signatures repo, switch to OCI 1.1 referrers, add another
+   > registry), update both [`docker.yml`](../.github/workflows/docker.yml)
+   > **and** [`DockerHub.md`](../DockerHub.md) (the "Verifying Image
+   > Signatures" section, then paste the rendered contents into the
+   > Docker Hub repo description — `DockerHub.md` is not auto-synced).
 
    Consumers verify with:
 
    ```shell
+   # GHCR (signatures co-located):
    cosign verify ghcr.io/ardanlabs/kronk:v1.26.4-cpu \
      --certificate-identity-regexp \
        'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+   # Docker Hub (signatures in sibling repo):
+   COSIGN_REPOSITORY=ardanlabs/kronk-signatures \
+     cosign verify ardanlabs/kronk:v1.26.4-cpu \
+       --certificate-identity-regexp \
+         'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
+       --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
 **Event → variants → tags:**

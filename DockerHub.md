@@ -1,3 +1,19 @@
+<!--
+  This file is the Docker Hub repository description for
+  https://hub.docker.com/r/ardanlabs/kronk. It is NOT auto-synced —
+  after editing, paste the rendered contents into the Docker Hub UI
+  (Repository → Settings → Description).
+
+  SYNC CHECKLIST when changing publishing/signing behaviour:
+    - .github/workflows/docker.yml  (the `Sign published manifests`
+      step — cosign keyless config, COSIGN_REPOSITORY, etc.)
+    - .manual/chapter-19-developer-guide.md  (the "Merge + sign"
+      section under the Docker workflow notes)
+    - This file — the "Image Tags You'll See" and "Verifying Image
+      Signatures" sections below. Keep the verify commands and the
+      signatures-repo name in sync with the workflow.
+-->
+
 # Kronk — Local LLM Inference & Audio Transcription Server
 
 Kronk is a high-performance, GPU-accelerated server for local LLM inference and audio transcription. Built on llama.cpp and whisper.cpp, it provides an OpenAI-compatible API for chat completions, responses, embeddings, reranking, and audio transcription.
@@ -212,8 +228,36 @@ Models, libraries, catalog data, and API keys are all stored under `/kronk`. Nam
 
 ---
 
+## Verifying Image Signatures
+
+Every published manifest is signed with [cosign](https://github.com/sigstore/cosign) **keyless** (Sigstore / Fulcio / Rekor) by the [`docker.yml`](https://github.com/ardanlabs/kronk/blob/main/.github/workflows/docker.yml) GitHub Actions workflow. There are no long-lived signing keys — the signature is bound to the workflow identity and recorded in the public Rekor transparency log.
+
+To avoid cluttering the `ardanlabs/kronk` tag list with `sha256-*.sig` entries, **Docker Hub signatures are stored in a sibling repository**, [`ardanlabs/kronk-signatures`](https://hub.docker.com/r/ardanlabs/kronk-signatures). Verifiers must point cosign at that repo via `COSIGN_REPOSITORY`:
+
+```bash
+COSIGN_REPOSITORY=ardanlabs/kronk-signatures \
+  cosign verify ardanlabs/kronk:latest \
+    --certificate-identity-regexp \
+      'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The mirror images on GHCR keep signatures co-located (the default cosign layout), so verifying those does not need `COSIGN_REPOSITORY`:
+
+```bash
+cosign verify ghcr.io/ardanlabs/kronk:latest \
+  --certificate-identity-regexp \
+    'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Substitute `latest` with any published tag (`<version>-<variant>`, `latest-<variant>`, etc.). A successful verification prints the Fulcio cert, the GitHub Actions workflow identity, and the Rekor log entry index.
+
+---
+
 ## Links
 
 - **Source:** https://github.com/ardanlabs/kronk
 - **Documentation:** https://github.com/ardanlabs/kronk#readme
 - **Website:** https://kronkai.com
+- **Signatures (Docker Hub):** https://hub.docker.com/r/ardanlabs/kronk-signatures

@@ -707,23 +707,57 @@ jobs:
       # exchanges the workflow's OIDC token (id-token: write granted on
       # this job) for a short-lived Fulcio cert tied to the workflow
       # identity, signs the manifest, and records the signature +
-      # rekor transparency-log entry in the same registry as the image.
+      # rekor transparency-log entry.
+      #
+      # GHCR signatures are stored alongside the image (default cosign
+      # behaviour). Docker Hub signatures are redirected to a sibling
+      # repo (ardanlabs/kronk-signatures) via COSIGN_REPOSITORY so they
+      # don't clutter the kronk tag list with sha256-*.sig entries.
+      # That repo must exist and be public for keyless verification.
+      #
+      # IF YOU CHANGE THE SIGNING LAYOUT (e.g. rename the signatures
+      # repo, switch to OCI 1.1 referrers, add another registry),
+      # update these too:
+      #   - DockerHub.md  ("Verifying Image Signatures" section, then
+      #     paste into the Docker Hub repo description)
+      #   - .manual/chapter-19-developer-guide.md  ("Merge + sign"
+      #     section under the Docker workflow notes)
+      #
       # Consumers verify with:
       #
-      #   cosign verify <ref> \
+      #   # GHCR (signatures co-located):
+      #   cosign verify ghcr.io/ardanlabs/kronk:<tag> \
       #     --certificate-identity-regexp \
       #       'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
       #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      #
+      #   # Docker Hub (signatures in sibling repo):
+      #   COSIGN_REPOSITORY=ardanlabs/kronk-signatures \
+      #     cosign verify ardanlabs/kronk:<tag> \
+      #       --certificate-identity-regexp \
+      #         'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
+      #       --certificate-oidc-issuer https://token.actions.githubusercontent.com
       - name: Sign published manifests (cosign keyless)
         env:
           SIGN_REFS: ${{ steps.merge_manifests.outputs.sign_refs }}
+          DH_IMAGE: ${{ env.DH_IMAGE }}
+          DH_SIG_REPO: ardanlabs/kronk-signatures
           COSIGN_YES: "true"
         run: |
           set -euo pipefail
           while IFS= read -r ref; do
             [[ -z "$ref" ]] && continue
-            echo ">>> cosign sign $ref"
-            cosign sign --recursive "$ref"
+            # Redirect Docker Hub signatures to the sibling -signatures
+            # repo so they don't show up as sha256-*.sig tags on the
+            # main image repo. GHCR refs are signed with the default
+            # (co-located) behaviour.
+            if [[ "$ref" == "${DH_IMAGE}:"* ]]; then
+              echo ">>> cosign sign $ref (COSIGN_REPOSITORY=${DH_SIG_REPO})"
+              COSIGN_REPOSITORY="${DH_SIG_REPO}" cosign sign --recursive "$ref"
+            else
+              echo ">>> cosign sign $ref"
+              cosign sign --recursive "$ref"
+            fi
           done <<<"$SIGN_REFS"
 
       - name: Inspect published images
