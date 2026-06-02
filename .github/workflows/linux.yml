@@ -152,15 +152,23 @@ jobs:
           args: check
 
       # Race detector pass on the SDK packages that don't spin up the
-      # full inference stack (those tests are owned by sdk-tests).
-      # Restricted to fast/unit-style packages by walking the same
-      # package list sdk-tests uses, with -short and -race. Catches
-      # concurrency bugs in parsers, kvstorage, pool primitives, etc.
-      # without doubling the wall-clock cost of the model-heavy tests.
+      # full inference stack (those tests are owned by sdk-tests). The
+      # excluded packages all require the kronk libraries (libllama,
+      # libwhisper, …) and/or downloaded models to even start, which
+      # this job intentionally does not provision:
+      #   /sdk/kronk/tests     — integration suite owned by sdk-tests.
+      #   /sdk/kronk/pool      — boots the llama runtime + real models.
+      #   /sdk/bucky/tests     — boots the whisper runtime + real models.
+      # Catches concurrency bugs in parsers, kvstorage, pool primitives,
+      # etc. without doubling the wall-clock cost of the model-heavy
+      # tests.
       - name: go test -race -short (sdk unit packages)
         run: |
           go test -race -short -count=1 -timeout 10m \
-            $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
+            $(go list ./sdk/... \
+              | grep -v '/sdk/kronk/tests' \
+              | grep -v '/sdk/kronk/pool' \
+              | grep -v '/sdk/bucky/tests')
 
   api-tests:
     name: api/service tests
