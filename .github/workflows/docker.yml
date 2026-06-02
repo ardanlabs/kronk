@@ -53,15 +53,14 @@ on:
     # `labeled`/`unlabeled` lets reviewers expand the PR build matrix by
     # adding a `build <variant>` label after the PR is open, without
     # needing to push an empty commit.
+    #
+    # A `paths:` filter is intentionally NOT set here: GitHub evaluates
+    # `paths:` as a changeset filter, and `labeled`/`unlabeled` events
+    # carry no changeset — so combining them silently drops every label
+    # event before a run is even created. We replicate the path-relevance
+    # check inside the `plan` job below (it's cheap, and the `build` job
+    # already short-circuits on an empty matrix).
     types: [opened, synchronize, reopened, labeled, unlabeled]
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
-      - "cmd/server/api/frontends/bui/**"
-      - "zarf/docker/kronk/**"
-      - "zarf/kms/**"
-      - ".github/workflows/docker.yml"
   push:
     branches: [main]
     tags: ["v*"]
@@ -73,9 +72,11 @@ on:
         required: false
 
 # Cancel superseded runs on the same PR / branch. Tag pushes get a unique
-# group so simultaneously-pushed tags don't cancel each other.
+# group so simultaneously-pushed tags don't cancel each other. Keyed on
+# the PR number when available so two same-named branches from different
+# forks don't fight for the same slot.
 concurrency:
-  group: docker-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: docker-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
@@ -98,6 +99,11 @@ jobs:
   # ---------------------------------------------------------------------------
   plan:
     runs-on: ubuntu-latest
+    # `pull-requests: read` is needed by `gh api /repos/.../pulls/N/files`
+    # in the relevance gate below. Everything else stays at the default.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       push: ${{ steps.plan.outputs.push }}
@@ -125,10 +131,14 @@ jobs:
         id: plan
         env:
           EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
           REF: ${{ github.ref }}
           SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABEL_NAME: ${{ github.event.label.name }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           DISPATCH_VARIANTS: ${{ github.event.inputs.variants }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -199,6 +209,38 @@ jobs:
           )
 
           # -------------------------------------------------------------------
+          # PR relevance gate
+          #
+          # Replicates what the trigger-level `paths:` filter used to do
+          # before we removed it (see header comment in `on:`). Two ways
+          # for a `pull_request` event to be irrelevant:
+          #
+          #   1. `labeled`/`unlabeled` of a label that isn't `build *` —
+          #      Docker builds only respond to the build-selection labels.
+          #   2. The PR's changeset doesn't touch any code path the image
+          #      depends on (Go sources, the Dockerfile, the kms zarf, or
+          #      this workflow file).
+          #
+          # When irrelevant, leave CHOSEN empty so an `{"include":[]}`
+          # matrix is emitted and the `build` job's `if:` short-circuits.
+          # -------------------------------------------------------------------
+          PR_RELEVANT=true
+          if [[ "$EVENT" == "pull_request" ]]; then
+            if [[ "$ACTION" =~ ^(labeled|unlabeled)$ && "$PR_LABEL_NAME" != build\ * ]]; then
+              echo "Skipping: non-build label event ($ACTION: $PR_LABEL_NAME)"
+              PR_RELEVANT=false
+            else
+              PR_FILES="$(gh api --paginate \
+                "/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" \
+                --jq '.[].filename')"
+              if ! grep -Eq '(\.go$|^go\.(mod|sum)$|^cmd/server/api/frontends/bui/|^zarf/docker/kronk/|^zarf/kms/|^\.github/workflows/docker\.yml$)' <<<"$PR_FILES"; then
+                echo "Skipping: PR diff touches no Docker-relevant paths"
+                PR_RELEVANT=false
+              fi
+            fi
+          fi
+
+          # -------------------------------------------------------------------
           # Variant selection
           # -------------------------------------------------------------------
           CHOSEN=()
@@ -222,23 +264,27 @@ jobs:
               fi
               ;;
             pull_request)
-              # cpu is always built — it exercises the most-shared
-              # Dockerfile path (default runtime stage, no GPU apt
-              # conditionals) so a regression there is most likely to
-              # be caught by a single, cheap matrix entry. Label
-              # `build all` expands to every variant; otherwise each
-              # `build <variant>` label adds that variant on top of
-              # cpu.
-              CHOSEN=(cpu)
-              if echo "$PR_LABELS" | jq -e 'any(. == "build all")' >/dev/null; then
-                CHOSEN=("${ALL_VARIANTS[@]}")
+              if [[ "$PR_RELEVANT" != "true" ]]; then
+                : # empty matrix; build job is skipped
               else
-                for v in "${ALL_VARIANTS[@]}"; do
-                  [[ "$v" == "cpu" ]] && continue
-                  if echo "$PR_LABELS" | jq -e --arg n "build $v" 'any(. == $n)' >/dev/null; then
-                    CHOSEN+=("$v")
-                  fi
-                done
+                # cpu is always built — it exercises the most-shared
+                # Dockerfile path (default runtime stage, no GPU apt
+                # conditionals) so a regression there is most likely to
+                # be caught by a single, cheap matrix entry. Label
+                # `build all` expands to every variant; otherwise each
+                # `build <variant>` label adds that variant on top of
+                # cpu.
+                CHOSEN=(cpu)
+                if echo "$PR_LABELS" | jq -e 'any(. == "build all")' >/dev/null; then
+                  CHOSEN=("${ALL_VARIANTS[@]}")
+                else
+                  for v in "${ALL_VARIANTS[@]}"; do
+                    [[ "$v" == "cpu" ]] && continue
+                    if echo "$PR_LABELS" | jq -e --arg n "build $v" 'any(. == $n)' >/dev/null; then
+                      CHOSEN+=("$v")
+                    fi
+                  done
+                fi
               fi
               ;;
           esac
