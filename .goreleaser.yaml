@@ -13,6 +13,25 @@ builds:
     goarch:
       - amd64
       - arm64
+    # No link-time -X override for sdk/kronk.Version — it is a `const`
+    # and must be bumped in the same commit that prepares the release
+    # tag. The release workflow runs .github/scripts/check-version.sh
+    # before invoking goreleaser, so any tag/constant mismatch fails
+    # the pipeline before binaries are produced.
+    #
+    # `-s -w` strips the symbol table and DWARF debug info, which
+    # also disables `go version -m <binary>` build-info inspection on
+    # the released artifacts (the VCS revision is still recorded by
+    # goreleaser in the release notes). Acceptable trade-off for the
+    # ~20% binary-size reduction; matches what the Dockerfile builder
+    # produces so the OCI and tarball binaries are byte-identical.
+    ldflags:
+      - -s -w
+    # `-trimpath` makes the resulting binary reproducible across build
+    # machines by stripping absolute module/source paths from the
+    # embedded debug info — matching what the Dockerfile builder uses.
+    flags:
+      - -trimpath
 
 before:
   hooks:

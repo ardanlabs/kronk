@@ -1,0 +1,75 @@
+name: Set up Kronk test environment
+description: >
+  Frees disk space, installs Go pinned to go.mod, restores the shared
+  models cache, builds the kronk CLI, installs the llama.cpp + whisper.cpp
+  libraries and (on cache miss) pulls every model required by the
+  integration tests. Re-used from the parallel test jobs in linux.yml so
+  api-tests and sdk-tests start from an identical environment and share
+  setup-go's Go module + build cache via the common cache key.
+
+outputs:
+  cache-hit:
+    description: "Whether the models cache was a hit."
+    value: ${{ steps.cache-models.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Free disk space
+      shell: bash
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+    # CI's Go toolchain lives in /.go-version (not go.mod) so that
+    # contributors on any 1.26.x release build with their local toolchain
+    # — no auto-download — while CI stays pinned to a known-patched
+    # version for govulncheck. The .go-version file is also picked up
+    # automatically by asdf, mise, goenv, gvm, and direnv's use_go.
+    # setup-go's cache key includes the resolved Go version, so all jobs
+    # using this file share the same cache.
+    - name: Install Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: .go-version
+
+    - name: Restore models cache
+      id: cache-models
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          ~/.kronk/models
+          ~/.kronk/bucky-models
+        key: ${{ runner.os }}-models-v4
+
+    - name: Install kronk command
+      shell: bash
+      run: go install ./cmd/kronk
+
+    - name: Install Libs
+      # The default behavior of `kronk libs --local` (no flags) installs
+      # the well-known defaultVersion baked into sdk/tools/libs/libs.go.
+      # Bumping defaultVersion in code rolls CI forward; CI never
+      # silently tracks llama.cpp's latest tag.
+      #
+      # `kronk bucky libs --local` does the same for the whisper.cpp
+      # backend used by the bucky pool and the
+      # /v1/audio/transcriptions endpoint.
+      shell: bash
+      run: |
+        mkdir -p $HOME/.kronk/libraries
+        kronk libs --local
+        kronk bucky libs --local
+
+    - name: Download test models
+      if: steps.cache-models.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mkdir -p $HOME/.kronk/models
+        kronk model pull --local unsloth/Qwen3.5-0.8B-Q8_0
+        kronk model pull --local Qwen/Qwen3-8B-Q8_0
+        kronk model pull --local ggml-org/embeddinggemma-300m-qat-Q8_0
+        kronk model pull --local gpustack/bge-reranker-v2-m3-Q8_0
+        kronk bucky model pull --local tiny.en

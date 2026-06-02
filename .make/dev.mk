@@ -30,6 +30,11 @@ diff:
 
 test-only: install-libraries install-test-models
 	@echo ========== RUN TESTS ==========
+	# Unset KRONK_* path overrides so a developer's shell environment
+	# (e.g. KRONK_BASE_PATH=/data/kronk) cannot leak into the suite —
+	# defaults.BaseDir consults KRONK_BASE_PATH when no override is
+	# supplied, and several SDK tests rely on the $HOME/.kronk default.
+	unset KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	go test -v -p=1 -count=1 ./cmd/server/... && \
@@ -39,6 +44,7 @@ test: test-only lint vuln-check diff
 
 test-gh-only: install-libraries-gh install-test-gh-models
 	@echo ========== RUN GH ONLY TESTS ==========
+	unset KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	export GITHUB_ACTIONS=true && \
@@ -115,6 +121,9 @@ deps-upgrade: bui-upgrade
 	go mod tidy
 	cd examples && go get -u -v ./...
 	cd examples && go mod tidy
+
+build-deps-upgrade: deps-upgrade
+	./zarf/docker/kronk/upgrade-pins.sh
 
 yzma-latest:
 	GOPROXY=direct go get github.com/hybridgroup/yzma@main

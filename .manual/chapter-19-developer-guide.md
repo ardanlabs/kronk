@@ -39,6 +39,10 @@
   - [19.13.4 Pool Integration (Shared `resman`)](#19134-pool-integration-shared-resman)
   - [19.13.5 `audioapp` HTTP Handler](#19135-audioapp-http-handler)
   - [19.13.6 Tests](#19136-tests)
+- [19.14 Continuous Integration](#1914-continuous-integration)
+  - [19.14.1 Workflows](#19141-workflows)
+  - [19.14.2 Container Image Build & Publish](#19142-container-image-build--publish)
+  - [19.14.3 Version Stamping](#19143-version-stamping)
 
 ---
 
@@ -1857,3 +1861,94 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...
 
 The transcribe tests skip themselves when no whisper model is on
 disk, so contributors without a pulled model still get a green run.
+
+### 19.14 Continuous Integration
+
+#### 19.14.1 Workflows
+
+Three GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
+
+| Workflow             | Triggers                                  | Purpose                                                                              |
+| -------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| [`linux.yml`](../.github/workflows/linux.yml)     | PRs + push to `main` (Go/mod paths)       | `go vet`, `staticcheck`, `govulncheck`, `go fix -diff`, plus the SDK and HTTP tests against pulled models (cached across runs). |
+| [`release.yaml`](../.github/workflows/release.yaml)  | Push of tag `v*`                          | Runs `goreleaser` to produce per-OS/arch archives, checksums, and refresh the Homebrew cask in `ardanlabs/homebrew-kronk`. |
+| [`docker.yml`](../.github/workflows/docker.yml)    | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds (and on push events: publishes) the six container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). Every variant bakes in both llama.cpp and matching whisper.cpp (bucky) shared libraries plus `ffmpeg` for transcription. |
+
+#### 19.14.2 Container Image Build & Publish
+
+The Docker workflow is matrix-driven; the `plan` job synthesises the build
+matrix at runtime from the event type (and from any `build <variant>` PR
+labels). Six variants are produced:
+
+| Variant  | `LLAMA_PROCESSORS`     | `BUCKY_PROCESSORS` | Platforms                    | Dockerfile target |
+| -------- | ---------------------- | ------------------ | ---------------------------- | ----------------- |
+| `cpu`    | `cpu`                  | `cpu`              | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `cuda`   | `cuda`                 | `cuda`             | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `vulkan` | `vulkan`               | `vulkan`           | `linux/amd64`, `linux/arm64` | `runtime`         |
+| `rocm`   | `rocm`                 | `vulkan` ¹         | `linux/amd64` only           | `runtime`         |
+| `jetson` | `cuda`                 | `cuda`             | `linux/arm64` only           | `runtime-jetson`  |
+| `all`    | `cpu cuda vulkan rocm` | `cpu cuda vulkan`  | `linux/amd64`, `linux/arm64` | `runtime`         |
+
+¹ Upstream whisper.cpp has no rocm build target
+([combinations.go](../sdk/tools/bucky/libs/combinations.go)), so the rocm
+variant ships the vulkan bucky bundle and the container entrypoint
+([entrypoint.sh](../zarf/docker/kronk/entrypoint.sh)) sets
+`KRONK_BUCKY_LIB_PATH` to point at it on ROCm hosts so transcription stays
+GPU-accelerated via the RADV Vulkan driver.
+
+Multi-arch images are built **natively** on `ubuntu-24.04` (amd64) and
+`ubuntu-24.04-arm` (arm64) runners — never under QEMU. Each per-arch job
+pushes its image to GHCR + Docker Hub by **digest only** (no human-readable
+tag yet) and uploads a tiny artifact containing that digest. A downstream
+`merge` job per variant collects the arch-specific digests and stitches them
+into the final multi-arch manifest with `docker buildx imagetools create`,
+applying the human-readable tags at that step.
+
+Event → tag mapping:
+
+| Event                | Variants                                                | Push? | Tags applied                                                       |
+| -------------------- | ------------------------------------------------------- | ----- | ------------------------------------------------------------------ |
+| PR (no labels)       | `cpu`                                                   | no    | —                                                                  |
+| PR + label `build all`  | all 6                                                   | no    | —                                                                  |
+| PR + label `build <v>`  | that variant                                            | no    | —                                                                  |
+| Push to `main`       | all 6                                                   | yes   | `main-<shortsha>-<variant>`                                        |
+| Push to tag `v*`     | all 6                                                   | yes   | `<tag>-<variant>` + `latest-<variant>`; plus `latest` → cpu image  |
+| `workflow_dispatch`  | input `variants` (default `all`, or comma-separated)    | no    | —                                                                  |
+
+Per-`(variant, arch)` GHA cache scopes (`type=gha,scope=<variant>-<arch>`)
+keep the BuildKit cache hot across runs; the runner-level free-disk step
+reclaims ~25 GB up front so the all-backends + rocm builds don't run out of
+space.
+
+#### 19.14.3 Version Constant & Release Guard
+
+The CLI's reported version is the value of the
+[`Version` constant in `sdk/kronk/kronk.go`](../sdk/kronk/kronk.go) — a
+plain `const string` with no link-time override.
+[`sdk/bucky.Version`](../sdk/bucky/bucky.go) is `const Version =
+kronk.Version` so the two SDKs always report the same string. Bumping the
+version is therefore part of the same commit that prepares a `v<X.Y.Z>`
+release tag.
+
+Both the release and Docker workflows enforce this with a shared guard:
+[`.github/scripts/check-version.sh`](../.github/scripts/check-version.sh)
+parses `const Version` out of `sdk/kronk/kronk.go`, strips the leading `v`
+from the pushed tag (`$GITHUB_REF`), and fails the workflow when the two
+don't match — before any binary, archive, or container image is produced.
+
+- [`release.yaml`](../.github/workflows/release.yaml) runs the script
+  immediately before `goreleaser`.
+- [`docker.yml`](../.github/workflows/docker.yml) runs it in the `plan`
+  job, gated on `startsWith(github.ref, 'refs/tags/v')`.
+
+The `KRONK_VERSION` build-arg consumed by the Dockerfile is purely
+cosmetic: it flows into the OCI image labels (`org.opencontainers.image
+.version`) so registry metadata can encode the variant / SHA / tag combo
+that produced an image. The kronk binary inside that image still reports
+the value of `const Version`, not `KRONK_VERSION`.
+
+Release checklist when cutting `v<X.Y.Z>`:
+
+1. Bump `const Version` in [`sdk/kronk/kronk.go`](../sdk/kronk/kronk.go).
+2. Commit, then tag the same commit `v<X.Y.Z>` and push.
+3. CI's tag-guard step refuses the release if step 1 was forgotten.

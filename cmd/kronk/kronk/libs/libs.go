@@ -57,7 +57,7 @@ func runWeb(upgrade bool, version string) error {
 	return nil
 }
 
-func runLocal(upgrade bool, version string) error {
+func runLocal(basePath string, upgrade bool, version string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
@@ -67,7 +67,7 @@ func runLocal(upgrade bool, version string) error {
 	}
 
 	libs, err := libs.New(
-		libs.WithLibPath(""),
+		libs.WithBasePath(basePath),
 		libs.WithVersion(v),
 		libs.WithAllowUpgrade(upgrade),
 	)
