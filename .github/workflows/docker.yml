@@ -461,8 +461,8 @@ jobs:
           && matrix.variant == 'cpu'
           && matrix.arch == 'amd64'
         run: |
-          docker run --rm kronk-smoke:latest kronk --version
-          docker run --rm kronk-smoke:latest kronk --help
+          docker run --rm --entrypoint kronk kronk-smoke:latest --version
+          docker run --rm --entrypoint kronk kronk-smoke:latest --help
 
       # Push event path: build & push by digest only. Final tags get
       # applied by the `merge` job once both arches are available.

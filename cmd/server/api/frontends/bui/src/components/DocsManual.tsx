@@ -425,7 +425,7 @@ KRONK_OS        - OS override: \`linux\`, \`darwin\`, \`windows\``}</code></pre>
           <p><code>KRONK_LIB_PATH</code> is interpreted in one of three ways:</p>
           <ol>
             <li><em>Unset</em> — the runtime resolves <code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> based on the detected (or <code>KRONK_*</code>-overridden) triple.</li>
-            <li><em>Points at a directory containing a &lt;code&gt;version.json&lt;/code&gt;</em> — used as-is. This is the form to set when you want to switch the active install to a previously-downloaded triple folder. Example: ```shell export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda ```</li>
+            <li><em>Points at a directory containing a &lt;code&gt;version.json&lt;/code&gt;</em> — used as-is. This is the form to set when you want to switch the active install to a previously-downloaded triple folder. Example: ``<code>shell export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda </code>``</li>
             <li><em>Points at a non-empty directory without a &lt;code&gt;version.json&lt;/code&gt;</em> — treated as a user-managed read-only build. Kronk will load libraries from it but never write to it; mutating CLI/HTTP operations against it return an error.</li>
           </ol>
           <p>Switching the active install requires a server restart; libraries are not hot-reloaded.</p>
@@ -5484,8 +5484,8 @@ response = client.chat.completions.create(
           <p><strong>2. Point OpenCode at the new model.</strong></p>
           <p>Edit <code>~/.config/opencode/opencode.jsonc</code> and update two places:</p>
           <ul>
-            <li>The top-level <code>model</code> field — this is the active default. Format is <code>&lt;provider&gt;/&lt;model-name&gt;</code>, so for the Kronk provider: ```jsonc "model": "kronk/my-new-model-Q4_K_M/AGENT" ```</li>
-            <li>The <code>provider.kronk.models</code> map — add a new entry so OpenCode knows the model exists and what its limits are: ```jsonc "models": &#123; "my-new-model-Q4_K_M/AGENT": &#123; "name": "My New Model Q4_K_M", "limit": &#123; "context": 131072, "output": 65536 &#125; &#125; &#125; ```</li>
+            <li>The top-level <code>model</code> field — this is the active default. Format is <code>&lt;provider&gt;/&lt;model-name&gt;</code>, so for the Kronk provider: ``<code>jsonc "model": "kronk/my-new-model-Q4_K_M/AGENT" </code>``</li>
+            <li>The <code>provider.kronk.models</code> map — add a new entry so OpenCode knows the model exists and what its limits are: ``<code>jsonc "models": &#123; "my-new-model-Q4_K_M/AGENT": &#123; "name": "My New Model Q4_K_M", "limit": &#123; "context": 131072, "output": 65536 &#125; &#125; &#125; </code>``</li>
           </ul>
           <p>You can pre-register multiple models in the <code>models</code> map and switch between them inside OpenCode with the <code>/models</code> command — the top-level <code>model</code> field just sets the startup default.</p>
           <p><strong>3. Re-shipping the bundle.</strong></p>
@@ -7129,6 +7129,14 @@ export GITHUB_WORKSPACE=$(pwd)
 # Run from project root directory
 make test`}</code></pre>
           <p><code>make test</code> expands to <code>test-only + lint + vuln-check + diff</code>. The <code>test-only</code> target depends on <code>install-libraries</code> and <code>install-test-models</code>, so the llama.cpp libraries and test GGUF models are downloaded automatically the first time you run it.</p>
+          <blockquote><strong>CI parity note:</strong> CI doesn't use these make targets directly. It</blockquote>
+          <blockquote>reads its model list from</blockquote>
+          <blockquote><a href="../.github/test-models.txt"><code>.github/test-models.txt</code></a> (one</blockquote>
+          <blockquote><code>&lt;backend&gt; &lt;model-id&gt;</code> per line) so the cache key for the models</blockquote>
+          <blockquote>cache can be tied to that file's hash. If you add a test that</blockquote>
+          <blockquote>requires a new model, you MUST add it to <code>test-models.txt</code> AND to</blockquote>
+          <blockquote>the local install path (<code>install-test-models</code>) or CI will silently</blockquote>
+          <blockquote>skip the dependency. See <a href="#19145-test-modelstxt--test-model-manifest">§19.14.5</a>.</blockquote>
           <p>For fast iteration (skip <code>lint</code>, <code>vuln-check</code>, and <code>diff</code>):</p>
           <pre className="code-block"><code className="language-shell">{`make test-only`}</code></pre>
           <p><strong>Run a single test:</strong></p>
@@ -7149,6 +7157,30 @@ make test`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`make install-gotooling   # staticcheck, govulncheck, protoc-gen-go(-grpc), gomod2nix
 make install-tooling     # brew: protobuf, grpcurl, node (only needed for codegen / BUI work)`}</code></pre>
           <p>A fresh checkout that skips <code>install-gotooling</code> will fail the <code>lint</code> and <code>vuln-check</code> steps of <code>make test</code> and the post-edit checks listed in §19.1.</p>
+          <p><strong>Go toolchain version:</strong></p>
+          <p>The repo carries two Go-version files with different roles:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Role</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="../go.mod"><code>go.mod</code></a></td>
+                <td>Minimum language version. Floor for downstream consumers.</td>
+                <td><code>go 1.26.0</code></td>
+              </tr>
+              <tr>
+                <td><a href="../.go-version"><code>.go-version</code></a></td>
+                <td>Exact toolchain CI / dev managers install (asdf, mise, goenv, gvm, direnv).</td>
+                <td><code>1.26.3</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>They are allowed to differ on the <em>patch</em> component but must agree on <code>&lt;major&gt;.&lt;minor&gt;</code>. The Linux + Release workflows run <a href="../.github/scripts/check-go-version.sh"><code>.github/scripts/check-go-version.sh</code></a> to enforce this — bump both files together or CI fails. See <a href="#19142-go-toolchain-pin-gomod-vs-go-version">§19.14.2</a>.</p>
           <h3 id="194-project-architecture">19.4 Project Architecture</h3>
           <p><strong>Directory Structure:</strong></p>
           <table className="flags-table">
@@ -8800,7 +8832,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
           <p>The transcribe tests skip themselves when no whisper model is on disk, so contributors without a pulled model still get a green run.</p>
           <h3 id="1914-continuous-integration">19.14 Continuous Integration</h3>
           <h4 id="19141-workflows">19.14.1 Workflows</h4>
-          <p>Three GitHub Actions workflows live under <a href="../.github/workflows/"><code>.github/workflows/</code></a>:</p>
+          <p>Five GitHub Actions workflows live under <a href="../.github/workflows/"><code>.github/workflows/</code></a>:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -8812,23 +8844,169 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
             <tbody>
               <tr>
                 <td><a href="../.github/workflows/linux.yml"><code>linux.yml</code></a></td>
-                <td>PRs + push to <code>main</code> (Go/mod paths)</td>
-                <td><code>go vet</code>, <code>staticcheck</code>, <code>govulncheck</code>, <code>go fix -diff</code>, plus the SDK and HTTP tests against pulled models (cached across runs).</td>
+                <td>PRs + push to <code>main</code> (Go/mod/CI paths)</td>
+                <td>Three parallel jobs: <code>static</code> (vet/staticcheck/govulncheck/gofmt/gofix/tidy/goreleaser-check/-race unit tests), <code>api-tests</code> (<code>cmd/server/...</code>), <code>sdk-tests</code> (<code>sdk/...</code>).</td>
               </tr>
               <tr>
                 <td><a href="../.github/workflows/release.yaml"><code>release.yaml</code></a></td>
                 <td>Push of tag <code>v*</code></td>
-                <td>Runs <code>goreleaser</code> to produce per-OS/arch archives, checksums, and refresh the Homebrew cask in <code>ardanlabs/homebrew-kronk</code>.</td>
+                <td>Pinned-toolchain <code>goreleaser release --clean</code>, SBOM generation via syft, SLSA build-provenance attestation, Homebrew cask refresh.</td>
               </tr>
               <tr>
                 <td><a href="../.github/workflows/docker.yml"><code>docker.yml</code></a></td>
                 <td>PRs, push to <code>main</code>, push of tag <code>v*</code>, <code>workflow_dispatch</code></td>
-                <td>Builds (and on push events: publishes) the six container variants defined in <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a>. Every variant bakes in both llama.cpp and matching whisper.cpp (bucky) shared libraries plus <code>ffmpeg</code> for transcription.</td>
+                <td>Builds (and on push: publishes + cosign-signs) the <strong>five</strong> container variants defined in <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a>.</td>
+              </tr>
+              <tr>
+                <td><a href="../.github/workflows/cache-cleanup.yml"><code>cache-cleanup.yml</code></a></td>
+                <td>Daily cron + manual</td>
+                <td>Prunes stale GHA cache entries and stale <code>kronk-buildcache</code> GHCR tags older than the cutoff.</td>
+              </tr>
+              <tr>
+                <td><a href="../.github/workflows/label-guard.yml"><code>label-guard.yml</code></a></td>
+                <td>Label events on PRs/issues</td>
+                <td>Removes unauthorized <code>build *</code> labels (PRs from non-maintainers; any application on an issue).</td>
               </tr>
             </tbody>
           </table>
-          <h4 id="19142-container-image-build-publish">19.14.2 Container Image Build &amp; Publish</h4>
-          <p>The Docker workflow is matrix-driven; the <code>plan</code> job synthesises the build matrix at runtime from the event type (and from any <code>build &lt;variant&gt;</code> PR labels). Six variants are produced:</p>
+          <p>The three Linux jobs run in parallel and all use <a href="https://github.com/actions/setup-go"><code>actions/setup-go</code></a> keyed on <a href="../.go-version"><code>.go-version</code></a>, so they share one Go module + build cache (<code>setup-go</code>'s key encodes OS + Go version + <code>go.sum</code> hash). That's also why bumping <code>.go-version</code> invalidates the <code>go install ./cmd/kronk</code> step's cache exactly once per Go-version bump.</p>
+          <h4 id="19142-go-toolchain-pin-`gomod`-vs-`go-version`">19.14.2 Go Toolchain Pin (`go.mod` vs `.go-version`)</h4>
+          <p>Two files, two roles:</p>
+          <pre className="code-block"><code className="language-diagram">{`╭──────────────╮      minimum language version (floor)
+│   go.mod     │ ───► \`go 1.26.0\`
+╰──────────────╯      used by downstream consumers of the modules
+                      and by \`GOTOOLCHAIN=auto\` resolution
+
+╭──────────────╮      exact toolchain CI + dev managers install
+│ .go-version  │ ───► \`1.26.3\`
+╰──────────────╯      picked up by asdf, mise, goenv, gvm, direnv,
+                      and actions/setup-go's \`go-version-file:\` input`}</code></pre>
+          <p><a href="../.github/scripts/check-go-version.sh"><code>.github/scripts/check-go-version.sh</code></a> parses the <code>go</code> directive from <code>go.mod</code> and the bare version from <code>.go-version</code>, then fails the workflow when their <code>&lt;major&gt;.&lt;minor&gt;</code> components disagree. Patch-level drift is allowed (and expected: CI typically pins a patched toolchain ahead of the language minimum) — minor-level drift means someone bumped one file and forgot the other.</p>
+          <p>Where the guard runs:</p>
+          <ul>
+            <li><code>linux.yml</code> → the <code>static</code> job, as the first step after checkout.</li>
+            <li><code>release.yaml</code> → before <code>goreleaser</code>, so a release can never be cut with a mismatched toolchain.</li>
+          </ul>
+          <p>All CI jobs export <code>GOTOOLCHAIN=local</code>. A transitive dependency that bumps its <code>go</code> directive above <code>.go-version</code> therefore fails loudly instead of silently triggering a toolchain auto-download — the correct fix is to bump <code>.go-version</code> (and re-run <code>check-go-version.sh</code>).</p>
+          <p>The Docker build performs the same pin: the <a href="../zarf/docker/kronk/Dockerfile">Dockerfile</a> reads <code>.go-version</code> at build time and downloads exactly that toolchain, so binaries published to registries are built with the same compiler CI tested against.</p>
+          <h4 id="19143-linux-pipeline-layout-`linuxyml`">19.14.3 Linux Pipeline Layout (`linux.yml`)</h4>
+          <p><code>linux.yml</code> runs three jobs in parallel after the <code>paths:</code> filter matches. There is no <code>lint</code> / <code>test</code> serialisation — the heavyweight <code>api-tests</code> / <code>sdk-tests</code> jobs start at the same time as the lightweight <code>static</code> job.</p>
+          <pre className="code-block"><code className="language-diagram">{`                       push / pull_request
+                              │
+                              ▼
+              ╭───────── paths filter ─────────╮
+              │ **.go, go.mod, go.sum,         │
+              │ .go-version, .goreleaser.yaml, │
+              │ .github/workflows/linux.yml,   │
+              │ .github/actions/setup-kronk/**,│
+              │ .github/scripts/check-go-...,  │
+              │ .github/test-models.txt        │
+              ╰────────────────┬───────────────╯
+                               │
+        ┌──────────────────────┼──────────────────────┐
+        ▼                      ▼                      ▼
+ ╭────────────╮         ╭─────────────╮        ╭─────────────╮
+ │   static   │         │ api-tests   │        │ sdk-tests   │
+ │            │         │             │        │             │
+ │ check-go-  │         │ setup-kronk │        │ setup-kronk │
+ │ version    │         │ (composite) │        │ (composite) │
+ │ gofmt -l   │         │             │        │             │
+ │ go mod tidy│         │ cmd/server/ │        │ sdk/...     │
+ │ go vet     │         │ (RUN_IN_    │        │ (excluding  │
+ │ staticcheck│         │  PARALLEL=  │        │  /sdk/kronk/│
+ │ govulncheck│         │  no)        │        │  tests)     │
+ │ go fix     │         │             │        │             │
+ │ goreleaser │         │ saves       │        │             │
+ │ check      │         │ models      │        │             │
+ │ -race      │         │ cache on    │        │             │
+ │ unit tests │         │ main + miss │        │             │
+ ╰────────────╯         ╰─────────────╯        ╰─────────────╯`}</code></pre>
+          <p>Key design decisions:</p>
+          <ul>
+            <li><strong>Concurrency group</strong> keyed on <code>$&#123;&#123; github.head_ref || github.ref &#125;&#125;</code> cancels in-progress runs when a PR is force-pushed, collapsing duplicate <code>push</code> + <code>pull_request</code> runs on the same branch.</li>
+            <li><strong>Minimum permissions</strong> (<code>contents: read</code> workflow-wide); <code>api-tests</code> alone gets <code>actions: write</code> so it can save the models cache.</li>
+            <li><strong>Only &lt;code&gt;api-tests&lt;/code&gt; saves the models cache</strong> (<code>actions/cache/save</code>) and only on a cache miss on <code>main</code>. Two save jobs would race on the same key; PR runs and cache hits don't need to save at all.</li>
+            <li>The <code>static</code> job also runs <code>-race -short</code> over the SDK packages that don't spin up the full inference stack — catches concurrency bugs in parsers, kvstorage, pool primitives without doubling test wall-clock.</li>
+            <li>The <code>paths:</code> filter explicitly includes CI infra files (<code>.go-version</code>, <code>setup-kronk/**</code>, <code>check-go-version.sh</code>, <code>test-models.txt</code>, <code>.goreleaser.yaml</code>) so changes to CI itself trigger CI.</li>
+          </ul>
+          <h4 id="19144-shared-setup-action-caches">19.14.4 Shared Setup Action &amp; Caches</h4>
+          <p>Both test jobs delegate to <a href="../.github/actions/setup-kronk/action.yml"><code>.github/actions/setup-kronk</code></a>, a composite action that:</p>
+          <ol>
+            <li>Frees ~25 GB on the runner (drops dotnet, android, ghc, CodeQL).</li>
+            <li>Installs Go via <code>actions/setup-go</code> with <code>go-version-file: .go-version</code>.</li>
+            <li>Restores two <strong>independent</strong> caches: | Cache         | Path                                 | Key                                                                         | Why separate                                                    | | ------------- | ------------------------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------- | | Libraries     | <code>~/.kronk/libraries</code>, <code>~/.kronk/bucky-libraries</code> | <code>$&#123;&#123; runner.os &#125;&#125;-kronk-libs-$&#123;&#123; hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') &#125;&#125;</code> | Libs change far less often than models; keep them hot.          | | Models        | <code>~/.kronk/models</code>, <code>~/.kronk/bucky-models</code>       | <code>$&#123;&#123; runner.os &#125;&#125;-models-$&#123;&#123; hashFiles('.github/test-models.txt') &#125;&#125;</code>        | Tied to the test-model manifest — see <a href="#19145-test-modelstxt--test-model-manifest">§19.14.5</a>. |</li>
+            <li><code>go install ./cmd/kronk</code> — fast because the Go module + build cache restored by <code>setup-go</code> is shared with the <code>static</code> job (same Go version, same <code>go.sum</code>).</li>
+            <li><code>kronk libs --local</code> + <code>kronk bucky libs --local</code> to install the llama.cpp + whisper.cpp native libraries (idempotent on a cache hit).</li>
+            <li>On models-cache miss only, walks <code>.github/test-models.txt</code> and pulls every listed model via <code>kronk model pull --local</code> or <code>kronk bucky model pull --local</code>.</li>
+          </ol>
+          <p>The composite emits <code>models-cache-hit</code> and <code>models-cache-key</code> as outputs so the caller can decide whether to re-save the cache.</p>
+          <h4 id="19145-`test-modelstxt`-—-test-model-manifest">19.14.5 `test-models.txt` — Test Model Manifest</h4>
+          <blockquote>⚠️ <strong>MAINTAIN THIS FILE.</strong> <a href="../.github/test-models.txt"><code>.github/test-models.txt</code></a> is the</blockquote>
+          <blockquote><strong>single source of truth</strong> for the models CI pulls into its test</blockquote>
+          <blockquote>environment. The file's hash is mixed into the models-cache key, so</blockquote>
+          <blockquote>adding / removing / renaming a model automatically invalidates the</blockquote>
+          <blockquote>cache on the next run and forces a fresh download. Forgetting to</blockquote>
+          <blockquote>update this file when a test gains a new model dependency means CI</blockquote>
+          <blockquote>will silently restore a stale cache and the new test will fail with</blockquote>
+          <blockquote>a "model not found" error.</blockquote>
+          <p>Format — one entry per line:</p>
+          <pre className="code-block"><code>{`<backend> <model-id>`}</code></pre>
+          <ul>
+            <li><code>backend</code> is <code>kronk</code> (LLM/embed/rerank, pulled with <code>kronk model pull</code>) or <code>bucky</code> (audio transcription, pulled with <code>kronk bucky model pull</code>).</li>
+            <li>Blank lines and lines starting with <code>#</code> are ignored.</li>
+            <li><strong>Do not add inline comments at the end of model lines</strong> — the parser word-splits each entry and treats the third field as garbage.</li>
+          </ul>
+          <p>Current manifest:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Backend</th>
+                <th>Model</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>kronk</code></td>
+                <td><code>unsloth/Qwen3.5-0.8B-Q8_0</code></td>
+              </tr>
+              <tr>
+                <td><code>kronk</code></td>
+                <td><code>Qwen/Qwen3-8B-Q8_0</code></td>
+              </tr>
+              <tr>
+                <td><code>kronk</code></td>
+                <td><code>ggml-org/embeddinggemma-300m-qat-Q8_0</code></td>
+              </tr>
+              <tr>
+                <td><code>kronk</code></td>
+                <td><code>gpustack/bge-reranker-v2-m3-Q8_0</code></td>
+              </tr>
+              <tr>
+                <td><code>bucky</code></td>
+                <td><code>tiny.en</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Checklist when adding a test that needs a new model:</p>
+          <ol>
+            <li>Add the <code>&lt;backend&gt; &lt;model-id&gt;</code> line to <code>.github/test-models.txt</code>.</li>
+            <li>Also wire it into the local <code>install-test-models</code> make target so <code>make test</code> keeps working for contributors who don't go through CI.</li>
+            <li>Push — the cache key changes automatically, CI pulls the new model once, then everyone else picks it up from cache.</li>
+          </ol>
+          <h4 id="19146-release-workflow-`releaseyaml`">19.14.6 Release Workflow (`release.yaml`)</h4>
+          <p>Triggered only by <code>v*</code> tag pushes. Runs inside a maintainer-gated <code>release</code> GitHub environment (configure required reviewers + tag patterns in <strong>Settings → Environments</strong>), so the <code>HOMEBREW_TAP_GITHUB_TOKEN</code> PAT and signing capabilities can never fire from an unattended branch push.</p>
+          <p>Sequence:</p>
+          <ol>
+            <li><strong>&lt;code&gt;check-go-version.sh&lt;/code&gt;</strong> — same drift guard as <code>linux.yml</code>.</li>
+            <li><strong>&lt;code&gt;actions/setup-go&lt;/code&gt; with &lt;code&gt;.go-version&lt;/code&gt;</strong> — same pinned toolchain as the test jobs, so the release binary is built with the compiler CI tested against.</li>
+            <li><strong>&lt;code&gt;check-version.sh&lt;/code&gt;</strong> — pushed tag must match <code>const Version</code> in <code>sdk/kronk/kronk.go</code> (see <a href="#19149-version-constant--release-guard">§19.14.9</a>).</li>
+            <li><strong>Install syft</strong> (<code>anchore/sbom-action/download-syft</code>) — GoReleaser's <code>sboms:</code> section in <a href="../.goreleaser.yaml"><code>.goreleaser.yaml</code></a> shells out to it to produce a CycloneDX-flavoured SPDX SBOM per archive (e.g. <code>kronk_Linux_x86_64.tar.gz.sbom.json</code>).</li>
+            <li><strong>&lt;code&gt;goreleaser release --clean&lt;/code&gt;</strong> — produces per-OS/arch archives, <code>checksums.txt</code>, the SBOMs, and refreshes the Homebrew cask in <code>ardanlabs/homebrew-kronk</code>.</li>
+            <li><strong>&lt;code&gt;actions/attest-build-provenance&lt;/code&gt;</strong> — attaches SLSA build provenance to every archive, the checksums file, and every SBOM. Consumers can verify with: ``<code>shell gh attestation verify dist/kronk_&lt;...&gt;.tar.gz --repo ardanlabs/kronk gh attestation verify dist/kronk_&lt;...&gt;.tar.gz.sbom.json --repo ardanlabs/kronk </code>``</li>
+          </ol>
+          <p>Permissions are limited to exactly what's needed: <code>contents: write</code> (release assets), <code>id-token: write</code> + <code>attestations: write</code> (SLSA OIDC).</p>
+          <h4 id="19147-container-image-build-publish-`dockeryml`">19.14.7 Container Image Build &amp; Publish (`docker.yml`)</h4>
+          <p>The Docker workflow is matrix-driven. The <code>plan</code> job synthesises the build matrix at runtime from the event type (and from any <code>build &lt;variant&gt;</code> PR labels — see <a href="#19148-support-workflows-cache-cleanupyml-label-guardyml">§19.14.8</a>). <strong>Five</strong> variants are produced (the previous <code>jetson</code> variant was removed; reintroduce it only on user demand):</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -8869,13 +9047,6 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 <td><code>runtime</code></td>
               </tr>
               <tr>
-                <td><code>jetson</code></td>
-                <td><code>cuda</code></td>
-                <td><code>cuda</code></td>
-                <td><code>linux/arm64</code> only</td>
-                <td><code>runtime-jetson</code></td>
-              </tr>
-              <tr>
                 <td><code>all</code></td>
                 <td><code>cpu cuda vulkan rocm</code></td>
                 <td><code>cpu cuda vulkan</code></td>
@@ -8885,8 +9056,35 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
             </tbody>
           </table>
           <p>¹ Upstream whisper.cpp has no rocm build target (<a href="../sdk/tools/bucky/libs/combinations.go">combinations.go</a>), so the rocm variant ships the vulkan bucky bundle and the container entrypoint (<a href="../zarf/docker/kronk/entrypoint.sh">entrypoint.sh</a>) sets <code>KRONK_BUCKY_LIB_PATH</code> to point at it on ROCm hosts so transcription stays GPU-accelerated via the RADV Vulkan driver.</p>
-          <p>Multi-arch images are built <strong>natively</strong> on <code>ubuntu-24.04</code> (amd64) and <code>ubuntu-24.04-arm</code> (arm64) runners — never under QEMU. Each per-arch job pushes its image to GHCR + Docker Hub by <strong>digest only</strong> (no human-readable tag yet) and uploads a tiny artifact containing that digest. A downstream <code>merge</code> job per variant collects the arch-specific digests and stitches them into the final multi-arch manifest with <code>docker buildx imagetools create</code>, applying the human-readable tags at that step.</p>
-          <p>Event → tag mapping:</p>
+          <p><strong>Native multi-arch builds.</strong> Each <code>(variant, arch)</code> matrix entry runs on its own runner — <code>ubuntu-24.04</code> (amd64) or <code>ubuntu-24.04-arm</code> (arm64) — never under QEMU.</p>
+          <p><strong>Separate per-registry buildx invocations.</strong> On push events, each matrix entry runs <strong>two</strong> <code>docker/build-push-action</code> steps: one pushes by digest to GHCR, one pushes by digest to Docker Hub. Why two:</p>
+          <pre className="code-block"><code className="language-diagram">{`                ╭──── build job (variant, arch) ────╮
+                │                                   │
+                │  ╭──── push by digest → GHCR ──╮  │
+                │  │   provenance attestation    │  │
+                │  │   names ghcr.io/...         │  │
+                │  │   surfaces outputs.digest A │  │
+                │  ╰─────────────────────────────╯  │
+                │                                   │
+                │  ╭──── push by digest → DH ────╮  │
+                │  │   provenance attestation    │  │
+                │  │   names docker.io/...       │  │
+                │  │   surfaces outputs.digest B │  │
+                │  ╰─────────────────────────────╯  │
+                │                                   │
+                │   uploads two artifacts:          │
+                │     digests-ghcr-<v>-<a>          │
+                │     digests-dh-<v>-<a>            │
+                ╰───────────────────────────────────╯`}</code></pre>
+          <p>A single buildx invocation with two <code>outputs:</code> lines pushes <strong>different index-manifest digests to each registry</strong> (provenance embeds the destination registry name), but <code>steps.build.outputs.digest</code> exposes only one. The downstream <code>merge</code> job then can't reconstruct working references for the other registry — it sees <code>manifest unknown</code> and fails (the bug that broke an earlier version of this workflow). Splitting the pushes gives each step its own <code>outputs.digest</code>, preserves provenance on both registries, and only re-uploads layers to the second registry (the BuildKit cache picks up everything else).</p>
+          <p><strong>Per-registry digest artifacts.</strong> Each push uploads a tiny <code>digests-&lt;registry&gt;-&lt;variant&gt;-&lt;arch&gt;</code> artifact whose filename is the bare hex of the digest. The <code>merge</code> job downloads the matching artifacts for its variant with <code>actions/download-artifact@v8</code>'s <code>merge-multiple: true</code> — that flag is <strong>required</strong>: without it, <code>download-artifact@v8</code> has a documented asymmetry where 2+ matching artifacts get per-artifact subdirectories but exactly 1 match (the single-arch <code>rocm</code> case) extracts straight into <code>path/</code> with no subdir. Flattening unconditionally makes the layout uniform and is collision-free because filenames are unique digests.</p>
+          <p><strong>Merge + sign.</strong> The <code>merge</code> job per variant:</p>
+          <ol>
+            <li>Downloads the per-registry digest artifacts for its variant.</li>
+            <li>Stitches the multi-arch manifest with <code>docker buildx imagetools create -t &lt;image&gt;:&lt;tag&gt; &lt;image&gt;@sha256:&lt;arch1&gt;...</code> against both registries independently.</li>
+            <li>Signs every published <code>&lt;registry&gt;:&lt;tag&gt;</code> with <strong>cosign keyless</strong> (OIDC). <code>id-token: write</code> is granted on this job only; cosign exchanges the workflow's OIDC token for a short-lived Fulcio cert tied to the workflow identity, signs the manifest, and records the signature + Rekor log entry in the same registry as the image. Consumers verify with: ``<code>shell cosign verify ghcr.io/ardanlabs/kronk:v1.26.4-cpu \ --certificate-identity-regexp \ 'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \ --certificate-oidc-issuer https://token.actions.githubusercontent.com </code>``</li>
+          </ol>
+          <p><strong>Event → variants → tags:</strong></p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -8901,31 +9099,31 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 <td>PR (no labels)</td>
                 <td><code>cpu</code></td>
                 <td>no</td>
-                <td>—</td>
+                <td>— (plus a <code>kronk --version</code> / <code>kronk --help</code> smoke test on cpu/amd64)</td>
               </tr>
               <tr>
                 <td>PR + label <code>build all</code></td>
-                <td>all 6</td>
+                <td>all 5</td>
                 <td>no</td>
                 <td>—</td>
               </tr>
               <tr>
                 <td>PR + label <code>build &lt;v&gt;</code></td>
-                <td>that variant</td>
+                <td><code>cpu</code> + each labeled variant</td>
                 <td>no</td>
                 <td>—</td>
               </tr>
               <tr>
                 <td>Push to <code>main</code></td>
-                <td>all 6</td>
+                <td>all 5</td>
                 <td>yes</td>
-                <td><code>main-&lt;shortsha&gt;-&lt;variant&gt;</code></td>
+                <td><code>main-&lt;shortsha&gt;-&lt;variant&gt;</code> (cosign-signed)</td>
               </tr>
               <tr>
                 <td>Push to tag <code>v*</code></td>
-                <td>all 6</td>
+                <td>all 5</td>
                 <td>yes</td>
-                <td><code>&lt;tag&gt;-&lt;variant&gt;</code> + <code>latest-&lt;variant&gt;</code>; plus <code>latest</code> → cpu image</td>
+                <td><code>&lt;tag&gt;-&lt;variant&gt;</code> + <code>latest-&lt;variant&gt;</code>; plus <code>latest</code> → cpu (all signed)</td>
               </tr>
               <tr>
                 <td><code>workflow_dispatch</code></td>
@@ -8935,8 +9133,24 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Per-<code>(variant, arch)</code> GHA cache scopes (<code>type=gha,scope=&lt;variant&gt;-&lt;arch&gt;</code>) keep the BuildKit cache hot across runs; the runner-level free-disk step reclaims ~25 GB up front so the all-backends + rocm builds don't run out of space.</p>
-          <h4 id="19143-version-constant-release-guard">19.14.3 Version Constant &amp; Release Guard</h4>
+          <p><strong>PR relevance gate.</strong> The trigger has no <code>paths:</code> filter — <code>paths:</code> is incompatible with <code>labeled</code> / <code>unlabeled</code> events (those carry no changeset, so GitHub silently drops every label event). The <code>plan</code> job replicates the relevance check inside its script: it calls <code>gh api .../pulls/N/files</code> and skips the build unless the diff touches <code>.go</code>, <code>go.&#123;mod,sum&#125;</code>, <code>.go-version</code>, <code>.dockerignore</code>, <code>cmd/server/api/frontends/bui/</code>, <code>zarf/docker/kronk/</code>, <code>zarf/kms/</code>, or <code>.github/workflows/docker.yml</code>.</p>
+          <p><strong>PR smoke test.</strong> The cpu/amd64 PR build additionally loads the resulting image into the local Docker daemon (<code>load: true</code>) and runs <code>docker run --rm kronk-smoke:latest kronk --version</code> / <code>kronk --help</code>. Catches breakage like a missing shared library or a bad ENTRYPOINT path that a non-load build wouldn't notice.</p>
+          <p><strong>Registry-backed BuildKit cache.</strong> <code>cache-to</code>/<code>cache-from</code> write to <code>ghcr.io/ardanlabs/kronk-buildcache:&lt;variant&gt;-&lt;arch&gt;</code>. On PR builds the cache is read-only — PR validation builds don't seed the trunk cache. On push builds the GHCR step writes the cache (<code>image-manifest=true</code> so it renders as a proper GHCR package) and the Docker Hub step reuses it (<code>cache-from</code> only). The <code>cache-cleanup.yml</code> workflow prunes stale entries — see <a href="#19148-support-workflows-cache-cleanupyml-label-guardyml">§19.14.8</a>.</p>
+          <h4 id="19148-support-workflows-`cache-cleanupyml`-`label-guardyml`">19.14.8 Support Workflows (`cache-cleanup.yml`, `label-guard.yml`)</h4>
+          <p><strong>&lt;code&gt;cache-cleanup.yml&lt;/code&gt;</strong> — daily cron at 04:17 UTC + manual dispatch. Two cleanup passes:</p>
+          <ol>
+            <li><strong>GHA cache entries</strong> older than <code>cutoff_days</code> (default 15) are deleted via <code>gh cache delete</code>. GitHub's built-in 7-day-unused eviction resets the timer on every read, so busy hot scopes never expire on their own — this job enforces an absolute age cap.</li>
+            <li><strong>GHCR &lt;code&gt;kronk-buildcache&lt;/code&gt; package versions</strong> older than the cutoff are deleted via the GHCR packages API. The script handles the first-run case where the package doesn't exist yet (404 → "nothing to prune") so the workflow doesn't fail before any cache has been pushed.</li>
+          </ol>
+          <p>Both passes support a <code>dry_run</code> input for safe inspection.</p>
+          <p><strong>&lt;code&gt;label-guard.yml&lt;/code&gt;</strong> — <code>pull_request_target: labeled</code> + <code>issues: labeled</code>. <code>build *</code> labels expand the Docker workflow's matrix to expensive multi-arch builds, so they're maintainer-only. Two enforcement rules:</p>
+          <ul>
+            <li>On PRs — only users with <code>write</code>, <code>maintain</code>, or <code>admin</code> permission may apply a <code>build *</code> label. Unauthorized applications are removed with an explanatory comment.</li>
+            <li>On issues — <code>build *</code> labels are PR-only; any application is removed.</li>
+          </ul>
+          <p>The workflow runs with minimum permissions (<code>issues: write</code> only — PR labels and comments both go through <code>/issues/</code> endpoints). It is a <strong>cleanup pass</strong>: it removes the label but cannot itself cancel an in-flight Docker build, because <code>GITHUB_TOKEN</code>-driven label removals don't trigger downstream workflow runs. The authoritative gate therefore lives in <code>docker.yml</code>'s <code>plan</code> job, which performs the same permission check and strips unauthorized <code>build *</code> labels from the matrix before expanding it. Belt + braces.</p>
+          <p><code>pull_request_target</code> (not <code>pull_request</code>) is required so the job runs in the base repo's context with write permissions, which is what lets it police labels on PRs from forks. The job never checks out or executes PR-author code — it only calls GitHub APIs with <code>github.event.label</code> / <code>github.event.sender</code> data — so the standard <code>pull_request_target</code> pwn-the-CI risk doesn't apply.</p>
+          <h4 id="19149-version-constant-release-guard">19.14.9 Version Constant &amp; Release Guard</h4>
           <p>The CLI's reported version is the value of the <a href="../sdk/kronk/kronk.go"><code>Version</code> constant in <code>sdk/kronk/kronk.go</code></a> — a plain <code>const string</code> with no link-time override. <a href="../sdk/bucky/bucky.go"><code>sdk/bucky.Version</code></a> is <code>const Version = kronk.Version</code> so the two SDKs always report the same string. Bumping the version is therefore part of the same commit that prepares a <code>v&lt;X.Y.Z&gt;</code> release tag.</p>
           <p>Both the release and Docker workflows enforce this with a shared guard: <a href="../.github/scripts/check-version.sh"><code>.github/scripts/check-version.sh</code></a> parses <code>const Version</code> out of <code>sdk/kronk/kronk.go</code>, strips the leading <code>v</code> from the pushed tag (<code>$GITHUB_REF</code>), and fails the workflow when the two don't match — before any binary, archive, or container image is produced.</p>
           <ul>
@@ -8947,8 +9161,10 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
           <p>Release checklist when cutting <code>v&lt;X.Y.Z&gt;</code>:</p>
           <ol>
             <li>Bump <code>const Version</code> in <a href="../sdk/kronk/kronk.go"><code>sdk/kronk/kronk.go</code></a>.</li>
+            <li>(Optional) bump <code>.go-version</code> to the latest patched Go in the current minor line; <code>check-go-version.sh</code> will block the release if <code>go.mod</code>'s minor doesn't match.</li>
             <li>Commit, then tag the same commit <code>v&lt;X.Y.Z&gt;</code> and push.</li>
             <li>CI's tag-guard step refuses the release if step 1 was forgotten.</li>
+            <li>The maintainer approving the <code>release</code> environment unblocks the <code>goreleaser</code> + SBOM + attestation pipeline.</li>
           </ol>
         </div>
 
