@@ -25,86 +25,79 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+# The workflow runs three independent jobs in parallel. They all use
+# `actions/setup-go@v6` pinned to `go-version-file: go.mod`, which gives
+# them an identical setup-go cache key (OS + Go version + go.sum hash)
+# so the Go module download cache and the build cache ($GOCACHE) are
+# shared across jobs and across runs.
+#
+#   static     — vet / staticcheck / govulncheck / go fix -diff.
+#                No models, no kronk binary, no libs. Finishes fast.
+#   api-tests  — full kronk + libs + models setup, runs cmd/server/...
+#                Also owns the models-cache save (and main-branch
+#                cache delete) so the two test jobs don't race on save.
+#   sdk-tests  — full kronk + libs + models setup, runs sdk/...
+#
+# On the rare cache miss both test jobs download the models in parallel.
+# That's wasted CPU but no wall-clock penalty, and avoids a serial
+# "prepare-models" job that would slow the common cache-hit case.
 jobs:
-  test:
+  static:
+    name: Static checks
     runs-on: ubuntu-latest
     steps:
-      - name: Runner specs
-        run: |
-          nproc
-          free -h
-          cat /proc/cpuinfo | grep "model name" | head -1
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
       - name: Checkout
         uses: actions/checkout@v6
+
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: "stable"
-      - name: Restore models cache
-        id: cache-models
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/.kronk/models
-            ~/.kronk/bucky-models
-          key: ${{ runner.os }}-models-v4
-      - name: Install kronk command
-        run: go install ./cmd/kronk
-      - name: Install Libs
-        # The default behavior of `kronk libs --local` (no flags) installs
-        # the well-known defaultVersion baked into sdk/tools/libs/libs.go.
-        # Bumping defaultVersion in code rolls CI forward; CI never
-        # silently tracks llama.cpp's latest tag.
-        #
-        # `kronk bucky libs --local` does the same for the whisper.cpp
-        # backend used by the bucky pool and the
-        # /v1/audio/transcriptions endpoint.
-        run: |
-          mkdir -p $HOME/.kronk/libraries
-          kronk libs --local
-          kronk bucky libs --local
-      - name: Download test models
-        if: steps.cache-models.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p $HOME/.kronk/models
-          kronk model pull --local unsloth/Qwen3.5-0.8B-Q8_0
-          kronk model pull --local Qwen/Qwen3-8B-Q8_0
-          kronk model pull --local ggml-org/embeddinggemma-300m-qat-Q8_0
-          kronk model pull --local gpustack/bge-reranker-v2-m3-Q8_0
-          kronk bucky model pull --local tiny.en
+          go-version-file: go.mod
+
       - name: Install static analysis tools
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@latest
           go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run api/service tests
-        timeout-minutes: 30
-        run: |
-          export RUN_IN_PARALLEL=no
-          go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
-      - name: Run sdk tests
-        run: |
-          export RUN_IN_PARALLEL=no
-          go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
+
       - name: Run vet, linter, vuln, diff checks
         run: |
           go vet ./...
           staticcheck -checks=all ./...
           govulncheck ./...
           go fix -diff ./...
+
+  api-tests:
+    name: api/service tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Runner specs
+        run: |
+          nproc
+          free -h
+          cat /proc/cpuinfo | grep "model name" | head -1
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Kronk
+        id: setup
+        uses: ./.github/actions/setup-kronk
+
+      - name: Run api/service tests
+        run: |
+          export RUN_IN_PARALLEL=no
+          go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
+
       - name: Delete existing models cache
-        if: github.ref == 'refs/heads/main' && steps.cache-models.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && steps.setup.outputs.cache-hit != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh cache delete "${{ runner.os }}-models-v4" --repo ${{ github.repository }} || true
+
       - name: Save models cache
-        if: github.ref == 'refs/heads/main' && steps.cache-models.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && steps.setup.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@v5
         with:
@@ -112,3 +105,19 @@ jobs:
             ~/.kronk/models
             ~/.kronk/bucky-models
           key: ${{ runner.os }}-models-v4
+
+  sdk-tests:
+    name: sdk tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Kronk
+        uses: ./.github/actions/setup-kronk
+
+      - name: Run sdk tests
+        run: |
+          export RUN_IN_PARALLEL=no
+          go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
