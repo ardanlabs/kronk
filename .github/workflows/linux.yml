@@ -45,7 +45,7 @@ concurrency:
 permissions:
   contents: read
 
-# The workflow runs three independent jobs in parallel. They all use
+# The workflow runs four independent jobs in parallel. They all use
 # `actions/setup-go@v6` pinned to `go-version-file: .go-version`, which
 # gives them an identical setup-go cache key (OS + Go version + go.sum
 # hash) so the Go module download cache and the build cache ($GOCACHE)
@@ -57,8 +57,13 @@ permissions:
 # go.mod's `go` directive declares the minimum language version only.
 #
 #   static     — vet / staticcheck / govulncheck / go fix / gofmt /
-#                go mod tidy / goreleaser check / -race unit tests.
-#                No models, no kronk binary, no libs. Finishes fast.
+#                go mod tidy / goreleaser check. No models, no kronk
+#                binary, no libs, no test run. Finishes fast.
+#   race       — `go test -race -short` on the SDK unit packages.
+#                Uses setup-kronk so unit tests that read real GGUFs
+#                (e.g. sdk/tools/models) can run under -race. Split out
+#                from static so a flaky/slow race run never gates fast
+#                lint feedback.
 #   api-tests  — full kronk + libs + models setup, runs cmd/server/...
 #                Owns the models-cache save so the two test jobs don't
 #                race on save.
@@ -151,17 +156,31 @@ jobs:
           version: "~> v2"
           args: check
 
-      # Race detector pass on the SDK packages that don't spin up the
-      # full inference stack (those tests are owned by sdk-tests). The
-      # excluded packages all require the kronk libraries (libllama,
-      # libwhisper, …) and/or downloaded models to even start, which
-      # this job intentionally does not provision:
+  race:
+    name: Race detector (sdk unit packages)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      # Same setup as api-tests / sdk-tests so unit tests that read real
+      # GGUFs on disk (e.g. sdk/tools/models TestModelMetadata) can
+      # exercise their full code path under the race detector. The libs
+      # + models caches are shared across all three jobs, so on a cache
+      # hit this adds only seconds.
+      - name: Set up Kronk
+        uses: ./.github/actions/setup-kronk
+        with:
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+
+      # Race detector pass on SDK unit packages. The model/library-heavy
+      # integration suites still belong to sdk-tests; this job stays
+      # scoped to fast unit tests so the race walltime doesn't approach
+      # the integration job's:
       #   /sdk/kronk/tests     — integration suite owned by sdk-tests.
       #   /sdk/kronk/pool      — boots the llama runtime + real models.
       #   /sdk/bucky/tests     — boots the whisper runtime + real models.
-      # Catches concurrency bugs in parsers, kvstorage, pool primitives,
-      # etc. without doubling the wall-clock cost of the model-heavy
-      # tests.
       - name: go test -race -short (sdk unit packages)
         run: |
           go test -race -short -count=1 -timeout 10m \
