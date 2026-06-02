@@ -13,8 +13,6 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// TODO: Verify latest version of llama.cpp and update default.
-
 // Version contains the current version of the kronk package. Bump this in
 // the same commit that prepares a `v<X.Y.Z>` release tag — CI guards the
 // release pipeline (.github/workflows/release.yaml and docker.yml, via
