@@ -23,13 +23,17 @@ runs:
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
 
-    # Pinning to go.mod (instead of "stable") keeps the setup-go cache
-    # key stable across jobs and across runs — every Go patch release
-    # would otherwise silently bust the module + build cache.
+    # CI's Go toolchain lives in /.go-version (not go.mod) so that
+    # contributors on any 1.26.x release build with their local toolchain
+    # — no auto-download — while CI stays pinned to a known-patched
+    # version for govulncheck. The .go-version file is also picked up
+    # automatically by asdf, mise, goenv, gvm, and direnv's use_go.
+    # setup-go's cache key includes the resolved Go version, so all jobs
+    # using this file share the same cache.
     - name: Install Go
       uses: actions/setup-go@v6
       with:
-        go-version-file: go.mod
+        go-version-file: .go-version
 
     - name: Restore models cache
       id: cache-models

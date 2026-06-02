@@ -26,10 +26,15 @@ concurrency:
   cancel-in-progress: true
 
 # The workflow runs three independent jobs in parallel. They all use
-# `actions/setup-go@v6` pinned to `go-version-file: go.mod`, which gives
-# them an identical setup-go cache key (OS + Go version + go.sum hash)
-# so the Go module download cache and the build cache ($GOCACHE) are
-# shared across jobs and across runs.
+# `actions/setup-go@v6` pinned to `go-version-file: .go-version`, which
+# gives them an identical setup-go cache key (OS + Go version + go.sum
+# hash) so the Go module download cache and the build cache ($GOCACHE)
+# are shared across jobs and across runs.
+#
+# CI's toolchain version lives in /.go-version (not go.mod) so that
+# contributors building locally with any supported Go release don't get
+# silently dragged into a toolchain auto-download by the build system.
+# go.mod's `go` directive declares the minimum language version only.
 #
 #   static     — vet / staticcheck / govulncheck / go fix -diff.
 #                No models, no kronk binary, no libs. Finishes fast.
@@ -49,10 +54,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Guard: catch the case where someone bumps the `go` directive in
+      # go.mod (or .go-version) but forgets the other file. Patch-level
+      # drift is allowed; minor-level drift fails the workflow.
+      - name: Check Go version pin
+        run: ./.github/scripts/check-go-version.sh
+
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version-file: .go-version
 
       - name: Install static analysis tools
         run: |
