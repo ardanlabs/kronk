@@ -666,14 +666,103 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Per-variant title + description for the OCI annotations the
+      # next step generates. The description ends up on the GHCR /
+      # Docker Hub package pages (each registry reads
+      # `org.opencontainers.image.description` from the INDEX manifest
+      # — see DOCKER_METADATA_ANNOTATIONS_LEVELS below). Keep these
+      # blurbs in sync with DockerHub.md and the "Available Images"
+      # table there; if you add or rename a variant, update both.
+      - name: Compute per-variant annotation overrides
+        id: variant_meta
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          case "$VARIANT" in
+            cpu)
+              DESC="Kronk — Local LLM inference and audio transcription server (OpenAI-compatible API). CPU-only build, runs anywhere (no GPU required)."
+              ;;
+            cuda)
+              DESC="Kronk — Local LLM inference and audio transcription server (OpenAI-compatible API). NVIDIA CUDA build (requires --gpus all and nvidia-container-toolkit)."
+              ;;
+            vulkan)
+              DESC="Kronk — Local LLM inference and audio transcription server (OpenAI-compatible API). Vulkan build for AMD / Intel / NVIDIA GPUs (vendor-neutral)."
+              ;;
+            rocm)
+              DESC="Kronk — Local LLM inference and audio transcription server (OpenAI-compatible API). AMD ROCm build (linux/amd64 only)."
+              ;;
+            all)
+              DESC="Kronk — Local LLM inference and audio transcription server (OpenAI-compatible API). All backends bundled (cpu, cuda, vulkan, rocm); selects the right one at runtime based on host hardware."
+              ;;
+            *)
+              echo "::error::No description configured for variant '$VARIANT' — add a case branch in .github/workflows/docker.yml" >&2
+              exit 1
+              ;;
+          esac
+          {
+            echo "title=kronk ($VARIANT)"
+            echo "description=$DESC"
+          } >>"$GITHUB_OUTPUT"
+
+      # Generate the canonical OCI annotation set (title, description,
+      # source, url, revision, created, version, licenses, vendor) from
+      # the workflow context, with per-variant title/description
+      # overrides applied above.
+      #
+      # DOCKER_METADATA_ANNOTATIONS_LEVELS=index is the critical bit:
+      # GHCR (and Docker Hub) read the description from annotations on
+      # the INDEX manifest, not on the per-platform manifests beneath
+      # it. The default is `manifest`, which silently does nothing for
+      # multi-arch images — that's why the GHCR UI was warning that no
+      # description was set despite per-arch labels being present.
+      #
+      # We don't use the `tags` output here (tag set is computed
+      # downstream in the merge step), but `images:` is required by the
+      # action so we pass both registries.
+      - name: Generate OCI annotations
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
+        with:
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ env.DH_IMAGE }}
+          annotations: |
+            org.opencontainers.image.title=${{ steps.variant_meta.outputs.title }}
+            org.opencontainers.image.description=${{ steps.variant_meta.outputs.description }}
+            org.opencontainers.image.vendor=Ardan Labs
+
       - name: Create and push manifests
         id: merge_manifests
         env:
           VERSION: ${{ needs.plan.outputs.version }}
           VARIANT: ${{ matrix.variant }}
           IS_TAG: ${{ needs.plan.outputs.is_tag }}
+          # Multi-line string of `index:<key>=<value>` entries produced
+          # by docker/metadata-action above. Parsed into --annotation
+          # flags for each `imagetools create` call below.
+          ANNOTATIONS_INPUT: ${{ steps.meta.outputs.annotations }}
         run: |
           set -euo pipefail
+
+          # -------------------------------------------------------------------
+          # Translate metadata-action's `annotations` output into the
+          # repeated --annotation flags that `buildx imagetools create`
+          # expects. Each input line is already in the form
+          # `index:org.opencontainers.image.<key>=<value>` (because of
+          # DOCKER_METADATA_ANNOTATIONS_LEVELS=index on the meta step).
+          # -------------------------------------------------------------------
+          ANNOTATION_FLAGS=()
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            ANNOTATION_FLAGS+=(--annotation "$line")
+          done <<<"$ANNOTATIONS_INPUT"
+
+          echo "::group::Annotations"
+          printf '  %s\n' "${ANNOTATION_FLAGS[@]}"
+          echo "::endgroup::"
 
           # Build per-registry lists of per-arch digest references.
           # Layout (flattened by `merge-multiple: true` on the download
