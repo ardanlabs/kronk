@@ -269,12 +269,21 @@ func markdownToJSX(markdown string) string {
 		}
 	}
 
+	// List items are accumulated as RAW markdown text (not yet
+	// inline-converted) because a single `<li>` body can span multiple
+	// source lines via list-continuation (an indented line under an OL
+	// entry, or a wrapped UL entry). Inline parsers like the inline-code
+	// regex `([^`]+)` only match within one line, so converting per-line
+	// would leave a backtick-span that crosses lines unrecognised — and
+	// any `<word>` inside it would then leak through as a (broken) JSX
+	// tag. Converting once at flush time, after the continuation lines
+	// have been joined, gives the inline parsers the complete span.
 	flushUL := func() {
 		flushParagraph()
 		if len(ulItems) > 0 {
 			result = append(result, "          <ul>")
 			for _, item := range ulItems {
-				result = append(result, fmt.Sprintf("            <li>%s</li>", item))
+				result = append(result, fmt.Sprintf("            <li>%s</li>", convertInlineMarkdown(item)))
 			}
 			result = append(result, "          </ul>")
 			ulItems = nil
@@ -289,15 +298,15 @@ func markdownToJSX(markdown string) string {
 			for j, item := range olItems {
 				switch {
 				case j < len(olSubItems) && len(olSubItems[j]) > 0:
-					result = append(result, fmt.Sprintf("            <li>%s", item))
+					result = append(result, fmt.Sprintf("            <li>%s", convertInlineMarkdown(item)))
 					result = append(result, "              <ul>")
 					for _, sub := range olSubItems[j] {
-						result = append(result, fmt.Sprintf("                <li>%s</li>", sub))
+						result = append(result, fmt.Sprintf("                <li>%s</li>", convertInlineMarkdown(sub)))
 					}
 					result = append(result, "              </ul>")
 					result = append(result, "            </li>")
 				default:
-					result = append(result, fmt.Sprintf("            <li>%s</li>", item))
+					result = append(result, fmt.Sprintf("            <li>%s</li>", convertInlineMarkdown(item)))
 				}
 			}
 			result = append(result, "          </ol>")
@@ -367,12 +376,12 @@ func markdownToJSX(markdown string) string {
 				for len(olSubItems) < len(olItems) {
 					olSubItems = append(olSubItems, nil)
 				}
-				olSubItems[len(olItems)-1] = append(olSubItems[len(olItems)-1], convertInlineMarkdown(item))
+				olSubItems[len(olItems)-1] = append(olSubItems[len(olItems)-1], item)
 				continue
 			}
 			// Continuation line: indented, non-empty, not a sub-item.
 			if line != trimmed && trimmed != "" && len(olItems) > 0 {
-				olItems[len(olItems)-1] += " " + convertInlineMarkdown(trimmed)
+				olItems[len(olItems)-1] += " " + trimmed
 				continue
 			}
 			// Blank line between items — skip without flushing.
@@ -385,7 +394,7 @@ func markdownToJSX(markdown string) string {
 			trimmed := strings.TrimLeft(line, " \t")
 			// Continuation line: indented, non-empty, not a nested bullet.
 			if line != trimmed && trimmed != "" && !strings.HasPrefix(trimmed, "- ") && !strings.HasPrefix(trimmed, "* ") && len(ulItems) > 0 {
-				ulItems[len(ulItems)-1] += " " + convertInlineMarkdown(trimmed)
+				ulItems[len(ulItems)-1] += " " + trimmed
 				continue
 			}
 			// Blank line between items — skip without flushing.
@@ -398,12 +407,12 @@ func markdownToJSX(markdown string) string {
 		case strings.HasPrefix(line, "- "):
 			flushOL()
 			inUL = true
-			ulItems = append(ulItems, convertInlineMarkdown(strings.TrimPrefix(line, "- ")))
+			ulItems = append(ulItems, strings.TrimPrefix(line, "- "))
 			continue
 		case strings.HasPrefix(line, "* "):
 			flushOL()
 			inUL = true
-			ulItems = append(ulItems, convertInlineMarkdown(strings.TrimPrefix(line, "* ")))
+			ulItems = append(ulItems, strings.TrimPrefix(line, "* "))
 			continue
 		default:
 			if inUL {
@@ -415,7 +424,7 @@ func markdownToJSX(markdown string) string {
 		case len(matches) > 1:
 			flushUL()
 			inOL = true
-			olItems = append(olItems, convertInlineMarkdown(matches[1]))
+			olItems = append(olItems, matches[1])
 			continue
 		default:
 			if inOL {
