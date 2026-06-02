@@ -31,8 +31,9 @@ name: Docker
 # │                    │ Add a label `build all` to build everything, or     │
 # │                    │ `build <variant>` (e.g. `build cuda`) for a subset. │
 # ├────────────────────┼─────────────────────────────────────────────────────┤
-# │ push → main        │ Build & push all variants as                        │
-# │                    │   <registry>/ardanlabs/kronk:main-<shortsha>-<v>    │
+# │ push → main        │ Build all variants (no push). Smoke-tests cpu/amd64 │
+# │                    │ and refreshes the registry-backed BuildKit cache so │
+# │                    │ PR builds stay warm. No images are published.       │
 # ├────────────────────┼─────────────────────────────────────────────────────┤
 # │ push → tag v*      │ Build & push all variants as                        │
 # │                    │   <registry>/ardanlabs/kronk:<tag>-<v>              │
@@ -146,6 +147,12 @@ jobs:
 
           # -------------------------------------------------------------------
           # Version + push policy
+          #
+          # Only tag pushes (v*) publish images. Main pushes build every
+          # variant for CI validation (and smoke-test cpu/amd64) but do
+          # NOT push to any registry — there's no main-* tag on GHCR or
+          # Docker Hub. Main builds DO refresh the registry-backed
+          # BuildKit cache; see the "Build (no push)" step's cache-to.
           # -------------------------------------------------------------------
           IS_TAG=false
           if [[ "$EVENT" == "push" && "$REF" == refs/tags/v* ]]; then
@@ -153,8 +160,10 @@ jobs:
             PUSH=true
             IS_TAG=true
           elif [[ "$EVENT" == "push" && "$REF" == "refs/heads/main" ]]; then
-            VERSION="main-${SHA:0:7}"       # e.g. main-abc1234
-            PUSH=true
+            VERSION="main-${SHA:0:7}"       # e.g. main-abc1234 (stamped
+                                            # into the binary; not used
+                                            # as an image tag)
+            PUSH=false
           else
             # pull_request or workflow_dispatch — build only, no push.
             VERSION="pr-${SHA:0:7}"
@@ -418,20 +427,26 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # PR / workflow_dispatch path: build, no push. Validates the
-      # Dockerfile compiles and produces a runnable image for this arch.
+      # Non-push path: build, no registry push. Used by PRs,
+      # workflow_dispatch, AND main pushes (main no longer publishes
+      # images — see the plan job). Validates the Dockerfile compiles
+      # and produces a runnable image for this arch.
       #
-      # The cpu/amd64 PR build additionally loads the resulting image
+      # The cpu/amd64 build additionally loads the resulting image
       # into the local Docker daemon so the smoke-test step below can
       # `docker run` it. Loading is restricted to a single (variant,
-      # arch) pair so we don't pay the cost on every matrix entry — cpu
-      # is the most-shared Dockerfile path and amd64 is the only arch
-      # whose local daemon matches the runner's host arch.
+      # arch) pair so we don't pay the cost on every matrix entry —
+      # cpu is the most-shared Dockerfile path and amd64 is the only
+      # arch whose local daemon matches the runner's host arch.
       #
-      # READ from the registry cache but do NOT write to it on this path.
-      # PR validation builds don't need to refresh the cache, and writing
-      # them would mean any PR could overwrite the trunk-seeded layers.
-      # Push builds (below) seed the cache for future PRs to consume.
+      # Registry-backed BuildKit cache:
+      #   - PR / workflow_dispatch: READ only, never WRITE — a PR
+      #     could otherwise overwrite the trunk-seeded layers.
+      #   - push → main: READ and WRITE. Refreshing the cache here
+      #     keeps PR builds fast even though main no longer pushes
+      #     runtime images.
+      #   - push → tag v*: cache WRITE happens in the build_ghcr
+      #     step below (which is the push-path step).
       - name: Build (no push)
         if: needs.plan.outputs.push != 'true'
         id: build_nopush
@@ -449,6 +464,10 @@ jobs:
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
+          # cache-to: only on main pushes (see the comment block
+          # above). PRs and workflow_dispatch evaluate to '', which
+          # build-push-action treats as "no cache export".
+          cache-to: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && format('type=registry,ref={0}:{1}-{2},mode=max,image-manifest=true,compression=zstd', env.BUILDCACHE_IMAGE, matrix.variant, matrix.arch) || '' }}
 
       # Smoke test: prove the cpu/amd64 image actually starts and the
       # entrypoint resolves the kronk binary. Catches breakage like a
@@ -464,8 +483,10 @@ jobs:
           docker run --rm --entrypoint kronk kronk-smoke:latest --version
           docker run --rm --entrypoint kronk kronk-smoke:latest --help
 
-      # Push event path: build & push by digest only. Final tags get
-      # applied by the `merge` job once both arches are available.
+      # Tag-push path (refs/tags/v*): build & push by digest only.
+      # Final tags get applied by the `merge` job once both arches
+      # are available. Main pushes never reach this step — see the
+      # plan job and the "Build (no push)" step above.
       #
       # GHCR and Docker Hub are pushed in SEPARATE buildx invocations
       # on purpose. A single invocation with two `outputs:` lines pushes
@@ -675,21 +696,46 @@ jobs:
           printf '  DH   ref: %s\n' "${DH_REFS[@]}"
           echo "::endgroup::"
 
-          # Write the published-tag list to GITHUB_OUTPUT so the cosign
-          # step below can iterate exactly the same set of tags without
-          # re-deriving them.
-          SIGN_REFS=()
           for TAG in "${TAGS[@]}"; do
             echo ">>> ${GHCR_IMAGE}:${TAG}"
             docker buildx imagetools create \
               -t "${GHCR_IMAGE}:${TAG}" "${GHCR_REFS[@]}"
-            SIGN_REFS+=("${GHCR_IMAGE}:${TAG}")
 
             echo ">>> ${DH_IMAGE}:${TAG}"
             docker buildx imagetools create \
               -t "${DH_IMAGE}:${TAG}" "${DH_REFS[@]}"
-            SIGN_REFS+=("${DH_IMAGE}:${TAG}")
           done
+
+          # All tags for this variant point at the same manifest-list
+          # digest, so we resolve the digest once per registry and sign
+          # by digest (not by tag). This:
+          #
+          #   * silences the cosign "uses a tag, not a digest" warning
+          #     (cosign plans to remove tag-based signing entirely);
+          #   * avoids signing the same digest N times for tag pushes
+          #     that produce <version>-<variant> + latest-<variant> +
+          #     (cpu only) latest — three Rekor entries collapse to one.
+          #
+          # Consumers still verify by tag — cosign resolves the tag to
+          # a digest and looks up signatures attached to the digest,
+          # regardless of how the signature was originally produced.
+          #
+          # NOTE: `--format '{{.Manifest.Digest}}'` is silently ignored
+          # by imagetools inspect (docker/buildx#1175, unfixed as of
+          # buildx v0.19 in late 2025) — only templates wrapped in the
+          # `json` function are honoured. Hence the json+jq dance.
+          GHCR_DIGEST=$(docker buildx imagetools inspect \
+            --format '{{json .Manifest}}' "${GHCR_IMAGE}:${TAGS[0]}" \
+            | jq -r .digest)
+          DH_DIGEST=$(docker buildx imagetools inspect \
+            --format '{{json .Manifest}}' "${DH_IMAGE}:${TAGS[0]}" \
+            | jq -r .digest)
+
+          SIGN_REFS=(
+            "${GHCR_IMAGE}@${GHCR_DIGEST}"
+            "${DH_IMAGE}@${DH_DIGEST}"
+          )
+
           # Newline-separated for the GITHUB_OUTPUT multiline syntax.
           {
             echo 'sign_refs<<EOF'
@@ -750,8 +796,9 @@ jobs:
             # Redirect Docker Hub signatures to the sibling -signatures
             # repo so they don't show up as sha256-*.sig tags on the
             # main image repo. GHCR refs are signed with the default
-            # (co-located) behaviour.
-            if [[ "$ref" == "${DH_IMAGE}:"* ]]; then
+            # (co-located) behaviour. Refs are in digest form
+            # (<image>@sha256:...) — see the merge step above.
+            if [[ "$ref" == "${DH_IMAGE}@"* ]]; then
               echo ">>> cosign sign $ref (COSIGN_REPOSITORY=${DH_SIG_REPO})"
               COSIGN_REPOSITORY="${DH_SIG_REPO}" cosign sign --recursive "$ref"
             else
