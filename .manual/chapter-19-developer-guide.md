@@ -641,27 +641,23 @@ them directly.
 
 **Cleanup Flow:**
 
-The KV-cache cleanup path depends on whether the request goes through the
-batch engine. The decision is captured by the local `batching` flag in
-[chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go).
+All chat requests go through the batch engine; per-slot KV cleanup happens
+inside the engine in
+[batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go),
+which clears each slot's sequence and frees per-request resources.
 
-_Batched path_ (text inference via IMC — the normal route for chat):
+On the failure path in [chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go)
+(submit error from `m.batch.submit`, e.g. engine shutdown or `ctx.Done()`),
+per-request IMC cleanup is handled by `m.imcClearPending(cache.imcSlotID)`
+inside `submitToBatchEngine`. The handler does **not** call any
+context-wide reset: a `llama.MemoryClear(mem, true)` here would wipe the
+entire KV cache — including the IMC sessions of other in-flight batched
+requests — and would race with the batch engine's `llama.Decode` (the
+engine holds `m.decodeMu` for decode; a context-wide reset has no safe
+moment to take that lock without corrupting other slots).
 
-- The `m.resetContext()` defer in `chat.go` is gated on `!batching` and is
-  skipped.
-- Per-slot KV cleanup happens inside the batch engine in
-  [batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go),
-  which clears each slot's sequence and frees per-request resources.
-- `releaseModel()` then runs from the wrapper `defer` in `concurrency.go`
-  after the user-facing channel closes.
-
-_Non-batched path_ (e.g. some embed/rerank entrypoints, non-IMC media flows):
-
-- `chat.go` registers `defer m.resetContext()` after `validateAndCloneDocument`
-  and `prepareContext` succeed (not "before any processing").
-- `resetContext()` calls `llama.Synchronize(m.lctx)` then
-  `llama.MemoryClear(mem, true)` for each model memory.
-- `releaseModel()` runs after that, from the wrapper `defer`.
+`releaseModel()` then runs from the wrapper `defer` in `concurrency.go`
+after the user-facing channel closes.
 
 **Key invariant:** the semaphore guarantees the model is never released
 while a request is in flight — `releaseModel()` is only called from the
@@ -723,12 +719,9 @@ Kronk uses two distinct context strategies depending on the workload.
 **Text inference: single shared context.**
 
 - One `llama.Context` is created in `NewModel` and reused across requests.
-- KV cleanup splits by path (see §19.7.4):
-  - Non-batched path → `resetContext()` runs `llama.Synchronize(m.lctx)` then
-    `llama.MemoryClear(mem, true)`.
-  - Batched path (text/IMC) → per-slot cleanup happens in
-    [batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go);
-    `resetContext()` is skipped.
+- KV cleanup is per-slot inside the batch engine
+  ([batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go));
+  see §19.7.4.
 - Reusing a single context avoids GPU memory fragmentation on all backends
   (CUDA, Metal, Vulkan, ROCm) caused by repeated context alloc/free.
 

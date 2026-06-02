@@ -108,11 +108,16 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		// (created in startSlot, freed in freeSlotResources). The chat
 		// handler does not own one — it only uses m.mtmdMetaCtx for
 		// SupportVision/SupportAudio metadata reads.
-		defer func() {
-			if !batching {
-				m.resetContext()
-			}
-		}()
+		//
+		// NOTE: We must NOT call m.resetContext() on the failure path here.
+		// resetContext() calls llama.MemoryClear(mem, true) which wipes the
+		// ENTIRE KV cache — including sequences owned by other in-flight
+		// batched requests and other clients' IMC sessions. It also races
+		// with the batch engine's llama.Decode because it does not hold
+		// m.decodeMu, which is the SIGSEGV we hit when VS Code cancelled
+		// one of three concurrent chat streams. Per-request IMC cleanup on
+		// submit failure is already handled inside submitToBatchEngine via
+		// m.imcClearPending(cache.imcSlotID).
 
 		prompt, media, cache, err := m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
 		if err != nil {

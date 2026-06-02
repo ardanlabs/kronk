@@ -407,8 +407,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		}
 
 	default:
-		// Non-IMC mode: clear the slot's sequence.
+		// Non-IMC mode: clear the slot's sequence. Held under decodeMu to
+		// serialize with the batch engine's llama.Decode and IMC decode
+		// paths, matching the lock discipline used elsewhere in this file
+		// for target-context KV mutations.
+		e.model.decodeMu.Lock()
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+		e.model.decodeMu.Unlock()
 	}
 
 	s.nPast = cacheIdx

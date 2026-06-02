@@ -1008,17 +1008,6 @@ func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
 }
 
-func (m *Model) resetContext() {
-	llama.Synchronize(m.lctx)
-
-	mem, err := llama.GetMemory(m.lctx)
-	if err == nil {
-		llama.MemoryClear(mem, true)
-	}
-
-	m.clearCaches()
-}
-
 func (m *Model) isUnnecessaryCRLF(reasonFlag int, completionFlag int, content string) bool {
 	// We just started reasoning or tool calling so remove leading CR.
 	if reasonFlag == 1 && content == "\x0A" {
