@@ -16,7 +16,7 @@
                     }
                 },
                 "Qwen3.5-0.8B-Q8_0/AGENT": {
-                    "name": "Qwen3.5 0.8B",
+                    "name": "Qwen3.5 0.8B-Q8_0",
                     "limit": {
                         "context": 131072,
                         "output": 65536
@@ -32,7 +32,7 @@
             }
         }
     },
-    "model": "kronk/Qwen3.5-0.8B-Q8_0/AGENT",
+    "model": "kronk/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
     "formatter": true,
     "lsp": true,
     "compaction": {
