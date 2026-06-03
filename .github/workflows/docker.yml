@@ -580,11 +580,12 @@ jobs:
   # merge
   #
   # Per-variant: assemble the multi-arch manifest from the per-arch digests
-  # uploaded by `build`, apply the human-readable tags, and then sign
-  # every published tag with cosign keyless (OIDC). The single-arch
-  # `rocm` variant still goes through here — `imagetools create` happily
-  # wraps a single platform under the same tag scheme so consumers can
-  # pull `rocm` without caring about arch.
+  # uploaded by `build`, apply the human-readable tags, and then sign the
+  # resulting manifest-list digest with cosign keyless (OIDC). Only ever
+  # runs on tag pushes (`if: push == 'true'`) — main pushes skip this job
+  # entirely. The single-arch `rocm` variant still goes through here —
+  # `imagetools create` happily wraps a single platform under the same
+  # tag scheme so consumers can pull `rocm` without caring about arch.
   # ---------------------------------------------------------------------------
   merge:
     needs: [plan, build]
@@ -676,11 +677,13 @@ jobs:
             exit 1
           fi
 
-          # Determine the tag set for this variant.
-          #   main push  → <version>-<variant>     (e.g. main-abc1234-cpu)
-          #   tag push   → <version>-<variant>     (e.g. v1.26.4-cpu)
-          #              + latest-<variant>
-          #              + latest (cpu only — see issue/PR discussion)
+          # Determine the tag set for this variant. This job only
+          # runs on tag pushes, so IS_TAG is always true here today —
+          # the `if [[ "$IS_TAG" == "true" ]]` guard is kept defensive
+          # in case a future event type also publishes images.
+          #   tag push → <version>-<variant>     (e.g. v1.26.4-cpu)
+          #            + latest-<variant>
+          #            + latest (cpu only — see issue/PR discussion)
           TAGS=("${VERSION}-${VARIANT}")
           if [[ "$IS_TAG" == "true" ]]; then
             TAGS+=("latest-${VARIANT}")
@@ -696,40 +699,70 @@ jobs:
           printf '  DH   ref: %s\n' "${DH_REFS[@]}"
           echo "::endgroup::"
 
+          # Capture the manifest-list digest from the FIRST imagetools
+          # create per registry via --metadata-file. All subsequent
+          # tags for this variant point at the same manifest-list
+          # blob (extra `-t` flags just add tag refs), so one capture
+          # per registry is enough.
+          #
+          # We use --metadata-file rather than inspecting a tag back
+          # because it returns the digest of the artifact we just
+          # wrote — no read-after-write race with the registry, and
+          # no dependency on quirks like docker/buildx#1175.
+          GHCR_META=$(mktemp)
+          DH_META=$(mktemp)
+          first=1
           for TAG in "${TAGS[@]}"; do
+            GHCR_EXTRA=()
+            DH_EXTRA=()
+            if (( first )); then
+              GHCR_EXTRA=(--metadata-file "$GHCR_META")
+              DH_EXTRA=(--metadata-file "$DH_META")
+              first=0
+            fi
+
             echo ">>> ${GHCR_IMAGE}:${TAG}"
             docker buildx imagetools create \
+              "${ANNOTATION_FLAGS[@]}" \
+              "${GHCR_EXTRA[@]}" \
               -t "${GHCR_IMAGE}:${TAG}" "${GHCR_REFS[@]}"
 
             echo ">>> ${DH_IMAGE}:${TAG}"
             docker buildx imagetools create \
+              "${ANNOTATION_FLAGS[@]}" \
+              "${DH_EXTRA[@]}" \
               -t "${DH_IMAGE}:${TAG}" "${DH_REFS[@]}"
           done
 
-          # All tags for this variant point at the same manifest-list
-          # digest, so we resolve the digest once per registry and sign
-          # by digest (not by tag). This:
+          # Sign by digest, not tag. Why:
           #
           #   * silences the cosign "uses a tag, not a digest" warning
           #     (cosign plans to remove tag-based signing entirely);
-          #   * avoids signing the same digest N times for tag pushes
-          #     that produce <version>-<variant> + latest-<variant> +
-          #     (cpu only) latest — three Rekor entries collapse to one.
+          #   * collapses N signatures of the same content into one —
+          #     a tag-release produces <version>-<variant> +
+          #     latest-<variant> + (cpu only) latest, all pointing at
+          #     the same digest, so we'd otherwise spend 2–3× the
+          #     Rekor / Fulcio round-trips per variant.
           #
-          # Consumers still verify by tag — cosign resolves the tag to
-          # a digest and looks up signatures attached to the digest,
-          # regardless of how the signature was originally produced.
-          #
-          # NOTE: `--format '{{.Manifest.Digest}}'` is silently ignored
-          # by imagetools inspect (docker/buildx#1175, unfixed as of
-          # buildx v0.19 in late 2025) — only templates wrapped in the
-          # `json` function are honoured. Hence the json+jq dance.
-          GHCR_DIGEST=$(docker buildx imagetools inspect \
-            --format '{{json .Manifest}}' "${GHCR_IMAGE}:${TAGS[0]}" \
-            | jq -r .digest)
-          DH_DIGEST=$(docker buildx imagetools inspect \
-            --format '{{json .Manifest}}' "${DH_IMAGE}:${TAGS[0]}" \
-            | jq -r .digest)
+          # Consumers still verify by tag — cosign resolves the tag
+          # to a digest and looks up signatures attached to that
+          # digest, regardless of how the signature was produced.
+          GHCR_DIGEST=$(jq -r '."containerimage.descriptor".digest // empty' "$GHCR_META")
+          DH_DIGEST=$(jq -r '."containerimage.descriptor".digest // empty' "$DH_META")
+
+          # Belt-and-braces. A malformed metadata file would otherwise
+          # produce `<image>@` (empty digest) and a cryptic cosign
+          # error a few steps later — fail fast here instead.
+          [[ "$GHCR_DIGEST" == sha256:* ]] || {
+            echo "::error::Failed to capture GHCR digest from $GHCR_META"
+            cat "$GHCR_META" || true
+            exit 1
+          }
+          [[ "$DH_DIGEST" == sha256:* ]] || {
+            echo "::error::Failed to capture Docker Hub digest from $DH_META"
+            cat "$DH_META" || true
+            exit 1
+          }
 
           SIGN_REFS=(
             "${GHCR_IMAGE}@${GHCR_DIGEST}"
@@ -749,11 +782,15 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac  # v3
 
-      # Keyless sign every <registry>:<tag> we just published. cosign
-      # exchanges the workflow's OIDC token (id-token: write granted on
-      # this job) for a short-lived Fulcio cert tied to the workflow
-      # identity, signs the manifest, and records the signature +
-      # rekor transparency-log entry.
+      # Keyless sign each (registry, digest) we just published.
+      # cosign exchanges the workflow's OIDC token (id-token: write
+      # granted on this job) for a short-lived Fulcio cert tied to
+      # the workflow identity, signs the manifest list at that
+      # digest (and recursively each per-arch child manifest, via
+      # --recursive), and records the signature plus a Rekor
+      # transparency-log entry. Signing by digest rather than by
+      # tag is what lets us collapse N tags-of-the-same-content
+      # into one signature — see the merge step above.
       #
       # GHCR signatures are stored alongside the image (default cosign
       # behaviour). Docker Hub signatures are redirected to a sibling

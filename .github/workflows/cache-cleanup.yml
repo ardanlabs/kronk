@@ -1,26 +1,56 @@
 name: Cache cleanup
 
-# Periodically prune stale build caches so the repo never bumps into
-# GitHub Actions' 10 GB GHA-cache quota or accumulates dead OCI artifacts
-# from the registry-backed BuildKit cache.
+# Periodically prune stale build caches and orphan registry artifacts
+# so the repo never bumps into GitHub Actions' 10 GB GHA-cache quota
+# or accumulates dead OCI manifests on GHCR / Docker Hub.
 #
-# Two scopes get cleaned:
+# Five scopes get cleaned (one job each, all run in parallel):
 #
-#   1. GHA cache (actions/cache + buildx `type=gha` exports). Anything
-#      older than CUTOFF_DAYS is deleted via `gh cache delete`. GitHub
-#      also evicts unused entries after 7 days of inactivity, but that
-#      timer resets on every read — busy hot scopes never expire on
-#      their own. This job enforces an absolute age cap.
+#   1. prune-gha-cache — GHA cache (actions/cache + buildx `type=gha`
+#      exports). Anything older than CUTOFF_DAYS is deleted via
+#      `gh cache delete`. GitHub also evicts unused entries after 7
+#      days of inactivity, but that timer resets on every read — busy
+#      hot scopes never expire on their own. This job enforces an
+#      absolute age cap.
 #
-#   2. GHCR image tags under BUILDCACHE_IMAGE (registry-backed BuildKit
-#      cache used by docker.yml). Untagged manifests cost nothing to
-#      keep around, but stale named tags pile up as variants/arches
-#      come and go. Tags older than CUTOFF_DAYS that aren't currently
-#      referenced are deleted via the GHCR packages API.
+#   2. prune-registry-cache — GHCR image tags under BUILDCACHE_IMAGE
+#      (registry-backed BuildKit cache used by docker.yml). Stale
+#      named tags pile up as variants/arches come and go; tags older
+#      than CUTOFF_DAYS get deleted via the GHCR packages API.
+#
+#   3. prune-orphan-signatures-ghcr — `sha256-<hex>.{sig,att,sbom}`
+#      package versions on `ghcr.io/ardanlabs/kronk` whose target
+#      digest is no longer published as a real image. Cosign leaves
+#      these behind when an image is deleted or replaced.
+#
+#   4. prune-orphan-signatures-dh — same idea for the sibling
+#      `ardanlabs/kronk-signatures` repo on Docker Hub (where the DH
+#      side stores cosign signatures via COSIGN_REPOSITORY — see
+#      docker.yml's sign step).
+#
+#   5. prune-untagged-ghcr — untagged manifest versions on
+#      `ghcr.io/ardanlabs/kronk` (the release image package) that are
+#      neither tagged nor referenced as children by any tagged index
+#      manifest. Walks each tagged index once to build a "protected"
+#      set before deleting. Docker Hub auto-collects untagged
+#      manifests after 30 days so we don't replicate this for DH.
+#
+# NEVER prunes:
+#   - Release tags (`v*-*`, `latest*`) on either registry — those are
+#     product artifacts. Removing them would break users pinning to a
+#     specific version. There is intentionally no retention policy on
+#     release tags; if you ever want one, do it in a separate workflow
+#     and require explicit dry-run for at least two cycles before
+#     turning it live.
+#   - GitHub Actions workflow artifacts uploaded by docker.yml — those
+#     already have `retention-days: 1`, so GitHub auto-deletes them
+#     within 24 hours. No code here for them.
 #
 # Triggered:
 #   - Daily at 04:17 UTC (cron). Off-peak to avoid contending with the
-#     hourly main-push builds.
+#     main-push cache-refresh builds (see docker.yml's "Build (no push)"
+#     step — main pushes don't publish images but DO refresh the
+#     registry-backed BuildKit cache).
 #   - Manually via workflow_dispatch (with optional dry-run override).
 
 on:
@@ -44,7 +74,16 @@ permissions:
 
 env:
   BUILDCACHE_PACKAGE: kronk-buildcache
-  # Kept in sync with docker.yml's BUILDCACHE_IMAGE namespace.
+  # Release image package name on GHCR (ghcr.io/$ORG/$RELEASE_PACKAGE)
+  # and on Docker Hub ($ORG/$RELEASE_PACKAGE). Kept in sync with
+  # docker.yml's GHCR_IMAGE / DH_IMAGE.
+  RELEASE_PACKAGE: kronk
+  # Sibling repo on Docker Hub that holds cosign signatures (see
+  # docker.yml's COSIGN_REPOSITORY redirect). Not a thing on GHCR
+  # (signatures co-located there).
+  DH_SIG_REPO: kronk-signatures
+  # Kept in sync with docker.yml's BUILDCACHE_IMAGE / GHCR_IMAGE /
+  # DH_IMAGE namespace.
   ORG: ardanlabs
 
 jobs:
@@ -179,3 +218,343 @@ jobs:
           ] | @tsv')
 
           echo "Done. deleted=${deleted} kept(within-window)=${kept}"
+
+  # ---------------------------------------------------------------------------
+  # prune-orphan-signatures-ghcr
+  #
+  # Delete cosign signature/attestation/SBOM versions on GHCR whose
+  # target image is no longer present. Cosign uses a sibling-tag layout
+  # by default: signing `ghcr.io/$ORG/kronk@sha256:<hex>` creates a
+  # separate manifest tagged `sha256-<hex>.sig` in the same repo. When
+  # the underlying image gets deleted, the signature manifest stays
+  # behind forever — unverifiable, but visible on the package's tag
+  # list — until something prunes it.
+  #
+  # Algorithm (one pass over the full version list):
+  #   1. Fetch every version of the kronk package.
+  #   2. Bucket each version into:
+  #        - LIVE_DIGESTS    = versions with at least one non-signature
+  #                            tag (i.e. an actual release tag). Their
+  #                            digest (.name) is what signatures target.
+  #        - ORPHAN_CANDIDATES = versions whose tags are ALL of the
+  #                              form sha256-<hex>.{sig,att,sbom}. The
+  #                              <hex> identifies the target image.
+  #   3. For each candidate, if `sha256:<hex>` ∉ LIVE_DIGESTS → delete.
+  #
+  # Untagged manifest versions are intentionally NOT touched here —
+  # that's prune-untagged-ghcr's job below.
+  # ---------------------------------------------------------------------------
+  prune-orphan-signatures-ghcr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete orphan cosign signatures from GHCR kronk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          echo "Scanning ghcr.io/${ORG}/${RELEASE_PACKAGE} for orphan cosign signatures"
+          echo "Dry run: ${DRY_RUN}"
+
+          # Same paginate-first, delete-after pattern as
+          # prune-registry-cache (see that job for the rationale).
+          if ! all="$(gh api --paginate \
+            "/orgs/${ORG}/packages/container/${RELEASE_PACKAGE}/versions?per_page=100" \
+            2>/dev/null | jq -s 'add // []')"; then
+            echo "Package versions API returned an error — assuming nothing to prune."
+            exit 0
+          fi
+
+          # Build LIVE_DIGESTS: digests of versions with at least one
+          # tag that DOESN'T match the cosign signature pattern.
+          # `.name` is the manifest digest including the `sha256:` prefix.
+          live_digests="$(echo "${all}" | jq -r '
+            [ .[] | select(
+                (.metadata.container.tags // [])
+                | map(test("^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$"))
+                | any(. == false)
+              ) | .name ]
+            | unique[]
+          ')"
+
+          # Build ORPHAN_CANDIDATES: versions whose entire tag set is
+          # signature-like. Emit `id\ttarget_digest\ttags` per row.
+          # Multiple sig-pattern tags on the same version should all
+          # reference the same target hex; we take the first.
+          candidates="$(echo "${all}" | jq -r '
+            .[]
+            | select(
+                ((.metadata.container.tags // []) | length) > 0
+                and ((.metadata.container.tags // [])
+                     | map(test("^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$"))
+                     | all)
+              )
+            | [
+                .id,
+                ((.metadata.container.tags[0] | capture("^sha256-(?<h>[a-f0-9]{64})\\.")).h),
+                ((.metadata.container.tags // []) | join(","))
+              ] | @tsv
+          ')"
+
+          deleted=0
+          kept=0
+          while IFS=$'\t' read -r vid target_hex tags; do
+            [[ -z "${vid}" ]] && continue
+            if grep -qxF "sha256:${target_hex}" <<<"${live_digests}"; then
+              kept=$((kept + 1))
+              continue
+            fi
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete version=${vid} target=sha256:${target_hex} tags=[${tags}]"
+            else
+              echo "Deleting version=${vid} target=sha256:${target_hex} tags=[${tags}]"
+              gh api \
+                --method DELETE \
+                "/orgs/${ORG}/packages/container/${RELEASE_PACKAGE}/versions/${vid}" \
+                || echo "  (skipped — already gone)"
+            fi
+            deleted=$((deleted + 1))
+          done <<<"${candidates}"
+
+          echo "Done. deleted=${deleted} kept(target-still-live)=${kept}"
+
+  # ---------------------------------------------------------------------------
+  # prune-orphan-signatures-dh
+  #
+  # Docker Hub variant of the orphan-signatures sweep. Cosign on the
+  # DH side writes to a sibling repo (kronk-signatures) via
+  # COSIGN_REPOSITORY, so all of its tags are of the form
+  # `sha256-<hex>.{sig,att,sbom}`. The <hex> targets a digest in the
+  # release repo (ardanlabs/kronk).
+  #
+  # Algorithm:
+  #   1. Authenticate with the DH v2 API (JWT).
+  #   2. List all tags in the release repo; build LIVE_DIGESTS from
+  #      each tag's top-level manifest `digest` field.
+  #   3. List all tags in the signatures repo. For each:
+  #        - parse the target <hex> out of the tag name;
+  #        - if `sha256:<hex>` ∉ LIVE_DIGESTS → delete the tag.
+  #
+  # Docker Hub auto-collects untagged manifests after 30 days for free
+  # orgs (and on push for paid), so we don't run a separate untagged
+  # sweep against DH.
+  # ---------------------------------------------------------------------------
+  prune-orphan-signatures-dh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete orphan cosign signatures from Docker Hub kronk-signatures
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          echo "Scanning ${ORG}/${DH_SIG_REPO} on Docker Hub for orphan cosign signatures"
+          echo "Dry run: ${DRY_RUN}"
+
+          # 1. JWT login. DH wraps the auth response in a small JSON
+          #    object; `.token` is the bearer string.
+          jwt="$(curl -sS \
+            -H 'Content-Type: application/json' \
+            -d "{\"username\":\"${DOCKERHUB_USERNAME}\",\"password\":\"${DOCKERHUB_TOKEN}\"}" \
+            'https://hub.docker.com/v2/users/login/' | jq -r .token)"
+          if [[ -z "${jwt}" || "${jwt}" == "null" ]]; then
+            echo "::error::Docker Hub login failed (empty JWT)"
+            exit 1
+          fi
+
+          # Walk DH's paginated tag-list endpoint, following `next` URLs
+          # until exhausted. Emits one JSON array of all results.
+          fetch_all_tags() {
+            local repo="$1"
+            local url="https://hub.docker.com/v2/repositories/${ORG}/${repo}/tags/?page_size=100"
+            local page acc='[]'
+            while [[ -n "${url}" && "${url}" != "null" ]]; do
+              page="$(curl -sS -H "Authorization: JWT ${jwt}" "${url}")"
+              acc="$(jq -c --argjson p "$(echo "${page}" | jq '.results // []')" \
+                '. + $p' <<<"${acc}")"
+              url="$(echo "${page}" | jq -r '.next // empty')"
+            done
+            echo "${acc}"
+          }
+
+          # 2. Build LIVE_DIGESTS from the release repo's tag list.
+          release_tags="$(fetch_all_tags "${RELEASE_PACKAGE}")"
+          live_digests="$(echo "${release_tags}" | jq -r '
+            [ .[].digest // empty ] | unique[]
+          ')"
+          live_count="$(wc -l <<<"${live_digests}" | tr -d ' ')"
+          echo "Found ${live_count} live digests in ${ORG}/${RELEASE_PACKAGE}"
+
+          # 3. Walk the signatures repo, classify each tag.
+          sig_tags="$(fetch_all_tags "${DH_SIG_REPO}")"
+          candidates="$(echo "${sig_tags}" | jq -r '
+            .[]
+            | select(.name | test("^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$"))
+            | [
+                .name,
+                ((.name | capture("^sha256-(?<h>[a-f0-9]{64})\\.")).h),
+                (.tag_last_pushed // .last_updated // "")
+              ] | @tsv
+          ')"
+
+          deleted=0
+          kept=0
+          skipped_non_sig=0
+
+          # Sanity: count any tags that DON'T match the signature
+          # pattern — there shouldn't be any in kronk-signatures, but
+          # if a maintainer ever pushes something by hand we want to
+          # see it in the log rather than silently delete it.
+          skipped_non_sig="$(echo "${sig_tags}" | jq '
+            [ .[] | select(.name | test("^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$") | not) ] | length
+          ')"
+          if (( skipped_non_sig > 0 )); then
+            echo "::warning::Found ${skipped_non_sig} non-signature tag(s) in ${ORG}/${DH_SIG_REPO} — leaving them alone."
+          fi
+
+          while IFS=$'\t' read -r tag target_hex pushed; do
+            [[ -z "${tag}" ]] && continue
+            if grep -qxF "sha256:${target_hex}" <<<"${live_digests}"; then
+              kept=$((kept + 1))
+              continue
+            fi
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete tag=${tag} target=sha256:${target_hex} pushed=${pushed}"
+            else
+              echo "Deleting tag=${tag} target=sha256:${target_hex} pushed=${pushed}"
+              # DH returns 204 on successful delete, 404 if already gone.
+              # Don't trip set -e on a 404.
+              http=$(curl -sS -o /dev/null -w '%{http_code}' \
+                -X DELETE \
+                -H "Authorization: JWT ${jwt}" \
+                "https://hub.docker.com/v2/repositories/${ORG}/${DH_SIG_REPO}/tags/${tag}/")
+              case "${http}" in
+                204|404) ;;
+                *) echo "  (HTTP ${http} — continuing)" ;;
+              esac
+            fi
+            deleted=$((deleted + 1))
+          done <<<"${candidates}"
+
+          echo "Done. deleted=${deleted} kept(target-still-live)=${kept} skipped(non-sig)=${skipped_non_sig}"
+
+  # ---------------------------------------------------------------------------
+  # prune-untagged-ghcr
+  #
+  # Garbage-collect untagged manifest versions on the GHCR release
+  # package. An untagged manifest is one that:
+  #   - has no tags directly pointing at it, AND
+  #   - is not referenced as a child by any tagged index manifest
+  #     (multi-arch images have per-arch children that themselves
+  #     show up as untagged versions in the GHCR API — these are
+  #     critical references and MUST be preserved).
+  #
+  # Algorithm:
+  #   1. List every version of the kronk package.
+  #   2. For each TAGGED version, fetch its manifest. If it's an
+  #      OCI image index / Docker manifest list, collect every child
+  #      `.manifests[].digest` into PROTECTED. (Single-arch image
+  #      manifests have no children — nothing to add.)
+  #      Iterates over UNIQUE digests rather than tags, so a release
+  #      with 6 tags pointing at the same digest costs one GET.
+  #   3. For each UNTAGGED version older than the cutoff:
+  #        - if its `.name` ∈ PROTECTED → keep (it's a per-arch child);
+  #        - else → delete.
+  #
+  # Docker Hub auto-collects untagged manifests after 30 days, so no
+  # equivalent DH job — see the workflow header.
+  # ---------------------------------------------------------------------------
+  prune-untagged-ghcr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete unreferenced untagged manifests from GHCR kronk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          CUTOFF_DAYS: ${{ github.event.inputs.cutoff_days || '15' }}
+        run: |
+          set -euo pipefail
+
+          cutoff_epoch=$(date -u -d "${CUTOFF_DAYS} days ago" +%s)
+          echo "Scanning ghcr.io/${ORG}/${RELEASE_PACKAGE} for unreferenced untagged versions"
+          echo "Cutoff: $(date -u -d "@${cutoff_epoch}" --iso-8601=seconds) (>${CUTOFF_DAYS}d old)"
+          echo "Dry run: ${DRY_RUN}"
+
+          if ! all="$(gh api --paginate \
+            "/orgs/${ORG}/packages/container/${RELEASE_PACKAGE}/versions?per_page=100" \
+            2>/dev/null | jq -s 'add // []')"; then
+            echo "Package versions API returned an error — assuming nothing to prune."
+            exit 0
+          fi
+
+          # GHCR pull token. The package is public, but authenticating
+          # avoids the stricter anonymous rate limit and works for
+          # both public and private packages.
+          ghcr_token="$(curl -sS -u "${GITHUB_ACTOR}:${GH_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${ORG}/${RELEASE_PACKAGE}:pull" \
+            | jq -r .token)"
+          if [[ -z "${ghcr_token}" || "${ghcr_token}" == "null" ]]; then
+            echo "::error::Failed to obtain a GHCR pull token"
+            exit 1
+          fi
+
+          # Collect the unique set of digests for TAGGED versions —
+          # one manifest GET per digest is enough to enumerate index
+          # children, even if the same digest is reachable via many
+          # tags.
+          tagged_digests="$(echo "${all}" | jq -r '
+            [ .[] | select(((.metadata.container.tags // []) | length) > 0) | .name ]
+            | unique[]
+          ')"
+
+          # Walk each tagged digest's manifest; harvest index children.
+          protected_file="$(mktemp)"
+          accept='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+          while IFS= read -r digest; do
+            [[ -z "${digest}" ]] && continue
+            manifest="$(curl -sSL \
+              -H "Authorization: Bearer ${ghcr_token}" \
+              -H "Accept: ${accept}" \
+              "https://ghcr.io/v2/${ORG}/${RELEASE_PACKAGE}/manifests/${digest}" \
+              2>/dev/null || echo '{}')"
+            # Only index/list manifests have a `.manifests` array.
+            echo "${manifest}" | jq -r '.manifests[]?.digest // empty' >>"${protected_file}"
+          done <<<"${tagged_digests}"
+
+          # Deduplicate.
+          sort -u "${protected_file}" -o "${protected_file}"
+          protected_count="$(wc -l <"${protected_file}" | tr -d ' ')"
+          echo "Protected child manifests (referenced by tagged indexes): ${protected_count}"
+
+          # Untagged versions older than cutoff that aren't protected.
+          stale="$(echo "${all}" | jq -c --argjson cutoff "${cutoff_epoch}" '
+            [ .[] | select(
+                ((.metadata.container.tags // []) | length) == 0
+                and (.updated_at | fromdateiso8601) < $cutoff
+              ) ]
+          ')"
+
+          deleted=0
+          kept=0
+          while IFS=$'\t' read -r vid name updated; do
+            [[ -z "${vid}" ]] && continue
+            if grep -qxF "${name}" "${protected_file}"; then
+              kept=$((kept + 1))
+              continue
+            fi
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete version=${vid} digest=${name} updated=${updated}"
+            else
+              echo "Deleting version=${vid} digest=${name} updated=${updated}"
+              gh api \
+                --method DELETE \
+                "/orgs/${ORG}/packages/container/${RELEASE_PACKAGE}/versions/${vid}" \
+                || echo "  (skipped — already gone or last version of package)"
+            fi
+            deleted=$((deleted + 1))
+          done < <(echo "${stale}" | jq -r '.[] | [.id, .name, .updated_at] | @tsv')
+
+          echo "Done. deleted=${deleted} kept(protected-children)=${kept}"
