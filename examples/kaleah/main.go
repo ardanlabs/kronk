@@ -20,6 +20,15 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
+var diffWhitespace = strings.NewReplacer("\t", "→TAB→", " ", "·")
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\nERROR: %s\n", err)
+		os.Exit(1)
+	}
+}
+
 func getModelSource() string {
 	// If user specified a model via env var, use it
 	if model := os.Getenv("KRONK_MODEL"); model != "" {
@@ -74,13 +83,6 @@ func getModelSource() string {
 	return files[0].ID
 }
 
-func main() {
-	if err := run(); err != nil {
-		fmt.Printf("\nERROR: %s\n", err)
-		os.Exit(1)
-	}
-}
-
 func run() error {
 	mp, err := installSystem()
 
@@ -130,15 +132,27 @@ func installSystem() (models.Path, error) {
 
 	source := getModelSource()
 
-	// Check if the selected model is already downloaded
-	if mp, err := mdls.FullPath(source); err == nil {
-		fmt.Println("Using existing model:", mp.ModelFiles[0])
-		return mp, nil
+	// Check if the selected model is already downloaded and valid on disk.
+	// The catalog may resolve to a different quantization than what's on disk,
+	// so we verify the file actually exists before trusting the catalog lookup.
+	mp, err := mdls.FullPath(source)
+	if err == nil {
+		allExist := true
+		for _, f := range mp.ModelFiles {
+			if _, statErr := os.Stat(f); statErr != nil {
+				allExist = false
+				break
+			}
+		}
+		if allExist {
+			fmt.Println("Using existing model:", mp.ModelFiles[0])
+			return mp, nil
+		}
 	}
 
-	// Model not found — download it
+	// Model not found or files missing — download it
 	fmt.Println("Downloading model:", source)
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, source)
+	mp, err = mdls.Download(ctx, kronk.FmtLogger, source)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
 	}
@@ -197,9 +211,11 @@ func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
 	codeFile := "kaleah/code.chunk"
 
-	var systemPrompt = `You will be given source code for one identifier from a program.
-Return the source code first, then create a side-by-side index of the identifiers used in that code and their type or kind.
-Use a JavaScript code block for the source code, followed by a markdown table with the columns Identifier and Type / Kind.`
+	var systemPrompt = `You will be given source code for one identifier from a 
+	program.Return the source code first, then create a side-by-side index of 
+	the identifiers used in that code and their type or kind.Use a JavaScript 
+	code block for the source code, followed by a markdown table 
+	with the columns Identifier and Type / Kind.`
 
 	// WRITE SOME CODE / FUNCTION READS THE FILE
 	code, err := os.ReadFile(codeFile)
@@ -220,7 +236,8 @@ Use a JavaScript code block for the source code, followed by a markdown table wi
 
 	for {
 		var err error
-		messages, err = userInput(messages, codeFile, identifiers)
+		var originalCode string
+		messages, originalCode, err = userInput(messages, codeFile, identifiers)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
@@ -244,7 +261,7 @@ Use a JavaScript code block for the source code, followed by a markdown table wi
 				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
 			}
 
-			messages, err = modelResponse(krn, messages, ch)
+			messages, err = modelResponse(krn, messages, ch, originalCode)
 
 			if err != nil {
 				return nil, fmt.Errorf("run: model response: %w", err)
@@ -259,7 +276,7 @@ Use a JavaScript code block for the source code, followed by a markdown table wi
 	}
 }
 
-func userInput(messages []model.D, codeFile string, identifiers map[string]string) ([]model.D, error) {
+func userInput(messages []model.D, codeFile string, identifiers map[string]string) ([]model.D, string, error) {
 	fmt.Print("\nUSER> ")
 
 	reader := bufio.NewReader(os.Stdin)
@@ -267,12 +284,14 @@ func userInput(messages []model.D, codeFile string, identifiers map[string]strin
 	userInput, err := reader.ReadString('\n')
 
 	if err != nil {
-		return messages, fmt.Errorf("unable to read user input: %w", err)
+		return messages, "", fmt.Errorf("unable to read user input: %w", err)
 	}
 
 	if strings.TrimSpace(userInput) == "quit" || userInput == "quit\n" {
-		return nil, io.EOF
+		return nil, "", io.EOF
 	}
+
+	var originalCode string
 
 	identifier := strings.TrimSpace(userInput)
 	typ, exists := identifiers[identifier]
@@ -288,8 +307,10 @@ func userInput(messages []model.D, codeFile string, identifiers map[string]strin
 	if exists {
 		code, err := extractColumnZeroIdentifierCode(codeFile, identifier)
 		if err != nil {
-			return messages, err
+			return messages, "", err
 		}
+
+		originalCode = code
 
 		userInput = fmt.Sprintf(`Return the full body code for this %s named %s, then create a side-by-side identifier/type index for it.
 
@@ -301,7 +322,7 @@ Code:
 		model.TextMessage(model.RoleUser, userInput),
 	)
 
-	return messages, nil
+	return messages, originalCode, nil
 }
 
 func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (model.ChatResponse, error) {
@@ -314,7 +335,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (model.ChatRe
 	return ch, nil
 }
 
-func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse) ([]model.D, error) {
+func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse, originalCode string) ([]model.D, error) {
 	fmt.Print("\nMODEL> ")
 
 	if len(resp.Choices) == 0 {
@@ -334,6 +355,17 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse
 		messages = append(messages, model.TextMessage(model.RoleAssistant, content))
 	}
 
+	if originalCode != "" {
+		modelCode := firstCodeBlock(content)
+		percent := codeMatchPercent(modelCode, originalCode)
+
+		fmt.Printf("\nCode match: %.2f%%\n", percent)
+
+		if diff := firstCodeDifference(modelCode, originalCode); diff != -1 {
+			fmt.Printf("First difference at byte: %d\n", diff)
+		}
+	}
+
 	reasoning := resp.Choices[0].Message.Reasoning
 
 	if reasoning != "" {
@@ -344,6 +376,58 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse
 		resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TokensPerSecond)
 
 	return messages, nil
+}
+
+func firstCodeBlock(content string) string {
+	start := strings.Index(content, "```")
+	if start == -1 {
+		return ""
+	}
+
+	content = content[start+3:]
+	if newline := strings.Index(content, "\n"); newline != -1 {
+		content = content[newline+1:]
+	}
+
+	before, _, ok := strings.Cut(content, "```")
+	if !ok {
+		return content
+	}
+
+	return before
+}
+
+func codeMatchPercent(modelCode, originalCode string) float64 {
+	modelCode = strings.ReplaceAll(modelCode, "\r\n", "\n")
+	originalCode = strings.ReplaceAll(originalCode, "\r\n", "\n")
+
+	maxLen := max(len(modelCode), len(originalCode))
+	if maxLen == 0 {
+		return 100
+	}
+
+	var matches int
+	for i := range maxLen {
+		if i < len(modelCode) && i < len(originalCode) && modelCode[i] == originalCode[i] {
+			matches++
+		}
+	}
+
+	return float64(matches) / float64(maxLen) * 100
+}
+
+func firstCodeDifference(modelCode, originalCode string) int {
+	modelCode = strings.ReplaceAll(modelCode, "\r\n", "\n")
+	originalCode = strings.ReplaceAll(originalCode, "\r\n", "\n")
+
+	maxLen := max(len(modelCode), len(originalCode))
+	for i := range maxLen {
+		if i >= len(modelCode) || i >= len(originalCode) || modelCode[i] != originalCode[i] {
+			return i
+		}
+	}
+
+	return -1
 }
 
 func columnZeroIdentifiers(filename string) (map[string]string, error) {
