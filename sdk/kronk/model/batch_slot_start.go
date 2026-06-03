@@ -309,6 +309,18 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 				e.model.decodeMu.Lock()
 				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				// MTP: the prior imc-restore (or a previous decode in
+				// this slot) populated the draft seq KV at positions
+				// [0..N). The forthcoming decodeTokensIntoCacheMTP
+				// rewrites draft positions starting at 0; without
+				// clearing the draft seq first, the mirror decode
+				// collides with the surviving positions and fails
+				// with "the input could not be processed".
+				if e.model.draft != nil && e.model.draft.mtp {
+					llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+					s.draftNPast = 0
+					s.pendingH = s.pendingH[:0]
+				}
 				e.model.decodeMu.Unlock()
 
 				cacheIdx = 0
@@ -333,6 +345,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 					e.model.decodeMu.Lock()
 					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+					// MTP: clear the draft seq in lock-step (see the
+					// imcClearSeq branch above for the rationale).
+					if e.model.draft != nil && e.model.draft.mtp {
+						llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+						s.draftNPast = 0
+						s.pendingH = s.pendingH[:0]
+					}
 					e.model.decodeMu.Unlock()
 
 					job.imcNewCacheTokens = job.imcNewCachedTokens
@@ -344,6 +363,21 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 					e.model.decodeMu.Lock()
 					llama.MemorySeqRm(e.model.mem, s.seqID, llama.Pos(job.imcTrimPos), -1)
+					// MTP: trim the draft seq KV symmetrically so the
+					// upcoming mirror decode doesn't collide with stale
+					// positions in [trimPos..oldEnd). Roll draftNPast
+					// back to trimPos and drop pendingH (the last-row
+					// h carried over from beyond trimPos is no longer
+					// the previous-position h for the new tokens; the
+					// mirror's first chunk will fall back to zeros at
+					// slot 0, which matches what a fresh build does).
+					if e.model.draft != nil && e.model.draft.mtp {
+						llama.MemorySeqRm(e.model.draft.mem, s.seqID, llama.Pos(job.imcTrimPos), -1)
+						if s.draftNPast > llama.Pos(job.imcTrimPos) {
+							s.draftNPast = llama.Pos(job.imcTrimPos)
+						}
+						s.pendingH = s.pendingH[:0]
+					}
 					e.model.decodeMu.Unlock()
 
 					cacheIdx = llama.Pos(job.imcTrimPos)
