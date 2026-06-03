@@ -557,9 +557,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # -----------------------------------------------------------------------------
 # Pre-cache npm modules (separate layer keyed on the lockfile).
 # -----------------------------------------------------------------------------
-COPY cmd/server/api/frontends/bui/package.json \
-     cmd/server/api/frontends/bui/package-lock.json \
-     cmd/server/api/frontends/bui/
+COPY cmd/server/api/frontends/bui/package.json cmd/server/api/frontends/bui/
+COPY cmd/server/api/frontends/bui/package-lock.json cmd/server/api/frontends/bui/
 
 RUN --mount=type=cache,target=/root/.npm \
     cd cmd/server/api/frontends/bui && npm ci
