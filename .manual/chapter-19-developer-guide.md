@@ -2237,9 +2237,9 @@ pushes never reach this job):
 
 | Event                  | Variants                                                  | Push? | Tags applied                                                              |
 | ---------------------- | --------------------------------------------------------- | ----- | ------------------------------------------------------------------------- |
-| PR (no labels)         | `cpu`                                                     | no    | — (plus a `kronk --version` / `kronk --help` smoke test on cpu/amd64)     |
-| PR + label `build all` | all 5                                                     | no    | —                                                                         |
-| PR + label `build <v>` | `cpu` + each labeled variant                              | no    | —                                                                         |
+| PR (no labels)         | `cpu` (linux/amd64 only)                                  | no    | — (plus a `kronk --version` / `kronk --help` smoke test on cpu/amd64)     |
+| PR + label `build all` | all 5 (all supported arches)                              | no    | —                                                                         |
+| PR + label `build <v>` | `cpu` + each labeled variant (all supported arches)       | no    | —                                                                         |
 | Push to `main`         | all 5                                                     | no    | — (smoke-tests cpu/amd64; refreshes the registry-backed BuildKit cache)   |
 | Push to tag `v*`       | all 5                                                     | yes   | `<tag>-<variant>` + `latest-<variant>`; plus `latest` → cpu (all signed)  |
 | `workflow_dispatch`    | input `variants` (default `all`, or comma-separated)      | no    | —                                                                         |
