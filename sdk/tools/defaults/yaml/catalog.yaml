@@ -7,36 +7,6 @@ providers:
   - gpustack
   - Qwen
 models:
-  Qwen/Qwen3-8B-Q8_0:
-    provider: Qwen
-    family: Qwen3-8B-GGUF
-    revision: main
-    files:
-      - Qwen3-8B-Q8_0.gguf
-    file_sizes:
-      - 8709518112
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
-  Qwen/Qwen3-Embedding-0.6B-Q8_0:
-    provider: Qwen
-    family: Qwen3-Embedding-0.6B-GGUF
-    revision: main
-    files:
-      - Qwen3-Embedding-0.6B-Q8_0.gguf
-    file_sizes:
-      - 639150592
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
   bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0:
     provider: bartowski
     family: cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF
@@ -52,6 +22,19 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T04:36:57.716061Z
+  ggml-org/embeddinggemma-300m-qat-Q8_0:
+    provider: ggml-org
+    family: embeddinggemma-300m-qat-q8_0-GGUF
+    revision: main
+    files:
+      - embeddinggemma-300m-qat-Q8_0.gguf
+    file_sizes:
+      - 328577056
+    model_type: Dense
+    capabilities:
+      endpoint: embeddings
+      embedding: true
+    resolved_at: 2026-04-28T00:03:50Z
   ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0:
     provider: ggml-org
     family: Qwen3-Omni-30B-A3B-Instruct-GGUF
@@ -72,19 +55,6 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
-  ggml-org/embeddinggemma-300m-qat-Q8_0:
-    provider: ggml-org
-    family: embeddinggemma-300m-qat-q8_0-GGUF
-    revision: main
-    files:
-      - embeddinggemma-300m-qat-Q8_0.gguf
-    file_sizes:
-      - 328577056
-    model_type: Dense
-    capabilities:
-      endpoint: embeddings
-      embedding: true
     resolved_at: 2026-04-28T00:03:50Z
   ggml-org/qwen3-reranker-0.6b-q8_0:
     provider: ggml-org
@@ -130,6 +100,85 @@ models:
       endpoint: chat_completion
       images: true
       audio: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-04-28T00:03:50Z
+  mradermacher/Qwopus3.5-4B-Coder.Q8_0:
+    provider: mradermacher
+    family: Qwopus3.5-4B-Coder-GGUF
+    revision: main
+    files:
+      - Qwopus3.5-4B-Coder.Q8_0.gguf
+    file_sizes:
+      - 4610581920
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-03T22:25:00Z
+  Qwen/Qwen3-8B-Q8_0:
+    provider: Qwen
+    family: Qwen3-8B-GGUF
+    revision: main
+    files:
+      - Qwen3-8B-Q8_0.gguf
+    file_sizes:
+      - 8709518112
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-04-28T00:03:50Z
+  Qwen/Qwen3-Embedding-0.6B-Q8_0:
+    provider: Qwen
+    family: Qwen3-Embedding-0.6B-GGUF
+    revision: main
+    files:
+      - Qwen3-Embedding-0.6B-Q8_0.gguf
+    file_sizes:
+      - 639150592
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-04-28T00:03:50Z
+  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
+    provider: unsloth
+    family: gemma-4-26B-A4B-it-GGUF
+    revision: main
+    files:
+      - gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    file_sizes:
+      - 16868240704
+    mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 1193058912
+    model_type: MoE
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-04-28T00:03:50Z
+  unsloth/gpt-oss-20b-Q8_0:
+    provider: unsloth
+    family: gpt-oss-20b-GGUF
+    revision: main
+    files:
+      - gpt-oss-20b-Q8_0.gguf
+    file_sizes:
+      - 12109567168
+    model_type: MoE
+    capabilities:
+      endpoint: chat_completion
       streaming: true
       reasoning: true
       tooling: true
@@ -259,40 +308,6 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-05-13T13:43:46.248759Z
-  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
-    provider: unsloth
-    family: gemma-4-26B-A4B-it-GGUF
-    revision: main
-    files:
-      - gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
-    file_sizes:
-      - 16868240704
-    mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
-    mmproj_orig: mmproj-F16.gguf
-    mmproj_size: 1193058912
-    model_type: MoE
-    capabilities:
-      endpoint: chat_completion
-      images: true
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
-  unsloth/gpt-oss-20b-Q8_0:
-    provider: unsloth
-    family: gpt-oss-20b-GGUF
-    revision: main
-    files:
-      - gpt-oss-20b-Q8_0.gguf
-    file_sizes:
-      - 12109567168
-    model_type: MoE
-    capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
   unsloth/rnj-1-instruct-Q6_K:
     provider: unsloth
     family: rnj-1-instruct-GGUF

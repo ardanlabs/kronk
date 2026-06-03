@@ -39,7 +39,7 @@
 # ==============================================================================
 # CODING MODELS
 
-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
   nseq-max: 2
   sampling-parameters:
@@ -47,7 +47,7 @@ Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     top_k: 20
     top_p: 0.95
 
-gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   context-window: 131072
   nseq-max: 2
   sampling-parameters:
@@ -55,7 +55,7 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     top_k: 64
     top_p: 0.95
 
-Qwopus3.5-4B-Coder.Q8_0:
+mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
   context-window: 73728
   sampling-parameters:
     temperature: 0.6

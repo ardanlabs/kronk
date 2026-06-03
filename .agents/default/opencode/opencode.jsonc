@@ -8,21 +8,21 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
-                "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
+                "unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
                     "name": "Qwen3.6 35B-A3B UD-Q8_K_XL",
                     "limit": {
                         "context": 131072,
                         "output": 65536
                     }
                 },
-                "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
+                "unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
                     "name": "Gemma4 26B-A4B UD-Q8_K_XL",
                     "limit": {
                         "context": 131072,
                         "output": 65536
                     }
                 },
-                "Qwopus3.5-4B-Coder.Q8_0": {
+                "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT": {
                     "name": "Qwopus3.5 4B-Coder Q8_0",
                     "limit": {
                         "context": 131072,
@@ -32,7 +32,7 @@
             }
         }
     },
-    "model": "kronk/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "model": "kronk/unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
     "formatter": true,
     "lsp": true,
     "compaction": {
