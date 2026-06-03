@@ -201,6 +201,31 @@ func (m *Models) FullPath(modelID string) (Path, error) {
 	return Path{}, fmt.Errorf("retrieve-path: model %q not found", modelID)
 }
 
+// LookupFile resolves a model identifier to its catalog File entry using
+// the same precedence rules as FullPath. The identifier may be the bare
+// model name ("Qwen3-8B-Q8_0"), an "<org>/<model>" pair, a
+// "<model>/<variant>" pair, or the full "<org>/<model>/<variant>" form.
+// Returns the matching File and true, or the zero value and false.
+func (m *Models) LookupFile(modelID string) (File, bool) {
+	files, err := m.Files()
+	if err != nil {
+		return File{}, false
+	}
+
+	byID := make(map[string]File, len(files))
+	for _, f := range files {
+		byID[f.ID] = f
+	}
+
+	for _, key := range fullPathLookupKeys(modelID) {
+		if f, ok := byID[key]; ok {
+			return f, true
+		}
+	}
+
+	return File{}, false
+}
+
 // MustFullPath finds a model and panics if the model was not found. This
 // should only be used for testing.
 func (m *Models) MustFullPath(modelID string) Path {

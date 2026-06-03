@@ -214,7 +214,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) ModelStatus() ([]ModelDetail, error)</code>
               </pre>
-              <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests.</p>
+              <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests. Cache keys may be the bare catalog ID, or any of the variants accepted by Models.LookupFile (e.g. "&lt;org&gt;/&lt;model&gt;", "&lt;model&gt;/&lt;variant&gt;", "&lt;org&gt;/&lt;model&gt;/&lt;variant&gt;"), so the catalog resolver is used to recover the row metadata rather than splitting the key here.</p>
             </div>
 
             <div className="doc-section" id="method-pool-resourcemanager">

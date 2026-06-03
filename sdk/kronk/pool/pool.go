@@ -220,43 +220,39 @@ func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 // yet completed their GGUF read). The latter are returned with
 // Status=ModelStatusLoading so BUI/observability can show them as
 // occupying budget while still being unavailable to serve requests.
+//
+// Cache keys may be the bare catalog ID, or any of the variants
+// accepted by Models.LookupFile (e.g. "<org>/<model>",
+// "<model>/<variant>", "<org>/<model>/<variant>"), so the catalog
+// resolver is used to recover the row metadata rather than splitting
+// the key here.
 func (p *Pool) ModelStatus() ([]ModelDetail, error) {
-	list, err := p.models.Files()
-	if err != nil {
-		return nil, err
-	}
-
 	ps := make([]ModelDetail, 0)
 	loadedKeys := make(map[string]struct{})
 
-entries:
 	for entry := range p.engine.Coldest() {
-		cacheID, _, _ := strings.Cut(entry.Key, "/")
-
-		for _, mi := range list {
-			if mi.ID != cacheID {
-				continue
-			}
-
-			krn := entry.Value
-			disp := p.llama.Display(krn, cacheID)
-
-			ps = append(ps, ModelDetail{
-				ID:            entry.Key,
-				Backend:       "kronk",
-				OwnedBy:       mi.OwnedBy,
-				ModelFamily:   mi.ModelFamily,
-				Size:          mi.Size,
-				VRAMTotal:     disp.VRAMTotal,
-				KVCache:       disp.KVCache,
-				Slots:         max(disp.Slots, 1),
-				ExpiresAt:     entry.ExpiresAt(),
-				ActiveStreams: krn.ActiveStreams(),
-				Status:        ModelStatusLoaded,
-			})
-			loadedKeys[entry.Key] = struct{}{}
-			continue entries
+		mi, ok := p.models.LookupFile(entry.Key)
+		if !ok {
+			continue
 		}
+
+		krn := entry.Value
+		disp := p.llama.Display(krn, mi.ID)
+
+		ps = append(ps, ModelDetail{
+			ID:            entry.Key,
+			Backend:       "kronk",
+			OwnedBy:       mi.OwnedBy,
+			ModelFamily:   mi.ModelFamily,
+			Size:          mi.Size,
+			VRAMTotal:     disp.VRAMTotal,
+			KVCache:       disp.KVCache,
+			Slots:         max(disp.Slots, 1),
+			ExpiresAt:     entry.ExpiresAt(),
+			ActiveStreams: krn.ActiveStreams(),
+			Status:        ModelStatusLoaded,
+		})
+		loadedKeys[entry.Key] = struct{}{}
 	}
 
 	// Surface any in-flight reservations (memory accounted for by the
@@ -277,17 +273,12 @@ entries:
 			continue
 		}
 
-		cacheID, _, _ := strings.Cut(r.Key, "/")
-
 		var ownedBy, modelFamily string
 		var size int64
-		for _, mi := range list {
-			if mi.ID == cacheID {
-				ownedBy = mi.OwnedBy
-				modelFamily = mi.ModelFamily
-				size = mi.Size
-				break
-			}
+		if mi, ok := p.models.LookupFile(r.Key); ok {
+			ownedBy = mi.OwnedBy
+			modelFamily = mi.ModelFamily
+			size = mi.Size
 		}
 
 		ps = append(ps, ModelDetail{
