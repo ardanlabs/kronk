@@ -160,10 +160,10 @@ A fresh checkout that skips `install-gotooling` will fail the `lint` and
 
 The repo carries two Go-version files with different roles:
 
-| File           | Role                                                              | Value          |
-| -------------- | ----------------------------------------------------------------- | -------------- |
-| [`go.mod`](../go.mod)      | Minimum language version. Floor for downstream consumers.         | `go 1.26.0`    |
-| [`.go-version`](../.go-version) | Exact toolchain CI / dev managers install (asdf, mise, goenv, gvm, direnv). | `1.26.3`       |
+| File                            | Role                                                                        | Value       |
+|---------------------------------|-----------------------------------------------------------------------------|-------------|
+| [`go.mod`](../go.mod)           | Minimum language version. Floor for downstream consumers.                   | `go 1.26.0` |
+| [`.go-version`](../.go-version) | Exact toolchain CI / dev managers install (asdf, mise, goenv, gvm, direnv). | `1.26.4`    |
 
 They are allowed to differ on the *patch* component but must agree on
 `<major>.<minor>`. The Linux + Release workflows run
@@ -1917,7 +1917,7 @@ Two files, two roles:
                       and by `GOTOOLCHAIN=auto` resolution
 
 ╭──────────────╮      exact toolchain CI + dev managers install
-│ .go-version  │ ───► `1.26.3`
+│ .go-version  │ ───► `1.26.4`
 ╰──────────────╯      picked up by asdf, mise, goenv, gvm, direnv,
                       and actions/setup-go's `go-version-file:` input
 ```

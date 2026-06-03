@@ -9,7 +9,7 @@
 #                                  floor for downstream consumers.
 #   .go-version                  — exact toolchain CI installs and
 #                                  what asdf/mise/goenv/gvm pick up
-#                                  for contributors (e.g. "1.26.3").
+#                                  for contributors (e.g. "1.26.4").
 #
 # The two are allowed to differ on the *patch* component (and should:
 # CI typically pins a patched toolchain ahead of the minimum). They
@@ -45,7 +45,7 @@ if [[ -z "$GOVERSION_RAW" ]]; then
     exit 1
 fi
 
-# Minor = first two dot-separated components ("1.26" from "1.26.3").
+# Minor = first two dot-separated components ("1.26" from "1.26.4").
 GOMOD_MINOR="$(echo "$GOMOD_RAW" | cut -d. -f1,2)"
 GOVERSION_MINOR="$(echo "$GOVERSION_RAW" | cut -d. -f1,2)"
 

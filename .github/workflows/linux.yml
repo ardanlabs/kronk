@@ -138,7 +138,7 @@ jobs:
 
       - name: go fix
         # `go fix -diff` only prints; it does not fail. Capture the diff
-        # and fail if it would have rewritten anything.
+        # and fail if it had rewritten anything.
         run: |
           fix_diff="$(go fix -diff ./...)"
           if [[ -n "$fix_diff" ]]; then

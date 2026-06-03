@@ -7176,7 +7176,7 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
               <tr>
                 <td><a href="../.go-version"><code>.go-version</code></a></td>
                 <td>Exact toolchain CI / dev managers install (asdf, mise, goenv, gvm, direnv).</td>
-                <td><code>1.26.3</code></td>
+                <td><code>1.26.4</code></td>
               </tr>
             </tbody>
           </table>
@@ -8865,7 +8865,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                       and by \`GOTOOLCHAIN=auto\` resolution
 
 ╭──────────────╮      exact toolchain CI + dev managers install
-│ .go-version  │ ───► \`1.26.3\`
+│ .go-version  │ ───► \`1.26.4\`
 ╰──────────────╯      picked up by asdf, mise, goenv, gvm, direnv,
                       and actions/setup-go's \`go-version-file:\` input`}</code></pre>
           <p><a href="../.github/scripts/check-go-version.sh"><code>.github/scripts/check-go-version.sh</code></a> parses the <code>go</code> directive from <code>go.mod</code> and the bare version from <code>.go-version</code>, then fails the workflow when their <code>&lt;major&gt;.&lt;minor&gt;</code> components disagree. Patch-level drift is allowed (and expected: CI typically pins a patched toolchain ahead of the language minimum) — minor-level drift means someone bumped one file and forgot the other.</p>
