@@ -363,6 +363,7 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse
 
 		if diff := firstCodeDifference(modelCode, originalCode); diff != -1 {
 			fmt.Printf("First difference at byte: %d\n", diff)
+			printCodeDiff(originalCode, modelCode)
 		}
 	}
 
@@ -428,6 +429,95 @@ func firstCodeDifference(modelCode, originalCode string) int {
 	}
 
 	return -1
+}
+
+func printCodeDiff(originalCode, modelCode string) {
+	modelCode = strings.ReplaceAll(modelCode, "\r\n", "\n")
+	originalCode = strings.ReplaceAll(originalCode, "\r\n", "\n")
+
+	origLines := strings.Split(originalCode, "\n")
+	modelLines := strings.Split(modelCode, "\n")
+
+	diffByte := firstCodeDifference(modelCode, originalCode)
+
+	// Find which line the byte offset falls on
+	lineIdx := 0
+	accum := 0
+	for i, line := range origLines {
+		lineWithNewline := len(line) + 1 // +1 for \n
+		if accum+lineWithNewline > diffByte {
+			lineIdx = i
+			break
+		}
+		accum += lineWithNewline
+	}
+
+	// If diff is beyond all lines, use last line
+	if lineIdx >= len(origLines) {
+		lineIdx = len(origLines) - 1
+	}
+
+	fmt.Println("\n--- Code Diff (→TAB→ = tab, · = space) ---")
+	fmt.Printf("%-45s | %s\n", "ORIGINAL", "MODEL")
+	fmt.Println(strings.Repeat("-", 80))
+
+	for i := 0; i < max(len(origLines), len(modelLines)); i++ {
+		origLine := ""
+		if i < len(origLines) {
+			origLine = origLines[i]
+		}
+		modelLine := ""
+		if i < len(modelLines) {
+			modelLine = modelLines[i]
+		}
+		origReplaced := diffWhitespace.Replace(origLine)
+		modelReplaced := diffWhitespace.Replace(modelLine)
+
+		if i == lineIdx {
+			origHighlighted := highlightAt(origReplaced, diffByte-accum, "\033[91m", "\033[0m")
+			modelHighlighted := highlightAt(modelReplaced, diffByte-accum, "\033[91m", "\033[0m")
+			fmt.Printf("→ %-43s | %s\n", origHighlighted, modelHighlighted)
+
+			origCaret := caretAt(origReplaced, diffByte-accum)
+			modelCaret := caretAt(modelReplaced, diffByte-accum)
+			fmt.Printf("  %-43s | %s\n", origCaret, modelCaret)
+		} else {
+			fmt.Printf("  %-43s | %s\n", origReplaced, modelReplaced)
+		}
+	}
+	fmt.Println("--- End Diff ---")
+}
+
+func highlightAt(s string, pos int, colorStart, colorEnd string) string {
+	runes := []rune(s)
+	if pos < 0 || pos >= len(runes) {
+		return s
+	}
+	var result []rune
+	for i, r := range runes {
+		if i == pos {
+			result = append(result, []rune(colorStart+string(r)+colorEnd)...)
+		} else {
+			result = append(result, r)
+		}
+	}
+	return string(result)
+}
+
+func caretAt(s string, pos int) string {
+	runes := []rune(s)
+	if pos < 0 || pos >= len(runes) {
+		return strings.Repeat(" ", len(runes))
+	}
+	var caret []rune
+	for i := range runes {
+		if i == pos {
+			caret = append(caret, '^')
+		} else {
+			caret = append(caret, ' ')
+		}
+	}
+	return string(caret)
 }
 
 func columnZeroIdentifiers(filename string) (map[string]string, error) {
