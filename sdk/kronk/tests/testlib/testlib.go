@@ -72,6 +72,12 @@ func Setup() {
 
 	printInfo(mdls)
 
+	fmt.Println("Seeding jinja templates...")
+	if err := defaults.WriteJinjaFiles("", ""); err != nil {
+		fmt.Printf("Failed to write jinja templates: %s\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Println("Init Kronk...")
 	if err := kronk.Init(); err != nil {
 		fmt.Printf("Failed to init the llama.cpp library: error: %s\n", err)

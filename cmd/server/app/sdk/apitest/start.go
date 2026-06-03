@@ -157,6 +157,17 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	// -------------------------------------------------------------------------
+	// Jinja Templates
+	//
+	// Seed the embedded chat templates to disk so model loads that rely on
+	// shipped jinja templates (e.g., Qwen3.5-0.8B-Q8_0) can find them under
+	// ~/.kronk/jinja.
+
+	if err := defaults.WriteJinjaFiles("", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// -------------------------------------------------------------------------
 	// Init Kronk + Bucky
 
 	if err := kronk.Init(); err != nil {
