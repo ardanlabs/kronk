@@ -8,6 +8,17 @@ description: >
   identical environment and share setup-go's Go module + build cache
   via the common cache key.
 
+  Wall-clock note: the models cache restore is ~10 GB / ~65 s and the
+  `go install ./cmd/kronk` + native-libs install path is ~25 s on a
+  Go-module cache miss. The two are independent (the kronk binary
+  doesn't need any models on disk, and the libs install only needs
+  the libraries cache), so this action overlaps them: it kicks off
+  the kronk build + libs install in the background after the libs
+  cache restore, then restores the models cache in the foreground,
+  then joins the background work before any downstream step that
+  needs the kronk binary on PATH. On a typical run this hides the
+  full go-install cost behind the models-cache restore.
+
 inputs:
   models-cache-key:
     description: >
@@ -53,6 +64,10 @@ runs:
     # code invalidates this cache without bumping any cache-key suffix
     # by hand. Separate from the models cache because libs change far
     # less often.
+    #
+    # Must complete BEFORE "Build kronk + install libs (background)"
+    # below, because `kronk libs --local` and `kronk bucky libs --local`
+    # read/write the on-disk library trees that this cache restores.
     - name: Restore libraries cache
       id: cache-libs
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
@@ -62,6 +77,55 @@ runs:
           ~/.kronk/bucky-libraries
         key: ${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}
 
+    # Kick off the kronk build + native-libs install in the background
+    # so it runs concurrently with the (much slower) models-cache
+    # restore below. The runner does NOT reap orphaned processes
+    # between composite-action steps, so setsid + nohup + disown is
+    # enough to keep the child alive across the step boundary.
+    #
+    # Exit code, log, and pid are written to /tmp/setup-kronk-bg.* so
+    # the "Wait for background kronk install" step can surface
+    # failures (and the build log) without losing the kronk install
+    # being the actual cause of a downstream "command not found".
+    #
+    # Why all three commands run in one background shell:
+    #   - `go install ./cmd/kronk` produces the kronk binary on PATH
+    #     (setup-go added GOPATH/bin to PATH for subsequent steps).
+    #   - `kronk libs --local` and `kronk bucky libs --local` need
+    #     the binary AND the libraries cache (already restored).
+    #   - All three are pure CPU+disk work that doesn't touch the
+    #     models cache, so chaining them inside the background lets
+    #     the whole sequence overlap the models restore.
+    - name: Build kronk + install libs (background)
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/.kronk/libraries"
+        rm -f /tmp/setup-kronk-bg.exit /tmp/setup-kronk-bg.log /tmp/setup-kronk-bg.pid
+
+        # setsid detaches from the controlling terminal; nohup + the
+        # explicit fd redirections make the child immune to SIGHUP
+        # and prevent it from holding the step's stdout/stderr pipes
+        # open (which would block the step from completing).
+        # NOTE: do NOT wrap the chain in `{ set -e; ... } || rc=$?` —
+        # bash suppresses `set -e` inside a compound command on the LHS
+        # of `||`, so a failing `go install` would be swallowed and
+        # the next command would still run. A plain `&&` chain stops
+        # at the first failure and propagates its exit status via $?.
+        setsid nohup bash -c '
+          go install ./cmd/kronk \
+            && kronk libs --local \
+            && kronk bucky libs --local
+          echo "$?" > /tmp/setup-kronk-bg.exit
+        ' </dev/null >/tmp/setup-kronk-bg.log 2>&1 &
+        echo $! > /tmp/setup-kronk-bg.pid
+        disown
+        echo "Started background kronk install (pid $(cat /tmp/setup-kronk-bg.pid))"
+
+    # Long pole: ~10 GB / ~65 s on a hit. Runs in the foreground while
+    # the background step above builds kronk and installs the native
+    # libs. On a typical run the background work finishes before this
+    # step does, so the join below is effectively free.
     - name: Restore models cache
       id: cache-models
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
@@ -71,27 +135,36 @@ runs:
           ~/.kronk/bucky-models
         key: ${{ inputs.models-cache-key }}
 
-    - name: Install kronk command
-      shell: bash
-      run: go install ./cmd/kronk
-
-    - name: Install Libs
-      # The default behavior of `kronk libs --local` (no flags) installs
-      # the well-known defaultVersion baked into sdk/tools/libs/libs.go.
-      # Bumping defaultVersion in code rolls CI forward; CI never
-      # silently tracks llama.cpp's latest tag.
-      #
-      # `kronk bucky libs --local` does the same for the whisper.cpp
-      # backend used by the bucky pool and the
-      # /v1/audio/transcriptions endpoint.
-      #
-      # Both commands are idempotent: on a libraries cache hit they
-      # re-detect the on-disk version and short-circuit.
+    # Join the background work before any downstream step needs the
+    # kronk binary on PATH (either the conditional model-download
+    # step below, or the test runs in the caller workflow). Polls
+    # the pid since `wait` only works on children of the current
+    # shell — and the background process was spawned in a previous
+    # step's shell.
+    - name: Wait for background kronk install
       shell: bash
       run: |
-        mkdir -p $HOME/.kronk/libraries
-        kronk libs --local
-        kronk bucky libs --local
+        set -euo pipefail
+        PID="$(cat /tmp/setup-kronk-bg.pid)"
+        echo "Waiting for background kronk install (pid $PID)..."
+        # `kill -0 PID` is a portable existence probe (Linux runners
+        # are the only place this composite is consumed today, but
+        # the same idiom works on macOS for local debugging).
+        # Belt-and-braces: stop polling as soon as the exit file
+        # appears, so we don't keep watching a recycled PID in the
+        # (vanishingly small) window between the child writing its
+        # result and the kernel reaping it.
+        while [[ ! -f /tmp/setup-kronk-bg.exit ]] && kill -0 "$PID" 2>/dev/null; do
+          sleep 1
+        done
+        echo "::group::Background kronk install log"
+        cat /tmp/setup-kronk-bg.log
+        echo "::endgroup::"
+        EXIT="$(cat /tmp/setup-kronk-bg.exit 2>/dev/null || echo 1)"
+        if [[ "$EXIT" != "0" ]]; then
+          echo "::error::Background kronk install failed (exit=$EXIT)"
+          exit "$EXIT"
+        fi
 
     - name: Download test models
       if: steps.cache-models.outputs.cache-hit != 'true'
