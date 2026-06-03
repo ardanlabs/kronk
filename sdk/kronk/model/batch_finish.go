@@ -22,6 +22,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	ctx := s.job.ctx
 	jobID := s.job.id
+	jobCh := s.job.ch
 	slotID := s.id
 	seqID := s.seqID
 	nPrompt := s.nPrompt
@@ -29,8 +30,6 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	var elapsed time.Duration
 
 	defer func() {
-		close(s.job.ch)
-
 		if s.prefillSpan != nil {
 			s.prefillSpan.End()
 			s.prefillSpan = nil
@@ -57,7 +56,17 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.freeSlotResources(s)
 		s.reset()
 
+		// Decrement activeStreams BEFORE close(jobCh). The model-level
+		// activeStreams counter coordinates Model.Unload — closing the
+		// channel before decrementing leaves a window where Unload could
+		// race past the count. The pool-visible flake on a one-slot
+		// pool (cap-evict-failed) is fixed at the outer kronk.Kronk
+		// layer in concurrency.go (release before close); this inner
+		// ordering keeps the per-model accounting consistent for the
+		// same reason. Note: s.reset() above sets s.job = nil, so we
+		// must close via the locally captured jobCh, not s.job.ch.
 		remaining := e.model.activeStreams.Add(-1)
+		close(jobCh)
 
 		args := []any{
 			"status", "slot-finished",
@@ -312,9 +321,12 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 		e.model.imcClearPending(job.imcSlotID)
 	}
 
-	close(job.ch)
-
+	// Decrement activeStreams BEFORE close(job.ch). See finishSlot's
+	// defer for the full rationale: closing first leaves a race window
+	// where the next sequential request can hit ErrServerBusy while
+	// this stream's count is still in flight.
 	remaining := e.model.activeStreams.Add(-1)
+	close(job.ch)
 
 	e.model.log(job.ctx, "batch-engine", "status", "job-failed", "id", job.id,
 		"imc_slot", job.imcSlotID, "imc_cache_hit", job.imcCacheHit,

@@ -79,9 +79,18 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			}
 
 			if !batching {
-				close(ch)
+				// Decrement activeStreams BEFORE close(ch). The HTTP handler
+				// (and Chat()'s range loop) blocks on the response channel; the
+				// instant close fires, the request is considered done by the
+				// caller and the next sequential request can start. The pool's
+				// evictOneIdle reads ActiveStreams() once and returns
+				// ErrServerBusy when it's still nonzero (no retry), so closing
+				// before decrementing leaves a race window where back-to-back
+				// requests against a one-slot pool flake with "all model slots
+				// have active requests".
 				remaining := m.activeStreams.Add(-1)
 				metrics.SetPoolActiveStreams(m.modelInfo.ID, int(remaining))
+				close(ch)
 				m.log(ctx, "chat-streaming", "status", "finished", "id", id, "active_streams", remaining)
 			}
 		}()

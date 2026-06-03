@@ -43,8 +43,17 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 				sendError(ch, ef, rec)
 			}
 
-			close(ch)
+			// Release the model BEFORE closing the channel. The HTTP
+			// handler (and any caller ranging over ch) unblocks on
+			// close, so the request is considered done by the caller
+			// the instant close fires. The pool's evictOneIdle reads
+			// krn.ActiveStreams() once and returns ErrServerBusy when
+			// it's still nonzero (no retry, no poll) — closing before
+			// releasing leaves a race window where the next sequential
+			// request against a one-slot pool can flake with
+			// "all model slots have active requests".
 			krn.releaseModel()
+			close(ch)
 		}()
 
 		lch := f(mdl)
@@ -110,8 +119,13 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 				sendError(ch, ef, ctx.Err())
 			}
 
-			close(ch)
+			// Release the model BEFORE closing the channel — same
+			// rationale as in streaming() above: the pool reads
+			// krn.ActiveStreams() once with no retry, so back-to-back
+			// requests against a one-slot pool flake if release runs
+			// after close.
 			krn.releaseModel()
+			close(ch)
 		}()
 
 		for _, msg := range p.Start() {
