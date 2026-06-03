@@ -15,13 +15,6 @@
                         "output": 65536
                     }
                 },
-                "Qwen3.5-0.8B-Q8_0/AGENT": {
-                    "name": "Qwen3.5 0.8B-Q8_0",
-                    "limit": {
-                        "context": 131072,
-                        "output": 65536
-                    }
-                },
                 "gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
                     "name": "Gemma4 26B-A4B UD-Q8_K_XL",
                     "limit": {
