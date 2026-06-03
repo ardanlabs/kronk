@@ -254,6 +254,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		FlashAttention:       model.DerefFlashAttention(mc.FlashAttention),
 		PtrIncrementalCache:  mc.PtrIncrementalCache,
 		PtrInsecureLogging:   mc.PtrInsecureLogging,
+		JinjaFile:            mc.Template,
 		PtrMainGPU:           mc.PtrMainGPU,
 		MoE:                  mc.MoE,
 		PtrNBatch:            mc.PtrNBatch,

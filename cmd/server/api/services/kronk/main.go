@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -354,6 +355,18 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	log.Info(ctx, "startup", "status", "model config", "path", modelConfigFile)
+
+	// -------------------------------------------------------------------------
+	// Jinja Templates
+	//
+	// Seed the embedded chat templates to disk on every start so fixes
+	// shipped in the binary always replace older on-disk copies.
+
+	if err := defaults.WriteJinjaFiles("", cfg.BasePath); err != nil {
+		return fmt.Errorf("writing jinja files: %w", err)
+	}
+
+	log.Info(ctx, "startup", "status", "jinja templates", "path", filepath.Join(defaults.BaseDir(cfg.BasePath), "jinja"))
 
 	// -------------------------------------------------------------------------
 	// Init Kronk

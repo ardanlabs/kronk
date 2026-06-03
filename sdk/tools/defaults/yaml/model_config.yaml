@@ -54,3 +54,14 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     temperature: 1.0
     top_k: 64
     top_p: 0.95
+
+Qwen3.5-0.8B-Q8_0/AGENT:
+  context-window: 131072
+  nseq-max: 1
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  template: jinja/Qwen3.5-0.8B-Q8_0.jinja
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95

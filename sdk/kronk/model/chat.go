@@ -259,10 +259,32 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 
 	prompt, media, err := m.createPrompt(ctx, d)
 	if err != nil {
+		// processCache marks the matched session pending and relies on
+		// startSlot (success) or submitToBatchEngine (submit failure) to
+		// clear it. createPrompt sits between those two and is the one
+		// uncovered window: if it errors after a reservation, pending
+		// leaks and every subsequent request hangs on the session until
+		// waitForIMCSlot times out and returns "server busy". Clear the
+		// reservation here so the failure is local to this request.
+		m.clearIMCPendingIfReserved(cache)
 		return "", nil, cache, fmt.Errorf("chat-streaming: unable to apply jinja template: %w", err)
 	}
 
 	return prompt, media, cache, nil
+}
+
+// clearIMCPendingIfReserved releases an IMC session reservation when
+// processCache marked one for build/extend but a subsequent step (e.g.,
+// createPrompt) failed before the batch engine took ownership. Pure cache
+// hits (no new tokens, no media build) hold no reservation and need no clear.
+func (m *Model) clearIMCPendingIfReserved(cache cacheResult) {
+	if cache.imcSession == nil {
+		return
+	}
+	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild {
+		return
+	}
+	m.imcClearPending(cache.imcSlotID)
 }
 
 // submitToBatchEngine attempts to submit the request to the batch engine.

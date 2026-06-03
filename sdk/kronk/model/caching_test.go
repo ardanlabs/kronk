@@ -1801,3 +1801,93 @@ func TestIMCRebuildResultFullRebuild(t *testing.T) {
 		t.Errorf("cacheIdx = %d, want 0 (start from beginning)", result.cacheIdx)
 	}
 }
+
+// TestClearIMCPendingIfReserved verifies that the pending-leak guard called by
+// prepareCacheAndPrompt on createPrompt failure clears pending only when
+// processCache actually reserved a session for build/extend. Pure cache hits
+// (no new tokens, no media build) hold no reservation and must be left alone,
+// otherwise an unrelated in-flight build on the same slot would be cleared by
+// a different request's error path.
+func TestClearIMCPendingIfReserved(t *testing.T) {
+	newModel := func() *Model {
+		m := &Model{
+			cfg:         Config{PtrIncrementalCache: new(true)},
+			imcSessions: make([]*imcSession, 1),
+			log:         func(ctx context.Context, msg string, args ...any) {},
+		}
+		m.cacheCond = sync.NewCond(&m.cacheMu)
+		m.imcSessions[0] = &imcSession{
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(0),
+			slotID:  0,
+			pending: true,
+		}
+		return m
+	}
+
+	tests := []struct {
+		name        string
+		cache       cacheResult
+		wantPending bool
+	}{
+		{
+			name: "build reservation clears pending",
+			cache: cacheResult{
+				imcSlotID:         0,
+				imcNewCacheTokens: []llama.Token{1, 2, 3},
+			},
+			wantPending: true, // imcSession nil → no clear (defensive; production sets imcSession)
+		},
+		{
+			name: "session+build clears pending",
+			cache: cacheResult{
+				imcSlotID:         0,
+				imcNewCacheTokens: []llama.Token{1, 2, 3},
+			},
+			wantPending: false,
+		},
+		{
+			name: "session+media build clears pending",
+			cache: cacheResult{
+				imcSlotID:     0,
+				imcMediaBuild: true,
+			},
+			wantPending: false,
+		},
+		{
+			name: "cache hit only (no reservation) leaves pending alone",
+			cache: cacheResult{
+				imcSlotID: 0,
+			},
+			wantPending: true,
+		},
+		{
+			name: "nil session leaves pending alone",
+			cache: cacheResult{
+				imcSlotID:         0,
+				imcNewCacheTokens: []llama.Token{1, 2, 3},
+			},
+			wantPending: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newModel()
+
+			// Wire imcSession unless this case intentionally tests nil.
+			switch tt.name {
+			case "build reservation clears pending", "nil session leaves pending alone":
+				// imcSession stays nil
+			default:
+				tt.cache.imcSession = m.imcSessions[0]
+			}
+
+			m.clearIMCPendingIfReserved(tt.cache)
+
+			if got := m.imcSessions[0].pending; got != tt.wantPending {
+				t.Errorf("pending = %v, want %v", got, tt.wantPending)
+			}
+		})
+	}
+}

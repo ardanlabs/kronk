@@ -8842,7 +8842,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
               <tr>
                 <td><a href="../.github/workflows/docker.yml"><code>docker.yml</code></a></td>
                 <td>PRs, push to <code>main</code>, push of tag <code>v*</code>, <code>workflow_dispatch</code></td>
-                <td>Builds (and on push: publishes + cosign-signs) the <strong>five</strong> container variants defined in <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a>.</td>
+                <td>Builds the <strong>five</strong> container variants defined in <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a>. Only tag pushes (<code>v*</code>) publish + cosign-sign; main pushes build all variants for CI validation (and smoke-test cpu/amd64) but do not push to any registry.</td>
               </tr>
               <tr>
                 <td><a href="../.github/workflows/cache-cleanup.yml"><code>cache-cleanup.yml</code></a></td>
@@ -9065,11 +9065,11 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 ╰───────────────────────────────────╯`}</code></pre>
           <p>A single buildx invocation with two <code>outputs:</code> lines pushes <strong>different index-manifest digests to each registry</strong> (provenance embeds the destination registry name), but <code>steps.build.outputs.digest</code> exposes only one. The downstream <code>merge</code> job then can't reconstruct working references for the other registry — it sees <code>manifest unknown</code> and fails (the bug that broke an earlier version of this workflow). Splitting the pushes gives each step its own <code>outputs.digest</code>, preserves provenance on both registries, and only re-uploads layers to the second registry (the BuildKit cache picks up everything else).</p>
           <p><strong>Per-registry digest artifacts.</strong> Each push uploads a tiny <code>digests-&lt;registry&gt;-&lt;variant&gt;-&lt;arch&gt;</code> artifact whose filename is the bare hex of the digest. The <code>merge</code> job downloads the matching artifacts for its variant with <code>actions/download-artifact@v8</code>'s <code>merge-multiple: true</code> — that flag is <strong>required</strong>: without it, <code>download-artifact@v8</code> has a documented asymmetry where 2+ matching artifacts get per-artifact subdirectories but exactly 1 match (the single-arch <code>rocm</code> case) extracts straight into <code>path/</code> with no subdir. Flattening unconditionally makes the layout uniform and is collision-free because filenames are unique digests.</p>
-          <p><strong>Merge + sign.</strong> The <code>merge</code> job per variant:</p>
+          <p><strong>Merge + sign.</strong> The <code>merge</code> job per variant (tag pushes only — main pushes never reach this job):</p>
           <ol>
             <li>Downloads the per-registry digest artifacts for its variant.</li>
-            <li>Stitches the multi-arch manifest with <code>docker buildx imagetools create -t &lt;image&gt;:&lt;tag&gt; &lt;image&gt;@sha256:&lt;arch1&gt;...</code> against both registries independently.</li>
-            <li>Signs every published <code>&lt;registry&gt;:&lt;tag&gt;</code> with <strong>cosign keyless</strong> (OIDC). <code>id-token: write</code> is granted on this job only; cosign exchanges the workflow's OIDC token for a short-lived Fulcio cert tied to the workflow identity, signs the manifest, and records the signature + Rekor log entry. (default cosign layout). <a href="https://hub.docker.com/r/ardanlabs/kronk-signatures"><code>ardanlabs/kronk-signatures</code></a> via <code>COSIGN_REPOSITORY</code> so they don't pollute the <code>ardanlabs/kronk</code> tag list with <code>sha256-<em>.sig&lt;/code&gt; entries. That repo must exist and be public for keyless verification to work. &gt; &lt;strong&gt;Sync note.&lt;/strong&gt; If you change the signing layout (rename the &gt; signatures repo, switch to OCI 1.1 referrers, add another &gt; registry), update both &lt;a href="../.github/workflows/docker.yml"&gt;&lt;code&gt;docker.yml&lt;/code&gt;&lt;/a&gt; &gt; &lt;strong&gt;and&lt;/strong&gt; &lt;a href="../DockerHub.md"&gt;&lt;code&gt;DockerHub.md&lt;/code&gt;&lt;/a&gt; (the "Verifying Image &gt; Signatures" section, then paste the rendered contents into the &gt; Docker Hub repo description — &lt;code&gt;DockerHub.md&lt;/code&gt; is not auto-synced). Consumers verify with: ``&lt;code&gt;shell # GHCR (signatures co-located): cosign verify ghcr.io/ardanlabs/kronk:v1.26.4-cpu \ --certificate-identity-regexp \ 'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.</em>' \ --certificate-oidc-issuer https://token.actions.githubusercontent.com # Docker Hub (signatures in sibling repo): COSIGN_REPOSITORY=ardanlabs/kronk-signatures \ cosign verify ardanlabs/kronk:v1.26.4-cpu \ --certificate-identity-regexp \ 'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \ --certificate-oidc-issuer https://token.actions.githubusercontent.com </code>``
+            <li>Stitches the multi-arch manifest with <code>docker buildx imagetools create -t &lt;image&gt;:&lt;tag&gt; &lt;image&gt;@sha256:&lt;arch1&gt;...</code> against both registries independently. The first invocation per registry uses <code>--metadata-file</code> so the resulting manifest-list digest can be captured deterministically (no read-after-write inspect).</li>
+            <li>Signs <strong>once per (registry, manifest-list digest)</strong> with <strong>cosign keyless</strong> (OIDC) using <code>--recursive</code> (which walks the index and signs each per-arch child too). <code>id-token: write</code> is granted on this job only; cosign exchanges the workflow's OIDC token for a short-lived Fulcio cert tied to the workflow identity and records the signature + Rekor log entry. Signing by digest (rather than once per tag) collapses N tags-of-the-same-content into a single signature — a tag release produces <code>&lt;version&gt;-&lt;variant&gt;</code>, <code>latest-&lt;variant&gt;</code> and (cpu only) <code>latest</code>, all pointing at the same digest. Consumers verify by tag as usual; cosign resolves the tag to a digest at verify time. (default cosign layout). <a href="https://hub.docker.com/r/ardanlabs/kronk-signatures"><code>ardanlabs/kronk-signatures</code></a> via <code>COSIGN_REPOSITORY</code> so they don't pollute the <code>ardanlabs/kronk</code> tag list with <code>sha256-<em>.sig&lt;/code&gt; entries. That repo must exist and be public for keyless verification to work. &gt; &lt;strong&gt;Sync note.&lt;/strong&gt; If you change the signing layout (rename the &gt; signatures repo, switch to OCI 1.1 referrers, add another &gt; registry), update both &lt;a href="../.github/workflows/docker.yml"&gt;&lt;code&gt;docker.yml&lt;/code&gt;&lt;/a&gt; &gt; &lt;strong&gt;and&lt;/strong&gt; &lt;a href="../DockerHub.md"&gt;&lt;code&gt;DockerHub.md&lt;/code&gt;&lt;/a&gt; (the "Verifying Image &gt; Signatures" section, then paste the rendered contents into the &gt; Docker Hub repo description — &lt;code&gt;DockerHub.md&lt;/code&gt; is not auto-synced). Consumers verify with: ``&lt;code&gt;shell # GHCR (signatures co-located): cosign verify ghcr.io/ardanlabs/kronk:v1.26.4-cpu \ --certificate-identity-regexp \ 'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.</em>' \ --certificate-oidc-issuer https://token.actions.githubusercontent.com # Docker Hub (signatures in sibling repo): COSIGN_REPOSITORY=ardanlabs/kronk-signatures \ cosign verify ardanlabs/kronk:v1.26.4-cpu \ --certificate-identity-regexp \ 'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \ --certificate-oidc-issuer https://token.actions.githubusercontent.com </code>``
               <ul>
                 <li><strong>GHCR</strong> signatures are stored co-located with the image</li>
                 <li><strong>Docker Hub</strong> signatures are redirected to the sibling repo</li>
@@ -9089,27 +9089,27 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
             <tbody>
               <tr>
                 <td>PR (no labels)</td>
-                <td><code>cpu</code></td>
+                <td><code>cpu</code> (linux/amd64 only)</td>
                 <td>no</td>
                 <td>— (plus a <code>kronk --version</code> / <code>kronk --help</code> smoke test on cpu/amd64)</td>
               </tr>
               <tr>
                 <td>PR + label <code>build all</code></td>
-                <td>all 5</td>
+                <td>all 5 (all supported arches)</td>
                 <td>no</td>
                 <td>—</td>
               </tr>
               <tr>
                 <td>PR + label <code>build &lt;v&gt;</code></td>
-                <td><code>cpu</code> + each labeled variant</td>
+                <td><code>cpu</code> + each labeled variant (all supported arches)</td>
                 <td>no</td>
                 <td>—</td>
               </tr>
               <tr>
                 <td>Push to <code>main</code></td>
                 <td>all 5</td>
-                <td>yes</td>
-                <td><code>main-&lt;shortsha&gt;-&lt;variant&gt;</code> (cosign-signed)</td>
+                <td>no</td>
+                <td>— (smoke-tests cpu/amd64; refreshes the registry-backed BuildKit cache)</td>
               </tr>
               <tr>
                 <td>Push to tag <code>v*</code></td>

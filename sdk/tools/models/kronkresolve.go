@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
@@ -44,6 +45,14 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	out := cfg.ToKronkConfig()
 	out.ModelFiles = fp.ModelFiles
 	out.ProjFile = fp.ProjFile
+
+	// Resolve a relative jinja template path against the kronk base
+	// directory so users can write portable values like
+	// "jinja/Qwen3.5-0.8B-Q8_0.jinja" in model_config.yaml without
+	// needing OS-specific home expansion.
+	if out.JinjaFile != "" && !filepath.IsAbs(out.JinjaFile) {
+		out.JinjaFile = filepath.Join(m.basePath, out.JinjaFile)
+	}
 
 	// Resolve draft model file paths if configured.
 	if cfg.DraftModel != nil && cfg.DraftModel.ModelID != "" {
