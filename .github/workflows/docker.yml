@@ -27,9 +27,12 @@ name: Docker
 # ┌────────────────────┬─────────────────────────────────────────────────────┐
 # │ Event              │ Behaviour                                           │
 # ├────────────────────┼─────────────────────────────────────────────────────┤
-# │ pull_request       │ Build the `cpu` variant only (no push) by default.  │
-# │                    │ Add a label `build all` to build everything, or     │
-# │                    │ `build <variant>` (e.g. `build cuda`) for a subset. │
+# │ pull_request       │ Build the `cpu` variant for linux/amd64 only (no    │
+# │                    │ push) by default. Add a label `build all` to build  │
+# │                    │ every variant on every supported arch, or           │
+# │                    │ `build <variant>` (e.g. `build cuda`) for a subset  │
+# │                    │ (each added variant builds on all its arches, and   │
+# │                    │ promotes cpu back to its full arch list too).       │
 # ├────────────────────┼─────────────────────────────────────────────────────┤
 # │ push → main        │ Build all variants (no push). Smoke-tests cpu/amd64 │
 # │                    │ and refreshes the registry-backed BuildKit cache so │
@@ -320,14 +323,23 @@ jobs:
                 # `build all` expands to every variant; otherwise each
                 # `build <variant>` label adds that variant on top of
                 # cpu.
+                #
+                # The default PR build is further trimmed to linux/amd64
+                # only (see PR_DEFAULT_ONLY below) — arm64 coverage on
+                # cpu is provided by the post-merge push-to-main run,
+                # which still builds every (variant, arch) pair. A PR
+                # that wants the full matrix can opt in with `build all`.
                 CHOSEN=(cpu)
+                PR_DEFAULT_ONLY=true
                 if echo "$PR_LABELS" | jq -e 'any(. == "build all")' >/dev/null; then
                   CHOSEN=("${ALL_VARIANTS[@]}")
+                  PR_DEFAULT_ONLY=false
                 else
                   for v in "${ALL_VARIANTS[@]}"; do
                     [[ "$v" == "cpu" ]] && continue
                     if echo "$PR_LABELS" | jq -e --arg n "build $v" 'any(. == $n)' >/dev/null; then
                       CHOSEN+=("$v")
+                      PR_DEFAULT_ONLY=false
                     fi
                   done
                 fi
@@ -337,10 +349,20 @@ jobs:
 
           # -------------------------------------------------------------------
           # Expand (variant) → (variant, arch) matrix entries
+          #
+          # PR_DEFAULT_ONLY (set in the pull_request branch above) trims
+          # the implicit cpu-only PR build down to linux/amd64. Any PR
+          # that opts into a wider matrix (via `build all` or a
+          # `build <variant>` label) clears the flag and gets the full
+          # per-variant platform list.
           # -------------------------------------------------------------------
           INCLUDE='[]'
           for v in "${CHOSEN[@]}"; do
-            for a in ${PLATFORMS[$v]}; do
+            PLATS="${PLATFORMS[$v]}"
+            if [[ "${PR_DEFAULT_ONLY:-false}" == "true" && "$v" == "cpu" ]]; then
+              PLATS="amd64"
+            fi
+            for a in $PLATS; do
               RUNNER=$([[ "$a" == "arm64" ]] && echo "ubuntu-24.04-arm" || echo "ubuntu-24.04")
               ITEM=$(jq -nc \
                 --arg variant "$v" \
