@@ -55,14 +55,9 @@ gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     top_k: 64
     top_p: 0.95
 
-Qwen3.5-0.8B-Q8_0:
-  context-window: 65536
-  template: jinja/Qwen3.5-0.8B.jinja
+Qwopus3.5-4B-Coder.Q8_0:
+  context-window: 73728
   sampling-parameters:
     temperature: 0.6
     top_k: 20
     top_p: 0.95
-
-Qwopus3.5-4B-Coder.Q8_0:
-  context-window: 131072
-  template: jinja/Qwopus3.5-4B-Coder.jinja

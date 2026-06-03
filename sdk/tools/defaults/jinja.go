@@ -22,6 +22,13 @@ const (
 	embeddedJinjaDir = "jinja"
 )
 
+// JinjaDir returns the absolute path to the per-user jinja directory under
+// BaseDir. The override is forwarded to BaseDir, so callers that already
+// resolved the base path can pass it through.
+func JinjaDir(override string) string {
+	return filepath.Join(BaseDir(override), jinjaDirName)
+}
+
 // WriteJinjaFiles seeds the embedded jinja chat templates to disk. If
 // override is provided, files are written under that directory. Otherwise
 // the templates are written to <basePath>/jinja/. Existing files are
@@ -30,7 +37,7 @@ const (
 func WriteJinjaFiles(override string, basePath string) error {
 	targetDir := override
 	if targetDir == "" {
-		targetDir = filepath.Join(BaseDir(basePath), jinjaDirName)
+		targetDir = JinjaDir(basePath)
 	}
 
 	if err := os.MkdirAll(targetDir, 0755); err != nil {

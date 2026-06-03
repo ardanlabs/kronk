@@ -170,6 +170,29 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 
 var splitPattern = regexp.MustCompile(`-\d+-of-\d+$`)
 
+// quantSuffixPattern matches a trailing GGUF quantization tag preceded by '.'
+// or '-'. It covers the common formats shipped by community quantizers:
+//
+//   - Standard k-quants:   .Q8_0  -Q4_K_M  -Q4_K_S  .Q5_K_M  .Q6_K
+//   - Block k-quants:      .Q4_0_4_4  .Q4_0_4_8  .Q4_0_8_8
+//   - i-quants:            .IQ4_NL  .IQ3_XXS  -IQ2_M
+//   - Unsloth dynamic:     -UD-Q8_K_XL  -UD-Q4_K_XL
+//   - Float variants:      .f16  .f32  -bf16
+//
+// The body of a Q/IQ tag is followed by zero or more "_<digits-or-letters>"
+// segments (Q8, Q8_0, Q4_K, Q4_K_M, Q4_0_4_4, IQ4_NL, ...). The pattern is
+// anchored at end-of-string so it only strips the trailing suffix, leaving
+// everything else intact (model family, parameter count, role tags).
+var quantSuffixPattern = regexp.MustCompile(`(?i)[.\-](UD-)?(Q\d+(_[0-9A-Z]+)*|IQ\d+(_[0-9A-Z]+)*|bf16|f16|f32)$`)
+
+// stripQuantSuffix returns modelID with a single trailing quantization suffix
+// removed when present. It is used by the template auto-discovery resolver so
+// "Qwopus3.5-4B-Coder.Q8_0" can be matched against a "Qwopus3.5-4B-Coder.jinja"
+// template that applies to every quant of the same base model.
+func stripQuantSuffix(modelID string) string {
+	return quantSuffixPattern.ReplaceAllString(modelID, "")
+}
+
 func modelIDFromFiles(modelFiles []string) string {
 	switch len(modelFiles) {
 	case 1:

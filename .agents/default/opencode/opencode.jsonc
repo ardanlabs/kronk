@@ -23,7 +23,7 @@
                     }
                 },
                 "Qwopus3.5-4B-Coder.Q8_0": {
-                    "name": "Qwopus3.5-4B-Coder.Q8_0",
+                    "name": "Qwopus3.5 4B-Coder Q8_0",
                     "limit": {
                         "context": 131072,
                         "output": 65536

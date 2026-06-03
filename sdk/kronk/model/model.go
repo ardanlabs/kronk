@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/attribute"
@@ -241,7 +243,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	metrics.SetVRAM(modelInfo.ID, modelInfo.VRAMTotal, modelInfo.SlotMemory)
 
-	template, err := retrieveTemplate(cfg, mdl)
+	template, err := retrieveTemplate(cfg, modelInfo.ID, mdl)
 	if err != nil {
 		llama.ModelFree(mdl)
 		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
@@ -860,7 +862,22 @@ func loadModelFromFiles(ctx context.Context, log applog.Logger, modelFiles []str
 	return mdl, nil
 }
 
-func retrieveTemplate(cfg Config, mdl llama.Model) (Template, error) {
+// retrieveTemplate resolves the Jinja chat template for a model. The
+// resolution order, from highest to lowest priority:
+//
+//  1. cfg.JinjaFile — explicit "template:" entry in model_config.yaml.
+//  2. <jinjaDir>/<modelID>.jinja — exact match on the model id (e.g.
+//     "Qwopus3.5-4B-Coder.Q8_0.jinja"), letting operators target a
+//     specific quant.
+//  3. <jinjaDir>/<stripQuantSuffix(modelID)>.jinja — match against the
+//     base model name with any trailing quant tag removed (e.g.
+//     "Qwopus3.5-4B-Coder.jinja"), so one file covers every quant of
+//     the same model.
+//  4. The GGUF-embedded "tokenizer.chat_template" — original fallback.
+//
+// Auto-discovery (steps 2-3) lets users drop a .jinja file into
+// <basePath>/jinja/ and have it applied without editing model_config.yaml.
+func retrieveTemplate(cfg Config, modelID string, mdl llama.Model) (Template, error) {
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
@@ -877,6 +894,10 @@ func retrieveTemplate(cfg Config, mdl llama.Model) (Template, error) {
 		}, nil
 	}
 
+	if tmpl, ok := autoDiscoverTemplate(modelID); ok {
+		return tmpl, nil
+	}
+
 	data := llama.ModelChatTemplate(mdl, "")
 	if data == "" {
 		data, _ = llama.ModelMetaValStr(mdl, "tokenizer.chat_template")
@@ -886,6 +907,39 @@ func retrieveTemplate(cfg Config, mdl llama.Model) (Template, error) {
 		FileName: "tokenizer.chat_template",
 		Script:   data,
 	}, nil
+}
+
+// autoDiscoverTemplate searches the per-user jinja directory for a template
+// matching the model id. It tries the full id first, then the id with any
+// trailing quant suffix stripped. Returns (Template{}, false) when nothing
+// matches or the model id is empty.
+func autoDiscoverTemplate(modelID string) (Template, bool) {
+	if modelID == "" {
+		return Template{}, false
+	}
+
+	jinjaDir := defaults.JinjaDir("")
+
+	candidates := []string{modelID}
+	if stripped := stripQuantSuffix(modelID); stripped != "" && stripped != modelID {
+		candidates = append(candidates, stripped)
+	}
+
+	for _, name := range candidates {
+		filePath := filepath.Join(jinjaDir, name+".jinja")
+
+		data, err := readJinjaTemplate(filePath)
+		if err != nil || data == "" {
+			continue
+		}
+
+		return Template{
+			FileName: filePath,
+			Script:   data,
+		}, true
+	}
+
+	return Template{}, false
 }
 
 func (m *Model) Unload(ctx context.Context) error {

@@ -99,6 +99,8 @@ install-class-models: install-kronk
 	@echo
 	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-Q8_0"
 	@echo
+	kronk model pull --local "mradermacher/Qwopus3.5-4B-Coder.Q8_0"
+	@echo
 	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0"
 	@echo
 	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
