@@ -20,8 +20,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-var diffWhitespace = strings.NewReplacer("\t", "→TAB→", " ", "·")
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
@@ -440,11 +438,10 @@ func printCodeDiff(originalCode, modelCode string) {
 
 	diffByte := firstCodeDifference(modelCode, originalCode)
 
-	// Find which line the byte offset falls on
 	lineIdx := 0
 	accum := 0
 	for i, line := range origLines {
-		lineWithNewline := len(line) + 1 // +1 for \n
+		lineWithNewline := len(line) + 1
 		if accum+lineWithNewline > diffByte {
 			lineIdx = i
 			break
@@ -452,15 +449,15 @@ func printCodeDiff(originalCode, modelCode string) {
 		accum += lineWithNewline
 	}
 
-	// If diff is beyond all lines, use last line
 	if lineIdx >= len(origLines) {
 		lineIdx = len(origLines) - 1
 	}
 
-	fmt.Println("\n--- Code Diff (→TAB→ = tab, · = space) ---")
+	fmt.Println("\n--- Code Diff ---")
 	fmt.Printf("%-45s | %s\n", "ORIGINAL", "MODEL")
 	fmt.Println(strings.Repeat("-", 80))
 
+	lineOffset := diffByte - accum
 	for i := 0; i < max(len(origLines), len(modelLines)); i++ {
 		origLine := ""
 		if i < len(origLines) {
@@ -470,19 +467,17 @@ func printCodeDiff(originalCode, modelCode string) {
 		if i < len(modelLines) {
 			modelLine = modelLines[i]
 		}
-		origReplaced := diffWhitespace.Replace(origLine)
-		modelReplaced := diffWhitespace.Replace(modelLine)
 
 		if i == lineIdx {
-			origHighlighted := highlightAt(origReplaced, diffByte-accum, "\033[91m", "\033[0m")
-			modelHighlighted := highlightAt(modelReplaced, diffByte-accum, "\033[91m", "\033[0m")
+			origHighlighted := highlightAt(origLine, lineOffset, "\033[91m", "\033[0m")
+			modelHighlighted := highlightAt(modelLine, lineOffset, "\033[91m", "\033[0m")
 			fmt.Printf("→ %-43s | %s\n", origHighlighted, modelHighlighted)
 
-			origCaret := caretAt(origReplaced, diffByte-accum)
-			modelCaret := caretAt(modelReplaced, diffByte-accum)
+			origCaret := caretAt(origLine, lineOffset)
+			modelCaret := caretAt(modelLine, lineOffset)
 			fmt.Printf("  %-43s | %s\n", origCaret, modelCaret)
 		} else {
-			fmt.Printf("  %-43s | %s\n", origReplaced, modelReplaced)
+			fmt.Printf("  %-43s | %s\n", origLine, modelLine)
 		}
 	}
 	fmt.Println("--- End Diff ---")
