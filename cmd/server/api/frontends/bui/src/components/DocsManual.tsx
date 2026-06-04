@@ -2428,32 +2428,56 @@ Step 4 — Total VRAM:
             </thead>
             <tbody>
               <tr>
-                <td><code>imc-hybrid-snapshot</code></td>
-                <td>State captured after cache build (shows snapshot_bytes)</td>
+                <td><code>imc-restore-start</code></td>
+                <td>About to restore externalized KV from <code>SessionStore</code> into the slot's sequence</td>
               </tr>
               <tr>
-                <td><code>imc-hybrid-snapshot-failed</code></td>
-                <td>StateSeqGetData returned 0 bytes</td>
+                <td><code>imc-restore-done</code></td>
+                <td><code>StateSeqSetData</code> succeeded (shows <code>cached_tokens</code>, <code>ram_bytes</code>)</td>
               </tr>
               <tr>
-                <td><code>imc-hybrid-restore</code></td>
-                <td>Snapshot restored after request (shows restored_bytes)</td>
+                <td><code>imc-snapshot-start</code></td>
+                <td>About to capture cached prefix KV via <code>StateSeqGetData</code> after build/extend</td>
               </tr>
               <tr>
-                <td><code>imc-hybrid-restore-failed</code></td>
-                <td>StateSeqSetData failed, slot metadata cleared</td>
+                <td><code>imc-snapshot-done</code></td>
+                <td>Snapshot committed to <code>session.kvState</code> (shows duration, bytes)</td>
               </tr>
               <tr>
-                <td><code>imc-hybrid-no-snapshot</code></td>
-                <td>No snapshot available, full clear + metadata invalidation</td>
+                <td><code>imc-snapshot-failed</code></td>
+                <td><code>StateSeqGetData</code> returned 0 bytes; session metadata reset</td>
               </tr>
               <tr>
-                <td><code>imc-hybrid-rebuild</code></td>
-                <td>Partial prefix: full clear + re-decode from position 0</td>
+                <td><code>imc-snapshot-skip-pure-hit</code></td>
+                <td>Pure-hit fast path took the snapshot-skip optimization (see §5.2 Pure Hit Snapshot Skip)</td>
               </tr>
               <tr>
-                <td><code>imc-hybrid-trim-rebuild</code></td>
-                <td>Trim-only prefix: full clear + re-decode truncated sequence</td>
+                <td><code>imc-pure-hit-stale</code></td>
+                <td>Pure-hit candidate found a concurrently-mutated session; client should retry</td>
+              </tr>
+              <tr>
+                <td><code>imc-extend-stale</code></td>
+                <td>Extend candidate found a concurrently-mutated session; client should retry</td>
+              </tr>
+              <tr>
+                <td><code>imc-rebuild-full</code></td>
+                <td>Hybrid (or corruption recovery): full clear + re-decode from position 0</td>
+              </tr>
+              <tr>
+                <td><code>imc-trim-prefix</code></td>
+                <td>Token-prefix fallback: trim from divergence point and re-decode the suffix</td>
+              </tr>
+              <tr>
+                <td><code>imc-clear-seq</code></td>
+                <td>VRAM sequence cleared (<code>finishSlot</code>, eviction, or rebuild)</td>
+              </tr>
+              <tr>
+                <td><code>imc-draft-snapshot-done</code></td>
+                <td>MTP draft KV snapshotted alongside the target (only with an MTP drafter)</td>
+              </tr>
+              <tr>
+                <td><code>imc-draft-restore-done</code></td>
+                <td>MTP draft KV restored alongside the target</td>
               </tr>
             </tbody>
           </table>
@@ -2544,11 +2568,32 @@ Conversation edit (sys prompt hash match, full hash mismatch):
 Qwen/Qwen3-8B-Q8_0:
   incremental-cache: true
   cache-min-tokens: 100 # Minimum tokens before caching (default)`}</code></pre>
-          <h4 id="multi-session-architecture">Multi-Session Architecture</h4>
-          <p>All <code>NSeqMax</code> sessions are available for IMC. Each session independently tracks its own conversation branch — its own message hash, system prompt hash, token count, and message index. Sub-agents are routed to different sessions via hash matching, allowing them to maintain independent caches.</p>
-          <p>Each session externalizes its cached KV state to RAM after the request completes. On the next request, the cached state is restored into any available slot — sessions are not pinned to specific slots. This means all slots are equally eligible for any session, maximizing slot utilization. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings.</p>
-          <p>With <code>nseq-max: 3</code>, three sub-agents can each have their own cached conversation branch. Without multi-session IMC, every sub-agent request would cause a prefix mismatch and rebuild the cache from scratch because different sub-agents send different system prompts and conversation content.</p>
-          <p><strong>Important:</strong> Set <code>nseq-max</code> to at least the number of concurrent sub-agents your agent framework spawns. If <code>nseq-max</code> is smaller than the number of sub-agents, cache thrashing can occur — each new sub-agent evicts a session, and when the evicted sub-agent returns, it evicts another. Every request triggers a full rebuild from scratch, eliminating the caching benefit entirely. With unified KV cache, all slots share the same <code>n_ctx</code> pool, so adding more slots does not multiply VRAM usage. However, more sessions means more cached conversations competing for the shared pool. KV pressure eviction automatically clears stale sessions when space gets tight — see <a href="#kv-pressure-eviction">KV Pressure Eviction</a>.</p>
+          <h4 id="session-pool-decoupled-from-slots">Session Pool (Decoupled from Slots)</h4>
+          <p>The IMC session pool is <strong>decoupled</strong> from the batch engine's execution slots. The pool is sized at <code>NSeqMax × 3</code> (the <code>imcSessionMultiplier</code> constant). With <code>nseq-max: 2</code>, six cache identities can stay warm; with <code>nseq-max: 4</code>, twelve. Idle session structs cost only a few hundred bytes each — the <code>SessionStore</code> backing buffer is allocated lazily on first use.</p>
+          <p>Each session independently tracks its own conversation branch (message hash, system prompt hash, token count, message index, cached tokens) and externalizes its KV bytes to host RAM between requests via <code>StateSeqGetData</code>. On the next request the matched session is bound to the first free execution slot and its bytes are restored via <code>StateSeqSetData</code>. Sessions and slots have no static affinity — any session can run on any slot.</p>
+          <p>Why a multiplier instead of <code>NSeqMax</code> sessions? In agentic workloads a driver loop plus a handful of sub-agents plus the occasional side conversation easily exceeds the number of parallel decode lanes you can afford to run on a single GPU. Sizing the cache identity pool above the execution slot count keeps the LRU eviction path quiet during normal multi-agent operation without forcing you to raise <code>nseq-max</code> (and pay the VRAM cost) just to avoid thrashing.</p>
+          <pre className="code-block"><code>{`nseq-max = 2           → 6 IMC sessions (cache identities), 2 slots (parallel decodes)
+nseq-max = 4           → 12 IMC sessions, 4 slots
+nseq-max = 8           → 24 IMC sessions, 8 slots`}</code></pre>
+          <p>With unified KV cache, all slots share the same <code>n_ctx</code> pool, so adding slots does not multiply VRAM usage. Adding sessions does not allocate KV memory either — only the RAM-side <code>SessionStore</code> grows as conversations accumulate. KV pressure eviction automatically clears stale sessions when space gets tight — see <a href="#kv-pressure-eviction">KV Pressure Eviction</a>.</p>
+          <p><strong>Sizing guidance:</strong> Set <code>nseq-max</code> to the level of decode parallelism you want (concurrent in-flight requests). The session pool will be 3× that, which is the right shape for typical sub-agent fan-out. If you know your workload spawns more than 3× sub-agents, raise <code>nseq-max</code> deliberately so both the decode parallelism and the cache pool keep up.</p>
+          <h4 id="pure-hit-snapshot-skip">Pure Hit Snapshot Skip</h4>
+          <p>A <strong>pure hit</strong> is the strongest possible match: the incoming request's cacheable messages are byte-for-byte identical to what the session already cached (<code>cachedMsgCount == len(messages) - 1</code>). Nothing needs to be re-decoded beyond the suffix.</p>
+          <p>On every IMC cache hit, the engine normally:</p>
+          <ol>
+            <li>Restores the externalized <code>kvState</code> into the slot's sequence via <code>StateSeqSetData</code>.</li>
+            <li>After build/extend (or no-op for a pure hit), serializes the KV state back out via <code>StateSeqGetData</code> so the next request can restore it.</li>
+          </ol>
+          <p>For a pure hit on a text-only session, step 2 is a byte-for-byte round trip of the bytes that were just restored in step 1 — pure I/O with no information change. The <strong>pure-hit snapshot-skip</strong> optimization detects this case and skips <code>StateSeqGetData</code> entirely.</p>
+          <p>Qualification (all must hold):</p>
+          <ul>
+            <li>Text-only session — media sessions also externalize KV, but the optimization gates on <code>!hasMedia</code> to keep the predicate small.</li>
+            <li>No prefix mutation in this request: no extension tokens, no media build, no trim, no clear.</li>
+            <li>The session's committed render-input fingerprint (<code>cachedRenderInputHash</code>) equals the current request's fingerprint (template, tools, <code>add_generation_prompt</code>, <code>preserve_thinking</code>, exact cacheable messages). This guards against template or top-level parameter changes that would silently invalidate the cached prefix.</li>
+            <li>The session has not been mutated by a concurrent request between <code>processIMC</code> and <code>startSlot</code> (re-validated under <code>cacheMu</code> at the decode boundary).</li>
+            <li>For models with an MTP drafter, the draft sequence's state was restored successfully alongside the target.</li>
+          </ul>
+          <p>When the skip fires, the log emits <code>imc-snapshot-skip-pure-hit</code> and the <code>imc_snapshot_skipped_total</code> counter increments. When a pure-hit candidate races a concurrent extend, the request is failed with <code>imc-pure-hit-stale</code> and the client retries — the next attempt sees the newer session version and goes through the normal extend path. The optimization is safe because <code>llama_state_seq_get_data</code> is a host-side serializer: skipping it cannot leave KV state in a bad shape.</p>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
           <pre className="code-block"><code>{`Messages: [system, user]
@@ -2581,13 +2626,23 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
               </ul>
             </li>
             <li><strong>KV pressure eviction</strong> — When a matching session is found and the total KV usage across all sessions exceeds the context window, evict mismatched sessions (largest first) to reclaim space. Sessions with externalized <code>kvState</code> do not count against VRAM KV pressure because their VRAM sequences are already cleared. See <a href="#kv-pressure-eviction">KV Pressure Eviction</a> for details.</li>
-            <li><strong>On full match</strong> — Pick the session with the best prefix coverage (most cached messages). If the request has new messages to cache, extend the session's cache. If the messages are identical, it's a pure cache hit.</li>
+            <li><strong>On full match</strong> — Pick the session with the best prefix coverage (most cached messages). Two sub-paths: decode the extension and snapshot the new KV state back to the session. cacheable prefix (<code>cachedMsgCount == len(messages) - 1</code>). The session's externalized KV is restored into the slot and the suffix is decoded directly. Text-only pure hits additionally qualify for the snapshot-skip fast path (see <a href="#pure-hit-snapshot-skip">Pure Hit Snapshot Skip</a>) — skipping the round-trip <code>StateSeqGetData</code> call cuts noticeable CPU and RAM bandwidth off cache-hit-heavy workloads.
+              <ul>
+                <li><strong>Extend</strong> — request has new messages beyond what the session cached:</li>
+                <li><strong>Pure cache hit</strong> — cached messages exactly equal the request's</li>
+              </ul>
+            </li>
             <li><strong>System prompt preservation (two-tier hash)</strong> — No full match, but a session has the same system prompt cached. Keep the system prompt KV in place, trim everything after the system prompt token boundary, and re-template and re-decode only the conversation body. Before preserving, IMC verifies the system prompt token boundary is consistent after re-templating — if the template produces a different token count for the system prompt, it falls back to a full rebuild.</li>
             <li><strong>Token prefix fallback</strong> — Tokenize the incoming messages and compare the resulting token sequence element-by-element against each non-empty session's stored <code>cachedTokens</code>. Pick the session with the longest common prefix that meets <code>cache-min-tokens</code>. Trim the KV cache from the divergence point and decode only the new tokens from there forward. See <a href="#token-prefix-fallback">Token Prefix Fallback</a> for details.</li>
             <li><strong>No match at all</strong> — Pick an empty session if one exists, otherwise evict the least-recently-used (LRU) session and rebuild from scratch.</li>
           </ol>
           <p><strong>Concurrent Build Protection:</strong></p>
           <p>When two requests arrive simultaneously and both need to build a cache from scratch, a race condition could cause both to pick the same empty session. IMC prevents this with a pending flag: when a session begins a deferred cache build, it is marked pending. Concurrent scanners skip pending sessions, so the second request picks a different session. The pending flag is cleared after the cache decode completes (or on error).</p>
+          <p>The publish path is split into <strong>two phases</strong> to close a second race in which a concurrent reader could observe fresh metadata but stale or empty externalized KV bytes:</p>
+          <ol>
+            <li><code>imcCommitSession</code> updates the session's metadata (hash, token count, cached tokens, render-input fingerprint) under <code>cacheMu</code>. The <code>pending</code> flag stays set — concurrent scanners still skip the session.</li>
+            <li><code>imcPublishSession</code> clears <code>pending</code> and broadcasts availability — but only after <code>startSlot</code> has externalized the KV state via <code>StateSeqGetData</code> into <code>session.kvState</code>. Now metadata and bytes are guaranteed consistent.</li>
+          </ol>
           <p><strong>Decode Failure Recovery:</strong></p>
           <p>If a cache decode fails at any point (extend, rebuild, trim, or media build), IMC clears the entire KV sequence and resets the session metadata. This ensures the slot never advertises cached content that doesn't exist in the KV cache.</p>
           <h4 id="kv-pressure-eviction">KV Pressure Eviction</h4>
@@ -2715,7 +2770,7 @@ unsloth/LFM2-700M-Q8_0:
   cache-type-k: f16   # Required for hybrid models
   cache-type-v: f16   # Required for hybrid models`}</code></pre>
           <h3 id="53-single-user-caching">5.3 Single-User Caching</h3>
-          <p>IMC is designed for single-user use. All <code>NSeqMax</code> sessions are available, with each session independently tracking its own conversation branch via hash matching. All sessions can run on any available slot. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories).</p>
+          <p>IMC is designed for single-user use. The session pool (sized at <code>NSeqMax × 3</code>, see <a href="#session-pool-decoupled-from-slots">Session Pool (Decoupled from Slots)</a>) gives multiple conversation branches their own cache identity; each branch independently tracks its own hash, system prompt, and cached tokens. Any session can run on any execution slot. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories) without saturating the GPU's parallel decode capacity.</p>
           <h3 id="54-when-to-use-imc">5.4 When to Use IMC</h3>
           <p>IMC caches the entire conversation history and uses hash matching with automatic token prefix fallback when changes are detected. It is best suited for:</p>
           <ul>
@@ -2741,15 +2796,19 @@ unsloth/LFM2-700M-Q8_0:
               </tr>
               <tr>
                 <td>Sessions</td>
-                <td>All sessions available, single-user</td>
+                <td>Session pool sized at <code>NSeqMax × 3</code>, single-user</td>
               </tr>
               <tr>
                 <td>Slot routing</td>
-                <td>Any available slot (all sessions)</td>
+                <td>Any available slot (no session/slot affinity)</td>
               </tr>
               <tr>
                 <td>Sub-agents</td>
                 <td>Each gets own session via hash matching</td>
+              </tr>
+              <tr>
+                <td>Pure hits</td>
+                <td>Snapshot-skip fast path on text-only exact-match (no round-trip <code>GetData</code>)</td>
               </tr>
               <tr>
                 <td>Best for</td>
@@ -2761,7 +2820,7 @@ unsloth/LFM2-700M-Q8_0:
               </tr>
               <tr>
                 <td>RAM</td>
-                <td>One externalized KV snapshot per session between requests</td>
+                <td>One externalized KV snapshot per active session (lazy-grow / never-shrink)</td>
               </tr>
             </tbody>
           </table>
@@ -2839,7 +2898,7 @@ Qwen/Qwen3-8B-Q8_0:
   Total KV cache: ~3.2 GB (8B model, F16)
   Any single slot can use up to the full 131K tokens
   Total across all slots cannot exceed 131K tokens`}</code></pre>
-          <p>Sessions do not pin their prefix KV in VRAM between requests — the cached prefix is snapshotted to RAM and the VRAM sequence is cleared. This means sessions consume <strong>RAM</strong> (one KV snapshot per session) but no VRAM KV cells between requests. The RAM cost varies by conversation length and model size.</p>
+          <p>Sessions do not pin their prefix KV in VRAM between requests — the cached prefix is snapshotted to RAM and the VRAM sequence is cleared. This means sessions consume <strong>RAM</strong> (one KV snapshot per active session) but no VRAM KV cells between requests. The RAM cost varies by conversation length and model size. The default <code>SessionStore</code> backend (<code>kvstorage/ram</code>) uses lazy-grow / never-shrink semantics: a session's buffer grows to its peak conversation size and stays there, so subsequent turns reuse the backing array without allocation churn. With a session pool of <code>NSeqMax × 3</code>, plan the RAM budget around peak conversation size times the number of branches you expect to keep warm concurrently — idle sessions cost only the struct (a few hundred bytes) because the buffer is allocated lazily on first use.</p>
           <p>KV pressure eviction only considers sessions whose cached KV is still resident in VRAM (sessions without an externalized <code>kvState</code>). Sessions with externalized state are excluded from VRAM pressure calculations.</p>
           <p><strong>IMC Token Prefix Fallback Performance:</strong></p>
           <p>When IMC falls back to token-level prefix matching, there is a one-time cost to tokenize the incoming messages for comparison. This is typically fast (&lt; 5ms for most conversations). The savings from salvaging 70-80% of the cached tokens far outweigh this cost compared to a full rebuild.</p>
@@ -2909,8 +2968,8 @@ Request 5 (text follow-up about the image):
             <li>Editing earlier messages requires a partial rebuild (system prompt KV is preserved when the system prompt hasn't changed; conversation body is re-decoded)</li>
             <li>Changing the system prompt triggers a full cache rebuild</li>
             <li>Designed for single-user use</li>
-            <li>Max concurrent conversation branches = NSeqMax; when all sessions are occupied, the least-recently-used session is evicted</li>
-            <li>Cache hits include a RAM→VRAM restore step (typically 10-30ms depending on conversation size)</li>
+            <li>Max concurrent conversation branches = <code>NSeqMax × 3</code> (session pool size); when all sessions are occupied, the least-recently-used session is evicted</li>
+            <li>Cache hits include a RAM→VRAM restore step (typically 10-30ms depending on conversation size). The pure-hit snapshot-skip fast path avoids the subsequent VRAM→RAM round trip when the request is text-only and the cached prefix is not mutated — see <a href="#pure-hit-snapshot-skip">Pure Hit Snapshot Skip</a>.</li>
             <li>When a new media message appears in the conversation, the cache is rebuilt through the mtmd pipeline (projection model encodes image/audio into embeddings)</li>
           </ul>
           <hr />
@@ -7887,7 +7946,7 @@ default:
             <li><code>slot.seqIDs</code> = pre-allocated slice for efficient <code>batchAdd</code> calls</li>
             <li><code>imcSession</code> = logical cached conversation branch (hash, tokens, KV state)</li>
           </ul>
-          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are decoupled from slots: session state is externalized to RAM after each request and restored into any available slot on the next request via <code>StateSeqSetData</code>. <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings. Full IMC lifecycle is detailed in §19.7.7.</p>
+          <p>Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs always start at 0. IMC sessions are <strong>decoupled</strong> from execution slots: the session pool is sized at <code>NSeqMax * imcSessionMultiplier</code> (3×, see <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L40-L58">model.go</a>), so the number of cache identities the server can keep warm exceeds the number of parallel decodes. Session state is externalized to RAM after each request and restored into any free slot on the next request via <code>StateSeqSetData</code>; <code>StateSeqGetData</code> captures raw KV bytes regardless of whether they originated from text tokens or media embeddings. <code>imcSession.seqID</code> is dynamic — set in <code>startSlot</code> when the session binds to a slot's sequence, reset to <code>imcSeqIDUnbound</code> (<code>-1</code>) in <code>finishSlot</code> — and the KV-pressure eviction path uses that sentinel to skip <code>MemorySeqRm</code> on sessions whose bytes only live in host RAM. Full IMC lifecycle is detailed in §19.7.7.</p>
           <h4 id="1976-context-pooling">19.7.6 Context Pooling</h4>
           <p>Kronk uses two distinct context strategies depending on the workload.</p>
           <p><strong>Text inference: single shared context.</strong></p>
@@ -7917,49 +7976,63 @@ default:
             <li><strong>Prefix mismatch detection</strong>: Use <code>strings.HasPrefix(fullPrompt, prefixPrompt)</code> to detect Jinja template nondeterminism.</li>
             <li><strong>&lt;code&gt;add_generation_prompt=false&lt;/code&gt; for cached prefixes</strong>: Creates valid prefix for extension. Generation prompt added only for final suffix.</li>
           </ol>
-          <p><strong>IMC Algorithm — 5 strategies</strong> (per <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go#L54-L68">caching_imc.go:54-68</a>):</p>
+          <p><strong>IMC Algorithm — 5 strategies</strong> (entry points in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">caching_imc.go</a>):</p>
           <p><code>processIMC</code> snapshots all sessions and picks one of:</p>
           <ol>
-            <li><strong>Pure cache hit</strong> — <code>cachedMsgCount == len(messages)-1</code>. Nothing to decode beyond the suffix; KV state is already correct.</li>
-            <li><strong>Hash-prefix extend</strong> — a session's <code>cachedMsgsHash</code> matches the prefix hash of the incoming messages → extend with <code>messages[cachedMsgCount : len-1]</code>.</li>
+            <li><strong>Hash-prefix match</strong> — a session's <code>cachedMsgsHash</code> matches the prefix hash of the incoming messages. Two sub-paths: extension and snapshot the new KV state. extension to decode; restore externalized KV into the slot and decode the suffix directly. Text-only pure hits also carry <code>imcPureHitSkipSnapshot = true</code> if the session's <code>cachedRenderInputHash</code> matches the request's <code>imcRenderFingerprint</code>, qualifying for the snapshot-skip fast path documented below.
+              <ul>
+                <li><strong>Extend</strong> (<code>cachedMsgCount &lt; lastMsgIdxToCache</code>): decode the</li>
+                <li><strong>Pure cache hit</strong> (<code>cachedMsgCount == lastMsgIdxToCache</code>): no</li>
+              </ul>
+            </li>
             <li><strong>System-prompt preserve</strong> — only the system prompt hash matches. The sys prompt KV is preserved; the conversation body is rebuilt fresh on top of it.</li>
             <li><strong>Token-prefix fallback</strong> — no hash match, but a session's <code>cachedTokens</code> shares a leading run with the incoming prompt's tokens. Trim to the common prefix, rebuild the rest (<code>rebuildIMCFromPartialPrefix</code>).</li>
             <li><strong>Rebuild from scratch</strong> — no usable overlap. Pick an empty session, or evict the LRU session by <code>lastUsed</code>, and call <code>buildIMCCacheFromScratch</code>.</li>
+            <li><strong>KV-pressure eviction</strong> runs alongside (1) before extend/hit: if total VRAM-resident cached tokens across all sessions exceeds <code>n_ctx</code>, evict mismatched non-pending sessions largest-first. Sessions in <code>imcSeqIDUnbound</code> state (externalized to RAM, no live slot) are skipped — they don't consume VRAM cells and <code>MemorySeqRm</code> on them is a no-op at best, a race at worst.</li>
           </ol>
-          <p><strong>Multi-user IMC:</strong></p>
-          <p>Each of the <code>NSeqMax</code> sessions is an independent conversation branch. Concurrent users and sub-agents land in different sessions via hash matching, so they don't trample each other's caches. When all sessions are full, the LRU session is evicted on <code>lastUsed</code>.</p>
-          <p><strong>Text vs Media IMC:</strong></p>
-          <ul>
-            <li><strong>Text sessions</strong> externalize KV to RAM via <code>StateSeqGetData</code> after each request and restore into any free slot via <code>StateSeqSetData</code> on the next request. Sessions migrate freely between slots.</li>
-            <li><strong>Media sessions</strong> (vision/audio) stay <strong>slot-dedicated</strong>: image/audio embeddings cannot be externalized through <code>StateSeqGetData/SetData</code>, so the session is bound to a fixed slot for its lifetime. Media-specific build/extend logic lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>; the <code>hasMedia</code>, <code>useMRoPE</code>, and <code>mediaKVCounts</code> fields track media state.</li>
-          </ul>
+          <p><strong>Pure-Hit Snapshot Skip</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go#L527-L595">batch_slot_start.go</a>):</p>
+          <p>On every IMC cache hit <code>startSlot</code> normally calls <code>StateSeqGetData</code> after build/extend to refresh the externalized snapshot. For a text-only pure hit with no prefix mutation, the bytes it would write are byte-for-byte equal to the bytes it just restored — pure I/O. The skip predicate guards on: <code>imcPureHitSkipSnapshot</code>, no new cache tokens, no media build, no trim, no clear, <code>cacheIdx == imcExpectedTokens</code>, and a re-validation under <code>cacheMu</code> (live session version still matches what <code>processIMC</code> observed, including <code>cachedRenderInputHash</code>). For MTP-equipped models the predicate also confirms <code>s.draftNPast == cacheIdx</code> and that <code>pendingH</code> is sized correctly. On success the engine logs <code>imc-snapshot-skip-pure-hit</code> and increments <code>imc_snapshot_skipped_total</code>; on the start-time version mismatch it fails with <code>imc-pure-hit-stale</code> (metric <code>imc_pure_hit_stale_session_total</code>) so the client retries. <code>llama_state_seq_get_data</code> is a host-side serializer, so skipping it cannot leave KV state in a bad shape — see <code>yzma pkg/llama/state.go</code> (<code>StateSeqGetData</code>) for the FFI contract.</p>
+          <p><strong>Two-Phase Session Publish</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go#L1373-L1437">caching_imc.go imcCommitSession/imcPublishSession</a>):</p>
+          <p>The publish path is split to close a race in which a concurrent scanner would otherwise see fresh metadata but stale <code>kvState</code> bytes:</p>
+          <ol>
+            <li><code>imcCommitSession(session, hash, ...)</code> updates metadata under <code>cacheMu</code> but <strong>leaves &lt;code&gt;pending&lt;/code&gt; set</strong>. Concurrent scanners still skip the session.</li>
+            <li><code>imcPublishSession(session)</code> clears <code>pending</code> and broadcasts on the IMC-slot-available condition variable — but the caller must only invoke it after <code>startSlot</code> has externalized the KV state into <code>session.kvState</code>. Now metadata and bytes are guaranteed consistent.</li>
+          </ol>
+          <p><strong>Multi-Session IMC:</strong></p>
+          <p>The session pool holds <code>NSeqMax * imcSessionMultiplier</code> (currently 3×) independent conversation branches. Concurrent users and sub-agents land in different sessions via hash matching, so they don't trample each other's caches. When all sessions are full, the LRU session is evicted on <code>lastUsed</code>. The decoupling lets the cache identity count exceed the execution slot count, which matches the realistic agentic shape (a driver loop plus a handful of sub-agents plus the occasional side conversation) without requiring you to raise <code>nseq-max</code> and pay the VRAM cost.</p>
+          <p><strong>Text and Media IMC:</strong></p>
+          <p>Both text and media sessions externalize KV via <code>StateSeqGetData</code> after build/extend and restore via <code>StateSeqSetData</code> on the next request. <code>StateSeqGetData</code> captures raw KV bytes irrespective of whether they were produced by text tokens or media embeddings — there is no longer a "slot-dedicated" media path. The media-specific build/extend logic lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>; the <code>hasMedia</code>, <code>useMRoPE</code>, and <code>mediaKVCounts</code> fields on <code>imcSession</code> track media state so that text-only follow-ups can compute the correct KV-position offset for new text tokens without re-encoding the media. The pure-hit snapshot-skip optimization gates on <code>!hasMedia</code> to keep its predicate small, but media pure hits still take the normal restore + snapshot path.</p>
           <p><strong>IMC Lifecycle (All Sessions):</strong></p>
           <ol>
-            <li><code>processIMC()</code> scans <strong>sessions</strong> (not slots) for a hash match</li>
-            <li><code>fillSlots()</code> assigns the job to the <strong>first available slot</strong></li>
-            <li><code>startSlot()</code> restores cached KV from RAM via <code>StateSeqSetData</code></li>
-            <li>Cache is extended/rebuilt as needed, then snapshotted back to RAM via <code>StateSeqGetData</code></li>
-            <li>Suffix tokens are decoded and generation runs</li>
-            <li><code>finishSlot()</code> clears the full VRAM sequence (cached prefix already lives in RAM)</li>
+            <li><code>processIMC()</code> scans <strong>sessions</strong> (not slots) for a hash match, classifying the result into one of the strategies above and populating <code>cacheResult</code> with <code>imcSessionID</code> and the session pointer.</li>
+            <li><code>fillSlots()</code> assigns the job to the <strong>first available slot</strong>.</li>
+            <li><code>startSlot()</code> binds the session to the slot's <code>seqID</code> under <code>cacheMu</code>, restores cached KV from RAM via <code>StateSeqSetData</code>.</li>
+            <li>Cache is extended/rebuilt as needed; <code>imcCommitSession</code> writes new metadata. Unless the pure-hit snapshot-skip predicate fires, <code>StateSeqGetData</code> snapshots the new prefix back to <code>session.kvState</code>.</li>
+            <li><code>imcPublishSession</code> clears <code>pending</code> once metadata and snapshot are both committed.</li>
+            <li>Suffix tokens are decoded and generation runs.</li>
+            <li><code>finishSlot()</code> clears the full VRAM sequence and resets the session's <code>seqID</code> to <code>imcSeqIDUnbound</code> (cached prefix already lives in RAM via <code>SessionStore</code>).</li>
           </ol>
-          <p><strong>IMC Session State</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L36-L60">model.go</a>):</p>
+          <p><strong>IMC Session State</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L60-L93">model.go</a>):</p>
           <pre className="code-block"><code className="language-go">{`type imcSession struct {
-    slotID            int           // Stable session-pool index (== seqID)
-    seqID             llama.SeqId   // KV sequence ID this session uses while resident in VRAM
-    cachedMsgsHash    string        // Hash of all cached messages
-    cachedTokens      []llama.Token // Full token sequence in KV cache
-    totalTokensCached int           // Total KV positions cached
-    cachedMsgCount    int           // Number of messages cached
-    kvState           SessionStore  // Externalized KV state (kvstorage backend)
-    lastUsed          time.Time     // Last access time (for LRU eviction)
-    pending           bool          // True when build/extend in-flight; protects kvState
-    hasMedia          bool          // True if cached content includes media
-    useMRoPE          bool          // True if cached media used M-RoPE
-    mediaKVCounts     []int         // KV positions per media chunk
-    sysPromptHash     string        // Hash of system prompt message
-    sysPromptTokens   int           // Token count of system prompt
+    id                    int           // Stable session-pool index (NOT a slot identity)
+    seqID                 llama.SeqId   // Bound slot's seq id while resident; imcSeqIDUnbound when externalized
+    cachedMsgsHash        string        // Hash of all cached messages
+    cachedTokens          []llama.Token // Full token sequence in KV cache (text-only sessions)
+    totalTokensCached     int           // Total KV positions cached (text + media)
+    cachedMsgCount        int           // Number of messages cached
+    kvState               SessionStore  // Externalized KV state (kvstorage backend)
+    draftKVState          SessionStore  // Externalized MTP draft seq KV (nil unless MTP drafter present)
+    pendingH              []float32     // MTP drafter's pre-norm hidden row at snapshot time
+    lastUsed              time.Time     // Last access time (for LRU eviction)
+    pending               bool          // True between imcCommitSession and imcPublishSession
+    hasMedia              bool          // True if cached content includes media
+    useMRoPE              bool          // True if cached media used M-RoPE 4D encoding
+    mediaKVCounts         []int         // KV positions per media chunk (text-extend math)
+    sysPromptHash         string        // Hash of system prompt message
+    sysPromptTokens       int           // Token count of system prompt
+    cachedRenderInputHash string        // imcRenderFingerprint of the committed prefix (pure-hit snapshot-skip key)
 }`}</code></pre>
-          <p><code>imcSessions</code> is sized 1:1 with execution slots at startup, but sessions are <strong>not</strong> bound to slots — <code>kvState</code> (a <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/session_store.go#L57-L97">SessionStore</a>) externalizes the cached KV bytes between requests so any matched session can run on any free slot. The <code>slotID</code>/<code>seqID</code> fields name the session pool entry and the KV sequence the session occupies while bytes are still resident in VRAM (used for KV-pressure eviction of un-externalized sessions). The <code>pending</code> flag is the per-session in-flight latch that protects <code>kvState</code> from concurrent writers.</p>
+          <p>The pool is sized <code>NSeqMax * imcSessionMultiplier</code> at startup in <code>NewModel</code>; sessions are <strong>not</strong> bound to slots. <code>kvState</code> (a <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/session_store.go#L57-L97">SessionStore</a>) externalizes the cached KV bytes between requests so any matched session can run on any free slot. The default RAM impl (<code>kvstorage/ram.Store</code>) uses lazy-grow / never-shrink semantics — once a session has stored its peak conversation, subsequent turns reuse the backing array without allocation churn. <code>id</code> is the stable pool index used for <code>imcClearPending</code> lookups and log correlation; <code>seqID</code> is dynamic and only meaningful while the session is bound to an execution slot (used by KV-pressure eviction to know whether to call <code>MemorySeqRm</code>). <code>pending</code> is the per-session in-flight latch that protects <code>kvState</code> from concurrent writers across the <code>imcCommitSession</code>/<code>imcPublishSession</code> two-phase publish.</p>
           <h4 id="1978-tool-call-internals">19.7.8 Tool Call Internals</h4>
           <p><strong>Processor state machine</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor.go">processor.go</a>):</p>
           <p>A per-slot <code>processor</code> classifies streaming output token-by-token into one of four statuses (<code>processor.go:10-15</code>):</p>

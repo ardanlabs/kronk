@@ -5,6 +5,8 @@
 - [5.1 Overview](#51-overview)
 - [5.2 Incremental Message Cache (IMC)](#52-incremental-message-cache-imc)
   - [Two-Tier Hash Design](#two-tier-hash-design)
+  - [Session Pool (Decoupled from Slots)](#session-pool-decoupled-from-slots)
+  - [Pure Hit Snapshot Skip](#pure-hit-snapshot-skip)
   - [KV Pressure Eviction](#kv-pressure-eviction)
   - [Token Prefix Fallback](#token-prefix-fallback)
   - [Model Type Interactions](#model-type-interactions)
@@ -151,35 +153,91 @@ Qwen/Qwen3-8B-Q8_0:
   cache-min-tokens: 100 # Minimum tokens before caching (default)
 ```
 
-#### Multi-Session Architecture
+#### Session Pool (Decoupled from Slots)
 
-All `NSeqMax` sessions are available for IMC. Each session independently
-tracks its own conversation branch — its own message hash, system prompt
-hash, token count, and message index. Sub-agents are routed to different
-sessions via hash matching, allowing them to maintain independent caches.
+The IMC session pool is **decoupled** from the batch engine's execution
+slots. The pool is sized at `NSeqMax × 3` (the `imcSessionMultiplier`
+constant). With `nseq-max: 2`, six cache identities can stay warm; with
+`nseq-max: 4`, twelve. Idle session structs cost only a few hundred bytes
+each — the `SessionStore` backing buffer is allocated lazily on first use.
 
-Each session externalizes its cached KV state to RAM after the request
-completes. On the next request, the cached state is restored into any
-available slot — sessions are not pinned to specific slots. This means
-all slots are equally eligible for any session, maximizing slot
-utilization. `StateSeqGetData` captures raw KV bytes regardless of
-whether they originated from text tokens or media embeddings.
+Each session independently tracks its own conversation branch (message
+hash, system prompt hash, token count, message index, cached tokens) and
+externalizes its KV bytes to host RAM between requests via
+`StateSeqGetData`. On the next request the matched session is bound to
+the first free execution slot and its bytes are restored via
+`StateSeqSetData`. Sessions and slots have no static affinity — any
+session can run on any slot.
 
-With `nseq-max: 3`, three sub-agents can each have their own cached
-conversation branch. Without multi-session IMC, every sub-agent request
-would cause a prefix mismatch and rebuild the cache from scratch because
-different sub-agents send different system prompts and conversation content.
+Why a multiplier instead of `NSeqMax` sessions? In agentic workloads a
+driver loop plus a handful of sub-agents plus the occasional side
+conversation easily exceeds the number of parallel decode lanes you can
+afford to run on a single GPU. Sizing the cache identity pool above the
+execution slot count keeps the LRU eviction path quiet during normal
+multi-agent operation without forcing you to raise `nseq-max` (and pay
+the VRAM cost) just to avoid thrashing.
 
-**Important:** Set `nseq-max` to at least the number of concurrent
-sub-agents your agent framework spawns. If `nseq-max` is smaller than
-the number of sub-agents, cache thrashing can occur — each new sub-agent
-evicts a session, and when the evicted sub-agent returns, it evicts another.
-Every request triggers a full rebuild from scratch, eliminating the
-caching benefit entirely. With unified KV cache, all slots share the same
-`n_ctx` pool, so adding more slots does not multiply VRAM usage. However,
-more sessions means more cached conversations competing for the shared
-pool. KV pressure eviction automatically clears stale sessions when
-space gets tight — see [KV Pressure Eviction](#kv-pressure-eviction).
+```
+nseq-max = 2           → 6 IMC sessions (cache identities), 2 slots (parallel decodes)
+nseq-max = 4           → 12 IMC sessions, 4 slots
+nseq-max = 8           → 24 IMC sessions, 8 slots
+```
+
+With unified KV cache, all slots share the same `n_ctx` pool, so adding
+slots does not multiply VRAM usage. Adding sessions does not allocate KV
+memory either — only the RAM-side `SessionStore` grows as conversations
+accumulate. KV pressure eviction automatically clears stale sessions
+when space gets tight — see [KV Pressure Eviction](#kv-pressure-eviction).
+
+**Sizing guidance:** Set `nseq-max` to the level of decode parallelism
+you want (concurrent in-flight requests). The session pool will be 3×
+that, which is the right shape for typical sub-agent fan-out. If you
+know your workload spawns more than 3× sub-agents, raise `nseq-max`
+deliberately so both the decode parallelism and the cache pool keep up.
+
+#### Pure Hit Snapshot Skip
+
+A **pure hit** is the strongest possible match: the incoming request's
+cacheable messages are byte-for-byte identical to what the session
+already cached (`cachedMsgCount == len(messages) - 1`). Nothing needs to
+be re-decoded beyond the suffix.
+
+On every IMC cache hit, the engine normally:
+
+1. Restores the externalized `kvState` into the slot's sequence via
+   `StateSeqSetData`.
+2. After build/extend (or no-op for a pure hit), serializes the KV state
+   back out via `StateSeqGetData` so the next request can restore it.
+
+For a pure hit on a text-only session, step 2 is a byte-for-byte round
+trip of the bytes that were just restored in step 1 — pure I/O with no
+information change. The **pure-hit snapshot-skip** optimization detects
+this case and skips `StateSeqGetData` entirely.
+
+Qualification (all must hold):
+
+- Text-only session — media sessions also externalize KV, but the
+  optimization gates on `!hasMedia` to keep the predicate small.
+- No prefix mutation in this request: no extension tokens, no media
+  build, no trim, no clear.
+- The session's committed render-input fingerprint
+  (`cachedRenderInputHash`) equals the current request's fingerprint
+  (template, tools, `add_generation_prompt`, `preserve_thinking`, exact
+  cacheable messages). This guards against template or top-level
+  parameter changes that would silently invalidate the cached prefix.
+- The session has not been mutated by a concurrent request between
+  `processIMC` and `startSlot` (re-validated under `cacheMu` at the
+  decode boundary).
+- For models with an MTP drafter, the draft sequence's state was
+  restored successfully alongside the target.
+
+When the skip fires, the log emits `imc-snapshot-skip-pure-hit` and the
+`imc_snapshot_skipped_total` counter increments. When a pure-hit
+candidate races a concurrent extend, the request is failed with
+`imc-pure-hit-stale` and the client retries — the next attempt sees the
+newer session version and goes through the normal extend path. The
+optimization is safe because `llama_state_seq_get_data` is a host-side
+serializer: skipping it cannot leave KV state in a bad shape.
 
 **How It Works:**
 
@@ -241,8 +299,16 @@ session's KV state is restored from RAM into the assigned slot.
    [KV Pressure Eviction](#kv-pressure-eviction) for details.
 
 3. **On full match** — Pick the session with the best prefix coverage (most
-   cached messages). If the request has new messages to cache, extend the
-   session's cache. If the messages are identical, it's a pure cache hit.
+   cached messages). Two sub-paths:
+   - **Extend** — request has new messages beyond what the session cached:
+     decode the extension and snapshot the new KV state back to the session.
+   - **Pure cache hit** — cached messages exactly equal the request's
+     cacheable prefix (`cachedMsgCount == len(messages) - 1`). The
+     session's externalized KV is restored into the slot and the suffix is
+     decoded directly. Text-only pure hits additionally qualify for the
+     snapshot-skip fast path (see [Pure Hit Snapshot Skip](#pure-hit-snapshot-skip))
+     — skipping the round-trip `StateSeqGetData` call cuts noticeable CPU
+     and RAM bandwidth off cache-hit-heavy workloads.
 
 4. **System prompt preservation (two-tier hash)** — No full match, but a
    session has the same system prompt cached. Keep the system prompt KV in
@@ -270,6 +336,18 @@ IMC prevents this with a pending flag: when a session begins a deferred cache
 build, it is marked pending. Concurrent scanners skip pending sessions, so
 the second request picks a different session. The pending flag is cleared
 after the cache decode completes (or on error).
+
+The publish path is split into **two phases** to close a second race in
+which a concurrent reader could observe fresh metadata but stale or empty
+externalized KV bytes:
+
+1. `imcCommitSession` updates the session's metadata (hash, token count,
+   cached tokens, render-input fingerprint) under `cacheMu`. The `pending`
+   flag stays set — concurrent scanners still skip the session.
+2. `imcPublishSession` clears `pending` and broadcasts availability — but
+   only after `startSlot` has externalized the KV state via
+   `StateSeqGetData` into `session.kvState`. Now metadata and bytes are
+   guaranteed consistent.
 
 **Decode Failure Recovery:**
 
@@ -427,12 +505,14 @@ unsloth/LFM2-700M-Q8_0:
 
 ### 5.3 Single-User Caching
 
-IMC is designed for single-user use. All `NSeqMax` sessions are available,
-with each session independently tracking its own conversation branch via hash
-matching. All sessions can run on any available slot. This design is
-optimized for agentic workflows
-where multiple sub-agents send independent conversations (different system
-prompts, different message histories).
+IMC is designed for single-user use. The session pool (sized at `NSeqMax × 3`,
+see [Session Pool (Decoupled from Slots)](#session-pool-decoupled-from-slots))
+gives multiple conversation branches their own cache identity; each branch
+independently tracks its own hash, system prompt, and cached tokens. Any
+session can run on any execution slot. This design is optimized for agentic
+workflows where multiple sub-agents send independent conversations (different
+system prompts, different message histories) without saturating the GPU's
+parallel decode capacity.
 
 ### 5.4 When to Use IMC
 
@@ -447,16 +527,17 @@ for:
 - **Sub-agent architectures** — each sub-agent gets its own session via hash
   matching, maintaining independent caches
 
-| Feature      | Behavior                                                        |
-| ------------ | --------------------------------------------------------------- |
-| Caches       | All messages except last                                        |
-| Extends      | Yes, incrementally                                              |
-| Sessions     | All sessions available, single-user                             |
-| Slot routing | Any available slot (all sessions)                               |
-| Sub-agents   | Each gets own session via hash matching                          |
-| Best for     | Agentic workflows                                               |
-| VRAM         | Unified `n_ctx` pool, not multiplied by `nseq-max`             |
-| RAM          | One externalized KV snapshot per session between requests       |
+| Feature      | Behavior                                                                       |
+| ------------ | ------------------------------------------------------------------------------ |
+| Caches       | All messages except last                                                       |
+| Extends      | Yes, incrementally                                                             |
+| Sessions     | Session pool sized at `NSeqMax × 3`, single-user                               |
+| Slot routing | Any available slot (no session/slot affinity)                                  |
+| Sub-agents   | Each gets own session via hash matching                                        |
+| Pure hits    | Snapshot-skip fast path on text-only exact-match (no round-trip `GetData`)     |
+| Best for     | Agentic workflows                                                              |
+| VRAM         | Unified `n_ctx` pool, not multiplied by `nseq-max`                             |
+| RAM          | One externalized KV snapshot per active session (lazy-grow / never-shrink)     |
 
 ### 5.5 Cache Invalidation
 
@@ -578,9 +659,16 @@ share the full `n_ctx` pool. The total KV cache size is determined by
 
 Sessions do not pin their prefix KV in VRAM between requests — the
 cached prefix is snapshotted to RAM and the VRAM sequence is cleared.
-This means sessions consume **RAM** (one KV snapshot per session)
+This means sessions consume **RAM** (one KV snapshot per active session)
 but no VRAM KV cells between requests. The RAM cost varies by
-conversation length and model size.
+conversation length and model size. The default `SessionStore` backend
+(`kvstorage/ram`) uses lazy-grow / never-shrink semantics: a session's
+buffer grows to its peak conversation size and stays there, so
+subsequent turns reuse the backing array without allocation churn.
+With a session pool of `NSeqMax × 3`, plan the RAM budget around peak
+conversation size times the number of branches you expect to keep warm
+concurrently — idle sessions cost only the struct (a few hundred bytes)
+because the buffer is allocated lazily on first use.
 
 KV pressure eviction only considers sessions whose cached KV is still
 resident in VRAM (sessions without an externalized `kvState`). Sessions
@@ -710,10 +798,13 @@ Request 5 (text follow-up about the image):
   re-decoded)
 - Changing the system prompt triggers a full cache rebuild
 - Designed for single-user use
-- Max concurrent conversation branches = NSeqMax; when all sessions are
-  occupied, the least-recently-used session is evicted
+- Max concurrent conversation branches = `NSeqMax × 3` (session pool size);
+  when all sessions are occupied, the least-recently-used session is evicted
 - Cache hits include a RAM→VRAM restore step (typically 10-30ms depending
-  on conversation size)
+  on conversation size). The pure-hit snapshot-skip fast path avoids the
+  subsequent VRAM→RAM round trip when the request is text-only and the
+  cached prefix is not mutated — see
+  [Pure Hit Snapshot Skip](#pure-hit-snapshot-skip).
 - When a new media message appears in the conversation, the cache is
   rebuilt through the mtmd pipeline (projection model encodes image/audio
   into embeddings)

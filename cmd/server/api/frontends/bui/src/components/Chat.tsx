@@ -69,7 +69,6 @@ export default function Chat() {
       topLogprobs: defaultSampling.topLogprobs,
       grammar: modelSampling.grammar ?? defaultSampling.grammar,
       systemPrompt: defaultSampling.systemPrompt,
-      cacheId: defaultSampling.cacheId,
     };
   }, []);
 
@@ -189,7 +188,6 @@ export default function Chat() {
       onMessage,
       onError,
       onComplete,
-      sampling.cacheId || undefined,
     );
   }, [selectedModel]);
 

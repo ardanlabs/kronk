@@ -540,15 +540,6 @@ export default function ChatPanel({
               max={100}
             />
           </div>
-          <div className="chat-setting">
-            <label>Cache ID</label>
-            <input
-              type="text"
-              value={sampling.cacheId}
-              onChange={(e) => setSampling({ cacheId: e.target.value })}
-              placeholder="e.g. user-123"
-            />
-          </div>
           <div className="chat-setting chat-setting-grammar">
             <label>Grammar</label>
             <select

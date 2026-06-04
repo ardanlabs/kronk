@@ -27,7 +27,6 @@ export interface SamplingParams {
   topLogprobs: number;
   grammar: string;
   systemPrompt: string;
-  cacheId: string;
 }
 
 export const defaultSampling: SamplingParams = {
@@ -55,7 +54,6 @@ export const defaultSampling: SamplingParams = {
   topLogprobs: 0,
   grammar: '',
   systemPrompt: '',
-  cacheId: '',
 };
 
 interface SamplingContextType {

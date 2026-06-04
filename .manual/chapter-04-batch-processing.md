@@ -499,14 +499,20 @@ state between requests. Snapshot/restore is used by all IMC sessions (to
 externalize KV state to RAM). These messages are especially useful when
 restore failures trigger expensive full rebuilds.
 
-| Log Message                  | Meaning                                                     |
-| ---------------------------- | ----------------------------------------------------------- |
-| `imc-hybrid-snapshot`        | State captured after cache build (shows snapshot_bytes)     |
-| `imc-hybrid-snapshot-failed` | StateSeqGetData returned 0 bytes                            |
-| `imc-hybrid-restore`         | Snapshot restored after request (shows restored_bytes)      |
-| `imc-hybrid-restore-failed`  | StateSeqSetData failed, slot metadata cleared               |
-| `imc-hybrid-no-snapshot`     | No snapshot available, full clear + metadata invalidation   |
-| `imc-hybrid-rebuild`         | Partial prefix: full clear + re-decode from position 0      |
-| `imc-hybrid-trim-rebuild`    | Trim-only prefix: full clear + re-decode truncated sequence |
+| Log Message                  | Meaning                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `imc-restore-start`          | About to restore externalized KV from `SessionStore` into the slot's sequence            |
+| `imc-restore-done`           | `StateSeqSetData` succeeded (shows `cached_tokens`, `ram_bytes`)                         |
+| `imc-snapshot-start`         | About to capture cached prefix KV via `StateSeqGetData` after build/extend               |
+| `imc-snapshot-done`          | Snapshot committed to `session.kvState` (shows duration, bytes)                          |
+| `imc-snapshot-failed`        | `StateSeqGetData` returned 0 bytes; session metadata reset                               |
+| `imc-snapshot-skip-pure-hit` | Pure-hit fast path took the snapshot-skip optimization (see §5.2 Pure Hit Snapshot Skip) |
+| `imc-pure-hit-stale`         | Pure-hit candidate found a concurrently-mutated session; client should retry             |
+| `imc-extend-stale`           | Extend candidate found a concurrently-mutated session; client should retry               |
+| `imc-rebuild-full`           | Hybrid (or corruption recovery): full clear + re-decode from position 0                  |
+| `imc-trim-prefix`            | Token-prefix fallback: trim from divergence point and re-decode the suffix               |
+| `imc-clear-seq`              | VRAM sequence cleared (`finishSlot`, eviction, or rebuild)                               |
+| `imc-draft-snapshot-done`    | MTP draft KV snapshotted alongside the target (only with an MTP drafter)                 |
+| `imc-draft-restore-done`     | MTP draft KV restored alongside the target                                               |
 
 ---

@@ -484,7 +484,6 @@ export default function ModelPlayground() {
     topLogprobs: 0,
     grammar: '',
     systemPrompt,
-    cacheId: '',
   }), [maxTokens, temperature, topP, topK, minP, presencePenalty, repeatPenalty, repeatLastN,
     dryMultiplier, dryBase, dryAllowedLength, dryPenaltyLastN, xtcProbability, xtcThreshold,
     xtcMinKeep, frequencyPenalty, enableThinking, reasoningEffort, systemPrompt]);
