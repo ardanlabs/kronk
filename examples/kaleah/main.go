@@ -336,10 +336,9 @@ func userInput(messages []model.D, codeFile string, identifiers map[string]ident
 
 		originalCode = code
 
-		userInput = fmt.Sprintf(`Return the full body code for this %s named %s.
-
-Code:
-%s`, info.typ, identifier, code)
+		// Don't include the source in the prompt — rely on the full file
+		// loaded as context at startup so this tests the model's recall.
+		userInput = fmt.Sprintf(`Return the full body code for this %s named %s.`, info.typ, identifier)
 	}
 
 	messages = append(messages,
@@ -380,7 +379,7 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse
 	}
 
 	if originalCode != "" {
-		modelCode := firstCodeBlock(content)
+		modelCode := strings.TrimSpace(firstCodeBlock(content))
 		percent := codeMatchPercent(modelCode, originalCode)
 
 		fmt.Printf("\nCode match: %.2f%%\n", percent)
@@ -427,7 +426,7 @@ func normalizeIndent(s string) string {
 	var result []rune
 	for _, r := range s {
 		if r == '\t' {
-			result = append(result, ' ', ' ')
+			result = append(result, ' ', ' ', ' ', ' ')
 		} else {
 			result = append(result, r)
 		}
