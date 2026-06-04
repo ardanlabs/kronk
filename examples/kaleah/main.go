@@ -4,13 +4,14 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +22,13 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
+type identInfo struct {
+	typ  string
+	line int
+}
+
+// =============================================================================
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
@@ -28,69 +36,13 @@ func main() {
 	}
 }
 
-func getModelSource() string {
-	// If user specified a model via env var, use it
-	if model := os.Getenv("KRONK_MODEL"); model != "" {
-		return model
-	}
-
-	mdls, err := models.New()
-	if err != nil {
-		return "unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL"
-	}
-
-	files, err := mdls.Files()
-	if err != nil || len(files) == 0 {
-		return "unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL"
-	}
-
-	// If only one model, use it
-	if len(files) == 1 {
-		return files[0].ID
-	}
-
-	// Multiple models — let user choose
-	fmt.Println("\nAvailable models:")
-	for i, f := range files {
-		fmt.Printf("  %d: %s\n", i+1, f.ID)
-	}
-	fmt.Print("Select a model (number or name): ")
-
-	reader := bufio.NewReader(os.Stdin)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-
-	if input == "" {
-		return files[0].ID
-	}
-
-	// Check if input is a number
-	for i, f := range files {
-		if fmt.Sprintf("%d", i+1) == input {
-			return f.ID
-		}
-	}
-
-	// Check if input matches a model ID
-	for _, f := range files {
-		if strings.EqualFold(f.ID, input) {
-			return f.ID
-		}
-	}
-
-	// Input didn't match — return first
-	return files[0].ID
-}
-
 func run() error {
 	mp, err := installSystem()
-
 	if err != nil {
 		return fmt.Errorf("run: unable to install system: %w", err)
 	}
 
 	krn, err := newKronk(mp)
-
 	if err != nil {
 		return fmt.Errorf("unable to init kronk: %w", err)
 	}
@@ -113,6 +65,8 @@ func installSystem() (models.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	defer cancel()
 
+	// -------------------------------------------------------------------------
+
 	libMgr, err := libs.New(
 		libs.WithVersion(defaults.LibVersion("")),
 	)
@@ -124,39 +78,86 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	// -------------------------------------------------------------------------
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
 
-	source := getModelSource()
-
-	// Check if the selected model is already downloaded and valid on disk.
-	// The catalog may resolve to a different quantization than what's on disk,
-	// so we verify the file actually exists before trusting the catalog lookup.
-	mp, err := mdls.FullPath(source)
-	if err == nil {
-		allExist := true
-		for _, f := range mp.ModelFiles {
-			if _, statErr := os.Stat(f); statErr != nil {
-				allExist = false
-				break
-			}
-		}
-		if allExist {
-			fmt.Println("Using existing model:", mp.ModelFiles[0])
-			return mp, nil
-		}
-	}
-
-	// Model not found or files missing — download it
-	fmt.Println("Downloading model:", source)
-	mp, err = mdls.Download(ctx, kronk.FmtLogger, source)
+	modelID, err := getModelID()
 	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
+		return models.Path{}, fmt.Errorf("unable to get model id: %w", err)
 	}
 
+	mp, err := mdls.FullPath(modelID)
+	if err != nil {
+		fmt.Println("Downloading model:", modelID)
+		mp, err = mdls.Download(ctx, kronk.FmtLogger, modelID)
+		if err != nil {
+			return models.Path{}, fmt.Errorf("unable to install model: %w", err)
+		}
+
+		return mp, nil
+	}
+
+	fmt.Println("Using existing model:", mp.ModelFiles[0])
 	return mp, nil
+}
+
+func getModelID() (string, error) {
+	mdls, err := models.New()
+	if err != nil {
+		return "", fmt.Errorf("models.new: %w", err)
+	}
+
+	files, err := mdls.Files()
+	if err != nil || len(files) == 0 {
+		return "", fmt.Errorf("mdls.files: %w", err)
+	}
+
+	// If only one model, use it
+	if len(files) == 1 {
+		return files[0].ID, nil
+	}
+
+	// Multiple models — let user choose
+	fmt.Println("\nAvailable models:")
+	for i, f := range files {
+		fmt.Printf("  %d: %s\n", i+1, f.ID)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Printf("Select a model (1-%d): ", len(files))
+
+		// Scanning into an int forces numeric input; any non-numeric
+		// token returns an error.
+		var n int
+		_, err := fmt.Fscan(reader, &n)
+
+		// Discard the rest of the line so the next scan starts clean.
+		if _, derr := reader.ReadString('\n'); derr != nil && err == nil {
+			err = derr
+		}
+
+		if errors.Is(err, io.EOF) {
+			return "", io.EOF
+		}
+
+		if err != nil {
+			fmt.Println("Please enter a number.")
+			continue
+		}
+
+		if n < 1 || n > len(files) {
+			fmt.Printf("Please enter a number between 1 and %d.\n", len(files))
+			continue
+		}
+
+		return files[n-1].ID, nil
+	}
 }
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
@@ -207,65 +208,36 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 }
 
 func chat(krn *kronk.Kronk) error {
-	messages := model.DocumentArray()
-	codeFile := "kaleah/code.chunk"
-
-	var systemPrompt = `You will be given source code for one identifier from a 
-	program. Return the source code in a JavaScript code block.`
-
-	// WRITE SOME CODE / FUNCTION READS THE FILE
-	code, err := os.ReadFile(codeFile)
-	if err != nil {
-		return fmt.Errorf("chat: read code.chunk: %w", err)
-	}
-
-	identifiers, err := columnZeroIdentifiers(codeFile)
+	const codeFile = "kaleah/code.chunk"
+	identifiers, code, err := retrieveIdentifiers(codeFile)
 	if err != nil {
 		return fmt.Errorf("chat: index identifiers: %w", err)
 	}
 
-	type ident struct {
-		name string
-		typ  string
-		line int
-	}
-
-	var idents []ident
-	nameWidth := len("Identifier")
-	for name, info := range identifiers {
-		if info.typ != "function" {
-			continue
-		}
-		idents = append(idents, ident{name, info.typ, info.line})
-		if len(name) > nameWidth {
-			nameWidth = len(name)
-		}
-	}
-	sort.Slice(idents, func(i, j int) bool { return idents[i].line < idents[j].line })
-
-	fmt.Println("\nAvailable functions:")
-	fmt.Printf("  %4s | %-*s | %s\n", "Line", nameWidth, "Identifier", "Type")
-	fmt.Printf("  %s-+-%s-+-%s\n", strings.Repeat("-", 4), strings.Repeat("-", nameWidth), strings.Repeat("-", 8))
-	for _, id := range idents {
-		fmt.Printf("  %4d | %-*s | %s\n", id.line, nameWidth, id.name, id.typ)
-	}
-
-	messages = append(messages,
-		model.TextMessage(model.RoleSystem, systemPrompt),
-		// USER MESSAGE WITH THE CONTEXT OF THE FILE
-		model.TextMessage("user", "Here is the code to analyze:\n\n"+string(code)),
-	)
+	printIdentifiers(identifiers)
 
 	for {
-		var err error
-		var originalCode string
-		messages, originalCode, err = userInput(messages, codeFile, identifiers)
+		identifier, err := selectIdentifier(identifiers)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
 			return fmt.Errorf("run:user input: %w", err)
 		}
+
+		codeBlock, err := extractIdentifierCode(code, identifier)
+		if err != nil {
+			return fmt.Errorf("extractIdentifierCode: %w", err)
+		}
+
+		info := identifiers[identifier]
+		fmt.Printf("\033[90mFound %s %q at %s:%d\033[0m\n", info.typ, identifier, codeFile, info.line)
+
+		// Don't include the source in the prompt — rely on the full file
+		// loaded as context at startup so this tests the model's recall.
+		userInput := fmt.Sprintf(`Return the full body code for this %s named %s.`, info.typ, identifier)
+
+		messages := createInitialMessages(code)
+		messages = append(messages,
+			model.TextMessage(model.RoleUser, userInput),
+		)
 
 		messages, err = func() ([]model.D, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -278,12 +250,11 @@ func chat(krn *kronk.Kronk) error {
 			}
 
 			ch, err := performChat(ctx, krn, d)
-
 			if err != nil {
 				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
 			}
 
-			messages, err = modelResponse(krn, messages, ch, originalCode)
+			messages, err = modelResponse(messages, ch, codeBlock)
 
 			if err != nil {
 				return nil, fmt.Errorf("run: model response: %w", err)
@@ -298,54 +269,174 @@ func chat(krn *kronk.Kronk) error {
 	}
 }
 
-func userInput(messages []model.D, codeFile string, identifiers map[string]identInfo) ([]model.D, string, error) {
-	fmt.Print("\nUSER> ")
+func retrieveIdentifiers(codeFile string) (map[string]identInfo, []byte, error) {
+	code, err := os.ReadFile(codeFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("chat: read code.chunk: %w", err)
+	}
+
+	identifiers := make(map[string]identInfo)
+	declRE := regexp.MustCompile(`^(function|var|let|const)\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
+
+	lineNum := 0
+	for line := range strings.SplitSeq(string(code), "\n") {
+		lineNum++
+
+		if line != strings.TrimLeft(line, " \t") {
+			continue
+		}
+
+		if matches := declRE.FindStringSubmatch(line); len(matches) == 3 {
+			info := identInfo{typ: "variable", line: lineNum}
+			if matches[1] == "function" {
+				info.typ = "function"
+			}
+			identifiers[matches[2]] = info
+		}
+	}
+
+	return identifiers, code, nil
+}
+
+func printIdentifiers(identifiers map[string]identInfo) {
+	idents := sortIdentifiers(identifiers)
+
+	var identLabelWidth int
+	for _, id := range idents {
+		if len(id.name) > identLabelWidth {
+			identLabelWidth = len(id.name)
+		}
+	}
+
+	fmt.Println("\nAvailable functions:")
+	fmt.Printf("  %4s | %4s | %-*s | %s\n", "Num", "Line", identLabelWidth, "Identifier", "Type")
+	fmt.Printf("  %s-+-%s-+-%s-+-%s\n", strings.Repeat("-", 4), strings.Repeat("-", 4), strings.Repeat("-", identLabelWidth), strings.Repeat("-", 8))
+
+	for i, id := range idents {
+		fmt.Printf("  %4d | %4d | %-*s | %s\n", i+1, id.line, identLabelWidth, id.name, id.typ)
+	}
+}
+
+func createInitialMessages(code []byte) []model.D {
+	var systemPrompt = `You will be given source code for one identifier from a 
+	program. Return the source code in a JavaScript code block.`
+
+	return append(model.DocumentArray(),
+		model.TextMessage(model.RoleSystem, systemPrompt),
+		model.TextMessage("user", "Here is the code to analyze:\n\n"+string(code)),
+	)
+}
+
+func selectIdentifier(identifiers map[string]identInfo) (string, error) {
+	idents := sortIdentifiers(identifiers)
+
+	fmt.Println("\nWhich Function Do We Test?")
+	for i, id := range idents {
+		fmt.Printf("  %d: %s\n", i+1, id.name)
+	}
 
 	reader := bufio.NewReader(os.Stdin)
 
-	userInput, err := reader.ReadString('\n')
+	var identifier string
+	for {
+		fmt.Printf("Select a function (1-%d, 0 to quit): ", len(idents))
 
-	if err != nil {
-		return messages, "", fmt.Errorf("unable to read user input: %w", err)
+		// Scanning into an int forces numeric input; any non-numeric
+		// token returns an error.
+		var n int
+		_, err := fmt.Fscan(reader, &n)
+
+		// Discard the rest of the line so the next scan starts clean.
+		if _, derr := reader.ReadString('\n'); derr != nil && err == nil {
+			err = derr
+		}
+
+		if errors.Is(err, io.EOF) {
+			return "", io.EOF
+		}
+
+		if err != nil {
+			fmt.Println("Please enter a number.")
+			continue
+		}
+
+		if n == 0 {
+			return "", io.EOF
+		}
+
+		if n < 1 || n > len(idents) {
+			fmt.Printf("Please enter a number between 1 and %d.\n", len(idents))
+			continue
+		}
+
+		identifier = idents[n-1].name
+		break
 	}
 
-	if strings.TrimSpace(userInput) == "quit" || userInput == "quit\n" {
-		return nil, "", io.EOF
+	return identifier, nil
+}
+
+type ident struct {
+	name string
+	typ  string
+	line int
+}
+
+// sortIdentifiers returns the function identifiers ordered by source line.
+func sortIdentifiers(identifiers map[string]identInfo) []ident {
+	var idents []ident
+	for name, info := range identifiers {
+		if info.typ != "function" {
+			continue
+		}
+		idents = append(idents, ident{name, info.typ, info.line})
 	}
 
-	var originalCode string
+	slices.SortFunc(idents, func(a, b ident) int {
+		return cmp.Compare(a.line, b.line)
+	})
 
-	identifier := strings.TrimSpace(userInput)
-	info, exists := identifiers[identifier]
-	if !exists {
-		for _, token := range regexp.MustCompile(`[A-Za-z_$][A-Za-z0-9_$]*`).FindAllString(userInput, -1) {
-			if info, exists = identifiers[token]; exists {
-				identifier = token
-				break
+	return idents
+}
+
+func extractIdentifierCode(code []byte, identifier string) (string, error) {
+	src := string(code)
+	declRE := regexp.MustCompile(`^(function|var|let|const)\s+` + regexp.QuoteMeta(identifier) + `(?:\s|\(|=|,|;)`)
+	offset := 0
+
+	for _, line := range strings.SplitAfter(src, "\n") {
+		if line != strings.TrimLeft(line, " \t") || !declRE.MatchString(line) {
+			offset += len(line)
+			continue
+		}
+
+		if !strings.HasPrefix(line, "function ") {
+			return strings.TrimSpace(line), nil
+		}
+
+		open := strings.Index(src[offset:], "{")
+		if open == -1 {
+			return "", fmt.Errorf("function %s has no opening brace", identifier)
+		}
+
+		open += offset
+		depth := 0
+		for i := open; i < len(src); i++ {
+			switch src[i] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+				if depth == 0 {
+					return strings.TrimSpace(src[offset : i+1]), nil
+				}
 			}
 		}
+
+		return "", fmt.Errorf("function %s has no closing brace", identifier)
 	}
 
-	if exists {
-		fmt.Printf("\033[90mFound %s %q at %s:%d\033[0m\n", info.typ, identifier, codeFile, info.line)
-
-		code, err := extractColumnZeroIdentifierCode(codeFile, identifier)
-		if err != nil {
-			return messages, "", err
-		}
-
-		originalCode = code
-
-		// Don't include the source in the prompt — rely on the full file
-		// loaded as context at startup so this tests the model's recall.
-		userInput = fmt.Sprintf(`Return the full body code for this %s named %s.`, info.typ, identifier)
-	}
-
-	messages = append(messages,
-		model.TextMessage(model.RoleUser, userInput),
-	)
-
-	return messages, originalCode, nil
+	return "", fmt.Errorf("identifier %s not found", identifier)
 }
 
 func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (model.ChatResponse, error) {
@@ -358,7 +449,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (model.ChatRe
 	return ch, nil
 }
 
-func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse, originalCode string) ([]model.D, error) {
+func modelResponse(messages []model.D, resp model.ChatResponse, codeBlock string) ([]model.D, error) {
 	fmt.Print("\nMODEL> ")
 
 	if len(resp.Choices) == 0 {
@@ -378,16 +469,16 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse
 		messages = append(messages, model.TextMessage(model.RoleAssistant, content))
 	}
 
-	if originalCode != "" {
+	if codeBlock != "" {
 		modelCode := strings.TrimSpace(firstCodeBlock(content))
-		percent := codeMatchPercent(modelCode, originalCode)
+		percent := codeMatchPercent(modelCode, codeBlock)
 
 		fmt.Printf("\nCode match: %.2f%%\n", percent)
 
-		if diff := firstCodeDifference(modelCode, originalCode); diff != -1 {
-			line := 1 + strings.Count(normalizeIndent(originalCode)[:diff], "\n")
+		if diff := firstCodeDifference(modelCode, codeBlock); diff != -1 {
+			line := 1 + strings.Count(normalizeIndent(codeBlock)[:diff], "\n")
 			fmt.Printf("First difference at line: %d\n", line)
-			printCodeDiff(originalCode, modelCode)
+			printCodeDiff(codeBlock, modelCode)
 		}
 	}
 
@@ -508,83 +599,4 @@ func printCodeDiff(originalCode, modelCode string) {
 		}
 	}
 	fmt.Println("--- End Diff ---")
-}
-
-type identInfo struct {
-	typ  string
-	line int
-}
-
-func columnZeroIdentifiers(filename string) (map[string]identInfo, error) {
-	b, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", filename, err)
-	}
-
-	identifiers := make(map[string]identInfo)
-	declRE := regexp.MustCompile(`^(function|var|let|const)\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
-
-	lineNum := 0
-	for line := range strings.SplitSeq(string(b), "\n") {
-		lineNum++
-
-		if line != strings.TrimLeft(line, " \t") {
-			continue
-		}
-
-		if matches := declRE.FindStringSubmatch(line); len(matches) == 3 {
-			info := identInfo{typ: "variable", line: lineNum}
-			if matches[1] == "function" {
-				info.typ = "function"
-			}
-			identifiers[matches[2]] = info
-		}
-	}
-
-	return identifiers, nil
-}
-
-func extractColumnZeroIdentifierCode(filename, identifier string) (string, error) {
-	b, err := os.ReadFile(filename)
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", filename, err)
-	}
-
-	src := string(b)
-	declRE := regexp.MustCompile(`^(function|var|let|const)\s+` + regexp.QuoteMeta(identifier) + `(?:\s|\(|=|,|;)`)
-	offset := 0
-
-	for _, line := range strings.SplitAfter(src, "\n") {
-		if line != strings.TrimLeft(line, " \t") || !declRE.MatchString(line) {
-			offset += len(line)
-			continue
-		}
-
-		if !strings.HasPrefix(line, "function ") {
-			return strings.TrimSpace(line), nil
-		}
-
-		open := strings.Index(src[offset:], "{")
-		if open == -1 {
-			return "", fmt.Errorf("function %s has no opening brace", identifier)
-		}
-
-		open += offset
-		depth := 0
-		for i := open; i < len(src); i++ {
-			switch src[i] {
-			case '{':
-				depth++
-			case '}':
-				depth--
-				if depth == 0 {
-					return strings.TrimSpace(src[offset : i+1]), nil
-				}
-			}
-		}
-
-		return "", fmt.Errorf("function %s has no closing brace", identifier)
-	}
-
-	return "", fmt.Errorf("identifier %s not found", identifier)
 }

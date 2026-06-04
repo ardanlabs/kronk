@@ -166,6 +166,7 @@ const menuStructure: MenuCategory[] = [
             { page: 'docs-sdk-examples', label: 'Concurrency', hash: 'example-concurrency' },
             { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
             { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
+            { page: 'docs-sdk-examples', label: 'Kaleah', hash: 'example-kaleah' },
             { page: 'docs-sdk-examples', label: 'Pool', hash: 'example-pool' },
             { page: 'docs-sdk-examples', label: 'Question', hash: 'example-question' },
             { page: 'docs-sdk-examples', label: 'Rag', hash: 'example-rag' },
