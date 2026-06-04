@@ -31,7 +31,7 @@ endif
 #
 #	Choose the `Qwen3-0.6B-Q8_0` model first since it's the smallest. Ask it
 #	a simple question like, write a hello world program in Go. If that works try
-#	the other 3 models (`LFM2-700M-Q8_0`, `Qwen3-8B-Q8_0` and `gpt-oss-20b-Q8_0`)
+#	the other 3 models (`LFM2-700M-Q8_0`, `Qwen3-8B-Q8_0` and `Qwopus3.5-4B-Coder.Q8_0`)
 #	and ask the same question. Do not be alarmed if the model server panics. It
 #	just means you can't run that model. Just make a note of the models that work
 #	and don't.

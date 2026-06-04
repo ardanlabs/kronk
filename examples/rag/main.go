@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	modelChatSource  = "unsloth/gpt-oss-20b-Q8_0"
+	modelChatSource  = "mradermacher/Qwopus3.5-4B-Coder.Q8_0"
 	modelEmbedSource = "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	dbPath           = "rag/docs/duck-rag.db" // ":memory:"
 	chunksFile       = "rag/docs/book.chunks"
