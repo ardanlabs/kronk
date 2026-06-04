@@ -63,6 +63,14 @@ type imcSession struct {
 	mediaKVCounts     []int         // KV positions consumed per media chunk (image/audio); used for text-only extend math
 	sysPromptHash     string        // Hash of the system prompt message (messages[0] when role="system")
 	sysPromptTokens   int           // Token count of the system prompt in the KV cache
+
+	// cachedRenderInputHash is the imcRenderFingerprint of the inputs that
+	// produced the currently-cached prefix (template, add_generation_prompt,
+	// preserve_thinking, cacheable messages, top-level tools). It is set by
+	// imcCommitSession and consumed by the pure-hit snapshot-skip predicate
+	// in startSlot. Empty string means "do not skip" — pre-rollout sessions
+	// and sessions for which fingerprinting failed naturally disqualify.
+	cachedRenderInputHash string
 }
 
 // draftModel holds resources for the draft model used in speculative decoding.

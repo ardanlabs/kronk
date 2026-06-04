@@ -1220,7 +1220,7 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	m.imcSessions[0] = session
 
 	m.imcCommitSession(session, "newhash", 1000, 5,
-		[]llama.Token{1, 2, 3}, false, nil, "syshash", 50)
+		[]llama.Token{1, 2, 3}, false, nil, "syshash", 50, "")
 
 	// kvState should be preserved — only startSlot snapshots update it.
 	if session.kvState.Len() != 3 {
@@ -1249,7 +1249,7 @@ func TestIMCCommitSessionNilSafe(t *testing.T) {
 	m.cacheCond = sync.NewCond(&m.cacheMu)
 
 	// Should not panic.
-	m.imcCommitSession(nil, "hash", 100, 2, nil, false, nil, "", 0)
+	m.imcCommitSession(nil, "hash", 100, 2, nil, false, nil, "", 0, "")
 }
 
 // TestIMCKVPressureSkipsExternalizedSessions verifies that the KV-pressure
@@ -1496,7 +1496,7 @@ func TestIMCCommitThenRematch(t *testing.T) {
 	sysHash := hashMessages(msgs2[:1])
 
 	m.imcCommitSession(m.imcSessions[0], hash2, 500, 2,
-		[]llama.Token{1, 2, 3, 4, 5}, false, nil, sysHash, 100)
+		[]llama.Token{1, 2, 3, 4, 5}, false, nil, sysHash, 100, "")
 
 	// Verify committed state.
 	s := m.imcSessions[0]
@@ -1585,7 +1585,7 @@ func TestIMCExtendAfterCommit(t *testing.T) {
 	hash2 := hashMessages(msgs2)
 
 	m.imcCommitSession(m.imcSessions[0], hash2, 500, 2,
-		[]llama.Token{1, 2, 3, 4, 5}, false, nil, hashMessages(msgs2[:1]), 100)
+		[]llama.Token{1, 2, 3, 4, 5}, false, nil, hashMessages(msgs2[:1]), 100, "")
 
 	// Request with 5 messages (2 cached + 3 new) — messages[0:4] should be cached.
 	d := D{
@@ -1642,7 +1642,7 @@ func TestIMCSysPromptPreserveRoute(t *testing.T) {
 	sysHash := hashMessages(cachedMsgs[:1])
 
 	m.imcCommitSession(m.imcSessions[0], hash3, 800, 3,
-		[]llama.Token{10, 20, 30, 40, 50, 60, 70, 80}, false, nil, sysHash, 200)
+		[]llama.Token{10, 20, 30, 40, 50, 60, 70, 80}, false, nil, sysHash, 200, "")
 
 	// Send a request with the SAME system prompt but EDITED conversation body.
 	// Full hash won't match, but sys prompt hash should match.
@@ -1697,7 +1697,7 @@ func TestIMCSysPromptChangeFallsToEmptySlot(t *testing.T) {
 	sysHash := hashMessages(cachedMsgs[:1])
 
 	m.imcCommitSession(m.imcSessions[0], hash, 500, 2,
-		[]llama.Token{1, 2, 3, 4, 5}, false, nil, sysHash, 100)
+		[]llama.Token{1, 2, 3, 4, 5}, false, nil, sysHash, 100, "")
 
 	// Send a request with a completely different system prompt B.
 	d := D{
@@ -1740,6 +1740,7 @@ func TestIMCRebuildResultPartialTrim(t *testing.T) {
 		200,                                     // sysToks
 		trimFrom,                                // trimFrom
 		&imcSession{kvState: ramSessionStore()}, // session
+		"",                                      // renderInputHash
 	)
 
 	if result.imcClearSeq {
@@ -1786,6 +1787,7 @@ func TestIMCRebuildResultFullRebuild(t *testing.T) {
 		200,
 		0, // trimFrom == 0 → full rebuild
 		&imcSession{kvState: ramSessionStore()},
+		"",
 	)
 
 	if !result.imcClearSeq {

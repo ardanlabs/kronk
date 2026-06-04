@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -25,6 +26,16 @@ type cacheResult struct {
 	imcSlotID       int         // Session-pool index (== imcSession.slotID)
 	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
 	imcPending      bool        // True if the matched session was already pending (caller should retry)
+
+	// Pure-hit snapshot-skip state. Populated for every IMC cache-result so
+	// imcCommitSession can refresh the session's cachedRenderInputHash;
+	// imcPureHitSkipSnapshot is true only on text-only exact pure hits when
+	// IMCPureHitSnapshotSkip is enabled and the live session's committed
+	// render-input hash equals imcExpectedRenderHash.
+	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot for the matched session.
+	imcExpectedTokens      int    // Expected totalTokensCached at startSlot for the matched session.
+	imcExpectedRenderHash  string // Expected cachedRenderInputHash at startSlot (set on hits; carried forward on builds/extends so commit can refresh the session field).
+	imcPureHitSkipSnapshot bool   // True when startSlot may skip the post-restore snapshot. Always false on extends/media/rebuilds.
 
 	// imcSession is the matched session pointer; the SessionStore on it
 	// is the authoritative source of the cached prefix bytes restored
@@ -251,4 +262,60 @@ func removeMessagesAtIndices(d D, indices []int) D {
 	d["messages"] = newMessages
 
 	return d
+}
+
+// =============================================================================
+
+// imcRenderFingerprintInput is the canonical render-input structure hashed by
+// imcRenderFingerprint. Fields are exported with stable JSON names so the hash
+// is stable across builds. ToolsPresent is emitted explicitly so a request
+// with no tools and a request with an explicitly-nil tools value do not
+// accidentally collapse to the same fingerprint.
+type imcRenderFingerprintInput struct {
+	TemplateHash        string `json:"template_hash"`
+	AddGenerationPrompt bool   `json:"add_generation_prompt"`
+	PreserveThinking    bool   `json:"preserve_thinking"`
+	Messages            []D    `json:"messages"`
+	ToolsPresent        bool   `json:"tools_present"`
+	Tools               any    `json:"tools,omitempty"`
+}
+
+// imcRenderFingerprint computes a SHA-256 fingerprint of the logical inputs
+// that determine what the Jinja template will render for an IMC prefix:
+// template script, add_generation_prompt=false (the IMC fixed setting),
+// preserve_thinking, the cacheable message slice (post imcEnsureUserMessage),
+// and top-level tools.
+//
+// Returned ok=false on marshal failure so callers can disable any optimization
+// that depends on a stable fingerprint. This is stricter than hashMessages,
+// which intentionally ignores tools and assistant tool-call metadata for
+// hit-selection scope. Used as the safety guard for IMCPureHitSnapshotSkip.
+func (m *Model) imcRenderFingerprint(d D, msgs []D) (string, bool) {
+	preserveThinking := true
+	if v, ok := d["preserve_thinking"].(bool); ok {
+		preserveThinking = v
+	}
+
+	templateSum := sha256.Sum256([]byte(m.template.Script))
+
+	in := imcRenderFingerprintInput{
+		TemplateHash:        hex.EncodeToString(templateSum[:]),
+		AddGenerationPrompt: false,
+		PreserveThinking:    preserveThinking,
+		Messages:            msgs,
+	}
+
+	if tools, ok := d["tools"]; ok {
+		in.ToolsPresent = true
+		in.Tools = tools
+	}
+
+	b, err := json.Marshal(in)
+	if err != nil {
+		return "", false
+	}
+
+	sum := sha256.Sum256(b)
+
+	return hex.EncodeToString(sum[:]), true
 }

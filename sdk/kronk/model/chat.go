@@ -314,6 +314,11 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcCacheHit:     imcCacheHit,
 		imcExpectedHash: cache.imcExpectedHash,
 
+		imcExpectedCachedMsgs:  cache.imcExpectedCachedMsgs,
+		imcExpectedTokens:      cache.imcExpectedTokens,
+		imcExpectedRenderHash:  cache.imcExpectedRenderHash,
+		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
+
 		imcNewCacheTokens:      cache.imcNewCacheTokens,
 		imcNewTotalCached:      cache.imcNewTotalCached,
 		imcNewCachedMsgCount:   cache.imcNewCachedMsgCount,

@@ -144,6 +144,12 @@ type promMetrics struct {
 	chatErrorsTotal      *prometheus.CounterVec   // labels: model_id, class.
 	chatRequestDuration  *prometheus.HistogramVec // labels: model_id.
 	chatQueueWaitSeconds *prometheus.HistogramVec // labels: model_id.
+
+	// -------------------------------------------------------------------------
+	// IMC pure-hit snapshot-skip metrics.
+
+	imcSnapshotSkippedTotal     *prometheus.CounterVec // labels: model_id.
+	imcPureHitStaleSessionTotal *prometheus.CounterVec // labels: model_id.
 }
 
 var m promMetrics
@@ -316,6 +322,15 @@ func init() {
 		}, []string{"model_id", "class"}),
 		chatRequestDuration:  newHistVec("chat_request_duration_seconds", "End-to-end chat request duration in seconds.", requestTTFTBuckets),
 		chatQueueWaitSeconds: newHistVec("chat_queue_wait_seconds", "Time spent waiting in the batch engine queue before being assigned a slot.", subSecondBuckets),
+
+		imcSnapshotSkippedTotal: auto.NewCounterVec(prometheus.CounterOpts{
+			Name: "imc_snapshot_skipped_total",
+			Help: "Total IMC post-restore snapshots skipped on text-only exact pure hits.",
+		}, []string{"model_id"}),
+		imcPureHitStaleSessionTotal: auto.NewCounterVec(prometheus.CounterOpts{
+			Name: "imc_pure_hit_stale_session_total",
+			Help: "Total IMC pure-hit snapshot-skip candidates that failed start-time session-version validation (session moved between processIMC and startSlot).",
+		}, []string{"model_id"}),
 	}
 }
 
@@ -655,4 +670,20 @@ func ObserveChatRequestDuration(modelID string, d time.Duration) {
 // engine queue before being assigned to a slot.
 func ObserveChatQueueWait(modelID string, d time.Duration) {
 	m.chatQueueWaitSeconds.WithLabelValues(normalizeModelID(modelID)).Observe(d.Seconds())
+}
+
+// =============================================================================
+// IMC pure-hit snapshot-skip helpers.
+
+// AddIMCSnapshotSkipped records a skipped post-restore IMC snapshot on a
+// text-only exact pure hit (Part A optimization).
+func AddIMCSnapshotSkipped(modelID string) {
+	m.imcSnapshotSkippedTotal.WithLabelValues(normalizeModelID(modelID)).Inc()
+}
+
+// AddIMCPureHitStaleSession records a pure-hit snapshot-skip candidate that
+// failed start-time session-version validation (the session was extended or
+// rebuilt by another goroutine between processIMC and startSlot).
+func AddIMCPureHitStaleSession(modelID string) {
+	m.imcPureHitStaleSessionTotal.WithLabelValues(normalizeModelID(modelID)).Inc()
 }

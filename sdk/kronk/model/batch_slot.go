@@ -42,6 +42,12 @@ type chatJob struct {
 	imcCacheHit     bool        // True if conversation history was found in cache
 	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
 
+	// Pure-hit snapshot-skip state mirrored from cacheResult.
+	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot.
+	imcExpectedTokens      int    // Expected totalTokensCached at startSlot.
+	imcExpectedRenderHash  string // Expected cachedRenderInputHash at startSlot (carried forward on builds/extends so commit can refresh the session field).
+	imcPureHitSkipSnapshot bool   // True when startSlot may skip the post-restore snapshot.
+
 	// IMC dedicated slot fields.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
 	imcNewTotalCached    int           // Total cached KV positions after extension

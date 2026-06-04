@@ -37,18 +37,19 @@ import (
 // imcSlotSnapshot holds a point-in-time copy of an imcSession's metadata.
 // Used by processIMC to release the read lock before hashing.
 type imcSlotSnapshot struct {
-	slotID            int
-	seqID             llama.SeqId
-	cachedMsgsHash    string
-	cachedTokens      []llama.Token
-	totalTokensCached int
-	cachedMsgCount    int
-	lastUsed          time.Time
-	pending           bool
-	empty             bool
-	hasMedia          bool
-	sysPromptHash     string
-	sysPromptTokens   int
+	slotID                int
+	seqID                 llama.SeqId
+	cachedMsgsHash        string
+	cachedTokens          []llama.Token
+	totalTokensCached     int
+	cachedMsgCount        int
+	lastUsed              time.Time
+	pending               bool
+	empty                 bool
+	hasMedia              bool
+	sysPromptHash         string
+	sysPromptTokens       int
+	cachedRenderInputHash string // imcRenderFingerprint of the committed prefix (empty when unavailable).
 }
 
 // processIMC implements incremental multi-turn caching (IMC) for agentic
@@ -108,18 +109,19 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	snapshots := make([]imcSlotSnapshot, len(m.imcSessions))
 	for i, sess := range m.imcSessions {
 		snapshots[i] = imcSlotSnapshot{
-			slotID:            sess.slotID,
-			seqID:             sess.seqID,
-			cachedMsgsHash:    sess.cachedMsgsHash,
-			cachedTokens:      sess.cachedTokens,
-			totalTokensCached: sess.totalTokensCached,
-			cachedMsgCount:    sess.cachedMsgCount,
-			lastUsed:          sess.lastUsed,
-			pending:           sess.pending,
-			empty:             sess.totalTokensCached == 0,
-			hasMedia:          sess.hasMedia,
-			sysPromptHash:     sess.sysPromptHash,
-			sysPromptTokens:   sess.sysPromptTokens,
+			slotID:                sess.slotID,
+			seqID:                 sess.seqID,
+			cachedMsgsHash:        sess.cachedMsgsHash,
+			cachedTokens:          sess.cachedTokens,
+			totalTokensCached:     sess.totalTokensCached,
+			cachedMsgCount:        sess.cachedMsgCount,
+			lastUsed:              sess.lastUsed,
+			pending:               sess.pending,
+			empty:                 sess.totalTokensCached == 0,
+			hasMedia:              sess.hasMedia,
+			sysPromptHash:         sess.sysPromptHash,
+			sysPromptTokens:       sess.sysPromptTokens,
+			cachedRenderInputHash: sess.cachedRenderInputHash,
 		}
 	}
 
@@ -142,6 +144,8 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 	var bestCachedMsgsHash string
 	var bestTotalTokensCached int
 	var bestCachedMsgCount int
+	var bestRenderInputHash string
+	var bestHasMedia bool
 	var emptySessions []*imcSession
 	var lruSession *imcSession
 	var mismatchSessions []int // Snapshot indices of non-matching sessions (eviction candidates).
@@ -213,6 +217,8 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 			bestCachedMsgsHash = snap.cachedMsgsHash
 			bestTotalTokensCached = snap.totalTokensCached
 			bestCachedMsgCount = snap.cachedMsgCount
+			bestRenderInputHash = snap.cachedRenderInputHash
+			bestHasMedia = snap.hasMedia
 		}
 	}
 
@@ -296,13 +302,29 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 			"cached-msgs", bestCachedMsgCount, "current-total-tokens-cached", bestTotalTokensCached,
 			"hash", bestCachedMsgsHash[:8])
 
+		// Pure-hit snapshot-skip qualification. Safe only when the live
+		// session's committed render-input fingerprint equals the current
+		// request's fingerprint (template, tools, preserve_thinking, exact
+		// cacheable messages). Text-only, non-pending sessions only.
+		skipSnapshot := false
+		if !bestHasMedia && bestTotalTokensCached > 0 && bestRenderInputHash != "" {
+			renderHash, ok := m.imcRenderFingerprint(d, m.imcEnsureUserMessage(ctx, messages[:bestCachedMsgCount]))
+			if ok && renderHash == bestRenderInputHash {
+				skipSnapshot = true
+			}
+		}
+
 		return cacheResult{
-			modifiedD:       removeFirstNMessages(d, bestCachedMsgCount),
-			cacheIdx:        llama.Pos(bestTotalTokensCached),
-			cacheSeqID:      bestSession.seqID,
-			imcSlotID:       bestSession.slotID,
-			imcExpectedHash: bestCachedMsgsHash,
-			imcSession:      bestSession,
+			modifiedD:              removeFirstNMessages(d, bestCachedMsgCount),
+			cacheIdx:               llama.Pos(bestTotalTokensCached),
+			cacheSeqID:             bestSession.seqID,
+			imcSlotID:              bestSession.slotID,
+			imcExpectedHash:        bestCachedMsgsHash,
+			imcExpectedCachedMsgs:  bestCachedMsgCount,
+			imcExpectedTokens:      bestTotalTokensCached,
+			imcExpectedRenderHash:  bestRenderInputHash,
+			imcPureHitSkipSnapshot: skipSnapshot,
+			imcSession:             bestSession,
 		}
 	}
 
@@ -594,7 +616,8 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 				"cached", currentTotalTokensCached, "new_total", totalTokens,
 				"sys_prompt_kept", trimFrom > 0, "sys_prompt_tokens", sysToks)
 
-			return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, trimFrom, session)
+			renderHash, _ := m.imcRenderFingerprint(d, msgs)
+			return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, trimFrom, session, renderHash)
 		}
 
 		m.imcClearPending(slotID)
@@ -627,20 +650,23 @@ func (m *Model) extendIMCCache(ctx context.Context, d D, messages []D, session *
 		"idx", fmt.Sprintf("cur[%d] -> new[%d]", currentCachedMsgCount, lastMsgIdxToCache),
 		"tokens", fmt.Sprintf("cur[%d] -> new[%d] (+%d)", currentTotalTokensCached, totalTokens, numOfExtTokens))
 
+	renderHash, _ := m.imcRenderFingerprint(d, msgs)
+
 	return cacheResult{
-		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
-		cacheIdx:             llama.Pos(currentTotalTokensCached),
-		cacheSeqID:           seqID,
-		imcSlotID:            slotID,
-		imcExpectedHash:      newHash,
-		imcSession:           session,
-		imcNewCacheTokens:    extensionTokens,
-		imcNewTotalCached:    totalTokens,
-		imcNewCachedMsgCount: lastMsgIdxToCache,
-		imcNewMsgsHash:       newHash,
-		imcNewCachedTokens:   allTokens,
-		imcSysPromptHash:     sysHash,
-		imcSysPromptTokens:   sysToks,
+		modifiedD:             removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:              llama.Pos(currentTotalTokensCached),
+		cacheSeqID:            seqID,
+		imcSlotID:             slotID,
+		imcExpectedHash:       newHash,
+		imcExpectedRenderHash: renderHash,
+		imcSession:            session,
+		imcNewCacheTokens:     extensionTokens,
+		imcNewTotalCached:     totalTokens,
+		imcNewCachedMsgCount:  lastMsgIdxToCache,
+		imcNewMsgsHash:        newHash,
+		imcNewCachedTokens:    allTokens,
+		imcSysPromptHash:      sysHash,
+		imcSysPromptTokens:    sysToks,
 	}
 }
 
@@ -855,16 +881,33 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 			seqID := session.seqID
 			sID := session.slotID
 			hash := session.cachedMsgsHash
+			renderHash := session.cachedRenderInputHash
+			sessionHasMedia := session.hasMedia
 
 			m.cacheMu.Unlock()
 
+			// Pure-hit snapshot-skip qualification, same predicate as the
+			// pre-scratch-build branch in processIMC. Safe because the
+			// session is text-only when sessionHasMedia is false.
+			skipSnapshot := false
+			if !sessionHasMedia && totalTokens > 0 && renderHash != "" {
+				reqHash, ok := m.imcRenderFingerprint(d, m.imcEnsureUserMessage(ctx, messages[:lastMsgIdx]))
+				if ok && reqHash == renderHash {
+					skipSnapshot = true
+				}
+			}
+
 			return cacheResult{
-				modifiedD:       removeFirstNMessages(d, lastMsgIdx),
-				cacheIdx:        llama.Pos(totalTokens),
-				cacheSeqID:      seqID,
-				imcSlotID:       sID,
-				imcExpectedHash: hash,
-				imcSession:      session,
+				modifiedD:              removeFirstNMessages(d, lastMsgIdx),
+				cacheIdx:               llama.Pos(totalTokens),
+				cacheSeqID:             seqID,
+				imcSlotID:              sID,
+				imcExpectedHash:        hash,
+				imcExpectedCachedMsgs:  lastMsgIdx,
+				imcExpectedTokens:      totalTokens,
+				imcExpectedRenderHash:  renderHash,
+				imcPureHitSkipSnapshot: skipSnapshot,
+				imcSession:             session,
 			}
 		}
 	}
@@ -963,7 +1006,8 @@ func (m *Model) buildIMCCacheFromScratch(ctx context.Context, d D, messages []D,
 
 	m.log(ctx, "imc", "status", "cache build prepared", "slot", slotID, "seq", seqID, "msgs", lastMsgIdxToCache, "tokens", nTokens, "hash", newHash[:8])
 
-	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, tokens, newHash, sysHash, sysToks, 0, session)
+	renderHash, _ := m.imcRenderFingerprint(d, msgsToCache)
+	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, tokens, newHash, sysHash, sysToks, 0, session, renderHash)
 }
 
 // rebuildIMCWithMedia handles cache builds/extends that involve media content.
@@ -1052,7 +1096,8 @@ func (m *Model) rebuildIMCFromPartialPrefix(ctx context.Context, d D, messages [
 		"common-prefix", commonPrefixLen, "extension-tokens", len(allTokens)-commonPrefixLen,
 		"total-tokens", len(allTokens), "hash", newHash[:8])
 
-	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, commonPrefixLen, session)
+	renderHash, _ := m.imcRenderFingerprint(d, msgsToCache)
+	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, commonPrefixLen, session, renderHash)
 }
 
 // rebuildIMCPreservingSysPrompt rebuilds a session's conversation cache while
@@ -1135,30 +1180,37 @@ func (m *Model) rebuildIMCPreservingSysPrompt(ctx context.Context, d D, messages
 			"total-tokens", totalTokens, "hash", newHash[:8])
 	}
 
-	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, trimFrom, session)
+	renderHash, _ := m.imcRenderFingerprint(d, msgsToCache)
+	return imcRebuildResult(d, seqID, slotID, lastMsgIdxToCache, allTokens, newHash, sysHash, sysToks, trimFrom, session, renderHash)
 }
 
 // imcRebuildResult constructs a cacheResult for any rebuild/trim scenario.
 // trimFrom determines the behavior:
 //   - trimFrom == 0: full rebuild (clear sequence, decode all tokens)
 //   - trimFrom > 0:  partial rebuild (trim KV from trimFrom, decode suffix)
-func imcRebuildResult(d D, seqID llama.SeqId, slotID, lastMsgIdxToCache int, allTokens []llama.Token, newHash, sysHash string, sysToks, trimFrom int, session *imcSession) cacheResult {
+//
+// renderInputHash is the imcRenderFingerprint over the messages about to be
+// cached; passed through to imcCommitSession so the committed session can
+// later qualify for the pure-hit snapshot-skip optimization. Pass "" when no
+// fingerprint was available.
+func imcRebuildResult(d D, seqID llama.SeqId, slotID, lastMsgIdxToCache int, allTokens []llama.Token, newHash, sysHash string, sysToks, trimFrom int, session *imcSession, renderInputHash string) cacheResult {
 	return cacheResult{
-		modifiedD:            removeFirstNMessages(d, lastMsgIdxToCache),
-		cacheIdx:             llama.Pos(trimFrom),
-		cacheSeqID:           seqID,
-		imcSlotID:            slotID,
-		imcExpectedHash:      newHash,
-		imcSession:           session,
-		imcNewCacheTokens:    allTokens[trimFrom:],
-		imcNewTotalCached:    len(allTokens),
-		imcNewCachedMsgCount: lastMsgIdxToCache,
-		imcNewMsgsHash:       newHash,
-		imcClearSeq:          trimFrom == 0,
-		imcTrimPos:           llama.Pos(trimFrom),
-		imcNewCachedTokens:   allTokens,
-		imcSysPromptHash:     sysHash,
-		imcSysPromptTokens:   sysToks,
+		modifiedD:             removeFirstNMessages(d, lastMsgIdxToCache),
+		cacheIdx:              llama.Pos(trimFrom),
+		cacheSeqID:            seqID,
+		imcSlotID:             slotID,
+		imcExpectedHash:       newHash,
+		imcExpectedRenderHash: renderInputHash,
+		imcSession:            session,
+		imcNewCacheTokens:     allTokens[trimFrom:],
+		imcNewTotalCached:     len(allTokens),
+		imcNewCachedMsgCount:  lastMsgIdxToCache,
+		imcNewMsgsHash:        newHash,
+		imcClearSeq:           trimFrom == 0,
+		imcTrimPos:            llama.Pos(trimFrom),
+		imcNewCachedTokens:    allTokens,
+		imcSysPromptHash:      sysHash,
+		imcSysPromptTokens:    sysToks,
 	}
 }
 
@@ -1304,6 +1356,7 @@ func imcResetSession(s *imcSession) {
 	s.mediaKVCounts = nil
 	s.sysPromptHash = ""
 	s.sysPromptTokens = 0
+	s.cachedRenderInputHash = ""
 }
 
 // imcClearPending clears a session's pending flag and notifies waiters.
@@ -1325,7 +1378,11 @@ func (m *Model) imcClearPending(slotID int) {
 //
 // The session parameter is the matched session (job.imcSession), not a
 // slot-indexed lookup. With externalized KV, any slot can serve any session.
-func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int, sysHash string, sysToks int) {
+//
+// renderInputHash is the imcRenderFingerprint of the inputs that produced
+// the just-cached prefix; pass "" when no fingerprint was computed (the
+// session simply will not qualify for the pure-hit snapshot-skip path).
+func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int, sysHash string, sysToks int, renderInputHash string) {
 	if session == nil {
 		return
 	}
@@ -1340,6 +1397,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 	session.mediaKVCounts = mediaKVCounts
 	session.sysPromptHash = sysHash
 	session.sysPromptTokens = sysToks
+	session.cachedRenderInputHash = renderInputHash
 	if !hasMedia {
 		session.useMRoPE = false
 	}
