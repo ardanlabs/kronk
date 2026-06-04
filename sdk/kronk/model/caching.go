@@ -18,14 +18,14 @@ type cacheResult struct {
 	cacheIdx  llama.Pos // KV position where cached content ends; new tokens start here
 	err       error     // Any error that occurred
 
-	// IMC session-routing fields. Sessions externalize their KV state
+	// IMC session-routing field. Sessions externalize their KV state
 	// via SessionStore between requests, so the matched session may run
-	// on any free slot. cacheSeqID and imcSlotID identify the session;
-	// the actual execution slot is chosen by the scheduler at startSlot.
-	cacheSeqID      llama.SeqId // KV sequence ID this session uses while resident in VRAM
-	imcSlotID       int         // Session-pool index (== imcSession.slotID)
-	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
-	imcPending      bool        // True if the matched session was already pending (caller should retry)
+	// on any free execution slot — the slot is chosen by the scheduler
+	// at startSlot. imcSessionID identifies the matched session pool
+	// entry (used by imcClearPending lookup and log correlation).
+	imcSessionID    int    // Session-pool index (== imcSession.id) of the matched session.
+	imcExpectedHash string // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
+	imcPending      bool   // True if the matched session was already pending (caller should retry)
 
 	// Pure-hit snapshot-skip state. Populated for every IMC cache-result so
 	// imcCommitSession can refresh the session's cachedRenderInputHash;
@@ -79,7 +79,8 @@ func (m *Model) processCache(ctx context.Context, d D, requestStart time.Time) c
 func (m *Model) clearCaches() {
 	m.cacheMu.Lock()
 
-	// Reset all IMC sessions in place (preserving slotID/seqID).
+	// Reset all IMC sessions in place (preserving id; seqID is dynamic
+	// and is set when a session binds to a slot in startSlot).
 	for _, s := range m.imcSessions {
 		if s != nil {
 			imcResetSession(s)

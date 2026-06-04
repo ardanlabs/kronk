@@ -264,7 +264,7 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 
 	session := &imcSession{
 		kvState: ramSessionStore(),
-		slotID:  0,
+		id:      0,
 		seqID:   0,
 		pending: true,
 	}
@@ -276,8 +276,17 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 		t.Errorf("after commit: cachedRenderInputHash = %q, want %q",
 			session.cachedRenderInputHash, "render-hash-1")
 	}
+	// imcCommitSession deliberately leaves pending=true so concurrent
+	// processIMC scanners cannot pick up the session's new metadata
+	// before kvState has been re-snapshotted. imcPublishSession is the
+	// matched call that finalizes publication.
+	if !session.pending {
+		t.Error("after commit (no publish): pending should still be true")
+	}
+
+	m.imcPublishSession(session)
 	if session.pending {
-		t.Error("after commit: pending should be false")
+		t.Error("after publish: pending should be false")
 	}
 
 	// A subsequent commit (e.g. extend) refreshes the fingerprint.
@@ -305,7 +314,7 @@ func TestIMCCommitEmptyRenderHashDisqualifiesSkip(t *testing.T) {
 	m := newFingerprintTestModel("template-x")
 	session := &imcSession{
 		kvState: ramSessionStore(),
-		slotID:  0,
+		id:      0,
 		seqID:   0,
 		pending: true,
 	}

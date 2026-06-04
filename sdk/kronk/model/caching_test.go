@@ -308,7 +308,7 @@ func TestIMCSlotState(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -355,7 +355,7 @@ func TestClearCaches(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState:           ramSessionStore(),
 			seqID:             llama.SeqId(i),
-			slotID:            i,
+			id:                i,
 			cachedMsgsHash:    "hash",
 			totalTokensCached: 500,
 			cachedMsgCount:    3,
@@ -382,13 +382,13 @@ func TestClearCaches(t *testing.T) {
 func TestCacheResultFields(t *testing.T) {
 	// Test that cacheResult correctly propagates IMC fields.
 	result := cacheResult{
-		modifiedD:  D{"test": "value"},
-		cacheIdx:   1000,
-		cacheSeqID: llama.SeqId(2),
+		modifiedD:    D{"test": "value"},
+		cacheIdx:     1000,
+		imcSessionID: 2,
 	}
 
-	if result.cacheSeqID != 2 {
-		t.Errorf("cacheSeqID = %d, want 2", result.cacheSeqID)
+	if result.imcSessionID != 2 {
+		t.Errorf("imcSessionID = %d, want 2", result.imcSessionID)
 	}
 	if result.cacheIdx != 1000 {
 		t.Errorf("cacheIdx = %d, want 1000", result.cacheIdx)
@@ -420,7 +420,7 @@ func TestProcessIMCScanSkipsPendingSlots(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -475,7 +475,7 @@ func TestProcessIMCScanAllPending(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 			pending: true,
 		}
 	}
@@ -516,7 +516,7 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -550,12 +550,9 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 		t.Fatalf("processIMC returned error: %v", result.err)
 	}
 
-	// Should match slot[1] (seqID=1).
-	if result.cacheSeqID != 1 {
-		t.Errorf("cacheSeqID = %d, want 1", result.cacheSeqID)
-	}
-	if result.imcSlotID != 1 {
-		t.Errorf("imcSlotID = %d, want 1", result.imcSlotID)
+	// Should match session-pool index 1.
+	if result.imcSessionID != 1 {
+		t.Errorf("imcSessionID = %d, want 1", result.imcSessionID)
 	}
 
 	// Pure cache hit: cachedMsgCount (2) == lastMsgIdxToCache (2).
@@ -584,7 +581,7 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -620,12 +617,9 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 		t.Fatalf("processIMC returned error: %v", result.err)
 	}
 
-	// Should pick slot[1] (seqID=1) because it has more cached messages.
-	if result.cacheSeqID != 1 {
-		t.Errorf("cacheSeqID = %d, want 1 (best prefix coverage)", result.cacheSeqID)
-	}
-	if result.imcSlotID != 1 {
-		t.Errorf("imcSlotID = %d, want 1 (best prefix coverage)", result.imcSlotID)
+	// Should pick session 1 because it has more cached messages.
+	if result.imcSessionID != 1 {
+		t.Errorf("imcSessionID = %d, want 1 (best prefix coverage)", result.imcSessionID)
 	}
 
 	// Pure cache hit: cachedMsgCount (4) == lastMsgIdxToCache (4).
@@ -654,7 +648,7 @@ func TestProcessIMCLRUEviction(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -720,7 +714,7 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -773,11 +767,8 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 	}
 
 	// Should match slot[0] (sub-agent 1's cache) via hash.
-	if result3.cacheSeqID != 0 {
-		t.Errorf("follow-up: cacheSeqID = %d, want 0 (should match sub-agent 1's slot)", result3.cacheSeqID)
-	}
-	if result3.imcSlotID != 0 {
-		t.Errorf("follow-up: imcSlotID = %d, want 0 (should match sub-agent 1's slot)", result3.imcSlotID)
+	if result3.imcSessionID != 0 {
+		t.Errorf("follow-up: imcSessionID = %d, want 0 (should match sub-agent 1's session)", result3.imcSessionID)
 	}
 
 	// Pure cache hit — no new tokens, no clear.
@@ -806,12 +797,9 @@ func TestProcessIMCParallelSubAgents(t *testing.T) {
 		t.Fatalf("sub-agent 2 follow-up error: %v", result4.err)
 	}
 
-	// Should match slot[1] (sub-agent 2's cache) via hash.
-	if result4.cacheSeqID != 1 {
-		t.Errorf("sub-agent 2 follow-up: cacheSeqID = %d, want 1", result4.cacheSeqID)
-	}
-	if result4.imcSlotID != 1 {
-		t.Errorf("sub-agent 2 follow-up: imcSlotID = %d, want 1", result4.imcSlotID)
+	// Should match session 1 (sub-agent 2's cache) via hash.
+	if result4.imcSessionID != 1 {
+		t.Errorf("sub-agent 2 follow-up: imcSessionID = %d, want 1", result4.imcSessionID)
 	}
 
 	if len(result4.imcNewCacheTokens) != 0 {
@@ -840,7 +828,7 @@ func TestProcessIMCPendingPreventsDoubleSlot(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -986,7 +974,7 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -1048,7 +1036,7 @@ func TestProcessIMCTokenPrefixFallback(t *testing.T) {
 func TestIMCResetSessionClearsKVState(t *testing.T) {
 	s := &imcSession{
 		kvState:           ramSessionStore(),
-		slotID:            0,
+		id:                0,
 		seqID:             0,
 		cachedMsgsHash:    "abc123",
 		cachedTokens:      []llama.Token{1, 2, 3},
@@ -1104,12 +1092,14 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		t.Errorf("sysPromptTokens = %d, want 0", s.sysPromptTokens)
 	}
 
-	// slotID and seqID should NOT be cleared — they are structural.
-	if s.slotID != 0 {
-		t.Errorf("slotID = %d, want 0 (should be preserved)", s.slotID)
+	// id is structural (session-pool index) and must be preserved.
+	if s.id != 0 {
+		t.Errorf("id = %d, want 0 (should be preserved)", s.id)
 	}
-	if s.seqID != 0 {
-		t.Errorf("seqID = %d, want 0 (should be preserved)", s.seqID)
+	// seqID is dynamic — reset to imcSeqIDUnbound when the session is
+	// detached from any slot's KV sequence.
+	if s.seqID != imcSeqIDUnbound {
+		t.Errorf("seqID = %d, want imcSeqIDUnbound (%d) after reset", s.seqID, imcSeqIDUnbound)
 	}
 }
 
@@ -1128,7 +1118,7 @@ func TestClearCachesResetsKVState(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState:           ramSessionStore(),
 			seqID:             llama.SeqId(i),
-			slotID:            i,
+			id:                i,
 			cachedMsgsHash:    "hash",
 			totalTokensCached: 500,
 			cachedMsgCount:    3,
@@ -1198,6 +1188,10 @@ func TestIMCSessionMediaFlag(t *testing.T) {
 
 // TestIMCCommitSessionPreservesKVState verifies that imcCommitSession does not
 // clear kvState — it should only be updated by the snapshot in startSlot.
+// It also verifies the publication contract: commit leaves pending=true so
+// concurrent IMC scanners ignore the in-flight session, and imcPublishSession
+// is the matched call that finalizes visibility once kvState has been
+// re-snapshotted.
 func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	m := &Model{
 		cfg: Config{
@@ -1211,7 +1205,7 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 
 	session := &imcSession{
 		kvState: ramSessionStore(),
-		slotID:  0,
+		id:      0,
 		seqID:   0,
 		pending: true,
 	}
@@ -1234,8 +1228,17 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	if session.totalTokensCached != 1000 {
 		t.Errorf("totalTokensCached = %d, want 1000", session.totalTokensCached)
 	}
+
+	// Commit alone must not publish: pending must still be true so a
+	// concurrent processIMC ignores this session until the snapshot is
+	// re-externalized.
+	if !session.pending {
+		t.Error("pending should still be true after commit (publication is deferred)")
+	}
+
+	m.imcPublishSession(session)
 	if session.pending {
-		t.Error("pending should be false after commit")
+		t.Error("pending should be false after publish")
 	}
 }
 
@@ -1271,7 +1274,7 @@ func TestIMCKVPressureSkipsExternalizedSessions(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -1350,7 +1353,7 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			session := &imcSession{
 				kvState:  ramSessionStore(),
-				slotID:   1,
+				id:       1,
 				seqID:    1,
 				hasMedia: tt.hasMedia,
 			}
@@ -1360,7 +1363,7 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 				imcCacheHit:     true,
 				imcSession:      session,
 				imcSessionMedia: tt.hasMedia,
-				imcSlotID:       1,
+				imcSessionID:    1,
 			}
 
 			// All IMC jobs use any-slot routing (KV externalized to RAM).
@@ -1378,7 +1381,7 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 // followed by a new imcMediaBuild. All sessions (text and media) get
 // kvState externalized to RAM.
 func TestIMCSessionMediaTransitions(t *testing.T) {
-	s := &imcSession{slotID: 0, seqID: 0, kvState: ramSessionStore()}
+	s := &imcSession{id: 0, seqID: 0, kvState: ramSessionStore()}
 
 	// snapshot simulates startSlot writing kvState by going through the
 	// kvBuffer Prepare/Commit lifecycle.
@@ -1484,7 +1487,7 @@ func TestIMCCommitThenRematch(t *testing.T) {
 	m.imcSessions[0] = &imcSession{
 		kvState: ramSessionStore(),
 		seqID:   0,
-		slotID:  0,
+		id:      0,
 	}
 
 	// Simulate a completed first request: 2 messages cached.
@@ -1537,12 +1540,9 @@ func TestIMCCommitThenRematch(t *testing.T) {
 		t.Fatalf("processIMC returned error: %v", result.err)
 	}
 
-	// Should match slot[0] with cache hit.
-	if result.cacheSeqID != 0 {
-		t.Errorf("cacheSeqID = %d, want 0", result.cacheSeqID)
-	}
-	if result.imcSlotID != 0 {
-		t.Errorf("imcSlotID = %d, want 0", result.imcSlotID)
+	// Should match session 0 with cache hit.
+	if result.imcSessionID != 0 {
+		t.Errorf("imcSessionID = %d, want 0", result.imcSessionID)
 	}
 	if result.cacheIdx != 500 {
 		t.Errorf("cacheIdx = %d, want 500 (should reuse cached position)", result.cacheIdx)
@@ -1574,7 +1574,7 @@ func TestIMCExtendAfterCommit(t *testing.T) {
 	m.imcSessions[0] = &imcSession{
 		kvState: ramSessionStore(),
 		seqID:   0,
-		slotID:  0,
+		id:      0,
 	}
 
 	// Commit: 2 messages cached, 500 tokens.
@@ -1628,7 +1628,7 @@ func TestIMCSysPromptPreserveRoute(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -1684,7 +1684,7 @@ func TestIMCSysPromptChangeFallsToEmptySlot(t *testing.T) {
 		m.imcSessions[i] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(i),
-			slotID:  i,
+			id:      i,
 		}
 	}
 
@@ -1731,8 +1731,7 @@ func TestIMCRebuildResultPartialTrim(t *testing.T) {
 
 	result := imcRebuildResult(
 		D{"messages": []D{}},                    // d
-		llama.SeqId(0),                          // seqID
-		0,                                       // slotID
+		0,                                       // sessionID
 		5,                                       // lastMsgIdxToCache
 		allTokens,                               // allTokens
 		"newhash",                               // newHash
@@ -1778,8 +1777,7 @@ func TestIMCRebuildResultFullRebuild(t *testing.T) {
 
 	result := imcRebuildResult(
 		D{"messages": []D{}},
-		llama.SeqId(0),
-		0,
+		0, // sessionID
 		4,
 		allTokens,
 		"newhash",
@@ -1821,7 +1819,7 @@ func TestClearIMCPendingIfReserved(t *testing.T) {
 		m.imcSessions[0] = &imcSession{
 			kvState: ramSessionStore(),
 			seqID:   llama.SeqId(0),
-			slotID:  0,
+			id:      0,
 			pending: true,
 		}
 		return m
@@ -1835,7 +1833,7 @@ func TestClearIMCPendingIfReserved(t *testing.T) {
 		{
 			name: "build reservation clears pending",
 			cache: cacheResult{
-				imcSlotID:         0,
+				imcSessionID:      0,
 				imcNewCacheTokens: []llama.Token{1, 2, 3},
 			},
 			wantPending: true, // imcSession nil → no clear (defensive; production sets imcSession)
@@ -1843,7 +1841,7 @@ func TestClearIMCPendingIfReserved(t *testing.T) {
 		{
 			name: "session+build clears pending",
 			cache: cacheResult{
-				imcSlotID:         0,
+				imcSessionID:      0,
 				imcNewCacheTokens: []llama.Token{1, 2, 3},
 			},
 			wantPending: false,
@@ -1851,7 +1849,7 @@ func TestClearIMCPendingIfReserved(t *testing.T) {
 		{
 			name: "session+media build clears pending",
 			cache: cacheResult{
-				imcSlotID:     0,
+				imcSessionID:  0,
 				imcMediaBuild: true,
 			},
 			wantPending: false,
@@ -1859,14 +1857,14 @@ func TestClearIMCPendingIfReserved(t *testing.T) {
 		{
 			name: "cache hit only (no reservation) leaves pending alone",
 			cache: cacheResult{
-				imcSlotID: 0,
+				imcSessionID: 0,
 			},
 			wantPending: true,
 		},
 		{
 			name: "nil session leaves pending alone",
 			cache: cacheResult{
-				imcSlotID:         0,
+				imcSessionID:      0,
 				imcNewCacheTokens: []llama.Token{1, 2, 3},
 			},
 			wantPending: true,
@@ -1891,5 +1889,281 @@ func TestClearIMCPendingIfReserved(t *testing.T) {
 				t.Errorf("pending = %v, want %v", got, tt.wantPending)
 			}
 		})
+	}
+}
+
+// TestIMCSessionMultiplier guards the per-slot session multiplier from
+// drifting accidentally. The multiplier controls how many distinct
+// conversation prefixes the server can keep warm at once; bumping it
+// changes worst-case host RAM use and should be a deliberate change.
+func TestIMCSessionMultiplier(t *testing.T) {
+	if imcSessionMultiplier != 3 {
+		t.Errorf("imcSessionMultiplier = %d, want 3", imcSessionMultiplier)
+	}
+}
+
+// TestIMCSeqIDUnboundSentinel guards the unbound sentinel value used by
+// the dynamic seqID binding contract. The KV-pressure eviction path
+// relies on this sentinel to skip MemorySeqRm for sessions whose bytes
+// only live in host RAM.
+func TestIMCSeqIDUnboundSentinel(t *testing.T) {
+	if imcSeqIDUnbound != -1 {
+		t.Errorf("imcSeqIDUnbound = %d, want -1", imcSeqIDUnbound)
+	}
+}
+
+// TestProcessIMCMultiAgentRetention verifies that with the session
+// pool sized larger than the execution-slot count (nSlots *
+// imcSessionMultiplier), more distinct conversation prefixes can stay
+// warm simultaneously than there are execution slots. This is the
+// core benefit of decoupling sessions from slots: a driver loop plus
+// several sub-agents can all hit warm caches even though only NSeqMax
+// of them can decode in parallel.
+//
+// Scenario: nSlots=2, sessions=nSlots*imcSessionMultiplier=6.
+// Four distinct agents each cache a 2-message prefix; a follow-up
+// from each agent should produce a pure hit on the right session
+// without triggering any LRU eviction.
+func TestProcessIMCMultiAgentRetention(t *testing.T) {
+	const nSlots = 2
+	nSessions := nSlots * imcSessionMultiplier // 6
+
+	m := &Model{
+		cfg: Config{
+			PtrIncrementalCache: new(true),
+		},
+		imcSessions: make([]*imcSession, nSessions),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
+			kvState: ramSessionStore(),
+			seqID:   imcSeqIDUnbound,
+			id:      i,
+		}
+	}
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// Four distinct agents, each with its own cached 2-message prefix.
+	// We use four to verify that the sessions beyond NSeqMax (=2) are
+	// reachable: with the old 1:1 sizing, only two prefixes could be
+	// remembered and agents 3 and 4 would have evicted agent 1 and 2.
+	agents := []struct {
+		system string
+		user   string
+		tokens int
+	}{
+		{"You are a code reviewer", "Review this code", 400},
+		{"You are a test writer", "Write tests for this", 350},
+		{"You are a documentation writer", "Document this API", 300},
+		{"You are a refactoring assistant", "Refactor this function", 320},
+	}
+
+	// Seed the first four sessions with each agent's cached prefix,
+	// simulating what startSlot would commit after each agent's
+	// initial build.
+	for i, a := range agents {
+		msgs := []D{
+			{"role": "system", "content": a.system},
+			{"role": "user", "content": a.user},
+		}
+		m.imcSessions[i].cachedMsgsHash = hashMessages(msgs)
+		m.imcSessions[i].totalTokensCached = a.tokens
+		m.imcSessions[i].cachedMsgCount = 2
+		m.imcSessions[i].lastUsed = now.Add(time.Duration(i) * time.Second)
+	}
+
+	// Each agent sends a follow-up that should be a pure cache hit
+	// against its own session. With nSlots=2 sessions in the old
+	// design, agents 1 and 2's caches would have been evicted when
+	// agents 3 and 4 arrived; with the multiplier they all stay warm.
+	for i, a := range agents {
+		followUp := []D{
+			{"role": "system", "content": a.system},
+			{"role": "user", "content": a.user},
+			{"role": "assistant", "content": "On it"},
+		}
+		d := D{"messages": followUp}
+
+		result := m.processIMC(ctx, d, time.Now())
+		if result.err != nil {
+			t.Fatalf("agent %d follow-up returned error: %v", i, result.err)
+		}
+
+		if result.imcSessionID != i {
+			t.Errorf("agent %d follow-up: imcSessionID = %d, want %d (each agent must hit its own session)",
+				i, result.imcSessionID, i)
+		}
+		if result.cacheIdx != llama.Pos(a.tokens) {
+			t.Errorf("agent %d follow-up: cacheIdx = %d, want %d (pure cache hit)",
+				i, result.cacheIdx, a.tokens)
+		}
+		if len(result.imcNewCacheTokens) != 0 {
+			t.Errorf("agent %d follow-up: imcNewCacheTokens = %d, want 0 (pure cache hit, no extension)",
+				i, len(result.imcNewCacheTokens))
+		}
+		if result.imcClearSeq {
+			t.Errorf("agent %d follow-up: imcClearSeq = true, want false (pure cache hit)", i)
+		}
+	}
+
+	// Verify no session got reset/evicted while serving the follow-ups.
+	for i, a := range agents {
+		if m.imcSessions[i].totalTokensCached != a.tokens {
+			t.Errorf("agent %d session: totalTokensCached = %d, want %d (must not be evicted)",
+				i, m.imcSessions[i].totalTokensCached, a.tokens)
+		}
+	}
+
+	// Sessions [4..5] should still be empty — they're available for
+	// future agents without disturbing any of the warm caches.
+	for i := len(agents); i < nSessions; i++ {
+		if m.imcSessions[i].totalTokensCached != 0 {
+			t.Errorf("spare session %d: totalTokensCached = %d, want 0 (should be untouched)",
+				i, m.imcSessions[i].totalTokensCached)
+		}
+	}
+}
+
+// TestImcClearPendingSessionIDArg verifies imcClearPending uses the
+// session-pool index argument (not an execution slot id) and tolerates
+// out-of-range indices defensively. The negative-index guard catches
+// stray callers that pass a slot id by mistake on a job that never
+// reserved an IMC session.
+func TestImcClearPendingSessionIDArg(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			PtrIncrementalCache: new(true),
+		},
+		imcSessions: make([]*imcSession, 4),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+	m.cacheCond = sync.NewCond(&m.cacheMu)
+
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
+			kvState: ramSessionStore(),
+			seqID:   imcSeqIDUnbound,
+			id:      i,
+			pending: true,
+		}
+	}
+
+	// Clear pending on session 3 (a session-pool index that would not
+	// be a valid execution-slot id in a NSeqMax=2 deployment, proving
+	// the call addresses sessions independently of slots).
+	m.imcClearPending(3)
+
+	if m.imcSessions[3].pending {
+		t.Error("session 3 pending = true after imcClearPending(3), want false")
+	}
+	for i := range 3 {
+		if !m.imcSessions[i].pending {
+			t.Errorf("session %d pending = false, want true (untouched)", i)
+		}
+	}
+
+	// Out-of-range arguments must be safe no-ops, not panics.
+	m.imcClearPending(-1)
+	m.imcClearPending(99)
+}
+
+// TestIMCCommitDoesNotPublishUntilSnapshot is a regression test for the
+// publication race that the IMC session pool resize uncovered: an in-flight
+// build/extend would update session metadata AND clear the pending flag in
+// a single imcCommitSession call, before startSlot had a chance to
+// externalize the new kvState. A concurrent processIMC scanner could then
+// observe a fully-published session whose totalTokensCached / cachedMsgsHash
+// matched the new build, but whose kvState was still empty (or held the
+// previous build's bytes). The fix splits commit (metadata only, keeps
+// pending=true) from publish (clears pending and broadcasts) so the
+// snapshot step in startSlot is what makes the session visible.
+//
+// This test exercises only the cache-layer contract: it simulates a build
+// in progress by setting pending=true, calls imcCommitSession, verifies
+// processIMC scanners ignore the still-pending session even though its
+// metadata already matches, then calls imcPublishSession and confirms the
+// next processIMC takes the cache hit.
+func TestIMCCommitDoesNotPublishUntilSnapshot(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			PtrIncrementalCache: new(true),
+		},
+		imcSessions: make([]*imcSession, 1),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+	m.cacheCond = sync.NewCond(&m.cacheMu)
+
+	m.imcSessions[0] = &imcSession{
+		kvState: ramSessionStore(),
+		seqID:   imcSeqIDUnbound,
+		id:      0,
+		pending: true, // simulates an in-flight build/extend
+	}
+
+	cachedMsgs := []D{
+		{"role": "system", "content": "You are helpful"},
+		{"role": "user", "content": "Hello"},
+	}
+	hash := hashMessages(cachedMsgs)
+	sysHash := hashMessages(cachedMsgs[:1])
+
+	// Commit the metadata mid-build (pending stays true).
+	m.imcCommitSession(m.imcSessions[0], hash, 500, 2,
+		[]llama.Token{1, 2, 3, 4, 5}, false, nil, sysHash, 100, "")
+
+	if !m.imcSessions[0].pending {
+		t.Fatal("imcCommitSession must leave pending=true so the session is invisible to scanners until publish")
+	}
+	if m.imcSessions[0].cachedMsgsHash != hash {
+		t.Fatalf("metadata not applied: cachedMsgsHash = %q, want %q", m.imcSessions[0].cachedMsgsHash, hash)
+	}
+
+	// A concurrent scanner that runs while the session is pending must
+	// NOT see this session as a cache hit, even though the metadata
+	// would otherwise match. processIMC explicitly skips pending
+	// sessions during snapshot scan.
+	d := D{
+		"messages": []D{
+			{"role": "system", "content": "You are helpful"},
+			{"role": "user", "content": "Hello"},
+			{"role": "assistant", "content": "Hi"},
+		},
+	}
+
+	result := m.processIMC(context.Background(), d, time.Now())
+	if result.cacheIdx != 0 {
+		t.Errorf("processIMC with pending session: cacheIdx = %d, want 0 (session must be invisible while pending)", result.cacheIdx)
+	}
+	if result.imcSessionID == 0 && result.cacheIdx > 0 {
+		t.Error("processIMC matched a pending session — publication race not closed")
+	}
+
+	// Simulate the snapshot step in startSlot writing the externalized
+	// KV bytes into session.kvState. This is what real production code
+	// does between imcCommitSession and imcPublishSession; encoding it
+	// in the test prevents the test from accidentally normalizing an
+	// invalid published state (metadata set but kvState empty).
+	buf := m.imcSessions[0].kvState.Prepare(3)
+	copy(buf, []byte{0x01, 0x02, 0x03})
+	m.imcSessions[0].kvState.Commit(3)
+
+	// Once the snapshot is committed in startSlot, imcPublishSession
+	// makes the session visible.
+	m.imcPublishSession(m.imcSessions[0])
+	if m.imcSessions[0].pending {
+		t.Fatal("imcPublishSession failed to clear pending")
+	}
+
+	// Now the same scan should land as a pure cache hit.
+	result = m.processIMC(context.Background(), d, time.Now())
+	if result.imcSessionID != 0 {
+		t.Errorf("after publish: imcSessionID = %d, want 0 (cache hit on published session)", result.imcSessionID)
+	}
+	if result.cacheIdx != 500 {
+		t.Errorf("after publish: cacheIdx = %d, want 500 (must reuse cached prefix)", result.cacheIdx)
 	}
 }

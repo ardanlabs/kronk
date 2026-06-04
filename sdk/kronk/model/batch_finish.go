@@ -142,6 +142,17 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.model.log(ctx, "finish-slot", "status", "seq-cleared", "slot", slotID, "seq", seqID)
 	}
 
+	// Unbind the IMC session from this slot's KV sequence. The session
+	// is now externalized (its bytes live in session.kvState in host
+	// RAM) and not resident in any VRAM seq, so the defensive
+	// KV-pressure eviction path should no longer issue MemorySeqRm
+	// against this session's seqID.
+	if s.job.imcSession != nil {
+		e.model.cacheMu.Lock()
+		s.job.imcSession.seqID = imcSeqIDUnbound
+		e.model.cacheMu.Unlock()
+	}
+
 	// Handle error case.
 	if err != nil {
 		outputTokens := s.reasonTokens + s.completionTokens
@@ -318,7 +329,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 
 	// Clear IMC pending reservation if this job reserved a slot.
 	if job.imcCacheHit && (len(job.imcNewCacheTokens) > 0 || job.imcMediaBuild) {
-		e.model.imcClearPending(job.imcSlotID)
+		e.model.imcClearPending(job.imcSessionID)
 	}
 
 	// Decrement activeStreams BEFORE close(job.ch). See finishSlot's
@@ -329,7 +340,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	close(job.ch)
 
 	e.model.log(job.ctx, "batch-engine", "status", "job-failed", "id", job.id,
-		"imc_slot", job.imcSlotID, "imc_cache_hit", job.imcCacheHit,
+		"imc_slot", job.imcSessionID, "imc_cache_hit", job.imcCacheHit,
 		"err", err, "active_streams", remaining)
 }
 

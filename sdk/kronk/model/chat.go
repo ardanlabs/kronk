@@ -126,7 +126,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		// m.decodeMu, which is the SIGSEGV we hit when VS Code cancelled
 		// one of three concurrent chat streams. Per-request IMC cleanup on
 		// submit failure is already handled inside submitToBatchEngine via
-		// m.imcClearPending(cache.imcSlotID).
+		// m.imcClearPending(cache.imcSessionID).
 
 		prompt, media, cache, err := m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
 		if err != nil {
@@ -284,7 +284,7 @@ func (m *Model) clearIMCPendingIfReserved(cache cacheResult) {
 	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild {
 		return
 	}
-	m.imcClearPending(cache.imcSlotID)
+	m.imcClearPending(cache.imcSessionID)
 }
 
 // submitToBatchEngine attempts to submit the request to the batch engine.
@@ -310,7 +310,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 
 		imcSession:      cache.imcSession,
 		imcSessionMedia: cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
-		imcSlotID:       cache.imcSlotID,
+		imcSessionID:    cache.imcSessionID,
 		imcCacheHit:     imcCacheHit,
 		imcExpectedHash: cache.imcExpectedHash,
 
@@ -341,7 +341,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		// pending is set during extendIMCCache/buildIMCCacheFromScratch
 		// and normally cleared in startSlot after decode.
 		if len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild {
-			m.imcClearPending(cache.imcSlotID)
+			m.imcClearPending(cache.imcSessionID)
 		}
 
 		m.sendChatError(ctx, ch, id, err)

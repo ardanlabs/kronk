@@ -37,18 +37,37 @@ type compiledTemplate struct {
 	err  error
 }
 
+// imcSessionMultiplier is the per-slot multiplier for the IMC session
+// pool. With NSeqMax execution slots the pool holds NSeqMax *
+// imcSessionMultiplier cache identities, which decouples how many
+// distinct conversation prefixes the server can keep warm from how
+// many requests can decode in parallel. 3x matches the realistic
+// agentic shape of a driver loop plus a handful of sub-agents plus
+// the occasional side conversation. Session structs cost only a few
+// hundred bytes when idle; the SessionStore backing buffer is
+// allocated lazily on first use, so unused sessions cost essentially
+// nothing.
+const imcSessionMultiplier = 3
+
+// imcSeqIDUnbound marks an IMC session that is not currently resident
+// in any execution slot's KV sequence. A session's seqID is set when
+// startSlot binds it to a slot and reset to imcSeqIDUnbound in
+// finishSlot after the slot's sequence is cleared. The KV-pressure
+// eviction path uses this sentinel to skip MemorySeqRm calls for
+// sessions whose bytes only live in host RAM (via SessionStore).
+const imcSeqIDUnbound llama.SeqId = -1
+
 // imcSession holds the state for a single IMC (Incremental Message Cache)
-// session. Sessions are session-pool entries, sized 1:1 with the
-// configured slot count. Each session externalizes its cached KV
-// state via SessionStore between requests, so any incoming request
-// matched to a session may execute on any free slot — slot identity
-// is decided fresh by the scheduler each time. The slotID/seqID
-// fields preserve the historical 1:1 mapping used to address the
-// session's KV sequence in VRAM while it is still resident (e.g. for
-// KV-pressure eviction of un-externalized sessions).
+// session. Sessions are session-pool entries, sized at NSeqMax *
+// imcSessionMultiplier so the cache identity count is larger than the
+// execution slot count. Each session externalizes its cached KV state
+// via SessionStore between requests; the scheduler binds a session to
+// whichever execution slot is free at startSlot time. The seqID field
+// is dynamic: it holds the bound slot's KV sequence id while a
+// request is in flight, and imcSeqIDUnbound otherwise.
 type imcSession struct {
-	slotID            int           // Stable session-pool index (== seqID). Used to address the session's KV sequence in VRAM and for log correlation; sessions are NOT bound to a particular execution slot.
-	seqID             llama.SeqId   // KV sequence ID this session uses when its bytes are resident in VRAM.
+	id                int           // Stable session-pool index. Used by imcClearPending lookup and for log correlation; not related to execution slot identity.
+	seqID             llama.SeqId   // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
 	cachedMsgsHash    string        // Hash of all cached messages
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
 	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
@@ -176,7 +195,7 @@ type Model struct {
 	decodeMu          sync.Mutex
 	cacheMu           sync.RWMutex
 	cacheCond         *sync.Cond    // Signaled when an IMC session's pending flag is cleared (a build/extend has finished).
-	imcSessions       []*imcSession // IMC session pool, sized 1:1 with execution slots; sessions migrate freely between slots via SessionStore.
+	imcSessions       []*imcSession // IMC session pool, sized NSeqMax * imcSessionMultiplier; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
 	addBOSToken       bool          // Whether to add BOS token (from model metadata)
 	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
 	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
@@ -597,19 +616,26 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	m.lctx = lctx
 	m.mem = mem
 
-	// Initialize the IMC session pool. Sized 1:1 with execution slots
-	// today; sessions externalize their KV state via SessionStore so any
-	// session can run on any free slot.
+	// Initialize the IMC session pool. Sized at nSlots *
+	// imcSessionMultiplier so the cache identity count is larger than
+	// the execution slot count: multi-agent workloads keep N distinct
+	// prefixes warm without LRU thrashing, while actual decode
+	// concurrency stays capped at nSlots in the batch engine. Sessions
+	// externalize their KV state via SessionStore so any session can
+	// run on any free slot. The SessionStore backing buffer is
+	// allocated lazily on first use, so unused sessions cost only the
+	// imcSession struct itself.
 	if m.cfg.IncrementalCache() {
-		m.imcSessions = make([]*imcSession, nSlots)
-		for i := range nSlots {
+		nSessions := nSlots * imcSessionMultiplier
+		m.imcSessions = make([]*imcSession, nSessions)
+		for i := range nSessions {
 			store, err := newSessionStore(m.cfg)
 			if err != nil {
 				return fmt.Errorf("init-generation-runtime: session-store: %w", err)
 			}
 			m.imcSessions[i] = &imcSession{
-				slotID:  i,
-				seqID:   llama.SeqId(i),
+				id:      i,
+				seqID:   imcSeqIDUnbound,
 				kvState: store,
 			}
 		}
