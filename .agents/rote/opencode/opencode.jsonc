@@ -8,15 +8,22 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
-                "gemma-4-26B-A4B-it-UD-Q4_K_M/AGENT": {
-                    "name": "Gemma4 26B-A4B UD-Q4_K_M",
+                "unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
+                    "name": "Qwen3.6 35B-A3B UD-Q8_K_XL",
                     "limit": {
                         "context": 131072,
                         "output": 65536
                     }
                 },
-                "Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT": {
-                    "name": "Qwen3.6 35B-A3B UD-Q4_K_M",
+                "unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
+                    "name": "Gemma4 26B-A4B UD-Q8_K_XL",
+                    "limit": {
+                        "context": 131072,
+                        "output": 65536
+                    }
+                },
+                "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT": {
+                    "name": "Qwopus3.5 4B-Coder Q8_0",
                     "limit": {
                         "context": 131072,
                         "output": 65536
@@ -25,7 +32,7 @@
             }
         }
     },
-    "model": "kronk/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "model": "kronk/unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
     "formatter": true,
     "lsp": true,
     "compaction": {
@@ -45,5 +52,10 @@
     ],
     "instructions": [
         "agent.md"
-    ]
+    ],
+    "agent": {
+        "title": {
+            "disable": true
+        }
+    },
 }
