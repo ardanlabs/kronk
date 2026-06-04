@@ -214,8 +214,6 @@ func chat(krn *kronk.Kronk) error {
 		return fmt.Errorf("chat: index identifiers: %w", err)
 	}
 
-	printIdentifiers(identifiers)
-
 	for {
 		identifier, err := selectIdentifier(identifiers)
 		if err != nil {
@@ -298,42 +296,10 @@ func retrieveIdentifiers(codeFile string) (map[string]identInfo, []byte, error) 
 	return identifiers, code, nil
 }
 
-func printIdentifiers(identifiers map[string]identInfo) {
-	idents := sortIdentifiers(identifiers)
-
-	var identLabelWidth int
-	for _, id := range idents {
-		if len(id.name) > identLabelWidth {
-			identLabelWidth = len(id.name)
-		}
-	}
-
-	fmt.Println("\nAvailable functions:")
-	fmt.Printf("  %4s | %4s | %-*s | %s\n", "Num", "Line", identLabelWidth, "Identifier", "Type")
-	fmt.Printf("  %s-+-%s-+-%s-+-%s\n", strings.Repeat("-", 4), strings.Repeat("-", 4), strings.Repeat("-", identLabelWidth), strings.Repeat("-", 8))
-
-	for i, id := range idents {
-		fmt.Printf("  %4d | %4d | %-*s | %s\n", i+1, id.line, identLabelWidth, id.name, id.typ)
-	}
-}
-
-func createInitialMessages(code []byte) []model.D {
-	var systemPrompt = `You will be given source code for one identifier from a 
-	program. Return the source code in a JavaScript code block.`
-
-	return append(model.DocumentArray(),
-		model.TextMessage(model.RoleSystem, systemPrompt),
-		model.TextMessage("user", "Here is the code to analyze:\n\n"+string(code)),
-	)
-}
-
 func selectIdentifier(identifiers map[string]identInfo) (string, error) {
 	idents := sortIdentifiers(identifiers)
 
-	fmt.Println("\nWhich Function Do We Test?")
-	for i, id := range idents {
-		fmt.Printf("  %d: %s\n", i+1, id.name)
-	}
+	printIdentifiers(identifiers)
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -374,6 +340,25 @@ func selectIdentifier(identifiers map[string]identInfo) (string, error) {
 	}
 
 	return identifier, nil
+}
+
+func printIdentifiers(identifiers map[string]identInfo) {
+	idents := sortIdentifiers(identifiers)
+
+	var identLabelWidth int
+	for _, id := range idents {
+		if len(id.name) > identLabelWidth {
+			identLabelWidth = len(id.name)
+		}
+	}
+
+	fmt.Println("\nWhich Function Do We Test?")
+	fmt.Printf("  %4s | %4s | %-*s\n", "Num", "Line", identLabelWidth, "Identifier")
+	fmt.Printf("  %s-+-%s-+-%s-+\n", strings.Repeat("-", 4), strings.Repeat("-", 4), strings.Repeat("-", identLabelWidth))
+
+	for i, id := range idents {
+		fmt.Printf("  %4d | %4d | %-*s\n", i+1, id.line, identLabelWidth, id.name)
+	}
 }
 
 type ident struct {
@@ -437,6 +422,16 @@ func extractIdentifierCode(code []byte, identifier string) (string, error) {
 	}
 
 	return "", fmt.Errorf("identifier %s not found", identifier)
+}
+
+func createInitialMessages(code []byte) []model.D {
+	var systemPrompt = `You will be given source code for one identifier from a 
+	program. Return the source code in a JavaScript code block.`
+
+	return append(model.DocumentArray(),
+		model.TextMessage(model.RoleSystem, systemPrompt),
+		model.TextMessage("user", "Here is the code to analyze:\n\n"+string(code)),
+	)
 }
 
 func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (model.ChatResponse, error) {
