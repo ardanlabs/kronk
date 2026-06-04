@@ -542,23 +542,6 @@ func TextMessageArray(role string, content string) D {
 	}
 }
 
-// RawMediaMessage creates a new media message and should not be used for
-// http based requests. On a http request, binary data is automatically
-// converted to base64 and the system won't recognize this as media.
-// Use ImageMessage, AudioMessage, or VideoMessage instead.
-func RawMediaMessage(text string, media []byte) []D {
-	return []D{
-		{
-			"role":    "user",
-			"content": media,
-		},
-		{
-			"role":    "user",
-			"content": text,
-		},
-	}
-}
-
 // ImageMessage create a new media message.
 //
 // The image part is emitted before the text part inside the user turn. Many
@@ -590,13 +573,13 @@ func ImageMessage(text string, media []byte, typ string) []D {
 
 // AudioMessage create a new media message.
 //
-// The audio is placed in its own user turn and the text question is placed
-// in a separate user turn that follows. Audio LLMs such as Qwen2-Audio were
-// trained with the audio token in a dedicated user turn (the chat template
-// embedded in those GGUFs is plain ChatML and concatenates content verbatim),
-// so packing the audio marker and the question into a single user message
-// produces nonsense output. Two consecutive user turns also remain valid
-// OpenAI-compatible JSON so the same value works over the HTTP API.
+// The audio part is emitted before the text part inside a single user turn,
+// matching the shape llama-mtmd-cli builds for "-p <text> --audio <file>".
+// Audio LLMs whose text side uses a standard Instruct chat template (e.g.
+// Ultravox on Llama-3.x-Instruct) refuse to acknowledge the media when the
+// audio and text live in separate user turns, because the template renders
+// back-to-back user headers that the base model was never trained on. The
+// single-turn shape is also the layout ImageMessage and VideoMessage use.
 func AudioMessage(text string, media []byte, typ string) []D {
 	encoded := base64.StdEncoding.EncodeToString(media)
 	data := fmt.Sprintf("data:audio/%s;base64,%s", typ, encoded)
@@ -611,11 +594,11 @@ func AudioMessage(text string, media []byte, typ string) []D {
 						"data": data,
 					},
 				},
+				{
+					"type": "text",
+					"text": text,
+				},
 			},
-		},
-		{
-			"role":    "user",
-			"content": text,
 		},
 	}
 }
@@ -660,7 +643,7 @@ func DocumentArray(doc ...D) []D {
 // Messages combines individual messages (D) and message groups ([]D) into
 // a single []D suitable for use as the "messages" field on a request. This
 // lets you mix helpers like TextMessage (returns D) with helpers like
-// ImageMessage or RawMediaMessage (return []D) in a single call.
+// ImageMessage or AudioMessage (return []D) in a single call.
 //
 // Unsupported item types panic, which signals a programmer error at the
 // call site.
@@ -1073,7 +1056,7 @@ type chatMessageContent struct {
 //   - nil                          — no content (e.g. assistant tool_calls)
 //   - string                       — plain text (or base64 string for Form1
 //     when the SDK caller supplied bytes via plain string content)
-//   - []byte                       — raw media bytes (Form1, RawMediaMessage)
+//   - []byte                       — raw media bytes (Form1)
 //   - []chatMessageContent         — typed multipart parts (Form2, OpenAI
 //     image_url / video_url / input_audio)
 type chatMessage struct {

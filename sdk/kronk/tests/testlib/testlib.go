@@ -66,7 +66,7 @@ func Setup() {
 	resolveModel(mdls, "embeddinggemma-300m-qat-Q8_0", &MPEmbed)
 	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerank)
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
-	resolveModel(mdls, "Qwen2-Audio-7B.Q8_0", &MPAudio)
+	resolveModel(mdls, "Qwen2.5-Omni-3B-Q8_0", &MPAudio)
 	resolveModel(mdls, "Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
 	resolveModel(mdls, "mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL", &MPMTP)
 
@@ -321,6 +321,9 @@ func CfgAudio() model.Config {
 		PtrNUBatch:       new(2048),
 		CacheTypeK:       model.GGMLTypeQ8_0,
 		CacheTypeV:       model.GGMLTypeQ8_0,
+		// Keep the mmproj on CPU to dodge the llama.cpp b9433 Metal
+		// im2col regression that breaks 1D-conv audio encoders.
+		PtrProjOnCPU: new(true),
 	}
 }
 

@@ -578,8 +578,8 @@ func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// chatAudioQwen2Audio returns chat tests for Qwen2-Audio-7B.Q8_0 model (audio).
-func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table {
+// chatAudioQwen25Omni returns chat tests for Qwen2.5-Omni-3B-Q8_0 model (audio).
+func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table {
 	audio, err := readFile(audioFile)
 	if err != nil {
 		t.Fatalf("read audio: %s", err)
@@ -594,7 +594,7 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "Qwen2-Audio-7B.Q8_0",
+				"model":       "Qwen2.5-Omni-3B-Q8_0",
 				"messages":    model.AudioMessage("please describe if you hear speech or not in this clip.", audio, "wav"),
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -611,7 +611,7 @@ func chatAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen2-Audio-7B.Q8_0",
+				Model:             "Qwen2.5-Omni-3B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.media",
 			},

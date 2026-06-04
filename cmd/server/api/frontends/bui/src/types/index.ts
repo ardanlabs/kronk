@@ -103,6 +103,7 @@ export interface ModelConfig {
   'offload-kqv': boolean | null;
   'op-offload': boolean | null;
   'op-offload-min-batch'?: number;
+  'proj-on-cpu': boolean | null;
   'ngpu-layers': number | null;
   'split-mode': string | null;
   'tensor-split': number[] | null;

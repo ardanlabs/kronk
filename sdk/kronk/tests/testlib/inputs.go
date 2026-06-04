@@ -161,7 +161,7 @@ func initInputs() error {
 		}
 
 		DMedia = model.D{
-			"messages":   model.RawMediaMessage("What is in this picture?", mediaBytes),
+			"messages":   model.ImageMessage("What is in this picture?", mediaBytes, "jpeg"),
 			"max_tokens": 2048,
 		}
 
@@ -180,7 +180,7 @@ func initInputs() error {
 		}
 
 		DAudio = model.D{
-			"messages":   model.RawMediaMessage("Please describe what you hear in the following audio clip.", audioBytes),
+			"messages":   model.AudioMessage("Please describe what you hear in the following audio clip.", audioBytes, "wav"),
 			"max_tokens": 2048,
 		}
 	}

@@ -121,6 +121,7 @@ export const PARAM_TOOLTIPS = {
 
   offloadKQV: 'Offloads key/query/value attention operations to GPU. Can improve performance on GPU-backed inference but increases VRAM usage.',
   opOffload: 'Allows selected host-side tensor operations to be offloaded to GPU during prompt processing. Can improve throughput for large or CPU-heavy workloads.',
+  projOnCpu: 'Forces the multimodal projector (mmproj) onto the CPU regardless of GPU availability. Use this for audio models hit by llama.cpp Metal kernel regressions; the main LLM still runs on GPU.',
   mainGpu: 'Primary GPU index used in multi-GPU configurations. Relevant when using split mode or explicit device placement. Leave empty on single-GPU systems.',
   devices: 'Explicit list of devices for inference (e.g. CUDA0,CUDA1). Leave empty to let the runtime auto-select.',
 

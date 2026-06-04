@@ -458,6 +458,7 @@ export default function ModelList() {
                         { key: 'offload-kqv', label: labelWithTip('offload-kqv', 'offloadKQV'), value: fmtVal(mc['offload-kqv']) },
                         { key: 'op-offload', label: labelWithTip('op-offload', 'opOffload'), value: fmtVal(mc['op-offload']) },
                         { key: 'op-offload-min-batch', label: labelWithTip('op-offload-min-batch', 'opOffloadMinBatch'), value: fmtVal(mc['op-offload-min-batch']) },
+                        { key: 'proj-on-cpu', label: labelWithTip('proj-on-cpu', 'projOnCpu'), value: fmtVal(mc['proj-on-cpu']) },
                         { key: 'rope-freq-base', label: labelWithTip('rope-freq-base', 'ropeFreqBase'), value: fmtVal(mc['rope-freq-base']) },
                         { key: 'rope-freq-scale', label: labelWithTip('rope-freq-scale', 'ropeFreqScale'), value: fmtVal(mc['rope-freq-scale']) },
                         { key: 'rope-scaling-type', label: labelWithTip('rope-scaling-type', 'ropeScaling'), value: mc['rope-scaling-type'] || '—' },

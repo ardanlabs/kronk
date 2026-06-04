@@ -84,17 +84,17 @@ models:
       endpoint: rerank
       rerank: true
     resolved_at: 2026-04-28T00:03:50Z
-  mradermacher/Qwen2-Audio-7B.Q8_0:
-    provider: mradermacher
-    family: Qwen2-Audio-7B-GGUF
+  ggml-org/Qwen2.5-Omni-3B-Q8_0:
+    provider: ggml-org
+    family: Qwen2.5-Omni-3B-GGUF
     revision: main
     files:
-      - Qwen2-Audio-7B.Q8_0.gguf
+      - Qwen2.5-Omni-3B-Q8_0.gguf
     file_sizes:
-      - 8247536704
-    mmproj: mmproj-Qwen2-Audio-7B.Q8_0.gguf
-    mmproj_orig: Qwen2-Audio-7B.mmproj-Q8_0.gguf
-    mmproj_size: 694562304
+      - 3616087360
+    mmproj: mmproj-Qwen2.5-Omni-3B-Q8_0.gguf
+    mmproj_orig: mmproj-Qwen2.5-Omni-3B-Q8_0.gguf
+    mmproj_size: 2623983328
     model_type: Dense
     capabilities:
       endpoint: chat_completion
@@ -103,7 +103,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
+    resolved_at: 2026-06-04T00:00:00Z
   mradermacher/Qwopus3.5-4B-Coder.Q8_0:
     provider: mradermacher
     family: Qwopus3.5-4B-Coder-GGUF

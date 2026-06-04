@@ -334,7 +334,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 		start := time.Now()
 
-		mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmd.ContextParamsDefault())
+		mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmdContextParams(cfg))
 		if err != nil {
 			llama.ModelFree(mdl)
 			return nil, fmt.Errorf("init-mtmd-meta-context: %w", err)
@@ -1323,4 +1323,23 @@ func humanBytes(n int64) string {
 	}
 
 	return fmt.Sprintf("%.1f%s", float64(n)/float64(div), suffixes[exp])
+}
+
+// mtmdContextParams returns the mtmd context parameters to use for the given
+// model configuration.
+//
+// TEMPORARY: the default for UseGPU is forced to false (i.e. PtrProjOnCPU
+// defaults to true) to dodge the llama.cpp b9433 Metal im2col regression that
+// breaks 1D-conv audio encoders and produces "@@@@" output. Callers can
+// override with WithProjOnCPU(false) once an upstream fix lands so the mmproj
+// runs on the GPU again. See:
+//
+//	https://github.com/ggml-org/llama.cpp/issues/23986
+func mtmdContextParams(cfg Config) mtmd.ContextParamsType {
+	params := mtmd.ContextParamsDefault()
+	params.UseGPU = false
+	if cfg.PtrProjOnCPU != nil {
+		params.UseGPU = !*cfg.PtrProjOnCPU
+	}
+	return params
 }

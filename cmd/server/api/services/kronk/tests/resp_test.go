@@ -113,8 +113,8 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// respAudioQwen2Audio returns response tests for Qwen2-Audio-7B.Q8_0 model (audio).
-func respAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table {
+// respAudioQwen25Omni returns response tests for Qwen2.5-Omni-3B-Q8_0 model (audio).
+func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table {
 	audio, err := readFile(audioFile)
 	if err != nil {
 		t.Fatalf("read audio: %s", err)
@@ -129,7 +129,7 @@ func respAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "Qwen2-Audio-7B.Q8_0",
+				"model":       "Qwen2.5-Omni-3B-Q8_0",
 				"input":       model.AudioMessage("please describe if you hear speech or not in this clip.", audio, "wav"),
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -140,7 +140,7 @@ func respAudioQwen2Audio(t *testing.T, tokens map[string]string) []apitest.Table
 			ExpResp: &kronk.ResponseResponse{
 				Object: "response",
 				Status: "completed",
-				Model:  "Qwen2-Audio-7B.Q8_0",
+				Model:  "Qwen2.5-Omni-3B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,

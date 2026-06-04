@@ -44,7 +44,7 @@ Example models from the seed catalog:
 
 - `unsloth/LFM2.5-VL-1.6B-Q8_0` - Vision model
 - `unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M` - Vision model
-- `mradermacher/Qwen2-Audio-7B.Q8_0` - Audio model
+- `ggml-org/Qwen2.5-Omni-3B-Q8_0` - Audio model
 - `ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0` - Vision + audio + video
 
 ### 11.2 Vision Models
@@ -112,7 +112,7 @@ Audio models transcribe and understand spoken content.
 **Download an Audio Model:**
 
 ```shell
-kronk model pull mradermacher/Qwen2-Audio-7B.Q8_0
+kronk model pull ggml-org/Qwen2.5-Omni-3B-Q8_0
 ```
 
 **API Request with Audio:**
@@ -121,7 +121,7 @@ kronk model pull mradermacher/Qwen2-Audio-7B.Q8_0
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "mradermacher/Qwen2-Audio-7B.Q8_0",
+    "model": "ggml-org/Qwen2.5-Omni-3B-Q8_0",
     "messages": [
       {
         "role": "user",
@@ -202,14 +202,14 @@ KV cache (8K):     ~0.4 GB
 Total:             ~2.4 GB
 ```
 
-**Audio Model Example (mradermacher/Qwen2-Audio-7B.Q8_0):**
+**Audio Model Example (ggml-org/Qwen2.5-Omni-3B-Q8_0):**
 
 ```
-Model weights:     ~8 GB
-Projector:         ~0.7 GB
-KV cache (8K):     ~0.6 GB
+Model weights:     ~3.4 GB
+Projector:         ~2.4 GB
+KV cache (8K):     ~0.4 GB
 ─────────────────────────
-Total:             ~9.3 GB
+Total:             ~6.2 GB
 ```
 
 ### 11.7 IMC and Multi-Modal Caching
@@ -284,7 +284,7 @@ AUDIO_B64=$(base64 -i recording.wav)
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "mradermacher/Qwen2-Audio-7B.Q8_0",
+    "model": "ggml-org/Qwen2.5-Omni-3B-Q8_0",
     "messages": [
       {
         "role": "user",

@@ -36,7 +36,7 @@ func detectMediaContent(d D) (mediaType MediaType, isOpenAIFormat bool, msgs cha
 			}
 
 		case []byte:
-			// Raw bytes from SDK callers (Form1, RawMediaMessage). Identify
+			// Raw bytes from SDK callers (Form1). Identify
 			// directly from the magic bytes — there's no base64 round-trip
 			// in the new toChatMessages walker, so we don't have a string
 			// to feed detectMediaType.
@@ -292,7 +292,7 @@ func detectMediaType(s string) MediaType {
 // "tokenization failed with code 1".
 //
 // This replaces the previous implementation, which used cross-message state
-// to pair text and media into RawMediaMessage entries. That approach silently
+// to pair text and media across separate user turns. That approach silently
 // dropped images, paired text from one message with media from another,
 // collapsed every output to the user role, and could not represent multiple
 // text or media parts in a single message.

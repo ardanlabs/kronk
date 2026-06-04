@@ -4907,7 +4907,7 @@ d := model.D{
           <ul>
             <li><code>unsloth/LFM2.5-VL-1.6B-Q8_0</code> - Vision model</li>
             <li><code>unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M</code> - Vision model</li>
-            <li><code>mradermacher/Qwen2-Audio-7B.Q8_0</code> - Audio model</li>
+            <li><code>ggml-org/Qwen2.5-Omni-3B-Q8_0</code> - Audio model</li>
             <li><code>ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0</code> - Vision + audio + video</li>
           </ul>
           <h3 id="112-vision-models">11.2 Vision Models</h3>
@@ -4956,12 +4956,12 @@ d := model.D{
           <h3 id="113-audio-models">11.3 Audio Models</h3>
           <p>Audio models transcribe and understand spoken content.</p>
           <p><strong>Download an Audio Model:</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk model pull mradermacher/Qwen2-Audio-7B.Q8_0`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull ggml-org/Qwen2.5-Omni-3B-Q8_0`}</code></pre>
           <p><strong>API Request with Audio:</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "mradermacher/Qwen2-Audio-7B.Q8_0",
+    "model": "ggml-org/Qwen2.5-Omni-3B-Q8_0",
     "messages": [
       {
         "role": "user",
@@ -5023,12 +5023,12 @@ Projector:         ~0.8 GB
 KV cache (8K):     ~0.4 GB
 ─────────────────────────
 Total:             ~2.4 GB`}</code></pre>
-          <p><strong>Audio Model Example (mradermacher/Qwen2-Audio-7B.Q8_0):</strong></p>
-          <pre className="code-block"><code>{`Model weights:     ~8 GB
-Projector:         ~0.7 GB
-KV cache (8K):     ~0.6 GB
+          <p><strong>Audio Model Example (ggml-org/Qwen2.5-Omni-3B-Q8_0):</strong></p>
+          <pre className="code-block"><code>{`Model weights:     ~3.4 GB
+Projector:         ~2.4 GB
+KV cache (8K):     ~0.4 GB
 ─────────────────────────
-Total:             ~9.3 GB`}</code></pre>
+Total:             ~6.2 GB`}</code></pre>
           <h3 id="117-imc-and-multi-modal-caching">11.7 IMC and Multi-Modal Caching</h3>
           <p>IMC fully supports vision and audio models. Media embeddings (images, audio) are cached in the KV cache alongside text tokens. After each request, the entire cached prefix — including media embeddings — is snapshotted to RAM via <code>StateSeqGetData</code> and the VRAM sequence is cleared. On the next request, the cached state is restored from RAM into any available slot, just like text-only sessions. Media is never re-encoded through the projection model unless the conversation cache is rebuilt from scratch.</p>
           <p>For example, in a multi-turn vision conversation:</p>
@@ -5075,7 +5075,7 @@ AUDIO_B64=$(base64 -i recording.wav)
 curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "mradermacher/Qwen2-Audio-7B.Q8_0",
+    "model": "ggml-org/Qwen2.5-Omni-3B-Q8_0",
     "messages": [
       {
         "role": "user",

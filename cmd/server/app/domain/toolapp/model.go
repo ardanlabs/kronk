@@ -283,6 +283,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			NSeqMax:             rmc.PtrNSeqMax,
 			PtrOffloadKQV:       rmc.PtrOffloadKQV,
 			PtrOpOffload:        rmc.PtrOpOffload,
+			PtrProjOnCPU:        rmc.PtrProjOnCPU,
 			PtrNGpuLayers:       rmc.PtrNGpuLayers,
 			PtrSplitMode:        rmc.PtrSplitMode,
 			TensorSplit:         rmc.TensorSplit,
@@ -662,6 +663,7 @@ type ModelConfig struct {
 	NSeqMax             *int                     `json:"nseq-max"`
 	PtrOffloadKQV       *bool                    `json:"offload-kqv"`
 	PtrOpOffload        *bool                    `json:"op-offload"`
+	PtrProjOnCPU        *bool                    `json:"proj-on-cpu"`
 	PtrNGpuLayers       *int                     `json:"ngpu-layers"`
 	PtrSplitMode        *model.SplitMode         `json:"split-mode"`
 	TensorSplit         []float32                `json:"tensor-split"`

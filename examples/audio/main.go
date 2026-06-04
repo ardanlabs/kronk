@@ -23,12 +23,12 @@ import (
 
 // modelSource is the model to download. It may be a HuggingFace URL,
 // a canonical "provider/modelID", or a bare model id.
-var modelSource = "mradermacher/Qwen2-Audio-7B.Q8_0"
+var modelSource = "ggml-org/Qwen2.5-Omni-3B-Q8_0"
 
 const audioFile = "samples/jfk.wav"
 
 func main() {
-	fmt.Print("\nBe aware that llama.cpp broke audio models starting at version b9433\nhttps://github.com/ggml-org/llama.cpp/issues/23986\n\n")
+	fmt.Print("\nllama.cpp broke GPU offload for 1D-conv audio encoders at version b9433\nhttps://github.com/ggml-org/llama.cpp/issues/23986\nWithProjOnCPU(true) keeps the mmproj on CPU to avoid the regression.\n\n")
 
 	if err := run(); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
@@ -101,6 +101,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 		model.WithProjFile(mp.ProjFile),
+		model.WithProjOnCPU(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
@@ -136,7 +137,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 }
 
 func audio(krn *kronk.Kronk) error {
-	question := "Please describe what you hear in the following audio clip."
+	question := "Transcribe the following audio and then summarize who said it and when."
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()

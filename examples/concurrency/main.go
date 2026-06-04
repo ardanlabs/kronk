@@ -233,10 +233,15 @@ func processImage(krn *kronk.Kronk, workerID int, imageFile string) {
 		return
 	}
 
+	imageType := "jpeg"
+	if strings.EqualFold(filepath.Ext(imageFile), ".png") {
+		imageType = "png"
+	}
+
 	params := model.D{
 		"messages": model.Messages(
 			model.TextMessage(model.RoleSystem, systemPrompt),
-			model.RawMediaMessage(prompt, imageData),
+			model.ImageMessage(prompt, imageData, imageType),
 		),
 		"enable_thinking": false,
 		"temperature":     1.0,

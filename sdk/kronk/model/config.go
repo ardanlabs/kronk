@@ -217,6 +217,15 @@ func (d DraftModelConfig) MainGPU() int    { return intOr(d.PtrMainGPU, 0) }
 // ProjFile is the path to the projection files. This is mandatory for media
 // based models like vision and audio.
 //
+// ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When
+// nil or false, the projector runs on whichever device llama.cpp picks by
+// default (GPU when available). Set to true to keep the projector on the CPU
+// — equivalent to llama-mtmd-cli's --no-mmproj-offload. The LLM itself is
+// unaffected and still runs on whatever device WithNGpuLayers selects. This
+// is the workaround for Metal builds affected by the b9433 im2col regression
+// that breaks 1D-conv audio encoders (Qwen2-Audio, Ultravox, any
+// Whisper-style mmproj).
+//
 // QueueDepth sets the multiplier for semaphore capacity when using the
 // batch engine (NSeqMax > 1). This controls how many requests can queue while
 // the current batch is processing. Default is 2, meaning NSeqMax * 2 requests
@@ -329,6 +338,7 @@ type Config struct {
 	PtrOpOffload         *bool
 	PtrOpOffloadMinBatch *int
 	ProjFile             string
+	PtrProjOnCPU         *bool
 	PtrQueueDepth        *int
 	PtrRopeFreqBase      *float32
 	PtrRopeFreqScale     *float32
@@ -423,14 +433,14 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nProjOnCPU[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.Devices, cfg.FlashAttention,
 		formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrNUBatch),
 		cfg.NUMA,
-		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile,
+		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, formatBoolPtr(cfg.PtrProjOnCPU),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
 		cfg.SessionStoreDir, cfg.sessionStoreKind(),
 		formatSplitModePtr(cfg.PtrSplitMode),
@@ -1404,6 +1414,7 @@ func WithOffloadKQV(v bool) Option                   { return func(c *Config) { 
 func WithOpOffload(v bool) Option                    { return func(c *Config) { c.PtrOpOffload = new(v) } }
 func WithOpOffloadMinBatch(v int) Option             { return func(c *Config) { c.PtrOpOffloadMinBatch = new(v) } }
 func WithProjFile(v string) Option                   { return func(c *Config) { c.ProjFile = v } }
+func WithProjOnCPU(v bool) Option                    { return func(c *Config) { c.PtrProjOnCPU = new(v) } }
 func WithRopeFreqBase(v float32) Option              { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
 func WithRopeFreqScale(v float32) Option             { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
 func WithRopeScaling(v RopeScalingType) Option       { return func(c *Config) { c.RopeScaling = v } }

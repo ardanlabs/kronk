@@ -66,10 +66,10 @@ func Test_API(t *testing.T) {
 	test.Run(t, msgsImageQwen35VL(t, tokens), "msgs-image-qwen35vl")
 
 	// -------------------------------------------------------------------------
-	// Model: Qwen2-Audio-7B.Q8_0 (audio)
+	// Model: Qwen2.5-Omni-3B-Q8_0 (audio)
 
-	test.Run(t, chatAudioQwen2Audio(t, tokens), "chat-audio-qwen2audio")
-	test.Run(t, respAudioQwen2Audio(t, tokens), "resp-audio-qwen2audio")
+	test.Run(t, chatAudioQwen25Omni(t, tokens), "chat-audio-qwen25omni")
+	test.Run(t, respAudioQwen25Omni(t, tokens), "resp-audio-qwen25omni")
 
 	// -------------------------------------------------------------------------
 	// Model: embeddinggemma-300m-qat-Q8_0

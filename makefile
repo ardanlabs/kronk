@@ -41,7 +41,7 @@ endif
 #	that image and ask the model what it sees. If that works try the two larger
 #	vision model `LFM2.5-VL-1.6B-Q8_0` and `Qwen2.5-VL-3B-Instruct-Q8_0`.
 #
-#	Now try the audio model `Qwen2-Audio-7B.Q8_0`. There is a wav file under the
+#	Now try the audio model `Qwen2.5-Omni-3B-Q8_0`. There is a wav file under the
 #	examples folder (examples/samples/jfk.wav). Select that wav file and ask the
 #	model what it hears.
 #

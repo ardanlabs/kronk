@@ -188,7 +188,7 @@ func acquireAndSee(p *pool.Pool) error {
 	fmt.Printf("\nQuestion: %s\n", question)
 
 	d := model.D{
-		"messages":    model.RawMediaMessage(question, image),
+		"messages":    model.ImageMessage(question, image, "jpeg"),
 		"temperature": 0.7,
 		"top_p":       0.9,
 		"top_k":       40,

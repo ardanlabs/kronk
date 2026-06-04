@@ -79,7 +79,7 @@ install-test-models: install-kronk
 	@echo
 	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M"
 	@echo
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0"
+	kronk model pull --local "ggml-org/Qwen2.5-Omni-3B-Q8_0"
 	@echo
 	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"
 	@echo
@@ -101,7 +101,7 @@ install-class-models: install-kronk
 	@echo
 	kronk model pull --local "mradermacher/Qwopus3.5-4B-Coder.Q8_0"
 	@echo
-	kronk model pull --local "mradermacher/Qwen2-Audio-7B.Q8_0"
+	kronk model pull --local "ggml-org/Qwen2.5-Omni-3B-Q8_0"
 	@echo
 	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
 	@echo

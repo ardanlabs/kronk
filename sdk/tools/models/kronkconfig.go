@@ -211,6 +211,7 @@ type ModelConfig struct {
 	PtrOffloadKQV        *bool                     `yaml:"offload-kqv,omitempty"`
 	PtrOpOffload         *bool                     `yaml:"op-offload,omitempty"`
 	PtrOpOffloadMinBatch *int                      `yaml:"op-offload-min-batch,omitempty"`
+	PtrProjOnCPU         *bool                     `yaml:"proj-on-cpu,omitempty"`
 	PtrRopeFreqBase      *float32                  `yaml:"rope-freq-base,omitempty"`
 	PtrRopeFreqScale     *float32                  `yaml:"rope-freq-scale,omitempty"`
 	RopeScaling          model.RopeScalingType     `yaml:"rope-scaling-type,omitempty"`
@@ -267,6 +268,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrOffloadKQV:        mc.PtrOffloadKQV,
 		PtrOpOffload:         mc.PtrOpOffload,
 		PtrOpOffloadMinBatch: mc.PtrOpOffloadMinBatch,
+		PtrProjOnCPU:         mc.PtrProjOnCPU,
 		PtrRopeFreqBase:      mc.PtrRopeFreqBase,
 		PtrRopeFreqScale:     mc.PtrRopeFreqScale,
 		RopeScaling:          mc.RopeScaling,
