@@ -474,27 +474,11 @@ func printCodeDiff(originalCode, modelCode string) {
 	origLines := strings.Split(originalCode, "\n")
 	modelLines := strings.Split(modelCode, "\n")
 
-	diffByte := firstCodeDifference(modelCode, originalCode)
-
-	lineIdx := 0
-	accum := 0
-	for i, line := range origLines {
-		lineWithNewline := len(line) + 1
-		if accum+lineWithNewline > diffByte {
-			lineIdx = i
-			break
-		}
-		accum += lineWithNewline
-	}
-
-	if lineIdx >= len(origLines) {
-		lineIdx = len(origLines) - 1
-	}
-
 	fmt.Println("\n--- Code Diff ---")
 	fmt.Printf("%-45s | %s\n", "ORIGINAL", "MODEL")
 	fmt.Println(strings.Repeat("-", 80))
 
+	const w = 43
 	for i := 0; i < max(len(origLines), len(modelLines)); i++ {
 		origLine := ""
 		if i < len(origLines) {
@@ -505,10 +489,22 @@ func printCodeDiff(originalCode, modelCode string) {
 			modelLine = modelLines[i]
 		}
 
-		if i == lineIdx {
-			fmt.Printf("  %-43s | %s\n", origLine, modelLine)
-		} else {
-			fmt.Printf("  %-43s | %s\n", origLine, modelLine)
+		// Wrap long lines at the column width so neither side pushes
+		// into the other column.
+		for len(origLine) > 0 || len(modelLine) > 0 {
+			o := origLine
+			if len(o) > w {
+				o, origLine = o[:w], o[w:]
+			} else {
+				origLine = ""
+			}
+			m := modelLine
+			if len(m) > w {
+				m, modelLine = m[:w], m[w:]
+			} else {
+				modelLine = ""
+			}
+			fmt.Printf("  %-*s | %s\n", w, o, m)
 		}
 	}
 	fmt.Println("--- End Diff ---")
