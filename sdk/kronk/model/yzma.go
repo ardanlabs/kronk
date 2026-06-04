@@ -83,35 +83,45 @@ func InitYzmaWorkarounds(libPath string) error {
 			return
 		}
 
-		// Try the three pre-norm symbols. Each is attempted first under
-		// its C linkage name (LLAMA_API / extern "C") and, on miss,
-		// under the Itanium C++ ABI mangled name observed in builds
-		// that compiled the declarations without LLAMA_API. The
-		// mangled forms come from `nm libllama.dylib` on a b9222
-		// macOS build:
+		// Try the three pre-norm hidden-state symbols. llama.cpp has
+		// renamed these at least once (pre_norm → nextn in b9496+), so
+		// each symbol is attempted under every name we know about,
+		// first under its C linkage name (LLAMA_API / extern "C") and,
+		// on miss, under the Itanium C++ ABI mangled name observed in
+		// builds that compiled the declarations without LLAMA_API. The
+		// mangled forms come from `nm libllama.dylib`:
 		//
-		//   __Z29llama_set_embeddings_pre_normP13llama_contextbb
-		//   __Z29llama_get_embeddings_pre_normP13llama_context
-		//   __Z33llama_get_embeddings_pre_norm_ithP13llama_contexti
+		//   b9222 (old, "pre_norm"):
+		//     __Z29llama_set_embeddings_pre_normP13llama_contextbb
+		//     __Z29llama_get_embeddings_pre_normP13llama_context
+		//     __Z33llama_get_embeddings_pre_norm_ithP13llama_contexti
+		//
+		//   b9496 (current, "nextn"):
+		//     __Z26llama_set_embeddings_nextnP13llama_contextbb
+		//     __Z26llama_get_embeddings_nextnP13llama_context
+		//     __Z30llama_get_embeddings_nextn_ithP13llama_contexti
 		//
 		// (The leading "_" is Mach-O's own underscore which dlsym
 		// strips, so we pass "_Z..." to Prep.) The mangling is
 		// deterministic for these signatures so this works across
 		// clang/gcc on Linux + macOS arm64/x86_64. Log-and-continue
 		// on miss; MTPAvailable() reflects what bound.
-		prepEither := func(c, cxx string, ret *ffi.Type, args ...*ffi.Type) (ffi.Fun, bool) {
-			if fn, err := lib.Prep(c, ret, args...); err == nil {
-				return fn, true
-			}
-			if fn, err := lib.Prep(cxx, ret, args...); err == nil {
-				return fn, true
+		prepAny := func(names []string, ret *ffi.Type, args ...*ffi.Type) (ffi.Fun, bool) {
+			for _, n := range names {
+				if fn, err := lib.Prep(n, ret, args...); err == nil {
+					return fn, true
+				}
 			}
 			return ffi.Fun{}, false
 		}
 
-		if fn, ok := prepEither(
-			"llama_set_embeddings_pre_norm",
-			"_Z29llama_set_embeddings_pre_normP13llama_contextbb",
+		if fn, ok := prepAny(
+			[]string{
+				"llama_set_embeddings_nextn",
+				"_Z26llama_set_embeddings_nextnP13llama_contextbb",
+				"llama_set_embeddings_pre_norm",
+				"_Z29llama_set_embeddings_pre_normP13llama_contextbb",
+			},
 			&ffi.TypeVoid,
 			&ffi.TypePointer, // llama_context *
 			&ffi.TypeUint8,   // bool value
@@ -120,18 +130,26 @@ func InitYzmaWorkarounds(libPath string) error {
 			setEmbeddingsPreNormFunc = fn
 		}
 
-		if fn, ok := prepEither(
-			"llama_get_embeddings_pre_norm",
-			"_Z29llama_get_embeddings_pre_normP13llama_context",
+		if fn, ok := prepAny(
+			[]string{
+				"llama_get_embeddings_nextn",
+				"_Z26llama_get_embeddings_nextnP13llama_context",
+				"llama_get_embeddings_pre_norm",
+				"_Z29llama_get_embeddings_pre_normP13llama_context",
+			},
 			&ffi.TypePointer, // float * return
 			&ffi.TypePointer, // llama_context *
 		); ok {
 			getEmbeddingsPreNormFunc = fn
 		}
 
-		if fn, ok := prepEither(
-			"llama_get_embeddings_pre_norm_ith",
-			"_Z33llama_get_embeddings_pre_norm_ithP13llama_contexti",
+		if fn, ok := prepAny(
+			[]string{
+				"llama_get_embeddings_nextn_ith",
+				"_Z30llama_get_embeddings_nextn_ithP13llama_contexti",
+				"llama_get_embeddings_pre_norm_ith",
+				"_Z33llama_get_embeddings_pre_norm_ithP13llama_contexti",
+			},
 			&ffi.TypePointer, // float * return
 			&ffi.TypePointer, // llama_context *
 			&ffi.TypeSint32,  // int32_t i

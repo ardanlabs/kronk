@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -230,13 +231,29 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 		return nil, nil
 	}
 
-	// Older llama.cpp builds (pre src/llama-ext.h pre-norm API) don't
-	// export the symbols MTP needs. Without those, the MTP head would
-	// predict blind. Skip silently — kronk runs without speculation
-	// rather than crashing on a missing symbol mid-request.
+	// The target GGUF declares MTP (nextn_predict_layers > 0) but the
+	// loaded llama library does not export the pre-norm hidden-state
+	// APIs MTP needs. Without those, the MTP head would predict blind.
+	// Kronk continues to run (without speculation) rather than crashing
+	// mid-request, but this is almost always wrong for the user — the
+	// model was selected because of its MTP head. Emit a loud WARN to
+	// both the structured logger and stderr so it is visible even when
+	// the host has wired a discard logger (e.g. test harnesses).
+	//
+	// The most common cause is a llama.cpp upstream rename of the
+	// pre-norm symbols (e.g. b9222 "pre_norm" → b9496+ "nextn"). When
+	// that happens the fix is to add the new symbol names to
+	// InitYzmaWorkarounds in sdk/kronk/model/yzma.go.
 	if !MTPAvailable() {
-		log(ctx, "draft-model-mtp", "status", "auto-detect-skipped",
-			"reason", "llama library does not export pre-norm hidden-state APIs (llama_set_embeddings_pre_norm / llama_get_embeddings_pre_norm / _ith); upgrade llama.cpp to a build that includes src/llama-ext.h")
+		const reason = "target GGUF declares MTP (nextn_predict_layers>0) but the loaded llama library does not export the pre-norm hidden-state APIs (llama_set_embeddings_nextn / llama_get_embeddings_nextn / _ith, formerly llama_*_pre_norm). MTP speculative decoding is DISABLED for this model. Update sdk/kronk/model/yzma.go with the symbol names exported by your llama build, or downgrade/upgrade libllama to a version that exports a known name set."
+
+		log(ctx, "draft-model-mtp", "status", "DISABLED",
+			"nextn-layers", nLayers,
+			"reason", reason)
+
+		fmt.Fprintf(os.Stderr,
+			"WARN: MTP DISABLED for this model: %s\n", reason)
+
 		return nil, nil
 	}
 
