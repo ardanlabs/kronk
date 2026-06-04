@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -210,10 +211,7 @@ func chat(krn *kronk.Kronk) error {
 	codeFile := "kaleah/code.chunk"
 
 	var systemPrompt = `You will be given source code for one identifier from a 
-	program.Return the source code first, then create a side-by-side index of 
-	the identifiers used in that code and their type or kind.Use a JavaScript 
-	code block for the source code, followed by a markdown table 
-	with the columns Identifier and Type / Kind.`
+	program. Return the source code in a JavaScript code block.`
 
 	// WRITE SOME CODE / FUNCTION READS THE FILE
 	code, err := os.ReadFile(codeFile)
@@ -224,6 +222,32 @@ func chat(krn *kronk.Kronk) error {
 	identifiers, err := columnZeroIdentifiers(codeFile)
 	if err != nil {
 		return fmt.Errorf("chat: index identifiers: %w", err)
+	}
+
+	type ident struct {
+		name string
+		typ  string
+		line int
+	}
+
+	var idents []ident
+	nameWidth := len("Identifier")
+	for name, info := range identifiers {
+		if info.typ != "function" {
+			continue
+		}
+		idents = append(idents, ident{name, info.typ, info.line})
+		if len(name) > nameWidth {
+			nameWidth = len(name)
+		}
+	}
+	sort.Slice(idents, func(i, j int) bool { return idents[i].line < idents[j].line })
+
+	fmt.Println("\nAvailable functions:")
+	fmt.Printf("  %4s | %-*s | %s\n", "Line", nameWidth, "Identifier", "Type")
+	fmt.Printf("  %s-+-%s-+-%s\n", strings.Repeat("-", 4), strings.Repeat("-", nameWidth), strings.Repeat("-", 8))
+	for _, id := range idents {
+		fmt.Printf("  %4d | %-*s | %s\n", id.line, nameWidth, id.name, id.typ)
 	}
 
 	messages = append(messages,
@@ -274,7 +298,7 @@ func chat(krn *kronk.Kronk) error {
 	}
 }
 
-func userInput(messages []model.D, codeFile string, identifiers map[string]string) ([]model.D, string, error) {
+func userInput(messages []model.D, codeFile string, identifiers map[string]identInfo) ([]model.D, string, error) {
 	fmt.Print("\nUSER> ")
 
 	reader := bufio.NewReader(os.Stdin)
@@ -292,10 +316,10 @@ func userInput(messages []model.D, codeFile string, identifiers map[string]strin
 	var originalCode string
 
 	identifier := strings.TrimSpace(userInput)
-	typ, exists := identifiers[identifier]
+	info, exists := identifiers[identifier]
 	if !exists {
 		for _, token := range regexp.MustCompile(`[A-Za-z_$][A-Za-z0-9_$]*`).FindAllString(userInput, -1) {
-			if typ, exists = identifiers[token]; exists {
+			if info, exists = identifiers[token]; exists {
 				identifier = token
 				break
 			}
@@ -303,6 +327,8 @@ func userInput(messages []model.D, codeFile string, identifiers map[string]strin
 	}
 
 	if exists {
+		fmt.Printf("\033[90mFound %s %q at %s:%d\033[0m\n", info.typ, identifier, codeFile, info.line)
+
 		code, err := extractColumnZeroIdentifierCode(codeFile, identifier)
 		if err != nil {
 			return messages, "", err
@@ -310,10 +336,10 @@ func userInput(messages []model.D, codeFile string, identifiers map[string]strin
 
 		originalCode = code
 
-		userInput = fmt.Sprintf(`Return the full body code for this %s named %s, then create a side-by-side identifier/type index for it.
+		userInput = fmt.Sprintf(`Return the full body code for this %s named %s.
 
 Code:
-%s`, typ, identifier, code)
+%s`, info.typ, identifier, code)
 	}
 
 	messages = append(messages,
@@ -360,7 +386,8 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, resp model.ChatResponse
 		fmt.Printf("\nCode match: %.2f%%\n", percent)
 
 		if diff := firstCodeDifference(modelCode, originalCode); diff != -1 {
-			fmt.Printf("First difference at byte: %d\n", diff)
+			line := 1 + strings.Count(normalizeIndent(originalCode)[:diff], "\n")
+			fmt.Printf("First difference at line: %d\n", line)
 			printCodeDiff(originalCode, modelCode)
 		}
 	}
@@ -396,9 +423,21 @@ func firstCodeBlock(content string) string {
 	return before
 }
 
+func normalizeIndent(s string) string {
+	var result []rune
+	for _, r := range s {
+		if r == '\t' {
+			result = append(result, ' ', ' ')
+		} else {
+			result = append(result, r)
+		}
+	}
+	return string(result)
+}
+
 func codeMatchPercent(modelCode, originalCode string) float64 {
-	modelCode = strings.ReplaceAll(modelCode, "\r\n", "\n")
-	originalCode = strings.ReplaceAll(originalCode, "\r\n", "\n")
+	modelCode = normalizeIndent(modelCode)
+	originalCode = normalizeIndent(originalCode)
 
 	maxLen := max(len(modelCode), len(originalCode))
 	if maxLen == 0 {
@@ -416,8 +455,8 @@ func codeMatchPercent(modelCode, originalCode string) float64 {
 }
 
 func firstCodeDifference(modelCode, originalCode string) int {
-	modelCode = strings.ReplaceAll(modelCode, "\r\n", "\n")
-	originalCode = strings.ReplaceAll(originalCode, "\r\n", "\n")
+	modelCode = normalizeIndent(modelCode)
+	originalCode = normalizeIndent(originalCode)
 
 	maxLen := max(len(modelCode), len(originalCode))
 	for i := range maxLen {
@@ -430,8 +469,8 @@ func firstCodeDifference(modelCode, originalCode string) int {
 }
 
 func printCodeDiff(originalCode, modelCode string) {
-	modelCode = strings.ReplaceAll(modelCode, "\r\n", "\n")
-	originalCode = strings.ReplaceAll(originalCode, "\r\n", "\n")
+	modelCode = normalizeIndent(modelCode)
+	originalCode = normalizeIndent(originalCode)
 
 	origLines := strings.Split(originalCode, "\n")
 	modelLines := strings.Split(modelCode, "\n")
@@ -457,7 +496,6 @@ func printCodeDiff(originalCode, modelCode string) {
 	fmt.Printf("%-45s | %s\n", "ORIGINAL", "MODEL")
 	fmt.Println(strings.Repeat("-", 80))
 
-	lineOffset := diffByte - accum
 	for i := 0; i < max(len(origLines), len(modelLines)); i++ {
 		origLine := ""
 		if i < len(origLines) {
@@ -469,13 +507,7 @@ func printCodeDiff(originalCode, modelCode string) {
 		}
 
 		if i == lineIdx {
-			origHighlighted := highlightAt(origLine, lineOffset, "\033[91m", "\033[0m")
-			modelHighlighted := highlightAt(modelLine, lineOffset, "\033[91m", "\033[0m")
-			fmt.Printf("→ %-43s | %s\n", origHighlighted, modelHighlighted)
-
-			origCaret := caretAt(origLine, lineOffset)
-			modelCaret := caretAt(modelLine, lineOffset)
-			fmt.Printf("  %-43s | %s\n", origCaret, modelCaret)
+			fmt.Printf("  %-43s | %s\n", origLine, modelLine)
 		} else {
 			fmt.Printf("  %-43s | %s\n", origLine, modelLine)
 		}
@@ -483,57 +515,34 @@ func printCodeDiff(originalCode, modelCode string) {
 	fmt.Println("--- End Diff ---")
 }
 
-func highlightAt(s string, pos int, colorStart, colorEnd string) string {
-	runes := []rune(s)
-	if pos < 0 || pos >= len(runes) {
-		return s
-	}
-	var result []rune
-	for i, r := range runes {
-		if i == pos {
-			result = append(result, []rune(colorStart+string(r)+colorEnd)...)
-		} else {
-			result = append(result, r)
-		}
-	}
-	return string(result)
+type identInfo struct {
+	typ  string
+	line int
 }
 
-func caretAt(s string, pos int) string {
-	runes := []rune(s)
-	if pos < 0 || pos >= len(runes) {
-		return strings.Repeat(" ", len(runes))
-	}
-	var caret []rune
-	for i := range runes {
-		if i == pos {
-			caret = append(caret, '^')
-		} else {
-			caret = append(caret, ' ')
-		}
-	}
-	return string(caret)
-}
-
-func columnZeroIdentifiers(filename string) (map[string]string, error) {
+func columnZeroIdentifiers(filename string) (map[string]identInfo, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", filename, err)
 	}
 
-	identifiers := make(map[string]string)
+	identifiers := make(map[string]identInfo)
 	declRE := regexp.MustCompile(`^(function|var|let|const)\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
 
+	lineNum := 0
 	for line := range strings.SplitSeq(string(b), "\n") {
+		lineNum++
+
 		if line != strings.TrimLeft(line, " \t") {
 			continue
 		}
 
 		if matches := declRE.FindStringSubmatch(line); len(matches) == 3 {
-			identifiers[matches[2]] = "variable"
+			info := identInfo{typ: "variable", line: lineNum}
 			if matches[1] == "function" {
-				identifiers[matches[2]] = "function"
+				info.typ = "function"
 			}
+			identifiers[matches[2]] = info
 		}
 	}
 
