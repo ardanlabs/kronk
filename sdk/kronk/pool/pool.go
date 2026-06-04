@@ -27,9 +27,9 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// ErrServerBusy is returned when all model slots are occupied with
-// active streams. It aliases the core sentinel so errors.Is works
-// across both packages.
+// ErrServerBusy is returned when the pool cannot make room for a new
+// entry because no idle pool entry is available to evict. It aliases
+// the core sentinel so errors.Is works across both packages.
 var ErrServerBusy = engine.ErrServerBusy
 
 // HumanBytes formats a byte count using decimal (SI) units. It aliases

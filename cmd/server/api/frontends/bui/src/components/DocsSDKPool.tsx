@@ -263,7 +263,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>{`var ErrServerBusy = engine.ErrServerBusy`}</code>
               </pre>
-              <p className="doc-description">ErrServerBusy is returned when all model slots are occupied with active streams. It aliases the core sentinel so errors.Is works across both packages.</p>
+              <p className="doc-description">ErrServerBusy is returned when the pool cannot make room for a new entry because no idle pool entry is available to evict. It aliases the core sentinel so errors.Is works across both packages.</p>
             </div>
           </div>
         </div>

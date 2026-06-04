@@ -184,7 +184,7 @@ func New(t *testing.T, testName string) *Test {
 		BuckyModels:     buckyModels,
 		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
 		BudgetPercent:   95,
-		ModelsInPool:    1,
+		ModelsInPool:    10,
 		TTL:             5 * time.Minute,
 	})
 	if err != nil {

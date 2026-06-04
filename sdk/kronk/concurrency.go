@@ -51,7 +51,7 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 			// it's still nonzero (no retry, no poll) — closing before
 			// releasing leaves a race window where the next sequential
 			// request against a one-slot pool can flake with
-			// "all model slots have active requests".
+			// "no idle pool entry available to evict".
 			krn.releaseModel()
 			close(ch)
 		}()

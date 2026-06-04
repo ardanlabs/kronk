@@ -34,9 +34,11 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// ErrServerBusy is returned when every cached entry is busy with active
-// streams and no idle victim is available for eviction.
-var ErrServerBusy = errors.New("server busy: all model slots have active requests")
+// ErrServerBusy is returned when the pool cannot make room for a new
+// entry because no idle pool entry is available to evict — either
+// every cached entry has active streams, or the cache is empty/in flux
+// and there is nothing to reclaim.
+var ErrServerBusy = errors.New("server busy: no idle pool entry available to evict")
 
 // Config carries the non-generic settings used to construct a Pool.
 //
