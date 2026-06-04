@@ -319,8 +319,15 @@ func CfgAudio() model.Config {
 		PtrContextWindow: new(8192),
 		PtrNBatch:        new(2048),
 		PtrNUBatch:       new(2048),
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
+		// Keep K/V at F16. Audio multimodal models are unusually
+		// sensitive to KV-cache quantization: audio tokens encode
+		// fine-grained acoustic structure, and the noise introduced by
+		// Q8_0 K/V degrades attention scores enough that decoding
+		// collapses into a degenerate repetition attractor under
+		// concurrent load. Matches the example program (which uses
+		// defaults) and the other quality-sensitive configs.
+		CacheTypeK: model.GGMLTypeF16,
+		CacheTypeV: model.GGMLTypeF16,
 		// Keep the mmproj on CPU to dodge the llama.cpp b9433 Metal
 		// im2col regression that breaks 1D-conv audio encoders.
 		PtrProjOnCPU: new(true),
