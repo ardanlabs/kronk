@@ -209,6 +209,15 @@ func (c *Pool[H]) eviction(event otter.DeletionEvent[string, H]) {
 	metrics.ClearVRAM(event.Key)
 	metrics.ClearPoolActiveStreams(event.Key)
 
+	// Decrement BEFORE takeTicket. evictOneIdle's wait predicate reads
+	// hasTicket() first and then itemsInPool, and uses ticket-absence
+	// as a signal that the counter is up to date. Sequencing the
+	// decrement before takeTicket means the mutex release inside
+	// takeTicket publishes the new counter value to any observer that
+	// subsequently sees hasTicket()==false — keeping the two pieces of
+	// state consistent from the waiter's point of view.
+	c.itemsInPool.Add(-1)
+
 	if ticket, ok := c.takeTicket(event.Key); ok {
 		c.resman.Release(ticket)
 		c.log(ctx, "pool eviction",
@@ -217,8 +226,6 @@ func (c *Pool[H]) eviction(event otter.DeletionEvent[string, H]) {
 		)
 		c.LogResmanUsage(ctx, "post-release", "key", event.Key)
 	}
-
-	c.itemsInPool.Add(-1)
 
 	c.PublishMetrics()
 }
