@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"testing"
 )
@@ -237,9 +238,7 @@ func cloneMessages(msgs []D) []D {
 					for ik, iv := range item {
 						if dv, ok := iv.(D); ok {
 							ndv := D{}
-							for dk, dvv := range dv {
-								ndv[dk] = dvv
-							}
+							maps.Copy(ndv, dv)
 							nitem[ik] = ndv
 						} else {
 							nitem[ik] = iv
