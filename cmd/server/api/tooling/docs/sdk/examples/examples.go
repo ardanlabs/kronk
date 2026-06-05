@@ -107,7 +107,7 @@ import CodeBlock from './CodeBlock';
 `)
 
 	for _, ex := range exs {
-		varName := ex.name + "Example"
+		varName := toVarName(ex.name)
 		b.WriteString(fmt.Sprintf("const %s = `%s`;\n\n", varName, escapeForTemplateLiteral(ex.code)))
 	}
 
@@ -142,7 +142,7 @@ import CodeBlock from './CodeBlock';
 
 	for _, ex := range exs {
 		anchor := toAnchor("example-" + ex.name)
-		varName := ex.name + "Example"
+		varName := toVarName(ex.name)
 
 		b.WriteString(fmt.Sprintf("\n          <div className=\"card\" id=\"%s\">\n", anchor))
 		b.WriteString(fmt.Sprintf("            <h3>%s</h3>\n", ex.displayName))
@@ -183,6 +183,28 @@ func escapeForTemplateLiteral(s string) string {
 	s = strings.ReplaceAll(s, "${", "\\${")
 
 	return s
+}
+
+// toVarName converts an example directory name into a valid JavaScript
+// identifier for the generated const, e.g. "bucky-stream" -> "buckyStreamExample".
+// Hyphen and dot segments are camelCased so multi-word example names do not
+// produce illegal identifiers.
+func toVarName(name string) string {
+	parts := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '.'
+	})
+
+	var b strings.Builder
+	for i, p := range parts {
+		if i == 0 {
+			b.WriteString(p)
+			continue
+		}
+		b.WriteString(cases.Title(language.English).String(p))
+	}
+	b.WriteString("Example")
+
+	return b.String()
 }
 
 func toAnchor(s string) string {
