@@ -854,9 +854,9 @@ func harvestPromptTokens(state whisper.State, maxTokens int) []whisper.Token {
 	nSeg := whisper.FullNSegmentsFromState(state)
 
 	var toks []whisper.Token
-	for seg := int32(0); seg < nSeg; seg++ {
+	for seg := range nSeg {
 		n := whisper.FullNTokensFromState(state, seg)
-		for t := int32(0); t < n; t++ {
+		for t := range n {
 			toks = append(toks, whisper.FullGetTokenIDFromState(state, seg, t))
 		}
 	}
