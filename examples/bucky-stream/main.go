@@ -1,10 +1,13 @@
-// This example shows the streaming transcription API surface for the
-// bucky SDK. It demonstrates the Feed -> range Events -> Reset -> Close
-// pattern for an indefinite session.
+// This example is a LIVE MICROPHONE transcription demo for the bucky
+// streaming API. It captures the default input device, streams the audio
+// through a *model.Stream, and renders the transcript live: partial
+// hypotheses are re-rendered in place (words appear, then get revised as
+// you keep talking), and finals are committed on their own line — the same
+// effect as whisper.cpp's stream example. Say "STOP" to end.
 //
-// NOTE: the streaming API is currently STUBBED. NewStream / Feed / Reset
-// / Close return model.ErrNotImplemented. This example exists to show
-// the intended call-site ergonomics, not to produce real transcripts.
+// The streaming SDK itself is pure Go (no CGO). This example adds CGO only
+// for microphone capture via github.com/gen2brain/malgo (miniaudio), which
+// lives entirely in the examples module.
 //
 // Run the example like this from the root of the project:
 // $ make example-bucky-stream
@@ -13,27 +16,40 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"strings"
 	"time"
 
-	"github.com/ardanlabs/bucky/pkg/audio"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	"github.com/gen2brain/malgo"
 )
 
 // modelSource names the bucky whisper model to download.
 const modelSource = "tiny.en"
 
-// audioFile is a 16 kHz mono WAV sample of JFK's "ask not" speech.
-const audioFile = "samples/jfk.wav"
+// micRate / micChannels are the format we ask the capture device for.
+// miniaudio converts the hardware's native format to this for us, so we
+// hand the stream exactly the 16 kHz mono int16 it wants with no resample.
+const (
+	micRate     = 16000
+	micChannels = 1
+)
 
-// feedChunk is how many samples we push per Feed call to simulate audio
-// arriving over time (≈200 ms at 16 kHz).
-const feedChunk = 3200
+// ANSI helpers for the live-rewrite UX. eraseLine clears the current line
+// and returns the cursor to column 0 so the next print overwrites it —
+// this is what produces the "words change as you talk" effect.
+const (
+	eraseLine = "\033[2K\r"
+	colYellow = "\033[33m"
+	colGreen  = "\033[32m"
+	colRed    = "\033[31m"
+	colReset  = "\033[0m"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -53,19 +69,14 @@ func run() error {
 		return fmt.Errorf("new bucky: %w", err)
 	}
 	defer func() {
-		fmt.Println("\nUnloading whisper")
+		fmt.Println("Unloading whisper")
 		if err := b.Unload(context.Background()); err != nil {
 			fmt.Printf("unload: %v\n", err)
 		}
 	}()
 
-	samples, err := loadSamples(audioFile)
-	if err != nil {
-		return fmt.Errorf("load samples: %w", err)
-	}
-
-	if err := streamTranscribe(b, samples); err != nil {
-		return fmt.Errorf("stream transcribe: %w", err)
+	if err := liveTranscribe(b); err != nil {
+		return fmt.Errorf("live transcribe: %w", err)
 	}
 
 	return nil
@@ -73,81 +84,153 @@ func run() error {
 
 // =============================================================================
 
-// streamTranscribe shows the intended streaming call site: open a stream,
-// consume Events in a goroutine, Feed audio over time, Reset to start a
-// fresh logical session without dropping the pool slot, then Close.
-func streamTranscribe(b *bucky.Bucky, samples []float32) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+// liveTranscribe opens a streaming session, wires the default microphone
+// into it, and renders the transcript live until the speaker says "STOP"
+// (or presses Ctrl-C).
+func liveTranscribe(b *bucky.Bucky) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
-	fmt.Println("\nOpening stream...")
-
+	// VAD is on by default, so Finals commit when you pause — cuts land in
+	// the gaps between phrases instead of mid-word. PartialEveryMs is kept
+	// short for a snappy live feel.
 	stream, err := b.NewStream(ctx,
 		model.WithStreamLanguage("en"),
-		model.WithPartialEveryMs(1000),
-		model.WithVAD(true),
-		model.WithEmitResetEvent(true),
+		model.WithPartialEveryMs(700),
 	)
-
-	// The API is stubbed today; show the surface and stop gracefully.
-	if errors.Is(err, model.ErrNotImplemented) {
-		fmt.Println("- NewStream returned ErrNotImplemented (API is stubbed)")
-		fmt.Println("- the code below shows how a real caller would drive it")
-		return nil
-	}
 	if err != nil {
 		return fmt.Errorf("new stream: %w", err)
 	}
 	defer stream.Close()
 
-	// Consumer: range over Events. The channel closes after Close (or an
-	// EventError). Partials are tentative; Finals are authoritative.
-	done := make(chan struct{})
+	// Consumer: render partials in place, commit finals, and watch for the
+	// spoken "STOP" command. Runs until Events closes (after stream.Close).
+	saidStop := make(chan struct{})
+	consumerDone := make(chan struct{})
 	go func() {
-		defer close(done)
-		for ev := range stream.Events() {
-			switch ev.Kind {
-			case model.EventPartial:
-				fmt.Printf("  ~ partial [%6dms] %s\n", ev.EndMs, ev.Text)
-			case model.EventFinal:
-				fmt.Printf("  = final   [%6dms] %s\n", ev.EndMs, ev.Text)
-			case model.EventReset:
-				fmt.Println("  -- reset --")
-			case model.EventError:
-				fmt.Printf("  ! error: %v\n", ev.Err)
+		defer close(consumerDone)
+		consume(stream, saidStop)
+	}()
+
+	// The audio callback runs on miniaudio's realtime thread; it must never
+	// block. It copies the captured bytes and hands them to a buffered
+	// channel that a pump goroutine drains into the stream.
+	pcmC := make(chan []byte, 64)
+	onFrames := func(_, in []byte, _ uint32) {
+		select {
+		case pcmC <- append([]byte(nil), in...):
+		default: // pump is behind; drop rather than stall the audio thread
+		}
+	}
+
+	device, mctx, err := openMic(onFrames)
+	if err != nil {
+		return fmt.Errorf("open mic: %w", err)
+	}
+	defer func() {
+		device.Uninit()
+		_ = mctx.Uninit()
+		mctx.Free()
+	}()
+
+	// Pump: convert + feed raw mic PCM into the stream. FeedPCM does the
+	// pure-Go int16 -> float32 conversion (and would downmix/resample if
+	// the format differed from the engine's 16 kHz mono).
+	micFormat := model.AudioFormat{SampleRate: micRate, Channels: micChannels, Sample: model.Int16LE}
+	go func() {
+		for buf := range pcmC {
+			if err := stream.FeedPCM(ctx, buf, micFormat); err != nil {
+				return
 			}
 		}
 	}()
 
-	// Producer: Feed audio in chunks to simulate a live source. Feed
-	// blocks (respecting ctx) when the internal buffer is full.
-	for off := 0; off < len(samples); off += feedChunk {
-		end := min(off+feedChunk, len(samples))
-
-		if err := stream.Feed(ctx, samples[off:end]); err != nil {
-			return fmt.Errorf("feed: %w", err)
-		}
-
-		time.Sleep(200 * time.Millisecond)
+	if err := device.Start(); err != nil {
+		return fmt.Errorf("start mic: %w", err)
 	}
 
-	// Reset starts a fresh logical session (e.g. topic change, push-to-talk
-	// release) WITHOUT releasing the pool slot or worker.
-	fmt.Println("\nResetting session...")
-	if err := stream.Reset(ctx); err != nil {
-		return fmt.Errorf("reset: %w", err)
+	fmt.Printf("\n%s🎤 Mic is live — say something. Say \"STOP\" to end.%s\n\n", colGreen, colReset)
+
+	// Wait for the spoken stop word or Ctrl-C.
+	select {
+	case <-saidStop:
+	case <-ctx.Done():
 	}
 
-	// ... feed the next session's audio here, reusing the same stream ...
-
-	// Close performs a final flush, emits remaining Finals, and closes
-	// Events. The consumer goroutine then returns.
-	if err := stream.Close(); err != nil {
-		return fmt.Errorf("close: %w", err)
-	}
-	<-done
+	fmt.Printf("\n\nStopping…\n")
+	_ = device.Stop()
+	close(pcmC)        // pump exits
+	_ = stream.Close() // final flush + closes Events
+	<-consumerDone     // let the consumer print the closing Final
 
 	return nil
+}
+
+// consume renders transcript events. Partials overwrite the live line;
+// Finals commit on their own line. The moment the word "stop" appears in
+// either a partial or a final, it signals saidStop once so the program
+// ends immediately rather than waiting for the next pause.
+func consume(stream *model.Stream, saidStop chan struct{}) {
+	signaled := false
+	signalStop := func(text string) {
+		if !signaled && containsWord(text, "stop") {
+			signaled = true
+			close(saidStop)
+		}
+	}
+
+	for ev := range stream.Events() {
+		switch ev.Kind {
+		case model.EventPartial:
+			fmt.Printf("%s%s%s%s", eraseLine, colYellow, ev.Text, colReset)
+			signalStop(ev.Text)
+
+		case model.EventFinal:
+			fmt.Printf("%s%s%s%s\n", eraseLine, colGreen, ev.Text, colReset)
+			signalStop(ev.Text)
+
+		case model.EventError:
+			fmt.Printf("\n%serror: %v%s\n", colRed, ev.Err, colReset)
+		}
+	}
+}
+
+// containsWord reports whether text contains word as a whole word,
+// case-insensitively and ignoring surrounding punctuation (so "Stop.",
+// "STOP!" and "stop" all match).
+func containsWord(text, word string) bool {
+	for _, f := range strings.Fields(strings.ToLower(text)) {
+		if strings.Trim(f, ".,!?;:\"'`-") == word {
+			return true
+		}
+	}
+	return false
+}
+
+// =============================================================================
+
+// openMic initializes the miniaudio context and the default capture device
+// configured for 16 kHz mono int16, wiring onFrames as the data callback.
+func openMic(onFrames malgo.DataProc) (*malgo.Device, *malgo.AllocatedContext, error) {
+	mctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, func(string) {})
+	if err != nil {
+		return nil, nil, fmt.Errorf("init audio context: %w", err)
+	}
+
+	cfg := malgo.DefaultDeviceConfig(malgo.Capture)
+	cfg.Capture.Format = malgo.FormatS16
+	cfg.Capture.Channels = micChannels
+	cfg.SampleRate = micRate
+	cfg.Alsa.NoMMap = 1
+
+	device, err := malgo.InitDevice(mctx.Context, cfg, malgo.DeviceCallbacks{Data: onFrames})
+	if err != nil {
+		_ = mctx.Uninit()
+		mctx.Free()
+		return nil, nil, fmt.Errorf("init capture device: %w", err)
+	}
+
+	return device, mctx, nil
 }
 
 // =============================================================================
@@ -206,19 +289,4 @@ func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {
 	fmt.Println("- active-streams  :", b.ActiveStreams())
 
 	return b, nil
-}
-
-func loadSamples(path string) ([]float32, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open %q: %w", path, err)
-	}
-	defer f.Close()
-
-	samples, err := audio.Decode(f)
-	if err != nil {
-		return nil, fmt.Errorf("decode %q: %w", path, err)
-	}
-
-	return samples, nil
 }

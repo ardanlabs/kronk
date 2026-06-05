@@ -43,6 +43,12 @@ type TranscribeConfig struct {
 	// InitialPrompt biases the decoder with prior context.
 	InitialPrompt string
 
+	// PromptTokens seeds the decoder with token ids harvested from a
+	// prior decode, carrying linguistic context across windows. Used by
+	// the streaming worker for cross-window continuity; empty for batch
+	// transcription.
+	PromptTokens []whisper.Token
+
 	// Translate, when true, translates the source audio to English.
 	Translate bool
 
@@ -199,6 +205,7 @@ func (m *Model) buildFullParams(tcfg TranscribeConfig) (whisper.WhisperFullParam
 	if err := refs.SetInitialPrompt(&params, tcfg.InitialPrompt); err != nil {
 		return whisper.WhisperFullParams{}, whisper.StringRefs{}, fmt.Errorf("build-params: initial-prompt: %w", err)
 	}
+	refs.SetPromptTokens(&params, tcfg.PromptTokens)
 
 	return params, refs, nil
 }
