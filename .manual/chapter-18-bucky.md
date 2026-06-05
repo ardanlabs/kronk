@@ -19,8 +19,14 @@
   - [18.7.1 `POST /v1/audio/transcriptions`](#1871-post-v1audiotranscriptions)
   - [18.7.2 Admin Endpoints](#1872-admin-endpoints)
 - [18.8 SDK Quick Start](#188-sdk-quick-start)
-- [18.9 Supported Languages](#189-supported-languages)
-- [18.10 Troubleshooting](#1810-troubleshooting)
+- [18.9 Streaming Transcription (SDK)](#189-streaming-transcription-sdk)
+  - [18.9.1 Event Model](#1891-event-model)
+  - [18.9.2 Feeding Audio](#1892-feeding-audio)
+  - [18.9.3 Stream Options](#1893-stream-options)
+  - [18.9.4 Indefinite Sessions & Reset](#1894-indefinite-sessions-reset)
+  - [18.9.5 Live Microphone Example](#1895-live-microphone-example)
+- [18.10 Supported Languages](#1810-supported-languages)
+- [18.11 Troubleshooting](#1811-troubleshooting)
 
 ---
 
@@ -399,14 +405,191 @@ Key SDK entry points:
 | -------------------------- | ------------------------------------------------------------- |
 | `bucky.Init(opts...)`      | Register backend + load whisper.cpp shared library.           |
 | `bucky.New(opts...)`       | Construct a concurrently-safe `*Bucky` handle for one model.  |
-| `Bucky.Transcribe(...)`    | Transcribe 16 kHz mono float32 PCM.                           |
+| `Bucky.Transcribe(...)`    | Transcribe 16 kHz mono float32 PCM (batch, one-shot).         |
+| `Bucky.NewStream(...)`     | Open a live streaming session (see [18.9](#189-streaming-transcription-sdk)). |
 | `Bucky.DetectLanguage(...)`| Run language detection only.                                  |
 | `Bucky.ActiveStreams()`    | In-flight transcribe count (observability).                   |
 | `Bucky.SystemInfo()`       | Parsed `whisper.cpp` system info string.                      |
 | `Bucky.Unload(ctx)`        | Wait for active streams to drain and unload the model.        |
 | `bucky.LangID/LangStr/LangMaxID` | Language code ↔ id helpers.                             |
 
-### 18.9 Supported Languages
+### 18.9 Streaming Transcription (SDK)
+
+`Bucky.Transcribe` is one-shot: hand it a full clip, get one result back.
+For audio that arrives *over time* — a microphone, a chunked HTTP upload,
+a WebSocket, a long voice memo — use a **stream** instead. You `Feed`
+samples as they arrive and consume incremental transcript **events** from
+a channel; the stream owns the buffering, windowing, and silence detection
+for you.
+
+```go
+ctx := context.Background()
+
+stream, err := b.NewStream(ctx, model.WithStreamLanguage("en"))
+if err != nil { /* ... */ }
+defer stream.Close()
+
+// Consumer: render partials live, commit on finals.
+go func() {
+    for ev := range stream.Events() {
+        switch ev.Kind {
+        case model.EventPartial: // tentative; REPLACE the live line
+            fmt.Printf("\033[2K\r%s", ev.Text)
+        case model.EventFinal:   // committed; APPEND and start a new line
+            fmt.Printf("\033[2K\r%s\n", ev.Text)
+        case model.EventError:
+            fmt.Println("error:", ev.Err)
+        }
+    }
+}()
+
+// Producer: push 16 kHz mono float32 PCM as it arrives.
+for samples := range incomingAudio {
+    if err := stream.Feed(ctx, samples); err != nil { /* ... */ }
+}
+
+stream.Close() // final flush, then Events closes
+```
+
+A streaming session holds **one `whisper.State` from the pool for its
+entire lifetime** and counts against `Bucky.ActiveStreams()`, so an open
+stream blocks `Unload` exactly like an in-flight `Transcribe`. Call
+`Close` exactly once when done; it is idempotent.
+
+> **Architectural floor.** Whisper is a non-streaming model: its encoder
+> works on fixed audio windows, so true token-by-token streaming is not
+> possible. Like every Whisper "streaming" implementation (including
+> whisper.cpp's own `examples/stream`), Bucky does *windowed* inference
+> under the hood and hides it behind this API. The practical consequences:
+> the partial-update latency floor is `PartialEveryMs`, and a Final trails
+> the actual end of speech by about one VAD frame.
+
+#### 18.9.1 Event Model
+
+Events mirror the "rolling hypothesis" UX of whisper.cpp's `stream`: the
+text re-renders and revises as more audio arrives, then locks in when you
+pause.
+
+| Kind            | Meaning                                                                                          | Consumer action                          |
+| --------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `EventPartial`  | Tentative, revisable re-decode of the current un-committed window. `Text` is the **full hypothesis** for that window (not a delta) and supersedes the previous partial. May be dropped under load. | **Replace** your pending-text buffer.    |
+| `EventFinal`    | The un-committed region is committed and will not be revised. Never dropped.                      | **Append** `Text`; clear pending buffer. |
+| `EventReset`    | Emitted after `Reset` (only when opened `WithEmitResetEvent`). `Text`/`Segments` empty.          | Clear any client-side accumulators.      |
+| `EventError`    | Terminal. `Err` is set; `Events` closes immediately after.                                        | Stop; `Close` and (if needed) re-open.   |
+
+Each `Event` also carries `StartMs` / `EndMs` (session-local; rebased to 0
+after a `Reset` by default) and a `Segments` slice for callers that want
+per-segment timing.
+
+By default a Final commits when the speaker **pauses** (voice-activity
+detection — see [18.9.3](#1893-stream-options)), so cuts land in natural
+gaps instead of mid-word, and adjacent Finals do not duplicate the
+boundary word. Across each commit the stream also rolls the previous
+window's tail tokens forward as decoder context, preserving linguistic
+continuity.
+
+#### 18.9.2 Feeding Audio
+
+The engine consumes one fixed internal format: **16 kHz, mono, float32 in
+[-1, 1]**. Two feed methods are provided:
+
+| Method     | Input                                            | Use when…                                                                 |
+| ---------- | ------------------------------------------------ | ------------------------------------------------------------------------- |
+| `Feed`     | `[]float32` already at 16 kHz mono               | You already hold normalized samples (e.g. Web Audio, decoded files).      |
+| `FeedPCM`  | raw `[]byte` + an `model.AudioFormat` descriptor | You have raw capture-device PCM at an arbitrary rate / channel count.     |
+
+`FeedPCM` does the **pure-Go** interpret → downmix → resample → normalize
+pipeline (no ffmpeg, no subprocess), carrying resampler phase across calls
+so block boundaries that fall mid-frame introduce no discontinuity:
+
+```go
+format := model.AudioFormat{
+    SampleRate: 48000,           // hardware rate; resampled to 16 kHz
+    Channels:   2,               // downmixed to mono
+    Sample:     model.Int16LE,   // or model.Float32LE
+}
+err := stream.FeedPCM(ctx, rawMicBytes, format)
+```
+
+Both methods are **producer-side** (call them from a single producer
+goroutine) and apply backpressure: they block (respecting `ctx`) when the
+internal buffer is full, so a fast producer cannot exhaust memory.
+
+#### 18.9.3 Stream Options
+
+Pass `model.StreamOption` values to `NewStream`. Every knob has a default;
+all defaults match whisper.cpp `stream` conventions where applicable.
+
+| Option                          | Default | Purpose                                                                                     |
+| ------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `WithStreamLanguage(code)`      | auto    | BCP-47 language hint; empty = auto-detect once at start.                                     |
+| `WithStreamInitialPrompt(s)`    | —       | Bias the decoder on the first window only.                                                   |
+| `WithStreamTranslate(bool)`     | false   | Translate source audio to English (multilingual models only).                               |
+| `WithStreamNThreads(n)`         | model   | Override decode thread count for this session.                                               |
+| `WithPartialEveryMs(ms)`        | 1000    | Partial-emit cadence. `<0` disables partials (final-only mode).                              |
+| `WithCommitEveryMs(ms)`         | 6000    | Force a Final on a fixed cadence even without a pause (mirrors `stream`'s `n_new_line`).     |
+| `WithMaxUtteranceMs(ms)`        | 25000   | Hard ceiling: force a Final if no silence is detected (stays under the 30 s mel window).     |
+| `WithKeepMs(ms)`                | 300     | Trailing audio kept across a commit so a boundary word is not clipped.                       |
+| `WithVAD(bool)`                 | **on**  | Energy-ratio silence detection that gates Finals. Pass `false` for fixed-cadence commits.    |
+| `WithVADThreshold(f)`           | 0.6     | Trailing window is "silence" when its mean energy < `f` × the whole window's mean energy.    |
+| `WithEmitResetEvent(bool)`      | false   | Emit an `EventReset` after `Reset` completes.                                                |
+
+VAD is **on by default**: the detector is a pure-Go energy-ratio check
+(the same approach as whisper.cpp's `vad_simple` — no model file, no extra
+inference). It is expressed by the negative `StreamConfig.DisableVAD` field
+(the `http.Transport.DisableKeepAlives` idiom) so the default-on behavior
+needs no sentinel.
+
+#### 18.9.4 Indefinite Sessions & Reset
+
+A single `*Stream` is designed to run **indefinitely** — for hours, across
+topic changes, mic mute/unmute, or "scratch that, start over". `Reset`
+clears the audio buffer and rolling context **without** releasing the pool
+slot, tearing down the worker, or closing `Events`, so you never re-pay
+acquisition latency or lose GPU cache warmth for what is logically one
+session. Resource use stays flat no matter how long a stream runs or how
+often it is reset.
+
+```go
+// e.g. on a "new topic" / push-to-talk-release signal:
+if err := stream.Reset(ctx); err != nil { /* ... */ }
+```
+
+`Reset` blocks until any in-flight decode finishes, then applies. Tune it
+with `model.ResetOption`:
+
+| Option                         | Default | Effect                                                                       |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------- |
+| `WithFlushPending(bool)`       | true    | Run one final pass over buffered audio (emitting its Final) before clearing. |
+| `WithRebaseTimestamps(bool)`   | true    | Restart `StartMs`/`EndMs` at 0 for subsequent events.                         |
+| `WithKeepPromptTokens(bool)`   | false   | Keep linguistic context across the reset ("rewind audio, keep context") instead of treating it as a hard boundary. |
+
+`Reset` is safe to call from any goroutine (including the `Events`
+consumer). After an `EventError` the worker has already exited, so don't
+rely on `Reset` to recover — the stream is dead: `Close` it and open a new
+one.
+
+#### 18.9.5 Live Microphone Example
+
+[`examples/bucky-stream/main.go`](../examples/bucky-stream/main.go)
+(runnable with `make example-bucky-stream`) is a complete live-mic demo
+that reproduces the whisper.cpp `stream` experience: it captures the
+default microphone, renders partials in place and commits finals on their
+own line, and ends when you **say "STOP"** (or press Ctrl-C).
+
+```text
+🎤 Mic is live — say something. Say "STOP" to end.
+```
+
+The **SDK itself is pure Go and needs no CGO.** The example adds CGO only
+for microphone capture, via
+[`github.com/gen2brain/malgo`](https://github.com/gen2brain/malgo)
+(miniaudio), which lives entirely in the `examples` module — nothing in
+`sdk/bucky` depends on it. The mic callback hands raw PCM to
+`Stream.FeedPCM`; the rest is the `Feed → range Events → Close` pattern
+above. (macOS prompts for microphone permission on first run.)
+
+### 18.10 Supported Languages
 
 `whisper.cpp` supports ~99 languages. Bucky exposes the full set
 through `bucky.LangID` / `bucky.LangStr` / `bucky.LangMaxID`, and the
@@ -421,7 +604,7 @@ The **English-only** model variants (`tiny.en`, `base.en`, `small.en`,
 `medium.en`) reject any non-`en` language hint. Use the multilingual
 variants for non-English audio.
 
-### 18.10 Troubleshooting
+### 18.11 Troubleshooting
 
 | Symptom                                                                 | Likely cause / fix                                                                                                                                |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -431,7 +614,10 @@ variants for non-English audio.
 | `transcribe: empty samples`                                             | The uploaded file decoded to zero samples — usually a corrupt file or a format `bucky/pkg/audio` cannot decode. Re-encode to 16 kHz mono WAV.     |
 | `parse multipart form: …` with 413 / size errors                        | The upload exceeded 25 MB. Split the audio or down-sample to 16 kHz mono before upload.                                                           |
 | GPU model loads but inference is suspiciously slow                      | Confirm the active bundle matches your hardware (`echo $KRONK_BUCKY_LIB_PATH`). A `cpu` bundle will silently work on a GPU host.                  |
-| `unload: cannot unload, too many active-streams[n]`                     | A shutdown raced a long transcribe. Increase the unload context deadline, or wait for in-flight requests to finish.                               |
+| `unload: cannot unload, too many active-streams[n]`                     | A shutdown raced a long transcribe or an open stream. Increase the unload context deadline, or `Close` the stream / wait for in-flight requests.   |
+| `NewStream` blocks or its context times out                            | Every pool slot is held by an open stream. A stream reserves one `whisper.State` for its whole lifetime; raise `NSeqMax` or `Close` an idle stream. |
+| Streaming emits no `EventPartial`, only finals                          | Partials are disabled (`WithPartialEveryMs` < 0), or the producer is feeding slower than `PartialEveryMs`. Feed steadily and use a positive cadence. |
+| A word is duplicated where two finals meet                              | VAD was turned off (`WithVAD(false)`), so a Final cut mid-word and the kept overlap re-decoded it. Leave VAD on (the default) so cuts land in pauses. |
 | Whisper noise (`whisper_init_*`, `ggml_metal_*`) bleeds into stdout     | Bucky installs `LogSilent` by default. If you forced `LogNormal` via `bucky.WithLogLevel(LogNormal)`, switch it back.                             |
 
 ---

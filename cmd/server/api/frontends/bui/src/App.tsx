@@ -19,6 +19,8 @@ import DocsSDK from './components/DocsSDK';
 import DocsSDKKronk from './components/DocsSDKKronk';
 import DocsSDKModel from './components/DocsSDKModel';
 import DocsSDKPool from './components/DocsSDKPool';
+import DocsSDKBucky from './components/DocsSDKBucky';
+import DocsSDKBuckyModel from './components/DocsSDKBuckyModel';
 import DocsSDKExamples from './components/DocsSDKExamples';
 import DocsCLICatalog from './components/DocsCLICatalog';
 import DocsCLILibs from './components/DocsCLILibs';
@@ -69,6 +71,8 @@ export type Page =
   | 'docs-sdk-kronk'
   | 'docs-sdk-model'
   | 'docs-sdk-pool'
+  | 'docs-sdk-bucky'
+  | 'docs-sdk-bucky-model'
   | 'docs-sdk-examples'
   | 'docs-cli-catalog'
   | 'docs-cli-libs'
@@ -108,6 +112,8 @@ export const routeMap: Record<Page, string> = {
   'docs-sdk-kronk': '/docs/sdk/kronk',
   'docs-sdk-model': '/docs/sdk/model',
   'docs-sdk-pool': '/docs/sdk/pool',
+  'docs-sdk-bucky': '/docs/sdk/bucky',
+  'docs-sdk-bucky-model': '/docs/sdk/bucky/model',
   'docs-sdk-examples': '/docs/sdk/examples',
   'docs-cli-catalog': '/docs/cli/catalog',
   'docs-cli-libs': '/docs/cli/libs',
@@ -209,6 +215,8 @@ function App() {
                 <Route path="/docs/sdk/kronk" element={<DocsSDKKronk />} />
                 <Route path="/docs/sdk/model" element={<DocsSDKModel />} />
                 <Route path="/docs/sdk/pool" element={<DocsSDKPool />} />
+                <Route path="/docs/sdk/bucky" element={<DocsSDKBucky />} />
+                <Route path="/docs/sdk/bucky/model" element={<DocsSDKBuckyModel />} />
                 <Route path="/docs/sdk/examples" element={<DocsSDKExamples />} />
                 <Route path="/docs/cli/catalog" element={<DocsCLICatalog />} />
                 <Route path="/docs/cli/libs" element={<DocsCLILibs />} />

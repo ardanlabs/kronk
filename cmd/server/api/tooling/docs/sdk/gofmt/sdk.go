@@ -51,13 +51,15 @@ type function struct {
 // =============================================================================
 
 func Run() error {
-	pkg := flag.String("pkg", "all", "Package to generate docs for: kronk, model, pool, or all")
+	pkg := flag.String("pkg", "all", "Package to generate docs for: kronk, model, pool, bucky, bucky-model, or all")
 	flag.Parse()
 
 	packages := make(map[string]string)
 	packages["kronk"] = "github.com/ardanlabs/kronk/sdk/kronk"
 	packages["model"] = "github.com/ardanlabs/kronk/sdk/kronk/model"
 	packages["pool"] = "github.com/ardanlabs/kronk/sdk/kronk/pool"
+	packages["bucky"] = "github.com/ardanlabs/kronk/sdk/bucky"
+	packages["bucky-model"] = "github.com/ardanlabs/kronk/sdk/bucky/model"
 
 	outputDir := "cmd/server/api/frontends/bui/src/components"
 
@@ -77,6 +79,16 @@ func Run() error {
 			return fmt.Errorf("generating pool docs: %w", err)
 		}
 
+	case "bucky":
+		if err := generateDocs(packages["bucky"], outputDir, "DocsSDKBucky.tsx", "Bucky"); err != nil {
+			return fmt.Errorf("generating bucky docs: %w", err)
+		}
+
+	case "bucky-model":
+		if err := generateDocs(packages["bucky-model"], outputDir, "DocsSDKBuckyModel.tsx", "BuckyModel"); err != nil {
+			return fmt.Errorf("generating bucky-model docs: %w", err)
+		}
+
 	case "all":
 		if err := generateDocs(packages["kronk"], outputDir, "DocsSDKKronk.tsx", "Kronk"); err != nil {
 			return fmt.Errorf("generating kronk docs: %w", err)
@@ -90,8 +102,16 @@ func Run() error {
 			return fmt.Errorf("generating pool docs: %w", err)
 		}
 
+		if err := generateDocs(packages["bucky"], outputDir, "DocsSDKBucky.tsx", "Bucky"); err != nil {
+			return fmt.Errorf("generating bucky docs: %w", err)
+		}
+
+		if err := generateDocs(packages["bucky-model"], outputDir, "DocsSDKBuckyModel.tsx", "BuckyModel"); err != nil {
+			return fmt.Errorf("generating bucky-model docs: %w", err)
+		}
+
 	default:
-		return fmt.Errorf("unknown package: %s (use kronk, model, pool, or all)", *pkg)
+		return fmt.Errorf("unknown package: %s (use kronk, model, pool, bucky, bucky-model, or all)", *pkg)
 	}
 
 	fmt.Println("Documentation generated successfully")

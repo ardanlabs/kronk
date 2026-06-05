@@ -168,6 +168,12 @@ make example-audio
 make example-bucky
 ```
 
+[BUCKY-STREAM](examples/bucky-stream/main.go) - This example shows you how to do live microphone transcription with the bucky streaming SDK: partials are revised in place and finals commit as you speak. Say "STOP" to end. See [Streaming Transcription](.manual/chapter-18-bucky.md#189-streaming-transcription-sdk) in the manual.
+
+```shell
+make example-bucky-stream
+```
+
 [CHAT](examples/chat/main.go) - This example shows you how to chat with the chat-completion api.
 
 ```shell

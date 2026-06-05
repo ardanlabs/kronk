@@ -7063,7 +7063,11 @@ func main() {
               </tr>
               <tr>
                 <td><code>Bucky.Transcribe(...)</code></td>
-                <td>Transcribe 16 kHz mono float32 PCM.</td>
+                <td>Transcribe 16 kHz mono float32 PCM (batch, one-shot).</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.NewStream(...)</code></td>
+                <td>Open a live streaming session (see <a href="#189-streaming-transcription-sdk">18.9</a>).</td>
               </tr>
               <tr>
                 <td><code>Bucky.DetectLanguage(...)</code></td>
@@ -7087,11 +7091,218 @@ func main() {
               </tr>
             </tbody>
           </table>
-          <h3 id="189-supported-languages">18.9 Supported Languages</h3>
+          <h3 id="189-streaming-transcription-sdk">18.9 Streaming Transcription (SDK)</h3>
+          <p><code>Bucky.Transcribe</code> is one-shot: hand it a full clip, get one result back. For audio that arrives <em>over time</em> — a microphone, a chunked HTTP upload, a WebSocket, a long voice memo — use a <strong>stream</strong> instead. You <code>Feed</code> samples as they arrive and consume incremental transcript <strong>events</strong> from a channel; the stream owns the buffering, windowing, and silence detection for you.</p>
+          <pre className="code-block"><code className="language-go">{`ctx := context.Background()
+
+stream, err := b.NewStream(ctx, model.WithStreamLanguage("en"))
+if err != nil { /* ... */ }
+defer stream.Close()
+
+// Consumer: render partials live, commit on finals.
+go func() {
+    for ev := range stream.Events() {
+        switch ev.Kind {
+        case model.EventPartial: // tentative; REPLACE the live line
+            fmt.Printf("\\033[2K\\r%s", ev.Text)
+        case model.EventFinal:   // committed; APPEND and start a new line
+            fmt.Printf("\\033[2K\\r%s\\n", ev.Text)
+        case model.EventError:
+            fmt.Println("error:", ev.Err)
+        }
+    }
+}()
+
+// Producer: push 16 kHz mono float32 PCM as it arrives.
+for samples := range incomingAudio {
+    if err := stream.Feed(ctx, samples); err != nil { /* ... */ }
+}
+
+stream.Close() // final flush, then Events closes`}</code></pre>
+          <p>A streaming session holds <strong>one &lt;code&gt;whisper.State&lt;/code&gt; from the pool for its entire lifetime</strong> and counts against <code>Bucky.ActiveStreams()</code>, so an open stream blocks <code>Unload</code> exactly like an in-flight <code>Transcribe</code>. Call <code>Close</code> exactly once when done; it is idempotent.</p>
+          <blockquote><strong>Architectural floor.</strong> Whisper is a non-streaming model: its encoder</blockquote>
+          <blockquote>works on fixed audio windows, so true token-by-token streaming is not</blockquote>
+          <blockquote>possible. Like every Whisper "streaming" implementation (including</blockquote>
+          <blockquote>whisper.cpp's own <code>examples/stream</code>), Bucky does <em>windowed</em> inference</blockquote>
+          <blockquote>under the hood and hides it behind this API. The practical consequences:</blockquote>
+          <blockquote>the partial-update latency floor is <code>PartialEveryMs</code>, and a Final trails</blockquote>
+          <blockquote>the actual end of speech by about one VAD frame.</blockquote>
+          <h4 id="1891-event-model">18.9.1 Event Model</h4>
+          <p>Events mirror the "rolling hypothesis" UX of whisper.cpp's <code>stream</code>: the text re-renders and revises as more audio arrives, then locks in when you pause.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Kind</th>
+                <th>Meaning</th>
+                <th>Consumer action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>EventPartial</code></td>
+                <td>Tentative, revisable re-decode of the current un-committed window. <code>Text</code> is the <strong>full hypothesis</strong> for that window (not a delta) and supersedes the previous partial. May be dropped under load.</td>
+                <td><strong>Replace</strong> your pending-text buffer.</td>
+              </tr>
+              <tr>
+                <td><code>EventFinal</code></td>
+                <td>The un-committed region is committed and will not be revised. Never dropped.</td>
+                <td><strong>Append</strong> <code>Text</code>; clear pending buffer.</td>
+              </tr>
+              <tr>
+                <td><code>EventReset</code></td>
+                <td>Emitted after <code>Reset</code> (only when opened <code>WithEmitResetEvent</code>). <code>Text</code>/<code>Segments</code> empty.</td>
+                <td>Clear any client-side accumulators.</td>
+              </tr>
+              <tr>
+                <td><code>EventError</code></td>
+                <td>Terminal. <code>Err</code> is set; <code>Events</code> closes immediately after.</td>
+                <td>Stop; <code>Close</code> and (if needed) re-open.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Each <code>Event</code> also carries <code>StartMs</code> / <code>EndMs</code> (session-local; rebased to 0 after a <code>Reset</code> by default) and a <code>Segments</code> slice for callers that want per-segment timing.</p>
+          <p>By default a Final commits when the speaker <strong>pauses</strong> (voice-activity detection — see <a href="#1893-stream-options">18.9.3</a>), so cuts land in natural gaps instead of mid-word, and adjacent Finals do not duplicate the boundary word. Across each commit the stream also rolls the previous window's tail tokens forward as decoder context, preserving linguistic continuity.</p>
+          <h4 id="1892-feeding-audio">18.9.2 Feeding Audio</h4>
+          <p>The engine consumes one fixed internal format: <strong>16 kHz, mono, float32 in [-1, 1]</strong>. Two feed methods are provided:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Input</th>
+                <th>Use when…</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Feed</code></td>
+                <td><code>[]float32</code> already at 16 kHz mono</td>
+                <td>You already hold normalized samples (e.g. Web Audio, decoded files).</td>
+              </tr>
+              <tr>
+                <td><code>FeedPCM</code></td>
+                <td>raw <code>[]byte</code> + an <code>model.AudioFormat</code> descriptor</td>
+                <td>You have raw capture-device PCM at an arbitrary rate / channel count.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>FeedPCM</code> does the <strong>pure-Go</strong> interpret → downmix → resample → normalize pipeline (no ffmpeg, no subprocess), carrying resampler phase across calls so block boundaries that fall mid-frame introduce no discontinuity:</p>
+          <pre className="code-block"><code className="language-go">{`format := model.AudioFormat{
+    SampleRate: 48000,           // hardware rate; resampled to 16 kHz
+    Channels:   2,               // downmixed to mono
+    Sample:     model.Int16LE,   // or model.Float32LE
+}
+err := stream.FeedPCM(ctx, rawMicBytes, format)`}</code></pre>
+          <p>Both methods are <strong>producer-side</strong> (call them from a single producer goroutine) and apply backpressure: they block (respecting <code>ctx</code>) when the internal buffer is full, so a fast producer cannot exhaust memory.</p>
+          <h4 id="1893-stream-options">18.9.3 Stream Options</h4>
+          <p>Pass <code>model.StreamOption</code> values to <code>NewStream</code>. Every knob has a default; all defaults match whisper.cpp <code>stream</code> conventions where applicable.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Default</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>WithStreamLanguage(code)</code></td>
+                <td>auto</td>
+                <td>BCP-47 language hint; empty = auto-detect once at start.</td>
+              </tr>
+              <tr>
+                <td><code>WithStreamInitialPrompt(s)</code></td>
+                <td>—</td>
+                <td>Bias the decoder on the first window only.</td>
+              </tr>
+              <tr>
+                <td><code>WithStreamTranslate(bool)</code></td>
+                <td>false</td>
+                <td>Translate source audio to English (multilingual models only).</td>
+              </tr>
+              <tr>
+                <td><code>WithStreamNThreads(n)</code></td>
+                <td>model</td>
+                <td>Override decode thread count for this session.</td>
+              </tr>
+              <tr>
+                <td><code>WithPartialEveryMs(ms)</code></td>
+                <td>1000</td>
+                <td>Partial-emit cadence. <code>&lt;0</code> disables partials (final-only mode).</td>
+              </tr>
+              <tr>
+                <td><code>WithCommitEveryMs(ms)</code></td>
+                <td>6000</td>
+                <td>Force a Final on a fixed cadence even without a pause (mirrors <code>stream</code>'s <code>n_new_line</code>).</td>
+              </tr>
+              <tr>
+                <td><code>WithMaxUtteranceMs(ms)</code></td>
+                <td>25000</td>
+                <td>Hard ceiling: force a Final if no silence is detected (stays under the 30 s mel window).</td>
+              </tr>
+              <tr>
+                <td><code>WithKeepMs(ms)</code></td>
+                <td>300</td>
+                <td>Trailing audio kept across a commit so a boundary word is not clipped.</td>
+              </tr>
+              <tr>
+                <td><code>WithVAD(bool)</code></td>
+                <td><strong>on</strong></td>
+                <td>Energy-ratio silence detection that gates Finals. Pass <code>false</code> for fixed-cadence commits.</td>
+              </tr>
+              <tr>
+                <td><code>WithVADThreshold(f)</code></td>
+                <td>0.6</td>
+                <td>Trailing window is "silence" when its mean energy &lt; <code>f</code> × the whole window's mean energy.</td>
+              </tr>
+              <tr>
+                <td><code>WithEmitResetEvent(bool)</code></td>
+                <td>false</td>
+                <td>Emit an <code>EventReset</code> after <code>Reset</code> completes.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>VAD is <strong>on by default</strong>: the detector is a pure-Go energy-ratio check (the same approach as whisper.cpp's <code>vad_simple</code> — no model file, no extra inference). It is expressed by the negative <code>StreamConfig.DisableVAD</code> field (the <code>http.Transport.DisableKeepAlives</code> idiom) so the default-on behavior needs no sentinel.</p>
+          <h4 id="1894-indefinite-sessions-reset">18.9.4 Indefinite Sessions &amp; Reset</h4>
+          <p>A single <code>*Stream</code> is designed to run <strong>indefinitely</strong> — for hours, across topic changes, mic mute/unmute, or "scratch that, start over". <code>Reset</code> clears the audio buffer and rolling context <strong>without</strong> releasing the pool slot, tearing down the worker, or closing <code>Events</code>, so you never re-pay acquisition latency or lose GPU cache warmth for what is logically one session. Resource use stays flat no matter how long a stream runs or how often it is reset.</p>
+          <pre className="code-block"><code className="language-go">{`// e.g. on a "new topic" / push-to-talk-release signal:
+if err := stream.Reset(ctx); err != nil { /* ... */ }`}</code></pre>
+          <p><code>Reset</code> blocks until any in-flight decode finishes, then applies. Tune it with <code>model.ResetOption</code>:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Default</th>
+                <th>Effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>WithFlushPending(bool)</code></td>
+                <td>true</td>
+                <td>Run one final pass over buffered audio (emitting its Final) before clearing.</td>
+              </tr>
+              <tr>
+                <td><code>WithRebaseTimestamps(bool)</code></td>
+                <td>true</td>
+                <td>Restart <code>StartMs</code>/<code>EndMs</code> at 0 for subsequent events.</td>
+              </tr>
+              <tr>
+                <td><code>WithKeepPromptTokens(bool)</code></td>
+                <td>false</td>
+                <td>Keep linguistic context across the reset ("rewind audio, keep context") instead of treating it as a hard boundary.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>Reset</code> is safe to call from any goroutine (including the <code>Events</code> consumer). After an <code>EventError</code> the worker has already exited, so don't rely on <code>Reset</code> to recover — the stream is dead: <code>Close</code> it and open a new one.</p>
+          <h4 id="1895-live-microphone-example">18.9.5 Live Microphone Example</h4>
+          <p><a href="../examples/bucky-stream/main.go"><code>examples/bucky-stream/main.go</code></a> (runnable with <code>make example-bucky-stream</code>) is a complete live-mic demo that reproduces the whisper.cpp <code>stream</code> experience: it captures the default microphone, renders partials in place and commits finals on their own line, and ends when you <strong>say "STOP"</strong> (or press Ctrl-C).</p>
+          <pre className="code-block"><code className="language-text">{`🎤 Mic is live — say something. Say "STOP" to end.`}</code></pre>
+          <p>The <strong>SDK itself is pure Go and needs no CGO.</strong> The example adds CGO only for microphone capture, via <a href="https://github.com/gen2brain/malgo"><code>github.com/gen2brain/malgo</code></a> (miniaudio), which lives entirely in the <code>examples</code> module — nothing in <code>sdk/bucky</code> depends on it. The mic callback hands raw PCM to <code>Stream.FeedPCM</code>; the rest is the <code>Feed → range Events → Close</code> pattern above. (macOS prompts for microphone permission on first run.)</p>
+          <h3 id="1810-supported-languages">18.10 Supported Languages</h3>
           <p><code>whisper.cpp</code> supports ~99 languages. Bucky exposes the full set through <code>bucky.LangID</code> / <code>bucky.LangStr</code> / <code>bucky.LangMaxID</code>, and the BUI Translator includes a shortlist of common ones plus an <strong>Auto-detect</strong> option (<code>language=""</code>).</p>
           <p>Pass the BCP-47 / ISO 639-1 short code (<code>en</code>, <code>de</code>, <code>fr</code>, …) in the <code>language</code> form field or in <code>model.WithLanguage(...)</code>. Empty string means auto-detect.</p>
           <p>The <strong>English-only</strong> model variants (<code>tiny.en</code>, <code>base.en</code>, <code>small.en</code>, <code>medium.en</code>) reject any non-<code>en</code> language hint. Use the multilingual variants for non-English audio.</p>
-          <h3 id="1810-troubleshooting">18.10 Troubleshooting</h3>
+          <h3 id="1811-troubleshooting">18.11 Troubleshooting</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -7126,7 +7337,19 @@ func main() {
               </tr>
               <tr>
                 <td><code>unload: cannot unload, too many active-streams[n]</code></td>
-                <td>A shutdown raced a long transcribe. Increase the unload context deadline, or wait for in-flight requests to finish.</td>
+                <td>A shutdown raced a long transcribe or an open stream. Increase the unload context deadline, or <code>Close</code> the stream / wait for in-flight requests.</td>
+              </tr>
+              <tr>
+                <td><code>NewStream</code> blocks or its context times out</td>
+                <td>Every pool slot is held by an open stream. A stream reserves one <code>whisper.State</code> for its whole lifetime; raise <code>NSeqMax</code> or <code>Close</code> an idle stream.</td>
+              </tr>
+              <tr>
+                <td>Streaming emits no <code>EventPartial</code>, only finals</td>
+                <td>Partials are disabled (<code>WithPartialEveryMs</code> &lt; 0), or the producer is feeding slower than <code>PartialEveryMs</code>. Feed steadily and use a positive cadence.</td>
+              </tr>
+              <tr>
+                <td>A word is duplicated where two finals meet</td>
+                <td>VAD was turned off (<code>WithVAD(false)</code>), so a Final cut mid-word and the kept overlap re-decoded it. Leave VAD on (the default) so cuts land in pauses.</td>
               </tr>
               <tr>
                 <td>Whisper noise (<code>whisper_init_<em>&lt;/code&gt;, &lt;code&gt;ggml_metal_</em></code>) bleeds into stdout</td>
@@ -9518,8 +9741,9 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 <li><a href="#186-bui-usage" className={activeSection === '186-bui-usage' ? 'active' : ''}>18.6 BUI Usage</a></li>
                 <li><a href="#187-api-endpoint" className={activeSection === '187-api-endpoint' ? 'active' : ''}>18.7 API Endpoint</a></li>
                 <li><a href="#188-sdk-quick-start" className={activeSection === '188-sdk-quick-start' ? 'active' : ''}>18.8 SDK Quick Start</a></li>
-                <li><a href="#189-supported-languages" className={activeSection === '189-supported-languages' ? 'active' : ''}>18.9 Supported Languages</a></li>
-                <li><a href="#1810-troubleshooting" className={activeSection === '1810-troubleshooting' ? 'active' : ''}>18.10 Troubleshooting</a></li>
+                <li><a href="#189-streaming-transcription-sdk" className={activeSection === '189-streaming-transcription-sdk' ? 'active' : ''}>18.9 Streaming Transcription (SDK)</a></li>
+                <li><a href="#1810-supported-languages" className={activeSection === '1810-supported-languages' ? 'active' : ''}>18.10 Supported Languages</a></li>
+                <li><a href="#1811-troubleshooting" className={activeSection === '1811-troubleshooting' ? 'active' : ''}>18.11 Troubleshooting</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
