@@ -416,7 +416,7 @@ func createInitialMessages(code []byte) []model.D {
 }
 
 func generateResponse(ctx context.Context, krn *kronk.Kronk, messages []model.D, codeBlock string) error {
-	fmt.Print("\nModel is thinking... ")
+	fmt.Print("\nModel is loading... ")
 	d := model.D{
 		"messages":        messages,
 		"max_tokens":      4096,
@@ -434,48 +434,47 @@ func generateResponse(ctx context.Context, krn *kronk.Kronk, messages []model.D,
 func modelResponse(resp model.ChatResponse, codeBlock string) error {
 	fmt.Print("\nMODEL> ")
 
-	if len(resp.Choices) == 0 {
-		return nil
-	}
-
-	switch resp.Choices[0].FinishReason() {
-	case model.FinishReasonError:
-		return fmt.Errorf("error from model: %s", resp.Choices[0].Message.Content)
-	case model.FinishReasonStop:
-	}
-
-	content := resp.Choices[0].Message.Content
-
-	if content != "" {
-		fmt.Print(content)
-	}
-
-	if codeBlock != "" {
-		modelCode := strings.TrimSpace(firstCodeBlock(content))
-		percent := codeMatchPercent(modelCode, codeBlock)
-
-		fmt.Printf("\nCode match: %.2f%%\n", percent)
-
-		if diff := firstCodeDifference(modelCode, codeBlock); diff != -1 {
-			line := 1 + strings.Count(normalizeIndent(codeBlock)[:diff], "\n")
-			fmt.Printf("First difference at line: %d\n", line)
-			printCodeDiff(codeBlock, modelCode)
+	if len(resp.Choices) != 0 {
+		choice := resp.Choices[0]
+		if choice.FinishReason() == model.FinishReasonError {
+			return fmt.Errorf("error from model: %s", choice.Message.Content)
 		}
+
+		content := choice.Message.Content
+		if content != "" {
+			fmt.Print(content)
+		}
+
+		if codeBlock != "" {
+			compareCode(content, codeBlock)
+		}
+
+		if choice.Message.Reasoning != "" {
+			fmt.Printf("\033[91m%s\033[0m", choice.Message.Reasoning)
+		}
+
+		fmt.Printf("\n\033[90mTokens: %d input, %d output | TPS: %.2f\033[0m\n",
+			resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TokensPerSecond)
 	}
-
-	reasoning := resp.Choices[0].Message.Reasoning
-
-	if reasoning != "" {
-		fmt.Printf("\033[91m%s\033[0m", reasoning)
-	}
-
-	fmt.Printf("\n\033[90mTokens: %d input, %d output | TPS: %.2f\033[0m\n",
-		resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TokensPerSecond)
-
 	return nil
 }
 
-func firstCodeBlock(content string) string {
+func compareCode(content, originalCode string) {
+	modelCode := strings.TrimSpace(parseCodeBlock(content))
+
+	percent := calculateMatchPercent(modelCode, originalCode)
+
+	fmt.Printf("\nCode match: %.2f%%\n", percent)
+
+	if diff := firstCodeDifference(modelCode, originalCode); diff != -1 {
+		line := 1 + strings.Count(normalizeIndent(originalCode)[:diff], "\n")
+		fmt.Printf("First difference at line: %d\n", line)
+
+		printCodeDiff(originalCode, modelCode)
+	}
+}
+
+func parseCodeBlock(content string) string {
 	start := strings.Index(content, "```")
 	if start == -1 {
 		return ""
@@ -486,12 +485,12 @@ func firstCodeBlock(content string) string {
 		content = content[newline+1:]
 	}
 
-	before, _, ok := strings.Cut(content, "```")
-	if !ok {
+	parts := strings.SplitN(content, "```", 2)
+	if len(parts) < 2 {
 		return content
 	}
 
-	return before
+	return parts[0]
 }
 
 func normalizeIndent(s string) string {
@@ -503,10 +502,11 @@ func normalizeIndent(s string) string {
 			result = append(result, r)
 		}
 	}
+
 	return string(result)
 }
 
-func codeMatchPercent(modelCode, originalCode string) float64 {
+func calculateMatchPercent(modelCode, originalCode string) float64 {
 	modelCode = normalizeIndent(modelCode)
 	originalCode = normalizeIndent(originalCode)
 
@@ -556,6 +556,7 @@ func printCodeDiff(originalCode, modelCode string) {
 		if i < len(origLines) {
 			origLine = origLines[i]
 		}
+
 		modelLine := ""
 		if i < len(modelLines) {
 			modelLine = modelLines[i]
@@ -564,20 +565,23 @@ func printCodeDiff(originalCode, modelCode string) {
 		// Wrap long lines at the column width so neither side pushes
 		// into the other column.
 		for len(origLine) > 0 || len(modelLine) > 0 {
-			o := origLine
-			if len(o) > w {
-				o, origLine = o[:w], o[w:]
+			origChunk := origLine
+			if len(origChunk) > w {
+				origChunk, origLine = origChunk[:w], origChunk[w:]
 			} else {
 				origLine = ""
 			}
-			m := modelLine
-			if len(m) > w {
-				m, modelLine = m[:w], m[w:]
+
+			modelChunk := modelLine
+			if len(modelChunk) > w {
+				modelChunk, modelLine = modelChunk[:w], modelChunk[w:]
 			} else {
 				modelLine = ""
 			}
-			fmt.Printf("  %-*s | %s\n", w, o, m)
+
+			fmt.Printf("  %-*s | %s\n", w, origChunk, modelChunk)
 		}
 	}
+
 	fmt.Println("--- End Diff ---")
 }
