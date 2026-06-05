@@ -4,7 +4,6 @@ package main
 
 import (
 	"bufio"
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -245,6 +244,41 @@ func chat(krn *kronk.Kronk) error {
 			return fmt.Errorf("generateResponse: %w", err)
 
 		}
+
+		again, err := askTestAnother()
+		if err != nil {
+			return fmt.Errorf("askTestAnother: %w", err)
+		}
+
+		if !again {
+			return nil
+		}
+	}
+}
+
+func askTestAnother() (bool, error) {
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Print("\nTest another function? (y/n): ")
+
+		line, err := reader.ReadString('\n')
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+
+		if err != nil {
+			return false, err
+		}
+
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true, nil
+		case "n", "no":
+			return false, nil
+		default:
+			fmt.Println("Please enter y or n.")
+		}
 	}
 }
 
@@ -359,7 +393,7 @@ func sortIdentifiers(identifiers map[string]identInfo) []ident {
 	}
 
 	slices.SortFunc(idents, func(a, b ident) int {
-		return cmp.Compare(a.line, b.line)
+		return a.line - b.line
 	})
 
 	return idents
@@ -432,8 +466,6 @@ func generateResponse(ctx context.Context, krn *kronk.Kronk, messages []model.D,
 }
 
 func modelResponse(resp model.ChatResponse, codeBlock string) error {
-	fmt.Print("\nMODEL> ")
-
 	if len(resp.Choices) != 0 {
 		choice := resp.Choices[0]
 		if choice.FinishReason() == model.FinishReasonError {
@@ -441,9 +473,6 @@ func modelResponse(resp model.ChatResponse, codeBlock string) error {
 		}
 
 		content := choice.Message.Content
-		if content != "" {
-			fmt.Print(content)
-		}
 
 		if codeBlock != "" {
 			compareCode(content, codeBlock)
@@ -462,16 +491,105 @@ func modelResponse(resp model.ChatResponse, codeBlock string) error {
 func compareCode(content, originalCode string) {
 	modelCode := strings.TrimSpace(parseCodeBlock(content))
 
-	percent := calculateMatchPercent(modelCode, originalCode)
+	want := strings.Split(originalCode, "\n")
+	got := strings.Split(modelCode, "\n")
 
+	// Exact comparison, whitespace included.
+	lcs := lcsLines(want, got)
+
+	// LCS-based similarity ratio (matching lines), not positional chars.
+	total := len(want) + len(got)
+	percent := 100.0
+	if total > 0 {
+		percent = float64(2*lcs) / float64(total) * 100
+	}
 	fmt.Printf("\nCode match: %.2f%%\n", percent)
 
-	if diff := firstCodeDifference(modelCode, originalCode); diff != -1 {
-		line := 1 + strings.Count(normalizeIndent(originalCode)[:diff], "\n")
-		fmt.Printf("First difference at line: %d\n", line)
+	fmt.Printf("\nCode diff (-want +got):\n%s\n", lineDiff(want, got))
+}
 
-		printCodeDiff(originalCode, modelCode)
+// lcsLines returns the length of the longest common subsequence of two
+// line slices.
+func lcsLines(a, b []string) int {
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+
+	for i := 1; i <= len(a); i++ {
+		for j := 1; j <= len(b); j++ {
+			if a[i-1] == b[j-1] {
+				curr[j] = prev[j-1] + 1
+			} else {
+				curr[j] = max(prev[j], curr[j-1])
+			}
+		}
+		prev, curr = curr, prev
 	}
+
+	return prev[len(b)]
+}
+
+// lineDiff renders a line-by-line diff. Lines are aligned with an LCS table
+// so inserted or removed lines don't shift the rest of the comparison.
+// Matching lines use " " context; within a changed block each removed "-"
+// line is paired next to its added "+" line.
+func lineDiff(a, b []string) string {
+	// LCS table for alignment (tolerates inserted/removed lines).
+	dp := make([][]int, len(a)+1)
+	for i := range dp {
+		dp[i] = make([]int, len(b)+1)
+	}
+	for i := len(a) - 1; i >= 0; i-- {
+		for j := len(b) - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				dp[i][j] = dp[i+1][j+1] + 1
+			} else {
+				dp[i][j] = max(dp[i+1][j], dp[i][j+1])
+			}
+		}
+	}
+
+	var sb strings.Builder
+	var dels, adds []string
+
+	// flush writes a changed block, pairing each removed line with the
+	// added line at the same offset so "-" sits next to its "+".
+	flush := func() {
+		for k := range max(len(dels), len(adds)) {
+			if k < len(dels) {
+				fmt.Fprintf(&sb, "- %s\n", dels[k])
+			}
+			if k < len(adds) {
+				fmt.Fprintf(&sb, "+ %s\n", adds[k])
+			}
+		}
+		dels, adds = nil, nil
+	}
+
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] == b[j]:
+			flush()
+			sb.WriteString("  " + a[i] + "\n")
+			i++
+			j++
+		case dp[i+1][j] >= dp[i][j+1]:
+			dels = append(dels, a[i])
+			i++
+		default:
+			adds = append(adds, b[j])
+			j++
+		}
+	}
+	for ; i < len(a); i++ {
+		dels = append(dels, a[i])
+	}
+	for ; j < len(b); j++ {
+		adds = append(adds, b[j])
+	}
+	flush()
+
+	return sb.String()
 }
 
 func parseCodeBlock(content string) string {
@@ -491,97 +609,4 @@ func parseCodeBlock(content string) string {
 	}
 
 	return parts[0]
-}
-
-func normalizeIndent(s string) string {
-	var result []rune
-	for _, r := range s {
-		if r == '\t' {
-			result = append(result, ' ', ' ', ' ', ' ')
-		} else {
-			result = append(result, r)
-		}
-	}
-
-	return string(result)
-}
-
-func calculateMatchPercent(modelCode, originalCode string) float64 {
-	modelCode = normalizeIndent(modelCode)
-	originalCode = normalizeIndent(originalCode)
-
-	maxLen := max(len(modelCode), len(originalCode))
-	if maxLen == 0 {
-		return 100
-	}
-
-	var matches int
-	for i := range maxLen {
-		if i < len(modelCode) && i < len(originalCode) && modelCode[i] == originalCode[i] {
-			matches++
-		}
-	}
-
-	return float64(matches) / float64(maxLen) * 100
-}
-
-func firstCodeDifference(modelCode, originalCode string) int {
-	modelCode = normalizeIndent(modelCode)
-	originalCode = normalizeIndent(originalCode)
-
-	maxLen := max(len(modelCode), len(originalCode))
-	for i := range maxLen {
-		if i >= len(modelCode) || i >= len(originalCode) || modelCode[i] != originalCode[i] {
-			return i
-		}
-	}
-
-	return -1
-}
-
-func printCodeDiff(originalCode, modelCode string) {
-	modelCode = normalizeIndent(modelCode)
-	originalCode = normalizeIndent(originalCode)
-
-	origLines := strings.Split(originalCode, "\n")
-	modelLines := strings.Split(modelCode, "\n")
-
-	fmt.Println("\n--- Code Diff ---")
-	fmt.Printf("%-45s | %s\n", "ORIGINAL", "MODEL")
-	fmt.Println(strings.Repeat("-", 80))
-
-	const w = 43
-	for i := 0; i < max(len(origLines), len(modelLines)); i++ {
-		origLine := ""
-		if i < len(origLines) {
-			origLine = origLines[i]
-		}
-
-		modelLine := ""
-		if i < len(modelLines) {
-			modelLine = modelLines[i]
-		}
-
-		// Wrap long lines at the column width so neither side pushes
-		// into the other column.
-		for len(origLine) > 0 || len(modelLine) > 0 {
-			origChunk := origLine
-			if len(origChunk) > w {
-				origChunk, origLine = origChunk[:w], origChunk[w:]
-			} else {
-				origLine = ""
-			}
-
-			modelChunk := modelLine
-			if len(modelChunk) > w {
-				modelChunk, modelLine = modelChunk[:w], modelChunk[w:]
-			} else {
-				modelLine = ""
-			}
-
-			fmt.Printf("  %-*s | %s\n", w, origChunk, modelChunk)
-		}
-	}
-
-	fmt.Println("--- End Diff ---")
 }
