@@ -237,32 +237,13 @@ func chat(krn *kronk.Kronk) error {
 			model.TextMessage(model.RoleUser, userInput),
 		)
 
-		messages, err = func() ([]model.D, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-			defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
 
-			d := model.D{
-				"messages":        messages,
-				"max_tokens":      4096,
-				"enable_thinking": false,
-			}
-
-			ch, err := performChat(ctx, krn, d)
-			if err != nil {
-				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
-			}
-
-			messages, err = modelResponse(messages, ch, codeBlock)
-
-			if err != nil {
-				return nil, fmt.Errorf("run: model response: %w", err)
-			}
-
-			return messages, nil
-		}()
-
+		err = generateResponse(ctx, krn, messages, codeBlock)
 		if err != nil {
-			return fmt.Errorf("run: unable to perform chat: %w", err)
+			return fmt.Errorf("generateResponse: %w", err)
+
 		}
 	}
 }
@@ -354,7 +335,7 @@ func printIdentifiers(identifiers map[string]identInfo) {
 
 	fmt.Println("\nWhich Function Do We Test?")
 	fmt.Printf("  %4s | %4s | %-*s\n", "Num", "Line", identLabelWidth, "Identifier")
-	fmt.Printf("  %s-+-%s-+-%s-+\n", strings.Repeat("-", 4), strings.Repeat("-", 4), strings.Repeat("-", identLabelWidth))
+	fmt.Printf("  %s-+-%s-+-%s-\n", strings.Repeat("-", 4), strings.Repeat("-", 4), strings.Repeat("-", identLabelWidth))
 
 	for i, id := range idents {
 		fmt.Printf("  %4d | %4d | %-*s\n", i+1, id.line, identLabelWidth, id.name)
@@ -434,26 +415,32 @@ func createInitialMessages(code []byte) []model.D {
 	)
 }
 
-func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (model.ChatResponse, error) {
-	ch, err := krn.Chat(ctx, d)
-
-	if err != nil {
-		return model.ChatResponse{}, fmt.Errorf("chat streaming: %w", err)
+func generateResponse(ctx context.Context, krn *kronk.Kronk, messages []model.D, codeBlock string) error {
+	fmt.Print("\nModel is thinking... ")
+	d := model.D{
+		"messages":        messages,
+		"max_tokens":      4096,
+		"enable_thinking": false,
 	}
 
-	return ch, nil
+	ch, err := krn.Chat(ctx, d)
+	if err != nil {
+		return fmt.Errorf("chat: %w", err)
+	}
+
+	return modelResponse(ch, codeBlock)
 }
 
-func modelResponse(messages []model.D, resp model.ChatResponse, codeBlock string) ([]model.D, error) {
+func modelResponse(resp model.ChatResponse, codeBlock string) error {
 	fmt.Print("\nMODEL> ")
 
 	if len(resp.Choices) == 0 {
-		return messages, nil
+		return nil
 	}
 
 	switch resp.Choices[0].FinishReason() {
 	case model.FinishReasonError:
-		return messages, fmt.Errorf("error from model: %s", resp.Choices[0].Message.Content)
+		return fmt.Errorf("error from model: %s", resp.Choices[0].Message.Content)
 	case model.FinishReasonStop:
 	}
 
@@ -461,7 +448,6 @@ func modelResponse(messages []model.D, resp model.ChatResponse, codeBlock string
 
 	if content != "" {
 		fmt.Print(content)
-		messages = append(messages, model.TextMessage(model.RoleAssistant, content))
 	}
 
 	if codeBlock != "" {
@@ -486,7 +472,7 @@ func modelResponse(messages []model.D, resp model.ChatResponse, codeBlock string
 	fmt.Printf("\n\033[90mTokens: %d input, %d output | TPS: %.2f\033[0m\n",
 		resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TokensPerSecond)
 
-	return messages, nil
+	return nil
 }
 
 func firstCodeBlock(content string) string {
