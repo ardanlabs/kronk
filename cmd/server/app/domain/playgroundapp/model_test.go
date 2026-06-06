@@ -1,6 +1,7 @@
 package playgroundapp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -65,6 +66,33 @@ func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 			}
 			if len(tt.wantFiles) != len(got.DraftModel.ModelFiles) {
 				t.Errorf("ModelFiles = %v, want %v", got.DraftModel.ModelFiles, tt.wantFiles)
+			}
+		})
+	}
+}
+
+func TestValidateTemplateName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"simple name is valid", "chatml", false},
+		{"name with dashes and digits is valid", "llama-3-instruct", false},
+		{"empty name is rejected", "", true},
+		{"name over 255 chars is rejected", strings.Repeat("a", 256), true},
+		{"parent traversal is rejected", "..", true},
+		{"embedded parent traversal is rejected", "foo/../bar", true},
+		{"forward slash is rejected", "dir/template", true},
+		{"backslash is rejected", "dir\\template", true},
+		{"leading dot is rejected", ".hidden", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateTemplateName(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateTemplateName(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
 			}
 		})
 	}
