@@ -6,9 +6,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-//go:fix inline
-func ptr[T any](v T) *T { return new(v) }
-
 func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 	tests := []struct {
 		name      string
