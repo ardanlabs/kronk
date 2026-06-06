@@ -7,6 +7,7 @@ import (
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/loader"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"github.com/jupiterrider/ffi"
 )
 
@@ -48,6 +49,25 @@ var (
 	getEmbeddingsPreNormFunc    ffi.Fun
 	getEmbeddingsPreNormIthFunc ffi.Fun
 )
+
+// mtmd_helper_bitmap_init_from_buf gained a trailing `bool placeholder`
+// parameter in llama.cpp b9541 (PR ggml-org/llama.cpp#23913):
+//
+//	b9538: mtmd_bitmap *mtmd_helper_bitmap_init_from_buf(mtmd_context*, const unsigned char*, size_t)
+//	b9541: mtmd_bitmap *mtmd_helper_bitmap_init_from_buf(mtmd_context*, const unsigned char*, size_t, bool placeholder)
+//
+// yzma v1.15.0 still preps the old 3-arg signature, so against b9541 the
+// missing 4th argument is read from an uninitialized register — usually
+// non-zero — which builds a *placeholder* bitmap that carries no pixel
+// data. mtmd_tokenize accepts it, but mtmd_encode_chunk then rejects it
+// ("image tokens batch is placeholder", returns 1), breaking all image
+// and audio prefill.
+//
+// We bind the symbol ourselves with the correct 4-arg signature and always
+// pass placeholder=false. The extra argument is harmless on older builds
+// (the callee simply ignores it), so this is safe across lib versions.
+// Remove once yzma binds the new signature upstream.
+var bitmapInitFromBufFunc ffi.Fun
 
 var (
 	yzmaOnce    sync.Once
@@ -156,9 +176,48 @@ func InitYzmaWorkarounds(libPath string) error {
 		); ok {
 			getEmbeddingsPreNormIthFunc = fn
 		}
+
+		// Bind mtmd_helper_bitmap_init_from_buf with the b9541+ 4-arg
+		// signature so image/audio prefill doesn't accidentally build a
+		// placeholder bitmap. Best-effort: on miss, BitmapInitFromBuf
+		// falls back to yzma's (3-arg) binding.
+		if mlib, err := loader.LoadLibrary(libPath, "mtmd"); err == nil {
+			if fn, err := mlib.Prep(
+				"mtmd_helper_bitmap_init_from_buf",
+				&ffi.TypePointer, // mtmd_bitmap *  (return)
+				&ffi.TypePointer, // mtmd_context *
+				&ffi.TypePointer, // const unsigned char * buf
+				&ffi.TypeUint64,  // size_t len
+				&ffi.TypeUint8,   // bool placeholder
+			); err == nil {
+				bitmapInitFromBufFunc = fn
+			}
+		}
 	})
 
 	return yzmaInitErr
+}
+
+// BitmapInitFromBuf decodes raw image or audio bytes into an mtmd bitmap.
+// It uses the corrected b9541+ 4-arg helper signature (placeholder always
+// false) bound in InitYzmaWorkarounds. If that binding isn't loaded it
+// falls back to yzma's upstream binding.
+//
+// Returns 0 when ctx is zero or mtmd cannot decode the payload.
+func BitmapInitFromBuf(ctx mtmd.Context, buf *byte, length uint64) mtmd.Bitmap {
+	if ctx == 0 {
+		return 0
+	}
+
+	if bitmapInitFromBufFunc.Cif == nil {
+		return mtmd.BitmapInitFromBuf(ctx, buf, length)
+	}
+
+	var bitmap mtmd.Bitmap
+	var placeholder bool
+	bitmapInitFromBufFunc.Call(unsafe.Pointer(&bitmap), unsafe.Pointer(&ctx), unsafe.Pointer(&buf), &length, &placeholder)
+
+	return bitmap
 }
 
 // SetEmbeddingsPreNorm enables (or disables) pre-norm hidden-state

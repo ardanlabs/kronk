@@ -984,10 +984,12 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 
 // startSlotMedia initializes a media (vision/audio) slot. Returns true on success.
 func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, buf []byte) bool {
-	// Convert raw media bytes into bitmap structures for the vision encoder.
-	// Reject empty payloads or any bytes mtmd cannot decode (BitmapInitFromBuf
-	// returns 0) so we surface a precise error instead of the generic
-	// "tokenization failed with code 1" from mtmd.Tokenize.
+	// Convert raw media bytes into bitmap structures for the vision/audio
+	// encoder. Images are decoded in Go (newMediaBitmap) and built via the
+	// stable mtmd_bitmap_init core API; audio still goes through the
+	// mtmd-helper. Reject empty payloads or any bytes that fail to decode so
+	// we surface a precise error instead of the generic "tokenization failed
+	// with code 1" from mtmd.Tokenize.
 	if len(job.media) > 0 {
 		s.bitmaps = make([]mtmd.Bitmap, len(job.media))
 		for i, med := range job.media {
@@ -995,11 +997,12 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d] is empty", i))
 				return false
 			}
-			s.bitmaps[i] = mtmd.BitmapInitFromBuf(s.mtmdCtx, &med[0], uint64(len(med)))
-			if s.bitmaps[i] == 0 {
-				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d] could not be decoded by mtmd (BitmapInitFromBuf returned 0)", i))
+			bmp, err := newMediaBitmap(s.mtmdCtx, med)
+			if err != nil {
+				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d]: %w", i, err))
 				return false
 			}
+			s.bitmaps[i] = bmp
 		}
 	}
 

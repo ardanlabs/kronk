@@ -49,6 +49,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">AddParams adds the values from the Params struct into the provided D map. Only non-zero values are added.</p>
             </div>
 
+            <div className="doc-section" id="func-bitmapinitfrombuf">
+              <h4>BitmapInitFromBuf</h4>
+              <pre className="code-block">
+                <code>func BitmapInitFromBuf(ctx mtmd.Context, buf *byte, length uint64) mtmd.Bitmap</code>
+              </pre>
+              <p className="doc-description">BitmapInitFromBuf decodes raw image or audio bytes into an mtmd bitmap. It uses the corrected b9541+ 4-arg helper signature (placeholder always false) bound in InitYzmaWorkarounds. If that binding isn't loaded it falls back to yzma's upstream binding. Returns 0 when ctx is zero or mtmd cannot decode the payload.</p>
+            </div>
+
             <div className="doc-section" id="func-checkmodel">
               <h4>CheckModel</h4>
               <pre className="code-block">
@@ -1630,6 +1638,7 @@ export default function DocsSDKModel() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
+                <li><a href="#func-bitmapinitfrombuf">BitmapInitFromBuf</a></li>
                 <li><a href="#func-checkmodel">CheckModel</a></li>
                 <li><a href="#func-detectmodeltypefromfiles">DetectModelTypeFromFiles</a></li>
                 <li><a href="#func-getembeddingsprenorm">GetEmbeddingsPreNorm</a></li>

@@ -40,9 +40,11 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 	m.log(ctx, "imc-media-cache", "status", "prompt-created", "seq", seqID,
 		"prompt_len", len(prompt), "media_count", len(media))
 
-	// Step 2: Create bitmaps from raw media bytes. Reject any payload that
-	// produces a zero bitmap so we surface a precise error instead of the
-	// generic "tokenization failed with code 1" from mtmd.Tokenize.
+	// Step 2: Create bitmaps from raw media bytes. Images are decoded in Go
+	// (newMediaBitmap) and built via the stable mtmd_bitmap_init core API;
+	// audio still goes through the mtmd-helper. Reject any payload that fails
+	// to decode so we surface a precise error instead of the generic
+	// "tokenization failed with code 1" from mtmd.Tokenize.
 	bitmaps := make([]mtmd.Bitmap, len(media))
 	defer func() {
 		for _, b := range bitmaps {
@@ -55,10 +57,11 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 		if len(med) == 0 {
 			return 0, nil, fmt.Errorf("imc-media-cache: media[%d] is empty", i)
 		}
-		bitmaps[i] = mtmd.BitmapInitFromBuf(mtmdCtx, &med[0], uint64(len(med)))
-		if bitmaps[i] == 0 {
-			return 0, nil, fmt.Errorf("imc-media-cache: media[%d] could not be decoded by mtmd (BitmapInitFromBuf returned 0)", i)
+		bmp, err := newMediaBitmap(mtmdCtx, med)
+		if err != nil {
+			return 0, nil, fmt.Errorf("imc-media-cache: media[%d]: %w", i, err)
 		}
+		bitmaps[i] = bmp
 	}
 
 	// Step 3: Tokenize the prompt with media into interleaved chunks.
