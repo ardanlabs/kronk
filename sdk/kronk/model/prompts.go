@@ -135,18 +135,17 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		d["add_generation_prompt"] = true
 	}
 
-	// Ensure preserve_thinking is set (default true if not specified).
-	// Qwen3.6+ chat templates read this flag to decide whether to keep
-	// <think>...</think> blocks on historical assistant turns. The default
-	// Qwen3 template behavior is to strip reasoning from all assistant turns
-	// except the most recent, which causes the templated token sequence to
-	// shift every turn and invalidates the IMC cache (triggering full
-	// rebuilds). Setting preserve_thinking=true keeps prior reasoning intact
-	// so re-tokenization is byte-identical across turns. Templates that do
-	// not reference this variable (every non-Qwen3.6 model) silently ignore
-	// it, so setting it unconditionally is safe.
+	// Ensure preserve_thinking is set (default false if not specified).
+	// Reasoning is ephemeral: keeping it on historical assistant turns costs
+	// prompt tokens without improving generation, and templates render it
+	// inconsistently across turns, shifting the tokenized prefix and forcing
+	// IMC rebuilds. The engine instead drops reasoning from assistant history
+	// before this render (see Model.normalizeHistoryReasoning) and removes any
+	// empty reasoning spans the template still emits via the post-render pass
+	// below. Templates that read this flag (e.g. Qwen3.6) honor it; the rest
+	// ignore it, so setting it unconditionally is safe.
 	if _, ok := d["preserve_thinking"]; !ok {
-		d["preserve_thinking"] = true
+		d["preserve_thinking"] = false
 	}
 
 	// Provide bos_token and eos_token from the model vocabulary. Templates
@@ -167,6 +166,18 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 	s, err := m.compiledTmpl.tmpl.Render(d)
 	if err != nil {
 		return "", fmt.Errorf("apply-jinja-template: failed to execute template: %w", err)
+	}
+
+	// Post-render reasoning normalization. Some templates emit empty reasoning
+	// spans (e.g. "<think>\n\n</think>") on assistant turns position-dependently,
+	// which the history field-drop cannot reach. Remove them so the tokenized
+	// prefix is byte-stable across turns, leaving the trailing generation marker
+	// intact. Parsers without reasoning markup (embed/rerank have a nil parser)
+	// do not implement ReasoningNormalizer and are skipped.
+	if m.stripReasoning(d) {
+		if norm, ok := m.parser.(ReasoningNormalizer); ok {
+			s = norm.StripEmptyReasoning(s)
+		}
 	}
 
 	return s, nil

@@ -292,17 +292,12 @@ type imcRenderFingerprintInput struct {
 // which intentionally ignores tools and assistant tool-call metadata for
 // hit-selection scope. Used as the safety guard for IMCPureHitSnapshotSkip.
 func (m *Model) imcRenderFingerprint(d D, msgs []D) (string, bool) {
-	preserveThinking := true
-	if v, ok := d["preserve_thinking"].(bool); ok {
-		preserveThinking = v
-	}
-
 	templateSum := sha256.Sum256([]byte(m.template.Script))
 
 	in := imcRenderFingerprintInput{
 		TemplateHash:        hex.EncodeToString(templateSum[:]),
 		AddGenerationPrompt: false,
-		PreserveThinking:    preserveThinking,
+		PreserveThinking:    preserveThinking(d),
 		Messages:            msgs,
 	}
 

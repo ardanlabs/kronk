@@ -25,10 +25,17 @@
                 "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT": {
                     "name": "Qwopus3.5 4B-Coder Q8_0",
                     "limit": {
+                        "context": 73728,
+                        "output": 65536
+                    }
+                },
+                "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT": {
+                    "name": "Gemma4 E4B-it-qat UD-Q4_K_XL",
+                    "limit": {
                         "context": 131072,
                         "output": 65536
                     }
-                }
+                },
             }
         }
     },

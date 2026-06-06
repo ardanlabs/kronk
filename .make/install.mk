@@ -101,6 +101,8 @@ install-class-models: install-kronk
 	@echo
 	kronk model pull --local "mradermacher/Qwopus3.5-4B-Coder.Q8_0"
 	@echo
+	kronk model pull --local "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
+	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-Omni-3B-Q8_0"
 	@echo
 	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"

@@ -223,9 +223,18 @@ unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     top_k: 64
     top_p: 0.95
 
+# < 16GB VRAM
 mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
   context-window: 73728
   sampling-parameters:
     temperature: 0.6
     top_k: 20
+    top_p: 0.95
+
+# < 8GB VRAM
+unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
+  context-window: 131072
+  sampling-parameters:
+    temperature: 1.0
+    top_k: 64
     top_p: 0.95

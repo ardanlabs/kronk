@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	modelChatSource  = "mradermacher/Qwopus3.5-4B-Coder.Q8_0"
+	modelChatSource  = "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
 	modelEmbedSource = "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	dbPath           = "rag/docs/duck-rag.db" // ":memory:"
 	chunksFile       = "rag/docs/book.chunks"

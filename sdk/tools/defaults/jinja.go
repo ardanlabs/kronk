@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed jinja/*.jinja
+//go:embed jinja
 var jinjaFS embed.FS
 
 const (
@@ -51,6 +51,12 @@ func WriteJinjaFiles(override string, basePath string) error {
 
 	for _, entry := range entries {
 		if entry.IsDir() {
+			continue
+		}
+
+		// Only seed chat templates. The directory may also carry docs (e.g.
+		// README.md) that must not be written to the per-user jinja directory.
+		if filepath.Ext(entry.Name()) != ".jinja" {
 			continue
 		}
 

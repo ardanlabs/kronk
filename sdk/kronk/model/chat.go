@@ -206,14 +206,14 @@ func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, e
 // and media (vision/audio) paths. Returns the modified document and object type.
 func (m *Model) prepareContext(ctx context.Context, d D) (D, string, error) {
 	if m.projFile == "" {
-		return m.prepareTextContext(d), ObjectChatText, nil
+		return m.normalizeHistoryReasoning(m.prepareTextContext(d)), ObjectChatText, nil
 	}
 
 	// If the model supports media but this request has no media content,
 	// treat it as text so caching (IMC) can operate.
 	mediaType, _, _, _ := detectMediaContent(d)
 	if mediaType == MediaTypeNone {
-		return m.prepareTextContext(d), ObjectChatText, nil
+		return m.normalizeHistoryReasoning(m.prepareTextContext(d)), ObjectChatText, nil
 	}
 
 	d, err := m.prepareMediaContext(ctx, d)
@@ -221,7 +221,7 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, string, error) {
 		return nil, ObjectChatUnknown, err
 	}
 
-	return d, ObjectChatMedia, nil
+	return m.normalizeHistoryReasoning(d), ObjectChatMedia, nil
 }
 
 // prepareCacheAndPrompt handles cache processing and prompt creation. Returns
