@@ -6,7 +6,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }
 
 func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 	tests := []struct {
@@ -25,24 +26,24 @@ func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 		{
 			name:    "empty draft_model_id clears existing draft",
 			base:    model.Config{DraftModel: &model.DraftModelConfig{ModelFiles: []string{"d.gguf"}}},
-			sc:      SessionConfig{DraftModelID: ptr("")},
+			sc:      SessionConfig{DraftModelID: new("")},
 			wantNil: true,
 		},
 		{
 			name:    "draft_ndraft only creates an MTP override (no files)",
-			sc:      SessionConfig{DraftNDraft: ptr(7)},
+			sc:      SessionConfig{DraftNDraft: new(7)},
 			wantND:  7,
 			wantNil: false,
 		},
 		{
 			name:   "draft_ndraft tunes an existing MTP override",
 			base:   model.Config{DraftModel: &model.DraftModelConfig{NDraft: 4}},
-			sc:     SessionConfig{DraftNDraft: ptr(9)},
+			sc:     SessionConfig{DraftNDraft: new(9)},
 			wantND: 9,
 		},
 		{
 			name:      "draft_model_id sets up a separate draft (files resolved later)",
-			sc:        SessionConfig{DraftModelID: ptr("some-draft"), DraftNDraft: ptr(5)},
+			sc:        SessionConfig{DraftModelID: new("some-draft"), DraftNDraft: new(5)},
 			wantND:    5,
 			wantFiles: nil, // files are resolved in the handler, not ApplyTo
 		},
@@ -78,10 +79,10 @@ func TestSessionConfigValidate_DraftNDraft(t *testing.T) {
 		sc      SessionConfig
 		wantErr bool
 	}{
-		{"MTP override without draft_model_id is valid", SessionConfig{DraftNDraft: ptr(6)}, false},
-		{"separate draft with ndraft is valid", SessionConfig{DraftModelID: ptr("d"), DraftNDraft: ptr(6)}, false},
-		{"ndraft below range is rejected", SessionConfig{DraftNDraft: ptr(0)}, true},
-		{"ndraft above range is rejected", SessionConfig{DraftNDraft: ptr(21)}, true},
+		{"MTP override without draft_model_id is valid", SessionConfig{DraftNDraft: new(6)}, false},
+		{"separate draft with ndraft is valid", SessionConfig{DraftModelID: new("d"), DraftNDraft: new(6)}, false},
+		{"ndraft below range is rejected", SessionConfig{DraftNDraft: new(0)}, true},
+		{"ndraft above range is rejected", SessionConfig{DraftNDraft: new(21)}, true},
 	}
 
 	for _, tt := range tests {

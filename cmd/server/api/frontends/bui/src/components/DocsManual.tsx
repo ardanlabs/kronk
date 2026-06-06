@@ -1803,7 +1803,7 @@ unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
               </tr>
             </tbody>
           </table>
-          <p>A model can have at most one drafter active. If you set <code>draft-model:</code> explicitly, that wins — the MTP head, even when present, is ignored on that load.</p>
+          <p>A model can have at most one drafter active. If you set a <code>draft-model:</code> block with a <code>model-id:</code>, the separate-GGUF drafter wins — the MTP head, even when present, is ignored on that load. A <code>draft-model:</code> block with <strong>only</strong> <code>ndraft:</code> (no <code>model-id:</code>) does not select a separate drafter; it just overrides the starting <code>ndraft</code> for the auto-detected MTP head (see <a href="#mtp-ndraft-override">MTP nDraft Override</a> below).</p>
           <p>For the user-facing operation guide (when to choose each mode, how to read acceptance metrics, observability), see <a href="#chapter-6-speculative-decoding--mtp">Chapter 6: Speculative Decoding & MTP</a>.</p>
           <h4 id="how-it-works">How It Works</h4>
           <table className="flags-table">
@@ -1975,6 +1975,29 @@ Qwen/Qwen3-8B-Q8_0:
           <p>On a successful load the server logs a line like:</p>
           <pre className="code-block"><code>{`draft-model-mtp status=loaded source=auto-detected nDraft=4 nextn-layers=1 nEmbd=2048 nCtx=8192`}</code></pre>
           <p>The default <code>nDraft</code> for MTP is <code>4</code>, which is conservative because MTP heads typically have high acceptance for the first 1–3 tokens and decay rapidly beyond that. See Chapter 6 for the full operation guide, including the adaptive throttle, observability events, and known limitations.</p>
+          <p><a id="mtp-ndraft-override"></a></p>
+          <h4 id="mtp-ndraft-override">MTP nDraft Override</h4>
+          <p>You can change the starting (ceiling) draft-token count for the auto-detected MTP head without supplying a separate draft GGUF. Add a <code>draft-model:</code> block that sets <strong>only</strong> <code>ndraft:</code> and omits <code>model-id:</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: f16
+  cache-type-v: f16
+  nseq-max: 2
+  incremental-cache: true
+  draft-model:
+    ndraft: 6        # start MTP speculation at 6 tokens/round (default: 4)`}</code></pre>
+          <p>Notes:</p>
+          <ul>
+            <li>The adaptive throttle still scales <code>ndraft</code> down from this ceiling to <code>0</code> per slot as acceptance drops — you are only raising/lowering the starting point.</li>
+            <li>Because there is no separate draft GGUF, this override does <strong>not</strong> require <code>nseq-max: 1</code>; multi-slot MTP is still supported.</li>
+            <li>An <code>ndraft</code> of <code>0</code> or unset falls back to the default of <code>4</code>; a negative value is rejected at config validation.</li>
+            <li>If the target has no MTP head, the override is a harmless no-op.</li>
+            <li>On load the server logs <code>source=auto-detected-configured</code> (instead of <code>source=auto-detected</code>) so you can confirm the override took effect.</li>
+          </ul>
+          <p>From the SDK, set:</p>
+          <pre className="code-block"><code className="language-go">{`cfg.DraftModel = &model.DraftModelConfig{NDraft: 6} // no ModelFiles`}</code></pre>
           <h3 id="313-sampling-parameters">3.13 Sampling Parameters</h3>
           <p>Sampling parameters control the randomness and quality of generated text. These are set per-request in the API call.</p>
           <p>For most models you will want to touch these basic sampling parameters. There are <a href="#chapter-10-request-parameters">many more</a> which will be presented later.</p>
@@ -3140,13 +3163,20 @@ Request 5 (text follow-up about the image):
             <li>A slot whose acceptance falls into the gutter (<code>&lt; 0.30</code>) will skip speculation entirely for that round. You will still see the <code>draft_tokens=0</code> / <code>draft_accepted_tokens=0</code> / <code>acceptance_rate=...</code> fields on the final log line — they are emitted on every request the moment the model has any drafter configured, so log schemas stay stable.</li>
             <li>The EMA <strong>persists across requests on the same slot</strong>. If a slot has been seeing poor acceptance, it will start the next request cautiously rather than re-paying the discovery cost.</li>
           </ul>
-          <p>The default <code>nDraft</code> is <strong>5 for separate-GGUF drafts</strong> and <strong>4 for MTP</strong> (MTP heads typically have high acceptance for the first 1–3 tokens and decay rapidly beyond that, so a lower cap is safer).</p>
+          <p>The default starting <code>nDraft</code> is <strong>5 for separate-GGUF drafts</strong> and <strong>4 for MTP</strong> (MTP heads typically have high acceptance for the first 1–3 tokens and decay rapidly beyond that, so a lower cap is safer).</p>
+          <p>For MTP you can override the starting <code>nDraft</code> ceiling — see the <a href="#mtp-ndraft-override">MTP override</a> below. The adaptive throttle still scales down from whatever ceiling you set, all the way to 0.</p>
           <h3 id="65-configuration-recap">6.5 Configuration Recap</h3>
-          <p>There is nothing speculative-decoding-specific to configure in this chapter. The YAML shapes live in <a href="#312-speculative-decoding">Chapter 3 §3.12</a>:</p>
+          <p>The YAML shapes live in <a href="#312-speculative-decoding">Chapter 3 §3.12</a>:</p>
           <ul>
-            <li><strong>Separate-GGUF</strong> — add a <code>draft-model:</code> block under the target entry in <code>model_config.yaml</code> (or set <code>model.Config.DraftModel</code> from the SDK). Requires <code>nseq-max: 1</code>.</li>
-            <li><strong>MTP</strong> — do nothing. Pull a target GGUF that ships an MTP head, and make sure you have not set <code>draft-model:</code> on that entry.</li>
+            <li><strong>Separate-GGUF</strong> — add a <code>draft-model:</code> block with a <code>model-id:</code> under the target entry in <code>model_config.yaml</code> (or set <code>model.Config.DraftModel</code> from the SDK). Requires <code>nseq-max: 1</code>.</li>
+            <li><strong>MTP (defaults)</strong> — do nothing. Pull a target GGUF that ships an MTP head, and make sure you have not set a <code>draft-model:</code> block with a <code>model-id:</code> on that entry.</li>
           </ul>
+          <p><a id="mtp-ndraft-override"></a></p>
+          <ul>
+            <li><strong>MTP (&lt;code&gt;nDraft&lt;/code&gt; override)</strong> — add a <code>draft-model:</code> block that sets <strong>only</strong> <code>ndraft:</code> and omits <code>model-id:</code>. This keeps MTP auto-detection but starts the adaptive throttle from your configured ceiling instead of the default 4. Because there is no separate draft GGUF, this mode does <strong>not</strong> require <code>nseq-max: 1</code>. ```yaml models:</li>
+          </ul>
+          <p>- model-id: my-mtp-model # ... target settings ... draft-model: ndraft: 6        # start speculation at 6 tokens/round, throttle down to 0 ```</p>
+          <p>From the SDK, set <code>model.Config.DraftModel = &DraftModelConfig&#123;NDraft: 6&#125;</code> with no <code>ModelFiles</code>. An <code>ndraft</code> of <code>0</code> (or unset) falls back to the default of 4; a negative value is rejected at config validation. If the target has no MTP head, the override is a harmless no-op.</p>
           <h3 id="66-observability">6.6 Observability</h3>
           <p>Kronk emits a consistent set of log events for both draft modes. Operators should be able to answer "is speculation actually helping?" from logs alone.</p>
           <p><strong>Always-present fields on the final response log line:</strong></p>
@@ -3273,8 +3303,8 @@ Request 5 (text follow-up about the image):
                 <td>Kronk forces <code>cache-type-k/v: f16</code> and disables Flash Attention on hybrid models. Throughput on hybrid + MTP is meaningfully lower than dense / MoE targets regardless of <code>nseq-max</code>.</td>
               </tr>
               <tr>
-                <td>MTP: <code>nDraft</code> ceiling is fixed at 4</td>
-                <td>The adaptive throttle scales down from 4 but there is no per-model knob to raise the ceiling on exceptionally well-behaved MTP heads.</td>
+                <td>MTP: <code>nDraft</code> ceiling defaults to 4</td>
+                <td>The adaptive throttle scales down from the ceiling. The ceiling defaults to 4 but can be raised or lowered per model with an MTP <code>nDraft</code> override — a <code>draft-model:</code> block that sets only <code>ndraft:</code> (no <code>model-id:</code>). See §6.5.</td>
               </tr>
               <tr>
                 <td>Speculative decoding is text-only</td>

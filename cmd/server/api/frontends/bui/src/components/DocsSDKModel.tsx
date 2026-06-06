@@ -283,15 +283,15 @@ export default function DocsSDKModel() {
               <h4>DraftModelConfig</h4>
               <pre className="code-block">
                 <code>{`type DraftModelConfig struct {
-	ModelFiles    []string  // Path to the draft model GGUF file(s)
-	NDraft        int       // Number of tokens to draft per step (default 5)
+	ModelFiles    []string  // Path to the draft model GGUF file(s); empty means MTP nDraft override
+	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 4)
 	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
 	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
 	PtrMainGPU    *int      // Primary GPU index for draft model
 	TensorSplit   []float32 // Per-device tensor split for draft model
 }`}</code>
               </pre>
-              <p className="doc-description">DraftModelConfig configures a draft model for speculative decoding. A smaller, faster model generates candidate tokens that the target model verifies in a single forward pass. This can improve generation throughput when the draft model's predictions frequently match the target's. Requirements: - Draft and target models must share the same vocabulary (same tokenizer) - NSeqMax must be 1 (single-slot mode) - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)</p>
+              <p className="doc-description">DraftModelConfig configures speculative decoding for a target model. It serves two purposes depending on whether ModelFiles is set: 1. Separate-GGUF draft (ModelFiles set): a smaller, faster model generates candidate tokens that the target verifies in a single forward pass. Requires NSeqMax == 1 (single-slot mode) and a draft that shares the target's vocabulary (same tokenizer). 2. MTP nDraft override (ModelFiles empty): when the target GGUF ships an auto-detected MTP head, this block lets you tune the starting number of draft tokens per round without supplying a separate model. The adaptive throttle still scales nDraft down from this ceiling (to 0) as acceptance drops. NDraft defaults to defMTPNDraft when left unset. A model can have at most one drafter. If ModelFiles is set, the separate-GGUF drafter wins even on a target that also has an MTP head.</p>
             </div>
 
             <div className="doc-section" id="type-embeddata">
@@ -1065,6 +1065,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">String returns a string representation of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
             </div>
 
+            <div className="doc-section" id="method-draftmodelconfig-isseparate">
+              <h4>DraftModelConfig.IsSeparate</h4>
+              <pre className="code-block">
+                <code>func (d DraftModelConfig) IsSeparate() bool</code>
+              </pre>
+              <p className="doc-description">IsSeparate reports whether this config points at a separate draft GGUF. When false, the config is an MTP nDraft override that carries no model files and only applies when the target ships an auto-detected MTP head.</p>
+            </div>
+
             <div className="doc-section" id="method-draftmodelconfig-maingpu">
               <h4>DraftModelConfig.MainGPU</h4>
               <pre className="code-block">
@@ -1718,6 +1726,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-d-messages">D.Messages</a></li>
                 <li><a href="#method-d-shallowclone">D.ShallowClone</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
+                <li><a href="#method-draftmodelconfig-isseparate">DraftModelConfig.IsSeparate</a></li>
                 <li><a href="#method-draftmodelconfig-maingpu">DraftModelConfig.MainGPU</a></li>
                 <li><a href="#method-draftmodelconfig-ngpulayers">DraftModelConfig.NGpuLayers</a></li>
                 <li><a href="#method-flashattentiontype-marshaljson">FlashAttentionType.MarshalJSON</a></li>
