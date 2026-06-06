@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/ardanlabs/bucky/pkg/audio"
 )
@@ -53,14 +54,33 @@ func LoadSamples(t *testing.T, path string) []float32 {
 // AssertTranscriptContains reports an error when text does not
 // contain every supplied substring (case-insensitive). Whisper
 // output varies slightly across runs so transcribe assertions are
-// substring-based, not equality-based.
+// substring-based, not equality-based. Punctuation and runs of
+// whitespace are normalized away before matching, so "Ask, not."
+// still satisfies a "ask not" expectation.
 func AssertTranscriptContains(t *testing.T, text string, subs ...string) {
 	t.Helper()
 
-	lower := strings.ToLower(text)
+	norm := normalizeTranscript(text)
 	for _, sub := range subs {
-		if !strings.Contains(lower, strings.ToLower(sub)) {
+		if !strings.Contains(norm, normalizeTranscript(sub)) {
 			t.Errorf("transcript: got %q, want substring %q", text, sub)
 		}
 	}
+}
+
+// normalizeTranscript lower-cases s, replaces every non-alphanumeric
+// rune with a space, and collapses runs of whitespace to a single
+// space. This makes substring matching tolerant of the punctuation
+// jitter whisper produces between runs.
+func normalizeTranscript(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte(' ')
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
 }
