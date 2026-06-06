@@ -29,16 +29,16 @@ import (
 // functions whose signature is explicitly unstable upstream (see
 // mtmd-helper.h: "these helpers are not guaranteed to be stable").
 //
-// Audio still flows through the corrected mtmd-helper binding
-// (BitmapInitFromBuf) because decoding compressed audio (WAV/MP3/OGG/FLAC)
-// to PCM F32 in Go is not yet wired up.
+// Audio still flows through yzma's mtmd-helper binding
+// (mtmd.BitmapInitFromBuf) because decoding compressed audio
+// (WAV/MP3/OGG/FLAC) to PCM F32 in Go is not yet wired up.
 func newMediaBitmap(ctx mtmd.Context, med []byte) (mtmd.Bitmap, error) {
 	switch mediaTypeFromMagicBytes(med) {
 	case MediaTypeVision:
 		return newImageBitmap(med)
 
 	case MediaTypeAudio:
-		bmp := BitmapInitFromBuf(ctx, &med[0], uint64(len(med)))
+		bmp := mtmd.BitmapInitFromBuf(ctx, &med[0], uint64(len(med)), false)
 		if bmp == 0 {
 			return 0, fmt.Errorf("mtmd could not decode audio payload")
 		}
