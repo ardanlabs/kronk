@@ -989,9 +989,12 @@ Kronk supports two interchangeable sources of draft tokens:
 | **Separate-GGUF** | A second, smaller GGUF you download and configure                    | Explicit `draft-model:` block in `model_config.yaml` (or `model.Config.DraftModel` from the SDK)     |
 | **MTP**           | A Multi-Token-Prediction head baked into the target GGUF             | Auto-enabled when the target GGUF ships an MTP head; no extra configuration                          |
 
-A model can have at most one drafter active. If you set `draft-model:`
-explicitly, that wins — the MTP head, even when present, is ignored on
-that load.
+A model can have at most one drafter active. If you set a `draft-model:`
+block with a `model-id:`, the separate-GGUF drafter wins — the MTP head,
+even when present, is ignored on that load. A `draft-model:` block with
+**only** `ndraft:` (no `model-id:`) does not select a separate drafter;
+it just overrides the starting `ndraft` for the auto-detected MTP head
+(see [MTP nDraft Override](#mtp-ndraft-override) below).
 
 For the user-facing operation guide (when to choose each mode, how to read
 acceptance metrics, observability), see [Chapter 6: Speculative Decoding & MTP](#chapter-6-speculative-decoding--mtp).
@@ -1129,6 +1132,45 @@ heads typically have high acceptance for the first 1–3 tokens and decay
 rapidly beyond that. See Chapter 6 for the full operation guide,
 including the adaptive throttle, observability events, and known
 limitations.
+
+<a id="mtp-ndraft-override"></a>
+#### MTP nDraft Override
+
+You can change the starting (ceiling) draft-token count for the
+auto-detected MTP head without supplying a separate draft GGUF. Add a
+`draft-model:` block that sets **only** `ndraft:` and omits `model-id:`:
+
+```yaml
+mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
+  context-window: 131072
+  nbatch: 2048
+  nubatch: 512
+  cache-type-k: f16
+  cache-type-v: f16
+  nseq-max: 2
+  incremental-cache: true
+  draft-model:
+    ndraft: 6        # start MTP speculation at 6 tokens/round (default: 4)
+```
+
+Notes:
+
+- The adaptive throttle still scales `ndraft` down from this ceiling to
+  `0` per slot as acceptance drops — you are only raising/lowering the
+  starting point.
+- Because there is no separate draft GGUF, this override does **not**
+  require `nseq-max: 1`; multi-slot MTP is still supported.
+- An `ndraft` of `0` or unset falls back to the default of `4`; a
+  negative value is rejected at config validation.
+- If the target has no MTP head, the override is a harmless no-op.
+- On load the server logs `source=auto-detected-configured` (instead of
+  `source=auto-detected`) so you can confirm the override took effect.
+
+From the SDK, set:
+
+```go
+cfg.DraftModel = &model.DraftModelConfig{NDraft: 6} // no ModelFiles
+```
 
 ### 3.13 Sampling Parameters
 

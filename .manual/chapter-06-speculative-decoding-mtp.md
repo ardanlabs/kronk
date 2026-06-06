@@ -210,21 +210,45 @@ Two operator-visible consequences:
   has been seeing poor acceptance, it will start the next request
   cautiously rather than re-paying the discovery cost.
 
-The default `nDraft` is **5 for separate-GGUF drafts** and **4 for
-MTP** (MTP heads typically have high acceptance for the first 1–3
-tokens and decay rapidly beyond that, so a lower cap is safer).
+The default starting `nDraft` is **5 for separate-GGUF drafts** and
+**4 for MTP** (MTP heads typically have high acceptance for the first
+1–3 tokens and decay rapidly beyond that, so a lower cap is safer).
+
+For MTP you can override the starting `nDraft` ceiling — see the
+[MTP override](#mtp-ndraft-override) below. The adaptive throttle
+still scales down from whatever ceiling you set, all the way to 0.
 
 ### 6.5 Configuration Recap
 
-There is nothing speculative-decoding-specific to configure in this
-chapter. The YAML shapes live in
+The YAML shapes live in
 [Chapter 3 §3.12](#312-speculative-decoding):
 
-- **Separate-GGUF** — add a `draft-model:` block under the target
-  entry in `model_config.yaml` (or set `model.Config.DraftModel` from
-  the SDK). Requires `nseq-max: 1`.
-- **MTP** — do nothing. Pull a target GGUF that ships an MTP head,
-  and make sure you have not set `draft-model:` on that entry.
+- **Separate-GGUF** — add a `draft-model:` block with a `model-id:`
+  under the target entry in `model_config.yaml` (or set
+  `model.Config.DraftModel` from the SDK). Requires `nseq-max: 1`.
+- **MTP (defaults)** — do nothing. Pull a target GGUF that ships an
+  MTP head, and make sure you have not set a `draft-model:` block with
+  a `model-id:` on that entry.
+
+<a id="mtp-ndraft-override"></a>
+- **MTP (`nDraft` override)** — add a `draft-model:` block that sets
+  **only** `ndraft:` and omits `model-id:`. This keeps MTP
+  auto-detection but starts the adaptive throttle from your configured
+  ceiling instead of the default 4. Because there is no separate draft
+  GGUF, this mode does **not** require `nseq-max: 1`.
+
+  ```yaml
+  models:
+    - model-id: my-mtp-model
+      # ... target settings ...
+      draft-model:
+        ndraft: 6        # start speculation at 6 tokens/round, throttle down to 0
+  ```
+
+  From the SDK, set `model.Config.DraftModel = &DraftModelConfig{NDraft: 6}`
+  with no `ModelFiles`. An `ndraft` of `0` (or unset) falls back to the
+  default of 4; a negative value is rejected at config validation. If
+  the target has no MTP head, the override is a harmless no-op.
 
 ### 6.6 Observability
 
@@ -275,7 +299,7 @@ speculation — so dashboards and log parsers see a stable schema.
 | MTP: greedy verify only                             | The MTP path always runs greedy verification, so strict Leviathan-style distribution equivalence at `temperature > 0` is not guaranteed. The full slot sampler (temperature / top-k / top-p) is still applied at each accepted position, so output shape is preserved. |
 | MTP + IMC: draft state must come from an MTP-aware build | IMC cache hits keep MTP running by restoring the draft seq KV + `pendingH` snapshotted alongside the target during the cache build. Sessions whose cache was built before this fix (no draft snapshot on disk/RAM) fall back to disabling MTP for the cache-hit request only — they re-enable on the next request once the cache is rebuilt by an MTP-aware path. |
 | MTP + hybrid targets: f16 KV cache + no Flash Attention required | Kronk forces `cache-type-k/v: f16` and disables Flash Attention on hybrid models. Throughput on hybrid + MTP is meaningfully lower than dense / MoE targets regardless of `nseq-max`. |
-| MTP: `nDraft` ceiling is fixed at 4                 | The adaptive throttle scales down from 4 but there is no per-model knob to raise the ceiling on exceptionally well-behaved MTP heads.                  |
+| MTP: `nDraft` ceiling defaults to 4                 | The adaptive throttle scales down from the ceiling. The ceiling defaults to 4 but can be raised or lowered per model with an MTP `nDraft` override — a `draft-model:` block that sets only `ndraft:` (no `model-id:`). See §6.5. |
 | Speculative decoding is text-only                   | Neither draft mode applies to vision or audio requests.                                                                                              |
 
 ---

@@ -79,18 +79,26 @@ func float32Or(p *float32, def float32) float32 {
 
 // =============================================================================
 
-// DraftModelConfig configures a draft model for speculative decoding. A smaller,
-// faster model generates candidate tokens that the target model verifies in a
-// single forward pass. This can improve generation throughput when the draft
-// model's predictions frequently match the target's.
+// DraftModelConfig configures speculative decoding for a target model. It
+// serves two purposes depending on whether ModelFiles is set:
 //
-// Requirements:
-//   - Draft and target models must share the same vocabulary (same tokenizer)
-//   - NSeqMax must be 1 (single-slot mode)
-//   - Draft model should be significantly smaller than the target (e.g., 0.6B draft for 8B target)
+//  1. Separate-GGUF draft (ModelFiles set): a smaller, faster model
+//     generates candidate tokens that the target verifies in a single
+//     forward pass. Requires NSeqMax == 1 (single-slot mode) and a draft
+//     that shares the target's vocabulary (same tokenizer).
+//
+//  2. MTP nDraft override (ModelFiles empty): when the target GGUF ships
+//     an auto-detected MTP head, this block lets you tune the starting
+//     number of draft tokens per round without supplying a separate
+//     model. The adaptive throttle still scales nDraft down from this
+//     ceiling (to 0) as acceptance drops. NDraft defaults to defMTPNDraft
+//     when left unset.
+//
+// A model can have at most one drafter. If ModelFiles is set, the
+// separate-GGUF drafter wins even on a target that also has an MTP head.
 type DraftModelConfig struct {
-	ModelFiles    []string  // Path to the draft model GGUF file(s)
-	NDraft        int       // Number of tokens to draft per step (default 5)
+	ModelFiles    []string  // Path to the draft model GGUF file(s); empty means MTP nDraft override
+	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 4)
 	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
 	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
 	PtrMainGPU    *int      // Primary GPU index for draft model
@@ -99,6 +107,11 @@ type DraftModelConfig struct {
 
 func (d DraftModelConfig) NGpuLayers() int { return intOr(d.PtrNGpuLayers, 0) }
 func (d DraftModelConfig) MainGPU() int    { return intOr(d.PtrMainGPU, 0) }
+
+// IsSeparate reports whether this config points at a separate draft GGUF.
+// When false, the config is an MTP nDraft override that carries no model
+// files and only applies when the target ships an auto-detected MTP head.
+func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 
 // Config represents model level configuration. These values if configured
 // incorrectly can cause the system to panic. The defaults are used when these
@@ -467,16 +480,25 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	if cfg.DraftModel != nil {
-		if len(cfg.DraftModel.ModelFiles) == 0 {
-			return fmt.Errorf("validate-config: draft model requires model files")
-		}
-		if cfg.NSeqMax() > 1 {
-			return fmt.Errorf("validate-config: speculative decoding requires NSeqMax=1, got %d", cfg.NSeqMax())
-		}
-		for _, modelFile := range cfg.DraftModel.ModelFiles {
-			log(ctx, "validate-config", "draft-model-file", modelFile)
-			if err := CheckModel(modelFile, true); err != nil {
-				return fmt.Errorf("validate-config: draft model: %w", err)
+		if cfg.DraftModel.IsSeparate() {
+			// Separate-GGUF drafter: requires single-slot mode and a
+			// readable draft GGUF that shares the target's tokenizer.
+			if cfg.NSeqMax() > 1 {
+				return fmt.Errorf("validate-config: speculative decoding requires NSeqMax=1, got %d", cfg.NSeqMax())
+			}
+			for _, modelFile := range cfg.DraftModel.ModelFiles {
+				log(ctx, "validate-config", "draft-model-file", modelFile)
+				if err := CheckModel(modelFile, true); err != nil {
+					return fmt.Errorf("validate-config: draft model: %w", err)
+				}
+			}
+		} else {
+			// MTP nDraft override (no model files): only the draft token
+			// count is configurable here. It applies when the target ships
+			// an auto-detected MTP head; on a target without one it is a
+			// harmless no-op.
+			if cfg.DraftModel.NDraft < 0 {
+				return fmt.Errorf("validate-config: draft model ndraft must be >= 0, got %d", cfg.DraftModel.NDraft)
 			}
 		}
 	}
@@ -619,7 +641,13 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	if cfg.DraftModel != nil && cfg.DraftModel.NDraft <= 0 {
-		cfg.DraftModel.NDraft = defNDraft
+		// Separate-GGUF drafts default to defNDraft; MTP nDraft overrides
+		// (no model files) default to the more conservative defMTPNDraft.
+		if cfg.DraftModel.IsSeparate() {
+			cfg.DraftModel.NDraft = defNDraft
+		} else {
+			cfg.DraftModel.NDraft = defMTPNDraft
+		}
 	}
 
 	// Hybrid models (Attention + Recurrent) don't support flash attention,
@@ -755,10 +783,14 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		//      MTP head (nextn_predict_layers > 0) and the running
 		//      llama.cpp build exports the pre-norm APIs.
 		switch {
-		case cfg.DraftModel != nil:
+		case cfg.DraftModel != nil && cfg.DraftModel.IsSeparate():
 			perSlot = 1 + cfg.DraftModel.NDraft
 		case mtpNextNLayers(mdl) > 0 && MTPAvailable():
-			perSlot = 1 + defMTPNDraft
+			// MTP draft count: an MTP nDraft override (DraftModel with no
+			// model files) raises/lowers the ceiling; otherwise default.
+			// adjustConfig has already defaulted NDraft to defMTPNDraft for
+			// an MTP override, so cfg.DraftModel.NDraft is authoritative here.
+			perSlot = 1 + mtpNDraft(cfg)
 		}
 
 		ctxParams.NOutputsMax = uint32(nSeqMax * perSlot)

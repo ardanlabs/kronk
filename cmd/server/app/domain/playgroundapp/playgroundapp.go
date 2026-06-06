@@ -143,8 +143,12 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"is_gpt_model":      krn.ModelInfo().IsGPTModel,
 	}
 
-	if dm := krn.ModelConfig().DraftModel; dm != nil && len(dm.ModelFiles) > 0 {
-		effectiveConfig["draft_model"] = dm.ModelFiles[0]
+	// Report the active drafter. A separate-GGUF draft carries model files;
+	// an MTP nDraft override carries only the draft-token count.
+	if dm := krn.ModelConfig().DraftModel; dm != nil {
+		if dm.IsSeparate() {
+			effectiveConfig["draft_model"] = dm.ModelFiles[0]
+		}
 		effectiveConfig["draft_ndraft"] = dm.NDraft
 	}
 

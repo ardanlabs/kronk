@@ -19,6 +19,18 @@ import (
 // chooseNDraft EMA will scale down further if acceptance is poor.
 const defMTPNDraft = 4
 
+// mtpNDraft returns the starting (ceiling) number of draft tokens for the
+// auto-detected MTP drafter. An MTP nDraft override — a DraftModel block
+// with no model files — sets the ceiling explicitly; otherwise the
+// conservative defMTPNDraft is used. The adaptive throttle (chooseNDraft)
+// scales this ceiling down to 0 per slot as acceptance drops.
+func mtpNDraft(cfg Config) int {
+	if cfg.DraftModel != nil && !cfg.DraftModel.IsSeparate() && cfg.DraftModel.NDraft > 0 {
+		return cfg.DraftModel.NDraft
+	}
+	return defMTPNDraft
+}
+
 // mtpNextNLayers returns the number of NextN (MTP) prediction layers
 // declared in the target GGUF's metadata. A return value of 0 means the
 // model does not contain an MTP head and the MTP drafter must not be
@@ -212,7 +224,7 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
 func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams) (*draftModel, error) {
-	if cfg.DraftModel != nil {
+	if cfg.DraftModel != nil && cfg.DraftModel.IsSeparate() {
 		d, err := loadDraftModel(ctx, log, cfg, targetModel, targetCtxParams)
 		if err != nil {
 			return nil, err
@@ -257,12 +269,18 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 		return nil, nil
 	}
 
-	d, err := loadDraftModelMTP(ctx, log, targetCtx, targetModel, targetCtxParams, defMTPNDraft)
+	nDraft := mtpNDraft(cfg)
+	source := "auto-detected"
+	if cfg.DraftModel != nil && !cfg.DraftModel.IsSeparate() {
+		source = "auto-detected-configured"
+	}
+
+	d, err := loadDraftModelMTP(ctx, log, targetCtx, targetModel, targetCtxParams, nDraft)
 	if err != nil {
 		return nil, err
 	}
 	log(ctx, "draft-model-mtp", "status", "loaded",
-		"source", "auto-detected",
+		"source", source,
 		"nDraft", d.nDraft, "nextn-layers", nLayers,
 		"nEmbd", d.nEmbd,
 		"nCtx", llama.NCtx(d.lctx))

@@ -142,6 +142,7 @@ export const PARAM_TOOLTIPS = {
   yarnAttnFactor: 'YaRN attention scaling factor that adjusts attention weight magnitude at extended positions. Fine-tunes quality at long context lengths.',
   draftModel: 'Speculative decoding draft model — a smaller, faster model that proposes candidate tokens which the main model then verifies. Speeds up generation when acceptance rate is high.',
   draftTokens: 'Number of tokens the draft model proposes per speculative decoding step. More tokens = potentially faster generation, but too many reduces acceptance rate.',
+  mtpNDraft: 'Starting number of draft tokens per round for the auto-detected MTP head baked into this model. The adaptive throttle scales this ceiling down to 0 as acceptance drops. Leave empty to use the default of 4.',
   draftMainGpu: 'Primary GPU index for the draft model in multi-GPU setups. Leave empty to use the same GPU as the main model.',
   draftTensorSplit: 'Proportional weight distribution for the draft model across GPUs. Same format as the main model tensor-split.',
   tensorBuftOverrides: 'Manual tensor buffer type overrides for specific layers. Advanced option for fine-grained control of where individual tensors are placed.',

@@ -81,6 +81,10 @@ export default function ModelPlayground() {
   const [enableThinking, setEnableThinking] = useState<'true' | 'false'>('true');
   const [reasoningEffort, setReasoningEffort] = useState<'none' | 'minimal' | 'low' | 'medium' | 'high'>('medium');
 
+  // MTP nDraft override (null = use server default of 4). Only applies when
+  // the target ships an auto-detected MTP head and no separate draft model.
+  const [mtpNDraft, setMtpNDraft] = useState<number | null>(null);
+
   // Catalog config state
   const [catalogConfig, setCatalogConfig] = useState<ModelConfig | null>(null);
   const [configLoading, setConfigLoading] = useState(false);
@@ -123,6 +127,18 @@ export default function ModelPlayground() {
   const vramFitStatus: VramFitStatus | null = moeFit.fit?.status ?? null;
   const vramNeededAllGPU = moeFit.fit?.allGPU ?? 0;
   const vramNeededCPUExperts = moeFit.fit?.cpuExperts ?? 0;
+
+  // Speculative decoding: detect an auto-detected MTP head from GGUF metadata
+  // (<arch>.nextn_predict_layers > 0). The MTP nDraft override only applies
+  // when the target has a head and no separate draft model is configured.
+  const hasMtpHead = useMemo(() => {
+    if (!modelMetadata) return false;
+    return Object.entries(modelMetadata).some(
+      ([k, v]) => k.endsWith('nextn_predict_layers') && parseInt(v, 10) > 0,
+    );
+  }, [modelMetadata]);
+  const hasSeparateDraft = !!catalogConfig?.['draft-model']?.['model-id'];
+  const showMtpOverride = hasMtpHead && !hasSeparateDraft;
 
   // Tool test state
   const [toolDefs, setToolDefs] = useState(defaultTools);
@@ -304,6 +320,10 @@ export default function ModelPlayground() {
       }
       if (moeMode === 'custom' && tensorBuftOverrides.length > 0) {
         config['tensor_buft_overrides'] = tensorBuftOverrides;
+      }
+      // MTP nDraft override — only meaningful for targets with an MTP head.
+      if (showMtpOverride && mtpNDraft != null) {
+        config['draft_ndraft'] = mtpNDraft;
       }
 
       const resp = await api.createPlaygroundSession({
@@ -766,6 +786,7 @@ export default function ModelPlayground() {
                     moe_mode: moeMode || undefined,
                     moe_keep_experts_top_n: moeMode === 'keep_top_n' ? moeKeepTopN : undefined,
                     tensor_buft_overrides: moeMode === 'custom' && tensorBuftOverrides.length > 0 ? tensorBuftOverrides : undefined,
+                    draft_ndraft: showMtpOverride && mtpNDraft != null ? mtpNDraft : undefined,
                   },
                 }}
               />
@@ -947,6 +968,21 @@ export default function ModelPlayground() {
                   onChange={(e) => setMoeKeepTopN(Number(e.target.value))}
                   min={0}
                   max={moeBlockCount || 64}
+                  disabled={!!session}
+                />
+              </div>
+            )}
+            {showMtpOverride && (
+              <div className="form-group">
+                <FieldLabel htmlFor="pg-mtp-ndraft" tooltipKey="mtpNDraft">⚡ MTP Draft Tokens</FieldLabel>
+                <input
+                  id="pg-mtp-ndraft"
+                  type="number"
+                  value={mtpNDraft ?? ''}
+                  placeholder="4 (default)"
+                  onChange={(e) => setMtpNDraft(e.target.value === '' ? null : Number(e.target.value))}
+                  min={1}
+                  max={20}
                   disabled={!!session}
                 />
               </div>

@@ -77,6 +77,42 @@ func TestParseGGMLType(t *testing.T) {
 	}
 }
 
+func TestDraftModelIsSeparate(t *testing.T) {
+	if (DraftModelConfig{NDraft: 4}).IsSeparate() {
+		t.Errorf("IsSeparate() = true for config with no model files, want false")
+	}
+	if !(DraftModelConfig{ModelFiles: []string{"draft.gguf"}}).IsSeparate() {
+		t.Errorf("IsSeparate() = false for config with model files, want true")
+	}
+}
+
+func TestMTPNDraft(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want int
+	}{
+		{"no draft model uses default", NewConfig(), defMTPNDraft},
+		{"separate-GGUF draft ignored for MTP, uses default", NewConfig(
+			WithDraftModel(&DraftModelConfig{ModelFiles: []string{"d.gguf"}, NDraft: 9}),
+		), defMTPNDraft},
+		{"MTP override uses configured value", NewConfig(
+			WithDraftModel(&DraftModelConfig{NDraft: 7}),
+		), 7},
+		{"MTP override with zero falls back to default", NewConfig(
+			WithDraftModel(&DraftModelConfig{}),
+		), defMTPNDraft},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mtpNDraft(tt.cfg); got != tt.want {
+				t.Errorf("mtpNDraft() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateConfig(t *testing.T) {
 	discardLogger := func(ctx context.Context, msg string, args ...any) {}
 
@@ -89,6 +125,19 @@ func TestValidateConfig(t *testing.T) {
 			WithDevices([]string{"CUDA0", "CUDA1"}),
 			WithModelFiles([]string{"dummy.gguf"}),
 		), false},
+		{"MTP nDraft override (no draft files) is valid even with NSeqMax>1", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithNSeqMax(4),
+			WithDraftModel(&DraftModelConfig{NDraft: 6}),
+		), false},
+		{"MTP nDraft override with zero is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithDraftModel(&DraftModelConfig{}),
+		), false},
+		{"MTP nDraft override rejects negative ndraft", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithDraftModel(&DraftModelConfig{NDraft: -1}),
+		), true},
 	}
 	{
 		for _, tt := range tests {

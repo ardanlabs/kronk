@@ -155,29 +155,23 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	if len(sc.TensorBuftOverrides) > 0 {
 		cfg.TensorBuftOverrides = sc.TensorBuftOverrides
 	}
-	if sc.DraftModelID != nil {
-		if *sc.DraftModelID == "" {
-			cfg.DraftModel = nil
-		} else {
-			if cfg.DraftModel == nil {
-				cfg.DraftModel = &model.DraftModelConfig{}
-			}
+	// Draft model overrides. Three shapes are supported:
+	//   - draft_model_id set & non-empty → separate-GGUF drafter (file
+	//     paths are resolved in the handler, which also forces nseq-max=1).
+	//   - draft_model_id set & empty     → clear any drafter.
+	//   - draft_ndraft only (no id)      → MTP nDraft override; tunes the
+	//     starting draft-token count for the target's auto-detected MTP
+	//     head without supplying a separate draft GGUF.
+	switch {
+	case sc.DraftModelID != nil && *sc.DraftModelID == "":
+		cfg.DraftModel = nil
+	case sc.DraftModelID != nil || sc.DraftNDraft != nil:
+		if cfg.DraftModel == nil {
+			cfg.DraftModel = &model.DraftModelConfig{}
 		}
 	}
 	if sc.DraftNDraft != nil && cfg.DraftModel != nil {
 		cfg.DraftModel.NDraft = *sc.DraftNDraft
-	}
-	if sc.DraftModelID != nil {
-		if *sc.DraftModelID == "" {
-			cfg.DraftModel = nil
-		} else {
-			if cfg.DraftModel == nil {
-				cfg.DraftModel = &model.DraftModelConfig{}
-			}
-			if sc.DraftNDraft != nil {
-				cfg.DraftModel.NDraft = *sc.DraftNDraft
-			}
-		}
 	}
 	return cfg
 }
@@ -243,10 +237,10 @@ func (sc SessionConfig) Validate() error {
 		return fmt.Errorf("op-offload-min-batch must be >= 0, got %d", *sc.OpOffloadMinBatch)
 	}
 
+	// draft_ndraft is valid both with a separate draft model (draft_model_id)
+	// and on its own as an MTP nDraft override on the target's auto-detected
+	// MTP head.
 	if sc.DraftNDraft != nil {
-		if sc.DraftModelID == nil || *sc.DraftModelID == "" {
-			return fmt.Errorf("draft_ndraft requires draft_model_id")
-		}
 		if *sc.DraftNDraft < 1 || *sc.DraftNDraft > 20 {
 			return fmt.Errorf("draft_ndraft must be between 1 and 20, got %d", *sc.DraftNDraft)
 		}

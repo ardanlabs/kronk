@@ -114,7 +114,11 @@ export default function ModelList() {
   const allModels = models?.data ?? [];
   const draftModelConfig = modelInfo?.model_config?.['draft-model'];
   const draftModelId = draftModelConfig?.['model-id'] ?? null;
-  const hasDraftModel = !!draftModelConfig;
+  // The "Draft Model Card" tab describes a separate draft GGUF, so it only
+  // applies when a draft model-id is set. A draft-model block with only
+  // ndraft (an MTP nDraft override) has no separate model to card — its
+  // ndraft still shows in the main config table.
+  const hasDraftModel = !!draftModelId;
 
   // Fetch draft model info when draft-card tab is selected
   useEffect(() => {

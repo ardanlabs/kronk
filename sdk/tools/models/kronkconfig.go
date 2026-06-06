@@ -232,7 +232,13 @@ type ModelConfig struct {
 	PtrYarnOrigCtx       *int                      `yaml:"yarn-orig-ctx,omitempty"`
 }
 
-// DraftModelConfig configures a draft model for speculative decoding.
+// DraftModelConfig configures speculative decoding for a target model.
+//
+// Set model-id to use a separate draft GGUF (classic speculative decoding;
+// requires nseq-max: 1). Omit model-id and set only ndraft to override the
+// starting draft-token count for an auto-detected MTP head on the target
+// (defaults to 4 when unset). In the MTP case the adaptive throttle still
+// scales ndraft down to 0 per slot as acceptance drops.
 type DraftModelConfig struct {
 	Devices       []string  `yaml:"devices,omitempty"`
 	PtrMainGPU    *int      `yaml:"main-gpu,omitempty"`
