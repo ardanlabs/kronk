@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -31,7 +32,7 @@ func main() {
 func run() error {
 	modelPath := flag.String("model", "", "Path to the GGUF model file")
 	projPath := flag.String("proj", "", "Path to the mmproj file for vision")
-	imagePath := flag.String("image", "examples/samples/giraffe.jpg", "Path to the image file")
+	imagePath := flag.String("image", "samples/giraffe.jpg", "Path to the image file")
 	prompt := flag.String("prompt", "What is in this image?", "Prompt to ask about the image")
 	flag.Parse()
 
@@ -46,7 +47,7 @@ func run() error {
 	}
 
 	if *imagePath == "" {
-		*imagePath = "examples/samples/giraffe.jpg"
+		*imagePath = "samples/giraffe.jpg"
 	}
 
 	// -------------------------------------------------------------------------
@@ -106,7 +107,7 @@ func run() error {
 
 	fmt.Printf("Loading image: %s\n", *imagePath)
 
-	bitmap := mtmd.BitmapInitFromFile(mtmdCtx, *imagePath)
+	bitmap := mtmd.BitmapInitFromFile(mtmdCtx, *imagePath, false)
 	if bitmap == 0 {
 		return fmt.Errorf("failed to load image: %s", *imagePath)
 	}
@@ -230,12 +231,7 @@ func run() error {
 }
 
 func initYzma() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("unable to get home dir: %w", err)
-	}
-
-	libPath := filepath.Join(home, ".kronk/libraries")
+	libPath := libs.Path("")
 
 	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("unable to load library: %w", err)

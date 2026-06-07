@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -176,12 +177,7 @@ func run() error {
 }
 
 func initYzma() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("unable to get home dir: %w", err)
-	}
-
-	libPath := filepath.Join(home, ".kronk/libraries")
+	libPath := libs.Path("")
 
 	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("unable to load library: %w", err)
