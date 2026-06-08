@@ -12,11 +12,11 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.6
-	github.com/hybridgroup/yzma v1.16.0
+	github.com/hybridgroup/yzma v1.16.1
 	github.com/jupiterrider/ffi v0.7.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/open-policy-agent/opa v1.17.0
+	github.com/open-policy-agent/opa v1.17.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
@@ -27,8 +27,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0
 	go.yaml.in/yaml/v2 v2.4.4
 	golang.org/x/image v0.41.0
-	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.45.0
+	golang.org/x/sync v0.21.0
+	golang.org/x/sys v0.46.0
 	golang.org/x/text v0.37.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
@@ -101,7 +101,7 @@ require (
 	github.com/lestrrat-go/dsig v1.3.0 // indirect
 	github.com/lestrrat-go/dsig-secp256k1 v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
-	github.com/lestrrat-go/httprc/v3 v3.0.5 // indirect
+	github.com/lestrrat-go/httprc/v3 v3.0.6 // indirect
 	github.com/lestrrat-go/jwx/v3 v3.1.1 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/mewkiz/flac v1.0.13 // indirect
