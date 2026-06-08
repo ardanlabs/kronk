@@ -559,7 +559,7 @@ func lineDiff(a, b []string) string {
 				fmt.Fprintf(&sb, "- %s\n", dels[k])
 			}
 			if k < len(adds) {
-				fmt.Fprintf(&sb, "+ %s\n", adds[k])
+				fmt.Fprintf(&sb, "\033[91m+ %s\033[0m\n", adds[k])
 			}
 		}
 		dels, adds = nil, nil
