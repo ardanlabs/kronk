@@ -234,10 +234,7 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // nil or false, the projector runs on whichever device llama.cpp picks by
 // default (GPU when available). Set to true to keep the projector on the CPU
 // — equivalent to llama-mtmd-cli's --no-mmproj-offload. The LLM itself is
-// unaffected and still runs on whatever device WithNGpuLayers selects. This
-// is the workaround for Metal builds affected by the b9433 im2col regression
-// that breaks 1D-conv audio encoders (Qwen2-Audio, Ultravox, any
-// Whisper-style mmproj).
+// unaffected and still runs on whatever device WithNGpuLayers selects.
 //
 // QueueDepth sets the multiplier for semaphore capacity when using the
 // batch engine (NSeqMax > 1). This controls how many requests can queue while

@@ -328,9 +328,6 @@ func CfgAudio() model.Config {
 		// defaults) and the other quality-sensitive configs.
 		CacheTypeK: model.GGMLTypeF16,
 		CacheTypeV: model.GGMLTypeF16,
-		// Keep the mmproj on CPU to dodge the llama.cpp b9433 Metal
-		// im2col regression that breaks 1D-conv audio encoders.
-		PtrProjOnCPU: new(true),
 	}
 }
 

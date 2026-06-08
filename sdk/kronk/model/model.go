@@ -1327,19 +1327,17 @@ func humanBytes(n int64) string {
 
 // mtmdContextParams returns the mtmd context parameters to use for the given
 // model configuration.
-//
-// TEMPORARY: the default for UseGPU is forced to false (i.e. PtrProjOnCPU
-// defaults to true) to dodge the llama.cpp b9433 Metal im2col regression that
-// breaks 1D-conv audio encoders and produces "@@@@" output. Callers can
-// override with WithProjOnCPU(false) once an upstream fix lands so the mmproj
-// runs on the GPU again. See:
-//
-//	https://github.com/ggml-org/llama.cpp/issues/23986
 func mtmdContextParams(cfg Config) mtmd.ContextParamsType {
 	params := mtmd.ContextParamsDefault()
-	params.UseGPU = false
+
+	// Pin UseGPU=true so the projector is offloaded to the GPU by default and
+	// the device decision lives here rather than relying on the upstream
+	// default. ContextParamsDefault() already returns use_gpu=true (verified
+	// deterministic), so this is an explicit safeguard.
+	params.UseGPU = true
 	if cfg.PtrProjOnCPU != nil {
 		params.UseGPU = !*cfg.PtrProjOnCPU
 	}
+
 	return params
 }
