@@ -2360,7 +2360,6 @@ package main
 
 import (
 	"bufio"
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -2377,6 +2376,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+var selectedModel string
 
 type identInfo struct {
 	typ  string
@@ -2474,6 +2475,7 @@ func getModelID() (string, error) {
 
 	// If only one model, use it
 	if len(files) == 1 {
+		selectedModel = files[0].ID
 		return files[0].ID, nil
 	}
 
@@ -2512,6 +2514,7 @@ func getModelID() (string, error) {
 			continue
 		}
 
+		selectedModel = files[n-1].ID
 		return files[n-1].ID, nil
 	}
 }
@@ -2570,8 +2573,6 @@ func chat(krn *kronk.Kronk) error {
 		return fmt.Errorf("chat: index identifiers: %w", err)
 	}
 
-	printIdentifiers(identifiers)
-
 	for {
 		identifier, err := selectIdentifier(identifiers)
 		if err != nil {
@@ -2595,32 +2596,48 @@ func chat(krn *kronk.Kronk) error {
 			model.TextMessage(model.RoleUser, userInput),
 		)
 
-		messages, err = func() ([]model.D, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-			defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
 
-			d := model.D{
-				"messages":        messages,
-				"max_tokens":      4096,
-				"enable_thinking": false,
-			}
+		err = generateResponse(ctx, krn, messages, codeBlock)
+		if err != nil {
+			return fmt.Errorf("generateResponse: %w", err)
 
-			ch, err := performChat(ctx, krn, d)
-			if err != nil {
-				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
-			}
+		}
 
-			messages, err = modelResponse(messages, ch, codeBlock)
+		again, err := askTestAnother()
+		if err != nil {
+			return fmt.Errorf("askTestAnother: %w", err)
+		}
 
-			if err != nil {
-				return nil, fmt.Errorf("run: model response: %w", err)
-			}
+		if !again {
+			return nil
+		}
+	}
+}
 
-			return messages, nil
-		}()
+func askTestAnother() (bool, error) {
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Print("\\nTest another function? (y/n): ")
+
+		line, err := reader.ReadString('\\n')
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
 
 		if err != nil {
-			return fmt.Errorf("run: unable to perform chat: %w", err)
+			return false, err
+		}
+
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true, nil
+		case "n", "no":
+			return false, nil
+		default:
+			fmt.Println("Please enter y or n.")
 		}
 	}
 }
@@ -2654,42 +2671,10 @@ func retrieveIdentifiers(codeFile string) (map[string]identInfo, []byte, error) 
 	return identifiers, code, nil
 }
 
-func printIdentifiers(identifiers map[string]identInfo) {
-	idents := sortIdentifiers(identifiers)
-
-	var identLabelWidth int
-	for _, id := range idents {
-		if len(id.name) > identLabelWidth {
-			identLabelWidth = len(id.name)
-		}
-	}
-
-	fmt.Println("\\nAvailable functions:")
-	fmt.Printf("  %4s | %4s | %-*s | %s\\n", "Num", "Line", identLabelWidth, "Identifier", "Type")
-	fmt.Printf("  %s-+-%s-+-%s-+-%s\\n", strings.Repeat("-", 4), strings.Repeat("-", 4), strings.Repeat("-", identLabelWidth), strings.Repeat("-", 8))
-
-	for i, id := range idents {
-		fmt.Printf("  %4d | %4d | %-*s | %s\\n", i+1, id.line, identLabelWidth, id.name, id.typ)
-	}
-}
-
-func createInitialMessages(code []byte) []model.D {
-	var systemPrompt = \`You will be given source code for one identifier from a 
-	program. Return the source code in a JavaScript code block.\`
-
-	return append(model.DocumentArray(),
-		model.TextMessage(model.RoleSystem, systemPrompt),
-		model.TextMessage("user", "Here is the code to analyze:\\n\\n"+string(code)),
-	)
-}
-
 func selectIdentifier(identifiers map[string]identInfo) (string, error) {
 	idents := sortIdentifiers(identifiers)
 
-	fmt.Println("\\nWhich Function Do We Test?")
-	for i, id := range idents {
-		fmt.Printf("  %d: %s\\n", i+1, id.name)
-	}
+	printIdentifiers(identifiers)
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -2732,6 +2717,25 @@ func selectIdentifier(identifiers map[string]identInfo) (string, error) {
 	return identifier, nil
 }
 
+func printIdentifiers(identifiers map[string]identInfo) {
+	idents := sortIdentifiers(identifiers)
+
+	var identLabelWidth int
+	for _, id := range idents {
+		if len(id.name) > identLabelWidth {
+			identLabelWidth = len(id.name)
+		}
+	}
+
+	fmt.Println("\\nWhich Function Do We Test?")
+	fmt.Printf("  %4s | %4s | %-*s\\n", "Num", "Line", identLabelWidth, "Identifier")
+	fmt.Printf("  %s-+-%s-+-%s-\\n", strings.Repeat("-", 4), strings.Repeat("-", 4), strings.Repeat("-", identLabelWidth))
+
+	for i, id := range idents {
+		fmt.Printf("  %4d | %4d | %-*s\\n", i+1, id.line, identLabelWidth, id.name)
+	}
+}
+
 type ident struct {
 	name string
 	typ  string
@@ -2749,7 +2753,7 @@ func sortIdentifiers(identifiers map[string]identInfo) []ident {
 	}
 
 	slices.SortFunc(idents, func(a, b ident) int {
-		return cmp.Compare(a.line, b.line)
+		return a.line - b.line
 	})
 
 	return idents
@@ -2795,62 +2799,164 @@ func extractIdentifierCode(code []byte, identifier string) (string, error) {
 	return "", fmt.Errorf("identifier %s not found", identifier)
 }
 
-func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (model.ChatResponse, error) {
-	ch, err := krn.Chat(ctx, d)
+func createInitialMessages(code []byte) []model.D {
+	var systemPrompt = \`You will be given source code for one identifier from a 
+	program. Return the source code in a JavaScript code block.\`
 
-	if err != nil {
-		return model.ChatResponse{}, fmt.Errorf("chat streaming: %w", err)
-	}
-
-	return ch, nil
+	return append(model.DocumentArray(),
+		model.TextMessage(model.RoleSystem, systemPrompt),
+		model.TextMessage("user", "Here is the code to analyze:\\n\\n"+string(code)),
+	)
 }
 
-func modelResponse(messages []model.D, resp model.ChatResponse, codeBlock string) ([]model.D, error) {
-	fmt.Print("\\nMODEL> ")
-
-	if len(resp.Choices) == 0 {
-		return messages, nil
+func generateResponse(ctx context.Context, krn *kronk.Kronk, messages []model.D, codeBlock string) error {
+	fmt.Print("\\nModel is loading... ")
+	d := model.D{
+		"messages":        messages,
+		"max_tokens":      4096,
+		"enable_thinking": false,
 	}
 
-	switch resp.Choices[0].FinishReason() {
-	case model.FinishReasonError:
-		return messages, fmt.Errorf("error from model: %s", resp.Choices[0].Message.Content)
-	case model.FinishReasonStop:
+	ch, err := krn.Chat(ctx, d)
+	if err != nil {
+		return fmt.Errorf("chat: %w", err)
 	}
 
-	content := resp.Choices[0].Message.Content
+	return modelResponse(ch, codeBlock)
+}
 
-	if content != "" {
-		fmt.Print(content)
-		messages = append(messages, model.TextMessage(model.RoleAssistant, content))
+func modelResponse(resp model.ChatResponse, codeBlock string) error {
+	if len(resp.Choices) != 0 {
+		choice := resp.Choices[0]
+		if choice.FinishReason() == model.FinishReasonError {
+			return fmt.Errorf("error from model: %s", choice.Message.Content)
+		}
+
+		content := choice.Message.Content
+
+		if codeBlock != "" {
+			compareCode(content, codeBlock)
+		}
+
+		if choice.Message.Reasoning != "" {
+			fmt.Printf("\\033[91m%s\\033[0m", choice.Message.Reasoning)
+		}
+
+		fmt.Printf("\\n\\033[90mTokens: %d input, %d output | TPS: %.2f\\033[0m\\n",
+			resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TokensPerSecond)
+	}
+	return nil
+}
+
+func compareCode(content, originalCode string) {
+	modelCode := strings.TrimSpace(parseCodeBlock(content))
+
+	want := strings.Split(originalCode, "\\n")
+	got := strings.Split(modelCode, "\\n")
+
+	// Exact comparison, whitespace included.
+	lcs := lcsLines(want, got)
+
+	// LCS-based similarity ratio (matching lines), not positional chars.
+	total := len(want) + len(got)
+	percent := 100.0
+	if total > 0 {
+		percent = float64(2*lcs) / float64(total) * 100
+	}
+	fmt.Printf("\\nCode match: %.2f%%\\n", percent)
+
+	if selectedModel != "" {
+		fmt.Printf("\\nModel: %s\\n", selectedModel)
 	}
 
-	if codeBlock != "" {
-		modelCode := strings.TrimSpace(firstCodeBlock(content))
-		percent := codeMatchPercent(modelCode, codeBlock)
+	fmt.Printf("\\nCode diff (-want +got):\\n%s\\n", lineDiff(want, got))
+}
 
-		fmt.Printf("\\nCode match: %.2f%%\\n", percent)
+// lcsLines returns the length of the longest common subsequence of two
+// line slices.
+func lcsLines(a, b []string) int {
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
 
-		if diff := firstCodeDifference(modelCode, codeBlock); diff != -1 {
-			line := 1 + strings.Count(normalizeIndent(codeBlock)[:diff], "\\n")
-			fmt.Printf("First difference at line: %d\\n", line)
-			printCodeDiff(codeBlock, modelCode)
+	for i := 1; i <= len(a); i++ {
+		for j := 1; j <= len(b); j++ {
+			if a[i-1] == b[j-1] {
+				curr[j] = prev[j-1] + 1
+			} else {
+				curr[j] = max(prev[j], curr[j-1])
+			}
+		}
+		prev, curr = curr, prev
+	}
+
+	return prev[len(b)]
+}
+
+// lineDiff renders a line-by-line diff. Lines are aligned with an LCS table
+// so inserted or removed lines don't shift the rest of the comparison.
+// Matching lines use " " context; within a changed block each removed "-"
+// line is paired next to its added "+" line.
+func lineDiff(a, b []string) string {
+	// LCS table for alignment (tolerates inserted/removed lines).
+	dp := make([][]int, len(a)+1)
+	for i := range dp {
+		dp[i] = make([]int, len(b)+1)
+	}
+	for i := len(a) - 1; i >= 0; i-- {
+		for j := len(b) - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				dp[i][j] = dp[i+1][j+1] + 1
+			} else {
+				dp[i][j] = max(dp[i+1][j], dp[i][j+1])
+			}
 		}
 	}
 
-	reasoning := resp.Choices[0].Message.Reasoning
+	var sb strings.Builder
+	var dels, adds []string
 
-	if reasoning != "" {
-		fmt.Printf("\\033[91m%s\\033[0m", reasoning)
+	// flush writes a changed block, pairing each removed line with the
+	// added line at the same offset so "-" sits next to its "+".
+	flush := func() {
+		for k := range max(len(dels), len(adds)) {
+			if k < len(dels) {
+				fmt.Fprintf(&sb, "- %s\\n", dels[k])
+			}
+			if k < len(adds) {
+				fmt.Fprintf(&sb, "\\033[91m+ %s\\033[0m\\n", adds[k])
+			}
+		}
+		dels, adds = nil, nil
 	}
 
-	fmt.Printf("\\n\\033[90mTokens: %d input, %d output | TPS: %.2f\\033[0m\\n",
-		resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TokensPerSecond)
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] == b[j]:
+			flush()
+			sb.WriteString("  " + a[i] + "\\n")
+			i++
+			j++
+		case dp[i+1][j] >= dp[i][j+1]:
+			dels = append(dels, a[i])
+			i++
+		default:
+			adds = append(adds, b[j])
+			j++
+		}
+	}
+	for ; i < len(a); i++ {
+		dels = append(dels, a[i])
+	}
+	for ; j < len(b); j++ {
+		adds = append(adds, b[j])
+	}
+	flush()
 
-	return messages, nil
+	return sb.String()
 }
 
-func firstCodeBlock(content string) string {
+func parseCodeBlock(content string) string {
 	start := strings.Index(content, "\`\`\`")
 	if start == -1 {
 		return ""
@@ -2861,100 +2967,12 @@ func firstCodeBlock(content string) string {
 		content = content[newline+1:]
 	}
 
-	before, _, ok := strings.Cut(content, "\`\`\`")
-	if !ok {
+	parts := strings.SplitN(content, "\`\`\`", 2)
+	if len(parts) < 2 {
 		return content
 	}
 
-	return before
-}
-
-func normalizeIndent(s string) string {
-	var result []rune
-	for _, r := range s {
-		if r == '\\t' {
-			result = append(result, ' ', ' ', ' ', ' ')
-		} else {
-			result = append(result, r)
-		}
-	}
-	return string(result)
-}
-
-func codeMatchPercent(modelCode, originalCode string) float64 {
-	modelCode = normalizeIndent(modelCode)
-	originalCode = normalizeIndent(originalCode)
-
-	maxLen := max(len(modelCode), len(originalCode))
-	if maxLen == 0 {
-		return 100
-	}
-
-	var matches int
-	for i := range maxLen {
-		if i < len(modelCode) && i < len(originalCode) && modelCode[i] == originalCode[i] {
-			matches++
-		}
-	}
-
-	return float64(matches) / float64(maxLen) * 100
-}
-
-func firstCodeDifference(modelCode, originalCode string) int {
-	modelCode = normalizeIndent(modelCode)
-	originalCode = normalizeIndent(originalCode)
-
-	maxLen := max(len(modelCode), len(originalCode))
-	for i := range maxLen {
-		if i >= len(modelCode) || i >= len(originalCode) || modelCode[i] != originalCode[i] {
-			return i
-		}
-	}
-
-	return -1
-}
-
-func printCodeDiff(originalCode, modelCode string) {
-	modelCode = normalizeIndent(modelCode)
-	originalCode = normalizeIndent(originalCode)
-
-	origLines := strings.Split(originalCode, "\\n")
-	modelLines := strings.Split(modelCode, "\\n")
-
-	fmt.Println("\\n--- Code Diff ---")
-	fmt.Printf("%-45s | %s\\n", "ORIGINAL", "MODEL")
-	fmt.Println(strings.Repeat("-", 80))
-
-	const w = 43
-	for i := 0; i < max(len(origLines), len(modelLines)); i++ {
-		origLine := ""
-		if i < len(origLines) {
-			origLine = origLines[i]
-		}
-		modelLine := ""
-		if i < len(modelLines) {
-			modelLine = modelLines[i]
-		}
-
-		// Wrap long lines at the column width so neither side pushes
-		// into the other column.
-		for len(origLine) > 0 || len(modelLine) > 0 {
-			o := origLine
-			if len(o) > w {
-				o, origLine = o[:w], o[w:]
-			} else {
-				origLine = ""
-			}
-			m := modelLine
-			if len(m) > w {
-				m, modelLine = m[:w], m[w:]
-			} else {
-				modelLine = ""
-			}
-			fmt.Printf("  %-*s | %s\\n", w, o, m)
-		}
-	}
-	fmt.Println("--- End Diff ---")
+	return parts[0]
 }
 `;
 

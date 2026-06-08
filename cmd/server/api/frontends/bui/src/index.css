@@ -5708,3 +5708,277 @@ button.autotest-detail-log-header:focus-visible {
         print-color-adjust: exact !important;
     }
 }
+/* ============================================================== */
+/* Accuracy app                                                   */
+/* ============================================================== */
+
+.accuracy-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.accuracy-source-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.accuracy-filename {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.accuracy-source {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
+  resize: vertical;
+}
+
+.accuracy-error {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.accuracy-error-cell {
+  color: var(--color-error);
+  font-size: 0.85rem;
+}
+
+.accuracy-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.accuracy-count,
+.accuracy-meta {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.accuracy-sort {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.accuracy-sort label {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.accuracy-sort select {
+  width: auto;
+}
+
+.accuracy-batch-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.accuracy-random {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.accuracy-batch-run {
+  margin-left: auto;
+}
+
+.accuracy-func-grid {
+  column-width: 240px;
+  column-gap: 1rem;
+  max-height: 320px;
+  overflow: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--color-code-border);
+  border-radius: 6px;
+}
+
+.accuracy-func-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  break-inside: avoid;
+  margin-bottom: 0.25rem;
+  cursor: pointer;
+}
+
+.accuracy-func-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.accuracy-func-loc {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.accuracy-func-line {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.accuracy-result {
+  margin-top: 1rem;
+}
+
+.accuracy-result-header,
+.accuracy-batch-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.accuracy-batch-summary {
+  margin-top: 1rem;
+}
+
+.accuracy-match {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.accuracy-match-good { color: var(--color-success-text); }
+.accuracy-match-mid  { color: var(--color-warning-text); }
+.accuracy-match-bad  { color: var(--color-error); }
+
+.accuracy-diff {
+  border: 1px solid var(--color-code-border);
+  border-radius: 6px;
+  overflow-x: auto;
+  background: var(--color-code-bg);
+}
+
+.accuracy-diff pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.accuracy-diff-line {
+  display: flex;
+  white-space: pre;
+  padding: 0 0.5rem;
+}
+
+.accuracy-diff-gutter {
+  width: 1.25rem;
+  flex-shrink: 0;
+  color: var(--color-muted);
+  user-select: none;
+}
+
+.accuracy-diff-context .accuracy-diff-text {
+  color: var(--color-code-text);
+}
+
+.accuracy-diff-add {
+  background: var(--color-success-bg);
+}
+
+.accuracy-diff-add .accuracy-diff-text,
+.accuracy-diff-add .accuracy-diff-gutter {
+  color: var(--color-success-text);
+}
+
+.accuracy-diff-del {
+  background: var(--color-error-bg);
+}
+
+.accuracy-diff-del .accuracy-diff-text,
+.accuracy-diff-del .accuracy-diff-gutter {
+  color: var(--color-error);
+}
+
+.accuracy-row-clickable {
+  cursor: pointer;
+}
+
+/* Accuracy diff title + key */
+.accuracy-diff-wrap {
+  margin-top: 0.5rem;
+}
+
+.accuracy-diff-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.accuracy-diff-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.accuracy-diff-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.accuracy-diff-key-item {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+}
+
+.accuracy-diff-key-item.accuracy-diff-del {
+  color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.accuracy-diff-key-item.accuracy-diff-add {
+  color: var(--color-success-text);
+  background: var(--color-success-bg);
+}
+
+/* Accuracy manual result: match% lined up with model/token stats */
+.accuracy-result-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.accuracy-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0.35rem 0 0.6rem;
+}
+
+.accuracy-fields strong {
+  color: var(--color-gray-800);
+}

@@ -21,6 +21,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
+var selectedModel string
+
 type identInfo struct {
 	typ  string
 	line int
@@ -117,6 +119,7 @@ func getModelID() (string, error) {
 
 	// If only one model, use it
 	if len(files) == 1 {
+		selectedModel = files[0].ID
 		return files[0].ID, nil
 	}
 
@@ -155,6 +158,7 @@ func getModelID() (string, error) {
 			continue
 		}
 
+		selectedModel = files[n-1].ID
 		return files[n-1].ID, nil
 	}
 }
@@ -504,6 +508,10 @@ func compareCode(content, originalCode string) {
 		percent = float64(2*lcs) / float64(total) * 100
 	}
 	fmt.Printf("\nCode match: %.2f%%\n", percent)
+
+	if selectedModel != "" {
+		fmt.Printf("\nModel: %s\n", selectedModel)
+	}
 
 	fmt.Printf("\nCode diff (-want +got):\n%s\n", lineDiff(want, got))
 }
