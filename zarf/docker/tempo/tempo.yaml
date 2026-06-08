@@ -13,28 +13,13 @@ distributor:
         grpc:
           endpoint: "0.0.0.0:4317"
 
-ingester:
-  trace_idle_period: 10s
-  max_block_bytes: 1_000_000
-  max_block_duration: 5m
-
-compactor:
-  compaction:
-    compaction_window: 1h
-    max_block_bytes: 100_000_000
-    block_retention: 1h
-    compacted_block_retention: 10m
-
 storage:
   trace:
     backend: local
     block:
       bloom_filter_false_positive: .05
-      v2_index_downsample_bytes: 1000
-      v2_encoding: zstd
     wal:
       path: /tmp/tempo/wal
-      v2_encoding: snappy
     local:
       path: /tmp/tempo/blocks
     pool:
@@ -53,5 +38,7 @@ metrics_generator:
 
 overrides:
   defaults:
+    compaction:
+      block_retention: 1h
     metrics_generator:
       processors: [service-graphs, span-metrics]
