@@ -475,13 +475,17 @@ but have different performance profiles that affect configuration:
 - Use `split_mode: row` for multi-GPU setups to enable expert-parallel
   execution
 
-#### Hybrid Constraints
+#### Hybrid Configuration
 
-Hybrid models have hard requirements that Kronk enforces at load time.
+Hybrid models use the same defaults as every other model type — Kronk no
+longer overrides flash attention or the KV cache for them.
 
-- KV cache must use `f16` — quantized cache types (e.g., `q8_0`) are
-  incompatible with recurrent layers
-- Flash attention is automatically disabled
+- Flash attention is supported. It applies only to the attention layers;
+  the recurrent layers never reach the Flash Attention kernel. Use
+  `flash_attention: auto` on backends that can't do FA so llama.cpp
+  falls back to disabled automatically.
+- A quantized KV cache (e.g., `q8_0`) is allowed, but only while flash
+  attention is active. With flash attention disabled, use `f16`.
 
 #### Hybrid Guardrails
 

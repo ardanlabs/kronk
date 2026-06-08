@@ -1147,23 +1147,24 @@ cache_type_v: q8_0 # Value cache precision`}</code></pre>
           <blockquote>"how much should each word pay attention to every other word." It works</blockquote>
           <blockquote>by being clever about how it uses fast on-chip memory so it doesn't</blockquote>
           <blockquote>have to write huge intermediate results to slower memory. It's on by</blockquote>
-          <blockquote>default. Most models support it; <strong>hybrid models do not</strong> (see the note</blockquote>
-          <blockquote>at the end of this section).</blockquote>
+          <blockquote>default and works on every model type, including <strong>hybrid models</strong></blockquote>
+          <blockquote>(see the note at the end of this section).</blockquote>
           <p>Attention is the core mechanism that lets a model figure out which parts of your input are relevant to each other. For example, in the sentence "The cat sat on the mat because it was tired," attention is how the model connects "it" back to "the cat." The standard attention algorithm needs to hold a large matrix of scores in memory — one score for every pair of tokens in your input. As context windows grow, this matrix grows quadratically and can become both slow and memory-hungry.</p>
           <p>Flash Attention is an optimized implementation that computes the same result but processes the matrix in small tiles that fit in the GPU's fast on-chip memory (SRAM) instead of slower VRAM. The result is lower memory usage and faster computation — especially noticeable with large context windows (32K+). It's enabled by default and should rarely need to be changed.</p>
           <p>Control whether Flash Attention is used:</p>
           <pre className="code-block"><code className="language-yaml">{`flash_attention: enabled   # Default: enabled
 flash_attention: disabled  # Disable if causing issues
 flash_attention: auto      # Let llama.cpp decide`}</code></pre>
-          <p>_Note: <strong>Hybrid models</strong> mix two kinds of layers: regular transformer attention layers <em>and</em> a different kind (like Mamba or convolutional layers in models such as Jamba, Granite-Hybrid, or LFM2) that don't do attention at all — they have their own way of remembering past tokens. Flash Attention only knows how to speed up the attention layers, and the way llama.cpp is wired you can only turn Flash Attention on for the <strong>whole model</strong> at once, not layer-by-layer. So if you turn it on for a hybrid model, llama.cpp tries to apply the trick to layers that don't have attention, and things break or produce wrong answers. That's why Kronk detects hybrid models and automatically disables it. Additionally, quantized KV caches (<code>q8_0</code>, <code>q4_0</code>) require flash attention to function — so when flash attention is disabled for hybrid models, Kronk also forces the KV cache type to f16. These overrides happen regardless of your configuration settings._</p>
+          <p>_Note: <strong>Hybrid models</strong> mix two kinds of layers: regular transformer attention layers <em>and</em> a different kind (like Mamba, Gated DeltaNet, or convolutional layers in models such as Jamba, Granite-Hybrid, LFM2, or Qwen3-Next) that don't do attention at all — they have their own way of remembering past tokens. Flash Attention only speeds up the attention layers, and current llama.cpp scopes it correctly: the recurrent layers in a hybrid model never reach the Flash Attention kernel, so enabling it only affects the genuine attention layers and is safe. Earlier versions of llama.cpp could crash on hybrid models, which is why older Kronk releases force-disabled Flash Attention (and forced an f16 KV cache) for them. That override has been removed — hybrid models now use the same defaults as every other model, and you control <code>flash_attention</code> and the KV cache types yourself. If you run a hybrid model on a backend that can't do Flash Attention, use <code>flash_attention: auto</code> and llama.cpp will probe device support and fall back to disabled automatically. Remember that quantized KV caches (<code>q8_0</code>, <code>q4_0</code>) require flash attention to be active._</p>
           <h3 id="36-sliding-window-attention-swa">3.6 Sliding Window Attention (SWA)</h3>
           <p>Some models use a <strong>mixed attention pattern</strong> that interleaves sliding window attention (SWA) layers with full global attention layers. In SWA layers, each token only attends to a small local window of recent tokens (e.g., 1024 tokens) rather than the entire context. The global attention layers still see everything, which keeps the model coherent over long contexts while the SWA layers provide efficient local processing.</p>
           <blockquote><strong>Not the same as a "hybrid model".</strong> SWA still uses transformer</blockquote>
           <blockquote>attention in every layer — some layers just attend to a smaller window</blockquote>
           <blockquote>than others. A "hybrid model" (Section 3.5) replaces some attention</blockquote>
           <blockquote>layers entirely with a non-attention mechanism like Mamba or</blockquote>
-          <blockquote>convolutions. Flash Attention works fine with SWA; it does not work</blockquote>
-          <blockquote>with hybrid models.</blockquote>
+          <blockquote>convolutions. Flash Attention works fine with both SWA and hybrid</blockquote>
+          <blockquote>models — in a hybrid model it simply applies to the attention layers</blockquote>
+          <blockquote>and skips the recurrent ones.</blockquote>
           <p>Models that use sliding window attention include:</p>
           <table className="flags-table">
             <thead>
@@ -1696,16 +1697,16 @@ Step 4 — Total VRAM:
             </thead>
             <tbody>
               <tr>
-                <td>Use <code>f16</code> for both <code>cache_type_k</code> and <code>cache_type_v</code></td>
-                <td>Use <code>q8_0</code> cache — it's incompatible with recurrent layers</td>
-              </tr>
-              <tr>
                 <td>Enable <code>incremental_cache</code> for conversation workloads</td>
-                <td>Manually enable flash attention — Kronk disables it for you</td>
+                <td>Assume the same KV cache savings as dense models</td>
               </tr>
               <tr>
-                <td>Budget extra VRAM for the larger f16 KV cache</td>
-                <td>Expect the same KV cache savings as dense models</td>
+                <td>Use <code>flash_attention: auto</code> on backends without FA</td>
+                <td>Forget that quantized KV caches need flash attention active</td>
+              </tr>
+              <tr>
+                <td>Use a quantized KV cache only with flash attention on</td>
+                <td>Pair a quantized KV cache with flash attention disabled</td>
               </tr>
             </tbody>
           </table>
@@ -2431,11 +2432,11 @@ Step 4 — Total VRAM:
             <li>Sensitive to aggressive KV cache quantization — use <code>f16</code> cache types if quality degrades with <code>q8_0</code></li>
             <li>Use <code>split_mode: row</code> for multi-GPU setups to enable expert-parallel execution</li>
           </ul>
-          <h4 id="hybrid-constraints">Hybrid Constraints</h4>
-          <p>Hybrid models have hard requirements that Kronk enforces at load time.</p>
+          <h4 id="hybrid-configuration">Hybrid Configuration</h4>
+          <p>Hybrid models use the same defaults as every other model type — Kronk no longer overrides flash attention or the KV cache for them.</p>
           <ul>
-            <li>KV cache must use <code>f16</code> — quantized cache types (e.g., <code>q8_0</code>) are incompatible with recurrent layers</li>
-            <li>Flash attention is automatically disabled</li>
+            <li>Flash attention is supported. It applies only to the attention layers; the recurrent layers never reach the Flash Attention kernel. Use <code>flash_attention: auto</code> on backends that can't do FA so llama.cpp falls back to disabled automatically.</li>
+            <li>A quantized KV cache (e.g., <code>q8_0</code>) is allowed, but only while flash attention is active. With flash attention disabled, use <code>f16</code>.</li>
           </ul>
           <h4 id="hybrid-guardrails">Hybrid Guardrails</h4>
           <p>Kronk protects against corrupted state by automatically recovering when snapshot operations fail.</p>
@@ -2775,7 +2776,7 @@ New decode:    4 tokens (T9-T12, from divergence point forward)`}</code></pre>
               <tr>
                 <td>Hybrid</td>
                 <td>Snapshot/Restore</td>
-                <td>f16 cache required, no flash attn</td>
+                <td>quantized KV needs flash attn on</td>
               </tr>
             </tbody>
           </table>
@@ -2790,8 +2791,9 @@ unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M:
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/model_config.yaml
 unsloth/LFM2-700M-Q8_0:
   incremental-cache: true
-  cache-type-k: f16   # Required for hybrid models
-  cache-type-v: f16   # Required for hybrid models`}</code></pre>
+  flash-attention: auto   # Falls back to disabled when the backend lacks FA
+  cache-type-k: f16       # Use f16 unless flash attention is active
+  cache-type-v: f16`}</code></pre>
           <h3 id="53-single-user-caching">5.3 Single-User Caching</h3>
           <p>IMC is designed for single-user use. The session pool (sized at <code>NSeqMax × 3</code>, see <a href="#session-pool-decoupled-from-slots">Session Pool (Decoupled from Slots)</a>) gives multiple conversation branches their own cache identity; each branch independently tracks its own hash, system prompt, and cached tokens. Any session can run on any execution slot. This design is optimized for agentic workflows where multiple sub-agents send independent conversations (different system prompts, different message histories) without saturating the GPU's parallel decode capacity.</p>
           <h3 id="54-when-to-use-imc">5.4 When to Use IMC</h3>
@@ -3299,8 +3301,8 @@ Request 5 (text follow-up about the image):
                 <td>IMC cache hits keep MTP running by restoring the draft seq KV + <code>pendingH</code> snapshotted alongside the target during the cache build. Sessions whose cache was built before this fix (no draft snapshot on disk/RAM) fall back to disabling MTP for the cache-hit request only — they re-enable on the next request once the cache is rebuilt by an MTP-aware path.</td>
               </tr>
               <tr>
-                <td>MTP + hybrid targets: f16 KV cache + no Flash Attention required</td>
-                <td>Kronk forces <code>cache-type-k/v: f16</code> and disables Flash Attention on hybrid models. Throughput on hybrid + MTP is meaningfully lower than dense / MoE targets regardless of <code>nseq-max</code>.</td>
+                <td>MTP + hybrid targets: lower throughput</td>
+                <td>Hybrid targets (e.g. Qwen3-Next, Qwen3.6-35B-A3B-MTP) now use the same Flash Attention and KV cache defaults as any other model — Kronk no longer forces <code>cache-type-k/v: f16</code> or disables Flash Attention. Flash Attention applies only to the attention layers. Throughput on hybrid + MTP is still meaningfully lower than dense / MoE targets regardless of <code>nseq-max</code>.</td>
               </tr>
               <tr>
                 <td>MTP: <code>nDraft</code> ceiling defaults to 4</td>

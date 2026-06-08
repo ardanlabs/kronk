@@ -480,7 +480,7 @@ manages state between requests.
 | ---------- | ------------------ | --------------------------------- |
 | Dense      | Snapshot/Restore   | No special requirements           |
 | MoE        | Snapshot/Restore   | f16 cache, split-mode: row        |
-| Hybrid     | Snapshot/Restore   | f16 cache required, no flash attn |
+| Hybrid     | Snapshot/Restore   | quantized KV needs flash attn on  |
 
 **MoE Configuration:**
 
@@ -499,8 +499,9 @@ unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M:
 # ~/.kronk/model_config.yaml
 unsloth/LFM2-700M-Q8_0:
   incremental-cache: true
-  cache-type-k: f16   # Required for hybrid models
-  cache-type-v: f16   # Required for hybrid models
+  flash-attention: auto   # Falls back to disabled when the backend lacks FA
+  cache-type-k: f16       # Use f16 unless flash attention is active
+  cache-type-v: f16
 ```
 
 ### 5.3 Single-User Caching

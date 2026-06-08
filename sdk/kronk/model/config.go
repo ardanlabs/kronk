@@ -650,15 +650,6 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		}
 	}
 
-	// Hybrid models (Attention + Recurrent) don't support flash attention,
-	// and quantized KV caches require flash attention. Force f16 KV cache
-	// in the config so downstream code and display reflect the actual values.
-	if llama.ModelIsHybrid(model) {
-		cfg.CacheTypeK = GGMLTypeF16
-		cfg.CacheTypeV = GGMLTypeF16
-		cfg.FlashAttention = FlashAttentionDisabled
-	}
-
 	// Ensure remaining pointer fields are non-nil after adjustment.
 	if cfg.PtrInsecureLogging == nil {
 		cfg.PtrInsecureLogging = new(false)
