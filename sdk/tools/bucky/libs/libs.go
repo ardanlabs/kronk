@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/bucky/pkg/download"
@@ -450,8 +451,10 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 
 // DownloadFor downloads the supplied version into the canonical
 // install directory for the supplied (arch, os, processor) triple
-// under the libraries Root. If version is empty, the
-// bucky-baked-in default is used.
+// under the libraries Root. If version is empty, the Kronk-pinned
+// defaultVersion is used unless a newer version is already installed,
+// in which case that newer version is kept. This mirrors the llama
+// backend's DownloadFor behavior.
 func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys string, processor string, version string) (VersionTag, error) {
 	if lib.readOnly {
 		return VersionTag{}, fmt.Errorf("libs: download-for: %w", ErrReadOnly)
@@ -461,7 +464,12 @@ func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys
 	}
 
 	if version == "" {
-		version = download.DefaultWhisperVersion
+		installed, _ := lib.InstalledVersion()
+		if installed.Version != "" && versionGreater(installed.Version, defaultVersion) {
+			version = installed.Version
+		} else {
+			version = defaultVersion
+		}
 	}
 
 	return lib.downloadInto(ctx, log, installPathFor(lib.root, arch, opSys, processor), arch, opSys, processor, version)
@@ -728,11 +736,13 @@ func chooseVersion(override string, allowUpgrade bool, installed string, latest 
 }
 
 // versionGreater reports whether v1 is greater than v2. Versions are
-// expected to be whisper.cpp release tags like "v1.8.4". It strips a
-// single leading non-digit character (covering "v<num>" tags) and
-// compares the suffixes; when both are purely numeric it does a
-// numeric comparison, otherwise it falls back to lexicographic
-// comparison (which is correct for same-shape dotted versions).
+// expected to be whisper.cpp release tags like "v1.8.4". A single
+// leading non-digit character (covering "v<num>" tags) is stripped and
+// the remaining dot-separated segments are compared one at a time:
+// numeric segments compare numerically, non-numeric segments fall back
+// to a lexicographic comparison of the raw segment, and a missing
+// segment is treated as 0 (so "v1.8" is less than "v1.8.1"). This ranks
+// different-shape tags such as "v1.10.0" above "v1.8.6" correctly.
 func versionGreater(v1, v2 string) bool {
 	if v1 == "" || v2 == "" {
 		return false
@@ -745,20 +755,37 @@ func versionGreater(v1, v2 string) bool {
 		return s
 	}
 
-	n1 := stripPrefix(v1)
-	n2 := stripPrefix(v2)
+	s1 := strings.Split(stripPrefix(v1), ".")
+	s2 := strings.Split(stripPrefix(v2), ".")
 
-	if n1 == n2 {
-		return false
-	}
-
-	if i1, e1 := strconv.Atoi(n1); e1 == nil {
-		if i2, e2 := strconv.Atoi(n2); e2 == nil {
-			return i1 > i2
+	for i := range max(len(s1), len(s2)) {
+		a, b := "0", "0"
+		if i < len(s1) {
+			a = s1[i]
 		}
+		if i < len(s2) {
+			b = s2[i]
+		}
+
+		if a == b {
+			continue
+		}
+
+		// Numeric segments compare numerically; otherwise fall back to a
+		// lexicographic comparison of the raw segments.
+		if i1, e1 := strconv.Atoi(a); e1 == nil {
+			if i2, e2 := strconv.Atoi(b); e2 == nil {
+				if i1 != i2 {
+					return i1 > i2
+				}
+				continue
+			}
+		}
+
+		return a > b
 	}
 
-	return n1 > n2
+	return false
 }
 
 func hasNetwork() bool {
