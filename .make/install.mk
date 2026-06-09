@@ -31,15 +31,15 @@ install-kronk:
 # Use this to install or update llama.cpp + whisper.cpp to the latest
 # version. Used by the local `make test` target so developers exercise
 # the newest bundles before bumping the well-known defaultVersion in
-# sdk/tools/libs/libs.go (llama) for a release. The bucky / whisper
-# install pins to the bundled default version — sdk/tools/bucky/libs has
-# no --upgrade equivalent.
+# sdk/tools/libs/libs.go (llama) and sdk/tools/bucky/libs/libs.go
+# (whisper) for a release. Both backends support --upgrade to track the
+# latest published release instead of the bundled default version.
 install-libraries: install-kronk
 	@echo "========== INSTALL LLAMA LIBRARIES (latest) =========="
 	kronk libs --local --upgrade
 	@echo
-	@echo "========== INSTALL WHISPER LIBRARIES =========="
-	kronk bucky libs --local
+	@echo "========== INSTALL WHISPER LIBRARIES (latest) =========="
+	kronk bucky libs --local --upgrade
 	@echo
 
 # Use this to install the well-known defaultVersion of llama.cpp +

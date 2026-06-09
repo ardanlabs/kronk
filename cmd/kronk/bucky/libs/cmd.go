@@ -43,6 +43,9 @@ EXAMPLES
   # Install the default whisper.cpp libraries for the current host.
   kronk bucky libs
 
+  # Track and install the latest published whisper.cpp release.
+  kronk bucky libs --local --upgrade
+
   # Install a specific whisper.cpp version.
   kronk bucky libs --version=v1.7.0
 
@@ -73,6 +76,7 @@ ENVIRONMENT VARIABLES
 
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
+	Cmd.Flags().Bool("upgrade", false, "Track the latest whisper.cpp release instead of the well-known default version")
 	Cmd.Flags().String("version", "", "Download a specific whisper.cpp version instead of the default")
 
 	Cmd.Flags().Bool("install", false, "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)")
@@ -93,6 +97,7 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command) error {
 	local, _ := cmd.Flags().GetBool("local")
+	upgrade, _ := cmd.Flags().GetBool("upgrade")
 	version, _ := cmd.Flags().GetString("version")
 
 	tripleInstall, _ := cmd.Flags().GetBool("install")
@@ -122,7 +127,7 @@ func run(cmd *cobra.Command) error {
 	}
 
 	if local {
-		return runDefaultLocal(version)
+		return runDefaultLocal(upgrade, version)
 	}
-	return runDefaultWeb(version)
+	return runDefaultWeb(upgrade, version)
 }

@@ -15,16 +15,18 @@ import (
 )
 
 // runDefaultLocal installs the whisper.cpp libraries for the current
-// host using the well-known default version (or the supplied version)
-// and then initializes the bucky runtime against the install path so
-// the libraries can be loaded.
-func runDefaultLocal(version string) error {
+// host using the well-known default version (or the supplied version,
+// or the latest published release when upgrade is set) and then
+// initializes the bucky runtime against the install path so the
+// libraries can be loaded.
+func runDefaultLocal(upgrade bool, version string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	lib, err := libs.New(
 		libs.WithLibPath(""),
 		libs.WithVersion(version),
+		libs.WithAllowUpgrade(upgrade),
 	)
 	if err != nil {
 		return fmt.Errorf("bucky libs: new: %w", err)
@@ -44,15 +46,20 @@ func runDefaultLocal(version string) error {
 // runDefaultWeb installs the whisper.cpp libraries for the active
 // triple by streaming progress from the model server's
 // /v1/bucky/libs/pull endpoint.
-func runDefaultWeb(version string) error {
+func runDefaultWeb(upgrade bool, version string) error {
 	url, err := client.DefaultURL("/v1/bucky/libs/pull")
 	if err != nil {
 		return fmt.Errorf("bucky libs: default url: %w", err)
 	}
 
+	q := neturl.Values{}
+	if upgrade {
+		q.Set("allow-upgrade", "true")
+	}
 	if version != "" {
-		q := neturl.Values{}
 		q.Set("version", version)
+	}
+	if len(q) > 0 {
 		url += "?" + q.Encode()
 	}
 

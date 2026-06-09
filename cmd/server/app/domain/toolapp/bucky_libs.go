@@ -12,17 +12,15 @@ import (
 )
 
 // listBuckyLibs returns the installed whisper.cpp library version for
-// the active triple. Unlike the llama backend, bucky's library system
-// does not track an "allow upgrade" toggle and does not synthesize a
-// "latest" comparison, so the response is a thin status envelope around
-// the on-disk version tag.
+// the active triple, reporting whether the libs handle is configured to
+// track the latest whisper.cpp release (AllowUpgrade).
 func (a *app) listBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 	tag, err := a.buckyLibs.InstalledVersion()
 	if err != nil {
-		return toAppVersionTag("not installed", tag, false)
+		return toAppVersionTag("not installed", tag, a.buckyLibs.AllowUpgrade)
 	}
 
-	return toAppVersionTag("retrieve", tag, false)
+	return toAppVersionTag("retrieve", tag, a.buckyLibs.AllowUpgrade)
 }
 
 // pullBuckyLibs streams a whisper.cpp library install. With no triple
@@ -60,6 +58,14 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 
 	// -------------------------------------------------------------------------
 
+	// A version override or cross-triple install always wins over upgrade
+	// tracking, so only honor allow-upgrade for an active-triple default
+	// install. This mirrors the llama backend's pullLibs behavior.
+	allowUpgrade := a.buckyLibs.AllowUpgrade
+	if !tripleAll && version == "" && q.Get("allow-upgrade") != "" {
+		allowUpgrade = true
+	}
+
 	logger := func(ctx context.Context, msg string, args ...any) {
 		var sb strings.Builder
 		for i := 0; i < len(args); i += 2 {
@@ -69,11 +75,21 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 		}
 
 		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
-		ver := toAppVersion(status, buckylibs.VersionTag{}, false)
+		ver := toAppVersion(status, buckylibs.VersionTag{}, allowUpgrade)
 
 		a.log.Info(ctx, "pull-bucky-libs", "info", ver[:len(ver)-1])
 		fmt.Fprint(w, ver)
 		f.Flush()
+	}
+
+	// I know this is a hack and a race condition. I expect this situation
+	// to only exist for a few people and in a single tenant mode.
+	if allowUpgrade && !a.buckyLibs.AllowUpgrade {
+		a.log.Info(ctx, "pull-bucky-libs", "status", "allowing libs upgrade")
+		a.buckyLibs.AllowUpgrade = true
+		defer func() {
+			a.buckyLibs.AllowUpgrade = false
+		}()
 	}
 
 	var (
@@ -92,14 +108,14 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 		tag, err = a.buckyLibs.Download(ctx, logger)
 	}
 	if err != nil {
-		ver := toAppVersion(err.Error(), buckylibs.VersionTag{}, false)
+		ver := toAppVersion(err.Error(), buckylibs.VersionTag{}, allowUpgrade)
 		a.log.Info(ctx, "pull-bucky-libs", "status", "ERROR", "error", err.Error())
 		fmt.Fprint(w, ver)
 		f.Flush()
 		return web.NewNoResponse()
 	}
 
-	ver := toAppVersion("downloaded", tag, false)
+	ver := toAppVersion("downloaded", tag, allowUpgrade)
 	a.log.Info(ctx, "pull-bucky-libs", "info", ver[:len(ver)-1])
 	fmt.Fprint(w, ver)
 	f.Flush()
