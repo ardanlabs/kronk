@@ -10,6 +10,16 @@
             "models": {
                 "unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
                     "name": "Qwen3.6 35B-A3B UD-Q8_K_XL",
+                    "attachment": true,
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
                     "limit": {
                         "context": 131072,
                         "output": 65536
@@ -17,6 +27,15 @@
                 },
                 "unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
                     "name": "Gemma4 26B-A4B UD-Q8_K_XL",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
                     "limit": {
                         "context": 131072,
                         "output": 65536
