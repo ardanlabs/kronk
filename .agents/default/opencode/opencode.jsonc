@@ -71,6 +71,14 @@
         "kronk": {
             "type": "remote",
             "url": "http://localhost:9000/mcp"
+        },
+        "gopls": {
+            "type": "local",
+            "command": [
+                "gopls",
+                "mcp"
+            ],
+            "enabled": true
         }
     },
     "plugin": [
