@@ -84,4 +84,7 @@
             "disable": true
         }
     },
+    "experimental": {
+        "openTelemetry": false
+    }
 }

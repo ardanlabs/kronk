@@ -12,6 +12,7 @@
 agents-default-opencode:
 	mkdir -p $$HOME/.config/opencode
 	cp .agents/default/opencode/opencode.jsonc $$HOME/.config/opencode/opencode.jsonc
+	cp .agents/default/opencode/tui.jsonc $$HOME/.config/opencode/tui.jsonc
 	cp .agents/default/opencode/auth.json $$HOME/.config/opencode/auth.json
 	cp .agents/default/AGENTS.md $$HOME/.config/opencode/AGENTS.md
 	rm -rf $$HOME/.config/opencode/skills
@@ -107,6 +108,7 @@ agents-rote-seed: agents-rote-playground
 agents-rote-opencode:
 	mkdir -p $$HOME/.config/opencode
 	cp .agents/rote/opencode/opencode.jsonc $$HOME/.config/opencode/opencode.jsonc
+	cp .agents/rote/opencode/tui.jsonc $$HOME/.config/opencode/tui.jsonc
 	cp .agents/rote/opencode/auth.json $$HOME/.config/opencode/auth.json
 	cp .agents/rote/AGENTS.md $$HOME/.config/opencode/AGENTS.md
 	rm -rf $$HOME/.config/opencode/skills
