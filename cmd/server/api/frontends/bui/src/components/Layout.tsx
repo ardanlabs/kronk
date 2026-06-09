@@ -4,6 +4,7 @@ import Prism from 'prismjs';
 import { type Page, routeMap, pathToPage } from '../App';
 import { useDownload } from '../contexts/DownloadContext';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
+import { useAccuracyRunner } from '../contexts/AccuracyRunnerContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { TRIAL_PAUSE_MS } from '../services/autoTestRunner';
 
@@ -265,6 +266,12 @@ export default function Layout({ children }: LayoutProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const { download, isDownloading } = useDownload();
   const { run, isRunning: isAutoTesting, stopRun } = useAutoTestRunner();
+  const {
+    activeRun: accuracyRun,
+    stopActive: stopAccuracy,
+    completedRun: accuracyCompleted,
+    dismissCompleted: dismissAccuracy,
+  } = useAccuracyRunner();
   const { theme, toggleTheme } = useTheme();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -367,6 +374,15 @@ export default function Layout({ children }: LayoutProps) {
 
   const showAutoTestIndicator = !!run;
   const showDownloadIndicator = !!download;
+  const showAccuracyIndicator = !!accuracyRun || !!accuracyCompleted;
+
+  const accuracyTitle = accuracyRun
+    ? accuracyRun.mode === 'manual'
+      ? 'Accuracy test...'
+      : accuracyRun.mode === 'batch'
+        ? 'Accuracy batch...'
+        : 'Accuracy compare...'
+    : '';
 
   // Auto-expand categories that contain the current page
   useEffect(() => {
@@ -556,7 +572,7 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
         </div>
         <nav>{menuStructure.map((category) => renderCategory(category))}</nav>
-        {(showAutoTestIndicator || showDownloadIndicator) && (
+        {(showAutoTestIndicator || showDownloadIndicator || showAccuracyIndicator) && (
           <div className="sidebar-indicators">
             {showAutoTestIndicator && (
               <div className="download-indicator">
@@ -620,6 +636,58 @@ export default function Layout({ children }: LayoutProps) {
                     </div>
                   )}
                 </Link>
+              </div>
+            )}
+            {showAccuracyIndicator && accuracyRun && (
+              <div className="download-indicator">
+                <div className="download-indicator-link autotest-indicator-link">
+                  <Link to={routeMap['accuracy']} className="autotest-indicator-top">
+                    <div className="download-indicator-header">
+                      <span className="download-indicator-spinner" />
+                      <span className="download-indicator-title">{accuracyTitle}</span>
+                    </div>
+                    <div className="download-indicator-url" title={accuracyRun.label}>
+                      {accuracyRun.label}
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="autotest-indicator-stop"
+                    onClick={stopAccuracy}
+                    aria-label="Stop accuracy run"
+                    title="Stop accuracy run"
+                  >
+                    ■
+                  </button>
+                </div>
+              </div>
+            )}
+            {showAccuracyIndicator && !accuracyRun && accuracyCompleted && (
+              <div className="download-indicator">
+                <div className="download-indicator-link autotest-indicator-link">
+                  <Link to={routeMap['accuracy']} className="autotest-indicator-top">
+                    <div className="download-indicator-header">
+                      {accuracyCompleted.ok ? (
+                        <span className="download-indicator-icon success">✓</span>
+                      ) : (
+                        <span className="download-indicator-icon error">✗</span>
+                      )}
+                      <span className="download-indicator-title">{accuracyCompleted.title}</span>
+                    </div>
+                    <div className="download-indicator-url" title={accuracyCompleted.summary}>
+                      {accuracyCompleted.summary}
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="autotest-indicator-stop"
+                    onClick={dismissAccuracy}
+                    aria-label="Dismiss accuracy result"
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             )}
           </div>

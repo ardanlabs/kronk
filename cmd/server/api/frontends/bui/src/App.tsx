@@ -46,6 +46,7 @@ import { ChatProvider } from './contexts/ChatContext';
 import { ChatHistoryProvider } from './contexts/ChatHistoryContext';
 import { SamplingProvider } from './contexts/SamplingContext';
 import { AutoTestRunnerProvider } from './contexts/AutoTestRunnerContext';
+import { AccuracyRunnerProvider } from './contexts/AccuracyRunnerContext';
 import { PlaygroundProvider } from './contexts/PlaygroundContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 
@@ -188,6 +189,7 @@ function App() {
       <ThemeProvider>
       <TokenProvider>
         <ModelListProvider>
+          <AccuracyRunnerProvider>
           <DownloadProvider>
             <AutoTestRunnerProvider>
             <PlaygroundProvider>
@@ -244,6 +246,7 @@ function App() {
             </PlaygroundProvider>
             </AutoTestRunnerProvider>
           </DownloadProvider>
+          </AccuracyRunnerProvider>
         </ModelListProvider>
       </TokenProvider>
       </ThemeProvider>

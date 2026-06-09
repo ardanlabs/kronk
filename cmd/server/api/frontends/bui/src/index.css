@@ -5751,14 +5751,56 @@ button.autotest-detail-log-header:focus-visible {
   font-size: 0.85rem;
 }
 
-.accuracy-mode-toggle {
+/* Selection label ("Select a Function:") with the functions count + sort
+   control inline on the same row. */
+.accuracy-label-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: 1.5rem;
+  margin-bottom: 6px;
 }
 
+/* The selection label ("Select a Function:" / "Select Functions:"). Styled
+   explicitly so Batch (not wrapped in a .form-group) matches the others. */
+.accuracy-label-row > label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-gray-800);
+  margin-bottom: 0;
+}
+
+.accuracy-functions-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Shared label style for the selection words ("Select a Function:",
+   "Models …", "N functions", "Sort by:") so they match throughout. */
 .accuracy-count,
+.accuracy-functions-meta label,
+.accuracy-compare-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-gray-800);
+  white-space: nowrap;
+}
+
+.accuracy-functions-meta label {
+  margin-bottom: 0;
+}
+
+/* The inline "Sort by" select. Kept compact and styled explicitly (border +
+   radius) so it looks identical in every mode, including Batch where it isn't
+   inside a .form-group. */
+.accuracy-functions-meta select {
+  width: auto;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-gray-300);
+  border-radius: 6px;
+}
+
 .accuracy-meta {
   font-size: 0.85rem;
   color: var(--color-muted);
@@ -5878,12 +5920,19 @@ button.autotest-detail-log-header:focus-visible {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.78rem;
   line-height: 1.45;
+  /* Shrink-to-fit the widest line (but never below the visible width) so
+     every line's background can span the full horizontal scroll width. */
+  display: inline-block;
+  min-width: 100%;
 }
 
 .accuracy-diff-line {
   display: flex;
   white-space: pre;
   padding: 0 0.5rem;
+  /* Fill the pre's width so each row's background covers the full scroll
+     width, not just the visible portion. */
+  min-width: 100%;
 }
 
 .accuracy-diff-gutter {
@@ -5917,6 +5966,93 @@ button.autotest-detail-log-header:focus-visible {
 
 .accuracy-row-clickable {
   cursor: pointer;
+}
+
+/* Compare mode */
+.accuracy-compare-label {
+  display: block;
+  margin: 0.75rem 0 0.4rem;
+}
+
+.accuracy-compare-results {
+  margin-top: 1rem;
+}
+
+.accuracy-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* Stacked layout: one full-width card per row so a long diff never has to
+   compete horizontally with another model's diff. */
+.accuracy-compare-grid.stacked {
+  grid-template-columns: 1fr;
+}
+
+.accuracy-compare-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.accuracy-compare-layout {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.accuracy-compare-card {
+  border: 1px solid var(--color-gray-200);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--color-white);
+  min-width: 0;
+}
+
+.accuracy-compare-winner {
+  border-color: var(--color-success-text);
+  box-shadow: 0 0 0 1px var(--color-success-text);
+}
+
+.accuracy-compare-tied {
+  border-color: var(--color-warning-text);
+  box-shadow: 0 0 0 1px var(--color-warning-text);
+}
+
+.accuracy-compare-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.accuracy-compare-model {
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accuracy-compare-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-success-text);
+  background: var(--color-success-bg);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.accuracy-compare-badge-tied {
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
 }
 
 /* Accuracy diff title + key */

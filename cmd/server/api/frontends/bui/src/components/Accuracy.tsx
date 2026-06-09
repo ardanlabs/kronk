@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../services/api';
+import { useMemo } from 'react';
 import { useModelList } from '../contexts/ModelListContext';
+import {
+  useAccuracyRunner,
+  isChatModel,
+  MAX_COMPARE,
+  MAX_RANDOM,
+  type BatchRow,
+  type SortBy,
+} from '../contexts/AccuracyRunnerContext';
 import type { AccuracyFunction, AccuracyResponse } from '../types';
-
-type Mode = 'manual' | 'batch';
-type SortBy = 'line' | 'loc' | 'name';
 
 // sortFunctions returns a copy of the list ordered by the chosen field.
 function sortFunctions(list: AccuracyFunction[], by: SortBy): AccuracyFunction[] {
@@ -22,30 +26,22 @@ function sortFunctions(list: AccuracyFunction[], by: SortBy): AccuracyFunction[]
   return out;
 }
 
-// A batch row tracks a single function's run lifecycle.
-interface BatchRow {
-  identifier: string;
-  line: number;
-  loc: number;
-  status: 'pending' | 'running' | 'done' | 'error';
-  result?: AccuracyResponse;
-  error?: string;
-}
-
-const DEFAULT_RANDOM = 5;
-const MAX_RANDOM = 5;
-
-// isChatModel filters out embedding/rerank models, matching the Chat app.
-function isChatModel(id: string): boolean {
-  const lid = id.toLowerCase();
-  return !lid.includes('embed') && !lid.includes('rerank');
-}
-
 // matchClass colors a percentage: green (strong), amber (partial), red (weak).
 function matchClass(pct: number): string {
   if (pct >= 90) return 'accuracy-match-good';
   if (pct >= 50) return 'accuracy-match-mid';
   return 'accuracy-match-bad';
+}
+
+// rankResult orders two compare results best-first: higher match %, then
+// faster (higher tps), then fewer completion tokens. Returns 0 only when all
+// three are identical (a true tie).
+function rankResult(a: AccuracyResponse, b: AccuracyResponse): number {
+  if (a.match_percent !== b.match_percent) return b.match_percent - a.match_percent;
+  if (a.usage.tokens_per_second !== b.usage.tokens_per_second) {
+    return b.usage.tokens_per_second - a.usage.tokens_per_second;
+  }
+  return a.usage.completion_tokens - b.usage.completion_tokens;
 }
 
 // DiffView renders the structured (-got +want) diff returned by the server,
@@ -77,187 +73,52 @@ function DiffView({ result, title = 'Code Difference' }: { result: AccuracyRespo
 }
 
 export default function Accuracy() {
-  const { models, loading: modelsLoading, loadModels } = useModelList();
+  const { models, loading: modelsLoading } = useModelList();
 
-  const [mode, setMode] = useState<Mode>('manual');
-  const [selectedModel, setSelectedModel] = useState('');
-
-  const [functions, setFunctions] = useState<AccuracyFunction[] | null>(null);
-  const [sortBy, setSortBy] = useState<SortBy>('line');
-  const [error, setError] = useState<string | null>(null);
-
-  // Manual mode state.
-  const [selectedFn, setSelectedFn] = useState('');
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<AccuracyResponse | null>(null);
-
-  // Batch mode state.
-  const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [randomCount, setRandomCount] = useState(DEFAULT_RANDOM);
-  const [rows, setRows] = useState<BatchRow[]>([]);
-  const [batchRunning, setBatchRunning] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const stopRef = useRef(false);
-
-  // Load models on mount.
-  useEffect(() => {
-    loadModels();
-  }, [loadModels]);
-
-  // Default to the first chat-capable model (same rule as the Chat app).
-  useEffect(() => {
-    if (models?.data && models.data.length > 0) {
-      const chatModels = models.data.filter((m) => isChatModel(m.id));
-      const valid = chatModels.some((m) => m.id === selectedModel);
-      if (!valid && chatModels.length > 0) {
-        setSelectedModel(chatModels[0].id);
-      }
-    }
-  }, [models, selectedModel]);
-
-  // Switching models resets the run state in both modes.
-  useEffect(() => {
-    setResult(null);
-    setRows([]);
-    setExpanded(new Set());
-    setChecked(new Set());
-    stopRef.current = true;
-  }, [selectedModel]);
-
-  // Load the fixed function list on mount.
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listAccuracyFunctions()
-      .then((resp) => {
-        if (cancelled) return;
-        setFunctions(resp.data);
-        if (resp.data.length > 0) setSelectedFn(resp.data[0].identifier);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to read functions');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // ── Manual run ──
-
-  async function runManual() {
-    if (!selectedModel || !selectedFn) return;
-    setRunning(true);
-    setError(null);
-    setResult(null);
-    try {
-      const resp = await api.runAccuracy(selectedModel, selectedFn);
-      setResult(resp);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Test failed');
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  // clearManual clears the current manual result.
-  function clearManual() {
-    setResult(null);
-    setError(null);
-  }
-
-  // ── Batch selection ──
-
-  function toggle(identifier: string) {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(identifier)) next.delete(identifier);
-      else next.add(identifier);
-      return next;
-    });
-  }
-
-  // clearAll clears the selection and any results (like Manual's Clear).
-  function clearAll() {
-    stopRef.current = true;
-    setChecked(new Set());
-    setRows([]);
-    setExpanded(new Set());
-  }
-
-  function pickRandom() {
-    const all = (functions ?? []).map((f) => f.identifier);
-    const n = Math.max(1, Math.min(randomCount, MAX_RANDOM, all.length));
-    // Fisher–Yates shuffle, then take the first n.
-    const shuffled = [...all];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    setChecked(new Set(shuffled.slice(0, n)));
-  }
-
-  // ── Batch run (sequential, client-side loop) ──
-
-  async function runBatch() {
-    if (!selectedModel || checked.size === 0) return;
-
-    const targets = (functions ?? []).filter((f) => checked.has(f.identifier));
-
-    setBatchRunning(true);
-    setError(null);
-    setExpanded(new Set());
-    stopRef.current = false;
-
-    const initial: BatchRow[] = targets.map((f) => ({
-      identifier: f.identifier,
-      line: f.line,
-      loc: f.loc,
-      status: 'pending',
-    }));
-    setRows(initial);
-
-    for (let i = 0; i < targets.length; i++) {
-      if (stopRef.current) break;
-      const fn = targets[i].identifier;
-
-      setRows((prev) =>
-        prev.map((r) => (r.identifier === fn ? { ...r, status: 'running' } : r)),
-      );
-
-      try {
-        const resp = await api.runAccuracy(selectedModel, fn);
-        setRows((prev) =>
-          prev.map((r) =>
-            r.identifier === fn ? { ...r, status: 'done', result: resp } : r,
-          ),
-        );
-      } catch (err) {
-        setRows((prev) =>
-          prev.map((r) =>
-            r.identifier === fn
-              ? { ...r, status: 'error', error: err instanceof Error ? err.message : 'failed' }
-              : r,
-          ),
-        );
-      }
-    }
-
-    setBatchRunning(false);
-  }
-
-  function stopBatch() {
-    stopRef.current = true;
-  }
-
-  function toggleExpand(identifier: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(identifier)) next.delete(identifier);
-      else next.add(identifier);
-      return next;
-    });
-  }
+  // All run state and logic lives in AccuracyRunnerContext so an in-progress
+  // run (and its results) survives navigating to other pages.
+  const {
+    mode,
+    setMode,
+    selectedModel,
+    setSelectedModel,
+    functions,
+    sortBy,
+    setSortBy,
+    error,
+    selectedFn,
+    setSelectedFn,
+    running,
+    result,
+    runManual,
+    stopManual,
+    clearManual,
+    checked,
+    setChecked,
+    randomCount,
+    setRandomCount,
+    rows,
+    batchRunning,
+    expanded,
+    toggle,
+    clearAll,
+    pickRandom,
+    runBatch,
+    stopBatch,
+    toggleExpand,
+    compareModels,
+    compareFn,
+    setCompareFn,
+    compareCells,
+    comparing,
+    compareLayout,
+    setCompareLayout,
+    toggleCompareModel,
+    clearCompare,
+    runCompare,
+    stopCompare,
+    isRunning,
+  } = useAccuracyRunner();
 
   // ── Derived ──
 
@@ -274,80 +135,141 @@ export default function Accuracy() {
     return sum / completed.length;
   }, [completed]);
 
+  const compareDoneCount = compareCells.filter(
+    (c) => c.status === 'done' || c.status === 'error',
+  ).length;
+  const compareFnInfo = sortedFunctions.find((f) => f.identifier === compareFn);
+
+  // compareOutcome decides the winner(s) by match %, then speed (tps), then
+  // conciseness (completion tokens). When models are identical on all three
+  // it reports a tie (co-winners) instead of arbitrarily picking one, and it
+  // explains which criterion separated a clear winner from the runner-up.
+  const compareOutcome = useMemo(() => {
+    const finished = compareCells.filter((c) => c.status === 'done' && c.result);
+    if (finished.length < 2) return null;
+
+    const sorted = [...finished].sort((x, y) => rankResult(x.result!, y.result!));
+    const top = sorted[0].result!;
+
+    const winners = sorted
+      .filter((c) => rankResult(c.result!, top) === 0)
+      .map((c) => c.model);
+
+    if (winners.length > 1) {
+      return { winners, tied: true, reason: 'identical match, speed & length' };
+    }
+
+    const runnerUp = sorted[1].result!;
+    let reason: string;
+    if (top.match_percent > runnerUp.match_percent) {
+      reason = 'highest match';
+    } else if (top.usage.tokens_per_second > runnerUp.usage.tokens_per_second) {
+      reason = 'fastest';
+    } else {
+      reason = 'fewest tokens';
+    }
+    return { winners, tied: false, reason };
+  }, [compareCells]);
+
+  // functionsMeta is the "N functions · Sort by" control shown inline next to
+  // each mode's selection label. Only one mode renders at a time, so the
+  // select id stays unique.
+  const functionsMeta = (
+    <span className="accuracy-functions-meta">
+      <span className="accuracy-count">{functions?.length ?? 0} functions</span>
+      <span className="accuracy-sort">
+        <label htmlFor="accuracy-sort">Sort by:</label>
+        <select
+          id="accuracy-sort"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortBy)}
+        >
+          <option value="line">Line number</option>
+          <option value="loc">Lines of Code</option>
+          <option value="name">Name</option>
+        </select>
+      </span>
+    </span>
+  );
+
   return (
     <div className="accuracy-page">
       <div className="page-header">
         <h2>Accuracy</h2>
         <p>
           Test how accurately a model recalls source code. Pick a model and a function,
-          then compare the model's output to the real source — in single or batch mode.
+          then compare the model's output to the real source — in single, batch, or
+          compare mode.
         </p>
       </div>
 
-      {/* Setup: model dropdown (Chat-style) */}
-      <div className="card accuracy-setup">
-        <div className="form-group">
-          <label>Model</label>
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            disabled={modelsLoading}
-          >
-            {modelsLoading && <option>Loading models...</option>}
-            {!modelsLoading && models?.data?.filter((m) => isChatModel(m.id)).length === 0 && (
-              <option>No models available</option>
-            )}
-            {models?.data
-              ?.filter((m) => isChatModel(m.id))
-              .map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
-          </select>
-        </div>
+      {/* Mode tabs */}
+      <div className="tabs">
+        <button
+          className={`tab ${mode === 'manual' ? 'active' : ''}`}
+          onClick={() => setMode('manual')}
+        >
+          Manual
+        </button>
+        <button
+          className={`tab ${mode === 'batch' ? 'active' : ''}`}
+          onClick={() => setMode('batch')}
+        >
+          Batch
+        </button>
+        <button
+          className={`tab ${mode === 'compare' ? 'active' : ''}`}
+          onClick={() => setMode('compare')}
+        >
+          Compare
+        </button>
       </div>
+
+      {/* Setup: model dropdown (Chat-style). Compare mode picks its own
+          set of models, so the single dropdown is hidden there. */}
+      {mode !== 'compare' && (
+        <div className="card accuracy-setup">
+          <div className="form-group">
+            <label>Model</label>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={modelsLoading || isRunning}
+            >
+              {modelsLoading && <option>Loading models...</option>}
+              {!modelsLoading && models?.data?.filter((m) => isChatModel(m.id)).length === 0 && (
+                <option>No models available</option>
+              )}
+              {models?.data
+                ?.filter((m) => isChatModel(m.id))
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id}
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {error && <div className="accuracy-error">{error}</div>}
 
       {functions && functions.length > 0 && (
         <>
-          {/* Mode toggle */}
-          <div className="accuracy-mode-toggle">
-            <button
-              className={`btn ${mode === 'manual' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setMode('manual')}
-            >
-              Manual
-            </button>
-            <button
-              className={`btn ${mode === 'batch' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setMode('batch')}
-            >
-              Batch
-            </button>
-            <span className="accuracy-count">{functions.length} functions</span>
-            <span className="accuracy-sort">
-              <label htmlFor="accuracy-sort">Sort by:</label>
-              <select
-                id="accuracy-sort"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortBy)}
-              >
-                <option value="line">Line number</option>
-                <option value="loc">Lines of Code</option>
-                <option value="name">Name</option>
-              </select>
-            </span>
-          </div>
-
           {/* Manual mode */}
           {mode === 'manual' && (
             <div className="card">
               <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label>Function</label>
-                  <select value={selectedFn} onChange={(e) => setSelectedFn(e.target.value)}>
+                  <div className="accuracy-label-row">
+                    <label>Select a Function:</label>
+                    {functionsMeta}
+                  </div>
+                  <select
+                    value={selectedFn}
+                    onChange={(e) => setSelectedFn(e.target.value)}
+                    disabled={running}
+                  >
                     {sortedFunctions.map((f) => (
                       <option key={f.identifier} value={f.identifier}>
                         {f.identifier} ({f.loc} loc) — line {f.line}
@@ -356,13 +278,19 @@ export default function Accuracy() {
                   </select>
                 </div>
                 <div className="form-group" style={{ alignSelf: 'flex-end' }}>
-                  <button
-                    className="btn btn-primary"
-                    onClick={runManual}
-                    disabled={running || !selectedModel || !selectedFn}
-                  >
-                    {running ? 'Running…' : 'Run test'}
-                  </button>
+                  {!running ? (
+                    <button
+                      className="btn btn-primary"
+                      onClick={runManual}
+                      disabled={!selectedModel || !selectedFn || isRunning}
+                    >
+                      Run test
+                    </button>
+                  ) : (
+                    <button className="btn btn-danger" onClick={stopManual}>
+                      Stop
+                    </button>
+                  )}
                 </div>
                 <div className="form-group" style={{ alignSelf: 'flex-end' }}>
                   <button
@@ -403,7 +331,11 @@ export default function Accuracy() {
                 <span className="accuracy-random">
                   <select
                     value={randomCount}
-                    onChange={(e) => setRandomCount(Number(e.target.value))}
+                    onChange={(e) => {
+                      setRandomCount(Number(e.target.value));
+                      // Changing the count starts a fresh selection.
+                      setChecked(new Set());
+                    }}
                     disabled={batchRunning}
                     style={{ width: '4rem' }}
                   >
@@ -426,7 +358,7 @@ export default function Accuracy() {
                     <button
                       className="btn btn-primary"
                       onClick={runBatch}
-                      disabled={!selectedModel || checked.size === 0}
+                      disabled={!selectedModel || checked.size === 0 || isRunning}
                     >
                       Run {checked.size || ''} tests
                     </button>
@@ -439,6 +371,10 @@ export default function Accuracy() {
               </div>
 
               {/* Function picker */}
+              <div className="accuracy-label-row">
+                <label>Select Functions:</label>
+                {functionsMeta}
+              </div>
               <div className="accuracy-func-grid">
                 {sortedFunctions.map((f) => (
                   <label key={f.identifier} className="accuracy-func-item">
@@ -446,7 +382,10 @@ export default function Accuracy() {
                       type="checkbox"
                       checked={checked.has(f.identifier)}
                       onChange={() => toggle(f.identifier)}
-                      disabled={batchRunning}
+                      disabled={
+                        batchRunning ||
+                        (!checked.has(f.identifier) && checked.size >= MAX_RANDOM)
+                      }
                     />
                     <span className="accuracy-func-name" title={f.identifier}>{f.identifier}</span>
                     <span className="accuracy-func-loc">({f.loc} loc)</span>
@@ -490,6 +429,166 @@ export default function Accuracy() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Compare mode */}
+          {mode === 'compare' && (
+            <div className="card">
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <div className="accuracy-label-row">
+                    <label>Select a Function:</label>
+                    {functionsMeta}
+                  </div>
+                  <select
+                    value={compareFn}
+                    onChange={(e) => setCompareFn(e.target.value)}
+                    disabled={comparing}
+                  >
+                    {sortedFunctions.map((f) => (
+                      <option key={f.identifier} value={f.identifier}>
+                        {f.identifier} ({f.loc} loc) — line {f.line}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group" style={{ alignSelf: 'flex-end' }}>
+                  {!comparing ? (
+                    <button
+                      className="btn btn-primary"
+                      onClick={runCompare}
+                      disabled={compareModels.size < 2 || !compareFn || isRunning}
+                    >
+                      Compare {compareModels.size || ''} models
+                    </button>
+                  ) : (
+                    <button className="btn btn-danger" onClick={stopCompare}>
+                      Stop ({compareDoneCount}/{compareCells.length})
+                    </button>
+                  )}
+                </div>
+                <div className="form-group" style={{ alignSelf: 'flex-end' }}>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={clearCompare}
+                    disabled={comparing}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {/* Model picker (exactly MAX_COMPARE) */}
+              <label className="accuracy-compare-label">
+                Models — pick {MAX_COMPARE} ({compareModels.size} selected)
+              </label>
+              <div className="accuracy-func-grid">
+                {models?.data
+                  ?.filter((m) => isChatModel(m.id))
+                  .map((m) => (
+                    <label key={m.id} className="accuracy-func-item">
+                      <input
+                        type="checkbox"
+                        checked={compareModels.has(m.id)}
+                        onChange={() => toggleCompareModel(m.id)}
+                        disabled={comparing}
+                      />
+                      <span className="accuracy-func-name" title={m.id}>{m.id}</span>
+                    </label>
+                  ))}
+              </div>
+
+              {/* Results: shared function header + one card per model */}
+              {compareCells.length > 0 && (
+                <div className="accuracy-compare-results">
+                  <div className="accuracy-compare-toolbar">
+                    <div className="accuracy-fields">
+                      <span>
+                        Function:{' '}
+                        <strong>
+                          {compareFn}
+                          {compareFnInfo ? ` (${compareFnInfo.loc} loc)` : ''}
+                        </strong>
+                      </span>
+                      {compareFnInfo && <span>line: {compareFnInfo.line}</span>}
+                    </div>
+                    <div className="accuracy-compare-layout">
+                      <button
+                        className={`btn btn-sm ${compareLayout === 'columns' ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setCompareLayout('columns')}
+                      >
+                        Side by side
+                      </button>
+                      <button
+                        className={`btn btn-sm ${compareLayout === 'stacked' ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setCompareLayout('stacked')}
+                      >
+                        Stacked
+                      </button>
+                    </div>
+                  </div>
+                  <div className={`accuracy-compare-grid${compareLayout === 'stacked' ? ' stacked' : ''}`}>
+                    {compareCells.map((c) => {
+                      const isWinner = compareOutcome?.winners.includes(c.model) ?? false;
+                      const tied = compareOutcome?.tied ?? false;
+                      return (
+                      <div
+                        key={c.model}
+                        className={`accuracy-compare-card${
+                          isWinner
+                            ? tied
+                              ? ' accuracy-compare-tied'
+                              : ' accuracy-compare-winner'
+                            : ''
+                        }`}
+                      >
+                        <div className="accuracy-compare-card-head">
+                          <span className="accuracy-compare-model" title={c.model}>
+                            {c.model}
+                          </span>
+                          {isWinner && (
+                            <span
+                              className={`accuracy-compare-badge${
+                                tied ? ' accuracy-compare-badge-tied' : ''
+                              }`}
+                              title={
+                                tied
+                                  ? 'Tied — identical match %, tokens/sec, and completion tokens'
+                                  : `Best — won on ${compareOutcome!.reason}`
+                              }
+                            >
+                              {tied ? 'Tied' : `Best · ${compareOutcome!.reason}`}
+                            </span>
+                          )}
+                        </div>
+                        {c.status === 'done' && c.result ? (
+                          <>
+                            <div className="accuracy-result-top">
+                              <span className={`accuracy-match ${matchClass(c.result.match_percent)}`}>
+                                {c.result.match_percent.toFixed(2)}% match
+                              </span>
+                              <span className="accuracy-meta">
+                                {c.result.usage.prompt_tokens} in /{' '}
+                                {c.result.usage.completion_tokens} out ·{' '}
+                                {c.result.usage.tokens_per_second.toFixed(1)} tps
+                              </span>
+                            </div>
+                            <DiffView result={c.result} />
+                          </>
+                        ) : c.status === 'running' ? (
+                          <div className="accuracy-meta">running…</div>
+                        ) : c.status === 'error' ? (
+                          <div className="accuracy-error-cell">{c.error}</div>
+                        ) : (
+                          <div className="accuracy-meta">pending</div>
+                        )}
+                      </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
