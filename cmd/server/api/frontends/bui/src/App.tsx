@@ -38,6 +38,7 @@ import DocsAPITools from './components/DocsAPITools';
 import DocsManual from './components/DocsManual';
 import VRAMCalculator from './components/VRAMCalculator';
 import ModelPlayground from './components/ModelPlayground';
+import Accuracy from './components/Accuracy';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
 import { DownloadProvider } from './contexts/DownloadContext';
@@ -45,6 +46,7 @@ import { ChatProvider } from './contexts/ChatContext';
 import { ChatHistoryProvider } from './contexts/ChatHistoryContext';
 import { SamplingProvider } from './contexts/SamplingContext';
 import { AutoTestRunnerProvider } from './contexts/AutoTestRunnerContext';
+import { AccuracyRunnerProvider } from './contexts/AccuracyRunnerContext';
 import { PlaygroundProvider } from './contexts/PlaygroundContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 
@@ -53,6 +55,7 @@ export type Page =
   | 'chat'
   | 'vram-calculator'
   | 'playground'
+  | 'accuracy'
   | 'model-list'
   | 'model-ps'
   | 'model-pull'
@@ -94,6 +97,7 @@ export const routeMap: Record<Page, string> = {
   'chat': '/chat',
   'vram-calculator': '/vram-calculator',
   'playground': '/playground',
+  'accuracy': '/accuracy',
   'model-list': '/models',
   'model-ps': '/models/running',
   'model-pull': '/models/pull',
@@ -185,6 +189,7 @@ function App() {
       <ThemeProvider>
       <TokenProvider>
         <ModelListProvider>
+          <AccuracyRunnerProvider>
           <DownloadProvider>
             <AutoTestRunnerProvider>
             <PlaygroundProvider>
@@ -197,6 +202,7 @@ function App() {
                 <Route path="/chat" element={<Chat />} />
                 <Route path="/vram-calculator" element={<VRAMCalculator />} />
                 <Route path="/playground" element={<ModelPlayground />} />
+                <Route path="/accuracy" element={<Accuracy />} />
                 <Route path="/models" element={<ModelList />} />
                 <Route path="/models/running" element={<ModelPs />} />
                 <Route path="/models/pull" element={<ModelPull />} />
@@ -240,6 +246,7 @@ function App() {
             </PlaygroundProvider>
             </AutoTestRunnerProvider>
           </DownloadProvider>
+          </AccuracyRunnerProvider>
         </ModelListProvider>
       </TokenProvider>
       </ThemeProvider>

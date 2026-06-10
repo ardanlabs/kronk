@@ -994,3 +994,40 @@ export interface TranscriptionResponse {
   text: string;
   segments: TranscriptionSegment[];
 }
+
+// =============================================================================
+// Accuracy app — model code-recall comparison
+
+export interface AccuracyFunction {
+  num: number;
+  line: number;
+  loc: number;
+  identifier: string;
+}
+
+export interface AccuracyFunctionsResponse {
+  object: string;
+  data: AccuracyFunction[];
+}
+
+export interface AccuracyDiffLine {
+  op: 'context' | 'del' | 'add';
+  text: string;
+}
+
+export interface AccuracyUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  tokens_per_second: number;
+}
+
+export interface AccuracyResponse {
+  model: string;
+  function: string;
+  line: number;
+  match_percent: number;
+  want: string;
+  got: string;
+  diff: AccuracyDiffLine[];
+  usage: AccuracyUsage;
+}

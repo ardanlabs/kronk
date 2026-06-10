@@ -35,6 +35,8 @@ import type {
   BuckyModelActionResponse,
   BuckyModelDetails,
   TranscriptionResponse,
+  AccuracyFunctionsResponse,
+  AccuracyResponse,
 } from '../types';
 
 class ApiService {
@@ -950,6 +952,24 @@ class ApiService {
     }
 
     return response.json();
+  }
+
+  // ── Accuracy app ──
+
+  async listAccuracyFunctions(): Promise<AccuracyFunctionsResponse> {
+    return this.request<AccuracyFunctionsResponse>('/accuracy/functions');
+  }
+
+  async runAccuracy(
+    model: string,
+    fn: string,
+    signal?: AbortSignal,
+  ): Promise<AccuracyResponse> {
+    return this.request<AccuracyResponse>('/accuracy/test', {
+      method: 'POST',
+      body: JSON.stringify({ model, function: fn }),
+      signal,
+    });
   }
 
 }
