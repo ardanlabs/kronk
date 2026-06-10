@@ -16,8 +16,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-// accuracyCode is the fixed source the Accuracy app tests against. It is the
-// same file checked in at examples/kaleah/code.chunk, embedded into the
+// accuracyCode is the fixed source the Accuracy app tests against. The
+// code.chunk file is checked in alongside this package and embedded into the
 // binary so the feature works with no upload or external file.
 //
 //go:embed code.chunk
@@ -25,9 +25,9 @@ var accuracyCode []byte
 
 // accuracyContextWindow is the context window used when loading the model for
 // a test. The whole source file is sent as context (~33k tokens), so the model
-// must be loaded with a large window — mirroring examples/kaleah/main.go which
-// used WithContextWindow(131072). Without this, a model resolved with the
-// default 8K window overflows and the inference call fails.
+// must be loaded with a large window using WithContextWindow(131072). Without
+// this, a model resolved with the default 8K window overflows and the
+// inference call fails.
 const accuracyContextWindow = 131072
 
 // =============================================================================
@@ -163,9 +163,9 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "unable to extract function: %s", err)
 	}
 
-	// Replicate examples/kaleah/main.go: load the model with a large context
-	// window and incremental caching disabled. Resolve the model's normal
-	// config, override those two settings, and acquire a dedicated instance.
+	// Load the model with a large context window and incremental caching
+	// disabled. Resolve the model's normal config, override those two settings,
+	// and acquire a dedicated instance.
 	cfg, err := a.models.KronkResolvedConfig(req.Model, a.pool.Kronk.ModelConfig())
 	if err != nil {
 		return errs.New(errs.InvalidArgument, fmt.Errorf("resolving model config: %w", err))
