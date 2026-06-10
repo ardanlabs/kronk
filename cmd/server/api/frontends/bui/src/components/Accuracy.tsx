@@ -277,7 +277,7 @@ export default function Accuracy() {
                     ))}
                   </select>
                 </div>
-                <div className="form-group" style={{ alignSelf: 'flex-end' }}>
+                <div className="form-group" style={{ alignSelf: 'flex-end', display: 'flex', flexDirection: 'row', gap: '0.5rem' }}>
                   {!running ? (
                     <button
                       className="btn btn-primary"
@@ -291,8 +291,6 @@ export default function Accuracy() {
                       Stop
                     </button>
                   )}
-                </div>
-                <div className="form-group" style={{ alignSelf: 'flex-end' }}>
                   <button
                     className="btn btn-secondary"
                     onClick={clearManual}
@@ -456,7 +454,7 @@ export default function Accuracy() {
                     ))}
                   </select>
                 </div>
-                <div className="form-group" style={{ alignSelf: 'flex-end' }}>
+                <div className="form-group" style={{ alignSelf: 'flex-end', display: 'flex', flexDirection: 'row', gap: '0.5rem' }}>
                   {!comparing ? (
                     <button
                       className="btn btn-primary"
@@ -470,8 +468,6 @@ export default function Accuracy() {
                       Stop ({compareDoneCount}/{compareCells.length})
                     </button>
                   )}
-                </div>
-                <div className="form-group" style={{ alignSelf: 'flex-end' }}>
                   <button
                     className="btn btn-secondary"
                     onClick={clearCompare}
