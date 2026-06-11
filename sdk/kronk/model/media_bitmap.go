@@ -38,7 +38,7 @@ func newMediaBitmap(ctx mtmd.Context, med []byte) (mtmd.Bitmap, error) {
 		return newImageBitmap(med)
 
 	case MediaTypeAudio:
-		bmp := mtmd.BitmapInitFromBuf(ctx, &med[0], uint64(len(med)), false)
+		bmp := mtmd.BitmapInitFromBuf(ctx, &med[0], uint64(len(med)), false).Bitmap
 		if bmp == 0 {
 			return 0, fmt.Errorf("mtmd could not decode audio payload")
 		}
