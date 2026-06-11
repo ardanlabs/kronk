@@ -19,6 +19,11 @@ interface PlaygroundState {
   playgroundMode: 'automated' | 'manual' | 'history';
   setPlaygroundMode: React.Dispatch<React.SetStateAction<'automated' | 'manual' | 'history'>>;
 
+  // Automated-testing sweep selection (Sampling vs Configurator). Lifted here
+  // so the Testing menu can deep-link straight to the right sweep.
+  sweepMode: 'sampling' | 'config';
+  setSweepMode: React.Dispatch<React.SetStateAction<'sampling' | 'config'>>;
+
   // Active tab (within manual mode)
   activeTab: 'chat' | 'tools' | 'inspector';
   setActiveTab: React.Dispatch<React.SetStateAction<'chat' | 'tools' | 'inspector'>>;
@@ -72,6 +77,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [chatMessages, setChatMessages] = useState<DisplayMessage[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [playgroundMode, setPlaygroundMode] = useState<'automated' | 'manual' | 'history'>('automated');
+  const [sweepMode, setSweepMode] = useState<'sampling' | 'config'>('sampling');
   const [activeTab, setActiveTab] = useState<'chat' | 'tools' | 'inspector'>('chat');
   const [systemPrompt, setSystemPrompt] = useState('You are a helpful assistant.');
   const [lastTPS, setLastTPS] = useState<number | null>(null);
@@ -95,6 +101,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     chatMessages, setChatMessages,
     selectedModel, setSelectedModel,
     playgroundMode, setPlaygroundMode,
+    sweepMode, setSweepMode,
     activeTab, setActiveTab,
     systemPrompt, setSystemPrompt,
     lastTPS, setLastTPS,
@@ -113,7 +120,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     tensorBuftOverrides, setTensorBuftOverrides,
     hydratedModelId, setHydratedModelId,
   }), [
-    session, chatMessages, selectedModel, playgroundMode, activeTab, systemPrompt, lastTPS,
+    session, chatMessages, selectedModel, playgroundMode, sweepMode, activeTab, systemPrompt, lastTPS,
     templateMode, selectedTemplate, customScript, contextWindow, nBatch, nUBatch,
     nSeqMax, flashAttention, cacheType, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
   ]);

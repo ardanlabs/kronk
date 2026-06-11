@@ -3105,6 +3105,12 @@ code[class*="language-"] {
     color: var(--color-gray-800);
 }
 
+.playground-header-subtitle {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--color-gray-600);
+}
+
 .playground-layout {
     display: flex;
     gap: 24px;
@@ -4743,6 +4749,24 @@ button.autotest-detail-log-header:focus-visible {
     color: var(--color-gray-500);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+.playground-sweep-advanced {
+    grid-column: 1 / -1;
+}
+
+.playground-sweep-advanced > summary {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-gray-500);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    margin: 8px 0;
+}
+
+.playground-sweep-advanced > .playground-sweep-params {
     margin-top: 4px;
 }
 

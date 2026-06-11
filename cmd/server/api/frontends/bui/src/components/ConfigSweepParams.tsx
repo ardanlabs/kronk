@@ -155,7 +155,7 @@ export default function ConfigSweepParams({
         <div className="playground-sweep-param">
           <FieldLabel className="playground-sweep-param-toggle" tooltipKey="cacheMode">Cache Mode</FieldLabel>
           <div className="playground-sweep-option-checks">
-            {['none', 'spc', 'imc'].map((val) => (
+            {['none', 'imc'].map((val) => (
               <label key={val} className="playground-sweep-option-label">
                 <input
                   type="checkbox"

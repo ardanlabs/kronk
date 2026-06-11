@@ -37,7 +37,9 @@ import DocsAPITokenize from './components/DocsAPITokenize';
 import DocsAPITools from './components/DocsAPITools';
 import DocsManual from './components/DocsManual';
 import VRAMCalculator from './components/VRAMCalculator';
-import ModelPlayground from './components/ModelPlayground';
+import TestingBasic from './components/TestingBasic';
+import TestingSampling from './components/TestingSampling';
+import TestingConfiguration from './components/TestingConfiguration';
 import Accuracy from './components/Accuracy';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
@@ -54,8 +56,10 @@ export type Page =
   | 'home'
   | 'chat'
   | 'vram-calculator'
-  | 'playground'
   | 'accuracy'
+  | 'testing-basic'
+  | 'testing-sampling'
+  | 'testing-configurator'
   | 'model-list'
   | 'model-ps'
   | 'model-pull'
@@ -96,8 +100,10 @@ export const routeMap: Record<Page, string> = {
   'home': '/',
   'chat': '/chat',
   'vram-calculator': '/vram-calculator',
-  'playground': '/playground',
   'accuracy': '/accuracy',
+  'testing-basic': '/testing/basic',
+  'testing-sampling': '/testing/sampling',
+  'testing-configurator': '/testing/configurator',
   'model-list': '/models',
   'model-ps': '/models/running',
   'model-pull': '/models/pull',
@@ -201,8 +207,10 @@ function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/chat" element={<Chat />} />
                 <Route path="/vram-calculator" element={<VRAMCalculator />} />
-                <Route path="/playground" element={<ModelPlayground />} />
                 <Route path="/accuracy" element={<Accuracy />} />
+                <Route path="/testing/basic" element={<TestingBasic />} />
+                <Route path="/testing/sampling" element={<TestingSampling />} />
+                <Route path="/testing/configurator" element={<TestingConfiguration />} />
                 <Route path="/models" element={<ModelList />} />
                 <Route path="/models/running" element={<ModelPs />} />
                 <Route path="/models/pull" element={<ModelPull />} />

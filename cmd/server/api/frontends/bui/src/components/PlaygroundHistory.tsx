@@ -11,8 +11,13 @@ import type { ColumnDef, CellMeta } from '../services/sweepModeColumns';
 import { sortRows, sortIndicator, nextSortDirection, BestTrialMetrics, TrialDetails } from './autoTestShared';
 import type { SortState } from './autoTestShared';
 
-export default function PlaygroundHistory() {
-  const [entries, setEntries] = useState<AutoTestHistoryEntry[]>([]);
+export default function PlaygroundHistory({ filterMode }: { filterMode?: AutoTestSweepMode }) {
+  const [allEntries, setEntries] = useState<AutoTestHistoryEntry[]>([]);
+  // When opened from a Testing screen, only show that screen's sweep type.
+  const entries = useMemo(
+    () => (filterMode ? allEntries.filter((e) => e.sweepMode === filterMode) : allEntries),
+    [allEntries, filterMode],
+  );
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
