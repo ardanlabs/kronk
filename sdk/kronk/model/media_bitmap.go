@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/ardanlabs/bucky/pkg/audio"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 
 	// Image decoders registered with image.Decode. Images are decoded in
@@ -25,52 +24,29 @@ import (
 // bytes) into an mtmd bitmap. The caller owns the returned bitmap and must
 // free it with mtmd.BitmapFree.
 //
-// Both images and audio are decoded in Go and handed to the stable mtmd core
-// API, avoiding the mtmd-helper bitmap functions whose signature and behavior
-// are explicitly unstable upstream (see mtmd-helper.h: "these helpers are not
-// guaranteed to be stable") and which broke audio decoding after the llama.cpp
-// upgrade:
+// Images are decoded in Go to packed RGB24 and handed to the stable
+// mtmd_bitmap_init(nx, ny, data) core API, avoiding the mtmd-helper bitmap
+// functions whose signature is explicitly unstable upstream (see
+// mtmd-helper.h: "these helpers are not guaranteed to be stable").
 //
-//   - Images are decoded to packed RGB24 and built via mtmd_bitmap_init(nx, ny,
-//     data).
-//   - Audio is decoded to 16 kHz mono PCM F32 and built via
-//     mtmd_bitmap_init_from_audio(n_samples, data).
-func newMediaBitmap(med []byte) (mtmd.Bitmap, error) {
+// Audio still flows through yzma's mtmd-helper binding
+// (mtmd.BitmapInitFromBuf) because decoding compressed audio
+// (WAV/MP3/OGG/FLAC) to PCM F32 in Go is not yet wired up.
+func newMediaBitmap(ctx mtmd.Context, med []byte) (mtmd.Bitmap, error) {
 	switch mediaTypeFromMagicBytes(med) {
 	case MediaTypeVision:
 		return newImageBitmap(med)
 
 	case MediaTypeAudio:
-		return newAudioBitmap(med)
+		bmp := mtmd.BitmapInitFromBuf(ctx, &med[0], uint64(len(med)), false).Bitmap
+		if bmp == 0 {
+			return 0, fmt.Errorf("mtmd could not decode audio payload")
+		}
+		return bmp, nil
 
 	default:
 		return 0, fmt.Errorf("media payload does not match any supported image or audio format")
 	}
-}
-
-// newAudioBitmap decodes encoded audio (WAV/MP3/FLAC) into 16 kHz mono PCM F32
-// samples and builds an mtmd bitmap via the stable mtmd_bitmap_init_from_audio
-// core API.
-//
-// Decoding in Go (rather than via the mtmd-helper) keeps audio on the same
-// stable, context-free core API as images. mtmd_bitmap_init_from_audio copies
-// the sample buffer, so the Go slice can be released after the call returns.
-func newAudioBitmap(med []byte) (mtmd.Bitmap, error) {
-	pcm, err := audio.Decode(bytes.NewReader(med))
-	if err != nil {
-		return 0, fmt.Errorf("decode audio: %w", err)
-	}
-	if len(pcm) == 0 {
-		return 0, fmt.Errorf("decoded audio contains no samples")
-	}
-
-	bmp := mtmd.BitmapInitFromAudio(uint64(len(pcm)), &pcm[0])
-	runtime.KeepAlive(pcm)
-	if bmp == 0 {
-		return 0, fmt.Errorf("mtmd_bitmap_init_from_audio returned 0")
-	}
-
-	return bmp, nil
 }
 
 // newImageBitmap decodes an encoded image (JPEG/PNG/GIF/WEBP) into packed

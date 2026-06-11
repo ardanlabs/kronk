@@ -57,7 +57,7 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 		if len(med) == 0 {
 			return 0, nil, fmt.Errorf("imc-media-cache: media[%d] is empty", i)
 		}
-		bmp, err := newMediaBitmap(med)
+		bmp, err := newMediaBitmap(mtmdCtx, med)
 		if err != nil {
 			return 0, nil, fmt.Errorf("imc-media-cache: media[%d]: %w", i, err)
 		}

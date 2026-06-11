@@ -1330,11 +1330,9 @@ func humanBytes(n int64) string {
 func mtmdContextParams(cfg Config) mtmd.ContextParamsType {
 	params := mtmd.ContextParamsDefault()
 
-	// Pin UseGPU=true so the projector is offloaded to the GPU by default and
-	// the device decision lives here rather than relying on the upstream
-	// default. ContextParamsDefault() already returns use_gpu=true (verified
-	// deterministic), so this is an explicit safeguard.
-	params.UseGPU = true
+	// Match the v1.27.4 logic: run the multimodal projector on the CPU by
+	// default (UseGPU=false), overridable via PtrProjOnCPU.
+	params.UseGPU = false
 	if cfg.PtrProjOnCPU != nil {
 		params.UseGPU = !*cfg.PtrProjOnCPU
 	}
