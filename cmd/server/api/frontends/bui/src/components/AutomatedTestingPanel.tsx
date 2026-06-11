@@ -13,6 +13,7 @@ import { defaultSamplingSweepDef, defaultConfigSweepDef, defaultMoESweepDef, def
 import type { PresetName } from '../services/autoTestRunner';
 import type { AutoTestScenario } from '../types';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
+import { usePlayground } from '../contexts/PlaygroundContext';
 import type { ConfigTrialResult } from '../contexts/AutoTestRunnerContext';
 import { formatMs, buildSamplingColumns, buildConfigColumns, SWEEP_MODES } from '../services/sweepModeColumns';
 import type { ColumnDef, CellMeta } from '../services/sweepModeColumns';
@@ -31,6 +32,9 @@ interface AutomatedTestingPanelProps {
   catalogSampling?: SamplingConfig | null;
   isMoE?: boolean;
   gpuVramBytes?: number;
+  // When launched from the Testing menu (Sampling or Configurator), the sweep
+  // is fixed and the Sweep Mode selector is hidden.
+  lockSweep?: boolean;
 }
 
 function clampNum(n: number, lo: number, hi: number): number {
@@ -188,8 +192,11 @@ function TrialProgressBar({ totalTrials, trials, running, runStartedAt }: TrialP
   );
 }
 
-export default function AutomatedTestingPanel({ session, sessionSeed, catalogSampling, isMoE, gpuVramBytes }: AutomatedTestingPanelProps) {
+export default function AutomatedTestingPanel({ session, sessionSeed, catalogSampling, isMoE, gpuVramBytes, lockSweep }: AutomatedTestingPanelProps) {
   const { run, isRunning, startSamplingRun, startConfigRun, stopRun, clearRun, reevaluateBestTrial, reorderQueuedTrial, skipTrial, unskipTrial, stopTrial, rerunTrial } = useAutoTestRunner();
+  // sweepMode is lifted into PlaygroundContext so the Testing menu can deep-link
+  // straight to the Sampling or Configurator sweep.
+  const { sweepMode, setSweepMode } = usePlayground();
 
   // Compute initial values from the run (if any) so that remounting
   // after navigation restores the sweep parameters instead of resetting.
@@ -197,7 +204,6 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
   const initConfigSweepDef = run?.kind === 'config' ? run.configSweepDef : defaultConfigSweepDef;
   const initWeights = run?.weights ?? (run?.kind === 'config' ? defaultConfigBestWeights : defaultBestConfigWeights);
 
-  const [sweepMode, setSweepMode] = useState<AutoTestSweepMode>(() => run?.kind ?? 'sampling');
   const [enabledScenarios, setEnabledScenarios] = useState(() => run?.enabledScenarios ?? { chat: true, tool_call: true });
   const [sweepDef, setSweepDef] = useState<SamplingSweepDefinition>(() => structuredClone(initSweepDef));
   const [sweepInputs, setSweepInputs] = useState(() => deriveSweepInputs(initSweepDef));
@@ -316,8 +322,12 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
   const hydratedRunIdRef = useRef<string | undefined>(run?.runId);
   useEffect(() => {
     if (!run || run.runId === hydratedRunIdRef.current) return;
+    // On a locked Testing screen (Sampling/Configuration) the screen's own mode
+    // is authoritative — never hydrate from (or be flipped by) a run of the
+    // other kind. That run belongs to the other screen.
+    if (lockSweep && run.kind !== sweepMode) return;
     hydratedRunIdRef.current = run.runId;
-    setSweepMode(run.kind);
+    if (!lockSweep) setSweepMode(run.kind);
     setEnabledScenarios(run.enabledScenarios);
     setRepeats(run.repeats);
     setWeights({ ...run.weights });
@@ -407,28 +417,38 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
     setSweepInputs(deriveSweepInputs(updated));
   }, [catalogSampling, lastCatalogRef, sweepDirty, run]);
 
-  const runnerState = run?.status ?? 'idle';
-  const errorMessage = run?.errorMessage ?? '';
-  const templateRepairStatus = run?.templateRepairStatus ?? '';
-  const calibrationStatus = run?.calibrationStatus ?? '';
-  const totalTrials = run?.totalTrials ?? 0;
-  const trials = run?.kind === 'sampling' ? run.trials : [];
-  const configTrials: ConfigTrialResult[] = run?.kind === 'config' ? run.trials : [];
-  const bestTrial = run?.kind === 'sampling' && run.bestTrialId
-    ? run.trials.find(t => t.id === run.bestTrialId) ?? null
+  // There is a single global auto-test runner shared by the Sampling and
+  // Configuration screens. On a locked Testing screen, a run of the *other*
+  // kind must not bleed into this screen (otherwise running a sampling sweep
+  // makes the Configuration screen look like it's running too). screenRun is
+  // the active run only when it belongs to this screen's mode.
+  const screenRun = lockSweep && run && run.kind !== sweepMode ? null : run;
+  const foreignRunActive = isRunning && !screenRun && !!run;
+  const isScreenRunning = isRunning && !!screenRun;
+
+  const runnerState = screenRun?.status ?? 'idle';
+  const errorMessage = screenRun?.errorMessage ?? '';
+  const templateRepairStatus = screenRun?.templateRepairStatus ?? '';
+  const calibrationStatus = screenRun?.calibrationStatus ?? '';
+  const totalTrials = screenRun?.totalTrials ?? 0;
+  const trials = screenRun?.kind === 'sampling' ? screenRun.trials : [];
+  const configTrials: ConfigTrialResult[] = screenRun?.kind === 'config' ? screenRun.trials : [];
+  const bestTrial = screenRun?.kind === 'sampling' && screenRun.bestTrialId
+    ? screenRun.trials.find(t => t.id === screenRun.bestTrialId) ?? null
     : null;
-  const bestConfigTrial = run?.kind === 'config' && run.bestTrialId
-    ? run.trials.find(t => t.id === run.bestTrialId) ?? null
+  const bestConfigTrial = screenRun?.kind === 'config' && screenRun.bestTrialId
+    ? screenRun.trials.find(t => t.id === screenRun.bestTrialId) ?? null
     : null;
 
-  const displayMode: AutoTestSweepMode = run ? run.kind : sweepMode;
+  // On a locked Testing screen the mode is fixed; elsewhere it follows the run.
+  const displayMode: AutoTestSweepMode = lockSweep ? sweepMode : run ? run.kind : sweepMode;
 
   // Keep local sweepMode in sync with the active run so that radio buttons
   // and parameter sections reflect the correct mode after navigation.
   const runKind = run?.kind;
   useEffect(() => {
-    if (runKind) setSweepMode(runKind);
-  }, [runKind]);
+    if (runKind && !lockSweep) setSweepMode(runKind);
+  }, [runKind, lockSweep]);
 
   const activeTrials = displayMode === 'config' ? configTrials : trials;
 
@@ -546,24 +566,26 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
     <div className="playground-autotest-container">
       {/* Sweep Mode + Repeats */}
       <div className="playground-autotest-section" style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
-        <div style={{ width: '50%' }}>
-          <h4>Sweep Mode</h4>
-          <div className="playground-inline-options" style={{ paddingBottom: '20px' }}>
-            {SWEEP_MODES.map(m => (
-              <label key={m.kind} className="playground-inline-option">
-                <input
-                  type="radio"
-                  name="sweepMode"
-                  value={m.kind}
-                  checked={sweepMode === m.kind}
-                  onChange={() => setSweepMode(m.kind as AutoTestSweepMode)}
-                  disabled={isRunning}
-                />
-                {m.label}
-              </label>
-            ))}
+        {!lockSweep && (
+          <div style={{ width: '50%' }}>
+            <h4>Sweep Mode</h4>
+            <div className="playground-inline-options" style={{ paddingBottom: '20px' }}>
+              {SWEEP_MODES.map(m => (
+                <label key={m.kind} className="playground-inline-option">
+                  <input
+                    type="radio"
+                    name="sweepMode"
+                    value={m.kind}
+                    checked={sweepMode === m.kind}
+                    onChange={() => setSweepMode(m.kind as AutoTestSweepMode)}
+                    disabled={isRunning}
+                  />
+                  {m.label}
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         <div>
           <h4>Repeats Per Test Case</h4>
           <p style={{ fontSize: 12, color: 'var(--color-gray-600)', marginBottom: 8 }}>
@@ -697,7 +719,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
             MoE Recommended
           </button>
         )}
-        {isRunning && (
+        {isScreenRunning && (
           <button className="btn btn-danger" onClick={handleStop}>
             Stop
           </button>
@@ -708,6 +730,13 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
           </button>
         )}
       </div>
+
+      {/* Another sweep (of the other kind) is using the shared runner */}
+      {foreignRunActive && run && (
+        <div className="playground-error">
+          A {run.kind === 'config' ? 'configuration' : 'sampling'} run is in progress. Stop it before starting a {sweepMode === 'config' ? 'configuration' : 'sampling'} run.
+        </div>
+      )}
 
       {/* Config mode session warning */}
       {sweepMode === 'config' && session && !isRunning && (

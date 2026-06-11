@@ -2411,7 +2411,7 @@ export const defaultConfigSweepDef: ConfigSweepDefinition = {
   nSeqMax: { enabled: true, values: [1, 2] },
   flashAttention: { enabled: true, values: ['enabled', 'disabled'] },
   cacheType: { enabled: true, values: ['f16', 'q8_0', 'q4_0'] },
-  cacheMode: { enabled: true, values: ['none', 'spc', 'imc'] },
+  cacheMode: { enabled: true, values: ['none', 'imc'] },
 }
 
 /** Default config sweep grids optimized for MoE models. */

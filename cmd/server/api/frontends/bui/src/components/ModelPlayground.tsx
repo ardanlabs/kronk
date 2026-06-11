@@ -30,7 +30,12 @@ const NEW_MODEL_VALUE = '__new__';
 
 const defaultTools = JSON.stringify(autoTestTools, null, 2);
 
-export default function ModelPlayground() {
+// ModelPlayground is the shared engine behind the standalone Testing screens.
+// Each screen renders it with a fixed mode: "Basic" (manual), "Sampling" or
+// "Configuration" (automated sweeps). There is no combined/mode-switching view.
+export type TestingMode = 'manual' | 'sampling' | 'config';
+
+export default function ModelPlayground({ mode }: { mode: TestingMode }) {
   const { models, loadModels } = useModelList();
   const { download, isDownloading, startDownload, cancelDownload, clearDownload } = useDownload();
 
@@ -40,6 +45,7 @@ export default function ModelPlayground() {
     chatMessages, setChatMessages,
     selectedModel, setSelectedModel,
     playgroundMode, setPlaygroundMode,
+    setSweepMode,
     activeTab, setActiveTab,
     systemPrompt, setSystemPrompt,
     templateMode, setTemplateMode,
@@ -57,6 +63,17 @@ export default function ModelPlayground() {
     tensorBuftOverrides, setTensorBuftOverrides,
     hydratedModelId, setHydratedModelId,
   } = usePlayground();
+
+  // Lock the engine to this screen's mode. Manual maps to the chat/tools view;
+  // sampling/config map to the automated sweep with the matching sweep type.
+  useEffect(() => {
+    if (mode === 'manual') {
+      setPlaygroundMode('manual');
+    } else {
+      setPlaygroundMode('automated');
+      setSweepMode(mode);
+    }
+  }, [mode, setPlaygroundMode, setSweepMode]);
 
   // Local-only state (OK to reset on navigation)
   const [templates, setTemplates] = useState<PlaygroundTemplateInfo[]>([]);
@@ -577,7 +594,16 @@ export default function ModelPlayground() {
   return (
     <div className="playground-container">
       <div className="playground-header">
-        <h2>Model Playground</h2>
+        <div className="playground-header-title">
+          <h2>{mode === 'manual' ? 'Basic' : mode === 'sampling' ? 'Sampling' : 'Configuration'}</h2>
+          <p className="playground-header-subtitle">
+            {mode === 'manual'
+              ? 'Verify a model performs the basic tasks it needs to — chat and tool calling — correctly.'
+              : mode === 'sampling'
+              ? 'Find the sampling parameters that produce the best quality and speed for a model.'
+              : 'Find the runtime configuration that runs a model the fastest within your hardware limits.'}
+          </p>
+        </div>
       </div>
 
       <div className="playground-layout">
@@ -741,24 +767,24 @@ export default function ModelPlayground() {
             </div>
           )}
 
+          {/* The screen is locked to its own mode (no cross-mode switches),
+              but History stays available for the sweep screens. */}
           <button
-            className={`playground-mode-btn ${playgroundMode === 'automated' ? 'active' : ''}`}
-            onClick={() => setPlaygroundMode('automated')}
+            className={`playground-mode-btn ${playgroundMode !== 'history' ? 'active' : ''}`}
+            onClick={() => setPlaygroundMode(mode === 'manual' ? 'manual' : 'automated')}
           >
-            Automated Mode
+            {mode === 'manual' ? 'Basic' : mode === 'sampling' ? 'Sampling' : 'Configuration'}
           </button>
-          <button
-            className={`playground-mode-btn ${playgroundMode === 'manual' ? 'active' : ''}`}
-            onClick={() => setPlaygroundMode('manual')}
-          >
-            Manual Mode
-          </button>
-          <button
-            className={`playground-mode-btn ${playgroundMode === 'history' ? 'active' : ''}`}
-            onClick={() => setPlaygroundMode('history')}
-          >
-            History
-          </button>
+          {/* Basic (manual) runs don't produce sweep history, so History is
+              only offered on the Sampling and Configuration screens. */}
+          {mode !== 'manual' && (
+            <button
+              className={`playground-mode-btn ${playgroundMode === 'history' ? 'active' : ''}`}
+              onClick={() => setPlaygroundMode('history')}
+            >
+              History
+            </button>
+          )}
         </div>
 
         {playgroundMode === 'automated' && (
@@ -769,6 +795,7 @@ export default function ModelPlayground() {
                 catalogSampling={catalogConfig?.['sampling-parameters'] ?? null}
                 isMoE={isMoE}
                 gpuVramBytes={devicesInfo?.gpuVramBytes}
+                lockSweep={mode === 'sampling' || mode === 'config'}
                 sessionSeed={{
                   model_id: selectedModel,
                   template_mode: templateMode,
@@ -797,7 +824,8 @@ export default function ModelPlayground() {
         {playgroundMode === 'history' && (
           <div className="playground-test" style={{ flex: 1 }}>
             <div className="playground-tab-content">
-              <PlaygroundHistory />
+              {/* Scope history to the current Testing screen's sweep type. */}
+              <PlaygroundHistory filterMode={mode === 'sampling' || mode === 'config' ? mode : undefined} />
             </div>
           </div>
         )}

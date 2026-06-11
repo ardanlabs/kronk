@@ -5,7 +5,9 @@ import { type Page, routeMap, pathToPage } from '../App';
 import { useDownload } from '../contexts/DownloadContext';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import { useAccuracyRunner } from '../contexts/AccuracyRunnerContext';
+import { usePlayground } from '../contexts/PlaygroundContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { api } from '../services/api';
 import { TRIAL_PAUSE_MS } from '../services/autoTestRunner';
 
 interface LayoutProps {
@@ -89,9 +91,19 @@ const menuStructure: MenuCategory[] = [
         label: 'Kronk',
         items: [
           { page: 'chat', label: 'Chat' },
-          { page: 'accuracy', label: 'Accuracy' },
-          { page: 'playground', label: 'Playground' },
           { page: 'vram-calculator', label: 'VRAM Calculator' },
+        ],
+        subcategories: [
+          {
+            id: 'apps-kronk-testing',
+            label: 'Testing',
+            items: [
+              { page: 'accuracy', label: 'Accuracy' },
+              { page: 'testing-basic', label: 'Basic' },
+              { page: 'testing-sampling', label: 'Sampling' },
+              { page: 'testing-configurator', label: 'Configuration' },
+            ],
+          },
         ],
       },
       {
@@ -271,7 +283,26 @@ export default function Layout({ children }: LayoutProps) {
     completedRun: accuracyCompleted,
     dismissCompleted: dismissAccuracy,
   } = useAccuracyRunner();
+  const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
+
+  // Unload the active Basic session from the sidebar indicator.
+  const [unloadingSession, setUnloadingSession] = useState(false);
+  const handleUnloadSession = async () => {
+    if (!session) return;
+    setUnloadingSession(true);
+    try {
+      await api.deletePlaygroundSession(session.session_id);
+      setSession(null);
+      setChatMessages([]);
+    } catch {
+      // Best effort — clear local state even if the server call fails so the
+      // indicator doesn't get stuck.
+      setSession(null);
+    } finally {
+      setUnloadingSession(false);
+    }
+  };
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -374,6 +405,7 @@ export default function Layout({ children }: LayoutProps) {
   const showAutoTestIndicator = !!run;
   const showDownloadIndicator = !!download;
   const showAccuracyIndicator = !!accuracyRun || !!accuracyCompleted;
+  const showSessionIndicator = !!session;
 
   const accuracyTitle = accuracyRun
     ? accuracyRun.mode === 'manual'
@@ -571,12 +603,37 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
         </div>
         <nav>{menuStructure.map((category) => renderCategory(category))}</nav>
-        {(showAutoTestIndicator || showDownloadIndicator || showAccuracyIndicator) && (
+        {(showAutoTestIndicator || showDownloadIndicator || showAccuracyIndicator || showSessionIndicator) && (
           <div className="sidebar-indicators">
+            {showSessionIndicator && (
+              <div className="download-indicator">
+                <div className="download-indicator-link autotest-indicator-link">
+                  <Link to={routeMap['testing-basic']} className="autotest-indicator-top">
+                    <div className="download-indicator-header">
+                      <span className="download-indicator-icon success">●</span>
+                      <span className="download-indicator-title">Session running</span>
+                    </div>
+                    <div className="download-indicator-url" title={selectedModel}>
+                      {selectedModel ? selectedModel.split('/').pop() : 'Basic'}
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="autotest-indicator-stop"
+                    onClick={handleUnloadSession}
+                    disabled={unloadingSession}
+                    aria-label="Unload session"
+                    title="Unload session"
+                  >
+                    {unloadingSession ? '…' : '⏏'}
+                  </button>
+                </div>
+              </div>
+            )}
             {showAutoTestIndicator && (
               <div className="download-indicator">
                 <div className="download-indicator-link autotest-indicator-link">
-                  <Link to={routeMap['playground']} className="autotest-indicator-top">
+                  <Link to={routeMap[run?.kind === 'config' ? 'testing-configurator' : 'testing-sampling']} className="autotest-indicator-top">
                     <div className="download-indicator-header">
                       {isAutoTesting ? (
                         <span className="download-indicator-spinner" />

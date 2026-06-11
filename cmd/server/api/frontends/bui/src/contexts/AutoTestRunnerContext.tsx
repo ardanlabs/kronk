@@ -296,6 +296,17 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
     void saveCompletedRun(run);
   }, [run?.runId, run?.status]);
 
+  // After a sampling/config run is cancelled, auto-dismiss its lingering
+  // status/results box after 8 seconds so the screen returns to a clean state.
+  useEffect(() => {
+    if (!run || run.status !== 'cancelled') return;
+    const cancelledRunId = run.runId;
+    const timer = setTimeout(() => {
+      setRun(prev => (prev && prev.runId === cancelledRunId && prev.status === 'cancelled' ? null : prev));
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [run?.runId, run?.status]);
+
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
