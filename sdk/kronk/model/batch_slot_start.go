@@ -997,7 +997,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d] is empty", i))
 				return false
 			}
-			bmp, err := newMediaBitmap(s.mtmdCtx, med)
+			bmp, err := newMediaBitmap(med)
 			if err != nil {
 				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d]: %w", i, err))
 				return false
