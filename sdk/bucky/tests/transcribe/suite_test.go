@@ -107,50 +107,72 @@ func testTranscribeChannels(t *testing.T, w *bucky.Bucky) {
 		t.Parallel()
 	}
 
-	// Build a synthetic two-channel input from the mono JFK clip so the
-	// SplitChannels path is exercised: channel 0 is the clip, channel 1
-	// is a half-amplitude copy. Both must still transcribe to the same
-	// stable phrase.
-	mono := testlib.LoadSamples(t, testlib.AudioFile)
-	quiet := make([]float32, len(mono))
-	for i, v := range mono {
-		quiet[i] = v * 0.5
+	// Decode the real two-channel sample (English speaker on channel 0,
+	// Spanish speaker on channel 1). This exercises the multi-channel
+	// decode path: DecodeRaw -> SplitChannels -> ResampleLinear.
+	f, err := os.Open(testlib.StereoAudioFile)
+	if err != nil {
+		t.Fatalf("open %q: %v", testlib.StereoAudioFile, err)
 	}
-	channels := [][]float32{mono, quiet}
+	defer f.Close()
+
+	channels, err := model.DecodeChannels(context.Background(), f)
+	if err != nil {
+		t.Fatalf("decode-channels: %v", err)
+	}
+	if len(channels) != 2 {
+		t.Fatalf("decoded channels: got %d, want 2", len(channels))
+	}
+	for i, ch := range channels {
+		if len(ch) == 0 {
+			t.Fatalf("decoded channel[%d]: got 0 samples", i)
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
-	d, err := w.TranscribeChannels(ctx, channels, model.WithLanguage("en"))
+	// Auto-detect (no language hint) so each channel's language is
+	// identified independently, proving true per-speaker separation.
+	d, err := w.TranscribeChannels(ctx, channels)
 	if err != nil {
 		t.Fatalf("transcribe-channels: %v", err)
 	}
 
 	if len(d.Channels) != 2 {
-		t.Fatalf("channels: got %d, want 2", len(d.Channels))
-	}
-	for i, ct := range d.Channels {
-		if ct.Channel != i {
-			t.Errorf("channel[%d].Channel: got %d, want %d", i, ct.Channel, i)
-		}
-		testlib.AssertTranscriptContains(t, ct.Text, "ask not", "country")
+		t.Fatalf("result channels: got %d, want 2", len(d.Channels))
 	}
 
+	// Channel 0 is the English speaker; channel 1 is the Spanish speaker.
+	if d.Channels[0].Channel != 0 || d.Channels[1].Channel != 1 {
+		t.Errorf("channel indices: got %d,%d want 0,1", d.Channels[0].Channel, d.Channels[1].Channel)
+	}
+	testlib.AssertTranscriptContains(t, d.Channels[0].Text, "ask not", "country")
+	if d.Channels[0].Language != "en" {
+		t.Errorf("channel 0 language: got %q, want %q", d.Channels[0].Language, "en")
+	}
+	testlib.AssertTranscriptContains(t, d.Channels[1].Text, "hola")
+	if d.Channels[1].Language != "es" {
+		t.Errorf("channel 1 language: got %q, want %q", d.Channels[1].Language, "es")
+	}
+
+	// Merged segments must be sorted by start time, carry a valid channel
+	// tag, and include segments from both channels.
 	if len(d.Segments) == 0 {
 		t.Fatal("merged segments: got 0, want > 0")
 	}
-
-	// Merged segments must be sorted by start time and carry a valid
-	// channel tag.
-	for i := 1; i < len(d.Segments); i++ {
-		if d.Segments[i].StartMs < d.Segments[i-1].StartMs {
-			t.Errorf("segments not sorted by start: [%d]=%d < [%d]=%d", i, d.Segments[i].StartMs, i-1, d.Segments[i-1].StartMs)
-		}
-	}
+	seen := map[int]bool{}
 	for i, s := range d.Segments {
 		if s.Channel < 0 || s.Channel >= len(d.Channels) {
 			t.Errorf("segment[%d].Channel out of range: %d", i, s.Channel)
 		}
+		seen[s.Channel] = true
+		if i > 0 && s.StartMs < d.Segments[i-1].StartMs {
+			t.Errorf("segments not sorted by start: [%d]=%d < [%d]=%d", i, s.StartMs, i-1, d.Segments[i-1].StartMs)
+		}
+	}
+	if !seen[0] || !seen[1] {
+		t.Errorf("merged segments missing a channel: seen=%v", seen)
 	}
 }
 
@@ -159,26 +181,34 @@ func testDecodeChannels(t *testing.T, w *bucky.Bucky) {
 		t.Parallel()
 	}
 
-	// The bundled JFK clip is mono, so DecodeChannels must yield exactly
-	// one channel and TranscribeChannelsFile must produce one speaker.
-	f, err := os.Open(testlib.AudioFile)
+	// End-to-end: decode the two-channel sample straight from an
+	// io.Reader and diarize it in one call. Channel 0 is the English
+	// speaker, channel 1 the Spanish speaker.
+	f, err := os.Open(testlib.StereoAudioFile)
 	if err != nil {
-		t.Fatalf("open %q: %v", testlib.AudioFile, err)
+		t.Fatalf("open %q: %v", testlib.StereoAudioFile, err)
 	}
 	defer f.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
-	d, err := w.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
+	d, err := w.TranscribeChannelsFile(ctx, f)
 	if err != nil {
 		t.Fatalf("transcribe-channels-file: %v", err)
 	}
 
-	if len(d.Channels) != 1 {
-		t.Fatalf("channels: got %d, want 1 (mono input)", len(d.Channels))
+	if len(d.Channels) != 2 {
+		t.Fatalf("channels: got %d, want 2", len(d.Channels))
 	}
 	testlib.AssertTranscriptContains(t, d.Channels[0].Text, "ask not", "country")
+	if d.Channels[0].Language != "en" {
+		t.Errorf("channel 0 language: got %q, want %q", d.Channels[0].Language, "en")
+	}
+	testlib.AssertTranscriptContains(t, d.Channels[1].Text, "hola")
+	if d.Channels[1].Language != "es" {
+		t.Errorf("channel 1 language: got %q, want %q", d.Channels[1].Language, "es")
+	}
 }
 
 func testDetectLanguage(t *testing.T, w *bucky.Bucky) {
