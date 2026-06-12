@@ -67,7 +67,7 @@ install-test-gh-models: install-kronk
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
-	kronk bucky model pull --local "tiny.en"
+	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
 
 # Use this to install the test models.
@@ -89,7 +89,7 @@ install-test-models: install-kronk
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
-	kronk bucky model pull --local "tiny.en"
+	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
 
 # Use this to install models for the class.
@@ -113,7 +113,7 @@ install-class-models: install-kronk
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
-	kronk bucky model pull --local "tiny.en"
+	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.9.6

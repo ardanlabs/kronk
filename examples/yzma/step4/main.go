@@ -107,7 +107,8 @@ func run() error {
 
 	fmt.Printf("Loading image: %s\n", *imagePath)
 
-	bitmap := mtmd.BitmapInitFromFile(mtmdCtx, *imagePath, false)
+	wrapper := mtmd.BitmapInitFromFile(mtmdCtx, *imagePath, false)
+	bitmap := wrapper.Bitmap
 	if bitmap == 0 {
 		return fmt.Errorf("failed to load image: %s", *imagePath)
 	}

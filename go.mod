@@ -3,7 +3,7 @@ module github.com/ardanlabs/kronk
 go 1.26.0
 
 require (
-	github.com/ardanlabs/bucky v1.0.4
+	github.com/ardanlabs/bucky v1.0.5
 	github.com/ardanlabs/conf/v3 v3.12.0
 	github.com/ardanlabs/jinja v1.4.0
 	github.com/arl/statsviz v0.8.0
@@ -77,7 +77,7 @@ require (
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
-	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

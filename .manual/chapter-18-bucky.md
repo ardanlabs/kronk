@@ -406,12 +406,49 @@ Key SDK entry points:
 | `bucky.Init(opts...)`      | Register backend + load whisper.cpp shared library.           |
 | `bucky.New(opts...)`       | Construct a concurrently-safe `*Bucky` handle for one model.  |
 | `Bucky.Transcribe(...)`    | Transcribe 16 kHz mono float32 PCM (batch, one-shot).         |
+| `Bucky.TranscribeFile(...)`| Decode an `io.Reader` (any supported format) and transcribe.  |
+| `Bucky.TranscribeChannels(...)` | Channel-separated (diarized) transcribe: one speaker per channel. |
+| `Bucky.TranscribeChannelsFile(...)` | Decode an `io.Reader` preserving channels and diarize. |
 | `Bucky.NewStream(...)`     | Open a live streaming session (see [18.9](#189-streaming-transcription-sdk)). |
 | `Bucky.DetectLanguage(...)`| Run language detection only.                                  |
 | `Bucky.ActiveStreams()`    | In-flight transcribe count (observability).                   |
 | `Bucky.SystemInfo()`       | Parsed `whisper.cpp` system info string.                      |
 | `Bucky.Unload(ctx)`        | Wait for active streams to drain and unload the model.        |
 | `bucky.LangID/LangStr/LangMaxID` | Language code ↔ id helpers.                             |
+
+#### Channel-Separated Diarization
+
+For recordings where each speaker is on a dedicated channel (call-center
+and meeting captures often record one participant per channel),
+`TranscribeChannels` / `TranscribeChannelsFile` transcribe every channel
+separately and merge the results into a single diarized transcript. This
+builds on the upstream `audio.SplitChannels` helper: native multi-channel
+formats (WAV, FLAC) are de-interleaved and each channel resampled to 16
+kHz, then transcribed on its own. Formats that require ffmpeg (WebM/Opus,
+MP4/AAC, ...) are downmixed to a single channel, so they yield one
+speaker.
+
+```go
+f, _ := os.Open("call.wav") // stereo: caller on L, agent on R
+defer f.Close()
+
+d, _ := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
+
+// d.Channels holds one Transcription per source channel.
+for _, ct := range d.Channels {
+    fmt.Printf("speaker %d: %s\n", ct.Channel, ct.Text)
+}
+
+// d.Segments merges every channel's segments sorted by start time,
+// each tagged with the channel (speaker) it came from.
+for _, s := range d.Segments {
+    fmt.Printf("[%6dms] speaker %d: %s\n", s.StartMs, s.Channel, s.Text)
+}
+```
+
+When you already hold decoded 16 kHz mono float32 channels (e.g. from
+`model.DecodeChannels`), call `TranscribeChannels(ctx, channels, ...)`
+directly.
 
 ### 18.9 Streaming Transcription (SDK)
 

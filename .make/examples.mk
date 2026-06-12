@@ -13,6 +13,9 @@ example-bucky:
 example-bucky-stream:
 	cd examples && go run ./bucky-stream/main.go
 
+example-bucky-diar:
+	cd examples && go run ./bucky-diar/main.go
+
 example-chat:
 	cd examples && go run ./chat/main.go
 

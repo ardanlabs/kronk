@@ -36,3 +36,35 @@ func (b *Bucky) TranscribeFile(ctx context.Context, r io.Reader, opts ...model.T
 
 	return m.TranscribeFile(ctx, r, opts...)
 }
+
+// TranscribeChannels transcribes each supplied channel of 16 kHz mono
+// float32 PCM separately and merges the results into a single diarized
+// transcript, treating one channel as one speaker. Pass the channels
+// returned by model.DecodeChannels. The call participates in the
+// per-handle backpressure semaphore and blocks until a slot is
+// available.
+func (b *Bucky) TranscribeChannels(ctx context.Context, channels [][]float32, opts ...model.TranscribeOption) (model.Diarization, error) {
+	m, err := b.acquireModel(ctx)
+	if err != nil {
+		return model.Diarization{}, fmt.Errorf("transcribe-channels: %w", err)
+	}
+	defer b.releaseModel()
+
+	return m.TranscribeChannels(ctx, channels, opts...)
+}
+
+// TranscribeChannelsFile decodes audio from r preserving its channel
+// layout and runs TranscribeChannels to produce a diarized transcript.
+// Native multi-channel formats (WAV, FLAC) yield true per-channel
+// diarization; formats that require ffmpeg are downmixed to a single
+// channel. The call participates in the per-handle backpressure
+// semaphore and blocks until a slot is available.
+func (b *Bucky) TranscribeChannelsFile(ctx context.Context, r io.Reader, opts ...model.TranscribeOption) (model.Diarization, error) {
+	m, err := b.acquireModel(ctx)
+	if err != nil {
+		return model.Diarization{}, fmt.Errorf("transcribe-channels-file: %w", err)
+	}
+	defer b.releaseModel()
+
+	return m.TranscribeChannelsFile(ctx, r, opts...)
+}

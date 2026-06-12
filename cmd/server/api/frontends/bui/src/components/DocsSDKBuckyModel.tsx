@@ -49,6 +49,14 @@ export default function DocsSDKBuckyModel() {
               <p className="doc-description">Decode reads audio in any format the bucky SDK supports and returns the 16 kHz mono float32 PCM that Transcribe expects. WAV, MP3, and FLAC are decoded in-process by the upstream github.com/ardanlabs/bucky/pkg/audio package. Anything else (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is transcoded to WAV by shelling out to ffmpeg via sdk/bucky/ffmpeg. ffmpeg is located once on first use and reused for the lifetime of the process. When ffmpeg is not installed or the transcode fails, Decode returns an error that wraps audio.ErrUnsupportedFormat so callers that already match the upstream sentinel keep working and the user-visible error category remains "unsupported format".</p>
             </div>
 
+            <div className="doc-section" id="func-decodechannels">
+              <h4>DecodeChannels</h4>
+              <pre className="code-block">
+                <code>func DecodeChannels(ctx context.Context, r io.Reader) ([][]float32, error)</code>
+              </pre>
+              <p className="doc-description">DecodeChannels reads audio in any format the bucky SDK supports and returns one 16 kHz mono float32 PCM slice per source channel, ready for channel-separated (per-speaker) transcription. Mono input yields a one-element result. Native formats (WAV, FLAC, MP3) are decoded in-process via audio.DecodeRaw, which preserves the source channel layout: each channel is de-interleaved with audio.SplitChannels and resampled to 16 kHz with audio.ResampleLinear. Anything that requires ffmpeg (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is downmixed to a single mono channel by the transcode, so such inputs also return a one-element result.</p>
+            </div>
+
             <div className="doc-section" id="func-langid">
               <h4>LangID</h4>
               <pre className="code-block">
@@ -112,6 +120,17 @@ export default function DocsSDKBuckyModel() {
               <p className="doc-description">AudioFormat describes the raw PCM a producer delivers to FeedPCM. The engine always converts to its fixed internal format: 16 kHz, mono, float32 in [-1, 1].</p>
             </div>
 
+            <div className="doc-section" id="type-channeltranscription">
+              <h4>ChannelTranscription</h4>
+              <pre className="code-block">
+                <code>{`type ChannelTranscription struct {
+	Channel int
+	Transcription
+}`}</code>
+              </pre>
+              <p className="doc-description">ChannelTranscription is the transcription of a single source channel in a channel-separated (diarized) result. Channel is the zero-based source channel index (0 = left, 1 = right for stereo).</p>
+            </div>
+
             <div className="doc-section" id="type-config">
               <h4>Config</h4>
               <pre className="code-block">
@@ -151,6 +170,28 @@ export default function DocsSDKBuckyModel() {
 }`}</code>
               </pre>
               <p className="doc-description">Config carries the per-model whisper.cpp configuration. Fields are resolved through the functional Option pattern (NewConfig + WithX) at construction time and treated as read-only thereafter. ModelPath is required. The remaining fields all have sensible zero defaults that match whisper_context_default_params and the per-handle backpressure conventions used by sdk/kronk.</p>
+            </div>
+
+            <div className="doc-section" id="type-diarization">
+              <h4>Diarization</h4>
+              <pre className="code-block">
+                <code>{`type Diarization struct {
+	Channels []ChannelTranscription
+	Segments []DiarizedSegment
+}`}</code>
+              </pre>
+              <p className="doc-description">Diarization is the result of a channel-separated transcribe. Channels holds one transcription per non-empty source channel; Segments merges every channel's segments into a single list sorted by start time, each tagged with the channel (speaker) it came from.</p>
+            </div>
+
+            <div className="doc-section" id="type-diarizedsegment">
+              <h4>DiarizedSegment</h4>
+              <pre className="code-block">
+                <code>{`type DiarizedSegment struct {
+	Channel int
+	Segment
+}`}</code>
+              </pre>
+              <p className="doc-description">DiarizedSegment is one decoded segment tagged with the source channel it came from, so a merged multi-channel transcript can attribute each segment to a speaker.</p>
             </div>
 
             <div className="doc-section" id="type-event">
@@ -457,6 +498,22 @@ export default function DocsSDKBuckyModel() {
               <p className="doc-description">Transcribe runs the whisper.cpp pipeline on the provided 16 kHz mono float32 PCM samples and returns the decoded text along with per-segment metadata. Transcribe acquires a whisper.State from the model's internal pool, so up to Config.NSeqMax goroutines may run Transcribe in parallel against the same Model. The acquired state is released back to the pool when Transcribe returns.</p>
             </div>
 
+            <div className="doc-section" id="method-model-transcribechannels">
+              <h4>Model.TranscribeChannels</h4>
+              <pre className="code-block">
+                <code>func (m *Model) TranscribeChannels(ctx context.Context, channels [][]float32, opts ...TranscribeOption) (Diarization, error)</code>
+              </pre>
+              <p className="doc-description">TranscribeChannels transcribes each supplied channel of 16 kHz mono float32 PCM separately and merges the results into a diarized transcript. Each channel is treated as one speaker, the common layout for call-center and meeting recordings where every participant has a dedicated channel. Pass the slices returned by DecodeChannels. Channels are transcribed sequentially. Each channel acquires and releases a whisper.State from the model's internal pool, so other goroutines may still run Transcribe against the same Model between channels. Empty channels are skipped.</p>
+            </div>
+
+            <div className="doc-section" id="method-model-transcribechannelsfile">
+              <h4>Model.TranscribeChannelsFile</h4>
+              <pre className="code-block">
+                <code>func (m *Model) TranscribeChannelsFile(ctx context.Context, r io.Reader, opts ...TranscribeOption) (Diarization, error)</code>
+              </pre>
+              <p className="doc-description">TranscribeChannelsFile decodes audio from r into one 16 kHz mono float32 channel per source channel (via DecodeChannels) and then runs TranscribeChannels. Native multi-channel formats (WAV, FLAC) yield true per-channel diarization; formats that require ffmpeg are downmixed to a single channel before transcription.</p>
+            </div>
+
             <div className="doc-section" id="method-model-transcribefile">
               <h4>Model.TranscribeFile</h4>
               <pre className="code-block">
@@ -521,6 +578,7 @@ export default function DocsSDKBuckyModel() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-decode">Decode</a></li>
+                <li><a href="#func-decodechannels">DecodeChannels</a></li>
                 <li><a href="#func-langid">LangID</a></li>
                 <li><a href="#func-langmaxid">LangMaxID</a></li>
                 <li><a href="#func-langstr">LangStr</a></li>
@@ -532,7 +590,10 @@ export default function DocsSDKBuckyModel() {
               <a href="#types" className="doc-index-header">Types</a>
               <ul>
                 <li><a href="#type-audioformat">AudioFormat</a></li>
+                <li><a href="#type-channeltranscription">ChannelTranscription</a></li>
                 <li><a href="#type-config">Config</a></li>
+                <li><a href="#type-diarization">Diarization</a></li>
+                <li><a href="#type-diarizedsegment">DiarizedSegment</a></li>
                 <li><a href="#type-event">Event</a></li>
                 <li><a href="#type-eventkind">EventKind</a></li>
                 <li><a href="#type-model">Model</a></li>
@@ -559,6 +620,8 @@ export default function DocsSDKBuckyModel() {
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
                 <li><a href="#method-model-newstream">Model.NewStream</a></li>
                 <li><a href="#method-model-transcribe">Model.Transcribe</a></li>
+                <li><a href="#method-model-transcribechannels">Model.TranscribeChannels</a></li>
+                <li><a href="#method-model-transcribechannelsfile">Model.TranscribeChannelsFile</a></li>
                 <li><a href="#method-model-transcribefile">Model.TranscribeFile</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-stream-close">Stream.Close</a></li>

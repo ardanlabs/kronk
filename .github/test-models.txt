@@ -17,4 +17,4 @@ kronk unsloth/Qwen3.5-0.8B-Q8_0
 kronk Qwen/Qwen3-8B-Q8_0
 kronk ggml-org/embeddinggemma-300m-qat-Q8_0
 kronk gpustack/bge-reranker-v2-m3-Q8_0
-bucky tiny.en
+bucky ggml-tiny.bin

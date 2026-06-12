@@ -78,6 +78,51 @@ func Decode(ctx context.Context, r io.Reader) ([]float32, error) {
 	return pcm16ToFloat32(raw), nil
 }
 
+// DecodeChannels reads audio in any format the bucky SDK supports and
+// returns one 16 kHz mono float32 PCM slice per source channel, ready
+// for channel-separated (per-speaker) transcription. Mono input yields
+// a one-element result.
+//
+// Native formats (WAV, FLAC, MP3) are decoded in-process via
+// audio.DecodeRaw, which preserves the source channel layout: each
+// channel is de-interleaved with audio.SplitChannels and resampled to
+// 16 kHz with audio.ResampleLinear. Anything that requires ffmpeg
+// (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is downmixed to a single mono
+// channel by the transcode, so such inputs also return a one-element
+// result.
+func DecodeChannels(ctx context.Context, r io.Reader) ([][]float32, error) {
+	head := make([]byte, sniffBytes)
+	n, err := io.ReadFull(r, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("sniff: %w", err)
+	}
+	head = head[:n]
+
+	combined := io.MultiReader(bytes.NewReader(head), r)
+
+	// Non-native formats are transcoded by ffmpeg, which collapses the
+	// audio to a single mono channel, so there is nothing to separate.
+	if !isNative(head) {
+		samples, err := Decode(ctx, combined)
+		if err != nil {
+			return nil, err
+		}
+		return [][]float32{samples}, nil
+	}
+
+	samples, rate, channels, err := audio.DecodeRaw(combined)
+	if err != nil {
+		return nil, fmt.Errorf("decode-raw: %w", err)
+	}
+
+	chans := audio.SplitChannels(samples, channels)
+	for i, ch := range chans {
+		chans[i] = audio.ResampleLinear(ch, rate, audio.TargetSampleRate)
+	}
+
+	return chans, nil
+}
+
 // =============================================================================
 
 // isNative reports whether head matches a format the upstream

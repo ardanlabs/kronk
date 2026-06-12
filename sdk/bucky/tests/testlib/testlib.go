@@ -62,7 +62,7 @@ func Setup() {
 		os.Exit(1)
 	}
 
-	resolveModel(mdls, "tiny.en", &MPTinyEn)
+	resolveModel(mdls, "ggml-tiny.bin", &MPTinyEn)
 
 	printInfo(mdls)
 
@@ -116,8 +116,8 @@ func WithWhisper(t *testing.T, cfg model.Config, fn func(t *testing.T, w *bucky.
 // =============================================================================
 // Config builders for each model variant.
 
-// CfgTinyEn returns a model.Config for the tiny.en whisper model
-// sized for the parallel transcribe tests (NSeqMax=2).
+// CfgTinyEn returns a model.Config for the multilingual ggml-tiny.bin
+// whisper model sized for the parallel transcribe tests (NSeqMax=2).
 func CfgTinyEn() model.Config {
 	return model.Config{
 		ModelPath: MPTinyEn.ModelFiles[0],

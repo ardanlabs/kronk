@@ -7068,6 +7068,18 @@ func main() {
                 <td>Transcribe 16 kHz mono float32 PCM (batch, one-shot).</td>
               </tr>
               <tr>
+                <td><code>Bucky.TranscribeFile(...)</code></td>
+                <td>Decode an <code>io.Reader</code> (any supported format) and transcribe.</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.TranscribeChannels(...)</code></td>
+                <td>Channel-separated (diarized) transcribe: one speaker per channel.</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.TranscribeChannelsFile(...)</code></td>
+                <td>Decode an <code>io.Reader</code> preserving channels and diarize.</td>
+              </tr>
+              <tr>
                 <td><code>Bucky.NewStream(...)</code></td>
                 <td>Open a live streaming session (see <a href="#189-streaming-transcription-sdk">18.9</a>).</td>
               </tr>
@@ -7093,6 +7105,24 @@ func main() {
               </tr>
             </tbody>
           </table>
+          <h4 id="channel-separated-diarization">Channel-Separated Diarization</h4>
+          <p>For recordings where each speaker is on a dedicated channel (call-center and meeting captures often record one participant per channel), <code>TranscribeChannels</code> / <code>TranscribeChannelsFile</code> transcribe every channel separately and merge the results into a single diarized transcript. This builds on the upstream <code>audio.SplitChannels</code> helper: native multi-channel formats (WAV, FLAC) are de-interleaved and each channel resampled to 16 kHz, then transcribed on its own. Formats that require ffmpeg (WebM/Opus, MP4/AAC, ...) are downmixed to a single channel, so they yield one speaker.</p>
+          <pre className="code-block"><code className="language-go">{`f, _ := os.Open("call.wav") // stereo: caller on L, agent on R
+defer f.Close()
+
+d, _ := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
+
+// d.Channels holds one Transcription per source channel.
+for _, ct := range d.Channels {
+    fmt.Printf("speaker %d: %s\\n", ct.Channel, ct.Text)
+}
+
+// d.Segments merges every channel's segments sorted by start time,
+// each tagged with the channel (speaker) it came from.
+for _, s := range d.Segments {
+    fmt.Printf("[%6dms] speaker %d: %s\\n", s.StartMs, s.Channel, s.Text)
+}`}</code></pre>
+          <p>When you already hold decoded 16 kHz mono float32 channels (e.g. from <code>model.DecodeChannels</code>), call <code>TranscribeChannels(ctx, channels, ...)</code> directly.</p>
           <h3 id="189-streaming-transcription-sdk">18.9 Streaming Transcription (SDK)</h3>
           <p><code>Bucky.Transcribe</code> is one-shot: hand it a full clip, get one result back. For audio that arrives <em>over time</em> — a microphone, a chunked HTTP upload, a WebSocket, a long voice memo — use a <strong>stream</strong> instead. You <code>Feed</code> samples as they arrive and consume incremental transcript <strong>events</strong> from a channel; the stream owns the buffering, windowing, and silence detection for you.</p>
           <pre className="code-block"><code className="language-go">{`ctx := context.Background()
