@@ -423,7 +423,7 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	// Look in the kronk pool first, then bucky. The two pools never
 	// share a cache key in practice (whisper short names like
-	// "tiny.en" don't collide with llama model ids), but checking
+	// "ggml-tiny.bin" don't collide with llama model ids), but checking
 	// kronk first matches the historical behavior of this endpoint.
 	if krn, exists := a.pool.Kronk.GetExisting(req.ID); exists {
 		if n := krn.ActiveStreams(); n > 0 {

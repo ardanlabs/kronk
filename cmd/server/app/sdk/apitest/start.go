@@ -139,7 +139,7 @@ func New(t *testing.T, testName string) *Test {
 	//
 	// Mirrors the production wiring in cmd/server/api/services/kronk/main.go
 	// so the /v1/audio/transcriptions endpoint is reachable in tests
-	// when the whisper library and a whisper model (e.g. tiny.en)
+	// when the whisper library and a whisper model (e.g. ggml-tiny.bin)
 	// have been installed under ~/.kronk.
 
 	buckyLibs, err := buckylibs.New()

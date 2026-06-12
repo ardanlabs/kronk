@@ -460,7 +460,7 @@ kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</
           <p>Download a model (recommended starter: Qwen3-0.6B-Q8_0):</p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull Qwen3-0.6B-Q8_0 --local`}</code></pre>
           <p>Models are stored in <code>~/.kronk/models/&lt;provider&gt;/&lt;family&gt;/</code> by default. After the pull completes the catalog entry is updated with the resolved provider, family, revision, and file sizes so subsequent lookups don't need to hit HuggingFace.</p>
-          <p><strong>Audio (Bucky):</strong> whisper models live in a separate flat layout at <code>~/.kronk/bucky-models/ggml-&lt;name&gt;.bin</code> and are pulled with <code>kronk bucky model pull &lt;name&gt;</code> (e.g. <code>tiny.en</code>). See <a href="chapter-18-bucky.md#183-model-catalog-pull">Chapter 18 §18.3</a>.</p>
+          <p><strong>Audio (Bucky):</strong> whisper models live in a separate flat layout at <code>~/.kronk/bucky-models/ggml-&lt;name&gt;.bin</code> and are pulled with <code>kronk bucky model pull &lt;name&gt;</code> (e.g. <code>ggml-tiny.bin</code>). See <a href="chapter-18-bucky.md#183-model-catalog-pull">Chapter 18 §18.3</a>.</p>
           <h3 id="26-starting-the-server">2.6 Starting the Server</h3>
           <p>Start the Kronk Model Server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
@@ -5670,7 +5670,7 @@ data: [DONE]`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`curl -X POST http://localhost:11435/v1/audio/transcriptions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -F file=@samples/jfk.wav \\
-  -F model=tiny.en \\
+  -F model=ggml-tiny.bin \\
   -F response_format=json`}</code></pre>
           <p>See <a href="chapter-18-bucky.md#187-api-endpoint">Chapter 18 §18.7</a> for the full form-field reference and supported response formats (<code>json</code>, <code>verbose_json</code>, <code>text</code>, <code>srt</code>, <code>vtt</code>).</p>
           <h3 id="1411-langchain">14.11 LangChain</h3>
@@ -6757,7 +6757,7 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
             </tbody>
           </table>
           <h3 id="183-model-catalog-pull">18.3 Model Catalog &amp; Pull</h3>
-          <p>Whisper models are single GGML <code>.bin</code> files stored flat under the bucky models root (default <code>~/.kronk/bucky-models/</code>). On-disk filenames follow the upstream HuggingFace mirror convention: <code>ggml-&lt;name&gt;.bin</code>. The short name strips the <code>ggml-</code> prefix and <code>.bin</code> suffix, so <code>ggml-tiny.en.bin</code> ↔ <code>tiny.en</code>.</p>
+          <p>Whisper models are single GGML <code>.bin</code> files stored flat under the bucky models root (default <code>~/.kronk/bucky-models/</code>). On-disk filenames follow the upstream HuggingFace mirror convention: <code>ggml-&lt;name&gt;.bin</code>. The short name strips the <code>ggml-</code> prefix and <code>.bin</code> suffix, so <code>ggml-ggml-tiny.bin.bin</code> ↔ <code>ggml-tiny.bin</code>.</p>
           <h4 id="1831-bundled-catalog">18.3.1 Bundled Catalog</h4>
           <table className="flags-table">
             <thead>
@@ -6774,7 +6774,7 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
                 <td>multilingual, fastest, lowest accuracy</td>
               </tr>
               <tr>
-                <td><code>tiny.en</code></td>
+                <td><code>ggml-tiny.bin</code></td>
                 <td>75 MB</td>
                 <td>english-only, fastest</td>
               </tr>
@@ -6826,13 +6826,13 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
 kronk bucky model catalog
 
 # Download the tiny English model.
-kronk bucky model pull tiny.en
+kronk bucky model pull ggml-tiny.bin
 
 # List installed models with size and ggml header summary.
 kronk bucky model list
 
 # Remove a model.
-kronk bucky model remove tiny.en`}</code></pre>
+kronk bucky model remove ggml-tiny.bin`}</code></pre>
           <p><code>pull</code> accepts a short name, a full ggml filename (<code>ggml-tiny.bin</code>), or a bare basename without extension. <code>--local</code> bypasses the model server.</p>
           <h4 id="1833-on-disk-layout">18.3.3 On-Disk Layout</h4>
           <pre className="code-block"><code className="language-diagram">{`~/.kronk/
@@ -6841,7 +6841,7 @@ kronk bucky model remove tiny.en`}</code></pre>
 │   ├── linux/amd64/cuda/          ← installed alongside (selected via KRONK_BUCKY_LIB_PATH)
 │   └── linux/amd64/cpu/
 └── bucky-models/
-    ├── ggml-tiny.en.bin
+    ├── ggml-ggml-tiny.bin.bin
     ├── ggml-base.bin
     └── ggml-large-v3-turbo.bin`}</code></pre>
           <h3 id="184-server-pool-configuration">18.4 Server &amp; Pool Configuration</h3>
@@ -6919,7 +6919,7 @@ kronk bucky model remove tiny.en`}</code></pre>
               <tr>
                 <td><code>model</code></td>
                 <td>string</td>
-                <td><strong>Required.</strong> Bucky model ID (short name, e.g. <code>tiny.en</code>).</td>
+                <td><strong>Required.</strong> Bucky model ID (short name, e.g. <code>ggml-tiny.bin</code>).</td>
               </tr>
               <tr>
                 <td><code>language</code></td>
@@ -6950,7 +6950,7 @@ kronk bucky model remove tiny.en`}</code></pre>
           </table>
           <p>Behavior notes:</p>
           <ul>
-            <li>The handler rejects requests against an English-only model (e.g. <code>tiny.en</code>) when <code>language</code> is set to anything other than <code>""</code> or <code>"en"</code>.</li>
+            <li>The handler rejects requests against an English-only model (e.g. <code>ggml-tiny.bin</code>) when <code>language</code> is set to anything other than <code>""</code> or <code>"en"</code>.</li>
             <li>The handler caps each request at a 30-minute internal deadline.</li>
             <li><code>verbose_json</code> includes <code>segments[]</code> with <code>start</code>, <code>end</code>, <code>text</code>, and <code>no_speech_prob</code>. Word-level timestamps are not yet plumbed through from whisper.cpp, so the <code>words: []</code> field is intentionally empty when <code>timestamp_granularities[]=word</code> is requested.</li>
           </ul>
@@ -6958,7 +6958,7 @@ kronk bucky model remove tiny.en`}</code></pre>
           <pre className="code-block"><code className="language-sh">{`curl -X POST http://localhost:8080/v1/audio/transcriptions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -F file=@samples/jfk.wav \\
-  -F model=tiny.en \\
+  -F model=ggml-tiny.bin \\
   -F response_format=json`}</code></pre>
           <h4 id="1872-admin-endpoints">18.7.2 Admin Endpoints</h4>
           <table className="flags-table">
@@ -7024,7 +7024,7 @@ func main() {
     lib.Download(ctx, bucky.FmtLogger)
 
     mdls, _ := buckymodels.New()
-    mp, _ := mdls.Download(ctx, bucky.FmtLogger, "tiny.en")
+    mp, _ := mdls.Download(ctx, bucky.FmtLogger, "ggml-tiny.bin")
 
     // 2. Initialize the whisper backend (loads the shared library).
     if err := bucky.Init(); err != nil {
@@ -7068,6 +7068,18 @@ func main() {
                 <td>Transcribe 16 kHz mono float32 PCM (batch, one-shot).</td>
               </tr>
               <tr>
+                <td><code>Bucky.TranscribeFile(...)</code></td>
+                <td>Decode an <code>io.Reader</code> (any supported format) and transcribe.</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.TranscribeChannels(...)</code></td>
+                <td>Channel-separated (diarized) transcribe: one speaker per channel.</td>
+              </tr>
+              <tr>
+                <td><code>Bucky.TranscribeChannelsFile(...)</code></td>
+                <td>Decode an <code>io.Reader</code> preserving channels and diarize.</td>
+              </tr>
+              <tr>
                 <td><code>Bucky.NewStream(...)</code></td>
                 <td>Open a live streaming session (see <a href="#189-streaming-transcription-sdk">18.9</a>).</td>
               </tr>
@@ -7093,6 +7105,24 @@ func main() {
               </tr>
             </tbody>
           </table>
+          <h4 id="channel-separated-diarization">Channel-Separated Diarization</h4>
+          <p>For recordings where each speaker is on a dedicated channel (call-center and meeting captures often record one participant per channel), <code>TranscribeChannels</code> / <code>TranscribeChannelsFile</code> transcribe every channel separately and merge the results into a single diarized transcript. This builds on the upstream <code>audio.SplitChannels</code> helper: native multi-channel formats (WAV, FLAC) are de-interleaved and each channel resampled to 16 kHz, then transcribed on its own. Formats that require ffmpeg (WebM/Opus, MP4/AAC, ...) are downmixed to a single channel, so they yield one speaker.</p>
+          <pre className="code-block"><code className="language-go">{`f, _ := os.Open("call.wav") // stereo: caller on L, agent on R
+defer f.Close()
+
+d, _ := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
+
+// d.Channels holds one Transcription per source channel.
+for _, ct := range d.Channels {
+    fmt.Printf("speaker %d: %s\\n", ct.Channel, ct.Text)
+}
+
+// d.Segments merges every channel's segments sorted by start time,
+// each tagged with the channel (speaker) it came from.
+for _, s := range d.Segments {
+    fmt.Printf("[%6dms] speaker %d: %s\\n", s.StartMs, s.Channel, s.Text)
+}`}</code></pre>
+          <p>When you already hold decoded 16 kHz mono float32 channels (e.g. from <code>model.DecodeChannels</code>), call <code>TranscribeChannels(ctx, channels, ...)</code> directly.</p>
           <h3 id="189-streaming-transcription-sdk">18.9 Streaming Transcription (SDK)</h3>
           <p><code>Bucky.Transcribe</code> is one-shot: hand it a full clip, get one result back. For audio that arrives <em>over time</em> — a microphone, a chunked HTTP upload, a WebSocket, a long voice memo — use a <strong>stream</strong> instead. You <code>Feed</code> samples as they arrive and consume incremental transcript <strong>events</strong> from a channel; the stream owns the buffering, windowing, and silence detection for you.</p>
           <pre className="code-block"><code className="language-go">{`ctx := context.Background()
@@ -7303,7 +7333,7 @@ if err := stream.Reset(ctx); err != nil { /* ... */ }`}</code></pre>
           <h3 id="1810-supported-languages">18.10 Supported Languages</h3>
           <p><code>whisper.cpp</code> supports ~99 languages. Bucky exposes the full set through <code>bucky.LangID</code> / <code>bucky.LangStr</code> / <code>bucky.LangMaxID</code>, and the BUI Translator includes a shortlist of common ones plus an <strong>Auto-detect</strong> option (<code>language=""</code>).</p>
           <p>Pass the BCP-47 / ISO 639-1 short code (<code>en</code>, <code>de</code>, <code>fr</code>, …) in the <code>language</code> form field or in <code>model.WithLanguage(...)</code>. Empty string means auto-detect.</p>
-          <p>The <strong>English-only</strong> model variants (<code>tiny.en</code>, <code>base.en</code>, <code>small.en</code>, <code>medium.en</code>) reject any non-<code>en</code> language hint. Use the multilingual variants for non-English audio.</p>
+          <p>The <strong>English-only</strong> model variants (<code>ggml-tiny.bin</code>, <code>base.en</code>, <code>small.en</code>, <code>medium.en</code>) reject any non-<code>en</code> language hint. Use the multilingual variants for non-English audio.</p>
           <h3 id="1811-troubleshooting">18.11 Troubleshooting</h3>
           <table className="flags-table">
             <thead>
@@ -9005,7 +9035,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/params.go"><code>sdk/kronk/model/params.go</code></a></td>
                 <td>`top_p == 0</td>
                 <td></td>
-                <td>== 1<code> from the request is treated as unset so the model-config </code>top_p` survives.</td>
+                <td>== 1<code>from the request is treated as unset so the model-config</code>top_p` survives.</td>
               </tr>
             </tbody>
           </table>
@@ -9249,7 +9279,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
           <ol>
             <li>Frees ~25 GB on the runner (drops dotnet, android, ghc, CodeQL).</li>
             <li>Installs Go via <code>actions/setup-go</code> with <code>go-version-file: .go-version</code>.</li>
-            <li>Restores two <strong>independent</strong> caches: | Cache         | Path                                 | Key                                                                         | Why separate                                                    | | ------------- | ------------------------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------- | | Libraries     | <code>~/.kronk/libraries</code>, <code>~/.kronk/bucky-libraries</code> | <code>$&#123;&#123; runner.os &#125;&#125;-kronk-libs-$&#123;&#123; hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') &#125;&#125;</code> | Libs change far less often than models; keep them hot.          | | Models        | <code>~/.kronk/models</code>, <code>~/.kronk/bucky-models</code>       | <code>$&#123;&#123; runner.os &#125;&#125;-models-$&#123;&#123; hashFiles('.github/test-models.txt') &#125;&#125;</code>        | Tied to the test-model manifest — see <a href="#19145-test-modelstxt--test-model-manifest">§19.14.5</a>. |</li>
+            <li>Restores two <strong>independent</strong> caches: | Cache     | Path                                             | Key                                                                                                      | Why separate                                                                                  | | --------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | | Libraries | <code>~/.kronk/libraries</code>, <code>~/.kronk/bucky-libraries</code> | <code>$&#123;&#123; runner.os &#125;&#125;-kronk-libs-$&#123;&#123; hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') &#125;&#125;</code> | Libs change far less often than models; keep them hot.                                        | | Models    | <code>~/.kronk/models</code>, <code>~/.kronk/bucky-models</code>       | <code>$&#123;&#123; runner.os &#125;&#125;-models-$&#123;&#123; hashFiles('.github/test-models.txt') &#125;&#125;</code>                                    | Tied to the test-model manifest — see <a href="#19145-test-modelstxt--test-model-manifest">§19.14.5</a>. |</li>
             <li><code>go install ./cmd/kronk</code> — fast because the Go module + build cache restored by <code>setup-go</code> is shared with the <code>static</code> job (same Go version, same <code>go.sum</code>).</li>
             <li><code>kronk libs --local</code> + <code>kronk bucky libs --local</code> to install the llama.cpp + whisper.cpp native libraries (idempotent on a cache hit).</li>
             <li>On models-cache miss only, walks <code>.github/test-models.txt</code> and pulls every listed model via <code>kronk model pull --local</code> or <code>kronk bucky model pull --local</code>.</li>
@@ -9298,7 +9328,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
               </tr>
               <tr>
                 <td><code>bucky</code></td>
-                <td><code>tiny.en</code></td>
+                <td><code>ggml-tiny.bin</code></td>
               </tr>
             </tbody>
           </table>

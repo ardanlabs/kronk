@@ -138,19 +138,19 @@ bucky-model-list-local:
 	go run cmd/kronk/main.go bucky model list --local
 
 
-# make bucky-model-pull NAME="tiny.en"
+# make bucky-model-pull NAME="ggml-tiny.bin"
 bucky-model-pull:
 	go run cmd/kronk/main.go bucky model pull "$(NAME)"
 
-# make bucky-model-pull-local NAME="tiny.en"
+# make bucky-model-pull-local NAME="ggml-tiny.bin"
 bucky-model-pull-local:
 	go run cmd/kronk/main.go bucky model pull --local "$(NAME)"
 
 
-# make bucky-model-remove NAME="tiny.en"
+# make bucky-model-remove NAME="ggml-tiny.bin"
 bucky-model-remove:
 	go run cmd/kronk/main.go bucky model remove "$(NAME)"
 
-# make bucky-model-remove-local NAME="tiny.en"
+# make bucky-model-remove-local NAME="ggml-tiny.bin"
 bucky-model-remove-local:
 	go run cmd/kronk/main.go bucky model remove --local "$(NAME)"

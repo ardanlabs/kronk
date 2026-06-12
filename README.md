@@ -176,6 +176,12 @@ make example-bucky
 make example-bucky-stream
 ```
 
+[BUCKY-DIAR](examples/bucky-diar/main.go) - This example shows you how to do channel-separated speaker diarization with the bucky SDK: each speaker is recorded on a dedicated channel, and `TranscribeChannelsFile` transcribes every channel on its own and merges the results into one time-sorted transcript tagged by speaker. See [Channel-Separated Diarization](.manual/chapter-18-bucky.md#188-sdk-quick-start) in the manual.
+
+```shell
+make example-bucky-diar
+```
+
 [CHAT](examples/chat/main.go) - This example shows you how to chat with the chat-completion api.
 
 ```shell

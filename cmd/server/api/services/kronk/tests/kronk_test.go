@@ -82,7 +82,7 @@ func Test_API(t *testing.T) {
 	test.Run(t, rerank200(tokens), "rerank-200")
 
 	// -------------------------------------------------------------------------
-	// Model: tiny.en (whisper / bucky)
+	// Model: ggml-tiny.bin (whisper / bucky)
 
 	test.Run(t, audioTranscriptions200(t, tokens), "audio-transcriptions-200")
 

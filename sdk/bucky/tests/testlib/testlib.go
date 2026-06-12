@@ -28,6 +28,11 @@ var (
 	MaxRetries    = 3
 	RunInParallel = false
 	AudioFile     string
+
+	// StereoAudioFile is a 16 kHz two-channel WAV with one speaker per
+	// channel (English on channel 0, Spanish on channel 1), used to
+	// exercise the channel-separated diarization path.
+	StereoAudioFile string
 )
 
 // Model paths resolved during Setup. Each entry corresponds to one
@@ -46,6 +51,7 @@ var (
 func Setup() {
 	gw := os.Getenv("GITHUB_WORKSPACE")
 	AudioFile = filepath.Join(gw, "examples", "samples", "jfk.wav")
+	StereoAudioFile = filepath.Join(gw, "examples", "samples", "stereo-speakers.wav")
 
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		Goroutines = 1
@@ -62,7 +68,7 @@ func Setup() {
 		os.Exit(1)
 	}
 
-	resolveModel(mdls, "tiny.en", &MPTinyEn)
+	resolveModel(mdls, "ggml-tiny.bin", &MPTinyEn)
 
 	printInfo(mdls)
 
@@ -116,8 +122,8 @@ func WithWhisper(t *testing.T, cfg model.Config, fn func(t *testing.T, w *bucky.
 // =============================================================================
 // Config builders for each model variant.
 
-// CfgTinyEn returns a model.Config for the tiny.en whisper model
-// sized for the parallel transcribe tests (NSeqMax=2).
+// CfgTinyEn returns a model.Config for the multilingual ggml-tiny.bin
+// whisper model sized for the parallel transcribe tests (NSeqMax=2).
 func CfgTinyEn() model.Config {
 	return model.Config{
 		ModelPath: MPTinyEn.ModelFiles[0],

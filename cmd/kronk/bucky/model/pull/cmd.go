@@ -39,7 +39,7 @@ MODES
 EXAMPLES
 
   # Download the tiny English model via a running server.
-  kronk bucky model pull tiny.en
+  kronk bucky model pull ggml-tiny.bin
 
   # Download in-process by full filename.
   kronk bucky model pull --local ggml-base.bin

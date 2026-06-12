@@ -396,7 +396,7 @@ func (m *Model) NewStream(ctx context.Context, onClose func(), opts ...StreamOpt
 			return Transcription{}, nil, err
 		}
 
-		return collectTranscription(ps.state, nil), harvestPromptTokens(ps.state, maxPromptTokens), nil
+		return collectTranscription(ps.state, cfg.Language, nil), harvestPromptTokens(ps.state, maxPromptTokens), nil
 	}
 
 	release := func() {

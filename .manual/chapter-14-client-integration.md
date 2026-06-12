@@ -399,7 +399,7 @@ data: [DONE]
 curl -X POST http://localhost:11435/v1/audio/transcriptions \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -F file=@samples/jfk.wav \
-  -F model=tiny.en \
+  -F model=ggml-tiny.bin \
   -F response_format=json
 ```
 

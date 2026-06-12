@@ -33,10 +33,10 @@ MODES
 EXAMPLES
 
   # Remove the tiny English model from a running server.
-  kronk bucky model remove tiny.en
+  kronk bucky model remove ggml-tiny.bin
 
   # Remove the tiny English model in-process.
-  kronk bucky model remove --local tiny.en
+  kronk bucky model remove --local ggml-tiny.bin
 
 ENVIRONMENT VARIABLES
 

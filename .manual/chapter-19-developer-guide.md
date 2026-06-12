@@ -161,11 +161,11 @@ A fresh checkout that skips `install-gotooling` will fail the `lint` and
 The repo carries two Go-version files with different roles:
 
 | File                            | Role                                                                        | Value       |
-|---------------------------------|-----------------------------------------------------------------------------|-------------|
+| ------------------------------- | --------------------------------------------------------------------------- | ----------- |
 | [`go.mod`](../go.mod)           | Minimum language version. Floor for downstream consumers.                   | `go 1.26.0` |
 | [`.go-version`](../.go-version) | Exact toolchain CI / dev managers install (asdf, mise, goenv, gvm, direnv). | `1.26.4`    |
 
-They are allowed to differ on the *patch* component but must agree on
+They are allowed to differ on the _patch_ component but must agree on
 `<major>.<minor>`. The Linux + Release workflows run
 [`.github/scripts/check-go-version.sh`](../.github/scripts/check-go-version.sh)
 to enforce this — bump both files together or CI fails. See
@@ -1480,11 +1480,11 @@ not yet bind. Kronk adds them locally in
 [`yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go)
 via the `jupiterrider/ffi` package:
 
-| Symbol                                | Go wrapper                                            | Purpose                                                                                              |
-| ------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `llama_set_embeddings_pre_norm`       | `SetEmbeddingsPreNorm(ctx, value, masked)`            | Toggle pre-norm extraction on a context. `masked=false` = dense (all rows); `masked=true` = sparse (logit-flagged rows only). |
-| `llama_get_embeddings_pre_norm`       | `GetEmbeddingsPreNorm(ctx, nRows, nEmbd) []float32`   | Return the dense buffer produced by the most recent `llama_decode`. Used on the target.              |
-| `llama_get_embeddings_pre_norm_ith`   | `GetEmbeddingsPreNormIth(ctx, i, nEmbd) []float32`    | Return a single row by output-table index. Used on the draft (masked) context.                       |
+| Symbol                              | Go wrapper                                          | Purpose                                                                                                                       |
+| ----------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `llama_set_embeddings_pre_norm`     | `SetEmbeddingsPreNorm(ctx, value, masked)`          | Toggle pre-norm extraction on a context. `masked=false` = dense (all rows); `masked=true` = sparse (logit-flagged rows only). |
+| `llama_get_embeddings_pre_norm`     | `GetEmbeddingsPreNorm(ctx, nRows, nEmbd) []float32` | Return the dense buffer produced by the most recent `llama_decode`. Used on the target.                                       |
+| `llama_get_embeddings_pre_norm_ith` | `GetEmbeddingsPreNormIth(ctx, i, nEmbd) []float32`  | Return a single row by output-table index. Used on the draft (masked) context.                                                |
 
 Two binding details worth highlighting:
 
@@ -1678,11 +1678,11 @@ The fix has two parts:
 2. **`processBatch` post-decode is three-pass** in
    [batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go):
 
-| Pass | Slots                                                        | Work                                                                                                          |
-| ---- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| 1    | Non-spec (`s.specDraftTokens == nil`)                         | MTP mirror (if applicable) + `processSlotToken`. Target logit buffer is fully intact.                          |
-| 2A   | Spec (`s.specDraftTokens != nil`)                             | Phase A — `verifySpeculativeTokens`. Pure reads on the target logit buffer, so all spec slots run safely back to back. |
-| 2B   | Spec with `specPendingFinalize == true`                       | Phase B — `finalizeSpeculativeTokens`. Hybrid restores can wipe the logit buffer here; by this point every other spec slot has already consumed its logits. |
+| Pass | Slots                                   | Work                                                                                                                                                        |
+| ---- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Non-spec (`s.specDraftTokens == nil`)   | MTP mirror (if applicable) + `processSlotToken`. Target logit buffer is fully intact.                                                                       |
+| 2A   | Spec (`s.specDraftTokens != nil`)       | Phase A — `verifySpeculativeTokens`. Pure reads on the target logit buffer, so all spec slots run safely back to back.                                      |
+| 2B   | Spec with `specPendingFinalize == true` | Phase B — `finalizeSpeculativeTokens`. Hybrid restores can wipe the logit buffer here; by this point every other spec slot has already consumed its logits. |
 
 EOG handling: when `handleSampledToken` inside Phase A finishes the
 slot (`finishSlot` → `reset`), the `specPending*` fields stay
@@ -1713,10 +1713,10 @@ boundary, and the next `llama_decode` would fail with `-1`.
 
 Two helpers in `batch_speculative.go` solve this:
 
-| Helper                          | What it does                                                                                                                                                |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `captureTargetSpecSnapshot(s)`  | Sizes `s.specSnapshot` via `StateSeqGetSize` and reads the full per-sequence state with `StateSeqGetData`. Called **before** the spec batch is decoded.     |
-| `restoreTargetSpecSnapshot(s)`  | `StateSeqSetData` to rewind, then re-decode `(sampledAtBase + first accepted drafts)` so the seq ends at exactly `basePast + 1 + accepted` correct positions. |
+| Helper                         | What it does                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `captureTargetSpecSnapshot(s)` | Sizes `s.specSnapshot` via `StateSeqGetSize` and reads the full per-sequence state with `StateSeqGetData`. Called **before** the spec batch is decoded.       |
+| `restoreTargetSpecSnapshot(s)` | `StateSeqSetData` to rewind, then re-decode `(sampledAtBase + first accepted drafts)` so the seq ends at exactly `basePast + 1 + accepted` correct positions. |
 
 The snapshot buffer is lazy-grow / never-shrink on the slot
 (`s.specSnapshot`). Size scales with current KV occupancy, so the cost
@@ -1756,35 +1756,35 @@ PR #593 added the following fields to `slot` in
 All are reset in `slot.reset()` with lazy-grow / never-shrink
 buffer policy.
 
-| Field                                                 | Purpose                                                                                                                                   |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `pendingH []float32`                                  | Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.                                            |
-| `targetBatchStart / Count / BasePos`                  | Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live. |
-| `mtpHasBatch`                                         | True between `batch.Add()` and the post-decode mirror; cleared by the mirror.                                                              |
-| `mtpDisabledForRequest`                               | Disables MTP for the remainder of the current request. Set at `startSlot` on IMC cache hits where the matched session has no draft-seq snapshot (or the draft restore returned 0 bytes) — MTP-aware IMC builds snapshot both target and draft seqs so this failsafe rarely fires on freshly-built caches. Also set inside `finalizeSpeculativeTokens` after a post-rollback mirror failure (the draft KV is wiped and the slot continues target-only). Cleared by `slot.reset()` when the slot is recycled for the next request. |
-| `verifyH []float32`                                   | Slot-local cache of the target's pre-norm hidden-state rows for the just-decoded spec batch range (1+nDraft rows of nEmbd floats). Captured at the top of `verifySpeculativeTokens` (Phase A) BEFORE any Phase B side-effect (notably `restoreTargetSpecSnapshot`'s re-decode on a hybrid target) can invalidate the per-context pre-norm buffer. `mirrorTargetBatchToMTPDraft` reads from this buffer when populated and clears it after consumption. Lazy-grow / never-shrink. |
-| `specSnapshot []byte`                                 | Pre-spec target state buffer for hybrid rollback (§19.12.6). Lazy-grow.                                                                    |
-| `specRounds`                                          | Counter used to throttle per-round verify logging (logs first round, then every 32nd).                                                     |
-| `specPendingFinalize bool`                            | Gates Phase B (§19.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips. |
-| `specPendingAccepted int`                             | Phase A → Phase B hand-off: accepted draft count.                                                                                          |
-| `specPendingBonusToken llama.Token`                   | Phase A → Phase B hand-off: bonus token sampled at `baseBatch + accepted`.                                                                  |
-| `specPendingOriginalSampled llama.Token`              | Phase A → Phase B hand-off: snapshot of `s.sampled` taken before any `handleSampledToken` mutated it. Hybrid restore needs this for the re-decode at `basePast`. |
+| Field                                    | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pendingH []float32`                     | Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `targetBatchStart / Count / BasePos`     | Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live.                                                                                                                                                                                                                                                                                                                                                                                         |
+| `mtpHasBatch`                            | True between `batch.Add()` and the post-decode mirror; cleared by the mirror.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `mtpDisabledForRequest`                  | Disables MTP for the remainder of the current request. Set at `startSlot` on IMC cache hits where the matched session has no draft-seq snapshot (or the draft restore returned 0 bytes) — MTP-aware IMC builds snapshot both target and draft seqs so this failsafe rarely fires on freshly-built caches. Also set inside `finalizeSpeculativeTokens` after a post-rollback mirror failure (the draft KV is wiped and the slot continues target-only). Cleared by `slot.reset()` when the slot is recycled for the next request. |
+| `verifyH []float32`                      | Slot-local cache of the target's pre-norm hidden-state rows for the just-decoded spec batch range (1+nDraft rows of nEmbd floats). Captured at the top of `verifySpeculativeTokens` (Phase A) BEFORE any Phase B side-effect (notably `restoreTargetSpecSnapshot`'s re-decode on a hybrid target) can invalidate the per-context pre-norm buffer. `mirrorTargetBatchToMTPDraft` reads from this buffer when populated and clears it after consumption. Lazy-grow / never-shrink.                                                 |
+| `specSnapshot []byte`                    | Pre-spec target state buffer for hybrid rollback (§19.12.6). Lazy-grow.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `specRounds`                             | Counter used to throttle per-round verify logging (logs first round, then every 32nd).                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `specPendingFinalize bool`               | Gates Phase B (§19.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `specPendingAccepted int`                | Phase A → Phase B hand-off: accepted draft count.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `specPendingBonusToken llama.Token`      | Phase A → Phase B hand-off: bonus token sampled at `baseBatch + accepted`.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `specPendingOriginalSampled llama.Token` | Phase A → Phase B hand-off: snapshot of `s.sampled` taken before any `handleSampledToken` mutated it. Hybrid restore needs this for the re-decode at `basePast`.                                                                                                                                                                                                                                                                                                                                                                 |
 
 #### 19.12.8 Code Map
 
-| File                                                                                                                                         | Role for MTP                                                                                                                       |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [`sdk/kronk/model/draft_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go)                     | `mtpNextNLayers`, `loadDraftModelMTP`, `selectAndLoadDraft`. Sole source for MTP load + detect.                                    |
-| [`sdk/kronk/model/batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)                     | `mirrorTargetBatchToMTPDraft`, `generateDraftTokensMTP`, `decodeTokensIntoCacheMTP` (IMC cache build with mirror), `mirrorBuildChunkToMTPDraft`, helpers (`batchTokensAt`, `mirrorBatchCapacity`). |
-| [`sdk/kronk/model/yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go)                               | FFI bindings for the three pre-norm symbols; `MTPAvailable`, `SetEmbeddingsPreNorm`, `GetEmbeddingsPreNorm{,Ith}`.                 |
-| [`sdk/kronk/model/model.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go)                             | `draftModel` struct extended with MTP fields (`mtp`, `nEmbd`, MTP batches, pinned embd slices). `Unload` skips shared `ModelFree`. |
-| [`sdk/kronk/model/batch_slot.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go)                   | `slot` struct extended with per-slot MTP state (`pendingH`, target-batch range, `mtpHasBatch`, `mtpDisabledForRequest`, `specSnapshot`, `specRounds`). |
-| [`sdk/kronk/model/batch_slot_start.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)       | Skips separate-draft-prefill on MTP; dispatches the MTP-aware `decodeTokensIntoCacheMTP` during IMC cache build so draft KV is populated in lock-step; snapshots/restores the draft seq + pendingH alongside the target so cache hits keep MTP running. Only disables MTP for a cache-hit request when the matched session has no draft snapshot. |
-| [`sdk/kronk/model/batch_engine.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)               | `processBatch` integration: claims slot's target-batch range at every add site, mirrors after every successful decode, dispatches MTP vs separate-GGUF draft generation. |
-| [`sdk/kronk/model/batch_prefill_text.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go)   | `addPrefillChunk` claims (or extends) the slot's MTP target-batch range so prefill rows get mirrored.                              |
-| [`sdk/kronk/model/batch_speculative.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go)     | Greedy-only MTP verify path; `originalSampled` snapshot; hybrid snapshot/restore; post-verify mirror; throttled `verify-done` log; MTP-specific `rollbackDraft`. |
-| [`sdk/kronk/model/batch_finish.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go)               | Always-emit draft metrics when a drafter is configured.                                                                            |
-| [`sdk/kronk/model/params.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/params.go)                           | `top_p == 0 || == 1` from the request is treated as unset so the model-config `top_p` survives.                                    |
+| File                                                                                                                                       | Role for MTP                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------------------------------------------------------------------ |
+| [`sdk/kronk/model/draft_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go)                   | `mtpNextNLayers`, `loadDraftModelMTP`, `selectAndLoadDraft`. Sole source for MTP load + detect.                                                                                                                                                                                                                                                   |
+| [`sdk/kronk/model/batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)                   | `mirrorTargetBatchToMTPDraft`, `generateDraftTokensMTP`, `decodeTokensIntoCacheMTP` (IMC cache build with mirror), `mirrorBuildChunkToMTPDraft`, helpers (`batchTokensAt`, `mirrorBatchCapacity`).                                                                                                                                                |
+| [`sdk/kronk/model/yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go)                             | FFI bindings for the three pre-norm symbols; `MTPAvailable`, `SetEmbeddingsPreNorm`, `GetEmbeddingsPreNorm{,Ith}`.                                                                                                                                                                                                                                |
+| [`sdk/kronk/model/model.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go)                           | `draftModel` struct extended with MTP fields (`mtp`, `nEmbd`, MTP batches, pinned embd slices). `Unload` skips shared `ModelFree`.                                                                                                                                                                                                                |
+| [`sdk/kronk/model/batch_slot.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go)                 | `slot` struct extended with per-slot MTP state (`pendingH`, target-batch range, `mtpHasBatch`, `mtpDisabledForRequest`, `specSnapshot`, `specRounds`).                                                                                                                                                                                            |
+| [`sdk/kronk/model/batch_slot_start.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)     | Skips separate-draft-prefill on MTP; dispatches the MTP-aware `decodeTokensIntoCacheMTP` during IMC cache build so draft KV is populated in lock-step; snapshots/restores the draft seq + pendingH alongside the target so cache hits keep MTP running. Only disables MTP for a cache-hit request when the matched session has no draft snapshot. |
+| [`sdk/kronk/model/batch_engine.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)             | `processBatch` integration: claims slot's target-batch range at every add site, mirrors after every successful decode, dispatches MTP vs separate-GGUF draft generation.                                                                                                                                                                          |
+| [`sdk/kronk/model/batch_prefill_text.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go) | `addPrefillChunk` claims (or extends) the slot's MTP target-batch range so prefill rows get mirrored.                                                                                                                                                                                                                                             |
+| [`sdk/kronk/model/batch_speculative.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go)   | Greedy-only MTP verify path; `originalSampled` snapshot; hybrid snapshot/restore; post-verify mirror; throttled `verify-done` log; MTP-specific `rollbackDraft`.                                                                                                                                                                                  |
+| [`sdk/kronk/model/batch_finish.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go)             | Always-emit draft metrics when a drafter is configured.                                                                                                                                                                                                                                                                                           |
+| [`sdk/kronk/model/params.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/params.go)                         | `top_p == 0                                                                                                                                                                                                                                                                                                                                       |     | == 1`from the request is treated as unset so the model-config`top_p` survives. |
 
 #### 19.12.9 Testing
 
@@ -1822,16 +1822,16 @@ of the whisper.cpp backend.
 
 #### 19.13.1 Package Layout
 
-| Package                                                                                                                                  | Role                                                                                                                                          |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`sdk/bucky`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky)                                                       | High-level handle (`*Bucky`). Owns one model + outer semaphore. Mirrors the role `sdk/kronk` plays for llama.                                 |
-| [`sdk/bucky/model`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/model)                                           | Low-level whisper.cpp wrapper: `Config`, `Model`, `Transcribe`, `DetectLanguage`, `statePool`, language helpers, ggml-header info.            |
-| [`sdk/bucky/pool`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool)                                             | Multi-model `engine.Pool[*Bucky]` cache, shared `resman.Manager` reservations, `ModelStatus` aggregation (loaded + loading).                  |
-| [`sdk/tools/bucky/libs`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/libs)                                 | Cross-platform whisper.cpp shared-library installer (triples, default bundle resolution, prebuilt-archive downloader).                        |
-| [`sdk/tools/bucky/models`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/models)                             | Bundled whisper catalog, GGML downloader, ggml-header parser, on-disk index for `bucky-models/`.                                              |
-| [`cmd/kronk/bucky`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/kronk/bucky)                                           | CLI: `kronk bucky libs` and `kronk bucky model {catalog,list,pull,remove}`. Each verb has a `--local` and a `--web` mode.                     |
-| [`cmd/server/app/domain/audioapp`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp)             | HTTP handler for `POST /v1/audio/transcriptions` (multipart upload, format dispatch).                                                         |
-| [`cmd/server/app/domain/toolapp`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp)               | HTTP handlers for `/v1/bucky/libs/*` and `/v1/bucky/models/*` admin endpoints (`bucky_libs.go`, `bucky_models.go`).                           |
+| Package                                                                                                                      | Role                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [`sdk/bucky`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky)                                           | High-level handle (`*Bucky`). Owns one model + outer semaphore. Mirrors the role `sdk/kronk` plays for llama.                      |
+| [`sdk/bucky/model`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/model)                               | Low-level whisper.cpp wrapper: `Config`, `Model`, `Transcribe`, `DetectLanguage`, `statePool`, language helpers, ggml-header info. |
+| [`sdk/bucky/pool`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool)                                 | Multi-model `engine.Pool[*Bucky]` cache, shared `resman.Manager` reservations, `ModelStatus` aggregation (loaded + loading).       |
+| [`sdk/tools/bucky/libs`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/libs)                     | Cross-platform whisper.cpp shared-library installer (triples, default bundle resolution, prebuilt-archive downloader).             |
+| [`sdk/tools/bucky/models`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/models)                 | Bundled whisper catalog, GGML downloader, ggml-header parser, on-disk index for `bucky-models/`.                                   |
+| [`cmd/kronk/bucky`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/kronk/bucky)                               | CLI: `kronk bucky libs` and `kronk bucky model {catalog,list,pull,remove}`. Each verb has a `--local` and a `--web` mode.          |
+| [`cmd/server/app/domain/audioapp`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp) | HTTP handler for `POST /v1/audio/transcriptions` (multipart upload, format dispatch).                                              |
+| [`cmd/server/app/domain/toolapp`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp)   | HTTP handlers for `/v1/bucky/libs/*` and `/v1/bucky/models/*` admin endpoints (`bucky_libs.go`, `bucky_models.go`).                |
 
 #### 19.13.2 Handle, Semaphore, and `whisper.State` Pool
 
@@ -1944,11 +1944,11 @@ to keep the response shape compatible.
 
 #### 19.13.6 Tests
 
-| Test                                                                                                                                          | Scope                                                                                              |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| [`sdk/bucky/tests/transcribe`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/tests/transcribe)                          | SDK-level: `Bucky.Transcribe` (greedy + `OnSegment`) and pool concurrency.                         |
-| [`sdk/bucky/init_test.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/init_test.go)                                  | `Init` idempotency, degraded-mode fallback, log-level wiring.                                      |
-| [`cmd/server/api/services/kronk/tests/audio_test.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/services/kronk/tests/audio_test.go) | End-to-end HTTP: `POST /v1/audio/transcriptions` with every supported `response_format`.           |
+| Test                                                                                                                                                               | Scope                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| [`sdk/bucky/tests/transcribe`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/tests/transcribe)                                               | SDK-level: `Bucky.Transcribe` (greedy + `OnSegment`) and pool concurrency.               |
+| [`sdk/bucky/init_test.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/init_test.go)                                                       | `Init` idempotency, degraded-mode fallback, log-level wiring.                            |
+| [`cmd/server/api/services/kronk/tests/audio_test.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/services/kronk/tests/audio_test.go) | End-to-end HTTP: `POST /v1/audio/transcriptions` with every supported `response_format`. |
 
 Tests follow the repo's standard env-var contract:
 
@@ -1967,13 +1967,13 @@ disk, so contributors without a pulled model still get a green run.
 
 Five GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
 
-| Workflow             | Triggers                                                   | Purpose                                                                                                                                                |
-| -------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`linux.yml`](../.github/workflows/linux.yml)             | PRs + push to `main` (Go/mod/CI paths)                     | Three parallel jobs: `static` (vet/staticcheck/govulncheck/gofmt/gofix/tidy/goreleaser-check/-race unit tests), `api-tests` (`cmd/server/...`), `sdk-tests` (`sdk/...`). |
-| [`release.yaml`](../.github/workflows/release.yaml)       | Push of tag `v*`                                           | Pinned-toolchain `goreleaser release --clean`, SBOM generation via syft, SLSA build-provenance attestation, Homebrew cask refresh.                     |
-| [`docker.yml`](../.github/workflows/docker.yml)           | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds the **five** container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). Only tag pushes (`v*`) publish + cosign-sign; main pushes build all variants for CI validation (and smoke-test cpu/amd64) but do not push to any registry. |
-| [`cache-cleanup.yml`](../.github/workflows/cache-cleanup.yml) | Daily cron + manual                                        | Prunes stale GHA cache entries and stale `kronk-buildcache` GHCR tags older than the cutoff.                                                            |
-| [`label-guard.yml`](../.github/workflows/label-guard.yml) | Label events on PRs/issues                                 | Removes unauthorized `build *` labels (PRs from non-maintainers; any application on an issue).                                                          |
+| Workflow                                                      | Triggers                                                   | Purpose                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`linux.yml`](../.github/workflows/linux.yml)                 | PRs + push to `main` (Go/mod/CI paths)                     | Three parallel jobs: `static` (vet/staticcheck/govulncheck/gofmt/gofix/tidy/goreleaser-check/-race unit tests), `api-tests` (`cmd/server/...`), `sdk-tests` (`sdk/...`).                                                                                                        |
+| [`release.yaml`](../.github/workflows/release.yaml)           | Push of tag `v*`                                           | Pinned-toolchain `goreleaser release --clean`, SBOM generation via syft, SLSA build-provenance attestation, Homebrew cask refresh.                                                                                                                                              |
+| [`docker.yml`](../.github/workflows/docker.yml)               | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds the **five** container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). Only tag pushes (`v*`) publish + cosign-sign; main pushes build all variants for CI validation (and smoke-test cpu/amd64) but do not push to any registry. |
+| [`cache-cleanup.yml`](../.github/workflows/cache-cleanup.yml) | Daily cron + manual                                        | Prunes stale GHA cache entries and stale `kronk-buildcache` GHCR tags older than the cutoff.                                                                                                                                                                                    |
+| [`label-guard.yml`](../.github/workflows/label-guard.yml)     | Label events on PRs/issues                                 | Removes unauthorized `build *` labels (PRs from non-maintainers; any application on an issue).                                                                                                                                                                                  |
 
 The three Linux jobs run in parallel and all use
 [`actions/setup-go`](https://github.com/actions/setup-go) keyed on
@@ -2089,10 +2089,10 @@ a composite action that:
 2. Installs Go via `actions/setup-go` with `go-version-file: .go-version`.
 3. Restores two **independent** caches:
 
-   | Cache         | Path                                 | Key                                                                         | Why separate                                                    |
-   | ------------- | ------------------------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
-   | Libraries     | `~/.kronk/libraries`, `~/.kronk/bucky-libraries` | `${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}` | Libs change far less often than models; keep them hot.          |
-   | Models        | `~/.kronk/models`, `~/.kronk/bucky-models`       | `${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}`        | Tied to the test-model manifest — see [§19.14.5](#19145-test-modelstxt--test-model-manifest). |
+   | Cache     | Path                                             | Key                                                                                                      | Why separate                                                                                  |
+   | --------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+   | Libraries | `~/.kronk/libraries`, `~/.kronk/bucky-libraries` | `${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}` | Libs change far less often than models; keep them hot.                                        |
+   | Models    | `~/.kronk/models`, `~/.kronk/bucky-models`       | `${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}`                                    | Tied to the test-model manifest — see [§19.14.5](#19145-test-modelstxt--test-model-manifest). |
 
 4. `go install ./cmd/kronk` — fast because the Go module + build cache
    restored by `setup-go` is shared with the `static` job (same Go
@@ -2131,13 +2131,13 @@ Format — one entry per line:
 
 Current manifest:
 
-| Backend | Model                                |
-| ------- | ------------------------------------ |
-| `kronk` | `unsloth/Qwen3.5-0.8B-Q8_0`          |
-| `kronk` | `Qwen/Qwen3-8B-Q8_0`                 |
+| Backend | Model                                   |
+| ------- | --------------------------------------- |
+| `kronk` | `unsloth/Qwen3.5-0.8B-Q8_0`             |
+| `kronk` | `Qwen/Qwen3-8B-Q8_0`                    |
 | `kronk` | `ggml-org/embeddinggemma-300m-qat-Q8_0` |
-| `kronk` | `gpustack/bge-reranker-v2-m3-Q8_0`   |
-| `bucky` | `tiny.en`                            |
+| `kronk` | `gpustack/bge-reranker-v2-m3-Q8_0`      |
+| `bucky` | `ggml-tiny.bin`                         |
 
 Checklist when adding a test that needs a new model:
 
@@ -2260,8 +2260,7 @@ digests.
 pushes never reach this job):
 
 1. Downloads the per-registry digest artifacts for its variant.
-2. Stitches the multi-arch manifest with `docker buildx imagetools
-   create -t <image>:<tag> <image>@sha256:<arch1>...` against both
+2. Stitches the multi-arch manifest with `docker buildx imagetools create -t <image>:<tag> <image>@sha256:<arch1>...` against both
    registries independently. The first invocation per registry uses
    `--metadata-file` so the resulting manifest-list digest can be
    captured deterministically (no read-after-write inspect).
@@ -2276,7 +2275,6 @@ pushes never reach this job):
    `latest-<variant>` and (cpu only) `latest`, all pointing at the
    same digest. Consumers verify by tag as usual; cosign resolves
    the tag to a digest at verify time.
-
    - **GHCR** signatures are stored co-located with the image
      (default cosign layout).
    - **Docker Hub** signatures are redirected to the sibling repo
@@ -2311,14 +2309,14 @@ pushes never reach this job):
 
 **Event → variants → tags:**
 
-| Event                  | Variants                                                  | Push? | Tags applied                                                              |
-| ---------------------- | --------------------------------------------------------- | ----- | ------------------------------------------------------------------------- |
-| PR (no labels)         | `cpu` (linux/amd64 only)                                  | no    | — (plus a `kronk --version` / `kronk --help` smoke test on cpu/amd64)     |
-| PR + label `build all` | all 5 (all supported arches)                              | no    | —                                                                         |
-| PR + label `build <v>` | `cpu` + each labeled variant (all supported arches)       | no    | —                                                                         |
-| Push to `main`         | all 5                                                     | no    | — (smoke-tests cpu/amd64; refreshes the registry-backed BuildKit cache)   |
-| Push to tag `v*`       | all 5                                                     | yes   | `<tag>-<variant>` + `latest-<variant>`; plus `latest` → cpu (all signed)  |
-| `workflow_dispatch`    | input `variants` (default `all`, or comma-separated)      | no    | —                                                                         |
+| Event                  | Variants                                             | Push? | Tags applied                                                             |
+| ---------------------- | ---------------------------------------------------- | ----- | ------------------------------------------------------------------------ |
+| PR (no labels)         | `cpu` (linux/amd64 only)                             | no    | — (plus a `kronk --version` / `kronk --help` smoke test on cpu/amd64)    |
+| PR + label `build all` | all 5 (all supported arches)                         | no    | —                                                                        |
+| PR + label `build <v>` | `cpu` + each labeled variant (all supported arches)  | no    | —                                                                        |
+| Push to `main`         | all 5                                                | no    | — (smoke-tests cpu/amd64; refreshes the registry-backed BuildKit cache)  |
+| Push to tag `v*`       | all 5                                                | yes   | `<tag>-<variant>` + `latest-<variant>`; plus `latest` → cpu (all signed) |
+| `workflow_dispatch`    | input `variants` (default `all`, or comma-separated) | no    | —                                                                        |
 
 **PR relevance gate.** The trigger has no `paths:` filter — `paths:` is
 incompatible with `labeled` / `unlabeled` events (those carry no

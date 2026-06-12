@@ -203,6 +203,22 @@ export default function DocsSDKBucky() {
               <p className="doc-description">Transcribe runs the whisper.cpp pipeline on the provided 16 kHz mono float32 PCM samples and returns the decoded text along with per-segment metadata. The call participates in the per-handle backpressure semaphore and blocks until a slot is available.</p>
             </div>
 
+            <div className="doc-section" id="method-bucky-transcribechannels">
+              <h4>Bucky.TranscribeChannels</h4>
+              <pre className="code-block">
+                <code>func (b *Bucky) TranscribeChannels(ctx context.Context, channels [][]float32, opts ...model.TranscribeOption) (model.Diarization, error)</code>
+              </pre>
+              <p className="doc-description">TranscribeChannels transcribes each supplied channel of 16 kHz mono float32 PCM separately and merges the results into a single diarized transcript, treating one channel as one speaker. Pass the channels returned by model.DecodeChannels. The call participates in the per-handle backpressure semaphore and blocks until a slot is available.</p>
+            </div>
+
+            <div className="doc-section" id="method-bucky-transcribechannelsfile">
+              <h4>Bucky.TranscribeChannelsFile</h4>
+              <pre className="code-block">
+                <code>func (b *Bucky) TranscribeChannelsFile(ctx context.Context, r io.Reader, opts ...model.TranscribeOption) (model.Diarization, error)</code>
+              </pre>
+              <p className="doc-description">TranscribeChannelsFile decodes audio from r preserving its channel layout and runs TranscribeChannels to produce a diarized transcript. Native multi-channel formats (WAV, FLAC) yield true per-channel diarization; formats that require ffmpeg are downmixed to a single channel. The call participates in the per-handle backpressure semaphore and blocks until a slot is available.</p>
+            </div>
+
             <div className="doc-section" id="method-bucky-transcribefile">
               <h4>Bucky.TranscribeFile</h4>
               <pre className="code-block">
@@ -298,6 +314,8 @@ export default function DocsSDKBucky() {
                 <li><a href="#method-bucky-newstream">Bucky.NewStream</a></li>
                 <li><a href="#method-bucky-systeminfo">Bucky.SystemInfo</a></li>
                 <li><a href="#method-bucky-transcribe">Bucky.Transcribe</a></li>
+                <li><a href="#method-bucky-transcribechannels">Bucky.TranscribeChannels</a></li>
+                <li><a href="#method-bucky-transcribechannelsfile">Bucky.TranscribeChannelsFile</a></li>
                 <li><a href="#method-bucky-transcribefile">Bucky.TranscribeFile</a></li>
                 <li><a href="#method-bucky-unload">Bucky.Unload</a></li>
               </ul>
