@@ -1330,9 +1330,6 @@ func humanBytes(n int64) string {
 func mtmdContextParams(cfg Config) mtmd.ContextParamsType {
 	params := mtmd.ContextParamsDefault()
 
-	// Match the v1.27.4 logic: run the multimodal projector on the CPU by
-	// default (UseGPU=false), overridable via PtrProjOnCPU.
-	params.UseGPU = false
 	if cfg.PtrProjOnCPU != nil {
 		params.UseGPU = !*cfg.PtrProjOnCPU
 	}
