@@ -739,7 +739,7 @@ import (
 
 // modelSource names the bucky whisper model to download. Valid short
 // names are listed by models.SupportedModels().
-const modelSource = "tiny.en"
+const modelSource = "ggml-tiny.bin"
 
 // audioFile is a 16 kHz mono WAV sample of JFK's "ask not" speech.
 const audioFile = "samples/jfk.wav"
@@ -1147,7 +1147,7 @@ import (
 )
 
 // modelSource names the bucky whisper model to download.
-const modelSource = "tiny.en"
+const modelSource = "ggml-tiny.bin"
 
 // micRate / micChannels are the format we ask the capture device for.
 // miniaudio converts the hardware's native format to this for us, so we

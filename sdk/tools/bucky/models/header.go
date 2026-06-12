@@ -173,7 +173,7 @@ func (m *Models) Header(modelID string) (Header, error) {
 }
 
 // CatalogHeader returns the parsed ggml Header for any model in the
-// bundled catalog identified by its short name ("tiny", "tiny.en",
+// bundled catalog identified by its short name ("tiny", "ggml-tiny.bin",
 // "large-v3"). Lookup order mirrors the kronk GGUF flow:
 //
 //  1. Per-id header cache under <modelsPath>/.header_cache/<id>.hdr.

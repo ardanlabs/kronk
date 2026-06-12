@@ -389,7 +389,7 @@
 # NOT included — pull one into the persisted /kronk volume on first use:
 #
 #   # CLI inside a running container:
-#   docker exec -it <ctr> kronk bucky model pull tiny.en
+#   docker exec -it <ctr> kronk bucky model pull ggml-tiny.bin
 #
 #   # Or from the BUI (http://localhost:11435 → Whisper Models).
 #
@@ -397,7 +397,7 @@
 #
 #   curl -X POST http://localhost:11435/v1/audio/transcriptions \
 #       -F file=@samples/jfk.wav \
-#       -F model=tiny.en \
+#       -F model=ggml-tiny.bin \
 #       -F response_format=json
 #
 # On ROCm hosts running the `:rocm` image, the entrypoint shim

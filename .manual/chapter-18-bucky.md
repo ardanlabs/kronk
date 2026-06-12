@@ -38,7 +38,7 @@ same SDK / server / CLI / BUI surfaces as the core LLM stack.
 
 For developer-level internals (package layout, the per-handle
 semaphore, the `whisper.State` pool, lifecycle, and tests) see the
-*Bucky Internals* section in
+_Bucky Internals_ section in
 [Chapter 19: Developer Guide](chapter-19-developer-guide.md).
 
 ### 18.1 Overview
@@ -106,12 +106,12 @@ the server will become functional once `bucky.Init` succeeds.
 
 #### 18.2.1 Library Bundles
 
-| Processor | Platforms                          | Notes                                                     |
-| --------- | ---------------------------------- | --------------------------------------------------------- |
-| `cpu`     | linux, darwin, windows (all archs) | Works everywhere. No GPU offload.                         |
-| `metal`   | darwin (universal slice)           | Apple Silicon GPU offload via Metal.                      |
-| `cuda`    | linux, windows (amd64)             | NVIDIA GPU offload. Requires a CUDA-capable host.         |
-| `vulkan`  | linux (amd64)                      | Cross-platform GPU offload via Vulkan.                    |
+| Processor | Platforms                          | Notes                                             |
+| --------- | ---------------------------------- | ------------------------------------------------- |
+| `cpu`     | linux, darwin, windows (all archs) | Works everywhere. No GPU offload.                 |
+| `metal`   | darwin (universal slice)           | Apple Silicon GPU offload via Metal.              |
+| `cuda`    | linux, windows (amd64)             | NVIDIA GPU offload. Requires a CUDA-capable host. |
+| `vulkan`  | linux (amd64)                      | Cross-platform GPU offload via Vulkan.            |
 
 #### 18.2.2 Installing via the CLI
 
@@ -169,22 +169,22 @@ Whisper models are single GGML `.bin` files stored flat under the
 bucky models root (default `~/.kronk/bucky-models/`). On-disk
 filenames follow the upstream HuggingFace mirror convention:
 `ggml-<name>.bin`. The short name strips the `ggml-` prefix and
-`.bin` suffix, so `ggml-tiny.en.bin` ↔ `tiny.en`.
+`.bin` suffix, so `ggml-ggml-tiny.bin.bin` ↔ `ggml-tiny.bin`.
 
 #### 18.3.1 Bundled Catalog
 
-| Short name        | Size     | Notes                                                       |
-| ----------------- | -------- | ----------------------------------------------------------- |
-| `tiny`            | 75 MB    | multilingual, fastest, lowest accuracy                      |
-| `tiny.en`         | 75 MB    | english-only, fastest                                       |
-| `base`            | 142 MB   | multilingual, fast                                          |
-| `base.en`         | 142 MB   | english-only, fast                                          |
-| `small`           | 466 MB   | multilingual, balanced                                      |
-| `small.en`        | 466 MB   | english-only, balanced                                      |
-| `medium`          | 1.5 GB   | multilingual, accurate                                      |
-| `medium.en`       | 1.5 GB   | english-only, accurate                                      |
-| `large-v3`        | 2.9 GB   | multilingual, highest accuracy                              |
-| `large-v3-turbo` | 1.5 GB   | multilingual, near-large accuracy at small/medium speed     |
+| Short name       | Size   | Notes                                                   |
+| ---------------- | ------ | ------------------------------------------------------- |
+| `tiny`           | 75 MB  | multilingual, fastest, lowest accuracy                  |
+| `ggml-tiny.bin`  | 75 MB  | english-only, fastest                                   |
+| `base`           | 142 MB | multilingual, fast                                      |
+| `base.en`        | 142 MB | english-only, fast                                      |
+| `small`          | 466 MB | multilingual, balanced                                  |
+| `small.en`       | 466 MB | english-only, balanced                                  |
+| `medium`         | 1.5 GB | multilingual, accurate                                  |
+| `medium.en`      | 1.5 GB | english-only, accurate                                  |
+| `large-v3`       | 2.9 GB | multilingual, highest accuracy                          |
+| `large-v3-turbo` | 1.5 GB | multilingual, near-large accuracy at small/medium speed |
 
 The English-only (`.en`) variants are noticeably more accurate per
 byte for English audio but reject any non-English language hint at
@@ -197,13 +197,13 @@ request time (see [§18.7.1](#1871-post-v1audiotranscriptions)).
 kronk bucky model catalog
 
 # Download the tiny English model.
-kronk bucky model pull tiny.en
+kronk bucky model pull ggml-tiny.bin
 
 # List installed models with size and ggml header summary.
 kronk bucky model list
 
 # Remove a model.
-kronk bucky model remove tiny.en
+kronk bucky model remove ggml-tiny.bin
 ```
 
 `pull` accepts a short name, a full ggml filename (`ggml-tiny.bin`),
@@ -219,7 +219,7 @@ server.
 │   ├── linux/amd64/cuda/          ← installed alongside (selected via KRONK_BUCKY_LIB_PATH)
 │   └── linux/amd64/cpu/
 └── bucky-models/
-    ├── ggml-tiny.en.bin
+    ├── ggml-ggml-tiny.bin.bin
     ├── ggml-base.bin
     └── ggml-large-v3-turbo.bin
 ```
@@ -243,11 +243,11 @@ under its short-name ID. The server-side wiring lives in
 
 Per-pool defaults:
 
-| Setting        | Default     | Source                          |
-| -------------- | ----------- | ------------------------------- |
-| `ModelsInPool` | `10`        | `sdk/bucky/pool.defaultModelsInPool` |
-| `TTL`          | `5m`        | `sdk/bucky/pool.defaultTTL`     |
-| `NSeqMax`      | `1`         | `sdk/bucky/model.Config`        |
+| Setting        | Default | Source                               |
+| -------------- | ------- | ------------------------------------ |
+| `ModelsInPool` | `10`    | `sdk/bucky/pool.defaultModelsInPool` |
+| `TTL`          | `5m`    | `sdk/bucky/pool.defaultTTL`          |
+| `NSeqMax`      | `1`     | `sdk/bucky/model.Config`             |
 
 The pool's per-handle semaphore is sized **1:1** with `NSeqMax`,
 matching the embedding / rerank rule in `sdk/kronk` (not the
@@ -300,20 +300,20 @@ behind the scenes and exposes the same fields that endpoint accepts.
 
 OpenAI-compatible. `multipart/form-data` upload, **25 MB** max body.
 
-| Field                       | Type      | Purpose                                                                       |
-| --------------------------- | --------- | ----------------------------------------------------------------------------- |
-| `file`                      | file      | Audio file (any format `bucky/pkg/audio` can decode to 16 kHz mono float32).  |
-| `model`                     | string    | **Required.** Bucky model ID (short name, e.g. `tiny.en`).                    |
-| `language`                  | string    | BCP-47 / ISO 639-1 language hint. Empty → auto-detect.                        |
-| `prompt`                    | string    | Initial decoder bias prompt.                                                  |
-| `translate`                 | bool      | When `true`, translate source audio to English.                               |
-| `response_format`           | string    | `json` (default), `verbose_json`, `text`, `srt`, `vtt`.                       |
-| `timestamp_granularities[]` | string    | `word` is accepted but currently emits an empty `words: []` array.            |
+| Field                       | Type   | Purpose                                                                      |
+| --------------------------- | ------ | ---------------------------------------------------------------------------- |
+| `file`                      | file   | Audio file (any format `bucky/pkg/audio` can decode to 16 kHz mono float32). |
+| `model`                     | string | **Required.** Bucky model ID (short name, e.g. `ggml-tiny.bin`).             |
+| `language`                  | string | BCP-47 / ISO 639-1 language hint. Empty → auto-detect.                       |
+| `prompt`                    | string | Initial decoder bias prompt.                                                 |
+| `translate`                 | bool   | When `true`, translate source audio to English.                              |
+| `response_format`           | string | `json` (default), `verbose_json`, `text`, `srt`, `vtt`.                      |
+| `timestamp_granularities[]` | string | `word` is accepted but currently emits an empty `words: []` array.           |
 
 Behavior notes:
 
 - The handler rejects requests against an English-only model
-  (e.g. `tiny.en`) when `language` is set to anything other than `""`
+  (e.g. `ggml-tiny.bin`) when `language` is set to anything other than `""`
   or `"en"`.
 - The handler caps each request at a 30-minute internal deadline.
 - `verbose_json` includes `segments[]` with `start`, `end`, `text`,
@@ -327,21 +327,21 @@ Example:
 curl -X POST http://localhost:8080/v1/audio/transcriptions \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -F file=@samples/jfk.wav \
-  -F model=tiny.en \
+  -F model=ggml-tiny.bin \
   -F response_format=json
 ```
 
 #### 18.7.2 Admin Endpoints
 
-| Path                                   | Purpose                                               |
-| -------------------------------------- | ----------------------------------------------------- |
-| `GET  /v1/bucky/libs`                  | Current install + supported combinations.             |
-| `POST /v1/bucky/libs/pull`             | Install / upgrade a library bundle.                   |
-| `GET  /v1/bucky/models`                | List downloaded whisper models.                       |
-| `GET  /v1/bucky/models/catalog`        | List the bundled catalog.                             |
-| `POST /v1/bucky/models/pull`           | Download a whisper model.                             |
-| `GET  /v1/bucky/models/{model}/details`| ggml header + on-disk details for one model.          |
-| `DELETE /v1/bucky/models/{model}`      | Remove a model from disk.                             |
+| Path                                    | Purpose                                      |
+| --------------------------------------- | -------------------------------------------- |
+| `GET  /v1/bucky/libs`                   | Current install + supported combinations.    |
+| `POST /v1/bucky/libs/pull`              | Install / upgrade a library bundle.          |
+| `GET  /v1/bucky/models`                 | List downloaded whisper models.              |
+| `GET  /v1/bucky/models/catalog`         | List the bundled catalog.                    |
+| `POST /v1/bucky/models/pull`            | Download a whisper model.                    |
+| `GET  /v1/bucky/models/{model}/details` | ggml header + on-disk details for one model. |
+| `DELETE /v1/bucky/models/{model}`       | Remove a model from disk.                    |
 
 These are the endpoints the BUI screens and the `--web` mode of the
 `kronk bucky` CLI talk to.
@@ -375,7 +375,7 @@ func main() {
     lib.Download(ctx, bucky.FmtLogger)
 
     mdls, _ := buckymodels.New()
-    mp, _ := mdls.Download(ctx, bucky.FmtLogger, "tiny.en")
+    mp, _ := mdls.Download(ctx, bucky.FmtLogger, "ggml-tiny.bin")
 
     // 2. Initialize the whisper backend (loads the shared library).
     if err := bucky.Init(); err != nil {
@@ -401,20 +401,20 @@ func main() {
 
 Key SDK entry points:
 
-| Symbol                     | Purpose                                                       |
-| -------------------------- | ------------------------------------------------------------- |
-| `bucky.Init(opts...)`      | Register backend + load whisper.cpp shared library.           |
-| `bucky.New(opts...)`       | Construct a concurrently-safe `*Bucky` handle for one model.  |
-| `Bucky.Transcribe(...)`    | Transcribe 16 kHz mono float32 PCM (batch, one-shot).         |
-| `Bucky.TranscribeFile(...)`| Decode an `io.Reader` (any supported format) and transcribe.  |
-| `Bucky.TranscribeChannels(...)` | Channel-separated (diarized) transcribe: one speaker per channel. |
-| `Bucky.TranscribeChannelsFile(...)` | Decode an `io.Reader` preserving channels and diarize. |
-| `Bucky.NewStream(...)`     | Open a live streaming session (see [18.9](#189-streaming-transcription-sdk)). |
-| `Bucky.DetectLanguage(...)`| Run language detection only.                                  |
-| `Bucky.ActiveStreams()`    | In-flight transcribe count (observability).                   |
-| `Bucky.SystemInfo()`       | Parsed `whisper.cpp` system info string.                      |
-| `Bucky.Unload(ctx)`        | Wait for active streams to drain and unload the model.        |
-| `bucky.LangID/LangStr/LangMaxID` | Language code ↔ id helpers.                             |
+| Symbol                              | Purpose                                                                       |
+| ----------------------------------- | ----------------------------------------------------------------------------- |
+| `bucky.Init(opts...)`               | Register backend + load whisper.cpp shared library.                           |
+| `bucky.New(opts...)`                | Construct a concurrently-safe `*Bucky` handle for one model.                  |
+| `Bucky.Transcribe(...)`             | Transcribe 16 kHz mono float32 PCM (batch, one-shot).                         |
+| `Bucky.TranscribeFile(...)`         | Decode an `io.Reader` (any supported format) and transcribe.                  |
+| `Bucky.TranscribeChannels(...)`     | Channel-separated (diarized) transcribe: one speaker per channel.             |
+| `Bucky.TranscribeChannelsFile(...)` | Decode an `io.Reader` preserving channels and diarize.                        |
+| `Bucky.NewStream(...)`              | Open a live streaming session (see [18.9](#189-streaming-transcription-sdk)). |
+| `Bucky.DetectLanguage(...)`         | Run language detection only.                                                  |
+| `Bucky.ActiveStreams()`             | In-flight transcribe count (observability).                                   |
+| `Bucky.SystemInfo()`                | Parsed `whisper.cpp` system info string.                                      |
+| `Bucky.Unload(ctx)`                 | Wait for active streams to drain and unload the model.                        |
+| `bucky.LangID/LangStr/LangMaxID`    | Language code ↔ id helpers.                                                   |
 
 #### Channel-Separated Diarization
 
@@ -453,7 +453,7 @@ directly.
 ### 18.9 Streaming Transcription (SDK)
 
 `Bucky.Transcribe` is one-shot: hand it a full clip, get one result back.
-For audio that arrives *over time* — a microphone, a chunked HTTP upload,
+For audio that arrives _over time_ — a microphone, a chunked HTTP upload,
 a WebSocket, a long voice memo — use a **stream** instead. You `Feed`
 samples as they arrive and consume incremental transcript **events** from
 a channel; the stream owns the buffering, windowing, and silence detection
@@ -496,7 +496,7 @@ stream blocks `Unload` exactly like an in-flight `Transcribe`. Call
 > **Architectural floor.** Whisper is a non-streaming model: its encoder
 > works on fixed audio windows, so true token-by-token streaming is not
 > possible. Like every Whisper "streaming" implementation (including
-> whisper.cpp's own `examples/stream`), Bucky does *windowed* inference
+> whisper.cpp's own `examples/stream`), Bucky does _windowed_ inference
 > under the hood and hides it behind this API. The practical consequences:
 > the partial-update latency floor is `PartialEveryMs`, and a Final trails
 > the actual end of speech by about one VAD frame.
@@ -507,12 +507,12 @@ Events mirror the "rolling hypothesis" UX of whisper.cpp's `stream`: the
 text re-renders and revises as more audio arrives, then locks in when you
 pause.
 
-| Kind            | Meaning                                                                                          | Consumer action                          |
-| --------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| `EventPartial`  | Tentative, revisable re-decode of the current un-committed window. `Text` is the **full hypothesis** for that window (not a delta) and supersedes the previous partial. May be dropped under load. | **Replace** your pending-text buffer.    |
-| `EventFinal`    | The un-committed region is committed and will not be revised. Never dropped.                      | **Append** `Text`; clear pending buffer. |
-| `EventReset`    | Emitted after `Reset` (only when opened `WithEmitResetEvent`). `Text`/`Segments` empty.          | Clear any client-side accumulators.      |
-| `EventError`    | Terminal. `Err` is set; `Events` closes immediately after.                                        | Stop; `Close` and (if needed) re-open.   |
+| Kind           | Meaning                                                                                                                                                                                            | Consumer action                          |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `EventPartial` | Tentative, revisable re-decode of the current un-committed window. `Text` is the **full hypothesis** for that window (not a delta) and supersedes the previous partial. May be dropped under load. | **Replace** your pending-text buffer.    |
+| `EventFinal`   | The un-committed region is committed and will not be revised. Never dropped.                                                                                                                       | **Append** `Text`; clear pending buffer. |
+| `EventReset`   | Emitted after `Reset` (only when opened `WithEmitResetEvent`). `Text`/`Segments` empty.                                                                                                            | Clear any client-side accumulators.      |
+| `EventError`   | Terminal. `Err` is set; `Events` closes immediately after.                                                                                                                                         | Stop; `Close` and (if needed) re-open.   |
 
 Each `Event` also carries `StartMs` / `EndMs` (session-local; rebased to 0
 after a `Reset` by default) and a `Segments` slice for callers that want
@@ -530,10 +530,10 @@ continuity.
 The engine consumes one fixed internal format: **16 kHz, mono, float32 in
 [-1, 1]**. Two feed methods are provided:
 
-| Method     | Input                                            | Use when…                                                                 |
-| ---------- | ------------------------------------------------ | ------------------------------------------------------------------------- |
-| `Feed`     | `[]float32` already at 16 kHz mono               | You already hold normalized samples (e.g. Web Audio, decoded files).      |
-| `FeedPCM`  | raw `[]byte` + an `model.AudioFormat` descriptor | You have raw capture-device PCM at an arbitrary rate / channel count.     |
+| Method    | Input                                            | Use when…                                                             |
+| --------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| `Feed`    | `[]float32` already at 16 kHz mono               | You already hold normalized samples (e.g. Web Audio, decoded files).  |
+| `FeedPCM` | raw `[]byte` + an `model.AudioFormat` descriptor | You have raw capture-device PCM at an arbitrary rate / channel count. |
 
 `FeedPCM` does the **pure-Go** interpret → downmix → resample → normalize
 pipeline (no ffmpeg, no subprocess), carrying resampler phase across calls
@@ -557,19 +557,19 @@ internal buffer is full, so a fast producer cannot exhaust memory.
 Pass `model.StreamOption` values to `NewStream`. Every knob has a default;
 all defaults match whisper.cpp `stream` conventions where applicable.
 
-| Option                          | Default | Purpose                                                                                     |
-| ------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `WithStreamLanguage(code)`      | auto    | BCP-47 language hint; empty = auto-detect once at start.                                     |
-| `WithStreamInitialPrompt(s)`    | —       | Bias the decoder on the first window only.                                                   |
-| `WithStreamTranslate(bool)`     | false   | Translate source audio to English (multilingual models only).                               |
-| `WithStreamNThreads(n)`         | model   | Override decode thread count for this session.                                               |
-| `WithPartialEveryMs(ms)`        | 1000    | Partial-emit cadence. `<0` disables partials (final-only mode).                              |
-| `WithCommitEveryMs(ms)`         | 6000    | Force a Final on a fixed cadence even without a pause (mirrors `stream`'s `n_new_line`).     |
-| `WithMaxUtteranceMs(ms)`        | 25000   | Hard ceiling: force a Final if no silence is detected (stays under the 30 s mel window).     |
-| `WithKeepMs(ms)`                | 300     | Trailing audio kept across a commit so a boundary word is not clipped.                       |
-| `WithVAD(bool)`                 | **on**  | Energy-ratio silence detection that gates Finals. Pass `false` for fixed-cadence commits.    |
-| `WithVADThreshold(f)`           | 0.6     | Trailing window is "silence" when its mean energy < `f` × the whole window's mean energy.    |
-| `WithEmitResetEvent(bool)`      | false   | Emit an `EventReset` after `Reset` completes.                                                |
+| Option                       | Default | Purpose                                                                                   |
+| ---------------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `WithStreamLanguage(code)`   | auto    | BCP-47 language hint; empty = auto-detect once at start.                                  |
+| `WithStreamInitialPrompt(s)` | —       | Bias the decoder on the first window only.                                                |
+| `WithStreamTranslate(bool)`  | false   | Translate source audio to English (multilingual models only).                             |
+| `WithStreamNThreads(n)`      | model   | Override decode thread count for this session.                                            |
+| `WithPartialEveryMs(ms)`     | 1000    | Partial-emit cadence. `<0` disables partials (final-only mode).                           |
+| `WithCommitEveryMs(ms)`      | 6000    | Force a Final on a fixed cadence even without a pause (mirrors `stream`'s `n_new_line`).  |
+| `WithMaxUtteranceMs(ms)`     | 25000   | Hard ceiling: force a Final if no silence is detected (stays under the 30 s mel window).  |
+| `WithKeepMs(ms)`             | 300     | Trailing audio kept across a commit so a boundary word is not clipped.                    |
+| `WithVAD(bool)`              | **on**  | Energy-ratio silence detection that gates Finals. Pass `false` for fixed-cadence commits. |
+| `WithVADThreshold(f)`        | 0.6     | Trailing window is "silence" when its mean energy < `f` × the whole window's mean energy. |
+| `WithEmitResetEvent(bool)`   | false   | Emit an `EventReset` after `Reset` completes.                                             |
 
 VAD is **on by default**: the detector is a pure-Go energy-ratio check
 (the same approach as whisper.cpp's `vad_simple` — no model file, no extra
@@ -595,11 +595,11 @@ if err := stream.Reset(ctx); err != nil { /* ... */ }
 `Reset` blocks until any in-flight decode finishes, then applies. Tune it
 with `model.ResetOption`:
 
-| Option                         | Default | Effect                                                                       |
-| ------------------------------ | ------- | ---------------------------------------------------------------------------- |
-| `WithFlushPending(bool)`       | true    | Run one final pass over buffered audio (emitting its Final) before clearing. |
-| `WithRebaseTimestamps(bool)`   | true    | Restart `StartMs`/`EndMs` at 0 for subsequent events.                         |
-| `WithKeepPromptTokens(bool)`   | false   | Keep linguistic context across the reset ("rewind audio, keep context") instead of treating it as a hard boundary. |
+| Option                       | Default | Effect                                                                                                             |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `WithFlushPending(bool)`     | true    | Run one final pass over buffered audio (emitting its Final) before clearing.                                       |
+| `WithRebaseTimestamps(bool)` | true    | Restart `StartMs`/`EndMs` at 0 for subsequent events.                                                              |
+| `WithKeepPromptTokens(bool)` | false   | Keep linguistic context across the reset ("rewind audio, keep context") instead of treating it as a hard boundary. |
 
 `Reset` is safe to call from any goroutine (including the `Events`
 consumer). After an `EventError` the worker has already exited, so don't
@@ -637,26 +637,26 @@ Pass the BCP-47 / ISO 639-1 short code (`en`, `de`, `fr`, …) in the
 `language` form field or in `model.WithLanguage(...)`. Empty string
 means auto-detect.
 
-The **English-only** model variants (`tiny.en`, `base.en`, `small.en`,
+The **English-only** model variants (`ggml-tiny.bin`, `base.en`, `small.en`,
 `medium.en`) reject any non-`en` language hint. Use the multilingual
 variants for non-English audio.
 
 ### 18.11 Troubleshooting
 
-| Symptom                                                                 | Likely cause / fix                                                                                                                                |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server logs `bucky init failed, running in degraded mode …`             | Whisper libraries not installed for the active triple. Run `kronk bucky libs` (or use the BUI), then restart the server.                          |
-| `/v1/audio/transcriptions` returns `unknown model "<id>"`               | Model not pulled. Run `kronk bucky model pull <id>` (or use the BUI), then retry.                                                                 |
-| `model[<id>] is english-only but language[<code>] was requested`         | You hit an `.en` model with a non-English `language` hint. Switch to a multilingual model (`tiny`, `base`, `small`, `medium`, `large-v3`).        |
-| `transcribe: empty samples`                                             | The uploaded file decoded to zero samples — usually a corrupt file or a format `bucky/pkg/audio` cannot decode. Re-encode to 16 kHz mono WAV.     |
-| `parse multipart form: …` with 413 / size errors                        | The upload exceeded 25 MB. Split the audio or down-sample to 16 kHz mono before upload.                                                           |
-| GPU model loads but inference is suspiciously slow                      | Confirm the active bundle matches your hardware (`echo $KRONK_BUCKY_LIB_PATH`). A `cpu` bundle will silently work on a GPU host.                  |
-| `unload: cannot unload, too many active-streams[n]`                     | A shutdown raced a long transcribe or an open stream. Increase the unload context deadline, or `Close` the stream / wait for in-flight requests.   |
-| `NewStream` blocks or its context times out                            | Every pool slot is held by an open stream. A stream reserves one `whisper.State` for its whole lifetime; raise `NSeqMax` or `Close` an idle stream. |
-| Streaming emits no `EventPartial`, only finals                          | Partials are disabled (`WithPartialEveryMs` < 0), or the producer is feeding slower than `PartialEveryMs`. Feed steadily and use a positive cadence. |
-| A word is duplicated where two finals meet                              | VAD was turned off (`WithVAD(false)`), so a Final cut mid-word and the kept overlap re-decoded it. Leave VAD on (the default) so cuts land in pauses. |
-| Whisper noise (`whisper_init_*`, `ggml_metal_*`) bleeds into stdout     | Bucky installs `LogSilent` by default. If you forced `LogNormal` via `bucky.WithLogLevel(LogNormal)`, switch it back.                             |
+| Symptom                                                             | Likely cause / fix                                                                                                                                    |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server logs `bucky init failed, running in degraded mode …`         | Whisper libraries not installed for the active triple. Run `kronk bucky libs` (or use the BUI), then restart the server.                              |
+| `/v1/audio/transcriptions` returns `unknown model "<id>"`           | Model not pulled. Run `kronk bucky model pull <id>` (or use the BUI), then retry.                                                                     |
+| `model[<id>] is english-only but language[<code>] was requested`    | You hit an `.en` model with a non-English `language` hint. Switch to a multilingual model (`tiny`, `base`, `small`, `medium`, `large-v3`).            |
+| `transcribe: empty samples`                                         | The uploaded file decoded to zero samples — usually a corrupt file or a format `bucky/pkg/audio` cannot decode. Re-encode to 16 kHz mono WAV.         |
+| `parse multipart form: …` with 413 / size errors                    | The upload exceeded 25 MB. Split the audio or down-sample to 16 kHz mono before upload.                                                               |
+| GPU model loads but inference is suspiciously slow                  | Confirm the active bundle matches your hardware (`echo $KRONK_BUCKY_LIB_PATH`). A `cpu` bundle will silently work on a GPU host.                      |
+| `unload: cannot unload, too many active-streams[n]`                 | A shutdown raced a long transcribe or an open stream. Increase the unload context deadline, or `Close` the stream / wait for in-flight requests.      |
+| `NewStream` blocks or its context times out                         | Every pool slot is held by an open stream. A stream reserves one `whisper.State` for its whole lifetime; raise `NSeqMax` or `Close` an idle stream.   |
+| Streaming emits no `EventPartial`, only finals                      | Partials are disabled (`WithPartialEveryMs` < 0), or the producer is feeding slower than `PartialEveryMs`. Feed steadily and use a positive cadence.  |
+| A word is duplicated where two finals meet                          | VAD was turned off (`WithVAD(false)`), so a Final cut mid-word and the kept overlap re-decoded it. Leave VAD on (the default) so cuts land in pauses. |
+| Whisper noise (`whisper_init_*`, `ggml_metal_*`) bleeds into stdout | Bucky installs `LogSilent` by default. If you forced `LogNormal` via `bucky.WithLogLevel(LogNormal)`, switch it back.                                 |
 
 ---
 
-*Next: [Chapter 19: Developer Guide](chapter-19-developer-guide.md)*
+_Next: [Chapter 19: Developer Guide](chapter-19-developer-guide.md)_

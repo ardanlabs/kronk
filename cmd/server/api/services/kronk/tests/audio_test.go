@@ -65,7 +65,7 @@ func buildAudioForm(t *testing.T, audioPath, modelID, language, respFmt string) 
 }
 
 func audioTranscriptions200(t *testing.T, tokens map[string]string) []apitest.Table {
-	body, contentType := buildAudioForm(t, audioFile, "tiny.en", "en", "json")
+	body, contentType := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "json")
 
 	table := []apitest.Table{
 		{
@@ -106,9 +106,9 @@ func audioTranscriptions200(t *testing.T, tokens map[string]string) []apitest.Ta
 }
 
 func audioTranscriptions401(t *testing.T, tokens map[string]string) []apitest.Table {
-	body, contentType := buildAudioForm(t, audioFile, "tiny.en", "en", "json")
+	body, contentType := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "json")
 
-	bodyAdmin, contentTypeAdmin := buildAudioForm(t, audioFile, "tiny.en", "en", "json")
+	bodyAdmin, contentTypeAdmin := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "json")
 
 	table := []apitest.Table{
 		{

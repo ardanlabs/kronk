@@ -30,7 +30,7 @@ import (
 )
 
 // modelSource names the bucky whisper model to download.
-const modelSource = "tiny.en"
+const modelSource = "ggml-tiny.bin"
 
 // micRate / micChannels are the format we ask the capture device for.
 // miniaudio converts the hardware's native format to this for us, so we

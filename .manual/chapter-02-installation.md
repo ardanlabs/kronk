@@ -367,7 +367,7 @@ need to hit HuggingFace.
 
 **Audio (Bucky):** whisper models live in a separate flat layout at
 `~/.kronk/bucky-models/ggml-<name>.bin` and are pulled with
-`kronk bucky model pull <name>` (e.g. `tiny.en`). See
+`kronk bucky model pull <name>` (e.g. `ggml-tiny.bin`). See
 [Chapter 18 §18.3](chapter-18-bucky.md#183-model-catalog-pull).
 
 ### 2.6 Starting the Server

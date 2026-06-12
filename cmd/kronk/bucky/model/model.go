@@ -35,13 +35,13 @@ EXAMPLES
   kronk bucky model catalog
 
   # Download the tiny English whisper model.
-  kronk bucky model pull tiny.en
+  kronk bucky model pull ggml-tiny.bin
 
   # List installed models.
   kronk bucky model list
 
   # Remove a model.
-  kronk bucky model remove tiny.en`,
+  kronk bucky model remove ggml-tiny.bin`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

@@ -159,7 +159,7 @@ curl-kronk-transcribe:
 	curl -i -X POST http://localhost:11435/v1/audio/transcriptions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
 	 -F file=@examples/samples/jfk.wav \
-	 -F model=tiny.en \
+	 -F model=ggml-tiny.bin \
 	 -F response_format=verbose_json
 
 curl-kronk-responses:

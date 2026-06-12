@@ -39,7 +39,7 @@ Models download automatically on first use.
 ## Available Images
 
 | Tag              | Description                                | Architectures                |
-|------------------|--------------------------------------------|------------------------------|
+| ---------------- | ------------------------------------------ | ---------------------------- |
 | `latest` / `all` | All backends (CPU, CUDA, Vulkan, ROCm)     | `linux/amd64`, `linux/arm64` |
 | `cpu`            | CPU-only (smallest image, runs everywhere) | `linux/amd64`, `linux/arm64` |
 | `cuda`           | NVIDIA CUDA only                           | `linux/amd64`, `linux/arm64` |
@@ -52,21 +52,22 @@ Models download automatically on first use.
 ## Platform Support
 
 | Host OS         | GPU       | Image              | Backend | Status                                                 |
-|-----------------|-----------|--------------------|---------|--------------------------------------------------------|
-| **Linux**       | NVIDIA    | `:cuda`            | CUDA    | ✅ Fully supported                                      |
-| **Linux**       | AMD       | `:rocm`            | ROCm    | ✅ Fully supported                                      |
-| **Linux**       | AMD       | `:vulkan`          | Vulkan  | ✅ Fully supported                                      |
-| **Linux**       | Intel     | `:vulkan`          | Vulkan  | ✅ Fully supported                                      |
-| **Linux**       | NVIDIA    | `:vulkan`          | Vulkan  | ✅ Fully supported                                      |
-| **Linux**       | None      | `:cpu` / `:latest` | CPU     | ✅ Fully supported                                      |
-| **Linux arm64** | Jetson    | `:jetson`          | CUDA    | ✅ Fully supported                                      |
-| **Linux arm64** | SoC iGPU  | `:vulkan`          | Vulkan  | ✅ Fully supported                                      |
+| --------------- | --------- | ------------------ | ------- | ------------------------------------------------------ |
+| **Linux**       | NVIDIA    | `:cuda`            | CUDA    | ✅ Fully supported                                     |
+| **Linux**       | AMD       | `:rocm`            | ROCm    | ✅ Fully supported                                     |
+| **Linux**       | AMD       | `:vulkan`          | Vulkan  | ✅ Fully supported                                     |
+| **Linux**       | Intel     | `:vulkan`          | Vulkan  | ✅ Fully supported                                     |
+| **Linux**       | NVIDIA    | `:vulkan`          | Vulkan  | ✅ Fully supported                                     |
+| **Linux**       | None      | `:cpu` / `:latest` | CPU     | ✅ Fully supported                                     |
+| **Linux arm64** | Jetson    | `:jetson`          | CUDA    | ✅ Fully supported                                     |
+| **Linux arm64** | SoC iGPU  | `:vulkan`          | Vulkan  | ✅ Fully supported                                     |
 | **macOS**       | Any       | `:latest`          | CPU     | ⚠️ Works (Apple Silicon GPU not exposed to containers) |
-| **Windows**     | NVIDIA    | `:cuda`            | CUDA    | ✅ Supported (Docker Desktop + WSL2)                    |
+| **Windows**     | NVIDIA    | `:cuda`            | CUDA    | ✅ Supported (Docker Desktop + WSL2)                   |
 | **Windows**     | AMD/Intel | `:cpu`             | CPU     | ⚠️ Works (Vulkan via WSL2 unreliable for inference)    |
-| **Windows**     | None      | `:cpu`             | CPU     | ✅ Fully supported                                      |
+| **Windows**     | None      | `:cpu`             | CPU     | ✅ Fully supported                                     |
 
 **Legend:**
+
 - ✅ Fully supported with GPU acceleration
 - ⚠️ Works with significant caveats
 
@@ -179,7 +180,7 @@ Every image includes whisper.cpp shared libraries and `ffmpeg` for decoding non-
 Pull a Whisper model (models are ~50-500MB, not baked into images):
 
 ```bash
-docker exec -it <container> kronk bucky model pull tiny.en
+docker exec -it <container> kronk bucky model pull ggml-tiny.bin
 ```
 
 Transcribe an audio file:
@@ -187,7 +188,7 @@ Transcribe an audio file:
 ```bash
 curl -X POST http://localhost:11435/v1/audio/transcriptions \
   -F file=@samples/jfk.wav \
-  -F model=tiny.en \
+  -F model=ggml-tiny.bin \
   -F response_format=json
 ```
 
@@ -196,7 +197,7 @@ curl -X POST http://localhost:11435/v1/audio/transcriptions \
 ## Ports
 
 | Port    | Service                                                               |
-|---------|-----------------------------------------------------------------------|
+| ------- | --------------------------------------------------------------------- |
 | `11435` | Main API (chat completions, embeddings, models, `/v1/liveness`, etc.) |
 | `11445` | Debug server (Prometheus `/metrics`, pprof, statsviz)                 |
 
@@ -219,7 +220,7 @@ Models, libraries, catalog data, and API keys are all stored under `/kronk`. Nam
 ## Environment Variables
 
 | Variable                       | Default                        | Description                                                                          |
-|--------------------------------|--------------------------------|--------------------------------------------------------------------------------------|
+| ------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------ |
 | `KRONK_DOWNLOAD_ENABLED`       | `false`                        | Allow model/library downloads from the browser UI (disabled by default for security) |
 | `KRONK_WEB_API_HOST`           | `0.0.0.0:11435`                | API bind address                                                                     |
 | `KRONK_WEB_DEBUG_HOST`         | `:11445`                       | Debug server bind address                                                            |

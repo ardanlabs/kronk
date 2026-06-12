@@ -45,7 +45,7 @@ EXAMPLES
   kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
 
   # Download the tiny English whisper model.
-  kronk bucky model pull tiny.en
+  kronk bucky model pull ggml-tiny.bin
 
   # List downloaded whisper models.
   kronk bucky model list
