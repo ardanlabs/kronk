@@ -30,9 +30,13 @@ interface MenuItem {
 
 const menuStructure: MenuCategory[] = [
   {
-    id: 'settings',
-    label: 'Settings',
-    items: [{ page: 'settings', label: 'API Token' }],
+    id: 'apps',
+    label: 'Apps',
+    items: [
+      { page: 'chat', label: 'Chat' },
+      { page: 'vram-calculator', label: 'VRAM Calculator' },
+      { page: 'translator', label: 'Translator' },
+    ],
   },
   {
     id: 'running',
@@ -83,37 +87,6 @@ const menuStructure: MenuCategory[] = [
     ],
   },
   {
-    id: 'apps',
-    label: 'Apps',
-    subcategories: [
-      {
-        id: 'apps-kronk',
-        label: 'Kronk',
-        items: [
-          { page: 'chat', label: 'Chat' },
-          { page: 'vram-calculator', label: 'VRAM Calculator' },
-        ],
-        subcategories: [
-          {
-            id: 'apps-kronk-testing',
-            label: 'Testing',
-            items: [
-              { page: 'accuracy', label: 'Accuracy' },
-              { page: 'testing-basic', label: 'Basic' },
-              { page: 'testing-sampling', label: 'Sampling' },
-              { page: 'testing-configurator', label: 'Configuration' },
-            ],
-          },
-        ],
-      },
-      {
-        id: 'apps-bucky',
-        label: 'Bucky',
-        items: [{ page: 'translator', label: 'Translator' }],
-      },
-    ],
-  },
-  {
     id: 'security',
     label: 'Security',
     subcategories: [
@@ -129,8 +102,21 @@ const menuStructure: MenuCategory[] = [
       {
         id: 'security-token',
         label: 'Token',
-        items: [{ page: 'security-token-create', label: 'Create' }],
+        items: [
+          { page: 'security-token-create', label: 'Create' },
+          { page: 'settings', label: 'Apply' },
+        ],
       },
+    ],
+  },
+  {
+    id: 'testing',
+    label: 'Testing',
+    items: [
+      { page: 'accuracy', label: 'Accuracy' },
+      { page: 'testing-basic', label: 'Basic' },
+      { page: 'testing-sampling', label: 'Sampling' },
+      { page: 'testing-configurator', label: 'Configuration' },
     ],
   },
   {
@@ -219,16 +205,6 @@ const menuStructure: MenuCategory[] = [
 ];
 
 const categoryIcons: Record<string, JSX.Element> = {
-  settings: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="18" x2="20" y2="18" />
-      <circle cx="8" cy="6" r="2" fill="currentColor" stroke="none" />
-      <circle cx="16" cy="12" r="2" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="18" r="2" fill="currentColor" stroke="none" />
-    </svg>
-  ),
   running: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="3 12 7 12 10 4 14 20 17 12 21 12" />
@@ -266,6 +242,13 @@ const categoryIcons: Record<string, JSX.Element> = {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
       <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </svg>
+  ),
+  testing: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 2h6" />
+      <path d="M10 2v6.5L5 18a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9.5V2" />
+      <path d="M7.5 14h9" />
     </svg>
   ),
 };
