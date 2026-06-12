@@ -28,6 +28,11 @@ var (
 	MaxRetries    = 3
 	RunInParallel = false
 	AudioFile     string
+
+	// StereoAudioFile is a 16 kHz two-channel WAV with one speaker per
+	// channel (English on channel 0, Spanish on channel 1), used to
+	// exercise the channel-separated diarization path.
+	StereoAudioFile string
 )
 
 // Model paths resolved during Setup. Each entry corresponds to one
@@ -46,6 +51,7 @@ var (
 func Setup() {
 	gw := os.Getenv("GITHUB_WORKSPACE")
 	AudioFile = filepath.Join(gw, "examples", "samples", "jfk.wav")
+	StereoAudioFile = filepath.Join(gw, "examples", "samples", "stereo-speakers.wav")
 
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		Goroutines = 1
