@@ -33,6 +33,7 @@
 
 ```shell
 brew tap ardanlabs/kronk
+brew trust ardanlabs/kronk
 brew install kronk
 ```
 

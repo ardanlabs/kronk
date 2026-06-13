@@ -26,6 +26,7 @@ On macOS or Linux with Homebrew:
 
 ```shell
 $ brew tap ardanlabs/kronk
+$ brew trust ardanlabs/kronk
 $ brew install kronk
 
 $ kronk server start
@@ -84,6 +85,7 @@ The recommended way to install Kronk on macOS or Linux is with Homebrew:
 
 ```shell
 $ brew tap ardanlabs/kronk
+$ brew trust ardanlabs/kronk
 $ brew install kronk
 
 $ kronk --help

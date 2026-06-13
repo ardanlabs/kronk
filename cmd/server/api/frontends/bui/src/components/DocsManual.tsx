@@ -230,6 +230,7 @@ curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","
           <h3 id="22-installing-the-cli">2.2 Installing the CLI</h3>
           <p><strong>Option 1: Homebrew (recommended for macOS and Linux)</strong></p>
           <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk
+brew trust ardanlabs/kronk
 brew install kronk`}</code></pre>
           <p>To upgrade later:</p>
           <pre className="code-block"><code className="language-shell">{`brew upgrade kronk`}</code></pre>
