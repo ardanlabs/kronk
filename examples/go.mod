@@ -6,11 +6,11 @@ replace github.com/ardanlabs/kronk => ../
 
 require (
 	github.com/ardanlabs/bucky v1.0.5
-	github.com/ardanlabs/kronk v1.27.7
+	github.com/ardanlabs/kronk v1.27.8
 	github.com/duckdb/duckdb-go/v2 v2.10503.1
 	github.com/gen2brain/malgo v0.11.25
 	github.com/google/uuid v1.6.0
-	github.com/hybridgroup/yzma v1.17.0
+	github.com/hybridgroup/yzma v1.17.1
 )
 
 require (
