@@ -98,7 +98,7 @@ func float32Or(p *float32, def float32) float32 {
 // separate-GGUF drafter wins even on a target that also has an MTP head.
 type DraftModelConfig struct {
 	ModelFiles    []string  // Path to the draft model GGUF file(s); empty means MTP nDraft override
-	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 4)
+	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 2)
 	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
 	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
 	PtrMainGPU    *int      // Primary GPU index for draft model

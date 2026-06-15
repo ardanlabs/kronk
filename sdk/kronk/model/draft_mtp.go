@@ -17,7 +17,7 @@ import (
 // Conservative default — MTP heads typically have high acceptance for
 // the first 1-3 tokens and rapidly decay beyond that. The adaptive
 // chooseNDraft EMA will scale down further if acceptance is poor.
-const defMTPNDraft = 4
+const defMTPNDraft = 2
 
 // mtpNDraft returns the starting (ceiling) number of draft tokens for the
 // auto-detected MTP drafter. An MTP nDraft override — a DraftModel block

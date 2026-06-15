@@ -51,7 +51,7 @@
 #   # draft-token count for an auto-detected MTP head on the target.
 #   draft-model:
 #     model-id: org/Draft-Model.Q8_0     # Draft model id (separate-GGUF drafter; requires nseq-max: 1)
-#     ndraft: 5                          # Tokens to draft per step (separate-GGUF default 5, MTP default 4)
+#     ndraft: 5                          # Tokens to draft per step (separate-GGUF default 5, MTP default 2)
 #     devices: [CUDA0]                   # Devices for the draft model
 #     main-gpu: 0                        # Primary GPU index for the draft model
 #     ngpu-layers: 0                     # GPU layers for the draft model (0 = all)
