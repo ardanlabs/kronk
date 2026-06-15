@@ -5,6 +5,7 @@ import { type Page, routeMap, pathToPage } from '../App';
 import { useDownload } from '../contexts/DownloadContext';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import { useAccuracyRunner } from '../contexts/AccuracyRunnerContext';
+import { useEfficiencyRunner } from '../contexts/EfficiencyRunnerContext';
 import { usePlayground } from '../contexts/PlaygroundContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../services/api';
@@ -114,6 +115,7 @@ const menuStructure: MenuCategory[] = [
     label: 'Testing',
     items: [
       { page: 'accuracy', label: 'Accuracy' },
+      { page: 'efficiency', label: 'Efficiency' },
       { page: 'testing-basic', label: 'Basic' },
       { page: 'testing-sampling', label: 'Sampling' },
       { page: 'testing-configurator', label: 'Configuration' },
@@ -267,6 +269,12 @@ export default function Layout({ children }: LayoutProps) {
     completedRun: accuracyCompleted,
     dismissCompleted: dismissAccuracy,
   } = useAccuracyRunner();
+  const {
+    activeRun: efficiencyRun,
+    stopActive: stopEfficiency,
+    completedRun: efficiencyCompleted,
+    dismissCompleted: dismissEfficiency,
+  } = useEfficiencyRunner();
   const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
 
@@ -389,6 +397,7 @@ export default function Layout({ children }: LayoutProps) {
   const showAutoTestIndicator = !!run;
   const showDownloadIndicator = !!download;
   const showAccuracyIndicator = !!accuracyRun || !!accuracyCompleted;
+  const showEfficiencyIndicator = !!efficiencyRun || !!efficiencyCompleted;
   const showSessionIndicator = !!session;
 
   const accuracyTitle = accuracyRun
@@ -587,7 +596,7 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
         </div>
         <nav>{menuStructure.map((category) => renderCategory(category))}</nav>
-        {(showAutoTestIndicator || showDownloadIndicator || showAccuracyIndicator || showSessionIndicator) && (
+        {(showAutoTestIndicator || showDownloadIndicator || showAccuracyIndicator || showEfficiencyIndicator || showSessionIndicator) && (
           <div className="sidebar-indicators">
             {showSessionIndicator && (
               <div className="download-indicator">
@@ -723,6 +732,60 @@ export default function Layout({ children }: LayoutProps) {
                     className="autotest-indicator-stop"
                     onClick={dismissAccuracy}
                     aria-label="Dismiss accuracy result"
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+            {showEfficiencyIndicator && efficiencyRun && (
+              <div className="download-indicator">
+                <div className="download-indicator-link autotest-indicator-link">
+                  <Link to={routeMap['efficiency']} className="autotest-indicator-top">
+                    <div className="download-indicator-header">
+                      <span className="download-indicator-spinner" />
+                      <span className="download-indicator-title">
+                        {efficiencyRun.status === 'loading' ? 'Loading model…' : 'Efficiency run…'}
+                      </span>
+                    </div>
+                    <div className="download-indicator-url" title={efficiencyRun.model}>
+                      {efficiencyRun.model.split('/').pop()}
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="autotest-indicator-stop"
+                    onClick={stopEfficiency}
+                    aria-label="Stop efficiency run"
+                    title="Stop efficiency run"
+                  >
+                    ■
+                  </button>
+                </div>
+              </div>
+            )}
+            {showEfficiencyIndicator && !efficiencyRun && efficiencyCompleted && (
+              <div className="download-indicator">
+                <div className="download-indicator-link autotest-indicator-link">
+                  <Link to={routeMap['efficiency']} className="autotest-indicator-top">
+                    <div className="download-indicator-header">
+                      {efficiencyCompleted.ok ? (
+                        <span className="download-indicator-icon success">✓</span>
+                      ) : (
+                        <span className="download-indicator-icon error">✗</span>
+                      )}
+                      <span className="download-indicator-title">{efficiencyCompleted.title}</span>
+                    </div>
+                    <div className="download-indicator-url" title={efficiencyCompleted.summary}>
+                      {efficiencyCompleted.summary}
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="autotest-indicator-stop"
+                    onClick={dismissEfficiency}
+                    aria-label="Dismiss efficiency result"
                     title="Dismiss"
                   >
                     ✕

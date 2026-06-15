@@ -89,6 +89,11 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/accuracy/functions", api.listAccuracyFunctions, auth)
 	app.HandlerFunc(http.MethodPost, version, "/accuracy/test", api.runAccuracy, auth)
 
+	// -------------------------------------------------------------------------
+	// Efficiency app — model throughput comparison.
+
+	app.HandlerFunc(http.MethodPost, version, "/efficiency/run", api.runEfficiency, auth)
+
 	// Auth is handled by the auth service for these calls.
 	app.HandlerFunc(http.MethodPost, version, "/security/token/create", api.createToken)
 	app.HandlerFunc(http.MethodGet, version, "/security/keys", api.listKeys)

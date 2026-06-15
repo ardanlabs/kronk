@@ -41,6 +41,7 @@ import TestingBasic from './components/TestingBasic';
 import TestingSampling from './components/TestingSampling';
 import TestingConfiguration from './components/TestingConfiguration';
 import Accuracy from './components/Accuracy';
+import Efficiency from './components/Efficiency';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { TokenProvider } from './contexts/TokenContext';
 import { DownloadProvider } from './contexts/DownloadContext';
@@ -49,6 +50,7 @@ import { ChatHistoryProvider } from './contexts/ChatHistoryContext';
 import { SamplingProvider } from './contexts/SamplingContext';
 import { AutoTestRunnerProvider } from './contexts/AutoTestRunnerContext';
 import { AccuracyRunnerProvider } from './contexts/AccuracyRunnerContext';
+import { EfficiencyRunnerProvider } from './contexts/EfficiencyRunnerContext';
 import { PlaygroundProvider } from './contexts/PlaygroundContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 
@@ -57,6 +59,7 @@ export type Page =
   | 'chat'
   | 'vram-calculator'
   | 'accuracy'
+  | 'efficiency'
   | 'testing-basic'
   | 'testing-sampling'
   | 'testing-configurator'
@@ -101,6 +104,7 @@ export const routeMap: Record<Page, string> = {
   'chat': '/chat',
   'vram-calculator': '/vram-calculator',
   'accuracy': '/accuracy',
+  'efficiency': '/efficiency',
   'testing-basic': '/testing/basic',
   'testing-sampling': '/testing/sampling',
   'testing-configurator': '/testing/configurator',
@@ -196,6 +200,7 @@ function App() {
       <TokenProvider>
         <ModelListProvider>
           <AccuracyRunnerProvider>
+          <EfficiencyRunnerProvider>
           <DownloadProvider>
             <AutoTestRunnerProvider>
             <PlaygroundProvider>
@@ -208,6 +213,7 @@ function App() {
                 <Route path="/chat" element={<Chat />} />
                 <Route path="/vram-calculator" element={<VRAMCalculator />} />
                 <Route path="/accuracy" element={<Accuracy />} />
+                <Route path="/efficiency" element={<Efficiency />} />
                 <Route path="/testing/basic" element={<TestingBasic />} />
                 <Route path="/testing/sampling" element={<TestingSampling />} />
                 <Route path="/testing/configurator" element={<TestingConfiguration />} />
@@ -254,6 +260,7 @@ function App() {
             </PlaygroundProvider>
             </AutoTestRunnerProvider>
           </DownloadProvider>
+          </EfficiencyRunnerProvider>
           </AccuracyRunnerProvider>
         </ModelListProvider>
       </TokenProvider>

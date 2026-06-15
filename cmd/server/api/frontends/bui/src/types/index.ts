@@ -1036,3 +1036,23 @@ export interface AccuracyResponse {
   diff: AccuracyDiffLine[];
   usage: AccuracyUsage;
 }
+
+// =============================================================================
+// Efficiency app — model throughput comparison
+
+export interface EfficiencyUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  in_tps: number;
+  out_tps: number;
+  ttft_ms: number;
+  wallclock_ms: number;
+}
+
+export interface EfficiencyResponse {
+  model: string;
+  prompt: string;
+  output: string;
+  usage: EfficiencyUsage;
+  ran_at: number;
+}

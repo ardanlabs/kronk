@@ -37,6 +37,7 @@ import type {
   TranscriptionResponse,
   AccuracyFunctionsResponse,
   AccuracyResponse,
+  EfficiencyResponse,
 } from '../types';
 
 class ApiService {
@@ -972,6 +973,21 @@ class ApiService {
     return this.request<AccuracyResponse>('/accuracy/test', {
       method: 'POST',
       body: JSON.stringify({ model, function: fn }),
+      signal,
+    });
+  }
+
+  // ── Efficiency app ──
+
+  async runEfficiency(
+    model: string,
+    prompt: string,
+    maxTokens: number,
+    signal?: AbortSignal,
+  ): Promise<EfficiencyResponse> {
+    return this.request<EfficiencyResponse>('/efficiency/run', {
+      method: 'POST',
+      body: JSON.stringify({ model, prompt, max_tokens: maxTokens }),
       signal,
     });
   }
