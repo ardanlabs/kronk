@@ -22,6 +22,7 @@ type File struct {
 	Modified             time.Time
 	Validated            bool
 	HasProjection        bool
+	HasMTP               bool
 }
 
 // Files returns all the models in the model directory.
@@ -74,6 +75,7 @@ func (m *Models) Files() ([]File, error) {
 			Modified:             modified,
 			Validated:            mp.Validated,
 			HasProjection:        mp.ProjFile != "",
+			HasMTP:               mp.MTPFile != "",
 		}
 
 		list = append(list, mf)

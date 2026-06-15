@@ -124,7 +124,7 @@ func TestSelectFiles_ExactMatch(t *testing.T) {
 		"mmproj-Q8_0.gguf",
 	}
 
-	files, mmproj, ok := selectFiles(siblings, "Qwen3.6-35B-A3B-UD-Q4_K_M")
+	files, mmproj, _, ok := selectFiles(siblings, "", "Qwen3.6-35B-A3B-UD-Q4_K_M")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -142,7 +142,7 @@ func TestSelectFiles_NoQuantPrefersUD(t *testing.T) {
 		"Qwen3-UD-Q4_K_M.gguf",
 		"Qwen3-Q5_K_M.gguf",
 	}
-	files, _, ok := selectFiles(siblings, "Qwen3")
+	files, _, _, ok := selectFiles(siblings, "", "Qwen3")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -156,7 +156,7 @@ func TestSelectFiles_NoQuantFallsBackToQ4KM(t *testing.T) {
 		"Qwen3-Q4_K_M.gguf",
 		"Qwen3-Q5_K_M.gguf",
 	}
-	files, _, ok := selectFiles(siblings, "Qwen3")
+	files, _, _, ok := selectFiles(siblings, "", "Qwen3")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -170,7 +170,7 @@ func TestSelectFiles_NoMatch(t *testing.T) {
 		"Qwen3-Q5_K_M.gguf",
 		"Qwen3-Q8_0.gguf",
 	}
-	if _, _, ok := selectFiles(siblings, "Qwen3"); ok {
+	if _, _, _, ok := selectFiles(siblings, "", "Qwen3"); ok {
 		t.Fatal("expected no match (no Q4_K_M variant)")
 	}
 }
@@ -180,7 +180,7 @@ func TestSelectFiles_Split(t *testing.T) {
 		"Llama-3.3-70B-Q8_0/Llama-3.3-70B-Q8_0-00001-of-00002.gguf",
 		"Llama-3.3-70B-Q8_0/Llama-3.3-70B-Q8_0-00002-of-00002.gguf",
 	}
-	files, _, ok := selectFiles(siblings, "Llama-3.3-70B-Q8_0")
+	files, _, _, ok := selectFiles(siblings, "", "Llama-3.3-70B-Q8_0")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -202,7 +202,7 @@ func TestSelectFiles_MmprojFallsBackWhenNoF16(t *testing.T) {
 		"Qwen-Q4_K_M.gguf",
 		"mmproj-Q8_0.gguf",
 	}
-	_, mmproj, ok := selectFiles(siblings, "Qwen-Q4_K_M")
+	_, mmproj, _, ok := selectFiles(siblings, "", "Qwen-Q4_K_M")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -221,7 +221,7 @@ func TestSelectFiles_MmprojEmbeddedNamingMradermacher(t *testing.T) {
 		"Qwen2-Audio-7B.mmproj-Q8_0.gguf",
 		"Qwen2-Audio-7B.mmproj-f16.gguf",
 	}
-	files, mmproj, ok := selectFiles(siblings, "Qwen2-Audio-7B.Q8_0")
+	files, mmproj, _, ok := selectFiles(siblings, "", "Qwen2-Audio-7B.Q8_0")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -243,7 +243,7 @@ func TestSelectFiles_MmprojBF16NotMisclassifiedAsF16(t *testing.T) {
 		"mmproj-BF16.gguf",
 		"mmproj-F16.gguf",
 	}
-	_, mmproj, ok := selectFiles(siblings, "gemma-Q4_K_M")
+	_, mmproj, _, ok := selectFiles(siblings, "", "gemma-Q4_K_M")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -257,7 +257,7 @@ func TestSelectFiles_MmprojBF16FallbackAcceptedWhenAlone(t *testing.T) {
 		"gemma-Q4_K_M.gguf",
 		"mmproj-BF16.gguf",
 	}
-	_, mmproj, ok := selectFiles(siblings, "gemma-Q4_K_M")
+	_, mmproj, _, ok := selectFiles(siblings, "", "gemma-Q4_K_M")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -273,7 +273,7 @@ func TestSelectFiles_MmprojPrefersF16OverOthers(t *testing.T) {
 		"mmproj-F16.gguf",
 		"mmproj-F32.gguf",
 	}
-	_, mmproj, ok := selectFiles(siblings, "gemma-Q4_K_M")
+	_, mmproj, _, ok := selectFiles(siblings, "", "gemma-Q4_K_M")
 	if !ok {
 		t.Fatal("expected match")
 	}
@@ -805,7 +805,7 @@ func TestSelectFilesByTag(t *testing.T) {
 			"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
 			"mmproj-F16.gguf",
 		}
-		files, mmproj, ok := selectFilesByTag(siblings, "UD-Q4_K_XL")
+		files, mmproj, _, ok := selectFilesByTag(siblings, "", "UD-Q4_K_XL")
 		if !ok {
 			t.Fatal("expected match")
 		}
@@ -822,7 +822,7 @@ func TestSelectFilesByTag(t *testing.T) {
 			"Qwen3-Q4_K_XL.gguf",
 			"Qwen3-UD-Q4_K_XL.gguf",
 		}
-		files, _, ok := selectFilesByTag(siblings, "Q4_K_XL")
+		files, _, _, ok := selectFilesByTag(siblings, "", "Q4_K_XL")
 		if !ok {
 			t.Fatal("expected match")
 		}
@@ -836,7 +836,7 @@ func TestSelectFilesByTag(t *testing.T) {
 			"Qwen3-Q5_K_M.gguf",
 			"Qwen3-Q8_0.gguf",
 		}
-		if _, _, ok := selectFilesByTag(siblings, "Q4_K_XL"); ok {
+		if _, _, _, ok := selectFilesByTag(siblings, "", "Q4_K_XL"); ok {
 			t.Fatal("expected no match")
 		}
 	})
@@ -846,7 +846,7 @@ func TestSelectFilesByTag(t *testing.T) {
 			"Llama-3.3-70B-Q8_0/Llama-3.3-70B-Q8_0-00001-of-00002.gguf",
 			"Llama-3.3-70B-Q8_0/Llama-3.3-70B-Q8_0-00002-of-00002.gguf",
 		}
-		files, _, ok := selectFilesByTag(siblings, "Q8_0")
+		files, _, _, ok := selectFilesByTag(siblings, "", "Q8_0")
 		if !ok {
 			t.Fatal("expected match")
 		}
@@ -864,7 +864,7 @@ func TestSelectFilesByTag(t *testing.T) {
 			"Qwen2-Audio-7B.Q8_0.gguf",
 			"Qwen2-Audio-7B.mmproj-f16.gguf",
 		}
-		files, mmproj, ok := selectFilesByTag(siblings, "Q8_0")
+		files, mmproj, _, ok := selectFilesByTag(siblings, "", "Q8_0")
 		if !ok {
 			t.Fatal("expected match")
 		}
@@ -878,7 +878,7 @@ func TestSelectFilesByTag(t *testing.T) {
 
 	t.Run("empty-tag", func(t *testing.T) {
 		siblings := []string{"Qwen3-Q8_0.gguf"}
-		if _, _, ok := selectFilesByTag(siblings, ""); ok {
+		if _, _, _, ok := selectFilesByTag(siblings, "", ""); ok {
 			t.Fatal("expected no match for empty tag")
 		}
 	})
@@ -1168,4 +1168,247 @@ func loadResolved(t *testing.T, path string) Catalog {
 	// Ensure deterministic provider ordering for any test that inspects it.
 	sort.Strings(rm.Providers)
 	return rm
+}
+
+// =============================================================================
+// MTP companion selection
+
+func TestSelectFiles_MTPCompanionCoLocated(t *testing.T) {
+	// Gemma-style: a normal GGUF repo ships the main model plus a
+	// co-located "mtp-" drafter at the repo root. Downloading the main
+	// model must also surface the drafter as a companion (not a model).
+	siblings := []string{
+		"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf",
+		"gemma-4-26B-A4B-it-Q8_0.gguf",
+		"mtp-gemma-4-26B-A4B-it.gguf",
+		"MTP/gemma-4-26B-A4B-it-Q8_0-MTP.gguf",
+		"mmproj-F16.gguf",
+	}
+
+	files, mmproj, mtp, ok := selectFiles(siblings, "gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-UD-Q8_K_XL")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if !reflect.DeepEqual(files, []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"}) {
+		t.Errorf("files = %v, want [gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf] (mtp must not leak into model files)", files)
+	}
+	if mmproj != "mmproj-F16.gguf" {
+		t.Errorf("mmproj = %q, want mmproj-F16.gguf", mmproj)
+	}
+	if mtp != "mtp-gemma-4-26B-A4B-it.gguf" {
+		t.Errorf("mtp = %q, want mtp-gemma-4-26B-A4B-it.gguf", mtp)
+	}
+}
+
+func TestSelectFiles_MTPDedicatedRepoIsStandalone(t *testing.T) {
+	// A dedicated "*-MTP-GGUF" repo holds standalone MTP models. Its files
+	// must remain selectable as the model and never be treated as a
+	// companion of some other model.
+	siblings := []string{
+		"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf",
+	}
+
+	files, _, mtp, ok := selectFilesByTag(siblings, "Qwen3.6-35B-A3B-MTP-GGUF", "UD-Q8_K_XL")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if !reflect.DeepEqual(files, []string{"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf"}) {
+		t.Errorf("files = %v, want the MTP repo file selected as a model", files)
+	}
+	if mtp != "" {
+		t.Errorf("mtp = %q, want empty (dedicated MTP repo has no companion)", mtp)
+	}
+}
+
+func TestSelectFiles_ExplicitMTPRequestIsStandalone(t *testing.T) {
+	// When the requested id itself carries the "mtp-" marker the request
+	// targets the drafter directly, so the "mtp-" sibling must stay in the
+	// model bucket and resolve as the model.
+	siblings := []string{
+		"mtp-gemma-4-26B-A4B-it.gguf",
+	}
+
+	files, _, mtp, ok := selectFiles(siblings, "gemma-4-26B-A4B-it-GGUF", "mtp-gemma-4-26B-A4B-it")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if !reflect.DeepEqual(files, []string{"mtp-gemma-4-26B-A4B-it.gguf"}) {
+		t.Errorf("files = %v, want the mtp file selected as a model", files)
+	}
+	if mtp != "" {
+		t.Errorf("mtp = %q, want empty (explicit mtp request is standalone)", mtp)
+	}
+}
+
+func TestSelectFiles_MTPNoCompanionWhenUnrelated(t *testing.T) {
+	// An "mtp-" sibling for a different family must not attach to an
+	// unrelated main model.
+	siblings := []string{
+		"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf",
+		"mtp-some-other-model.gguf",
+	}
+
+	_, _, mtp, ok := selectFiles(siblings, "gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-UD-Q8_K_XL")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if mtp != "" {
+		t.Errorf("mtp = %q, want empty (unrelated mtp file must not attach)", mtp)
+	}
+}
+
+func TestMatchMTPToModel(t *testing.T) {
+	modelfiles := map[string][]string{
+		"gemma-4-26B-A4B-it-UD-Q8_K_XL": {"/m/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+		"gemma-4-26B-A4B-it-UD-Q4_K_M":  {"/m/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"},
+	}
+
+	// Canonical companion name re-keys to one exact model.
+	if id, ok := matchMTPToModel("/m/mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf", modelfiles); !ok || id != "gemma-4-26B-A4B-it-UD-Q8_K_XL" {
+		t.Errorf("exact match = %q,%v, want gemma-4-26B-A4B-it-UD-Q8_K_XL,true", id, ok)
+	}
+
+	// Upstream (no-quant) name falls back to a family match.
+	if id, ok := matchMTPToModel("/m/mtp-gemma-4-26B-A4B-it.gguf", modelfiles); !ok || id == "" {
+		t.Errorf("family match = %q,%v, want a family match,true", id, ok)
+	}
+
+	// Unrelated companion matches nothing.
+	if id, ok := matchMTPToModel("/m/mtp-llama-3.gguf", modelfiles); ok {
+		t.Errorf("unrelated match = %q,%v, want no match", id, ok)
+	}
+}
+
+// TestResolver_DiscoverMTP verifies the schema-v2 migration path: an
+// existing catalog entry that predates MTP companion support gets a
+// co-located mtp-*.gguf drafter discovered and recorded by a single HF
+// sibling scan, with mtp_checked stamped so the work runs only once.
+func TestResolver_DiscoverMTP(t *testing.T) {
+	if !hasNetwork() {
+		t.Skip("discoverCompanions requires network for the hasNetwork() guard")
+	}
+
+	hfc := &fakeHF{
+		metas: map[string][]string{
+			"unsloth/gemma-4-26B-A4B-it-GGUF": {
+				"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf",
+				"mmproj-F16.gguf",
+				"mtp-gemma-4-26B-A4B-it.gguf",
+			},
+		},
+	}
+	dir := t.TempDir()
+	rfile := filepath.Join(dir, "catalog.yaml")
+	mustWriteFile(t, rfile, "providers:\n  - unsloth\nmodels: {}\n")
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+
+	entry := CatalogEntry{
+		Provider: "unsloth",
+		Family:   "gemma-4-26B-A4B-it-GGUF",
+		Revision: "main",
+		Files:    []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+	}
+
+	got, ok := r.discoverCompanions(context.Background(), entry, testLog)
+	if !ok {
+		t.Fatalf("discoverCompanions ok=false, want true")
+	}
+	if !got.MTPChecked {
+		t.Error("MTPChecked not set after a successful scan")
+	}
+	if got.MTPOrig != "mtp-gemma-4-26B-A4B-it.gguf" {
+		t.Errorf("MTPOrig = %q, want mtp-gemma-4-26B-A4B-it.gguf", got.MTPOrig)
+	}
+	if got.MTP != "mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf" {
+		t.Errorf("MTP = %q, want mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf", got.MTP)
+	}
+
+	// A repo with no mtp sibling still stamps mtp_checked so the scan is
+	// not retried on every reconcile.
+	hfc.metas["unsloth/Qwen3-GGUF"] = []string{"Qwen3-Q8_0.gguf", "mmproj-F16.gguf"}
+	none := CatalogEntry{
+		Provider: "unsloth",
+		Family:   "Qwen3-GGUF",
+		Revision: "main",
+		Files:    []string{"Qwen3-Q8_0.gguf"},
+	}
+	got2, ok := r.discoverCompanions(context.Background(), none, testLog)
+	if !ok {
+		t.Fatalf("discoverCompanions (no companion) ok=false, want true")
+	}
+	if !got2.MTPChecked {
+		t.Error("MTPChecked not set when no companion exists")
+	}
+	if got2.MTP != "" || got2.MTPOrig != "" {
+		t.Errorf("expected empty MTP fields, got MTP=%q MTPOrig=%q", got2.MTP, got2.MTPOrig)
+	}
+}
+
+// TestResolver_DiscoverCompanions_RecoverMMProj verifies the mmproj
+// recovery path: an entry whose projection metadata was clobbered by a
+// URL-based pull (no mmproj recorded) but whose renamed projection file is
+// still on disk gets its mmproj source name recovered from an HF re-scan.
+// An entry with nothing to look up performs no HF call.
+func TestResolver_DiscoverCompanions_RecoverMMProj(t *testing.T) {
+	if !hasNetwork() {
+		t.Skip("discoverCompanions requires network for the hasNetwork() guard")
+	}
+
+	m := newTestModels(t)
+	hfc := &fakeHF{
+		metas: map[string][]string{
+			"unsloth/gemma-4-26B-A4B-it-GGUF": {
+				"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf",
+				"mmproj-F16.gguf",
+				"mtp-gemma-4-26B-A4B-it.gguf",
+			},
+		},
+	}
+	rfile := filepath.Join(t.TempDir(), "catalog.yaml")
+	r := NewResolverWithClient(m, rfile, hfc)
+
+	// The renamed projection is on disk; the catalog entry forgot it.
+	dir := filepath.Join(m.modelsPath, "unsloth", "gemma-4-26B-A4B-it-GGUF")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	projOnDisk := "mmproj-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
+	mustWriteFile(t, filepath.Join(dir, projOnDisk), "proj-bytes")
+
+	entry := CatalogEntry{
+		Provider:   "unsloth",
+		Family:     "gemma-4-26B-A4B-it-GGUF",
+		Revision:   "main",
+		Files:      []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+		MTPChecked: true, // only the mmproj needs recovery
+	}
+
+	got, ok := r.discoverCompanions(context.Background(), entry, testLog)
+	if !ok {
+		t.Fatalf("discoverCompanions ok=false, want true (mmproj recovery)")
+	}
+	if got.MMProjOrig != "mmproj-F16.gguf" {
+		t.Errorf("MMProjOrig = %q, want mmproj-F16.gguf", got.MMProjOrig)
+	}
+	if got.MMProj != projOnDisk {
+		t.Errorf("MMProj = %q, want %q", got.MMProj, projOnDisk)
+	}
+
+	// An entry already checked with no on-disk projection has nothing to
+	// look up: no HF call, ok=false.
+	hfc.calls = nil
+	done := CatalogEntry{
+		Provider:   "unsloth",
+		Family:     "gemma-4-26B-A4B-it-GGUF",
+		Revision:   "main",
+		Files:      []string{"some-other-model-Q8_0.gguf"},
+		MTPChecked: true,
+	}
+	if _, ok := r.discoverCompanions(context.Background(), done, testLog); ok {
+		t.Error("discoverCompanions ok=true, want false (nothing to discover)")
+	}
+	if len(hfc.calls) != 0 {
+		t.Errorf("expected zero HF calls for a no-op scan, got %v", hfc.calls)
+	}
 }

@@ -238,7 +238,10 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 			continue
 		}
 
-		cat.Models[canonical] = r.buildEntry(local.Provider, local.Family, local.Revision, local.Files, local.MMProj)
+		entry := r.buildEntry(local.Provider, local.Family, local.Revision, local.Files, local.MMProj, local.MTP)
+		entry.MMProjOrig = local.MMProjOrig
+		entry.MTPOrig = local.MTPOrig
+		cat.Models[canonical] = entry
 
 		log(ctx, "reconcile-catalog: added", "id", canonical)
 		changed++
@@ -252,17 +255,32 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 	schemaUpgrade := cat.Schema < SchemaVersion
 
 	for canonical, entry := range cat.Models {
-		if !schemaUpgrade && entry.ModelType != "" && entry.Capabilities.Endpoint != "" {
-			continue
+		var touched bool
+
+		// Companion discovery: pre-MTP entries (mtp_checked == false) get a
+		// one-time HuggingFace sibling scan so a co-located mtp-*.gguf
+		// drafter is surfaced, and entries whose mmproj metadata was
+		// clobbered by a URL-based pull recover their projection. The scan
+		// is a no-op when nothing needs looking up; network failures leave
+		// the work for a later retry.
+		if updated, ok := r.discoverCompanions(ctx, entry, log); ok {
+			entry = updated
+			touched = true
 		}
 
-		updated, ok := m.enrichEntry(ctx, entry, log)
-		if !ok {
-			continue
+		// Enrichment (model_type, capabilities). On a schema upgrade every
+		// entry is re-enriched; otherwise only entries missing the fields.
+		if schemaUpgrade || entry.ModelType == "" || entry.Capabilities.Endpoint == "" {
+			if updated, ok := m.enrichEntry(ctx, entry, log); ok {
+				entry = updated
+				touched = true
+			}
 		}
 
-		cat.Models[canonical] = updated
-		changed++
+		if touched {
+			cat.Models[canonical] = entry
+			changed++
+		}
 	}
 
 	if schemaUpgrade {
@@ -364,6 +382,13 @@ func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log
 		p := filepath.Join(dir, filepath.Base(entry.MMProj))
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			log(ctx, "remove-catalog-entry: mmproj", "path", p, "ERROR", err)
+		}
+		removeCompanions(p)
+	}
+	if entry.MTP != "" {
+		p := filepath.Join(dir, filepath.Base(entry.MTP))
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log(ctx, "remove-catalog-entry: mtp", "path", p, "ERROR", err)
 		}
 		removeCompanions(p)
 	}

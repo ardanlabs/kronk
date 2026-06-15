@@ -183,6 +183,7 @@ export interface CatalogFile {
 export interface CatalogFiles {
   model: CatalogFile[];
   proj: CatalogFile;
+  mtp: CatalogFile;
 }
 
 export interface VRAMInput {
@@ -261,6 +262,7 @@ export interface CatalogSummary {
   total_size: string;
   total_size_bytes: number;
   has_projection: boolean;
+  has_mtp?: boolean;
   downloaded: boolean;
   validated: boolean;
   model_type?: string;
@@ -328,6 +330,8 @@ export interface PullResponse {
   status: string;
   model_file?: string;
   model_files?: string[];
+  proj_file?: string;
+  mtp_file?: string;
   downloaded?: boolean;
   meta?: PullMeta;
   progress?: PullProgress;
@@ -568,6 +572,7 @@ export interface ResolveSourceResponse {
   revision: string;
   download_urls: string[];
   download_proj?: string;
+  download_mtp?: string;
   from_cache: boolean;
   from_local: boolean;
   installed: boolean;

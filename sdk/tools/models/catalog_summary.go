@@ -15,10 +15,12 @@ type CatalogFile struct {
 	Size int64  `json:"size"`
 }
 
-// CatalogFiles groups the model files and a single projection (if any).
+// CatalogFiles groups the model files, a single projection (if any), and a
+// single MTP drafter companion (if any).
 type CatalogFiles struct {
 	Model []CatalogFile `json:"model"`
 	Proj  CatalogFile   `json:"proj"`
+	MTP   CatalogFile   `json:"mtp"`
 }
 
 // CatalogCapabilities describes what the model can do, derived from
@@ -49,6 +51,7 @@ type CatalogSummary struct {
 	TotalSize      string              `json:"total_size"`
 	TotalSizeBytes int64               `json:"total_size_bytes"`
 	HasProjection  bool                `json:"has_projection"`
+	HasMTP         bool                `json:"has_mtp"`
 	Downloaded     bool                `json:"downloaded"`
 	Validated      bool                `json:"validated"`
 	ModelType      string              `json:"model_type,omitempty"`
@@ -94,7 +97,7 @@ func (m *Models) IndexState() (downloaded, validated map[string]bool) {
 // NewSummary builds a CatalogSummary from a catalog entry plus the local
 // index state.
 func NewSummary(canonical string, entry CatalogEntry, downloaded, validated map[string]bool) CatalogSummary {
-	totalBytes := entry.MMProjSize
+	totalBytes := entry.MMProjSize + entry.MTPSize
 	for _, n := range entry.FileSizes {
 		totalBytes += n
 	}
@@ -108,6 +111,7 @@ func NewSummary(canonical string, entry CatalogEntry, downloaded, validated map[
 		TotalSize:      FormatBytes(totalBytes),
 		TotalSizeBytes: totalBytes,
 		HasProjection:  entry.MMProj != "",
+		HasMTP:         entry.MTP != "",
 		Downloaded:     downloaded[canonical],
 		Validated:      validated[canonical],
 		ModelType:      entry.ModelType,
@@ -144,6 +148,20 @@ func NewFiles(entry CatalogEntry) CatalogFiles {
 		out.Proj = CatalogFile{
 			URL:  projURL,
 			Size: entry.MMProjSize,
+		}
+	}
+
+	if entry.MTP != "" {
+		// The MTP URL is built from the HuggingFace source name (MTPOrig).
+		// Pre-MTPOrig entries leave the URL empty until the resolver
+		// self-heals on the next online Resolve.
+		var mtpURL string
+		if entry.MTPOrig != "" {
+			mtpURL = hf.BuildURL(entry.Provider, entry.Family, entry.Revision, entry.MTPOrig)
+		}
+		out.MTP = CatalogFile{
+			URL:  mtpURL,
+			Size: entry.MTPSize,
 		}
 	}
 

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
-import DownloadInfoTable from './DownloadInfoTable';
 import DownloadProgressBar from './DownloadProgressBar';
 import type { ResolveSourceResponse, HFRepoFile } from '../types';
 import {
@@ -42,6 +41,9 @@ export default function ModelPull() {
 
   const [showOverride, setShowOverride] = useState(false);
   const [projOverride, setProjOverride] = useState('');
+
+  const [showMTPOverride, setShowMTPOverride] = useState(false);
+  const [mtpOverride, setMtpOverride] = useState('');
 
   const isComplete = download?.status === 'complete';
   const hasError = download?.status === 'error';
@@ -157,17 +159,25 @@ export default function ModelPull() {
     setResolveError(null);
     setProjOverride('');
     setShowOverride(false);
+    setMtpOverride('');
+    setShowMTPOverride(false);
   };
 
   const handlePull = () => {
     if (!resolved || isDownloading || resolved.installed) return;
 
     const proj = showOverride ? projOverride.trim() : '';
+    // The MTP companion is auto-detected by the resolver (a co-located
+    // mtp-*.gguf file). When the override section is open and populated,
+    // the explicit URL replaces the resolver's choice; otherwise the
+    // resolved companion (if any) is downloaded alongside the model.
+    const mtpExplicit = showMTPOverride ? mtpOverride.trim() : '';
+    const mtp = mtpExplicit || resolved.download_mtp || '';
     // The server now handles id → URL resolution when ProjURL is set,
     // so the BUI can always send the canonical id regardless of mode.
     const modelArg = resolved.canonical_id || buildSource(provider, family, model);
 
-    startDownload(modelArg, proj || undefined);
+    startDownload(modelArg, proj || undefined, mtp || undefined);
   };
 
   const sourceLabel = resolved?.from_local
@@ -406,6 +416,14 @@ export default function ModelPull() {
                       : <span style={{ opacity: 0.6 }}>none</span>}
                   </td>
                 </tr>
+                <tr>
+                  <td>MTP drafter</td>
+                  <td>
+                    {resolved.download_mtp
+                      ? <code style={{ wordBreak: 'break-all' }}>{resolved.download_mtp}</code>
+                      : <span style={{ opacity: 0.6 }}>none</span>}
+                  </td>
+                </tr>
               </tbody>
             </table>
 
@@ -434,6 +452,31 @@ export default function ModelPull() {
               </div>
             </details>
 
+            <details
+              style={{ marginTop: '12px' }}
+              open={showMTPOverride}
+              onToggle={(e) => setShowMTPOverride((e.target as HTMLDetailsElement).open)}
+            >
+              <summary style={{ cursor: 'pointer', userSelect: 'none' }}>
+                Override MTP drafter URL
+              </summary>
+              <div className="form-group" style={{ marginTop: '8px' }}>
+                <label htmlFor="mtpOverride">MTP drafter URL (fully qualified HuggingFace URL)</label>
+                <input
+                  type="text"
+                  id="mtpOverride"
+                  value={mtpOverride}
+                  onChange={(e) => setMtpOverride(e.target.value)}
+                  placeholder="https://huggingface.co/org/repo/resolve/main/mtp-model.gguf"
+                  disabled={isDownloading}
+                />
+                <p style={{ fontSize: '12px', opacity: 0.7, margin: '4px 0 0 0' }}>
+                  When set, the explicit MTP drafter URL replaces the resolver's choice.
+                  Leave the field empty (or close this section) to use the MTP drafter above.
+                </p>
+              </div>
+            </details>
+
             <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
               <button
                 type="button"
@@ -456,10 +499,6 @@ export default function ModelPull() {
               )}
             </div>
           </div>
-        )}
-
-        {download && download.meta && (
-          <DownloadInfoTable meta={download.meta} urls={resolved?.download_urls} />
         )}
 
         {download && download.progress && isDownloading && (

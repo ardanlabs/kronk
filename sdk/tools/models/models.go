@@ -109,6 +109,15 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 
 			modelfiles := make(map[string][]string)
 			projFiles := make(map[string]string)
+			mtpFiles := make(map[string]string)
+
+			// dedicatedMTPRepo: a "*-MTP-GGUF" family directory holds
+			// standalone MTP models, so its "mtp-" files must NOT be
+			// treated as companions. Co-located "mtp-" files in any other
+			// family directory are drafter companions of a main model.
+			dedicatedMTPRepo := repoMatchesRenameRule(modelFamily)
+
+			var pendingMTP []string
 
 			for _, fileEntry := range fileEntries {
 				if fileEntry.IsDir() {
@@ -127,9 +136,29 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 					continue
 				}
 
-				modelID := extractModelID(fileEntry.Name())
 				filePath := filepath.Join(m.modelsPath, org, modelFamily, fileEntry.Name())
+
+				if !dedicatedMTPRepo && modelIDCarriesRenameMarker(extractModelID(name)) {
+					pendingMTP = append(pendingMTP, filePath)
+					continue
+				}
+
+				modelID := extractModelID(fileEntry.Name())
 				modelfiles[modelID] = append(modelfiles[modelID], filePath)
+			}
+
+			// Attach each pending "mtp-" file to its matching main model as
+			// a companion. An unmatched file (or one in a directory with no
+			// main model) is kept as a standalone model so user-downloaded
+			// files are never silently hidden.
+			for _, mtpPath := range pendingMTP {
+				if matchID, ok := matchMTPToModel(mtpPath, modelfiles); ok {
+					mtpFiles[matchID] = mtpPath
+					continue
+				}
+
+				modelID := extractModelID(filepath.Base(mtpPath))
+				modelfiles[modelID] = append(modelfiles[modelID], mtpPath)
 			}
 
 			ctx := context.Background()
@@ -163,6 +192,10 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 					mp.ProjFile = projFile
 				}
 
+				if mtpFile, exists := mtpFiles[modelID]; exists {
+					mp.MTPFile = mtpFile
+				}
+
 				validated := isValidated
 				if checkSHA {
 					validated = true
@@ -179,6 +212,14 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 						log(ctx, "running check ", "proj", path.Base(mp.ProjFile))
 						if err := model.CheckModel(mp.ProjFile, true); err != nil {
 							log(ctx, "running check ", "proj", path.Base(mp.ProjFile), "ERROR", err)
+							validated = false
+						}
+					}
+
+					if mp.MTPFile != "" {
+						log(ctx, "running check ", "mtp", path.Base(mp.MTPFile))
+						if err := model.CheckModel(mp.MTPFile, true); err != nil {
+							log(ctx, "running check ", "mtp", path.Base(mp.MTPFile), "ERROR", err)
 							validated = false
 						}
 					}
@@ -203,6 +244,35 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 	}
 
 	return nil
+}
+
+// matchMTPToModel finds the main-model key in modelfiles that the MTP
+// drafter at mtpPath belongs to. It first looks for an exact model-id
+// match (the canonical companion name "mtp-<modelID>.gguf" re-keys to one
+// specific model), then falls back to a family match (model id minus quant
+// suffix) so an upstream-named companion like "mtp-gemma-4-26B-A4B-it.gguf"
+// still attaches when only one quant of the family is installed.
+func matchMTPToModel(mtpPath string, modelfiles map[string][]string) (string, bool) {
+	id := trimMTPPrefix(extractModelID(filepath.Base(mtpPath)))
+
+	for mid := range modelfiles {
+		if strings.EqualFold(mid, id) {
+			return mid, true
+		}
+	}
+
+	fam := stripQuantSuffix(id)
+
+	var best string
+	for mid := range modelfiles {
+		if strings.EqualFold(stripQuantSuffix(mid), fam) {
+			if best == "" || mid < best {
+				best = mid
+			}
+		}
+	}
+
+	return best, best != ""
 }
 
 // MarkValidated sets Validated=true for the specified model in the index,

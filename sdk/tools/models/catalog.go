@@ -38,7 +38,11 @@ import (
 // History:
 //   - v1: initial schema (model_type, capabilities, omni→audio+video on
 //     general.architecture).
-const SchemaVersion = 1
+//   - v2: MTP drafter companion discovery. Entries persisted before MTP
+//     support never recorded a co-located mtp-*.gguf companion; the
+//     schema-upgrade reconcile re-scans HuggingFace once per entry to
+//     fill in MTP/MTPOrig and stamp mtp_checked.
+const SchemaVersion = 2
 
 // Catalog is the on-disk schema for catalog.yaml. It owns the provider
 // priority list and the cache of previously-resolved canonical model IDs.
@@ -72,6 +76,10 @@ type CatalogEntry struct {
 	MMProj       string              `yaml:"mmproj,omitempty"`
 	MMProjOrig   string              `yaml:"mmproj_orig,omitempty"`
 	MMProjSize   int64               `yaml:"mmproj_size,omitempty"`
+	MTP          string              `yaml:"mtp,omitempty"`
+	MTPOrig      string              `yaml:"mtp_orig,omitempty"`
+	MTPSize      int64               `yaml:"mtp_size,omitempty"`
+	MTPChecked   bool                `yaml:"mtp_checked,omitempty"`
 	ModelType    string              `yaml:"model_type,omitempty"`
 	Capabilities CatalogCapabilities `yaml:"capabilities,omitempty"`
 	ResolvedAt   time.Time           `yaml:"resolved_at"`
@@ -89,12 +97,22 @@ type Resolution struct {
 	Files        []string
 	MMProj       string
 	MMProjOrig   string
+	MTP          string
+	MTPOrig      string
 	DownloadURLs []string
 	DownloadProj string
+	DownloadMTP  string
 	LocalPaths   []string
 	LocalProj    string
+	LocalMTP     string
 	FromLocal    bool
 	FromCache    bool
+
+	// MTPChecked carries the persisted entry's mtp_checked flag through a
+	// cache hit. It reports whether the entry was built by an HF sibling
+	// scan that looked for an MTP drafter companion. Pre-MTP-support
+	// entries leave it false so the resolver knows to re-scan once.
+	MTPChecked bool
 
 	// RepoFiles is populated only when the input identified a repository
 	// without selecting a specific model file (e.g. "owner/repo" or a
@@ -119,6 +137,7 @@ func (r Resolution) VerifyLocal() error {
 	mp := Path{
 		ModelFiles: append([]string(nil), r.LocalPaths...),
 		ProjFile:   r.LocalProj,
+		MTPFile:    r.LocalMTP,
 	}
 
 	return verifyAllSizes(mp)
@@ -265,8 +284,10 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		// renamed projection name but no HF source name, so DownloadProj
 		// would be empty. When online, fall through to HF so the entry
 		// can be repaired with the canonical mmproj source name. When
-		// offline, return what we have.
-		needsRepair := cached.MMProj != "" && cached.DownloadProj == ""
+		// offline, return what we have. The same self-heal applies to a
+		// tracked MTP companion missing its DownloadMTP URL.
+		needsRepair := (cached.MMProj != "" && cached.DownloadProj == "") ||
+			(cached.MTP != "" && cached.DownloadMTP == "")
 		if !needsRepair || !online {
 			cached.FromCache = true
 			r.attachLocal(&cached)
@@ -307,8 +328,10 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 			// disk; MMProjOrig records the HuggingFace source filename so
 			// DownloadProj URLs can be reconstructed from cache hits without
 			// another HF round-trip.
-			entry := r.buildEntry(res.Provider, res.Family, res.Revision, res.Files, res.MMProj)
+			entry := r.buildEntry(res.Provider, res.Family, res.Revision, res.Files, res.MMProj, res.MTP)
 			entry.MMProjOrig = res.MMProjOrig
+			entry.MTPOrig = res.MTPOrig
+			entry.MTPChecked = true
 			rm.Models[res.CanonicalID] = entry
 			if err := r.Save(rm); err != nil {
 				return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
@@ -329,7 +352,10 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 
 		// Persist what we know so subsequent online Resolves can self-heal
 		// and fill in MMProjOrig.
-		rm.Models[local.CanonicalID] = r.buildEntry(local.Provider, local.Family, local.Revision, local.Files, local.MMProj)
+		entry := r.buildEntry(local.Provider, local.Family, local.Revision, local.Files, local.MMProj, local.MTP)
+		entry.MMProjOrig = local.MMProjOrig
+		entry.MTPOrig = local.MTPOrig
+		rm.Models[local.CanonicalID] = entry
 		if err := r.Save(rm); err != nil {
 			return Resolution{}, fmt.Errorf("resolve: persist local: %w", err)
 		}
@@ -359,7 +385,8 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 	online := hasNetwork()
 
 	if cached, ok := r.lookupCacheByTag(rm, provider, repo, tag); ok {
-		needsRepair := cached.MMProj != "" && cached.DownloadProj == ""
+		needsRepair := (cached.MMProj != "" && cached.DownloadProj == "") ||
+			(cached.MTP != "" && cached.DownloadMTP == "")
 		if !needsRepair || !online {
 			cached.FromCache = true
 			r.attachLocal(&cached)
@@ -379,7 +406,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 		return Resolution{}, fmt.Errorf("resolve: %s/%s: %w", provider, repo, err)
 	}
 
-	files, mmproj, ok := selectFilesByTag(meta.Siblings, tag)
+	files, mmproj, mtp, ok := selectFilesByTag(meta.Siblings, repo, tag)
 	if !ok {
 		return Resolution{}, fmt.Errorf("resolve: tag %q not found in %s/%s", tag, provider, repo)
 	}
@@ -395,15 +422,22 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 		Files:        files,
 		MMProj:       localProjName(repo, mmproj, files),
 		MMProjOrig:   mmproj,
+		MTP:          localMTPName(repo, mtp, files),
+		MTPOrig:      mtp,
 		DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
 	}
 
 	if mmproj != "" {
 		res.DownloadProj = buildDownloadURL(provider, repo, "main", mmproj)
 	}
+	if mtp != "" {
+		res.DownloadMTP = buildDownloadURL(provider, repo, "main", mtp)
+	}
 
-	entry := r.buildEntry(provider, repo, "main", files, res.MMProj)
+	entry := r.buildEntry(provider, repo, "main", files, res.MMProj, res.MTP)
 	entry.MMProjOrig = mmproj
+	entry.MTPOrig = mtp
+	entry.MTPChecked = true
 
 	if rm.Models == nil {
 		rm.Models = map[string]CatalogEntry{}
@@ -498,13 +532,14 @@ func canonicalID(provider, modelID string) string {
 // MMProjSize are populated from os.Stat. Files that aren't on disk yet
 // produce zero entries (callers expecting sizes for un-downloaded entries
 // must fill them via HF HEAD elsewhere).
-func (r *Resolver) buildEntry(provider, family, revision string, files []string, mmproj string) CatalogEntry {
+func (r *Resolver) buildEntry(provider, family, revision string, files []string, mmproj, mtp string) CatalogEntry {
 	entry := CatalogEntry{
 		Provider:   provider,
 		Family:     family,
 		Revision:   revision,
 		Files:      files,
 		MMProj:     mmproj,
+		MTP:        mtp,
 		ResolvedAt: time.Now().UTC(),
 	}
 
@@ -531,6 +566,12 @@ func (r *Resolver) buildEntry(provider, family, revision string, files []string,
 	if mmproj != "" {
 		if fi, err := os.Stat(filepath.Join(dir, filepath.Base(mmproj))); err == nil {
 			entry.MMProjSize = fi.Size()
+		}
+	}
+
+	if mtp != "" {
+		if fi, err := os.Stat(filepath.Join(dir, filepath.Base(mtp))); err == nil {
+			entry.MTPSize = fi.Size()
 		}
 	}
 
@@ -586,10 +627,15 @@ func (r *Resolver) refreshSizes(canonical string) error {
 		return nil
 	}
 
-	updated := r.buildEntry(entry.Provider, entry.Family, entry.Revision, entry.Files, entry.MMProj)
+	updated := r.buildEntry(entry.Provider, entry.Family, entry.Revision, entry.Files, entry.MMProj, entry.MTP)
 
-	// Preserve the original ResolvedAt — refreshing sizes shouldn't
-	// rewrite the resolution timestamp.
+	// Preserve fields buildEntry does not repopulate so a size refresh
+	// never drops the HF source names, enrichment, or the resolution
+	// timestamp.
+	updated.MMProjOrig = entry.MMProjOrig
+	updated.MTPOrig = entry.MTPOrig
+	updated.ModelType = entry.ModelType
+	updated.Capabilities = entry.Capabilities
 	updated.ResolvedAt = entry.ResolvedAt
 
 	rm.Models[canonical] = updated
@@ -654,6 +700,10 @@ func (r *Resolver) lookupLocal(provider, modelID string) (Resolution, bool) {
 		res.MMProj = filepath.Base(mp.ProjFile)
 		res.LocalProj = mp.ProjFile
 	}
+	if mp.MTPFile != "" {
+		res.MTP = filepath.Base(mp.MTPFile)
+		res.LocalMTP = mp.MTPFile
+	}
 
 	return res, true
 }
@@ -688,6 +738,9 @@ func entryToResolution(canonical string, entry CatalogEntry) Resolution {
 		Files:        append([]string(nil), entry.Files...),
 		MMProj:       entry.MMProj,
 		MMProjOrig:   entry.MMProjOrig,
+		MTP:          entry.MTP,
+		MTPOrig:      entry.MTPOrig,
+		MTPChecked:   entry.MTPChecked,
 		DownloadURLs: buildDownloadURLs(entry.Provider, entry.Family, entry.Revision, entry.Files),
 	}
 
@@ -696,6 +749,12 @@ func entryToResolution(canonical string, entry CatalogEntry) Resolution {
 	// MMProjOrig empty so the resolver can detect the gap and self-heal.
 	if entry.MMProjOrig != "" {
 		res.DownloadProj = buildDownloadURL(entry.Provider, entry.Family, entry.Revision, entry.MMProjOrig)
+	}
+
+	// DownloadMTP mirrors DownloadProj: built from the HF source name
+	// (MTPOrig), left empty for pre-MTPOrig entries so they self-heal.
+	if entry.MTPOrig != "" {
+		res.DownloadMTP = buildDownloadURL(entry.Provider, entry.Family, entry.Revision, entry.MTPOrig)
 	}
 
 	return res
@@ -725,6 +784,13 @@ func (r *Resolver) attachLocal(res *Resolution) {
 		p := filepath.Join(dir, filepath.Base(res.MMProj))
 		if _, err := os.Stat(p); err == nil {
 			res.LocalProj = p
+		}
+	}
+
+	if res.MTP != "" {
+		p := filepath.Join(dir, filepath.Base(res.MTP))
+		if _, err := os.Stat(p); err == nil {
+			res.LocalMTP = p
 		}
 	}
 }
@@ -764,7 +830,7 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, pre
 			return Resolution{}, false, err
 		}
 
-		files, mmproj, ok := selectFiles(meta.Siblings, modelID)
+		files, mmproj, mtp, ok := selectFiles(meta.Siblings, repo, modelID)
 		if !ok {
 			continue
 		}
@@ -777,17 +843,133 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, pre
 			Files:        files,
 			MMProj:       localProjName(repo, mmproj, files),
 			MMProjOrig:   mmproj,
+			MTP:          localMTPName(repo, mtp, files),
+			MTPOrig:      mtp,
 			DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
 		}
 
 		if mmproj != "" {
 			res.DownloadProj = buildDownloadURL(provider, repo, "main", mmproj)
 		}
+		if mtp != "" {
+			res.DownloadMTP = buildDownloadURL(provider, repo, "main", mtp)
+		}
 
 		return res, true, nil
 	}
 
 	return Resolution{}, false, nil
+}
+
+// discoverCompanions re-scans the HuggingFace repo backing an existing
+// catalog entry to fill in companion files (an mtp-*.gguf drafter and/or a
+// missing mmproj projection) with a single ModelMeta round-trip. It serves
+// two jobs run during a reconcile:
+//
+//   - MTP migration: entries persisted before MTP companion support
+//     (MTPChecked == false) get the drafter discovered and recorded.
+//     MTPChecked is stamped on every successful scan — including when no
+//     companion is found — so the work runs at most once per entry.
+//
+//   - mmproj recovery: when the entry has no mmproj recorded but the
+//     renamed projection file is present on disk (the signature of a
+//     URL-based download — e.g. an MTP-only pull — that clobbered the
+//     projection metadata), the projection source name is recovered so
+//     the BUI surfaces it again. Models genuinely without a projection
+//     have no on-disk mmproj and so never trip this path.
+//
+// The scan is skipped entirely when there is nothing to look up. When
+// offline or the lookup fails the entry is returned unchanged (ok=false)
+// and the work is retried on the next reconcile.
+func (r *Resolver) discoverCompanions(ctx context.Context, entry CatalogEntry, log applog.Logger) (CatalogEntry, bool) {
+	if len(entry.Files) == 0 {
+		return entry, false
+	}
+
+	recoverMMProj := entry.MMProj == "" && r.companionOnDisk(entry, projOnDiskName(entry))
+
+	if entry.MTPChecked && !recoverMMProj {
+		return entry, false
+	}
+
+	if !hasNetwork() {
+		return entry, false
+	}
+
+	revision := entry.Revision
+	if revision == "" {
+		revision = "main"
+	}
+
+	meta, err := r.hfClient.ModelMeta(ctx, entry.Provider, entry.Family, revision)
+	if err != nil {
+		log(ctx, "discover-companions: model-meta", "provider", entry.Provider, "family", entry.Family, "ERROR", err)
+		return entry, false
+	}
+
+	// Companion context: an mtp-*.gguf in this repo is a drafter for the
+	// co-resident main model, not a standalone model — unless the repo
+	// itself is a dedicated *-MTP-GGUF sibling.
+	_, proj, mtpc := classifySiblings(meta.Siblings, repoMatchesRenameRule(entry.Family))
+	target := entry.Files[0]
+
+	if !entry.MTPChecked {
+		entry.MTPChecked = true
+		if mtp := pickMTPCompanion(mtpc, target); mtp != "" {
+			entry.MTP = localMTPName(entry.Family, mtp, entry.Files)
+			entry.MTPOrig = mtp
+			entry.MTPSize = r.companionSize(entry, entry.MTP)
+		}
+	}
+
+	if recoverMMProj {
+		if mmproj := pickF16Mmproj(proj, target); mmproj != "" {
+			entry.MMProj = localProjName(entry.Family, mmproj, entry.Files)
+			entry.MMProjOrig = mmproj
+			entry.MMProjSize = r.companionSize(entry, entry.MMProj)
+		}
+	}
+
+	return entry, true
+}
+
+// projOnDiskName returns the renamed on-disk projection filename a complete
+// download would have produced for the entry's model, or "" when the entry
+// has no model files.
+func projOnDiskName(entry CatalogEntry) string {
+	if len(entry.Files) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("mmproj-%s.gguf", catalogModelID(entry.Family, entry.Files[0]))
+}
+
+// companionOnDisk reports whether the named companion file exists on disk
+// under the entry's canonical model directory.
+func (r *Resolver) companionOnDisk(entry CatalogEntry, name string) bool {
+	if r.models == nil || name == "" {
+		return false
+	}
+
+	dir := filepath.Join(r.models.modelsPath, entry.Provider, entry.Family)
+	_, err := os.Stat(filepath.Join(dir, filepath.Base(name)))
+
+	return err == nil
+}
+
+// companionSize returns the on-disk byte size of the named companion file,
+// or 0 when it is not present.
+func (r *Resolver) companionSize(entry CatalogEntry, name string) int64 {
+	if r.models == nil || name == "" {
+		return 0
+	}
+
+	dir := filepath.Join(r.models.modelsPath, entry.Provider, entry.Family)
+	if fi, err := os.Stat(filepath.Join(dir, filepath.Base(name))); err == nil {
+		return fi.Size()
+	}
+
+	return 0
 }
 
 // orderRepos returns repos sorted so the most likely correct candidate
@@ -892,7 +1074,7 @@ func isNotFound(err error) bool {
 // derived from one or more HuggingFace download URLs. Used after URL-based
 // downloads so catalog.yaml stays current regardless of the input
 // shape passed to Download.
-func (m *Models) persistURLResolution(modelURLs []string, projURL string) error {
+func (m *Models) persistURLResolution(modelURLs []string, projURL, mtpURL string) error {
 	if len(modelURLs) == 0 {
 		return nil
 	}
@@ -907,6 +1089,14 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 		if _, _, _, file, parsed := hf.ParseURL(hf.NormalizeDownloadURL(projURL)); parsed {
 			mmproj = localProjName(repo, file, files)
 			mmprojOrig = file
+		}
+	}
+
+	var mtp, mtpOrig string
+	if mtpURL != "" {
+		if _, _, _, file, parsed := hf.ParseURL(hf.NormalizeDownloadURL(mtpURL)); parsed {
+			mtp = localMTPName(repo, file, files)
+			mtpOrig = file
 		}
 	}
 
@@ -929,8 +1119,32 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL string) error 
 	modelID := catalogModelID(repo, files[0])
 	canonical := canonicalID(provider, modelID)
 
-	entry := r.buildEntry(provider, repo, revision, files, mmproj)
+	entry := r.buildEntry(provider, repo, revision, files, mmproj, mtp)
 	entry.MMProjOrig = mmprojOrig
+	entry.MTPOrig = mtpOrig
+	if mtpURL != "" {
+		entry.MTPChecked = true
+	}
+
+	// A URL-based download only carries the companions it was asked to
+	// fetch. Preserve any companion already recorded for this model when
+	// the current call did not supply it, so pulling just the MTP drafter
+	// (projURL == "") does not clobber a previously resolved mmproj, and a
+	// projection-only pull does not wipe a tracked MTP companion.
+	if prev, ok := rm.Models[canonical]; ok {
+		if projURL == "" {
+			entry.MMProj = prev.MMProj
+			entry.MMProjOrig = prev.MMProjOrig
+			entry.MMProjSize = prev.MMProjSize
+		}
+		if mtpURL == "" {
+			entry.MTP = prev.MTP
+			entry.MTPOrig = prev.MTPOrig
+			entry.MTPSize = prev.MTPSize
+			entry.MTPChecked = prev.MTPChecked
+		}
+	}
+
 	rm.Models[canonical] = entry
 
 	if err := r.Save(rm); err != nil {
@@ -951,6 +1165,20 @@ func localProjName(family, hfMMProj string, modelFiles []string) string {
 	}
 
 	return fmt.Sprintf("mmproj-%s.gguf", catalogModelID(family, modelFiles[0]))
+}
+
+// localMTPName returns the on-disk MTP drafter filename that downloadModel
+// produces by renaming the HuggingFace source file to a canonical
+// "mtp-<modelID>.gguf" keyed off the main model. The upstream name (e.g.
+// "mtp-gemma-4-26B-A4B-it.gguf") is therefore re-keyed to the requesting
+// model id so the index has a deterministic name with no request context.
+// Returns "" when there is no MTP companion.
+func localMTPName(family, hfMTP string, modelFiles []string) string {
+	if hfMTP == "" || len(modelFiles) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("mtp-%s.gguf", catalogModelID(family, modelFiles[0]))
 }
 
 // diskName returns the on-disk basename for an upstream HF file name,

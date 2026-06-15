@@ -167,6 +167,7 @@ func TestDownloadSplits_BareModel(t *testing.T) {
 		context.Background(), testLog,
 		[]string{"https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"},
 		"",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("downloadSplits: %v", err)
@@ -214,6 +215,7 @@ func TestDownloadSplits_WithProjection(t *testing.T) {
 		context.Background(), testLog,
 		[]string{"https://huggingface.co/Qwen/Qwen3-VL-GGUF/resolve/main/Qwen3-VL-Q8_0.gguf"},
 		"https://huggingface.co/Qwen/Qwen3-VL-GGUF/resolve/main/mmproj-F16.gguf",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("downloadSplits: %v", err)
@@ -224,6 +226,51 @@ func TestDownloadSplits_WithProjection(t *testing.T) {
 	}
 	if _, err := os.Stat(mp.ProjFile); err != nil {
 		t.Errorf("renamed proj file missing: %v", err)
+	}
+}
+
+func TestDownloadSplits_WithMTPCompanion(t *testing.T) {
+	body := []byte("model-body-bytes\n")
+	mtp := []byte("mtp-drafter-bytes\n")
+
+	g := &fakeGetter{
+		contents: map[string][]byte{
+			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf": body,
+			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf":        mtp,
+		},
+	}
+	withFakeGetter(t, g)
+
+	m := newTestModels(t)
+
+	mp, err := m.downloadSplits(
+		context.Background(), testLog,
+		[]string{"https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+		"",
+		"https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf",
+	)
+	if err != nil {
+		t.Fatalf("downloadSplits: %v", err)
+	}
+
+	// The MTP drafter is re-keyed to the main model id on disk.
+	if filepath.Base(mp.MTPFile) != "mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf" {
+		t.Errorf("MTPFile basename = %q, want mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf (renamed from upstream mtp-gemma-4-26B-A4B-it)", filepath.Base(mp.MTPFile))
+	}
+	if _, err := os.Stat(mp.MTPFile); err != nil {
+		t.Errorf("renamed mtp file missing: %v", err)
+	}
+
+	// The companion must round-trip through the index onto the model's Path.
+	fp, err := m.FullPath("gemma-4-26B-A4B-it-UD-Q8_K_XL")
+	if err != nil {
+		t.Fatalf("FullPath: %v", err)
+	}
+	if filepath.Base(fp.MTPFile) != "mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf" {
+		t.Errorf("indexed MTPFile basename = %q, want mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf", filepath.Base(fp.MTPFile))
+	}
+	if len(fp.ModelFiles) != 1 {
+		t.Errorf("indexed ModelFiles = %v, want 1 (mtp companion must not be a standalone model)", fp.ModelFiles)
 	}
 }
 
@@ -246,7 +293,7 @@ func TestDownloadSplits_MultiShard(t *testing.T) {
 		"https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF/resolve/main/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf",
 	}
 
-	mp, err := m.downloadSplits(context.Background(), testLog, urls, "")
+	mp, err := m.downloadSplits(context.Background(), testLog, urls, "", "")
 	if err != nil {
 		t.Fatalf("downloadSplits: %v", err)
 	}
@@ -281,7 +328,7 @@ func TestDownloadSplits_IndexHit_SecondCallNoNetwork(t *testing.T) {
 
 	url := "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
 
-	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, ""); err != nil {
+	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", ""); err != nil {
 		t.Fatalf("first downloadSplits: %v", err)
 	}
 
@@ -291,7 +338,7 @@ func TestDownloadSplits_IndexHit_SecondCallNoNetwork(t *testing.T) {
 	// when every shard short-circuited on the index, so the aggregate
 	// flag is not a reliable signal for "fetched any bytes". Assert via
 	// the call count instead.
-	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, ""); err != nil {
+	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", ""); err != nil {
 		t.Fatalf("second downloadSplits: %v", err)
 	}
 
@@ -313,7 +360,7 @@ func TestDownloadSplits_IndexStale_FileDeleted(t *testing.T) {
 
 	url := "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
 
-	mp, err := m.downloadSplits(context.Background(), testLog, []string{url}, "")
+	mp, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", "")
 	if err != nil {
 		t.Fatalf("first downloadSplits: %v", err)
 	}
@@ -325,7 +372,7 @@ func TestDownloadSplits_IndexStale_FileDeleted(t *testing.T) {
 
 	callsBefore := len(g.calls)
 
-	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, ""); err != nil {
+	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", ""); err != nil {
 		t.Fatalf("second downloadSplits: %v", err)
 	}
 

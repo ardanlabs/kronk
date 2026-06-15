@@ -204,6 +204,9 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	if installed && res.MMProj != "" && res.LocalProj == "" {
 		installed = false
 	}
+	if installed && res.MTP != "" && res.LocalMTP == "" {
+		installed = false
+	}
 	if installed {
 		if err := res.VerifyLocal(); err != nil {
 			installed = false
@@ -217,6 +220,7 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		Revision:     res.Revision,
 		DownloadURLs: res.DownloadURLs,
 		DownloadProj: res.DownloadProj,
+		DownloadMTP:  res.DownloadMTP,
 		FromCache:    res.FromCache,
 		FromLocal:    res.FromLocal,
 		Installed:    installed,

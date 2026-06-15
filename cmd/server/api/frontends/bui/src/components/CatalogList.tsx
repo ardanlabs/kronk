@@ -860,6 +860,7 @@ export default function CatalogList() {
                       <KeyValueTable rows={[
                         { key: 'model-url', label: 'Model URL', value: (modelInfo.files?.model?.length ?? 0) > 0 ? modelInfo.files!.model.map((file, idx) => <div key={idx}>{file.url} {file.size ? `(${formatBytes(file.size)})` : ''}</div>) : '-' },
                         { key: 'proj-url', label: 'Projection URL', value: modelInfo.files?.proj?.url ? <div>{modelInfo.files.proj.url} {modelInfo.files.proj.size ? `(${formatBytes(modelInfo.files.proj.size)})` : ''}</div> : '-' },
+                        { key: 'mtp-url', label: 'MTP Drafter URL', value: modelInfo.files?.mtp?.url ? <div>{modelInfo.files.mtp.url} {modelInfo.files.mtp.size ? `(${formatBytes(modelInfo.files.mtp.size)})` : ''}</div> : '-' },
                       ]} />
                     </div>
 

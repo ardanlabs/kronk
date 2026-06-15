@@ -72,7 +72,7 @@ func runLocal(mdls *models.Models, basePath string, source string, projURL strin
 	// expand split (multi-file) models; the supplied projection URL
 	// replaces the resolver's choice.
 	if isURL(source) {
-		if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, []string{source}, projURL); err != nil {
+		if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, []string{source}, projURL, ""); err != nil {
 			return fmt.Errorf("download-model: %w", err)
 		}
 
@@ -91,7 +91,7 @@ func runLocal(mdls *models.Models, basePath string, source string, projURL strin
 
 	fmt.Printf("Resolved %s → %s/%s (%d file(s))\n", source, res.Provider, res.Family, len(res.DownloadURLs))
 
-	if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, res.DownloadURLs, projURL); err != nil {
+	if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, res.DownloadURLs, projURL, res.DownloadMTP); err != nil {
 		return fmt.Errorf("download-model: %w", err)
 	}
 

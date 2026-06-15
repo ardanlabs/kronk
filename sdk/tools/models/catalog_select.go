@@ -74,8 +74,16 @@ func extractQuantTag(modelID string) string {
 //   - mmproj: pick a sibling matching mmproj*F16*.gguf for the chosen
 //     model; preferred in this order: same directory + matching base id,
 //     same directory, any matching F16 mmproj, any F16 mmproj.
-func selectFiles(siblings []string, modelID string) (files []string, mmproj string, ok bool) {
-	gguf, proj := classifySiblings(siblings)
+//   - mtp: pick a co-located "mtp-<family>.gguf" drafter companion for the
+//     chosen model (see pickMTPCompanion). Skipped when the request is for
+//     a standalone MTP model (see mtpStandaloneContext).
+//
+// repo is the HuggingFace repo segment; it is used to decide whether a
+// leading "mtp-" sibling is a standalone model (dedicated *-MTP-GGUF repo)
+// or a companion of a co-resident main model.
+func selectFiles(siblings []string, repo, modelID string) (files []string, mmproj string, mtp string, ok bool) {
+	standalone := mtpStandaloneContext(repo, modelID)
+	gguf, proj, mtpc := classifySiblings(siblings, standalone)
 
 	target, matched := matchModel(gguf, modelID)
 	if !matched {
@@ -88,7 +96,7 @@ func selectFiles(siblings []string, modelID string) (files []string, mmproj stri
 		}
 	}
 	if !matched {
-		return nil, "", false
+		return nil, "", "", false
 	}
 
 	files = collectSplitParts(gguf, target)
@@ -98,8 +106,20 @@ func selectFiles(siblings []string, modelID string) (files []string, mmproj stri
 	sort.Strings(files)
 
 	mmproj = pickF16Mmproj(proj, target)
+	mtp = pickMTPCompanion(mtpc, target)
 
-	return files, mmproj, true
+	return files, mmproj, mtp, true
+}
+
+// mtpStandaloneContext reports whether an "mtp-" prefixed GGUF in repo
+// should be treated as a STANDALONE model rather than a companion drafter.
+// This is true when the request explicitly targets an mtp model (the model
+// id already carries the rename marker, e.g. "mtp-Foo-Q8_0") or when the
+// repo itself is a dedicated MTP sibling repo (e.g. "*-MTP-GGUF"). In
+// either case the mtp files are the requested model, not a companion of a
+// co-resident main model.
+func mtpStandaloneContext(repo, modelID string) bool {
+	return repoMatchesRenameRule(repo) || modelIDCarriesRenameMarker(modelID)
 }
 
 // selectFilesByTag picks the GGUF model files (and optional F16 mmproj)
@@ -111,12 +131,14 @@ func selectFiles(siblings []string, modelID string) (files []string, mmproj stri
 // When multiple candidates pass the suffix filter (e.g. "Qwen-Q4_K_XL"
 // and "Qwen-UD-Q4_K_XL" both match tag "Q4_K_XL"), the UD variant wins.
 // Split (multi-file) models are expanded via collectSplitParts.
-func selectFilesByTag(siblings []string, tag string) (files []string, mmproj string, ok bool) {
+func selectFilesByTag(siblings []string, repo, tag string) (files []string, mmproj string, mtp string, ok bool) {
 	if tag == "" {
-		return nil, "", false
+		return nil, "", "", false
 	}
 
-	gguf, proj := classifySiblings(siblings)
+	// The "provider/repo:tag" form has no model id to inspect, so a
+	// standalone MTP request is detected from the repo shape alone.
+	gguf, proj, mtpc := classifySiblings(siblings, repoMatchesRenameRule(repo))
 
 	var candidates []string
 	for _, f := range gguf {
@@ -125,7 +147,7 @@ func selectFilesByTag(siblings []string, tag string) (files []string, mmproj str
 		}
 	}
 	if len(candidates) == 0 {
-		return nil, "", false
+		return nil, "", "", false
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -141,8 +163,9 @@ func selectFilesByTag(siblings []string, tag string) (files []string, mmproj str
 	sort.Strings(files)
 
 	mmproj = pickF16Mmproj(proj, target)
+	mtp = pickMTPCompanion(mtpc, target)
 
-	return files, mmproj, true
+	return files, mmproj, mtp, true
 }
 
 // fileMatchesTag reports whether siblingModelID(file) ends with "-<tag>"
@@ -173,7 +196,13 @@ func fileMatchesTag(file, tag string) bool {
 // The token must be delimited by a non-alphanumeric character on both
 // sides so unrelated names containing "mmproj" inside another word do
 // not get misclassified.
-func classifySiblings(siblings []string) (gguf, proj []string) {
+//
+// When mtpStandalone is false, leading "mtp-" GGUFs are split into the
+// mtp bucket so they are treated as drafter companions of a co-resident
+// main model rather than as model files. When mtpStandalone is true (a
+// dedicated *-MTP-GGUF repo, or an explicit "mtp-..." request) the mtp
+// files stay in the gguf bucket so they can be selected as the model.
+func classifySiblings(siblings []string, mtpStandalone bool) (gguf, proj, mtp []string) {
 	for _, s := range siblings {
 		if !strings.HasSuffix(strings.ToLower(s), ".gguf") {
 			continue
@@ -184,10 +213,62 @@ func classifySiblings(siblings []string) (gguf, proj []string) {
 			continue
 		}
 
+		if !mtpStandalone && modelIDCarriesRenameMarker(siblingModelID(s)) {
+			mtp = append(mtp, s)
+			continue
+		}
+
 		gguf = append(gguf, s)
 	}
 
-	return gguf, proj
+	return gguf, proj, mtp
+}
+
+// pickMTPCompanion returns the best co-located MTP drafter sibling for the
+// chosen model, or "" when none matches. A candidate matches when its
+// model id (with the "mtp-" prefix and any quant suffix stripped) equals
+// the target's family (target id minus quant suffix) — e.g. target
+// "gemma-4-26B-A4B-it-UD-Q8_K_XL" matches companion "mtp-gemma-4-26B-A4B-it".
+// Same-directory candidates are preferred so a repo that ships drafters in
+// an "MTP/" subfolder still resolves the top-level convenience copy first.
+func pickMTPCompanion(mtp []string, target string) string {
+	if len(mtp) == 0 {
+		return ""
+	}
+
+	tFam := strings.ToLower(stripQuantSuffix(siblingModelID(target)))
+
+	var matches []string
+	for _, p := range mtp {
+		id := stripQuantSuffix(trimMTPPrefix(siblingModelID(p)))
+		if strings.EqualFold(id, tFam) {
+			matches = append(matches, p)
+		}
+	}
+	if len(matches) == 0 {
+		return ""
+	}
+
+	if pick := pickBestInDir(matches, dirSlash(target)); pick != "" {
+		return pick
+	}
+
+	sort.Strings(matches)
+	return matches[0]
+}
+
+// trimMTPPrefix removes a leading rename-rule marker (e.g. "mtp-") from a
+// model id, returning the underlying family id. Names without a marker are
+// returned unchanged.
+func trimMTPPrefix(modelID string) string {
+	lower := strings.ToLower(modelID)
+	for _, r := range renamePrefixRules {
+		if strings.HasPrefix(lower, r.marker+"-") || strings.HasPrefix(lower, r.marker+"_") {
+			return modelID[len(r.marker)+1:]
+		}
+	}
+
+	return modelID
 }
 
 // isMMProj reports whether base is a GGUF mmproj filename. It accepts

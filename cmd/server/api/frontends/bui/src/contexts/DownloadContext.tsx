@@ -45,7 +45,7 @@ interface DownloadState {
 interface DownloadContextType {
   download: DownloadState | null;
   isDownloading: boolean;
-  startDownload: (modelUrl: string, projUrl?: string) => void;
+  startDownload: (modelUrl: string, projUrl?: string, mtpUrl?: string) => void;
   startBatchDownload: (modelUrls: string[], projUrl?: string) => void;
   startCatalogDownload: (catalogId: string, downloadServer?: string) => void;
   cancelDownload: () => void;
@@ -116,7 +116,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const pullOne = useCallback((modelUrl: string, projUrl: string | undefined, onComplete: () => void) => {
+  const pullOne = useCallback((modelUrl: string, projUrl: string | undefined, mtpUrl: string | undefined, onComplete: () => void) => {
     abortRef.current = api.pullModel(
       modelUrl,
       projUrl,
@@ -168,11 +168,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         setDownload((prev) => (prev ? { ...prev, status: 'error' } : prev));
         abortRef.current = null;
       },
-      onComplete
+      onComplete,
+      undefined,
+      mtpUrl
     );
   }, [addMessage, updateLastMessage, handleProgress]);
 
-  const startDownload = useCallback((modelUrl: string, projUrl?: string) => {
+  const startDownload = useCallback((modelUrl: string, projUrl?: string, mtpUrl?: string) => {
     if (abortRef.current) {
       return;
     }
@@ -188,7 +190,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     progressStartRef.current = null;
     lastProgressUpdateRef.current = 0;
 
-    pullOne(modelUrl, projUrl, () => {
+    pullOne(modelUrl, projUrl, mtpUrl, () => {
       addMessage('Pull complete!', 'success');
       setDownload((prev) => (prev ? { ...prev, status: 'complete' } : prev));
       abortRef.current = null;
@@ -218,7 +220,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
     const pullNext = (index: number) => {
       const proj = index === 0 ? projUrl : undefined;
-      pullOne(modelUrls[index], proj, () => {
+      pullOne(modelUrls[index], proj, undefined, () => {
         addMessage(`Pull complete for: ${modelUrls[index]}`, 'success');
         abortRef.current = null;
 

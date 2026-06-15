@@ -57,5 +57,23 @@ func (m *Models) Remove(mp Path, log applog.Logger) (err error) {
 		}
 	}
 
+	if mp.MTPFile != "" {
+		if err := os.Remove(mp.MTPFile); err != nil {
+			return fmt.Errorf("remove: unable to remove mtp: %q", mp.MTPFile)
+		}
+
+		dir := filepath.Dir(mp.MTPFile)
+		base := filepath.Base(mp.MTPFile)
+		shaFile := filepath.Join(dir, "sha", base)
+
+		if err := os.Remove(shaFile); err != nil {
+			return fmt.Errorf("remove: unable to remove model: %q", shaFile)
+		}
+
+		if err := model.RemoveVerifiedSentinel(mp.MTPFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove: unable to remove verified sentinel for %q: %w", mp.MTPFile, err)
+		}
+	}
+
 	return nil
 }

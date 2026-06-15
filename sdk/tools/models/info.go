@@ -13,6 +13,7 @@ import (
 type ModelInfo struct {
 	ID            string
 	HasProjection bool
+	HasMTP        bool
 	Desc          string
 	Size          uint64
 	IsGPTModel    bool
@@ -75,8 +76,9 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string) (ModelIn
 	lowerID := strings.ToLower(id)
 
 	mi := ModelInfo{
-		ID:            id,
-		HasProjection: projFile != "",
+		ID:            modelID,
+		HasProjection: path.ProjFile != "",
+		HasMTP:        path.MTPFile != "",
 		Desc:          metadata["general.name"],
 		Size:          totalSize,
 		IsGPTModel:    strings.Contains(lowerID, "gpt"),

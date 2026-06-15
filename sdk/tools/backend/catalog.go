@@ -13,6 +13,7 @@ import (
 type ModelPath struct {
 	ModelFiles           []string `yaml:"model_files"`
 	ProjFile             string   `yaml:"proj_file"`
+	MTPFile              string   `yaml:"mtp_file,omitempty"`
 	Downloaded           bool     `yaml:"downloaded"`
 	Validated            bool     `yaml:"validated"`
 	TokenizerFingerprint string   `yaml:"tokenizer_fingerprint,omitempty"`

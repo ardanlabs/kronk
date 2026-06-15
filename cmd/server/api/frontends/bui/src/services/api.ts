@@ -202,13 +202,17 @@ class ApiService {
     onMessage: (data: PullResponse) => void,
     onError: (error: string) => void,
     onComplete: () => void,
-    downloadServer?: string
+    downloadServer?: string,
+    mtpUrl?: string
   ): () => void {
     const controller = new AbortController();
 
-    const body: { model_url: string; proj_url?: string; download_server?: string } = { model_url: modelUrl };
+    const body: { model_url: string; proj_url?: string; mtp_url?: string; download_server?: string } = { model_url: modelUrl };
     if (projUrl) {
       body.proj_url = projUrl;
+    }
+    if (mtpUrl) {
+      body.mtp_url = mtpUrl;
     }
     if (downloadServer) {
       body.download_server = downloadServer;
