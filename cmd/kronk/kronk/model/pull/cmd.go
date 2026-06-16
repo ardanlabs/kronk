@@ -30,12 +30,15 @@ the resolution. Multi-file (split) models are downloaded in full when
 the resolver expands them. Successful pulls update the catalog so the
 next request becomes a cache hit.
 
-Use --proj <URL> to pin a specific projection file. The flag takes a
-fully qualified HuggingFace URL and forces the explicit-URL workflow:
-  - With an id source the resolver is consulted to expand split shards,
-    then the supplied projection URL replaces the resolver's choice.
+Use --proj <URL> to pin a specific projection file and --mtp-draft <URL>
+to pin a specific MTP drafter file. Each flag takes a fully qualified
+HuggingFace URL and forces the explicit-URL workflow:
+  - With an id source the resolver is consulted to expand split shards.
+    Any companion you pin replaces the resolver's choice; any companion
+    you do not pin is still auto-resolved (the MTP drafter is always
+    fetched when the catalog knows about it).
   - With a URL source the model file at that URL is paired directly
-    with the supplied projection URL — no resolver lookup.
+    with the supplied companion URLs — no resolver lookup.
 
 Environment Variables (web mode - default):
       KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
@@ -51,6 +54,7 @@ Environment Variables (--local mode):
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 	Cmd.Flags().String("proj", "", "Fully qualified projection (mmproj) URL to pin")
+	Cmd.Flags().String("mtp-draft", "", "Fully qualified MTP drafter URL to pin")
 }
 
 func main(cmd *cobra.Command, args []string) {
@@ -63,6 +67,7 @@ func main(cmd *cobra.Command, args []string) {
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 	projURL, _ := cmd.Flags().GetString("proj")
+	mtpURL, _ := cmd.Flags().GetString("mtp-draft")
 
 	basePath := client.GetBasePath(cmd)
 
@@ -73,9 +78,9 @@ func run(cmd *cobra.Command, args []string) error {
 
 	switch local {
 	case true:
-		err = runLocal(models, basePath, args[0], projURL)
+		err = runLocal(models, basePath, args[0], projURL, mtpURL)
 	default:
-		err = runWeb(args[0], projURL)
+		err = runWeb(args[0], projURL, mtpURL)
 	}
 
 	if err != nil {

@@ -221,6 +221,8 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		mp, err = a.downloadFromPeer(ctx, logger, req)
 	case req.ProjURL != "" || req.MTPURL != "":
 		modelURLs := []string{req.ModelURL}
+		projURL := req.ProjURL
+		mtpURL := req.MTPURL
 		if !strings.HasPrefix(req.ModelURL, "http://") && !strings.HasPrefix(req.ModelURL, "https://") {
 			res, rerr := a.models.ResolveSource(ctx, req.ModelURL)
 			if rerr != nil {
@@ -232,8 +234,19 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 				break
 			}
 			modelURLs = res.DownloadURLs
+
+			// An override of one companion must not suppress the other.
+			// Auto-resolve any companion the caller did not explicitly
+			// pin so the MTP drafter (and projection) are always fetched
+			// when the catalog knows about them.
+			if projURL == "" {
+				projURL = res.DownloadProj
+			}
+			if mtpURL == "" {
+				mtpURL = res.DownloadMTP
+			}
 		}
-		mp, err = a.models.DownloadURLs(ctx, logger, modelURLs, req.ProjURL, req.MTPURL)
+		mp, err = a.models.DownloadURLs(ctx, logger, modelURLs, projURL, mtpURL)
 	default:
 		mp, err = a.models.Download(ctx, logger, req.ModelURL)
 	}

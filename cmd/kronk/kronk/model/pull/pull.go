@@ -16,7 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-func runWeb(source string, projURL string) error {
+func runWeb(source string, projURL string, mtpURL string) error {
 	url, err := client.DefaultURL("/v1/kronk/models/pull")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
@@ -27,6 +27,7 @@ func runWeb(source string, projURL string) error {
 	body := client.D{
 		"model_url": source,
 		"proj_url":  projURL,
+		"mtp_url":   mtpURL,
 	}
 
 	cln := client.NewSSE[toolapp.PullResponse](
@@ -51,14 +52,15 @@ func runWeb(source string, projURL string) error {
 	return nil
 }
 
-func runLocal(mdls *models.Models, basePath string, source string, projURL string) error {
+func runLocal(mdls *models.Models, basePath string, source string, projURL string, mtpURL string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	// Default workflow — Download handles every input form (bare id,
 	// canonical id, full URL, owner/repo/file.gguf path) and locates
-	// the projection file automatically.
-	if projURL == "" {
+	// both the projection and MTP drafter companions automatically. This
+	// mirrors the model server's pull endpoint (and the BUI).
+	if projURL == "" && mtpURL == "" {
 		if _, err := mdls.Download(ctx, kronk.FmtLogger, source); err != nil {
 			return fmt.Errorf("download-model: %w", err)
 		}
@@ -66,19 +68,20 @@ func runLocal(mdls *models.Models, basePath string, source string, projURL strin
 		return nil
 	}
 
-	// Explicit projection override — full-control workflow. When the
-	// source is a URL, pair it directly with the supplied projection
-	// URL. When the source is an id, the resolver is consulted only to
-	// expand split (multi-file) models; the supplied projection URL
-	// replaces the resolver's choice.
+	// Explicit companion override — full-control workflow. When the
+	// source is a URL, pair it directly with the supplied companion URLs.
 	if isURL(source) {
-		if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, []string{source}, projURL, ""); err != nil {
+		if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, []string{source}, projURL, mtpURL); err != nil {
 			return fmt.Errorf("download-model: %w", err)
 		}
 
 		return nil
 	}
 
+	// Id source: the resolver expands split (multi-file) models. A
+	// companion the caller pinned replaces the resolver's choice; a
+	// companion left empty is auto-resolved so the MTP drafter (and
+	// projection) is always fetched when the catalog knows about it.
 	rfile, err := defaults.CatalogFile("", basePath)
 	if err != nil {
 		return fmt.Errorf("resolver-file: %w", err)
@@ -89,9 +92,16 @@ func runLocal(mdls *models.Models, basePath string, source string, projURL strin
 		return fmt.Errorf("resolve: %w", err)
 	}
 
+	if projURL == "" {
+		projURL = res.DownloadProj
+	}
+	if mtpURL == "" {
+		mtpURL = res.DownloadMTP
+	}
+
 	fmt.Printf("Resolved %s → %s/%s (%d file(s))\n", source, res.Provider, res.Family, len(res.DownloadURLs))
 
-	if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, res.DownloadURLs, projURL, res.DownloadMTP); err != nil {
+	if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, res.DownloadURLs, projURL, mtpURL); err != nil {
 		return fmt.Errorf("download-model: %w", err)
 	}
 
