@@ -106,6 +106,12 @@ func (m *Models) AnalysisDefaults(modelID string) ModelConfig {
 		cfg.FlashAttention = new(model.FlashAttentionEnabled)
 	}
 
+	// Set the hardware-aware split mode so the resolved config is explicit
+	// rather than relying on the in-load default (which uses the same rule).
+	if sm, err := model.ParseSplitMode(rec.SplitMode); err == nil && rec.SplitMode != "" {
+		cfg.PtrSplitMode = &sm
+	}
+
 	// model.Config: PtrNGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
 	// Only set when we explicitly want CPU-only.
 	if rec.NGPULayers < 0 {

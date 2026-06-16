@@ -93,6 +93,7 @@ type RuntimeRecommendation struct {
 	CacheTypeK         string `json:"cache_type_k"`
 	CacheTypeV         string `json:"cache_type_v"`
 	FlashAttention     string `json:"flash_attention"`
+	SplitMode          string `json:"split_mode"`
 	NGPULayers         int64  `json:"ngpu_layers"`
 	EstimatedVRAMBytes int64  `json:"estimated_vram_bytes"`
 	Fits               bool   `json:"fits"`
@@ -131,6 +132,12 @@ func (r RuntimeRecommendation) ToModelConfig() model.Config {
 		cfg.FlashAttention = model.FlashAttentionDisabled
 	default:
 		cfg.FlashAttention = model.FlashAttentionEnabled
+	}
+
+	// Set the hardware-aware split mode so the resolved config is explicit
+	// rather than relying on the in-load default (which uses the same rule).
+	if sm, err := model.ParseSplitMode(r.SplitMode); err == nil && r.SplitMode != "" {
+		cfg.PtrSplitMode = &sm
 	}
 
 	// model.Config: PtrNGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
@@ -271,6 +278,7 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 		class:       class,
 		gpuBudget:   gpuBudget,
 		hasGPU:      sf.SupportsGPUOffload,
+		gpuCount:    devs.GPUCount,
 		attn:        attn,
 	}
 
@@ -328,6 +336,7 @@ type profileInput struct {
 	class       string
 	gpuBudget   int64
 	hasGPU      bool
+	gpuCount    int
 	attn        AttentionFacts
 }
 
@@ -346,6 +355,11 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	} else {
 		rec.FlashAttention = "disabled"
 	}
+
+	// Determine split mode from the GPU count. Uses the same single source of
+	// truth as the in-load default so the analysis and the load path can never
+	// disagree: SplitModeRow only with multiple GPUs, otherwise SplitModeLayer.
+	rec.SplitMode = model.DefaultSplitMode(p.gpuCount).String()
 
 	// Determine target slots.
 	switch {

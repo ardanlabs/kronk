@@ -1067,11 +1067,12 @@ split_mode: row      # Tensor parallelism (best for MoE models)`}</code></pre>
                 <td>SplitMode</td>
                 <td><code>split_mode</code></td>
                 <td>none/layer/row</td>
-                <td>none</td>
+                <td>auto*</td>
                 <td>Multi-GPU distribution</td>
               </tr>
             </tbody>
           </table>
+          <p>\* <code>split_mode</code> default is device-count aware: <code>row</code> (tensor parallelism) only when more than one GPU is present, otherwise <code>layer</code>. Tensor parallelism on a single GPU is a no-op that performs worse and can crash MoE models with view tensors (e.g. gemma4).</p>
           <h3 id="34-kv-cache-quantization">3.4 KV Cache Quantization</h3>
           <p>As discussed in the previous section, the KV cache is the model's short-term memory of your conversation. By default it stores values in half precision (f16), which gives the best accuracy but uses the most VRAM. Quantization reduces the precision of those stored values — using fewer bits to represent each number. It's a trade-off: you lose a small amount of accuracy in exchange for meaningful VRAM savings. For most use cases, <code>q8_0</code> (8-bit) gives nearly identical output quality while cutting KV cache memory by about 25%. More aggressive options like <code>q4_0</code> save even more but can start to affect generation quality.</p>
           <p>Control the precision of the key and value caches independently:</p>

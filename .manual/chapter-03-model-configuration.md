@@ -378,7 +378,12 @@ these settings can be ignored.
 | NGpuLayers | `n_gpu_layers` | 0, -1, N       | 0       | Layers on GPU (0=all, -1=none) |
 | OffloadKQV | `offload_kqv`  | true/false     | true    | KV cache on GPU                |
 | OpOffload  | `op_offload`   | true/false     | true    | Tensor ops on GPU              |
-| SplitMode  | `split_mode`   | none/layer/row | none    | Multi-GPU distribution         |
+| SplitMode  | `split_mode`   | none/layer/row | auto*   | Multi-GPU distribution         |
+
+\* `split_mode` default is device-count aware: `row` (tensor parallelism) only
+when more than one GPU is present, otherwise `layer`. Tensor parallelism on a
+single GPU is a no-op that performs worse and can crash MoE models with view
+tensors (e.g. gemma4).
 
 ### 3.4 KV Cache Quantization
 
