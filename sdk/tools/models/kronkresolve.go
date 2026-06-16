@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
 // Default batch sizes used when seeding from analysis.
@@ -71,13 +72,16 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	return out, nil
 }
 
-// AnalysisDefaults runs ModelAnalysis on the specified model and converts
-// the balanced recommendation into a ModelConfig. If the model is not
-// downloaded or analysis fails, an empty ModelConfig is returned.
-func (m *Models) AnalysisDefaults(modelID string) ModelConfig {
-	analysis, err := m.ModelAnalysis(modelID)
+// AutoTune is the single source of analysis-derived defaults. It analyzes the
+// given model facts against the available hardware and returns the recommended
+// settings as a ModelConfig. Both the model pool (via AnalysisDefaults /
+// KronkResolvedConfig) and the SDK auto-tune path (kronk.New with WithAutoTune)
+// call it so the two never seed defaults differently. Callers overlay their own
+// explicit settings on top of the returned config.
+func AutoTune(info ModelInfo, devs devices.Devices) (ModelConfig, error) {
+	analysis, err := Analyze(info, devs)
 	if err != nil {
-		return ModelConfig{}
+		return ModelConfig{}, fmt.Errorf("auto-tune: %w", err)
 	}
 
 	rec := analysis.Recommended
@@ -117,6 +121,24 @@ func (m *Models) AnalysisDefaults(modelID string) ModelConfig {
 	if rec.NGPULayers < 0 {
 		n := int(rec.NGPULayers)
 		cfg.PtrNGpuLayers = &n
+	}
+
+	return cfg, nil
+}
+
+// AnalysisDefaults runs the hardware analysis on a catalog model and returns
+// the recommended settings as a ModelConfig. It is the catalog/modelID-based
+// entry point onto the shared AutoTune logic. If the model is not downloaded or
+// analysis fails, an empty ModelConfig is returned.
+func (m *Models) AnalysisDefaults(modelID string) ModelConfig {
+	info, err := m.ModelInformation(modelID)
+	if err != nil {
+		return ModelConfig{}
+	}
+
+	cfg, err := AutoTune(info, devices.List())
+	if err != nil {
+		return ModelConfig{}
 	}
 
 	return cfg

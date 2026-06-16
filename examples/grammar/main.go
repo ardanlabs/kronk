@@ -123,6 +123,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
+		model.WithAutoTune(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)

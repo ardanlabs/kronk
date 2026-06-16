@@ -117,6 +117,14 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // incorrectly can cause the system to panic. The defaults are used when these
 // values are set to 0.
 //
+// AutoTune, when true, asks kronk.New to run a hardware-aware analysis of the
+// model (architecture, size, and available devices) and seed unset settings
+// (context window, KV cache type, slots, flash attention, split mode, etc.)
+// before loading. It is off by default for backwards compatibility, and any
+// option the caller sets explicitly always wins over the analysis. It has no
+// effect when using the low-level model package directly (only kronk.New
+// applies it).
+//
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
@@ -324,6 +332,7 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
+	AutoTune             bool
 	PtrCacheMinTokens    *int
 	PtrCacheSlotTimeout  *int
 	CacheTypeK           GGMLType
@@ -1429,6 +1438,7 @@ func NewConfig(opts ...Option) Config {
 }
 
 func WithConfig(src Config) Option                   { return func(c *Config) { *c = src } }
+func WithAutoTune(v bool) Option                     { return func(c *Config) { c.AutoTune = v } }
 func WithCacheMinTokens(v int) Option                { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
 func WithCacheSlotTimeout(v int) Option              { return func(c *Config) { c.PtrCacheSlotTimeout = new(v) } }
 func WithCacheTypeK(v GGMLType) Option               { return func(c *Config) { c.CacheTypeK = v } }

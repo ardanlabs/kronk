@@ -106,6 +106,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 		model.WithProjFile(mp.ProjFile),
+		model.WithAutoTune(true),
 		model.WithIncrementalCache(false),
 		model.WithContextWindow(8*1024),
 		model.WithNSeqMax(2),

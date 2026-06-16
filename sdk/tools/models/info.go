@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -34,8 +35,26 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 		return ModelInfo{}, fmt.Errorf("failed to retrieve path modelID[%s] file: %w", modelID, err)
 	}
 
+	return ModelInfoFromPath(modelID, path.ModelFiles, path.ProjFile)
+}
+
+// ModelInfoFromPath builds ModelInfo directly from on-disk model file paths,
+// without requiring a catalog/basePath. It backs ModelInformation and lets
+// callers that already hold raw file paths (e.g. SDK auto-tune via kronk.New)
+// run the analysis. id is used only for the gpt/embed/rerank name heuristics
+// and the ID field; when empty it is derived from the first model file name.
+func ModelInfoFromPath(id string, modelFiles []string, projFile string) (ModelInfo, error) {
+	if len(modelFiles) == 0 {
+		return ModelInfo{}, fmt.Errorf("model-info-from-path: no model files provided")
+	}
+
+	if id == "" {
+		base := filepath.Base(modelFiles[0])
+		id = strings.TrimSuffix(base, filepath.Ext(base))
+	}
+
 	var totalSize uint64
-	for _, mf := range path.ModelFiles {
+	for _, mf := range modelFiles {
 		info, err := os.Stat(mf)
 		if err != nil {
 			return ModelInfo{}, fmt.Errorf("failed to stat file: %w", err)
@@ -43,7 +62,7 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 		totalSize += uint64(info.Size())
 	}
 
-	data, err := gguf.ReadHeaderBytes(path.ModelFiles[0])
+	data, err := gguf.ReadHeaderBytes(modelFiles[0])
 	if err != nil {
 		return ModelInfo{}, err
 	}
@@ -53,29 +72,16 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 		return ModelInfo{}, fmt.Errorf("model-information: %w", err)
 	}
 
-	var isGPTModel bool
-	if strings.Contains(modelID, "gpt") {
-		isGPTModel = true
-	}
-
-	var isEmbedModel bool
-	if strings.Contains(modelID, "embed") {
-		isEmbedModel = true
-	}
-
-	var isRerankModel bool
-	if strings.Contains(modelID, "rerank") {
-		isRerankModel = true
-	}
+	lowerID := strings.ToLower(id)
 
 	mi := ModelInfo{
-		ID:            modelID,
-		HasProjection: path.ProjFile != "",
+		ID:            id,
+		HasProjection: projFile != "",
 		Desc:          metadata["general.name"],
 		Size:          totalSize,
-		IsGPTModel:    isGPTModel,
-		IsEmbedModel:  isEmbedModel,
-		IsRerankModel: isRerankModel,
+		IsGPTModel:    strings.Contains(lowerID, "gpt"),
+		IsEmbedModel:  strings.Contains(lowerID, "embed"),
+		IsRerankModel: strings.Contains(lowerID, "rerank"),
 		Metadata:      metadata,
 	}
 

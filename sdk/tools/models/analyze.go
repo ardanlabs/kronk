@@ -100,64 +100,16 @@ type RuntimeRecommendation struct {
 	Reason             string `json:"reason,omitempty"`
 }
 
-// ToModelConfig converts a RuntimeRecommendation into a model.Config suitable
-// for use with kronk.New. Fields not covered by the recommendation (like
-// ModelFiles, ProjFile, Log) must be set by the caller.
-func (r RuntimeRecommendation) ToModelConfig() model.Config {
-	cfg := model.Config{
-		PtrContextWindow: new(int(r.ContextWindow)),
-		PtrNSeqMax:       new(int(r.NSeqMax)),
-		PtrNBatch:        new(defNBatch),
-		PtrNUBatch:       new(defNUBatch),
-	}
-
-	switch r.CacheTypeK {
-	case "f16":
-		cfg.CacheTypeK = model.GGMLTypeF16
-	case "q8_0":
-		cfg.CacheTypeK = model.GGMLTypeQ8_0
-	}
-
-	switch r.CacheTypeV {
-	case "f16":
-		cfg.CacheTypeV = model.GGMLTypeF16
-	case "q8_0":
-		cfg.CacheTypeV = model.GGMLTypeQ8_0
-	}
-
-	switch r.FlashAttention {
-	case "auto":
-		cfg.FlashAttention = model.FlashAttentionAuto
-	case "disabled":
-		cfg.FlashAttention = model.FlashAttentionDisabled
-	default:
-		cfg.FlashAttention = model.FlashAttentionEnabled
-	}
-
-	// Set the hardware-aware split mode so the resolved config is explicit
-	// rather than relying on the in-load default (which uses the same rule).
-	if sm, err := model.ParseSplitMode(r.SplitMode); err == nil && r.SplitMode != "" {
-		cfg.PtrSplitMode = &sm
-	}
-
-	// model.Config: PtrNGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
-	// Only set when we explicitly want CPU-only.
-	if r.NGPULayers < 0 {
-		n := int(r.NGPULayers)
-		cfg.PtrNGpuLayers = &n
-	}
-
-	return cfg
-}
-
-// Default batch sizes matching model package defaults.
-const (
-	defNBatch  = 2048
-	defNUBatch = 512
-)
-
 // =============================================================================
 // Public API
+
+// Analyze produces a hardware-aware analysis with recommended runtime settings
+// from already-gathered model facts and device information. It is the pure entry
+// point (no disk or hardware I/O) shared by the catalog-based ModelAnalysis and
+// path-based callers such as the SDK auto-tune flow in kronk.New.
+func Analyze(info ModelInfo, devs devices.Devices) (Analysis, error) {
+	return analyzeModel(info, devs)
+}
 
 // ModelAnalysis reads a GGUF model file and produces an analysis with
 // recommended runtime settings based on the model's architecture and
