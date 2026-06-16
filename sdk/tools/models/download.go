@@ -179,18 +179,27 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 			Downloaded: true,
 		}
 
-		if vErr := verifyAllSizes(mp); vErr != nil {
-			log(ctx, "download-model: on-disk copy is incomplete, re-downloading", "provider", res.Provider, "family", res.Family, "ERROR", vErr)
-		} else {
-			log(ctx, "download-model: already installed", "provider", res.Provider, "family", res.Family)
+		// A companion the catalog tracks (MMProj/MTP non-empty) but whose
+		// file is absent on disk leaves LocalProj/LocalMTP empty after
+		// attachLocal. That happens when the user deletes a companion or an
+		// older buggy pull skipped it. verifyAllSizes cannot catch this —
+		// it only checks the companion paths that are populated — so detect
+		// the gap here and fall through to the download path to re-fetch it.
+		missingProj := res.MMProj != "" && res.LocalProj == ""
+		missingMTP := res.MTP != "" && res.LocalMTP == ""
+		sizeErr := verifyAllSizes(mp)
 
-			if res.LocalProj != "" {
-				log(ctx, "download-projection: already installed", "provider", res.Provider, "family", res.Family)
-			}
+		switch {
+		case missingProj || missingMTP:
+			log(ctx, "download-model: companion file missing, re-downloading", "provider", res.Provider, "family", res.Family, "missing-projection", missingProj, "missing-mtp", missingMTP)
 
-			if res.LocalMTP != "" {
-				log(ctx, "download-mtp: already installed", "provider", res.Provider, "family", res.Family)
-			}
+		case sizeErr != nil:
+			log(ctx, "download-model: on-disk copy is incomplete, re-downloading", "provider", res.Provider, "family", res.Family, "ERROR", sizeErr)
+
+		default:
+			logArtifactStatus(ctx, log, artifactModel, mp.ModelFiles[0], false)
+			logArtifactStatus(ctx, log, artifactProj, res.LocalProj, false)
+			logArtifactStatus(ctx, log, artifactMTP, res.LocalMTP, false)
 
 			return mp, nil
 		}
@@ -355,8 +364,12 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 			logProjURL = pLoc.RawURL
 		}
 
-		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] model-id[%s] file[%d/%d]", mLoc.RawURL, logProjURL, modelID, i+1, len(modelURLs)))
-		log(ctx, "download-model: waiting to check model status...")
+		logMTPURL := ""
+		if dLoc != nil {
+			logMTPURL = dLoc.RawURL
+		}
+
+		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] mtp-url[%s] model-id[%s] file[%d/%d]", mLoc.RawURL, logProjURL, logMTPURL, modelID, i+1, len(modelURLs)))
 
 		progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
 			log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
@@ -385,18 +398,10 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 			return Path{}, fmt.Errorf("download-model: unable to download model file: %w", errOrg)
 		}
 
-		switch mp.Downloaded {
-		case true:
-			log(ctx, "download-model: download complete")
-
-		default:
-			log(ctx, "download-model: already installed")
-		}
-
 		if len(mp.ModelFiles) >= len(modelURLs) {
 			for j := i + 1; j < len(modelURLs); j++ {
-				log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[] model-id[%s]", hf.NormalizeDownloadURL(modelURLs[j]), modelID))
-				log(ctx, "download-model: already installed")
+				log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[] mtp-url[] model-id[%s]", hf.NormalizeDownloadURL(modelURLs[j]), modelID))
+				logArtifactStatus(ctx, log, artifactModel, mp.ModelFiles[j], false)
 			}
 			result.ModelFiles = mp.ModelFiles[:len(modelURLs)]
 			result.ProjFile = mp.ProjFile
@@ -476,6 +481,13 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, mLoc Loca
 	}
 
 	if mp, hit := m.checkValidatedIndex(ctx, log, mLoc, projLoc, mtpLoc); hit {
+		// Everything the model needs is already present and validated on
+		// disk — report each artifact so the output plainly says nothing
+		// had to be downloaded. Only this shard's model file is logged
+		// here; the caller's loop reports any remaining shards.
+		logArtifactStatus(ctx, log, artifactModel, mLoc.DiskFile, false)
+		logArtifactStatus(ctx, log, artifactProj, mp.ProjFile, false)
+		logArtifactStatus(ctx, log, artifactMTP, mp.MTPFile, false)
 		return mp, nil
 	}
 
@@ -483,6 +495,7 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, mLoc Loca
 	if err != nil {
 		return Path{}, err
 	}
+	logArtifactStatus(ctx, log, artifactModel, modelFileName, downloadedMF)
 
 	mp := Path{ModelFiles: []string{modelFileName}, Downloaded: downloadedMF}
 
@@ -491,6 +504,7 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, mLoc Loca
 		if err != nil {
 			return Path{}, err
 		}
+		logArtifactStatus(ctx, log, artifactProj, projFileName, fetched)
 		mp.ProjFile = projFileName
 		if fetched {
 			mp.Downloaded = true
@@ -502,6 +516,7 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, mLoc Loca
 		if err != nil {
 			return Path{}, err
 		}
+		logArtifactStatus(ctx, log, artifactMTP, mtpFileName, fetched)
 		mp.MTPFile = mtpFileName
 		if fetched {
 			mp.Downloaded = true
@@ -509,6 +524,30 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, mLoc Loca
 	}
 
 	return mp, nil
+}
+
+// Artifact labels used by logArtifactStatus to identify each file a model
+// needs in the per-file download summary.
+const (
+	artifactModel = "model file"
+	artifactProj  = "projection"
+	artifactMTP   = "mtp drafter"
+)
+
+// logArtifactStatus emits one clear line for a single artifact stating
+// whether a download was required or the file was already present on disk.
+// Empty file paths (a companion the model does not have) are skipped.
+func logArtifactStatus(ctx context.Context, log applog.Logger, label, file string, downloaded bool) {
+	if file == "" {
+		return
+	}
+
+	state := "already downloaded"
+	if downloaded {
+		state = "downloaded"
+	}
+
+	log(ctx, fmt.Sprintf("download-model: %-12s %s -> %s", label+":", filepath.Base(file), state))
 }
 
 // companionKind identifies a same-repo companion artifact and carries the
@@ -704,6 +743,26 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 		return "", false, nil
 	}
 
+	// A re-download of a model whose companion is already on disk can match
+	// the destination companion against itself. Copying a file onto itself
+	// truncates it to zero bytes, so adopt the existing file in place rather
+	// than copying. Note: orgShaFileName is left in place on the miss return
+	// so the caller's fall-through rename still has its source pointer.
+	if filepath.Clean(existing) == filepath.Clean(dstFileName) {
+		if err := model.CheckModel(dstFileName, true); err != nil {
+			// On-disk companion is bad — fall through to a fresh download.
+			return "", false, nil
+		}
+		if filepath.Clean(existingSha) != filepath.Clean(shaFileName) {
+			if err := copyFile(existingSha, shaFileName); err != nil {
+				return "", false, fmt.Errorf("download-model: unable to copy %s sha file: %w", kind.label, err)
+			}
+		}
+		os.Remove(orgShaFileName)
+		log(ctx, "download-model: companion already present, reusing in place", "kind", kind.label, "file", filepath.Base(dstFileName))
+		return dstFileName, true, nil
+	}
+
 	log(ctx, "download-model: found existing companion file by SHA match, copying", "kind", kind.label, "src", filepath.Base(existing), "dst", filepath.Base(dstFileName))
 
 	if err := copyFile(existing, dstFileName); err != nil {
@@ -713,12 +772,16 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 		return "", false, fmt.Errorf("download-model: unable to copy %s sha file: %w", kind.label, err)
 	}
 
-	os.Remove(orgShaFileName)
-
 	if err := model.CheckModel(dstFileName, true); err != nil {
 		// Copied file failed verification — fall through to regular download.
+		// orgShaFileName is intentionally left in place for the caller's
+		// rename step.
 		return "", false, nil
 	}
+
+	// Only drop the upstream-named sha pointer once the reuse has been
+	// verified; on the miss returns above the caller still needs it.
+	os.Remove(orgShaFileName)
 
 	log(ctx, "download-model: skipping companion download, using existing file", "kind", kind.label)
 	return dstFileName, true, nil

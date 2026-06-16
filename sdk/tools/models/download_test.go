@@ -380,3 +380,84 @@ func TestDownloadSplits_IndexStale_FileDeleted(t *testing.T) {
 		t.Error("expected re-download after on-disk file removed; got no new fake-getter calls")
 	}
 }
+
+func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
+	g := &fakeGetter{
+		contents: map[string][]byte{
+			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf": []byte("model-body-bytes\n"),
+			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-F16.gguf":                   []byte("proj-body-bytes\n"),
+			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf":       []byte("mtp-drafter-bytes\n"),
+		},
+	}
+	withFakeGetter(t, g)
+
+	m := newTestModels(t)
+
+	// Seed the resolver catalog so Download resolves from cache without an
+	// HF round-trip. The entry carries mmproj_orig/mtp_orig so the cache hit
+	// can rebuild DownloadProj/DownloadMTP and never needs a repair search.
+	catalogDir := filepath.Join(m.BasePath(), "catalog")
+	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
+		t.Fatalf("mkdir catalog: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(catalogDir, "catalog.yaml"), `schema: 1
+providers:
+  - unsloth
+models:
+  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
+    provider: unsloth
+    family: gemma-4-26B-A4B-it-GGUF
+    revision: main
+    files:
+      - gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mtp: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
+    mtp_checked: true
+`)
+
+	canonical := "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"
+
+	// First pull installs the model body, projection, and MTP drafter.
+	mp, err := m.Download(context.Background(), testLog, canonical)
+	if err != nil {
+		t.Fatalf("first Download: %v", err)
+	}
+	if mp.ProjFile == "" || mp.MTPFile == "" {
+		t.Fatalf("first Download did not install companions: proj=%q mtp=%q", mp.ProjFile, mp.MTPFile)
+	}
+	for _, f := range []string{mp.ModelFiles[0], mp.ProjFile, mp.MTPFile} {
+		if _, err := os.Stat(f); err != nil {
+			t.Fatalf("expected %s on disk after first pull: %v", filepath.Base(f), err)
+		}
+	}
+
+	// Regression: the user deletes only the companion files; the model body
+	// stays. A second pull must NOT short-circuit on "already installed" —
+	// it has to notice the catalog-tracked companions are gone and re-fetch.
+	if err := os.Remove(mp.ProjFile); err != nil {
+		t.Fatalf("rm proj: %v", err)
+	}
+	if err := os.Remove(mp.MTPFile); err != nil {
+		t.Fatalf("rm mtp: %v", err)
+	}
+
+	callsBefore := len(g.calls)
+
+	mp2, err := m.Download(context.Background(), testLog, canonical)
+	if err != nil {
+		t.Fatalf("second Download: %v", err)
+	}
+
+	if len(g.calls) == callsBefore {
+		t.Fatal("expected re-download of missing companions; got no new fake-getter calls")
+	}
+
+	if _, err := os.Stat(mp2.ProjFile); err != nil {
+		t.Errorf("projection not restored after re-download: %v", err)
+	}
+	if _, err := os.Stat(mp2.MTPFile); err != nil {
+		t.Errorf("mtp drafter not restored after re-download: %v", err)
+	}
+}

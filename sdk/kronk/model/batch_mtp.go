@@ -349,11 +349,11 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 // batch. We stored it implicitly by allocating mirrorBatchMTP with
 // (NBatch, nEmbd, 1) but llama.Batch doesn't expose the original
 // capacity, so we derive it from the size of the alias slice.
-func (d *draftCore) mirrorBatchCapacity() int32 {
-	if d.nEmbd <= 0 {
+func (dc *draftCore) mirrorBatchCapacity() int32 {
+	if dc.nEmbd <= 0 {
 		return 0
 	}
-	return int32(len(d.mirrorEmbdSlice) / d.nEmbd)
+	return int32(len(dc.mirrorEmbdSlice) / dc.nEmbd)
 }
 
 // decodeTokensIntoCacheMTP is the MTP-aware analogue of

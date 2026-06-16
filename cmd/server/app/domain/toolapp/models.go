@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	reDownloadMeta     = regexp.MustCompile(`download-model: model-url\[([^\]]*)\] proj-url\[([^\]]*)\] model-id\[([^\]]*)\] file\[(\d+)/(\d+)\]`)
+	reDownloadMeta     = regexp.MustCompile(`download-model: model-url\[([^\]]*)\] proj-url\[([^\]]*)\] mtp-url\[([^\]]*)\] model-id\[([^\]]*)\] file\[(\d+)/(\d+)\]`)
 	reDownloadProgress = regexp.MustCompile(`download-model: Downloading ([^ ]+)\.\.\. (\d+) MB of (\d+) MB \(([\d.]+) MB/s\)`)
 )
 
@@ -164,14 +164,15 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		switch {
 		case reDownloadMeta.MatchString(clean):
 			m := reDownloadMeta.FindStringSubmatch(clean)
-			fileIdx, _ := strconv.Atoi(m[4])
-			fileTotal, _ := strconv.Atoi(m[5])
+			fileIdx, _ := strconv.Atoi(m[5])
+			fileTotal, _ := strconv.Atoi(m[6])
 			ver = toAppPullResponse(PullResponse{
 				Status: clean,
 				Meta: &PullMeta{
 					ModelURL:  m[1],
 					ProjURL:   m[2],
-					ModelID:   m[3],
+					MTPURL:    m[3],
+					ModelID:   m[4],
 					FileIndex: fileIdx,
 					FileTotal: fileTotal,
 				},

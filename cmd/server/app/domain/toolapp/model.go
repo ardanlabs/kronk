@@ -174,6 +174,7 @@ func (app *PullRequest) Decode(data []byte) error {
 type PullMeta struct {
 	ModelURL  string `json:"model_url,omitempty"`
 	ProjURL   string `json:"proj_url,omitempty"`
+	MTPURL    string `json:"mtp_url,omitempty"`
 	ModelID   string `json:"model_id,omitempty"`
 	FileIndex int    `json:"file_index,omitempty"`
 	FileTotal int    `json:"file_total,omitempty"`

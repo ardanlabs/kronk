@@ -149,27 +149,27 @@ type mtpSyncer interface {
 // draft sampler registration, the greedy sampler, and the two token
 // batches. It does NOT free the context or the model — unload sequences
 // those per strategy.
-func (c *draftCore) freeCommon() {
-	if c.registeredSampler != 0 {
-		llama.SetSampler(c.lctx, c.registeredSeqID, 0)
-		c.registeredSampler = 0
+func (dc *draftCore) freeCommon() {
+	if dc.registeredSampler != 0 {
+		llama.SetSampler(dc.lctx, dc.registeredSeqID, 0)
+		dc.registeredSampler = 0
 	}
-	llama.SamplerFree(c.sampler)
-	llama.BatchFree(c.batch)
-	llama.BatchFree(c.prefillBatch)
+	llama.SamplerFree(dc.sampler)
+	llama.BatchFree(dc.batch)
+	llama.BatchFree(dc.prefillBatch)
 }
 
 // freeMTPBatches releases the MTP-only mirror/draft batches. Their Embd
 // pointers reference Go-owned, runtime.Pinner-pinned slices, so detach
 // them before BatchFree (which would otherwise free() Go memory) and
 // unpin after.
-func (c *draftCore) freeMTPBatches() {
-	c.draftBatchMTP.Embd = nil
-	c.mirrorBatchMTP.Embd = nil
-	llama.BatchFree(c.draftBatchMTP)
-	llama.BatchFree(c.mirrorBatchMTP)
-	c.draftEmbdPin.Unpin()
-	c.mirrorEmbdPin.Unpin()
+func (dc *draftCore) freeMTPBatches() {
+	dc.draftBatchMTP.Embd = nil
+	dc.mirrorBatchMTP.Embd = nil
+	llama.BatchFree(dc.draftBatchMTP)
+	llama.BatchFree(dc.mirrorBatchMTP)
+	dc.draftEmbdPin.Unpin()
+	dc.mirrorEmbdPin.Unpin()
 }
 
 // =============================================================================

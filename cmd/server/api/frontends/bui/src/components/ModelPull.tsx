@@ -166,15 +166,16 @@ export default function ModelPull() {
   const handlePull = () => {
     if (!resolved || isDownloading || resolved.installed) return;
 
+    // Both companion URLs are sent ONLY as explicit overrides. Left empty,
+    // the server resolves the model id and downloads every companion it
+    // needs (projection AND mtp drafter). Auto-sending a resolved companion
+    // URL here would flip the server into explicit-URL mode, where any
+    // companion whose URL was not also supplied (e.g. the projection) is
+    // silently skipped. Keep proj and mtp symmetric: override-only.
     const proj = showOverride ? projOverride.trim() : '';
-    // The MTP companion is auto-detected by the resolver (a co-located
-    // mtp-*.gguf file). When the override section is open and populated,
-    // the explicit URL replaces the resolver's choice; otherwise the
-    // resolved companion (if any) is downloaded alongside the model.
-    const mtpExplicit = showMTPOverride ? mtpOverride.trim() : '';
-    const mtp = mtpExplicit || resolved.download_mtp || '';
-    // The server now handles id → URL resolution when ProjURL is set,
-    // so the BUI can always send the canonical id regardless of mode.
+    const mtp = showMTPOverride ? mtpOverride.trim() : '';
+    // The server handles id → URL resolution, so the BUI can always send
+    // the canonical id regardless of mode.
     const modelArg = resolved.canonical_id || buildSource(provider, family, model);
 
     startDownload(modelArg, proj || undefined, mtp || undefined);
