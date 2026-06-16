@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -944,20 +944,31 @@ func withDestFilename(rawURL, destName string) (string, error) {
 // =============================================================================
 // Misc helpers
 
-// hasNetwork probes the only host Kronk actually needs to reach for
-// model downloads. TCP/443 is essentially never blocked on networks
-// that have any internet at all, and resolving + connecting to
-// huggingface.co exercises exactly the path the subsequent download
-// will take — unlike a TCP/53 dial to a public DNS server, which is
-// blocked on many ISPs, hotels, and corporate networks even when
-// HTTPS works fine.
+// hasNetwork reports whether Kronk can reach huggingface.co, the host model
+// downloads actually target. It issues a real HTTP request through a client
+// that honors HTTP_PROXY/HTTPS_PROXY, so the probe exercises exactly the path
+// the subsequent download will take and succeeds in proxy-only environments
+// where a raw outbound TCP dial is blocked. Setting KRONK_SKIP_NETWORK_CHECK
+// bypasses the probe for unusual setups.
 func hasNetwork() bool {
-	conn, err := net.DialTimeout("tcp", "huggingface.co:443", 3*time.Second)
+	if os.Getenv("KRONK_SKIP_NETWORK_CHECK") != "" {
+		return true
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, "https://huggingface.co", nil)
 	if err != nil {
 		return false
 	}
 
-	conn.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+
+	resp.Body.Close()
 
 	return true
 }

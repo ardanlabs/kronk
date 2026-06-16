@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,7 +26,7 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b9622"
+	defaultVersion = "b9664"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -955,13 +955,30 @@ func versionGreater(v1, v2 string) bool {
 	return n1 > n2
 }
 
+// hasNetwork reports whether Kronk can reach the internet. It issues a real
+// HTTP request through a client that honors HTTP_PROXY/HTTPS_PROXY, so the
+// probe succeeds in proxy-only environments where a raw outbound TCP dial is
+// blocked. Setting KRONK_SKIP_NETWORK_CHECK bypasses the probe for unusual
+// setups.
 func hasNetwork() bool {
-	conn, err := net.DialTimeout("tcp", "8.8.8.8:53", 5*time.Second)
+	if os.Getenv("KRONK_SKIP_NETWORK_CHECK") != "" {
+		return true
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, "https://huggingface.co", nil)
 	if err != nil {
 		return false
 	}
 
-	conn.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+
+	resp.Body.Close()
 
 	return true
 }
