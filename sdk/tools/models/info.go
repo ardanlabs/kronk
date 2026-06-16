@@ -36,7 +36,7 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 		return ModelInfo{}, fmt.Errorf("failed to retrieve path modelID[%s] file: %w", modelID, err)
 	}
 
-	return ModelInfoFromPath(modelID, path.ModelFiles, path.ProjFile)
+	return ModelInfoFromPath(modelID, path.ModelFiles, path.ProjFile, path.MTPFile)
 }
 
 // ModelInfoFromPath builds ModelInfo directly from on-disk model file paths,
@@ -44,7 +44,7 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 // callers that already hold raw file paths (e.g. SDK auto-tune via kronk.New)
 // run the analysis. id is used only for the gpt/embed/rerank name heuristics
 // and the ID field; when empty it is derived from the first model file name.
-func ModelInfoFromPath(id string, modelFiles []string, projFile string) (ModelInfo, error) {
+func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile string) (ModelInfo, error) {
 	if len(modelFiles) == 0 {
 		return ModelInfo{}, fmt.Errorf("model-info-from-path: no model files provided")
 	}
@@ -76,9 +76,9 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string) (ModelIn
 	lowerID := strings.ToLower(id)
 
 	mi := ModelInfo{
-		ID:            modelID,
-		HasProjection: path.ProjFile != "",
-		HasMTP:        path.MTPFile != "",
+		ID:            id,
+		HasProjection: projFile != "",
+		HasMTP:        mtpFile != "",
 		Desc:          metadata["general.name"],
 		Size:          totalSize,
 		IsGPTModel:    strings.Contains(lowerID, "gpt"),
