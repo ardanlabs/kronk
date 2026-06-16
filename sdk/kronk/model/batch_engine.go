@@ -530,11 +530,13 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		// pendingH stays empty and generateDraftTokensMTP short-circuits,
 		// so we'd just be paying decode cost for nothing.
 		if mtpDraft && s.mtpHasBatch && !s.mtpDisabledForRequest {
-			if err := e.mirrorTargetBatchToMTPDraft(s, int(s.targetBatchCount)); err != nil {
-				e.model.log(s.job.ctx, "speculative", "status", "mtp-mirror-error",
-					"slot", s.id, "err", err)
-				e.finishSlot(s, fmt.Errorf("mtp mirror: %w", err))
-				continue
+			if syncer, ok := e.model.draft.(mtpSyncer); ok {
+				if err := syncer.syncAfterTargetDecode(e, s, int(s.targetBatchCount)); err != nil {
+					e.model.log(s.job.ctx, "speculative", "status", "mtp-sync-error",
+						"slot", s.id, "err", err)
+					e.finishSlot(s, fmt.Errorf("mtp sync: %w", err))
+					continue
+				}
 			}
 		}
 

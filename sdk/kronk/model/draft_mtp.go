@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -210,17 +212,200 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	return &mtpDrafter{c: dm}, nil
 }
 
+// probeGemma4AssistantMTP reports whether file is a separate-file MTP
+// "assistant" drafter GGUF (Gemma4 gemma4-assistant). It reads only the
+// GGUF header metadata — avoiding a full model load for files that turn
+// out not to be assistants — and returns true only when:
+//
+//   - general.architecture names an "assistant" variant (e.g.
+//     "gemma4-assistant"); matched by substring so future families
+//     (gemma5-assistant, ...) work without a new check, and
+//   - it declares at least one NextN (MTP) prediction layer
+//     ("<arch>.nextn_predict_layers" > 0).
+func probeGemma4AssistantMTP(ctx context.Context, log applog.Logger, file string) bool {
+	data, err := gguf.ReadHeaderBytes(file)
+	if err != nil {
+		log(ctx, "draft-model-mtp-shared", "status", "probe-skip", "file", file, "err", err)
+		return false
+	}
+
+	md, err := gguf.ParseMetadata(data)
+	if err != nil {
+		log(ctx, "draft-model-mtp-shared", "status", "probe-skip", "file", file, "err", err)
+		return false
+	}
+
+	if !strings.Contains(md["general.architecture"], "assistant") {
+		return false
+	}
+
+	for k, v := range md {
+		if strings.Contains(k, "nextn_predict_layers") {
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			return err == nil && n > 0
+		}
+	}
+
+	return false
+}
+
+// loadDraftModelMTPShared loads a separate-file MTP assistant (Gemma4
+// gemma4-assistant) from cfg.MTPDrafterFile as its OWN llama_model, then
+// creates its context with ctx_other==targetCtx so it SHARES the target's
+// llama_memory. This is the is_mem_shared path (common/speculative.cpp):
+// the target's decode populates the shared KV directly and the assistant
+// reads it, so there is no separate draft KV to mirror into or roll back.
+//
+// Distinguishing plumbing vs. a normal draft context:
+//
+//  1. params.CtxOther = targetCtx — REQUIRED; the assistant graph pulls the
+//     target's token embeddings through ctx_other and shares its memory.
+//  2. params.CtxType = MTP and SetEmbeddingsPreNorm enable pre-norm
+//     hidden-state extraction (target dense, draft masked), exactly as the
+//     embedded-MTP path.
+//  3. The embd buffer on the AR draft batch is sized to the TARGET's
+//     embedding width (== ModelNEmbdOut(assistant)), the row width the MTP
+//     head consumes.
+//  4. The shared memory is NOT cleared here — clearing it would wipe the
+//     TARGET's KV.
+//
+// On success the returned *sharedMTPDrafter owns the assistant llama_model,
+// so its unload frees it.
+func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, nDraft int) (*sharedMTPDrafter, error) {
+
+	// Load the assistant GGUF with the same hardware placement as the
+	// target (NOT a DraftModelConfig — there is no user knob). buildModelParams
+	// mutates the cfg copy; pass a copy so the live config is untouched.
+	cfgCopy := cfg
+	mParams, ka, err := buildModelParams(ctx, &cfgCopy, log)
+	if err != nil {
+		return nil, fmt.Errorf("mtp-shared-build-model-params: %w", err)
+	}
+
+	log(ctx, "draft-model-mtp-shared", "status", "loading-assistant",
+		"file", cfg.MTPDrafterFile, "gpu_layers", mParams.NGpuLayers)
+
+	asstModel, err := loadModelFromFiles(ctx, log, []string{cfg.MTPDrafterFile}, mParams)
+	runtime.KeepAlive(ka)
+	if err != nil {
+		return nil, fmt.Errorf("mtp-shared-load-assistant: %w", err)
+	}
+
+	// The MTP head consumes rows of the TARGET's hidden width. llama.cpp
+	// asserts n_embd_out(assistant) == n_embd(target); enforce the same
+	// here so a mismatched companion fails loudly instead of corrupting.
+	nEmbd := int(llama.ModelNEmbd(targetModel))
+	nEmbdOut := int(llama.ModelNEmbdOut(asstModel))
+	if nEmbd <= 0 {
+		llama.ModelFree(asstModel)
+		return nil, fmt.Errorf("mtp-shared: invalid target nEmbd %d", nEmbd)
+	}
+	if nEmbdOut != nEmbd {
+		llama.ModelFree(asstModel)
+		return nil, fmt.Errorf("mtp-shared: assistant n_embd_out %d != target n_embd %d", nEmbdOut, nEmbd)
+	}
+
+	// Context params: shared memory with the target via CtxOther, MTP type,
+	// inheriting thread layout, KV cache types, offload, and the sequence /
+	// batch dimensions from the target.
+	params := llama.ContextDefaultParams()
+	params.CtxType = llama.ContextTypeMTP
+	params.CtxOther = targetCtx
+	params.NCtx = targetCtxParams.NCtx
+	params.NBatch = targetCtxParams.NBatch
+	params.NUbatch = targetCtxParams.NUbatch
+	params.NSeqMax = targetCtxParams.NSeqMax
+	params.NThreads = targetCtxParams.NThreads
+	params.NThreadsBatch = targetCtxParams.NThreadsBatch
+	params.FlashAttentionType = targetCtxParams.FlashAttentionType
+	params.TypeK = targetCtxParams.TypeK
+	params.TypeV = targetCtxParams.TypeV
+	params.Offload_kqv = targetCtxParams.Offload_kqv
+	params.OpOffload = targetCtxParams.OpOffload
+
+	// KVUnified and SwaFull define the shared cache topology. They MUST match
+	// the target: the assistant borrows the target's KV tensors (CtxOther), so
+	// a stream-layout mismatch (e.g. assistant n_stream=NSeqMax vs target
+	// n_stream=1 under unified mode) makes llama_kv_cache::get_k compute a 4-D
+	// view that overruns the shared tensor and trips ggml_view_4d's bounds
+	// assert. This only bites at NSeqMax>1, where the target enables KVUnified.
+	params.KVUnified = targetCtxParams.KVUnified
+	params.SwaFull = targetCtxParams.SwaFull
+
+	log(ctx, "draft-model-mtp-shared", "status", "init-context",
+		"nDraft", nDraft, "nEmbd", nEmbd,
+		"nCtx", params.NCtx, "nBatch", params.NBatch,
+		"nUbatch", params.NUbatch, "nSeqMax", params.NSeqMax)
+
+	lctx, err := llama.InitFromModel(asstModel, params)
+	if err != nil {
+		llama.ModelFree(asstModel)
+		return nil, fmt.Errorf("mtp-shared-init-context: %w", err)
+	}
+
+	// Shared memory: this returns the TARGET's llama_memory. Do NOT clear
+	// it — that would wipe the target's KV. We keep the handle only for
+	// the safe ops (MemorySeqRm on the assistant's own cells is a no-op
+	// for the shared layers).
+	mem, err := llama.GetMemory(lctx)
+	if err != nil {
+		llama.Free(lctx)
+		llama.ModelFree(asstModel)
+		return nil, fmt.Errorf("mtp-shared-get-memory: %w", err)
+	}
+
+	// Enable pre-norm hidden-state extraction: target dense (all rows),
+	// draft masked (only logits-flagged rows). Must be set before any
+	// decode on either context.
+	SetEmbeddingsPreNorm(targetCtx, true, false)
+	SetEmbeddingsPreNorm(lctx, true, true)
+
+	// Greedy sampler (temperature=0) — matches the embedded-MTP hot path;
+	// verifySpeculativeTokens forces greedy verification for MTP.
+	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
+
+	// Construct *draftCore BEFORE pinning so the runtime.Pinner fields stay
+	// at their final addresses (see the loadDraftModelMTP note).
+	//
+	// Shared-KV needs only the AR draft batch (capacity 1) — there is no
+	// mirror-replay, so mirrorBatchMTP / mirrorEmbdSlice stay zero
+	// (BatchFree on a zero batch and Unpin on an empty Pinner are no-ops).
+	dm := &draftCore{
+		model:          asstModel,
+		vocab:          llama.ModelGetVocab(targetModel),
+		nEmbd:          nEmbd,
+		lctx:           lctx,
+		mem:            mem,
+		sampler:        sampler,
+		draftBatchMTP:  llama.BatchInit(1, 0, 1),
+		draftEmbdSlice: make([]float32, nEmbd),
+		nDraft:         nDraft,
+	}
+
+	if len(dm.draftEmbdSlice) > 0 {
+		dm.draftEmbdPin.Pin(&dm.draftEmbdSlice[0])
+		dm.draftBatchMTP.Embd = (*float32)(unsafe.Pointer(&dm.draftEmbdSlice[0]))
+	}
+
+	return &sharedMTPDrafter{c: dm}, nil
+}
+
 // selectAndLoadDraft chooses the appropriate draft source and loads it,
-// or returns (nil, nil) when no drafter applies. Two sources, checked in
+// or returns (nil, nil) when no drafter applies. Three sources, checked in
 // priority order:
 //
-//  1. Explicit separate-draft GGUF (cfg.DraftModel) — user override.
-//  2. Auto-detect: enable MTP when the target GGUF carries an MTP head
-//     (nextn_predict_layers > 0) and the target is single-sequence.
+//  1. Explicit separate-draft GGUF (cfg.DraftModel) — user override,
+//     vocab-matched classic draft.
+//  2. Separate-file MTP assistant (cfg.MTPDrafterFile, Gemma4
+//     gemma4-assistant): a per-model speculative head that ships alongside
+//     the main GGUF and shares the target's KV memory (ctx_other==target).
+//  3. Auto-detect embedded MTP: enable when the target GGUF itself carries
+//     an MTP head (nextn_predict_layers > 0).
 //
 // targetCtx is needed because MTP requires
 // llama_set_embeddings_pre_norm(target, true, false) before the next
-// target decode — the MTP loader handles that call internally.
+// target decode — the MTP loaders handle that call internally.
 //
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
@@ -233,6 +418,33 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 		log(ctx, "draft-model", "status", "loaded",
 			"source", "explicit-separate",
 			"nDraft", d.c.nDraft, "devices", cfg.DraftModel.Devices,
+			"nCtx", llama.NCtx(d.c.lctx))
+		return d, nil
+	}
+
+	// Separate-file MTP assistant (Gemma4). Present on disk and probes as a
+	// gemma4-assistant head → load it as a shared-KV MTP drafter. It needs
+	// the same pre-norm APIs the embedded MTP path does; if the loaded
+	// llama build doesn't export them, skip with a loud WARN (handled below
+	// for the embedded path, mirrored here).
+	if cfg.MTPDrafterFile != "" && probeGemma4AssistantMTP(ctx, log, cfg.MTPDrafterFile) {
+		if !MTPAvailable() {
+			const reason = "MTPDrafterFile is a gemma4-assistant MTP head but the loaded llama library does not export the pre-norm hidden-state APIs (llama_set_embeddings_nextn / llama_get_embeddings_nextn / _ith). MTP speculative decoding is DISABLED for this model. Update sdk/kronk/model/yzma.go with the symbol names exported by your llama build."
+
+			log(ctx, "draft-model-mtp-shared", "status", "DISABLED", "reason", reason)
+			fmt.Fprintf(os.Stderr, "WARN: MTP DISABLED for this model: %s\n", reason)
+			return nil, nil
+		}
+
+		nDraft := mtpNDraft(cfg)
+		d, err := loadDraftModelMTPShared(ctx, log, cfg, targetCtx, targetModel, targetCtxParams, nDraft)
+		if err != nil {
+			return nil, err
+		}
+		log(ctx, "draft-model-mtp-shared", "status", "loaded",
+			"source", "mtp-drafter-file",
+			"file", cfg.MTPDrafterFile,
+			"nDraft", d.c.nDraft, "nEmbd", d.c.nEmbd,
 			"nCtx", llama.NCtx(d.c.lctx))
 		return d, nil
 	}

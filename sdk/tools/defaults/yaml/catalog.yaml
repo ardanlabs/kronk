@@ -112,13 +112,18 @@ models:
       - Qwopus3.5-4B-Coder.Q8_0.gguf
     file_sizes:
       - 4610581920
+    mmproj: mmproj-Qwopus3.5-4B-Coder.Q8_0.gguf
+    mmproj_orig: Qwopus3.5-4B-Coder.mmproj-f16.gguf
+    mmproj_size: 672424544
+    mtp_checked: true
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
+      images: true
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-06-03T22:25:00Z
+    resolved_at: 2026-06-03T18:40:08.158897Z
   Qwen/Qwen3-8B-Q8_0:
     provider: Qwen
     family: Qwen3-8B-GGUF
@@ -323,3 +328,23 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
+  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL:
+    provider: unsloth
+    family: gemma-4-E4B-it-qat-GGUF
+    revision: main
+    files:
+      - gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
+    file_sizes:
+      - 4215693760
+    mmproj: mmproj-gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 990372672
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-10T20:19:14.621688Z

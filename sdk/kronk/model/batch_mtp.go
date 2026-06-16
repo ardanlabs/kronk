@@ -409,11 +409,16 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 		}
 		llama.Synchronize(e.model.lctx)
 
-		// Mirror the just-decoded chunk into the MTP draft seq KV.
-		// Failure here means the draft seq is partially-populated; the
-		// caller treats that as a build failure and clears both seqs.
-		if err := e.mirrorBuildChunkToMTPDraft(s, tokens[i:end], llama.Pos(startPos+i)); err != nil {
-			return fmt.Errorf("imc-mtp: mirror at pos %d: %w", startPos+i, err)
+		// Sync the just-decoded chunk into the MTP head's view. Own-KV
+		// (Qwen) mirrors it into the separate draft seq KV; shared-KV
+		// (Gemma4) only captures pendingH (the target decode already
+		// populated the shared KV). Failure here means the draft state
+		// is inconsistent; the caller treats that as a build failure and
+		// clears both seqs.
+		if syncer, ok := e.model.draft.(mtpSyncer); ok {
+			if err := syncer.syncCacheBuildChunk(e, s, tokens[i:end], llama.Pos(startPos+i)); err != nil {
+				return fmt.Errorf("imc-mtp: sync at pos %d: %w", startPos+i, err)
+			}
 		}
 	}
 
@@ -528,4 +533,220 @@ func (e *batchEngine) mirrorBuildChunkToMTPDraft(s *slot, tokens []llama.Token, 
 	s.draftNPast = basePos + llama.Pos(nTokens)
 
 	return nil
+}
+
+// =============================================================================
+// Shared-KV MTP (Gemma4 gemma4-assistant). These are the *sharedMTPDrafter
+// counterparts of the own-KV mirror/draft functions above. The assistant's
+// context was created with ctx_other==target, so it SHARES the target's
+// llama_memory: the target's decode already populates the shared KV and the
+// assistant reads it directly. There is therefore NO catch-up/mirror decode
+// and NO separate draft KV to roll back — we only carry the last pre-norm
+// hidden row forward as s.pendingH and draft at a FIXED KV position.
+//
+// Reference: common/speculative.cpp common_speculative_impl_draft_mtp, the
+// is_mem_shared == true branches (skip catch-up decode; draft at dp.n_past;
+// no seq_rm).
+
+// captureTargetBatchForSharedMTP is the shared-KV counterpart of
+// mirrorTargetBatchToMTPDraft. After a successful target decode+sync for
+// the slot, it records the last surviving position's pre-norm hidden row as
+// s.pendingH (the carry-over the next shared draft round conditions on) and
+// advances s.draftNPast to the target's new position. It does NOT decode the
+// draft context — the shared memory means the target's decode already
+// populated the KV the assistant reads.
+func (e *batchEngine) captureTargetBatchForSharedMTP(s *slot, effectiveCount int) error {
+	dr := e.model.draft
+	if dr == nil || !dr.mtp() {
+		s.mtpHasBatch = false
+		return nil
+	}
+	if effectiveCount <= 0 || !s.mtpHasBatch {
+		s.mtpHasBatch = false
+		return nil
+	}
+
+	draft := dr.core()
+	nEmbd := draft.nEmbd
+	start := int(s.targetBatchStart)
+
+	// Choose pre-norm source for the LAST surviving row, mirroring the
+	// own-KV path: prefer s.verifyH (captured in Phase A of speculative
+	// verify before any re-decode side-effect), else the live target
+	// pre-norm buffer indexed by raw target-batch position.
+	var lastRow []float32
+	switch {
+	case len(s.verifyH) >= effectiveCount*nEmbd:
+		k := effectiveCount - 1
+		lastRow = s.verifyH[k*nEmbd : (k+1)*nEmbd]
+
+	default:
+		totalRows := int(e.batch.NTokens)
+		embd := GetEmbeddingsPreNorm(e.model.lctx, totalRows, nEmbd)
+		if embd == nil {
+			s.mtpHasBatch = false
+			return fmt.Errorf("mtp-shared-capture: target pre-norm buffer is nil (SetEmbeddingsPreNorm may not be enabled)")
+		}
+		absRow := start + effectiveCount - 1
+		if absRow < 0 || absRow >= totalRows {
+			s.mtpHasBatch = false
+			return fmt.Errorf("mtp-shared-capture: row %d out of target batch (size %d)", absRow, totalRows)
+		}
+		lastRow = embd[absRow*nEmbd : (absRow+1)*nEmbd]
+	}
+
+	if cap(s.pendingH) < nEmbd {
+		s.pendingH = make([]float32, nEmbd)
+	} else {
+		s.pendingH = s.pendingH[:nEmbd]
+	}
+	copy(s.pendingH, lastRow)
+
+	s.draftNPast = s.targetBatchBasePos + llama.Pos(effectiveCount)
+
+	// verifyH (if it was the source) has been consumed; reset length so
+	// the next Phase A capture starts clean while retaining capacity.
+	s.verifyH = s.verifyH[:0]
+
+	s.mtpHasBatch = false
+	return nil
+}
+
+// captureBuildChunkForSharedMTP is the shared-KV counterpart of
+// mirrorBuildChunkToMTPDraft. During an IMC cold cache build the target
+// decode (in decodeTokensIntoCacheMTP) already populated the shared KV, so
+// here we only record the last decoded position's pre-norm row as
+// s.pendingH and advance s.draftNPast. No draft decode happens.
+func (e *batchEngine) captureBuildChunkForSharedMTP(s *slot, tokens []llama.Token, basePos llama.Pos) error {
+	dr := e.model.draft
+	if dr == nil || !dr.mtp() {
+		return nil
+	}
+
+	nTokens := len(tokens)
+	if nTokens == 0 {
+		return nil
+	}
+
+	draft := dr.core()
+	nEmbd := draft.nEmbd
+
+	embd := GetEmbeddingsPreNorm(e.model.lctx, nTokens, nEmbd)
+	if embd == nil {
+		return fmt.Errorf("mtp-shared-build-capture: target pre-norm buffer is nil (SetEmbeddingsPreNorm may not be enabled)")
+	}
+
+	if cap(s.pendingH) < nEmbd {
+		s.pendingH = make([]float32, nEmbd)
+	} else {
+		s.pendingH = s.pendingH[:nEmbd]
+	}
+	copy(s.pendingH, embd[(nTokens-1)*nEmbd:nTokens*nEmbd])
+	s.draftNPast = basePos + llama.Pos(nTokens)
+
+	return nil
+}
+
+// generateDraftTokensMTPShared is the shared-KV counterpart of
+// generateDraftTokensMTP. It runs the auto-regressive draft loop on the
+// assistant context, feeding each step (token id, pre-norm hidden state)
+// and reading back the next pre-norm row via GetEmbeddingsPreNormIth.
+//
+// The ONE semantic difference from the own-KV path: every draft token is
+// decoded at the SAME fixed KV position (s.draftNPast). This is the Gemma4
+// shared-memory convention (common/speculative.cpp is_mem_shared: "we use
+// the same position for all draft tokens"). Because the assistant shares
+// the target's memory and never advances its own position, there is no
+// draft-KV rollback to do afterward and s.draftNPast is left untouched —
+// the next captureTargetBatchForSharedMTP resets it from the target.
+//
+// PRECONDITIONS
+//   - The most recent target decode for this slot has been captured
+//     (captureTargetBatchForSharedMTP), so s.pendingH holds the pre-norm
+//     hidden state of s.sampled and s.draftNPast is the target position.
+func (e *batchEngine) generateDraftTokensMTPShared(s *slot) []llama.Token {
+	draft := e.model.draft.core()
+	nEmbd := draft.nEmbd
+
+	nDraft := chooseNDraft(s, draft.nDraft)
+	if nDraft == 0 {
+		s.draftTokensBuf = s.draftTokensBuf[:0]
+		return s.draftTokensBuf
+	}
+
+	if cap(s.draftTokensBuf) < nDraft {
+		s.draftTokensBuf = make([]llama.Token, nDraft)
+	}
+	s.draftTokensBuf = s.draftTokensBuf[:0]
+
+	// pendingH is populated by the capture that ran after the last target
+	// decode. Without it we cannot condition the MTP head — short-circuit.
+	if len(s.pendingH) != nEmbd {
+		return s.draftTokensBuf
+	}
+
+	// Greedy sampler for MTP, matching the own-KV path and the reference
+	// hot path; verifySpeculativeTokens forces greedy verification for MTP.
+	sampler := draft.sampler
+
+	batch := draft.draftBatchMTP
+	seqIDs := s.seqIDs
+	curToken := s.sampled
+	curEmbd := s.pendingH
+
+	// FIXED position for every draft token (Gemma4 shared-memory
+	// convention). Unlike the own-KV path, pos is NOT incremented.
+	pos := s.draftNPast
+
+	for range nDraft {
+		batch.NTokens = 0
+		batch.Add(curToken, pos, seqIDs, true)
+
+		// Copy the conditioning hidden row into the pinned embd slice
+		// backing draftBatchMTP.Embd (see loadDraftModelMTPShared).
+		copy(draft.draftEmbdSlice, curEmbd)
+
+		ret, err := llama.Decode(draft.lctx, batch)
+		if err != nil || ret != 0 {
+			break
+		}
+		// Synchronize before reading logits / pre-norm rows on async
+		// backends (Metal/CUDA).
+		llama.Synchronize(draft.lctx)
+
+		// Sample the next draft token from the MTP head.
+		nextTok := llama.SamplerSample(sampler, draft.lctx, -1)
+
+		// Read back the next pre-norm hidden row (masked draft ctx, single
+		// logits-flagged row → output index 0).
+		nextEmbd := GetEmbeddingsPreNormIth(draft.lctx, 0, nEmbd)
+		if nextEmbd == nil {
+			s.draftTokensBuf = append(s.draftTokensBuf, nextTok)
+			break
+		}
+
+		if cap(s.pendingH) < nEmbd {
+			s.pendingH = make([]float32, nEmbd)
+		} else {
+			s.pendingH = s.pendingH[:nEmbd]
+		}
+		copy(s.pendingH, nextEmbd)
+
+		// EOG check — stop drafting past end of generation.
+		if llama.VocabIsEOG(e.model.vocab, nextTok) {
+			s.draftTokensBuf = append(s.draftTokensBuf, nextTok)
+			break
+		}
+
+		s.draftTokensBuf = append(s.draftTokensBuf, nextTok)
+		curToken = nextTok
+		curEmbd = s.pendingH
+	}
+
+	// Shared-KV: do NOT advance s.draftNPast — all draft tokens decoded at
+	// the fixed position and the target owns the shared-layer KV position.
+	// The reference impl performs no seq_rm here either; the assistant's
+	// own transient cells at the fixed position are overwritten next round.
+	s.specDraftedTotal += len(s.draftTokensBuf)
+	return s.draftTokensBuf
 }

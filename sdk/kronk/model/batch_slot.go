@@ -148,6 +148,7 @@ type slot struct {
 	specAcceptedTotal  int           // Total draft tokens accepted across all speculative steps
 	specAccEMA         float64       // Exponential moving average of acceptance rate (persists across requests)
 	specRounds         int           // Verify rounds completed this request (used to throttle per-round logging)
+	mtpProbeTick       int           // Counts decode rounds spent fully throttled (EMA < floor); drives the periodic recovery probe in chooseNDraft. Persists across requests.
 
 	// Per-slot owned buffers for speculative decoding. Avoids shared buffer
 	// corruption when multiple slots generate draft tokens in the same

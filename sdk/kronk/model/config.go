@@ -238,6 +238,15 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // ProjFile is the path to the projection files. This is mandatory for media
 // based models like vision and audio.
 //
+// MTPDrafterFile is the path to a separate-file MTP "assistant" drafter GGUF
+// that ships alongside the main model (e.g. Gemma4's
+// "mtp-gemma-4-26B-A4B-it-*.gguf"). It is NOT the main model and NOT a
+// vocab-matched classic draft model: it is a per-model speculative head
+// loaded as its own llama_model whose context shares the target's KV
+// memory. Auto-wired from disk when the companion file is present; empty
+// otherwise. Distinct from the embedded MTP head carried inside some
+// target GGUFs (Qwen3.5/3.6), which has no separate file.
+//
 // ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When
 // nil or false, the projector runs on whichever device llama.cpp picks by
 // default (GPU when available). Set to true to keep the projector on the CPU
@@ -360,6 +369,7 @@ type Config struct {
 	PtrOpOffload         *bool
 	PtrOpOffloadMinBatch *int
 	ProjFile             string
+	MTPDrafterFile       string
 	PtrProjOnCPU         *bool
 	PtrQueueDepth        *int
 	PtrRopeFreqBase      *float32
@@ -455,14 +465,14 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nProjOnCPU[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.Devices, cfg.FlashAttention,
 		formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrNUBatch),
 		cfg.NUMA,
-		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, formatBoolPtr(cfg.PtrProjOnCPU),
+		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
 		cfg.SessionStoreDir, cfg.sessionStoreKind(),
 		formatSplitModePtr(cfg.PtrSplitMode),
@@ -568,6 +578,14 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 		if err := CheckModel(cfg.ProjFile, true); err != nil {
 			return fmt.Errorf("validate-config: prog-file[%s]: %w", cfg.ProjFile, err)
+		}
+	}
+
+	if cfg.MTPDrafterFile != "" {
+		log(ctx, "validate-config", "model-file", cfg.MTPDrafterFile)
+
+		if err := CheckModel(cfg.MTPDrafterFile, true); err != nil {
+			return fmt.Errorf("validate-config: mtp-drafter-file[%s]: %w", cfg.MTPDrafterFile, err)
 		}
 	}
 
@@ -785,6 +803,12 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		switch {
 		case cfg.DraftModel != nil && cfg.DraftModel.IsSeparate():
 			perSlot = 1 + cfg.DraftModel.NDraft
+		case cfg.MTPDrafterFile != "" && MTPAvailable():
+			// Separate-file MTP assistant drafter (Gemma4). The companion
+			// file is present on disk; selectAndLoadDraft loads it as a
+			// shared-KV MTP head that queues 1 + nDraft logits-flagged rows
+			// per slot in the verification batch, same as the embedded MTP.
+			perSlot = 1 + mtpNDraft(cfg)
 		case mtpNextNLayers(mdl) > 0 && MTPAvailable():
 			// MTP draft count: an MTP nDraft override (DraftModel with no
 			// model files) raises/lowers the ceiling; otherwise default.
@@ -1466,6 +1490,7 @@ func WithOffloadKQV(v bool) Option                   { return func(c *Config) { 
 func WithOpOffload(v bool) Option                    { return func(c *Config) { c.PtrOpOffload = new(v) } }
 func WithOpOffloadMinBatch(v int) Option             { return func(c *Config) { c.PtrOpOffloadMinBatch = new(v) } }
 func WithProjFile(v string) Option                   { return func(c *Config) { c.ProjFile = v } }
+func WithMTPDrafterFile(v string) Option             { return func(c *Config) { c.MTPDrafterFile = v } }
 func WithProjOnCPU(v bool) Option                    { return func(c *Config) { c.PtrProjOnCPU = new(v) } }
 func WithRopeFreqBase(v float32) Option              { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
 func WithRopeFreqScale(v float32) Option             { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }

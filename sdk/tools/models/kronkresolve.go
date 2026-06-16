@@ -47,6 +47,13 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	out.ModelFiles = fp.ModelFiles
 	out.ProjFile = fp.ProjFile
 
+	// fp.MTPFile is the on-disk path to the separate-file MTP assistant
+	// drafter companion (e.g. Gemma4's "mtp-*.gguf"), discovered by the
+	// download/catalog layer. The runtime config calls it MTPDrafterFile to
+	// avoid confusion with MTP-capable MAIN models (whose own filenames
+	// also start with "mtp-", e.g. mtp-Qwen3.6-...).
+	out.MTPDrafterFile = fp.MTPFile
+
 	// Resolve a relative jinja template path against the kronk base
 	// directory so users can write portable values like
 	// "jinja/Qwen3.5-0.8B-Q8_0.jinja" in model_config.yaml without
