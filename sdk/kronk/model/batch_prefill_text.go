@@ -48,7 +48,7 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 	// processBatch iteration (round-robin tray fill), so we only set
 	// start/basePos on the FIRST call this iteration; subsequent calls
 	// just accumulate count.
-	mtpDraft := e.model.draft != nil && e.model.draft.mtp
+	mtpDraft := e.model.draft != nil && e.model.draft.mtp()
 	if mtpDraft && !s.mtpHasBatch {
 		s.targetBatchStart = e.batch.NTokens
 		s.targetBatchBasePos = s.nPast

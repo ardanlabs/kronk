@@ -157,7 +157,7 @@ type slot struct {
 
 	// -------------------------------------------------------------------------
 	// MTP (Multi-Token Prediction) per-slot state — populated only when
-	// e.model.draft != nil && e.model.draft.mtp.
+	// e.model.draft != nil && e.model.draft.mtp().
 
 	// pendingH is a copy of the pre-norm hidden-state row from the
 	// most-recently committed target position for this slot's sequence.

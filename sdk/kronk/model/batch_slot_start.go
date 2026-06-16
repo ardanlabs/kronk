@@ -213,8 +213,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// the target's kvState read above) so we don't race with
 			// a concurrent evictor / writer mutating draftKVState's
 			// slice header.
-			if e.model.draft != nil && e.model.draft.mtp && job.imcSession != nil && job.imcSession.draftKVState != nil {
-				draft := e.model.draft
+			if ext, ok := e.model.draft.(draftKVExternalizer); ok && job.imcSession != nil && job.imcSession.draftKVState != nil {
+				draft := ext.core()
 
 				var draftBytes []byte
 				var savedPendingH []float32
@@ -230,7 +230,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					draftRestoreStart := time.Now()
 
 					e.model.decodeMu.Lock()
-					nDraftRead := llama.StateSeqSetData(draft.lctx, draftBytes, s.seqID)
+					nDraftRead := llama.StateSeqSetData(ext.draftKVCtx(), draftBytes, s.seqID)
 					e.model.decodeMu.Unlock()
 
 					switch {
@@ -378,8 +378,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				// clearing the draft seq first, the mirror decode
 				// collides with the surviving positions and fails
 				// with "the input could not be processed".
-				if e.model.draft != nil && e.model.draft.mtp {
-					llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+				if e.model.draft != nil && e.model.draft.mtp() {
+					llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
 					s.draftNPast = 0
 					s.pendingH = s.pendingH[:0]
 				}
@@ -409,8 +409,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 					// MTP: clear the draft seq in lock-step (see the
 					// imcClearSeq branch above for the rationale).
-					if e.model.draft != nil && e.model.draft.mtp {
-						llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+					if e.model.draft != nil && e.model.draft.mtp() {
+						llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
 						s.draftNPast = 0
 						s.pendingH = s.pendingH[:0]
 					}
@@ -433,8 +433,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					// the previous-position h for the new tokens; the
 					// mirror's first chunk will fall back to zeros at
 					// slot 0, which matches what a fresh build does).
-					if e.model.draft != nil && e.model.draft.mtp {
-						llama.MemorySeqRm(e.model.draft.mem, s.seqID, llama.Pos(job.imcTrimPos), -1)
+					if e.model.draft != nil && e.model.draft.mtp() {
+						llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, llama.Pos(job.imcTrimPos), -1)
 						if s.draftNPast > llama.Pos(job.imcTrimPos) {
 							s.draftNPast = llama.Pos(job.imcTrimPos)
 						}
@@ -461,7 +461,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			var decodeErr error
 			switch {
-			case e.model.draft != nil && e.model.draft.mtp:
+			case e.model.draft != nil && e.model.draft.mtp():
 				decodeErr = e.decodeTokensIntoCacheMTP(job.ctx, s, job.imcNewCacheTokens, int(cacheIdx))
 			default:
 				decodeErr = e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx))
@@ -469,8 +469,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			if decodeErr != nil {
 				e.model.decodeMu.Lock()
 				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-				if e.model.draft != nil && e.model.draft.mtp {
-					llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+				if e.model.draft != nil && e.model.draft.mtp() {
+					llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
 					s.draftNPast = 0
 					s.pendingH = s.pendingH[:0]
 				}
@@ -568,8 +568,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// snapshot block so the draft snapshot path runs / is
 			// logged as today.
 			draftOK := true
-			if e.model.draft != nil && e.model.draft.mtp {
-				draft := e.model.draft
+			if e.model.draft != nil && e.model.draft.mtp() {
+				draft := e.model.draft.core()
 				draftOK = s.draftNPast == cacheIdx
 				if draftOK && draft.nEmbd > 0 {
 					draftOK = len(s.pendingH) == draft.nEmbd
@@ -658,16 +658,17 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// position hidden state. Gated on a successful target snapshot
 			// (nExtracted > 0) — without that the cache hit is going to
 			// fail anyway.
-			if nExtracted > 0 && e.model.draft != nil && e.model.draft.mtp && job.imcSession.draftKVState != nil {
-				draft := e.model.draft
+			if ext, ok := e.model.draft.(draftKVExternalizer); ok && nExtracted > 0 && job.imcSession.draftKVState != nil {
+				draft := ext.core()
+				dctx := ext.draftKVCtx()
 
 				draftCapBefore := job.imcSession.draftKVState.Cap()
 
 				e.model.decodeMu.Lock()
-				llama.Synchronize(draft.lctx)
-				draftKVSize := llama.StateSeqGetSize(draft.lctx, s.seqID)
+				llama.Synchronize(dctx)
+				draftKVSize := llama.StateSeqGetSize(dctx, s.seqID)
 				draftBuf := job.imcSession.draftKVState.Prepare(int(draftKVSize))
-				nDraftExtracted := llama.StateSeqGetData(draft.lctx, draftBuf, s.seqID)
+				nDraftExtracted := llama.StateSeqGetData(dctx, draftBuf, s.seqID)
 				e.model.decodeMu.Unlock()
 
 				draftCapAfter := job.imcSession.draftKVState.Cap()
@@ -838,7 +839,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	// so the draftPrefillNeeded / draftPromptTokens scaffolding used by
 	// the separate-GGUF path would only cause a redundant (and broken,
 	// because it can't supply embd) re-prefill.
-	if e.model.draft != nil && e.model.draft.mtp {
+	if e.model.draft != nil && e.model.draft.mtp() {
 		// Clear any stale draftPromptTokens from a previous non-MTP slot
 		// reuse; mtpHasBatch / pendingH are reset in slot.reset().
 		s.draftPromptTokens = nil
@@ -864,8 +865,8 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 				"draft_n_past", s.draftNPast)
 		}
 	}
-	if e.model.draft != nil && !e.model.draft.mtp && !draftSlotHasMedia {
-		draft := e.model.draft
+	if e.model.draft != nil && !e.model.draft.mtp() && !draftSlotHasMedia {
+		draft := e.model.draft.core()
 		var needed int
 		var cachedLen int
 

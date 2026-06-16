@@ -203,7 +203,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// MTP: every iteration starts with no slot having claimed a target
 	// batch range. The add sites (prefill / gen / spec) re-claim it as
 	// they push to e.batch, and the post-decode mirror step consumes it.
-	mtpDraft := e.model.draft != nil && e.model.draft.mtp
+	mtpDraft := e.model.draft != nil && e.model.draft.mtp()
 	if mtpDraft {
 		for _, s := range e.slots {
 			s.mtpHasBatch = false
@@ -267,17 +267,14 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		// Only for text slots that completed draft prefill (draftNPast > 0).
 		// MTP path is additionally skipped when mtpDisabledForRequest
 		// (IMC cache-hit, see batch_slot_start.go).
-		mtpUsable := e.model.draft != nil && e.model.draft.mtp && !s.mtpDisabledForRequest
+		mtpUsable := e.model.draft != nil && e.model.draft.mtp() && !s.mtpDisabledForRequest
 		canSpec := e.model.draft != nil && !s.draftPrefillNeeded && s.draftNPast > 0 &&
-			(!e.model.draft.mtp || mtpUsable)
+			(!e.model.draft.mtp() || mtpUsable)
 		if canSpec {
-			var draftTokens []llama.Token
-			switch {
-			case e.model.draft.mtp:
-				draftTokens = e.generateDraftTokensMTP(s)
-			default:
-				draftTokens = e.generateDraftTokens(s)
-			}
+			// Per-mode dispatch: classic uses token-only drafting, MTP
+			// uses the hidden-state head. Adding a new strategy means
+			// implementing generate, not editing this call site.
+			draftTokens := e.model.draft.generate(e, s)
 			if len(draftTokens) > 0 {
 				s.specBasePast = s.nPast
 				s.specBaseBatch = e.batch.NTokens

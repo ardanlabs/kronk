@@ -107,7 +107,7 @@ type filterHeapEntry struct {
 }
 
 // filterState holds pre-allocated buffers for applySamplerFilters to avoid
-// per-call allocations. Stored on draftModel and reused across calls.
+// per-call allocations. Stored on draftCore and reused across calls.
 type filterState struct {
 	heap     []filterHeapEntry
 	rawProbs []float64

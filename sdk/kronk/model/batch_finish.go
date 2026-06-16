@@ -117,11 +117,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		trimPos := llama.Pos(len(s.draftCachedTokens))
 		switch {
 		case trimPos > 0:
-			llama.MemorySeqRm(e.model.draft.mem, s.seqID, trimPos, -1)
+			llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, trimPos, -1)
 			e.model.log(ctx, "speculative", "status", "draft-kv-trimmed",
 				"slot", slotID, "seq", seqID, "trim_pos", trimPos)
 		default:
-			llama.MemorySeqRm(e.model.draft.mem, s.seqID, -1, -1)
+			llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
 			e.model.log(ctx, "speculative", "status", "draft-kv-cleared",
 				"slot", slotID, "seq", seqID)
 		}
@@ -348,7 +348,7 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 	// Unregister the per-slot draft sampler from the draft context before
 	// freeing it, to prevent a dangling pointer in the context's sampler map.
 	if s.draftSampler != 0 && e.model.draft != nil {
-		draft := e.model.draft
+		draft := e.model.draft.core()
 		if draft.registeredSampler == s.draftSampler {
 			llama.SetSampler(draft.lctx, draft.registeredSeqID, 0)
 			draft.registeredSampler = 0

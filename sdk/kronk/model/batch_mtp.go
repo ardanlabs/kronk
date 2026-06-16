@@ -71,8 +71,8 @@ func batchTokensAt(b llama.Batch, start, count int) []llama.Token {
 // to the hidden row of the last surviving position. On failure the
 // draft KV may be partially advanced; the caller should fail the slot.
 func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) error {
-	draft := e.model.draft
-	if draft == nil || !draft.mtp {
+	dr := e.model.draft
+	if dr == nil || !dr.mtp() {
 		s.mtpHasBatch = false
 		return nil
 	}
@@ -81,6 +81,7 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 		return nil
 	}
 
+	draft := dr.core()
 	nEmbd := draft.nEmbd
 	mirror := draft.mirrorBatchMTP
 
@@ -251,7 +252,7 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 // Returns the generated draft tokens (also stored in s.draftTokensBuf
 // per existing convention).
 func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
-	draft := e.model.draft
+	draft := e.model.draft.core()
 	nEmbd := draft.nEmbd
 
 	nDraft := chooseNDraft(s, draft.nDraft)
@@ -348,7 +349,7 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 // batch. We stored it implicitly by allocating mirrorBatchMTP with
 // (NBatch, nEmbd, 1) but llama.Batch doesn't expose the original
 // capacity, so we derive it from the size of the alias slice.
-func (d *draftModel) mirrorBatchCapacity() int32 {
+func (d *draftCore) mirrorBatchCapacity() int32 {
 	if d.nEmbd <= 0 {
 		return 0
 	}
@@ -441,8 +442,8 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 // advanced; the caller should treat the build as failed and clear
 // both seqs.
 func (e *batchEngine) mirrorBuildChunkToMTPDraft(s *slot, tokens []llama.Token, basePos llama.Pos) error {
-	draft := e.model.draft
-	if draft == nil || !draft.mtp {
+	dr := e.model.draft
+	if dr == nil || !dr.mtp() {
 		return nil
 	}
 
@@ -451,6 +452,7 @@ func (e *batchEngine) mirrorBuildChunkToMTPDraft(s *slot, tokens []llama.Token, 
 		return nil
 	}
 
+	draft := dr.core()
 	nEmbd := draft.nEmbd
 	mirror := draft.mirrorBatchMTP
 

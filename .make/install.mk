@@ -73,6 +73,8 @@ install-test-gh-models: install-kronk
 # Use this to install the test models.
 install-test-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
+	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
+	@echo
 	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
 	@echo
 	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"

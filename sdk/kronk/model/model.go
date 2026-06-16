@@ -93,17 +93,20 @@ type imcSession struct {
 	cachedRenderInputHash string
 }
 
-// draftModel holds resources for the draft model used in speculative decoding.
-// The draft model is a smaller, faster model that generates candidate tokens
-// for the target model to verify in a single forward pass.
+// draftCore holds the llama resources shared by every speculative-decoding
+// strategy. It is wrapped by the concrete drafter types in draft.go
+// (classicDrafter, mtpDrafter); the engine reaches these resources via
+// drafter.core(). Decode and MemorySeqRm on draftCore are safe for every
+// mode. The strategy TYPE — not a flag on this struct — decides which
+// code paths run; see draft.go for the mode separation.
 //
-// Two operating modes are supported:
+// Two strategies use draftCore today:
 //
-//   - Separate-GGUF draft (mtp == false): a distinct, smaller GGUF loaded
-//     into its own llama_model + context. Token-only decode loop (no
-//     hidden-state plumbing). Uses llama.DraftGenerate.
+//   - Separate-GGUF draft (*classicDrafter): a distinct, smaller GGUF
+//     loaded into its own llama_model + context. Token-only decode loop
+//     (no hidden-state plumbing). Uses llama.DraftGenerate.
 //
-//   - MTP draft (mtp == true): an MTP (multi-token-prediction) head living
+//   - MTP draft (*mtpDrafter): an MTP (multi-token-prediction) head living
 //     inside the TARGET GGUF (Qwen3.5 / Qwen3.6 architecture qwen35). The
 //     llama_model pointer is SHARED with the target — there is no extra
 //     file. The MTP head takes (token_id, pre_norm_hidden_state) per
@@ -111,7 +114,7 @@ type imcSession struct {
 //     draft context with batch.embd populated from
 //     llama_get_embeddings_pre_norm. See loadDraftModelMTP and the
 //     batch_mtp.go mirroring helpers.
-type draftModel struct {
+type draftCore struct {
 	model        llama.Model
 	vocab        llama.Vocab
 	lctx         llama.Context
@@ -123,10 +126,9 @@ type draftModel struct {
 	promptBuf    []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf     []llama.Token // Reusable buffer for generateDraftTokens output
 
-	// MTP-only fields. When mtp == true the draft context shares its
-	// llama_model with the target (Unload must skip the ModelFree).
-	mtp   bool
-	nEmbd int // model embedding width; size of one pre-norm hidden row
+	// nEmbd is the model embedding width (size of one pre-norm hidden
+	// row). Set only for MTP strategies; zero for classic drafts.
+	nEmbd int
 
 	// MTP batches carry pre-norm hidden-state vectors alongside token
 	// ids. llama_batch_init allocates EITHER the token buffer OR the
@@ -202,7 +204,7 @@ type Model struct {
 	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
 	pool              *contextPool  // Context pool for parallel embed/rerank
 	parser            Parser        // Selected via selectParser at load time; nil for embed/rerank.
-	draft             *draftModel   // Draft model for speculative decoding
+	draft             drafter       // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns
@@ -709,8 +711,11 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	// the target's kvState during IMC cache build, so cache hits on
 	// later requests restore both seqs in lock-step and MTP can keep
 	// running. Non-MTP / no-draft / non-IMC paths leave draftKVState
-	// nil, which the snapshot/restore code paths skip.
-	if m.cfg.IncrementalCache() && m.draft != nil && m.draft.mtp {
+	// nil, which the snapshot/restore code paths skip. Only strategies
+	// that own their draft KV (draftKVExternalizer) may externalize it;
+	// a shared-KV strategy must not, so it never gets a store.
+	_, externalizesDraftKV := m.draft.(draftKVExternalizer)
+	if m.cfg.IncrementalCache() && externalizesDraftKV {
 		for _, sess := range m.imcSessions {
 			store, err := newSessionStore(m.cfg)
 			if err != nil {
@@ -729,7 +734,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 // loadDraftModel loads the draft model for speculative decoding. It creates
 // a separate model, context, and greedy sampler. The draft model uses the
 // same context window as the target to support long prompts.
-func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetModel llama.Model, targetCtxParams llama.ContextParams) (*draftModel, error) {
+func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetModel llama.Model, targetCtxParams llama.ContextParams) (*classicDrafter, error) {
 	dCfg := cfg.DraftModel
 
 	// Load draft model.
@@ -842,7 +847,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 		draftProbs[i] = make([]float32, nVocab)
 	}
 
-	return &draftModel{
+	return &classicDrafter{c: &draftCore{
 		model:        dModel,
 		vocab:        dVocab,
 		lctx:         dLctx,
@@ -855,7 +860,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 		draftProbs:   draftProbs,
 		targetProbs:  make([]float32, nVocab),
 		adjusted:     make([]float32, nVocab),
-	}, nil
+	}}, nil
 }
 
 // buildDraftSampler creates a sampler chain for draft token generation that
@@ -1020,35 +1025,11 @@ func (m *Model) Unload(ctx context.Context) error {
 
 	m.log(ctx, "unload", "status", "streams-drained")
 
-	// Free draft model resources if loaded.
+	// Free draft model resources if loaded. Each strategy frees its own
+	// resources in the correct order (classic frees its model; MTP shares
+	// the target's model and skips ModelFree). See draft.go.
 	if m.draft != nil {
-		if m.draft.registeredSampler != 0 {
-			llama.SetSampler(m.draft.lctx, m.draft.registeredSeqID, 0)
-			m.draft.registeredSampler = 0
-		}
-		llama.SamplerFree(m.draft.sampler)
-		llama.BatchFree(m.draft.batch)
-		llama.BatchFree(m.draft.prefillBatch)
-		// MTP-specific batches; zero values are safe no-ops if the draft
-		// was a separate-GGUF (mtp == false) and these were never alloc'd.
-		// llama_batch_free unconditionally calls free() on Batch.Embd —
-		// our MTP Embd pointers reference Go-owned slices (pinned via
-		// runtime.Pinner), so detach them before BatchFree and unpin
-		// after so the Go GC can reclaim the backing arrays.
-		if m.draft.mtp {
-			m.draft.draftBatchMTP.Embd = nil
-			m.draft.mirrorBatchMTP.Embd = nil
-			llama.BatchFree(m.draft.draftBatchMTP)
-			llama.BatchFree(m.draft.mirrorBatchMTP)
-			m.draft.draftEmbdPin.Unpin()
-			m.draft.mirrorEmbdPin.Unpin()
-		}
-		llama.Free(m.draft.lctx)
-		// MTP shares the target's llama_model — the target's Unload path
-		// owns its lifetime. Skip ModelFree to avoid double-free.
-		if !m.draft.mtp {
-			llama.ModelFree(m.draft.model)
-		}
+		m.draft.unload()
 		m.draft = nil
 		m.log(ctx, "unload", "status", "draft-model-freed")
 	}

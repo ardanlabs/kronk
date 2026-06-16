@@ -15,7 +15,7 @@ import (
 // only decodes the new suffix, avoiding redundant re-prefill of the entire
 // prompt on subsequent turns.
 func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
-	draft := e.model.draft
+	draft := e.model.draft.core()
 	tokens := s.draftPromptTokens
 
 	if len(tokens) == 0 {
@@ -150,7 +150,7 @@ func chooseNDraft(s *slot, maxDraft int) int {
 // captures the draft model's sparse probability distribution at each step.
 // The sparse distributions are stored in s.specDraftDistsSparse for verification.
 func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
-	draft := e.model.draft
+	draft := e.model.draft.core()
 	temperature := s.job.params.Temperature
 	greedy := temperature == 0
 
@@ -326,7 +326,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	// this loses the rigorous speculative-sampling distribution
 	// guarantee but is the standard approximation when the draft
 	// distribution is unavailable.
-	mtpGreedy := e.model.draft != nil && e.model.draft.mtp
+	mtpGreedy := e.model.draft != nil && e.model.draft.mtp()
 	if mtpGreedy {
 		greedy = true
 	}
@@ -363,7 +363,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	// Capturing the rows here decouples Phase B's MTP mirror from that
 	// restore so MTP keeps running across partial rejections on hybrid
 	// targets instead of being disabled for the rest of the request.
-	if e.model.draft != nil && e.model.draft.mtp && s.mtpHasBatch && !s.mtpDisabledForRequest {
+	if e.model.draft != nil && e.model.draft.mtp() && s.mtpHasBatch && !s.mtpDisabledForRequest {
 		if err := e.captureVerifyPreNorm(s, 1+nDraft); err != nil {
 			e.model.log(ctx, "speculative", "status", "verify-prenorm-capture-error",
 				"slot", s.id, "err", err)
@@ -469,7 +469,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 				break
 			}
 
-			draftRef := e.model.draft
+			draftRef := e.model.draft.core()
 			draftRef.sortIndices = applySamplerFilters(targetLogits, draftRef.targetProbs, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draftRef.sortIndices, &draftRef.filterBuf)
 
 			pTarget := draftRef.targetProbs[draftToken]
@@ -514,7 +514,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			break
 		}
 
-		draft := e.model.draft
+		draft := e.model.draft.core()
 		draft.sortIndices = applySamplerFilters(targetLogits, draft.targetProbs, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draft.sortIndices, &draft.filterBuf)
 
 		pTarget := draft.targetProbs[draftToken]
@@ -569,7 +569,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			bonusToken = argmax(targetLogits)
 
 		default:
-			draft := e.model.draft
+			draft := e.model.draft.core()
 			draft.sortIndices = applySamplerFilters(targetLogits, draft.targetProbs, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draft.sortIndices, &draft.filterBuf)
 			bonusToken = sampleFromProbs(draft.targetProbs)
 		}
@@ -656,7 +656,7 @@ func (e *batchEngine) finalizeSpeculativeTokens(s *slot, buf []byte) {
 	rollbackFrom := basePast + llama.Pos(1+accepted)
 	rollbackTo := basePast + llama.Pos(1+nDraft)
 	hybridRestore := e.model.modelInfo.Type == ModelTypeHybrid && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
-	mtpActive := e.model.draft != nil && e.model.draft.mtp && s.mtpHasBatch && !s.mtpDisabledForRequest
+	mtpActive := e.model.draft != nil && e.model.draft.mtp() && s.mtpHasBatch && !s.mtpDisabledForRequest
 
 	switch {
 	case hybridRestore:
@@ -912,10 +912,11 @@ func sampleFromProbs(probs []float32) llama.Token {
 // rollbackDraft removes rejected draft tokens from the draft model's KV cache
 // and updates the slot's draft position to stay in sync with the target.
 func (e *batchEngine) rollbackDraft(ctx context.Context, s *slot, accepted, nDraft int) {
-	draft := e.model.draft
-	if draft == nil {
+	dr := e.model.draft
+	if dr == nil {
 		return
 	}
+	draft := dr.core()
 
 	// MTP: clear the ENTIRE drafted range from draft KV. The post-verify
 	// mirror that runs next in verifySpeculativeTokens re-decodes
@@ -927,7 +928,7 @@ func (e *batchEngine) rollbackDraft(ctx context.Context, s *slot, accepted, nDra
 	//
 	// So for MTP we must remove ALL AR-loop entries first, then let the
 	// mirror write the correct target-derived entries into clean slots.
-	if draft.mtp {
+	if dr.mtp() {
 		draftBasePast := s.draftNPast - llama.Pos(nDraft)
 		if draftBasePast < s.draftNPast {
 			llama.MemorySeqRm(draft.mem, s.seqID, draftBasePast, s.draftNPast)
@@ -999,7 +1000,7 @@ func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {
 		return nil
 	}
 
-	draft := e.model.draft
+	draft := e.model.draft.core()
 	nEmbd := draft.nEmbd
 	totalRows := int(e.batch.NTokens)
 	start := int(s.targetBatchStart)
@@ -1040,7 +1041,7 @@ func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {
 // the next finishSlot clears mtpDisabledForRequest so the next request
 // on this slot can use MTP again.
 func (e *batchEngine) disableMTPForRequestSpec(ctx context.Context, s *slot, reason string, accepted int) {
-	draft := e.model.draft
+	draft := e.model.draft.core()
 
 	llama.MemorySeqRm(draft.mem, s.seqID, -1, -1)
 	s.draftNPast = 0

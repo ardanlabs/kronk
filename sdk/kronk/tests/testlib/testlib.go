@@ -37,6 +37,7 @@ var (
 	MPEmbed         models.Path
 	MPRerank        models.Path
 	MPMTP           models.Path
+	MPDraft         models.Path
 )
 
 // Setup initializes the test environment. Call from each package's TestMain.
@@ -69,6 +70,7 @@ func Setup() {
 	resolveModel(mdls, "Qwen2.5-Omni-3B-Q8_0", &MPAudio)
 	resolveModel(mdls, "Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
 	resolveModel(mdls, "mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL", &MPMTP)
+	resolveModel(mdls, "Qwen3-0.6B-Q8_0", &MPDraft)
 
 	printInfo(mdls)
 
@@ -397,6 +399,29 @@ func CfgMTPChatMultiSlot() model.Config {
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
 		PtrNSeqMax:       new(2),
+	}
+}
+
+// CfgClassicDraftChat returns a single-slot chat config that uses a
+// TRADITIONAL separate-GGUF draft model for speculative decoding: the
+// Qwen3-8B target paired with the vocab-matched Qwen3-0.6B draft. This
+// exercises the classic drafter path (loadDraftModel / generateDraftTokens
+// / the classic rollback + unload-with-ModelFree branches), which is
+// distinct from the MTP path. NSeqMax=1 because the separate draft context
+// is created single-sequence (see loadDraftModel).
+func CfgClassicDraftChat() model.Config {
+	return model.Config{
+		ModelFiles:       MPThinkToolChat.ModelFiles,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+		PtrNSeqMax:       new(1),
+		DraftModel: &model.DraftModelConfig{
+			ModelFiles: MPDraft.ModelFiles,
+			NDraft:     4,
+		},
 	}
 }
 

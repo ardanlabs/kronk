@@ -71,9 +71,9 @@ func mtpNextNLayers(model llama.Model) int {
 //     C buffer the MTP graph can read. (BatchInit with embd=0 only
 //     allocates the token slot, no embd buffer.)
 //
-// On success the returned *draftModel has mtp=true so Unload skips the
-// shared llama_model free.
-func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, nDraft int) (*draftModel, error) {
+// On success the returned *mtpDrafter shares the target's llama_model, so
+// its unload skips the model free.
+func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, nDraft int) (*mtpDrafter, error) {
 
 	// Build context params for the MTP draft context. We inherit thread
 	// layout, KV cache types, and offload behavior from the target so
@@ -154,7 +154,7 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// The Go slices must be pinned (runtime.Pinner) for the lifetime of
 	// the batch — the C side reads through Batch.Embd repeatedly across
 	// decode calls, and Go's GC is allowed to move heap objects. The
-	// pin and the slice are both stored on draftModel so Unload can
+	// pin and the slice are both stored on draftCore so unload can
 	// release them in lock-step with BatchFree.
 	//
 	// batch and prefillBatch remain zero because MTP doesn't use them,
@@ -170,14 +170,15 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// same reason. Skipping the full-vocab allocations avoids ~1-2 MB
 	// of unused memory per drafter on large-vocab models.
 
-	// Construct the *draftModel BEFORE pinning so the runtime.Pinner
+	// Construct the *draftCore BEFORE pinning so the runtime.Pinner
 	// fields stay at their final addresses. runtime.Pinner is invalid
 	// to copy once it holds pinned pointers, so we can't Pin into a
 	// local var and then move the Pinner into the struct literal.
-	dm := &draftModel{
+	// Wrapping the *draftCore pointer in *mtpDrafter below does not move
+	// dm, so the pins stay valid.
+	dm := &draftCore{
 		model:   targetModel,
 		vocab:   llama.ModelGetVocab(targetModel),
-		mtp:     true,
 		nEmbd:   nEmbd,
 		lctx:    lctx,
 		mem:     mem,
@@ -206,7 +207,7 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		dm.mirrorBatchMTP.Embd = (*float32)(unsafe.Pointer(&dm.mirrorEmbdSlice[0]))
 	}
 
-	return dm, nil
+	return &mtpDrafter{c: dm}, nil
 }
 
 // selectAndLoadDraft chooses the appropriate draft source and loads it,
@@ -223,7 +224,7 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 //
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
-func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams) (*draftModel, error) {
+func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams) (drafter, error) {
 	if cfg.DraftModel != nil && cfg.DraftModel.IsSeparate() {
 		d, err := loadDraftModel(ctx, log, cfg, targetModel, targetCtxParams)
 		if err != nil {
@@ -231,8 +232,8 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 		}
 		log(ctx, "draft-model", "status", "loaded",
 			"source", "explicit-separate",
-			"nDraft", d.nDraft, "devices", cfg.DraftModel.Devices,
-			"nCtx", llama.NCtx(d.lctx))
+			"nDraft", d.c.nDraft, "devices", cfg.DraftModel.Devices,
+			"nCtx", llama.NCtx(d.c.lctx))
 		return d, nil
 	}
 
@@ -281,8 +282,8 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 	}
 	log(ctx, "draft-model-mtp", "status", "loaded",
 		"source", source,
-		"nDraft", d.nDraft, "nextn-layers", nLayers,
-		"nEmbd", d.nEmbd,
-		"nCtx", llama.NCtx(d.lctx))
+		"nDraft", d.c.nDraft, "nextn-layers", nLayers,
+		"nEmbd", d.c.nEmbd,
+		"nCtx", llama.NCtx(d.c.lctx))
 	return d, nil
 }
