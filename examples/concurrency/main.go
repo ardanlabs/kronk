@@ -157,6 +157,11 @@ func printModelInfo(krn *kronk.Kronk) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := cfg.PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 }
 
 const prompt = `Analyze the attached trail cam picture and determine if there

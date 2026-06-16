@@ -132,6 +132,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 
 	return krn, nil
 }

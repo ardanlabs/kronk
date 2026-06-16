@@ -256,6 +256,13 @@ You can find more examples in the ArdanLabs AI training repo at [Example13](http
 ## Sample API Program - Question Example
 
 ```go
+// This example shows how to use GBNF grammars to constrain model output.
+// Grammars force the model to only produce tokens that match the specified
+// pattern, guaranteeing structured output.
+//
+// Run the example like this from the root of the project:
+// $ make example-grammar
+
 package main
 
 import (
@@ -271,7 +278,17 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-const modelSource = "unsloth/Qwen3-0.6B-Q8_0"
+var grammarJSONObject = `root ::= object
+value ::= object | array | string | number | "true" | "false" | "null"
+object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? ws "}"
+array ::= "[" ws ( value ("," ws value)* )? ws "]"
+string ::= "\"" ([^"\\] | "\\" ["\\bfnrt/] | "\\u" [0-9a-fA-F]{4})* "\""
+number ::= "-"? ("0" | [1-9][0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+ws ::= [ \t\n\r]*`
+
+// modelSource is the model to download. It may be a HuggingFace URL,
+// a canonical "provider/modelID", or a bare model id.
+var modelSource = "unsloth/Qwen3-0.6B-Q8_0"
 
 func main() {
 	if err := run(); err != nil {
@@ -298,7 +315,27 @@ func run() error {
 		}
 	}()
 
-	if err := question(krn); err != nil {
+	// -------------------------------------------------------------------------
+	// Example 1: Using a grammar preset (GrammarJSONObject)
+
+	fmt.Println("=== Example 1: Grammar Preset (JSON Object) ===")
+	if err := grammarPreset(krn); err != nil {
+		fmt.Println(err)
+	}
+
+	// -------------------------------------------------------------------------
+	// Example 2: Using a JSON Schema to auto-generate grammar
+
+	fmt.Println("\n=== Example 2: JSON Schema ===")
+	if err := jsonSchema(krn); err != nil {
+		fmt.Println(err)
+	}
+
+	// -------------------------------------------------------------------------
+	// Example 3: Custom grammar for constrained choices
+
+	fmt.Println("\n=== Example 3: Custom Grammar (Sentiment Analysis) ===")
+	if err := customGrammar(krn); err != nil {
 		fmt.Println(err)
 	}
 
@@ -320,12 +357,12 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
 	}
+
+	fmt.Println("Downloading model:", modelSource)
 
 	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource)
 	if err != nil {
@@ -344,6 +381,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
+		model.WithAutoTune(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create inference model: %w", err)
@@ -374,28 +412,33 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 
 	return krn, nil
 }
 
-func question(krn *kronk.Kronk) error {
+// grammarPreset demonstrates using a built-in grammar preset to force JSON output.
+func grammarPreset(krn *kronk.Kronk) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	question := "Hello model"
+	prompt := "List 3 programming languages with their year of creation. Respond in JSON format."
 
-	fmt.Println()
-	fmt.Println("QUESTION:", question)
+	fmt.Println("PROMPT:", prompt)
 	fmt.Println()
 
 	d := model.D{
 		"messages": model.DocumentArray(
-			model.TextMessage(model.RoleUser, question),
+			model.TextMessage(model.RoleUser, prompt),
 		),
-		"temperature": 0.7,
-		"top_p":       0.9,
-		"top_k":       40,
-		"max_tokens":  2048,
+		"grammar":         grammarJSONObject,
+		"enable_thinking": false, // Grammar requires output to match from first token
+		"temperature":     0.7,
+		"max_tokens":      512,
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
@@ -403,9 +446,7 @@ func question(krn *kronk.Kronk) error {
 		return fmt.Errorf("chat streaming: %w", err)
 	}
 
-	// -------------------------------------------------------------------------
-
-	var reasoning bool
+	fmt.Print("RESPONSE: ")
 
 	for resp := range ch {
 		switch resp.Choices[0].FinishReason() {
@@ -413,22 +454,131 @@ func question(krn *kronk.Kronk) error {
 			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
+			fmt.Println()
 			return nil
 
 		default:
-			if resp.Choices[0].Delta.Reasoning != "" {
-				reasoning = true
-				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choices[0].Delta.Reasoning)
-				continue
-			}
+			fmt.Print(resp.Choices[0].Delta.Content)
+		}
+	}
 
-			if reasoning {
-				reasoning = false
-				fmt.Println()
-				continue
-			}
+	return nil
+}
 
-			fmt.Printf("%s", resp.Choices[0].Delta.Content)
+// jsonSchema demonstrates using a JSON Schema to auto-generate a grammar.
+// This gives you more control over the exact structure of the output.
+func jsonSchema(krn *kronk.Kronk) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	prompt := "Describe the Go programming language."
+
+	fmt.Println("PROMPT:", prompt)
+	fmt.Println()
+
+	// Define the expected output structure using JSON Schema.
+	schema := model.D{
+		"type": "object",
+		"properties": model.D{
+			"name": model.D{
+				"type": "string",
+			},
+			"year": model.D{
+				"type": "integer",
+			},
+			"paradigm": model.D{
+				"type": "string",
+				"enum": []string{"procedural", "object-oriented", "functional", "concurrent"},
+			},
+			"compiled": model.D{
+				"type": "boolean",
+			},
+		},
+		"required": []string{"name", "year", "paradigm", "compiled"},
+	}
+
+	d := model.D{
+		"messages": model.DocumentArray(
+			model.TextMessage(model.RoleUser, prompt),
+		),
+		"json_schema":     schema,
+		"enable_thinking": false, // Grammar requires output to match from first token
+		"temperature":     0.7,
+		"max_tokens":      256,
+	}
+
+	ch, err := krn.ChatStreaming(ctx, d)
+	if err != nil {
+		return fmt.Errorf("chat streaming: %w", err)
+	}
+
+	fmt.Print("RESPONSE: ")
+
+	for resp := range ch {
+		switch resp.Choices[0].FinishReason() {
+		case model.FinishReasonError:
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
+
+		case model.FinishReasonStop:
+			fmt.Println()
+			return nil
+
+		default:
+			fmt.Print(resp.Choices[0].Delta.Content)
+		}
+	}
+
+	return nil
+}
+
+// customGrammar demonstrates writing a custom GBNF grammar to constrain
+// output to specific choices. This is useful for classification tasks.
+func customGrammar(krn *kronk.Kronk) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Custom grammar that only allows specific sentiment values.
+	// The model MUST output one of these exact strings.
+	sentimentGrammar := `root ::= sentiment
+sentiment ::= "positive" | "negative" | "neutral"`
+
+	prompt := `Analyze the sentiment of this text and respond with exactly one word.
+
+Text: "I absolutely love this product! It exceeded all my expectations and I would recommend it to everyone."
+
+Sentiment:`
+
+	fmt.Println("PROMPT:", prompt)
+	fmt.Println()
+
+	d := model.D{
+		"messages": model.DocumentArray(
+			model.TextMessage(model.RoleUser, prompt),
+		),
+		"grammar":         sentimentGrammar,
+		"enable_thinking": false, // Grammar requires output to match from first token
+		"temperature":     0.0,
+		"max_tokens":      16,
+	}
+
+	ch, err := krn.ChatStreaming(ctx, d)
+	if err != nil {
+		return fmt.Errorf("chat streaming: %w", err)
+	}
+
+	fmt.Print("RESPONSE: ")
+
+	for resp := range ch {
+		switch resp.Choices[0].FinishReason() {
+		case model.FinishReasonError:
+			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
+
+		case model.FinishReasonStop:
+			fmt.Println()
+			return nil
+
+		default:
+			fmt.Print(resp.Choices[0].Delta.Content)
 		}
 	}
 
@@ -440,27 +590,30 @@ This example can produce the following output:
 
 ```shell
 $ make example-question
-go run examples/question/main.go
-download-libraries: check libraries version information: arch[arm64] os[darwin] processor[cpu]
-download-libraries: check llama.cpp installation: arch[arm64] os[darwin] processor[cpu] latest[b8189] current[b8189]
-download-libraries: already installed: latest[b8189] current[b8189]
-download-model: model-url[https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf] proj-url[] model-id[Qwen3-0.6B-Q8_0]:
-download-model: waiting to check model status...:
-download-model: model already exists:
+cd examples && go run ./question/main.go
 loading model...
 - system info:
-	ACCELERATE:on, REPACK:on, MTL:EMBED_LIBRARY, CPU:NEON, ARM_FMA:on, FP16_VA:on, DOTPROD:on, LLAMAFILE:on,
-- contextWindow: 8196
-- k/v          : q8_0/q8_0
-- nBatch       : 2048
-- nuBatch      : 512
-- modelType    : dense
-- isGPT        : false
-- template     : tokenizer.chat_template
+	REPACK:on, MTL:EMBED_LIBRARY, CPU:NEON, ARM_FMA:on, DOTPROD:on, LLAMAFILE:on, ACCELERATE:on,
+- contextWindow  : 32768
+- k/v            : f16/f16
+- flashAttention : auto
+- nBatch         : 2048
+- nuBatch        : 512
+- modelType      : dense
+- isGPT          : false
+- template       : tokenizer.chat_template
+- grammar        : false
+- nSeqMax        : 1
+- vramTotal      : 4493 MiB
+- slotMemory     : 3584 MiB
+- modelSize      : 633 MB
+- imc            : true
+- nGPULayers     : all
+- splitMode      : layer
 
 QUESTION: Hello model
 
-Okay, the user just said "Hello model." I need to respond appropriately. Since I'm an AI assistant, my initial response is friendly and helpful. Let me start by acknowledging their greeting. I should make sure to use a friendly tone and offer assistance. Maybe add something about being here to help with anything they need. Keep it simple and conversational. Let me check if there's any additional context needed, but since they just said hello, a basic reply should suffice.
+Okay, the user just said "Hello model". I need to respond appropriately. Since they didn't ask a question, I should acknowledge their message and offer help. Let me make sure the response is friendly and open-ended. I should check if there's anything specific they need, but keep it general. Maybe mention availability and willingness to assist further. Alright, that should work.
 
 ! How can I assist you today? 😊
 Unloading Kronk

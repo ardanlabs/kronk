@@ -473,6 +473,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 
 	return krn, nil
 }
@@ -609,6 +614,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		fmt.Println("- nGPULayers     :", *n)
 	} else {
 		fmt.Println("- nGPULayers     : all")
+	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
 	}
 
 	return krn, nil
@@ -1547,6 +1557,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 
 	return krn, nil
 }
@@ -1927,6 +1942,11 @@ func printModelInfo(krn *kronk.Kronk) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := cfg.PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 }
 
 const prompt = \`Analyze the attached trail cam picture and determine if there
@@ -2181,6 +2201,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 
 	return krn, nil
 }
@@ -2368,6 +2393,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		fmt.Println("- nGPULayers     :", *n)
 	} else {
 		fmt.Println("- nGPULayers     : all")
+	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
 	}
 
 	return krn, nil
@@ -2940,6 +2970,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 
 	return krn, nil
 }
@@ -3497,6 +3532,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	} else {
 		fmt.Println("- nGPULayers     : all")
 	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
+	}
 
 	return krn, nil
 }
@@ -3677,6 +3717,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		fmt.Println("- nGPULayers     :", *n)
 	} else {
 		fmt.Println("- nGPULayers     : all")
+	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
 	}
 
 	return krn, nil
@@ -4028,6 +4073,11 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 		fmt.Println("- nGPULayers     :", *n)
 	} else {
 		fmt.Println("- nGPULayers     : all")
+	}
+	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
+		fmt.Println("- splitMode      :", sm)
+	} else {
+		fmt.Println("- splitMode      : auto")
 	}
 
 	return krn, nil
