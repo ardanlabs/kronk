@@ -446,7 +446,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="const-version">
               <h4>Version</h4>
               <pre className="code-block">
-                <code>{`const Version = "1.27.9"`}</code>
+                <code>{`const Version = "1.28.0"`}</code>
               </pre>
               <p className="doc-description">Version contains the current version of the kronk package. Bump this in the same commit that prepares a `v&lt;X.Y.Z&gt;` release tag — CI guards the release pipeline (.github/workflows/release.yaml and docker.yml, via .github/scripts/check-version.sh) and refuses to publish a tag whose value does not match this constant.</p>
             </div>
