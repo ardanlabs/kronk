@@ -1570,14 +1570,6 @@ func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
 
 	var systemPrompt = \`
-		You are a helpful AI assistant. You are designed to help users answer
-		questions, create content, and provide information in a helpful and
-		accurate manner. Always follow the user's instructions carefully and
-		respond with clear, concise, and well-structured answers. You are a
-		helpful AI assistant. You are designed to help users answer questions,
-		create content, and provide information in a helpful and accurate manner.
-		Always follow the user's instructions carefully and respond with clear,
-		concise, and well-structured answers. You are a helpful AI assistant.
 		You are designed to help users answer questions, create content, and
 		provide information in a helpful and accurate manner. Always follow the
 		user's instructions carefully and respond with clear, concise, and
@@ -1587,17 +1579,25 @@ func chat(krn *kronk.Kronk) error {
 		model.TextMessage(model.RoleSystem, systemPrompt),
 	)
 
+	// needUserInput controls whether we prompt the user for the next message.
+	// After the model requests a tool call, we append the tool result and loop
+	// back to the model (without asking the user) so it can respond using that
+	// result.
+	needUserInput := true
+
 	for {
-		var err error
-		messages, err = userInput(messages)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
+		if needUserInput {
+			var err error
+			messages, err = userInput(messages)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("run:user input: %w", err)
 			}
-			return fmt.Errorf("run:user input: %w", err)
 		}
 
-		messages, err = func() ([]model.D, error) {
+		toolCall, err := func() (bool, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 
@@ -1609,20 +1609,25 @@ func chat(krn *kronk.Kronk) error {
 
 			ch, err := performChat(ctx, krn, d)
 			if err != nil {
-				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
+				return false, fmt.Errorf("run: unable to perform chat: %w", err)
 			}
 
-			messages, err = modelResponse(krn, messages, ch)
+			var toolCall bool
+			messages, toolCall, err = modelResponse(krn, messages, ch)
 			if err != nil {
-				return nil, fmt.Errorf("run: model response: %w", err)
+				return false, fmt.Errorf("run: model response: %w", err)
 			}
 
-			return messages, nil
+			return toolCall, nil
 		}()
 
 		if err != nil {
 			return fmt.Errorf("run: unable to perform chat: %w", err)
 		}
+
+		// If the model requested a tool, we already appended the tool result;
+		// loop back to the model instead of prompting the user.
+		needUserInput = !toolCall
 	}
 }
 
@@ -1678,10 +1683,11 @@ func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (<-chan model
 	return ch, nil
 }
 
-func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatResponse) ([]model.D, error) {
+func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatResponse) ([]model.D, bool, error) {
 	fmt.Print("\\nMODEL> ")
 
 	var reasoning bool
+	var toolCall bool
 	var lr model.ChatResponse
 	var content strings.Builder
 
@@ -1695,12 +1701,13 @@ loop:
 
 		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return messages, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
+			return messages, false, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
 			break loop
 
 		case model.FinishReasonTool:
+			toolCall = true
 			fmt.Println()
 			if krn.ModelInfo().IsGPTModel {
 				fmt.Println()
@@ -1779,7 +1786,7 @@ loop:
 	fmt.Printf("\\n\\n\\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Output: %d  Window: %d (%.0f%% of %.0fK) TPS: %.2f\\u001b[0m\\n",
 		lr.Usage.PromptTokens, lr.Usage.ReasoningTokens, lr.Usage.CompletionTokens, lr.Usage.OutputTokens, contextTokens, percentage, of, lr.Usage.TokensPerSecond)
 
-	return messages, nil
+	return messages, toolCall, nil
 }
 `;
 
@@ -3730,17 +3737,25 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
 
+	// needUserInput controls whether we prompt the user for the next message.
+	// After the model requests a tool call, we append the tool result and loop
+	// back to the model (without asking the user) so it can respond using that
+	// result.
+	needUserInput := true
+
 	for {
-		var err error
-		messages, err = userInput(messages)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
+		if needUserInput {
+			var err error
+			messages, err = userInput(messages)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("run:user input: %w", err)
 			}
-			return fmt.Errorf("run:user input: %w", err)
 		}
 
-		messages, err = func() ([]model.D, error) {
+		toolCall, err := func() (bool, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 
@@ -3755,20 +3770,25 @@ func chat(krn *kronk.Kronk) error {
 
 			ch, err := performChat(ctx, krn, d)
 			if err != nil {
-				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
+				return false, fmt.Errorf("run: unable to perform chat: %w", err)
 			}
 
-			messages, err = modelResponse(krn, messages, ch)
+			var toolCall bool
+			messages, toolCall, err = modelResponse(krn, messages, ch)
 			if err != nil {
-				return nil, fmt.Errorf("run: model response: %w", err)
+				return false, fmt.Errorf("run: model response: %w", err)
 			}
 
-			return messages, nil
+			return toolCall, nil
 		}()
 
 		if err != nil {
 			return fmt.Errorf("run: unable to perform chat: %w", err)
 		}
+
+		// If the model requested a tool, we already appended the tool result;
+		// loop back to the model instead of prompting the user.
+		needUserInput = !toolCall
 	}
 }
 
@@ -3824,7 +3844,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (<-chan kronk
 	return ch, nil
 }
 
-func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.ResponseStreamEvent) ([]model.D, error) {
+func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.ResponseStreamEvent) ([]model.D, bool, error) {
 	fmt.Print("\\nMODEL> ")
 
 	var fullText string
@@ -3934,7 +3954,7 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.Respons
 		)
 	}
 
-	return messages, nil
+	return messages, len(pendingCalls) > 0, nil
 }
 `;
 
