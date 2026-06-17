@@ -18,8 +18,72 @@ import type { EfficiencyResponse } from '../types';
 import CodeBlock from './CodeBlock';
 
 type Tab = 'manual' | 'history';
-type SortBy = 'date' | 'model' | 'prompt';
+type SortKey = 'date' | 'model' | 'prompt' | 'out_tps' | 'ttft' | 'wall' | 'tokens';
+type SortDir = 'asc' | 'desc';
 type CompareLayout = 'columns' | 'stacked';
+
+// Default sort direction per column: rates/dates start high→low, names and
+// time-based metrics (where smaller is better) start low→high.
+const SORT_DEFAULT_DIR: Record<SortKey, SortDir> = {
+  date: 'desc',
+  model: 'asc',
+  prompt: 'asc',
+  out_tps: 'desc',
+  ttft: 'asc',
+  wall: 'asc',
+  tokens: 'desc',
+};
+
+// compareEntries orders two runs by the given column.
+function compareEntries(
+  a: EfficiencyHistoryEntry,
+  b: EfficiencyHistoryEntry,
+  key: SortKey,
+): number {
+  switch (key) {
+    case 'model':
+      return a.model.localeCompare(b.model);
+    case 'prompt':
+      return a.prompt.localeCompare(b.prompt);
+    case 'out_tps':
+      return a.result.usage.out_tps - b.result.usage.out_tps;
+    case 'ttft':
+      return a.result.usage.ttft_ms - b.result.usage.ttft_ms;
+    case 'wall':
+      return a.result.usage.wallclock_ms - b.result.usage.wallclock_ms;
+    case 'tokens':
+      return a.result.usage.completion_tokens - b.result.usage.completion_tokens;
+    default:
+      return a.savedAt - b.savedAt;
+  }
+}
+
+// ManualRow is one completed Manual run shown in the summary table.
+interface ManualRow {
+  model: string;
+  result: EfficiencyResponse;
+}
+
+// compareManual orders two completed Manual runs by the given column.
+function compareManual(a: ManualRow, b: ManualRow, key: SortKey): number {
+  switch (key) {
+    case 'model':
+      return a.model.localeCompare(b.model);
+    case 'ttft':
+      return a.result.usage.ttft_ms - b.result.usage.ttft_ms;
+    case 'wall':
+      return a.result.usage.wallclock_ms - b.result.usage.wallclock_ms;
+    case 'tokens':
+      return a.result.usage.completion_tokens - b.result.usage.completion_tokens;
+    case 'out_tps':
+    default:
+      return a.result.usage.out_tps - b.result.usage.out_tps;
+  }
+}
+
+// Max saved runs that can be compared at once. Comparison is only readable with
+// a handful of cards; this caps it (read-only, so it's looser than MAX_MODELS).
+const MAX_COMPARE = 4;
 
 // RankBy selects which axis decides the "best" model in a comparison. Wall clock
 // alone is misleading because it scales with how many tokens a model happened to
@@ -126,6 +190,34 @@ function ManualTab() {
   const chatModels = (models?.data ?? []).filter((m) => isChatModel(m.id));
   const selected = Array.from(selectedModels);
 
+  // Sortable summary of completed runs for quick scanning.
+  const [sortKey, setSortKey] = useState<SortKey>('out_tps');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const completed: ManualRow[] = selected
+    .map((model) => ({ model, state: runs.get(model) }))
+    .filter((r) => r.state?.status === 'done' && r.state.result)
+    .map((r) => ({ model: r.model, result: r.state!.result! }));
+
+  const sortedSummary = [...completed].sort((a, b) => {
+    const cmp = compareManual(a, b, sortKey);
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortKey(key);
+      setSortDir(SORT_DEFAULT_DIR[key]);
+    }
+  };
+
+  const sortIndicator = (key: SortKey) => {
+    const active = key === sortKey;
+    const symbol = active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
+    return <span className={`efficiency-sort-ind${active ? ' active' : ''}`}>{symbol}</span>;
+  };
+
   return (
     <>
       <div className="accuracy-label-row">
@@ -161,9 +253,6 @@ function ManualTab() {
         <div className="efficiency-section-head">
           <label>Choose Prompt:</label>
           <div className="efficiency-prompt-controls">
-            <select value="custom" disabled>
-              <option value="custom">Custom</option>
-            </select>
             <button className="btn btn-secondary btn-sm" onClick={clear} disabled={isRunning}>
               clear
             </button>
@@ -201,6 +290,63 @@ function ManualTab() {
           )}
         </div>
       </div>
+
+      {sortedSummary.length > 0 && (
+        <div className="form-group">
+          <label>Summary</label>
+          <div className="efficiency-history-list">
+            <table className="efficiency-history-table">
+              <thead>
+                <tr>
+                  <th onClick={() => handleSort('model')}>
+                    Model{sortIndicator('model')}
+                  </th>
+                  <th
+                    className="efficiency-th-num"
+                    onClick={() => handleSort('out_tps')}
+                  >
+                    Output tps{sortIndicator('out_tps')}
+                  </th>
+                  <th
+                    className="efficiency-th-num"
+                    onClick={() => handleSort('ttft')}
+                  >
+                    TTFT{sortIndicator('ttft')}
+                  </th>
+                  <th
+                    className="efficiency-th-num"
+                    onClick={() => handleSort('wall')}
+                  >
+                    Wall{sortIndicator('wall')}
+                  </th>
+                  <th
+                    className="efficiency-th-num"
+                    onClick={() => handleSort('tokens')}
+                  >
+                    In/Out{sortIndicator('tokens')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedSummary.map(({ model, result }) => {
+                  const u = result.usage;
+                  return (
+                    <tr key={model}>
+                      <td className="efficiency-cell-model" title={model}>{model}</td>
+                      <td className="efficiency-th-num">{fmtTPS(u.out_tps)}</td>
+                      <td className="efficiency-th-num">{u.ttft_ms.toFixed(0)} ms</td>
+                      <td className="efficiency-th-num">{fmtSeconds(u.wallclock_ms)}</td>
+                      <td className="efficiency-th-num">
+                        {u.prompt_tokens}/{u.completion_tokens}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {selected.length > 0 && (
         <div className="form-group">
@@ -244,11 +390,18 @@ function ManualResultCard({
   const inFlight = status === 'loading' || status === 'running';
   const [saved, setSaved] = useState(false);
 
+  // Reset the saved flag whenever a new result arrives so a fresh run can be
+  // saved again; otherwise it stays "saved ✓" permanently.
+  useEffect(() => {
+    setSaved(false);
+  }, [state?.result]);
+
   const handleSave = () => {
-    if (!state?.result) return;
-    saveRun(model, prompt, state.result);
+    if (!state?.result || saved) return;
+    // Use the prompt the result was actually measured with, not the live
+    // textarea, which may have been edited since the run.
+    saveRun(model, state.result.prompt, state.result);
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
   };
 
   return (
@@ -256,7 +409,11 @@ function ManualResultCard({
       <div className="accuracy-compare-card-head">
         <span className="accuracy-compare-model" title={model}>{model}</span>
         {state?.result && status === 'done' && (
-          <button className="btn btn-secondary btn-sm efficiency-run-btn" onClick={handleSave}>
+          <button
+            className="btn btn-secondary btn-sm efficiency-run-btn"
+            onClick={handleSave}
+            disabled={saved}
+          >
             {saved ? 'saved ✓' : 'save to history'}
           </button>
         )}
@@ -274,7 +431,7 @@ function ManualResultCard({
             onClick={onRun}
             disabled={disabled || !prompt.trim()}
           >
-            run again
+            {state?.result ? 'run again' : 'run'}
           </button>
         )}
       </div>
@@ -298,7 +455,8 @@ function ManualResultCard({
 function HistoryTab() {
   const [entries, setEntries] = useState<EfficiencyHistoryEntry[]>(() => loadHistory());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState<SortBy>('date');
+  const [sortKey, setSortKey] = useState<SortKey>('date');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [comparing, setComparing] = useState<EfficiencyHistoryEntry[] | null>(null);
   const [layout, setLayout] = useState<CompareLayout>('columns');
   const [rankBy, setRankBy] = useState<RankBy>('out_tps');
@@ -317,16 +475,38 @@ function HistoryTab() {
   }, [entries]);
 
   const sorted = [...entries].sort((a, b) => {
-    switch (sortBy) {
-      case 'model':
-        return a.model.localeCompare(b.model);
-      case 'prompt':
-        return a.prompt.localeCompare(b.prompt);
-      default:
-        return b.savedAt - a.savedAt;
-    }
+    const cmp = compareEntries(a, b, sortKey);
+    return sortDir === 'asc' ? cmp : -cmp;
   });
 
+  // handleSort toggles direction when re-clicking a column, else switches to the
+  // new column with its sensible default direction.
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(SORT_DEFAULT_DIR[key]);
+    }
+  };
+
+  // A faint ⇅ on every sortable header signals it's clickable; the active column
+  // shows a solid ▲/▼ for the current direction.
+  const sortIndicator = (key: SortKey) => {
+    const active = key === sortKey;
+    const symbol = active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
+    return <span className={`efficiency-sort-ind${active ? ' active' : ''}`}>{symbol}</span>;
+  };
+
+  // Select-all toggles every visible run (handy for bulk delete; compare is
+  // still gated to MAX_COMPARE on its own button).
+  const allSelected = sorted.length > 0 && sorted.every((e) => selectedIds.has(e.id));
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(sorted.map((e) => e.id)));
+  };
+
+  // Selection is uncapped so any number of runs can be deleted at once. The
+  // MAX_COMPARE limit is enforced only on the Compare action below.
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -355,20 +535,13 @@ function HistoryTab() {
       <div className="efficiency-history-toolbar">
         <label>Saved Runs</label>
         <div className="efficiency-history-controls">
-          <label>
-            Sort by:{' '}
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}>
-              <option value="date">Date</option>
-              <option value="model">Model</option>
-              <option value="prompt">Prompt</option>
-            </select>
-          </label>
           <button
             className="btn btn-primary btn-sm"
             onClick={handleCompare}
-            disabled={selectedIds.size < 2}
+            disabled={selectedIds.size < 2 || selectedIds.size > MAX_COMPARE}
+            title={`Select 2–${MAX_COMPARE} runs to compare`}
           >
-            Compare Selected ({selectedIds.size})
+            Compare Selected ({selectedIds.size}/{MAX_COMPARE})
           </button>
           <button
             className="btn btn-danger btn-sm"
@@ -386,31 +559,93 @@ function HistoryTab() {
         </div>
       ) : (
         <div className="efficiency-history-list">
-          {sorted.map((e) => (
-            <label key={e.id} className="playground-history-item">
-              <input
-                type="checkbox"
-                checked={selectedIds.has(e.id)}
-                onChange={() => toggleSelect(e.id)}
-              />
-              <div className="playground-history-item-content">
-                <div className="playground-history-item-model">{e.model}</div>
-                <div className="efficiency-history-prompt">"{e.prompt}"</div>
-                <div className="efficiency-history-stats">
-                  {fmtSeconds(e.result.usage.wallclock_ms)} wall · {e.result.usage.prompt_tokens} in ·{' '}
-                  {e.result.usage.completion_tokens} out · {fmtTPS(e.result.usage.out_tps)} tps
-                  <span className="efficiency-history-date">
-                    {new Date(e.savedAt).toLocaleString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-              </div>
-            </label>
-          ))}
+          <table className="efficiency-history-table">
+            <thead>
+              <tr>
+                <th className="efficiency-th-check">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    title="Select all"
+                  />
+                </th>
+                <th onClick={() => handleSort('model')}>
+                  Model{sortIndicator('model')}
+                </th>
+                <th onClick={() => handleSort('prompt')}>
+                  Prompt{sortIndicator('prompt')}
+                </th>
+                <th
+                  className="efficiency-th-num"
+                  onClick={() => handleSort('out_tps')}
+                >
+                  Output tps{sortIndicator('out_tps')}
+                </th>
+                <th
+                  className="efficiency-th-num"
+                  onClick={() => handleSort('ttft')}
+                >
+                  TTFT{sortIndicator('ttft')}
+                </th>
+                <th
+                  className="efficiency-th-num"
+                  onClick={() => handleSort('wall')}
+                >
+                  Wall{sortIndicator('wall')}
+                </th>
+                <th
+                  className="efficiency-th-num"
+                  onClick={() => handleSort('tokens')}
+                >
+                  In/Out{sortIndicator('tokens')}
+                </th>
+                <th
+                  className="efficiency-th-num"
+                  onClick={() => handleSort('date')}
+                >
+                  Saved{sortIndicator('date')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((e) => {
+                const u = e.result.usage;
+                return (
+                  <tr
+                    key={e.id}
+                    className={selectedIds.has(e.id) ? 'efficiency-row-selected' : undefined}
+                    onClick={() => toggleSelect(e.id)}
+                  >
+                    <td className="efficiency-th-check">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(e.id)}
+                        onChange={() => toggleSelect(e.id)}
+                        onClick={(ev) => ev.stopPropagation()}
+                      />
+                    </td>
+                    <td className="efficiency-cell-model" title={e.model}>{e.model}</td>
+                    <td className="efficiency-cell-prompt" title={e.prompt}>{e.prompt}</td>
+                    <td className="efficiency-th-num">{fmtTPS(u.out_tps)}</td>
+                    <td className="efficiency-th-num">{u.ttft_ms.toFixed(0)} ms</td>
+                    <td className="efficiency-th-num">{fmtSeconds(u.wallclock_ms)}</td>
+                    <td className="efficiency-th-num">
+                      {u.prompt_tokens}/{u.completion_tokens}
+                    </td>
+                    <td className="efficiency-th-num efficiency-cell-date">
+                      {new Date(e.savedAt).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -438,6 +673,15 @@ function HistoryTab() {
                 onClick={() => setLayout('stacked')}
               >
                 stacked
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setComparing(null);
+                  setSelectedIds(new Set());
+                }}
+              >
+                Clear
               </button>
             </div>
           </div>
@@ -480,9 +724,9 @@ export default function Efficiency() {
       <div className="page-header">
         <h2>Efficiency</h2>
         <p>
-          Compare how fast models run the same prompt — prefill/output tokens-per-second,
-          time-to-first-token, and wall clock. Model load and a warm-up pass are excluded so
-          the numbers reflect steady-state throughput.
+          Measure how fast a model runs a prompt — tokens-per-second, time-to-first-token, and
+          wall clock (model load and warm-up excluded). Save runs to History to compare across
+          models or prompts.
         </p>
       </div>
 

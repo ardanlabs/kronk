@@ -6196,7 +6196,6 @@ button.autotest-detail-log-header:focus-visible {
 
 /* Keep the small selects/inputs compact (matching Accuracy's "Sort by")
    instead of stretching to full width via the global .form-group rule. */
-.efficiency-prompt-controls select,
 .efficiency-rankby select,
 .efficiency-history-controls select,
 .efficiency-maxtokens input {
@@ -6298,12 +6297,86 @@ button.autotest-detail-log-header:focus-visible {
 }
 
 .efficiency-history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
   max-height: 360px;
   overflow-y: auto;
-  padding-right: 0.25rem;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 6px;
+}
+
+.efficiency-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.efficiency-history-table th,
+.efficiency-history-table td {
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-gray-200);
+  white-space: nowrap;
+}
+
+.efficiency-history-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-white);
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  color: var(--color-gray-800);
+}
+
+.efficiency-sort-ind {
+  margin-left: 0.3rem;
+  font-size: 0.7em;
+  opacity: 0.5;
+}
+
+.efficiency-sort-ind.active {
+  opacity: 1;
+  color: var(--color-blue);
+}
+
+.efficiency-history-table tbody tr {
+  cursor: pointer;
+}
+
+.efficiency-history-table tbody tr:hover {
+  background: var(--color-gray-50);
+}
+
+.efficiency-history-table tbody tr.efficiency-row-selected {
+  background: var(--color-active-item-bg);
+}
+
+.efficiency-th-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.efficiency-th-check {
+  width: 1.5rem;
+  text-align: center;
+}
+
+/* Long prompts/model names truncate so rows stay scannable. */
+.efficiency-cell-prompt {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.efficiency-cell-model {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.efficiency-cell-date {
+  color: var(--color-muted);
 }
 
 .efficiency-history-prompt {
@@ -6311,14 +6384,4 @@ button.autotest-detail-log-header:focus-visible {
   color: var(--color-gray-700);
   margin: 0.15rem 0;
   font-style: italic;
-}
-
-.efficiency-history-stats {
-  font-size: 0.8rem;
-  color: var(--color-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.efficiency-history-date {
-  margin-left: 0.75rem;
 }

@@ -71,7 +71,7 @@ interface EfficiencyRunnerValue {
 const EfficiencyRunnerContext = createContext<EfficiencyRunnerValue | null>(null);
 
 export function EfficiencyRunnerProvider({ children }: { children: ReactNode }) {
-  const { models, loadModels } = useModelList();
+  const { loadModels } = useModelList();
 
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [prompt, setPrompt] = useState('');
@@ -79,9 +79,12 @@ export function EfficiencyRunnerProvider({ children }: { children: ReactNode }) 
   const [runs, setRuns] = useState<Map<string, RunState>>(new Map());
   const [completedRun, setCompletedRun] = useState<EfficiencyCompletedRun | null>(null);
 
-  // Only one run may be active at a time. A synchronous ref lock guards against
-  // overlapping runs more reliably than async React state.
+  // Only one run may be active at a time. The ref is the synchronous lock
+  // (checked/set in the same tick to block overlapping runs); runningModel is
+  // the state mirror that the UI reads, so the sidebar indicator can't drift
+  // from the ref. This matches the Accuracy/AutoTest runner contexts.
   const runningRef = useRef<string | null>(null);
+  const [runningModel, setRunningModel] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const stopAllRef = useRef(false);
 
@@ -89,23 +92,10 @@ export function EfficiencyRunnerProvider({ children }: { children: ReactNode }) 
   // next run shows "running" rather than "loading".
   const warmedRef = useRef<Set<string>>(new Set());
 
-  // Default-select runs only once, so clearing the selection doesn't snap back.
-  const didDefaultSelectRef = useRef(false);
-
   // Load models on mount.
   useEffect(() => {
     loadModels();
   }, [loadModels]);
-
-  // Default-select the first chat-capable model the first time models arrive.
-  useEffect(() => {
-    if (didDefaultSelectRef.current) return;
-    const chat = models?.data?.filter((m) => isChatModel(m.id)) ?? [];
-    if (chat.length > 0) {
-      didDefaultSelectRef.current = true;
-      setSelectedModels(new Set([chat[0].id]));
-    }
-  }, [models]);
 
   // Auto-dismiss the completion notice.
   useEffect(() => {
@@ -163,6 +153,7 @@ export function EfficiencyRunnerProvider({ children }: { children: ReactNode }) 
     if (!prompt.trim()) return false;
 
     runningRef.current = id;
+    setRunningModel(id);
     const cold = !warmedRef.current.has(id);
     setRunState(id, { status: cold ? 'loading' : 'running' });
 
@@ -184,6 +175,7 @@ export function EfficiencyRunnerProvider({ children }: { children: ReactNode }) 
     } finally {
       abortRef.current = null;
       runningRef.current = null;
+      setRunningModel(null);
     }
   }
 
@@ -226,8 +218,8 @@ export function EfficiencyRunnerProvider({ children }: { children: ReactNode }) 
     abortRef.current?.abort();
   }
 
-  // Sidebar indicator summary.
-  const runningModel = runningRef.current;
+  // Sidebar indicator summary, derived from state (not the ref) so it stays in
+  // sync with what React renders.
   const isRunning = runningModel !== null;
   let activeRun: EfficiencyActiveRun | null = null;
   if (runningModel) {
