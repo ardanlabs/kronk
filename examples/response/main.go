@@ -144,17 +144,25 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 func chat(krn *kronk.Kronk) error {
 	messages := model.DocumentArray()
 
+	// needUserInput controls whether we prompt the user for the next message.
+	// After the model requests a tool call, we append the tool result and loop
+	// back to the model (without asking the user) so it can respond using that
+	// result.
+	needUserInput := true
+
 	for {
-		var err error
-		messages, err = userInput(messages)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
+		if needUserInput {
+			var err error
+			messages, err = userInput(messages)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("run:user input: %w", err)
 			}
-			return fmt.Errorf("run:user input: %w", err)
 		}
 
-		messages, err = func() ([]model.D, error) {
+		toolCall, err := func() (bool, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 
@@ -169,20 +177,25 @@ func chat(krn *kronk.Kronk) error {
 
 			ch, err := performChat(ctx, krn, d)
 			if err != nil {
-				return nil, fmt.Errorf("run: unable to perform chat: %w", err)
+				return false, fmt.Errorf("run: unable to perform chat: %w", err)
 			}
 
-			messages, err = modelResponse(krn, messages, ch)
+			var toolCall bool
+			messages, toolCall, err = modelResponse(krn, messages, ch)
 			if err != nil {
-				return nil, fmt.Errorf("run: model response: %w", err)
+				return false, fmt.Errorf("run: model response: %w", err)
 			}
 
-			return messages, nil
+			return toolCall, nil
 		}()
 
 		if err != nil {
 			return fmt.Errorf("run: unable to perform chat: %w", err)
 		}
+
+		// If the model requested a tool, we already appended the tool result;
+		// loop back to the model instead of prompting the user.
+		needUserInput = !toolCall
 	}
 }
 
@@ -238,7 +251,7 @@ func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (<-chan kronk
 	return ch, nil
 }
 
-func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.ResponseStreamEvent) ([]model.D, error) {
+func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.ResponseStreamEvent) ([]model.D, bool, error) {
 	fmt.Print("\nMODEL> ")
 
 	var fullText string
@@ -348,5 +361,5 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.Respons
 		)
 	}
 
-	return messages, nil
+	return messages, len(pendingCalls) > 0, nil
 }
