@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -540,6 +541,108 @@ func TestStream_ResetKeepsPromptTokens(t *testing.T) {
 	}
 	if got := calls[before]; !tokensEqual(got, []whisper.Token{4, 5, 6}) {
 		t.Errorf("prompt on first decode after keep-reset: got %v, want [4 5 6]", got)
+	}
+}
+
+func TestStream_PromptCarryoverDisabled(t *testing.T) {
+	// WithPromptCarryover(false) flips DisablePromptCarryover on; assert the
+	// option wiring before exercising the worker.
+	var cfg StreamConfig
+	WithPromptCarryover(false)(&cfg)
+	if !cfg.DisablePromptCarryover {
+		t.Fatal("WithPromptCarryover(false) did not set DisablePromptCarryover")
+	}
+	WithPromptCarryover(true)(&cfg)
+	if cfg.DisablePromptCarryover {
+		t.Fatal("WithPromptCarryover(true) did not clear DisablePromptCarryover")
+	}
+
+	fd := &fakeDecoder{text: "x", harvest: []whisper.Token{7, 8, 9}}
+	cfg = StreamConfig{
+		PartialEveryMs:         -1,
+		CommitEveryMs:          200,
+		MaxUtteranceMs:         100000,
+		DisableVAD:             true,
+		DisablePromptCarryover: true,
+	}.withDefaults()
+
+	s := newStream(cfg, fd.decode, func() {})
+	c := newCollector(s)
+
+	// Two windows worth of audio so at least two commits occur; a harvested
+	// prompt would normally roll into the decode after the first commit.
+	if err := s.Feed(context.Background(), tone(400, 0.5)); err != nil {
+		t.Fatalf("Feed 1: %v", err)
+	}
+	c.waitFor(t, func(evs []Event) bool { return countKind(evs, EventFinal) >= 1 })
+
+	if err := s.Feed(context.Background(), tone(400, 0.5)); err != nil {
+		t.Fatalf("Feed 2: %v", err)
+	}
+	c.waitFor(t, func(evs []Event) bool { return countKind(evs, EventFinal) >= 2 })
+
+	s.Close()
+	<-c.doneC
+
+	// With carryover disabled every window must decode independently: no
+	// decode may ever see the harvested {7,8,9} as its prompt.
+	calls := fd.promptCalls()
+	if len(calls) == 0 {
+		t.Fatal("decoder never called")
+	}
+	for i, p := range calls {
+		if len(p) != 0 {
+			t.Errorf("decode %d carried a prompt with carryover disabled: got %v, want empty", i, p)
+		}
+	}
+}
+
+func TestStream_PromptCarryoverEnabled(t *testing.T) {
+	// Carryover is the default (DisablePromptCarryover false). The first
+	// window decodes independently, but the tokens harvested at its commit
+	// must seed the next window's decode. This is the positive counterpart
+	// to TestStream_PromptCarryoverDisabled: without it, a commit() that
+	// always cleared promptTokens would still pass the disabled test.
+	fd := &fakeDecoder{text: "x", harvest: []whisper.Token{7, 8, 9}}
+	cfg := StreamConfig{
+		PartialEveryMs: -1,
+		CommitEveryMs:  200,
+		MaxUtteranceMs: 100000,
+		DisableVAD:     true,
+	}.withDefaults()
+
+	s := newStream(cfg, fd.decode, func() {})
+	c := newCollector(s)
+
+	if err := s.Feed(context.Background(), tone(400, 0.5)); err != nil {
+		t.Fatalf("Feed 1: %v", err)
+	}
+	c.waitFor(t, func(evs []Event) bool { return countKind(evs, EventFinal) >= 1 })
+
+	if err := s.Feed(context.Background(), tone(400, 0.5)); err != nil {
+		t.Fatalf("Feed 2: %v", err)
+	}
+	c.waitFor(t, func(evs []Event) bool { return countKind(evs, EventFinal) >= 2 })
+
+	s.Close()
+	<-c.doneC
+
+	calls := fd.promptCalls()
+	if len(calls) < 2 {
+		t.Fatalf("expected at least 2 decode calls, got %d", len(calls))
+	}
+
+	// First window decodes independently.
+	if len(calls[0]) != 0 {
+		t.Errorf("first decode carried a prompt: got %v, want empty", calls[0])
+	}
+
+	// At least one later decode must have been seeded with the harvested
+	// tail tokens.
+	if !slices.ContainsFunc(calls[1:], func(p []whisper.Token) bool {
+		return slices.Equal(p, []whisper.Token{7, 8, 9})
+	}) {
+		t.Errorf("no decode after the first commit carried the harvested prompt {7 8 9}; got %v", calls[1:])
 	}
 }
 

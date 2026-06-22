@@ -7107,6 +7107,7 @@ func main() {
               </tr>
             </tbody>
           </table>
+          <p><code>Transcribe</code> accepts <code>model.TranscribeOption</code> values for per-call tuning: <code>WithLanguage</code>, <code>WithTranslate</code>, <code>WithBeamSize</code>, <code>WithTranscribeNThreads</code>, and the hallucination quality gates <code>WithNoSpeechThreshold</code> (no-speech probability) / <code>WithLogProbThreshold</code> (average log-probability acceptance). Both gates leave the whisper.cpp defaults (<code>0.6</code> and <code>-1.0</code>) in place unless set; the streaming equivalents are in <a href="#1893-stream-options">18.9.3</a>.</p>
           <h4 id="channel-separated-diarization">Channel-Separated Diarization</h4>
           <p>For recordings where each speaker is on a dedicated channel (call-center and meeting captures often record one participant per channel), <code>TranscribeChannels</code> / <code>TranscribeChannelsFile</code> transcribe every channel separately and merge the results into a single diarized transcript. This builds on the upstream <code>audio.SplitChannels</code> helper: native multi-channel formats (WAV, FLAC) are de-interleaved and each channel resampled to 16 kHz, then transcribed on its own. Formats that require ffmpeg (WebM/Opus, MP4/AAC, ...) are downmixed to a single channel, so they yield one speaker.</p>
           <pre className="code-block"><code className="language-go">{`f, _ := os.Open("call.wav") // stereo: caller on L, agent on R
@@ -7289,12 +7290,29 @@ err := stream.FeedPCM(ctx, rawMicBytes, format)`}</code></pre>
                 <td>Trailing window is "silence" when its mean energy &lt; <code>f</code> × the whole window's mean energy.</td>
               </tr>
               <tr>
+                <td><code>WithPromptCarryover(bool)</code></td>
+                <td><strong>on</strong></td>
+                <td>Seed each window's decode with the previous window's tail tokens (manual <code>condition_on_previous_text</code>). Pass <code>false</code> to decode every window independently.</td>
+              </tr>
+              <tr>
+                <td><code>WithStreamNoSpeechThreshold(f)</code></td>
+                <td>library (0.6)</td>
+                <td>Override whisper.cpp's no-speech probability gate for every decode in the session. <code>0</code> leaves the library default.</td>
+              </tr>
+              <tr>
+                <td><code>WithStreamLogProbThreshold(f)</code></td>
+                <td>library (-1.0)</td>
+                <td>Override whisper.cpp's average log-probability acceptance gate for every decode in the session. Passing any value (including <code>0</code>) sets the override.</td>
+              </tr>
+              <tr>
                 <td><code>WithEmitResetEvent(bool)</code></td>
                 <td>false</td>
                 <td>Emit an <code>EventReset</code> after <code>Reset</code> completes.</td>
               </tr>
             </tbody>
           </table>
+          <p><strong>Prompt carryover</strong> is <strong>on by default</strong>: at each commit the decoded tail tokens are harvested and seeded into the next window's decode, so the decoder keeps linguistic context across commits (the manual equivalent of whisper.cpp's <code>condition_on_previous_text</code>). The trade-off is that a strong prior — e.g. a committed question — can condition a near-silent trailing window into a plausible but hallucinated continuation. Pass <code>WithPromptCarryover(false)</code> to decode every window independently and stop that. Like VAD, it is expressed by the negative <code>StreamConfig.DisablePromptCarryover</code> field so the default-on behavior needs no sentinel. <code>WithStreamInitialPrompt</code> is unaffected — it still biases the first window regardless of carryover. When carryover is disabled, <code>WithKeepPromptTokens</code> on a <code>Reset</code> becomes a no-op: the global setting always wins.</p>
+          <p><strong>Quality gates</strong> (<code>WithStreamNoSpeechThreshold</code> / <code>WithStreamLogProbThreshold</code>) are a second lever against hallucinated output on quiet audio. A lower no-speech threshold treats more borderline segments as silence (raise it to be more permissive); a stricter (higher) log-probability threshold rejects low-confidence decodes and retries them at a higher temperature. The same gates are available per call on the batch path via <code>WithNoSpeechThreshold</code> / <code>WithLogProbThreshold</code> (<a href="#188-sdk-quick-start">18.8</a>). Both leave the whisper.cpp defaults in place unless set.</p>
           <p>VAD is <strong>on by default</strong>: the detector is a pure-Go energy-ratio check (the same approach as whisper.cpp's <code>vad_simple</code> — no model file, no extra inference). It is expressed by the negative <code>StreamConfig.DisableVAD</code> field (the <code>http.Transport.DisableKeepAlives</code> idiom) so the default-on behavior needs no sentinel.</p>
           <h4 id="1894-indefinite-sessions-reset">18.9.4 Indefinite Sessions &amp; Reset</h4>
           <p>A single <code>*Stream</code> is designed to run <strong>indefinitely</strong> — for hours, across topic changes, mic mute/unmute, or "scratch that, start over". <code>Reset</code> clears the audio buffer and rolling context <strong>without</strong> releasing the pool slot, tearing down the worker, or closing <code>Events</code>, so you never re-pay acquisition latency or lose GPU cache warmth for what is logically one session. Resource use stays flat no matter how long a stream runs or how often it is reset.</p>
