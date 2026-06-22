@@ -83,6 +83,26 @@ type TranscribeConfig struct {
 	// NThreads overrides Config.NThreads for this call when > 0.
 	NThreads int32
 
+	// NoSpeechThreshold overrides whisper.cpp's no-speech probability
+	// threshold when > 0 (the library default is 0.6). A segment whose
+	// no-speech probability exceeds this is treated as silence during
+	// the decode's temperature-fallback decision, reducing the chance a
+	// near-silent window is decoded into hallucinated text. The value is
+	// a probability in (0, 1]; a zero (or negative) value is the "unset"
+	// sentinel and leaves the library default in place. A >0 sentinel is
+	// sufficient here because 0 is not a useful threshold (it would flag
+	// nearly every segment as silence), so it need not be expressible.
+	NoSpeechThreshold float32
+
+	// LogProbThreshold overrides whisper.cpp's average log-probability
+	// acceptance threshold when non-nil (the library default is -1.0).
+	// Decodes whose average token log-probability falls below this are
+	// rejected and retried at a higher temperature. nil leaves the
+	// library default in place. Unlike NoSpeechThreshold this is a
+	// pointer rather than a >0/!=0 sentinel because 0 is a legitimate
+	// (maximally strict) threshold the caller must be able to set.
+	LogProbThreshold *float32
+
 	// BeamSize, when > 0, switches the sampler to beam search with
 	// the specified beam size. Defaults to greedy.
 	BeamSize int32
@@ -119,6 +139,20 @@ func WithTranslate(v bool) TranscribeOption {
 // WithTranscribeNThreads overrides Config.NThreads for this call.
 func WithTranscribeNThreads(v int32) TranscribeOption {
 	return func(c *TranscribeConfig) { c.NThreads = v }
+}
+
+// WithNoSpeechThreshold overrides whisper.cpp's no-speech probability
+// threshold for this call. 0 leaves the library default (0.6) in place.
+func WithNoSpeechThreshold(v float32) TranscribeOption {
+	return func(c *TranscribeConfig) { c.NoSpeechThreshold = v }
+}
+
+// WithLogProbThreshold overrides whisper.cpp's average log-probability
+// acceptance threshold for this call. Passing a value (including 0) sets
+// the override; not calling the option leaves the library default (-1.0)
+// in place.
+func WithLogProbThreshold(v float32) TranscribeOption {
+	return func(c *TranscribeConfig) { c.LogProbThreshold = &v }
 }
 
 // WithBeamSize switches the sampler to beam search of the specified
@@ -279,6 +313,12 @@ func (m *Model) buildFullParams(tcfg TranscribeConfig) (whisper.WhisperFullParam
 	}
 	if tcfg.NoTimestamps {
 		params.NoTimestamps = 1
+	}
+	if tcfg.NoSpeechThreshold > 0 {
+		params.NoSpeechThold = tcfg.NoSpeechThreshold
+	}
+	if tcfg.LogProbThreshold != nil {
+		params.LogprobThold = *tcfg.LogProbThreshold
 	}
 
 	params.PrintProgress = 0

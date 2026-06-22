@@ -268,7 +268,10 @@ export default function DocsSDKBuckyModel() {
 	// history across the reset so the next window keeps linguistic
 	// continuity ("rewind the audio buffer but keep context"). Default
 	// false, which treats Reset as a hard session boundary (e.g. a topic
-	// change) and clears the context.
+	// change) and clears the context. This is a no-op when the session
+	// was created with prompt carryover disabled
+	// (StreamConfig.DisablePromptCarryover): that global setting always
+	// wins, so every window decodes independently regardless of this flag.
 	KeepPromptTokens bool
 }`}</code>
               </pre>
@@ -367,6 +370,33 @@ export default function DocsSDKBuckyModel() {
 	// eager to cut. 0 = 0.6.
 	VADThreshold float32
 
+	// DisablePromptCarryover turns OFF the cross-window prompt-token
+	// continuity. By default (zero value) each committed window's tail
+	// tokens are harvested and seeded into the next window's decode, the
+	// manual equivalent of whisper.cpp's condition_on_previous_text, so the
+	// decoder keeps linguistic context across commits. The cost is that a
+	// strong prior (e.g. a committed question) can condition a near-silent
+	// trailing window into a plausible but hallucinated continuation. Set
+	// it true (via WithPromptCarryover(false)) to decode every window
+	// independently. The field is named for the non-default state, matching
+	// the DisableVAD idiom, so the default-on behavior needs no sentinel.
+	// InitialPrompt is unaffected; it still biases the first window.
+	DisablePromptCarryover bool
+
+	// NoSpeechThreshold overrides whisper.cpp's no-speech probability
+	// threshold for every decode in the session when > 0 (library default
+	// 0.6). A zero (or negative) value is the "unset" sentinel and leaves
+	// the default in place; see TranscribeConfig.NoSpeechThreshold for why
+	// >0 is a sufficient sentinel.
+	NoSpeechThreshold float32
+
+	// LogProbThreshold overrides whisper.cpp's average log-probability
+	// acceptance threshold for every decode in the session when non-nil
+	// (library default -1.0). nil leaves the default in place; it is a
+	// pointer rather than a sentinel because 0 is a legitimate threshold
+	// the caller must be able to set.
+	LogProbThreshold *float32
+
 	// EmitResetEvent, when true, emits an EventReset after Reset.
 	// Default false. Useful when a different goroutine consumes Events
 	// and keeps partial-text accumulators it must clear at a boundary.
@@ -406,6 +436,26 @@ export default function DocsSDKBuckyModel() {
 
 	// NThreads overrides Config.NThreads for this call when > 0.
 	NThreads int32
+
+	// NoSpeechThreshold overrides whisper.cpp's no-speech probability
+	// threshold when > 0 (the library default is 0.6). A segment whose
+	// no-speech probability exceeds this is treated as silence during
+	// the decode's temperature-fallback decision, reducing the chance a
+	// near-silent window is decoded into hallucinated text. The value is
+	// a probability in (0, 1]; a zero (or negative) value is the "unset"
+	// sentinel and leaves the library default in place. A >0 sentinel is
+	// sufficient here because 0 is not a useful threshold (it would flag
+	// nearly every segment as silence), so it need not be expressible.
+	NoSpeechThreshold float32
+
+	// LogProbThreshold overrides whisper.cpp's average log-probability
+	// acceptance threshold when non-nil (the library default is -1.0).
+	// Decodes whose average token log-probability falls below this are
+	// rejected and retried at a higher temperature. nil leaves the
+	// library default in place. Unlike NoSpeechThreshold this is a
+	// pointer rather than a >0/!=0 sentinel because 0 is a legitimate
+	// (maximally strict) threshold the caller must be able to set.
+	LogProbThreshold *float32
 
 	// BeamSize, when > 0, switches the sampler to beam search with
 	// the specified beam size. Defaults to greedy.

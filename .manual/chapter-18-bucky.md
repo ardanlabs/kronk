@@ -416,6 +416,14 @@ Key SDK entry points:
 | `Bucky.Unload(ctx)`                 | Wait for active streams to drain and unload the model.                        |
 | `bucky.LangID/LangStr/LangMaxID`    | Language code ↔ id helpers.                                                   |
 
+`Transcribe` accepts `model.TranscribeOption` values for per-call tuning:
+`WithLanguage`, `WithTranslate`, `WithBeamSize`, `WithTranscribeNThreads`,
+and the hallucination quality gates `WithNoSpeechThreshold` (no-speech
+probability) / `WithLogProbThreshold` (average log-probability acceptance).
+Both gates leave the whisper.cpp defaults (`0.6` and `-1.0`) in place
+unless set; the streaming equivalents are in
+[18.9.3](#1893-stream-options).
+
 #### Channel-Separated Diarization
 
 For recordings where each speaker is on a dedicated channel (call-center
@@ -569,7 +577,35 @@ all defaults match whisper.cpp `stream` conventions where applicable.
 | `WithKeepMs(ms)`             | 300     | Trailing audio kept across a commit so a boundary word is not clipped.                    |
 | `WithVAD(bool)`              | **on**  | Energy-ratio silence detection that gates Finals. Pass `false` for fixed-cadence commits. |
 | `WithVADThreshold(f)`        | 0.6     | Trailing window is "silence" when its mean energy < `f` × the whole window's mean energy. |
+| `WithPromptCarryover(bool)`  | **on**  | Seed each window's decode with the previous window's tail tokens (manual `condition_on_previous_text`). Pass `false` to decode every window independently. |
+| `WithStreamNoSpeechThreshold(f)` | library (0.6) | Override whisper.cpp's no-speech probability gate for every decode in the session. `0` leaves the library default. |
+| `WithStreamLogProbThreshold(f)`  | library (-1.0) | Override whisper.cpp's average log-probability acceptance gate for every decode in the session. Passing any value (including `0`) sets the override. |
 | `WithEmitResetEvent(bool)`   | false   | Emit an `EventReset` after `Reset` completes.                                             |
+
+**Prompt carryover** is **on by default**: at each commit the decoded
+tail tokens are harvested and seeded into the next window's decode, so
+the decoder keeps linguistic context across commits (the manual
+equivalent of whisper.cpp's `condition_on_previous_text`). The trade-off
+is that a strong prior — e.g. a committed question — can condition a
+near-silent trailing window into a plausible but hallucinated
+continuation. Pass `WithPromptCarryover(false)` to decode every window
+independently and stop that. Like VAD, it is expressed by the negative
+`StreamConfig.DisablePromptCarryover` field so the default-on behavior
+needs no sentinel. `WithStreamInitialPrompt` is unaffected — it still
+biases the first window regardless of carryover. When carryover is
+disabled, `WithKeepPromptTokens` on a `Reset` becomes a no-op: the global
+setting always wins.
+
+**Quality gates** (`WithStreamNoSpeechThreshold` /
+`WithStreamLogProbThreshold`) are a second lever against hallucinated
+output on quiet audio. A lower no-speech threshold treats more borderline
+segments as silence (raise it to be more permissive); a stricter (higher)
+log-probability threshold rejects low-confidence decodes and retries them at
+a higher temperature. The same
+gates are available per call on the batch path via
+`WithNoSpeechThreshold` / `WithLogProbThreshold`
+([18.8](#188-sdk-quick-start)). Both leave the whisper.cpp defaults in
+place unless set.
 
 VAD is **on by default**: the detector is a pure-Go energy-ratio check
 (the same approach as whisper.cpp's `vad_simple` — no model file, no extra

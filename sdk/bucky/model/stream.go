@@ -168,6 +168,33 @@ type StreamConfig struct {
 	// eager to cut. 0 = 0.6.
 	VADThreshold float32
 
+	// DisablePromptCarryover turns OFF the cross-window prompt-token
+	// continuity. By default (zero value) each committed window's tail
+	// tokens are harvested and seeded into the next window's decode, the
+	// manual equivalent of whisper.cpp's condition_on_previous_text, so the
+	// decoder keeps linguistic context across commits. The cost is that a
+	// strong prior (e.g. a committed question) can condition a near-silent
+	// trailing window into a plausible but hallucinated continuation. Set
+	// it true (via WithPromptCarryover(false)) to decode every window
+	// independently. The field is named for the non-default state, matching
+	// the DisableVAD idiom, so the default-on behavior needs no sentinel.
+	// InitialPrompt is unaffected; it still biases the first window.
+	DisablePromptCarryover bool
+
+	// NoSpeechThreshold overrides whisper.cpp's no-speech probability
+	// threshold for every decode in the session when > 0 (library default
+	// 0.6). A zero (or negative) value is the "unset" sentinel and leaves
+	// the default in place; see TranscribeConfig.NoSpeechThreshold for why
+	// >0 is a sufficient sentinel.
+	NoSpeechThreshold float32
+
+	// LogProbThreshold overrides whisper.cpp's average log-probability
+	// acceptance threshold for every decode in the session when non-nil
+	// (library default -1.0). nil leaves the default in place; it is a
+	// pointer rather than a sentinel because 0 is a legitimate threshold
+	// the caller must be able to set.
+	LogProbThreshold *float32
+
 	// EmitResetEvent, when true, emits an EventReset after Reset.
 	// Default false. Useful when a different goroutine consumes Events
 	// and keeps partial-text accumulators it must clear at a boundary.
@@ -252,6 +279,30 @@ func WithVADThreshold(v float32) StreamOption {
 	return func(c *StreamConfig) { c.VADThreshold = v }
 }
 
+// WithPromptCarryover toggles cross-window prompt-token continuity
+// (the manual condition_on_previous_text). Carryover is ON by default;
+// pass false to decode each window independently and stop a committed
+// prior from conditioning a near-silent trailing window into a
+// hallucinated continuation.
+func WithPromptCarryover(v bool) StreamOption {
+	return func(c *StreamConfig) { c.DisablePromptCarryover = !v }
+}
+
+// WithStreamNoSpeechThreshold overrides whisper.cpp's no-speech
+// probability threshold for every decode in the session. 0 leaves the
+// library default (0.6) in place.
+func WithStreamNoSpeechThreshold(v float32) StreamOption {
+	return func(c *StreamConfig) { c.NoSpeechThreshold = v }
+}
+
+// WithStreamLogProbThreshold overrides whisper.cpp's average
+// log-probability acceptance threshold for every decode in the session.
+// Passing a value (including 0) sets the override; not calling the option
+// leaves the library default (-1.0) in place.
+func WithStreamLogProbThreshold(v float32) StreamOption {
+	return func(c *StreamConfig) { c.LogProbThreshold = &v }
+}
+
 // WithEmitResetEvent makes Reset emit an EventReset on the channel.
 func WithEmitResetEvent(v bool) StreamOption {
 	return func(c *StreamConfig) { c.EmitResetEvent = v }
@@ -276,7 +327,10 @@ type ResetConfig struct {
 	// history across the reset so the next window keeps linguistic
 	// continuity ("rewind the audio buffer but keep context"). Default
 	// false, which treats Reset as a hard session boundary (e.g. a topic
-	// change) and clears the context.
+	// change) and clears the context. This is a no-op when the session
+	// was created with prompt carryover disabled
+	// (StreamConfig.DisablePromptCarryover): that global setting always
+	// wins, so every window decodes independently regardless of this flag.
 	KeepPromptTokens bool
 }
 
@@ -377,10 +431,12 @@ func (m *Model) NewStream(ctx context.Context, onClose func(), opts ...StreamOpt
 
 	decode := func(samples []float32, firstWindow bool, prompt []whisper.Token) (Transcription, []whisper.Token, error) {
 		tcfg := TranscribeConfig{
-			Language:     cfg.Language,
-			Translate:    cfg.Translate,
-			NThreads:     cfg.NThreads,
-			PromptTokens: prompt,
+			Language:          cfg.Language,
+			Translate:         cfg.Translate,
+			NThreads:          cfg.NThreads,
+			PromptTokens:      prompt,
+			NoSpeechThreshold: cfg.NoSpeechThreshold,
+			LogProbThreshold:  cfg.LogProbThreshold,
 		}
 		if firstWindow {
 			tcfg.InitialPrompt = cfg.InitialPrompt
@@ -707,7 +763,9 @@ func (s *Stream) commit() error {
 
 	s.emitFinal(tr)
 	s.firstWindow = false
-	s.promptTokens = toks
+	if !s.cfg.DisablePromptCarryover {
+		s.promptTokens = toks
+	}
 
 	keep := min(samplesForMs(s.cfg.KeepMs), len(s.buf))
 	committed := len(s.buf) - keep
@@ -747,8 +805,10 @@ func (s *Stream) doReset(rc ResetConfig) error {
 		s.emitFinal(tr)
 
 		// When continuity is requested, the flush is the freshest
-		// context, so carry its tail tokens forward.
-		if rc.KeepPromptTokens {
+		// context, so carry its tail tokens forward — unless the session
+		// has prompt carryover disabled, in which case windows are always
+		// decoded independently.
+		if rc.KeepPromptTokens && !s.cfg.DisablePromptCarryover {
 			s.promptTokens = toks
 		}
 	}
