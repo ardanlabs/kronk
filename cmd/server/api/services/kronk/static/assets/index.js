@@ -3089,6 +3089,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -3133,6 +3134,7 @@ func run() error {
 		return fmt.Errorf("unable to install model: %w", err)
 	}
 
+	versionInfo()
 	systemInfo()
 	llamaInfo(binDir)
 	benchInfo(binDir, modelPath)
@@ -3193,7 +3195,8 @@ func installModel(source string) (string, error) {
 
 // systemInfo prints "About This Mac"-style information about the host. The
 // goal is to capture EVERYTHING we can about the machine and its devices, so
-// we can later decide what's actually useful.
+// we can later decide what's actually useful. The actual commands depend on
+// the OS, so we dispatch by GOOS.
 func systemInfo() {
 	fmt.Println("\\n========== SYSTEM INFO ==========")
 
@@ -3201,8 +3204,20 @@ func systemInfo() {
 	fmt.Println("- goArch  :", runtime.GOARCH)
 	fmt.Println("- numCPU  :", runtime.NumCPU())
 
-	// macOS-specific tools. We'll deal with Windows/Linux later.
+	switch runtime.GOOS {
+	case "darwin":
+		systemInfoDarwin()
+	case "linux":
+		systemInfoLinux()
+	case "windows":
+		systemInfoWindows()
+	default:
+		fmt.Println("(no system info collector for", runtime.GOOS, ")")
+	}
+}
 
+// systemInfoDarwin captures host/device info on macOS.
+func systemInfoDarwin() {
 	// OS version + kernel.
 	dump("sw_vers")
 	dump("uname", "-a")
@@ -3223,6 +3238,68 @@ func systemInfo() {
 	dump("pmset", "-g", "therm") // CPU_Speed_Limit < 100 => throttling
 	dump("pmset", "-g", "batt")  // AC vs battery, charge %
 	dump("pmset", "-g")          // power settings incl. lowpowermode
+}
+
+// systemInfoLinux captures host/device info on Linux, including discrete GPUs.
+func systemInfoLinux() {
+	// OS version + kernel.
+	dump("uname", "-a")
+	dump("cat", "/etc/os-release")
+
+	// CPU / memory.
+	dump("lscpu")
+	dump("cat", "/proc/meminfo")
+	dump("free", "-h")
+
+	// Swap + free disk (same "model bigger than RAM / disk full" failures).
+	dump("swapon", "--show")
+	dump("df", "-h")
+
+	// GPU cards. These only exist when the matching drivers are installed;
+	// dump() just records an error otherwise. This is the important one for
+	// the "Linux with GPU cards" target.
+	dump("nvidia-smi") // NVIDIA
+	dump("rocm-smi")   // AMD
+}
+
+// systemInfoWindows captures host/device info on Windows via PowerShell.
+func systemInfoWindows() {
+	// OS + CPU + memory overview.
+	dump("systeminfo")
+
+	// Structured CPU / OS / RAM / GPU via CIM (PowerShell).
+	ps := func(expr string) { dump("powershell", "-NoProfile", "-Command", expr) }
+	ps("Get-CimInstance Win32_Processor | Format-List Name,NumberOfCores,NumberOfLogicalProcessors")
+	ps("Get-CimInstance Win32_OperatingSystem | Format-List Caption,Version,BuildNumber,TotalVisibleMemorySize,FreePhysicalMemory")
+	ps("Get-CimInstance Win32_ComputerSystem | Format-List Manufacturer,Model,TotalPhysicalMemory")
+	ps("Get-CimInstance Win32_VideoController | Format-List Name,AdapterRAM,DriverVersion")
+
+	// GPU cards (NVIDIA), if drivers/tooling are present.
+	dump("nvidia-smi")
+}
+
+// versionInfo prints the Kronk and yzma versions.
+func versionInfo() {
+	fmt.Println("\\n========== VERSIONS ==========")
+
+	fmt.Println("- kronk   :", kronk.Version)
+	fmt.Println("- yzma    :", yzmaVersion())
+}
+
+// yzmaVersion reads the yzma dependency version from the build info.
+func yzmaVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+
+	for _, dep := range info.Deps {
+		if dep.Path == "github.com/hybridgroup/yzma" {
+			return dep.Version
+		}
+	}
+
+	return "unknown"
 }
 
 // llamaInfo prints version and device information from the llama.cpp binaries.
