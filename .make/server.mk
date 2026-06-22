@@ -21,6 +21,14 @@ bui-upgrade-latest:
 # ==============================================================================
 # Kronk Server
 
+install-working-libs:
+	@echo "========== INSTALL LLAMA LIBRARIES (working) =========="
+	go run cmd/kronk/main.go libs --local --version=b9748
+	@echo
+	@echo "========== INSTALL WHISPER LIBRARIES (working) =========="
+	go run cmd/kronk/main.go bucky libs --local --version=v1.9.1
+	@echo
+
 kronk-build: kronk-docs bui-build
 
 kronk-docs:
@@ -38,6 +46,13 @@ kronk-server-build: kronk-build
 	. .env 2>/dev/null || true && \
 	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_ALLOW_UPGRADE=true && \
+	export KRONK_INSECURE_LOGGING=true && \
+	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
+
+kronk-server-working: install-working-libs
+	. .env 2>/dev/null || true && \
+	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
