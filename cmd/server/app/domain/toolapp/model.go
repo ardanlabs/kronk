@@ -149,6 +149,56 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]models.M
 
 // =============================================================================
 
+// OpenAIModel is a single entry in the OpenAI-compatible /v1/models list.
+type OpenAIModel struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
+}
+
+// OpenAIModelsResponse is the OpenAI-compatible response for GET /v1/models.
+// Apps like OpenWebUI call this endpoint to discover available models.
+type OpenAIModelsResponse struct {
+	Object string        `json:"object"`
+	Data   []OpenAIModel `json:"data"`
+}
+
+// Encode implements the encoder interface.
+func (app OpenAIModelsResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toOpenAIModels(modelFiles []models.File) OpenAIModelsResponse {
+	resp := OpenAIModelsResponse{
+		Object: "list",
+		Data:   make([]OpenAIModel, 0, len(modelFiles)),
+	}
+
+	for _, mf := range modelFiles {
+		ownedBy := mf.OwnedBy
+		if ownedBy == "" {
+			ownedBy = "kronk"
+		}
+
+		resp.Data = append(resp.Data, OpenAIModel{
+			ID:      mf.ID,
+			Object:  "model",
+			Created: mf.Modified.Unix(),
+			OwnedBy: ownedBy,
+		})
+	}
+
+	slices.SortFunc(resp.Data, func(a, b OpenAIModel) int {
+		return strings.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
+	})
+
+	return resp
+}
+
+// =============================================================================
+
 // PullRequest represents the input for the pull command. ModelURL
 // accepts a direct HuggingFace URL, an owner/repo/file.gguf path, a
 // canonical catalog id (e.g. "unsloth/Qwen3-8B-Q8_0"), or a bare model

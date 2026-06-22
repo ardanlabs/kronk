@@ -35,6 +35,13 @@ func Routes(app *web.App, cfg Config) {
 	authAdmin := mid.Authenticate(cfg.AuthClient, true, "")
 
 	// -------------------------------------------------------------------------
+	// OpenAI-compatible model discovery. Apps like OpenWebUI call
+	// GET /v1/models to enumerate available models. The native,
+	// Kronk-specific listing lives at GET /v1/kronk/models.
+
+	app.HandlerFunc(http.MethodGet, version, "/models", api.listModelsOpenAI, auth)
+
+	// -------------------------------------------------------------------------
 	// Kronk (llama.cpp) backend — libs, models, catalog.
 
 	app.HandlerFunc(http.MethodGet, version, "/kronk/libs", api.listLibs, auth)

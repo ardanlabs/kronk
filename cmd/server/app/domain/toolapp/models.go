@@ -36,53 +36,23 @@ func (a *app) indexModels(ctx context.Context, r *http.Request) web.Encoder {
 	return nil
 }
 
-func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
-	modelFiles, err := a.models.Files()
+// listModelsOpenAI returns the OpenAI-compatible model list served at
+// GET /v1/models. Apps like OpenWebUI call this endpoint to discover the
+// available models. The native, Kronk-specific listing (with sizes,
+// sampling config, etc.) lives at GET /v1/kronk/models.
+func (a *app) listModelsOpenAI(ctx context.Context, r *http.Request) web.Encoder {
+	modelFiles, err := a.collectModelFiles()
 	if err != nil {
 		return errs.Errorf(errs.Internal, "unable to retrieve model list: %s", err)
 	}
 
-	// Build a map of existing models for quick lookup.
-	existing := make(map[string]models.File)
-	for _, mf := range modelFiles {
-		existing[mf.ID] = mf
-	}
+	return toOpenAIModels(modelFiles)
+}
 
-	// Add extension models from the model config that aren't already present.
-	// Extension models use "/" in their ID (e.g., "model/FMC") and inherit
-	// from a base model.
-	modelConfig := a.pool.Kronk.ModelConfig()
-	for modelID := range modelConfig {
-		if _, exists := existing[modelID]; exists {
-			continue
-		}
-
-		// Check if this is an extension model (contains "/").
-		before, _, ok := strings.Cut(modelID, "/")
-		if !ok {
-			continue
-		}
-
-		// Extract the base model ID and check if it exists.
-		baseModelID := before
-		baseModel, exists := existing[baseModelID]
-		if !exists {
-			continue
-		}
-
-		// Create a new File entry for the extension model using the base model's info.
-		extModel := models.File{
-			ID:                   modelID,
-			OwnedBy:              baseModel.OwnedBy,
-			ModelFamily:          baseModel.ModelFamily,
-			TokenizerFingerprint: baseModel.TokenizerFingerprint,
-			Size:                 baseModel.Size,
-			Modified:             baseModel.Modified,
-			Validated:            baseModel.Validated,
-			HasProjection:        baseModel.HasProjection,
-		}
-
-		modelFiles = append(modelFiles, extModel)
+func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
+	modelFiles, err := a.collectModelFiles()
+	if err != nil {
+		return errs.Errorf(errs.Internal, "unable to retrieve model list: %s", err)
 	}
 
 	extendedConfig := r.URL.Query().Get("extended-config") == "true"
@@ -101,6 +71,57 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	return toListModelsInfo(modelFiles, resolvedConfigs, extendedConfig)
+}
+
+// collectModelFiles returns all on-disk model files plus any extension
+// models declared in the model config that inherit from a base model.
+// Extension models use "/" in their ID (e.g. "model/FMC") and reuse the
+// base model's file information.
+func (a *app) collectModelFiles() ([]models.File, error) {
+	modelFiles, err := a.models.Files()
+	if err != nil {
+		return nil, err
+	}
+
+	// Build a map of existing models for quick lookup.
+	existing := make(map[string]models.File)
+	for _, mf := range modelFiles {
+		existing[mf.ID] = mf
+	}
+
+	// Add extension models from the model config that aren't already present.
+	modelConfig := a.pool.Kronk.ModelConfig()
+	for modelID := range modelConfig {
+		if _, exists := existing[modelID]; exists {
+			continue
+		}
+
+		// Check if this is an extension model (contains "/").
+		before, _, ok := strings.Cut(modelID, "/")
+		if !ok {
+			continue
+		}
+
+		// Extract the base model ID and check if it exists.
+		baseModel, exists := existing[before]
+		if !exists {
+			continue
+		}
+
+		// Create a new File entry for the extension model using the base model's info.
+		modelFiles = append(modelFiles, models.File{
+			ID:                   modelID,
+			OwnedBy:              baseModel.OwnedBy,
+			ModelFamily:          baseModel.ModelFamily,
+			TokenizerFingerprint: baseModel.TokenizerFingerprint,
+			Size:                 baseModel.Size,
+			Modified:             baseModel.Modified,
+			Validated:            baseModel.Validated,
+			HasProjection:        baseModel.HasProjection,
+		})
+	}
+
+	return modelFiles, nil
 }
 
 // resolvedModelConfig assembles the analysis-derived defaults overlaid
