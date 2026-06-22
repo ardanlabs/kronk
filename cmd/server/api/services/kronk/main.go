@@ -116,9 +116,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			ModelsInPool    int           `conf:"default:10"`
 			TTL             time.Duration `conf:"default:20m"`
 		}
-		Bucky struct {
-			AllowUpgrade bool `conf:"default:false"`
-		}
 		BasePath        string
 		LibPath         string
 		LibVersion      string
@@ -322,7 +319,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	buckyLibs, err := buckylibs.New(
 		buckylibs.WithBasePath(cfg.BasePath),
 		buckylibs.WithLibPath(os.Getenv("KRONK_BUCKY_LIB_PATH")),
-		buckylibs.WithAllowUpgrade(cfg.Bucky.AllowUpgrade),
+		buckylibs.WithAllowUpgrade(cfg.AllowUpgrade),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create bucky libs api: %w", err)
