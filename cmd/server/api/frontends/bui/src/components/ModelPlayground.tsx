@@ -353,7 +353,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       setSession(resp);
       setChatMessages([]);
     } catch (err: any) {
-      setSessionError(err.message || 'Failed to create session');
+      setSessionError(err.message || 'Failed to load model');
     } finally {
       setSessionLoading(false);
     }
@@ -372,7 +372,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       setSession(null);
       setChatMessages([]);
     } catch (err: any) {
-      setSessionError(err.message || 'Failed to unload session');
+      setSessionError(err.message || 'Failed to unload model');
     }
   };
 
@@ -549,7 +549,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
 
   const playgroundTransport = useCallback<StreamTransport>(({ messages, sampling, onMessage, onError, onComplete }) => {
     if (!session) {
-      onError('No session');
+      onError('No model loaded');
       return () => {};
     }
     return api.streamPlaygroundChat(
@@ -1147,11 +1147,11 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                 onClick={handleCreateSession}
                 disabled={!selectedModel || sessionLoading || configLoading}
               >
-                {sessionLoading ? 'Loading Model...' : configLoading ? 'Loading Config...' : 'Create Session'}
+                {sessionLoading ? 'Loading Model...' : configLoading ? 'Loading Config...' : 'Load Model'}
               </button>
             ) : (
               <button className="btn btn-danger" onClick={handleUnloadSession}>
-                Unload Session
+                Unload Model
               </button>
             )}
           </div>
@@ -1160,8 +1160,6 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
 
           {session && (
             <div className="playground-session-info">
-              <strong>Session:</strong> {session.session_id}
-              <br />
               <strong>Status:</strong> {session.status}
               {session.effective_config && (
                 <div className="playground-effective-config">
@@ -1230,7 +1228,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                   devicesInfo={devicesInfo}
                   moeFit={moeFit}
                   disabled={!session}
-                  disabledPlaceholder="Create a session to start chatting"
+                  disabledPlaceholder="Load a model to start chatting"
                   headerLeft={<h2>Basic Chat</h2>}
                 />
               </div>

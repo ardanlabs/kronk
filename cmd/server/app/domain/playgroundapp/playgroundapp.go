@@ -173,16 +173,11 @@ func (a *app) deleteSession(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.NotFound, "session not found: %s", id)
 	}
 
-	if !entry.custom {
-		delete(a.sessions, id)
-		a.mu.Unlock()
-		return SessionDeleteResponse{Status: "unloaded"}
-	}
-
-	a.mu.Unlock()
-
+	// Defer the unload while streams are still in flight on this model
+	// instance. The cleanup loop performs the unload once they drain.
+	// This protects in-flight requests on both custom and shared
+	// (cacheKey == modelID) instances, including the regular chat path.
 	if krn, found := a.pool.Kronk.GetExisting(entry.cacheKey); found && krn.ActiveStreams() > 0 {
-		a.mu.Lock()
 		entry.pendingDelete = true
 		a.sessions[id] = entry
 		a.mu.Unlock()
@@ -190,13 +185,31 @@ func (a *app) deleteSession(ctx context.Context, r *http.Request) web.Encoder {
 		return SessionDeleteResponse{Status: "unloaded"}
 	}
 
-	a.pool.Kronk.Invalidate(entry.cacheKey)
-
-	a.mu.Lock()
 	delete(a.sessions, id)
+
+	// Unload the model unless another live session still shares the same
+	// pooled instance. Custom sessions always have a unique cache key, so
+	// this only protects concurrent shared sessions for the same model.
+	stillShared := a.cacheKeyShared(entry.cacheKey)
 	a.mu.Unlock()
 
+	if !stillShared {
+		a.pool.Kronk.Invalidate(entry.cacheKey)
+	}
+	a.log.Info(ctx, "playground-delete", "session-id", id, "cache-key", entry.cacheKey, "unloaded", !stillShared)
+
 	return SessionDeleteResponse{Status: "unloaded"}
+}
+
+// cacheKeyShared reports whether any remaining session still references
+// cacheKey. The caller must hold a.mu.
+func (a *app) cacheKeyShared(cacheKey string) bool {
+	for _, e := range a.sessions {
+		if e.cacheKey == cacheKey {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder {
@@ -293,7 +306,7 @@ func (a *app) cleanupLoop() {
 				cacheKey string
 			}
 			for id, entry := range a.sessions {
-				if entry.pendingDelete && entry.custom {
+				if entry.pendingDelete {
 					pending = append(pending, struct {
 						id       string
 						cacheKey string
@@ -304,11 +317,19 @@ func (a *app) cleanupLoop() {
 
 			for _, p := range pending {
 				krn, found := a.pool.Kronk.GetExisting(p.cacheKey)
-				if !found || krn.ActiveStreams() == 0 {
+				if found && krn.ActiveStreams() > 0 {
+					continue
+				}
+
+				// Drop the pending session, then unload only if no other
+				// live session still shares the same pooled instance.
+				a.mu.Lock()
+				delete(a.sessions, p.id)
+				stillShared := a.cacheKeyShared(p.cacheKey)
+				a.mu.Unlock()
+
+				if found && !stillShared {
 					a.pool.Kronk.Invalidate(p.cacheKey)
-					a.mu.Lock()
-					delete(a.sessions, p.id)
-					a.mu.Unlock()
 				}
 			}
 

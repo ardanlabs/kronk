@@ -154,8 +154,8 @@ A few things the BUI deliberately does not do:
 - It does not edit `~/.kronk/model_config.yaml` from the model pages.
   Persistent configuration changes are made by editing that file
   directly (see Chapter 3); the BUI's per-model views are read-only.
-- The Playground's loaded session is held in server memory; closing
-  the browser tab does not unload the model. Use **Unload Session**
+- The Playground's loaded model is held in server memory; closing
+  the browser tab does not unload the model. Use **Unload Model**
   before adjusting model configuration.
 
 ---

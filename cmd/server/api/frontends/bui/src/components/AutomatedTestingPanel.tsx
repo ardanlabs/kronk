@@ -740,7 +740,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
       {/* Config mode session warning */}
       {sweepMode === 'config' && session && !isRunning && (
-        <div className="playground-error">Unload the current session before running config sweeps</div>
+        <div className="playground-error">Unload the current model before running config sweeps</div>
       )}
 
       {/* Template Repair Status */}

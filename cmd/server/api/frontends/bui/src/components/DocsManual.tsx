@@ -5452,7 +5452,7 @@ response = client.chat.completions.create(
           <ul>
             <li>It does not switch the active llama.cpp install in-process. Changing <code>KRONK_LIB_PATH</code> requires a server restart.</li>
             <li>It does not edit <code>~/.kronk/model_config.yaml</code> from the model pages. Persistent configuration changes are made by editing that file directly (see Chapter 3); the BUI's per-model views are read-only.</li>
-            <li>The Playground's loaded session is held in server memory; closing the browser tab does not unload the model. Use <strong>Unload Session</strong> before adjusting model configuration.</li>
+            <li>The Playground's loaded model is held in server memory; closing the browser tab does not unload the model. Use <strong>Unload Model</strong> before adjusting model configuration.</li>
           </ul>
           <hr />
           <p><em>Next: &lt;a href="#chapter-14-client-integration"&gt;Chapter 14: Client Integration&lt;/a&gt;</em></p>
