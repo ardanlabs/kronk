@@ -1242,6 +1242,24 @@ func resolveBackendDevice(name string) llama.GGMLBackendDevice {
 		}
 	}
 
+	// Newer llama.cpp builds expose the HIP backend devices under "ROCm"
+	// names (e.g. "ROCm0") rather than "HIP", so an exact by-name lookup
+	// for the "hip"/"rocm" aliases misses them. Fall back to a prefix scan
+	// over the registered devices.
+	if strings.EqualFold(name, "rocm") {
+		for i := range llama.GGMLBackendDeviceCount() {
+			dev := llama.GGMLBackendDeviceGet(i)
+			if dev == 0 {
+				continue
+			}
+
+			n := llama.GGMLBackendDeviceName(dev)
+			if strings.HasPrefix(n, "ROCm") || strings.HasPrefix(n, "HIP") {
+				return dev
+			}
+		}
+	}
+
 	return 0
 }
 
