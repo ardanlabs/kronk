@@ -105,6 +105,9 @@ func printText(report diagnose.Report, noBench bool) {
 	}
 	fmt.Println("- binDir  :", report.Llama.BinDir)
 	fmt.Println("- build   :", valueOrUnknown(report.Llama.Build))
+	if len(report.Llama.Devices) == 0 {
+		fmt.Println("- device  : none detected (running CPU-only)")
+	}
 	for _, d := range report.Llama.Devices {
 		fmt.Printf("- device  : %s %s (%d MiB total, %d MiB free)\n", d.ID, d.Name, d.VRAMTotalMiB, d.VRAMFreeMiB)
 	}
