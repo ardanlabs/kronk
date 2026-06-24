@@ -18,7 +18,7 @@ import (
 // release pipeline (.github/workflows/release.yaml and docker.yml, via
 // .github/scripts/check-version.sh) and refuses to publish a tag whose
 // value does not match this constant.
-const Version = "1.28.3"
+const Version = "1.28.4"
 
 // =============================================================================
 
