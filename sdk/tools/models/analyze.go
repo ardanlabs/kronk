@@ -333,7 +333,7 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 
 	switch name {
 	case "balanced":
-		ctxCap = minInt64(ctxCap, vram.ContextWindow32K)
+		ctxCap = minInt64(ctxCap, vram.ContextWindow128K)
 	case "max_context":
 		// Use full training context.
 	case "max_concurrency":
