@@ -669,7 +669,7 @@ func swapTempForLibAt(path string, tempPath string) error {
 			continue
 		}
 
-		os.Remove(filepath.Join(path, entry.Name()))
+		os.RemoveAll(filepath.Join(path, entry.Name()))
 	}
 
 	tempEntries, err := os.ReadDir(tempPath)
@@ -680,6 +680,7 @@ func swapTempForLibAt(path string, tempPath string) error {
 	for _, entry := range tempEntries {
 		src := filepath.Join(tempPath, entry.Name())
 		dst := filepath.Join(path, entry.Name())
+		os.RemoveAll(dst)
 		if err := os.Rename(src, dst); err != nil {
 			return fmt.Errorf("swap-temp-for-lib: unable to move %s: %w", entry.Name(), err)
 		}
