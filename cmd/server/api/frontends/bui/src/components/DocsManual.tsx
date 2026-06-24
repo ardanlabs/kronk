@@ -541,12 +541,12 @@ Qwen/Qwen3-8B-Q8_0/YARN:
               <tr>
                 <td><code>nbatch</code></td>
                 <td>Logical batch size</td>
-                <td>2048</td>
+                <td><code>nubatch × nseq-max</code></td>
               </tr>
               <tr>
                 <td><code>nubatch</code></td>
                 <td>Physical batch size for prompt ingestion</td>
-                <td>512</td>
+                <td>2048</td>
               </tr>
               <tr>
                 <td><code>cache-type-k</code></td>
@@ -744,6 +744,23 @@ curl http://localhost:11435/v1/chat/completions \\
           <p>The catalog (<code>~/.kronk/catalog.yaml</code>) is <strong>not</strong> a source of tuning knobs — it is a resolution cache (provider, family, revision, files). All tuning described in this chapter lives in <code>model_config.yaml</code> or <code>model.Config</code>.</p>
           <h3 id="31-basic-configuration">3.1 Basic Configuration</h3>
           <p>For most models you will want to touch these basic settings. There are many more which will be presented later. Each model has GGUF metadata that Kronk can read for defaults like setting the context window size when not provided. Kronk also has default settings for things like <code>temperature</code> and <code>top_p</code> when not provided.</p>
+          <h4 id="automatic-tuning-autotune">Automatic Tuning (AutoTune)</h4>
+          <p>Rather than hand-pick the settings below, you can let Kronk derive them from a hardware-aware analysis of the model and the machine it is loading on. AutoTune inspects the model (architecture, size) and the available devices, then seeds any setting you left unset:</p>
+          <ul>
+            <li><strong>Context window</strong> — the largest size that still fits the model weights and KV cache in the GPU budget, capped at <strong>128K</strong> even when the model supports more. This replaces the conservative 8K fallback so clients like OpenCode start with a usable window out of the box.</li>
+            <li><strong>KV cache type</strong> (<code>f16</code>, falling back to <code>q8_0</code> if <code>f16</code> will not fit)</li>
+            <li><strong>Slots</strong> (<code>n_seq_max</code>)</li>
+            <li><strong>Flash attention</strong> and <strong>multi-GPU split mode</strong></li>
+          </ul>
+          <p>Two key guarantees: <strong>any value you set explicitly always wins</strong> over the analysis, and if the analysis fails for any reason the original config is used unchanged — AutoTune never blocks a load.</p>
+          <p><strong>SDK.</strong> AutoTune is opt-in via the <code>WithAutoTune</code> option and is applied by <code>kronk.New</code> (it has no effect when you use the low-level <code>model</code> package directly):</p>
+          <pre className="code-block"><code className="language-go">{`krn, err := kronk.New(
+    model.WithModelFiles(mp.ModelFiles),
+    model.WithAutoTune(true),
+    // model.WithContextWindow(32768), // an explicit value would override AutoTune
+)`}</code></pre>
+          <p><strong>Model server / KMS.</strong> The server applies the same hardware analysis automatically through <code>models.KronkResolvedConfig</code>, so models loaded by the pool already start from analysis-derived defaults. Per-model overrides in <code>~/.kronk/model_config.yaml</code> (described below) still take precedence over the analysis.</p>
+          <p>The individual settings AutoTune seeds are documented in the rest of this chapter; set any of them explicitly when you want to override what the analysis chose.</p>
           <h4 id="context-window">Context Window</h4>
           <p>The context window is the maximum number of tokens the KV cache can hold, and it's consumed by both input tokens (system prompt, user messages) and output tokens (model responses). Once the cumulative tokens from all inputs and outputs in a session reach the context window limit, the model can't process more without some form of truncation, sliding window, or cache eviction.</p>
           <pre className="code-block"><code className="language-yaml">{`context_window: 8192 # This represent 8192 tokens.`}</code></pre>
@@ -790,12 +807,14 @@ curl http://localhost:11435/v1/chat/completions \\
           <h4 id="batch-size-configuration">Batch Size Configuration</h4>
           <p>When you send a prompt to a model, the model doesn't process all your input tokens at once. It breaks them into smaller chunks and processes each chunk through the GPU in a series of steps called forward passes. These two parameters control the size of those chunks:</p>
           <ul>
-            <li><code>n_batch</code> - Maximum tokens per decode call (kronk default: 2048)</li>
-            <li><code>n_ubatch</code> - GPU compute chunk size within each decode call (kronk default: 512)</li>
+            <li><code>n_batch</code> - Maximum tokens per decode call (kronk default: <code>n_ubatch × n_seq_max</code>)</li>
+            <li><code>n_ubatch</code> - GPU compute chunk size within each decode call (kronk default: 2048)</li>
           </ul>
+          <p>Both defaults are applied at load time when left unset. <code>n_ubatch</code> defaults to <strong>2048</strong> because most models Kronk serves are multi-modal (mtmd) models whose image encoder uses non-causal attention and requires every patch token of an image chunk to land in a single physical <code>n_ubatch</code>; dropping below that breaks image input. Text-only models share the same value for one predictable setting. (MoE models with CPU expert offload raise the <code>n_ubatch</code> floor to 4096.)</p>
           <p><strong>&lt;code&gt;n_batch&lt;/code&gt; is the capacity of the work tray</strong> — the maximum number of tokens you can load onto the tray before handing it to the GPU. When the batch engine is running multiple slots in parallel (NSeqMax &gt; 1), all their tokens share this tray.</p>
           <p><strong>&lt;code&gt;n_ubatch&lt;/code&gt; is the GPU's bite size</strong> — when the tray arrives at the GPU, it doesn't process all the tokens at once. It chews through them in <code>n_ubatch</code>-sized bites. This is a hardware optimization: different GPUs have different optimal bite sizes based on their memory architecture.</p>
           <p><strong>&lt;code&gt;n_ubatch&lt;/code&gt; also controls fair sharing of the tray.</strong> When multiple slots need prefill, the batch engine uses <code>n_ubatch</code> as the round-robin chunk size. It pulls up to <code>n_ubatch</code> tokens from slot 0, then up to <code>n_ubatch</code> from slot 1, then slot 2, and so on — cycling through until the tray is full. This prevents one slot's large prefill from starving the others.</p>
+          <p><strong>This is why &lt;code&gt;n_batch&lt;/code&gt; defaults to &lt;code&gt;n_ubatch × n_seq_max&lt;/code&gt;.</strong> Sizing the tray to exactly one full <code>n_ubatch</code> chunk per slot means every active slot can land a complete chunk in a single pass — the slots iterated last are never starved by the tray filling up early.</p>
           <p>The flow works like this:</p>
           <ol>
             <li>Add generation tokens from all active slots (1 token each — always fits)</li>
@@ -803,44 +822,32 @@ curl http://localhost:11435/v1/chat/completions \\
             <li>Hand tray to the GPU</li>
             <li>GPU processes the tray in <code>n_ubatch</code>-sized bites</li>
           </ol>
-          <p>For example, with 4 prefilling slots, <code>n_batch: 4096</code>, and <code>n_ubatch: 512</code>, each round pulls 512 tokens from S0, then S1, then S2, then S3, then back to S0 — giving each slot 1024 tokens per tray instead of one slot consuming all 4096.</p>
-          <p>For example, if you send a 4096-token prompt with <code>n_batch: 2048</code> and <code>n_ubatch: 512</code>, the prompt is split into 2 decode calls of 2048 tokens each. Within each call, the GPU processes 512 tokens at a time — so each call runs 4 compute passes internally. Larger values mean faster prompt processing but use more VRAM. The <code>n_ubatch</code> value must always be less than or equal to <code>n_batch</code>.</p>
-          <pre className="code-block"><code className="language-yaml">{`n_batch: 2048 # Work tray capacity (must be ≥ n_ubatch)
-n_ubatch: 512 # GPU bite size (must be ≤ n_batch)`}</code></pre>
-          <h4 id="recommended-settings-by-workload">Recommended settings by workload</h4>
+          <p>For example, with 4 slots at the defaults (<code>n_ubatch: 2048</code>, so <code>n_batch: 8192</code>), each round pulls 2048 tokens from S0, then S1, then S2, then S3 — filling the tray with one full chunk per slot so no slot waits.</p>
+          <p>For example, if you send a 4096-token prompt to a single slot at the defaults (<code>n_ubatch: 2048</code>, <code>n_batch: 2048</code>), the prompt is split into 2 decode calls of 2048 tokens each, each processed as a single GPU compute pass. Larger <code>n_ubatch</code> values mean faster prompt processing but use more compute-buffer VRAM. The <code>n_ubatch</code> value must always be less than or equal to <code>n_batch</code>.</p>
+          <pre className="code-block"><code className="language-yaml">{`# Both default automatically; shown here for illustration with n_seq_max: 4.
+n_ubatch: 2048 # GPU bite size (default 2048; must be ≤ n_batch)
+n_batch: 8192  # Work tray capacity (default n_ubatch × n_seq_max = 2048 × 4)`}</code></pre>
+          <h4 id="overriding-the-defaults">Overriding the defaults</h4>
+          <p>Most deployments should leave both unset and let Kronk derive them. Set them explicitly only when you have a specific reason:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Workload</th>
-                <th>n_batch</th>
-                <th>n_ubatch</th>
+                <th>Goal</th>
+                <th>What to set</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Interactive chat (single user)</td>
-                <td>512-1024</td>
-                <td>512</td>
+                <td>Faster prompt ingestion (big VRAM)</td>
+                <td>Raise <code>n_ubatch</code> (e.g. 4096); <code>n_batch</code> tracks it ×slots</td>
               </tr>
               <tr>
-                <td>Long prompts/RAG</td>
-                <td>2048-4096</td>
-                <td>512-1024</td>
+                <td>Lower compute-buffer VRAM</td>
+                <td>Lower <code>n_ubatch</code> (text-only models; breaks image input)</td>
               </tr>
               <tr>
-                <td>Batch inference (multiple prompts)</td>
-                <td>2048-4096</td>
-                <td>512</td>
-              </tr>
-              <tr>
-                <td>Low VRAM (&lt;8GB)</td>
-                <td>512</td>
-                <td>256-512</td>
-              </tr>
-              <tr>
-                <td>High VRAM (24GB+)</td>
-                <td>4096+</td>
-                <td>1024+</td>
+                <td>Fixed tray regardless of slot count</td>
+                <td>Set <code>n_batch</code> explicitly (must stay ≥ <code>n_ubatch</code>)</td>
               </tr>
             </tbody>
           </table>
@@ -1714,7 +1721,7 @@ Step 4 — Total VRAM:
           </table>
           <p>See <a href="#imc-hybrid">IMC Hybrid</a> for details on how caching works with recurrent state.</p>
           <h4 id="vision-and-audio-models">Vision and Audio Models</h4>
-          <p>Vision and audio models process media (image tiles, audio frames) as large token batches. Low <code>n_ubatch</code> values force multiple decode passes per image or audio clip, significantly slowing inference.</p>
+          <p>Vision and audio models process media (image tiles, audio frames) as large token batches. The image encoder uses non-causal attention, so every patch token of an image chunk must fit in a single <code>n_ubatch</code>. The default <code>n_ubatch</code> of 2048 already satisfies this for typical models, so media workloads work out of the box — <code>n_batch</code> auto-derives to <code>n_ubatch × n_seq_max</code>.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1724,11 +1731,11 @@ Step 4 — Total VRAM:
             </thead>
             <tbody>
               <tr>
-                <td>Set <code>n_ubatch</code> high (2048+) to match media token volume</td>
-                <td>Leave <code>n_ubatch</code> at low defaults — it causes multiple decode passes</td>
+                <td>Rely on the default <code>n_ubatch</code> (2048) for most media models</td>
+                <td>Lower <code>n_ubatch</code> below a single image's patch count — it breaks image input</td>
               </tr>
               <tr>
-                <td>Match <code>n_batch</code> to <code>n_ubatch</code> for media workloads</td>
+                <td>Raise <code>n_ubatch</code> only if one image chunk exceeds 2048 tokens</td>
                 <td>Set <code>n_seq_max</code> high — media processing is memory-intensive</td>
               </tr>
             </tbody>
@@ -1874,8 +1881,6 @@ unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
           <pre className="code-block"><code className="language-yaml">{`# In ~/.kronk/model_config.yaml
 Qwen/Qwen3-8B-Q8_0:
   context-window: 32768
-  nbatch: 2048
-  nubatch: 512
   cache-type-k: q8_0
   cache-type-v: q8_0
   nseq-max: 1
@@ -1969,8 +1974,6 @@ Qwen/Qwen3-8B-Q8_0:
           <p>Minimal <code>model_config.yaml</code> snippet for a Qwen3.6 MTP target:</p>
           <pre className="code-block"><code className="language-yaml">{`mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
   context-window: 131072
-  nbatch: 2048
-  nubatch: 512
   cache-type-k: f16
   cache-type-v: f16
   nseq-max: 2
@@ -1983,8 +1986,6 @@ Qwen/Qwen3-8B-Q8_0:
           <p>You can change the starting (ceiling) draft-token count for the auto-detected MTP head without supplying a separate draft GGUF. Add a <code>draft-model:</code> block that sets <strong>only</strong> <code>ndraft:</code> and omits <code>model-id:</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
   context-window: 131072
-  nbatch: 2048
-  nubatch: 512
   cache-type-k: f16
   cache-type-v: f16
   nseq-max: 2
@@ -2058,8 +2059,6 @@ Qwen/Qwen3-8B-Q8_0:
 
 Qwen/Qwen3-8B-Q8_0:
   context-window: 32768
-  nbatch: 2048
-  nubatch: 512
   nseq-max: 2
   cache-type-k: q8_0
   cache-type-v: q8_0
@@ -2265,8 +2264,8 @@ Request 3 (WAIT) ──▶│                                  │
 Qwen/Qwen3-8B-Q8_0:
   context-window: 8192
   nseq-max: 8
-  nbatch: 2048
-  nubatch: 512
+  # nbatch / nubatch left unset — Kronk derives nubatch=2048 and
+  # nbatch=nubatch×nseq-max (16384) for fair round-robin prefill.
   cache-type-k: q8_0
   cache-type-v: q8_0
   incremental-cache: true`}</code></pre>
@@ -3475,8 +3474,8 @@ cache-type-v: q8_0`}</code></pre>
 Qwen/Qwen3-8B-Q8_0:
   context-window: 65536      # 64K context
   rope-scaling-type: yarn
-  nbatch: 4096               # Larger batch for long prompts
-  nubatch: 1024
+  nubatch: 4096              # Larger GPU bite for faster long-prompt prefill
+                             # (nbatch derives to nubatch × nseq-max = 4096)
   cache-type-k: q8_0
   cache-type-v: q8_0
   nseq-max: 1                # Single request (memory intensive)`}</code></pre>
@@ -5099,12 +5098,11 @@ d := model.D{
           <h3 id="115-configuration-for-multi-modal-models">11.5 Configuration for Multi-Modal Models</h3>
           <p>Vision and audio models have specific configuration requirements:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/LFM2.5-VL-1.6B-Q8_0:
-  nubatch: 2048 # Higher for image token processing
   nseq-max: 2 # Process up to 2 requests concurrently
   context-window: 8192`}</code></pre>
           <p><strong>Key Considerations:</strong></p>
           <ul>
-            <li><code>nubatch</code> should be high (≥2048) for efficient image/audio token processing</li>
+            <li><code>nubatch</code> defaults to <strong>2048</strong> for all models (text and media), which is the floor the image encoder's non-causal attention requires — so you normally do not need to set it. Only raise it if a single image chunk exceeds 2048 patch tokens; lowering it below the per-image patch count breaks image input.</li>
             <li><code>nseq-max</code> controls batch parallelism (multiple slots in shared context)</li>
             <li>Vision/audio models use the same batch engine as text models</li>
           </ul>

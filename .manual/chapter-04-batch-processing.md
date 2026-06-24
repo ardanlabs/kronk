@@ -272,8 +272,8 @@ memory, and caching for a multi-user API server:
 Qwen/Qwen3-8B-Q8_0:
   context-window: 8192
   nseq-max: 8
-  nbatch: 2048
-  nubatch: 512
+  # nbatch / nubatch left unset — Kronk derives nubatch=2048 and
+  # nbatch=nubatch×nseq-max (16384) for fair round-robin prefill.
   cache-type-k: q8_0
   cache-type-v: q8_0
   incremental-cache: true
