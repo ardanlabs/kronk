@@ -386,6 +386,62 @@ func TestAnalyzeModelTightMemory(t *testing.T) {
 	}
 }
 
+func TestAnalyzeBalancedContextCap(t *testing.T) {
+
+	// A small model whose training context exceeds 128K, on a GPU with ample
+	// free VRAM. The balanced/Recommended profile should climb to the 128K cap
+	// (no longer clamped to 32K) while staying within the GPU budget.
+	info := ModelInfo{
+		ID:   "SmallLongCtx-3B-Q8_0",
+		Desc: "Small Long Context 3B",
+		Size: 3_000_000_000,
+		Metadata: map[string]string{
+			"general.architecture":          "qwen3",
+			"general.file_type":             "7",
+			"qwen3.block_count":             "24",
+			"qwen3.context_length":          "262144",
+			"qwen3.embedding_length":        "2048",
+			"qwen3.attention.head_count":    "16",
+			"qwen3.attention.head_count_kv": "8",
+			"qwen3.attention.key_length":    "128",
+			"qwen3.attention.value_length":  "128",
+		},
+	}
+
+	devs := devices.Devices{
+		Devices: []devices.DeviceInfo{
+			{
+				Index:      0,
+				Name:       "Apple M5 Max",
+				Type:       "gpu_metal",
+				FreeBytes:  115_000_000_000,
+				TotalBytes: 128_000_000_000,
+			},
+		},
+		GPUCount:           1,
+		GPUTotalBytes:      128_000_000_000,
+		SupportsGPUOffload: true,
+		SystemRAMBytes:     128_000_000_000,
+	}
+
+	a, err := analyzeModel(info, devs)
+	if err != nil {
+		t.Fatalf("analyzeModel failed: %v", err)
+	}
+
+	if a.Recommended.Name != "balanced" {
+		t.Fatalf("Recommended.Name = %q, want %q", a.Recommended.Name, "balanced")
+	}
+
+	if a.Recommended.ContextWindow != vram.ContextWindow128K {
+		t.Errorf("Recommended.ContextWindow = %d, want %d (128K cap)", a.Recommended.ContextWindow, vram.ContextWindow128K)
+	}
+
+	if !a.Recommended.Fits {
+		t.Error("Recommended should fit within the GPU budget")
+	}
+}
+
 func TestClassifyModel(t *testing.T) {
 	tests := []struct {
 		name string
