@@ -64,11 +64,23 @@ type System struct {
 }
 
 // Llama holds information reported by the llama.cpp binaries. Installed reports
-// whether the llama.cpp libraries are present; when false the binaries were not
-// inspected (run with install enabled to download them). Build and Devices are
-// parsed from Commands.
+// whether any llama.cpp library bundle is present; when false the binaries were
+// not inspected (run with install enabled to download them). Every installed
+// backend bundle (cpu, cuda, rocm, vulkan, metal) is probed independently so
+// the report shows what each one actually sees — the running server may use a
+// different backend than auto-detection would pick.
 type Llama struct {
 	Installed bool      `json:"installed" yaml:"installed"`
+	Root      string    `json:"root" yaml:"root"`
+	Backends  []Backend `json:"backends" yaml:"backends"`
+}
+
+// Backend holds the information reported by one installed llama.cpp library
+// bundle (one processor/accelerator variant). Build and Devices are parsed
+// from Commands.
+type Backend struct {
+	Processor string    `json:"processor" yaml:"processor"`
+	Version   string    `json:"version" yaml:"version"`
 	BinDir    string    `json:"binDir" yaml:"binDir"`
 	Build     string    `json:"build" yaml:"build"`
 	Devices   []Device  `json:"devices" yaml:"devices"`
@@ -84,10 +96,12 @@ type Device struct {
 	VRAMFreeMiB  uint64 `json:"vramFreeMiB" yaml:"vramFreeMiB"`
 }
 
-// Bench holds the llama-bench results for the selected model.
+// Bench holds the llama-bench results for the selected model. Processor is the
+// backend that was benchmarked.
 type Bench struct {
-	Model    string    `json:"model" yaml:"model"`
-	Commands []Command `json:"commands,omitempty" yaml:"commands,omitempty"`
+	Processor string    `json:"processor" yaml:"processor"`
+	Model     string    `json:"model" yaml:"model"`
+	Commands  []Command `json:"commands,omitempty" yaml:"commands,omitempty"`
 }
 
 // Command is the captured output of a single diagnostic command.
@@ -172,26 +186,25 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 		System:   collectSystem(),
 	}
 
-	binDir, installed, err := resolveLibs(ctx, log, o.install)
+	backends, root, err := resolveBackends(ctx, log, o.install)
 	if err != nil {
 		return Report{}, fmt.Errorf("resolve libraries: %w", err)
 	}
 
-	r.Llama = Llama{Installed: installed, BinDir: binDir}
-	if installed {
-		cmds := llamaCommands(binDir)
-		r.Llama.Commands = cmds
-		r.Llama.Build = parseLlamaBuild(commandOutput(cmds, "--version"))
-		r.Llama.Devices = parseDevices(commandOutput(cmds, "--list-devices"))
+	r.Llama = Llama{
+		Installed: len(backends) > 0,
+		Root:      root,
+		Backends:  backends,
 	}
 
-	if installed && !o.skipBench {
+	if len(backends) > 0 && !o.skipBench {
 		modelPath, ok, err := resolveModel(ctx, log, o.modelSource, o.install)
 		if err != nil {
 			return Report{}, fmt.Errorf("resolve model: %w", err)
 		}
 		if ok {
-			r.Bench = collectBench(binDir, modelPath)
+			b := benchBackend(backends)
+			r.Bench = collectBench(b.Processor, b.BinDir, modelPath)
 		}
 	}
 
@@ -231,26 +244,49 @@ func llamaCommands(binDir string) []Command {
 	}
 }
 
-func collectBench(binDir, modelPath string) Bench {
+func collectBench(processor, binDir, modelPath string) Bench {
 	return Bench{
-		Model: modelPath,
+		Processor: processor,
+		Model:     modelPath,
 		Commands: []Command{
 			capture(commandSpec{bin(binDir, "llama-bench"), []string{"-m", modelPath}}),
 		},
 	}
 }
 
+// benchBackend chooses which installed backend to benchmark. It prefers a
+// backend that actually sees a device (a real GPU), then the auto-detected
+// processor, and finally the first installed backend.
+func benchBackend(backends []Backend) Backend {
+	for _, b := range backends {
+		if len(b.Devices) > 0 {
+			return b
+		}
+	}
+
+	if p, err := defaults.Processor(""); err == nil {
+		for _, b := range backends {
+			if b.Processor == p.String() {
+				return b
+			}
+		}
+	}
+
+	return backends[0]
+}
+
 // =============================================================================
 // Installation
 
-// resolveLibs locates the installed llama.cpp binaries. When install is true it
-// downloads them first. It returns the binary directory, whether the libraries
-// are installed, and any error. In inspect-only mode (install false) a missing
-// install is not an error: installed is simply false.
-func resolveLibs(ctx context.Context, log applog.Logger, install bool) (string, bool, error) {
+// resolveBackends discovers every installed llama.cpp library bundle for the
+// running machine and probes each one. When install is true it first downloads
+// the auto-detected backend if it is missing. It returns the probed backends
+// and the libraries root. In inspect-only mode (install false) a missing
+// install is not an error: the backend list is simply empty.
+func resolveBackends(ctx context.Context, log applog.Logger, install bool) ([]Backend, string, error) {
 	lib, err := libs.New(libs.WithVersion(defaults.LibVersion("")))
 	if err != nil {
-		return "", false, err
+		return nil, "", err
 	}
 
 	if install {
@@ -258,16 +294,39 @@ func resolveLibs(ctx context.Context, log applog.Logger, install bool) (string, 
 		defer cancel()
 
 		if _, err := lib.Download(dctx, log); err != nil {
-			return "", false, fmt.Errorf("download llama.cpp: %w", err)
+			return nil, "", fmt.Errorf("download llama.cpp: %w", err)
 		}
 	}
 
-	// A readable version file means the libraries are installed.
-	if _, err := lib.InstalledVersion(); err != nil {
-		return "", false, nil
+	root := lib.Root()
+
+	tags, err := lib.List()
+	if err != nil {
+		return nil, root, fmt.Errorf("list installed libraries: %w", err)
 	}
 
-	return lib.LibsPath(), true, nil
+	var backends []Backend
+	for _, tag := range tags {
+		// Only probe bundles built for the running machine; binaries for
+		// another OS/arch cannot be executed here.
+		if tag.OS != runtime.GOOS || tag.Arch != runtime.GOARCH {
+			continue
+		}
+
+		binDir := filepath.Join(root, tag.OS, tag.Arch, tag.Processor)
+		cmds := llamaCommands(binDir)
+
+		backends = append(backends, Backend{
+			Processor: tag.Processor,
+			Version:   tag.Version,
+			BinDir:    binDir,
+			Build:     parseLlamaBuild(commandOutput(cmds, "--version")),
+			Devices:   parseDevices(commandOutput(cmds, "--list-devices")),
+			Commands:  cmds,
+		})
+	}
+
+	return backends, root, nil
 }
 
 // resolveModel resolves the model to benchmark. A path to an existing .gguf

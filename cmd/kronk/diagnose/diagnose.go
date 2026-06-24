@@ -103,15 +103,20 @@ func printText(report diagnose.Report, noBench bool) {
 		fmt.Println("llama.cpp is not installed. Run: kronk diagnose --install")
 		return
 	}
-	fmt.Println("- binDir  :", report.Llama.BinDir)
-	fmt.Println("- build   :", valueOrUnknown(report.Llama.Build))
-	if len(report.Llama.Devices) == 0 {
-		fmt.Println("- device  : none detected (running CPU-only)")
+	fmt.Println("- root    :", report.Llama.Root)
+	for _, b := range report.Llama.Backends {
+		fmt.Printf("\n--- backend: %s ---\n", b.Processor)
+		fmt.Println("- binDir  :", b.BinDir)
+		fmt.Println("- version :", valueOrUnknown(b.Version))
+		fmt.Println("- build   :", valueOrUnknown(b.Build))
+		if len(b.Devices) == 0 {
+			fmt.Println("- device  : none detected (this backend sees no GPU)")
+		}
+		for _, d := range b.Devices {
+			fmt.Printf("- device  : %s %s (%d MiB total, %d MiB free)\n", d.ID, d.Name, d.VRAMTotalMiB, d.VRAMFreeMiB)
+		}
+		printCommands(b.Commands)
 	}
-	for _, d := range report.Llama.Devices {
-		fmt.Printf("- device  : %s %s (%d MiB total, %d MiB free)\n", d.ID, d.Name, d.VRAMTotalMiB, d.VRAMFreeMiB)
-	}
-	printCommands(report.Llama.Commands)
 
 	if noBench {
 		return
@@ -122,6 +127,7 @@ func printText(report diagnose.Report, noBench bool) {
 		fmt.Println("benchmark skipped: model not installed (use --install or --model <path>)")
 		return
 	}
+	fmt.Println("- backend :", report.Bench.Processor)
 	fmt.Println("- model   :", report.Bench.Model)
 	printCommands(report.Bench.Commands)
 }
