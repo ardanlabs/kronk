@@ -205,8 +205,8 @@ Configuration for processing long documents:
 Qwen/Qwen3-8B-Q8_0:
   context-window: 65536      # 64K context
   rope-scaling-type: yarn
-  nbatch: 4096               # Larger batch for long prompts
-  nubatch: 1024
+  nubatch: 4096              # Larger GPU bite for faster long-prompt prefill
+                             # (nbatch derives to nubatch × nseq-max = 4096)
   cache-type-k: q8_0
   cache-type-v: q8_0
   nseq-max: 1                # Single request (memory intensive)

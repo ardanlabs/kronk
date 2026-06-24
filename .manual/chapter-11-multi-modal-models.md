@@ -177,14 +177,16 @@ Vision and audio models have specific configuration requirements:
 
 ```yaml
 unsloth/LFM2.5-VL-1.6B-Q8_0:
-  nubatch: 2048 # Higher for image token processing
   nseq-max: 2 # Process up to 2 requests concurrently
   context-window: 8192
 ```
 
 **Key Considerations:**
 
-- `nubatch` should be high (≥2048) for efficient image/audio token processing
+- `nubatch` defaults to **2048** for all models (text and media), which is the
+  floor the image encoder's non-causal attention requires — so you normally do
+  not need to set it. Only raise it if a single image chunk exceeds 2048 patch
+  tokens; lowering it below the per-image patch count breaks image input.
 - `nseq-max` controls batch parallelism (multiple slots in shared context)
 - Vision/audio models use the same batch engine as text models
 

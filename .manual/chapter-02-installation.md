@@ -454,8 +454,8 @@ The file includes a commented reference at the top listing every option. Here ar
 | `flash-attention`     | Flash Attention mode: `enabled`, `disabled`, `auto`    | auto    |
 | `incremental-cache`   | Enable IMC for agentic workflows                       | true    |
 | `nseq-max`            | Max parallel sequences for batched inference           | 0       |
-| `nbatch`              | Logical batch size                                     | 2048    |
-| `nubatch`             | Physical batch size for prompt ingestion               | 512     |
+| `nbatch`              | Logical batch size                                     | `nubatch × nseq-max` |
+| `nubatch`             | Physical batch size for prompt ingestion               | 2048    |
 | `cache-type-k`        | KV cache key quantization: `f16`, `q8_0`, `q4_0`, etc. | —       |
 | `cache-type-v`        | KV cache value quantization                            | —       |
 | `sampling-parameters` | Nested block for temperature, top_p, top_k, min_p      | —       |
