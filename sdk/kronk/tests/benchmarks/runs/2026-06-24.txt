@@ -1,0 +1,87 @@
+# Date: 2026-06-24
+# Kronk: dev
+
+
+## benchmark-dense-nc
+go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b9782 (darwin/arm64/metal)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M5 Max
+BenchmarkDense_NonCaching-18    	       3	47358391667 ns/op	     13185 avg-prompt-tok	      5237 lastT-ttft-ms	       181.7 tok/s	     50056 total-ms	      2985 ttft-ms	15990933 B/op	   52246 allocs/op
+--- BENCH: BenchmarkDense_NonCaching-18
+    bench_test.go:1110: System prompt: 8252 tokens (39336 chars)
+    bench_test.go:1110: Final turn (15): 17710 tokens (81243 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	143.078s
+
+## benchmark-dense-imc
+go test -run=none -bench=BenchmarkDense_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b9782 (darwin/arm64/metal)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M5 Max
+BenchmarkDense_IMC-18    	       3	12536068750 ns/op	     13186 avg-prompt-tok	       599.0 lastT-ttft-ms	       176.3 tok/s	     12808 total-ms	       490.9 ttft-ms	7798145701 B/op	   58583 allocs/op
+--- BENCH: BenchmarkDense_IMC-18
+    bench_test.go:1118: System prompt: 8252 tokens (39336 chars)
+    bench_test.go:1118: Final turn (15): 17710 tokens (81243 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	38.616s
+
+## benchmark-moe-nc
+go test -run=none -bench=BenchmarkMoE_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b9782 (darwin/arm64/metal)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M5 Max
+BenchmarkMoE_NonCaching-18    	       3	128971024444 ns/op	     13935 avg-prompt-tok	     11842 lastT-ttft-ms	        79.71 tok/s	    132407 total-ms	      8024 ttft-ms	10278730 B/op	   77042 allocs/op
+--- BENCH: BenchmarkMoE_NonCaching-18
+    bench_test.go:1132: System prompt: 8784 tokens (39336 chars)
+    bench_test.go:1132: Final turn (15): 18709 tokens (81243 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	395.949s
+
+## benchmark-moe-imc
+go test -run=none -bench=BenchmarkMoE_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b9782 (darwin/arm64/metal)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M5 Max
+BenchmarkMoE_IMC-18    	       3	27264539236 ns/op	     13941 avg-prompt-tok	       968.0 lastT-ttft-ms	        78.33 tok/s	     27445 total-ms	      1013 ttft-ms	1499475482 B/op	   82410 allocs/op
+--- BENCH: BenchmarkMoE_IMC-18
+    bench_test.go:1140: System prompt: 8784 tokens (39336 chars)
+    bench_test.go:1140: Final turn (15): 18709 tokens (81243 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	83.664s
+
+## benchmark-hybrid-nc
+go test -run=none -bench=BenchmarkHybrid_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b9782 (darwin/arm64/metal)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M5 Max
+BenchmarkHybrid_NonCaching-18    	       3	114266792500 ns/op	     13592 avg-prompt-tok	     10140 lastT-ttft-ms	        79.62 tok/s	    114324 total-ms	      6818 ttft-ms	10263962 B/op	   53762 allocs/op
+--- BENCH: BenchmarkHybrid_NonCaching-18
+    bench_test.go:1155: System prompt: 8505 tokens (39336 chars)
+    bench_test.go:1155: Final turn (15): 18199 tokens (81243 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	346.140s
+
+## benchmark-hybrid-imc
+go test -run=none -bench=BenchmarkHybrid_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+bench: llama.cpp b9782 (darwin/arm64/metal)
+goos: darwin
+goarch: arm64
+pkg: github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks
+cpu: Apple M5 Max
+BenchmarkHybrid_IMC-18    	       3	25395337167 ns/op	     13592 avg-prompt-tok	       805.0 lastT-ttft-ms	        76.88 tok/s	     25444 total-ms	       863.8 ttft-ms	1401421360 B/op	   60493 allocs/op
+--- BENCH: BenchmarkHybrid_IMC-18
+    bench_test.go:1163: System prompt: 8505 tokens (39336 chars)
+    bench_test.go:1163: Final turn (15): 18199 tokens (81243 chars, 38 messages)
+PASS
+ok  	github.com/ardanlabs/kronk/sdk/kronk/tests/benchmarks	77.943s

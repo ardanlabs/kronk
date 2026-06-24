@@ -510,7 +510,7 @@ func writeRawTable(out *strings.Builder, current run, prev *run) {
 	}
 	padWidth++ // one space before the colon
 
-	fmtStr := fmt.Sprintf("%%-%ds: %%14.0f ns/op %%s   %%8.0f B/op %%s   %%5.0f allocs/op %%s\n", padWidth)
+	fmtStr := fmt.Sprintf("%%-%ds: %%14.0f ns/op %%s   %%11.0f B/op %%s   %%6.0f allocs/op %%s\n", padWidth)
 
 	for _, g := range groups {
 		wrote := false
@@ -577,7 +577,7 @@ func writePerfGrid(out *strings.Builder, current run, prev *run) {
 			for _, name := range chunk {
 				b := current.benchs[name]
 				delta := fmtDelta(b.tokS, lookupField(prev, name, fieldTokS), true)
-				tokCols = append(tokCols, fmt.Sprintf("%5.2f tok/s    %s", b.tokS, delta))
+				tokCols = append(tokCols, fmt.Sprintf("%6.2f tok/s    %s", b.tokS, delta))
 			}
 			out.WriteString(strings.Join(tokCols, "    ") + "\n")
 
@@ -586,7 +586,7 @@ func writePerfGrid(out *strings.Builder, current run, prev *run) {
 			for _, name := range chunk {
 				b := current.benchs[name]
 				delta := fmtDelta(b.ttftMS, lookupField(prev, name, fieldTtftMS), false)
-				ttftCols = append(ttftCols, fmt.Sprintf("%5.0f ttft-ms  %s", b.ttftMS, delta))
+				ttftCols = append(ttftCols, fmt.Sprintf("%6.0f ttft-ms  %s", b.ttftMS, delta))
 			}
 			out.WriteString(strings.Join(ttftCols, "    ") + "\n")
 
@@ -595,7 +595,7 @@ func writePerfGrid(out *strings.Builder, current run, prev *run) {
 			for _, name := range chunk {
 				b := current.benchs[name]
 				delta := fmtDelta(b.totalMS, lookupField(prev, name, fieldTotalMS), false)
-				totalCols = append(totalCols, fmt.Sprintf("%5.0f total-ms %s", b.totalMS, delta))
+				totalCols = append(totalCols, fmt.Sprintf("%6.0f total-ms %s", b.totalMS, delta))
 			}
 			out.WriteString(strings.Join(totalCols, "    ") + "\n\n")
 		}
@@ -643,9 +643,11 @@ func lookupField(prev *run, name string, f field) float64 {
 
 // fmtDelta formats a percentage change with emoji indicator.
 // higherIsBetter=true for tok/s, false for ns/op, B/op, allocs/op, ttft-ms, total-ms.
+// The numeric portion is right-aligned to a fixed width so the emoji and the
+// columns that follow it stay vertically aligned across every row.
 func fmtDelta(current, previous float64, higherIsBetter bool) string {
 	if previous == 0 {
-		return "⚪  new"
+		return fmt.Sprintf("%s %8s", "⚪", "new")
 	}
 
 	pct := ((current - previous) / previous) * 100
@@ -664,7 +666,7 @@ func fmtDelta(current, previous float64, higherIsBetter bool) string {
 		emoji = "🔴"
 	}
 
-	return fmt.Sprintf("%s %+.2f%%", emoji, pct)
+	return fmt.Sprintf("%s %+7.2f%%", emoji, pct)
 }
 
 // =============================================================================
