@@ -22,6 +22,12 @@ func parseSystem(cmds []Command) (cpuModel string, ramBytes uint64) {
 	return cpuModel, ramBytes
 }
 
+// gpuAccessHints returns no hints on macOS; Metal device access is not gated
+// by render-node permissions.
+func gpuAccessHints() []Hint {
+	return nil
+}
+
 // systemCommandSpecs returns the host/device commands to capture on macOS.
 func systemCommandSpecs() []commandSpec {
 	return []commandSpec{

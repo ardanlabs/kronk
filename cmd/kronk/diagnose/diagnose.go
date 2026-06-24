@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/diagnose"
@@ -90,6 +91,10 @@ func printText(report diagnose.Report, noBench bool) {
 	fmt.Println("- kronk   :", report.Versions.Kronk)
 	fmt.Println("- yzma    :", report.Versions.Yzma)
 
+	// Print hints up front so actionable findings are not buried below the
+	// long command output (and are shown even when sections return early).
+	printHints(report.Hints)
+
 	fmt.Println("\n========== SYSTEM INFO ==========")
 	fmt.Println("- goOS    :", report.System.OS)
 	fmt.Println("- goArch  :", report.System.Arch)
@@ -130,6 +135,20 @@ func printText(report diagnose.Report, noBench bool) {
 	fmt.Println("- backend :", report.Bench.Processor)
 	fmt.Println("- model   :", report.Bench.Model)
 	printCommands(report.Bench.Commands)
+}
+
+func printHints(hints []diagnose.Hint) {
+	if len(hints) == 0 {
+		return
+	}
+
+	fmt.Println("\n========== HINTS ==========")
+	for _, h := range hints {
+		fmt.Printf("- [%s] %s\n", strings.ToUpper(h.Severity), h.Message)
+		if h.Remedy != "" {
+			fmt.Printf("    fix: %s\n", h.Remedy)
+		}
+	}
 }
 
 // valueOrUnknown returns v, or "unknown" when v is empty.

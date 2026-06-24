@@ -3,9 +3,56 @@
 package diagnose
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+// gpuAccessHints looks for the common case where GPU hardware is present but a
+// backend still sees no device because the user lacks permission to open the
+// DRM render nodes (e.g. not in the "render" group). It returns a remediation
+// hint when that is detected, or nil otherwise. A render node existing implies
+// a real render-capable GPU; display-only chips do not create one.
+func gpuAccessHints() []Hint {
+	nodes, _ := filepath.Glob("/dev/dri/renderD*")
+	if len(nodes) == 0 {
+		// No render nodes: no GPU to access, so nothing to explain here.
+		return nil
+	}
+
+	var blocked string
+	for _, node := range nodes {
+		f, err := os.OpenFile(node, os.O_RDWR, 0)
+		if err == nil {
+			f.Close()
+			continue
+		}
+		if errors.Is(err, os.ErrPermission) {
+			blocked = node
+			break
+		}
+	}
+
+	if blocked == "" {
+		return nil
+	}
+
+	username := "$USER"
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		username = u.Username
+	}
+
+	return []Hint{{
+		Severity: "warn",
+		Message: fmt.Sprintf("GPU hardware is present but render node %s is not accessible (permission denied); "+
+			"the GPU backend falls back to CPU.", blocked),
+		Remedy: fmt.Sprintf("sudo usermod -aG render,video %s   # then log out and back in (or reboot)", username),
+	}}
+}
 
 // parseSystem extracts the CPU model and total RAM (bytes) from the captured
 // Linux commands. CPU comes from the "Model name:" line of lscpu; RAM comes

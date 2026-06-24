@@ -29,6 +29,12 @@ func formatListValue(out, key string) string {
 	return ""
 }
 
+// gpuAccessHints returns no hints on Windows; GPU access is not gated by DRM
+// render-node permissions.
+func gpuAccessHints() []Hint {
+	return nil
+}
+
 // systemCommandSpecs returns the host/device commands to capture on Windows via
 // systeminfo and PowerShell CIM queries.
 func systemCommandSpecs() []commandSpec {

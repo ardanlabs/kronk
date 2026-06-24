@@ -44,6 +44,15 @@ type Report struct {
 	System   System   `json:"system" yaml:"system"`
 	Llama    Llama    `json:"llama" yaml:"llama"`
 	Bench    Bench    `json:"bench" yaml:"bench"`
+	Hints    []Hint   `json:"hints,omitempty" yaml:"hints,omitempty"`
+}
+
+// Hint is an actionable finding: a likely problem detected during collection
+// along with a one-line remediation. Severity is "warn" or "fail".
+type Hint struct {
+	Severity string `json:"severity" yaml:"severity"`
+	Message  string `json:"message" yaml:"message"`
+	Remedy   string `json:"remedy,omitempty" yaml:"remedy,omitempty"`
 }
 
 // Versions holds the relevant component versions.
@@ -197,6 +206,12 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 		Backends:  backends,
 	}
 
+	// When a GPU backend is installed but sees no device, look for a host
+	// reason we can explain (e.g. render nodes not accessible).
+	if gpuBackendMissingDevices(backends) {
+		r.Hints = append(r.Hints, gpuAccessHints()...)
+	}
+
 	if len(backends) > 0 && !o.skipBench {
 		modelPath, ok, err := resolveModel(ctx, log, o.modelSource, o.install)
 		if err != nil {
@@ -252,6 +267,21 @@ func collectBench(processor, binDir, modelPath string) Bench {
 			capture(commandSpec{bin(binDir, "llama-bench"), []string{"-m", modelPath}}),
 		},
 	}
+}
+
+// gpuBackendMissingDevices reports whether an installed GPU-capable backend
+// (cuda, rocm, vulkan) found no device. That is the symptom worth explaining
+// with a hint; a cpu or metal backend reporting no GPU is not noteworthy.
+func gpuBackendMissingDevices(backends []Backend) bool {
+	for _, b := range backends {
+		switch b.Processor {
+		case "cuda", "rocm", "vulkan":
+			if len(b.Devices) == 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // benchBackend chooses which installed backend to benchmark. It prefers a

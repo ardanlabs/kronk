@@ -11,3 +11,8 @@ func systemCommandSpecs() []commandSpec {
 func parseSystem(cmds []Command) (cpuModel string, ramBytes uint64) {
 	return "", 0
 }
+
+// gpuAccessHints returns no hints on unsupported operating systems.
+func gpuAccessHints() []Hint {
+	return nil
+}
