@@ -49,14 +49,14 @@ kronk-server:
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
-kronk-server-build:
+kronk-server-build: bui-build
 	. .env 2>/dev/null || true && \
 	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
-kronk-server-upgrade: install-latest-libs
+kronk-server-upgrade: install-latest-libs bui-build
 	. .env 2>/dev/null || true && \
 	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_ALLOW_UPGRADE=true && \

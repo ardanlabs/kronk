@@ -821,6 +821,12 @@ func (m *Models) pull(ctx context.Context, loc Locator, kind pullKind, progress 
 		srcURL = strings.Replace(loc.RawURL, "resolve", "raw", 1)
 		interval = 0
 
+		// The sha pointer is a tiny file (a few hundred bytes). Reporting
+		// progress on it only produces a burst of misleading
+		// "0 MB of 0 MB" lines before the model body download begins, so
+		// suppress progress for this pull.
+		progress = nil
+
 		// Offline: trust the sha already on disk; downloads of the body
 		// will pick it up via the standard CheckModel path.
 		if !hasNetworkFn() {
