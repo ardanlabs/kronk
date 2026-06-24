@@ -8,6 +8,23 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
+                "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
+                    "name": "Qwen3.6 MTP 35B-A3B UD-Q8_K_XL",
+                    "attachment": true,
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 131072,
+                        "output": 65536
+                    }
+                },
                 "unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
                     "name": "Qwen3.6 35B-A3B UD-Q8_K_XL",
                     "attachment": true,
@@ -58,7 +75,7 @@
             }
         }
     },
-    "model": "kronk/unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "model": "kronk/unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
     "formatter": true,
     "lsp": true,
     "compaction": {

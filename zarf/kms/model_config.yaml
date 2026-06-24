@@ -207,6 +207,14 @@
 # ==============================================================================
 # CODING MODELS
 
+unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+  context-window: 131072
+  nseq-max: 2
+  sampling-parameters:
+    temperature: 0.6
+    top_k: 20
+    top_p: 0.95
+
 unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
   nseq-max: 2
