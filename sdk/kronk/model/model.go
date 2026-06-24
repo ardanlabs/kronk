@@ -1230,15 +1230,21 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 // device handle. ROCm libraries register under the "hip" backend name in
 // llama.cpp, so "rocm" is treated as an alias for "hip".
 func resolveBackendDevice(name string) llama.GGMLBackendDevice {
-	candidates := []string{name}
-
-	if strings.EqualFold(name, "rocm") {
-		candidates = []string{"hip", "HIP", name}
+	if dev := llama.GGMLBackendDeviceByName(name); dev != 0 {
+		return dev
 	}
 
-	for _, c := range candidates {
-		if dev := llama.GGMLBackendDeviceByName(c); dev != 0 {
-			return dev
+	// "rocm"/"hip" are aliases for the same backend. Newer llama.cpp builds
+	// name HIP devices "ROCm0", older builds "HIP0", so an exact by-name
+	// lookup misses them. Scan the registered devices by type instead, using
+	// the same classifier that drives device enumeration so the prefix
+	// knowledge lives in one place.
+	if strings.EqualFold(name, "rocm") || strings.EqualFold(name, "hip") {
+		for i := range llama.GGMLBackendDeviceCount() {
+			dev := llama.GGMLBackendDeviceGet(i)
+			if dev != 0 && devices.ClassifyDeviceType(llama.GGMLBackendDeviceName(dev)) == "gpu_rocm" {
+				return dev
+			}
 		}
 	}
 
