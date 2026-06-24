@@ -8,12 +8,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
-// Default batch sizes used when seeding from analysis.
-const (
-	defAnalysisNBatch  = 2048
-	defAnalysisNUBatch = 512
-)
-
 // KronkResolvedConfig builds a model.Config for kronk.New() using the new
 // resolution flow: analysis defaults (layer 1) overridden by user-supplied
 // model_config.yaml entries (layer 3), then sampling defaults via
@@ -95,9 +89,10 @@ func AutoTune(info ModelInfo, devs devices.Devices) (ModelConfig, error) {
 
 	var cfg ModelConfig
 
+	// NBatch and NUBatch are intentionally left unset here so the load-time
+	// adjustConfig (the single source of batch sizing) derives them: NUBatch
+	// defaults to 2048 and NBatch to NUBatch * NSeqMax.
 	cfg.PtrContextWindow = new(int(rec.ContextWindow))
-	cfg.PtrNBatch = new(defAnalysisNBatch)
-	cfg.PtrNUBatch = new(defAnalysisNUBatch)
 	cfg.PtrNSeqMax = new(int(rec.NSeqMax))
 
 	if k, err := model.ParseGGMLType(rec.CacheTypeK); err == nil {

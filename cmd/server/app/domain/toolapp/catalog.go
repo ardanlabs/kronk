@@ -95,8 +95,8 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	cfg := vram.Config{
-		ContextWindow:   vram.ContextWindow8K,
-		BytesPerElement: vram.BytesPerElementQ8_0,
+		ContextWindow:   vram.ContextWindow128K,
+		BytesPerElement: vram.BytesPerElementF16,
 		Slots:           vram.Slots1,
 	}
 

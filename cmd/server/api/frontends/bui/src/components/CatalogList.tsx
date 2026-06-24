@@ -435,8 +435,8 @@ export default function CatalogList() {
   const effectiveVram = modelInfo?.vram ?? (modelInfo ? remoteVram[modelInfo.id] : undefined);
   const catalogModelUrl = modelInfo?.files?.model?.[0]?.url;
   const { controlsProps: vramControls, resultsProps: vramResults } = useVRAMState({
-    initialContextWindow: 8192,
-    initialBytesPerElement: 1,
+    initialContextWindow: 131072,
+    initialBytesPerElement: 2,
     serverResponse: effectiveVram ?? null,
     modelId: modelInfo?.vram ? modelInfo.id : undefined,
     modelUrl: !modelInfo?.vram ? catalogModelUrl : undefined,

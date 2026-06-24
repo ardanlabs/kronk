@@ -81,9 +81,14 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 
 	bpe := bytesPerElement(cfg.CacheTypeK, cfg.CacheTypeV)
 
+	// When the resolved config leaves the context window unset (e.g. the
+	// hardware analysis could not run), the model loads with the runtime
+	// default applied by model.adjustContextWindow: min(trained_ctx, 8K).
+	// Reserve against 8K so the plan never under-counts KV relative to what
+	// the load actually uses.
 	ctxWin := int64(cfg.ContextWindow())
 	if ctxWin <= 0 {
-		ctxWin = int64(vram.ContextWindow4K)
+		ctxWin = int64(vram.ContextWindow8K)
 	}
 
 	nseq := int64(cfg.NSeqMax())
@@ -218,7 +223,7 @@ func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
 
 	ctxWin := int64(cfg.ContextWindow())
 	if ctxWin <= 0 {
-		ctxWin = int64(vram.ContextWindow4K)
+		ctxWin = int64(vram.ContextWindow8K)
 	}
 
 	nseq := int64(cfg.NSeqMax())

@@ -66,8 +66,8 @@ export default function ModelList() {
   // VRAM calculator state (shared hook)
   const vramServerResponse = modelInfo?.vram ?? null;
   const { controlsProps: vramControls, resultsProps: vramResults } = useVRAMState({
-    initialContextWindow: 8192,
-    initialBytesPerElement: 1,
+    initialContextWindow: 131072,
+    initialBytesPerElement: 2,
     serverResponse: vramServerResponse,
     modelId: selectedModelId ?? undefined,
   });

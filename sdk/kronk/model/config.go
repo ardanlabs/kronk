@@ -14,17 +14,25 @@ import (
 )
 
 /*
-Workload							NBatch		NUBatch		Rationale
-Interactive chat (single user)		512–1024	512			Low latency; small batches
-Long prompts/RAG					2048–4096	512–1024	Faster prompt ingestion
-Batch inference (multiple prompts)	2048–4096	512			Higher throughput
-Low VRAM (<8GB)						512			256–512		Avoid OOM
-High VRAM (24GB+)					4096+		1024+		Maximize parallelism
+Batch sizing defaults (applied in adjustConfig when left unset):
+
+	NUBatch = 2048                 physical batch (per-pass GPU chunk)
+	NBatch  = NUBatch * NSeqMax    logical batch (the round-robin tray)
+
+NUBatch defaults to 2048 because most models we serve are mtmd (vision)
+models whose image encoder uses non-causal attention and needs every patch
+token of an image chunk in a single physical ubatch; dropping below that
+breaks image input. Text-only models share the same value for one predictable
+setting. MoE expert-CPU offload raises the NUBatch floor to 4096.
+
+NBatch is the shared tray the round-robin batch engine fills across slots:
+each active slot may contribute up to NUBatch tokens per pass, so sizing it to
+NUBatch * NSeqMax lets every slot land a full chunk in one pass without
+starving the slots iterated last.
 
 Key principles:
 - NUBatch ≤ NBatch always (enforced in adjustConfig)
-- NUBatch primarily affects prompt processing speed; keep it ≤512 for stability on most consumer GPUs
-- NBatch closer to ContextWindow improves throughput but uses more VRAM
+- NUBatch primarily affects prompt processing speed and compute-buffer VRAM
 - Powers of 2 are slightly more efficient on most hardware
 */
 
@@ -38,9 +46,7 @@ const (
 
 const (
 	defContextWindow    = 8 * 1024
-	defNBatch           = 2 * 1024
-	defNUBatch          = 512
-	defNUBatchVision    = 2 * 1024
+	defNUBatch          = 2 * 1024
 	defMinCacheTokens   = 100
 	defThreadZero       = 0
 	defNSeqMax          = 1
@@ -196,7 +202,7 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // performance (throughput) if your hardware can handle it, as it better
 // utilizes parallel computation. However, a very high n_batch can lead to
 // out-of-memory errors on systems with limited VRAM.
-// When set to 0, the default value is 2048.
+// When set to 0, the default value is NUBatch * NSeqMax.
 //
 // MainGPU is the index of the GPU to use as the primary device when SplitMode
 // is SplitModeNone. When nil, the default GPU (usually index 0) is used.
@@ -225,7 +231,7 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // sequentially. This parameter is crucial for tuning performance on specific
 // hardware (especially GPUs) because different values might yield better prompt
 // processing times depending on the memory architecture.
-// When set to 0, the default value is 512.
+// When set to 0, the default value is 2048.
 //
 // OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or
 // true, the KV cache is stored on the GPU (default behavior). Set to false to
@@ -595,30 +601,36 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 func adjustConfig(cfg Config, model llama.Model) Config {
 	cfg = adjustContextWindow(cfg, model)
 
-	// MoE-optimized defaults: larger batch sizes for CPU expert offload.
-	moeExperts := cfg.MoE != nil && (cfg.MoE.Mode == MoEModeExpertsCPU || cfg.MoE.Mode == MoEModeKeepTopN)
-	if moeExperts {
-		if cfg.NBatch() <= 0 {
-			cfg.PtrNBatch = new(4096)
-		}
-		if cfg.NUBatch() <= 0 {
-			cfg.PtrNUBatch = new(4096)
-		}
+	// Resolve the number of parallel sequence slots first; the batch sizing
+	// below derives n_batch from it.
+	if cfg.NSeqMax() <= 0 {
+		cfg.PtrNSeqMax = new(defNSeqMax)
 	}
 
-	if cfg.NBatch() <= 0 {
-		cfg.PtrNBatch = new(defNBatch)
-	}
-
+	// Physical batch size (n_ubatch). Default to 2048. Most models we serve
+	// are mtmd (vision) models whose image encoder uses non-causal attention
+	// and requires every patch token of an image chunk to land in a single
+	// physical ubatch, so n_ubatch must never drop below the largest image
+	// chunk. We use the same value for text-only models for one shared,
+	// predictable setting. MoE expert-CPU offload uses a larger floor for
+	// prompt-ingestion throughput.
 	if cfg.NUBatch() <= 0 {
-		// Vision models require n_ubatch >= n_tokens for the image encoder's
-		// non-causal attention. Use a larger default when ProjFile is set.
-		switch cfg.ProjFile != "" {
+		moeExperts := cfg.MoE != nil && (cfg.MoE.Mode == MoEModeExpertsCPU || cfg.MoE.Mode == MoEModeKeepTopN)
+		switch moeExperts {
 		case true:
-			cfg.PtrNUBatch = new(defNUBatchVision)
+			cfg.PtrNUBatch = new(4096)
 		case false:
 			cfg.PtrNUBatch = new(defNUBatch)
 		}
+	}
+
+	// Logical batch size (n_batch) is the shared "tray" the round-robin batch
+	// engine fills across slots: each active slot may contribute up to
+	// n_ubatch tokens per pass. Size it to n_ubatch * NSeqMax so every slot
+	// can land a full n_ubatch chunk in a single pass without starving the
+	// slots iterated last.
+	if cfg.NBatch() <= 0 {
+		cfg.PtrNBatch = new(cfg.NUBatch() * cfg.NSeqMax())
 	}
 
 	if cfg.NThreads() < 0 {
@@ -636,14 +648,10 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	// NBatch is generally greater than or equal to NUBatch. The entire
-	// NUBatch of tokens must fit into a physical batch for processing.
+	// NUBatch of tokens must fit into a physical batch for processing. This
+	// guards against an explicit NBatch override smaller than NUBatch.
 	if cfg.NUBatch() > cfg.NBatch() {
 		cfg.PtrNUBatch = new(cfg.NBatch())
-	}
-
-	// This value must be 1 to properly configure the batch engine.
-	if cfg.NSeqMax() <= 0 {
-		cfg.PtrNSeqMax = new(defNSeqMax)
 	}
 
 	// IMC is enabled by default.

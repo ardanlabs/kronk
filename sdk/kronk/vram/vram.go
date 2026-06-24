@@ -552,6 +552,13 @@ func EstimateComputeBuffer(input Input) int64 {
 		baseBufferSmall = 256 * 1024 * 1024 // 256 MiB for models < 100B params
 		baseBufferLarge = 512 * 1024 * 1024 // 512 MiB for models >= 100B params
 		k               = 8                 // empirical multiplier
+
+		// nUBatch mirrors the runtime physical batch default applied in
+		// model.adjustConfig (model.defNUBatch = 2048). The compute buffer
+		// scales with n_ubatch, and the VRAM calculator UI does not expose
+		// n_ubatch, so we estimate against the same default the server uses
+		// at load time.
+		nUBatch = 2048
 	)
 
 	baseBuffer := int64(baseBufferSmall)
@@ -564,8 +571,7 @@ func EstimateComputeBuffer(input Input) int64 {
 
 	var embeddingComponent int64
 	if input.EmbeddingLength > 0 {
-		nUBatch := int64(512)
-		base := k * nUBatch * input.EmbeddingLength * 4
+		base := int64(k) * nUBatch * input.EmbeddingLength * 4
 		embeddingComponent = int64(float64(base) * slotMultiplier)
 	}
 
