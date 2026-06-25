@@ -112,6 +112,13 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		Key:         req.Key,
 		Devices:     gpuDevices(cfg.Devices),
 		TensorSplit: cfg.TensorSplit,
+		// Allow the resman to account an unpinned load across all GPUs
+		// unless the user explicitly pinned a single GPU via
+		// SplitModeNone. When the split mode is unset (nil) the runtime
+		// default is device-count aware (row/layer for multi-GPU), so the
+		// model is auto-distributed across every card — matching how
+		// llama.cpp actually places it.
+		AllowSplit: cfg.PtrSplitMode == nil || *cfg.PtrSplitMode != model.SplitModeNone,
 	}
 
 	// Map the calculator's GPU/CPU split onto resman buckets.
@@ -160,6 +167,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		"ram", humanBytes(planReq.RAMBytes),
 		"devices", planReq.Devices,
 		"tensor-split", planReq.TensorSplit,
+		"allow-split", planReq.AllowSplit,
 	)
 
 	return planReq, nil

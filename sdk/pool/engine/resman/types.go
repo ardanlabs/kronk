@@ -78,13 +78,25 @@ type Config struct {
 // across the listed devices proportionally to the split values.
 //
 // When Devices is empty the manager picks the GPU with the most remaining
-// budget that can fit VRAMBytes.
+// budget that can fit VRAMBytes — unless AllowSplit is set.
+//
+// AllowSplit permits an unpinned request (empty Devices) to be accounted
+// across ALL of the manager's GPUs rather than requiring it to fit on a
+// single card. This mirrors llama.cpp's default behavior on a multi-GPU
+// box: when the user does not pin devices and the split mode is not
+// "none", the model is auto-distributed across every GPU. Callers set
+// this to anything but an explicit single-GPU (SplitModeNone) request.
+// When set, VRAMBytes is split across all GPUs proportional to TensorSplit
+// (if supplied, length must match the GPU count) or to each GPU's total
+// memory (llama.cpp's auto layer-split heuristic). It has no effect when
+// Devices is non-empty or only one GPU is present.
 type PlanRequest struct {
 	Key         string
 	VRAMBytes   int64
 	RAMBytes    int64
 	Devices     []string
 	TensorSplit []float32
+	AllowSplit  bool
 }
 
 // DeviceAllocation describes how many bytes were reserved on a specific GPU.

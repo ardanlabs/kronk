@@ -172,7 +172,14 @@ func (m *Manager) Reserve(req PlanRequest) (Ticket, LoadPlan, error) {
 		return Ticket{}, LoadPlan{}, fmt.Errorf("reserve: key[%s]: %w", req.Key, ErrDuplicateKey)
 	}
 
-	plan, err := m.planLocked(req)
+	// Plan against the remaining budget on each device (budget minus what
+	// is already reserved).
+	avail := make([]int64, len(m.devices))
+	for i := range m.devices {
+		avail[i] = m.deviceBudget[i] - m.deviceUsed[i]
+	}
+
+	plan, err := m.planLocked(req, avail)
 	if err != nil {
 		return Ticket{}, LoadPlan{}, err
 	}
@@ -258,9 +265,46 @@ func (m *Manager) Usage() Usage {
 
 // =============================================================================
 
-// planLocked resolves a PlanRequest into a LoadPlan against current
-// reservations. The caller must hold m.mu.
-func (m *Manager) planLocked(req PlanRequest) (LoadPlan, error) {
+// VRAMFeasible reports whether req's VRAM footprint could ever be placed
+// if the manager held no other reservations — i.e. it runs the exact same
+// placement logic as Reserve, but against each device's full budget rather
+// than its remaining budget. It returns nil when the request can fit on an
+// empty manager and a wrapped ErrNoCapacity (or ErrInvalidPlan /
+// ErrUnknownDevice / ErrNoGPUs) otherwise.
+//
+// Callers use this to reject impossible requests up front, before evicting
+// any loaded models: a footprint that does not fit on an empty manager can
+// never be satisfied by freeing other reservations, so walking the eviction
+// loop would only gut the cache for nothing. Because it shares planLocked
+// with Reserve, the feasibility verdict can never drift from the real
+// split the manager would compute (single-device, pinned, explicit split,
+// or auto-split across all GPUs).
+//
+// RAM is the caller's concern; VRAMFeasible only reasons about GPU memory.
+func (m *Manager) VRAMFeasible(req PlanRequest) error {
+	if req.VRAMBytes <= 0 {
+		return nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Plan against each device's full budget (empty-manager state).
+	avail := make([]int64, len(m.devices))
+	copy(avail, m.deviceBudget)
+
+	if _, err := m.planLocked(req, avail); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// planLocked resolves a PlanRequest into a LoadPlan. avail holds the bytes
+// currently available on each device (indexed by device index); Reserve
+// passes the remaining budget while VRAMFeasible passes the full budget.
+// The caller must hold m.mu.
+func (m *Manager) planLocked(req PlanRequest, avail []int64) (LoadPlan, error) {
 	plan := LoadPlan{
 		Key:       req.Key,
 		VRAMBytes: req.VRAMBytes,
@@ -277,7 +321,7 @@ func (m *Manager) planLocked(req PlanRequest) (LoadPlan, error) {
 
 	// Multi-device with explicit tensor split.
 	if len(req.Devices) > 1 || (len(req.Devices) > 0 && len(req.TensorSplit) > 0) {
-		return m.planSplitLocked(req, plan)
+		return m.planSplitLocked(req, plan, avail)
 	}
 
 	// Single pinned device by name.
@@ -287,8 +331,8 @@ func (m *Manager) planLocked(req PlanRequest) (LoadPlan, error) {
 			return LoadPlan{}, fmt.Errorf("plan: device[%s]: %w", req.Devices[0], ErrUnknownDevice)
 		}
 
-		if !m.fitsLocked(idx, req.VRAMBytes) {
-			return LoadPlan{}, m.noCapacityErr(req.Devices[0], idx, req.VRAMBytes)
+		if !fits(avail, idx, req.VRAMBytes) {
+			return LoadPlan{}, m.noCapacityErr(req.Devices[0], idx, req.VRAMBytes, avail)
 		}
 
 		plan.Per = []DeviceAllocation{{Index: idx, Name: m.devices[idx].Name, Bytes: req.VRAMBytes}}
@@ -296,11 +340,27 @@ func (m *Manager) planLocked(req PlanRequest) (LoadPlan, error) {
 		return plan, nil
 	}
 
+	// Unpinned but splittable: account the request across ALL GPUs. This
+	// mirrors llama.cpp's default multi-GPU behavior — when the user does
+	// not pin devices and the split mode is not "none", the model is
+	// auto-distributed across every card (layer/row split). Because the
+	// load path re-resolves config without our LoadPlan, llama.cpp will
+	// split even a model that would fit on one card, so accounting it as
+	// split keeps the resman's view aligned with the real placement.
+	if req.AllowSplit && len(m.devices) > 1 {
+		splitReq := req
+		splitReq.Devices = make([]string, len(m.devices))
+		for i, d := range m.devices {
+			splitReq.Devices[i] = d.Name
+		}
+		return m.planSplitLocked(splitReq, plan, avail)
+	}
+
 	// Free choice: best-fit by remaining headroom.
 	bestIdx := -1
 	var bestRoom int64 = -1
 	for idx := range m.devices {
-		room := m.deviceBudget[idx] - m.deviceUsed[idx]
+		room := avail[idx]
 
 		if room < req.VRAMBytes {
 			continue
@@ -329,8 +389,8 @@ func (m *Manager) planLocked(req PlanRequest) (LoadPlan, error) {
 // planSplitLocked handles the multi-device case. When TensorSplit is supplied
 // it is used as the proportion vector; otherwise the request is split
 // proportional to each listed device's TotalBytes (matching llama.cpp's
-// auto-split heuristic).
-func (m *Manager) planSplitLocked(req PlanRequest, plan LoadPlan) (LoadPlan, error) {
+// auto-split heuristic). avail holds the bytes available on each device.
+func (m *Manager) planSplitLocked(req PlanRequest, plan LoadPlan, avail []int64) (LoadPlan, error) {
 	if len(req.TensorSplit) > 0 && len(req.TensorSplit) != len(req.Devices) {
 		return LoadPlan{}, fmt.Errorf("plan: devices[%d] != tensor-split[%d]: %w",
 			len(req.Devices), len(req.TensorSplit), ErrInvalidPlan)
@@ -385,8 +445,8 @@ func (m *Manager) planSplitLocked(req PlanRequest, plan LoadPlan) (LoadPlan, err
 			assigned += bytes
 		}
 
-		if !m.fitsLocked(idx, bytes) {
-			return LoadPlan{}, m.noCapacityErr(name, idx, bytes)
+		if !fits(avail, idx, bytes) {
+			return LoadPlan{}, m.noCapacityErr(name, idx, bytes, avail)
 		}
 
 		plan.Per = append(plan.Per, DeviceAllocation{Index: idx, Name: m.devices[idx].Name, Bytes: bytes})
@@ -395,15 +455,16 @@ func (m *Manager) planSplitLocked(req PlanRequest, plan LoadPlan) (LoadPlan, err
 	return plan, nil
 }
 
-// fitsLocked reports whether the device at idx can absorb an additional
-// `need` bytes without exceeding its budget. Caller must hold m.mu.
-func (m *Manager) fitsLocked(idx int, need int64) bool {
-	return m.deviceUsed[idx]+need <= m.deviceBudget[idx]
+// fits reports whether the device at idx can absorb an additional `need`
+// bytes given the available bytes in avail.
+func fits(avail []int64, idx int, need int64) bool {
+	return need <= avail[idx]
 }
 
 // noCapacityErr produces a descriptive ErrNoCapacity error for a specific
-// device. Caller must hold m.mu.
-func (m *Manager) noCapacityErr(name string, idx int, need int64) error {
-	return fmt.Errorf("plan: device[%s] cannot fit need=%d bytes (used=%d budget=%d): %w",
-		name, need, m.deviceUsed[idx], m.deviceBudget[idx], ErrNoCapacity)
+// device. avail holds the bytes available on each device. Caller must hold
+// m.mu.
+func (m *Manager) noCapacityErr(name string, idx int, need int64, avail []int64) error {
+	return fmt.Errorf("plan: device[%s] cannot fit need=%d bytes (free=%d budget=%d): %w",
+		name, need, avail[idx], m.deviceBudget[idx], ErrNoCapacity)
 }

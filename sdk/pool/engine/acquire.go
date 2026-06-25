@@ -254,36 +254,15 @@ func (c *Pool[H]) checkRequestFitsBudget(newKey string, req resman.PlanRequest) 
 			newKey, HumanBytes(req.RAMBytes), HumanBytes(usage.RAMBudget))
 	}
 
-	if req.VRAMBytes > 0 {
-		// When specific devices are requested, each must individually
-		// fit (the manager allocates per-device, not pooled). When
-		// unpinned, the request must fit on at least one device.
-		if len(req.Devices) > 0 {
-			for _, name := range req.Devices {
-				var budget int64
-				for _, d := range usage.Devices {
-					if d.Name == name {
-						budget = d.BudgetBytes
-						break
-					}
-				}
-				if budget > 0 && req.VRAMBytes > budget && len(req.Devices) == 1 {
-					return fmt.Errorf("request[%s] needs vram=%s but device[%s] budget is %s",
-						newKey, HumanBytes(req.VRAMBytes), name, HumanBytes(budget))
-				}
-			}
-		} else {
-			var maxBudget int64
-			for _, d := range usage.Devices {
-				if d.BudgetBytes > maxBudget {
-					maxBudget = d.BudgetBytes
-				}
-			}
-			if maxBudget > 0 && req.VRAMBytes > maxBudget {
-				return fmt.Errorf("request[%s] needs vram=%s but largest device budget is %s",
-					newKey, HumanBytes(req.VRAMBytes), HumanBytes(maxBudget))
-			}
-		}
+	// Delegate the VRAM verdict to the resman so the feasibility check
+	// runs the exact same placement logic Reserve will use — single
+	// device, pinned, explicit tensor split, or auto-split across all
+	// GPUs (llama.cpp's default for an unpinned multi-GPU load). Checking
+	// only the largest single-device budget here would wrongly reject a
+	// model that is meant to be split across several cards.
+	if err := c.resman.VRAMFeasible(req); err != nil {
+		return fmt.Errorf("request[%s] needs vram=%s: %w",
+			newKey, HumanBytes(req.VRAMBytes), err)
 	}
 
 	return nil

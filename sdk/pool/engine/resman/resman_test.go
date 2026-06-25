@@ -192,9 +192,9 @@ func Test_Reserve_NeverExceedsBudget(t *testing.T) {
 }
 
 func Test_Reserve_DoesNotSumAcrossGPUs(t *testing.T) {
-	// 24 GiB + 12 GiB = 36 GiB total VRAM, but a single 20 GiB model still
-	// has to fit on ONE card. A 30 GiB model that "would fit" if we summed
-	// the cards must still be rejected.
+	// 24 GiB + 12 GiB = 36 GiB total VRAM. Without AllowSplit a single
+	// 30 GiB model still has to fit on ONE card, so a model that "would
+	// fit" only if we summed the cards must be rejected.
 	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -203,6 +203,160 @@ func Test_Reserve_DoesNotSumAcrossGPUs(t *testing.T) {
 	_, _, err = m.Reserve(resman.PlanRequest{Key: "huge", VRAMBytes: 30 * GiB})
 	if !errors.Is(err, resman.ErrNoCapacity) {
 		t.Fatalf("a 30 GiB model must not be admitted across 24+12 GiB cards: %v", err)
+	}
+}
+
+func Test_Reserve_AllowSplit_AcrossGPUs(t *testing.T) {
+	// With AllowSplit set, a 30 GiB model that fits on neither card alone
+	// is auto-distributed across both 24+12 GiB cards proportional to
+	// their total VRAM: 30 * 24/36 = 20 GiB on CUDA0, remainder 10 GiB on
+	// CUDA1.
+	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	_, plan, err := m.Reserve(resman.PlanRequest{Key: "split", VRAMBytes: 30 * GiB, AllowSplit: true})
+	if err != nil {
+		t.Fatalf("a 30 GiB model must split across 24+12 GiB cards: %v", err)
+	}
+
+	if len(plan.Per) != 2 {
+		t.Fatalf("expected a 2-way split, got %+v", plan.Per)
+	}
+	if plan.Per[0].Name != "CUDA0" || plan.Per[0].Bytes != 20*GiB {
+		t.Errorf("CUDA0: want 20 GiB, got %+v", plan.Per[0])
+	}
+	if plan.Per[1].Name != "CUDA1" || plan.Per[1].Bytes != 10*GiB {
+		t.Errorf("CUDA1: want 10 GiB, got %+v", plan.Per[1])
+	}
+
+	// The reservation must charge both cards.
+	u := m.Usage()
+	if u.Devices[0].UsedBytes != 20*GiB || u.Devices[1].UsedBytes != 10*GiB {
+		t.Errorf("usage after split: CUDA0=%d CUDA1=%d", u.Devices[0].UsedBytes, u.Devices[1].UsedBytes)
+	}
+}
+
+func Test_Reserve_AllowSplit_PerDeviceShareOverflows(t *testing.T) {
+	// AllowSplit must not admit a request whose proportional share
+	// overflows one card even though the aggregate budget would hold it.
+	// A skewed tensor split forces a lopsided distribution: a 20 GiB
+	// model split 10%/90% across 24+12 cards puts 2 GiB on CUDA0 and
+	// 18 GiB on CUDA1 — which exceeds CUDA1's 12 GiB budget even though
+	// the 20 GiB total fits well within the 36 GiB aggregate.
+	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	_, _, err = m.Reserve(resman.PlanRequest{
+		Key:         "overflow",
+		VRAMBytes:   20 * GiB,
+		AllowSplit:  true,
+		TensorSplit: []float32{0.1, 0.9},
+	})
+	if !errors.Is(err, resman.ErrNoCapacity) {
+		t.Fatalf("a share that overflows CUDA1 must be rejected: %v", err)
+	}
+}
+
+func Test_VRAMFeasible_AllowSplit(t *testing.T) {
+	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	// 30 GiB fits when split across both cards (20+10), even though it
+	// fits on neither card alone.
+	if err := m.VRAMFeasible(resman.PlanRequest{Key: "ok", VRAMBytes: 30 * GiB, AllowSplit: true}); err != nil {
+		t.Errorf("30 GiB with AllowSplit must be feasible: %v", err)
+	}
+
+	// Without AllowSplit, the same request can never fit on one card.
+	if err := m.VRAMFeasible(resman.PlanRequest{Key: "no", VRAMBytes: 30 * GiB}); !errors.Is(err, resman.ErrNoCapacity) {
+		t.Errorf("30 GiB without AllowSplit must be infeasible: %v", err)
+	}
+
+	// A per-device share that overflows a card is infeasible even on an
+	// empty manager: a 20 GiB request split 10%/90% puts 18 GiB on
+	// CUDA1 (> 12 GiB budget).
+	if err := m.VRAMFeasible(resman.PlanRequest{Key: "big", VRAMBytes: 20 * GiB, AllowSplit: true, TensorSplit: []float32{0.1, 0.9}}); !errors.Is(err, resman.ErrNoCapacity) {
+		t.Errorf("a share overflowing CUDA1 must be infeasible: %v", err)
+	}
+
+	// VRAMFeasible reports the empty-manager verdict regardless of current
+	// reservations: reserve on CUDA1, then confirm the splittable 30 GiB
+	// request is still reported feasible (it could fit if that reservation
+	// were released).
+	if _, _, err := m.Reserve(resman.PlanRequest{Key: "held", VRAMBytes: 8 * GiB, Devices: []string{"CUDA1"}}); err != nil {
+		t.Fatalf("reserve held: %v", err)
+	}
+	if err := m.VRAMFeasible(resman.PlanRequest{Key: "ok2", VRAMBytes: 30 * GiB, AllowSplit: true}); err != nil {
+		t.Errorf("feasibility must ignore current reservations: %v", err)
+	}
+}
+
+func Test_Reserve_AllowSplit_RespectsCurrentUsage(t *testing.T) {
+	// AllowSplit accounting must still respect bytes already reserved.
+	// Reserve 6 GiB on CUDA1 (leaving 6 GiB free there), then a 30 GiB
+	// split wants 10 GiB on CUDA1 — which no longer fits, so Reserve
+	// fails. After releasing, the same request succeeds.
+	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	tkt, _, err := m.Reserve(resman.PlanRequest{Key: "pin", VRAMBytes: 6 * GiB, Devices: []string{"CUDA1"}})
+	if err != nil {
+		t.Fatalf("reserve pin: %v", err)
+	}
+
+	_, _, err = m.Reserve(resman.PlanRequest{Key: "split", VRAMBytes: 30 * GiB, AllowSplit: true})
+	if !errors.Is(err, resman.ErrNoCapacity) {
+		t.Fatalf("split must fail while CUDA1 is partially used: %v", err)
+	}
+
+	m.Release(tkt)
+
+	if _, _, err := m.Reserve(resman.PlanRequest{Key: "split", VRAMBytes: 30 * GiB, AllowSplit: true}); err != nil {
+		t.Fatalf("split must succeed after release: %v", err)
+	}
+}
+
+func Test_Reserve_AllowSplit_SingleGPUNoSplit(t *testing.T) {
+	// With only one GPU present, AllowSplit is a no-op: the request is
+	// placed on the single card (and rejected if it does not fit).
+	m, err := resman.New(noHeadroom(snapshotSingle(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	_, plan, err := m.Reserve(resman.PlanRequest{Key: "one", VRAMBytes: 10 * GiB, AllowSplit: true})
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if len(plan.Per) != 1 || plan.Per[0].Name != "CUDA0" {
+		t.Fatalf("expected single-card placement, got %+v", plan.Per)
+	}
+}
+
+func Test_Reserve_AllowSplit_TensorSplitMismatch(t *testing.T) {
+	// An unpinned splittable request with a TensorSplit whose length does
+	// not match the GPU count is an invalid plan.
+	m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	_, _, err = m.Reserve(resman.PlanRequest{
+		Key:         "bad",
+		VRAMBytes:   20 * GiB,
+		AllowSplit:  true,
+		TensorSplit: []float32{1}, // 1 weight, 2 GPUs.
+	})
+	if !errors.Is(err, resman.ErrInvalidPlan) {
+		t.Fatalf("tensor-split length mismatch must be ErrInvalidPlan: %v", err)
 	}
 }
 
