@@ -417,12 +417,49 @@ func capture(spec commandSpec) Command {
 	cmd := Command{Cmd: strings.TrimSpace(spec.name + " " + strings.Join(spec.args, " "))}
 
 	out, err := exec.Command(spec.name, spec.args...).CombinedOutput()
-	cmd.Output = string(out)
+	cmd.Output = expandTabs(string(out))
 	if err != nil {
 		cmd.Err = err.Error()
 	}
 
 	return cmd
+}
+
+// expandTabs replaces tab characters with spaces, honoring 8-column tab stops.
+// Some commands (e.g. "sw_vers") separate their columns with tabs; the raw tabs
+// render inconsistently depending on the viewer's tab width (terminal, browser
+// <pre>, pasted bug report), which makes the section hard to read. Expanding the
+// tabs here, at the single capture point, fixes the output for every consumer
+// (CLI, BUI, and JSON/YAML) at once.
+func expandTabs(s string) string {
+	if !strings.ContainsRune(s, '\t') {
+		return s
+	}
+
+	const tabStop = 8
+
+	var b strings.Builder
+	b.Grow(len(s) + len(s)/4)
+
+	col := 0
+	for _, r := range s {
+		switch r {
+		case '\t':
+			n := tabStop - (col % tabStop)
+			for range n {
+				b.WriteByte(' ')
+			}
+			col += n
+		case '\n':
+			b.WriteByte('\n')
+			col = 0
+		default:
+			b.WriteRune(r)
+			col++
+		}
+	}
+
+	return b.String()
 }
 
 // bin returns the path to a llama binary, adding .exe on Windows.

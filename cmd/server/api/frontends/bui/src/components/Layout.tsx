@@ -41,8 +41,11 @@ const menuStructure: MenuCategory[] = [
   },
   {
     id: 'running',
-    label: 'Running',
-    items: [{ page: 'model-ps', label: 'Models' }],
+    label: 'System',
+    items: [
+      { page: 'diagnose', label: 'Info' },
+      { page: 'model-ps', label: 'Running' },
+    ],
   },
   {
     id: 'kronk',

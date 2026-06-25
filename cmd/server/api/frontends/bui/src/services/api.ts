@@ -24,6 +24,7 @@ import type {
   PlaygroundSessionResponse,
   PlaygroundChatRequest,
   DevicesResponse,
+  DiagnoseResponse,
   LibsCombinationsResponse,
   LibsBundleListResponse,
   LibsBundleActionResponse,
@@ -99,6 +100,10 @@ class ApiService {
 
   async getPoolBudget(): Promise<PoolBudgetResponse> {
     return this.request<PoolBudgetResponse>('/pool/budget');
+  }
+
+  async getDiagnose(bench = false): Promise<DiagnoseResponse> {
+    return this.request<DiagnoseResponse>(`/diagnose${bench ? '?bench=true' : ''}`);
   }
 
   async unloadModel(id: string): Promise<void> {

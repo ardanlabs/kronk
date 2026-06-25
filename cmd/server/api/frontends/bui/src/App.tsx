@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
+import Diagnose from './components/Diagnose';
 import ModelPull from './components/ModelPull';
 import KMSPull from './components/KMSPull';
 import CatalogList from './components/CatalogList';
@@ -63,6 +64,7 @@ export type Page =
   | 'testing-basic'
   | 'testing-sampling'
   | 'testing-configurator'
+  | 'diagnose'
   | 'model-list'
   | 'model-ps'
   | 'model-pull'
@@ -108,8 +110,9 @@ export const routeMap: Record<Page, string> = {
   'testing-basic': '/testing/basic',
   'testing-sampling': '/testing/sampling',
   'testing-configurator': '/testing/configurator',
+  'diagnose': '/system/info',
   'model-list': '/models',
-  'model-ps': '/models/running',
+  'model-ps': '/system/running',
   'model-pull': '/models/pull',
   'kms-pull': '/models/kms-pull',
   'catalog-list': '/catalog',
@@ -217,8 +220,9 @@ function App() {
                 <Route path="/testing/basic" element={<TestingBasic />} />
                 <Route path="/testing/sampling" element={<TestingSampling />} />
                 <Route path="/testing/configurator" element={<TestingConfiguration />} />
+                <Route path="/system/info" element={<Diagnose />} />
+                <Route path="/system/running" element={<ModelPs />} />
                 <Route path="/models" element={<ModelList />} />
-                <Route path="/models/running" element={<ModelPs />} />
                 <Route path="/models/pull" element={<ModelPull />} />
                 <Route path="/models/kms-pull" element={<KMSPull />} />
                 <Route path="/catalog" element={<CatalogList />} />

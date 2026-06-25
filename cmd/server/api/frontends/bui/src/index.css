@@ -1117,6 +1117,15 @@ tr.selected:hover td {
     white-space: pre;
 }
 
+/* Diagnose JSON view: wrap long lines so the whole report stays in the window
+   (no horizontal scrolling) while preserving the JSON structure/indentation. */
+.diagnose-json .code-block,
+.diagnose-json .code-block code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 .doc-list {
     margin-top: 12px;
     padding-left: 20px;
