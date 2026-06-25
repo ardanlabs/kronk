@@ -185,7 +185,10 @@ const menuStructure: MenuCategory[] = [
         id: 'docs-cli-sub',
         label: 'CLI',
         items: [
+          { page: 'docs-cli-bucky', label: 'bucky' },
           { page: 'docs-cli-catalog', label: 'catalog' },
+          { page: 'docs-cli-devices', label: 'devices' },
+          { page: 'docs-cli-diagnose', label: 'diagnose' },
           { page: 'docs-cli-libs', label: 'libs' },
           { page: 'docs-cli-model', label: 'model' },
           { page: 'docs-cli-run', label: 'run' },

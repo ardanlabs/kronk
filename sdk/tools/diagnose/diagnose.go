@@ -500,7 +500,7 @@ var deviceLine = regexp.MustCompile(`^\s*(\S+):\s+(.+?)\s+\((\d+)\s*MiB,\s*(\d+)
 // parseDevices extracts the device list from "llama-bench --list-devices"
 // output. VRAM values are reported in MiB.
 func parseDevices(out string) []Device {
-	var devices []Device
+	devices := []Device{}
 	for line := range strings.SplitSeq(out, "\n") {
 		m := deviceLine.FindStringSubmatch(line)
 		if m == nil {

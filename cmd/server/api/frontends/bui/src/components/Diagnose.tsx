@@ -58,6 +58,7 @@ export default function Diagnose() {
   const load = async () => {
     setLoading(true);
     setError(null);
+    setBenchRan(false);
     try {
       const resp = await api.getDiagnose();
       setData(resp);
@@ -212,7 +213,7 @@ export default function Diagnose() {
                 <p style={{ marginTop: 0, color: 'var(--color-text-secondary)' }}>
                   Root: <code>{data.llama.root}</code>
                 </p>
-                {data.llama.backends.map((b) => (
+                {(data.llama.backends ?? []).map((b) => (
                   <div key={b.processor} style={{ marginBottom: 24 }}>
                     <h4 style={{ marginBottom: 8 }}>{b.processor}</h4>
                     <div className="table-container" style={{ marginBottom: 12 }}>
@@ -233,7 +234,7 @@ export default function Diagnose() {
                         </tbody>
                       </table>
                     </div>
-                    {b.devices.length === 0 ? (
+                    {(b.devices ?? []).length === 0 ? (
                       <p style={{ color: 'var(--color-text-secondary)', margin: '4px 0' }}>
                         No devices detected.
                       </p>
@@ -249,7 +250,7 @@ export default function Diagnose() {
                             </tr>
                           </thead>
                           <tbody>
-                            {b.devices.map((d) => (
+                            {(b.devices ?? []).map((d) => (
                               <tr key={d.id}>
                                 <td>{d.id}</td>
                                 <td>{d.name}</td>
