@@ -6,6 +6,10 @@ import CodeBlock from './CodeBlock';
 
 type ViewMode = 'summary' | 'json';
 
+// BENCH_MODEL mirrors defaultModelSource in sdk/tools/diagnose/diagnose.go — the
+// standard model the benchmark runs so throughput is comparable across machines.
+const BENCH_MODEL = 'unsloth/Qwen3-0.6B-Q8_0';
+
 function formatMiB(mib: number): string {
   if (!mib) return '—';
   return formatBytes(mib * 1024 * 1024);
@@ -269,6 +273,60 @@ export default function Diagnose() {
             )}
           </div>
 
+          {data.engine?.probed && (
+            <div
+              className="card"
+              style={
+                data.engine.loaded
+                  ? undefined
+                  : { borderLeft: '4px solid var(--color-error)' }
+              }
+            >
+              <h3 style={{ marginTop: 0 }}>Engine</h3>
+              {data.engine.loaded ? (
+                <p style={{ marginTop: 0, color: 'var(--color-text-secondary)' }}>
+                  Loaded — Kronk can load models and run inference.
+                </p>
+              ) : (
+                <p style={{ marginTop: 0, color: 'var(--color-error)' }}>
+                  <strong>
+                    Degraded — Kronk could not load its llama.cpp libraries in-process,
+                    so model loading and inference are unavailable.
+                  </strong>
+                </p>
+              )}
+              <div className="table-container">
+                <table>
+                  <tbody>
+                    <tr>
+                      <td>Loaded</td>
+                      <td>{data.engine.loaded ? '✓ true' : '✗ false'}</td>
+                    </tr>
+                    <tr>
+                      <td>Processor</td>
+                      <td>{data.engine.processor || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td>Library path</td>
+                      <td><code>{data.engine.libPath}</code></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              {data.engine.error && (
+                <pre className="code-block" style={{ marginTop: 12, whiteSpace: 'pre-wrap' }}>
+                  {data.engine.error}
+                </pre>
+              )}
+              {!data.engine.loaded && (
+                <p style={{ marginBottom: 0, color: 'var(--color-text-secondary)' }}>
+                  Reinstall the latest libraries (Kronk → Libs → Pull). On Windows this
+                  is usually a stale System32 DLL shadowing a bundled dependency.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="card">
             <div
               style={{
@@ -310,13 +368,19 @@ export default function Diagnose() {
                 <CommandOutput commands={data.bench.commands} open />
               </>
             ) : benchRan ? (
-              <p style={{ color: 'var(--color-warning-text)' }}>
-                Benchmark skipped — the benchmark model is not installed on this
-                machine, so there was nothing to run. Download a model (e.g. via
-                the catalog) and try again, or run{' '}
-                <code>kronk diagnose --install</code> from the CLI to fetch the
-                default model automatically.
-              </p>
+              <div style={{ color: 'var(--color-warning-text)' }}>
+                <p style={{ marginTop: 0 }}>
+                  Benchmark skipped — the benchmark model <code>{BENCH_MODEL}</code>{' '}
+                  is not installed, so there was nothing to run. Install it from the
+                  CLI, then click <strong>Run benchmark</strong> again:
+                </p>
+                <pre className="code-block" style={{ whiteSpace: 'pre-wrap' }}>
+                  {`kronk model pull ${BENCH_MODEL}`}
+                </pre>
+                <p style={{ marginBottom: 0 }}>
+                  Or fetch it automatically with <code>kronk diagnose --install</code>.
+                </p>
+              </div>
             ) : (
               <p style={{ color: 'var(--color-text-secondary)' }}>
                 No benchmark run yet. Click <strong>Run benchmark</strong> to measure

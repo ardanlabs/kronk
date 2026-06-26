@@ -43,6 +43,7 @@ type Report struct {
 	Versions Versions `json:"versions" yaml:"versions"`
 	System   System   `json:"system" yaml:"system"`
 	Llama    Llama    `json:"llama" yaml:"llama"`
+	Engine   Engine   `json:"engine" yaml:"engine"`
 	Bench    Bench    `json:"bench" yaml:"bench"`
 	Hints    []Hint   `json:"hints,omitempty" yaml:"hints,omitempty"`
 }
@@ -105,6 +106,20 @@ type Device struct {
 	VRAMFreeMiB  uint64 `json:"vramFreeMiB" yaml:"vramFreeMiB"`
 }
 
+// Engine reports whether Kronk can load the llama.cpp libraries in-process
+// (the path the server uses via yzma), as opposed to merely running the
+// standalone binaries as subprocesses. This is what catches failures that put
+// the server in degraded mode (e.g. Windows System32 DLL shadowing) which the
+// subprocess probes do not see. Probed is false when no engine probe was
+// supplied or no libraries are installed; in that case Loaded/Error are unset.
+type Engine struct {
+	Probed    bool   `json:"probed" yaml:"probed"`
+	Loaded    bool   `json:"loaded" yaml:"loaded"`
+	Processor string `json:"processor" yaml:"processor"`
+	LibPath   string `json:"libPath" yaml:"libPath"`
+	Error     string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
 // Bench holds the llama-bench results for the selected model. Processor is the
 // backend that was benchmarked.
 type Bench struct {
@@ -126,11 +141,17 @@ type Command struct {
 // Option configures a Collect call.
 type Option func(*options)
 
+// EngineProbe attempts to load the inference engine in-process and returns the
+// error (nil on success). It is injected by the caller — the same way the Kronk
+// version is — so this package does not depend on the top-level kronk package.
+type EngineProbe func() error
+
 type options struct {
 	kronkVersion string
 	modelSource  string
 	skipBench    bool
 	install      bool
+	engineProbe  EngineProbe
 }
 
 func defaultOptions() options {
@@ -175,6 +196,17 @@ func WithInstall(install bool) Option {
 	}
 }
 
+// WithEngineProbe supplies the in-process engine load check. When set (and
+// libraries are installed) Collect runs it to report whether Kronk can actually
+// load the llama.cpp libraries in-process — the real path the server uses — and
+// emits a hint when it fails. The probe is injected so this package stays free
+// of a dependency on the top-level kronk package.
+func WithEngineProbe(probe EngineProbe) Option {
+	return func(o *options) {
+		o.engineProbe = probe
+	}
+}
+
 // =============================================================================
 // Collect
 
@@ -210,6 +242,16 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 	// reason we can explain (e.g. render nodes not accessible).
 	if gpuBackendMissingDevices(backends) {
 		r.Hints = append(r.Hints, gpuAccessHints()...)
+	}
+
+	// Probe the real in-process engine load (the path the server uses). The
+	// subprocess probes above only prove the standalone binaries run; this is
+	// what catches the failures that put the server in degraded mode.
+	if o.engineProbe != nil && len(backends) > 0 {
+		r.Engine = collectEngine(o.engineProbe)
+		if !r.Engine.Loaded {
+			r.Hints = append(r.Hints, engineLoadHint(r.Engine.Error)...)
+		}
 	}
 
 	if len(backends) > 0 && !o.skipBench {
@@ -267,6 +309,46 @@ func collectBench(processor, binDir, modelPath string) Bench {
 			capture(commandSpec{bin(binDir, "llama-bench"), []string{"-m", modelPath}}),
 		},
 	}
+}
+
+// collectEngine runs the injected in-process engine load probe and records the
+// outcome. Processor and LibPath describe the auto-detected backend the server
+// would use, so a failure here mirrors what the server hits at startup.
+func collectEngine(probe EngineProbe) Engine {
+	e := Engine{
+		Probed:  true,
+		LibPath: libs.Path(""),
+	}
+
+	if p, err := defaults.Processor(""); err == nil {
+		e.Processor = p.String()
+	}
+
+	if err := probe(); err != nil {
+		e.Error = err.Error()
+		return e
+	}
+
+	e.Loaded = true
+	return e
+}
+
+// engineLoadHint explains an in-process engine load failure: the server can
+// start but cannot load models or run inference (degraded mode).
+func engineLoadHint(errMsg string) []Hint {
+	msg := "Kronk could not load its llama.cpp libraries in-process; the server " +
+		"runs in degraded mode and cannot load models or run inference."
+	if errMsg != "" {
+		msg += " (" + errMsg + ")"
+	}
+
+	return []Hint{{
+		Severity: "fail",
+		Message:  msg,
+		Remedy: "Reinstall the latest libraries: run `kronk libs pull` (or in the BUI: " +
+			"Kronk → Libs → Pull). On Windows this is usually a stale System32 DLL " +
+			"shadowing a bundled dependency (e.g. libomp140.x86_64.dll, ggml.dll).",
+	}}
 }
 
 // gpuBackendMissingDevices reports whether an installed GPU-capable backend

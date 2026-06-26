@@ -978,6 +978,14 @@ export interface DiagnoseLlama {
   backends: DiagnoseBackend[];
 }
 
+export interface DiagnoseEngine {
+  probed: boolean;
+  loaded: boolean;
+  processor: string;
+  libPath: string;
+  error?: string;
+}
+
 export interface DiagnoseBench {
   processor: string;
   model: string;
@@ -994,6 +1002,7 @@ export interface DiagnoseResponse {
   versions: DiagnoseVersions;
   system: DiagnoseSystem;
   llama: DiagnoseLlama;
+  engine: DiagnoseEngine;
   bench: DiagnoseBench;
   hints?: DiagnoseHint[];
 }

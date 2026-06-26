@@ -15,7 +15,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
-	"github.com/ardanlabs/kronk/sdk/tools/diagnose"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -1004,18 +1003,6 @@ type DevicesResponse devices.Devices
 
 // Encode implements the encoder interface.
 func (d DevicesResponse) Encode() ([]byte, string, error) {
-	data, err := json.Marshal(d)
-	return data, "application/json", err
-}
-
-// =============================================================================
-
-// DiagnoseResponse returns the host diagnostic report (versions, system,
-// llama.cpp backends/devices, and any actionable hints).
-type DiagnoseResponse diagnose.Report
-
-// Encode implements the encoder interface.
-func (d DiagnoseResponse) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(d)
 	return data, "application/json", err
 }

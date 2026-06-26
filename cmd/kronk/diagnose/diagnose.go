@@ -47,6 +47,13 @@ func run(cmd *cobra.Command) (int, error) {
 		diagnose.WithModelSource(model),
 		diagnose.WithSkipBench(noBench),
 		diagnose.WithInstall(install),
+		// Probe the real in-process library load (the path the server uses).
+		// This runs in this standalone process, so it never touches a running
+		// server — which is exactly why the server reaches diagnose by
+		// re-executing this command rather than calling Collect in-process.
+		diagnose.WithEngineProbe(func() error {
+			return kronk.Init()
+		}),
 	)
 	if err != nil {
 		return exitError, fmt.Errorf("unable to collect diagnostics: %w", err)
@@ -121,6 +128,16 @@ func printText(report diagnose.Report, noBench bool) {
 			fmt.Printf("- device  : %s %s (%d MiB total, %d MiB free)\n", d.ID, d.Name, d.VRAMTotalMiB, d.VRAMFreeMiB)
 		}
 		printCommands(b.Commands)
+	}
+
+	if report.Engine.Probed {
+		fmt.Println("\n========== ENGINE ==========")
+		fmt.Println("- loaded    :", report.Engine.Loaded)
+		fmt.Println("- processor :", valueOrUnknown(report.Engine.Processor))
+		fmt.Println("- libPath   :", report.Engine.LibPath)
+		if report.Engine.Error != "" {
+			fmt.Println("- error     :", report.Engine.Error)
+		}
 	}
 
 	if noBench {
