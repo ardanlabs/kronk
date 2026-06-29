@@ -334,20 +334,21 @@ func collectEngine(probe EngineProbe) Engine {
 }
 
 // engineLoadHint explains an in-process engine load failure: the server can
-// start but cannot load models or run inference (degraded mode).
+// start but cannot load models or run inference (degraded mode). It reports
+// only what is verified — the failure and the exact error — and offers no
+// remedy, because at this point the libraries are installed and the underlying
+// cause cannot be reliably classified from the error text. A confident fix is
+// withheld rather than risk sending the user down the wrong path.
 func engineLoadHint(errMsg string) []Hint {
 	msg := "Kronk could not load its llama.cpp libraries in-process; the server " +
 		"runs in degraded mode and cannot load models or run inference."
 	if errMsg != "" {
-		msg += " (" + errMsg + ")"
+		msg += " Error: " + errMsg
 	}
 
 	return []Hint{{
 		Severity: "fail",
 		Message:  msg,
-		Remedy: "Reinstall the latest libraries: run `kronk libs pull` (or in the BUI: " +
-			"Kronk → Libs → Pull). On Windows this is usually a stale System32 DLL " +
-			"shadowing a bundled dependency (e.g. libomp140.x86_64.dll, ggml.dll).",
 	}}
 }
 
