@@ -561,7 +561,7 @@ COPY cmd/server/api/frontends/bui/package.json cmd/server/api/frontends/bui/
 COPY cmd/server/api/frontends/bui/package-lock.json cmd/server/api/frontends/bui/
 
 RUN --mount=type=cache,target=/root/.npm \
-    cd cmd/server/api/frontends/bui && npm ci
+    cd cmd/server/api/frontends/bui && npm install --include=optional
 
 # -----------------------------------------------------------------------------
 # Bring in the rest of the source. Everything past this point invalidates
