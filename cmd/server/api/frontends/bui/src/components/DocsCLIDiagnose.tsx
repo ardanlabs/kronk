@@ -65,7 +65,7 @@ export default function DocsCLIDiagnose() {
                 </tr>
                 <tr>
                   <td><code>--processor &lt;string&gt;</code></td>
-                  <td>Processor to benchmark: <code>cpu</code>, <code>cuda</code>, <code>metal</code>, or <code>vulkan</code> (default: <code>KRONK_PROCESSOR</code> or auto-detect). Affects the benchmark only; the engine section always reflects the real server. With <code>cpu</code> the benchmark runs CPU-only even from a GPU library bundle.</td>
+                  <td>Processor to benchmark: <code>cpu</code>, <code>cuda</code>, <code>metal</code>, <code>rocm</code>, or <code>vulkan</code> (default: <code>KRONK_PROCESSOR</code> or auto-detect). Affects the benchmark only; the engine section always reflects the real server. When <code>cpu</code> is requested but only a GPU library bundle is installed, the benchmark runs CPU-only.</td>
                 </tr>
                 <tr>
                   <td><code>--base-path &lt;string&gt;</code></td>

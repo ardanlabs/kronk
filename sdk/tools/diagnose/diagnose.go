@@ -291,7 +291,23 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 				return Report{}, fmt.Errorf("resolve processor: %w", err)
 			}
 			b := benchBackend(backends, proc.String())
-			r.Bench = collectBench(proc.String(), b.BinDir, modelPath)
+
+			// Force CPU only when reusing a GPU bundle's binary for a cpu
+			// request (e.g. cpu chosen but only a vulkan bundle is installed):
+			// "-ngl 0" offloads zero layers so it runs on the CPU. When the
+			// selected bundle is itself the cpu bundle, let it run its natural
+			// default — important on Intel macOS, where the "cpu" bundle uses
+			// Metal and forcing -ngl 0 would wrongly benchmark CPU-only.
+			forceCPU := proc.String() == "cpu" && b.Processor != "cpu"
+
+			// Report what actually ran: "cpu" when forced onto the CPU,
+			// otherwise the bundle that was benchmarked.
+			benchProc := b.Processor
+			if forceCPU {
+				benchProc = "cpu"
+			}
+
+			r.Bench = collectBench(benchProc, b.BinDir, modelPath, forceCPU)
 		}
 	}
 
@@ -331,14 +347,16 @@ func llamaCommands(binDir string) []Command {
 	}
 }
 
-func collectBench(processor, binDir, modelPath string) Bench {
+func collectBench(processor, binDir, modelPath string, forceCPU bool) Bench {
 	args := []string{"-m", modelPath}
 
-	// Force CPU-only execution when the processor is cpu. llama-bench defaults
-	// to offloading to the GPU, so without this a GPU bundle's binary would
-	// benchmark the GPU even though the user asked for cpu. "-ngl 0" offloads
-	// zero layers, measuring the CPU path the user actually runs.
-	if processor == "cpu" {
+	// Force CPU-only execution only when reusing a GPU bundle's binary for a
+	// cpu request. llama-bench defaults to offloading to the GPU, so without
+	// this a GPU bundle's binary would benchmark the GPU even though the user
+	// asked for cpu. "-ngl 0" offloads zero layers, measuring the CPU path the
+	// user actually runs. The cpu bundle itself is left at its natural default
+	// (important on Intel macOS, where that bundle uses Metal).
+	if forceCPU {
 		args = append(args, "-ngl", "0")
 	}
 
