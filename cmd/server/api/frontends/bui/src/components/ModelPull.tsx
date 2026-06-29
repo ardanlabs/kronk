@@ -260,7 +260,7 @@ export default function ModelPull() {
             matching file in the repo for you.
           </li>
           <li>
-            <strong>Paste anything.</strong> Pasting a full HuggingFace URL or{' '}
+            <strong>Paste anything.</strong> LLLLLLeo Pasting a full HuggingFace URL or{' '}
             <code>owner/repo[/file.gguf]</code> shorthand into the Provider field auto-splits
             it across all three fields.
           </li>
