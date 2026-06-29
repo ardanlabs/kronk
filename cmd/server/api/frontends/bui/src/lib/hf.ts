@@ -53,7 +53,8 @@ export function matchesQuant(filename: string, quant: string): boolean {
 // like a HuggingFace shape worth auto-splitting (so plain "unsloth"
 // stays in the Provider field as the user typed it).
 export function splitPaste(input: string): { provider: string; family: string; model: string } | null {
-  const trimmed = input.trim();
+  // Strip query parameters and trim
+  const trimmed = input.trim().split('?')[0];
   if (!trimmed) return null;
 
   let s = trimmed;
