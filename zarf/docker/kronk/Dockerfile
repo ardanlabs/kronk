@@ -484,9 +484,9 @@ RUN apt-get update \
 # Discover hashes for a new version with:
 #   curl -fsSL https://nodejs.org/dist/v<VER>/SHASUMS256.txt \
 #       | grep -E 'linux-(x64|arm64)\.tar\.xz$'
-ENV NODE_VERSION=22.11.0
-ARG NODE_SHA256_X64="83bf07dd343002a26211cf1fcd46a9d9534219aad42ee02847816940bf610a72"
-ARG NODE_SHA256_ARM64="6031d04b98f59ff0f7cb98566f65b115ecd893d3b7870821171708cdbaf7ae6e"
+ENV NODE_VERSION=24.11.0
+ARG NODE_SHA256_X64="46da9a098973ab7ba4fca76945581ecb2eaf468de347173897044382f10e0a0a"
+ARG NODE_SHA256_ARM64="33a6673b2c7bffeae9deec7f9f8b31aad9119b08f13d49b2ca3ee3bebfe8260f"
 RUN set -eux; \
     case "$(uname -m)" in \
         x86_64)  NODE_ARCH=x64;   NODE_SHA256="${NODE_SHA256_X64}" ;; \
