@@ -1055,7 +1055,7 @@ func main() {
 func run() error {
 	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("run: unable to installation system: %w", err)
+		return fmt.Errorf("run: unable to install system: %w", err)
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -2463,7 +2463,7 @@ func main() {
 func run() error {
 	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("run: unable to installation system: %w", err)
+		return fmt.Errorf("run: unable to install system: %w", err)
 	}
 
 	krn, err := newKronk(mp)
@@ -3109,7 +3109,7 @@ func main() {
 func run() error {
 	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("unable to installation system: %w", err)
+		return fmt.Errorf("unable to install system: %w", err)
 	}
 
 	krn, err := newKronk(mp)
@@ -3281,7 +3281,7 @@ func main() {
 func run() error {
 	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("unable to installation system: %w", err)
+		return fmt.Errorf("unable to install system: %w", err)
 	}
 
 	krn, err := newKronk(mp)
@@ -3873,7 +3873,7 @@ func main() {
 func run() error {
 	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("unable to installation system: %w", err)
+		return fmt.Errorf("unable to install system: %w", err)
 	}
 
 	krn, err := newKronk(mp)
@@ -4430,7 +4430,7 @@ func main() {
 func run() error {
 	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("unable to installation system: %w", err)
+		return fmt.Errorf("unable to install system: %w", err)
 	}
 
 	krn, err := newKronk(mp)
@@ -4615,7 +4615,7 @@ func main() {
 func run() error {
 	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("run: unable to installation system: %w", err)
+		return fmt.Errorf("run: unable to install system: %w", err)
 	}
 
 	krn, err := newKronk(mp)

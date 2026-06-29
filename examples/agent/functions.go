@@ -83,7 +83,7 @@ func RegisterReadFile(tools map[string]Tool) model.D {
 	return rf.toolDocument()
 }
 
-// ToolDocument defines the metadata for the tool that is provied to the model.
+// ToolDocument defines the metadata for the tool that is provided to the model.
 func (rf *ReadFile) toolDocument() model.D {
 	return model.D{
 		"type": "function",
@@ -145,7 +145,7 @@ func RegisterSearchFiles(tools map[string]Tool) model.D {
 	return sf.toolDocument()
 }
 
-// toolDocument defines the metadata for the tool that is provied to the model.
+// toolDocument defines the metadata for the tool that is provided to the model.
 func (sf *SearchFiles) toolDocument() model.D {
 	return model.D{
 		"type": "function",
@@ -285,7 +285,7 @@ func RegisterCreateFile(tools map[string]Tool) model.D {
 	return cf.toolDocument()
 }
 
-// toolDocument defines the metadata for the tool that is provied to the model.
+// toolDocument defines the metadata for the tool that is provided to the model.
 func (cf *CreateFile) toolDocument() model.D {
 	return model.D{
 		"type": "function",
@@ -354,7 +354,7 @@ func RegisterGoCodeEditor(tools map[string]Tool) model.D {
 	return gce.toolDocument()
 }
 
-// toolDocument defines the metadata for the tool that is provied to the model.
+// toolDocument defines the metadata for the tool that is provided to the model.
 func (gce *GoCodeEditor) toolDocument() model.D {
 	return model.D{
 		"type": "function",
