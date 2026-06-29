@@ -152,6 +152,7 @@ type options struct {
 	skipBench    bool
 	install      bool
 	engineProbe  EngineProbe
+	processor    string
 }
 
 func defaultOptions() options {
@@ -207,6 +208,19 @@ func WithEngineProbe(probe EngineProbe) Option {
 	}
 }
 
+// WithProcessor pins the processor (cpu, cuda, metal, vulkan) the BENCHMARK runs
+// on. It does NOT affect the engine section, which always reflects the real
+// server (ambient KRONK_PROCESSOR or auto-detection) so its health check is not
+// distorted by a benchmark-only choice. An empty value falls back to that same
+// ambient resolution. When the resolved processor is "cpu", the benchmark forces
+// CPU-only execution even from a GPU library bundle, so it measures the path the
+// user asked about.
+func WithProcessor(processor string) Option {
+	return func(o *options) {
+		o.processor = processor
+	}
+}
+
 // =============================================================================
 // Collect
 
@@ -220,6 +234,15 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(&o)
+	}
+
+	// Validate an explicit benchmark processor override up front so a bad value
+	// fails fast, even when the benchmark is skipped. An empty value is fine: it
+	// resolves to the ambient KRONK_PROCESSOR or auto-detection later.
+	if o.processor != "" {
+		if _, err := defaults.Processor(o.processor); err != nil {
+			return Report{}, fmt.Errorf("resolve processor: %w", err)
+		}
 	}
 
 	r := Report{
@@ -260,8 +283,15 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 			return Report{}, fmt.Errorf("resolve model: %w", err)
 		}
 		if ok {
-			b := benchBackend(backends)
-			r.Bench = collectBench(b.Processor, b.BinDir, modelPath)
+			// The benchmark honors the override; the engine above stays on the
+			// real server processor, so a benchmark-only choice never distorts
+			// the engine health check.
+			proc, err := defaults.Processor(o.processor)
+			if err != nil {
+				return Report{}, fmt.Errorf("resolve processor: %w", err)
+			}
+			b := benchBackend(backends, proc.String())
+			r.Bench = collectBench(proc.String(), b.BinDir, modelPath)
 		}
 	}
 
@@ -302,18 +332,30 @@ func llamaCommands(binDir string) []Command {
 }
 
 func collectBench(processor, binDir, modelPath string) Bench {
+	args := []string{"-m", modelPath}
+
+	// Force CPU-only execution when the processor is cpu. llama-bench defaults
+	// to offloading to the GPU, so without this a GPU bundle's binary would
+	// benchmark the GPU even though the user asked for cpu. "-ngl 0" offloads
+	// zero layers, measuring the CPU path the user actually runs.
+	if processor == "cpu" {
+		args = append(args, "-ngl", "0")
+	}
+
 	return Bench{
 		Processor: processor,
 		Model:     modelPath,
 		Commands: []Command{
-			capture(commandSpec{bin(binDir, "llama-bench"), []string{"-m", modelPath}}),
+			capture(commandSpec{bin(binDir, "llama-bench"), args}),
 		},
 	}
 }
 
 // collectEngine runs the injected in-process engine load probe and records the
-// outcome. Processor and LibPath describe the auto-detected backend the server
-// would use, so a failure here mirrors what the server hits at startup.
+// outcome. Processor and LibPath describe the real server backend (the ambient
+// KRONK_PROCESSOR or auto-detection), so a failure here mirrors what the server
+// hits at startup. It deliberately ignores any benchmark processor override so
+// the health check always reflects the actual server.
 func collectEngine(probe EngineProbe) Engine {
 	e := Engine{
 		Probed:  true,
@@ -367,21 +409,23 @@ func gpuBackendMissingDevices(backends []Backend) bool {
 	return false
 }
 
-// benchBackend chooses which installed backend to benchmark. It prefers a
-// backend that actually sees a device (a real GPU), then the auto-detected
-// processor, and finally the first installed backend.
-func benchBackend(backends []Backend) Backend {
-	for _, b := range backends {
-		if len(b.Devices) > 0 {
-			return b
+// benchBackend chooses which installed backend bundle to benchmark. It honors
+// the resolved processor first so the benchmark obeys the same processor setting
+// the rest of Kronk does. If no installed bundle matches that processor it falls
+// back to a bundle that sees a device (a real GPU) — its binary can still run
+// CPU-only when collectBench forces it — and finally the first installed bundle.
+func benchBackend(backends []Backend, processor string) Backend {
+	if processor != "" {
+		for _, b := range backends {
+			if b.Processor == processor {
+				return b
+			}
 		}
 	}
 
-	if p, err := defaults.Processor(""); err == nil {
-		for _, b := range backends {
-			if b.Processor == p.String() {
-				return b
-			}
+	for _, b := range backends {
+		if len(b.Devices) > 0 {
+			return b
 		}
 	}
 

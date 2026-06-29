@@ -64,6 +64,10 @@ export default function DocsCLIDiagnose() {
                   <td>Model source or local <code>.gguf</code> path to benchmark (e.g. <code>unsloth/Qwen3-8B-Q8_0</code>)</td>
                 </tr>
                 <tr>
+                  <td><code>--processor &lt;string&gt;</code></td>
+                  <td>Processor to benchmark: <code>cpu</code>, <code>cuda</code>, <code>metal</code>, or <code>vulkan</code> (default: <code>KRONK_PROCESSOR</code> or auto-detect). Affects the benchmark only; the engine section always reflects the real server. With <code>cpu</code> the benchmark runs CPU-only even from a GPU library bundle.</td>
+                </tr>
+                <tr>
                   <td><code>--base-path &lt;string&gt;</code></td>
                   <td>Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag</td>
                 </tr>
@@ -88,7 +92,10 @@ kronk diagnose --format yaml
 kronk diagnose --no-bench
 
 # Benchmark a specific model (source or local .gguf path)
-kronk diagnose --model unsloth/Qwen3-8B-Q8_0`}</code>
+kronk diagnose --model unsloth/Qwen3-8B-Q8_0
+
+# Benchmark on a specific processor (e.g. force CPU on a GPU machine)
+kronk diagnose --processor cpu`}</code>
             </pre>
           </div>
         </div>

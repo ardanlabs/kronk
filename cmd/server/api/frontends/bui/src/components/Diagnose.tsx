@@ -54,6 +54,7 @@ export default function Diagnose() {
   const [view, setView] = useState<ViewMode>('summary');
   const [benchmarking, setBenchmarking] = useState(false);
   const [benchRan, setBenchRan] = useState(false);
+  const [benchProcessor, setBenchProcessor] = useState('');
 
   useEffect(() => {
     load();
@@ -80,7 +81,7 @@ export default function Diagnose() {
     setBenchmarking(true);
     setError(null);
     try {
-      const resp = await api.getDiagnose(true);
+      const resp = await api.getDiagnose(true, benchProcessor);
       setData(resp);
       setBenchRan(true);
       setView('summary');
@@ -92,6 +93,13 @@ export default function Diagnose() {
   };
 
   const reportJSON = data ? JSON.stringify(data, null, 2) : '';
+
+  // benchProcessorOptions lists the processors the user can benchmark: every
+  // installed backend plus cpu (always selectable, since any bundle can run
+  // CPU-only via -ngl 0 — this is how a GPU-only install still benchmarks cpu).
+  const benchProcessorOptions = Array.from(
+    new Set([...(data?.llama.backends ?? []).map((b) => b.processor), 'cpu'])
+  );
 
   return (
     <div>
@@ -318,12 +326,6 @@ export default function Diagnose() {
                   {data.engine.error}
                 </pre>
               )}
-              {!data.engine.loaded && (
-                <p style={{ marginBottom: 0, color: 'var(--color-text-secondary)' }}>
-                  Reinstall the latest libraries (Kronk → Libs → Pull). On Windows this
-                  is usually a stale System32 DLL shadowing a bundled dependency.
-                </p>
-              )}
             </div>
           )}
 
@@ -337,13 +339,31 @@ export default function Diagnose() {
               }}
             >
               <h3 style={{ margin: 0 }}>Benchmark</h3>
-              <button
-                className="btn btn-primary"
-                onClick={runBenchmark}
-                disabled={benchmarking || loading || !data.llama.installed}
-              >
-                {benchmarking ? 'Running benchmark…' : 'Run benchmark'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span className="bench-processor">
+                  <label htmlFor="bench-processor">Processor:</label>
+                  <select
+                    id="bench-processor"
+                    value={benchProcessor}
+                    onChange={(e) => setBenchProcessor(e.target.value)}
+                    disabled={benchmarking || loading}
+                  >
+                    <option value="">Auto</option>
+                    {benchProcessorOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+                <button
+                  className="btn btn-primary"
+                  onClick={runBenchmark}
+                  disabled={benchmarking || loading || !data.llama.installed}
+                >
+                  {benchmarking ? 'Running benchmark…' : 'Run benchmark'}
+                </button>
+              </div>
             </div>
             {benchmarking ? (
               <p style={{ color: 'var(--color-text-secondary)' }}>

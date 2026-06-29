@@ -28,10 +28,13 @@ import (
 // By default the benchmark step is skipped ("--no-bench") because it loads a
 // model and would make this endpoint slow; it runs only when requested with
 // "?bench=true". An optional "?model=" selects which installed model to
-// benchmark.
+// benchmark, and "?processor=" pins the benchmark processor (cpu, cuda, metal,
+// vulkan). The processor affects the benchmark only; the engine section always
+// reflects the real server.
 func (a *app) diagnose(ctx context.Context, r *http.Request) web.Encoder {
 	bench := r.URL.Query().Get("bench") == "true"
 	model := r.URL.Query().Get("model")
+	processor := r.URL.Query().Get("processor")
 
 	exe, err := os.Executable()
 	if err != nil {
@@ -44,6 +47,9 @@ func (a *app) diagnose(ctx context.Context, r *http.Request) web.Encoder {
 	}
 	if model != "" {
 		args = append(args, "--model", model)
+	}
+	if processor != "" {
+		args = append(args, "--processor", processor)
 	}
 
 	// stdout carries the JSON report; stderr carries progress and is only used

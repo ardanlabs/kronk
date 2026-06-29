@@ -57,4 +57,5 @@ func init() {
 	Cmd.Flags().Bool("install", false, "Download missing llama.cpp libraries and benchmark model")
 	Cmd.Flags().Bool("no-bench", false, "Skip the llama-bench step")
 	Cmd.Flags().String("model", "", "Model source or local .gguf path to benchmark")
+	Cmd.Flags().String("processor", "", "Processor to benchmark: cpu, cuda, metal, or vulkan (default: KRONK_PROCESSOR or auto-detect)")
 }

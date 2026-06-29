@@ -26,6 +26,7 @@ func run(cmd *cobra.Command) (int, error) {
 	install, _ := cmd.Flags().GetBool("install")
 	noBench, _ := cmd.Flags().GetBool("no-bench")
 	model, _ := cmd.Flags().GetString("model")
+	processor, _ := cmd.Flags().GetString("processor")
 
 	switch format {
 	case "text", "json", "yaml":
@@ -47,6 +48,7 @@ func run(cmd *cobra.Command) (int, error) {
 		diagnose.WithModelSource(model),
 		diagnose.WithSkipBench(noBench),
 		diagnose.WithInstall(install),
+		diagnose.WithProcessor(processor),
 		// Probe the real in-process library load (the path the server uses).
 		// This runs in this standalone process, so it never touches a running
 		// server — which is exactly why the server reaches diagnose by
