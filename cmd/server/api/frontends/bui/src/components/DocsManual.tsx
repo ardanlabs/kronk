@@ -216,7 +216,51 @@ kronk server start
 curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","messages":[...]}'`}</code></pre>
           <hr />
           <h2 id="chapter-2-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
-          <h3 id="21-prerequisites">2.1 Prerequisites</h3>
+          <h3 id="21-quick-start-10-minutes">2.1 Quick Start (10 Minutes)</h3>
+          <p>This is the fastest path from nothing to a working local coding assistant. Follow it top to bottom and you'll have the Kronk Model Server running with a real coding model in about ten minutes — plus however long your connection needs to pull the model (roughly 5 GB). The sections after this one cover every step in more detail and the alternatives (Docker, manual library installs, NixOS, deeper tuning).</p>
+          <p>Everything here runs on a laptop-class GPU. On Apple Silicon a 16 GB M-series Mac is plenty; on Linux/Windows, 16 GB+ of VRAM runs the recommended model comfortably.</p>
+          <p><strong>Step 1 — Install Kronk</strong></p>
+          <p>On macOS or Linux with Homebrew:</p>
+          <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk
+brew trust ardanlabs/kronk
+brew install kronk`}</code></pre>
+          <p>Or with Go on any supported platform:</p>
+          <pre className="code-block"><code className="language-shell">{`go install github.com/ardanlabs/kronk/cmd/kronk@latest`}</code></pre>
+          <p>Confirm it's on your <code>PATH</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk --help`}</code></pre>
+          <p><strong>Step 2 — Start the server</strong></p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
+          <p>On first run Kronk auto-detects your hardware (Metal, CUDA, Vulkan, or CPU), downloads the matching llama.cpp libraries, and seeds a default <code>~/.kronk/model_config.yaml</code>. When it's ready you'll see:</p>
+          <pre className="code-block"><code>{`Kronk Model Server started
+API: http://localhost:11435
+BUI: http://localhost:11435`}</code></pre>
+          <p>That's the OpenAI-compatible API and the Browser UI, both on port</p>
+          <ol>
+            <li>To run it in the background use <code>kronk server start -d</code>; to stop</li>
+          </ol>
+          <p>it, <code>kronk server stop</code>.</p>
+          <p><strong>Step 3 — Download a coding model</strong></p>
+          <p>The recommended starter is <strong>Qwopus3.5-4B-Coder</strong>, a 4-billion-parameter coding model. It's about 5 GB on disk, runs in roughly 14 GB of VRAM with a 72k-token context window, and is already pre-configured in the seeded <code>model_config.yaml</code> — no editing required to use it.</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local`}</code></pre>
+          <p>The <code>--local</code> flag does the download directly against your filesystem with nicer progress output. The model lands under <code>~/.kronk/models/</code>. (Prefer clicking? Open the BUI at http://localhost:11435, go to <strong>Catalog → List</strong>, find <code>Qwopus3.5-4B-Coder.Q8_0</code>, and hit download.)</p>
+          <p><strong>Step 4 — Verify it works</strong></p>
+          <p>Quickest check is the BUI: open http://localhost:11435, click <strong>Apps → Chat</strong>, pick <code>Qwopus3.5-4B-Coder.Q8_0</code>, and ask it something. The first message takes a few seconds while the model loads; after that it's near-instant.</p>
+          <p>Prefer the terminal? Hit the API directly:</p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT",
+    "messages": [{"role": "user", "content": "Write a Go function that reverses a string."}],
+    "max_tokens": 256
+  }'`}</code></pre>
+          <p>You should get back a working Go function. That's it — Kronk is running locally with a coding model, at zero per-token cost, and your source code never leaves your machine.</p>
+          <p><strong>Step 5 — Put it to work</strong></p>
+          <ul>
+            <li><strong>Connect your editor or coding agent.</strong> Point VS Code Chat, OpenCode, or any OpenAI-compatible client at <code>http://localhost:11435/v1</code>. See <a href="chapter-14-client-integration.md">Chapter 14: Client Integration</a>.</li>
+            <li><strong>Want more capability?</strong> With a 24 GB+ GPU you can step up to the 35B-class MoE <code>unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M</code> (also pre-seeded). Pull it the same way and select it in your client.</li>
+            <li><strong>Tune for your hardware.</strong> Context window, <code>nseq-max</code>, and KV cache quantization all live in <code>~/.kronk/model_config.yaml</code> — see section 2.8 below and <a href="chapter-03-model-configuration.md">Chapter 3: Model Configuration</a>.</li>
+          </ul>
+          <h3 id="22-prerequisites">2.2 Prerequisites</h3>
           <p><strong>Required</strong></p>
           <ul>
             <li>Go 1.26 or later</li>
@@ -227,7 +271,7 @@ curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","
             <li>GPU with Metal (macOS), CUDA (NVIDIA), or Vulkan support</li>
             <li>16GB+ system RAM (96GB+ Recommended)</li>
           </ul>
-          <h3 id="22-installing-the-cli">2.2 Installing the CLI</h3>
+          <h3 id="23-installing-the-cli">2.3 Installing the CLI</h3>
           <p><strong>Option 1: Homebrew (recommended for macOS and Linux)</strong></p>
           <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk
 brew trust ardanlabs/kronk
@@ -308,7 +352,7 @@ Flags:
   -v, --version            version for kronk
 
 Use "kronk [command] --help" for more information about a command.`}</code></pre>
-          <h3 id="23-docker-oci-container">2.3 Docker / OCI Container</h3>
+          <h3 id="24-docker-oci-container">2.4 Docker / OCI Container</h3>
           <p>Pre-built multi-arch container images are published to GHCR and Docker Hub on every release. They bundle the kronk binary, the BUI, one or more llama.cpp processor backends for LLM inference, the matching whisper.cpp (bucky) backend for audio transcription via <code>/v1/audio/transcriptions</code>, and <code>ffmpeg</code> for decoding non-PCM audio uploads — so the image is offline-ready after the first pull (models still need to be downloaded separately into the persisted <code>/kronk</code> volume). Six variants are produced; pick the one that matches your hardware:</p>
           <table className="flags-table">
             <thead>
@@ -374,7 +418,7 @@ docker run --rm \\
           <p>The <code>/kronk</code> volume persists models, libraries, catalog data, keys, and badger state across container restarts — keep it on a host bind-mount or a named volume.</p>
           <p>The header comment of <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a> documents every <code>docker run</code> invocation (AMD ROCm; Vulkan on AMD / NVIDIA / Intel; Jetson; specific-card device passthrough; etc.), the audio transcription workflow (pulling a whisper model, hitting <code>/v1/audio/transcriptions</code>), and lists the full host-OS × GPU compatibility matrix. See also <a href="chapter-18-bucky.md">Chapter 18: Bucky</a> for full transcription documentation.</p>
           <p>The <code>:rocm</code> image is a special case: the upstream whisper.cpp build matrix has no rocm bundle, so the rocm image ships the <strong>vulkan</strong> bucky bundle instead and the container entrypoint transparently points <code>KRONK_BUCKY_LIB_PATH</code> at it on ROCm hosts. Transcription therefore stays GPU-accelerated on AMD GPUs via the RADV Vulkan driver.</p>
-          <h3 id="24-installing-libraries">2.4 Installing Libraries</h3>
+          <h3 id="25-installing-libraries">2.5 Installing Libraries</h3>
           <p>Before running inference, you need the llama.cpp libraries for your machine. Kronk auto-detects your hardware and downloads the appropriate binaries.</p>
           <p><strong>Option A: Via the Server</strong></p>
           <p>Start the server and use the BUI to download libraries:</p>
@@ -447,7 +491,7 @@ kronk libs --list-installs
 kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</code></pre>
           <p>In web mode (the default — no <code>--local</code>) the same commands are dispatched through the running server. Activate any installed bundle by exporting <code>KRONK_LIB_PATH</code> to its folder and restarting the server.</p>
           <p><strong>Audio (Bucky):</strong> if you also plan to use speech-to-text, install the whisper.cpp libraries with the parallel <code>kronk bucky libs</code> command. The flags mirror <code>kronk libs</code> and the bundle lands under <code>~/.kronk/bucky-libraries/</code>. See <a href="chapter-18-bucky.md">Chapter 18: Bucky</a>.</p>
-          <h3 id="25-downloading-your-first-model">2.5 Downloading Your First Model</h3>
+          <h3 id="26-downloading-your-first-model">2.6 Downloading Your First Model</h3>
           <p>Kronk maintains your <strong>personal catalog</strong> at <code>~/.kronk/catalog.yaml</code>. On first run it is seeded from an embedded starter list so you have something to choose from immediately; the catalog grows as you pull more models or resolve new IDs against HuggingFace.</p>
           <p>List entries in the catalog:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local`}</code></pre>
@@ -462,7 +506,7 @@ kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</
           <pre className="code-block"><code className="language-shell">{`kronk model pull Qwen3-0.6B-Q8_0 --local`}</code></pre>
           <p>Models are stored in <code>~/.kronk/models/&lt;provider&gt;/&lt;family&gt;/</code> by default. After the pull completes the catalog entry is updated with the resolved provider, family, revision, and file sizes so subsequent lookups don't need to hit HuggingFace.</p>
           <p><strong>Audio (Bucky):</strong> whisper models live in a separate flat layout at <code>~/.kronk/bucky-models/ggml-&lt;name&gt;.bin</code> and are pulled with <code>kronk bucky model pull &lt;name&gt;</code> (e.g. <code>ggml-tiny.bin</code>). See <a href="chapter-18-bucky.md#183-model-catalog-pull">Chapter 18 §18.3</a>.</p>
-          <h3 id="26-starting-the-server">2.6 Starting the Server</h3>
+          <h3 id="27-starting-the-server">2.7 Starting the Server</h3>
           <p>Start the Kronk Model Server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
           <p>The server starts on <code>http://localhost:11435</code> by default. You'll see output like:</p>
@@ -474,7 +518,7 @@ BUI: http://localhost:11435`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start -d`}</code></pre>
           <p><strong>Stopping the Server</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
-          <h3 id="27-model-configuration-file">2.7 Model Configuration File</h3>
+          <h3 id="28-model-configuration-file">2.8 Model Configuration File</h3>
           <p>When Kronk starts the server for the first time, it automatically installs a default <code>model_config.yaml</code> file in the <code>~/.kronk/</code> directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.</p>
           <p><strong>How It Works</strong></p>
           <p>The default configuration is embedded inside the Kronk CLI binary. On first server start, if <code>~/.kronk/model_config.yaml</code> does not already exist, Kronk writes the embedded default to that path. Once the file exists, Kronk never overwrites it — your edits are preserved across upgrades.</p>
@@ -590,7 +634,7 @@ kronk server start`}</code></pre>
             <li>Use YAML anchors (<code>&name</code> and <code>&lt;&lt;: *name</code>) to share common settings between variants. The default file includes examples of this pattern.</li>
             <li>The <code>--model-config</code> server flag lets you point to an alternative config file for testing without modifying your main one.</li>
           </ul>
-          <h3 id="28-verifying-the-installation">2.8 Verifying the Installation</h3>
+          <h3 id="29-verifying-the-installation">2.9 Verifying the Installation</h3>
           <p><strong>Test via curl</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p>You should see a list of available models.</p>
@@ -605,23 +649,6 @@ kronk server start`}</code></pre>
   }'`}</code></pre>
           <p><strong>Test via BUI</strong></p>
           <p>Open <code>http://localhost:11435</code> in your browser and navigate to the <code>Apps/Chat</code> app. Select the model you want to try and chat away.</p>
-          <h3 id="29-quick-start-summary">2.9 Quick Start Summary</h3>
-          <pre className="code-block"><code className="language-shell">{`# 1. Install Kronk
-go install github.com/ardanlabs/kronk/cmd/kronk@latest
-
-# 2. Start the server (auto-installs libraries on first run)
-kronk server start
-
-# 3. Open BUI and download a model
-open http://localhost:11435
-
-# 4. Download via the BUI Catalog/List screen or use this CLI call
-kronk model pull Qwen3-0.6B-Q8_0 --local
-
-# 5. Test the API using this curl call or the BUI App/Chat screen
-curl http://localhost:11435/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -d '{"model": "Qwen3-0.6B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'`}</code></pre>
           <h3 id="210-nixos-setup">2.10 NixOS Setup</h3>
           <p>NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared libraries and binaries cannot be found in standard paths like <code>/usr/lib</code>. Kronk requires llama.cpp shared libraries at runtime, which means on NixOS you need to provide them through Nix rather than using the built-in <code>kronk libs</code> downloader.</p>
           <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for development and build packages for producing a standalone <code>kronk</code> binary, each per GPU backend.</p>
@@ -9550,15 +9577,15 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
             <div className="doc-index-section">
               <a href="#chapter-2-installation-quick-start" className={`doc-index-header ${activeSection === 'chapter-2-installation-quick-start' ? 'active' : ''}`}>Chapter 2: Installation &amp; Quick Start</a>
               <ul>
-                <li><a href="#21-prerequisites" className={activeSection === '21-prerequisites' ? 'active' : ''}>2.1 Prerequisites</a></li>
-                <li><a href="#22-installing-the-cli" className={activeSection === '22-installing-the-cli' ? 'active' : ''}>2.2 Installing the CLI</a></li>
-                <li><a href="#23-docker-oci-container" className={activeSection === '23-docker-oci-container' ? 'active' : ''}>2.3 Docker / OCI Container</a></li>
-                <li><a href="#24-installing-libraries" className={activeSection === '24-installing-libraries' ? 'active' : ''}>2.4 Installing Libraries</a></li>
-                <li><a href="#25-downloading-your-first-model" className={activeSection === '25-downloading-your-first-model' ? 'active' : ''}>2.5 Downloading Your First Model</a></li>
-                <li><a href="#26-starting-the-server" className={activeSection === '26-starting-the-server' ? 'active' : ''}>2.6 Starting the Server</a></li>
-                <li><a href="#27-model-configuration-file" className={activeSection === '27-model-configuration-file' ? 'active' : ''}>2.7 Model Configuration File</a></li>
-                <li><a href="#28-verifying-the-installation" className={activeSection === '28-verifying-the-installation' ? 'active' : ''}>2.8 Verifying the Installation</a></li>
-                <li><a href="#29-quick-start-summary" className={activeSection === '29-quick-start-summary' ? 'active' : ''}>2.9 Quick Start Summary</a></li>
+                <li><a href="#21-quick-start-10-minutes" className={activeSection === '21-quick-start-10-minutes' ? 'active' : ''}>2.1 Quick Start (10 Minutes)</a></li>
+                <li><a href="#22-prerequisites" className={activeSection === '22-prerequisites' ? 'active' : ''}>2.2 Prerequisites</a></li>
+                <li><a href="#23-installing-the-cli" className={activeSection === '23-installing-the-cli' ? 'active' : ''}>2.3 Installing the CLI</a></li>
+                <li><a href="#24-docker-oci-container" className={activeSection === '24-docker-oci-container' ? 'active' : ''}>2.4 Docker / OCI Container</a></li>
+                <li><a href="#25-installing-libraries" className={activeSection === '25-installing-libraries' ? 'active' : ''}>2.5 Installing Libraries</a></li>
+                <li><a href="#26-downloading-your-first-model" className={activeSection === '26-downloading-your-first-model' ? 'active' : ''}>2.6 Downloading Your First Model</a></li>
+                <li><a href="#27-starting-the-server" className={activeSection === '27-starting-the-server' ? 'active' : ''}>2.7 Starting the Server</a></li>
+                <li><a href="#28-model-configuration-file" className={activeSection === '28-model-configuration-file' ? 'active' : ''}>2.8 Model Configuration File</a></li>
+                <li><a href="#29-verifying-the-installation" className={activeSection === '29-verifying-the-installation' ? 'active' : ''}>2.9 Verifying the Installation</a></li>
                 <li><a href="#210-nixos-setup" className={activeSection === '210-nixos-setup' ? 'active' : ''}>2.10 NixOS Setup</a></li>
               </ul>
             </div>

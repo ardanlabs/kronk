@@ -2,20 +2,128 @@
 
 ## Table of Contents
 
-- [2.1 Prerequisites](#21-prerequisites)
-- [2.2 Installing the CLI](#22-installing-the-cli)
-- [2.3 Docker / OCI Container](#23-docker--oci-container)
-- [2.4 Installing Libraries](#24-installing-libraries)
-- [2.5 Downloading Your First Model](#25-downloading-your-first-model)
-- [2.6 Starting the Server](#26-starting-the-server)
-- [2.7 Model Configuration File](#27-model-configuration-file)
-- [2.8 Verifying the Installation](#28-verifying-the-installation)
-- [2.9 Quick Start Summary](#29-quick-start-summary)
+- [2.1 Quick Start (10 Minutes)](#21-quick-start-10-minutes)
+- [2.2 Prerequisites](#22-prerequisites)
+- [2.3 Installing the CLI](#23-installing-the-cli)
+- [2.4 Docker / OCI Container](#24-docker--oci-container)
+- [2.5 Installing Libraries](#25-installing-libraries)
+- [2.6 Downloading Your First Model](#26-downloading-your-first-model)
+- [2.7 Starting the Server](#27-starting-the-server)
+- [2.8 Model Configuration File](#28-model-configuration-file)
+- [2.9 Verifying the Installation](#29-verifying-the-installation)
 - [2.10 NixOS Setup](#210-nixos-setup)
 
 ---
 
-### 2.1 Prerequisites
+### 2.1 Quick Start (10 Minutes)
+
+This is the fastest path from nothing to a working local coding
+assistant. Follow it top to bottom and you'll have the Kronk Model
+Server running with a real coding model in about ten minutes — plus
+however long your connection needs to pull the model (roughly 5 GB).
+The sections after this one cover every step in more detail and the
+alternatives (Docker, manual library installs, NixOS, deeper tuning).
+
+Everything here runs on a laptop-class GPU. On Apple Silicon a 16 GB
+M-series Mac is plenty; on Linux/Windows, 16 GB+ of VRAM runs the
+recommended model comfortably.
+
+**Step 1 — Install Kronk**
+
+On macOS or Linux with Homebrew:
+
+```shell
+brew tap ardanlabs/kronk
+brew trust ardanlabs/kronk
+brew install kronk
+```
+
+Or with Go on any supported platform:
+
+```shell
+go install github.com/ardanlabs/kronk/cmd/kronk@latest
+```
+
+Confirm it's on your `PATH`:
+
+```shell
+kronk --help
+```
+
+**Step 2 — Start the server**
+
+```shell
+kronk server start
+```
+
+On first run Kronk auto-detects your hardware (Metal, CUDA, Vulkan, or
+CPU), downloads the matching llama.cpp libraries, and seeds a default
+`~/.kronk/model_config.yaml`. When it's ready you'll see:
+
+```
+Kronk Model Server started
+API: http://localhost:11435
+BUI: http://localhost:11435
+```
+
+That's the OpenAI-compatible API and the Browser UI, both on port
+11435. To run it in the background use `kronk server start -d`; to stop
+it, `kronk server stop`.
+
+**Step 3 — Download a coding model**
+
+The recommended starter is **Qwopus3.5-4B-Coder**, a 4-billion-parameter
+coding model. It's about 5 GB on disk, runs in roughly 14 GB of VRAM
+with a 72k-token context window, and is already pre-configured in the
+seeded `model_config.yaml` — no editing required to use it.
+
+```shell
+kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local
+```
+
+The `--local` flag does the download directly against your filesystem
+with nicer progress output. The model lands under `~/.kronk/models/`.
+(Prefer clicking? Open the BUI at http://localhost:11435, go to
+**Catalog → List**, find `Qwopus3.5-4B-Coder.Q8_0`, and hit download.)
+
+**Step 4 — Verify it works**
+
+Quickest check is the BUI: open http://localhost:11435, click
+**Apps → Chat**, pick `Qwopus3.5-4B-Coder.Q8_0`, and ask it something.
+The first message takes a few seconds while the model loads; after that
+it's near-instant.
+
+Prefer the terminal? Hit the API directly:
+
+```shell
+curl http://localhost:11435/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT",
+    "messages": [{"role": "user", "content": "Write a Go function that reverses a string."}],
+    "max_tokens": 256
+  }'
+```
+
+You should get back a working Go function. That's it — Kronk is running
+locally with a coding model, at zero per-token cost, and your source
+code never leaves your machine.
+
+**Step 5 — Put it to work**
+
+- **Connect your editor or coding agent.** Point VS Code Chat,
+  OpenCode, or any OpenAI-compatible client at
+  `http://localhost:11435/v1`. See [Chapter 14: Client
+  Integration](chapter-14-client-integration.md).
+- **Want more capability?** With a 24 GB+ GPU you can step up to the
+  35B-class MoE `unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M` (also pre-seeded).
+  Pull it the same way and select it in your client.
+- **Tune for your hardware.** Context window, `nseq-max`, and KV cache
+  quantization all live in `~/.kronk/model_config.yaml` — see section
+  2.8 below and [Chapter 3: Model
+  Configuration](chapter-03-model-configuration.md).
+
+### 2.2 Prerequisites
 
 **Required**
 
@@ -27,7 +135,7 @@
 - GPU with Metal (macOS), CUDA (NVIDIA), or Vulkan support
 - 16GB+ system RAM (96GB+ Recommended)
 
-### 2.2 Installing the CLI
+### 2.3 Installing the CLI
 
 **Option 1: Homebrew (recommended for macOS and Linux)**
 
@@ -132,7 +240,7 @@ Flags:
 Use "kronk [command] --help" for more information about a command.
 ```
 
-### 2.3 Docker / OCI Container
+### 2.4 Docker / OCI Container
 
 Pre-built multi-arch container images are published to GHCR and Docker Hub on
 every release. They bundle the kronk binary, the BUI, one or more
@@ -198,7 +306,7 @@ bundle instead and the container entrypoint transparently points
 `KRONK_BUCKY_LIB_PATH` at it on ROCm hosts. Transcription therefore
 stays GPU-accelerated on AMD GPUs via the RADV Vulkan driver.
 
-### 2.4 Installing Libraries
+### 2.5 Installing Libraries
 
 Before running inference, you need the llama.cpp libraries for your machine. Kronk auto-detects your hardware and downloads the appropriate binaries.
 
@@ -328,7 +436,7 @@ whisper.cpp libraries with the parallel `kronk bucky libs` command. The
 flags mirror `kronk libs` and the bundle lands under
 `~/.kronk/bucky-libraries/`. See [Chapter 18: Bucky](chapter-18-bucky.md).
 
-### 2.5 Downloading Your First Model
+### 2.6 Downloading Your First Model
 
 Kronk maintains your **personal catalog** at `~/.kronk/catalog.yaml`. On
 first run it is seeded from an embedded starter list so you have something
@@ -371,7 +479,7 @@ need to hit HuggingFace.
 `kronk bucky model pull <name>` (e.g. `ggml-tiny.bin`). See
 [Chapter 18 §18.3](chapter-18-bucky.md#183-model-catalog-pull).
 
-### 2.6 Starting the Server
+### 2.7 Starting the Server
 
 Start the Kronk Model Server:
 
@@ -401,7 +509,7 @@ kronk server start -d
 kronk server stop
 ```
 
-### 2.7 Model Configuration File
+### 2.8 Model Configuration File
 
 When Kronk starts the server for the first time, it automatically installs a default `model_config.yaml` file in the `~/.kronk/` directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.
 
@@ -508,7 +616,7 @@ you're embedding the SDK directly).
 - Use YAML anchors (`&name` and `<<: *name`) to share common settings between variants. The default file includes examples of this pattern.
 - The `--model-config` server flag lets you point to an alternative config file for testing without modifying your main one.
 
-### 2.8 Verifying the Installation
+### 2.9 Verifying the Installation
 
 **Test via curl**
 
@@ -536,27 +644,6 @@ curl http://localhost:11435/v1/chat/completions \
 **Test via BUI**
 
 Open `http://localhost:11435` in your browser and navigate to the `Apps/Chat` app. Select the model you want to try and chat away.
-
-### 2.9 Quick Start Summary
-
-```shell
-# 1. Install Kronk
-go install github.com/ardanlabs/kronk/cmd/kronk@latest
-
-# 2. Start the server (auto-installs libraries on first run)
-kronk server start
-
-# 3. Open BUI and download a model
-open http://localhost:11435
-
-# 4. Download via the BUI Catalog/List screen or use this CLI call
-kronk model pull Qwen3-0.6B-Q8_0 --local
-
-# 5. Test the API using this curl call or the BUI App/Chat screen
-curl http://localhost:11435/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "Qwen3-0.6B-Q8_0", "messages": [{"role": "user", "content": "Hello!"}]}'
-```
 
 ### 2.10 NixOS Setup
 
