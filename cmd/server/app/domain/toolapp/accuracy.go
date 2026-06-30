@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
 )
 
 // accuracyCode is the fixed source the Accuracy app tests against. The
@@ -24,11 +26,14 @@ import (
 var accuracyCode []byte
 
 // accuracyContextWindow is the context window used when loading the model for
-// a test. The whole source file is sent as context (~33k tokens), so the model
-// must be loaded with a large window using WithContextWindow(131072). Without
-// this, a model resolved with the default 8K window overflows and the
-// inference call fails.
-const accuracyContextWindow = 131072
+// a test. The whole source file is sent as context (~33k tokens) plus the
+// 4096-token max answer, so the model must be loaded with a window larger than
+// the default 8K (which would overflow and fail the inference call). The value
+// is sized to clear the ~38K-token prompt with margin while keeping the KV
+// cache small enough to fit on ~16GB-class GPUs: at 128K the KV cache alone
+// pushed a 4B model past 22GB and failed to reserve on smaller cards, whereas
+// 48K keeps the total around ~11GB.
+const accuracyContextWindow = 49152
 
 // =============================================================================
 // Requests
@@ -178,7 +183,14 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 
 	krn, err := a.pool.Kronk.AquireCustom(ctx, req.Model+"/accuracy", cfg)
 	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
+		switch {
+		case errors.Is(err, kronkpool.ErrNoCapacity):
+			return errs.Errorf(errs.ResourceExhausted, "not enough GPU memory to run %q at the accuracy context window; try a smaller model", req.Model)
+		case errors.Is(err, kronkpool.ErrServerBusy):
+			return errs.Errorf(errs.Unavailable, "server is busy; try again in a moment")
+		default:
+			return errs.New(errs.Internal, err)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
