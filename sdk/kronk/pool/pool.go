@@ -32,6 +32,13 @@ import (
 // the core sentinel so errors.Is works across both packages.
 var ErrServerBusy = engine.ErrServerBusy
 
+// ErrNoCapacity is returned when a request's memory footprint can never
+// fit in the configured budget on this hardware, even on an empty pool
+// (e.g. an over-spec'd context window). It is the pool's public
+// translation of the internal resman.ErrNoCapacity so callers can match
+// on a pool-level sentinel without importing resman.
+var ErrNoCapacity = errors.New("pool: insufficient memory budget")
+
 // HumanBytes formats a byte count using decimal (SI) units. It aliases
 // the core helper so existing callers of pool.HumanBytes keep working.
 func HumanBytes(n int64) string {
@@ -176,11 +183,22 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 // models.
 func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
 	modelID, _, _ := strings.Cut(key, "/")
-	return p.engine.Acquire(ctx, loader.LoadRequest{
+	krn, err := p.engine.Acquire(ctx, loader.LoadRequest{
 		ModelID: modelID,
 		Key:     key,
 		Custom:  cfg,
 	})
+	if err != nil {
+		// Translate the internal capacity error into the pool's public
+		// sentinel so callers match on pool.ErrNoCapacity without importing
+		// resman. The original error is wrapped to preserve its detail (the
+		// requested vs available VRAM) for logs and debugging.
+		if errors.Is(err, resman.ErrNoCapacity) {
+			return nil, fmt.Errorf("%w: %w", ErrNoCapacity, err)
+		}
+		return nil, err
+	}
+	return krn, nil
 }
 
 // ModelConfig returns the loaded per-model configuration overrides.

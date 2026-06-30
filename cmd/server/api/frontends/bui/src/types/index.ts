@@ -934,6 +934,80 @@ export interface DevicesResponse {
 }
 
 // =============================================================================
+// Diagnose (host diagnostic report)
+
+export interface DiagnoseVersions {
+  kronk: string;
+  yzma: string;
+}
+
+export interface DiagnoseCommand {
+  cmd: string;
+  output: string;
+  err?: string;
+}
+
+export interface DiagnoseSystem {
+  os: string;
+  arch: string;
+  numCPU: number;
+  cpuModel: string;
+  ramBytes: number;
+  commands?: DiagnoseCommand[];
+}
+
+export interface DiagnoseDevice {
+  id: string;
+  name: string;
+  vramTotalMiB: number;
+  vramFreeMiB: number;
+}
+
+export interface DiagnoseBackend {
+  processor: string;
+  version: string;
+  binDir: string;
+  build: string;
+  devices: DiagnoseDevice[];
+  commands?: DiagnoseCommand[];
+}
+
+export interface DiagnoseLlama {
+  installed: boolean;
+  root: string;
+  backends: DiagnoseBackend[];
+}
+
+export interface DiagnoseEngine {
+  probed: boolean;
+  loaded: boolean;
+  processor: string;
+  libPath: string;
+  error?: string;
+}
+
+export interface DiagnoseBench {
+  processor: string;
+  model: string;
+  commands?: DiagnoseCommand[];
+}
+
+export interface DiagnoseHint {
+  severity: string;
+  message: string;
+  remedy?: string;
+}
+
+export interface DiagnoseResponse {
+  versions: DiagnoseVersions;
+  system: DiagnoseSystem;
+  llama: DiagnoseLlama;
+  engine: DiagnoseEngine;
+  bench: DiagnoseBench;
+  hints?: DiagnoseHint[];
+}
+
+// =============================================================================
 // Bucky (whisper) models
 
 export interface BuckyCatalogEntry {

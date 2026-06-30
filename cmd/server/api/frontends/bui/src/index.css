@@ -1117,6 +1117,39 @@ tr.selected:hover td {
     white-space: pre;
 }
 
+/* Diagnose JSON view: wrap long lines so the whole report stays in the window
+   (no horizontal scrolling) while preserving the JSON structure/indentation. */
+.diagnose-json .code-block,
+.diagnose-json .code-block code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* Inline "Processor" select on the Info → Benchmark card. Mirrors the accuracy
+   "Sort by" control so inline dropdowns look consistent across the BUI. */
+.bench-processor {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bench-processor label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-gray-800);
+    white-space: nowrap;
+    margin-bottom: 0;
+}
+
+.bench-processor select {
+    width: auto;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+}
+
 .doc-list {
     margin-top: 12px;
     padding-left: 20px;
