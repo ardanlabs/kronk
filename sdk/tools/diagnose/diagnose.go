@@ -290,6 +290,16 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 			if err != nil {
 				return Report{}, fmt.Errorf("resolve processor: %w", err)
 			}
+
+			// A non-cpu request must match an installed bundle. cpu is always
+			// allowed because any GPU bundle can run CPU-only via -ngl 0.
+			// Without this guard benchBackend silently falls back to another
+			// bundle and the report would claim a processor the user did not
+			// ask for. Only fail when the user explicitly chose a processor.
+			if o.processor != "" && proc.String() != "cpu" && !backendInstalled(backends, proc.String()) {
+				return Report{}, fmt.Errorf("processor %q is not installed (available: %s)", proc.String(), strings.Join(installedProcessors(backends), ", "))
+			}
+
 			b := benchBackend(backends, proc.String())
 
 			// Force CPU only when reusing a GPU bundle's binary for a cpu
@@ -425,6 +435,30 @@ func gpuBackendMissingDevices(backends []Backend) bool {
 		}
 	}
 	return false
+}
+
+// backendInstalled reports whether an installed bundle matches the processor.
+func backendInstalled(backends []Backend, processor string) bool {
+	for _, b := range backends {
+		if b.Processor == processor {
+			return true
+		}
+	}
+	return false
+}
+
+// installedProcessors lists the processors of every installed bundle, plus cpu
+// (always benchmarkable via -ngl 0), for use in user-facing error messages.
+func installedProcessors(backends []Backend) []string {
+	seen := map[string]bool{"cpu": true}
+	procs := []string{"cpu"}
+	for _, b := range backends {
+		if !seen[b.Processor] {
+			seen[b.Processor] = true
+			procs = append(procs, b.Processor)
+		}
+	}
+	return procs
 }
 
 // benchBackend chooses which installed backend bundle to benchmark. It honors
