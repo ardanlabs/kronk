@@ -41,8 +41,11 @@ const menuStructure: MenuCategory[] = [
   },
   {
     id: 'running',
-    label: 'Running',
-    items: [{ page: 'model-ps', label: 'Models' }],
+    label: 'System',
+    items: [
+      { page: 'diagnose', label: 'Info' },
+      { page: 'model-ps', label: 'Running' },
+    ],
   },
   {
     id: 'kronk',
@@ -182,7 +185,10 @@ const menuStructure: MenuCategory[] = [
         id: 'docs-cli-sub',
         label: 'CLI',
         items: [
+          { page: 'docs-cli-bucky', label: 'bucky' },
           { page: 'docs-cli-catalog', label: 'catalog' },
+          { page: 'docs-cli-devices', label: 'devices' },
+          { page: 'docs-cli-diagnose', label: 'diagnose' },
           { page: 'docs-cli-libs', label: 'libs' },
           { page: 'docs-cli-model', label: 'model' },
           { page: 'docs-cli-run', label: 'run' },

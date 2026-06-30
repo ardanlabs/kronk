@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
+import Diagnose from './components/Diagnose';
 import ModelPull from './components/ModelPull';
 import KMSPull from './components/KMSPull';
 import CatalogList from './components/CatalogList';
@@ -22,7 +23,10 @@ import DocsSDKPool from './components/DocsSDKPool';
 import DocsSDKBucky from './components/DocsSDKBucky';
 import DocsSDKBuckyModel from './components/DocsSDKBuckyModel';
 import DocsSDKExamples from './components/DocsSDKExamples';
+import DocsCLIBucky from './components/DocsCLIBucky';
 import DocsCLICatalog from './components/DocsCLICatalog';
+import DocsCLIDevices from './components/DocsCLIDevices';
+import DocsCLIDiagnose from './components/DocsCLIDiagnose';
 import DocsCLILibs from './components/DocsCLILibs';
 import DocsCLIModel from './components/DocsCLIModel';
 import DocsCLIRun from './components/DocsCLIRun';
@@ -63,6 +67,7 @@ export type Page =
   | 'testing-basic'
   | 'testing-sampling'
   | 'testing-configurator'
+  | 'diagnose'
   | 'model-list'
   | 'model-ps'
   | 'model-pull'
@@ -84,7 +89,10 @@ export type Page =
   | 'docs-sdk-bucky'
   | 'docs-sdk-bucky-model'
   | 'docs-sdk-examples'
+  | 'docs-cli-bucky'
   | 'docs-cli-catalog'
+  | 'docs-cli-devices'
+  | 'docs-cli-diagnose'
   | 'docs-cli-libs'
   | 'docs-cli-model'
   | 'docs-cli-run'
@@ -108,8 +116,9 @@ export const routeMap: Record<Page, string> = {
   'testing-basic': '/testing/basic',
   'testing-sampling': '/testing/sampling',
   'testing-configurator': '/testing/configurator',
+  'diagnose': '/system/info',
   'model-list': '/models',
-  'model-ps': '/models/running',
+  'model-ps': '/system/running',
   'model-pull': '/models/pull',
   'kms-pull': '/models/kms-pull',
   'catalog-list': '/catalog',
@@ -129,7 +138,10 @@ export const routeMap: Record<Page, string> = {
   'docs-sdk-bucky': '/docs/sdk/bucky',
   'docs-sdk-bucky-model': '/docs/sdk/bucky/model',
   'docs-sdk-examples': '/docs/sdk/examples',
+  'docs-cli-bucky': '/docs/cli/bucky',
   'docs-cli-catalog': '/docs/cli/catalog',
+  'docs-cli-devices': '/docs/cli/devices',
+  'docs-cli-diagnose': '/docs/cli/diagnose',
   'docs-cli-libs': '/docs/cli/libs',
   'docs-cli-model': '/docs/cli/model',
   'docs-cli-run': '/docs/cli/run',
@@ -217,8 +229,9 @@ function App() {
                 <Route path="/testing/basic" element={<TestingBasic />} />
                 <Route path="/testing/sampling" element={<TestingSampling />} />
                 <Route path="/testing/configurator" element={<TestingConfiguration />} />
+                <Route path="/system/info" element={<Diagnose />} />
+                <Route path="/system/running" element={<ModelPs />} />
                 <Route path="/models" element={<ModelList />} />
-                <Route path="/models/running" element={<ModelPs />} />
                 <Route path="/models/pull" element={<ModelPull />} />
                 <Route path="/models/kms-pull" element={<KMSPull />} />
                 <Route path="/catalog" element={<CatalogList />} />
@@ -238,7 +251,10 @@ function App() {
                 <Route path="/docs/sdk/bucky" element={<DocsSDKBucky />} />
                 <Route path="/docs/sdk/bucky/model" element={<DocsSDKBuckyModel />} />
                 <Route path="/docs/sdk/examples" element={<DocsSDKExamples />} />
+                <Route path="/docs/cli/bucky" element={<DocsCLIBucky />} />
                 <Route path="/docs/cli/catalog" element={<DocsCLICatalog />} />
+                <Route path="/docs/cli/devices" element={<DocsCLIDevices />} />
+                <Route path="/docs/cli/diagnose" element={<DocsCLIDiagnose />} />
                 <Route path="/docs/cli/libs" element={<DocsCLILibs />} />
                 <Route path="/docs/cli/model" element={<DocsCLIModel />} />
                 <Route path="/docs/cli/run" element={<DocsCLIRun />} />

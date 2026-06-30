@@ -258,6 +258,14 @@ export default function DocsSDKPool() {
           <div className="card" id="variables">
             <h3>Variables</h3>
 
+            <div className="doc-section" id="var-errnocapacity">
+              <h4>ErrNoCapacity</h4>
+              <pre className="code-block">
+                <code>{`var ErrNoCapacity = errors.New("pool: insufficient memory budget")`}</code>
+              </pre>
+              <p className="doc-description">ErrNoCapacity is returned when a request's memory footprint can never fit in the configured budget on this hardware, even on an empty pool (e.g. an over-spec'd context window). It is the pool's public translation of the internal resman.ErrNoCapacity so callers can match on a pool-level sentinel without importing resman.</p>
+            </div>
+
             <div className="doc-section" id="var-errserverbusy">
               <h4>ErrServerBusy</h4>
               <pre className="code-block">
@@ -314,6 +322,7 @@ export default function DocsSDKPool() {
             <div className="doc-index-section">
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
+                <li><a href="#var-errnocapacity">ErrNoCapacity</a></li>
                 <li><a href="#var-errserverbusy">ErrServerBusy</a></li>
               </ul>
             </div>
