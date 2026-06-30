@@ -235,6 +235,20 @@ rebuilt and the server is recompiled.
 | Production build    | `make bui-build` (or `npm run build`)                |
 | Build + embed + run | `make kronk-server-build`                            |
 
+**CI Build Workflow:**
+
+The `static/` directory is excluded from git (`.gitignore`) to avoid merge
+conflicts on generated files. When a PR touching BUI source merges to main,
+the `bui-build.yml` workflow automatically runs `npm run build` and commits
+the refreshed `static/` assets back to main with `[skip ci]`. This ensures:
+
+- PRs never conflict on generated JavaScript bundles
+- The main branch always has fresh built assets
+- Local developers don't commit stale builds
+
+When working on BUI locally, run `make bui-build` before testing with the
+embedded server (`make kronk-server-build`).
+
 **Component Conventions:**
 
 Tooltip and form-label conventions are governed by

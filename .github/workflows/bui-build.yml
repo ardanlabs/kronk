@@ -1,0 +1,92 @@
+name: BUI Build
+
+# Automatically build BUI and commit static assets to main after PR merge.
+# This keeps static/ out of PRs (avoiding merge conflicts on generated files)
+# while ensuring main always has fresh built assets.
+#
+# Flow:
+#   1. PR merges to main (static/ changes are ignored via .gitignore)
+#   2. This workflow detects BUI source changes
+#   3. Builds npm run build → generates static/
+#   4. Commits static/ back to main with [skip ci] to avoid loops
+#
+# The commit message includes [skip ci] so this workflow doesn't
+# re-trigger itself. Other workflows can opt in to running on BUI asset
+# updates by NOT filtering on [skip ci].
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "cmd/server/api/frontends/bui/src/**"
+      - "cmd/server/api/frontends/bui/package.json"
+      - "cmd/server/api/frontends/bui/package-lock.json"
+      - "cmd/server/api/frontends/bui/vite.config.ts"
+      - "cmd/server/api/frontends/bui/tsconfig.json"
+      - "cmd/server/api/frontends/bui/index.html"
+      - ".github/workflows/bui-build.yml"
+
+# Only one BUI build should run at a time on main to avoid race
+# conditions when multiple PRs merge in quick succession.
+concurrency:
+  group: bui-build-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and commit BUI assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          # Fetch full history so the commit we create below has proper
+          # parent tracking and doesn't create a detached ref.
+          fetch-depth: 0
+          # Use a PAT or the default GITHUB_TOKEN. GITHUB_TOKEN works
+          # for commits but some repos require workflow:write to push.
+          # If this fails with "refusing to allow a GitHub App to create
+          # or update workflow", switch to a PAT with repo scope.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@c18f0e5ea81b7aefcaf3b6c0e8b1c6c11ec84e8d  # v4.5.0
+        with:
+          node-version: '22.12.0'
+          cache: 'npm'
+          cache-dependency-path: cmd/server/api/frontends/bui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: cmd/server/api/frontends/bui
+        run: npm ci
+
+      - name: Build BUI
+        working-directory: cmd/server/api/frontends/bui
+        run: npm run build
+
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet cmd/server/api/services/kronk/static/; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes to static assets"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Static assets changed, will commit"
+          fi
+
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cmd/server/api/services/kronk/static/
+          git commit -m "build(bui): auto-generate static assets [skip ci]
+
+          Built from ${{ github.sha }}
+          Triggered by: ${{ github.event.head_commit.message }}"
+          git push origin main
