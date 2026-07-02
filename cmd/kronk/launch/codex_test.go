@@ -1,6 +1,8 @@
 package launch
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -44,7 +46,7 @@ func TestBuildCodexArgs(t *testing.T) {
 		{ID: "Qwen2-VL-7B", Name: "Qwen2-VL-7B", Vision: true},
 	}
 
-	args, err := buildCodexArgs("Qwen3-8B-Q8_0", chatModels)
+	args, err := buildCodexArgs("Qwen3-8B-Q8_0", chatModels, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -80,12 +82,33 @@ func TestBuildCodexArgs(t *testing.T) {
 	if _, ok := overrides["model_providers.kronk.env_key"]; ok {
 		t.Errorf("env_key should be absent when KRONK_TOKEN is unset")
 	}
+	// Empty catalog path → no catalog override.
+	if _, ok := overrides["model_catalog_json"]; ok {
+		t.Errorf("model_catalog_json should be absent when no catalog path is given")
+	}
+}
+
+func TestBuildCodexArgsWithCatalog(t *testing.T) {
+	t.Setenv("KRONK_TOKEN", "")
+
+	chatModels := []Model{{ID: "Qwen3-8B-Q8_0", Name: "Qwen3-8B-Q8_0", Context: 40960}}
+
+	args, err := buildCodexArgs("Qwen3-8B-Q8_0", chatModels, "/tmp/kronk-codex-catalog.json")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	overrides, _ := codexArgMap(t, args)
+
+	if got := overrides["model_catalog_json"]; got != `"/tmp/kronk-codex-catalog.json"` {
+		t.Errorf("model_catalog_json: got %q, want quoted path", got)
+	}
 }
 
 func TestBuildCodexArgsWithToken(t *testing.T) {
 	t.Setenv("KRONK_TOKEN", "secret-token")
 
-	args, err := buildCodexArgs("a/one", []Model{{ID: "a/one", Name: "a/one"}})
+	args, err := buildCodexArgs("a/one", []Model{{ID: "a/one", Name: "a/one"}}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,8 +125,70 @@ func TestBuildCodexArgsWithToken(t *testing.T) {
 }
 
 func TestBuildCodexArgsRequiresModels(t *testing.T) {
-	if _, err := buildCodexArgs("", nil); err == nil {
+	if _, err := buildCodexArgs("", nil, ""); err == nil {
 		t.Errorf("expected error when no default model/models provided")
+	}
+}
+
+func TestBuildCodexCatalog(t *testing.T) {
+	chatModels := []Model{
+		{ID: "Qwen3-8B-Q8_0", Name: "Qwen3-8B-Q8_0", Context: 40960},
+		{ID: "Qwen2-VL-7B", Name: "Qwen2-VL-7B", Vision: true, Context: 8192},
+	}
+
+	// Text model with a known context window.
+	cat := buildCodexCatalog("Qwen3-8B-Q8_0", chatModels)
+	models := cat["models"].([]any)
+	if len(models) != 1 {
+		t.Fatalf("expected 1 catalog model, got %d", len(models))
+	}
+	entry := models[0].(map[string]any)
+	if entry["slug"] != "Qwen3-8B-Q8_0" {
+		t.Errorf("slug: got %v", entry["slug"])
+	}
+	if entry["context_window"] != 40960 {
+		t.Errorf("context_window: got %v, want 40960", entry["context_window"])
+	}
+	if mods := entry["input_modalities"].([]any); len(mods) != 1 || mods[0] != "text" {
+		t.Errorf("input_modalities: got %v, want [text]", mods)
+	}
+
+	// Vision model → image modality added.
+	visCat := buildCodexCatalog("Qwen2-VL-7B", chatModels)
+	visEntry := visCat["models"].([]any)[0].(map[string]any)
+	if mods := visEntry["input_modalities"].([]any); len(mods) != 2 {
+		t.Errorf("vision input_modalities: got %v, want [text image]", mods)
+	}
+
+	// Unknown context window → fallback.
+	fbCat := buildCodexCatalog("no/window", []Model{{ID: "no/window", Name: "no/window"}})
+	fbEntry := fbCat["models"].([]any)[0].(map[string]any)
+	if fbEntry["context_window"] != codexFallbackContextWindow {
+		t.Errorf("fallback context_window: got %v, want %d", fbEntry["context_window"], codexFallbackContextWindow)
+	}
+}
+
+func TestWriteCodexCatalog(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+
+	cat := buildCodexCatalog("a/one", []Model{{ID: "a/one", Name: "a/one", Context: 8192}})
+
+	path, err := writeCodexCatalog(cat)
+	if err != nil {
+		t.Fatalf("writeCodexCatalog: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading catalog: %v", err)
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("catalog is not valid JSON: %v", err)
+	}
+	if _, ok := doc["models"].([]any); !ok {
+		t.Errorf("catalog missing models array")
 	}
 }
 
