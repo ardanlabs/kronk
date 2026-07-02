@@ -1,10 +1,13 @@
 package launch
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 )
@@ -18,6 +21,17 @@ const codexInstallCmd = "npm install -g @openai/codex"
 // Codex reserves the built-in ids "openai", "ollama", and "lmstudio", so a
 // distinct id is required.
 const codexProvider = "kronk"
+
+// codexMinCatalogVersion is the lowest Codex CLI version whose model-catalog
+// schema is known to accept the catalog the launcher writes. On older versions
+// the catalog is skipped (Codex falls back to its "metadata not found" warning,
+// which is cosmetic) rather than risk Codex rejecting an unrecognized schema.
+const codexMinCatalogVersion = "0.134.0"
+
+// codexFallbackContextWindow is the context window written into the catalog when
+// a model's real window could not be resolved, so the catalog entry is still
+// well-formed.
+const codexFallbackContextWindow = 128000
 
 // codexInstall describes how to locate and install the Codex CLI.
 var codexInstall = agentInstall{
@@ -43,7 +57,19 @@ func (codex) Run(defaultModel string, chatModels []Model, args []string) error {
 		return err
 	}
 
-	codexArgs, err := buildCodexArgs(defaultModel, chatModels)
+	// Best-effort: silence Codex's "model metadata not found" warning by
+	// supplying a model catalog, but only on Codex versions whose catalog
+	// schema we have verified (older versions may reject an unrecognized
+	// schema). Any failure here is non-fatal: launch proceeds without the
+	// catalog and Codex just shows the cosmetic warning.
+	var catalogPath string
+	if codexCatalogSupported(bin) {
+		if p, err := writeCodexCatalog(buildCodexCatalog(defaultModel, chatModels)); err == nil {
+			catalogPath = p
+		}
+	}
+
+	codexArgs, err := buildCodexArgs(defaultModel, chatModels, catalogPath)
 	if err != nil {
 		return fmt.Errorf("build codex args: %w", err)
 	}
@@ -71,18 +97,18 @@ func (codex) Run(defaultModel string, chatModels []Model, args []string) error {
 //   - -c model_context_window=N: the default model's resolved context window,
 //     so Codex compacts prompts to fit instead of assuming a larger window for
 //     an unrecognized model name. Omitted when the window is unknown.
+//   - -c model_catalog_json="<path>": only when catalogPath is non-empty (a
+//     supported Codex version), pointing Codex at a catalog file that describes
+//     the model so Codex does not print its "metadata not found" warning.
 //   - -m <model>: the default model to use.
 //
-// Codex prints a harmless "model metadata not found" warning for models it
-// does not recognize and then runs with fallback metadata. We deliberately do
-// not supply a model catalog to silence it: Codex's catalog schema changes
-// between releases, and a catalog that does not match the installed Codex
-// version is discarded wholesale (bringing the warning back) or rejected
-// outright. The context-window override above is a stable config key and
-// prevents the one failure that actually matters (prompt overflow).
+// When no catalog is supplied (older/unverified Codex), Codex prints a harmless
+// "model metadata not found" warning and runs with fallback metadata. The
+// context-window override above is a stable config key and prevents the one
+// failure that actually matters (prompt overflow) regardless of the catalog.
 //
 // Codex parses -c values as TOML, so string values are quoted with %q.
-func buildCodexArgs(defaultModel string, chatModels []Model) ([]string, error) {
+func buildCodexArgs(defaultModel string, chatModels []Model, catalogPath string) ([]string, error) {
 	if defaultModel == "" || len(chatModels) == 0 {
 		return nil, fmt.Errorf("a default model and at least one model are required")
 	}
@@ -111,6 +137,10 @@ func buildCodexArgs(defaultModel string, chatModels []Model) ([]string, error) {
 		overrides = append(overrides, "model_context_window="+strconv.Itoa(cw))
 	}
 
+	if catalogPath != "" {
+		overrides = append(overrides, fmt.Sprintf("model_catalog_json=%q", catalogPath))
+	}
+
 	args := make([]string, 0, len(overrides)*2+2)
 	for _, o := range overrides {
 		args = append(args, "-c", o)
@@ -118,6 +148,94 @@ func buildCodexArgs(defaultModel string, chatModels []Model) ([]string, error) {
 	args = append(args, "-m", defaultModel)
 
 	return args, nil
+}
+
+// codexCatalogSupported reports whether the installed Codex CLI is new enough
+// for the model-catalog schema the launcher writes. It fails closed (returns
+// false when the version cannot be determined) so an unknown Codex version
+// never gets a catalog it might reject.
+func codexCatalogSupported(bin string) bool {
+	v := codexVersion(bin)
+	if v == "" {
+		return false
+	}
+
+	return compareVersions(v, codexMinCatalogVersion) >= 0
+}
+
+// codexVersion returns the Codex CLI version parsed from "codex --version"
+// (output like "codex-cli 0.134.0"), or "" when it cannot be determined.
+func codexVersion(bin string) string {
+	out, err := exec.Command(bin, "--version").Output()
+	if err != nil {
+		return ""
+	}
+
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) == 0 {
+		return ""
+	}
+
+	return fields[len(fields)-1]
+}
+
+// buildCodexCatalog builds the Codex model-catalog document for the default
+// model, describing it so Codex does not fall back to guessed metadata. Only
+// the default model is described (that is the model Codex launches with); its
+// resolved context window and vision capability come from the discovered Model.
+func buildCodexCatalog(defaultModel string, chatModels []Model) map[string]any {
+	contextWindow := codexFallbackContextWindow
+	if cw := contextFor(defaultModel, chatModels); cw > 0 {
+		contextWindow = cw
+	}
+
+	modalities := []any{"text"}
+	for _, m := range chatModels {
+		if m.ID == defaultModel && m.Vision {
+			modalities = append(modalities, "image")
+			break
+		}
+	}
+
+	entry := map[string]any{
+		"slug":                         defaultModel,
+		"display_name":                 defaultModel,
+		"context_window":               contextWindow,
+		"shell_type":                   "default",
+		"visibility":                   "list",
+		"supported_in_api":             true,
+		"priority":                     0,
+		"truncation_policy":            map[string]any{"mode": "bytes", "limit": 10000},
+		"input_modalities":             modalities,
+		"base_instructions":            "",
+		"support_verbosity":            true,
+		"default_verbosity":            "low",
+		"supports_parallel_tool_calls": false,
+		"supports_reasoning_summaries": false,
+		"supported_reasoning_levels":   []any{},
+		"experimental_supported_tools": []any{},
+	}
+
+	return map[string]any{
+		"models": []any{entry},
+	}
+}
+
+// writeCodexCatalog writes the catalog document to a Kronk-owned file (in the
+// system temp dir, never the user's ~/.codex config) and returns its path. The
+// file is overwritten on each launch so it always reflects the current model.
+func writeCodexCatalog(catalog map[string]any) (string, error) {
+	data, err := json.MarshalIndent(catalog, "", "  ")
+	if err != nil {
+		return "", err
+	}
+
+	path := filepath.Join(os.TempDir(), "kronk-codex-catalog.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", err
+	}
+
+	return path, nil
 }
 
 // checkCodexInstallDeps verifies npm (Node.js) is available, since Codex is
