@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -40,7 +39,8 @@ var modelSource = "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }
 
@@ -1805,7 +1805,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -1833,7 +1832,8 @@ const (
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }
 
