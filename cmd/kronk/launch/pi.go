@@ -11,11 +11,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 )
 
-// piInstallCmd is the npm command that installs the Pi coding agent. Pi is
-// distributed via npm on every platform, so the same command works on
-// Windows, macOS, and Linux.
-const piInstallCmd = "npm install -g @earendil-works/pi-coding-agent"
-
 // piProvider is the provider id written into Pi's models.json for the local
 // Kronk server.
 const piProvider = "kronk"
@@ -33,19 +28,6 @@ const piPlaceholderKey = "kronk"
 // added under the same provider are preserved untouched.
 const piLaunchMarker = "_launch"
 
-// piInstall describes how to locate and install the Pi coding agent. The npm
-// global install lands on PATH; the install-script variant drops the binary in
-// ~/.local/bin, which may not be on PATH in the current shell yet, so that
-// directory is searched as a fallback.
-var piInstall = agentInstall{
-	bin:              "pi",
-	display:          "Pi",
-	fallbackDirs:     []string{".local/bin"},
-	installHint:      piInstallHint,
-	installerCommand: piInstallerCommand,
-	checkDeps:        checkPiInstallDeps,
-}
-
 // pi implements Runner for the Pi coding agent. Unlike the other agents Pi has
 // no environment variable for its model provider; it is configured only
 // through ~/.pi/agent/models.json. So Run writes/merges that file (with a
@@ -57,7 +39,12 @@ type pi struct{}
 // into Pi's models.json, and execs Pi with the default model selected on the
 // command line (so the user's saved Pi defaults are left unchanged).
 func (pi) Run(defaultModel string, chatModels []Model, args []string) error {
-	bin, err := ensureInstalled(piInstall)
+	install, err := loadInstall("pi")
+	if err != nil {
+		return fmt.Errorf("pi: %w", err)
+	}
+
+	bin, err := ensureInstalled(install)
 	if err != nil {
 		return err
 	}
@@ -234,40 +221,4 @@ func writeFileWithBackup(path string, data []byte) error {
 	}
 
 	return os.WriteFile(path, data, 0o644)
-}
-
-// checkPiInstallDeps verifies npm (Node.js) is available, since Pi is installed
-// via npm on every platform.
-func checkPiInstallDeps(goos string) error {
-	switch goos {
-	case "windows", "darwin", "linux":
-		if _, err := exec.LookPath("npm"); err != nil {
-			return fmt.Errorf("pi is not installed and npm (Node.js) is required to install it: https://nodejs.org/\n\nthen re-run: kronk launch pi")
-		}
-	default:
-		return fmt.Errorf("pi is not installed and automatic install is not supported on %s\n\ninstall it manually: %s", goos, piInstallHint(goos))
-	}
-
-	return nil
-}
-
-// piInstallHint returns the human-readable install command for the given OS.
-func piInstallHint(goos string) string {
-	switch goos {
-	case "windows", "darwin", "linux":
-		return piInstallCmd
-	default:
-		return "see https://pi.dev for installation instructions"
-	}
-}
-
-// piInstallerCommand returns the command that installs Pi on the given OS via
-// npm.
-func piInstallerCommand(goos string) (string, []string, error) {
-	switch goos {
-	case "windows", "darwin", "linux":
-		return "npm", []string{"install", "-g", "@earendil-works/pi-coding-agent"}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported platform for pi install: %s", goos)
-	}
 }

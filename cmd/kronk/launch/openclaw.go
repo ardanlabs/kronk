@@ -11,11 +11,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 )
 
-// openclawInstallCmd is the npm command that installs OpenClaw. OpenClaw is
-// distributed via npm on every platform, so the same command works on Windows,
-// macOS, and Linux.
-const openclawInstallCmd = "npm install -g openclaw"
-
 // openclawProvider is the provider id written into OpenClaw's config for the
 // local Kronk server. OpenClaw refers to a model as "<provider>/<id>", so the
 // fully-qualified refs the launcher writes are "kronk/<model-id>".
@@ -27,19 +22,6 @@ const openclawProvider = "kronk"
 // config instead uses "${KRONK_TOKEN}" so OpenClaw interpolates it from the
 // environment at request time (the secret is never persisted to disk).
 const openclawPlaceholderKey = "kronk"
-
-// openclawInstall describes how to locate and install OpenClaw. The npm global
-// install lands on PATH; the install-script variant can drop the binary in
-// ~/.local/bin, which may not be on PATH in the current shell yet, so that
-// directory is searched as a fallback.
-var openclawInstall = agentInstall{
-	bin:              "openclaw",
-	display:          "OpenClaw",
-	fallbackDirs:     []string{".local/bin"},
-	installHint:      openclawInstallHint,
-	installerCommand: openclawInstallerCommand,
-	checkDeps:        checkOpenClawInstallDeps,
-}
 
 // openClaw implements Runner for OpenClaw. Unlike a plain coding CLI, OpenClaw
 // is a personal-assistant platform with a gateway daemon, channels, and a web
@@ -56,7 +38,12 @@ type openClaw struct{}
 // verbatim; otherwise the launcher defaults to "chat" so the session runs
 // against the local embedded runtime (no gateway daemon).
 func (openClaw) Run(defaultModel string, chatModels []Model, args []string) error {
-	bin, err := ensureInstalled(openclawInstall)
+	install, err := loadInstall("openclaw")
+	if err != nil {
+		return fmt.Errorf("openclaw: %w", err)
+	}
+
+	bin, err := ensureInstalled(install)
 	if err != nil {
 		return err
 	}
@@ -246,41 +233,4 @@ func openClawModelEntry(m Model) map[string]any {
 	}
 
 	return entry
-}
-
-// checkOpenClawInstallDeps verifies npm (Node.js) is available, since OpenClaw
-// is installed via npm on every platform.
-func checkOpenClawInstallDeps(goos string) error {
-	switch goos {
-	case "windows", "darwin", "linux":
-		if _, err := exec.LookPath("npm"); err != nil {
-			return fmt.Errorf("openclaw is not installed and npm (Node.js) is required to install it: https://nodejs.org/\n\nthen re-run: kronk launch openclaw")
-		}
-	default:
-		return fmt.Errorf("openclaw is not installed and automatic install is not supported on %s\n\ninstall it manually: %s", goos, openclawInstallHint(goos))
-	}
-
-	return nil
-}
-
-// openclawInstallHint returns the human-readable install command for the given
-// OS.
-func openclawInstallHint(goos string) string {
-	switch goos {
-	case "windows", "darwin", "linux":
-		return openclawInstallCmd
-	default:
-		return "see https://openclaw.ai for installation instructions"
-	}
-}
-
-// openclawInstallerCommand returns the command that installs OpenClaw on the
-// given OS via npm.
-func openclawInstallerCommand(goos string) (string, []string, error) {
-	switch goos {
-	case "windows", "darwin", "linux":
-		return "npm", []string{"install", "-g", "openclaw"}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported platform for openclaw install: %s", goos)
-	}
 }

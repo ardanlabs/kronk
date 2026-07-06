@@ -1,17 +1,19 @@
 package launch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // agentInstall describes how to locate and, if necessary, install a coding
-// agent's binary. Each supported agent supplies one of these so the install
-// flow (find on PATH, prompt, check deps, run installer, re-find) is shared
-// instead of duplicated per agent.
+// agent's binary. It is populated from the embedded agents metadata (see
+// metadata.go) so the find/install flow is shared and data-driven instead of
+// duplicated per agent.
 type agentInstall struct {
 	// bin is the executable name to look for (e.g. "opencode", "claude").
 	bin string
@@ -24,16 +26,73 @@ type agentInstall struct {
 	// installer may not be on PATH in the current shell yet.
 	fallbackDirs []string
 
-	// installHint returns the human-readable install command for goos.
-	installHint func(goos string) string
+	// docsURL backs the "see <url> for installation instructions" message shown
+	// on platforms with no install recipe.
+	docsURL string
 
-	// installerCommand returns the command and args that install the agent on
-	// goos, or an error when the platform is unsupported.
-	installerCommand func(goos string) (string, []string, error)
+	// perOS holds the per-OS install recipe, keyed by runtime.GOOS values
+	// (darwin | linux | windows).
+	perOS map[string]osInstall
+}
 
-	// checkDeps verifies the tools needed to run the installer on goos are
-	// present, returning a helpful error when they are not.
-	checkDeps func(goos string) error
+// installHint returns the human-readable install command for goos, or a
+// docs-link fallback when the platform has no recipe.
+func (a agentInstall) installHint(goos string) string {
+	if oi, ok := a.perOS[goos]; ok {
+		return oi.Hint
+	}
+
+	return fmt.Sprintf("see %s for installation instructions", a.docsURL)
+}
+
+// installerCommand returns the command and args that install the agent on goos,
+// or an error when the platform is unsupported.
+func (a agentInstall) installerCommand(goos string) (string, []string, error) {
+	oi, ok := a.perOS[goos]
+	if !ok {
+		return "", nil, fmt.Errorf("unsupported platform for %s install: %s", a.bin, goos)
+	}
+
+	return oi.Command.Bin, oi.Command.Args, nil
+}
+
+// checkDeps verifies the tools needed to run the installer on goos are present.
+// The message is built from a shared, neutral template fed by the per-OS
+// metadata: it always surfaces the actual install command (the real fix), notes
+// any version/edition specifics (deps_note), and can be fully overridden by a
+// bespoke deps_error when the template cannot be made correct.
+func (a agentInstall) checkDeps(goos string) error {
+	oi, ok := a.perOS[goos]
+	if !ok {
+		return fmt.Errorf("%s is not installed and automatic install is not supported on %s\n\ninstall it manually: %s", a.display, goos, a.installHint(goos))
+	}
+
+	var missing []string
+	for _, dep := range oi.Deps {
+		if _, err := exec.LookPath(dep); err != nil {
+			missing = append(missing, dep)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	// Guardrail: a fully bespoke message wins verbatim when supplied.
+	if oi.DepsError != "" {
+		return errors.New(oi.DepsError)
+	}
+
+	// Shared template. Phrasing is neutral about why a dep is needed ("for
+	// setup", not "to install it"), the version nuance is preserved via
+	// deps_note, and the actual install command is always shown as the fix.
+	note := ""
+	if oi.DepsNote != "" {
+		note = " (" + oi.DepsNote + ")"
+	}
+
+	return fmt.Errorf("%s requires %s for setup%s.\n\ninstall them, then run:\n  %s\n\nthen re-run: kronk launch %s",
+		a.display, strings.Join(missing, ", "), note, a.installHint(goos), a.bin)
 }
 
 // find returns the agent binary path, checking PATH first and then the

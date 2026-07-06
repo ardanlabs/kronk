@@ -1,0 +1,157 @@
+# Agent install metadata for "kronk launch".
+#
+# This file is the single source of truth for how each supported agent is
+# located and installed. It is embedded into the binary (see metadata.go) so
+# the launcher no longer hardcodes per-agent install logic in Go.
+#
+# schema: bump when the shape below changes; the loader rejects unknown values.
+#
+# Per agent:
+#   display        human-facing name
+#   bin            executable to look for on PATH
+#   fallback_dirs  dirs under $HOME to search when bin is not on PATH
+#   docs_url       used for the "see <url> for installation instructions"
+#                  message on unsupported platforms
+#   install.<os>   per-OS install recipe (os is darwin | linux | windows):
+#     deps         binaries that must be on PATH to run the installer
+#     deps_note    version/edition nuance shown when a dep is missing
+#                  (e.g. "Node.js 22+"); keep the neutral template wording
+#     deps_error   optional fully-bespoke missing-deps message (verbatim);
+#                  only use when the shared template cannot be made correct
+#     hint         human-readable install command (always shown as the fix)
+#     command      { bin, args } actually executed to install the agent
+schema: 1
+agents:
+  opencode:
+    display: OpenCode
+    bin: opencode
+    fallback_dirs: [.opencode/bin]
+    docs_url: https://opencode.ai/docs
+    install:
+      darwin:
+        deps: [curl, bash]
+        hint: "curl -fsSL https://opencode.ai/install | bash"
+        command:
+          bin: bash
+          args: ["-c", "set -o pipefail; curl -fsSL https://opencode.ai/install | bash"]
+      linux:
+        deps: [curl, bash]
+        hint: "curl -fsSL https://opencode.ai/install | bash"
+        command:
+          bin: bash
+          args: ["-c", "set -o pipefail; curl -fsSL https://opencode.ai/install | bash"]
+      windows:
+        deps: [npm]
+        deps_note: Node.js
+        hint: "npm install -g opencode-ai@latest"
+        command:
+          bin: npm
+          args: ["install", "-g", "opencode-ai@latest"]
+
+  claude:
+    display: Claude Code
+    bin: claude
+    fallback_dirs: [.local/bin]
+    docs_url: https://docs.claude.com/en/docs/claude-code
+    install:
+      darwin:
+        deps: [curl, bash]
+        hint: "curl -fsSL https://claude.ai/install.sh | bash"
+        command:
+          bin: bash
+          args: ["-c", "set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash"]
+      linux:
+        deps: [curl, bash]
+        hint: "curl -fsSL https://claude.ai/install.sh | bash"
+        command:
+          bin: bash
+          args: ["-c", "set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash"]
+      windows:
+        deps: [powershell]
+        hint: "irm https://claude.ai/install.ps1 | iex"
+        command:
+          bin: powershell
+          args: ["-NoProfile", "-Command", "irm https://claude.ai/install.ps1 | iex"]
+
+  codex:
+    display: Codex CLI
+    bin: codex
+    docs_url: https://developers.openai.com/codex
+    install:
+      darwin: &codex_npm
+        deps: [npm]
+        deps_note: Node.js
+        hint: "npm install -g @openai/codex"
+        command:
+          bin: npm
+          args: ["install", "-g", "@openai/codex"]
+      linux: *codex_npm
+      windows: *codex_npm
+
+  copilot:
+    display: Copilot CLI
+    bin: copilot
+    fallback_dirs: [.local/bin]
+    docs_url: https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli
+    install:
+      darwin: &copilot_npm
+        deps: [npm]
+        deps_note: Node.js 22+
+        hint: "npm install -g @github/copilot"
+        command:
+          bin: npm
+          args: ["install", "-g", "@github/copilot"]
+      linux: *copilot_npm
+      windows: *copilot_npm
+
+  pi:
+    display: Pi
+    bin: pi
+    fallback_dirs: [.local/bin]
+    docs_url: https://pi.dev
+    install:
+      darwin: &pi_npm
+        deps: [npm]
+        deps_note: Node.js
+        hint: "npm install -g @earendil-works/pi-coding-agent"
+        command:
+          bin: npm
+          args: ["install", "-g", "@earendil-works/pi-coding-agent"]
+      linux: *pi_npm
+      windows: *pi_npm
+
+  openclaw:
+    display: OpenClaw
+    bin: openclaw
+    fallback_dirs: [.local/bin]
+    docs_url: https://openclaw.ai
+    install:
+      darwin: &openclaw_npm
+        deps: [npm]
+        deps_note: Node.js
+        hint: "npm install -g openclaw"
+        command:
+          bin: npm
+          args: ["install", "-g", "openclaw"]
+      linux: *openclaw_npm
+      windows: *openclaw_npm
+
+  hermes:
+    display: Hermes Agent
+    bin: hermes
+    fallback_dirs: [.local/bin, AppData/Local/hermes-agent/venv/Scripts]
+    docs_url: https://hermes-agent.nousresearch.com
+    install:
+      darwin: &hermes_unix
+        deps: [bash, curl, git]
+        hint: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup"
+        command:
+          bin: bash
+          args: ["-lc", "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup"]
+      linux: *hermes_unix
+      windows:
+        deps: []
+        hint: "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -SkipSetup"
+        command:
+          bin: powershell.exe
+          args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -SkipSetup"]

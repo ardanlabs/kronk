@@ -1,6 +1,7 @@
 // Package launch provides the "kronk launch" command, which starts a
-// coding agent (currently OpenCode) pre-wired to the local Kronk server
-// and the chat models installed on it.
+// supported coding agent (OpenCode, Claude Code, Codex, Copilot, Pi,
+// OpenClaw, or Hermes) pre-wired to the local Kronk server and the chat
+// models installed on it.
 package launch
 
 // Runner launches a coding agent configured to talk to the local Kronk

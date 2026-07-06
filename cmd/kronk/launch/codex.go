@@ -12,11 +12,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 )
 
-// codexInstallCmd is the npm command that installs the Codex CLI. Codex is
-// distributed via npm on every platform, so the same command works on
-// Windows, macOS, and Linux.
-const codexInstallCmd = "npm install -g @openai/codex"
-
 // codexProvider is the id used for the Kronk provider Codex is pointed at.
 // Codex reserves the built-in ids "openai", "ollama", and "lmstudio", so a
 // distinct id is required.
@@ -33,15 +28,6 @@ const codexMinCatalogVersion = "0.134.0"
 // well-formed.
 const codexFallbackContextWindow = 128000
 
-// codexInstall describes how to locate and install the Codex CLI.
-var codexInstall = agentInstall{
-	bin:              "codex",
-	display:          "Codex CLI",
-	installHint:      codexInstallHint,
-	installerCommand: codexInstallerCommand,
-	checkDeps:        checkCodexInstallDeps,
-}
-
 // codex implements Runner for the Codex CLI. Codex is configured entirely
 // through one-off "-c key=value" overrides passed at launch time so we never
 // touch the user's ~/.codex/config.toml. It talks to Kronk's OpenAI-compatible
@@ -52,7 +38,12 @@ type codex struct{}
 // provider overrides from the installed models, and execs Codex with them
 // (plus any pass-through args).
 func (codex) Run(defaultModel string, chatModels []Model, args []string) error {
-	bin, err := ensureInstalled(codexInstall)
+	install, err := loadInstall("codex")
+	if err != nil {
+		return fmt.Errorf("codex: %w", err)
+	}
+
+	bin, err := ensureInstalled(install)
 	if err != nil {
 		return err
 	}
@@ -238,39 +229,30 @@ func writeCodexCatalog(catalog map[string]any) (string, error) {
 	return path, nil
 }
 
-// checkCodexInstallDeps verifies npm (Node.js) is available, since Codex is
-// installed via npm on every platform.
-func checkCodexInstallDeps(goos string) error {
-	switch goos {
-	case "windows", "darwin", "linux":
-		if _, err := exec.LookPath("npm"); err != nil {
-			return fmt.Errorf("codex is not installed and npm (Node.js) is required to install it: https://nodejs.org/\n\nthen re-run: kronk launch codex")
+// compareVersions compares two dot-separated numeric version strings and
+// returns -1 when a < b, 0 when equal, and 1 when a > b. Non-numeric or missing
+// segments are treated as 0, which is enough for the coarse "is it new enough"
+// checks here.
+func compareVersions(a, b string) int {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+
+	n := max(len(aParts), len(bParts))
+	for i := range n {
+		var an, bn int
+		if i < len(aParts) {
+			an, _ = strconv.Atoi(aParts[i])
 		}
-	default:
-		return fmt.Errorf("codex is not installed and automatic install is not supported on %s\n\ninstall it manually: %s", goos, codexInstallHint(goos))
+		if i < len(bParts) {
+			bn, _ = strconv.Atoi(bParts[i])
+		}
+		if an != bn {
+			if an < bn {
+				return -1
+			}
+			return 1
+		}
 	}
 
-	return nil
-}
-
-// codexInstallHint returns the human-readable install command for the given
-// OS.
-func codexInstallHint(goos string) string {
-	switch goos {
-	case "windows", "darwin", "linux":
-		return codexInstallCmd
-	default:
-		return "see https://developers.openai.com/codex for installation instructions"
-	}
-}
-
-// codexInstallerCommand returns the command that installs Codex on the given
-// OS via npm.
-func codexInstallerCommand(goos string) (string, []string, error) {
-	switch goos {
-	case "windows", "darwin", "linux":
-		return "npm", []string{"install", "-g", "@openai/codex"}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported platform for codex install: %s", goos)
-	}
+	return 0
 }

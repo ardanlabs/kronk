@@ -9,29 +9,11 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 )
 
-// copilotInstallCmd is the npm command that installs GitHub Copilot CLI.
-// Copilot CLI is distributed via npm on every platform (Node.js 22+), so the
-// same command works on Windows, macOS, and Linux.
-const copilotInstallCmd = "npm install -g @github/copilot"
-
 // copilotOutputReserveFraction is the share of a model's context window held
 // back for the agent's output. Copilot does not know our model, so we tell it
 // the prompt/output budgets explicitly; reserving a slice for output keeps
 // prompt+output within the server's context window and avoids overflow.
 const copilotOutputReserveFraction = 4 // reserve 1/4 of the window for output
-
-// copilotInstall describes how to locate and install the Copilot CLI. The
-// npm global install lands on PATH; the install script variant drops the
-// binary in ~/.local/bin, which may not be on PATH in the current shell yet,
-// so that directory is searched as a fallback.
-var copilotInstall = agentInstall{
-	bin:              "copilot",
-	display:          "Copilot CLI",
-	fallbackDirs:     []string{".local/bin"},
-	installHint:      copilotInstallHint,
-	installerCommand: copilotInstallerCommand,
-	checkDeps:        checkCopilotInstallDeps,
-}
 
 // copilot implements Runner for GitHub Copilot CLI. Copilot CLI has no
 // provider/model config file to touch; it is configured entirely through its
@@ -43,7 +25,12 @@ type copilot struct{}
 // environment pointing at the local Kronk server, and execs Copilot with that
 // environment (args are passed straight through).
 func (copilot) Run(defaultModel string, chatModels []Model, args []string) error {
-	bin, err := ensureInstalled(copilotInstall)
+	install, err := loadInstall("copilot")
+	if err != nil {
+		return fmt.Errorf("copilot: %w", err)
+	}
+
+	bin, err := ensureInstalled(install)
 	if err != nil {
 		return err
 	}
@@ -115,41 +102,4 @@ func buildCopilotEnv(defaultModel string, chatModels []Model) ([]string, error) 
 	}
 
 	return env, nil
-}
-
-// checkCopilotInstallDeps verifies npm (Node.js) is available, since Copilot
-// CLI is installed via npm on every platform.
-func checkCopilotInstallDeps(goos string) error {
-	switch goos {
-	case "windows", "darwin", "linux":
-		if _, err := exec.LookPath("npm"); err != nil {
-			return fmt.Errorf("copilot is not installed and npm (Node.js 22+) is required to install it: https://nodejs.org/\n\nthen re-run: kronk launch copilot")
-		}
-	default:
-		return fmt.Errorf("copilot is not installed and automatic install is not supported on %s\n\ninstall it manually: %s", goos, copilotInstallHint(goos))
-	}
-
-	return nil
-}
-
-// copilotInstallHint returns the human-readable install command for the given
-// OS.
-func copilotInstallHint(goos string) string {
-	switch goos {
-	case "windows", "darwin", "linux":
-		return copilotInstallCmd
-	default:
-		return "see https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli for installation instructions"
-	}
-}
-
-// copilotInstallerCommand returns the command that installs Copilot CLI on the
-// given OS via npm.
-func copilotInstallerCommand(goos string) (string, []string, error) {
-	switch goos {
-	case "windows", "darwin", "linux":
-		return "npm", []string{"install", "-g", "@github/copilot"}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported platform for copilot install: %s", goos)
-	}
 }

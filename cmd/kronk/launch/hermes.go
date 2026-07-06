@@ -11,37 +11,12 @@ import (
 	yaml "go.yaml.in/yaml/v2"
 )
 
-// hermesInstallScript installs Nous Research's Hermes Agent on macOS/Linux.
-// "--skip-setup" suppresses Hermes' own interactive provider wizard, since the
-// launcher writes the Kronk provider into config.yaml itself.
-const hermesInstallScript = "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup"
-
-// hermesWindowsInstallURL / hermesWindowsInstallCmd install Hermes on Windows
-// via its PowerShell installer, also skipping the setup wizard.
-const (
-	hermesWindowsInstallURL = "https://hermes-agent.nousresearch.com/install.ps1"
-	hermesWindowsInstallCmd = "& ([scriptblock]::Create((irm " + hermesWindowsInstallURL + "))) -SkipSetup"
-)
-
 // hermesPlaceholderKey is written as the provider api_key when the Kronk server
 // needs no auth. A token-less Kronk server ignores it, and Hermes' "custom"
 // provider still reads api_key from config. When a token is required the config
 // instead uses "${KRONK_TOKEN}" so Hermes interpolates it from the environment
 // at request time (the secret is never persisted to disk).
 const hermesPlaceholderKey = "kronk"
-
-// hermesInstall describes how to locate and install Hermes Agent. Hermes is
-// distributed via an install script (not npm); the binary lands on PATH, with
-// ~/.local/bin as a fallback for the current shell, plus the Windows venv
-// script path the installer uses.
-var hermesInstall = agentInstall{
-	bin:              "hermes",
-	display:          "Hermes Agent",
-	fallbackDirs:     []string{".local/bin", "AppData/Local/hermes-agent/venv/Scripts"},
-	installHint:      hermesInstallHint,
-	installerCommand: hermesInstallerCommand,
-	checkDeps:        checkHermesInstallDeps,
-}
 
 // hermes implements Runner for Nous Research's Hermes Agent. Hermes is a
 // personal-assistant platform (CLI plus an optional messaging gateway), but its
@@ -57,7 +32,12 @@ type hermes struct{}
 // the caller passes through their own args they are used verbatim; otherwise
 // Hermes starts its interactive terminal session against the configured model.
 func (hermes) Run(defaultModel string, chatModels []Model, args []string) error {
-	bin, err := ensureInstalled(hermesInstall)
+	install, err := loadInstall("hermes")
+	if err != nil {
+		return fmt.Errorf("hermes: %w", err)
+	}
+
+	bin, err := ensureInstalled(install)
 	if err != nil {
 		return err
 	}
@@ -182,52 +162,4 @@ func hermesConfigPath() (string, error) {
 	}
 
 	return filepath.Join(home, ".hermes", "config.yaml"), nil
-}
-
-// checkHermesInstallDeps verifies the tools the Hermes install script needs are
-// present on macOS/Linux (bash, curl, git).
-func checkHermesInstallDeps(goos string) error {
-	switch goos {
-	case "windows":
-		return nil
-	case "darwin", "linux":
-		var missing []string
-		for _, dep := range []string{"bash", "curl", "git"} {
-			if _, err := exec.LookPath(dep); err != nil {
-				missing = append(missing, dep)
-			}
-		}
-		if len(missing) > 0 {
-			return fmt.Errorf("hermes is not installed and required tools are missing: %v\n\ninstall them first, then re-run: kronk launch hermes", missing)
-		}
-		return nil
-	default:
-		return fmt.Errorf("hermes is not installed and automatic install is not supported on %s\n\ninstall it manually: %s", goos, hermesInstallHint(goos))
-	}
-}
-
-// hermesInstallHint returns the human-readable install command for the given
-// OS.
-func hermesInstallHint(goos string) string {
-	switch goos {
-	case "windows":
-		return hermesWindowsInstallCmd
-	case "darwin", "linux":
-		return hermesInstallScript
-	default:
-		return "see https://hermes-agent.nousresearch.com for installation instructions"
-	}
-}
-
-// hermesInstallerCommand returns the command that installs Hermes on the given
-// OS via its official install script.
-func hermesInstallerCommand(goos string) (string, []string, error) {
-	switch goos {
-	case "windows":
-		return "powershell.exe", []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", hermesWindowsInstallCmd}, nil
-	case "darwin", "linux":
-		return "bash", []string{"-lc", hermesInstallScript}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported platform for hermes install: %s", goos)
-	}
 }

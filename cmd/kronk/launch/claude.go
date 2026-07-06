@@ -10,25 +10,11 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 )
 
-const claudeInstallScript = "curl -fsSL https://claude.ai/install.sh | bash"
-
 // claudePlaceholderToken is sent as ANTHROPIC_AUTH_TOKEN when the Kronk
 // server needs no auth. Claude Code requires a token to skip its login flow
 // but the value is ignored by a token-less Kronk server (this mirrors
 // Ollama, which sets ANTHROPIC_AUTH_TOKEN=ollama).
 const claudePlaceholderToken = "kronk"
-
-// claudeInstall describes how to locate and install the Claude Code binary.
-// The native installer (used on all platforms) drops the binary in
-// ~/.local/bin, which may not be on PATH in the current shell yet.
-var claudeInstall = agentInstall{
-	bin:              "claude",
-	display:          "Claude Code",
-	fallbackDirs:     []string{".local/bin"},
-	installHint:      claudeInstallHint,
-	installerCommand: claudeInstallerCommand,
-	checkDeps:        checkClaudeInstallDeps,
-}
 
 // claudeCode implements Runner for the Claude Code agent. Unlike OpenCode,
 // Claude Code has no provider/model config file; it is configured entirely
@@ -40,7 +26,12 @@ type claudeCode struct{}
 // Anthropic environment pointing at the local Kronk server, and execs
 // Claude Code with that environment.
 func (claudeCode) Run(defaultModel string, chatModels []Model, args []string) error {
-	bin, err := ensureInstalled(claudeInstall)
+	install, err := loadInstall("claude")
+	if err != nil {
+		return fmt.Errorf("claude: %w", err)
+	}
+
+	bin, err := ensureInstalled(install)
 	if err != nil {
 		return err
 	}
@@ -136,58 +127,4 @@ func contextFor(id string, chatModels []Model) int {
 		}
 	}
 	return 0
-}
-
-// checkClaudeInstallDeps verifies the tools needed to install Claude Code on
-// the given OS are available.
-func checkClaudeInstallDeps(goos string) error {
-	switch goos {
-	case "windows":
-		if _, err := exec.LookPath("powershell"); err != nil {
-			return fmt.Errorf("claude is not installed and PowerShell is required to install it\n\ninstall it manually: %s\n\nthen re-run: kronk launch claude", claudeInstallHint(goos))
-		}
-
-	case "darwin", "linux":
-		var missing []string
-		if _, err := exec.LookPath("curl"); err != nil {
-			missing = append(missing, "curl")
-		}
-		if _, err := exec.LookPath("bash"); err != nil {
-			missing = append(missing, "bash")
-		}
-		if len(missing) > 0 {
-			return fmt.Errorf("claude is not installed and these tools are required to install it: %s\n\ninstall them, then re-run: kronk launch claude", strings.Join(missing, ", "))
-		}
-
-	default:
-		return fmt.Errorf("claude is not installed and automatic install is not supported on %s\n\ninstall it manually: %s", goos, claudeInstallHint(goos))
-	}
-
-	return nil
-}
-
-// claudeInstallHint returns the human-readable install command for the given
-// OS.
-func claudeInstallHint(goos string) string {
-	switch goos {
-	case "windows":
-		return "irm https://claude.ai/install.ps1 | iex"
-	case "darwin", "linux":
-		return claudeInstallScript
-	default:
-		return "see https://docs.claude.com/en/docs/claude-code for installation instructions"
-	}
-}
-
-// claudeInstallerCommand returns the command that installs Claude Code on the
-// given OS using Anthropic's native installer.
-func claudeInstallerCommand(goos string) (string, []string, error) {
-	switch goos {
-	case "windows":
-		return "powershell", []string{"-NoProfile", "-Command", "irm https://claude.ai/install.ps1 | iex"}, nil
-	case "darwin", "linux":
-		return "bash", []string{"-c", "set -o pipefail; " + claudeInstallScript}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported platform for claude install: %s", goos)
-	}
 }

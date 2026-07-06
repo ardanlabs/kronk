@@ -16,7 +16,6 @@ var registry = map[string]Runner{
 	"pi":       pi{},
 	"openclaw": openClaw{},
 	"hermes":   hermes{},
-	"vscode":   vsCode{},
 }
 
 // lookup returns the Runner registered for name.

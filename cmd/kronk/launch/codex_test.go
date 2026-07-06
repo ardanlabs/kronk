@@ -203,9 +203,14 @@ func TestCodexInstallerCommand(t *testing.T) {
 		{goos: "plan9", wantErr: true},
 	}
 
+	install, err := loadInstall("codex")
+	if err != nil {
+		t.Fatalf("loadInstall: %v", err)
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.goos, func(t *testing.T) {
-			bin, args, err := codexInstallerCommand(tt.goos)
+			bin, args, err := install.installerCommand(tt.goos)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for %s, got nil", tt.goos)
@@ -222,5 +227,28 @@ func TestCodexInstallerCommand(t *testing.T) {
 				t.Errorf("expected non-empty args for %s", tt.goos)
 			}
 		})
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"1.104", "1.104", 0},
+		{"1.103", "1.104", -1},
+		{"1.105", "1.104", 1},
+		{"1.104.2", "1.104", 1},
+		{"1.121", "1.122", -1},
+		{"1.122", "1.122", 0},
+		{"0.40.9", "0.41.0", -1},
+		{"0.41.0", "0.41.0", 0},
+		{"2.0", "1.999", 1},
+	}
+
+	for _, tt := range tests {
+		if got := compareVersions(tt.a, tt.b); got != tt.want {
+			t.Errorf("compareVersions(%q, %q): got %d, want %d", tt.a, tt.b, got, tt.want)
+		}
 	}
 }

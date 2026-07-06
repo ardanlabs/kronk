@@ -202,9 +202,14 @@ func TestOpenClawInstallerCommand(t *testing.T) {
 		{goos: "plan9", wantErr: true},
 	}
 
+	install, err := loadInstall("openclaw")
+	if err != nil {
+		t.Fatalf("loadInstall: %v", err)
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.goos, func(t *testing.T) {
-			bin, args, err := openclawInstallerCommand(tt.goos)
+			bin, args, err := install.installerCommand(tt.goos)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for %s, got nil", tt.goos)

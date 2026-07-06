@@ -29,7 +29,6 @@ Supported agents:
   pi         Pi (https://pi.dev)
   openclaw   OpenClaw (https://openclaw.ai)
   hermes     Hermes Agent (https://hermes-agent.nousresearch.com)
-  vscode     VS Code + GitHub Copilot Chat BYOK (https://code.visualstudio.com)
 
 EXAMPLES
 
@@ -53,9 +52,6 @@ EXAMPLES
 
   # Launch Hermes Agent wired to the local Kronk server
   kronk launch hermes
-
-  # Configure VS Code (Copilot Chat BYOK) for the local Kronk server and open it
-  kronk launch vscode
 
   # Launch with a specific installed model as the default
   # (use the model id shown by "kronk model ls", e.g. Qwen3-8B-Q8_0)
