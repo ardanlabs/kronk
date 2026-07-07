@@ -1,3 +1,15 @@
+// Adapter lifecycle helpers for model-scoped LoRA support.
+//
+// This file separates adapter management into two phases:
+//
+//  1. Model load time (initAdapter): load adapter GGUFs once against the
+//     base llama.Model and keep the returned handles on Model.
+//  2. Context creation time (setAdaptersOnContext): apply the loaded adapter
+//     handles and configured scales to each llama.Context that will decode.
+//
+// Adapters are therefore initialized once per loaded model and re-applied to
+// every runtime context (generation, pooled, draft) derived from that model.
+// freeAdapters releases model-owned adapter handles during unload/error paths.
 package model
 
 import (
@@ -12,6 +24,8 @@ const (
 	metaKeyArch = "general.architecture"
 )
 
+// initAdapter loads and validates all configured adapters against the model
+// and stores their handles plus effective scales on m.
 func initAdapter(ctx context.Context, m *Model) error {
 	m.adapters = make([]loadedAdapter, 0, len(m.cfg.Adapters))
 
@@ -53,6 +67,8 @@ func initAdapter(ctx context.Context, m *Model) error {
 	return nil
 }
 
+// adapterHandles returns adapter handles in stable config order for passing
+// to llama.SetAdaptersLora.
 func (m *Model) adapterHandles() []llama.AdapterLora {
 	handles := make([]llama.AdapterLora, len(m.adapters))
 	for i := range m.adapters {
@@ -61,6 +77,7 @@ func (m *Model) adapterHandles() []llama.AdapterLora {
 	return handles
 }
 
+// adapterScales returns adapter scales aligned with adapterHandles.
 func (m *Model) adapterScales() []float32 {
 	scales := make([]float32, len(m.adapters))
 	for i := range m.adapters {
@@ -69,6 +86,8 @@ func (m *Model) adapterScales() []float32 {
 	return scales
 }
 
+// setAdaptersOnContext applies currently loaded adapters to a single llama
+// context. It is safe to call on every newly created context.
 func (m *Model) setAdaptersOnContext(ctx context.Context, lctx llama.Context) error {
 	if len(m.adapters) == 0 {
 		return nil
@@ -85,6 +104,8 @@ func (m *Model) setAdaptersOnContext(ctx context.Context, lctx llama.Context) er
 	return nil
 }
 
+// freeAdapters releases all loaded adapter handles and clears in-memory
+// adapter state on the model.
 func (m *Model) freeAdapters() {
 	for i := range m.adapters {
 		// AdapterLoraFree only reports an error for zero handles, and a loaded

@@ -115,6 +115,7 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		return nil, fmt.Errorf("init-mtp-context: %w", err)
 	}
 
+	// Set adapters on the MTP context if any are configured. The adapters are loaded into the target model, so the MTP context can share them. The adapterHandles and adapterScales are passed in from the target model's configuration.
 	if len(adapterHandles) > 0 {
 		if rc := llama.SetAdaptersLora(lctx, adapterHandles, adapterScales); rc != 0 {
 			llama.Free(lctx)

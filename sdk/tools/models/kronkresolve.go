@@ -70,6 +70,7 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 		out.DraftModel.ModelFiles = draftPath.ModelFiles
 	}
 
+	// Resolve adapter file paths if configured.
 	for i, a := range cfg.Adapters {
 		if a.ModelID == "" {
 			continue
