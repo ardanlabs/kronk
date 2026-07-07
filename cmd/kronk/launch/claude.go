@@ -11,9 +11,8 @@ import (
 )
 
 // claudePlaceholderToken is sent as ANTHROPIC_AUTH_TOKEN when the Kronk
-// server needs no auth. Claude Code requires a token to skip its login flow
-// but the value is ignored by a token-less Kronk server (this mirrors
-// Ollama, which sets ANTHROPIC_AUTH_TOKEN=ollama).
+// server needs no auth. Claude Code requires a token to skip its login flow,
+// but the value is ignored by a token-less Kronk server.
 const claudePlaceholderToken = "kronk"
 
 // claudeCode implements Runner for the Claude Code agent. Unlike OpenCode,

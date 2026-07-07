@@ -13,8 +13,8 @@ import (
 )
 
 // codexProvider is the id used for the Kronk provider Codex is pointed at.
-// Codex reserves the built-in ids "openai", "ollama", and "lmstudio", so a
-// distinct id is required.
+// Codex reserves several built-in provider ids (e.g. "openai"), so a distinct
+// id is required.
 const codexProvider = "kronk"
 
 // codexMinCatalogVersion is the lowest Codex CLI version whose model-catalog

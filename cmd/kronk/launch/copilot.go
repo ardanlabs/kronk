@@ -70,10 +70,10 @@ func (copilot) Run(defaultModel string, chatModels []Model, args []string) error
 //     prompt+output within the server's window instead of overflowing it.
 //     Omitted when the window is unknown.
 //
-// Unlike Ollama's integration this does not set COPILOT_PROVIDER_WIRE_API:
-// that key is undocumented, and the documented "openai" provider type already
-// uses Chat Completions, which Kronk serves. Copilot ignores env vars it does
-// not recognize, so the budget hints above are best-effort and never fatal.
+// This does not set COPILOT_PROVIDER_WIRE_API: that key is undocumented, and
+// the documented "openai" provider type already uses Chat Completions, which
+// Kronk serves. Copilot ignores env vars it does not recognize, so the budget
+// hints above are best-effort and never fatal.
 func buildCopilotEnv(defaultModel string, chatModels []Model) ([]string, error) {
 	if defaultModel == "" || len(chatModels) == 0 {
 		return nil, fmt.Errorf("a default model and at least one model are required")
