@@ -230,6 +230,12 @@ type ModelConfig struct {
 	PtrYarnBetaSlow      *float32                  `yaml:"yarn-beta-slow,omitempty"`
 	PtrYarnExtFactor     *float32                  `yaml:"yarn-ext-factor,omitempty"`
 	PtrYarnOrigCtx       *int                      `yaml:"yarn-orig-ctx,omitempty"`
+	Adapters             []AdapterConfig           `yaml:"adapters,omitempty"`
+}
+
+type AdapterConfig struct {
+	ModelID string   `yaml:"model-id,omitempty"`
+	Scale   *float32 `yaml:"scale,omitempty"`
 }
 
 // DraftModelConfig configures speculative decoding for a target model.
@@ -300,6 +306,13 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 			NDraft:        mc.DraftModel.NDraft,
 			PtrNGpuLayers: mc.DraftModel.PtrNGpuLayers,
 			TensorSplit:   mc.DraftModel.TensorSplit,
+		}
+	}
+
+	if len(mc.Adapters) > 0 {
+		cfg.Adapters = make([]model.AdapterConfig, len(mc.Adapters))
+		for i, a := range mc.Adapters {
+			cfg.Adapters[i] = model.AdapterConfig{ModelID: a.ModelID, Scale: a.Scale}
 		}
 	}
 

@@ -83,6 +83,20 @@ func float32Or(p *float32, def float32) float32 {
 	return *p
 }
 
+type AdapterConfig struct {
+	ModelID string
+	Scale   *float32
+	Path    string
+}
+
+func (ac AdapterConfig) GetScale() float32 {
+	if ac.Scale == nil {
+		return 1.0
+	}
+
+	return *ac.Scale
+}
+
 // =============================================================================
 
 // DraftModelConfig configures speculative decoding for a target model. It
@@ -394,6 +408,7 @@ type Config struct {
 	PtrYarnBetaSlow      *float32
 	PtrYarnExtFactor     *float32
 	PtrYarnOrigCtx       *int
+	Adapters             []AdapterConfig
 }
 
 func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) }
@@ -418,6 +433,7 @@ func (cfg Config) YarnOrigCtx() int        { return intOr(cfg.PtrYarnOrigCtx, 0)
 func (cfg Config) IncrementalCache() bool  { return boolOr(cfg.PtrIncrementalCache, false) }
 func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLogging, false) }
 func (cfg Config) UseDirectIO() bool       { return boolOr(cfg.PtrUseDirectIO, false) }
+func (cfg Config) HasAdapters() bool       { return len(cfg.Adapters) > 0 }
 
 // sessionStoreKind returns the configured SessionStore backend, or
 // defaultSessionStoreKind ("ram") if unset. Lowercase because Go does
@@ -1470,6 +1486,7 @@ func NewConfig(opts ...Option) Config {
 }
 
 func WithConfig(src Config) Option                   { return func(c *Config) { *c = src } }
+func WithAdapters(v []AdapterConfig) Option          { return func(c *Config) { c.Adapters = v } }
 func WithAutoTune(v bool) Option                     { return func(c *Config) { c.AutoTune = v } }
 func WithCacheMinTokens(v int) Option                { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
 func WithCacheSlotTimeout(v int) Option              { return func(c *Config) { c.PtrCacheSlotTimeout = new(v) } }

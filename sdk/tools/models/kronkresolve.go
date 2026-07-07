@@ -70,6 +70,20 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 		out.DraftModel.ModelFiles = draftPath.ModelFiles
 	}
 
+	for i, a := range cfg.Adapters {
+		if a.ModelID == "" {
+			continue
+		}
+		ap, err := m.FullPath(a.ModelID)
+		if err != nil {
+			return model.Config{}, fmt.Errorf("kronk-resolved-config: adapter[%d] %q: %w", i, a.ModelID, err)
+		}
+		if len(ap.ModelFiles) != 1 {
+			return model.Config{}, fmt.Errorf("kronk-resolved-config: adapter %q has %d files, expected 1", a.ModelID, len(ap.ModelFiles))
+		}
+		out.Adapters[i].Path = ap.ModelFiles[0]
+	}
+
 	return out, nil
 }
 

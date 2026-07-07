@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -24,7 +25,7 @@ type contextPool struct {
 
 // newContextPool creates a pool of n llama contexts from the given model.
 // Each context has its own KV cache but shares the model weights.
-func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.ContextParams, log applog.Logger, n int) (*contextPool, error) {
+func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.ContextParams, log applog.Logger, n int, adapterHandles []llama.AdapterLora, adapterScales []float32) (*contextPool, error) {
 	if n < 1 {
 		n = 1
 	}
@@ -47,6 +48,17 @@ func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.Cont
 				llama.Free(p.contexts[j])
 			}
 			return nil, err
+		}
+
+		if len(adapterHandles) > 0 {
+			if rc := llama.SetAdaptersLora(lctx, adapterHandles, adapterScales); rc != 0 {
+				llama.Free(lctx)
+				for j := range i {
+					llama.Synchronize(p.contexts[j])
+					llama.Free(p.contexts[j])
+				}
+				return nil, fmt.Errorf("set-adapters-lora-pool-%d: rc=%d", i, rc)
+			}
 		}
 
 		mem, err := llama.GetMemory(lctx)

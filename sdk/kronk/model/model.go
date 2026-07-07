@@ -205,6 +205,14 @@ type Model struct {
 	pool              *contextPool  // Context pool for parallel embed/rerank
 	parser            Parser        // Selected via selectParser at load time; nil for embed/rerank.
 	draft             drafter       // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
+	adapters          []loadedAdapter
+}
+
+type loadedAdapter struct {
+	handle llama.AdapterLora
+	name   string // From config, or the adapter's general.name metadata.
+	path   string
+	scale  float32 // Configured default scale.
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns
@@ -321,6 +329,13 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		addBOSToken: addBOSToken,
 	}
 
+	if m.cfg.HasAdapters() {
+		if err := initAdapter(ctx, &m); err != nil {
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("init-adapters: %w", err)
+		}
+	}
+
 	// Initialize either context pool (for embed/rerank) or batch engine (for generation).
 	// Embed/rerank models use a pool of contexts for parallel processing.
 	// Generation models use the batch engine with a primary context.
@@ -351,8 +366,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	switch {
 	case !isGenerationModel:
-		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
+		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots, m.adapterHandles(), m.adapterScales())
 		if err != nil {
+			m.freeAdapters()
 			llama.ModelFree(mdl)
 			return nil, fmt.Errorf("new-context-pool: unable to create context pool: %w", err)
 		}
@@ -363,6 +379,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			if m.mtmdMetaCtx != 0 {
 				mtmd.Free(m.mtmdMetaCtx)
 			}
+			m.freeAdapters()
 			llama.ModelFree(mdl)
 			return nil, err
 		}
@@ -621,6 +638,11 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 		return fmt.Errorf("init-from-model: unable to init context: %w", err)
 	}
 
+	if err := m.setAdaptersOnContext(ctx, lctx); err != nil {
+		llama.Free(lctx)
+		return fmt.Errorf("init-from-model: %w", err)
+	}
+
 	mem, err := llama.GetMemory(lctx)
 	if err != nil {
 		llama.Free(lctx)
@@ -697,7 +719,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	// an auto-detected MTP head living inside the target GGUF
 	// (nextn_predict_layers > 0, qwen35 architecture). Returns (nil, nil)
 	// when no draft applies.
-	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams)
+	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams, m.adapterHandles(), m.adapterScales())
 	if err != nil {
 		m.batch.stop(ctx)
 		m.batch.freeBatch()
@@ -1077,6 +1099,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		mtmd.Free(m.mtmdMetaCtx)
 		m.mtmdMetaCtx = 0
 	}
+
+	m.freeAdapters()
 
 	llama.ModelFree(m.model)
 

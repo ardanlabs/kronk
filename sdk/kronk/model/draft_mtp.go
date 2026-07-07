@@ -75,7 +75,7 @@ func mtpNextNLayers(model llama.Model) int {
 //
 // On success the returned *mtpDrafter shares the target's llama_model, so
 // its unload skips the model free.
-func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, nDraft int) (*mtpDrafter, error) {
+func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, nDraft int, adapterHandles []llama.AdapterLora, adapterScales []float32) (*mtpDrafter, error) {
 
 	// Build context params for the MTP draft context. We inherit thread
 	// layout, KV cache types, and offload behavior from the target so
@@ -113,6 +113,13 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	lctx, err := llama.InitFromModel(targetModel, params)
 	if err != nil {
 		return nil, fmt.Errorf("init-mtp-context: %w", err)
+	}
+
+	if len(adapterHandles) > 0 {
+		if rc := llama.SetAdaptersLora(lctx, adapterHandles, adapterScales); rc != 0 {
+			llama.Free(lctx)
+			return nil, fmt.Errorf("set-adapters-lora-mtp: rc=%d", rc)
+		}
 	}
 
 	mem, err := llama.GetMemory(lctx)
@@ -409,7 +416,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 //
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
-func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams) (drafter, error) {
+func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, adapterHandles []llama.AdapterLora, adapterScales []float32) (drafter, error) {
 	if cfg.DraftModel != nil && cfg.DraftModel.IsSeparate() {
 		d, err := loadDraftModel(ctx, log, cfg, targetModel, targetCtxParams)
 		if err != nil {
@@ -488,7 +495,7 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 		source = "auto-detected-configured"
 	}
 
-	d, err := loadDraftModelMTP(ctx, log, targetCtx, targetModel, targetCtxParams, nDraft)
+	d, err := loadDraftModelMTP(ctx, log, targetCtx, targetModel, targetCtxParams, nDraft, adapterHandles, adapterScales)
 	if err != nil {
 		return nil, err
 	}
