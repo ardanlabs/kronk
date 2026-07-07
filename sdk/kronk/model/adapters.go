@@ -19,11 +19,6 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-const (
-	metaKeyName = "general.name"
-	metaKeyArch = "general.architecture"
-)
-
 // initAdapter loads and validates all configured adapters against the model
 // and stores their handles plus effective scales on m.
 func initAdapter(ctx context.Context, m *Model) error {
@@ -44,14 +39,6 @@ func initAdapter(ctx context.Context, m *Model) error {
 		}
 
 		name := a.ModelID
-		if name == "" {
-			if v, ok := llama.AdapterMetaValStr(handle, metaKeyName); ok {
-				name = v
-			} else {
-				name = a.Path
-			}
-		}
-
 		scale := a.GetScale()
 
 		m.adapters = append(m.adapters, loadedAdapter{
