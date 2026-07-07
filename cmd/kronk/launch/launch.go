@@ -50,6 +50,11 @@ func run(cmd *cobra.Command, args []string) error {
 		return noChatModelsError()
 	}
 
+	// Let the user know when they are running with only some of the curated
+	// launch models installed, so a partial install (e.g. only one of three)
+	// is visible rather than silent. This never blocks the launch.
+	noteMissingCuratedModels(cmd, chatModels)
+
 	defaultModel, err := resolveDefaultModel(requested, chatModels)
 	if err != nil {
 		return err
@@ -114,10 +119,21 @@ func resolveDefaultModel(requested string, chatModels []Model) (string, error) {
 		return chatModels[0].ID, nil
 	}
 
+	// An exact installed id wins.
 	for _, m := range chatModels {
 		if m.ID == requested {
 			return requested, nil
 		}
+	}
+
+	// A curated alias/key (e.g. "qwen", "gemma") resolves to the installed
+	// model for that curated entry, preferring its AGENT profile. This is the
+	// uniform, agent-agnostic way to swap between the curated models.
+	if entry, ok := lookupCurated(requested); ok {
+		if m, ok := installedCuratedModel(entry.Key, chatModels); ok {
+			return m.ID, nil
+		}
+		return "", fmt.Errorf("model %q (%s) is not installed\n\npull it first (--local uses a longer timeout, better for these large models): kronk model pull --local %s", requested, entry.Display, entry.PullID)
 	}
 
 	ids := make([]string, 0, len(chatModels))
@@ -193,7 +209,7 @@ func maybePullCuratedModel(cmd *cobra.Command, requested string, chatModels []Mo
 	// curated was installed before the pull, so a match here is the model we
 	// just pulled.)
 	if _, _, ok := firstInstalledCurated(refreshed); !ok {
-		return nil, fmt.Errorf("pull of %s did not complete; it is still not installed\n\ntry again manually: kronk model pull %s", entry.Display, entry.PullID)
+		return nil, fmt.Errorf("pull of %s did not complete; it is still not installed\n\ntry again manually (--local uses a longer timeout, better for these large models): kronk model pull --local %s", entry.Display, entry.PullID)
 	}
 
 	return refreshed, nil
@@ -257,20 +273,44 @@ func pullCuratedModel(cmd *cobra.Command, m launchModel) error {
 	return nil
 }
 
+// noteMissingCuratedModels prints an informational notice when only some of
+// the curated launch models are installed, listing the missing ones and the
+// exact command to pull each. It is advisory only and never blocks the launch;
+// it prints nothing when all curated models are installed (or none are, since
+// that case is handled by the auto-pull prompt / no-models error).
+func noteMissingCuratedModels(cmd *cobra.Command, chatModels []Model) {
+	total, missing := curatedInstallStatus(chatModels)
+
+	// Nothing to say when metadata is unavailable, all are installed, or none
+	// are installed (the latter is handled elsewhere).
+	if total == 0 || len(missing) == 0 || len(missing) == total {
+		return
+	}
+
+	w := cmd.ErrOrStderr()
+	fmt.Fprintf(w, "Note: %d of %d curated launch models are installed; %d missing:\n", total-len(missing), total, len(missing))
+	for _, m := range missing {
+		fmt.Fprintf(w, "  - %s [%s]  →  kronk model pull --local %s\n", m.Display, m.Quant, m.PullID)
+	}
+	fmt.Fprintln(w, "(--local uses a longer timeout than the default web pull, better for these large models.)")
+	fmt.Fprintln(w)
+}
+
 // noChatModelsError builds the "no models installed" error. When curated
 // metadata is available it lists the exact pull commands for the curated
 // models; otherwise it falls back to a generic example.
 func noChatModelsError() error {
 	lm, err := loadLaunchModels()
 	if err != nil || len(lm.Order) == 0 {
-		return errors.New("no installed chat models found\n\ninstall one first, for example: kronk model pull unsloth/Qwen3-8B-Q8_0")
+		return errors.New("no installed chat models found\n\ninstall one first, for example: kronk model pull --local unsloth/Qwen3-8B-Q8_0")
 	}
 
 	var b strings.Builder
 	b.WriteString("no installed chat models found\n\ninstall one of the curated coding models, for example:\n")
 	for _, key := range lm.Order {
-		fmt.Fprintf(&b, "  kronk model pull %s\n", lm.Models[key].PullID)
+		fmt.Fprintf(&b, "  kronk model pull --local %s\n", lm.Models[key].PullID)
 	}
+	b.WriteString("(--local uses a longer timeout than the default web pull, better for these large models.)")
 
 	return errors.New(strings.TrimRight(b.String(), "\n"))
 }

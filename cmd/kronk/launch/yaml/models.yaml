@@ -14,6 +14,8 @@
 #          wins when no --model is passed.
 # models   per-model metadata keyed by the base model name (the filename
 #          segment the server reports, e.g. "Qwen3.6-35B-A3B-UD-Q8_K_XL"):
+#     alias      short, memorable name accepted by "--model" for any agent
+#                (e.g. "qwen"); the uniform way to swap models at launch
 #     display    human-facing name shown in prompts and messages
 #     family     model family (for grouping/reference)
 #     quant      quantization form we standardize on
@@ -30,13 +32,19 @@ order:
 
 models:
   mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL:
+    alias: qwen-mtp
     display: Qwen3.6-35B-A3B (MTP)
     family: Qwen3.6-35B-A3B
     quant: Q8_K_XL
-    pull_id: unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
+    # The MTP variant is a standalone GGUF in a dedicated "*-MTP-GGUF" repo,
+    # not a repo named "mtp-...". Pull it by pinning the repo and quant with
+    # the "provider/repo:tag" form; Kronk renames the on-disk file to
+    # "mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL" (the id the server then reports).
+    pull_id: unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q8_K_XL
     size_note: ""
 
   Qwen3.6-35B-A3B-UD-Q8_K_XL:
+    alias: qwen
     display: Qwen3.6-35B-A3B
     family: Qwen3.6-35B-A3B
     quant: Q8_K_XL
@@ -44,6 +52,7 @@ models:
     size_note: ""
 
   gemma-4-26B-A4B-it-UD-Q8_K_XL:
+    alias: gemma
     display: Gemma-4-26B-A4B-it
     family: Gemma-4-26B-A4B
     quant: Q8_K_XL

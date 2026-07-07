@@ -32,6 +32,7 @@ type launchModel struct {
 	// loader from the map key so callers have it without the map).
 	Key string `yaml:"-"`
 
+	Alias    string `yaml:"alias"`
 	Display  string `yaml:"display"`
 	Family   string `yaml:"family"`
 	Quant    string `yaml:"quant"`
@@ -124,11 +125,32 @@ func matchCurated(id, key string) curatedMatch {
 	return noMatch
 }
 
+// installedCuratedModel returns the installed discovered model for the curated
+// model named by key, preferring a profile variant (which carries the AGENT
+// context/sampling profile) over a bare base match. ok is false when none is
+// installed.
+func installedCuratedModel(key string, chatModels []Model) (Model, bool) {
+	var base Model
+	haveBase := false
+
+	for _, m := range chatModels {
+		switch matchCurated(m.ID, key) {
+		case profileMatch:
+			return m, true
+		case baseMatch:
+			if !haveBase {
+				base = m
+				haveBase = true
+			}
+		}
+	}
+
+	return base, haveBase
+}
+
 // firstInstalledCurated returns the highest-preference curated model that is
 // installed, per the metadata order, along with the matching discovered model.
-// Within a curated model a profile variant (carrying the AGENT context/sampling
-// profile) is preferred over a bare base match. It returns ok=false when
-// metadata is unavailable or none are installed.
+// It returns ok=false when metadata is unavailable or none are installed.
 func firstInstalledCurated(chatModels []Model) (launchModel, Model, bool) {
 	lm, err := loadLaunchModels()
 	if err != nil {
@@ -136,25 +158,63 @@ func firstInstalledCurated(chatModels []Model) (launchModel, Model, bool) {
 	}
 
 	for _, key := range lm.Order {
-		var base Model
-		haveBase := false
-
-		for _, m := range chatModels {
-			switch matchCurated(m.ID, key) {
-			case profileMatch:
-				return lm.Models[key], m, true
-			case baseMatch:
-				if !haveBase {
-					base = m
-					haveBase = true
-				}
-			}
-		}
-
-		if haveBase {
-			return lm.Models[key], base, true
+		if m, ok := installedCuratedModel(key, chatModels); ok {
+			return lm.Models[key], m, true
 		}
 	}
 
 	return launchModel{}, Model{}, false
+}
+
+// curatedInstallStatus reports, in metadata order, how many of the curated
+// launch models are installed and which ones are missing. total is the number
+// of curated models; missing lists the ones not installed (empty when all are
+// present or metadata is unavailable).
+func curatedInstallStatus(chatModels []Model) (total int, missing []launchModel) {
+	lm, err := loadLaunchModels()
+	if err != nil {
+		return 0, nil
+	}
+
+	total = len(lm.Order)
+	for _, key := range lm.Order {
+		if _, ok := installedCuratedModel(key, chatModels); !ok {
+			missing = append(missing, lm.Models[key])
+		}
+	}
+
+	return total, missing
+}
+
+// orderedCurated returns the curated models in metadata order. It returns nil
+// when metadata is unavailable.
+func orderedCurated() []launchModel {
+	lm, err := loadLaunchModels()
+	if err != nil {
+		return nil
+	}
+
+	out := make([]launchModel, 0, len(lm.Order))
+	for _, key := range lm.Order {
+		out = append(out, lm.Models[key])
+	}
+
+	return out
+}
+
+// lookupCurated returns the curated model whose key or alias matches name
+// (case-insensitive). It is how "--model qwen" resolves to a curated entry.
+func lookupCurated(name string) (launchModel, bool) {
+	lm, err := loadLaunchModels()
+	if err != nil {
+		return launchModel{}, false
+	}
+
+	for _, m := range lm.Models {
+		if strings.EqualFold(m.Key, name) || (m.Alias != "" && strings.EqualFold(m.Alias, name)) {
+			return m, true
+		}
+	}
+
+	return launchModel{}, false
 }
