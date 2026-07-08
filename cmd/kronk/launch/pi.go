@@ -1,7 +1,9 @@
 package launch
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -101,8 +103,8 @@ func writePiConfig(chatModels []Model) error {
 	}
 
 	existing := map[string]any{}
-	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &existing)
+	if err := readExistingConfig(path, &existing, json.Unmarshal); err != nil {
+		return err
 	}
 
 	merged := buildPiConfig(existing, chatModels, baseURL, apiKey)
@@ -209,6 +211,31 @@ func hasModelArg(args []string) bool {
 	}
 
 	return false
+}
+
+// readExistingConfig reads and parses an existing agent config file into dst
+// using unmarshal. A missing or empty file is not an error (dst is left as-is).
+// A file that exists with content but cannot be parsed is a hard error, so a
+// user's hand-edited config is never silently discarded and overwritten by the
+// launcher's merge-and-backup path.
+func readExistingConfig(path string, dst any, unmarshal func([]byte, any) error) error {
+	data, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("read existing %s: %w", path, err)
+	}
+
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil
+	}
+
+	if err := unmarshal(data, dst); err != nil {
+		return fmt.Errorf("parse existing %s (fix or remove it, then re-run): %w", path, err)
+	}
+
+	return nil
 }
 
 // writeFileWithBackup writes data to path, first copying any existing file to

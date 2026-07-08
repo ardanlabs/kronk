@@ -7,6 +7,53 @@ import (
 	"testing"
 )
 
+func TestReadExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("missing file is not an error", func(t *testing.T) {
+		dst := map[string]any{}
+		if err := readExistingConfig(filepath.Join(dir, "nope.json"), &dst, json.Unmarshal); err != nil {
+			t.Fatalf("missing file should not error, got %v", err)
+		}
+	})
+
+	t.Run("empty file is not an error", func(t *testing.T) {
+		p := filepath.Join(dir, "empty.json")
+		if err := os.WriteFile(p, []byte("   \n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dst := map[string]any{}
+		if err := readExistingConfig(p, &dst, json.Unmarshal); err != nil {
+			t.Fatalf("empty file should not error, got %v", err)
+		}
+	})
+
+	t.Run("valid file parses", func(t *testing.T) {
+		p := filepath.Join(dir, "ok.json")
+		if err := os.WriteFile(p, []byte(`{"a":1}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dst := map[string]any{}
+		if err := readExistingConfig(p, &dst, json.Unmarshal); err != nil {
+			t.Fatalf("valid file should parse, got %v", err)
+		}
+		if _, ok := dst["a"]; !ok {
+			t.Errorf("expected key %q to be parsed into dst", "a")
+		}
+	})
+
+	t.Run("malformed file is a hard error", func(t *testing.T) {
+		p := filepath.Join(dir, "bad.json")
+		if err := os.WriteFile(p, []byte("{not valid json"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dst := map[string]any{}
+		if err := readExistingConfig(p, &dst, json.Unmarshal); err == nil {
+			t.Fatal("malformed file should error instead of being silently overwritten")
+		}
+	})
+}
+
 func TestBuildPiConfigFromEmpty(t *testing.T) {
 	chatModels := []Model{
 		{ID: "Qwen3-8B-Q8_0", Name: "Qwen3-8B-Q8_0", Reasoning: true, Context: 40960},

@@ -84,8 +84,8 @@ func writeHermesConfig(defaultModel string, chatModels []Model) error {
 	}
 
 	existing := map[string]any{}
-	if data, err := os.ReadFile(path); err == nil {
-		_ = yaml.Unmarshal(data, &existing)
+	if err := readExistingConfig(path, &existing, yaml.Unmarshal); err != nil {
+		return err
 	}
 
 	merged := buildHermesConfig(existing, defaultModel, baseURL, apiKey, contextFor(defaultModel, chatModels))
@@ -117,6 +117,11 @@ func buildHermesConfig(existing map[string]any, defaultModel, baseURL, apiKey st
 	model["default"] = defaultModel
 	model["base_url"] = baseURL
 	model["api_key"] = apiKey
+
+	// Always clear any previously-written window first; a stale context_length
+	// from an earlier launch (with a different model) must not linger when the
+	// current model's window is unknown. Only re-set it when it is known.
+	delete(model, "context_length")
 	if contextLen > 0 {
 		model["context_length"] = contextLen
 	}

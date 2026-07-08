@@ -100,8 +100,8 @@ func writeOpenClawConfig(defaultModel string, chatModels []Model) error {
 	}
 
 	existing := map[string]any{}
-	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &existing)
+	if err := readExistingConfig(path, &existing, json.Unmarshal); err != nil {
+		return err
 	}
 
 	merged := buildOpenClawConfig(existing, chatModels, defaultModel, baseURL, apiKey)

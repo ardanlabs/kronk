@@ -39,6 +39,24 @@ func TestBuildHermesConfigOmitsUnknownContext(t *testing.T) {
 	}
 }
 
+func TestBuildHermesConfigClearsStaleContext(t *testing.T) {
+	// A previous launch wrote a context_length for a different model; launching
+	// a model whose window is unknown (contextLen == 0) must not keep the stale
+	// value, or Hermes would be configured with a false context window.
+	existing := map[string]any{
+		"model": map[string]any{
+			"context_length": 131072,
+		},
+	}
+
+	config := buildHermesConfig(existing, "m", "http://x/v1", "kronk", 0)
+
+	model := hermesStringMap(config["model"])
+	if _, ok := model["context_length"]; ok {
+		t.Errorf("stale context_length should be cleared when the new model's window is unknown")
+	}
+}
+
 func TestBuildHermesConfigPreservesUserData(t *testing.T) {
 	// Mimic what YAML v2 produces: nested maps are map[any]any.
 	existing := map[string]any{
