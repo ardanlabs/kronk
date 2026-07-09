@@ -521,23 +521,26 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	// Build the hash for messages[0:2] (the first 2 messages).
+	// Build the hash for messages[0:3] (the first 3 messages).
 	cachedMsgs := []D{
 		{"role": "system", "content": "You are helpful"},
 		{"role": "user", "content": "Hello"},
+		{"role": "assistant", "content": "Hi there"},
 	}
 	cachedHash := hashMessages(cachedMsgs)
 
-	// Simulate: slot[1] has cached the first 2 messages.
+	// Simulate: slot[1] has cached the first 3 messages.
 	m.imcSessions[1].cachedMsgsHash = cachedHash
 	m.imcSessions[1].totalTokensCached = 500
-	m.imcSessions[1].cachedMsgCount = 2
+	m.imcSessions[1].cachedMsgCount = 3
 
-	// Request with same 2 messages + 1 new message (total=3, cache 2, generate from last).
+	// Request with same 3 messages + 1 new user message (total=4, cache 3,
+	// generate from last).
 	messages := []D{
 		{"role": "system", "content": "You are helpful"},
 		{"role": "user", "content": "Hello"},
 		{"role": "assistant", "content": "Hi there"},
+		{"role": "user", "content": "What next?"},
 	}
 
 	d := D{
@@ -555,7 +558,7 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 		t.Errorf("imcSessionID = %d, want 1", result.imcSessionID)
 	}
 
-	// Pure cache hit: cachedMsgCount (2) == lastMsgIdxToCache (2).
+	// Pure cache hit: cachedMsgCount (3) == lastMsgIdxToCache (3).
 	if result.cacheIdx != 500 {
 		t.Errorf("cacheIdx = %d, want 500", result.cacheIdx)
 	}
@@ -563,6 +566,76 @@ func TestProcessIMCSlotMatchByHash(t *testing.T) {
 	// No new tokens to decode (pure hit, not extend).
 	if len(result.imcNewCacheTokens) != 0 {
 		t.Errorf("imcNewCacheTokens = %d, want 0 (pure cache hit)", len(result.imcNewCacheTokens))
+	}
+}
+
+// TestProcessIMCKeepsUserInToolSuffix verifies IMC does not extend the cache
+// past the latest user when the remaining standalone suffix is an assistant
+// tool-call message followed by tool results. Qwen/Ornith-style templates
+// raise when a standalone render input contains no user query, so this should
+// stay a pure cache hit instead of extending/rebuilding.
+func TestProcessIMCKeepsUserInToolSuffix(t *testing.T) {
+	m := &Model{
+		cfg: Config{
+			PtrIncrementalCache: new(true),
+		},
+		imcSessions: make([]*imcSession, 3),
+		log:         func(ctx context.Context, msg string, args ...any) {},
+	}
+
+	for i := range m.imcSessions {
+		m.imcSessions[i] = &imcSession{
+			kvState: ramSessionStore(),
+			seqID:   llama.SeqId(i),
+			id:      i,
+		}
+	}
+
+	messages := []D{
+		{"role": "system", "content": "You are helpful"},
+		{"role": "user", "content": "Initial request"},
+		{"role": "assistant", "content": "Working on it"},
+		{"role": "user", "content": "Use the tool"},
+		{"role": "assistant", "content": "", "tool_calls": []D{{"id": "call_1", "type": "function", "function": D{"name": "lookup", "arguments": "{}"}}}},
+		{"role": "tool", "tool_call_id": "call_1", "content": "tool result"},
+	}
+
+	// Cache only through the message before the latest user. The old boundary
+	// would extend this to include messages[3], leaving assistant+tool as the
+	// rendered suffix. The fixed boundary keeps messages[3:] together.
+	cachedMsgs := messages[:3]
+	m.imcSessions[1].cachedMsgsHash = hashMessages(cachedMsgs)
+	m.imcSessions[1].totalTokensCached = 700
+	m.imcSessions[1].cachedMsgCount = len(cachedMsgs)
+
+	result := m.processIMC(context.Background(), D{"messages": messages}, time.Now())
+
+	if result.err != nil {
+		t.Fatalf("processIMC returned error: %v", result.err)
+	}
+	if result.imcSessionID != 1 {
+		t.Errorf("imcSessionID = %d, want 1", result.imcSessionID)
+	}
+	if result.cacheIdx != 700 {
+		t.Errorf("cacheIdx = %d, want 700", result.cacheIdx)
+	}
+	if len(result.imcNewCacheTokens) != 0 {
+		t.Errorf("imcNewCacheTokens = %d, want 0 (pure cache hit)", len(result.imcNewCacheTokens))
+	}
+
+	gotMsgs, ok := result.modifiedD["messages"].([]D)
+	if !ok {
+		t.Fatalf("modifiedD messages has type %T, want []D", result.modifiedD["messages"])
+	}
+	if len(gotMsgs) != 3 {
+		t.Fatalf("suffix message count = %d, want 3", len(gotMsgs))
+	}
+
+	for i, want := range []string{RoleUser, RoleAssistant, RoleTool} {
+		role, _ := gotMsgs[i]["role"].(string)
+		if role != want {
+			t.Errorf("suffix role[%d] = %q, want %q", i, role, want)
+		}
 	}
 }
 
@@ -593,6 +666,7 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 		{"role": "assistant", "content": "Hi"},
 		{"role": "user", "content": "How are you?"},
 		{"role": "assistant", "content": "Fine"},
+		{"role": "user", "content": "Continue"},
 	}
 
 	// Slot[0] cached first 2 messages.
@@ -601,11 +675,11 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 	m.imcSessions[0].totalTokensCached = 300
 	m.imcSessions[0].cachedMsgCount = 2
 
-	// Slot[1] cached first 4 messages (better coverage).
-	hash4 := hashMessages(messages[:4])
+	// Slot[1] cached first 5 messages (better coverage).
+	hash4 := hashMessages(messages[:5])
 	m.imcSessions[1].cachedMsgsHash = hash4
 	m.imcSessions[1].totalTokensCached = 800
-	m.imcSessions[1].cachedMsgCount = 4
+	m.imcSessions[1].cachedMsgCount = 5
 
 	d := D{
 		"messages": messages,
@@ -622,7 +696,7 @@ func TestProcessIMCBestPrefixCoverage(t *testing.T) {
 		t.Errorf("imcSessionID = %d, want 1 (best prefix coverage)", result.imcSessionID)
 	}
 
-	// Pure cache hit: cachedMsgCount (4) == lastMsgIdxToCache (4).
+	// Pure cache hit: cachedMsgCount (5) == lastMsgIdxToCache (5).
 	if result.cacheIdx != 800 {
 		t.Errorf("cacheIdx = %d, want 800", result.cacheIdx)
 	}

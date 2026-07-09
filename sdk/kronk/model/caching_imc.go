@@ -95,6 +95,27 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 		lastMsgIdxToCache--
 	}
 
+	// Some embedded templates (notably Qwen/Ornith variants) refuse to
+	// render a standalone tool-continuation slice that contains no user query.
+	// Since IMC renders the post-cache suffix separately, keep the latest real
+	// user message in that suffix instead of caching past it. This preserves
+	// the existing cached prefix when possible and avoids injecting synthetic
+	// user content into an assistant/tool continuation.
+	constrainSuffixBoundary := messagesContainRole(messages[lastMsgIdxToCache:], RoleTool) &&
+		!messagesContainRole(messages[lastMsgIdxToCache:], RoleUser)
+	if constrainSuffixBoundary {
+		for i := lastMsgIdxToCache - 1; i >= 0; i-- {
+			role, _ := messages[i]["role"].(string)
+			if role != RoleUser {
+				continue
+			}
+
+			m.log(ctx, "imc", "status", "keeping user in suffix", "old-msgs-to-cache", lastMsgIdxToCache, "new-msgs-to-cache", i)
+			lastMsgIdxToCache = i
+			break
+		}
+	}
+
 	// If we walked all the way back to 0, there's nothing to cache.
 	if lastMsgIdxToCache < 1 {
 		return cacheResult{modifiedD: d}
@@ -178,6 +199,15 @@ func (m *Model) processIMC(ctx context.Context, d D, requestStart time.Time) cac
 		// Skip sessions with more cached messages than this request has total.
 		if totalMsgs <= snap.cachedMsgCount {
 			m.log(ctx, "imc", "scan", fmt.Sprintf("session[%d] skip (cached-msgs[%d] >= total-msgs[%d])", snap.id, snap.cachedMsgCount, totalMsgs))
+			mismatchSessions = append(mismatchSessions, i)
+			continue
+		}
+
+		// Skip sessions that cached past the legal render boundary for this
+		// request. Removing that many messages would leave a tool-continuation
+		// suffix the template cannot render as a standalone input.
+		if constrainSuffixBoundary && snap.cachedMsgCount > lastMsgIdxToCache {
+			m.log(ctx, "imc", "scan", fmt.Sprintf("session[%d] skip (cached-msgs[%d] > msgs-to-cache[%d])", snap.id, snap.cachedMsgCount, lastMsgIdxToCache))
 			mismatchSessions = append(mismatchSessions, i)
 			continue
 		}
@@ -1526,4 +1556,15 @@ func (m *Model) imcEnsureUserMessage(ctx context.Context, msgs []D) []D {
 	result = append(result, D{"role": "user", "content": ""})
 	result = append(result, msgs[1:]...)
 	return result
+}
+
+func messagesContainRole(msgs []D, role string) bool {
+	for _, msg := range msgs {
+		msgRole, _ := msg["role"].(string)
+		if msgRole == role {
+			return true
+		}
+	}
+
+	return false
 }
