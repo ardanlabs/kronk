@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,8 +40,9 @@ func run(cmd *cobra.Command, args []string) error {
 	requested, _ := cmd.Flags().GetString("model")
 
 	// When no model is requested and none of the curated launch models are
-	// installed, offer to pull the preferred one so launch runs on a curated
-	// model. Declining falls back to whatever is installed.
+	// installed, list the curated models and let the user pick one to download
+	// so launch runs on a curated model. Skipping falls back to whatever is
+	// installed.
 	chatModels, err = maybePullCuratedModel(cmd, requested, chatModels)
 	if err != nil {
 		return err
@@ -152,17 +154,24 @@ func discoverChatModels() ([]Model, error) {
 
 	chatModels, err := fetchChatModels(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("unable to reach the Kronk server: %w\n\nis it running? start it with: kronk server start", err)
+		// The underlying dial/HTTP error (e.g. "connection refused") is noise
+		// for the common case: the server simply isn't running. Hide it and
+		// surface a clear, actionable next step instead.
+		return nil, errors.New(
+			"cannot reach the Kronk server — it does not appear to be running.\n\n" +
+				"  Start it with this command, then try again:\n\n" +
+				"      kronk server start")
 	}
 
 	return chatModels, nil
 }
 
-// maybePullCuratedModel offers to pull the preferred curated launch model when
-// no --model was requested and none of the curated models are installed. It
-// only prompts on an interactive terminal, and declining (or a non-interactive
-// terminal) falls back to whatever is installed. On a successful pull it
-// re-discovers the installed models so the new one is picked up.
+// maybePullCuratedModel lists the curated launch models and lets the user pick
+// one to download when no --model was requested and none of the curated models
+// are installed. It only prompts on an interactive terminal, and skipping (or a
+// non-interactive terminal) falls back to whatever is installed. On a
+// successful pull it re-discovers the installed models so the new one is picked
+// up.
 func maybePullCuratedModel(cmd *cobra.Command, requested string, chatModels []Model) ([]Model, error) {
 	// An explicit --model is honored as-is (resolveDefaultModel validates it);
 	// only the curated default is auto-pulled.
@@ -175,13 +184,11 @@ func maybePullCuratedModel(cmd *cobra.Command, requested string, chatModels []Mo
 		return chatModels, nil
 	}
 
-	lm, err := loadLaunchModels()
-	if err != nil || len(lm.Order) == 0 {
+	curated := orderedCurated()
+	if len(curated) == 0 {
 		// No curated metadata available; leave discovery as-is.
 		return chatModels, nil
 	}
-
-	entry := lm.Models[lm.Order[0]]
 
 	// Never run a network pull on a non-interactive terminal; fall back to
 	// whatever is installed (the caller surfaces guidance if nothing is).
@@ -189,7 +196,9 @@ func maybePullCuratedModel(cmd *cobra.Command, requested string, chatModels []Mo
 		return chatModels, nil
 	}
 
-	if !confirmPull(entry) {
+	entry, ok := chooseCuratedModel(curated)
+	if !ok {
+		// User skipped the selection.
 		return chatModels, nil
 	}
 
@@ -215,21 +224,35 @@ func maybePullCuratedModel(cmd *cobra.Command, requested string, chatModels []Mo
 	return refreshed, nil
 }
 
-// confirmPull asks the user for permission before pulling a curated model. It
-// avoids fabricating a size; the optional size_note from metadata is shown when
-// present, and the pull itself streams real progress.
-func confirmPull(m launchModel) bool {
-	size := ""
-	if m.SizeNote != "" {
-		size = " (" + m.SizeNote + ")"
-	}
+// chooseCuratedModel lists the curated launch models and lets the user pick one
+// to download, or skip. It avoids fabricating a size; the optional size_note
+// from metadata is shown when present, and the pull itself streams real
+// progress. It reads a single line: a valid number selects that model; anything
+// else (including empty) skips. ok is false when the user skips.
+func chooseCuratedModel(curated []launchModel) (launchModel, bool) {
+	w := os.Stderr
 
-	fmt.Fprintf(os.Stderr, "The curated launch model %s [%s] is not installed.\nPull it now%s? This is a large download. (y/N): ", m.Display, m.Quant, size)
+	fmt.Fprintln(w, "No curated launch model is installed. Pick one to download:")
+	fmt.Fprintln(w)
+	for i, m := range curated {
+		size := ""
+		if m.SizeNote != "" {
+			size = " (" + m.SizeNote + ")"
+		}
+		fmt.Fprintf(w, "  %d) %s [%s]%s\n", i+1, m.Display, m.Quant, size)
+	}
+	fmt.Fprintln(w)
+	fmt.Fprint(w, "Enter a number to download, or press Enter to skip: ")
 
 	var response string
 	fmt.Scanln(&response)
 
-	return response == "y" || response == "Y"
+	n, err := strconv.Atoi(strings.TrimSpace(response))
+	if err != nil || n < 1 || n > len(curated) {
+		return launchModel{}, false
+	}
+
+	return curated[n-1], true
 }
 
 // pullStatus is the subset of the server's pull SSE response the launcher
@@ -302,7 +325,7 @@ func noteMissingCuratedModels(cmd *cobra.Command, chatModels []Model) {
 func noChatModelsError() error {
 	lm, err := loadLaunchModels()
 	if err != nil || len(lm.Order) == 0 {
-		return errors.New("no installed chat models found\n\ninstall one first, for example: kronk model pull --local unsloth/Qwen3-8B-Q8_0")
+		return errors.New("no installed chat models found\n\ninstall one first, for example: kronk model pull --local Qwen/Qwen3-8B-Q8_0")
 	}
 
 	var b strings.Builder
