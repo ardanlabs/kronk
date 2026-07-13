@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -39,6 +40,27 @@ func run(cmd *cobra.Command, args []string) error {
 
 	requested, _ := cmd.Flags().GetString("model")
 
+	// Validate an explicit --model up front, before installing the agent, so a
+	// typo or uninstalled model is surfaced immediately instead of after a
+	// (possibly network) agent install. maybePullCuratedModel below is a no-op
+	// when --model is set, so chatModels (and thus this resolution) is identical
+	// to the final resolveDefaultModel call — the same source of truth, checked
+	// early.
+	if requested != "" {
+		if _, err := resolveDefaultModel(requested, chatModels); err != nil {
+			return err
+		}
+	}
+
+	// Install the agent now — after confirming the server is reachable but
+	// before any (possibly multi-GB) curated model pull below — so a missing or
+	// uninstallable agent is surfaced up front instead of after a long download.
+	// ensureInstalled is idempotent, so the runner's own install call is then a
+	// fast no-op.
+	if err := ensureAgentInstalled(name); err != nil {
+		return err
+	}
+
 	// When no model is requested and none of the curated launch models are
 	// installed, list the curated models and let the user pick one to download
 	// so launch runs on a curated model. Skipping falls back to whatever is
@@ -72,6 +94,22 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	return runner.Run(defaultModel, chatModels, passArgs)
+}
+
+// ensureAgentInstalled ensures the named agent's binary is installed, prompting
+// to install it when interactive. name is normalized to match the agent
+// metadata keys (the same normalization lookup uses). It returns nil when the
+// binary is already present, so calling it before a model pull only adds the
+// install prompt to the front of the flow without changing behavior when the
+// agent is already installed.
+func ensureAgentInstalled(name string) error {
+	install, err := loadInstall(strings.ToLower(strings.TrimSpace(name)))
+	if err != nil {
+		return err
+	}
+
+	_, err = ensureInstalled(install)
+	return err
 }
 
 // parseArgs splits "<agent> [-- extra args]" into the agent name and the
@@ -153,17 +191,75 @@ func discoverChatModels() ([]Model, error) {
 	defer cancel()
 
 	chatModels, err := fetchChatModels(ctx)
-	if err != nil {
-		// The underlying dial/HTTP error (e.g. "connection refused") is noise
-		// for the common case: the server simply isn't running. Hide it and
-		// surface a clear, actionable next step instead.
+	if err == nil {
+		return chatModels, nil
+	}
+
+	switch {
+	// The server answered but refused the request: a missing, invalid, or
+	// expired token — not a down server. Kronk returns 403 (permission denied,
+	// which the client maps to ErrUnauthorized) or 401 (unauthenticated, which
+	// the client surfaces in the error text as "status: 401"). Point the user
+	// at the token rather than telling them to start an already-running server.
+	case errors.Is(err, client.ErrUnauthorized) || strings.Contains(err.Error(), "status: 401"):
+		return nil, errors.New(
+			"the Kronk server refused the request — your KRONK_TOKEN is missing, invalid, or expired.\n\n" +
+				"  Set a valid token, then try again:\n\n" +
+				"      export KRONK_TOKEN=<token>")
+
+	// The request did not complete within the timeout. This is distinct from an
+	// outright refused connection: the server may be reachable but overloaded,
+	// or the configured address may be wrong. "start the server" would be the
+	// wrong advice, so give timeout-specific guidance.
+	case errors.Is(err, context.DeadlineExceeded):
+		return nil, fmt.Errorf(
+			"the Kronk server at %s did not respond in time.\n\n"+
+				"  It may be overloaded, or the address may be wrong.\n"+
+				"  Check that it is running and reachable, then try again",
+			serverAddr())
+
+	// The HTTP round-trip never completed (connection refused, no route, DNS,
+	// TLS). The raw dial error is noise, so hide it behind a clear, actionable
+	// next step. When a custom host is configured, "start the local server" is
+	// the wrong advice, so point at the configured address instead.
+	case isTransportError(err):
+		if os.Getenv("KRONK_WEB_API_HOST") != "" {
+			return nil, fmt.Errorf(
+				"cannot reach the Kronk server at %s (from KRONK_WEB_API_HOST).\n\n"+
+					"  Check the address is correct and the server is running there, then try again",
+				serverAddr())
+		}
 		return nil, errors.New(
 			"cannot reach the Kronk server — it does not appear to be running.\n\n" +
 				"  Start it with this command, then try again:\n\n" +
 				"      kronk server start")
+
+	// Anything else (5xx, a malformed response) is a real error the user needs
+	// to see rather than a misleading "not running" message.
+	default:
+		return nil, fmt.Errorf("could not query the Kronk server for its models: %w", err)
+	}
+}
+
+// serverAddr returns the Kronk server base address for use in error messages:
+// the KRONK_WEB_API_HOST override when set, otherwise the default local address.
+func serverAddr() string {
+	if base, err := client.DefaultURL(""); err == nil {
+		return strings.TrimRight(base, "/")
 	}
 
-	return chatModels, nil
+	return "http://localhost:11435"
+}
+
+// isTransportError reports whether err is a failure to complete the HTTP
+// round-trip (connection refused, DNS, TLS) rather than a response the server
+// actually sent. net/http surfaces all such failures as *url.Error, which lets
+// the launcher tell "server unreachable" apart from "server answered with an
+// error status". A timeout is also a *url.Error, so callers check
+// context.DeadlineExceeded before this to give timeout-specific guidance.
+func isTransportError(err error) bool {
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
 }
 
 // maybePullCuratedModel lists the curated launch models and lets the user pick
@@ -214,10 +310,11 @@ func maybePullCuratedModel(cmd *cobra.Command, requested string, chatModels []Mo
 	}
 
 	// The pull stream can end without surfacing a server-side failure, so
-	// verify by outcome: the curated model must now be installed. (Nothing
-	// curated was installed before the pull, so a match here is the model we
-	// just pulled.)
-	if _, _, ok := firstInstalledCurated(refreshed); !ok {
+	// verify by outcome: the model the user actually chose must now be
+	// installed. Checking the specific selection (not just "any curated model")
+	// avoids a false success if a different curated model was installed
+	// concurrently while this pull failed.
+	if _, ok := installedCuratedModel(entry.Key, refreshed); !ok {
 		return nil, fmt.Errorf("pull of %s did not complete; it is still not installed\n\ntry again manually (--local uses a longer timeout, better for these large models): kronk model pull --local %s", entry.Display, entry.PullID)
 	}
 
@@ -244,11 +341,15 @@ func chooseCuratedModel(curated []launchModel) (launchModel, bool) {
 	fmt.Fprintln(w)
 	fmt.Fprint(w, "Enter a number to download, or press Enter to skip: ")
 
-	var response string
-	fmt.Scanln(&response)
+	line, ok := readPromptLine()
+	if !ok || line == "" {
+		// EOF or an empty line (the user pressed Enter): skip quietly.
+		return launchModel{}, false
+	}
 
-	n, err := strconv.Atoi(strings.TrimSpace(response))
+	n, err := strconv.Atoi(line)
 	if err != nil || n < 1 || n > len(curated) {
+		fmt.Fprintln(w, "invalid selection; skipping.")
 		return launchModel{}, false
 	}
 
@@ -292,6 +393,14 @@ func pullCuratedModel(cmd *cobra.Command, m launchModel) error {
 		}
 	}
 	fmt.Fprintln(cmd.ErrOrStderr())
+
+	// The SSE client signals a mid-stream timeout/cancel only by closing the
+	// channel (there is no error channel), so a deadline hit here would
+	// otherwise look like a successful pull. Check the context so the user gets
+	// the real cause instead of the generic "did not complete" downstream.
+	if ctx.Err() != nil {
+		return fmt.Errorf("pull of %s did not finish in time (the connection may be slow); try again manually: kronk model pull --local %s", m.PullID, m.PullID)
+	}
 
 	return nil
 }

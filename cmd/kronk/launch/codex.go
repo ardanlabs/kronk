@@ -1,13 +1,14 @@
 package launch
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 )
@@ -23,10 +24,10 @@ const codexProvider = "kronk"
 // which is cosmetic) rather than risk Codex rejecting an unrecognized schema.
 const codexMinCatalogVersion = "0.134.0"
 
-// codexFallbackContextWindow is the context window written into the catalog when
-// a model's real window could not be resolved, so the catalog entry is still
-// well-formed.
-const codexFallbackContextWindow = 128000
+// codexCmdTimeout bounds the "codex --version" probe so a wedged Codex CLI
+// cannot hang the launch. It is generous (a cold Node.js start is still far
+// under it) so it never fires on a legitimately slow-but-working CLI.
+const codexCmdTimeout = 30 * time.Second
 
 // codex implements Runner for the Codex CLI. Codex is configured entirely
 // through one-off "-c key=value" overrides passed at launch time so we never
@@ -48,19 +49,34 @@ func (codex) Run(defaultModel string, chatModels []Model, args []string) error {
 		return err
 	}
 
+	// Honor a model the user selected via pass-through args (e.g. "-- -m X" or
+	// "-- exec --model X") instead of pinning the launcher's default over it.
+	// The effective model drives the catalog and context-window sizing, and when
+	// the user supplied one we must not also emit our own "-m" (Codex rejects a
+	// top-level --model given twice).
+	override := modelArgValue(args)
+	effectiveModel := defaultModel
+	if override != "" {
+		effectiveModel = override
+	}
+
 	// Best-effort: silence Codex's "model metadata not found" warning by
-	// supplying a model catalog, but only on Codex versions whose catalog
-	// schema we have verified (older versions may reject an unrecognized
-	// schema). Any failure here is non-fatal: launch proceeds without the
-	// catalog and Codex just shows the cosmetic warning.
+	// supplying a model catalog, but only when the model's real context window
+	// is known and only on Codex versions whose catalog schema we have verified
+	// (older versions may reject an unrecognized schema). When the window is
+	// unknown the catalog is skipped rather than advertising a fabricated one:
+	// a wrong (too large) window causes real context-overflow failures, whereas
+	// the missing catalog only costs Codex's cosmetic warning. Any failure here
+	// is non-fatal.
 	var catalogPath string
-	if codexCatalogSupported(bin) {
-		if p, err := writeCodexCatalog(buildCodexCatalog(defaultModel, chatModels)); err == nil {
+	if cw := contextFor(effectiveModel, chatModels); cw > 0 && codexCatalogSupported(bin) {
+		if p, err := writeCodexCatalog(buildCodexCatalog(effectiveModel, cw, chatModels)); err == nil {
 			catalogPath = p
+			defer os.Remove(catalogPath)
 		}
 	}
 
-	codexArgs, err := buildCodexArgs(defaultModel, chatModels, catalogPath)
+	codexArgs, err := buildCodexArgs(effectiveModel, chatModels, catalogPath, override == "")
 	if err != nil {
 		return fmt.Errorf("build codex args: %w", err)
 	}
@@ -91,7 +107,13 @@ func (codex) Run(defaultModel string, chatModels []Model, args []string) error {
 //   - -c model_catalog_json="<path>": only when catalogPath is non-empty (a
 //     supported Codex version), pointing Codex at a catalog file that describes
 //     the model so Codex does not print its "metadata not found" warning.
-//   - -m <model>: the default model to use.
+//   - -m <model>: the model to use — emitted only when emitModelFlag is true.
+//     It is suppressed when the user selected their own model via pass-through
+//     args (Codex rejects a top-level --model given twice); their selection
+//     then supplies the model instead.
+//
+// model is the effective model (the launcher default, or the user's pass-through
+// selection) and drives both the -m value and the context-window override.
 //
 // When no catalog is supplied (older/unverified Codex), Codex prints a harmless
 // "model metadata not found" warning and runs with fallback metadata. The
@@ -99,8 +121,8 @@ func (codex) Run(defaultModel string, chatModels []Model, args []string) error {
 // failure that actually matters (prompt overflow) regardless of the catalog.
 //
 // Codex parses -c values as TOML, so string values are quoted with %q.
-func buildCodexArgs(defaultModel string, chatModels []Model, catalogPath string) ([]string, error) {
-	if defaultModel == "" || len(chatModels) == 0 {
+func buildCodexArgs(model string, chatModels []Model, catalogPath string, emitModelFlag bool) ([]string, error) {
+	if model == "" || len(chatModels) == 0 {
 		return nil, fmt.Errorf("a default model and at least one model are required")
 	}
 
@@ -124,7 +146,7 @@ func buildCodexArgs(defaultModel string, chatModels []Model, catalogPath string)
 		overrides = append(overrides, fmt.Sprintf("model_providers.%s.env_key=%q", codexProvider, "KRONK_TOKEN"))
 	}
 
-	if cw := contextFor(defaultModel, chatModels); cw > 0 {
+	if cw := contextFor(model, chatModels); cw > 0 {
 		overrides = append(overrides, "model_context_window="+strconv.Itoa(cw))
 	}
 
@@ -136,7 +158,9 @@ func buildCodexArgs(defaultModel string, chatModels []Model, catalogPath string)
 	for _, o := range overrides {
 		args = append(args, "-c", o)
 	}
-	args = append(args, "-m", defaultModel)
+	if emitModelFlag {
+		args = append(args, "-m", model)
+	}
 
 	return args, nil
 }
@@ -157,7 +181,10 @@ func codexCatalogSupported(bin string) bool {
 // codexVersion returns the Codex CLI version parsed from "codex --version"
 // (output like "codex-cli 0.134.0"), or "" when it cannot be determined.
 func codexVersion(bin string) string {
-	out, err := exec.Command(bin, "--version").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), codexCmdTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, bin, "--version").Output()
 	if err != nil {
 		return ""
 	}
@@ -172,14 +199,10 @@ func codexVersion(bin string) string {
 
 // buildCodexCatalog builds the Codex model-catalog document for the default
 // model, describing it so Codex does not fall back to guessed metadata. Only
-// the default model is described (that is the model Codex launches with); its
-// resolved context window and vision capability come from the discovered Model.
-func buildCodexCatalog(defaultModel string, chatModels []Model) map[string]any {
-	contextWindow := codexFallbackContextWindow
-	if cw := contextFor(defaultModel, chatModels); cw > 0 {
-		contextWindow = cw
-	}
-
+// the default model is described (that is the model Codex launches with);
+// contextWindow is its resolved context window (the caller only builds a catalog
+// when it is known) and the vision capability comes from the discovered Model.
+func buildCodexCatalog(defaultModel string, contextWindow int, chatModels []Model) map[string]any {
 	modalities := []any{"text"}
 	for _, m := range chatModels {
 		if m.ID == defaultModel && m.Vision {
@@ -212,21 +235,34 @@ func buildCodexCatalog(defaultModel string, chatModels []Model) map[string]any {
 	}
 }
 
-// writeCodexCatalog writes the catalog document to a Kronk-owned file (in the
-// system temp dir, never the user's ~/.codex config) and returns its path. The
-// file is overwritten on each launch so it always reflects the current model.
+// writeCodexCatalog writes the catalog document to a Kronk-owned temp file
+// (never the user's ~/.codex config) and returns its path; the caller removes it
+// once Codex exits. It uses os.CreateTemp for a unique, owner-only (0600) file:
+// a predictable name in a shared temp dir could be pre-created as a symlink or
+// clobbered by a concurrent launch, so a fresh unique file is used each time.
 func writeCodexCatalog(catalog map[string]any) (string, error) {
 	data, err := json.MarshalIndent(catalog, "", "  ")
 	if err != nil {
 		return "", err
 	}
 
-	path := filepath.Join(os.TempDir(), "kronk-codex-catalog.json")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	f, err := os.CreateTemp(os.TempDir(), "kronk-codex-catalog-*.json")
+	if err != nil {
 		return "", err
 	}
 
-	return path, nil
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+
+	return f.Name(), nil
 }
 
 // compareVersions compares two dot-separated numeric version strings and

@@ -51,6 +51,7 @@ func TestBuildClaudeEnv(t *testing.T) {
 		"CLAUDE_CODE_USE_FOUNDRY",
 		"CLAUDE_CODE_USE_MANTLE",
 		"CLAUDE_CODE_USE_ANTHROPIC_AWS",
+		"CLAUDE_CODE_USE_GATEWAY",
 	} {
 		v, ok := got[flag]
 		if !ok {

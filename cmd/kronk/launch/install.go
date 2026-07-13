@@ -177,12 +177,42 @@ func isInteractive() bool {
 }
 
 // confirmInstall asks the user for permission before running an agent's
-// installer.
+// installer. Only "y"/"yes" (case-insensitive) confirms; empty input, EOF, or
+// anything else declines.
 func confirmInstall(display, hint string) bool {
 	fmt.Fprintf(os.Stderr, "%s is not installed. Install it now with:\n  %s\nProceed? (y/N): ", display, hint)
 
-	var response string
-	fmt.Scanln(&response)
+	line, _ := readPromptLine()
+	switch strings.ToLower(line) {
+	case "y", "yes":
+		return true
+	default:
+		return false
+	}
+}
 
-	return response == "y" || response == "Y"
+// readPromptLine reads a single line from stdin for an interactive prompt,
+// returning it trimmed of surrounding whitespace. ok is false on EOF or a read
+// error before any newline, which callers treat as "no input".
+//
+// It reads one byte at a time from os.Stdin rather than using a buffered reader:
+// these prompts run immediately before the launcher execs an agent that inherits
+// the same stdin, so a buffered reader could consume input past the newline and
+// swallow the user's first keystrokes to the agent.
+func readPromptLine() (string, bool) {
+	var b []byte
+	buf := make([]byte, 1)
+
+	for {
+		n, err := os.Stdin.Read(buf)
+		if n > 0 {
+			if buf[0] == '\n' {
+				return strings.TrimSpace(string(b)), true
+			}
+			b = append(b, buf[0])
+		}
+		if err != nil {
+			return strings.TrimSpace(string(b)), len(b) > 0
+		}
+	}
 }

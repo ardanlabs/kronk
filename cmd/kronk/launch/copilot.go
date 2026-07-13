@@ -35,7 +35,9 @@ func (copilot) Run(defaultModel string, chatModels []Model, args []string) error
 		return err
 	}
 
-	env, err := buildCopilotEnv(defaultModel, chatModels)
+	// Honor a model the user selected via pass-through args (e.g.
+	// "-- --model X") instead of pinning the launcher's default over it.
+	env, err := buildCopilotEnv(defaultModel, chatModels, modelArgValue(args))
 	if err != nil {
 		return fmt.Errorf("build copilot env: %w", err)
 	}
@@ -62,19 +64,41 @@ func (copilot) Run(defaultModel string, chatModels []Model, args []string) error
 //     KRONK_TOKEN when set; left empty otherwise, since a token-less Kronk
 //     server needs no auth (Copilot's own docs note the key is not required
 //     for local providers).
-//   - COPILOT_MODEL: the default model. A user-supplied "--model" in the
-//     pass-through args overrides it.
+//   - COPILOT_MODEL: the default model, unless the user selected their own via
+//     pass-through "--model" (overrideModel), in which case the model-naming
+//     vars are cleared so the CLI selection wins (see below).
 //   - COPILOT_PROVIDER_MAX_PROMPT_TOKENS / COPILOT_PROVIDER_MAX_OUTPUT_TOKENS:
-//     derived from the model's resolved context window so Copilot (which would
-//     otherwise assume a large window for an unrecognized model name) keeps
-//     prompt+output within the server's window instead of overflowing it.
-//     Omitted when the window is unknown.
+//     derived from the effective model's resolved context window so Copilot
+//     (which would otherwise assume a large window for an unrecognized model
+//     name) keeps prompt+output within the server's window instead of
+//     overflowing it. Omitted when the window is unknown.
 //
-// This does not set COPILOT_PROVIDER_WIRE_API: that key is undocumented, and
-// the documented "openai" provider type already uses Chat Completions, which
-// Kronk serves. Copilot ignores env vars it does not recognize, so the budget
-// hints above are best-effort and never fatal.
-func buildCopilotEnv(defaultModel string, chatModels []Model) ([]string, error) {
+// All routing-affecting BYOK keys are pinned explicitly (not left to their
+// defaults) so a user's pre-existing BYOK environment — set up for a different
+// provider — cannot leak in and divert Copilot away from the local Kronk
+// server. Go's exec keeps the last value for duplicate keys, so these override
+// any inherited value:
+//
+//   - COPILOT_PROVIDER_WIRE_API=completions: Kronk serves Chat Completions;
+//     an inherited "responses" would post to an endpoint Kronk does not serve
+//     for Copilot.
+//   - COPILOT_PROVIDER_TRANSPORT=http: the default; blocks an inherited
+//     "websockets".
+//   - COPILOT_PROVIDER_BEARER_TOKEN: a bearer token takes precedence over the
+//     API key in Copilot, so it is pinned to the same value (KRONK_TOKEN, or
+//     empty for a token-less server) as COPILOT_PROVIDER_API_KEY. An empty
+//     value is falsy, so Copilot falls back to the (also empty) API key and
+//     sends no auth; a set value neutralizes any inherited bearer token.
+//   - COPILOT_PROVIDER_MODEL_ID / COPILOT_PROVIDER_WIRE_MODEL: both default to
+//     COPILOT_MODEL, but an inherited explicit value would override it and send
+//     the wrong model name to Kronk, so both are pinned to the default model.
+//
+// When overrideModel is set (the user passed their own "--model" through), the
+// three model-naming vars are set to empty instead. An empty value is falsy for
+// Copilot, so it neutralizes any inherited model name yet still lets the model
+// passed on Copilot's own command line take effect — without it, pinning the
+// launcher default would silently override the user's selection.
+func buildCopilotEnv(defaultModel string, chatModels []Model, overrideModel string) ([]string, error) {
 	if defaultModel == "" || len(chatModels) == 0 {
 		return nil, fmt.Errorf("a default model and at least one model are required")
 	}
@@ -84,14 +108,38 @@ func buildCopilotEnv(defaultModel string, chatModels []Model) ([]string, error) 
 		return nil, fmt.Errorf("default-url: %w", err)
 	}
 
+	token := os.Getenv("KRONK_TOKEN")
+
 	env := []string{
 		"COPILOT_PROVIDER_TYPE=openai",
 		"COPILOT_PROVIDER_BASE_URL=" + baseURL,
-		"COPILOT_PROVIDER_API_KEY=" + os.Getenv("KRONK_TOKEN"),
-		"COPILOT_MODEL=" + defaultModel,
+		"COPILOT_PROVIDER_API_KEY=" + token,
+		"COPILOT_PROVIDER_BEARER_TOKEN=" + token,
+		"COPILOT_PROVIDER_WIRE_API=completions",
+		"COPILOT_PROVIDER_TRANSPORT=http",
 	}
 
-	if cw := contextFor(defaultModel, chatModels); cw > 0 {
+	// Pin the launcher default only when the user did not select their own
+	// model; otherwise clear these so the CLI "--model" wins while still
+	// neutralizing any inherited value. The token budgets below are sized for
+	// whichever model is effective.
+	effectiveModel := defaultModel
+	if overrideModel == "" {
+		env = append(env,
+			"COPILOT_MODEL="+defaultModel,
+			"COPILOT_PROVIDER_MODEL_ID="+defaultModel,
+			"COPILOT_PROVIDER_WIRE_MODEL="+defaultModel,
+		)
+	} else {
+		effectiveModel = overrideModel
+		env = append(env,
+			"COPILOT_MODEL=",
+			"COPILOT_PROVIDER_MODEL_ID=",
+			"COPILOT_PROVIDER_WIRE_MODEL=",
+		)
+	}
+
+	if cw := contextFor(effectiveModel, chatModels); cw > 0 {
 		out := max(cw/copilotOutputReserveFraction, 1)
 		prompt := cw - out
 

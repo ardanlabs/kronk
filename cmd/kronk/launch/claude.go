@@ -35,7 +35,16 @@ func (claudeCode) Run(defaultModel string, chatModels []Model, args []string) er
 		return err
 	}
 
-	env, err := buildClaudeEnv(defaultModel, chatModels)
+	// Honor a model the user selected via pass-through args (e.g.
+	// "-- --model X"): Claude Code's CLI --model overrides ANTHROPIC_MODEL, so
+	// describe that same model everywhere (tiers and the context window) instead
+	// of leaving the launcher default's window pinned under the user's model.
+	model := defaultModel
+	if override := modelArgValue(args); override != "" {
+		model = override
+	}
+
+	env, err := buildClaudeEnv(model, chatModels)
 	if err != nil {
 		return fmt.Errorf("build claude env: %w", err)
 	}
@@ -93,19 +102,22 @@ func buildClaudeEnv(defaultModel string, chatModels []Model) ([]string, error) {
 		"ANTHROPIC_SMALL_FAST_MODEL=" + defaultModel,
 	}
 
-	// Neutralize any inherited cloud-provider routing flags so a user's
-	// existing CLAUDE_CODE_USE_BEDROCK=1 (or Vertex/Foundry/Mantle/AWS)
+	// Neutralize any inherited cloud-provider/gateway routing flags so a user's
+	// existing CLAUDE_CODE_USE_BEDROCK=1 (or Vertex/Foundry/Mantle/AWS/Gateway)
 	// cannot divert requests away from the local Kronk server pointed to by
-	// ANTHROPIC_BASE_URL. These flags are read as truthy, so an empty value
-	// disables them; "0" would not (a non-empty string is truthy). Go's exec
-	// keeps the last value for duplicate keys, so these override the inherited
-	// ones.
+	// ANTHROPIC_BASE_URL. In gateway mode Claude Code reinterprets
+	// ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN as a cloud-gateway URL/session
+	// token, so an inherited CLAUDE_CODE_USE_GATEWAY would break the local
+	// endpoint. These flags are read as truthy, so an empty value disables them;
+	// "0" would not (a non-empty string is truthy). Go's exec keeps the last
+	// value for duplicate keys, so these override the inherited ones.
 	for _, flag := range []string{
 		"CLAUDE_CODE_USE_BEDROCK",
 		"CLAUDE_CODE_USE_VERTEX",
 		"CLAUDE_CODE_USE_FOUNDRY",
 		"CLAUDE_CODE_USE_MANTLE",
 		"CLAUDE_CODE_USE_ANTHROPIC_AWS",
+		"CLAUDE_CODE_USE_GATEWAY",
 	} {
 		env = append(env, flag+"=")
 	}

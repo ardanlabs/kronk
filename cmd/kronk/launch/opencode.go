@@ -109,6 +109,15 @@ func buildOpenCodeConfig(defaultModel string, chatModels []Model) (string, error
 		// Pin the lightweight model to a local one too so OpenCode does not
 		// fall back to a non-Kronk provider for small tasks (e.g. titles).
 		"small_model": "kronk/" + defaultModel,
+		// Guarantee the injected Kronk provider survives regardless of the
+		// user's existing config. OpenCode filters providers through the
+		// enabled_providers allowlist and the disabled_providers denylist; a
+		// user list that omits (or disables) "kronk" would otherwise silently
+		// drop the provider and break the launched session. Because launch
+		// pins both model and small_model to Kronk anyway, restricting the
+		// session to the Kronk provider is the intended behavior.
+		"enabled_providers":  []string{"kronk"},
+		"disabled_providers": []string{},
 	}
 
 	data, err := json.Marshal(config)

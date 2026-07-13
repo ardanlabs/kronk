@@ -102,7 +102,7 @@ func TestWriteHermesConfigBacksUpAndIsValidYAML(t *testing.T) {
 	path := filepath.Join(home, ".hermes", "config.yaml")
 
 	// First write: no prior file, so no backup.
-	if err := writeHermesConfig("a/one", []Model{{ID: "a/one", Name: "a/one", Context: 65536}}); err != nil {
+	if err := writeHermesConfig("a/one", "a/one", []Model{{ID: "a/one", Name: "a/one", Context: 65536}}); err != nil {
 		t.Fatalf("first writeHermesConfig: %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -113,7 +113,7 @@ func TestWriteHermesConfigBacksUpAndIsValidYAML(t *testing.T) {
 	}
 
 	// Second write: the prior file should be backed up.
-	if err := writeHermesConfig("b/two", []Model{{ID: "b/two", Name: "b/two"}}); err != nil {
+	if err := writeHermesConfig("b/two", "b/two", []Model{{ID: "b/two", Name: "b/two"}}); err != nil {
 		t.Fatalf("second writeHermesConfig: %v", err)
 	}
 	if _, err := os.Stat(path + ".bak"); err != nil {
@@ -135,8 +135,42 @@ func TestWriteHermesConfigBacksUpAndIsValidYAML(t *testing.T) {
 	}
 }
 
+func TestWriteHermesConfigSizesContextForContextModel(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("HERMES_HOME", "")
+
+	// The user selected a one-off model via pass-through args: the persisted
+	// default stays the launcher default, but context_length must reflect the
+	// model actually in use so its window is not mis-sized.
+	chatModels := []Model{
+		{ID: "a/one", Name: "a/one", Context: 65536},
+		{ID: "b/two", Name: "b/two", Context: 131072},
+	}
+	if err := writeHermesConfig("a/one", "b/two", chatModels); err != nil {
+		t.Fatalf("writeHermesConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(home, ".hermes", "config.yaml"))
+	if err != nil {
+		t.Fatalf("reading config.yaml: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("config.yaml is not valid YAML: %v", err)
+	}
+
+	model := hermesStringMap(doc["model"])
+	if got := model["default"]; got != "a/one" {
+		t.Errorf("default: got %v, want a/one (launcher default preserved)", got)
+	}
+	if got := model["context_length"]; got != 131072 {
+		t.Errorf("context_length: got %v, want 131072 (sized for the context model)", got)
+	}
+}
+
 func TestWriteHermesConfigRequiresModels(t *testing.T) {
-	if err := writeHermesConfig("", nil); err == nil {
+	if err := writeHermesConfig("", "", nil); err == nil {
 		t.Errorf("expected error when no models provided")
 	}
 }
@@ -177,5 +211,22 @@ func TestHermesInstallerCommand(t *testing.T) {
 				t.Errorf("expected non-empty args for %s", tt.goos)
 			}
 		})
+	}
+}
+
+func TestHermesEnv(t *testing.T) {
+	got := envMap(hermesEnv("Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT"))
+
+	want := map[string]string{
+		"HERMES_MODEL":              "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+		"HERMES_INFERENCE_MODEL":    "Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+		"HERMES_TUI_PROVIDER":       "custom",
+		"HERMES_INFERENCE_PROVIDER": "custom",
+	}
+
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: got %q, want %q", k, got[k], v)
+		}
 	}
 }

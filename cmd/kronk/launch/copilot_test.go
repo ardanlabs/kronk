@@ -31,7 +31,7 @@ func TestBuildCopilotEnv(t *testing.T) {
 		{ID: "Qwen2-VL-7B", Name: "Qwen2-VL-7B", Vision: true},
 	}
 
-	env, err := buildCopilotEnv("Qwen3-8B-Q8_0", chatModels)
+	env, err := buildCopilotEnv("Qwen3-8B-Q8_0", chatModels, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,6 +51,26 @@ func TestBuildCopilotEnv(t *testing.T) {
 	// No token → empty API key (a token-less Kronk server needs no auth).
 	if got, ok := m["COPILOT_PROVIDER_API_KEY"]; !ok || got != "" {
 		t.Errorf("COPILOT_PROVIDER_API_KEY: got %q (present=%v), want empty", got, ok)
+	}
+	// Bearer token is pinned to the same (empty) value so an inherited bearer
+	// cannot take precedence over the API key.
+	if got, ok := m["COPILOT_PROVIDER_BEARER_TOKEN"]; !ok || got != "" {
+		t.Errorf("COPILOT_PROVIDER_BEARER_TOKEN: got %q (present=%v), want empty", got, ok)
+	}
+
+	// Routing-affecting keys are pinned so an inherited BYOK env cannot divert
+	// Copilot away from Kronk.
+	if got := m["COPILOT_PROVIDER_WIRE_API"]; got != "completions" {
+		t.Errorf("COPILOT_PROVIDER_WIRE_API: got %q, want completions", got)
+	}
+	if got := m["COPILOT_PROVIDER_TRANSPORT"]; got != "http" {
+		t.Errorf("COPILOT_PROVIDER_TRANSPORT: got %q, want http", got)
+	}
+	if got := m["COPILOT_PROVIDER_MODEL_ID"]; got != "Qwen3-8B-Q8_0" {
+		t.Errorf("COPILOT_PROVIDER_MODEL_ID: got %q, want Qwen3-8B-Q8_0", got)
+	}
+	if got := m["COPILOT_PROVIDER_WIRE_MODEL"]; got != "Qwen3-8B-Q8_0" {
+		t.Errorf("COPILOT_PROVIDER_WIRE_MODEL: got %q, want Qwen3-8B-Q8_0", got)
 	}
 
 	// Known context window → prompt+output budgets that stay within it, with
@@ -74,7 +94,7 @@ func TestBuildCopilotEnv(t *testing.T) {
 func TestBuildCopilotEnvWithToken(t *testing.T) {
 	t.Setenv("KRONK_TOKEN", "secret-token")
 
-	env, err := buildCopilotEnv("a/one", []Model{{ID: "a/one", Name: "a/one"}})
+	env, err := buildCopilotEnv("a/one", []Model{{ID: "a/one", Name: "a/one"}}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -83,6 +103,9 @@ func TestBuildCopilotEnvWithToken(t *testing.T) {
 
 	if got := m["COPILOT_PROVIDER_API_KEY"]; got != "secret-token" {
 		t.Errorf("COPILOT_PROVIDER_API_KEY: got %q, want secret-token", got)
+	}
+	if got := m["COPILOT_PROVIDER_BEARER_TOKEN"]; got != "secret-token" {
+		t.Errorf("COPILOT_PROVIDER_BEARER_TOKEN: got %q, want secret-token", got)
 	}
 	// Model with an unknown context window carries no token budgets.
 	if _, ok := m["COPILOT_PROVIDER_MAX_PROMPT_TOKENS"]; ok {
@@ -93,8 +116,53 @@ func TestBuildCopilotEnvWithToken(t *testing.T) {
 	}
 }
 
+// TestBuildCopilotEnvModelOverride verifies that when the user selects their own
+// model via pass-through args, the launcher clears the model-naming env vars
+// (empty is falsy for Copilot) so the CLI selection wins and an inherited value
+// cannot override it, while token budgets are sized for the override model.
+func TestBuildCopilotEnvModelOverride(t *testing.T) {
+	t.Setenv("KRONK_TOKEN", "")
+
+	chatModels := []Model{
+		{ID: "Qwen3-8B-Q8_0", Name: "Qwen3-8B-Q8_0", Context: 40960},
+		{ID: "Other-Model", Name: "Other-Model", Context: 16384},
+	}
+
+	env, err := buildCopilotEnv("Qwen3-8B-Q8_0", chatModels, "Other-Model")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m := copilotEnvMap(t, env)
+
+	// Model-naming vars are present but empty so the CLI --model wins.
+	for _, key := range []string{"COPILOT_MODEL", "COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL"} {
+		if got, ok := m[key]; !ok || got != "" {
+			t.Errorf("%s: got %q (present=%v), want empty so the CLI selection wins", key, got, ok)
+		}
+	}
+
+	// Routing keys are still pinned.
+	if got := m["COPILOT_PROVIDER_WIRE_API"]; got != "completions" {
+		t.Errorf("COPILOT_PROVIDER_WIRE_API: got %q, want completions", got)
+	}
+
+	// Budgets are sized for the override model's window (16384), not the default.
+	prompt, err := strconv.Atoi(m["COPILOT_PROVIDER_MAX_PROMPT_TOKENS"])
+	if err != nil {
+		t.Fatalf("MAX_PROMPT_TOKENS not an int: %v", err)
+	}
+	out, err := strconv.Atoi(m["COPILOT_PROVIDER_MAX_OUTPUT_TOKENS"])
+	if err != nil {
+		t.Fatalf("MAX_OUTPUT_TOKENS not an int: %v", err)
+	}
+	if prompt+out != 16384 {
+		t.Errorf("prompt+output: got %d, want 16384 (the override model's window)", prompt+out)
+	}
+}
+
 func TestBuildCopilotEnvRequiresModels(t *testing.T) {
-	if _, err := buildCopilotEnv("", nil); err == nil {
+	if _, err := buildCopilotEnv("", nil, ""); err == nil {
 		t.Errorf("expected error when no default model/models provided")
 	}
 }

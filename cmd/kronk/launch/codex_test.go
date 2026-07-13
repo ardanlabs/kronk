@@ -46,7 +46,7 @@ func TestBuildCodexArgs(t *testing.T) {
 		{ID: "Qwen2-VL-7B", Name: "Qwen2-VL-7B", Vision: true},
 	}
 
-	args, err := buildCodexArgs("Qwen3-8B-Q8_0", chatModels, "")
+	args, err := buildCodexArgs("Qwen3-8B-Q8_0", chatModels, "", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestBuildCodexArgsWithCatalog(t *testing.T) {
 
 	chatModels := []Model{{ID: "Qwen3-8B-Q8_0", Name: "Qwen3-8B-Q8_0", Context: 40960}}
 
-	args, err := buildCodexArgs("Qwen3-8B-Q8_0", chatModels, "/tmp/kronk-codex-catalog.json")
+	args, err := buildCodexArgs("Qwen3-8B-Q8_0", chatModels, "/tmp/kronk-codex-catalog.json", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -105,10 +105,39 @@ func TestBuildCodexArgsWithCatalog(t *testing.T) {
 	}
 }
 
+// TestBuildCodexArgsModelOverride verifies that when the user selects their own
+// model via pass-through args (emitModelFlag=false), the launcher does not emit
+// its own top-level -m (Codex rejects --model twice), yet still sizes the
+// context-window override to the effective (override) model.
+func TestBuildCodexArgsModelOverride(t *testing.T) {
+	t.Setenv("KRONK_TOKEN", "")
+
+	chatModels := []Model{
+		{ID: "Qwen3-8B-Q8_0", Name: "Qwen3-8B-Q8_0", Context: 40960},
+		{ID: "Other-Model", Name: "Other-Model", Context: 16384},
+	}
+
+	args, err := buildCodexArgs("Other-Model", chatModels, "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	overrides, model := codexArgMap(t, args)
+
+	// No -m is emitted; the user's pass-through selection supplies the model.
+	if model != "" {
+		t.Errorf("model flag should be absent when the user selected their own, got %q", model)
+	}
+	// The context window is sized to the effective (override) model.
+	if got := overrides["model_context_window"]; got != "16384" {
+		t.Errorf("model_context_window: got %q, want 16384 (the override model's window)", got)
+	}
+}
+
 func TestBuildCodexArgsWithToken(t *testing.T) {
 	t.Setenv("KRONK_TOKEN", "secret-token")
 
-	args, err := buildCodexArgs("a/one", []Model{{ID: "a/one", Name: "a/one"}}, "")
+	args, err := buildCodexArgs("a/one", []Model{{ID: "a/one", Name: "a/one"}}, "", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +154,7 @@ func TestBuildCodexArgsWithToken(t *testing.T) {
 }
 
 func TestBuildCodexArgsRequiresModels(t *testing.T) {
-	if _, err := buildCodexArgs("", nil, ""); err == nil {
+	if _, err := buildCodexArgs("", nil, "", true); err == nil {
 		t.Errorf("expected error when no default model/models provided")
 	}
 }
@@ -137,7 +166,7 @@ func TestBuildCodexCatalog(t *testing.T) {
 	}
 
 	// Text model with a known context window.
-	cat := buildCodexCatalog("Qwen3-8B-Q8_0", chatModels)
+	cat := buildCodexCatalog("Qwen3-8B-Q8_0", 40960, chatModels)
 	models := cat["models"].([]any)
 	if len(models) != 1 {
 		t.Fatalf("expected 1 catalog model, got %d", len(models))
@@ -154,24 +183,17 @@ func TestBuildCodexCatalog(t *testing.T) {
 	}
 
 	// Vision model → image modality added.
-	visCat := buildCodexCatalog("Qwen2-VL-7B", chatModels)
+	visCat := buildCodexCatalog("Qwen2-VL-7B", 8192, chatModels)
 	visEntry := visCat["models"].([]any)[0].(map[string]any)
 	if mods := visEntry["input_modalities"].([]any); len(mods) != 2 {
 		t.Errorf("vision input_modalities: got %v, want [text image]", mods)
-	}
-
-	// Unknown context window → fallback.
-	fbCat := buildCodexCatalog("no/window", []Model{{ID: "no/window", Name: "no/window"}})
-	fbEntry := fbCat["models"].([]any)[0].(map[string]any)
-	if fbEntry["context_window"] != codexFallbackContextWindow {
-		t.Errorf("fallback context_window: got %v, want %d", fbEntry["context_window"], codexFallbackContextWindow)
 	}
 }
 
 func TestWriteCodexCatalog(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 
-	cat := buildCodexCatalog("a/one", []Model{{ID: "a/one", Name: "a/one", Context: 8192}})
+	cat := buildCodexCatalog("a/one", 8192, []Model{{ID: "a/one", Name: "a/one", Context: 8192}})
 
 	path, err := writeCodexCatalog(cat)
 	if err != nil {
@@ -189,6 +211,25 @@ func TestWriteCodexCatalog(t *testing.T) {
 	}
 	if _, ok := doc["models"].([]any); !ok {
 		t.Errorf("catalog missing models array")
+	}
+
+	// The file must be owner-only (it lives in a shared temp dir).
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat catalog: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("catalog perms: got %o, want 600", perm)
+	}
+
+	// A second write must use a distinct, unpredictable path (not a fixed name)
+	// so concurrent launches cannot clobber each other.
+	path2, err := writeCodexCatalog(cat)
+	if err != nil {
+		t.Fatalf("second writeCodexCatalog: %v", err)
+	}
+	if path2 == path {
+		t.Errorf("expected a unique catalog path per call, got %q twice", path)
 	}
 }
 

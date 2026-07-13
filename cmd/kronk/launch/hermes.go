@@ -42,7 +42,18 @@ func (hermes) Run(defaultModel string, chatModels []Model, args []string) error 
 		return err
 	}
 
-	if err := writeHermesConfig(defaultModel, chatModels); err != nil {
+	// Honor a model the user selected via pass-through args (e.g.
+	// "-- --model X"): Hermes' CLI --model outranks the config default and the
+	// env, so size the persisted context window for that effective model instead
+	// of leaving the launcher default's window attached under the user's model.
+	// The persisted "default" itself stays the launcher default so a one-off
+	// selection does not clobber the user's saved default.
+	contextModel := defaultModel
+	if override := modelArgValue(args); override != "" {
+		contextModel = override
+	}
+
+	if err := writeHermesConfig(defaultModel, contextModel, chatModels); err != nil {
 		return fmt.Errorf("configure hermes: %w", err)
 	}
 
@@ -50,14 +61,36 @@ func (hermes) Run(defaultModel string, chatModels []Model, args []string) error 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), hermesEnv(defaultModel)...)
 
 	return cmd.Run()
 }
 
+// hermesEnv returns the environment overrides that keep Hermes on the local
+// Kronk route the launcher just wrote to config.yaml. Hermes resolves the model
+// as: CLI --model > HERMES_INFERENCE_MODEL env > config.yaml default, so an
+// inherited HERMES_INFERENCE_MODEL/HERMES_MODEL would otherwise beat the
+// configured local model. These are pinned to the same values written to the
+// config (provider "custom", the selected model), so an inherited env cannot
+// divert Hermes to a cloud model/provider. A user's own CLI --model/--provider
+// still wins, as those take precedence over the environment. Go's exec keeps the
+// last value for duplicate keys, so these override any inherited ones.
+func hermesEnv(defaultModel string) []string {
+	return []string{
+		"HERMES_MODEL=" + defaultModel,
+		"HERMES_INFERENCE_MODEL=" + defaultModel,
+		"HERMES_TUI_PROVIDER=custom",
+		"HERMES_INFERENCE_PROVIDER=custom",
+	}
+}
+
 // writeHermesConfig writes the Kronk custom-provider settings and default model
 // into ~/.hermes/config.yaml, merging into any existing config and backing up
-// the previous file first.
-func writeHermesConfig(defaultModel string, chatModels []Model) error {
+// the previous file first. defaultModel is persisted as the config default;
+// contextModel is the model whose resolved window is written as context_length
+// (they differ only when the user selected a one-off model via pass-through
+// args, so the window matches the model actually in use).
+func writeHermesConfig(defaultModel, contextModel string, chatModels []Model) error {
 	if defaultModel == "" || len(chatModels) == 0 {
 		return fmt.Errorf("a default model and at least one model are required")
 	}
@@ -88,7 +121,7 @@ func writeHermesConfig(defaultModel string, chatModels []Model) error {
 		return err
 	}
 
-	merged := buildHermesConfig(existing, defaultModel, baseURL, apiKey, contextFor(defaultModel, chatModels))
+	merged := buildHermesConfig(existing, defaultModel, baseURL, apiKey, contextFor(contextModel, chatModels))
 
 	data, err := yaml.Marshal(merged)
 	if err != nil {

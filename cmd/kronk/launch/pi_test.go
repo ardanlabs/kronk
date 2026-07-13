@@ -54,6 +54,52 @@ func TestReadExistingConfig(t *testing.T) {
 	})
 }
 
+func TestUnmarshalJSONC(t *testing.T) {
+	t.Run("plain JSON", func(t *testing.T) {
+		var m map[string]any
+		if err := unmarshalJSONC([]byte(`{"a":1}`), &m); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m["a"] != float64(1) {
+			t.Errorf("a: got %v, want 1", m["a"])
+		}
+	})
+
+	t.Run("line comments and trailing commas", func(t *testing.T) {
+		in := `{
+  // a comment
+  "providers": {
+    "kronk": { "baseUrl": "http://x/v1", }, // trailing comma above and here
+  },
+}`
+		var m map[string]any
+		if err := unmarshalJSONC([]byte(in), &m); err != nil {
+			t.Fatalf("JSONC should parse, got %v", err)
+		}
+		providers, ok := m["providers"].(map[string]any)
+		if !ok || providers["kronk"] == nil {
+			t.Errorf("expected providers.kronk to survive, got %v", m)
+		}
+	})
+
+	t.Run("does not corrupt // inside strings", func(t *testing.T) {
+		var m map[string]any
+		if err := unmarshalJSONC([]byte(`{"url":"http://host/v1"}`), &m); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m["url"] != "http://host/v1" {
+			t.Errorf("url mangled: got %v, want http://host/v1", m["url"])
+		}
+	})
+
+	t.Run("genuinely malformed still errors", func(t *testing.T) {
+		var m map[string]any
+		if err := unmarshalJSONC([]byte(`{"a": }`), &m); err == nil {
+			t.Error("expected an error for malformed JSON even after stripping")
+		}
+	})
+}
+
 func TestBuildPiConfigFromEmpty(t *testing.T) {
 	chatModels := []Model{
 		{ID: "Qwen3-8B-Q8_0", Name: "Qwen3-8B-Q8_0", Reasoning: true, Context: 40960},
@@ -191,6 +237,9 @@ func TestHasModelArg(t *testing.T) {
 func TestWritePiConfigBacksUp(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// Force the default location regardless of any PI_CODING_AGENT_DIR in the
+	// test runner's environment.
+	t.Setenv("PI_CODING_AGENT_DIR", "")
 
 	path := filepath.Join(home, ".pi", "agent", "models.json")
 
@@ -231,6 +280,89 @@ func TestWritePiConfigBacksUp(t *testing.T) {
 func TestWritePiConfigRequiresModels(t *testing.T) {
 	if err := writePiConfig(nil); err == nil {
 		t.Errorf("expected error when no models provided")
+	}
+}
+
+func TestPiModelsPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	t.Run("default location", func(t *testing.T) {
+		t.Setenv("PI_CODING_AGENT_DIR", "")
+		got, err := piModelsPath()
+		if err != nil {
+			t.Fatalf("piModelsPath: %v", err)
+		}
+		want := filepath.Join(home, ".pi", "agent", "models.json")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("honors PI_CODING_AGENT_DIR", func(t *testing.T) {
+		custom := filepath.Join(home, "custom-pi")
+		t.Setenv("PI_CODING_AGENT_DIR", custom)
+		got, err := piModelsPath()
+		if err != nil {
+			t.Fatalf("piModelsPath: %v", err)
+		}
+		want := filepath.Join(custom, "models.json")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("expands leading tilde", func(t *testing.T) {
+		t.Setenv("PI_CODING_AGENT_DIR", "~/agentdir")
+		got, err := piModelsPath()
+		if err != nil {
+			t.Fatalf("piModelsPath: %v", err)
+		}
+		want := filepath.Join(home, "agentdir", "models.json")
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+}
+
+// TestWriteFileWithBackupPreservesOriginal verifies the backup captures the
+// user's pristine original and is never clobbered by later launches, and that
+// both the backup and the written file are not world/group readable (they can
+// carry the user's other provider keys).
+func TestWriteFileWithBackupPreservesOriginal(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	original := []byte(`{"user":"original"}`)
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatalf("seed original: %v", err)
+	}
+
+	// Two managed writes: the first backs up the original, the second must not
+	// overwrite that pristine backup with an already-modified version.
+	if err := writeFileWithBackup(path, []byte(`{"launch":1}`)); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if err := writeFileWithBackup(path, []byte(`{"launch":2}`)); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+
+	bak, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatalf("reading backup: %v", err)
+	}
+	if string(bak) != string(original) {
+		t.Errorf("backup should hold the pristine original; got %q, want %q", bak, original)
+	}
+
+	for _, p := range []string{path, path + ".bak"} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatalf("stat %s: %v", p, err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("%s perms: got %o, want 600", p, perm)
+		}
 	}
 }
 

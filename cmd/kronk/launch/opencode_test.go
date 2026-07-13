@@ -239,6 +239,17 @@ func TestBuildOpenCodeConfig(t *testing.T) {
 		t.Errorf("small_model: got %v, want kronk/unsloth/Qwen3-8B-Q8_0", cfg["small_model"])
 	}
 
+	// The Kronk provider must be pinned into the allowlist and kept out of the
+	// denylist so a user's existing provider filters cannot drop it.
+	enabled, ok := cfg["enabled_providers"].([]any)
+	if !ok || len(enabled) != 1 || enabled[0] != "kronk" {
+		t.Errorf("enabled_providers: got %v, want [kronk]", cfg["enabled_providers"])
+	}
+	disabled, ok := cfg["disabled_providers"].([]any)
+	if !ok || len(disabled) != 0 {
+		t.Errorf("disabled_providers: got %v, want []", cfg["disabled_providers"])
+	}
+
 	// No token set → no apiKey in options.
 	opts, _ := kronk["options"].(map[string]any)
 	if _, ok := opts["apiKey"]; ok {
