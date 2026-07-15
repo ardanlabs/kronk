@@ -7,7 +7,7 @@ export default function SecurityKeyCreate() {
   const { token: storedToken } = useToken();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [newKeyId, setNewKeyId] = useState<string | null>(null);
+  const [created, setCreated] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -15,10 +15,10 @@ export default function SecurityKeyCreate() {
 
     setLoading(true);
     setError(null);
-    setNewKeyId(null);
+    setCreated(false);
     try {
-      const response = await api.createKey(storedToken);
-      setNewKeyId(response.id);
+      await api.createKey(storedToken);
+      setCreated(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create key');
     } finally {
@@ -51,20 +51,7 @@ export default function SecurityKeyCreate() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {newKeyId && (
-        <div className="card">
-          <div className="alert alert-success">Key created successfully!</div>
-          <div style={{ marginTop: '12px' }}>
-            <label style={{ fontWeight: 500, display: 'block', marginBottom: '8px' }}>
-              New Key ID
-            </label>
-            <div className="token-display">{newKeyId}</div>
-            <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--color-gray-600)' }}>
-              Store this key securely. It will not be shown again.
-            </p>
-          </div>
-        </div>
-      )}
+      {created && <div className="alert alert-success">Key created successfully!</div>}
     </div>
   );
 }

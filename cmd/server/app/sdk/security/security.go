@@ -104,7 +104,7 @@ func (sec *Security) Authenticate(ctx context.Context, bearerToken string, admin
 		return auth.Claims{}, fmt.Errorf("authorization failed: %w", err)
 	}
 
-	if claims.Admin {
+	if claims.Admin || endpoint == "" {
 		return claims, nil
 	}
 

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api } from '../services/api';
 import type { DisplayMessage } from '../contexts/ChatContext';
 import { isChangedFrom, formatBaselineValue, hasAnyChange, hasAdvancedChange, type SamplingParams } from '../contexts/SamplingContext';
 import CodeBlock from './CodeBlock';
@@ -124,9 +123,7 @@ export default function ChatPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
-  const [grammarFiles, setGrammarFiles] = useState<string[]>([]);
-  const [grammarMode, setGrammarMode] = useState<'none' | 'preset' | 'custom'>('none');
-  const [selectedPreset, setSelectedPreset] = useState('');
+  const [grammarMode, setGrammarMode] = useState<'none' | 'custom'>('none');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -137,19 +134,6 @@ export default function ChatPanel({
   const programmaticScrollRef = useRef(false);
   const userInteractedRef = useRef(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-
-  useEffect(() => {
-    api.listGrammars()
-      .then(res => setGrammarFiles(res.files || []))
-      .catch(() => setGrammarFiles([]));
-  }, []);
-
-  const loadPresetContent = useCallback((name: string) => {
-    setSelectedPreset(name);
-    api.getGrammarContent(name)
-      .then(res => setSampling({ grammar: res.content }))
-      .catch(() => setSampling({ grammar: '' }));
-  }, [setSampling]);
 
   // ── Scroll logic ───────────────────────────────────────────────────
 
@@ -545,37 +529,15 @@ export default function ChatPanel({
             <select
               value={grammarMode}
               onChange={(e) => {
-                const mode = e.target.value as 'none' | 'preset' | 'custom';
+                const mode = e.target.value as 'none' | 'custom';
                 setGrammarMode(mode);
-                if (mode === 'none') {
-                  setSampling({ grammar: '' });
-                  setSelectedPreset('');
-                } else if (mode === 'preset' && grammarFiles.length > 0) {
-                  loadPresetContent(grammarFiles[0]);
-                } else if (mode === 'custom') {
-                  setSampling({ grammar: '' });
-                  setSelectedPreset('');
-                }
+                setSampling({ grammar: '' });
               }}
             >
               <option value="none">None</option>
-              <option value="preset">Preset</option>
               <option value="custom">Custom</option>
             </select>
           </div>
-          {grammarMode === 'preset' && (
-            <div className="chat-setting chat-setting-grammar-preset">
-              <label>Preset</label>
-              <select
-                value={selectedPreset}
-                onChange={(e) => loadPresetContent(e.target.value)}
-              >
-                {grammarFiles.map((f) => (
-                  <option key={f} value={f}>{f.replace('.grm', '')}</option>
-                ))}
-              </select>
-            </div>
-          )}
           <div className="chat-setting chat-setting-button">
             <button
               type="button"
@@ -601,7 +563,7 @@ export default function ChatPanel({
             )}
           </div>
         </div>
-        {(grammarMode === 'preset' || grammarMode === 'custom') && (
+        {grammarMode === 'custom' && (
           <div className="chat-grammar-editor">
             <textarea
               value={sampling.grammar}

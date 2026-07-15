@@ -76,24 +76,9 @@ export default function Chat() {
     if (modelSampling) {
       const params = toSamplingParams(modelSampling);
       const grammarVal = params.grammar;
-
-      if (grammarVal && grammarVal.endsWith('.grm')) {
-        api.getGrammarContent(grammarVal)
-          .then(res => {
-            setSampling({ ...params, grammar: res.content });
-            setModelBaseline({ ...params, grammar: res.content });
-          })
-          .catch(() => {
-            setSampling({ ...params, grammar: '' });
-            setModelBaseline({ ...params, grammar: '' });
-          });
-      } else if (grammarVal) {
-        setSampling(params);
-        setModelBaseline(params);
-      } else {
-        setSampling(params);
-        setModelBaseline(params);
-      }
+      const resolvedParams = grammarVal?.endsWith('.grm') ? { ...params, grammar: '' } : params;
+      setSampling(resolvedParams);
+      setModelBaseline(resolvedParams);
     } else {
       setModelBaseline(null);
     }
