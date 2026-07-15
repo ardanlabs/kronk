@@ -2,12 +2,10 @@ module github.com/ardanlabs/kronk
 
 go 1.26.0
 
-replace github.com/ardanlabs/jinja => ../jinja
-
 require (
 	github.com/ardanlabs/bucky v1.0.6
 	github.com/ardanlabs/conf/v3 v3.12.0
-	github.com/ardanlabs/jinja v1.4.0
+	github.com/ardanlabs/jinja v1.5.0
 	github.com/arl/statsviz v0.8.1
 	github.com/dgraph-io/badger/v4 v4.9.4
 	github.com/golang-jwt/jwt/v4 v4.5.2

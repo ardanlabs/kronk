@@ -4,11 +4,9 @@ go 1.26.0
 
 replace github.com/ardanlabs/kronk => ../
 
-replace github.com/ardanlabs/jinja => ../../jinja
-
 require (
 	github.com/ardanlabs/bucky v1.0.6
-	github.com/ardanlabs/kronk v1.28.6
+	github.com/ardanlabs/kronk v1.28.7
 	github.com/duckdb/duckdb-go/v2 v2.10504.0
 	github.com/gen2brain/malgo v0.11.25
 	github.com/google/uuid v1.6.0
@@ -28,7 +26,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.58.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.58.0 // indirect
 	github.com/apache/arrow-go/v18 v18.6.0 // indirect
-	github.com/ardanlabs/jinja v1.4.0 // indirect
+	github.com/ardanlabs/jinja v1.5.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.42.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.14 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.30 // indirect
