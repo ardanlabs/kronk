@@ -1,0 +1,72 @@
+# Curated coding models for "kronk launch".
+#
+# This is the single source of truth for the models the launcher is meant to
+# run against. It is embedded into the binary (see models_metadata.go) so the
+# curated set is managed here instead of hardcoded in Go.
+#
+# The AGENT sampling/context profiles for these models live in the server's
+# model_config.yaml (owned by the SDK); this file only names which models the
+# launcher prefers and how to pull them, so the two concerns stay separate.
+#
+# schema: bump when the shape below changes; the loader rejects unknown values.
+#
+# order    default-model preference; the first curated model that is installed
+#          wins when no --model is passed.
+# models   per-model metadata keyed by the base model name (the filename
+#          segment the server reports, e.g. "Qwen3.6-35B-A3B-UD-Q8_K_XL"):
+#     alias      short, memorable name accepted by "--model" for any agent
+#                (e.g. "qwen"); the uniform way to swap models at launch
+#     display    human-facing name shown in prompts and messages
+#     family     model family (for grouping/reference)
+#     quant      quantization form we standardize on
+#     pull_id    canonical id passed to the pull endpoint (kronk model pull)
+#     size_note  optional human-readable download-size note shown before a
+#                pull; leave empty rather than guessing (the pull stream
+#                reports real progress)
+schema: 1
+
+order:
+  - Qwen3.6-35B-A3B-UD-Q8_K_XL
+  - mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
+  - gemma-4-26B-A4B-it-UD-Q8_K_XL
+  - Qwen3-8B-Q8_0
+
+models:
+  mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL:
+    alias: qwen-mtp
+    display: Qwen3.6-35B-A3B (MTP)
+    family: Qwen3.6-35B-A3B
+    quant: Q8_K_XL
+    # The MTP variant is a standalone GGUF in a dedicated "*-MTP-GGUF" repo,
+    # not a repo named "mtp-...". Pull it by pinning the repo and quant with
+    # the "provider/repo:tag" form; Kronk renames the on-disk file to
+    # "mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL" (the id the server then reports).
+    pull_id: unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q8_K_XL
+    size_note: ""
+
+  Qwen3.6-35B-A3B-UD-Q8_K_XL:
+    alias: qwen
+    display: Qwen3.6-35B-A3B
+    family: Qwen3.6-35B-A3B
+    quant: Q8_K_XL
+    pull_id: unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL
+    size_note: ""
+
+  gemma-4-26B-A4B-it-UD-Q8_K_XL:
+    alias: gemma
+    display: Gemma-4-26B-A4B-it
+    family: Gemma-4-26B-A4B
+    quant: Q8_K_XL
+    pull_id: unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL
+    size_note: ""
+
+  # A small dense fallback for machines that cannot comfortably run the large
+  # MoE/hybrid models above. It has no AGENT profile, so the launcher runs it
+  # as a plain base model using the server's analyzed context window.
+  Qwen3-8B-Q8_0:
+    alias: qwen-8b
+    display: Qwen3-8B
+    family: Qwen3-8B
+    quant: Q8_0
+    pull_id: Qwen/Qwen3-8B-Q8_0
+    size_note: ""

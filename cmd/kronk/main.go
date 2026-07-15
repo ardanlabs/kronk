@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/run"
+	"github.com/ardanlabs/kronk/cmd/kronk/launch"
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
 	k "github.com/ardanlabs/kronk/sdk/kronk"
@@ -106,4 +107,5 @@ func init() {
 	rootCmd.AddCommand(security.Cmd)
 	rootCmd.AddCommand(devices.Cmd)
 	rootCmd.AddCommand(diagnose.Cmd)
+	rootCmd.AddCommand(launch.Cmd)
 }

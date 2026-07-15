@@ -1,6 +1,7 @@
 package security_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,6 +35,32 @@ func TestGenerateToken(t *testing.T) {
 
 	if token == "" {
 		t.Fatal("expected non-empty token")
+	}
+}
+
+func TestAuthenticateWithoutEndpointRestriction(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sec, err := security.New(security.Config{
+		OverrideBaseKeysFolder: tmpDir,
+		Issuer:                 "test-issuer",
+	})
+	if err != nil {
+		t.Fatalf("failed to create security: %v", err)
+	}
+	defer sec.Close()
+
+	endpoints := map[string]auth.RateLimit{
+		"chat-completions": {Limit: 0, Window: auth.RateUnlimited},
+	}
+
+	token, err := sec.GenerateToken(false, endpoints, time.Hour)
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+
+	if _, err := sec.Authenticate(context.Background(), "Bearer "+token, false, ""); err != nil {
+		t.Fatalf("failed to authenticate without endpoint restriction: %v", err)
 	}
 }
 

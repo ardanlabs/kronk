@@ -8413,6 +8413,10 @@ default:
                 <td>Standard JSON <code>&#123;"name":..., "arguments":...&#125;</code></td>
               </tr>
               <tr>
+                <td><code>parsers/deepseek</code></td>
+                <td>DeepSeek DSML <code>&lt;｜DSML｜tool_calls&gt;</code> / <code>&lt;｜DSML｜invoke&gt;</code> blocks</td>
+              </tr>
+              <tr>
                 <td><code>processor_qwen.go</code></td>
                 <td>Qwen3-Coder XML-like <code>&lt;tool_call&gt;</code> / <code>&lt;function=...&gt;</code> tags</td>
               </tr>

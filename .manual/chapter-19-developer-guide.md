@@ -941,6 +941,7 @@ parser based on its format:
 | File                   | Format                                                                |
 | ---------------------- | --------------------------------------------------------------------- |
 | `processor_json.go`    | Standard JSON `{"name":..., "arguments":...}`                         |
+| `parsers/deepseek`     | DeepSeek DSML `<｜DSML｜tool_calls>` / `<｜DSML｜invoke>` blocks         |
 | `processor_qwen.go`    | Qwen3-Coder XML-like `<tool_call>` / `<function=...>` tags            |
 | `processor_gpt.go`     | GPT-OSS Harmony (`<\|channel\|>commentary to=NAME<\|constrain\|>...`) |
 | `processor_glm.go`     | GLM `<arg_key>` / `<arg_value>` pairs                                 |

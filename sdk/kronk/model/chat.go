@@ -487,8 +487,23 @@ func deserializeToolCallArguments(d D) D {
 				continue
 			}
 
-			var argsMap map[string]any
-			if err := json.Unmarshal([]byte(argsStr), &argsMap); err != nil {
+			var args any
+			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+				continue
+			}
+
+			// ToolCallArguments implements MarshalJSON by returning a JSON
+			// string, so callers that marshal it before storing it in message
+			// history can produce a string containing JSON object text. Decode
+			// that second layer before passing the arguments to Jinja.
+			if encoded, ok := args.(string); ok {
+				if err := json.Unmarshal([]byte(encoded), &args); err != nil {
+					continue
+				}
+			}
+
+			argsMap, ok := args.(map[string]any)
+			if !ok && args != nil {
 				continue
 			}
 

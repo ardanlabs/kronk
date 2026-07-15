@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/deepseek"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gemma"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/glm"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gpt"
@@ -30,9 +31,10 @@ var defaultParsersOnce sync.Once
 //     claims any fingerprint, ensuring every model resolves to a
 //     parser even when the more specific parsers all decline.
 //
-// The middle four (qwen, gemma, glm, mistral) inspect architecture +
-// template + name internally and do not overlap, so their relative
-// order is irrelevant.
+// DeepSeek is registered before Qwen because DSML is a protocol-specific
+// XML-like format and should take precedence over lineage metadata inherited
+// by a converted model. The remaining parsers inspect architecture + template
+// + name internally and do not overlap.
 //
 // This function is idempotent — calling it multiple times has no effect.
 // It is called automatically by NewWithContext, so most callers do not
@@ -43,6 +45,7 @@ var defaultParsersOnce sync.Once
 func registerDefaultParsers() {
 	defaultParsersOnce.Do(func() {
 		model.RegisterParser(gpt.New) // template-only — must be first
+		model.RegisterParser(deepseek.New)
 		model.RegisterParser(qwen.New)
 		model.RegisterParser(gemma.New)
 		model.RegisterParser(glm.New)

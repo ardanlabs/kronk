@@ -111,6 +111,13 @@ func authorize(ath *auth.Auth) func(t *testing.T) {
 		})
 
 		// Endpoint tests
+		t.Run("user allowed without endpoint restriction", func(t *testing.T) {
+			err := ath.Authorize(ctx, userClaims, false, "")
+			if err != nil {
+				t.Fatalf("user should be authorized without endpoint restriction: %s", err)
+			}
+		})
+
 		t.Run("user has endpoint", func(t *testing.T) {
 			err := ath.Authorize(ctx, userClaims, false, "chat-completions")
 			if err != nil {
@@ -132,10 +139,10 @@ func authorize(ath *auth.Auth) func(t *testing.T) {
 			}
 		})
 
-		t.Run("admin missing endpoint", func(t *testing.T) {
-			err := ath.Authorize(ctx, adminClaims, false, "unknown-endpoint")
-			if err == nil {
-				t.Fatal("admin should not be authorized for unknown-endpoint")
+		t.Run("admin bypasses endpoint restrictions", func(t *testing.T) {
+			err := ath.Authorize(ctx, adminClaims, false, "")
+			if err != nil {
+				t.Fatalf("admin should be authorized without endpoint permission: %s", err)
 			}
 		})
 	}

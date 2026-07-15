@@ -9,6 +9,7 @@ package model
 // registration:
 //
 // model.RegisterParser(gpt.New) // template-only — must be first
+// model.RegisterParser(deepseek.New)
 // model.RegisterParser(qwen.New)
 // model.RegisterParser(gemma.New)
 // model.RegisterParser(glm.New)

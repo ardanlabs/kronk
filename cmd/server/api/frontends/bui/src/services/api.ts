@@ -44,6 +44,17 @@ import type {
 class ApiService {
   private baseUrl = '/v1';
 
+  private headers(headers?: HeadersInit): Headers {
+    const requestHeaders = new Headers(headers);
+    if (!requestHeaders.has('Authorization')) {
+      const token = localStorage.getItem('kronk_token');
+      if (token) {
+        requestHeaders.set('Authorization', `Bearer ${token}`);
+      }
+    }
+    return requestHeaders;
+  }
+
   private async parseErrorMessage(response: Response): Promise<string> {
     let message = `HTTP ${response.status}`;
     try {
@@ -62,12 +73,14 @@ class ApiService {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    const headers = this.headers(options.headers);
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -88,6 +101,7 @@ class ApiService {
   async rebuildModelIndex(): Promise<void> {
     const response = await fetch(`${this.baseUrl}/kronk/models/index`, {
       method: 'POST',
+      headers: this.headers(),
     });
     if (!response.ok) {
       throw new Error(await this.parseErrorMessage(response));
@@ -128,7 +142,7 @@ class ApiService {
   async pullModelAsync(modelUrl: string): Promise<AsyncPullResponse> {
     const response = await fetch(`${this.baseUrl}/kronk/models/pull`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ model_url: modelUrl, async: true }),
     });
 
@@ -149,6 +163,7 @@ class ApiService {
 
     fetch(`${this.baseUrl}/kronk/models/pull/${encodeURIComponent(sessionId)}`, {
       method: 'GET',
+      headers: this.headers(),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -230,7 +245,7 @@ class ApiService {
 
     fetch(`${this.baseUrl}/kronk/models/pull`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
       signal: controller.signal,
     })
@@ -351,6 +366,7 @@ class ApiService {
 
     fetch(url, {
       method: 'POST',
+      headers: this.headers(),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -412,8 +428,8 @@ class ApiService {
     });
   }
 
-  async createKey(token: string): Promise<{ id: string }> {
-    return this.request<{ id: string }>('/security/keys/add', {
+  async createKey(token: string): Promise<void> {
+    await this.request<void>('/security/keys/add', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -448,11 +464,9 @@ class ApiService {
   ): () => void {
     const controller = new AbortController();
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-
     fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers,
+      headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ ...request, stream: true }),
       signal: controller.signal,
     })
@@ -529,14 +543,6 @@ class ApiService {
     });
   }
 
-  async listGrammars(): Promise<{ files: string[] }> {
-    return this.request<{ files: string[] }>('/grammars');
-  }
-
-  async getGrammarContent(name: string): Promise<{ content: string }> {
-    return this.request<{ content: string }>(`/grammars/${encodeURIComponent(name)}`);
-  }
-
   async listTemplates(): Promise<{ files: string[] }> {
     return this.request<{ files: string[] }>('/templates');
   }
@@ -580,7 +586,7 @@ class ApiService {
 
     fetch(`${this.baseUrl}/playground/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ ...request, stream: true }),
       signal: controller.signal,
     })
@@ -711,6 +717,7 @@ class ApiService {
 
     fetch(url, {
       method: 'POST',
+      headers: this.headers(),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -790,7 +797,7 @@ class ApiService {
 
     fetch(`${this.baseUrl}/bucky/models/pull`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ source }),
       signal: controller.signal,
     })
@@ -872,6 +879,7 @@ class ApiService {
 
     fetch(url, {
       method: 'POST',
+      headers: this.headers(),
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -957,7 +965,7 @@ class ApiService {
 
     const response = await fetch(`${this.baseUrl}/audio/transcriptions`, {
       method: 'POST',
-      headers,
+      headers: this.headers(headers),
       body: form,
     });
 

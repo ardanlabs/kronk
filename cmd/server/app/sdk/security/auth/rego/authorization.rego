@@ -25,5 +25,13 @@ auth := {"Authorized": false, "Reason": sprintf("endpoint %q not authorized", [i
 }
 
 endpoint_match if {
+	input.Claim.Admin
+}
+
+endpoint_match if {
+	input.Requires.Endpoint == ""
+}
+
+endpoint_match if {
 	input.Claim.Endpoints[input.Requires.Endpoint]
 }
