@@ -1453,7 +1453,7 @@ import (
 
 // modelSource is the model to download. It may be a HuggingFace URL,
 // a canonical "provider/modelID", or a bare model id.
-var modelSource = "unsloth/Qwen3-0.6B-Q8_0"
+var modelSource = "unsloth/DeepSeek-V4-Flash-UD-Q8_K_XL"
 
 func main() {
 	if err := run(); err != nil {
