@@ -1,0 +1,3 @@
+[submodule "flac-test-files"]
+	path = testdata/flac-test-files
+	url = https://github.com/ietf-wg-cellar/flac-test-files

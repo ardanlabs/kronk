@@ -7,6 +7,12 @@ import { RateLimit, RateWindow } from '../types';
 const AVAILABLE_ENDPOINTS = [
   { label: '/v1/chat/completions', value: 'chat-completions' },
   { label: '/v1/embeddings', value: 'embeddings' },
+  { label: '/v1/rerank', value: 'rerank' },
+  { label: '/v1/responses', value: 'responses' },
+  { label: '/v1/audio/transcriptions', value: 'transcriptions' },
+  { label: '/v1/messages', value: 'messages' },
+  { label: '/v1/tokenize', value: 'tokenize' },
+  { label: '/v1/playground', value: 'playground' },
 ];
 
 const RATE_WINDOWS: { label: string; value: RateWindow }[] = [

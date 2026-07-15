@@ -265,6 +265,12 @@ func (sec *Security) generateAdminToken(keysPath string) error {
 	endpoints := map[string]auth.RateLimit{
 		"chat-completions": {Limit: 0, Window: auth.RateUnlimited},
 		"embeddings":       {Limit: 0, Window: auth.RateUnlimited},
+		"rerank":           {Limit: 0, Window: auth.RateUnlimited},
+		"responses":        {Limit: 0, Window: auth.RateUnlimited},
+		"transcriptions":   {Limit: 0, Window: auth.RateUnlimited},
+		"messages":         {Limit: 0, Window: auth.RateUnlimited},
+		"tokenize":         {Limit: 0, Window: auth.RateUnlimited},
+		"playground":       {Limit: 0, Window: auth.RateUnlimited},
 	}
 
 	const tenYears = time.Minute * 526000
