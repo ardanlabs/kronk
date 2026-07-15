@@ -33,7 +33,7 @@ import (
 
 // modelSource is the model to download. It may be a HuggingFace URL,
 // a canonical "provider/modelID", or a bare model id.
-var modelSource = "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
+var modelSource = "unsloth/DeepSeek-V4-Flash-UD-Q8_K_XL"
 
 // =============================================================================
 
