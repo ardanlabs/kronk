@@ -43,9 +43,6 @@ schema = 3
   [mod."github.com/ardanlabs/conf/v3"]
     version = "v3.12.0"
     hash = "sha256-lywKaxHXxsGBNlIOu0c4kLPB4U3oaX0INu56qv6/V3A="
-  [mod."github.com/ardanlabs/jinja"]
-    version = "v1.4.0"
-    hash = "sha256-0uOkEieDjWNUpJyUdL0YjhTCW0b9o3Mvipo9uka5x+Y="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.1"
     hash = "sha256-c64Cjjy25oYyAUtAbd8KD8XwHzhb48P7z4V6D1QVJIQ="

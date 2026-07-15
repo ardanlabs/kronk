@@ -2,9 +2,12 @@ package deepseek
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/jinja"
 )
 
 func TestToolCallWeather(t *testing.T) {
@@ -26,6 +29,56 @@ func TestToolCallWeather(t *testing.T) {
 	}
 	if got := calls[0].Function.Arguments["location"]; got != "New York City, NY" {
 		t.Errorf("location = %#v, want %q", got, "New York City, NY")
+	}
+}
+
+func TestToolCallWeatherTemplateRoundTrip(t *testing.T) {
+	content := `<｜DSML｜tool_calls>
+<｜DSML｜invoke name="get_weather">
+<｜DSML｜parameter name="location" string="true">New York City, NY</｜DSML｜parameter>
+</｜DSML｜invoke>
+</｜DSML｜tool_calls>`
+
+	calls := Parser{}.ToolCall(context.Background(), nil, content)
+	if len(calls) != 1 {
+		t.Fatalf("len(calls) = %d, want 1", len(calls))
+	}
+
+	// ToolCallArguments marshals itself as an OpenAI JSON string. Convert it
+	// to its underlying map first because assistant history stores the JSON
+	// object text for the template to decode exactly once.
+	argsJSON, err := json.Marshal(map[string]any(calls[0].Function.Arguments))
+	if err != nil {
+		t.Fatalf("marshal arguments: %v", err)
+	}
+
+	const source = `{%- set func = tool['function'] -%}
+{%- set args = func['arguments'] -%}
+{%- if args is string -%}
+  {%- set args = args | from_json -%}
+{%- endif -%}
+{%- for key, val in args.items() -%}{{ key }}={{ val }}{%- endfor -%}`
+
+	tmpl, err := jinja.Compile(source)
+	if err != nil {
+		t.Fatalf("compile template: %v", err)
+	}
+
+	result, err := tmpl.Render(map[string]any{
+		"tool": map[string]any{
+			"function": map[string]any{
+				"name":      calls[0].Function.Name,
+				"arguments": string(argsJSON),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("render template: %v", err)
+	}
+
+	const want = "location=New York City, NY"
+	if result != want {
+		t.Errorf("result = %q, want %q", result, want)
 	}
 }
 

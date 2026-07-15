@@ -2,6 +2,8 @@ module github.com/ardanlabs/kronk
 
 go 1.26.0
 
+replace github.com/ardanlabs/jinja => ../jinja
+
 require (
 	github.com/ardanlabs/bucky v1.0.6
 	github.com/ardanlabs/conf/v3 v3.12.0

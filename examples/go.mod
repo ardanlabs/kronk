@@ -4,6 +4,8 @@ go 1.26.0
 
 replace github.com/ardanlabs/kronk => ../
 
+replace github.com/ardanlabs/jinja => ../../jinja
+
 require (
 	github.com/ardanlabs/bucky v1.0.6
 	github.com/ardanlabs/kronk v1.28.6
