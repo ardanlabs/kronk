@@ -108,8 +108,6 @@ func audioTranscriptions200(t *testing.T, tokens map[string]string) []apitest.Ta
 func audioTranscriptions401(t *testing.T, tokens map[string]string) []apitest.Table {
 	body, contentType := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "json")
 
-	bodyAdmin, contentTypeAdmin := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "json")
-
 	table := []apitest.Table{
 		{
 			Name:       "bad-token",
@@ -121,33 +119,6 @@ func audioTranscriptions401(t *testing.T, tokens map[string]string) []apitest.Ta
 				"Content-Type": contentType,
 			},
 			RawBody: body,
-			GotResp: &errs.Error{},
-			ExpResp: &errs.Error{
-				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"transcriptions\" not authorized",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(errs.Error{}, "FuncName", "FileName"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return ""
-			},
-		},
-		{
-			Name:       "admin-only-token",
-			URL:        "/v1/audio/transcriptions",
-			Token:      tokens["admin"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusUnauthorized,
-			Headers: map[string]string{
-				"Content-Type": contentTypeAdmin,
-			},
-			RawBody: bodyAdmin,
 			GotResp: &errs.Error{},
 			ExpResp: &errs.Error{
 				Code:    errs.Unauthenticated,

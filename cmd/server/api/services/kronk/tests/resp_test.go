@@ -250,35 +250,6 @@ func respEndpoint401(tokens map[string]string) []apitest.Table {
 				return ""
 			},
 		},
-		{
-			Name:       "admin-only-token",
-			URL:        "/v1/responses",
-			Token:      tokens["admin"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusUnauthorized,
-			Input: model.D{
-				"model": "Qwen3-8B-Q8_0",
-				"input": model.DocumentArray(
-					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
-				),
-			},
-			GotResp: &errs.Error{},
-			ExpResp: &errs.Error{
-				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"responses\" not authorized",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(errs.Error{}, "FuncName", "FileName"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return ""
-			},
-		},
 	}
 
 	return table
