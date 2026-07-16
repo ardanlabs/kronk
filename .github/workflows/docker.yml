@@ -104,6 +104,7 @@ jobs:
   # ---------------------------------------------------------------------------
   plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # `pull-requests: read` is needed by `gh api /repos/.../pulls/N/files`
     # in the relevance gate below. Everything else stays at the default.
     permissions:
@@ -406,6 +407,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.matrix != '{"include":[]}'
     runs-on: ${{ matrix.runner }}
+    # The `all` variant (cpu+cuda+vulkan+rocm) is the long pole; 90 min
+    # leaves headroom over a cold-cache build while still killing a hung
+    # runner well before the 6-hour GitHub default.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -496,6 +501,15 @@ jobs:
       # missing shared library or a bad ENTRYPOINT path that the build
       # alone would not detect. Runs only on the (cpu, amd64, no-push)
       # path — see `load:` above.
+      #
+      # Coverage gap (intentional): only cpu/amd64 is exercised at
+      # runtime. arm64 can't run natively on this amd64 runner without
+      # QEMU emulation (the whole point of the native-arch matrix is to
+      # avoid QEMU), and the cuda/vulkan/rocm variants need GPU hardware
+      # the hosted runners don't have. cpu is the most-shared Dockerfile
+      # path, so a single (cpu, amd64) smoke test catches the breakage
+      # most likely to be common across variants. arm64 image validity
+      # is still covered structurally by the build succeeding.
       - name: Smoke test cpu/amd64 image
         if: >-
           needs.plan.outputs.push != 'true'
@@ -504,6 +518,30 @@ jobs:
         run: |
           docker run --rm --entrypoint kronk kronk-smoke:latest --version
           docker run --rm --entrypoint kronk kronk-smoke:latest --help
+
+      # Vulnerability scan the runtime image before it can ship. Runs on
+      # the same (cpu, amd64, no-push) path as the smoke test — the only
+      # path where the image is `load`ed into the local daemon. This
+      # gates PR and push→main builds; since a tag push builds the same
+      # layers from the same cache, a CVE introduced by a base-image or
+      # dependency bump is caught on main before a release tag is cut.
+      #
+      # Fails only on fixable CRITICAL findings to keep the gate
+      # actionable — unfixed CVEs (no upstream patch yet) would block
+      # every build with no remediation available, so they're ignored.
+      - name: Scan cpu/amd64 image for vulnerabilities (Trivy)
+        if: >-
+          needs.plan.outputs.push != 'true'
+          && matrix.variant == 'cpu'
+          && matrix.arch == 'amd64'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: kronk-smoke:latest
+          format: table
+          exit-code: "1"
+          severity: CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
 
       # Tag-push path (refs/tags/v*): build & push by digest only.
       # Final tags get applied by the `merge` job once both arches
@@ -546,6 +584,22 @@ jobs:
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # Supply-chain attestations: max-mode SLSA provenance plus an
+          # SPDX SBOM, attached to each per-arch image so consumers can
+          # `cosign verify-attestation` / pull the SBOM alongside the
+          # cosign signatures produced in the merge job.
+          #
+          # CAVEAT — validate on a throwaway tag before trusting: with
+          # push-by-digest, buildx attaches the attestations as extra
+          # manifests referenced from a per-arch image index. The merge
+          # job assembles the final manifest list from the image digests
+          # collected in Export digests; confirm those attestation
+          # manifests survive `imagetools create` (inspect the published
+          # tag for provenance/SBOM). If they're dropped by the merge,
+          # switch to attaching the SBOM via cosign attest in the merge
+          # job instead.
+          provenance: mode=max
+          sbom: true
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }},mode=max,image-manifest=true,compression=zstd
 
@@ -563,6 +617,12 @@ jobs:
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           outputs: type=image,name=${{ env.DH_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # Same provenance + SBOM attestations as the GHCR push above so
+          # both registries carry equivalent supply-chain metadata. See
+          # the CAVEAT there re: validating attestation survival through
+          # the imagetools merge.
+          provenance: mode=max
+          sbom: true
           # cache-from only: the GHCR step above already populated the
           # cache for this (variant, arch); a second cache-to would
           # just rewrite the same content.
@@ -613,6 +673,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.push == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
