@@ -270,7 +270,6 @@ func (sec *Security) generateAdminToken(keysPath string) error {
 		"transcriptions":   {Limit: 0, Window: auth.RateUnlimited},
 		"messages":         {Limit: 0, Window: auth.RateUnlimited},
 		"tokenize":         {Limit: 0, Window: auth.RateUnlimited},
-		"playground":       {Limit: 0, Window: auth.RateUnlimited},
 	}
 
 	const tenYears = time.Minute * 526000
