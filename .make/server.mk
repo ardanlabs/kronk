@@ -59,7 +59,6 @@ kronk-server-build: kronk-build
 kronk-server-upgrade: install-latest-libs kronk-build
 	. .env 2>/dev/null || true && \
 	export KRONK_DOWNLOAD_ENABLED=true && \
-	export KRONK_AUTH_LOCAL_ENABLED=true && \
 	export KRONK_ALLOW_UPGRADE=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
