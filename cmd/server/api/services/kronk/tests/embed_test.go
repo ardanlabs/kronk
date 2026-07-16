@@ -165,37 +165,6 @@ func embed401(tokens map[string]string) []apitest.Table {
 				return ""
 			},
 		},
-		{
-			Name:       "admin-only-token",
-			URL:        "/v1/embeddings",
-			Token:      tokens["admin"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusUnauthorized,
-			Input: model.D{
-				"model":       "embeddinggemma-300m-qat-Q8_0",
-				"input":       "Embed this sentence",
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"top_p":       0.9,
-				"top_k":       40,
-			},
-			GotResp: &errs.Error{},
-			ExpResp: &errs.Error{
-				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"embeddings\" not authorized",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(errs.Error{}, "FuncName", "FileName"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return ""
-			},
-		},
 	}
 
 	return table

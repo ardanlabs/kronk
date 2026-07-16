@@ -140,7 +140,7 @@ func authorize(ath *auth.Auth) func(t *testing.T) {
 		})
 
 		t.Run("admin bypasses endpoint restrictions", func(t *testing.T) {
-			err := ath.Authorize(ctx, adminClaims, false, "")
+			err := ath.Authorize(ctx, adminClaims, false, "unknown-endpoint")
 			if err != nil {
 				t.Fatalf("admin should be authorized without endpoint permission: %s", err)
 			}

@@ -177,45 +177,8 @@ func msgsEndpoint401(tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
 			Name:       "bad-token",
-			SkipInGH:   true,
 			URL:        "/v1/messages",
 			Token:      tokens["embeddings"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusUnauthorized,
-			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen3-8B-Q8_0",
-				MaxTokens: 2048,
-				Messages: []msgsapp.Message{
-					{
-						Role: "user",
-						Content: msgsapp.Content{
-							Text: "Echo back the word: Gorilla",
-						},
-					},
-				},
-			},
-			GotResp: &errs.Error{},
-			ExpResp: &errs.Error{
-				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"messages\" not authorized",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(errs.Error{}, "FuncName", "FileName"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return ""
-			},
-		},
-		{
-			Name:       "admin-only-token",
-			SkipInGH:   true,
-			URL:        "/v1/messages",
-			Token:      tokens["admin"],
 			Method:     http.MethodPost,
 			StatusCode: http.StatusUnauthorized,
 			Input: msgsapp.MessagesRequest{

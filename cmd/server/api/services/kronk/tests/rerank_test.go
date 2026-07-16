@@ -116,36 +116,6 @@ func rerank401(tokens map[string]string) []apitest.Table {
 				return ""
 			},
 		},
-		{
-			Name:       "admin-only-token",
-			URL:        "/v1/rerank",
-			Token:      tokens["admin"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusUnauthorized,
-			Input: model.D{
-				"model": "bge-reranker-v2-m3-Q8_0",
-				"query": "What is the capital of France?",
-				"documents": []string{
-					"Paris is the capital of France.",
-				},
-			},
-			GotResp: &errs.Error{},
-			ExpResp: &errs.Error{
-				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"rerank\" not authorized",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(errs.Error{}, "FuncName", "FileName"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return ""
-			},
-		},
 	}
 
 	return table
