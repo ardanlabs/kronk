@@ -110,10 +110,10 @@ jobs:
 
       - name: gofmt
         # `git ls-files '*.go'` ignores generated files that are
-        # gitignored. We exclude vendor/ because vendored code is
-        # upstream-formatted and not ours to reformat.
+        # gitignored. We deliberately don't run gofmt on vendored or
+        # generated code.
         run: |
-          fmt="$(gofmt -l $(git ls-files '*.go' | grep -v '^vendor/'))"
+          fmt="$(gofmt -l $(git ls-files '*.go'))"
           if [[ -n "$fmt" ]]; then
             printf '%s\n' "$fmt"
             echo "::error::Go files need gofmt -s -w"
