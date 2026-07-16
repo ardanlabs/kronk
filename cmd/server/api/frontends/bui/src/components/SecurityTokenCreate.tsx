@@ -12,7 +12,6 @@ const AVAILABLE_ENDPOINTS = [
   { label: '/v1/audio/transcriptions', value: 'transcriptions' },
   { label: '/v1/messages', value: 'messages' },
   { label: '/v1/tokenize', value: 'tokenize' },
-  { label: '/v1/playground', value: 'playground' },
 ];
 
 const RATE_WINDOWS: { label: string; value: RateWindow }[] = [
