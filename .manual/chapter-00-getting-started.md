@@ -2,7 +2,7 @@
 
 Kronk is your personal engine for running open source models locally. Find
 your hardware below, copy the one command, and run it. Then open
-<http://localhost:11435> in your browser to download a model and start
+http://localhost:11435 in your browser to download a model and start
 chatting.
 
 ## Table of Contents
@@ -63,7 +63,7 @@ docker run -d --name kronk --restart unless-stopped \
   ghcr.io/ardanlabs/kronk:latest
 ```
 
-**Now open <http://localhost:11435>** in your browser. Go to **Catalog**,
+**Now open http://localhost:11435** in your browser. Go to **Catalog**,
 download a small model to try (e.g. `Qwopus3.5-4B-Coder.Q8_0`), then open
 **Chat** and ask it something. That's it — Kronk is running locally, at zero
 per-token cost, and nothing you type leaves your machine.
