@@ -262,10 +262,12 @@ pick the one that matches your hardware:
 
 Tag scheme:
 
+- `:latest-<variant>` (e.g. `:latest-cuda`) — floats to the newest release of
+  that variant.
+- `:latest` — the CPU image (alias of `:latest-cpu`), the only variant
+  guaranteed to run anywhere. For GPUs use `:latest-cuda` / `:latest-vulkan` /
+  `:latest-rocm`.
 - `:vX.Y.Z-<variant>` — immutable, tied to a released version (recommended for production).
-- `:latest-<variant>` — floats to the latest release of that variant.
-- `:latest` — alias of `:latest-cpu` (the only variant guaranteed to run anywhere).
-- `:main-<shortsha>-<variant>` — bleeding-edge builds from `main`.
 
 Pull and run (CPU on any host):
 
@@ -305,6 +307,144 @@ matrix has no rocm bundle, so the rocm image ships the **vulkan** bucky
 bundle instead and the container entrypoint transparently points
 `KRONK_BUCKY_LIB_PATH` at it on ROCm hosts. Transcription therefore
 stays GPU-accelerated on AMD GPUs via the RADV Vulkan driver.
+
+**Running headless on a remote machine.** The examples above use
+`--rm`, which deletes the container on stop — fine for a quick trial,
+wrong for a server. For an unattended host, run detached with a restart
+policy and a named volume so state on `/kronk` survives crashes and
+reboots. Inside the container Kronk runs as UID/GID `10001` and stores
+everything (models, catalog, keys, libraries) under `/kronk`.
+
+```shell
+docker run -d \
+    --name kronk \
+    --restart unless-stopped \
+    -e KRONK_AUTH_LOCAL_ENABLED=true \
+    -p 11435:11435 \
+    -v kronk-data:/kronk \
+    ghcr.io/ardanlabs/kronk:latest
+```
+
+Only the API port `11435` is published; the debug/metrics port `11445`
+is intentionally left unpublished so it is not reachable from the
+network. A bind mount (`-v /srv/kronk:/kronk`) works too, but requires
+`sudo chown -R 10001:10001 /srv/kronk` first since the container is
+non-root. Verify it is up:
+
+```shell
+curl http://localhost:11435/v1/liveness
+docker logs -f kronk
+```
+
+**User security.** The `KRONK_AUTH_LOCAL_ENABLED=true` above turns on
+the embedded JWT auth. On first start Kronk generates a master key and a
+10-year admin token under `/kronk/keys/`. Retrieve the admin token, then
+use it to mint scoped user tokens — never hand out the admin token
+itself:
+
+```shell
+# Admin token (treat like a root password)
+docker exec kronk cat /kronk/keys/master.jwt
+
+# Mint a 30-day, rate-limited user token for clients
+docker exec \
+  -e KRONK_TOKEN="$(docker exec kronk cat /kronk/keys/master.jwt)" \
+  kronk kronk security token create \
+    --duration 720h \
+    --endpoints "chat-completions:1000/day,embeddings:500/day"
+```
+
+Even with auth on, restrict port `11435` to trusted networks and
+terminate TLS at a reverse proxy — Kronk serves plain HTTP. See
+[Chapter 12: Security & Authentication](chapter-12-security-authentication.md)
+for key rotation, endpoint/limit syntax, and standalone-auth mode.
+
+**Auto-restart on reboot.** The `--restart unless-stopped` flag already
+brings the container back after a daemon restart or host reboot, as long
+as Docker starts on boot (`sudo systemctl enable docker`). To manage
+Kronk as a first-class service with journald logging and ordering, use a
+systemd unit at `/etc/systemd/system/kronk.service` instead of the
+restart policy:
+
+```ini
+[Unit]
+Description=Kronk LLM inference server
+Requires=docker.service
+After=docker.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStartPre=-/usr/bin/docker rm -f kronk
+ExecStart=/usr/bin/docker run --rm --name kronk \
+  -e KRONK_AUTH_LOCAL_ENABLED=true \
+  -p 11435:11435 \
+  -v kronk-data:/kronk \
+  ghcr.io/ardanlabs/kronk:latest
+ExecStop=/usr/bin/docker stop kronk
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```shell
+sudo systemctl daemon-reload
+sudo systemctl enable --now kronk
+journalctl -u kronk -f
+```
+
+Use **either** the `--restart` policy **or** the systemd unit, not
+both — with systemd the container is `--rm` and systemd owns its
+lifecycle.
+
+**Preinstalling models.** Pull models into the running container so the
+box is ready immediately and can run offline. Because state lives on the
+volume, models pulled once persist across updates and reboots. The
+`KRONK_DOWNLOAD_ENABLED=false` default only blocks downloads triggered
+from the browser UI; CLI `model pull` works regardless:
+
+```shell
+docker exec kronk kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
+docker exec kronk kronk catalog list --local
+
+# Whisper (Bucky) audio model
+docker exec kronk kronk bucky model pull ggml-tiny.bin
+```
+
+**Updating the image.** Data lives on the `kronk-data` volume, so
+updating is pull-and-recreate — models and keys are untouched. Pin a
+specific version tag in production so restarts are reproducible.
+
+```shell
+docker pull ghcr.io/ardanlabs/kronk:latest
+
+# plain docker: recreate with the same run command
+docker stop kronk && docker rm kronk
+# docker run -d ... (as above)
+
+# systemd deployment
+sudo systemctl restart kronk
+
+# verify
+docker exec kronk kronk version
+curl http://localhost:11435/v1/liveness
+```
+
+**Uninstalling.** Stop and remove the container, image, and — only if
+you no longer need your models and tokens — the volume. Removing the
+volume is irreversible.
+
+```shell
+# systemd deployment
+sudo systemctl disable --now kronk
+sudo rm /etc/systemd/system/kronk.service && sudo systemctl daemon-reload
+
+# plain docker deployment
+docker stop kronk && docker rm kronk
+
+docker rmi ghcr.io/ardanlabs/kronk:latest
+docker volume rm kronk-data   # deletes all models, catalog, and keys
+```
 
 ### 2.5 Installing Libraries
 

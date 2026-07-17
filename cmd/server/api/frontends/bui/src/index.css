@@ -880,6 +880,36 @@ tr.selected:hover td {
     line-height: 1.6;
 }
 
+.hero-actions {
+    margin-top: 28px;
+    display: flex;
+    justify-content: center;
+}
+
+.hero-cta-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 40px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-white);
+    background: var(--color-primary);
+    border-radius: 12px;
+    text-decoration: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    transition:
+            transform 0.2s,
+            box-shadow 0.2s,
+            filter 0.2s;
+}
+
+.hero-cta-button:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.08);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2);
+}
+
 .features-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));

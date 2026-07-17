@@ -107,6 +107,10 @@ $ go install github.com/ardanlabs/kronk/cmd/kronk@latest
 $ kronk --help
 ```
 
+To run Kronk headless with Docker on a remote machine (first run, user
+security, auto-restart on reboot, preinstalling models, updating, and
+uninstalling), see [Chapter 2.4: Docker / OCI Container](.manual/chapter-02-installation.md#24-docker--oci-container) in the manual.
+
 ## Issues/Features
 
 Here is the existing [Issues/Features](https://github.com/ardanlabs/kronk/issues) for the project and the things being worked on or things that would be nice to have.

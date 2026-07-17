@@ -38,33 +38,47 @@ Models download automatically on first use.
 
 ## Available Images
 
-| Tag              | Description                                | Architectures                |
-| ---------------- | ------------------------------------------ | ---------------------------- |
-| `latest` / `all` | All backends (CPU, CUDA, Vulkan, ROCm)     | `linux/amd64`, `linux/arm64` |
-| `cpu`            | CPU-only (smallest image, runs everywhere) | `linux/amd64`, `linux/arm64` |
-| `cuda`           | NVIDIA CUDA only                           | `linux/amd64`, `linux/arm64` |
-| `vulkan`         | Vulkan (works on AMD, Intel, NVIDIA)       | `linux/amd64`                |
-| `rocm`           | AMD ROCm only                              | `linux/amd64`                |
-| `jetson`         | NVIDIA Jetson Orin/Xavier (L4T runtime)    | `linux/arm64`                |
+| Tag             | Description                                       | Architectures                |
+|-----------------|---------------------------------------------------|------------------------------|
+| `latest`        | CPU-only, runs everywhere (alias of `latest-cpu`) | `linux/amd64`, `linux/arm64` |
+| `latest-cpu`    | CPU-only (smallest image, runs everywhere)        | `linux/amd64`, `linux/arm64` |
+| `latest-cuda`   | NVIDIA CUDA                                       | `linux/amd64`, `linux/arm64` |
+| `latest-vulkan` | Vulkan (works on AMD, Intel, NVIDIA)              | `linux/amd64`, `linux/arm64` |
+| `latest-rocm`   | AMD ROCm                                          | `linux/amd64`                |
+| `latest-all`    | All backends bundled (CPU, CUDA, Vulkan, ROCm)    | `linux/amd64`, `linux/arm64` |
+
+**Tag scheme:**
+
+- `latest-<variant>` (e.g. `latest-cuda`) floats to the newest release of that
+  variant. `latest` is an alias of `latest-cpu`.
+- `latest` is the **CPU** image — for GPU acceleration use the matching
+  `latest-cuda` / `latest-vulkan` / `latest-rocm` tag.
+- Every variant also has an immutable per-release tag, `<version>-<variant>`
+  (e.g. `1.28.8-cuda`). **Pin these in production** so restarts are
+  reproducible.
+- **NVIDIA Jetson (Orin / Xavier):** published as `:jetson`. It is built on
+  demand via the `--target runtime-jetson` path documented in the
+  [Dockerfile](https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile),
+  not as part of the automatic build matrix. See the run example below.
 
 ---
 
 ## Platform Support
 
-| Host OS         | GPU       | Image              | Backend | Status                                                 |
-| --------------- | --------- | ------------------ | ------- | ------------------------------------------------------ |
-| **Linux**       | NVIDIA    | `:cuda`            | CUDA    | ✅ Fully supported                                     |
-| **Linux**       | AMD       | `:rocm`            | ROCm    | ✅ Fully supported                                     |
-| **Linux**       | AMD       | `:vulkan`          | Vulkan  | ✅ Fully supported                                     |
-| **Linux**       | Intel     | `:vulkan`          | Vulkan  | ✅ Fully supported                                     |
-| **Linux**       | NVIDIA    | `:vulkan`          | Vulkan  | ✅ Fully supported                                     |
-| **Linux**       | None      | `:cpu` / `:latest` | CPU     | ✅ Fully supported                                     |
-| **Linux arm64** | Jetson    | `:jetson`          | CUDA    | ✅ Fully supported                                     |
-| **Linux arm64** | SoC iGPU  | `:vulkan`          | Vulkan  | ✅ Fully supported                                     |
-| **macOS**       | Any       | `:latest`          | CPU     | ⚠️ Works (Apple Silicon GPU not exposed to containers) |
-| **Windows**     | NVIDIA    | `:cuda`            | CUDA    | ✅ Supported (Docker Desktop + WSL2)                   |
-| **Windows**     | AMD/Intel | `:cpu`             | CPU     | ⚠️ Works (Vulkan via WSL2 unreliable for inference)    |
-| **Windows**     | None      | `:cpu`             | CPU     | ✅ Fully supported                                     |
+| Host OS         | GPU       | Image             | Backend | Status                                                 |
+| --------------- | --------- | ----------------- | ------- | ------------------------------------------------------ |
+| **Linux**       | NVIDIA    | `:latest-cuda`    | CUDA    | ✅ Fully supported                                     |
+| **Linux**       | AMD       | `:latest-rocm`    | ROCm    | ✅ Fully supported                                     |
+| **Linux**       | AMD       | `:latest-vulkan`  | Vulkan  | ✅ Fully supported                                     |
+| **Linux**       | Intel     | `:latest-vulkan`  | Vulkan  | ✅ Fully supported                                     |
+| **Linux**       | NVIDIA    | `:latest-vulkan`  | Vulkan  | ✅ Fully supported                                     |
+| **Linux**       | None      | `:latest`         | CPU     | ✅ Fully supported                                     |
+| **Linux arm64** | Jetson    | `:jetson`         | CUDA    | ✅ Fully supported (built on demand — see tag scheme)  |
+| **Linux arm64** | SoC iGPU  | `:latest-vulkan`  | Vulkan  | ✅ Fully supported                                     |
+| **macOS**       | Any       | `:latest`         | CPU     | ⚠️ Works (Apple Silicon GPU not exposed to containers) |
+| **Windows**     | NVIDIA    | `:latest-cuda`    | CUDA    | ✅ Supported (Docker Desktop + WSL2)                   |
+| **Windows**     | AMD/Intel | `:latest`         | CPU     | ⚠️ Works (Vulkan via WSL2 unreliable for inference)    |
+| **Windows**     | None      | `:latest`         | CPU     | ✅ Fully supported                                     |
 
 **Legend:**
 
@@ -80,19 +94,19 @@ Models download automatically on first use.
 Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
 ```bash
-docker run --rm --gpus all -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest
+docker run --rm --gpus all -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
 ```
 
 Specific GPUs by index:
 
 ```bash
-docker run --rm --gpus '"device=0,1"' -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest
+docker run --rm --gpus '"device=0,1"' -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
 ```
 
 Specific GPUs by UUID:
 
 ```bash
-docker run --rm --gpus '"device=GPU-3a1f...,GPU-9b2e..."' -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest
+docker run --rm --gpus '"device=GPU-3a1f...,GPU-9b2e..."' -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
 ```
 
 ### AMD GPU (ROCm)
@@ -105,7 +119,7 @@ docker run --rm \
   --group-add video --group-add render \
   --security-opt seccomp=unconfined \
   -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:rocm
+  ghcr.io/ardanlabs/kronk:latest-rocm
 ```
 
 ### Vulkan (AMD, Intel, NVIDIA)
@@ -115,7 +129,7 @@ A single image that works across GPU vendors. Requires Mesa Vulkan drivers on th
 ```bash
 docker run --rm --device=/dev/dri --group-add video --group-add render \
   -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:vulkan
+  ghcr.io/ardanlabs/kronk:latest-vulkan
 ```
 
 **Vulkan on NVIDIA:** Requires NVIDIA Container Toolkit with graphics capabilities:
@@ -124,7 +138,7 @@ docker run --rm --device=/dev/dri --group-add video --group-add render \
 docker run --rm --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
   -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:vulkan
+  ghcr.io/ardanlabs/kronk:latest-vulkan
 ```
 
 **Vulkan on Intel:** Expose `/dev/dri` (ANV driver):
@@ -132,7 +146,7 @@ docker run --rm --gpus all \
 ```bash
 docker run --rm --device=/dev/dri --group-add video --group-add render \
   -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:vulkan
+  ghcr.io/ardanlabs/kronk:latest-vulkan
 ```
 
 **Multi-GPU selection:** Pin a specific GPU with environment variables:
@@ -143,7 +157,7 @@ docker run --rm --device=/dev/dri --group-add video --group-add render \
 docker run --rm --device=/dev/dri --group-add video --group-add render \
   -e MESA_VK_DEVICE_SELECT='1002:744c' \
   -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:vulkan
+  ghcr.io/ardanlabs/kronk:latest-vulkan
 ```
 
 Verify Vulkan devices inside the container:
@@ -259,6 +273,7 @@ Substitute `latest` with any published tag (`<version>-<variant>`, `latest-<vari
 ## Links
 
 - **Source:** https://github.com/ardanlabs/kronk
+- **Headless remote deployment guide:** https://github.com/ardanlabs/kronk/blob/main/.manual/chapter-02-installation.md#24-docker--oci-container
 - **Documentation:** https://github.com/ardanlabs/kronk#readme
 - **Website:** https://kronkai.com
 - **Signatures (Docker Hub):** https://hub.docker.com/r/ardanlabs/kronk-signatures

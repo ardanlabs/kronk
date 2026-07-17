@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import Layout from './components/Layout';
 import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
@@ -173,6 +173,11 @@ function HomePage() {
         <p className="hero-tagline">
           Hardware-accelerated local inference with llama.cpp directly integrated into your Go applications
         </p>
+        <div className="hero-actions">
+          <Link to="/docs/manual#getting-started" className="hero-cta-button">
+            🚀 Getting Started
+          </Link>
+        </div>
       </div>
 
       <div className="features-grid">
