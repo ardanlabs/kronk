@@ -22,7 +22,7 @@ var (
 	masterFile  = "master"
 )
 
-// Config represents the config needed to constuct the security API.
+// Config represents the config needed to construct the security API.
 type Config struct {
 	OverrideBaseKeysFolder string
 	Issuer                 string
@@ -224,7 +224,9 @@ func (sec *Security) addSystemKeys() error {
 	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
 	keysPath := filepath.Join(basePath, localFolder)
 
-	os.MkdirAll(keysPath, 0755)
+	if err := os.MkdirAll(keysPath, 0755); err != nil {
+		return fmt.Errorf("add-system-keys: unable to create keys path: %w", err)
+	}
 
 	n, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath))
 	if err != nil {
@@ -272,7 +274,7 @@ func (sec *Security) generateAdminToken(keysPath string) error {
 		"tokenize":         {Limit: 0, Window: auth.RateUnlimited},
 	}
 
-	const tenYears = time.Minute * 526000
+	const tenYears = 10 * 365 * 24 * time.Hour
 
 	token, err := sec.GenerateToken(admin, endpoints, tenYears)
 	if err != nil {
