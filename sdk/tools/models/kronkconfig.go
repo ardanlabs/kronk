@@ -189,6 +189,7 @@ func (s SamplingConfig) toParams() model.Params {
 
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
+	Adapters             []AdapterConfig           `yaml:"adapters,omitempty"`
 	PtrCacheMinTokens    *int                      `yaml:"cache-min-tokens,omitempty"`
 	PtrCacheSlotTimeout  *int                      `yaml:"cache-slot-timeout,omitempty"`
 	CacheTypeK           model.GGMLType            `yaml:"cache-type-k,omitempty"`
@@ -230,6 +231,15 @@ type ModelConfig struct {
 	PtrYarnBetaSlow      *float32                  `yaml:"yarn-beta-slow,omitempty"`
 	PtrYarnExtFactor     *float32                  `yaml:"yarn-ext-factor,omitempty"`
 	PtrYarnOrigCtx       *int                      `yaml:"yarn-orig-ctx,omitempty"`
+}
+
+// AdapterConfig identifies a local llama.cpp-compatible LoRA adapter GGUF.
+// Set exactly one of ID or Path. An ID resolves beneath the Kronk lora folder;
+// Path names an absolute file elsewhere on disk.
+type AdapterConfig struct {
+	ID       string   `yaml:"id,omitempty"`
+	Path     string   `yaml:"path,omitempty"`
+	PtrScale *float32 `yaml:"scale,omitempty"`
 }
 
 // DraftModelConfig configures speculative decoding for a target model.

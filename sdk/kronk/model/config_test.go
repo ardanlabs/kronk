@@ -2,6 +2,9 @@ package model
 
 import (
 	"context"
+	"math"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -115,6 +118,11 @@ func TestMTPNDraft(t *testing.T) {
 
 func TestValidateConfig(t *testing.T) {
 	discardLogger := func(ctx context.Context, msg string, args ...any) {}
+	tempDir := t.TempDir()
+	adapterFile := filepath.Join(tempDir, "adapter.gguf")
+	if err := os.WriteFile(adapterFile, []byte("adapter"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 
 	tests := []struct {
 		want    string
@@ -137,6 +145,30 @@ func TestValidateConfig(t *testing.T) {
 		{"MTP nDraft override rejects negative ndraft", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithDraftModel(&DraftModelConfig{NDraft: -1}),
+		), true},
+		{"adapter is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithAdapters([]AdapterConfig{{Path: adapterFile, Scale: 1}}),
+		), false},
+		{"zero adapter scale is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithAdapters([]AdapterConfig{{Path: adapterFile, Scale: 0}}),
+		), false},
+		{"relative adapter path is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithAdapters([]AdapterConfig{{Path: "adapter.gguf", Scale: 1}}),
+		), true},
+		{"negative adapter scale is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithAdapters([]AdapterConfig{{Path: adapterFile, Scale: -1}}),
+		), true},
+		{"non-finite adapter scale is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithAdapters([]AdapterConfig{{Path: adapterFile, Scale: float32(math.Inf(1))}}),
+		), true},
+		{"duplicate adapter path is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithAdapters([]AdapterConfig{{Path: adapterFile, Scale: 1}, {Path: adapterFile, Scale: 0.5}}),
 		), true},
 	}
 	{

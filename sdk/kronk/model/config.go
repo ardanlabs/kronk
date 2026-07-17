@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -119,9 +120,19 @@ func (d DraftModelConfig) MainGPU() int    { return intOr(d.PtrMainGPU, 0) }
 // files and only applies when the target ships an auto-detected MTP head.
 func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 
+// AdapterConfig configures a local llama.cpp-compatible LoRA adapter GGUF.
+// Scale is fixed for the lifetime of the loaded model.
+type AdapterConfig struct {
+	Path  string
+	Scale float32
+}
+
 // Config represents model level configuration. These values if configured
 // incorrectly can cause the system to panic. The defaults are used when these
 // values are set to 0.
+//
+// Adapters contains local llama.cpp-compatible LoRA adapter GGUF files to load
+// with the model. Adapter scales are fixed for the lifetime of the model.
 //
 // AutoTune, when true, asks kronk.New to run a hardware-aware analysis of the
 // model (architecture, size, and available devices) and seed unset settings
@@ -349,6 +360,7 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
+	Adapters             []AdapterConfig
 	AutoTune             bool
 	PtrCacheMinTokens    *int
 	PtrCacheSlotTimeout  *int
@@ -473,8 +485,8 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
-		formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
+	return fmt.Sprintf("\nAdapters[%v]\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+		cfg.Adapters, formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.Devices, cfg.FlashAttention,
 		formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
@@ -493,6 +505,33 @@ func (cfg Config) String() string {
 func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
+	}
+
+	seenAdapters := make(map[string]struct{}, len(cfg.Adapters))
+	for i, adapter := range cfg.Adapters {
+		if !filepath.IsAbs(adapter.Path) {
+			return fmt.Errorf("validate-config: adapter[%d] path must be absolute: %q", i, adapter.Path)
+		}
+		if !strings.EqualFold(filepath.Ext(adapter.Path), ".gguf") {
+			return fmt.Errorf("validate-config: adapter[%d] path must have a .gguf extension: %q", i, adapter.Path)
+		}
+		if adapter.Scale < 0 || math.IsNaN(float64(adapter.Scale)) || math.IsInf(float64(adapter.Scale), 0) {
+			return fmt.Errorf("validate-config: adapter[%d] scale must be finite and >= 0, got %g", i, adapter.Scale)
+		}
+
+		adapterPath := filepath.Clean(adapter.Path)
+		if _, exists := seenAdapters[adapterPath]; exists {
+			return fmt.Errorf("validate-config: duplicate adapter path: %q", adapterPath)
+		}
+		seenAdapters[adapterPath] = struct{}{}
+
+		fi, err := os.Stat(adapterPath)
+		if err != nil {
+			return fmt.Errorf("validate-config: adapter[%d] path %q: %w", i, adapterPath, err)
+		}
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("validate-config: adapter[%d] path is not a regular file: %q", i, adapterPath)
+		}
 	}
 
 	if len(cfg.TensorSplit) > 0 && len(cfg.Devices) > 0 && len(cfg.TensorSplit) != len(cfg.Devices) {
@@ -1473,6 +1512,7 @@ func NewConfig(opts ...Option) Config {
 }
 
 func WithConfig(src Config) Option                   { return func(c *Config) { *c = src } }
+func WithAdapters(v []AdapterConfig) Option          { return func(c *Config) { c.Adapters = v } }
 func WithAutoTune(v bool) Option                     { return func(c *Config) { c.AutoTune = v } }
 func WithCacheMinTokens(v int) Option                { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
 func WithCacheSlotTimeout(v int) Option              { return func(c *Config) { c.PtrCacheSlotTimeout = new(v) } }

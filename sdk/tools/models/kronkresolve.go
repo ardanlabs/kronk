@@ -2,7 +2,10 @@ package models
 
 import (
 	"fmt"
+	"math"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
@@ -41,6 +44,12 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	out.ModelFiles = fp.ModelFiles
 	out.ProjFile = fp.ProjFile
 
+	adapters, err := m.resolveAdapters(cfg.Adapters)
+	if err != nil {
+		return model.Config{}, fmt.Errorf("kronk-resolved-config: %w", err)
+	}
+	out.Adapters = adapters
+
 	// fp.MTPFile is the on-disk path to the separate-file MTP assistant
 	// drafter companion (e.g. Gemma4's "mtp-*.gguf"), discovered by the
 	// download/catalog layer. The runtime config calls it MTPDrafterFile to
@@ -71,6 +80,83 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	}
 
 	return out, nil
+}
+
+// resolveAdapters converts user-facing adapter ids and paths into concrete
+// runtime paths. Adapter ids are local identifiers, not model catalog ids.
+func (m *Models) resolveAdapters(adapters []AdapterConfig) ([]model.AdapterConfig, error) {
+	resolved := make([]model.AdapterConfig, 0, len(adapters))
+	seen := make(map[string]struct{}, len(adapters))
+
+	for i, adapter := range adapters {
+		if (adapter.ID == "") == (adapter.Path == "") {
+			return nil, fmt.Errorf("resolve-adapters: adapter[%d] must set exactly one of id or path", i)
+		}
+
+		var adapterPath string
+		switch {
+		case adapter.ID != "":
+			if err := validateAdapterID(adapter.ID); err != nil {
+				return nil, fmt.Errorf("resolve-adapters: adapter[%d] id %q: %w", i, adapter.ID, err)
+			}
+			adapterPath = filepath.Join(m.basePath, "lora", filepath.FromSlash(adapter.ID)+".gguf")
+
+		default:
+			if !filepath.IsAbs(adapter.Path) {
+				return nil, fmt.Errorf("resolve-adapters: adapter[%d] path must be absolute: %q", i, adapter.Path)
+			}
+			adapterPath = adapter.Path
+		}
+
+		adapterPath = filepath.Clean(adapterPath)
+		if !strings.EqualFold(filepath.Ext(adapterPath), ".gguf") {
+			return nil, fmt.Errorf("resolve-adapters: adapter[%d] path must have a .gguf extension: %q", i, adapterPath)
+		}
+		if _, exists := seen[adapterPath]; exists {
+			return nil, fmt.Errorf("resolve-adapters: duplicate adapter path: %q", adapterPath)
+		}
+
+		fi, err := os.Stat(adapterPath)
+		if err != nil {
+			return nil, fmt.Errorf("resolve-adapters: adapter[%d] path %q: %w", i, adapterPath, err)
+		}
+		if !fi.Mode().IsRegular() {
+			return nil, fmt.Errorf("resolve-adapters: adapter[%d] path is not a regular file: %q", i, adapterPath)
+		}
+
+		scale := float32(1)
+		if adapter.PtrScale != nil {
+			scale = *adapter.PtrScale
+		}
+		if scale < 0 || math.IsNaN(float64(scale)) || math.IsInf(float64(scale), 0) {
+			return nil, fmt.Errorf("resolve-adapters: adapter[%d] scale must be finite and >= 0, got %g", i, scale)
+		}
+
+		seen[adapterPath] = struct{}{}
+		resolved = append(resolved, model.AdapterConfig{Path: adapterPath, Scale: scale})
+	}
+
+	return resolved, nil
+}
+
+func validateAdapterID(id string) error {
+	if id != strings.TrimSpace(id) || id == "" {
+		return fmt.Errorf("must not be empty or contain surrounding whitespace")
+	}
+	if filepath.IsAbs(id) || strings.Contains(id, `\`) {
+		return fmt.Errorf("must be a slash-separated relative id")
+	}
+	if strings.EqualFold(filepath.Ext(id), ".gguf") {
+		return fmt.Errorf("must omit the .gguf extension")
+	}
+
+	for part := range strings.SplitSeq(id, "/") {
+		if part == "" || part == "." || part == ".." {
+			return fmt.Errorf("contains an invalid path component")
+		}
+	}
+
+	return nil
 }
 
 // AutoTune is the single source of analysis-derived defaults. It analyzes the
@@ -148,6 +234,9 @@ func (m *Models) AnalysisDefaults(modelID string) ModelConfig {
 
 // MergeModelConfig overlays non-zero fields from src onto dst.
 func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
+	if len(src.Adapters) > 0 {
+		dst.Adapters = src.Adapters
+	}
 	if src.Template != "" {
 		dst.Template = src.Template
 	}
