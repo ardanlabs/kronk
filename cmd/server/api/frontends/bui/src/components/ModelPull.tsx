@@ -212,41 +212,41 @@ export default function ModelPull() {
             fontSize: '14px',
             lineHeight: '1.4',
             padding: '12px 14px',
-            background: 'var(--bg-2, #1a1a1a)',
-            border: '1px solid var(--border, #333)',
+            background: 'var(--color-gray-100)',
+            border: '1px solid var(--color-gray-300)',
             borderRadius: '4px',
             margin: '8px 0',
             overflowX: 'auto',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            color: 'var(--text, #e5e5e5)',
+            color: 'var(--color-gray-900)',
           }}
         >
           <span style={{ opacity: 0.85 }}>https://huggingface.co/</span>
-          <span style={{ color: 'var(--accent, #60a5fa)', fontWeight: 600 }}>unsloth</span>
+          <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>unsloth</span>
           <span style={{ opacity: 0.85 }}>/</span>
-          <span style={{ color: 'var(--success, #4ade80)', fontWeight: 600 }}>Qwen3.6-27B-GGUF</span>
+          <span style={{ color: 'var(--color-success-text)', fontWeight: 600 }}>Qwen3.6-27B-GGUF</span>
           <span style={{ opacity: 0.85 }}>/blob/main/</span>
-          <span style={{ color: 'var(--warning, #fbbf24)', fontWeight: 600 }}>Qwen3.6-27B-Q4_K_M</span>
+          <span style={{ color: 'var(--color-warning-text)', fontWeight: 600 }}>Qwen3.6-27B-Q4_K_M</span>
           <span style={{ opacity: 0.85 }}>.gguf</span>
           {'\n'}
           {/* 23 spaces, then 7-wide bracket, 1 space, 16-wide bracket, 11 spaces, 18-wide bracket */}
           {'                       '}
-          <span style={{ color: 'var(--accent, #60a5fa)' }}>└─────┘</span>
+          <span style={{ color: 'var(--color-primary)' }}>└─────┘</span>
           {' '}
-          <span style={{ color: 'var(--success, #4ade80)' }}>└──────────────┘</span>
+          <span style={{ color: 'var(--color-success-text)' }}>└──────────────┘</span>
           {'           '}
-          <span style={{ color: 'var(--warning, #fbbf24)' }}>└────────────────┘</span>
+          <span style={{ color: 'var(--color-warning-text)' }}>└────────────────┘</span>
           {'\n'}
           {/* labels centered under each segment:
                 Provider centered on col 26 (segment cols 23-29) → starts col 22
                 Family   centered on col 39 (segment cols 31-46) → starts col 36
                 Model    centered on col 66 (segment cols 58-75) → starts col 64 */}
           {'                      '}
-          <span style={{ color: 'var(--accent, #60a5fa)', fontWeight: 600 }}>Provider</span>
+          <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>Provider</span>
           {'      '}
-          <span style={{ color: 'var(--success, #4ade80)', fontWeight: 600 }}>Family</span>
+          <span style={{ color: 'var(--color-success-text)', fontWeight: 600 }}>Family</span>
           {'                      '}
-          <span style={{ color: 'var(--warning, #fbbf24)', fontWeight: 600 }}>Model</span>
+          <span style={{ color: 'var(--color-warning-text)', fontWeight: 600 }}>Model</span>
         </pre>
 
         <ul style={{ margin: '4px 0 0 0', paddingLeft: '20px', fontSize: '13px' }}>
@@ -340,7 +340,7 @@ export default function ModelPull() {
         {repoFiles && (() => {
           const rows = groupRepoFiles(repoFiles);
           return (
-            <div className="card" style={{ background: 'var(--bg-2, #1a1a1a)', marginTop: '12px' }}>
+            <div className="card" style={{ background: 'var(--color-gray-100)', marginTop: '12px' }}>
               <div style={{ marginBottom: '12px' }}>
                 <strong>Pick a file from </strong>
                 <code>{provider.trim()}/{family.trim()}</code>
@@ -387,12 +387,12 @@ export default function ModelPull() {
         })()}
 
         {resolved && (
-          <div className="card" style={{ background: 'var(--bg-2, #1a1a1a)', marginTop: '12px' }}>
+          <div className="card" style={{ background: 'var(--color-gray-100)', marginTop: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '12px' }}>
               <strong style={{ fontSize: '16px' }}>{resolved.canonical_id}</strong>
               <span style={{ fontSize: '12px', opacity: 0.7 }}>({sourceLabel})</span>
               {resolved.installed && (
-                <span style={{ fontSize: '12px', color: 'var(--success, #4ade80)' }}>● already installed</span>
+                <span style={{ fontSize: '12px', color: 'var(--color-success-text)' }}>● already installed</span>
               )}
             </div>
 
