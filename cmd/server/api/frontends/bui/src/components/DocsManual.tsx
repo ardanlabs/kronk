@@ -67,7 +67,7 @@ export default function DocsManual() {
       <div className="doc-layout">
         <div className="doc-content manual-content">
           <h2 id="getting-started">Getting Started</h2>
-          <p>Kronk is your personal engine for running open source models locally. Find your hardware below, copy the one command, and run it. Then open <a href="http://localhost:11435">http://localhost:11435</a> in your browser to download a model and start chatting.</p>
+          <p>Kronk is your personal engine for running open source models locally. Find your hardware below, copy the one command, and run it. Then open <code>http://localhost:11435</code> in your browser to download a model and start chatting.</p>
 
           <h3 id="gs-quick-start">Quick Start — Copy, Paste, Run</h3>
 
@@ -99,7 +99,8 @@ KRONK_DOWNLOAD_ENABLED=true kronk server start`}</code></pre>
   -p 11435:11435 -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:latest`}</code></pre>
 
-          <p><strong>Now open <a href="http://localhost:11435">http://localhost:11435</a></strong> in your browser. Go to <strong>Catalog</strong>, download a small model to try (e.g. <code>Qwopus3.5-4B-Coder.Q8_0</code>), then open <strong>Chat</strong> and ask it something. That's it — Kronk is running locally, at zero per-token cost, and nothing you type leaves your machine.</p>
+          <p><strong>Now open <code>http://localhost:11435</code></strong> in your browser. Go to <strong>Catalog</strong>, download a small model to try (e.g. <code>Qwopus3.5-4B-Coder.Q8_0</code>), then open <strong>Chat</strong> and ask it something. That's it — Kronk is running locally, at zero per-token cost, and nothing you type leaves your machine.</p>
+          <blockquote><strong>Heads up:</strong> the Docker commands above publish port <code>11435</code> on every network interface with no authentication and downloads enabled — fine on your own machine, but if the host is reachable by anyone else (a cloud VM, a shared network), turn on auth and lock down the port first. See <a href="#gs-going-to-production">Going to Production</a> below.</blockquote>
 
           <h3 id="gs-which-one">Which One Should I Use?</h3>
           <p>The quick start above already picked for you, but here's the difference in plain terms:</p>
@@ -538,6 +539,34 @@ docker stop kronk && docker rm kronk
 
 docker rmi ghcr.io/ardanlabs/kronk:latest
 docker volume rm kronk-data   # deletes all models, catalog, and keys`}</code></pre>
+
+          <p><strong>Google Cloud Run.</strong> Kronk is a standard OCI image; deploy it per the <a href="https://docs.cloud.google.com/run/docs/deploying">Cloud Run docs</a>. Cloud Run terminates TLS, routes one port, and gives every instance an <strong>ephemeral</strong> filesystem — <code>/kronk</code> does not survive a new revision or cold start.</p>
+          <p>CPU-only service (Kronk listens on <code>11435</code> by default):</p>
+          <pre className="code-block"><code className="language-shell">{`gcloud run deploy kronk \\
+    --image=ghcr.io/ardanlabs/kronk:latest \\
+    --region=us-central1 --port=11435 \\
+    --cpu=8 --memory=32Gi \\
+    --timeout=3600 --concurrency=4 \\
+    --min-instances=1 --no-cpu-throttling`}</code></pre>
+          <ul>
+            <li><code>--port=11435</code> — the default listen port; the debug port <code>11445</code> is not routed.</li>
+            <li><code>--timeout=3600</code> — Cloud Run max (60m), matching Kronk's <code>WriteTimeout</code> default.</li>
+            <li><code>--min-instances=1 --no-cpu-throttling</code> — keep the model resident; scale-to-zero reloads it on every cold start.</li>
+          </ul>
+          <p><strong>Models.</strong> <code>KRONK_DOWNLOAD_ENABLED</code> is <code>false</code> and the filesystem is ephemeral, so bake the model into a derived image:</p>
+          <pre className="code-block"><code className="language-dockerfile">{`FROM ghcr.io/ardanlabs/kronk:latest
+RUN kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local --base-path /kronk`}</code></pre>
+          <p>Or mount a bucket at <code>/kronk/models</code> — see <a href="https://docs.cloud.google.com/run/docs/configuring/services/cloud-storage-volume-mounts">Cloud Storage volume mounts</a>. GCS FUSE is unsuitable for badger state (catalog, keys); bake that in.</p>
+          <p><strong>Auth.</strong> Gate at the edge with Cloud Run IAM (<code>--no-allow-unauthenticated</code> + <code>roles/run.invoker</code>), or use Kronk JWT (<code>--set-env-vars=KRONK_AUTH_LOCAL_ENABLED=true</code>) with keys baked in — a new revision otherwise regenerates them. See <a href="#chapter-12-security-authentication">Chapter 12: Security &amp; Authentication</a>.</p>
+          <p><strong>GPU (NVIDIA L4).</strong> Deploy the <code>-cuda</code> image with an attached GPU in a <a href="https://docs.cloud.google.com/run/docs/configuring/services/gpu">supported region</a> (min 4 CPU / 16 GiB); Kronk auto-selects the <code>cuda</code> backend.</p>
+          <pre className="code-block"><code className="language-shell">{`gcloud run deploy kronk \\
+    --image=ghcr.io/ardanlabs/kronk:latest-cuda \\
+    --region=us-central1 --port=11435 \\
+    --cpu=8 --memory=32Gi \\
+    --gpu=1 --gpu-type=nvidia-l4 --no-cpu-throttling \\
+    --timeout=3600 --concurrency=4 \\
+    --min-instances=1 --max-instances=1`}</code></pre>
+          <p>Cloud Run requires <code>--max-instances</code> to be set when a GPU is attached.</p>
 
           <h3 id="25-installing-libraries">2.5 Installing Libraries</h3>
           <p>Before running inference, you need the llama.cpp libraries for your machine. Kronk auto-detects your hardware and downloads the appropriate binaries.</p>

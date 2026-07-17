@@ -248,17 +248,20 @@ llama.cpp processor backends for LLM inference, the matching whisper.cpp
 (bucky) backend for audio transcription via `/v1/audio/transcriptions`,
 and `ffmpeg` for decoding non-PCM audio uploads — so the image is
 offline-ready after the first pull (models still need to be downloaded
-separately into the persisted `/kronk` volume). Six variants are produced;
+separately into the persisted `/kronk` volume). Five variants are produced;
 pick the one that matches your hardware:
 
-| Tag suffix | Hardware target                                 | Platforms                    |
-| ---------- | ----------------------------------------------- | ---------------------------- |
-| `-cpu`     | Any host, no GPU acceleration (smallest image)  | `linux/amd64`, `linux/arm64` |
-| `-cuda`    | NVIDIA GPUs (Linux + Windows-WSL2)              | `linux/amd64`, `linux/arm64` |
-| `-vulkan`  | Vendor-neutral GPU (AMD / NVIDIA / Intel)       | `linux/amd64`, `linux/arm64` |
-| `-rocm`    | AMD GPUs via ROCm                               | `linux/amd64`                |
-| `-jetson`  | NVIDIA Jetson Orin / Xavier (JetPack 6+)        | `linux/arm64`                |
-| `-all`     | Bundles cpu + cuda + vulkan + rocm in one image | `linux/amd64`, `linux/arm64` |
+| Tag           | Hardware target                                 | Platforms                    |
+| ------------- | ----------------------------------------------- | ---------------------------- |
+| `latest-cpu`  | Any host, no GPU acceleration (smallest image)  | `linux/amd64`, `linux/arm64` |
+| `latest-cuda` | NVIDIA GPUs (Linux + Windows-WSL2)              | `linux/amd64`, `linux/arm64` |
+| `latest-vulkan` | Vendor-neutral GPU (AMD / NVIDIA / Intel)     | `linux/amd64`, `linux/arm64` |
+| `latest-rocm` | AMD GPUs via ROCm                               | `linux/amd64`                |
+| `latest-all`  | Bundles cpu + cuda + vulkan + rocm in one image | `linux/amd64`, `linux/arm64` |
+
+NVIDIA Jetson (Orin / Xavier) is not part of the published set; build it on
+demand with `--target runtime-jetson` as documented in the
+[`Dockerfile`](../zarf/docker/kronk/Dockerfile) header.
 
 Tag scheme:
 
@@ -445,6 +448,61 @@ docker stop kronk && docker rm kronk
 docker rmi ghcr.io/ardanlabs/kronk:latest
 docker volume rm kronk-data   # deletes all models, catalog, and keys
 ```
+
+**Google Cloud Run.** Kronk is a standard OCI image; deploy it per the
+[Cloud Run docs](https://docs.cloud.google.com/run/docs/deploying). Cloud
+Run terminates TLS, routes one port, and gives every instance an
+**ephemeral** filesystem — `/kronk` does not survive a new revision or
+cold start.
+
+CPU-only service (Kronk listens on `11435` by default):
+
+```shell
+gcloud run deploy kronk \
+    --image=ghcr.io/ardanlabs/kronk:latest \
+    --region=us-central1 --port=11435 \
+    --cpu=8 --memory=32Gi \
+    --timeout=3600 --concurrency=4 \
+    --min-instances=1 --no-cpu-throttling
+```
+
+- `--port=11435` — the default listen port; the debug port `11445` is not routed.
+- `--timeout=3600` — Cloud Run max (60m), matching Kronk's `WriteTimeout` default.
+- `--min-instances=1 --no-cpu-throttling` — keep the model resident; scale-to-zero reloads it on every cold start.
+
+**Models.** `KRONK_DOWNLOAD_ENABLED` is `false` and the filesystem is
+ephemeral, so bake the model into a derived image:
+
+```dockerfile
+FROM ghcr.io/ardanlabs/kronk:latest
+RUN kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local --base-path /kronk
+```
+
+Or mount a bucket at `/kronk/models` — see
+[Cloud Storage volume mounts](https://docs.cloud.google.com/run/docs/configuring/services/cloud-storage-volume-mounts).
+GCS FUSE is unsuitable for badger state (catalog, keys); bake that in.
+
+**Auth.** Gate at the edge with Cloud Run IAM (`--no-allow-unauthenticated`
++ `roles/run.invoker`), or use Kronk JWT
+(`--set-env-vars=KRONK_AUTH_LOCAL_ENABLED=true`) with keys baked in — a new
+revision otherwise regenerates them. See
+[Chapter 12](chapter-12-security-authentication.md).
+
+**GPU (NVIDIA L4).** Deploy the `-cuda` image with an attached GPU in a
+[supported region](https://docs.cloud.google.com/run/docs/configuring/services/gpu)
+(min 4 CPU / 16 GiB); Kronk auto-selects the `cuda` backend.
+
+```shell
+gcloud run deploy kronk \
+    --image=ghcr.io/ardanlabs/kronk:latest-cuda \
+    --region=us-central1 --port=11435 \
+    --cpu=8 --memory=32Gi \
+    --gpu=1 --gpu-type=nvidia-l4 --no-cpu-throttling \
+    --timeout=3600 --concurrency=4 \
+    --min-instances=1 --max-instances=1
+```
+
+Cloud Run requires `--max-instances` to be set when a GPU is attached.
 
 ### 2.5 Installing Libraries
 

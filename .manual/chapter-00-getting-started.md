@@ -68,6 +68,12 @@ download a small model to try (e.g. `Qwopus3.5-4B-Coder.Q8_0`), then open
 **Chat** and ask it something. That's it — Kronk is running locally, at zero
 per-token cost, and nothing you type leaves your machine.
 
+> **Heads up:** the Docker commands above publish port `11435` on every
+> network interface with no authentication and downloads enabled — fine on
+> your own machine, but if the host is reachable by anyone else (a cloud VM,
+> a shared network), turn on auth and lock down the port first. See
+> [Going to Production](#going-to-production) below.
+
 ## Which One Should I Use?
 
 The quick start above already picked for you, but here's the difference in
