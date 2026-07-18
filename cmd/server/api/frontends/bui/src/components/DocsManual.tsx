@@ -66,49 +66,6 @@ export default function DocsManual() {
 
       <div className="doc-layout">
         <div className="doc-content manual-content">
-          <h1 id="getting-started">Getting Started</h1>
-          <p>Kronk is your personal engine for running open source models locally. Find your hardware below, copy the one command, and run it. Then open http://localhost:11435 in your browser to download a model and start chatting.</p>
-          <h2 id="quick-start-—-copy-paste-run">Quick Start — Copy, Paste, Run</h2>
-          <p><strong>🍎 On a Mac (MacBook, Mac mini, Mac Studio, iMac)</strong></p>
-          <p>Installs Kronk as a normal app and uses your Mac's GPU automatically. Paste this into the Terminal app:</p>
-          <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk && brew trust ardanlabs/kronk && brew install kronk
-KRONK_DOWNLOAD_ENABLED=true kronk server start`}</code></pre>
-          <p><strong>🟩 If you have an NVIDIA graphics card (Linux or Windows)</strong></p>
-          <p>Runs in Docker with GPU acceleration. Needs Docker + the <a href="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html">NVIDIA Container Toolkit</a>:</p>
-          <pre className="code-block"><code className="language-shell">{`docker run -d --name kronk --restart unless-stopped --gpus all \\
-  -e KRONK_DOWNLOAD_ENABLED=true \\
-  -p 11435:11435 -v kronk-data:/kronk \\
-  ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>
-          <p><strong>🖥️ If you have an AMD graphics card (Linux)</strong></p>
-          <p>Runs in Docker using ROCm. Needs Docker and access to <code>/dev/kfd</code> and <code>/dev/dri</code>:</p>
-          <pre className="code-block"><code className="language-shell">{`docker run -d --name kronk --restart unless-stopped \\
-  --device=/dev/kfd --device=/dev/dri --group-add video --group-add render \\
-  --security-opt seccomp=unconfined \\
-  -e KRONK_DOWNLOAD_ENABLED=true \\
-  -p 11435:11435 -v kronk-data:/kronk \\
-  ghcr.io/ardanlabs/kronk:latest-rocm`}</code></pre>
-          <p><strong>🤷 Not sure, or none of the above</strong></p>
-          <p>This runs on any computer with Docker, using just the CPU. It works everywhere, but don't expect great performance — larger models will be slow:</p>
-          <pre className="code-block"><code className="language-shell">{`docker run -d --name kronk --restart unless-stopped \\
-  -e KRONK_DOWNLOAD_ENABLED=true \\
-  -p 11435:11435 -v kronk-data:/kronk \\
-  ghcr.io/ardanlabs/kronk:latest`}</code></pre>
-          <p><strong>Now open http://localhost:11435</strong> in your browser. Go to <strong>Catalog</strong>, download a small model to try (e.g. <code>Qwopus3.5-4B-Coder.Q8_0</code>), then open <strong>Chat</strong> and ask it something. That's it — Kronk is running locally, at zero per-token cost, and nothing you type leaves your machine.</p>
-          <blockquote><strong>Heads up:</strong> the Docker commands above publish port <code>11435</code> on every</blockquote>
-          <blockquote>network interface with no authentication and downloads enabled — fine on</blockquote>
-          <blockquote>your own machine, but if the host is reachable by anyone else (a cloud VM,</blockquote>
-          <blockquote>a shared network), turn on auth and lock down the port first. See</blockquote>
-          <blockquote><a href="#going-to-production">Going to Production</a> below.</blockquote>
-          <h2 id="which-one-should-i-use?">Which One Should I Use?</h2>
-          <p>The quick start above already picked for you, but here's the difference in plain terms:</p>
-          <ul>
-            <li><strong>Standalone app</strong> (the Mac command) — Kronk installed like any normal program. Best for your own laptop or desktop. Full details in <a href="chapter-02-installation.md#23-installing-the-cli">2.3 Installing the CLI</a>.</li>
-            <li><strong>Docker container</strong> (the graphics-card and CPU commands) — Kronk runs from a ready-made image, nothing to install but Docker itself. Best for a server or remote machine that should keep running on its own. Full details in <a href="chapter-02-installation.md#24-docker--oci-container">2.4 Docker / OCI Container</a>.</li>
-          </ul>
-          <h2 id="going-to-production">Going to Production</h2>
-          <p>Before you expose Kronk beyond your own machine, turn on authentication: enable it, retrieve the admin token, and mint scoped user tokens. See <a href="chapter-12-security-authentication.md">Chapter 12: Security & Authentication</a>. For unattended remote hosts, <a href="chapter-02-installation.md#24-docker--oci-container">Chapter 2.4: Docker / OCI Container</a> covers running headless with auto-restart, updates, and uninstalling.</p>
-          <hr />
-          <p><em>Next: &lt;a href="chapter-01-introduction.md"&gt;Chapter 1: Introduction&lt;/a&gt;</em></p>
           <h2 id="chapter-1-introduction">Chapter 1: Introduction</h2>
           <h3 id="11-what-is-kronk">1.1 What is Kronk</h3>
           <p>Kronk is a Go SDK and Model Server for running local inference with open-source models. It's built on top of two best-in-class C++ inference engines (llama.cpp and whisper.cpp).</p>
@@ -257,6 +214,47 @@ for resp := range ch {
 # Server-side per-model tuning lives in ~/.kronk/model_config.yaml.
 kronk server start
 curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","messages":[...]}'`}</code></pre>
+          <h3 id="15-getting-started">1.5 Getting Started</h3>
+          <p>Kronk is your personal engine for running open source models locally. Find your hardware below, copy the one command, and run it. Then open http://localhost:11435 in your browser to download a model and start chatting.</p>
+          <h4 id="151-quick-start-—-copy-paste-run">1.5.1 Quick Start — Copy, Paste, Run</h4>
+          <p><strong>🍎 On a Mac (MacBook, Mac mini, Mac Studio, iMac)</strong></p>
+          <p>Installs Kronk as a normal app and uses your Mac's GPU automatically. Paste this into the Terminal app:</p>
+          <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk && brew trust ardanlabs/kronk && brew install kronk
+KRONK_DOWNLOAD_ENABLED=true kronk server start`}</code></pre>
+          <p><strong>🟩 If you have an NVIDIA graphics card (Linux or Windows)</strong></p>
+          <p>Runs in Docker with GPU acceleration. Needs Docker + the <a href="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html">NVIDIA Container Toolkit</a>:</p>
+          <pre className="code-block"><code className="language-shell">{`docker run -d --name kronk --restart unless-stopped --gpus all \\
+  -e KRONK_DOWNLOAD_ENABLED=true \\
+  -p 11435:11435 -v kronk-data:/kronk \\
+  ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>
+          <p><strong>🖥️ If you have an AMD graphics card (Linux)</strong></p>
+          <p>Runs in Docker using ROCm. Needs Docker and access to <code>/dev/kfd</code> and <code>/dev/dri</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`docker run -d --name kronk --restart unless-stopped \\
+  --device=/dev/kfd --device=/dev/dri --group-add video --group-add render \\
+  --security-opt seccomp=unconfined \\
+  -e KRONK_DOWNLOAD_ENABLED=true \\
+  -p 11435:11435 -v kronk-data:/kronk \\
+  ghcr.io/ardanlabs/kronk:latest-rocm`}</code></pre>
+          <p><strong>🤷 Not sure, or none of the above</strong></p>
+          <p>This runs on any computer with Docker, using just the CPU. It works everywhere, but don't expect great performance — larger models will be slow:</p>
+          <pre className="code-block"><code className="language-shell">{`docker run -d --name kronk --restart unless-stopped \\
+  -e KRONK_DOWNLOAD_ENABLED=true \\
+  -p 11435:11435 -v kronk-data:/kronk \\
+  ghcr.io/ardanlabs/kronk:latest`}</code></pre>
+          <p><strong>Now open http://localhost:11435</strong> in your browser. Go to <strong>Catalog</strong>, download a small model to try (e.g. <code>Qwopus3.5-4B-Coder.Q8_0</code>), then open <strong>Chat</strong> and ask it something. That's it — Kronk is running locally, at zero per-token cost, and nothing you type leaves your machine.</p>
+          <blockquote><strong>Heads up:</strong> the Docker commands above publish port <code>11435</code> on every</blockquote>
+          <blockquote>network interface with no authentication and downloads enabled — fine on</blockquote>
+          <blockquote>your own machine, but if the host is reachable by anyone else (a cloud VM,</blockquote>
+          <blockquote>a shared network), turn on auth and lock down the port first. See</blockquote>
+          <blockquote><a href="#153-going-to-production">Going to Production</a> below.</blockquote>
+          <h4 id="152-which-one-should-i-use?">1.5.2 Which One Should I Use?</h4>
+          <p>The quick start above already picked for you, but here's the difference in plain terms:</p>
+          <ul>
+            <li><strong>Standalone app</strong> (the Mac command) — Kronk installed like any normal program. Best for your own laptop or desktop. Full details in <a href="chapter-02-installation.md#23-installing-the-cli">2.3 Installing the CLI</a>.</li>
+            <li><strong>Docker container</strong> (the graphics-card and CPU commands) — Kronk runs from a ready-made image, nothing to install but Docker itself. Best for a server or remote machine that should keep running on its own. Full details in <a href="chapter-02-installation.md#24-docker--oci-container">2.4 Docker / OCI Container</a>.</li>
+          </ul>
+          <h4 id="153-going-to-production">1.5.3 Going to Production</h4>
+          <p>Before you expose Kronk beyond your own machine, turn on authentication: enable it, retrieve the admin token, and mint scoped user tokens. See <a href="chapter-12-security-authentication.md">Chapter 12: Security & Authentication</a>. For unattended remote hosts, <a href="chapter-02-installation.md#24-docker--oci-container">Chapter 2.4: Docker / OCI Container</a> covers running headless with auto-restart, updates, and uninstalling.</p>
           <hr />
           <h2 id="chapter-2-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
           <h3 id="21-quick-start-10-minutes">2.1 Quick Start (10 Minutes)</h3>
@@ -9709,21 +9707,13 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
         <nav className="doc-sidebar">
           <div className="doc-sidebar-content">
             <div className="doc-index-section">
-              <a href="#quick-start-—-copy-paste-run" className={`doc-index-header ${activeSection === 'quick-start-—-copy-paste-run' ? 'active' : ''}`}>Quick Start — Copy, Paste, Run</a>
-            </div>
-            <div className="doc-index-section">
-              <a href="#which-one-should-i-use?" className={`doc-index-header ${activeSection === 'which-one-should-i-use?' ? 'active' : ''}`}>Which One Should I Use?</a>
-            </div>
-            <div className="doc-index-section">
-              <a href="#going-to-production" className={`doc-index-header ${activeSection === 'going-to-production' ? 'active' : ''}`}>Going to Production</a>
-            </div>
-            <div className="doc-index-section">
               <a href="#chapter-1-introduction" className={`doc-index-header ${activeSection === 'chapter-1-introduction' ? 'active' : ''}`}>Chapter 1: Introduction</a>
               <ul>
                 <li><a href="#11-what-is-kronk" className={activeSection === '11-what-is-kronk' ? 'active' : ''}>1.1 What is Kronk</a></li>
                 <li><a href="#12-key-features" className={activeSection === '12-key-features' ? 'active' : ''}>1.2 Key Features</a></li>
                 <li><a href="#13-supported-platforms-and-hardware" className={activeSection === '13-supported-platforms-and-hardware' ? 'active' : ''}>1.3 Supported Platforms and Hardware</a></li>
                 <li><a href="#14-architecture-overview" className={activeSection === '14-architecture-overview' ? 'active' : ''}>1.4 Architecture Overview</a></li>
+                <li><a href="#15-getting-started" className={activeSection === '15-getting-started' ? 'active' : ''}>1.5 Getting Started</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
