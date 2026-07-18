@@ -4,7 +4,7 @@ name: Cache cleanup
 # so the repo never bumps into GitHub Actions' 10 GB GHA-cache quota
 # or accumulates dead OCI manifests on GHCR / Docker Hub.
 #
-# Five scopes get cleaned (one job each, all run in parallel):
+# Eight scopes get cleaned (one job each, all run in parallel):
 #
 #   1. prune-gha-cache — GHA cache (actions/cache + buildx `type=gha`
 #      exports). Anything older than CUTOFF_DAYS is deleted via
@@ -35,6 +35,24 @@ name: Cache cleanup
 #      set before deleting. Docker Hub auto-collects untagged
 #      manifests after 30 days so we don't replicate this for DH.
 #
+#   6. prune-snapshot-tags-ghcr-main — immutable per-commit snapshot
+#      tags (`main-<sha>-<variant>`) on `ghcr.io/ardanlabs/kronk-main`
+#      older than CUTOFF_DAYS. The floating `main-latest-<variant>`
+#      pointers are NEVER pruned. Deleting a snapshot's index manifest
+#      here leaves its per-arch children + cosign signatures behind;
+#      jobs 7 and 8 reap those on subsequent runs.
+#
+#   7. prune-untagged-ghcr-main — same untagged-manifest sweep as job 5
+#      but for `ghcr.io/ardanlabs/kronk-main`. Reclaims the per-arch
+#      children orphaned by job 6, plus any by-digest pushes from a
+#      main build whose `merge_main` never ran (e.g. a failed gate, so
+#      no tags were ever applied).
+#
+#   8. prune-orphan-signatures-ghcr-main — same orphan-cosign sweep as
+#      job 3 but for `ghcr.io/ardanlabs/kronk-main`. Reaps the
+#      `sha256-<hex>.{sig,att,sbom}` versions left behind when job 6
+#      removes a snapshot the signature targeted.
+#
 # NEVER prunes:
 #   - Release tags (`v*-*`, `latest*`) on either registry — those are
 #     product artifacts. Removing them would break users pinning to a
@@ -42,6 +60,10 @@ name: Cache cleanup
 #     release tags; if you ever want one, do it in a separate workflow
 #     and require explicit dry-run for at least two cycles before
 #     turning it live.
+#   - The floating `main-latest-<variant>` snapshot pointers on
+#     `ghcr.io/ardanlabs/kronk-main` — always the newest trunk build,
+#     so consumers pinning to `main-latest-*` never break. Only the
+#     immutable `main-<sha>-<variant>` snapshots age out (job 6).
 #   - GitHub Actions workflow artifacts uploaded by docker.yml — those
 #     already have `retention-days: 1`, so GitHub auto-deletes them
 #     within 24 hours. No code here for them.
@@ -78,6 +100,11 @@ env:
   # and on Docker Hub ($ORG/$RELEASE_PACKAGE). Kept in sync with
   # docker.yml's GHCR_IMAGE / DH_IMAGE.
   RELEASE_PACKAGE: kronk
+  # Trunk-snapshot image package on GHCR (ghcr.io/$ORG/$MAIN_PACKAGE),
+  # written only by docker.yml's `merge_main` job on push→main. GHCR
+  # only — this repo has no Docker Hub counterpart. Kept in sync with
+  # docker.yml's GHCR_MAIN_IMAGE.
+  MAIN_PACKAGE: kronk-main
   # Sibling repo on Docker Hub that holds cosign signatures (see
   # docker.yml's COSIGN_REPOSITORY redirect). Not a thing on GHCR
   # (signatures co-located there).
@@ -558,3 +585,249 @@ jobs:
           done < <(echo "${stale}" | jq -r '.[] | [.id, .name, .updated_at] | @tsv')
 
           echo "Done. deleted=${deleted} kept(protected-children)=${kept}"
+
+  # ---------------------------------------------------------------------------
+  # prune-snapshot-tags-ghcr-main
+  #
+  # Age out immutable trunk snapshots on ghcr.io/$ORG/kronk-main. Every
+  # push→main publishes, per variant, two tags on that repo:
+  #   - main-<sha>-<variant>   immutable per-commit (accumulates forever)
+  #   - main-latest-<variant>  floating pointer to the newest build
+  #
+  # We delete `main-<sha>-<variant>` index manifests older than the
+  # cutoff and NEVER touch `main-latest-<variant>` (a version can carry
+  # both a snapshot tag and main-latest right after a build — if ANY tag
+  # is main-latest we keep the whole version). Removing the snapshot's
+  # index leaves its per-arch children + cosign sigs orphaned;
+  # prune-untagged-ghcr-main and prune-orphan-signatures-ghcr-main
+  # collect those on later runs.
+  # ---------------------------------------------------------------------------
+  prune-snapshot-tags-ghcr-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete main-<sha> snapshot tags older than the cutoff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          CUTOFF_DAYS: ${{ github.event.inputs.cutoff_days || '15' }}
+        run: |
+          set -euo pipefail
+
+          cutoff_epoch=$(date -u -d "${CUTOFF_DAYS} days ago" +%s)
+          echo "Pruning ${MAIN_PACKAGE} snapshot tags updated before $(date -u -d "@${cutoff_epoch}" --iso-8601=seconds) (>${CUTOFF_DAYS}d old)"
+          echo "Dry run: ${DRY_RUN}"
+
+          # Same paginate-first, delete-after pattern as the other GHCR
+          # jobs (see prune-registry-cache for the rationale). 404 on the
+          # first-ever run (package not created yet) → nothing to prune.
+          if ! all="$(gh api --paginate \
+            "/orgs/${ORG}/packages/container/${MAIN_PACKAGE}/versions?per_page=100" \
+            2>/dev/null | jq -s 'add // []')"; then
+            echo "Package versions API returned an error — assuming nothing to prune."
+            exit 0
+          fi
+
+          # Snapshot version = has >=1 tag, EVERY tag is a snapshot tag
+          # (main-<7+ hex>-<variant>), NONE is a main-latest pointer, and
+          # it's older than the cutoff. The all/none tag checks make a
+          # version that still carries main-latest untouchable.
+          stale="$(echo "${all}" | jq -c --argjson cutoff "${cutoff_epoch}" '
+            [ .[] | select(
+                ((.metadata.container.tags // []) | length) > 0
+                and ((.metadata.container.tags // [])
+                     | map(test("^main-latest-")) | any | not)
+                and ((.metadata.container.tags // [])
+                     | map(test("^main-[0-9a-f]{7,}-.+$")) | all)
+                and (.updated_at | fromdateiso8601) < $cutoff
+              ) ]
+          ')"
+
+          deleted=0
+          kept="$(echo "${all}" | jq --argjson stale "${stale}" 'length - ($stale | length)')"
+          while IFS=$'\t' read -r vid updated tags; do
+            [[ -z "${vid}" ]] && continue
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete version=${vid} updated=${updated} tags=[${tags}]"
+            else
+              echo "Deleting version=${vid} updated=${updated} tags=[${tags}]"
+              gh api \
+                --method DELETE \
+                "/orgs/${ORG}/packages/container/${MAIN_PACKAGE}/versions/${vid}" \
+                || echo "  (skipped — already gone or last version of package)"
+            fi
+            deleted=$((deleted + 1))
+          done < <(echo "${stale}" | jq -r '.[] | [
+            .id,
+            .updated_at,
+            ((.metadata.container.tags // []) | join(","))
+          ] | @tsv')
+
+          echo "Done. deleted=${deleted} kept(latest-or-within-window)=${kept}"
+
+  # ---------------------------------------------------------------------------
+  # prune-untagged-ghcr-main
+  #
+  # The kronk-main counterpart to prune-untagged-ghcr (see that job for
+  # the full algorithm + rationale). Deletes untagged manifest versions
+  # on ghcr.io/$ORG/kronk-main that are neither tagged nor referenced as
+  # a child by any tagged index. Covers two sources of orphans:
+  #   - per-arch children of snapshots removed by prune-snapshot-tags;
+  #   - by-digest pushes from a main build whose merge_main never ran
+  #     (failed gate → no tags applied → the digest is never referenced).
+  # ---------------------------------------------------------------------------
+  prune-untagged-ghcr-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete unreferenced untagged manifests from GHCR kronk-main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          CUTOFF_DAYS: ${{ github.event.inputs.cutoff_days || '15' }}
+        run: |
+          set -euo pipefail
+
+          cutoff_epoch=$(date -u -d "${CUTOFF_DAYS} days ago" +%s)
+          echo "Scanning ghcr.io/${ORG}/${MAIN_PACKAGE} for unreferenced untagged versions"
+          echo "Cutoff: $(date -u -d "@${cutoff_epoch}" --iso-8601=seconds) (>${CUTOFF_DAYS}d old)"
+          echo "Dry run: ${DRY_RUN}"
+
+          if ! all="$(gh api --paginate \
+            "/orgs/${ORG}/packages/container/${MAIN_PACKAGE}/versions?per_page=100" \
+            2>/dev/null | jq -s 'add // []')"; then
+            echo "Package versions API returned an error — assuming nothing to prune."
+            exit 0
+          fi
+
+          ghcr_token="$(curl -sS -u "${GITHUB_ACTOR}:${GH_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${ORG}/${MAIN_PACKAGE}:pull" \
+            | jq -r .token)"
+          if [[ -z "${ghcr_token}" || "${ghcr_token}" == "null" ]]; then
+            echo "::error::Failed to obtain a GHCR pull token"
+            exit 1
+          fi
+
+          tagged_digests="$(echo "${all}" | jq -r '
+            [ .[] | select(((.metadata.container.tags // []) | length) > 0) | .name ]
+            | unique[]
+          ')"
+
+          protected_file="$(mktemp)"
+          accept='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+          while IFS= read -r digest; do
+            [[ -z "${digest}" ]] && continue
+            manifest="$(curl -sSL \
+              -H "Authorization: Bearer ${ghcr_token}" \
+              -H "Accept: ${accept}" \
+              "https://ghcr.io/v2/${ORG}/${MAIN_PACKAGE}/manifests/${digest}" \
+              2>/dev/null || echo '{}')"
+            echo "${manifest}" | jq -r '.manifests[]?.digest // empty' >>"${protected_file}"
+          done <<<"${tagged_digests}"
+
+          sort -u "${protected_file}" -o "${protected_file}"
+          protected_count="$(wc -l <"${protected_file}" | tr -d ' ')"
+          echo "Protected child manifests (referenced by tagged indexes): ${protected_count}"
+
+          stale="$(echo "${all}" | jq -c --argjson cutoff "${cutoff_epoch}" '
+            [ .[] | select(
+                ((.metadata.container.tags // []) | length) == 0
+                and (.updated_at | fromdateiso8601) < $cutoff
+              ) ]
+          ')"
+
+          deleted=0
+          kept=0
+          while IFS=$'\t' read -r vid name updated; do
+            [[ -z "${vid}" ]] && continue
+            if grep -qxF "${name}" "${protected_file}"; then
+              kept=$((kept + 1))
+              continue
+            fi
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete version=${vid} digest=${name} updated=${updated}"
+            else
+              echo "Deleting version=${vid} digest=${name} updated=${updated}"
+              gh api \
+                --method DELETE \
+                "/orgs/${ORG}/packages/container/${MAIN_PACKAGE}/versions/${vid}" \
+                || echo "  (skipped — already gone or last version of package)"
+            fi
+            deleted=$((deleted + 1))
+          done < <(echo "${stale}" | jq -r '.[] | [.id, .name, .updated_at] | @tsv')
+
+          echo "Done. deleted=${deleted} kept(protected-children)=${kept}"
+
+  # ---------------------------------------------------------------------------
+  # prune-orphan-signatures-ghcr-main
+  #
+  # The kronk-main counterpart to prune-orphan-signatures-ghcr (see that
+  # job for the full algorithm). Deletes `sha256-<hex>.{sig,att,sbom}`
+  # cosign versions on ghcr.io/$ORG/kronk-main whose target digest is no
+  # longer published — e.g. the signature of a snapshot that
+  # prune-snapshot-tags-ghcr-main aged out.
+  # ---------------------------------------------------------------------------
+  prune-orphan-signatures-ghcr-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete orphan cosign signatures from GHCR kronk-main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          echo "Scanning ghcr.io/${ORG}/${MAIN_PACKAGE} for orphan cosign signatures"
+          echo "Dry run: ${DRY_RUN}"
+
+          if ! all="$(gh api --paginate \
+            "/orgs/${ORG}/packages/container/${MAIN_PACKAGE}/versions?per_page=100" \
+            2>/dev/null | jq -s 'add // []')"; then
+            echo "Package versions API returned an error — assuming nothing to prune."
+            exit 0
+          fi
+
+          live_digests="$(echo "${all}" | jq -r '
+            [ .[] | select(
+                (.metadata.container.tags // [])
+                | map(test("^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$"))
+                | any(. == false)
+              ) | .name ]
+            | unique[]
+          ')"
+
+          candidates="$(echo "${all}" | jq -r '
+            .[]
+            | select(
+                ((.metadata.container.tags // []) | length) > 0
+                and ((.metadata.container.tags // [])
+                     | map(test("^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$"))
+                     | all)
+              )
+            | [
+                .id,
+                ((.metadata.container.tags[0] | capture("^sha256-(?<h>[a-f0-9]{64})\\.")).h),
+                ((.metadata.container.tags // []) | join(","))
+              ] | @tsv
+          ')"
+
+          deleted=0
+          kept=0
+          while IFS=$'\t' read -r vid target_hex tags; do
+            [[ -z "${vid}" ]] && continue
+            if grep -qxF "sha256:${target_hex}" <<<"${live_digests}"; then
+              kept=$((kept + 1))
+              continue
+            fi
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete version=${vid} target=sha256:${target_hex} tags=[${tags}]"
+            else
+              echo "Deleting version=${vid} target=sha256:${target_hex} tags=[${tags}]"
+              gh api \
+                --method DELETE \
+                "/orgs/${ORG}/packages/container/${MAIN_PACKAGE}/versions/${vid}" \
+                || echo "  (skipped — already gone)"
+            fi
+            deleted=$((deleted + 1))
+          done <<<"${candidates}"
+
+          echo "Done. deleted=${deleted} kept(target-still-live)=${kept}"

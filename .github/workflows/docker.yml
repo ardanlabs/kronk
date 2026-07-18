@@ -34,9 +34,13 @@ name: Docker
 # │                    │ (each added variant builds on all its arches, and   │
 # │                    │ promotes cpu back to its full arch list too).       │
 # ├────────────────────┼─────────────────────────────────────────────────────┤
-# │ push → main        │ Build all variants (no push). Smoke-tests cpu/amd64 │
-# │                    │ and refreshes the registry-backed BuildKit cache so │
-# │                    │ PR builds stay warm. No images are published.       │
+# │ push → main        │ Build all variants, smoke-test cpu/amd64, then      │
+# │                    │ push & cosign-sign to the trunk-snapshot repo       │
+# │                    │   ghcr.io/ardanlabs/kronk-main:main-<sha>-<v>       │
+# │                    │   ghcr.io/ardanlabs/kronk-main:main-latest-<v>      │
+# │                    │ GHCR only (no Docker Hub). Also refreshes the       │
+# │                    │ registry-backed BuildKit cache so PR builds stay    │
+# │                    │ warm.                                               │
 # ├────────────────────┼─────────────────────────────────────────────────────┤
 # │ push → tag v*      │ Build & push all variants as                        │
 # │                    │   <registry>/ardanlabs/kronk:<tag>-<v>              │
@@ -86,6 +90,12 @@ concurrency:
 
 env:
   GHCR_IMAGE: ghcr.io/ardanlabs/kronk
+  # Separate GHCR repo for main-branch builds. Kept apart from the
+  # release repo (GHCR_IMAGE) so trunk snapshots never mix into the
+  # release tag list, and so a floating `main-latest` can move freely
+  # without touching `latest`. Only GHCR is targeted for main builds —
+  # Docker Hub carries release tags only.
+  GHCR_MAIN_IMAGE: ghcr.io/ardanlabs/kronk-main
   DH_IMAGE: ardanlabs/kronk
   # Registry-backed BuildKit cache. Stored as OCI artifacts alongside
   # the runtime images in GHCR — no 10 GB per-repo GHA quota to fight,
@@ -114,6 +124,7 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
       push: ${{ steps.plan.outputs.push }}
       is_tag: ${{ steps.plan.outputs.is_tag }}
+      is_main: ${{ steps.plan.outputs.is_main }}
       version: ${{ steps.plan.outputs.version }}
       variants: ${{ steps.plan.outputs.variants }}
     steps:
@@ -152,22 +163,29 @@ jobs:
           # -------------------------------------------------------------------
           # Version + push policy
           #
-          # Only tag pushes (v*) publish images. Main pushes build every
-          # variant for CI validation (and smoke-test cpu/amd64) but do
-          # NOT push to any registry — there's no main-* tag on GHCR or
-          # Docker Hub. Main builds DO refresh the registry-backed
-          # BuildKit cache; see the "Build (no push)" step's cache-to.
+          # Two events publish images, to two different GHCR repos:
+          #
+          #   * tag push (v*) → release repo (GHCR_IMAGE + Docker Hub),
+          #     cosign-signed. IS_TAG=true.
+          #   * push → main  → trunk-snapshot repo (GHCR_MAIN_IMAGE only),
+          #     cosign-signed, tagged main-<sha> + main-latest.
+          #     IS_MAIN=true.
+          #
+          # Both refresh the registry-backed BuildKit cache. PRs and
+          # workflow_dispatch build only (PUSH=false) and never publish.
           # -------------------------------------------------------------------
           IS_TAG=false
+          IS_MAIN=false
           if [[ "$EVENT" == "push" && "$REF" == refs/tags/v* ]]; then
             VERSION="${REF#refs/tags/}"     # e.g. v1.26.4
             PUSH=true
             IS_TAG=true
           elif [[ "$EVENT" == "push" && "$REF" == "refs/heads/main" ]]; then
             VERSION="main-${SHA:0:7}"       # e.g. main-abc1234 (stamped
-                                            # into the binary; not used
-                                            # as an image tag)
-            PUSH=false
+                                            # into the binary AND used as
+                                            # the image tag prefix)
+            PUSH=true
+            IS_MAIN=true
           else
             # pull_request or workflow_dispatch — build only, no push.
             VERSION="pr-${SHA:0:7}"
@@ -384,12 +402,13 @@ jobs:
             echo "matrix=$MATRIX"
             echo "push=$PUSH"
             echo "is_tag=$IS_TAG"
+            echo "is_main=$IS_MAIN"
             echo "version=$VERSION"
             echo "variants=$VARIANTS_JSON"
           } >> "$GITHUB_OUTPUT"
 
           echo "::group::Plan"
-          echo "event=$EVENT  ref=$REF  push=$PUSH  is_tag=$IS_TAG  version=$VERSION"
+          echo "event=$EVENT  ref=$REF  push=$PUSH  is_tag=$IS_TAG  is_main=$IS_MAIN  version=$VERSION"
           echo "chosen variants: ${CHOSEN[*]}"
           echo "$MATRIX" | jq .
           echo "::endgroup::"
@@ -447,17 +466,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Docker Hub carries release tags only — main pushes go to GHCR
+      # (GHCR_MAIN_IMAGE) exclusively, so skip the DH login on main.
       - name: Log in to Docker Hub
-        if: needs.plan.outputs.push == 'true'
+        if: needs.plan.outputs.is_tag == 'true'
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Non-push path: build, no registry push. Used by PRs,
-      # workflow_dispatch, AND main pushes (main no longer publishes
-      # images — see the plan job). Validates the Dockerfile compiles
-      # and produces a runnable image for this arch.
+      # Non-push validation build. Runs on every path that needs the
+      # smoke-test / Trivy gate BEFORE anything is published:
+      #   - PR / workflow_dispatch: every matrix entry (Dockerfile
+      #     compile check for this arch).
+      #   - push → main: ONLY the cpu/amd64 entry, purely to produce
+      #     the loaded `kronk-smoke:latest` image the gate needs. Every
+      #     other main entry is built directly by the push step below;
+      #     the cache makes cpu/amd64's second build there nearly free.
+      # Tag pushes skip this entirely — they build the same layers from
+      # cache in the push step, and the gate already ran on main.
       #
       # The cpu/amd64 build additionally loads the resulting image
       # into the local Docker daemon so the smoke-test step below can
@@ -466,16 +493,16 @@ jobs:
       # cpu is the most-shared Dockerfile path and amd64 is the only
       # arch whose local daemon matches the runner's host arch.
       #
-      # Registry-backed BuildKit cache:
-      #   - PR / workflow_dispatch: READ only, never WRITE — a PR
-      #     could otherwise overwrite the trunk-seeded layers.
-      #   - push → main: READ and WRITE. Refreshing the cache here
-      #     keeps PR builds fast even though main no longer pushes
-      #     runtime images.
-      #   - push → tag v*: cache WRITE happens in the build_ghcr
-      #     step below (which is the push-path step).
+      # This step never WRITES the registry-backed BuildKit cache: on
+      # publish paths (main / tag) the push steps below own the
+      # cache-to; on PR / workflow_dispatch we read only so a PR can't
+      # overwrite the trunk-seeded layers.
       - name: Build (no push)
-        if: needs.plan.outputs.push != 'true'
+        if: >-
+          needs.plan.outputs.push != 'true'
+          || (needs.plan.outputs.is_main == 'true'
+              && matrix.variant == 'cpu'
+              && matrix.arch == 'amd64')
         id: build_nopush
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
         with:
@@ -491,10 +518,6 @@ jobs:
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
-          # cache-to: only on main pushes (see the comment block
-          # above). PRs and workflow_dispatch evaluate to '', which
-          # build-push-action treats as "no cache export".
-          cache-to: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && format('type=registry,ref={0}:{1}-{2},mode=max,image-manifest=true,compression=zstd', env.BUILDCACHE_IMAGE, matrix.variant, matrix.arch) || '' }}
 
       # Smoke test: prove the cpu/amd64 image actually starts and the
       # entrypoint resolves the kronk binary. Catches breakage like a
@@ -512,7 +535,7 @@ jobs:
       # is still covered structurally by the build succeeding.
       - name: Smoke test cpu/amd64 image
         if: >-
-          needs.plan.outputs.push != 'true'
+          needs.plan.outputs.is_tag != 'true'
           && matrix.variant == 'cpu'
           && matrix.arch == 'amd64'
         run: |
@@ -531,7 +554,7 @@ jobs:
       # every build with no remediation available, so they're ignored.
       - name: Scan cpu/amd64 image for vulnerabilities (Trivy)
         if: >-
-          needs.plan.outputs.push != 'true'
+          needs.plan.outputs.is_tag != 'true'
           && matrix.variant == 'cpu'
           && matrix.arch == 'amd64'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
@@ -571,7 +594,7 @@ jobs:
       # instead of unknown artifacts. Only the GHCR step writes the
       # cache; the DH step reads from it.
       - name: Build & push by digest to GHCR
-        if: needs.plan.outputs.push == 'true'
+        if: needs.plan.outputs.is_tag == 'true'
         id: build_ghcr
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
         with:
@@ -604,7 +627,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }},mode=max,image-manifest=true,compression=zstd
 
       - name: Build & push by digest to Docker Hub
-        if: needs.plan.outputs.push == 'true'
+        if: needs.plan.outputs.is_tag == 'true'
         id: build_dh
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
         with:
@@ -628,8 +651,37 @@ jobs:
           # just rewrite the same content.
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
 
+      # Main-push path (refs/heads/main): build & push by digest to the
+      # trunk-snapshot repo GHCR_MAIN_IMAGE only (no Docker Hub). The
+      # merge_main job applies the main-<sha> / main-latest tags once
+      # both arches are available. Tag pushes never reach this step;
+      # main pushes never reach the release GHCR/DH steps above.
+      #
+      # This is also the cache WRITE for main builds (mode=max), keeping
+      # PR builds warm — the old main "Build (no push)" cache-to moved
+      # here. Same provenance + SBOM attestations as the release path.
+      - name: Build & push by digest to GHCR (main)
+        if: needs.plan.outputs.is_main == 'true'
+        id: build_ghcr_main
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
+        with:
+          context: .
+          file: zarf/docker/kronk/Dockerfile
+          platforms: ${{ matrix.platform }}
+          target: ${{ matrix.target }}
+          build-args: |
+            LLAMA_PROCESSORS=${{ matrix.processors }}
+            BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
+            KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
+          outputs: type=image,name=${{ env.GHCR_MAIN_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }},mode=max,image-manifest=true,compression=zstd
+
+      # Release-path digest export (tag push): GHCR + Docker Hub.
       - name: Export digests
-        if: needs.plan.outputs.push == 'true'
+        if: needs.plan.outputs.is_tag == 'true'
         run: |
           # One file per registry, named with the bare hex of the digest
           # so the merge job can reconstruct `<image>@sha256:<digest>`
@@ -640,8 +692,16 @@ jobs:
           touch "/tmp/digests/ghcr/${d_ghcr#sha256:}"
           touch "/tmp/digests/dh/${d_dh#sha256:}"
 
+      # Main-path digest export: GHCR_MAIN_IMAGE only.
+      - name: Export digest (main)
+        if: needs.plan.outputs.is_main == 'true'
+        run: |
+          mkdir -p /tmp/digests/ghcr-main
+          d_main='${{ steps.build_ghcr_main.outputs.digest }}'
+          touch "/tmp/digests/ghcr-main/${d_main#sha256:}"
+
       - name: Upload GHCR digest
-        if: needs.plan.outputs.push == 'true'
+        if: needs.plan.outputs.is_tag == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: digests-ghcr-${{ matrix.variant }}-${{ matrix.arch }}
@@ -650,11 +710,20 @@ jobs:
           retention-days: 1
 
       - name: Upload Docker Hub digest
-        if: needs.plan.outputs.push == 'true'
+        if: needs.plan.outputs.is_tag == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: digests-dh-${{ matrix.variant }}-${{ matrix.arch }}
           path: /tmp/digests/dh/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload GHCR main digest
+        if: needs.plan.outputs.is_main == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: digests-ghcr-main-${{ matrix.variant }}-${{ matrix.arch }}
+          path: /tmp/digests/ghcr-main/*
           if-no-files-found: error
           retention-days: 1
 
@@ -671,7 +740,7 @@ jobs:
   # ---------------------------------------------------------------------------
   merge:
     needs: [plan, build]
-    if: needs.plan.outputs.push == 'true'
+    if: needs.plan.outputs.is_tag == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -1023,3 +1092,218 @@ jobs:
         run: |
           docker buildx imagetools inspect "${GHCR_IMAGE}:${VERSION}-${VARIANT}" || true
           docker buildx imagetools inspect "${DH_IMAGE}:${VERSION}-${VARIANT}" || true
+
+  # ---------------------------------------------------------------------------
+  # merge_main
+  #
+  # The main-branch counterpart to `merge`. Runs only on push → main
+  # (`if: is_main == 'true'`). Assembles the multi-arch manifest for each
+  # variant from the per-arch digests uploaded by `build`, applies the
+  # trunk-snapshot tags to GHCR_MAIN_IMAGE only (no Docker Hub), and
+  # cosign-signs the manifest-list digest — full supply-chain parity with
+  # the release path, one registry.
+  #
+  #   push → main → <GHCR_MAIN_IMAGE>:main-<sha>-<variant>   (immutable)
+  #               + <GHCR_MAIN_IMAGE>:main-latest-<variant>  (floating)
+  #
+  # No floating `latest` / `main` alias — main-latest-<variant> is the
+  # only moving pointer, so a consumer must always name a variant.
+  #
+  # ONE-TIME SETUP: the first run creates the GHCR_MAIN_IMAGE package,
+  # which GHCR makes private and unlinked to the repo by default. A
+  # maintainer must set its visibility to public on the package settings
+  # page before external consumers can pull/verify main-latest-*.
+  # Retention of the immutable main-<sha> snapshots is handled by
+  # cache-cleanup.yml (see its prune-*-ghcr-main jobs).
+  # ---------------------------------------------------------------------------
+  merge_main:
+    needs: [plan, build]
+    if: needs.plan.outputs.is_main == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.plan.outputs.variants) }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # cosign keyless signing exchanges this OIDC token for a Fulcio cert
+    steps:
+      # `merge-multiple: true` flattens every matching artifact's file
+      # straight into `path/`. Required for the single-arch rocm variant
+      # (one matching artifact) — see the long note on the release
+      # `merge` job's download step for the download-artifact@v8
+      # single-vs-multi asymmetry this avoids.
+      - name: Download GHCR main digests for this variant
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          path: /tmp/digests/ghcr-main
+          pattern: digests-ghcr-main-${{ matrix.variant }}-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Per-variant title + description for the OCI index annotations
+      # GHCR renders on the package page. Kept in sync with the release
+      # `merge` job's variant_meta step; the main images carry the same
+      # blurbs with a trunk-snapshot note appended.
+      - name: Compute per-variant annotation overrides
+        id: variant_meta
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          case "$VARIANT" in
+            cpu)
+              DESC="Kronk (main-branch snapshot) — Local LLM inference and audio transcription server (OpenAI-compatible API). CPU-only build, runs anywhere (no GPU required)."
+              ;;
+            cuda)
+              DESC="Kronk (main-branch snapshot) — Local LLM inference and audio transcription server (OpenAI-compatible API). NVIDIA CUDA build (requires --gpus all and nvidia-container-toolkit)."
+              ;;
+            vulkan)
+              DESC="Kronk (main-branch snapshot) — Local LLM inference and audio transcription server (OpenAI-compatible API). Vulkan build for AMD / Intel / NVIDIA GPUs (vendor-neutral)."
+              ;;
+            rocm)
+              DESC="Kronk (main-branch snapshot) — Local LLM inference and audio transcription server (OpenAI-compatible API). AMD ROCm build (linux/amd64 only)."
+              ;;
+            all)
+              DESC="Kronk (main-branch snapshot) — Local LLM inference and audio transcription server (OpenAI-compatible API). All backends bundled (cpu, cuda, vulkan, rocm); selects the right one at runtime based on host hardware."
+              ;;
+            *)
+              echo "::error::No description configured for variant '$VARIANT' — add a case branch in .github/workflows/docker.yml" >&2
+              exit 1
+              ;;
+          esac
+          {
+            echo "title=kronk-main ($VARIANT)"
+            echo "description=$DESC"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Generate OCI annotations
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
+        with:
+          images: ${{ env.GHCR_MAIN_IMAGE }}
+          annotations: |
+            org.opencontainers.image.title=${{ steps.variant_meta.outputs.title }}
+            org.opencontainers.image.description=${{ steps.variant_meta.outputs.description }}
+            org.opencontainers.image.vendor=Ardan Labs
+
+      - name: Create and push manifests
+        id: merge_manifests
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
+          ANNOTATIONS_INPUT: ${{ steps.meta.outputs.annotations }}
+        run: |
+          set -euo pipefail
+
+          # metadata-action emits `index:<key>=<value>` lines (because of
+          # DOCKER_METADATA_ANNOTATIONS_LEVELS=index) — turn each into a
+          # repeated --annotation flag for `imagetools create`.
+          ANNOTATION_FLAGS=()
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            ANNOTATION_FLAGS+=(--annotation "$line")
+          done <<<"$ANNOTATIONS_INPUT"
+
+          echo "::group::Annotations"
+          printf '  %s\n' "${ANNOTATION_FLAGS[@]}"
+          echo "::endgroup::"
+
+          # Per-arch digest refs for this variant (flattened layout from
+          # merge-multiple: true above): /tmp/digests/ghcr-main/<hexdigest>
+          collect_refs() {
+            local dir="$1" image="$2"
+            local f d
+            for f in "$dir"/*; do
+              [[ -f "$f" ]] || continue
+              d=$(basename "$f")
+              printf '%s@sha256:%s\n' "$image" "$d"
+            done
+          }
+
+          mapfile -t REFS < <(collect_refs /tmp/digests/ghcr-main "$GHCR_MAIN_IMAGE")
+
+          if (( ${#REFS[@]} == 0 )); then
+            echo "::error::No digests found for variant=${VARIANT}"
+            ls -laR /tmp/digests || true
+            exit 1
+          fi
+
+          # Trunk-snapshot tag set: immutable per-commit + floating.
+          #   main-<sha>-<variant>  (VERSION is already "main-<sha>")
+          #   main-latest-<variant>
+          TAGS=("${VERSION}-${VARIANT}" "main-latest-${VARIANT}")
+
+          echo "::group::Manifest plan"
+          echo "variant=${VARIANT}"
+          echo "tags=${TAGS[*]}"
+          printf '  ref: %s\n' "${REFS[@]}"
+          echo "::endgroup::"
+
+          # Capture the manifest-list digest from the FIRST imagetools
+          # create via --metadata-file. Both tags point at the same
+          # manifest-list blob, so one capture is enough to sign once.
+          META=$(mktemp)
+          first=1
+          for TAG in "${TAGS[@]}"; do
+            EXTRA=()
+            if (( first )); then
+              EXTRA=(--metadata-file "$META")
+              first=0
+            fi
+            echo ">>> ${GHCR_MAIN_IMAGE}:${TAG}"
+            docker buildx imagetools create \
+              "${ANNOTATION_FLAGS[@]}" \
+              "${EXTRA[@]}" \
+              -t "${GHCR_MAIN_IMAGE}:${TAG}" "${REFS[@]}"
+          done
+
+          DIGEST=$(jq -r '."containerimage.descriptor".digest // empty' "$META")
+          [[ "$DIGEST" == sha256:* ]] || {
+            echo "::error::Failed to capture GHCR main digest from $META"
+            cat "$META" || true
+            exit 1
+          }
+
+          echo "sign_ref=${GHCR_MAIN_IMAGE}@${DIGEST}" >>"$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac  # v3
+
+      # Keyless-sign the manifest-list digest (and each per-arch child
+      # via --recursive). GHCR signatures are co-located with the image,
+      # the default cosign layout. Consumers verify by tag:
+      #
+      #   cosign verify ghcr.io/ardanlabs/kronk-main:main-latest-cpu \
+      #     --certificate-identity-regexp \
+      #       'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: Sign published manifest (cosign keyless)
+        env:
+          SIGN_REF: ${{ steps.merge_manifests.outputs.sign_ref }}
+          COSIGN_YES: "true"
+        run: |
+          set -euo pipefail
+          echo ">>> cosign sign $SIGN_REF"
+          cosign sign --recursive "$SIGN_REF"
+
+      - name: Inspect published images
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          docker buildx imagetools inspect "${GHCR_MAIN_IMAGE}:${VERSION}-${VARIANT}" || true
+          docker buildx imagetools inspect "${GHCR_MAIN_IMAGE}:main-latest-${VARIANT}" || true
