@@ -135,6 +135,39 @@ kronk devices
 kronk libs --local
 ```
 
+**Problem: NVIDIA GPU present (`nvidia-smi` works) but Kronk runs on CPU**
+
+On Linux the `cuda` bundle's `libggml-cuda.so` is dynamically linked
+against the CUDA **runtime** libraries `libcudart.so.13` and
+`libcublas.so.13`. These are **not** part of the bundle and are **not**
+provided by the NVIDIA driver/container runtime — `nvidia-smi` only proves
+the *driver* is present. If they are missing, `libggml-cuda.so` fails to
+`dlopen` and llama.cpp silently loads only the CPU backend, so
+`llama-bench --list-devices` shows `(none)` even though the GPU is
+visible.
+
+**Diagnose** — look for `not found` lines:
+
+```shell
+ldd ~/.kronk/libraries/linux/amd64/cuda/libggml-cuda.so | grep -iE 'cudart|cublas'
+# In a container:
+# ldd /kronk/libraries/linux/amd64/cuda/libggml-cuda.so | grep -iE 'cudart|cublas'
+```
+
+**Fix (native Linux)** — install the CUDA runtime packages (no full
+toolkit needed) on the host:
+
+```shell
+# Ubuntu 24.04, after adding NVIDIA's repo via the cuda-keyring package:
+sudo apt-get install -y cuda-cudart-13-0 libcublas-13-0
+```
+
+**Fix (Docker)** — use a `:latest-cuda` image built after this fix (the
+CUDA runtime is baked in), and run with `--runtime=nvidia --gpus all`.
+
+This is a **Linux-only** gap. On Windows the CUDA runtime redistributable
+is fetched automatically alongside the bundle.
+
 **Problem: "unable to load library" pointing at the wrong folder**
 
 Library bundles now live at `<base>/libraries/<os>/<arch>/<processor>/`,

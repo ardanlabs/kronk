@@ -570,6 +570,30 @@ RUN kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local --base-path /kronk`}</code>
           <blockquote>are reproducible. The model server takes the opposite default</blockquote>
           <blockquote>(<code>--allow-upgrade=true</code>) so a long-running server picks up upstream</blockquote>
           <blockquote>fixes; see Chapter 8 §8.3 for that flag.</blockquote>
+          <blockquote><strong>NVIDIA/CUDA on Linux — host runtime prerequisite.</strong> The <code>cuda</code> bundle</blockquote>
+          <blockquote>ships <code>libggml-cuda.so</code>, which is dynamically linked against the CUDA</blockquote>
+          <blockquote><strong>runtime</strong> libraries <code>libcudart.so.13</code> and <code>libcublas.so.13</code>. On Linux</blockquote>
+          <blockquote>these are <strong>not</strong> included in the bundle and are <strong>not</strong> provided by the</blockquote>
+          <blockquote>NVIDIA driver — <code>nvidia-smi</code> working only proves the driver is present.</blockquote>
+          <blockquote>They must already exist on the host, or the CUDA backend fails to load</blockquote>
+          <blockquote>and Kronk silently falls back to CPU. Most machines with the CUDA</blockquote>
+          <blockquote>toolkit installed already have them; if not, install the runtime</blockquote>
+          <blockquote>packages (no full toolkit needed):</blockquote>
+          <p>&gt;</p>
+          <blockquote>```shell</blockquote>
+          <blockquote># Ubuntu 24.04 — add NVIDIA's repo via the cuda-keyring package, then:</blockquote>
+          <blockquote>sudo apt-get install -y cuda-cudart-13-0 libcublas-13-0</blockquote>
+          <blockquote>```</blockquote>
+          <p>&gt;</p>
+          <blockquote>Verify the backend can resolve its dependencies (no <code>not found</code> lines):</blockquote>
+          <p>&gt;</p>
+          <blockquote>```shell</blockquote>
+          <blockquote>ldd ~/.kronk/libraries/linux/amd64/cuda/libggml-cuda.so | grep -iE 'cudart|cublas'</blockquote>
+          <blockquote>```</blockquote>
+          <p>&gt;</p>
+          <blockquote>This affects <strong>Linux only</strong>. On Windows the CUDA runtime redistributable</blockquote>
+          <blockquote>is downloaded automatically alongside the bundle, and the <code>:latest-cuda</code></blockquote>
+          <blockquote>Docker image bakes these libraries in.</blockquote>
           <p><strong>Pinning a Specific Library Version</strong></p>
           <p>Sometimes there are breaking changes to llama.cpp that require a matching version of yzma and Kronk. To ensure stability, you can install a specific library version:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --version=b8864 --local`}</code></pre>
@@ -6344,6 +6368,17 @@ kronk devices
 
 # Re-install matching libraries
 kronk libs --local`}</code></pre>
+          <p><strong>Problem: NVIDIA GPU present (&lt;code&gt;nvidia-smi&lt;/code&gt; works) but Kronk runs on CPU</strong></p>
+          <p>On Linux the <code>cuda</code> bundle's <code>libggml-cuda.so</code> is dynamically linked against the CUDA <strong>runtime</strong> libraries <code>libcudart.so.13</code> and <code>libcublas.so.13</code>. These are <strong>not</strong> part of the bundle and are <strong>not</strong> provided by the NVIDIA driver/container runtime — <code>nvidia-smi</code> only proves the <em>driver</em> is present. If they are missing, <code>libggml-cuda.so</code> fails to <code>dlopen</code> and llama.cpp silently loads only the CPU backend, so <code>llama-bench --list-devices</code> shows <code>(none)</code> even though the GPU is visible.</p>
+          <p><strong>Diagnose</strong> — look for <code>not found</code> lines:</p>
+          <pre className="code-block"><code className="language-shell">{`ldd ~/.kronk/libraries/linux/amd64/cuda/libggml-cuda.so | grep -iE 'cudart|cublas'
+# In a container:
+# ldd /kronk/libraries/linux/amd64/cuda/libggml-cuda.so | grep -iE 'cudart|cublas'`}</code></pre>
+          <p><strong>Fix (native Linux)</strong> — install the CUDA runtime packages (no full toolkit needed) on the host:</p>
+          <pre className="code-block"><code className="language-shell">{`# Ubuntu 24.04, after adding NVIDIA's repo via the cuda-keyring package:
+sudo apt-get install -y cuda-cudart-13-0 libcublas-13-0`}</code></pre>
+          <p><strong>Fix (Docker)</strong> — use a <code>:latest-cuda</code> image built after this fix (the CUDA runtime is baked in), and run with <code>--runtime=nvidia --gpus all</code>.</p>
+          <p>This is a <strong>Linux-only</strong> gap. On Windows the CUDA runtime redistributable is fetched automatically alongside the bundle.</p>
           <p><strong>Problem: "unable to load library" pointing at the wrong folder</strong></p>
           <p>Library bundles now live at <code>&lt;base&gt;/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>, one folder per <code>(arch, os, processor)</code> triple. If <code>dlopen</code> reports a path like <code>&lt;base&gt;/libraries/libllama.dylib</code> (libraries directly under the root), you have an installation from before the per-triple layout. The SDK migrates the legacy layout into the correct triple folder automatically on first call to <code>libs.New()</code>/<code>libs.Path()</code>. If migration fails, just re-run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
