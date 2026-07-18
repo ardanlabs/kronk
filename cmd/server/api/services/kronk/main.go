@@ -77,6 +77,21 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Configuration
 
+	// +-------------------+--------------------+--------------------------+---------------------------------------------------------------+
+	// | WEB_ADMIN_ENABLED | AUTH_ADMIN_ENABLED | AUTH_LOCAL_ENABLED       | Effective mode                                                |
+	// +-------------------+--------------------+--------------------------+---------------------------------------------------------------+
+	// | false             | false              | false                    | Headless; inference is open                                   |
+	// | true              | false              | false                    | BUI without login; inference is open                          |
+	// | true              | true               | false                    | BUI login; management protected; inference is open            |
+	// | true              | implied true       | true                     | BUI login; management and inference are protected             |
+	// | false             | implied true       | true                     | Headless; management and inference are protected              |
+	// +-------------------+--------------------+--------------------------+---------------------------------------------------------------+
+
+	// Notes:
+	// - WEB_ADMIN_ENABLED  controls whether the BUI is served under /admin/.
+	// - AUTH_ADMIN_ENABLED protects BUI login and management, playground, tool, and security endpoints.
+	// - AUTH_LOCAL_ENABLED protects inference endpoints and automatically enables admin authentication.
+
 	cfg := struct {
 		conf.Version
 		Web struct {

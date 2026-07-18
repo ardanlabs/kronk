@@ -747,6 +747,33 @@ Kronk separates inference authentication from administration so a server can
 offer model inference without exposing model downloads, configuration,
 playground sessions, or security management.
 
+The three switches have separate responsibilities:
+
+- `KRONK_WEB_ADMIN_ENABLED` serves the BUI under `/admin/`.
+- `KRONK_AUTH_ADMIN_ENABLED` requires BUI login and an admin JWT for management,
+  playground, tool, and security endpoints.
+- `KRONK_AUTH_LOCAL_ENABLED` requires a JWT for inference endpoints and
+  automatically enables admin authentication.
+
+The effective modes are:
+
+```text
++-------------------+--------------------+--------------------+---------------------------------------------------------------+
+| WEB_ADMIN_ENABLED | AUTH_ADMIN_ENABLED | AUTH_LOCAL_ENABLED | Effective mode                                                |
++-------------------+--------------------+--------------------+---------------------------------------------------------------+
+| false             | false              | false              | Headless; inference is open                                   |
+| true              | false              | false              | BUI without login; inference is open                          |
+| false             | true               | false              | Headless; management protected; inference is open             |
+| true              | true               | false              | BUI login; management protected; inference is open            |
+| true              | implied true       | true               | BUI login; management and inference are protected             |
+| false             | implied true       | true               | Headless; management and inference are protected              |
++-------------------+--------------------+--------------------+---------------------------------------------------------------+
+```
+
+In the last two rows, `AUTH_ADMIN_ENABLED` is effectively true even if it was
+configured as false because enabling local inference authentication also
+enables admin authentication.
+
 Choose one mode:
 
 | Mode | Inference APIs and `GET /v1/models` | Management and playground APIs | BUI |

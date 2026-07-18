@@ -681,6 +681,24 @@ API: http://localhost:11435`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
           <h3 id="28-securing-the-server-and-bui">2.8 Securing the Server and BUI</h3>
           <p>Kronk separates inference authentication from administration so a server can offer model inference without exposing model downloads, configuration, playground sessions, or security management.</p>
+          <p>The three switches have separate responsibilities:</p>
+          <ul>
+            <li><code>KRONK_WEB_ADMIN_ENABLED</code> serves the BUI under <code>/admin/</code>.</li>
+            <li><code>KRONK_AUTH_ADMIN_ENABLED</code> requires BUI login and an admin JWT for management, playground, tool, and security endpoints.</li>
+            <li><code>KRONK_AUTH_LOCAL_ENABLED</code> requires a JWT for inference endpoints and automatically enables admin authentication.</li>
+          </ul>
+          <p>The effective modes are:</p>
+          <pre className="code-block"><code className="language-text">{`+-------------------+--------------------+--------------------+---------------------------------------------------------------+
+| WEB_ADMIN_ENABLED | AUTH_ADMIN_ENABLED | AUTH_LOCAL_ENABLED | Effective mode                                                |
++-------------------+--------------------+--------------------+---------------------------------------------------------------+
+| false             | false              | false              | Headless; inference is open                                   |
+| true              | false              | false              | BUI without login; inference is open                          |
+| false             | true               | false              | Headless; management protected; inference is open             |
+| true              | true               | false              | BUI login; management protected; inference is open            |
+| true              | implied true       | true               | BUI login; management and inference are protected             |
+| false             | implied true       | true               | Headless; management and inference are protected              |
++-------------------+--------------------+--------------------+---------------------------------------------------------------+`}</code></pre>
+          <p>In the last two rows, <code>AUTH_ADMIN_ENABLED</code> is effectively true even if it was configured as false because enabling local inference authentication also enables admin authentication.</p>
           <p>Choose one mode:</p>
           <table className="flags-table">
             <thead>
