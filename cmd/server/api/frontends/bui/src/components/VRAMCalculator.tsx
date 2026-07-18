@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
 import { api } from '../services/api';
-import { useToken } from '../contexts/TokenContext';
 import type { VRAMCalculatorResponse, HFRepoFile } from '../types';
 import { VRAMCalculatorPanel, useVRAMState } from './vram';
 import { EXPERTS_ALL_ON_GPU } from './vram/constants';
@@ -34,8 +33,6 @@ function buildModelURL(provider: string, family: string, filename: string): stri
 }
 
 export default function VRAMCalculator() {
-  const { token } = useToken();
-
   const [provider, setProvider] = useState('');
   const [family, setFamily] = useState('');
   const [model, setModel] = useState('');
@@ -54,7 +51,6 @@ export default function VRAMCalculator() {
     serverResponse: result,
     enableHardwareOverrides: true,
     modelUrl: calculatedModelLabel || undefined,
-    authToken: token || undefined,
   });
 
   const canResolve = provider.trim().length > 0 && family.trim().length > 0;
@@ -146,7 +142,6 @@ export default function VRAMCalculator() {
           slots: controlsProps.slots,
           expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
         },
-        token || undefined,
       );
       setResult(response);
       setCalculatedModelLabel(localID);
@@ -165,7 +160,7 @@ export default function VRAMCalculator() {
     }
 
     await calculateOne(`${m}.gguf`);
-  }, [isResolving, loading, provider, family, model, controlsProps, token]);
+  }, [isResolving, loading, provider, family, model, controlsProps]);
 
   // calculateOne resolves a specific filename to the HF URL the
   // calculateVRAM endpoint understands and stores the result. Split
@@ -208,7 +203,6 @@ export default function VRAMCalculator() {
           slots: controlsProps.slots,
           expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
         },
-        token || undefined,
       );
       setResult(response);
       setCalculatedModelLabel(label);
@@ -219,7 +213,7 @@ export default function VRAMCalculator() {
     } finally {
       setLoading(false);
     }
-  }, [provider, family, controlsProps, token, result]);
+  }, [provider, family, controlsProps, result]);
 
   const handlePickFile = (filename: string) => {
     setModel(modelIDFromFilename(filename));

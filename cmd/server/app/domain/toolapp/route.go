@@ -16,13 +16,14 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log         *logger.Logger
-	AuthClient  *authclient.Client
-	Pool        *pool.Pool
-	Libs        *libs.Libs
-	Models      *models.Models
-	BuckyLibs   *buckylibs.Libs
-	BuckyModels *buckymodels.Models
+	Log              *logger.Logger
+	AuthClient       *authclient.Client
+	Pool             *pool.Pool
+	Libs             *libs.Libs
+	Models           *models.Models
+	BuckyLibs        *buckylibs.Libs
+	BuckyModels      *buckymodels.Models
+	AdminAuthEnabled bool
 }
 
 // Routes adds specific routes for this group.
@@ -31,15 +32,19 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg)
 
-	auth := mid.Authenticate(cfg.AuthClient, false, "")
+	inferenceAuth := mid.Authenticate(cfg.AuthClient, false, "")
 	authAdmin := mid.Authenticate(cfg.AuthClient, true, "")
+	auth := inferenceAuth
+	if cfg.AdminAuthEnabled {
+		auth = authAdmin
+	}
 
 	// -------------------------------------------------------------------------
 	// OpenAI-compatible model discovery. Apps like OpenWebUI call
 	// GET /v1/models to enumerate available models. The native,
 	// Kronk-specific listing lives at GET /v1/kronk/models.
 
-	app.HandlerFunc(http.MethodGet, version, "/models", api.listModelsOpenAI, auth)
+	app.HandlerFunc(http.MethodGet, version, "/models", api.listModelsOpenAI, inferenceAuth)
 
 	// -------------------------------------------------------------------------
 	// Kronk (llama.cpp) backend — libs, models, catalog.
@@ -103,8 +108,8 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodPost, version, "/efficiency/run", api.runEfficiency, auth)
 
 	// Auth is handled by the auth service for these calls.
-	app.HandlerFunc(http.MethodPost, version, "/security/token/create", api.createToken)
-	app.HandlerFunc(http.MethodGet, version, "/security/keys", api.listKeys)
-	app.HandlerFunc(http.MethodPost, version, "/security/keys/add", api.addKey)
-	app.HandlerFunc(http.MethodPost, version, "/security/keys/remove/{keyid}", api.removeKey)
+	app.HandlerFunc(http.MethodPost, version, "/security/token/create", api.createToken, auth)
+	app.HandlerFunc(http.MethodGet, version, "/security/keys", api.listKeys, auth)
+	app.HandlerFunc(http.MethodPost, version, "/security/keys/add", api.addKey, auth)
+	app.HandlerFunc(http.MethodPost, version, "/security/keys/remove/{keyid}", api.removeKey, auth)
 }

@@ -13,11 +13,12 @@ import (
 
 // Config holds the dependencies for the auth handlers.
 type Config struct {
-	Log      *logger.Logger
-	Security *security.Security
-	Listener net.Listener
-	Tracer   trace.Tracer
-	Enabled  bool
+	Log              *logger.Logger
+	Security         *security.Security
+	Listener         net.Listener
+	Tracer           trace.Tracer
+	Enabled          bool
+	AdminAuthEnabled bool
 }
 
 // Start constructs the registers the auth app to the grpc server.

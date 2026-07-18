@@ -92,12 +92,29 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	if cmd.Flags().Changed("auth-enabled") {
 		v, _ := cmd.Flags().GetBool("auth-enabled")
 		envVars = append(envVars, "KRONK_AUTH_LOCAL_ENABLED="+strconv.FormatBool(v))
+		if v {
+			envVars = append(envVars, "KRONK_AUTH_ADMIN_ENABLED=true")
+		}
+	}
+	if cmd.Flags().Changed("admin-auth-enabled") {
+		v, _ := cmd.Flags().GetBool("admin-auth-enabled")
+		general, _ := cmd.Flags().GetBool("auth-enabled")
+		if !general {
+			envVars = append(envVars, "KRONK_AUTH_ADMIN_ENABLED="+strconv.FormatBool(v))
+		}
+	}
+	if cmd.Flags().Changed("web-admin-enabled") {
+		v, _ := cmd.Flags().GetBool("web-admin-enabled")
+		envVars = append(envVars, "KRONK_WEB_ADMIN_ENABLED="+strconv.FormatBool(v))
 	}
 	if v, _ := cmd.Flags().GetString("auth-host"); v != "" {
 		envVars = append(envVars, "KRONK_AUTH_HOST="+v)
 	}
 	if v, _ := cmd.Flags().GetString("auth-issuer"); v != "" {
 		envVars = append(envVars, "KRONK_AUTH_LOCAL_ISSUER="+v)
+	}
+	if v, _ := cmd.Flags().GetString("web-admin-password-sha256"); v != "" {
+		envVars = append(envVars, "KRONK_WEB_ADMIN_PASSWORD_SHA256="+v)
 	}
 
 	// Tempo/tracing settings

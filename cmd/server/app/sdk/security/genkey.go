@@ -22,7 +22,7 @@ func generatePrivateKey(keysPath string, keyName string) error {
 	keyName = filepath.Join(keysPath, fileName)
 
 	// Create a file for the private key information in PEM form.
-	privateFile, err := os.Create(keyName)
+	privateFile, err := os.OpenFile(keyName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("creating private file: %w", err)
 	}

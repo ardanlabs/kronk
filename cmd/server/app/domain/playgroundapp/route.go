@@ -13,10 +13,11 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log        *logger.Logger
-	AuthClient *authclient.Client
-	Pool       *pool.Pool
-	Models     *models.Models
+	Log              *logger.Logger
+	AuthClient       *authclient.Client
+	Pool             *pool.Pool
+	Models           *models.Models
+	AdminAuthEnabled bool
 }
 
 // Routes adds specific routes for this group.
@@ -26,6 +27,9 @@ func Routes(app *web.App, cfg Config) {
 	api := newApp(cfg)
 
 	auth := mid.Authenticate(cfg.AuthClient, false, "playground")
+	if cfg.AdminAuthEnabled {
+		auth = mid.Authenticate(cfg.AuthClient, true, "")
+	}
 
 	app.HandlerFunc(http.MethodPost, version, "/playground/sessions", api.createSession, auth)
 	app.HandlerFunc(http.MethodDelete, version, "/playground/sessions/{id}", api.deleteSession, auth)

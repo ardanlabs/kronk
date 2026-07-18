@@ -52,11 +52,11 @@ QUICK START
   # Download a model (e.g., Qwen3-8B)
   $ kronk model pull Qwen3-8B-Q8_0 --local
 
-  # Start the server (runs on http://localhost:11435)
-  $ kronk server start
+  # Start the server with the Browser UI
+  $ kronk server start --web-admin-enabled
 
   # Open the Browser UI in your browser
-  $ open http://localhost:11435
+  $ open http://localhost:11435/admin/
 
 FEATURES
   - Text generation, Vision, Audio, Embeddings, and Reranking

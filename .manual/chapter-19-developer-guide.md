@@ -267,18 +267,18 @@ Uses `MenuCategory[]` with properties:
 
 **State Management:**
 
-| Context            | Purpose                                               |
-| ------------------ | ----------------------------------------------------- |
-| `TokenContext`     | Stores API token in localStorage (key: `kronk_token`) |
-| `ModelListContext` | Caches model list data with invalidation support      |
+| Context            | Purpose                                          |
+| ------------------ | ------------------------------------------------ |
+| `AuthContext`      | Tracks the HttpOnly-cookie admin session         |
+| `ModelListContext` | Caches model list data with invalidation support |
 
-Access via hooks: `useToken()`, `useModelList()`
+Access via hooks: `useAuth()`, `useModelList()`
 
 **API Service (`services/api.ts`):**
 
 - `ApiService` class with methods for all endpoints
 - Streaming support for pull operations (models and libraries)
-- Auth-required endpoints accept token parameter
+- Same-origin requests use the browser admin session cookie
 
 The catalog is local and personal — there is no `catalog pull` stream.
 

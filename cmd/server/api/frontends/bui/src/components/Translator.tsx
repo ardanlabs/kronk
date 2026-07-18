@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../services/api';
-import { useToken } from '../contexts/TokenContext';
 import { FieldLabel, labelWithTip } from './ParamTooltips';
 import type {
   BuckyModelEntry,
@@ -123,8 +122,6 @@ interface RunResult {
 }
 
 export default function Translator() {
-  const { token } = useToken();
-
   const [models, setModels] = useState<BuckyModelEntry[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -330,7 +327,6 @@ export default function Translator() {
         language: language || undefined,
         translate: translate || undefined,
         prompt: prompt || undefined,
-        token: token || undefined,
       });
       const wallMs = performance.now() - t0;
       setResult({
@@ -349,7 +345,7 @@ export default function Translator() {
     } finally {
       setSubmitting(false);
     }
-  }, [input, selectedModel, language, translate, prompt, token, multilingual]);
+  }, [input, selectedModel, language, translate, prompt, multilingual]);
 
   const handleClear = useCallback(() => {
     replaceInput(null);

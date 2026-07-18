@@ -16,8 +16,6 @@ export interface UseVRAMStateOptions {
   modelUrl?: string;
   /** Local model id to use for incremental recomputes (model details tab). */
   modelId?: string;
-  /** Bearer token for authenticated catalog/standalone calculator calls. */
-  authToken?: string;
 }
 
 /** Debounce window for slider/input changes that trigger a server recompute. */
@@ -141,7 +139,6 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     enableHardwareOverrides = false,
     modelUrl,
     modelId,
-    authToken,
   } = opts;
 
   // ── Control state ────────────────────────────────────────────────────────
@@ -300,7 +297,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
         tensor_split: parsedTensorSplit.length > 0 ? parsedTensorSplit : undefined,
       };
       try {
-        const resp = await api.calculateVRAM(req, authToken);
+        const resp = await api.calculateVRAM(req);
         if (latestRequestIdRef.current === id) {
           setLiveResponse(resp);
           setRecomputing(false);
@@ -318,7 +315,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     // by the seed effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    modelUrl, modelId, authToken,
+    modelUrl, modelId,
     contextWindow, bytesPerElement, slots,
     gpuLayers, expertLayersOnGPU, kvCacheOnCPU,
     effectiveDeviceCount, parsedTensorSplit,
@@ -362,7 +359,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       system_ram_bytes: effectiveSystemRAMBytes,
     };
 
-    api.calculateVRAM(req, authToken)
+    api.calculateVRAM(req)
       .then(resp => {
         if (latestRequestIdRef.current !== id) return;
         setLiveResponse(resp);
@@ -373,7 +370,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       })
       .catch(() => { /* ignore */ });
   }, [
-    modelUrl, modelId, authToken,
+    modelUrl, modelId,
     liveResponse, serverResponse,
     effectiveDeviceCount, effectiveGpuTotalBytes, effectiveGpuDevices, effectiveSystemRAMBytes,
     contextWindow, bytesPerElement, slots, kvCacheOnCPU, parsedTensorSplit,

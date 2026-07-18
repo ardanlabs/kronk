@@ -41,18 +41,21 @@ import type {
   EfficiencyResponse,
 } from '../types';
 
+export const SESSION_EXPIRED_EVENT = 'kronk:session-expired';
+
 class ApiService {
   private baseUrl = '/v1';
 
   private headers(headers?: HeadersInit): Headers {
-    const requestHeaders = new Headers(headers);
-    if (!requestHeaders.has('Authorization')) {
-      const token = localStorage.getItem('kronk_token');
-      if (token) {
-        requestHeaders.set('Authorization', `Bearer ${token}`);
-      }
+    return new Headers(headers);
+  }
+
+  private async fetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+    const response = await fetch(input, { credentials: 'same-origin', ...init });
+    if (response.status === 401) {
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }
-    return requestHeaders;
+    return response;
   }
 
   private async parseErrorMessage(response: Response): Promise<string> {
@@ -78,7 +81,7 @@ class ApiService {
       headers.set('Content-Type', 'application/json');
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await this.fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
       headers,
     });
@@ -99,7 +102,7 @@ class ApiService {
   }
 
   async rebuildModelIndex(): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/kronk/models/index`, {
+    const response = await this.fetch(`${this.baseUrl}/kronk/models/index`, {
       method: 'POST',
       headers: this.headers(),
     });
@@ -140,7 +143,7 @@ class ApiService {
   }
 
   async pullModelAsync(modelUrl: string): Promise<AsyncPullResponse> {
-    const response = await fetch(`${this.baseUrl}/kronk/models/pull`, {
+    const response = await this.fetch(`${this.baseUrl}/kronk/models/pull`, {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ model_url: modelUrl, async: true }),
@@ -161,7 +164,7 @@ class ApiService {
   ): () => void {
     const controller = new AbortController();
 
-    fetch(`${this.baseUrl}/kronk/models/pull/${encodeURIComponent(sessionId)}`, {
+    this.fetch(`${this.baseUrl}/kronk/models/pull/${encodeURIComponent(sessionId)}`, {
       method: 'GET',
       headers: this.headers(),
       signal: controller.signal,
@@ -243,7 +246,7 @@ class ApiService {
       body.download_server = downloadServer;
     }
 
-    fetch(`${this.baseUrl}/kronk/models/pull`, {
+    this.fetch(`${this.baseUrl}/kronk/models/pull`, {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
@@ -364,7 +367,7 @@ class ApiService {
     const qs = params.toString();
     const url = qs ? `${this.baseUrl}/kronk/libs/pull?${qs}` : `${this.baseUrl}/kronk/libs/pull`;
 
-    fetch(url, {
+    this.fetch(url, {
       method: 'POST',
       headers: this.headers(),
       signal: controller.signal,
@@ -420,38 +423,25 @@ class ApiService {
     return () => controller.abort();
   }
 
-  async listKeys(token: string): Promise<KeysResponse> {
-    return this.request<KeysResponse>('/security/keys', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+  async listKeys(): Promise<KeysResponse> {
+    return this.request<KeysResponse>('/security/keys');
   }
 
-  async createKey(token: string): Promise<void> {
+  async createKey(): Promise<void> {
     await this.request<void>('/security/keys/add', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
     });
   }
 
-  async deleteKey(token: string, keyId: string): Promise<void> {
+  async deleteKey(keyId: string): Promise<void> {
     await this.request(`/security/keys/remove/${encodeURIComponent(keyId)}`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
     });
   }
 
-  async createToken(token: string, request: TokenRequest): Promise<TokenResponse> {
+  async createToken(request: TokenRequest): Promise<TokenResponse> {
     return this.request<TokenResponse>('/security/token/create', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
       body: JSON.stringify(request),
     });
   }
@@ -464,7 +454,7 @@ class ApiService {
   ): () => void {
     const controller = new AbortController();
 
-    fetch(`${this.baseUrl}/chat/completions`, {
+    this.fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ ...request, stream: true }),
@@ -531,14 +521,9 @@ class ApiService {
     });
   }
 
-  async calculateVRAM(request: VRAMRequest, token?: string): Promise<VRAMCalculatorResponse> {
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+  async calculateVRAM(request: VRAMRequest): Promise<VRAMCalculatorResponse> {
     return this.request<VRAMCalculatorResponse>('/kronk/models/vram', {
       method: 'POST',
-      headers,
       body: JSON.stringify(request),
     });
   }
@@ -584,7 +569,7 @@ class ApiService {
   ): () => void {
     const controller = new AbortController();
 
-    fetch(`${this.baseUrl}/playground/chat/completions`, {
+    this.fetch(`${this.baseUrl}/playground/chat/completions`, {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ ...request, stream: true }),
@@ -715,7 +700,7 @@ class ApiService {
     const qs = params.toString();
     const url = qs ? `${this.baseUrl}/bucky/libs/pull?${qs}` : `${this.baseUrl}/bucky/libs/pull`;
 
-    fetch(url, {
+    this.fetch(url, {
       method: 'POST',
       headers: this.headers(),
       signal: controller.signal,
@@ -795,7 +780,7 @@ class ApiService {
   ): () => void {
     const controller = new AbortController();
 
-    fetch(`${this.baseUrl}/bucky/models/pull`, {
+    this.fetch(`${this.baseUrl}/bucky/models/pull`, {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ source }),
@@ -877,7 +862,7 @@ class ApiService {
     const params = new URLSearchParams({ host, arch, os, processor });
     const url = `${this.baseUrl}/download/libs/pull-from-peer?${params.toString()}`;
 
-    fetch(url, {
+    this.fetch(url, {
       method: 'POST',
       headers: this.headers(),
       signal: controller.signal,
@@ -949,7 +934,6 @@ class ApiService {
       language?: string;
       translate?: boolean;
       prompt?: string;
-      token?: string;
     } = {},
   ): Promise<TranscriptionResponse> {
     const form = new FormData();
@@ -960,12 +944,9 @@ class ApiService {
     if (opts.translate) form.append('translate', 'true');
     if (opts.prompt) form.append('prompt', opts.prompt);
 
-    const headers: Record<string, string> = {};
-    if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
-
-    const response = await fetch(`${this.baseUrl}/audio/transcriptions`, {
+    const response = await this.fetch(`${this.baseUrl}/audio/transcriptions`, {
       method: 'POST',
-      headers: this.headers(headers),
+      headers: this.headers(),
       body: form,
     });
 

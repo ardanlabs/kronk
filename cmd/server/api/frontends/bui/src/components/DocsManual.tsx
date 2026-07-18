@@ -270,22 +270,22 @@ brew install kronk`}</code></pre>
           <p>Confirm it's on your <code>PATH</code>:</p>
           <pre className="code-block"><code className="language-shell">{`kronk --help`}</code></pre>
           <p><strong>Step 2 — Start the server</strong></p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --web-admin-enabled`}</code></pre>
           <p>On first run Kronk auto-detects your hardware (Metal, CUDA, Vulkan, or CPU), downloads the matching llama.cpp libraries, and seeds a default <code>~/.kronk/model_config.yaml</code>. When it's ready you'll see:</p>
           <pre className="code-block"><code>{`Kronk Model Server started
 API: http://localhost:11435
-BUI: http://localhost:11435`}</code></pre>
+BUI: http://localhost:11435/admin/`}</code></pre>
           <p>That's the OpenAI-compatible API and the Browser UI, both on port</p>
           <ol>
-            <li>To run it in the background use <code>kronk server start -d</code>; to stop</li>
+            <li>To run the same setup in the background use</li>
           </ol>
-          <p>it, <code>kronk server stop</code>.</p>
+          <p><code>kronk server start --web-admin-enabled -d</code>; to stop it, use <code>kronk server stop</code>.</p>
           <p><strong>Step 3 — Download a coding model</strong></p>
           <p>The recommended starter is <strong>Qwopus3.5-4B-Coder</strong>, a 4-billion-parameter coding model. It's about 5 GB on disk, runs in roughly 14 GB of VRAM with a 72k-token context window, and is already pre-configured in the seeded <code>model_config.yaml</code> — no editing required to use it.</p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local`}</code></pre>
-          <p>The <code>--local</code> flag does the download directly against your filesystem with nicer progress output. The model lands under <code>~/.kronk/models/</code>. (Prefer clicking? Open the BUI at http://localhost:11435, go to <strong>Catalog → List</strong>, find <code>Qwopus3.5-4B-Coder.Q8_0</code>, and hit download.)</p>
+          <p>The <code>--local</code> flag does the download directly against your filesystem with nicer progress output. The model lands under <code>~/.kronk/models/</code>. (Prefer clicking? Open the BUI at http://localhost:11435/admin/, go to <strong>Catalog → List</strong>, find <code>Qwopus3.5-4B-Coder.Q8_0</code>, and hit download.)</p>
           <p><strong>Step 4 — Verify it works</strong></p>
-          <p>Quickest check is the BUI: open http://localhost:11435, click <strong>Apps → Chat</strong>, pick <code>Qwopus3.5-4B-Coder.Q8_0</code>, and ask it something. The first message takes a few seconds while the model loads; after that it's near-instant.</p>
+          <p>Quickest check is the BUI: open http://localhost:11435/admin/, click <strong>Apps → Chat</strong>, pick <code>Qwopus3.5-4B-Coder.Q8_0</code>, and ask it something. The first message takes a few seconds while the model loads; after that it's near-instant.</p>
           <p>Prefer the terminal? Hit the API directly:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -348,11 +348,11 @@ QUICK START
   # Download a model (e.g., Qwen3-8B)
   kronk model pull Qwen3-0.6B-Q8_0 --local
 
-  # Start the server (runs on http://localhost:11435)
-  kronk server start
+  # Start the server with the Browser UI
+  kronk server start --web-admin-enabled
 
   # Open the Browser UI
-  open http://localhost:11435
+  open http://localhost:11435/admin/
 
 FEATURES
   • Text, Vision, Audio, Embeddings, Reranking
@@ -558,9 +558,9 @@ RUN kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local --base-path /kronk`}</code>
           <h3 id="25-installing-libraries">2.5 Installing Libraries</h3>
           <p>Before running inference, you need the llama.cpp libraries for your machine. Kronk auto-detects your hardware and downloads the appropriate binaries.</p>
           <p><strong>Option A: Via the Server</strong></p>
-          <p>Start the server and use the BUI to download libraries:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
-          <p>Open http://localhost:11435 in your browser and navigate to the Libraries page.</p>
+          <p>Start the server with the BUI enabled and use it to download libraries:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --web-admin-enabled`}</code></pre>
+          <p>Open http://localhost:11435/admin/ in your browser and navigate to the Libraries page.</p>
           <p><strong>Option B: Via CLI</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
           <p>This downloads the <strong>well-known default version</strong> of llama.cpp baked into the SDK and installs it under <code>~/.kronk/libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code> using auto-detected settings (for example <code>~/.kronk/libraries/darwin/arm64/metal/</code>). Each <code>(arch, os, processor)</code> triple lives in its own folder so multiple bundles can coexist on the same machine.</p>
@@ -648,14 +648,84 @@ kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda --local`}</
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
           <p>The server starts on <code>http://localhost:11435</code> by default. You'll see output like:</p>
           <pre className="code-block"><code>{`Kronk Model Server started
-API: http://localhost:11435
-BUI: http://localhost:11435`}</code></pre>
+API: http://localhost:11435`}</code></pre>
+          <p>The BUI is disabled by default. Add <code>--web-admin-enabled</code> to mount it at <code>http://localhost:11435/admin/</code>.</p>
           <p><strong>Running in Background</strong></p>
           <p>To run the server as a background process:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start -d`}</code></pre>
           <p><strong>Stopping the Server</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server stop`}</code></pre>
-          <h3 id="28-model-configuration-file">2.8 Model Configuration File</h3>
+          <h3 id="28-securing-the-server-and-bui">2.8 Securing the Server and BUI</h3>
+          <p>Kronk separates inference authentication from administration so a server can offer model inference without exposing model downloads, configuration, playground sessions, or security management.</p>
+          <p>Choose one mode:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Inference APIs and <code>GET /v1/models</code></th>
+                <th>Management and playground APIs</th>
+                <th>BUI</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Open</td>
+                <td>No token</td>
+                <td>No token</td>
+                <td>Optional, no login</td>
+              </tr>
+              <tr>
+                <td>Admin-only</td>
+                <td>No token</td>
+                <td>Admin token</td>
+                <td>Optional; password login</td>
+              </tr>
+              <tr>
+                <td>Fully protected</td>
+                <td>User or admin token</td>
+                <td>Admin token</td>
+                <td>Optional; password login</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The BUI is always optional. Without <code>--web-admin-enabled</code>, nothing is served under <code>/admin/</code>.</p>
+          <p><strong>Open server (trusted networks only)</strong></p>
+          <p>Run headless with every API open:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
+          <p>Or attach the BUI without authentication:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --web-admin-enabled`}</code></pre>
+          <p><strong>Public inference with protected administration</strong></p>
+          <p>First choose a long, randomly generated password and store its SHA-256 digest. The digest is not a slow password hash, so do not use a short or reused human password.</p>
+          <pre className="code-block"><code className="language-shell">{`KRONK_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+export KRONK_WEB_ADMIN_PASSWORD_SHA256="$(printf '%s' "$KRONK_ADMIN_PASSWORD" | shasum -a 256 | awk '{print $1}')"
+
+kronk server start \\
+  --admin-auth-enabled \\
+  --web-admin-enabled \\
+  --web-admin-password-sha256="$KRONK_WEB_ADMIN_PASSWORD_SHA256"`}</code></pre>
+          <p>On Linux, use <code>sha256sum</code> instead of <code>shasum -a 256</code> if <code>shasum</code> is not installed. Open <code>https://your-server/admin/</code> and sign in with the value of <code>KRONK_ADMIN_PASSWORD</code>. The password itself is never placed in server configuration.</p>
+          <p>Inference endpoints remain open in this mode. Every Kronk management, playground, and security-management endpoint requires an admin JWT. <code>GET /v1/models</code> remains an inference endpoint.</p>
+          <p>The CLI reads its JWT from <code>KRONK_TOKEN</code>. The local auth service creates the master admin token on first start:</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_TOKEN="$(cat ~/.kronk/keys/master.jwt)"
+kronk model list`}</code></pre>
+          <p>Treat <code>master.jwt</code> like a root credential. Do not distribute it to inference clients.</p>
+          <p><strong>Fully protected server</strong></p>
+          <p>Use <code>--auth-enabled</code> to require JWTs for inference as well. This flag automatically enables admin authentication:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start \\
+  --auth-enabled \\
+  --web-admin-enabled \\
+  --web-admin-password-sha256="$KRONK_WEB_ADMIN_PASSWORD_SHA256"`}</code></pre>
+          <p>Create scoped user tokens for inference clients rather than giving them the admin token. See <a href="chapter-12-security-authentication.md">Chapter 12</a> for token creation, endpoint grants, rate limits, and key rotation.</p>
+          <p><strong>Internet deployment requirements</strong></p>
+          <ul>
+            <li>Terminate HTTPS at a reverse proxy; Kronk itself serves plain HTTP.</li>
+            <li>Keep <code>/admin/</code> and <code>/v1</code> on the same public origin so the secure BUI session cookie can authenticate API calls.</li>
+            <li>Block <code>/admin/</code> at the proxy or firewall where browser administration should not be reachable.</li>
+            <li>Password-based BUI login currently requires Kronk's local auth service; it is not available with <code>KRONK_AUTH_HOST</code>.</li>
+            <li>Leave <code>KRONK_WEB_ADMIN_ENABLED</code> unset for a headless deployment.</li>
+          </ul>
+          <p>The equivalent environment variables are <code>KRONK_AUTH_LOCAL_ENABLED</code>, <code>KRONK_AUTH_ADMIN_ENABLED</code>, <code>KRONK_WEB_ADMIN_ENABLED</code>, and the masked <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code>.</p>
+          <h3 id="29-model-configuration-file">2.9 Model Configuration File</h3>
           <p>When Kronk starts the server for the first time, it automatically installs a default <code>model_config.yaml</code> file in the <code>~/.kronk/</code> directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.</p>
           <p><strong>How It Works</strong></p>
           <p>The default configuration is embedded inside the Kronk CLI binary. On first server start, if <code>~/.kronk/model_config.yaml</code> does not already exist, Kronk writes the embedded default to that path. Once the file exists, Kronk never overwrites it — your edits are preserved across upgrades.</p>
@@ -771,7 +841,7 @@ kronk server start`}</code></pre>
             <li>Use YAML anchors (<code>&name</code> and <code>&lt;&lt;: *name</code>) to share common settings between variants. The default file includes examples of this pattern.</li>
             <li>The <code>--model-config</code> server flag lets you point to an alternative config file for testing without modifying your main one.</li>
           </ul>
-          <h3 id="29-verifying-the-installation">2.9 Verifying the Installation</h3>
+          <h3 id="210-verifying-the-installation">2.10 Verifying the Installation</h3>
           <p><strong>Test via curl</strong></p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
           <p>You should see a list of available models.</p>
@@ -785,8 +855,8 @@ kronk server start`}</code></pre>
     "max_tokens": 100
   }'`}</code></pre>
           <p><strong>Test via BUI</strong></p>
-          <p>Open <code>http://localhost:11435</code> in your browser and navigate to the <code>Apps/Chat</code> app. Select the model you want to try and chat away.</p>
-          <h3 id="210-nixos-setup">2.10 NixOS Setup</h3>
+          <p>Start Kronk with <code>--web-admin-enabled</code>, open <code>http://localhost:11435/admin/</code>, and navigate to <strong>Apps → Chat</strong>. Select the model you want to try and chat away.</p>
+          <h3 id="211-nixos-setup">2.11 NixOS Setup</h3>
           <p>NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared libraries and binaries cannot be found in standard paths like <code>/usr/lib</code>. Kronk requires llama.cpp shared libraries at runtime, which means on NixOS you need to provide them through Nix rather than using the built-in <code>kronk libs</code> downloader.</p>
           <p>A <code>flake.nix</code> is provided in <code>zarf/nix/</code> with dev shells for development and build packages for producing a standalone <code>kronk</code> binary, each per GPU backend.</p>
           <p><strong>Prerequisites</strong></p>
@@ -4111,6 +4181,8 @@ unsloth/Qwen3-0.6B-Q8_0:
   cache-type-v: q8_0
   incremental-cache: true`}</code></pre>
           <hr />
+          <h3 id="admin-ui-and-authentication-modes">Admin UI and authentication modes</h3>
+          <p>The embedded browser UI is disabled by default. Set <code>KRONK_WEB_ADMIN_ENABLED=true</code> (or <code>--web-admin-enabled</code>) to mount it at <code>/admin/</code>; the server root remains unmounted. With admin authentication off, the UI is intentionally open. With admin authentication on, configure <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code> with the 64-character hexadecimal SHA-256 digest of the UTF-8 password. Browser password login currently requires the local auth service and HTTPS.</p>
           <h2 id="chapter-9-api-endpoints">Chapter 9: API Endpoints</h2>
           <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the available endpoints and their usage.</p>
           <h3 id="91-endpoint-overview">9.1 Endpoint Overview</h3>
@@ -5559,12 +5631,41 @@ response = client.chat.completions.create(
           </ul>
           <hr />
           <p><em>Next: &lt;a href="#chapter-13-browser-ui-bui"&gt;Chapter 13: Browser UI (BUI)&lt;/a&gt;</em></p>
+          <h3 id="authentication-modes">Authentication modes</h3>
+          <p>Kronk separates inference authentication from administration:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th><code>KRONK_AUTH_LOCAL_ENABLED</code></th>
+                <th><code>KRONK_AUTH_ADMIN_ENABLED</code></th>
+                <th>Mode</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>false</td>
+                <td>false</td>
+                <td>Open</td>
+              </tr>
+              <tr>
+                <td>false</td>
+                <td>true</td>
+                <td>Admin-only (inference remains open)</td>
+              </tr>
+              <tr>
+                <td>true</td>
+                <td>true</td>
+                <td>Fully protected</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>General authentication automatically enables admin authentication. The legacy <code>--auth-enabled=true</code> flag therefore enables both; <code>--admin-auth-enabled</code> enables the admin-only mode explicitly. Admin tokens are required for management, playground, and security APIs in admin mode. <code>GET /v1/models</code> retains normal inference-auth semantics.</p>
           <h2 id="chapter-13-browser-ui-bui">Chapter 13: Browser UI (BUI)</h2>
-          <p>Kronk ships with a built-in Browser UI (BUI) served from the same port as the API. It is a thin client over the Web API and exposes the same operations the CLI provides — pulling libraries and models, browsing the catalog, managing tokens, and running interactive experiments against a loaded model. This chapter is a high-level guide to what the BUI offers; it intentionally does not enumerate every tab, filter, or button so that the documentation stays accurate as the UI evolves.</p>
+          <p>Kronk ships with an optional Browser UI (BUI) served from the same port as the API under <code>/admin/</code>. It is a thin client over the Web API and exposes the same operations the CLI provides — pulling libraries and models, browsing the catalog, managing tokens, and running interactive experiments against a loaded model. This chapter is a high-level guide to what the BUI offers; it intentionally does not enumerate every tab, filter, or button so that the documentation stays accurate as the UI evolves.</p>
           <h3 id="131-accessing-the-bui">13.1 Accessing the BUI</h3>
-          <p>The BUI loads automatically when you open the server root in a browser:</p>
-          <pre className="code-block"><code>{`http://localhost:11435`}</code></pre>
-          <p>It is bundled inside the <code>kronk</code> binary and served from the same address configured by <code>KRONK_WEB_API_HOST</code> (default <code>0.0.0.0:11435</code>).</p>
+          <p>Enable the BUI with <code>KRONK_WEB_ADMIN_ENABLED=true</code>, then open:</p>
+          <pre className="code-block"><code>{`http://localhost:11435/admin/`}</code></pre>
+          <p>It is bundled inside the <code>kronk</code> binary and served from the same address configured by <code>KRONK_WEB_API_HOST</code> (default <code>0.0.0.0:11435</code>). The server root does not redirect to the BUI. Leave the setting disabled for a headless deployment.</p>
           <h3 id="132-sidebar-layout">13.2 Sidebar Layout</h3>
           <p>Navigation is grouped into the following top-level sections in the sidebar:</p>
           <ul>
@@ -5596,7 +5697,7 @@ response = client.chat.completions.create(
             <li><strong>Translator</strong> — a speech-to-text workbench backed by Bucky (whisper.cpp). Upload or record audio, pick a whisper model and language (or auto-detect), choose response format, and view the transcript with per-segment timestamps. See <a href="chapter-18-bucky.md#186-bui-usage">Chapter 18 §18.6</a>.</li>
           </ul>
           <h4 id="security">Security</h4>
-          <p>When authentication is enabled (Chapter 12), the Security area lets you list, create, and delete signing keys and create user tokens with chosen durations, endpoint scopes, and rate limits. These pages require an admin token configured under Settings; with auth disabled they remain accessible but are not meaningful.</p>
+          <p>When admin authentication is enabled (Chapter 12), the Security area lets you list, create, and delete signing keys and create user tokens with chosen durations, endpoint scopes, and rate limits. These pages use the authenticated browser admin session. With authentication disabled they remain accessible but are not meaningful.</p>
           <h4 id="docs">Docs</h4>
           <p>The Docs area embeds the full Kronk documentation set so it is available offline next to the running server:</p>
           <ul>
@@ -5606,9 +5707,9 @@ response = client.chat.completions.create(
             <li><strong>Web API</strong> — reference for the HTTP endpoints (Chat, Messages, Responses, Embeddings, Rerank, Tokenize, Tools)</li>
           </ul>
           <h4 id="settings">Settings</h4>
-          <p>Settings holds BUI-level preferences, including the API token used by the BUI when calling the Web API. Set this when running with <code>--auth-enabled</code> so the BUI can reach security-protected endpoints.</p>
+          <p>Settings reports whether the current BUI is using an authenticated admin session or the server is running with administration authentication disabled.</p>
           <h3 id="134-authentication">13.4 Authentication</h3>
-          <p>The BUI talks to the same <code>/v1</code> API as any other client. When <code>--auth-enabled</code> is set on <code>kronk server start</code>, every BUI call must carry a valid bearer token — configure it under <strong>Settings</strong>. With auth disabled the BUI works without configuration. See Chapter 12 for key and token management.</p>
+          <p>The BUI talks to the same <code>/v1</code> API as any other client. When admin authentication is enabled, password login creates a short-lived admin JWT in an HttpOnly cookie. JavaScript cannot read the token, and the BUI sends the cookie only to the same server origin. With authentication disabled, the BUI works without a login. See Chapter 12 for key and token management.</p>
           <h3 id="135-notes-on-live-state">13.5 Notes on Live State</h3>
           <p>A few things the BUI deliberately does not do:</p>
           <ul>
@@ -5618,6 +5719,8 @@ response = client.chat.completions.create(
           </ul>
           <hr />
           <p><em>Next: &lt;a href="#chapter-14-client-integration"&gt;Chapter 14: Client Integration&lt;/a&gt;</em></p>
+          <h3 id="secure-browser-administration">Secure browser administration</h3>
+          <p>Enable the BUI with <code>KRONK_WEB_ADMIN_ENABLED=true</code> or <code>--web-admin-enabled</code>. It is served only below <code>/admin/</code>. For a protected BUI, also enable <code>KRONK_AUTH_ADMIN_ENABLED</code> and set the masked <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code> value. Login creates a one-hour, Secure/HttpOnly/SameSite=Strict <code>__Host-kronk-admin</code> cookie. The server applies same-origin CSRF checks to unsafe cookie-authenticated requests; explicit Bearer clients do not use browser CSRF checks.</p>
           <h2 id="chapter-14-client-integration">Chapter 14: Client Integration</h2>
           <p>Kronk's OpenAI-compatible API works with popular AI clients, coding agents, and tools. OpenCode is the only coding agent the project supports and ships configuration for. This chapter covers installing OpenCode, wiring it into Kronk via the bundles in <code>.agents/</code>, swapping out the model OpenCode uses, plus a few general-purpose clients (OpenWebUI, Python SDK, curl, LangChain).</p>
           <h3 id="141-installing-opencode">14.1 Installing OpenCode</h3>
@@ -7878,8 +7981,8 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
             </thead>
             <tbody>
               <tr>
-                <td><code>TokenContext</code></td>
-                <td>Stores API token in localStorage (key: <code>kronk_token</code>)</td>
+                <td><code>AuthContext</code></td>
+                <td>Tracks the HttpOnly-cookie admin session</td>
               </tr>
               <tr>
                 <td><code>ModelListContext</code></td>
@@ -7887,12 +7990,12 @@ make install-tooling     # brew: protobuf, grpcurl, node (only needed for codege
               </tr>
             </tbody>
           </table>
-          <p>Access via hooks: <code>useToken()</code>, <code>useModelList()</code></p>
+          <p>Access via hooks: <code>useAuth()</code>, <code>useModelList()</code></p>
           <p><strong>API Service (&lt;code&gt;services/api.ts&lt;/code&gt;):</strong></p>
           <ul>
             <li><code>ApiService</code> class with methods for all endpoints</li>
             <li>Streaming support for pull operations (models and libraries)</li>
-            <li>Auth-required endpoints accept token parameter</li>
+            <li>Same-origin requests use the browser admin session cookie</li>
           </ul>
           <p>The catalog is local and personal — there is no <code>catalog pull</code> stream.</p>
           <p><strong>Styling Conventions:</strong></p>
@@ -9726,9 +9829,10 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 <li><a href="#25-installing-libraries" className={activeSection === '25-installing-libraries' ? 'active' : ''}>2.5 Installing Libraries</a></li>
                 <li><a href="#26-downloading-your-first-model" className={activeSection === '26-downloading-your-first-model' ? 'active' : ''}>2.6 Downloading Your First Model</a></li>
                 <li><a href="#27-starting-the-server" className={activeSection === '27-starting-the-server' ? 'active' : ''}>2.7 Starting the Server</a></li>
-                <li><a href="#28-model-configuration-file" className={activeSection === '28-model-configuration-file' ? 'active' : ''}>2.8 Model Configuration File</a></li>
-                <li><a href="#29-verifying-the-installation" className={activeSection === '29-verifying-the-installation' ? 'active' : ''}>2.9 Verifying the Installation</a></li>
-                <li><a href="#210-nixos-setup" className={activeSection === '210-nixos-setup' ? 'active' : ''}>2.10 NixOS Setup</a></li>
+                <li><a href="#28-securing-the-server-and-bui" className={activeSection === '28-securing-the-server-and-bui' ? 'active' : ''}>2.8 Securing the Server and BUI</a></li>
+                <li><a href="#29-model-configuration-file" className={activeSection === '29-model-configuration-file' ? 'active' : ''}>2.9 Model Configuration File</a></li>
+                <li><a href="#210-verifying-the-installation" className={activeSection === '210-verifying-the-installation' ? 'active' : ''}>2.10 Verifying the Installation</a></li>
+                <li><a href="#211-nixos-setup" className={activeSection === '211-nixos-setup' ? 'active' : ''}>2.11 NixOS Setup</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -9817,6 +9921,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 <li><a href="#89-logging" className={activeSection === '89-logging' ? 'active' : ''}>8.9 Logging</a></li>
                 <li><a href="#810-data-paths" className={activeSection === '810-data-paths' ? 'active' : ''}>8.10 Data Paths</a></li>
                 <li><a href="#811-complete-example" className={activeSection === '811-complete-example' ? 'active' : ''}>8.11 Complete Example</a></li>
+                <li><a href="#admin-ui-and-authentication-modes" className={activeSection === 'admin-ui-and-authentication-modes' ? 'active' : ''}>Admin UI and authentication modes</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -9874,6 +9979,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 <li><a href="#128-rate-limiting" className={activeSection === '128-rate-limiting' ? 'active' : ''}>12.8 Rate Limiting</a></li>
                 <li><a href="#129-configuration-reference" className={activeSection === '129-configuration-reference' ? 'active' : ''}>12.9 Configuration Reference</a></li>
                 <li><a href="#1210-security-best-practices" className={activeSection === '1210-security-best-practices' ? 'active' : ''}>12.10 Security Best Practices</a></li>
+                <li><a href="#authentication-modes" className={activeSection === 'authentication-modes' ? 'active' : ''}>Authentication modes</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -9884,6 +9990,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
                 <li><a href="#133-what-the-bui-provides" className={activeSection === '133-what-the-bui-provides' ? 'active' : ''}>13.3 What the BUI Provides</a></li>
                 <li><a href="#134-authentication" className={activeSection === '134-authentication' ? 'active' : ''}>13.4 Authentication</a></li>
                 <li><a href="#135-notes-on-live-state" className={activeSection === '135-notes-on-live-state' ? 'active' : ''}>13.5 Notes on Live State</a></li>
+                <li><a href="#secure-browser-administration" className={activeSection === 'secure-browser-administration' ? 'active' : ''}>Secure browser administration</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

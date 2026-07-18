@@ -224,8 +224,22 @@ func (sec *Security) addSystemKeys() error {
 	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
 	keysPath := filepath.Join(basePath, localFolder)
 
-	if err := os.MkdirAll(keysPath, 0755); err != nil {
+	if err := os.MkdirAll(keysPath, 0700); err != nil {
 		return fmt.Errorf("add-system-keys: unable to create keys path: %w", err)
+	}
+	if err := os.Chmod(keysPath, 0700); err != nil {
+		return fmt.Errorf("add-system-keys: unable to secure keys path: %w", err)
+	}
+	entries, err := os.ReadDir(keysPath)
+	if err != nil {
+		return fmt.Errorf("add-system-keys: unable to read keys path: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".pem" {
+			if err := os.Chmod(filepath.Join(keysPath, entry.Name()), 0600); err != nil {
+				return fmt.Errorf("add-system-keys: unable to secure private key: %w", err)
+			}
+		}
 	}
 
 	n, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath))

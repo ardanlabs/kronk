@@ -87,10 +87,15 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			APIHost            string        `conf:"default:0.0.0.0:11435"`
 			DebugHost          string        `conf:"default:0.0.0.0:11445"`
 			CORSAllowedOrigins []string      `conf:"default:*"`
+			Admin              struct {
+				Enabled        bool   `conf:"default:true"`
+				PasswordSHA256 string `conf:"default:18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11,mask"` // kronk
+			}
 		}
 		Auth struct {
-			Host  string // Leave empty to run the local auth service.
-			Local struct {
+			Host         string // Leave empty to run the local auth service.
+			AdminEnabled bool   `conf:"default:true"`
+			Local        struct {
 				Issuer  string `conf:"default:kronk project"`
 				Enabled bool   `conf:"default:false"`
 			}
@@ -149,6 +154,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		return fmt.Errorf("parsing config: %w", err)
 	}
+	cfg.Auth.AdminEnabled = cfg.Auth.AdminEnabled || cfg.Auth.Local.Enabled
+	if err := validateAdminConfig(cfg.Auth.AdminEnabled, cfg.Web.Admin.Enabled, cfg.Web.Admin.PasswordSHA256, cfg.Auth.Host); err != nil {
+		return err
+	}
 
 	// -------------------------------------------------------------------------
 	// App Starting
@@ -198,11 +207,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// Start the auth server
 
 	var authClientOpts []func(*authclient.Client)
+	var sec *security.Security
 
 	// If no host is provided for the auth service, we will start it ourselves
 	// with a bufconn listener.
 	if cfg.Auth.Host == "" {
-		sec, err := security.New(security.Config{
+		sec, err = security.New(security.Config{
 			Issuer: cfg.Auth.Local.Issuer,
 		})
 
@@ -217,11 +227,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		lis := bufconn.Listen(1024 * 1024)
 
 		authApp := authapp.Start(ctx, authapp.Config{
-			Log:      log,
-			Security: sec,
-			Listener: lis,
-			Tracer:   tracer,
-			Enabled:  cfg.Auth.Local.Enabled,
+			Log:              log,
+			Security:         sec,
+			Listener:         lis,
+			Tracer:           tracer,
+			Enabled:          cfg.Auth.Local.Enabled,
+			AdminAuthEnabled: cfg.Auth.AdminEnabled,
 		})
 
 		defer authApp.Shutdown(ctx)
@@ -454,22 +465,26 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	cfgMux := mux.Config{
-		Build:           tag,
-		Log:             log,
-		AuthClient:      authClient,
-		Pool:            p,
-		Libs:            libs,
-		Models:          models,
-		BuckyLibs:       buckyLibs,
-		BuckyModels:     buckyModels,
-		DownloadEnabled: cfg.Download.Enabled,
+		Build:               tag,
+		Log:                 log,
+		AuthClient:          authClient,
+		Pool:                p,
+		Libs:                libs,
+		Models:              models,
+		BuckyLibs:           buckyLibs,
+		BuckyModels:         buckyModels,
+		DownloadEnabled:     cfg.Download.Enabled,
+		AdminAuthEnabled:    cfg.Auth.AdminEnabled,
+		WebAdminEnabled:     cfg.Web.Admin.Enabled,
+		AdminPasswordSHA256: cfg.Web.Admin.PasswordSHA256,
+		Security:            sec,
 	}
 
-	webAPI := mux.WebAPI(cfgMux,
-		build.Routes(),
-		mux.WithCORS(cfg.Web.CORSAllowedOrigins),
-		mux.WithFileServer(true, static, "static", "/", []string{"v1"}),
-	)
+	options := []func(*mux.Options){mux.WithCORS(cfg.Web.CORSAllowedOrigins)}
+	if cfg.Web.Admin.Enabled {
+		options = append(options, mux.WithFileServer(true, static, "static", "/admin/", []string{"admin/api", "v1"}))
+	}
+	webAPI := mux.WebAPI(cfgMux, build.Routes(), options...)
 
 	api := http.Server{
 		Addr:         cfg.Web.APIHost,

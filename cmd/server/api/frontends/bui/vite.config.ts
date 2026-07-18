@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  base: '/admin/',
   plugins: [react()],
   build: {
     outDir: '../../services/kronk/static',
@@ -18,6 +19,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/v1': 'http://localhost:11435',
+      '/admin/api': 'http://localhost:11435',
     },
   },
 })

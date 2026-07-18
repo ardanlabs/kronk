@@ -33,13 +33,14 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	toolapp.Routes(app, toolapp.Config{
-		Log:         cfg.Log,
-		AuthClient:  cfg.AuthClient,
-		Pool:        cfg.Pool,
-		Libs:        cfg.Libs,
-		Models:      cfg.Models,
-		BuckyLibs:   cfg.BuckyLibs,
-		BuckyModels: cfg.BuckyModels,
+		Log:              cfg.Log,
+		AuthClient:       cfg.AuthClient,
+		Pool:             cfg.Pool,
+		Libs:             cfg.Libs,
+		Models:           cfg.Models,
+		BuckyLibs:        cfg.BuckyLibs,
+		BuckyModels:      cfg.BuckyModels,
+		AdminAuthEnabled: cfg.AdminAuthEnabled,
 	})
 
 	chatapp.Routes(app, chatapp.Config{
@@ -85,10 +86,11 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	playgroundapp.Routes(app, playgroundapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
-		Models:     cfg.Models,
+		Log:              cfg.Log,
+		AuthClient:       cfg.AuthClient,
+		Pool:             cfg.Pool,
+		Models:           cfg.Models,
+		AdminAuthEnabled: cfg.AdminAuthEnabled,
 	})
 
 	if cfg.DownloadEnabled {

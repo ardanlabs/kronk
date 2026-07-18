@@ -8,6 +8,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/pool"
@@ -54,15 +55,19 @@ func WithFileServer(react bool, static embed.FS, dir string, path string, apiPre
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Build           string
-	Log             *logger.Logger
-	AuthClient      *authclient.Client
-	Pool            *pool.Pool
-	Libs            *libs.Libs
-	Models          *models.Models
-	BuckyLibs       *buckylibs.Libs
-	BuckyModels     *buckymodels.Models
-	DownloadEnabled bool
+	Build               string
+	Log                 *logger.Logger
+	AuthClient          *authclient.Client
+	Pool                *pool.Pool
+	Libs                *libs.Libs
+	Models              *models.Models
+	BuckyLibs           *buckylibs.Libs
+	BuckyModels         *buckymodels.Models
+	DownloadEnabled     bool
+	AdminAuthEnabled    bool
+	WebAdminEnabled     bool
+	AdminPasswordSHA256 string
+	Security            *security.Security
 }
 
 // RouteAdder defines behavior that sets the routes to bind for an instance
@@ -92,6 +97,9 @@ func WebAPI(cfg Config, routeAdder RouteAdder, options ...func(opts *Options)) h
 	}
 
 	routeAdder.Add(app, cfg)
+	if cfg.WebAdminEnabled {
+		registerAdminRoutes(app, cfg)
+	}
 
 	for _, site := range opts.sites {
 		switch site.react {
@@ -104,6 +112,10 @@ func WebAPI(cfg Config, routeAdder RouteAdder, options ...func(opts *Options)) h
 	}
 
 	app.NotFoundHandler()
+
+	if cfg.WebAdminEnabled {
+		return adminCookieMiddleware(app)
+	}
 
 	return app
 }

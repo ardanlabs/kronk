@@ -29,9 +29,12 @@ func init() {
 	Cmd.Flags().StringSlice("cors-allowed-origins", nil, "CORS allowed origins")
 
 	// Auth settings
-	Cmd.Flags().Bool("auth-enabled", false, "Enable local authentication")
+	Cmd.Flags().Bool("auth-enabled", false, "Enable local inference and admin authentication")
+	Cmd.Flags().Bool("admin-auth-enabled", false, "Require admin authentication for management APIs")
+	Cmd.Flags().Bool("web-admin-enabled", false, "Serve the browser admin UI at /admin/")
 	Cmd.Flags().String("auth-host", "", "External auth service host")
 	Cmd.Flags().String("auth-issuer", "", "Local auth issuer name")
+	Cmd.Flags().String("web-admin-password-sha256", "", "SHA-256 digest for browser admin login")
 
 	// Tempo/tracing settings
 	Cmd.Flags().String("tempo-host", "", "Tempo host address (e.g., localhost:4317)")

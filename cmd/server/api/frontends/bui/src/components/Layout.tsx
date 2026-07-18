@@ -8,6 +8,7 @@ import { useAccuracyRunner } from '../contexts/AccuracyRunnerContext';
 import { useEfficiencyRunner } from '../contexts/EfficiencyRunnerContext';
 import { usePlayground } from '../contexts/PlaygroundContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { TRIAL_PAUSE_MS } from '../services/autoTestRunner';
 
@@ -108,7 +109,7 @@ const menuStructure: MenuCategory[] = [
         label: 'Token',
         items: [
           { page: 'security-token-create', label: 'Create' },
-          { page: 'settings', label: 'Apply' },
+          { page: 'settings', label: 'Session' },
         ],
       },
     ],
@@ -283,6 +284,7 @@ export default function Layout({ children }: LayoutProps) {
   } = useEfficiencyRunner();
   const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
+  const { authenticationRequired, logout } = useAuth();
 
   // Unload the active Basic session from the sidebar indicator.
   const [unloadingSession, setUnloadingSession] = useState(false);
@@ -597,7 +599,7 @@ export default function Layout({ children }: LayoutProps) {
       <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <div className="sidebar-header">
           <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }} className="sidebar-brand">
-            <img src="/kronk-logo.png" alt="Kronk Logo" className="sidebar-logo" />
+            <img src="/admin/kronk-logo.png" alt="Kronk Logo" className="sidebar-logo" />
             <h1>Model Server</h1>
           </Link>
         </div>
@@ -800,6 +802,11 @@ export default function Layout({ children }: LayoutProps) {
               </div>
             )}
           </div>
+        )}
+        {authenticationRequired && (
+          <button className="sidebar-logout" type="button" onClick={() => void logout()} title="Sign out">
+            Sign out
+          </button>
         )}
         <button
           className="sidebar-toggle"

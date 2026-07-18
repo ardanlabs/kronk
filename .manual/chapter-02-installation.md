@@ -9,9 +9,10 @@
 - [2.5 Installing Libraries](#25-installing-libraries)
 - [2.6 Downloading Your First Model](#26-downloading-your-first-model)
 - [2.7 Starting the Server](#27-starting-the-server)
-- [2.8 Model Configuration File](#28-model-configuration-file)
-- [2.9 Verifying the Installation](#29-verifying-the-installation)
-- [2.10 NixOS Setup](#210-nixos-setup)
+- [2.8 Securing the Server and BUI](#28-securing-the-server-and-bui)
+- [2.9 Model Configuration File](#29-model-configuration-file)
+- [2.10 Verifying the Installation](#210-verifying-the-installation)
+- [2.11 NixOS Setup](#211-nixos-setup)
 
 ---
 
@@ -53,7 +54,7 @@ kronk --help
 **Step 2 — Start the server**
 
 ```shell
-kronk server start
+kronk server start --web-admin-enabled
 ```
 
 On first run Kronk auto-detects your hardware (Metal, CUDA, Vulkan, or
@@ -63,12 +64,13 @@ CPU), downloads the matching llama.cpp libraries, and seeds a default
 ```
 Kronk Model Server started
 API: http://localhost:11435
-BUI: http://localhost:11435
+BUI: http://localhost:11435/admin/
 ```
 
 That's the OpenAI-compatible API and the Browser UI, both on port
-11435. To run it in the background use `kronk server start -d`; to stop
-it, `kronk server stop`.
+11435. To run the same setup in the background use
+`kronk server start --web-admin-enabled -d`; to stop it, use
+`kronk server stop`.
 
 **Step 3 — Download a coding model**
 
@@ -83,12 +85,12 @@ kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local
 
 The `--local` flag does the download directly against your filesystem
 with nicer progress output. The model lands under `~/.kronk/models/`.
-(Prefer clicking? Open the BUI at http://localhost:11435, go to
+(Prefer clicking? Open the BUI at http://localhost:11435/admin/, go to
 **Catalog → List**, find `Qwopus3.5-4B-Coder.Q8_0`, and hit download.)
 
 **Step 4 — Verify it works**
 
-Quickest check is the BUI: open http://localhost:11435, click
+Quickest check is the BUI: open http://localhost:11435/admin/, click
 **Apps → Chat**, pick `Qwopus3.5-4B-Coder.Q8_0`, and ask it something.
 The first message takes a few seconds while the model loads; after that
 it's near-instant.
@@ -193,11 +195,11 @@ QUICK START
   # Download a model (e.g., Qwen3-8B)
   kronk model pull Qwen3-0.6B-Q8_0 --local
 
-  # Start the server (runs on http://localhost:11435)
-  kronk server start
+  # Start the server with the Browser UI
+  kronk server start --web-admin-enabled
 
   # Open the Browser UI
-  open http://localhost:11435
+  open http://localhost:11435/admin/
 
 FEATURES
   • Text, Vision, Audio, Embeddings, Reranking
@@ -510,13 +512,13 @@ Before running inference, you need the llama.cpp libraries for your machine. Kro
 
 **Option A: Via the Server**
 
-Start the server and use the BUI to download libraries:
+Start the server with the BUI enabled and use it to download libraries:
 
 ```shell
-kronk server start
+kronk server start --web-admin-enabled
 ```
 
-Open http://localhost:11435 in your browser and navigate to the Libraries page.
+Open http://localhost:11435/admin/ in your browser and navigate to the Libraries page.
 
 **Option B: Via CLI**
 
@@ -690,8 +692,10 @@ The server starts on `http://localhost:11435` by default. You'll see output like
 ```
 Kronk Model Server started
 API: http://localhost:11435
-BUI: http://localhost:11435
 ```
+
+The BUI is disabled by default. Add `--web-admin-enabled` to mount it at
+`http://localhost:11435/admin/`.
 
 **Running in Background**
 
@@ -707,7 +711,105 @@ kronk server start -d
 kronk server stop
 ```
 
-### 2.8 Model Configuration File
+### 2.8 Securing the Server and BUI
+
+Kronk separates inference authentication from administration so a server can
+offer model inference without exposing model downloads, configuration,
+playground sessions, or security management.
+
+Choose one mode:
+
+| Mode | Inference APIs and `GET /v1/models` | Management and playground APIs | BUI |
+| --- | --- | --- | --- |
+| Open | No token | No token | Optional, no login |
+| Admin-only | No token | Admin token | Optional; password login |
+| Fully protected | User or admin token | Admin token | Optional; password login |
+
+The BUI is always optional. Without `--web-admin-enabled`, nothing is served
+under `/admin/`.
+
+**Open server (trusted networks only)**
+
+Run headless with every API open:
+
+```shell
+kronk server start
+```
+
+Or attach the BUI without authentication:
+
+```shell
+kronk server start --web-admin-enabled
+```
+
+**Public inference with protected administration**
+
+First choose a long, randomly generated password and store its SHA-256 digest.
+The digest is not a slow password hash, so do not use a short or reused human
+password.
+
+```shell
+KRONK_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+export KRONK_WEB_ADMIN_PASSWORD_SHA256="$(printf '%s' "$KRONK_ADMIN_PASSWORD" | shasum -a 256 | awk '{print $1}')"
+
+kronk server start \
+  --admin-auth-enabled \
+  --web-admin-enabled \
+  --web-admin-password-sha256="$KRONK_WEB_ADMIN_PASSWORD_SHA256"
+```
+
+On Linux, use `sha256sum` instead of `shasum -a 256` if `shasum` is not
+installed. Open `https://your-server/admin/` and sign in with the value of
+`KRONK_ADMIN_PASSWORD`. The password itself is never placed in server
+configuration.
+
+Inference endpoints remain open in this mode. Every Kronk management,
+playground, and security-management endpoint requires an admin JWT.
+`GET /v1/models` remains an inference endpoint.
+
+The CLI reads its JWT from `KRONK_TOKEN`. The local auth service creates the
+master admin token on first start:
+
+```shell
+export KRONK_TOKEN="$(cat ~/.kronk/keys/master.jwt)"
+kronk model list
+```
+
+Treat `master.jwt` like a root credential. Do not distribute it to inference
+clients.
+
+**Fully protected server**
+
+Use `--auth-enabled` to require JWTs for inference as well. This flag
+automatically enables admin authentication:
+
+```shell
+kronk server start \
+  --auth-enabled \
+  --web-admin-enabled \
+  --web-admin-password-sha256="$KRONK_WEB_ADMIN_PASSWORD_SHA256"
+```
+
+Create scoped user tokens for inference clients rather than giving them the
+admin token. See [Chapter 12](chapter-12-security-authentication.md) for token
+creation, endpoint grants, rate limits, and key rotation.
+
+**Internet deployment requirements**
+
+- Terminate HTTPS at a reverse proxy; Kronk itself serves plain HTTP.
+- Keep `/admin/` and `/v1` on the same public origin so the secure BUI session
+  cookie can authenticate API calls.
+- Block `/admin/` at the proxy or firewall where browser administration should
+  not be reachable.
+- Password-based BUI login currently requires Kronk's local auth service; it is
+  not available with `KRONK_AUTH_HOST`.
+- Leave `KRONK_WEB_ADMIN_ENABLED` unset for a headless deployment.
+
+The equivalent environment variables are `KRONK_AUTH_LOCAL_ENABLED`,
+`KRONK_AUTH_ADMIN_ENABLED`, `KRONK_WEB_ADMIN_ENABLED`, and the masked
+`KRONK_WEB_ADMIN_PASSWORD_SHA256`.
+
+### 2.9 Model Configuration File
 
 When Kronk starts the server for the first time, it automatically installs a default `model_config.yaml` file in the `~/.kronk/` directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.
 
@@ -814,7 +916,7 @@ you're embedding the SDK directly).
 - Use YAML anchors (`&name` and `<<: *name`) to share common settings between variants. The default file includes examples of this pattern.
 - The `--model-config` server flag lets you point to an alternative config file for testing without modifying your main one.
 
-### 2.9 Verifying the Installation
+### 2.10 Verifying the Installation
 
 **Test via curl**
 
@@ -841,9 +943,11 @@ curl http://localhost:11435/v1/chat/completions \
 
 **Test via BUI**
 
-Open `http://localhost:11435` in your browser and navigate to the `Apps/Chat` app. Select the model you want to try and chat away.
+Start Kronk with `--web-admin-enabled`, open
+`http://localhost:11435/admin/`, and navigate to **Apps → Chat**. Select the
+model you want to try and chat away.
 
-### 2.10 NixOS Setup
+### 2.11 NixOS Setup
 
 NixOS does not follow the Filesystem Hierarchy Standard (FHS), so shared
 libraries and binaries cannot be found in standard paths like `/usr/lib`. Kronk

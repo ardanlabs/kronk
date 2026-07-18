@@ -340,3 +340,18 @@ Auth can run in two modes:
 ---
 
 _Next: [Chapter 13: Browser UI (BUI)](#chapter-13-browser-ui-bui)_
+### Authentication modes
+
+Kronk separates inference authentication from administration:
+
+| `KRONK_AUTH_LOCAL_ENABLED` | `KRONK_AUTH_ADMIN_ENABLED` | Mode |
+| --- | --- | --- |
+| false | false | Open |
+| false | true | Admin-only (inference remains open) |
+| true | true | Fully protected |
+
+General authentication automatically enables admin authentication. The legacy
+`--auth-enabled=true` flag therefore enables both; `--admin-auth-enabled`
+enables the admin-only mode explicitly. Admin tokens are required for management,
+playground, and security APIs in admin mode. `GET /v1/models` retains normal
+inference-auth semantics.

@@ -146,7 +146,7 @@ func (a *Auth) Authenticate(ctx context.Context, bearerToken string) (Claims, er
 	}
 
 	if err := a.opaAuthentication(ctx, input); err != nil {
-		return Claims{}, fmt.Errorf("authentication failed: token[%s] subject[%s]: %w", jwtUnverified, claims.Subject, err)
+		return Claims{}, fmt.Errorf("authentication failed for subject %q: %w", claims.Subject, err)
 	}
 
 	return claims, nil

@@ -17,8 +17,8 @@
 
 ---
 
-Kronk ships with a built-in Browser UI (BUI) served from the same port as
-the API. It is a thin client over the Web API and exposes the same
+Kronk ships with an optional Browser UI (BUI) served from the same port as
+the API under `/admin/`. It is a thin client over the Web API and exposes the same
 operations the CLI provides — pulling libraries and models, browsing the
 catalog, managing tokens, and running interactive experiments against a
 loaded model. This chapter is a high-level guide to what the BUI offers;
@@ -27,14 +27,16 @@ the documentation stays accurate as the UI evolves.
 
 ### 13.1 Accessing the BUI
 
-The BUI loads automatically when you open the server root in a browser:
+Enable the BUI with `KRONK_WEB_ADMIN_ENABLED=true`, then open:
 
 ```
-http://localhost:11435
+http://localhost:11435/admin/
 ```
 
 It is bundled inside the `kronk` binary and served from the same address
 configured by `KRONK_WEB_API_HOST` (default `0.0.0.0:11435`).
+The server root does not redirect to the BUI. Leave the setting disabled for
+a headless deployment.
 
 ### 13.2 Sidebar Layout
 
@@ -113,11 +115,11 @@ Four interactive tools live under **Apps**:
 
 #### Security
 
-When authentication is enabled (Chapter 12), the Security area lets
+When admin authentication is enabled (Chapter 12), the Security area lets
 you list, create, and delete signing keys and create user tokens with
-chosen durations, endpoint scopes, and rate limits. These pages
-require an admin token configured under Settings; with auth disabled
-they remain accessible but are not meaningful.
+chosen durations, endpoint scopes, and rate limits. These pages use the
+authenticated browser admin session. With authentication disabled they remain
+accessible but are not meaningful.
 
 #### Docs
 
@@ -133,17 +135,16 @@ available offline next to the running server:
 
 #### Settings
 
-Settings holds BUI-level preferences, including the API token used
-by the BUI when calling the Web API. Set this when running with
-`--auth-enabled` so the BUI can reach security-protected endpoints.
+Settings reports whether the current BUI is using an authenticated admin
+session or the server is running with administration authentication disabled.
 
 ### 13.4 Authentication
 
-The BUI talks to the same `/v1` API as any other client. When
-`--auth-enabled` is set on `kronk server start`, every BUI call must
-carry a valid bearer token — configure it under **Settings**. With
-auth disabled the BUI works without configuration. See Chapter 12 for
-key and token management.
+The BUI talks to the same `/v1` API as any other client. When admin
+authentication is enabled, password login creates a short-lived admin JWT in
+an HttpOnly cookie. JavaScript cannot read the token, and the BUI sends the
+cookie only to the same server origin. With authentication disabled, the BUI
+works without a login. See Chapter 12 for key and token management.
 
 ### 13.5 Notes on Live State
 
@@ -161,3 +162,12 @@ A few things the BUI deliberately does not do:
 ---
 
 _Next: [Chapter 14: Client Integration](#chapter-14-client-integration)_
+### Secure browser administration
+
+Enable the BUI with `KRONK_WEB_ADMIN_ENABLED=true` or
+`--web-admin-enabled`. It is served only below `/admin/`. For a protected BUI,
+also enable `KRONK_AUTH_ADMIN_ENABLED` and set the masked
+`KRONK_WEB_ADMIN_PASSWORD_SHA256` value. Login creates a one-hour,
+Secure/HttpOnly/SameSite=Strict `__Host-kronk-admin` cookie. The server applies
+same-origin CSRF checks to unsafe cookie-authenticated requests; explicit
+Bearer clients do not use browser CSRF checks.

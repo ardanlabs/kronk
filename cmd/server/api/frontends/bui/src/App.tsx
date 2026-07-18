@@ -47,7 +47,7 @@ import TestingConfiguration from './components/TestingConfiguration';
 import Accuracy from './components/Accuracy';
 import Efficiency from './components/Efficiency';
 import { ModelListProvider } from './contexts/ModelListContext';
-import { TokenProvider } from './contexts/TokenContext';
+import { AuthProvider } from './contexts/AuthContext';
 import { DownloadProvider } from './contexts/DownloadContext';
 import { ChatProvider } from './contexts/ChatContext';
 import { ChatHistoryProvider } from './contexts/ChatHistoryContext';
@@ -212,9 +212,9 @@ function HomePage() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/admin">
       <ThemeProvider>
-      <TokenProvider>
+      <AuthProvider>
         <ModelListProvider>
           <AccuracyRunnerProvider>
           <EfficiencyRunnerProvider>
@@ -284,7 +284,7 @@ function App() {
           </EfficiencyRunnerProvider>
           </AccuracyRunnerProvider>
         </ModelListProvider>
-      </TokenProvider>
+      </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>
   );

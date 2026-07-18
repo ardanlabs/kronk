@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../services/api';
-import { useToken } from '../contexts/TokenContext';
 import { RateLimit, RateWindow } from '../types';
 
 const AVAILABLE_ENDPOINTS = [
@@ -36,7 +34,6 @@ const defaultEndpointConfig = (): EndpointConfig => ({
 });
 
 export default function SecurityTokenCreate() {
-  const { token: storedToken } = useToken();
   const [isAdmin, setIsAdmin] = useState(false);
   const [endpointConfigs, setEndpointConfigs] = useState<EndpointConfigs>(() => {
     const configs: EndpointConfigs = {};
@@ -63,8 +60,6 @@ export default function SecurityTokenCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!storedToken) return;
-
     setLoading(true);
     setError(null);
     setNewToken(null);
@@ -97,7 +92,7 @@ export default function SecurityTokenCreate() {
     });
 
     try {
-      const response = await api.createToken(storedToken, {
+      const response = await api.createToken({
         admin: isAdmin,
         endpoints,
         duration: durationNs,
@@ -117,13 +112,6 @@ export default function SecurityTokenCreate() {
         <p>Generate a new authentication token</p>
       </div>
 
-      {!storedToken && (
-        <div className="alert alert-error">
-          No API token configured. <Link to="/settings">Configure your token in Settings</Link>
-        </div>
-      )}
-
-      {storedToken && (
         <div className="card">
           <form onSubmit={handleSubmit}>
             <div className="form-group">
@@ -282,7 +270,6 @@ export default function SecurityTokenCreate() {
             </button>
           </form>
         </div>
-      )}
 
       {error && <div className="alert alert-error">{error}</div>}
 

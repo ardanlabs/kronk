@@ -23,21 +23,23 @@ import (
 // App represents the grpc handlers for the auth service.
 type App struct {
 	UnimplementedAuthServer
-	log      *logger.Logger
-	security *security.Security
-	lis      net.Listener
-	tracer   trace.Tracer
-	enabled  bool
-	gs       *grpc.Server
+	log              *logger.Logger
+	security         *security.Security
+	lis              net.Listener
+	tracer           trace.Tracer
+	enabled          bool
+	adminAuthEnabled bool
+	gs               *grpc.Server
 }
 
 func newApp(cfg Config) *App {
 	return &App{
-		log:      cfg.Log,
-		security: cfg.Security,
-		lis:      cfg.Listener,
-		tracer:   cfg.Tracer,
-		enabled:  cfg.Enabled,
+		log:              cfg.Log,
+		security:         cfg.Security,
+		lis:              cfg.Listener,
+		tracer:           cfg.Tracer,
+		enabled:          cfg.Enabled,
+		adminAuthEnabled: cfg.AdminAuthEnabled,
 	}
 }
 
@@ -49,7 +51,7 @@ func (a *App) Shutdown(ctx context.Context) {
 
 // Authenticate validates a bearer token.
 func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*AuthenticateResponse, error) {
-	if !a.enabled {
+	if !a.enabled && !(req.GetAdmin() && a.adminAuthEnabled) {
 		a.log.Info(ctx, "***> auth", "status", "authentication disabled")
 
 		arb := AuthenticateResponse_builder{
@@ -74,7 +76,7 @@ func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*Auth
 	claims, err := a.security.Authenticate(ctx, bearerToken[0], req.GetAdmin(), req.GetEndpoint())
 	if err != nil {
 		a.log.Error(ctx, "authenticate", "err", err)
-		return nil, status.Error(codes.Unauthenticated, err.Error())
+		return nil, status.Error(codes.Unauthenticated, "authentication failed")
 	}
 
 	arb := AuthenticateResponse_builder{
@@ -184,10 +186,10 @@ func (a *App) authInterceptor(ctx context.Context, req any, info *grpc.UnaryServ
 	ctx = otel.InjectTracing(ctx, a.tracer)
 
 	switch info.FullMethod {
-	case "/auth.Auth/CreateToken",
-		"/auth.Auth/ListKeys",
-		"/auth.Auth/AddKey",
-		"/auth.Auth/RemoveKey":
+	case Auth_CreateToken_FullMethodName,
+		Auth_ListKeys_FullMethodName,
+		Auth_AddKey_FullMethodName,
+		Auth_RemoveKey_FullMethodName:
 		return a.requireAuth(ctx, true, "", req, handler)
 
 	default:
@@ -196,7 +198,7 @@ func (a *App) authInterceptor(ctx context.Context, req any, info *grpc.UnaryServ
 }
 
 func (a *App) requireAuth(ctx context.Context, admin bool, endpoint string, req any, handler grpc.UnaryHandler) (any, error) {
-	if !a.enabled {
+	if !a.enabled && !(admin && a.adminAuthEnabled) {
 		a.log.Info(ctx, "***> auth", "status", "authentication disabled")
 		return handler(ctx, req)
 	}

@@ -1,10 +1,7 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../services/api';
-import { useToken } from '../contexts/TokenContext';
 
 export default function SecurityKeyDelete() {
-  const { token: storedToken } = useToken();
   const [keyId, setKeyId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -12,13 +9,13 @@ export default function SecurityKeyDelete() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!storedToken || !keyId.trim()) return;
+    if (!keyId.trim()) return;
 
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      await api.deleteKey(storedToken, keyId.trim());
+      await api.deleteKey(keyId.trim());
       setSuccess(`Key "${keyId}" deleted successfully`);
       setKeyId('');
     } catch (err) {
@@ -32,16 +29,9 @@ export default function SecurityKeyDelete() {
     <div>
       <div className="page-header">
         <h2>Delete Security Key</h2>
-        <p>Remove a security key (requires admin token)</p>
+        <p>Remove a security key using your admin session</p>
       </div>
 
-      {!storedToken && (
-        <div className="alert alert-error">
-          No API token configured. <Link to="/settings">Configure your token in Settings</Link>
-        </div>
-      )}
-
-      {storedToken && (
         <div className="card">
           {error && <div className="alert alert-error">{error}</div>}
           {success && <div className="alert alert-success">{success}</div>}
@@ -66,7 +56,6 @@ export default function SecurityKeyDelete() {
             </button>
           </form>
         </div>
-      )}
     </div>
   );
 }
