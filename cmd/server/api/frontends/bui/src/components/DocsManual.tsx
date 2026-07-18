@@ -223,7 +223,7 @@ curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","
 KRONK_DOWNLOAD_ENABLED=true kronk server start`}</code></pre>
           <p><strong>🟩 If you have an NVIDIA graphics card (Linux or Windows)</strong></p>
           <p>Runs in Docker with GPU acceleration. Needs Docker + the <a href="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html">NVIDIA Container Toolkit</a>:</p>
-          <pre className="code-block"><code className="language-shell">{`docker run -d --name kronk --restart unless-stopped --gpus all \\
+          <pre className="code-block"><code className="language-shell">{`docker run -d --name kronk --restart unless-stopped --runtime=nvidia --gpus all \\
   -e KRONK_DOWNLOAD_ENABLED=true \\
   -p 11435:11435 -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>
@@ -446,8 +446,8 @@ docker run --rm \\
     -p 11435:11435 \\
     -v kronk-data:/kronk \\
     ghcr.io/ardanlabs/kronk:latest`}</code></pre>
-          <p>NVIDIA GPU (requires <code>nvidia-container-toolkit</code> on the host):</p>
-          <pre className="code-block"><code className="language-shell">{`docker run --rm --gpus all \\
+          <p>NVIDIA GPU (requires <code>nvidia-container-toolkit</code> on the host). Pass <code>--runtime=nvidia</code> unless the NVIDIA runtime is already the default in <code>/etc/docker/daemon.json</code>. The CUDA runtime libraries (libcudart, libcublas) are baked into the <code>:latest-cuda</code> image; the container runtime injects only the driver, so a working <code>nvidia-smi</code> inside the container does not by itself confirm GPU-accelerated inference:</p>
+          <pre className="code-block"><code className="language-shell">{`docker run --rm --runtime=nvidia --gpus all \\
     -p 11435:11435 \\
     -v kronk-data:/kronk \\
     ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>

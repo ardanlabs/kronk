@@ -42,7 +42,7 @@
 # ┌─────────────┬────────────┬──────────────┬─────────┬──────┬──────────────────────────────────────────────┐
 # │ Host OS     │ Host GPU   │ Image        │ Backend │  ?   │ Notes                                        │
 # ├─────────────┼────────────┼──────────────┼─────────┼──────┼──────────────────────────────────────────────┤
-# │ Linux       │ NVIDIA     │ :cuda        │ cuda    │  ✅  │ nvidia-container-toolkit + --gpus all        │
+# │ Linux       │ NVIDIA     │ :cuda        │ cuda    │  ✅  │ nvidia-container-toolkit; --runtime=nvidia   │
 # ├─────────────┼────────────┼──────────────┼─────────┼──────┼──────────────────────────────────────────────┤
 # │ Linux       │ AMD        │ :rocm        │ rocm    │  ✅  │ /dev/kfd + /dev/dri; ROCm baked in image     │
 # ├─────────────┼────────────┼──────────────┼─────────┼──────┼──────────────────────────────────────────────┤
@@ -167,9 +167,16 @@
 #       -v kronk-data:/kronk \
 #       ghcr.io/ardanlabs/kronk:latest
 #
-# NVIDIA GPU — all cards (host needs nvidia-container-toolkit):
+# NVIDIA GPU — all cards (host needs nvidia-container-toolkit). The
+# `--runtime=nvidia` flag is required unless the NVIDIA runtime is set as
+# the default in /etc/docker/daemon.json; passing it explicitly is
+# harmless when it already is the default, so every example below includes
+# it. The CUDA runtime libraries (libcudart / libcublas) are baked into
+# the `:cuda` / `:latest` images — the container runtime injects only the
+# driver, so `nvidia-smi` working inside the container is NOT sufficient
+# on its own for GPU inference:
 #
-#   docker run --rm --gpus all \
+#   docker run --rm --runtime=nvidia --gpus all \
 #       -p 11435:11435 \
 #       -v kronk-data:/kronk \
 #       ghcr.io/ardanlabs/kronk:latest
@@ -178,7 +185,7 @@
 # to map indices to physical cards). The quoting around `device=...` is
 # required by the docker CLI parser:
 #
-#   docker run --rm --gpus '"device=0,1"' \
+#   docker run --rm --runtime=nvidia --gpus '"device=0,1"' \
 #       -p 11435:11435 \
 #       -v kronk-data:/kronk \
 #       ghcr.io/ardanlabs/kronk:latest
@@ -186,7 +193,7 @@
 # NVIDIA GPU — specific cards by UUID (stable across reboots / PCI
 # reordering; get UUIDs from `nvidia-smi -L`):
 #
-#   docker run --rm \
+#   docker run --rm --runtime=nvidia \
 #       --gpus '"device=GPU-3a1f...,GPU-9b2e..."' \
 #       -p 11435:11435 \
 #       -v kronk-data:/kronk \
@@ -277,7 +284,7 @@
 # injects libnvidia-glvkspirv and the NVIDIA Vulkan ICD into the
 # container automatically when graphics capabilities are requested):
 #
-#   docker run --rm --gpus all \
+#   docker run --rm --runtime=nvidia --gpus all \
 #       -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
 #       -p 11435:11435 \
 #       -v kronk-data:/kronk \
@@ -741,6 +748,15 @@ ARG TARGETARCH
 # llama.cpp ROCm bundle if upstream advances its build target.
 ARG ROCM_VERSION="6.4.3"
 
+# CUDA runtime major-minor installed when LLAMA_PROCESSORS contains `cuda`.
+# The llama.cpp cuda bundle is built as `ubuntu-cuda-13-x64` (see
+# yzma download.go) and its libggml-cuda.so is NEEDED-linked against
+# libcudart.so.13 + libcublas.so.13. The apt package suffix is
+# `<major>-<minor>` (e.g. cuda-cudart-13-0), so this value must match the
+# bundle's CUDA major. Bump in lockstep if upstream advances the cuda
+# bundle to a new major.
+ARG CUDA_PKG_VERSION="13-0"
+
 # Expected fingerprint of AMD's ROCm apt repo signing key. Verified
 # after fetching rocm.gpg.key over HTTPS; build fails loudly if AMD
 # rotates keys. Discover the current fingerprint with:
@@ -830,6 +846,46 @@ RUN set -eux; \
             rocm-smi-lib \
             rocminfo; \
         echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf; \
+        ldconfig; \
+        apt-get purge -y --auto-remove gnupg; \
+        apt-get clean; \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Install the CUDA runtime libraries (libcudart, libcublas, libcublasLt)
+# when `cuda` is present in LLAMA_PROCESSORS AND the target arch is amd64.
+#
+# CRITICAL: the NVIDIA Container Runtime injects only the *driver* stack
+# (libcuda.so.1, libnvidia-ml — enough for `nvidia-smi`) when you run with
+# `--gpus all` / `--runtime=nvidia`. It does NOT inject the CUDA *toolkit*
+# runtime. But the bundled llama.cpp libggml-cuda.so is NEEDED-linked
+# against libcudart.so.13 and libcublas.so.13, so without these packages
+# the backend fails to dlopen and llama.cpp silently falls back to CPU
+# (`llama-bench --list-devices` shows "(none)" even though nvidia-smi sees
+# the GPU). These libs therefore MUST live inside the image. The Jetson
+# stage below avoids this because its L4T base already bundles cudart.
+#
+# We install only the two runtime packages (~few hundred MB), NOT the full
+# `cuda-toolkit` (~several GB of compilers/headers kronk never uses). Their
+# lib dir (/usr/local/cuda-<ver>/targets/x86_64-linux/lib) is wired into
+# ld.so.conf.d so the runtime dynamic linker resolves them; the existing
+# LD_LIBRARY_PATH `/usr/local/cuda/lib64` entry also covers dlopen callers
+# that bypass the cache once the cuda-<ver> -> cuda compat symlink exists
+# (created by the cuda-cudart package).
+RUN set -eux; \
+    if [ "${TARGETARCH}" = "amd64" ] && echo " ${LLAMA_PROCESSORS} " | grep -q ' cuda '; then \
+        apt-get update; \
+        apt-get install -y --no-install-recommends gnupg; \
+        curl -fsSL -o /tmp/cuda-keyring.deb \
+            https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb; \
+        dpkg -i /tmp/cuda-keyring.deb; \
+        rm -f /tmp/cuda-keyring.deb; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends \
+            "cuda-cudart-${CUDA_PKG_VERSION}" \
+            "libcublas-${CUDA_PKG_VERSION}"; \
+        CUDA_LIB_DIR="$(dirname "$(find /usr/local -name 'libcudart.so.*' -print -quit)")"; \
+        echo "${CUDA_LIB_DIR}" > /etc/ld.so.conf.d/cuda.conf; \
         ldconfig; \
         apt-get purge -y --auto-remove gnupg; \
         apt-get clean; \

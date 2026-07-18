@@ -284,10 +284,15 @@ docker run --rm \
     ghcr.io/ardanlabs/kronk:latest
 ```
 
-NVIDIA GPU (requires `nvidia-container-toolkit` on the host):
+NVIDIA GPU (requires `nvidia-container-toolkit` on the host). Pass
+`--runtime=nvidia` unless the NVIDIA runtime is already the default in
+`/etc/docker/daemon.json`. The CUDA runtime libraries (libcudart,
+libcublas) are baked into the `:latest-cuda` image; the container runtime
+injects only the driver, so a working `nvidia-smi` inside the container
+does not by itself confirm GPU-accelerated inference:
 
 ```shell
-docker run --rm --gpus all \
+docker run --rm --runtime=nvidia --gpus all \
     -p 11435:11435 \
     -v kronk-data:/kronk \
     ghcr.io/ardanlabs/kronk:latest-cuda

@@ -177,7 +177,7 @@ Runs in Docker with GPU acceleration. Needs Docker + the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html):
 
 ```shell
-docker run -d --name kronk --restart unless-stopped --gpus all \
+docker run -d --name kronk --restart unless-stopped --runtime=nvidia --gpus all \
   -e KRONK_DOWNLOAD_ENABLED=true \
   -p 11435:11435 -v kronk-data:/kronk \
   ghcr.io/ardanlabs/kronk:latest-cuda

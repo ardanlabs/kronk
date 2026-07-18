@@ -92,21 +92,27 @@ Models download automatically on first use.
 ### NVIDIA GPU
 
 Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+Pass `--runtime=nvidia` unless the NVIDIA runtime is already the default in
+`/etc/docker/daemon.json` (passing it when it already is the default is
+harmless). The CUDA runtime libraries are baked into the `:latest-cuda`
+image — the container runtime injects only the driver, so `nvidia-smi`
+working inside the container does not by itself mean inference is
+GPU-accelerated.
 
 ```bash
-docker run --rm --gpus all -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
+docker run --rm --runtime=nvidia --gpus all -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
 ```
 
 Specific GPUs by index:
 
 ```bash
-docker run --rm --gpus '"device=0,1"' -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
+docker run --rm --runtime=nvidia --gpus '"device=0,1"' -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
 ```
 
 Specific GPUs by UUID:
 
 ```bash
-docker run --rm --gpus '"device=GPU-3a1f...,GPU-9b2e..."' -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
+docker run --rm --runtime=nvidia --gpus '"device=GPU-3a1f...,GPU-9b2e..."' -p 11435:11435 -v kronk-data:/kronk ghcr.io/ardanlabs/kronk:latest-cuda
 ```
 
 ### AMD GPU (ROCm)
@@ -135,7 +141,7 @@ docker run --rm --device=/dev/dri --group-add video --group-add render \
 **Vulkan on NVIDIA:** Requires NVIDIA Container Toolkit with graphics capabilities:
 
 ```bash
-docker run --rm --gpus all \
+docker run --rm --runtime=nvidia --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
   -p 11435:11435 -v kronk-data:/kronk \
   ghcr.io/ardanlabs/kronk:latest-vulkan
