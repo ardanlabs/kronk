@@ -3,6 +3,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -174,18 +175,20 @@ type draftCore struct {
 
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
-	cfg          Config
-	log          applog.Logger
-	model        llama.Model
-	vocab        llama.Vocab
-	ctxParams    llama.ContextParams
-	lctx         llama.Context
-	mem          llama.Memory
-	batch        *batchEngine
-	template     Template
-	compiledTmpl *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
-	templateOnce sync.Once         // Guards one-time compile of compiledTmpl.
-	projFile     string
+	cfg            Config
+	log            applog.Logger
+	model          llama.Model
+	vocab          llama.Vocab
+	ctxParams      llama.ContextParams
+	lctx           llama.Context
+	mem            llama.Memory
+	adapterHandles []llama.AdapterLora
+	adapterScales  []float32
+	batch          *batchEngine
+	template       Template
+	compiledTmpl   *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
+	templateOnce   sync.Once         // Guards one-time compile of compiledTmpl.
+	projFile       string
 	// mtmdMetaCtx is a single, long-lived multimodal projector context
 	// loaded in NewModel and freed in Unload. It is used ONLY for
 	// read-only metadata checks (SupportVision/SupportAudio) by chat
@@ -354,22 +357,39 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		l(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
 	}
 
+	if err := m.loadAdapters(ctx); err != nil {
+		if m.mtmdMetaCtx != 0 {
+			mtmd.Free(m.mtmdMetaCtx)
+		}
+		llama.ModelFree(mdl)
+		return nil, err
+	}
+
 	switch {
 	case !isGenerationModel:
 		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
 		if err != nil {
+			adapterErr := m.freeAdapters()
 			llama.ModelFree(mdl)
-			return nil, fmt.Errorf("new-context-pool: unable to create context pool: %w", err)
+			return nil, errors.Join(fmt.Errorf("new-context-pool: unable to create context pool: %w", err), adapterErr)
 		}
 		m.pool = pool
+		if err := m.applyAdaptersToPool(); err != nil {
+			m.pool.close()
+			m.pool = nil
+			adapterErr := m.freeAdapters()
+			llama.ModelFree(mdl)
+			return nil, errors.Join(err, adapterErr)
+		}
 
 	default:
 		if err := initGenerationRuntime(ctx, &m, nSlots); err != nil {
 			if m.mtmdMetaCtx != 0 {
 				mtmd.Free(m.mtmdMetaCtx)
 			}
+			adapterErr := m.freeAdapters()
 			llama.ModelFree(mdl)
-			return nil, err
+			return nil, errors.Join(err, adapterErr)
 		}
 	}
 
@@ -652,7 +672,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 		for i := range nSessions {
 			store, err := newSessionStore(m.cfg)
 			if err != nil {
-				return fmt.Errorf("init-generation-runtime: session-store: %w", err)
+				return m.cleanupGenerationRuntime(ctx, fmt.Errorf("init-generation-runtime: session-store: %w", err))
 			}
 			m.imcSessions[i] = &imcSession{
 				id:      i,
@@ -684,8 +704,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	m.parser = selectParser(fp)
 
 	if m.parser == nil {
-		llama.Free(lctx)
-		return fmt.Errorf("select-parser: no parser registered for %q (call kronk.registerDefaultParsers or model.RegisterParser(standard.New) at bootstrap)", m.modelInfo.ID)
+		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("select-parser: no parser registered for %q (call kronk.registerDefaultParsers or model.RegisterParser(standard.New) at bootstrap)", m.modelInfo.ID))
 	}
 
 	m.log(ctx, "select-parser",
@@ -693,6 +712,10 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 		"model", fp.ModelName,
 		"parser", m.parser.Name(),
 	)
+
+	if err := m.applyAdapters(lctx); err != nil {
+		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("init-generation-runtime: %w", err))
+	}
 
 	m.batch = newBatchEngine(m, nSlots)
 	m.batch.start(ctx)
@@ -704,12 +727,12 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	// when no draft applies.
 	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams)
 	if err != nil {
-		m.batch.stop(ctx)
-		m.batch.freeBatch()
-		llama.Free(lctx)
-		return fmt.Errorf("load-draft-model: %w", err)
+		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("load-draft-model: %w", err))
 	}
 	m.draft = draft
+	if err := m.applyAdaptersToDraft(m.draft); err != nil {
+		return m.cleanupGenerationRuntime(ctx, err)
+	}
 
 	// Initialize per-session draft KV state stores once we know MTP is
 	// enabled. The stores externalize the MTP draft seq state alongside
@@ -724,16 +747,55 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 		for _, sess := range m.imcSessions {
 			store, err := newSessionStore(m.cfg)
 			if err != nil {
-				m.batch.stop(ctx)
-				m.batch.freeBatch()
-				llama.Free(lctx)
-				return fmt.Errorf("init-generation-runtime: draft session-store: %w", err)
+				return m.cleanupGenerationRuntime(ctx, fmt.Errorf("init-generation-runtime: draft session-store: %w", err))
 			}
 			sess.draftKVState = store
 		}
 	}
 
 	return nil
+}
+
+// cleanupGenerationRuntime releases partially initialized generation state.
+// The order mirrors Unload: draft, batch, primary context, then session stores.
+func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error {
+	if m.draft != nil {
+		m.draft.unload()
+		m.draft = nil
+	}
+	if m.batch != nil {
+		m.batch.stop(ctx)
+		m.batch.freeBatch()
+		m.batch = nil
+	}
+	if m.lctx != 0 {
+		llama.Synchronize(m.lctx)
+		llama.Free(m.lctx)
+		m.lctx = 0
+		m.mem = 0
+	}
+
+	cleanupErrs := []error{cause}
+	for i, sess := range m.imcSessions {
+		if sess == nil {
+			continue
+		}
+		if sess.kvState != nil {
+			if err := sess.kvState.Close(); err != nil {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] store: %w", i, err))
+			}
+		}
+		if sess.draftKVState != nil {
+			if err := sess.draftKVState.Close(); err != nil {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] draft store: %w", i, err))
+			}
+		}
+	}
+	m.imcSessions = nil
+	m.cacheCond = nil
+	m.parser = nil
+
+	return errors.Join(cleanupErrs...)
 }
 
 // loadDraftModel loads the draft model for speculative decoding. It creates
@@ -1083,7 +1145,12 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.mtmdMetaCtx = 0
 	}
 
+	adapterErr := m.freeAdapters()
 	llama.ModelFree(m.model)
+
+	if adapterErr != nil {
+		return fmt.Errorf("unload: %w", adapterErr)
+	}
 
 	return nil
 }
