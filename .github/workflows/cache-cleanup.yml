@@ -4,7 +4,7 @@ name: Cache cleanup
 # so the repo never bumps into GitHub Actions' 10 GB GHA-cache quota
 # or accumulates dead OCI manifests on GHCR / Docker Hub.
 #
-# Eight scopes get cleaned (one job each, all run in parallel):
+# Ten scopes get cleaned (one job each, all run in parallel):
 #
 #   1. prune-gha-cache — GHA cache (actions/cache + buildx `type=gha`
 #      exports). Anything older than CUTOFF_DAYS is deleted via
@@ -53,6 +53,17 @@ name: Cache cleanup
 #      `sha256-<hex>.{sig,att,sbom}` versions left behind when job 6
 #      removes a snapshot the signature targeted.
 #
+#   9. prune-snapshot-tags-dh-main — Docker Hub counterpart to job 6.
+#      Deletes `main-<sha>-<variant>` tags on `ardanlabs/kronk-main`
+#      older than CUTOFF_DAYS, always keeping `main-latest-<variant>`.
+#      DH auto-collects the now-untagged manifests after 30 days, so
+#      there's no DH equivalent of job 7.
+#
+#  10. prune-orphan-signatures-dh-main — Docker Hub counterpart to job
+#      8 (and to job 4): reaps orphan cosign tags in the sibling
+#      `ardanlabs/kronk-main-signatures` repo whose target digest is no
+#      longer live in `ardanlabs/kronk-main`.
+#
 # NEVER prunes:
 #   - Release tags (`v*-*`, `latest*`) on either registry — those are
 #     product artifacts. Removing them would break users pinning to a
@@ -61,9 +72,10 @@ name: Cache cleanup
 #     and require explicit dry-run for at least two cycles before
 #     turning it live.
 #   - The floating `main-latest-<variant>` snapshot pointers on
-#     `ghcr.io/ardanlabs/kronk-main` — always the newest trunk build,
-#     so consumers pinning to `main-latest-*` never break. Only the
-#     immutable `main-<sha>-<variant>` snapshots age out (job 6).
+#     `ghcr.io/ardanlabs/kronk-main` and `ardanlabs/kronk-main` —
+#     always the newest trunk build, so consumers pinning to
+#     `main-latest-*` never break. Only the immutable
+#     `main-<sha>-<variant>` snapshots age out (jobs 6 and 9).
 #   - GitHub Actions workflow artifacts uploaded by docker.yml — those
 #     already have `retention-days: 1`, so GitHub auto-deletes them
 #     within 24 hours. No code here for them.
@@ -109,6 +121,10 @@ env:
   # docker.yml's COSIGN_REPOSITORY redirect). Not a thing on GHCR
   # (signatures co-located there).
   DH_SIG_REPO: kronk-signatures
+  # Docker Hub sibling repo holding cosign signatures for the
+  # trunk-snapshot images (ardanlabs/kronk-main). Kept in sync with
+  # docker.yml's merge_main DH_MAIN_SIG_REPO.
+  DH_MAIN_SIG_REPO: kronk-main-signatures
   # Kept in sync with docker.yml's BUILDCACHE_IMAGE / GHCR_IMAGE /
   # DH_IMAGE namespace.
   ORG: ardanlabs
@@ -831,3 +847,186 @@ jobs:
           done <<<"${candidates}"
 
           echo "Done. deleted=${deleted} kept(target-still-live)=${kept}"
+
+  # ---------------------------------------------------------------------------
+  # prune-snapshot-tags-dh-main
+  #
+  # Docker Hub counterpart to prune-snapshot-tags-ghcr-main. Age out the
+  # immutable `main-<sha>-<variant>` snapshot tags on ardanlabs/kronk-main
+  # older than the cutoff, always keeping the floating
+  # `main-latest-<variant>` pointers. On DH each tag is its own entity
+  # (deleting the snapshot tag never touches the main-latest tag, even
+  # when both point at the same digest), so — unlike the GHCR version —
+  # there's no all/none tag-set guard to worry about. DH auto-collects
+  # the now-untagged manifests after 30 days, so no untagged sweep here.
+  # ---------------------------------------------------------------------------
+  prune-snapshot-tags-dh-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete main-<sha> snapshot tags from Docker Hub kronk-main
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          CUTOFF_DAYS: ${{ github.event.inputs.cutoff_days || '15' }}
+        run: |
+          set -euo pipefail
+
+          cutoff_epoch=$(date -u -d "${CUTOFF_DAYS} days ago" +%s)
+          echo "Pruning ${ORG}/${MAIN_PACKAGE} snapshot tags pushed before $(date -u -d "@${cutoff_epoch}" --iso-8601=seconds) (>${CUTOFF_DAYS}d old)"
+          echo "Dry run: ${DRY_RUN}"
+
+          jwt="$(curl -sS \
+            -H 'Content-Type: application/json' \
+            -d "{\"username\":\"${DOCKERHUB_USERNAME}\",\"password\":\"${DOCKERHUB_TOKEN}\"}" \
+            'https://hub.docker.com/v2/users/login/' | jq -r .token)"
+          if [[ -z "${jwt}" || "${jwt}" == "null" ]]; then
+            echo "::error::Docker Hub login failed (empty JWT)"
+            exit 1
+          fi
+
+          fetch_all_tags() {
+            local repo="$1"
+            local url="https://hub.docker.com/v2/repositories/${ORG}/${repo}/tags/?page_size=100"
+            local page acc='[]'
+            while [[ -n "${url}" && "${url}" != "null" ]]; do
+              page="$(curl -sS -H "Authorization: JWT ${jwt}" "${url}")"
+              acc="$(jq -c --argjson p "$(echo "${page}" | jq '.results // []')" \
+                '. + $p' <<<"${acc}")"
+              url="$(echo "${page}" | jq -r '.next // empty')"
+            done
+            echo "${acc}"
+          }
+
+          # Snapshot tags: name matches main-<7+ hex>-<variant>, never a
+          # main-latest pointer, last pushed before the cutoff. Emit
+          # `name\tpushed` per row.
+          all_tags="$(fetch_all_tags "${MAIN_PACKAGE}")"
+          stale="$(echo "${all_tags}" | jq -r --argjson cutoff "${cutoff_epoch}" '
+            .[]
+            | select(
+                (.name | test("^main-latest-") | not)
+                and (.name | test("^main-[0-9a-f]{7,}-.+$"))
+                and (((.tag_last_pushed // .last_updated) // "1970-01-01T00:00:00Z")
+                     | fromdateiso8601) < $cutoff
+              )
+            | [ .name, ((.tag_last_pushed // .last_updated) // "") ] | @tsv
+          ')"
+
+          deleted=0
+          while IFS=$'\t' read -r tag pushed; do
+            [[ -z "${tag}" ]] && continue
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete tag=${tag} pushed=${pushed}"
+            else
+              echo "Deleting tag=${tag} pushed=${pushed}"
+              http=$(curl -sS -o /dev/null -w '%{http_code}' \
+                -X DELETE \
+                -H "Authorization: JWT ${jwt}" \
+                "https://hub.docker.com/v2/repositories/${ORG}/${MAIN_PACKAGE}/tags/${tag}/")
+              case "${http}" in
+                204|404) ;;
+                *) echo "  (HTTP ${http} — continuing)" ;;
+              esac
+            fi
+            deleted=$((deleted + 1))
+          done <<<"${stale}"
+
+          echo "Done. deleted=${deleted}"
+
+  # ---------------------------------------------------------------------------
+  # prune-orphan-signatures-dh-main
+  #
+  # Docker Hub counterpart to prune-orphan-signatures-ghcr-main (and a
+  # clone of prune-orphan-signatures-dh pointed at the snapshot repos).
+  # Reaps `sha256-<hex>.{sig,att,sbom}` tags in ardanlabs/kronk-main-
+  # signatures whose target digest is no longer live in
+  # ardanlabs/kronk-main — e.g. the signature of a snapshot that
+  # prune-snapshot-tags-dh-main just aged out.
+  # ---------------------------------------------------------------------------
+  prune-orphan-signatures-dh-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete orphan cosign signatures from Docker Hub kronk-main-signatures
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          echo "Scanning ${ORG}/${DH_MAIN_SIG_REPO} on Docker Hub for orphan cosign signatures"
+          echo "Dry run: ${DRY_RUN}"
+
+          jwt="$(curl -sS \
+            -H 'Content-Type: application/json' \
+            -d "{\"username\":\"${DOCKERHUB_USERNAME}\",\"password\":\"${DOCKERHUB_TOKEN}\"}" \
+            'https://hub.docker.com/v2/users/login/' | jq -r .token)"
+          if [[ -z "${jwt}" || "${jwt}" == "null" ]]; then
+            echo "::error::Docker Hub login failed (empty JWT)"
+            exit 1
+          fi
+
+          fetch_all_tags() {
+            local repo="$1"
+            local url="https://hub.docker.com/v2/repositories/${ORG}/${repo}/tags/?page_size=100"
+            local page acc='[]'
+            while [[ -n "${url}" && "${url}" != "null" ]]; do
+              page="$(curl -sS -H "Authorization: JWT ${jwt}" "${url}")"
+              acc="$(jq -c --argjson p "$(echo "${page}" | jq '.results // []')" \
+                '. + $p' <<<"${acc}")"
+              url="$(echo "${page}" | jq -r '.next // empty')"
+            done
+            echo "${acc}"
+          }
+
+          release_tags="$(fetch_all_tags "${MAIN_PACKAGE}")"
+          live_digests="$(echo "${release_tags}" | jq -r '
+            [ .[].digest // empty ] | unique[]
+          ')"
+          live_count="$(wc -l <<<"${live_digests}" | tr -d ' ')"
+          echo "Found ${live_count} live digests in ${ORG}/${MAIN_PACKAGE}"
+
+          sig_tags="$(fetch_all_tags "${DH_MAIN_SIG_REPO}")"
+          candidates="$(echo "${sig_tags}" | jq -r '
+            .[]
+            | select(.name | test("^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$"))
+            | [
+                .name,
+                ((.name | capture("^sha256-(?<h>[a-f0-9]{64})\\.")).h),
+                (.tag_last_pushed // .last_updated // "")
+              ] | @tsv
+          ')"
+
+          skipped_non_sig="$(echo "${sig_tags}" | jq '
+            [ .[] | select(.name | test("^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$") | not) ] | length
+          ')"
+          if (( skipped_non_sig > 0 )); then
+            echo "::warning::Found ${skipped_non_sig} non-signature tag(s) in ${ORG}/${DH_MAIN_SIG_REPO} — leaving them alone."
+          fi
+
+          deleted=0
+          kept=0
+          while IFS=$'\t' read -r tag target_hex pushed; do
+            [[ -z "${tag}" ]] && continue
+            if grep -qxF "sha256:${target_hex}" <<<"${live_digests}"; then
+              kept=$((kept + 1))
+              continue
+            fi
+            if [[ "${DRY_RUN}" == "true" ]]; then
+              echo "[dry-run] would delete tag=${tag} target=sha256:${target_hex} pushed=${pushed}"
+            else
+              echo "Deleting tag=${tag} target=sha256:${target_hex} pushed=${pushed}"
+              http=$(curl -sS -o /dev/null -w '%{http_code}' \
+                -X DELETE \
+                -H "Authorization: JWT ${jwt}" \
+                "https://hub.docker.com/v2/repositories/${ORG}/${DH_MAIN_SIG_REPO}/tags/${tag}/")
+              case "${http}" in
+                204|404) ;;
+                *) echo "  (HTTP ${http} — continuing)" ;;
+              esac
+            fi
+            deleted=$((deleted + 1))
+          done <<<"${candidates}"
+
+          echo "Done. deleted=${deleted} kept(target-still-live)=${kept} skipped(non-sig)=${skipped_non_sig}"

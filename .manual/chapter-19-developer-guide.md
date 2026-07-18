@@ -1972,7 +1972,7 @@ Five GitHub Actions workflows live under [`.github/workflows/`](../.github/workf
 | ------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`linux.yml`](../.github/workflows/linux.yml)                 | PRs + push to `main` (Go/mod/CI paths)                     | Three parallel jobs: `static` (vet/staticcheck/govulncheck/gofmt/gofix/tidy/goreleaser-check/-race unit tests), `api-tests` (`cmd/server/...`), `sdk-tests` (`sdk/...`).                                                                                                        |
 | [`release.yaml`](../.github/workflows/release.yaml)           | Push of tag `v*`                                           | Pinned-toolchain `goreleaser release --clean`, SBOM generation via syft, SLSA build-provenance attestation, Homebrew cask refresh.                                                                                                                                              |
-| [`docker.yml`](../.github/workflows/docker.yml)               | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds the **five** container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). Tag pushes (`v*`) publish + cosign-sign to the release repos (`ghcr.io/ardanlabs/kronk` + Docker Hub); main pushes publish + cosign-sign trunk snapshots to a separate GHCR repo (`ghcr.io/ardanlabs/kronk-main`, `main-<sha>` / `main-latest` tags, GHCR only). Both smoke-test cpu/amd64 before publishing. |
+| [`docker.yml`](../.github/workflows/docker.yml)               | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds the **five** container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). Tag pushes (`v*`) publish + cosign-sign to the release repos (`ghcr.io/ardanlabs/kronk` + Docker Hub); main pushes publish + cosign-sign trunk snapshots to separate repos on both registries (`ghcr.io/ardanlabs/kronk-main` + `ardanlabs/kronk-main`, `main-<sha>` / `main-latest` tags). Both smoke-test cpu/amd64 before publishing. |
 | [`cache-cleanup.yml`](../.github/workflows/cache-cleanup.yml) | Daily cron + manual                                        | Prunes stale GHA cache entries and stale `kronk-buildcache` GHCR tags older than the cutoff.                                                                                                                                                                                    |
 | [`label-guard.yml`](../.github/workflows/label-guard.yml)     | Label events on PRs/issues                                 | Removes unauthorized `build *` labels (PRs from non-maintainers; any application on an issue).                                                                                                                                                                                  |
 
@@ -2311,41 +2311,54 @@ pushes never reach this job):
 **Merge + sign (main).** The `merge_main` job is the main-branch
 counterpart to `merge` (runs only when `is_main == 'true'`). It is the
 same shape — download digests → `imagetools create` → cosign keyless
-sign the manifest-list digest — but targets a **single** registry, the
-trunk-snapshot repo `ghcr.io/ardanlabs/kronk-main`, and never touches
-Docker Hub. Per variant it applies two tags to that repo:
+sign each manifest-list digest — and publishes to **both** registries'
+trunk-snapshot repos, `ghcr.io/ardanlabs/kronk-main` and Docker Hub
+`ardanlabs/kronk-main`. Per variant it applies two tags to each repo:
 
 - `main-<sha>-<variant>` — immutable per-commit snapshot (the `<sha>`
   is the same `main-<sha>` version string stamped into the binary).
 - `main-latest-<variant>` — a floating pointer to the newest main build.
 
-There is no floating `latest` / `main` alias on the snapshot repo, so a
-consumer always names a variant (`ghcr.io/ardanlabs/kronk-main:main-latest-cpu`).
-Signatures are GHCR-co-located (default cosign layout); verify exactly
-as for the release GHCR images but against the `kronk-main` repo:
+There is no floating `latest` / `main` alias on the snapshot repos, so a
+consumer always names a variant (`.../kronk-main:main-latest-cpu`). GHCR
+signatures are co-located (default cosign layout); Docker Hub signatures
+are redirected to the sibling `ardanlabs/kronk-main-signatures` repo via
+`COSIGN_REPOSITORY` (mirroring how the release path uses
+`kronk-signatures`). Verify:
 
    ```shell
+   # GHCR (signatures co-located):
    cosign verify ghcr.io/ardanlabs/kronk-main:main-latest-cpu \
      --certificate-identity-regexp \
        'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+   # Docker Hub (signatures in sibling repo):
+   COSIGN_REPOSITORY=ardanlabs/kronk-main-signatures \
+     cosign verify ardanlabs/kronk-main:main-latest-cpu \
+       --certificate-identity-regexp \
+         'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
+       --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
 > **One-time setup.** The first `push → main` build creates the
 > `kronk-main` GHCR package, which GHCR makes **private** by default and
-> does not link to the repo. Until a maintainer sets its visibility to
-> public (and grants the repo write access) on the package settings
-> page, `docker pull` / `cosign verify` of `main-latest-*` will 401 for
-> anyone but the org. This is a one-time manual step per new package.
+> does not link to the repo — a maintainer must set its visibility to
+> public (and grant the repo write access) on the package settings page.
+> On Docker Hub, create the `ardanlabs/kronk-main` and
+> `ardanlabs/kronk-main-signatures` repos as **public** before the first
+> main build. Until both are done, `docker pull` / `cosign verify` of
+> `main-latest-*` will fail for anyone outside the org.
 
-> **Retention.** `cache-cleanup.yml` prunes the `kronk-main` repo on its
+> **Retention.** `cache-cleanup.yml` prunes both snapshot repos on its
 > daily cron: immutable `main-<sha>-<variant>` tags age out after
 > `cutoff_days` (default 15), while the floating `main-latest-<variant>`
-> pointers are kept forever. Three cooperating jobs handle it —
-> `prune-snapshot-tags-ghcr-main` removes aged snapshot indexes, then
-> `prune-untagged-ghcr-main` and `prune-orphan-signatures-ghcr-main`
-> reap the per-arch children and cosign signatures those leave behind
-> (the same untagged/orphan sweeps that run for the release repo).
+> pointers are kept forever. Five cooperating jobs handle it —
+> `prune-snapshot-tags-ghcr-main` + `prune-snapshot-tags-dh-main` remove
+> aged snapshots, then `prune-untagged-ghcr-main` (GHCR only; DH
+> auto-collects untagged manifests) and
+> `prune-orphan-signatures-{ghcr,dh}-main` reap the per-arch children
+> and cosign signatures those leave behind.
 
 **Event → variants → tags:**
 
@@ -2354,7 +2367,7 @@ as for the release GHCR images but against the `kronk-main` repo:
 | PR (no labels)         | `cpu` (linux/amd64 only)                             | no    | — (plus a `kronk --version` / `kronk --help` smoke test on cpu/amd64)    |
 | PR + label `build all` | all 5 (all supported arches)                         | no    | —                                                                        |
 | PR + label `build <v>` | `cpu` + each labeled variant (all supported arches)  | no    | —                                                                        |
-| Push to `main`         | all 5                                                | yes   | `main-<sha>-<variant>` + `main-latest-<variant>` on `ghcr.io/ardanlabs/kronk-main` (GHCR only, cosign-signed); smoke-tests cpu/amd64; refreshes the BuildKit cache |
+| Push to `main`         | all 5                                                | yes   | `main-<sha>-<variant>` + `main-latest-<variant>` on `ghcr.io/ardanlabs/kronk-main` **and** `ardanlabs/kronk-main` (both cosign-signed); smoke-tests cpu/amd64; refreshes the BuildKit cache |
 | Push to tag `v*`       | all 5                                                | yes   | `<tag>-<variant>` + `latest-<variant>`; plus `latest` → cpu (all signed) |
 | `workflow_dispatch`    | input `variants` (default `all`, or comma-separated) | no    | —                                                                        |
 

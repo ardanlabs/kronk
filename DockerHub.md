@@ -61,6 +61,13 @@ Models download automatically on first use.
   [Dockerfile](https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile),
   not as part of the automatic build matrix. See the run example below.
 
+**Development snapshots** (bleeding edge, not for production) are published
+from every push to `main` in a separate repo,
+[`ardanlabs/kronk-main`](https://hub.docker.com/r/ardanlabs/kronk-main), as
+`main-<sha>-<variant>` (immutable per-commit) and `main-latest-<variant>`
+(floating). They are cosign-signed the same way as releases, with signatures
+in [`ardanlabs/kronk-main-signatures`](https://hub.docker.com/r/ardanlabs/kronk-main-signatures).
+
 ---
 
 ## Platform Support

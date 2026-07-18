@@ -35,12 +35,12 @@ name: Docker
 # │                    │ promotes cpu back to its full arch list too).       │
 # ├────────────────────┼─────────────────────────────────────────────────────┤
 # │ push → main        │ Build all variants, smoke-test cpu/amd64, then      │
-# │                    │ push & cosign-sign to the trunk-snapshot repo       │
-# │                    │   ghcr.io/ardanlabs/kronk-main:main-<sha>-<v>       │
-# │                    │   ghcr.io/ardanlabs/kronk-main:main-latest-<v>      │
-# │                    │ GHCR only (no Docker Hub). Also refreshes the       │
-# │                    │ registry-backed BuildKit cache so PR builds stay    │
-# │                    │ warm.                                               │
+# │                    │ push & cosign-sign to the trunk-snapshot repos      │
+# │                    │ on BOTH registries:                                 │
+# │                    │   {ghcr.io/ardanlabs,ardanlabs}/kronk-main          │
+# │                    │     :main-<sha>-<v>  +  :main-latest-<v>            │
+# │                    │ Also refreshes the registry-backed BuildKit cache   │
+# │                    │ so PR builds stay warm.                             │
 # ├────────────────────┼─────────────────────────────────────────────────────┤
 # │ push → tag v*      │ Build & push all variants as                        │
 # │                    │   <registry>/ardanlabs/kronk:<tag>-<v>              │
@@ -90,12 +90,13 @@ concurrency:
 
 env:
   GHCR_IMAGE: ghcr.io/ardanlabs/kronk
-  # Separate GHCR repo for main-branch builds. Kept apart from the
-  # release repo (GHCR_IMAGE) so trunk snapshots never mix into the
-  # release tag list, and so a floating `main-latest` can move freely
-  # without touching `latest`. Only GHCR is targeted for main builds —
-  # Docker Hub carries release tags only.
+  # Separate repos for main-branch builds, one per registry. Kept apart
+  # from the release repos (GHCR_IMAGE / DH_IMAGE) so trunk snapshots
+  # never mix into the release tag list, and so a floating `main-latest`
+  # can move freely without touching `latest`. Main builds publish to
+  # BOTH registries, same as releases.
   GHCR_MAIN_IMAGE: ghcr.io/ardanlabs/kronk-main
+  DH_MAIN_IMAGE: ardanlabs/kronk-main
   DH_IMAGE: ardanlabs/kronk
   # Registry-backed BuildKit cache. Stored as OCI artifacts alongside
   # the runtime images in GHCR — no 10 GB per-repo GHA quota to fight,
@@ -163,13 +164,14 @@ jobs:
           # -------------------------------------------------------------------
           # Version + push policy
           #
-          # Two events publish images, to two different GHCR repos:
+          # Two events publish images, each to its own pair of repos
+          # (GHCR + Docker Hub):
           #
-          #   * tag push (v*) → release repo (GHCR_IMAGE + Docker Hub),
+          #   * tag push (v*) → release repos (GHCR_IMAGE + DH_IMAGE),
           #     cosign-signed. IS_TAG=true.
-          #   * push → main  → trunk-snapshot repo (GHCR_MAIN_IMAGE only),
-          #     cosign-signed, tagged main-<sha> + main-latest.
-          #     IS_MAIN=true.
+          #   * push → main  → trunk-snapshot repos (GHCR_MAIN_IMAGE +
+          #     DH_MAIN_IMAGE), cosign-signed, tagged main-<sha> +
+          #     main-latest. IS_MAIN=true.
           #
           # Both refresh the registry-backed BuildKit cache. PRs and
           # workflow_dispatch build only (PUSH=false) and never publish.
@@ -466,10 +468,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Docker Hub carries release tags only — main pushes go to GHCR
-      # (GHCR_MAIN_IMAGE) exclusively, so skip the DH login on main.
+      # Both publish paths (tag → release repos, main → snapshot repos)
+      # push to Docker Hub. PR / workflow_dispatch never publish, so
+      # skip the DH login there to avoid a needless credential use.
       - name: Log in to Docker Hub
-        if: needs.plan.outputs.is_tag == 'true'
+        if: needs.plan.outputs.is_tag == 'true' || needs.plan.outputs.is_main == 'true'
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -652,14 +655,18 @@ jobs:
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
 
       # Main-push path (refs/heads/main): build & push by digest to the
-      # trunk-snapshot repo GHCR_MAIN_IMAGE only (no Docker Hub). The
-      # merge_main job applies the main-<sha> / main-latest tags once
-      # both arches are available. Tag pushes never reach this step;
+      # trunk-snapshot repos GHCR_MAIN_IMAGE + DH_MAIN_IMAGE, mirroring
+      # the release GHCR/DH split above (separate buildx invocations so
+      # each surfaces its own outputs.digest — see the long note there).
+      # The merge_main job applies the main-<sha> / main-latest tags once
+      # both arches are available. Tag pushes never reach these steps;
       # main pushes never reach the release GHCR/DH steps above.
       #
-      # This is also the cache WRITE for main builds (mode=max), keeping
-      # PR builds warm — the old main "Build (no push)" cache-to moved
-      # here. Same provenance + SBOM attestations as the release path.
+      # The GHCR step is also the cache WRITE for main builds (mode=max),
+      # keeping PR builds warm — the old main "Build (no push)" cache-to
+      # moved here. The DH step reads from that cache (cache-from only),
+      # exactly like the release DH step. Same provenance + SBOM
+      # attestations as the release path.
       - name: Build & push by digest to GHCR (main)
         if: needs.plan.outputs.is_main == 'true'
         id: build_ghcr_main
@@ -679,6 +686,26 @@ jobs:
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }},mode=max,image-manifest=true,compression=zstd
 
+      - name: Build & push by digest to Docker Hub (main)
+        if: needs.plan.outputs.is_main == 'true'
+        id: build_dh_main
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
+        with:
+          context: .
+          file: zarf/docker/kronk/Dockerfile
+          platforms: ${{ matrix.platform }}
+          target: ${{ matrix.target }}
+          build-args: |
+            LLAMA_PROCESSORS=${{ matrix.processors }}
+            BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
+            KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
+          outputs: type=image,name=${{ env.DH_MAIN_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          # cache-from only: the GHCR (main) step above already populated
+          # the cache for this (variant, arch).
+          cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
+
       # Release-path digest export (tag push): GHCR + Docker Hub.
       - name: Export digests
         if: needs.plan.outputs.is_tag == 'true'
@@ -692,13 +719,15 @@ jobs:
           touch "/tmp/digests/ghcr/${d_ghcr#sha256:}"
           touch "/tmp/digests/dh/${d_dh#sha256:}"
 
-      # Main-path digest export: GHCR_MAIN_IMAGE only.
+      # Main-path digest export: GHCR_MAIN_IMAGE + DH_MAIN_IMAGE.
       - name: Export digest (main)
         if: needs.plan.outputs.is_main == 'true'
         run: |
-          mkdir -p /tmp/digests/ghcr-main
-          d_main='${{ steps.build_ghcr_main.outputs.digest }}'
-          touch "/tmp/digests/ghcr-main/${d_main#sha256:}"
+          mkdir -p /tmp/digests/ghcr-main /tmp/digests/dh-main
+          d_ghcr_main='${{ steps.build_ghcr_main.outputs.digest }}'
+          d_dh_main='${{ steps.build_dh_main.outputs.digest }}'
+          touch "/tmp/digests/ghcr-main/${d_ghcr_main#sha256:}"
+          touch "/tmp/digests/dh-main/${d_dh_main#sha256:}"
 
       - name: Upload GHCR digest
         if: needs.plan.outputs.is_tag == 'true'
@@ -724,6 +753,15 @@ jobs:
         with:
           name: digests-ghcr-main-${{ matrix.variant }}-${{ matrix.arch }}
           path: /tmp/digests/ghcr-main/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Docker Hub main digest
+        if: needs.plan.outputs.is_main == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: digests-dh-main-${{ matrix.variant }}-${{ matrix.arch }}
+          path: /tmp/digests/dh-main/*
           if-no-files-found: error
           retention-days: 1
 
@@ -1099,22 +1137,26 @@ jobs:
   # The main-branch counterpart to `merge`. Runs only on push → main
   # (`if: is_main == 'true'`). Assembles the multi-arch manifest for each
   # variant from the per-arch digests uploaded by `build`, applies the
-  # trunk-snapshot tags to GHCR_MAIN_IMAGE only (no Docker Hub), and
-  # cosign-signs the manifest-list digest — full supply-chain parity with
-  # the release path, one registry.
+  # trunk-snapshot tags to BOTH snapshot repos (GHCR_MAIN_IMAGE +
+  # DH_MAIN_IMAGE), and cosign-signs each manifest-list digest — full
+  # supply-chain parity with the release path, on both registries.
   #
   #   push → main → <GHCR_MAIN_IMAGE>:main-<sha>-<variant>   (immutable)
   #               + <GHCR_MAIN_IMAGE>:main-latest-<variant>  (floating)
+  #               + <DH_MAIN_IMAGE>:main-<sha>-<variant>     (immutable)
+  #               + <DH_MAIN_IMAGE>:main-latest-<variant>    (floating)
   #
   # No floating `latest` / `main` alias — main-latest-<variant> is the
   # only moving pointer, so a consumer must always name a variant.
   #
-  # ONE-TIME SETUP: the first run creates the GHCR_MAIN_IMAGE package,
-  # which GHCR makes private and unlinked to the repo by default. A
-  # maintainer must set its visibility to public on the package settings
-  # page before external consumers can pull/verify main-latest-*.
+  # ONE-TIME SETUP: the first run creates the GHCR_MAIN_IMAGE package
+  # (GHCR makes it private and unlinked to the repo by default — a
+  # maintainer must set it public on the package settings page) and the
+  # DH_MAIN_IMAGE + kronk-main-signatures repos on Docker Hub (create
+  # them public before the first run, or verification fails). Only then
+  # can external consumers pull/verify main-latest-*.
   # Retention of the immutable main-<sha> snapshots is handled by
-  # cache-cleanup.yml (see its prune-*-ghcr-main jobs).
+  # cache-cleanup.yml (see its prune-*-main jobs).
   # ---------------------------------------------------------------------------
   merge_main:
     needs: [plan, build]
@@ -1142,6 +1184,13 @@ jobs:
           pattern: digests-ghcr-main-${{ matrix.variant }}-*
           merge-multiple: true
 
+      - name: Download Docker Hub main digests for this variant
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          path: /tmp/digests/dh-main
+          pattern: digests-dh-main-${{ matrix.variant }}-*
+          merge-multiple: true
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
 
@@ -1151,6 +1200,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Per-variant title + description for the OCI index annotations
       # GHCR renders on the package page. Kept in sync with the release
@@ -1194,7 +1249,9 @@ jobs:
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: index
         with:
-          images: ${{ env.GHCR_MAIN_IMAGE }}
+          images: |
+            ${{ env.GHCR_MAIN_IMAGE }}
+            ${{ env.DH_MAIN_IMAGE }}
           annotations: |
             org.opencontainers.image.title=${{ steps.variant_meta.outputs.title }}
             org.opencontainers.image.description=${{ steps.variant_meta.outputs.description }}
@@ -1222,8 +1279,10 @@ jobs:
           printf '  %s\n' "${ANNOTATION_FLAGS[@]}"
           echo "::endgroup::"
 
-          # Per-arch digest refs for this variant (flattened layout from
-          # merge-multiple: true above): /tmp/digests/ghcr-main/<hexdigest>
+          # Per-registry per-arch digest refs for this variant (flattened
+          # layout from merge-multiple: true above):
+          #   /tmp/digests/ghcr-main/<hexdigest>
+          #   /tmp/digests/dh-main/<hexdigest>
           collect_refs() {
             local dir="$1" image="$2"
             local f d
@@ -1234,10 +1293,11 @@ jobs:
             done
           }
 
-          mapfile -t REFS < <(collect_refs /tmp/digests/ghcr-main "$GHCR_MAIN_IMAGE")
+          mapfile -t GHCR_REFS < <(collect_refs /tmp/digests/ghcr-main "$GHCR_MAIN_IMAGE")
+          mapfile -t DH_REFS   < <(collect_refs /tmp/digests/dh-main   "$DH_MAIN_IMAGE")
 
-          if (( ${#REFS[@]} == 0 )); then
-            echo "::error::No digests found for variant=${VARIANT}"
+          if (( ${#GHCR_REFS[@]} == 0 || ${#DH_REFS[@]} == 0 )); then
+            echo "::error::No digests found for variant=${VARIANT} (ghcr=${#GHCR_REFS[@]}, dh=${#DH_REFS[@]})"
             ls -laR /tmp/digests || true
             exit 1
           fi
@@ -1250,55 +1310,104 @@ jobs:
           echo "::group::Manifest plan"
           echo "variant=${VARIANT}"
           echo "tags=${TAGS[*]}"
-          printf '  ref: %s\n' "${REFS[@]}"
+          printf '  GHCR ref: %s\n' "${GHCR_REFS[@]}"
+          printf '  DH   ref: %s\n' "${DH_REFS[@]}"
           echo "::endgroup::"
 
-          # Capture the manifest-list digest from the FIRST imagetools
-          # create via --metadata-file. Both tags point at the same
-          # manifest-list blob, so one capture is enough to sign once.
-          META=$(mktemp)
+          # Capture each registry's manifest-list digest from the FIRST
+          # imagetools create via --metadata-file. Both tags on a registry
+          # point at the same manifest-list blob, so one capture per
+          # registry is enough to sign once.
+          GHCR_META=$(mktemp)
+          DH_META=$(mktemp)
           first=1
           for TAG in "${TAGS[@]}"; do
-            EXTRA=()
+            GHCR_EXTRA=()
+            DH_EXTRA=()
             if (( first )); then
-              EXTRA=(--metadata-file "$META")
+              GHCR_EXTRA=(--metadata-file "$GHCR_META")
+              DH_EXTRA=(--metadata-file "$DH_META")
               first=0
             fi
+
             echo ">>> ${GHCR_MAIN_IMAGE}:${TAG}"
             docker buildx imagetools create \
               "${ANNOTATION_FLAGS[@]}" \
-              "${EXTRA[@]}" \
-              -t "${GHCR_MAIN_IMAGE}:${TAG}" "${REFS[@]}"
+              "${GHCR_EXTRA[@]}" \
+              -t "${GHCR_MAIN_IMAGE}:${TAG}" "${GHCR_REFS[@]}"
+
+            echo ">>> ${DH_MAIN_IMAGE}:${TAG}"
+            docker buildx imagetools create \
+              "${ANNOTATION_FLAGS[@]}" \
+              "${DH_EXTRA[@]}" \
+              -t "${DH_MAIN_IMAGE}:${TAG}" "${DH_REFS[@]}"
           done
 
-          DIGEST=$(jq -r '."containerimage.descriptor".digest // empty' "$META")
-          [[ "$DIGEST" == sha256:* ]] || {
-            echo "::error::Failed to capture GHCR main digest from $META"
-            cat "$META" || true
+          GHCR_DIGEST=$(jq -r '."containerimage.descriptor".digest // empty' "$GHCR_META")
+          DH_DIGEST=$(jq -r '."containerimage.descriptor".digest // empty' "$DH_META")
+          [[ "$GHCR_DIGEST" == sha256:* ]] || {
+            echo "::error::Failed to capture GHCR main digest from $GHCR_META"
+            cat "$GHCR_META" || true
+            exit 1
+          }
+          [[ "$DH_DIGEST" == sha256:* ]] || {
+            echo "::error::Failed to capture Docker Hub main digest from $DH_META"
+            cat "$DH_META" || true
             exit 1
           }
 
-          echo "sign_ref=${GHCR_MAIN_IMAGE}@${DIGEST}" >>"$GITHUB_OUTPUT"
+          SIGN_REFS=(
+            "${GHCR_MAIN_IMAGE}@${GHCR_DIGEST}"
+            "${DH_MAIN_IMAGE}@${DH_DIGEST}"
+          )
+          {
+            echo 'sign_refs<<EOF'
+            printf '%s\n' "${SIGN_REFS[@]}"
+            echo 'EOF'
+          } >>"$GITHUB_OUTPUT"
 
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac  # v3
 
-      # Keyless-sign the manifest-list digest (and each per-arch child
-      # via --recursive). GHCR signatures are co-located with the image,
-      # the default cosign layout. Consumers verify by tag:
+      # Keyless-sign each registry's manifest-list digest (and each
+      # per-arch child via --recursive). GHCR signatures are co-located
+      # with the image (default cosign layout); Docker Hub signatures are
+      # redirected to a sibling repo (ardanlabs/kronk-main-signatures) via
+      # COSIGN_REPOSITORY so they don't clutter the kronk-main tag list —
+      # exactly as the release path does for kronk-signatures. That repo
+      # must exist and be public for keyless verification. Consumers
+      # verify by tag:
       #
+      #   # GHCR (signatures co-located):
       #   cosign verify ghcr.io/ardanlabs/kronk-main:main-latest-cpu \
       #     --certificate-identity-regexp \
       #       'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
       #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
-      - name: Sign published manifest (cosign keyless)
+      #
+      #   # Docker Hub (signatures in sibling repo):
+      #   COSIGN_REPOSITORY=ardanlabs/kronk-main-signatures \
+      #     cosign verify ardanlabs/kronk-main:main-latest-cpu \
+      #       --certificate-identity-regexp \
+      #         'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
+      #       --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: Sign published manifests (cosign keyless)
         env:
-          SIGN_REF: ${{ steps.merge_manifests.outputs.sign_ref }}
+          SIGN_REFS: ${{ steps.merge_manifests.outputs.sign_refs }}
+          DH_MAIN_IMAGE: ${{ env.DH_MAIN_IMAGE }}
+          DH_MAIN_SIG_REPO: ardanlabs/kronk-main-signatures
           COSIGN_YES: "true"
         run: |
           set -euo pipefail
-          echo ">>> cosign sign $SIGN_REF"
-          cosign sign --recursive "$SIGN_REF"
+          while IFS= read -r ref; do
+            [[ -z "$ref" ]] && continue
+            if [[ "$ref" == "${DH_MAIN_IMAGE}@"* ]]; then
+              echo ">>> cosign sign $ref (COSIGN_REPOSITORY=${DH_MAIN_SIG_REPO})"
+              COSIGN_REPOSITORY="${DH_MAIN_SIG_REPO}" cosign sign --recursive "$ref"
+            else
+              echo ">>> cosign sign $ref"
+              cosign sign --recursive "$ref"
+            fi
+          done <<<"$SIGN_REFS"
 
       - name: Inspect published images
         env:
@@ -1307,3 +1416,5 @@ jobs:
         run: |
           docker buildx imagetools inspect "${GHCR_MAIN_IMAGE}:${VERSION}-${VARIANT}" || true
           docker buildx imagetools inspect "${GHCR_MAIN_IMAGE}:main-latest-${VARIANT}" || true
+          docker buildx imagetools inspect "${DH_MAIN_IMAGE}:${VERSION}-${VARIANT}" || true
+          docker buildx imagetools inspect "${DH_MAIN_IMAGE}:main-latest-${VARIANT}" || true
