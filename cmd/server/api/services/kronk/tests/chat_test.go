@@ -926,7 +926,7 @@ func chatEndpoint401(tokens map[string]string) []apitest.Table {
 			GotResp: &errs.Error{},
 			ExpResp: &errs.Error{
 				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"chat-completions\" not authorized",
+				Message: "rpc error: code = Unauthenticated desc = authentication failed",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,

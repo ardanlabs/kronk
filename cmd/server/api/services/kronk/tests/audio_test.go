@@ -122,7 +122,7 @@ func audioTranscriptions401(t *testing.T, tokens map[string]string) []apitest.Ta
 			GotResp: &errs.Error{},
 			ExpResp: &errs.Error{
 				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = not authorized: attempted action is not allowed: endpoint \"transcriptions\" not authorized",
+				Message: "rpc error: code = Unauthenticated desc = authentication failed",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
