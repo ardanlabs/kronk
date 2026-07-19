@@ -3,6 +3,7 @@ package security
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/security/key"
@@ -53,15 +54,30 @@ EXAMPLES
 
   # Create a JWT token for a user
   kronk security token create --user=john --ttl=1h`,
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if os.Getenv("KRONK_TOKEN") == "" {
-			return errors.New("KRONK_TOKEN environment variable must be set")
-		}
-		return sec.Authenticate()
-	},
+	PersistentPreRunE: authenticate,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
+}
+
+func authenticate(cmd *cobra.Command, args []string) error {
+	if os.Getenv("KRONK_TOKEN") == "" {
+		return errors.New("KRONK_TOKEN environment variable must be set")
+	}
+
+	if cmd.Flags().Lookup("local") == nil {
+		return nil
+	}
+
+	local, err := cmd.Flags().GetBool("local")
+	if err != nil {
+		return fmt.Errorf("local flag: %w", err)
+	}
+	if !local {
+		return nil
+	}
+
+	return sec.Authenticate()
 }
 
 func init() {

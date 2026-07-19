@@ -9542,7 +9542,7 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
               <tr>
                 <td><a href="../.github/workflows/docker.yml"><code>docker.yml</code></a></td>
                 <td>PRs, push to <code>main</code>, push of tag <code>v*</code>, <code>workflow_dispatch</code></td>
-                <td>Builds the <strong>five</strong> container variants defined in <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a>. Only tag pushes (<code>v*</code>) publish + cosign-sign; main pushes build all variants for CI validation (and smoke-test cpu/amd64) but do not push to any registry.</td>
+                <td>Builds the <strong>five</strong> container variants defined in <a href="../zarf/docker/kronk/Dockerfile"><code>zarf/docker/kronk/Dockerfile</code></a>. Tag pushes (<code>v*</code>) publish + cosign-sign to the release repos (<code>ghcr.io/ardanlabs/kronk</code> + Docker Hub); main pushes publish + cosign-sign trunk snapshots to separate repos on both registries (<code>ghcr.io/ardanlabs/kronk-main</code> + <code>ardanlabs/kronk-main</code>, <code>main-&lt;sha&gt;</code> / <code>main-latest</code> tags). Both smoke-test cpu/amd64 before publishing.</td>
               </tr>
               <tr>
                 <td><a href="../.github/workflows/cache-cleanup.yml"><code>cache-cleanup.yml</code></a></td>
@@ -9776,6 +9776,31 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
               </ul>
             </li>
           </ol>
+          <p><strong>Merge + sign (main).</strong> The <code>merge_main</code> job is the main-branch counterpart to <code>merge</code> (runs only when <code>is_main == 'true'</code>). It is the same shape — download digests → <code>imagetools create</code> → cosign keyless sign each manifest-list digest — and publishes to <strong>both</strong> registries' trunk-snapshot repos, <code>ghcr.io/ardanlabs/kronk-main</code> and Docker Hub <code>ardanlabs/kronk-main</code>. Per variant it applies two tags to each repo:</p>
+          <ul>
+            <li><code>main-&lt;sha&gt;-&lt;variant&gt;</code> — immutable per-commit snapshot (the <code>&lt;sha&gt;</code> is the same <code>main-&lt;sha&gt;</code> version string stamped into the binary).</li>
+            <li><code>main-latest-&lt;variant&gt;</code> — a floating pointer to the newest main build.</li>
+          </ul>
+          <p>There is no floating <code>latest</code> / <code>main</code> alias on the snapshot repos, so a consumer always names a variant (<code>.../kronk-main:main-latest-cpu</code>). GHCR signatures are co-located (default cosign layout); Docker Hub signatures are redirected to the sibling <code>ardanlabs/kronk-main-signatures</code> repo via <code>COSIGN_REPOSITORY</code> (mirroring how the release path uses <code>kronk-signatures</code>). Verify:</p>
+          <p>```shell # GHCR (signatures co-located): cosign verify ghcr.io/ardanlabs/kronk-main:main-latest-cpu \ --certificate-identity-regexp \ 'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \ --certificate-oidc-issuer https://token.actions.githubusercontent.com</p>
+          <p># Docker Hub (signatures in sibling repo): COSIGN_REPOSITORY=ardanlabs/kronk-main-signatures \ cosign verify ardanlabs/kronk-main:main-latest-cpu \ --certificate-identity-regexp \ 'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \ --certificate-oidc-issuer https://token.actions.githubusercontent.com ```</p>
+          <blockquote><strong>One-time setup.</strong> The first <code>push → main</code> build creates the</blockquote>
+          <blockquote><code>kronk-main</code> GHCR package, which GHCR makes <strong>private</strong> by default and</blockquote>
+          <blockquote>does not link to the repo — a maintainer must set its visibility to</blockquote>
+          <blockquote>public (and grant the repo write access) on the package settings page.</blockquote>
+          <blockquote>On Docker Hub, create the <code>ardanlabs/kronk-main</code> and</blockquote>
+          <blockquote><code>ardanlabs/kronk-main-signatures</code> repos as <strong>public</strong> before the first</blockquote>
+          <blockquote>main build. Until both are done, <code>docker pull</code> / <code>cosign verify</code> of</blockquote>
+          <blockquote><code>main-latest-*</code> will fail for anyone outside the org.</blockquote>
+          <blockquote><strong>Retention.</strong> <code>cache-cleanup.yml</code> prunes both snapshot repos on its</blockquote>
+          <blockquote>daily cron: immutable <code>main-&lt;sha&gt;-&lt;variant&gt;</code> tags age out after</blockquote>
+          <blockquote><code>cutoff_days</code> (default 15), while the floating <code>main-latest-&lt;variant&gt;</code></blockquote>
+          <blockquote>pointers are kept forever. Five cooperating jobs handle it —</blockquote>
+          <blockquote><code>prune-snapshot-tags-ghcr-main</code> + <code>prune-snapshot-tags-dh-main</code> remove</blockquote>
+          <blockquote>aged snapshots, then <code>prune-untagged-ghcr-main</code> (GHCR only; DH</blockquote>
+          <blockquote>auto-collects untagged manifests) and</blockquote>
+          <blockquote><code>prune-orphan-signatures-&#123;ghcr,dh&#125;-main</code> reap the per-arch children</blockquote>
+          <blockquote>and cosign signatures those leave behind.</blockquote>
           <p><strong>Event → variants → tags:</strong></p>
           <table className="flags-table">
             <thead>
@@ -9808,8 +9833,8 @@ go test -v -count=1 ./sdk/bucky/tests/transcribe/...`}</code></pre>
               <tr>
                 <td>Push to <code>main</code></td>
                 <td>all 5</td>
-                <td>no</td>
-                <td>— (smoke-tests cpu/amd64; refreshes the registry-backed BuildKit cache)</td>
+                <td>yes</td>
+                <td><code>main-&lt;sha&gt;-&lt;variant&gt;</code> + <code>main-latest-&lt;variant&gt;</code> on <code>ghcr.io/ardanlabs/kronk-main</code> <strong>and</strong> <code>ardanlabs/kronk-main</code> (both cosign-signed); smoke-tests cpu/amd64; refreshes the BuildKit cache</td>
               </tr>
               <tr>
                 <td>Push to tag <code>v*</code></td>
