@@ -2697,7 +2697,7 @@ Step 4 — Total VRAM:
             <li><strong>Restore</strong>: On the next request, the cached state is restored from RAM into any available slot via <code>StateSeqSetData</code>.</li>
           </ol>
           <pre className="code-block"><code>{`IMC (all types, all content): Snapshot to RAM → Clear VRAM → Restore into any slot`}</code></pre>
-          <p>The only difference is that when a new media message appears in the conversation, the cache is rebuilt through the mtmd pipeline (projection model encodes image/audio into embeddings).</p>
+          <p>The first media plan, or any plan with changed/reordered/removed/new media, is built through the mtmd pipeline (the projection model encodes image/audio into embeddings). A text-only follow-up to an unchanged media prefix restores the snapshot, decodes only appended stable text, and atomically advances the externalized snapshot; the media is not re-encoded.</p>
           <p>The snapshot/restore is a memory copy operation, typically 10-30ms depending on conversation size.</p>
           <h4 id="partial-prefix-rebuilds-hybrid">Partial Prefix Rebuilds (Hybrid)</h4>
           <p>Partial prefix matches are more expensive for hybrid models because the recurrent state must be rebuilt from the beginning.</p>
@@ -2735,23 +2735,23 @@ Step 4 — Total VRAM:
               </tr>
               <tr>
                 <td><code>imc-restore-done</code></td>
-                <td><code>StateSeqSetData</code> succeeded (shows <code>cached_tokens</code>, <code>ram_bytes</code>)</td>
+                <td><code>StateSeqSetData</code> succeeded (shows <code>next_logical_position</code>, <code>physical_kv_cells</code>, and <code>restored_bytes</code>)</td>
               </tr>
               <tr>
                 <td><code>imc-snapshot-start</code></td>
-                <td>About to capture cached prefix KV via <code>StateSeqGetData</code> after build/extend</td>
+                <td>About to capture cached prefix KV; distinguishes logical position from physical KV cells</td>
               </tr>
               <tr>
                 <td><code>imc-snapshot-done</code></td>
-                <td>Snapshot committed to <code>session.kvState</code> (shows duration, bytes)</td>
+                <td>Snapshot committed with logical position, physical KV cells, duration, and byte size</td>
               </tr>
               <tr>
                 <td><code>imc-snapshot-failed</code></td>
                 <td><code>StateSeqGetData</code> returned 0 bytes; session metadata reset</td>
               </tr>
               <tr>
-                <td><code>imc-snapshot-skip-pure-hit</code></td>
-                <td>Pure-hit fast path took the snapshot-skip optimization (see §5.2 Pure Hit Snapshot Skip)</td>
+                <td><code>imc-snapshot-skip-read-only</code></td>
+                <td>Exact text or media hit skipped redundant serialization; carries <code>snapshot_action=skip-read-only</code></td>
               </tr>
               <tr>
                 <td><code>imc-pure-hit-stale</code></td>
@@ -2760,6 +2760,14 @@ Step 4 — Total VRAM:
               <tr>
                 <td><code>imc-extend-stale</code></td>
                 <td>Extend candidate found a concurrently-mutated session; client should retry</td>
+              </tr>
+              <tr>
+                <td><code>imc-media-anchor-advanced-in-slot</code></td>
+                <td>Restored media prefix was extended with text only; media projection did not run</td>
+              </tr>
+              <tr>
+                <td><code>imc-media-anchor-committed</code></td>
+                <td>Staged target snapshot and physical/logical metadata were swapped atomically</td>
               </tr>
               <tr>
                 <td><code>imc-rebuild-full</code></td>
@@ -2897,16 +2905,16 @@ nseq-max = 8           → 24 IMC sessions, 8 slots`}</code></pre>
             <li>Restores the externalized <code>kvState</code> into the slot's sequence via <code>StateSeqSetData</code>.</li>
             <li>After build/extend (or no-op for a pure hit), serializes the KV state back out via <code>StateSeqGetData</code> so the next request can restore it.</li>
           </ol>
-          <p>For a pure hit on a text-only session, step 2 is a byte-for-byte round trip of the bytes that were just restored in step 1 — pure I/O with no information change. The <strong>pure-hit snapshot-skip</strong> optimization detects this case and skips <code>StateSeqGetData</code> entirely.</p>
+          <p>For a pure hit, step 2 is a byte-for-byte round trip of the bytes that were just restored in step 1 — pure I/O with no information change. The <strong>pure-hit snapshot-skip</strong> optimization detects this case for exact text and media plans and skips <code>StateSeqGetData</code> entirely.</p>
           <p>Qualification (all must hold):</p>
           <ul>
-            <li>Text-only session — media sessions also externalize KV, but the optimization gates on <code>!hasMedia</code> to keep the predicate small.</li>
             <li>No prefix mutation in this request: no extension tokens, no media build, no trim, no clear.</li>
+            <li>For media sessions, the stored logical prompt plan exactly equals the request's stable plan, including ordered media SHA-256 identities.</li>
             <li>The session's committed render-input fingerprint (<code>cachedRenderInputHash</code>) equals the current request's fingerprint (template, tools, <code>add_generation_prompt</code>, <code>preserve_thinking</code>, exact cacheable messages). This guards against template or top-level parameter changes that would silently invalidate the cached prefix.</li>
             <li>The session has not been mutated by a concurrent request between <code>processIMC</code> and <code>startSlot</code> (re-validated under <code>cacheMu</code> at the decode boundary).</li>
             <li>For models with an MTP drafter, the draft sequence's state was restored successfully alongside the target.</li>
           </ul>
-          <p>When the skip fires, the log emits <code>imc-snapshot-skip-pure-hit</code> and the <code>imc_snapshot_skipped_total</code> counter increments. When a pure-hit candidate races a concurrent extend, the request is failed with <code>imc-pure-hit-stale</code> and the client retries — the next attempt sees the newer session version and goes through the normal extend path. The optimization is safe because <code>llama_state_seq_get_data</code> is a host-side serializer: skipping it cannot leave KV state in a bad shape.</p>
+          <p>When the skip fires, the log emits <code>imc-snapshot-skip-read-only</code> with <code>snapshot_action=skip-read-only</code>, and the <code>imc_snapshot_skipped_total</code> counter increments. When a pure-hit candidate races a concurrent extend, the request is failed with <code>imc-pure-hit-stale</code> and the client retries — the next attempt sees the newer session version and goes through the normal extend path. The optimization is safe because <code>llama_state_seq_get_data</code> is a host-side serializer: skipping it cannot leave KV state in a bad shape.</p>
           <p><strong>How It Works:</strong></p>
           <p>First request (2 messages: system + user):</p>
           <pre className="code-block"><code>{`Messages: [system, user]
@@ -2931,8 +2939,9 @@ Prefill:  [user3 + gen_prompt]`}</code></pre>
           <blockquote>append, and rebuild selections reserve their session immediately. The</blockquote>
           <blockquote>reservation is released on submission failure, cancellation, decode failure,</blockquote>
           <blockquote>panic before batch handoff, or normal slot completion. Media sessions are</blockquote>
-          <blockquote>reused only on exact logical-plan identity; changed or appended media rebuilds</blockquote>
-          <blockquote>through the authoritative mtmd pipeline.</blockquote>
+          <blockquote>reused on exact logical-plan identity or when the stored media plan is an</blockquote>
+          <blockquote>immutable prefix followed only by new text. Changed, reordered, removed, or</blockquote>
+          <blockquote>newly appended media rebuilds through the authoritative mtmd pipeline.</blockquote>
           <p>The algorithm below documents pre token-v2 behavior for interpreting old logs.</p>
           <p>When a request arrives, IMC scans all sessions to find the best match. The algorithm has five steps, tried in order. After a session is selected, the batch engine assigns the request to the first available slot. The session's KV state is restored from RAM into the assigned slot.</p>
           <ol>
@@ -2993,8 +3002,9 @@ Total VRAM-resident: 134,077 tokens > 131,072 → context window full!`}</code><
             <li>No configuration needed — eviction triggers automatically when KV pressure is detected</li>
           </ul>
           <h4 id="media-and-m-rope">Media and M-RoPE</h4>
-          <p>IMC supports mtmd image, audio, and multipart requests. A media prompt plan contains text-token units and ordered media identities derived from immutable input bytes. Raw media and identities are not logged. Exact plans restore the externalized KV state without re-encoding media. Changed, reordered, removed, or appended media rebuilds through mtmd so model-specific chunk boundaries and embeddings remain authoritative.</p>
-          <p>M-RoPE handling distinguishes physical image embeddings (<code>n_tokens</code>) from logical position advancement (<code>n_pos</code>). Images use <code>[t, y, x, 0]</code> positions; following text broadcasts each logical position across all four planes. An exact restored request resumes suffix decoding at the saved logical position. Sessions persist both the physical KV-cell count (for capacity and prompt accounting) and the next logical position (for M-RoPE continuation). M-RoPE layouts whose embedding count is not the rectangular <code>nx*ny</code> grid are rejected rather than decoded with guessed coordinates; they require mtmd's per-token decoder-position API to be exposed by the Go binding.</p>
+          <p>IMC supports mtmd image, audio, and multipart requests. A media prompt plan contains text-token units and ordered media identities derived from immutable input bytes. BOS is added globally exactly once; vocabularies that automatically append EOS conservatively fall back to mtmd rebuilds because an old terminal EOS cannot safely become an interior prefix token. Raw media and identities are not logged.</p>
+          <p>Exact plans restore the externalized KV state without re-encoding media and skip redundant snapshot serialization. When the stored plan is a complete prefix of the new stable plan and everything after it is text, IMC selects an <strong>anchor</strong> match. It restores the media KV, decodes only the authoritative text extension, snapshots the enlarged prefix into a separate <code>SessionStore</code>, and atomically swaps the snapshot and metadata. A failed decode or staged snapshot leaves the previous anchor valid. Changed, reordered, removed, or newly appended media rebuilds through mtmd so model-specific chunk boundaries and embeddings remain authoritative.</p>
+          <p>M-RoPE handling distinguishes physical image embeddings (<code>n_tokens</code>) from logical position advancement (<code>n_pos</code>). Images use <code>[t, y, x, 0]</code> positions; following text broadcasts each logical position across all four planes. An exact or anchor-restored request resumes suffix decoding at the saved logical position. Sessions persist both the physical KV-cell count (for capacity and prompt accounting) and the next logical position (for M-RoPE continuation). M-RoPE layouts whose embedding count is not the rectangular <code>nx*ny</code> grid are rejected rather than decoded with guessed coordinates; they require mtmd's per-token decoder-position API to be exposed by the Go binding.</p>
           <p>Useful structured events are:</p>
           <table className="flags-table">
             <thead>
@@ -3010,19 +3020,27 @@ Total VRAM-resident: 134,077 tokens > 131,072 → context window full!`}</code><
               </tr>
               <tr>
                 <td><code>imc-media-cache status=plan-ready</code></td>
-                <td><code>media_count</code>, <code>logical_units</code>, <code>text_tokens</code>, <code>match_kind</code>, <code>reusable_kv</code>, <code>position_mode</code></td>
+                <td><code>media_count</code>, <code>logical_units</code>, <code>text_tokens</code>, <code>match_kind</code>, <code>match_reason</code>, <code>anchor_physical_kv</code>, <code>anchor_logical_position</code>, <code>extension_text</code></td>
               </tr>
               <tr>
                 <td><code>start-slot status=imc-restore-done</code></td>
-                <td><code>cached_tokens</code>, <code>restored_bytes</code>, <code>elapsed</code></td>
+                <td><code>next_logical_position</code>, <code>physical_kv_cells</code>, <code>restored_bytes</code>, <code>elapsed</code></td>
               </tr>
               <tr>
                 <td><code>start-slot status=imc-snapshot-done</code></td>
-                <td><code>cached_tokens</code>, <code>snapshot_bytes</code>, <code>buf_action</code>, <code>elapsed</code></td>
+                <td><code>next_logical_position</code>, <code>physical_kv_cells</code>, <code>snapshot_bytes</code>, <code>buf_action</code>, <code>elapsed</code></td>
               </tr>
               <tr>
-                <td><code>start-slot status=imc-snapshot-skip-pure-hit</code></td>
-                <td>exact prefix reused without reserializing it</td>
+                <td><code>start-slot status=imc-snapshot-skip-read-only</code></td>
+                <td>exact prefix reused without reserializing it; <code>snapshot_action=skip-read-only</code></td>
+              </tr>
+              <tr>
+                <td><code>start-slot status=imc-media-anchor-advanced-in-slot</code></td>
+                <td>appended stable text decoded without re-encoding media</td>
+              </tr>
+              <tr>
+                <td><code>start-slot status=imc-media-anchor-committed</code></td>
+                <td>staged snapshot and matching physical/logical metadata swapped atomically</td>
               </tr>
               <tr>
                 <td><code>imc-media-cache status=complete</code></td>
@@ -3030,7 +3048,7 @@ Total VRAM-resident: 134,077 tokens > 131,072 → context window full!`}</code><
               </tr>
               <tr>
                 <td><code>slot-finished</code></td>
-                <td>final <code>imc_cache_mode</code>, <code>imc_match_kind</code>, <code>imc_tail_tokens</code>, and MTP totals</td>
+                <td><code>imc_active</code> reports IMC participation; <code>imc_cache_hit</code> reports successful prior-snapshot restoration; also carries <code>imc_cache_mode</code>, <code>imc_match_kind</code>, <code>imc_tail_tokens</code>, and MTP totals</td>
               </tr>
             </tbody>
           </table>
@@ -3269,10 +3287,7 @@ Qwen/Qwen3-8B-Q8_0:
           <p><strong>IMC Planning Cost:</strong></p>
           <p>Text IMC renders and tokenizes two complete prompts for planning. This adds a small host-side cost but avoids unsafe suffix rendering and typically saves far more time by restoring the model's cached prefill state.</p>
           <p><strong>IMC with Vision/Audio Models:</strong></p>
-          <p>IMC supports mtmd image, audio, and multipart requests. Exact complete media plans restore text plus media KV from RAM without re-encoding. Any changed or appended media plan rebuilds through mtmd; this conservative rule keeps mtmd's model-specific token, embedding, and M-RoPE stream authoritative.</p>
-          <blockquote>The examples and partial-media-extension internals below describe the legacy</blockquote>
-          <blockquote>pre token-v2 implementation. Current token-v2 media planning performs exact</blockquote>
-          <blockquote>reuse or a full mtmd rebuild.</blockquote>
+          <p>IMC supports mtmd image, audio, and multipart requests. Exact complete media plans restore text plus media KV from RAM without re-encoding. Text-only follow-ups use an anchor restore and atomically advance the stored snapshot. Any changed, reordered, removed, or newly appended media rebuilds through mtmd; this rule keeps mtmd's model-specific token, embedding, and M-RoPE stream authoritative.</p>
           <p>For example, in a conversation like:</p>
           <pre className="code-block"><code>{`Request 1 (image request):
 [system]       →  cached by IMC (text tokens)
@@ -3302,7 +3317,7 @@ Request 4 (back to asking about the image):
 [user]         →  extended (new text tokens decoded into cache)
 [assistant]    →  extended
 [user]         →  prefill (generation target)`}</code></pre>
-          <p>When an image appears mid-conversation (after text-only messages), IMC preserves the existing text cache and extends it with media instead of rebuilding from scratch:</p>
+          <p>When an image first appears mid-conversation, the complete stable media plan is built through mtmd. Once that media snapshot exists, subsequent text-only turns anchor to it and do not rerun projection:</p>
           <pre className="code-block"><code>{`Text-only conversation, then image appears mid-conversation:
 
 Requests 1–3 (text-only):
@@ -3312,10 +3327,9 @@ Requests 1–3 (text-only):
 ...            →  conversation grows, all text cached incrementally
 
 Request 4 (image appears mid-conversation):
-[system]       →  cached (text tokens skipped via imcMediaSkipTextTokens)
-[earlier msgs] →  cached (text tokens skipped)
-[asst + user]  →  media extend from text (new text decoded from skip point)
-[user + image] →  media extend from text (image encoded through projection model)
+[system]       →  rebuilt through the stable media plan
+[earlier msgs] →  rebuilt through the stable media plan
+[user + image] →  image encoded once through the projection model
 [user]         →  prefill (generation target)
 
 Request 5 (text follow-up about the image):
@@ -3324,13 +3338,13 @@ Request 5 (text follow-up about the image):
 [user]         →  prefill (generation target)`}</code></pre>
           <p><strong>How media caching works internally:</strong></p>
           <ol>
-            <li>When <code>buildIMCCacheFromScratch</code> detects media content, it defers the build to <code>startSlot</code> where the mtmd pipeline (projection model) is available. The cache result carries <code>imcMediaBuild: true</code>.</li>
-            <li>When media first appears in a conversation that started text-only, <code>extendIMCTextCacheWithMedia</code> preserves the existing text prefix in the KV cache. It sets <code>imcMediaSkipTextTokens</code> to the number of already-cached text tokens, so <code>decodeMediaIntoCache</code> skips them and only decodes the new text plus media embeddings. This avoids re-decoding potentially tens of thousands of cached text tokens when an image is first introduced mid-conversation.</li>
-            <li><code>decodeMediaIntoCache</code> processes the prompt as interleaved chunks — text chunks are tokenized and decoded normally, while image/audio chunks are encoded through the projection model and their embeddings are decoded into the KV cache. When <code>imcMediaSkipTextTokens</code> is set, the first text chunk is partially skipped (only tokens beyond the skip point are decoded). For models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned to image tokens.</li>
+            <li><code>buildPromptPlan</code> splits the stable and generation-ready renders at mtmd's marker, tokenizes each text segment without per-segment special tokens, adds BOS globally once, and inserts ordered SHA-256 media units.</li>
+            <li><code>processIMCMediaTokenPlan</code> selects <code>exact</code>, <code>anchor</code>, or <code>rebuild</code>. Anchors require a nonempty valid snapshot, unchanged ordered media, a complete plan prefix, and a text-only extension.</li>
+            <li>A rebuild defers to <code>startSlot</code>, where <code>decodeMediaIntoCache</code> processes the prompt as interleaved chunks — text chunks are tokenized and decoded normally, while image/audio chunks are encoded through the projection model and their embeddings are decoded into the KV cache. For models using M-RoPE, 2D spatial positions are assigned to image tokens.</li>
             <li>The session tracks <code>mediaKVCounts</code> — the number of KV positions consumed by each media chunk. This is needed because media embeddings occupy a different number of KV positions than the text marker tokens they replace in the tokenized prompt.</li>
-            <li>On text-only follow-ups, <code>extendIMCMediaSlotWithText</code> uses the <code>mediaKVCounts</code> to compute the correct offset between text token indices and KV positions, then decodes only the new text tokens at the right position — no image re-encoding occurs.</li>
-            <li>If a new message being added contains media (a second image, for example), <code>rebuildIMCWithMedia</code> triggers a full rebuild through the mtmd pipeline.</li>
-            <li>Token prefix matching is skipped when the incoming request contains media messages, since the tokenization path would mutate media content and corrupt downstream processing.</li>
+            <li>On text-only follow-ups, the engine restores the target snapshot at the stored logical position and decodes <code>imcNewCacheTokens</code>. Linear models use normal text positions; M-RoPE models broadcast each new logical text position across all four planes. No marker-token offset arithmetic or image re-encoding is involved.</li>
+            <li>The advanced target state is serialized into a new <code>SessionStore</code>. Only a successful snapshot atomically replaces <code>kvState</code>, <code>promptPlan</code>, physical KV count, logical position, message/hash metadata, and render fingerprint.</li>
+            <li>If a new message adds or changes media, prefix identity fails and the full stable plan rebuilds through mtmd.</li>
           </ol>
           <p><strong>IMC Limitations:</strong></p>
           <ul>
@@ -3573,6 +3587,10 @@ Request 5 (text follow-up about the image):
                 <td>Shared-KV Gemma4 resumed from restored target KV. Carries <code>resume_source=shared-target-kv</code>, <code>cached_tokens</code>, and the nonempty <code>tail_tokens</code>.</td>
               </tr>
               <tr>
+                <td><code>speculative status=mtp-disabled-media-mrope</code></td>
+                <td>An M-RoPE media request—rebuild or anchor reuse—kept target IMC active but disabled MTP because draft positional compatibility is not yet proven.</td>
+              </tr>
+              <tr>
                 <td><code>speculative status=mtp-disabled-imc-hit</code></td>
                 <td>MTP disabled for this request because the IMC cache hit didn't carry a draft-seq snapshot (no draft state on the matched session, or the restore returned 0 bytes). MTP-aware IMC builds — the default since this fix — snapshot the draft seq state and pendingH alongside the target so cache hits keep MTP running. (See §6.7.)</td>
               </tr>
@@ -3643,8 +3661,12 @@ Request 5 (text follow-up about the image):
                 <td>The MTP path always runs greedy verification, so strict Leviathan-style distribution equivalence at <code>temperature &gt; 0</code> is not guaranteed. The full slot sampler (temperature / top-k / top-p) is still applied at each accepted position, so output shape is preserved.</td>
               </tr>
               <tr>
-                <td>MTP + IMC: resume depends on KV ownership</td>
+                <td>MTP + text IMC: resume depends on KV ownership</td>
                 <td>Shared-KV Gemma4 resumes from restored target KV, then decodes the guaranteed nonempty token-v2 tail to capture fresh <code>pendingH</code>. Own-KV MTP restores draft KV + <code>pendingH</code> snapshotted alongside the target; if that draft restore is missing or fails, only that cache-hit request runs target-only.</td>
+              </tr>
+              <tr>
+                <td>MTP + media IMC</td>
+                <td>Linear shared-target-KV Gemma4 resumes from restored media target KV and mirrors appended text. Own-KV media sessions deliberately discard draft snapshots that cannot prove complete projected-media coverage, so those requests run target-only. All M-RoPE media requests also run target-only and report <code>media-mrope</code>. Target IMC remains active in both fallback cases.</td>
               </tr>
               <tr>
                 <td>MTP + hybrid targets: lower throughput</td>
@@ -3655,8 +3677,8 @@ Request 5 (text follow-up about the image):
                 <td>The adaptive throttle scales down from the ceiling. The ceiling defaults to 2 but can be raised or lowered per model with an MTP <code>nDraft</code> override — a <code>draft-model:</code> block that sets only <code>ndraft:</code> (no <code>model-id:</code>). See §6.5.</td>
               </tr>
               <tr>
-                <td>Speculative decoding is text-only</td>
-                <td>Neither draft mode applies to vision or audio requests.</td>
+                <td>Media projection is not speculative</td>
+                <td>Image/audio encoding and media prefill always run on the target. Generated text after a linear shared-target-KV media prefix may still use MTP; unsupported own-KV or M-RoPE media combinations continue target-only.</td>
               </tr>
             </tbody>
           </table>
@@ -8655,35 +8677,28 @@ default:
           </ul>
           <h4 id="1977-imc-implementation-details">19.7.7 IMC Implementation Details</h4>
           <p><strong>Key Functions:</strong></p>
-          <p>The four entry points an agent will grep for live in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">caching_imc.go</a> and <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>:</p>
+          <p>The principal entry points live in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_tokens.go">caching_imc_tokens.go</a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media_tokens.go">caching_imc_media_tokens.go</a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/prompt_plan.go">prompt_plan.go</a>, and <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>:</p>
           <ul>
-            <li><code>processIMC</code> — session selection / strategy dispatch</li>
-            <li><code>extendIMCCache</code> — append new messages to a matched session</li>
-            <li><code>buildIMCCacheFromScratch</code> — fresh build (no usable prefix)</li>
-            <li><code>rebuildIMCFromPartialPrefix</code> — salvage a token-prefix overlap</li>
+            <li><code>processIMCTokenPlan</code> — complete-token text selection (<code>exact</code>, <code>append</code>, <code>rebuild</code>)</li>
+            <li><code>buildPromptPlan</code> — canonical ordered text-token/media-unit plan</li>
+            <li><code>processIMCMediaTokenPlan</code> — media selection (<code>exact</code>, <code>anchor</code>, <code>rebuild</code>)</li>
+            <li><code>decodeMediaIntoCache</code> — authoritative mtmd cold/rebuild path</li>
+            <li><code>imcCommitMediaAdvance</code> — atomic staged-store and metadata swap</li>
           </ul>
           <p><strong>Critical Implementation Details:</strong></p>
           <ol>
-            <li><strong>Extension tokenization must use &lt;code&gt;special=true&lt;/code&gt;</strong>: <code>llama.Tokenize(m.vocab, extension, m.addBOSToken, true)</code> — the <code>true</code> in the 4th arg ensures ChatML tokens like <code>&lt;|im_start|&gt;</code> are recognized. The <code>addBOS</code> arg uses the model's <code>addBOSToken</code> setting, not a hardcoded value.</li>
-            <li><strong>Prefix mismatch detection</strong>: Use <code>strings.HasPrefix(fullPrompt, prefixPrompt)</code> to detect Jinja template nondeterminism.</li>
-            <li><strong>&lt;code&gt;add_generation_prompt=false&lt;/code&gt; for cached prefixes</strong>: Creates valid prefix for extension. Generation prompt added only for final suffix.</li>
+            <li>Stable and generation-ready prompts are rendered independently. The stable render uses <code>add_generation_prompt=false</code>; the generation-ready render must have a nonempty tail after the stable plan.</li>
+            <li>Text plans tokenize the complete renders with special-token parsing enabled. Media plans split on mtmd's marker, tokenize every text segment with <code>addSpecial=false</code>, and add vocabulary BOS globally exactly once. Automatic EOS disables token-v2 media reuse because the old EOS cannot remain inside an appended conversation.</li>
+            <li>Media units are indivisible ordered SHA-256 identities. Raw media and hashes are not logged. Prefix reuse requires exact token/media-unit equality up to the stored boundary and a text-only remainder.</li>
           </ol>
-          <p><strong>IMC Algorithm — 5 strategies</strong> (entry points in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go">caching_imc.go</a>):</p>
-          <p><code>processIMC</code> snapshots all sessions and picks one of:</p>
-          <ol>
-            <li><strong>Hash-prefix match</strong> — a session's <code>cachedMsgsHash</code> matches the prefix hash of the incoming messages. Two sub-paths: extension and snapshot the new KV state. extension to decode; restore externalized KV into the slot and decode the suffix directly. Text-only pure hits also carry <code>imcPureHitSkipSnapshot = true</code> if the session's <code>cachedRenderInputHash</code> matches the request's <code>imcRenderFingerprint</code>, qualifying for the snapshot-skip fast path documented below.
-              <ul>
-                <li><strong>Extend</strong> (<code>cachedMsgCount &lt; lastMsgIdxToCache</code>): decode the</li>
-                <li><strong>Pure cache hit</strong> (<code>cachedMsgCount == lastMsgIdxToCache</code>): no</li>
-              </ul>
-            </li>
-            <li><strong>System-prompt preserve</strong> — only the system prompt hash matches. The sys prompt KV is preserved; the conversation body is rebuilt fresh on top of it.</li>
-            <li><strong>Token-prefix fallback</strong> — no hash match, but a session's <code>cachedTokens</code> shares a leading run with the incoming prompt's tokens. Trim to the common prefix, rebuild the rest (<code>rebuildIMCFromPartialPrefix</code>).</li>
-            <li><strong>Rebuild from scratch</strong> — no usable overlap. Pick an empty session, or evict the LRU session by <code>lastUsed</code>, and call <code>buildIMCCacheFromScratch</code>.</li>
-            <li><strong>KV-pressure eviction</strong> runs alongside (1) before extend/hit: if total VRAM-resident cached tokens across all sessions exceeds <code>n_ctx</code>, evict mismatched non-pending sessions largest-first. Sessions in <code>imcSeqIDUnbound</code> state (externalized to RAM, no live slot) are skipped — they don't consume VRAM cells and <code>MemorySeqRm</code> on them is a no-op at best, a race at worst.</li>
-          </ol>
+          <p><strong>Token-v2 selection:</strong></p>
+          <ul>
+            <li>Text: select the longest complete cached token sequence that prefixes the stable target. Equal length is <code>exact</code>; a text suffix is <code>append</code>; no safe complete prefix is <code>rebuild</code> into an empty/LRU session.</li>
+            <li>Media: require a valid nonempty target snapshot, internally consistent physical/logical metadata, unchanged ordered media units, and a complete plan prefix. Equal plans are <code>exact</code>; a text-only remainder is <code>anchor</code>; any media change or earlier divergence is <code>rebuild</code> through mtmd.</li>
+            <li>Every selected session is reserved immediately. Read-only exact reservations remain held through generation. Advancing media anchors also retain their write reservation through generation because suffix routing still reads the session's M-RoPE and physical-count metadata.</li>
+          </ul>
           <p><strong>Pure-Hit Snapshot Skip</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go#L527-L595">batch_slot_start.go</a>):</p>
-          <p>On every IMC cache hit <code>startSlot</code> normally calls <code>StateSeqGetData</code> after build/extend to refresh the externalized snapshot. For a text-only pure hit with no prefix mutation, the bytes it would write are byte-for-byte equal to the bytes it just restored — pure I/O. The skip predicate guards on: <code>imcPureHitSkipSnapshot</code>, no new cache tokens, no media build, no trim, no clear, <code>cacheIdx == imcExpectedTokens</code>, and a re-validation under <code>cacheMu</code> (live session version still matches what <code>processIMC</code> observed, including <code>cachedRenderInputHash</code>). For MTP-equipped models the predicate also confirms <code>s.draftNPast == cacheIdx</code> and that <code>pendingH</code> is sized correctly. On success the engine logs <code>imc-snapshot-skip-pure-hit</code> and increments <code>imc_snapshot_skipped_total</code>; on the start-time version mismatch it fails with <code>imc-pure-hit-stale</code> (metric <code>imc_pure_hit_stale_session_total</code>) so the client retries. <code>llama_state_seq_get_data</code> is a host-side serializer, so skipping it cannot leave KV state in a bad shape — see <code>yzma pkg/llama/state.go</code> (<code>StateSeqGetData</code>) for the FFI contract.</p>
+          <p>On every mutating IMC cache hit <code>startSlot</code> normally calls <code>StateSeqGetData</code> after build/extend to refresh the externalized snapshot. For a read-only exact text or media hit with no prefix mutation, the bytes it would write are byte-for-byte equal to the bytes it just restored — pure I/O. The skip predicate guards on: <code>imcReadOnlyReservation</code>, no new cache tokens, no media build, no trim, no clear, <code>cacheIdx == imcExpectedTokens</code>, and a re-validation under <code>cacheMu</code> (live session version, physical/logical counts, and media prompt plan still match what planning observed). On success the engine logs <code>imc-snapshot-skip-read-only</code> with <code>snapshot_action=skip-read-only</code> and increments <code>imc_snapshot_skipped_total</code>; on the start-time version mismatch it fails with <code>imc-pure-hit-stale</code> (metric <code>imc_pure_hit_stale_session_total</code>) so the client retries. <code>llama_state_seq_get_data</code> is a host-side serializer, so skipping it cannot leave KV state in a bad shape — see <code>yzma pkg/llama/state.go</code> (<code>StateSeqGetData</code>) for the FFI contract.</p>
           <p><strong>Two-Phase Session Publish</strong> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go#L1373-L1437">caching_imc.go imcCommitSession/imcPublishSession</a>):</p>
           <p>The publish path is split to close a race in which a concurrent scanner would otherwise see fresh metadata but stale <code>kvState</code> bytes:</p>
           <ol>
@@ -8693,14 +8708,16 @@ default:
           <p><strong>Multi-Session IMC:</strong></p>
           <p>The session pool holds <code>NSeqMax * imcSessionMultiplier</code> (currently 3×) independent conversation branches. Concurrent users and sub-agents land in different sessions via hash matching, so they don't trample each other's caches. When all sessions are full, the LRU session is evicted on <code>lastUsed</code>. The decoupling lets the cache identity count exceed the execution slot count, which matches the realistic agentic shape (a driver loop plus a handful of sub-agents plus the occasional side conversation) without requiring you to raise <code>nseq-max</code> and pay the VRAM cost.</p>
           <p><strong>Text and Media IMC:</strong></p>
-          <p>Both text and media sessions externalize KV via <code>StateSeqGetData</code> after build/extend and restore via <code>StateSeqSetData</code> on the next request. <code>StateSeqGetData</code> captures raw KV bytes irrespective of whether they were produced by text tokens or media embeddings — there is no longer a "slot-dedicated" media path. The media-specific build/extend logic lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>; the <code>hasMedia</code>, <code>useMRoPE</code>, and <code>mediaKVCounts</code> fields on <code>imcSession</code> track media state so that text-only follow-ups can compute the correct KV-position offset for new text tokens without re-encoding the media. The pure-hit snapshot-skip optimization gates on <code>!hasMedia</code> to keep its predicate small, but media pure hits still take the normal restore + snapshot path.</p>
+          <p>Both text and media sessions externalize KV via <code>StateSeqGetData</code> after build/extend and restore via <code>StateSeqSetData</code> on the next request. <code>StateSeqGetData</code> captures raw KV bytes irrespective of whether they were produced by text tokens or media embeddings — there is no longer a "slot-dedicated" media path. The media-specific build/extend logic lives in <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media_tokens.go">caching_imc_media_tokens.go</a>, <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/prompt_plan.go">prompt_plan.go</a>, and <a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go">caching_imc_media.go</a>; the <code>hasMedia</code>, <code>useMRoPE</code>, and <code>mediaKVCounts</code> fields on <code>imcSession</code> track media state. <code>totalTokensCached</code> is the physical KV-cell count; <code>nextLogicalPos</code> is the M-RoPE continuation position.</p>
+          <p>An anchor restores the old snapshot and decodes only the text units after the stored plan. It serializes the enlarged target state into a newly allocated <code>SessionStore</code>; <code>imcCommitMediaAdvance</code> swaps the store, prompt plan, physical/logical counts, hashes, and render metadata under <code>cacheMu</code>. The old store is closed only after the swap. Decode/staging/snapshot failure leaves the old snapshot untouched. The legacy marker-token delta path is not used.</p>
+          <p>Media commits erase own-KV <code>draftKVState</code> and <code>pendingH</code>, and media sessions do not publish an own-draft snapshot without proven media coverage. Linear shared-target-KV Gemma4 resumes MTP from target KV. Own-KV media and M-RoPE media anchors continue target-only.</p>
           <p><strong>IMC Lifecycle (All Sessions):</strong></p>
           <ol>
-            <li><code>processIMC()</code> scans <strong>sessions</strong> (not slots) for a hash match, classifying the result into one of the strategies above and populating <code>cacheResult</code> with <code>imcSessionID</code> and the session pointer.</li>
+            <li>Token-v2 planning scans <strong>sessions</strong> (not slots) for a complete safe prefix, classifying the result into one of the matches above and populating <code>cacheResult</code> with <code>imcSessionID</code> and the session pointer.</li>
             <li><code>fillSlots()</code> assigns the job to the <strong>first available slot</strong>.</li>
             <li><code>startSlot()</code> binds the session to the slot's <code>seqID</code> under <code>cacheMu</code>, restores cached KV from RAM via <code>StateSeqSetData</code>.</li>
-            <li>Cache is extended/rebuilt as needed; <code>imcCommitSession</code> writes new metadata. Unless the pure-hit snapshot-skip predicate fires, <code>StateSeqGetData</code> snapshots the new prefix back to <code>session.kvState</code>.</li>
-            <li><code>imcPublishSession</code> clears <code>pending</code> once metadata and snapshot are both committed.</li>
+            <li>Cache is extended/rebuilt as needed. Ordinary mutations use <code>imcCommitSession</code>; media anchors snapshot into a staged store and use <code>imcCommitMediaAdvance</code> for the atomic swap. Exact hits skip serialization.</li>
+            <li>Ordinary mutations call <code>imcPublishSession</code> after snapshot commit. Media anchors retain <code>pending</code> until <code>finishSlot</code> because generation still reads immutable routing/accounting metadata from the reserved session.</li>
             <li>Suffix tokens are decoded and generation runs.</li>
             <li><code>finishSlot()</code> clears the full VRAM sequence and resets the session's <code>seqID</code> to <code>imcSeqIDUnbound</code> (cached prefix already lives in RAM via <code>SessionStore</code>).</li>
           </ol>
@@ -8710,7 +8727,8 @@ default:
     seqID                 llama.SeqId   // Bound slot's seq id while resident; imcSeqIDUnbound when externalized
     cachedMsgsHash        string        // Hash of all cached messages
     cachedTokens          []llama.Token // Full token sequence in KV cache (text-only sessions)
-    totalTokensCached     int           // Total KV positions cached (text + media)
+    totalTokensCached     int           // Physical KV cells in the cached prefix
+    nextLogicalPos        int           // Next logical position (differs for M-RoPE media)
     cachedMsgCount        int           // Number of messages cached
     kvState               SessionStore  // Externalized KV state (kvstorage backend)
     draftKVState          SessionStore  // Externalized MTP draft seq KV (nil unless MTP drafter present)
@@ -8720,6 +8738,7 @@ default:
     hasMedia              bool          // True if cached content includes media
     useMRoPE              bool          // True if cached media used M-RoPE 4D encoding
     mediaKVCounts         []int         // KV positions per media chunk (text-extend math)
+    promptPlan            promptPlan    // Ordered token/media identity plan
     sysPromptHash         string        // Hash of system prompt message
     sysPromptTokens       int           // Token count of system prompt
     cachedRenderInputHash string        // imcRenderFingerprint of the committed prefix (pure-hit snapshot-skip key)
@@ -9084,18 +9103,18 @@ default:
           <h4 id="step-9-initialize-the-slot">Step 9: Initialize the Slot</h4>
           <p>The assigned slot is prepared for this request:</p>
           <ol>
-            <li><strong>Restore cached KV state</strong>: For IMC, the session's externalized KV state is restored from RAM into the slot's sequence via <code>StateSeqSetData</code>. Extension tokens are then decoded, or the sequence is cleared and rebuilt.</li>
+            <li><strong>Restore cached KV state</strong>: For IMC, the session's externalized KV state is restored from RAM into the slot's sequence via <code>StateSeqSetData</code>. Extension tokens are then decoded, or the sequence is cleared and rebuilt. A media-anchor match restores the target KV without re-encoding unchanged media, then decodes only the appended stable text. Shared-target-KV Gemma4 MTP resumes from that same target state; own-KV media MTP and M-RoPE media anchors run target-only unless complete draft-state coverage is available.</li>
             <li><strong>Build the sampler</strong>: A sampler chain is constructed from the request's sampling parameters (temperature, top_k, top_p, min_p, repetition penalties, etc.). If grammar-constrained output is requested, a separate grammar sampler is also created.</li>
-            <li><strong>Snapshot cached prefix</strong>: For IMC, after cache build/extend but before suffix tokens are decoded, the cached prefix KV state is snapshotted to RAM via <code>StateSeqGetData</code>. This captures the reusable prefix for the next request.</li>
-            <li><strong>Tokenize the prompt</strong>: The prompt string is converted into a sequence of token IDs. Only the non-cached portion of the prompt needs tokenization.</li>
+            <li><strong>Snapshot cached prefix</strong>: For an ordinary IMC build/extension, after the cache is prepared but before suffix tokens are decoded, the reusable prefix is serialized via <code>StateSeqGetData</code>. A media-anchor advance instead stages the larger snapshot in a separate <code>SessionStore</code> and swaps snapshot plus prompt-plan metadata atomically. If staging, decode, or serialization fails, the prior valid snapshot remains published.</li>
+            <li><strong>Tokenize the prompt</strong>: The prompt string is converted into a sequence of token IDs. Token-v2 planning retains canonical token tails, so only the non-cached portion is scheduled for decode. Canonical media plans preserve ordered text and media units separately because media KV cannot be reconstructed from token IDs alone.</li>
             <li><strong>Context window check</strong>: The total token count (cached + new) is verified against the model's context window limit.</li>
           </ol>
           <p><strong>Code:</strong></p>
           <ul>
             <li><code>startSlot()</code> (<a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go">model/batch_slot_start.go</a>) — resets the slot, ends the <code>queue-wait</code> span, and starts the <code>process-request</code> and <code>prefill</code> spans (§19.10).</li>
             <li><code>toSampler()</code> builds the llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat); a separate grammar sampler is created if requested.</li>
-            <li>IMC KV restore: <code>StateSeqSetData</code> from <code>session.kvState</code>, then <code>decodeTokensIntoCache()</code> for extend, or <code>MemorySeqRm</code> for rebuild, or partial trim.</li>
-            <li>IMC KV snapshot: <code>StateSeqGetData</code> into <code>session.kvState</code> after build/extend.</li>
+            <li>IMC KV restore: <code>StateSeqSetData</code> from <code>session.kvState</code>, then <code>decodeTokensIntoCache()</code> for text extension, media-anchor stable-text replay, or partial trim; <code>MemorySeqRm</code> starts a rebuild.</li>
+            <li>IMC KV snapshot: <code>StateSeqGetData</code> into <code>session.kvState</code> after an ordinary build/extension, or into a staged store before an atomic media-anchor publish. Exact read-only matches skip redundant serialization.</li>
             <li><code>llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)</code> — <code>special=true</code> ensures ChatML markers are recognized (§19.7.7).</li>
             <li>Draft prompt assembly for speculative decoding.</li>
             <li>First chunk added via <code>addPrefillChunk()</code>.</li>
@@ -9361,7 +9380,11 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><code>mtpDisabledForRequest</code></td>
-                <td>Disables MTP for the remainder of the current request. Set at <code>startSlot</code> on IMC cache hits where the matched session has no draft-seq snapshot (or the draft restore returned 0 bytes) — MTP-aware IMC builds snapshot both target and draft seqs so this failsafe rarely fires on freshly-built caches. Also set inside <code>finalizeSpeculativeTokens</code> after a post-rollback mirror failure (the draft KV is wiped and the slot continues target-only). Cleared by <code>slot.reset()</code> when the slot is recycled for the next request.</td>
+                <td>Disables MTP for the remainder of the current request. It is set when own-KV draft state cannot safely resume beside an IMC-restored target, including media anchors without complete draft-state coverage, and after a post-rollback mirror failure. Shared-target-KV Gemma4 resumes directly from target KV and does not require a separate draft snapshot. Cleared by <code>slot.reset()</code> when the slot is recycled for the next request.</td>
+              </tr>
+              <tr>
+                <td><code>mtpDisableReason</code></td>
+                <td>Short machine-friendly reason reported in final usage and completion logs when MTP is disabled for the request.</td>
               </tr>
               <tr>
                 <td><code>verifyH []float32</code></td>
@@ -9424,7 +9447,7 @@ mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]`}</code></pre>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go"><code>sdk/kronk/model/batch_slot_start.go</code></a></td>
-                <td>Skips separate-draft-prefill on MTP; dispatches the MTP-aware <code>decodeTokensIntoCacheMTP</code> during IMC cache build so draft KV is populated in lock-step; snapshots/restores the draft seq + pendingH alongside the target so cache hits keep MTP running. Only disables MTP for a cache-hit request when the matched session has no draft snapshot.</td>
+                <td>Skips separate-draft-prefill on MTP; dispatches the MTP-aware <code>decodeTokensIntoCacheMTP</code> during text IMC cache builds; restores media anchors without re-encoding unchanged media; resumes shared-target-KV Gemma4 from target state; and disables own-KV media MTP when complete draft-state coverage is unavailable.</td>
               </tr>
               <tr>
                 <td><a href="file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go"><code>sdk/kronk/model/batch_engine.go</code></a></td>

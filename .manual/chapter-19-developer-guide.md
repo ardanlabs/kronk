@@ -749,67 +749,58 @@ Kronk uses two distinct context strategies depending on the workload.
 
 **Key Functions:**
 
-The four entry points an agent will grep for live in
-[caching_imc.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go) and [caching_imc_media.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go):
+The principal entry points live in
+[caching_imc_tokens.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_tokens.go),
+[caching_imc_media_tokens.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media_tokens.go),
+[prompt_plan.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/prompt_plan.go), and
+[caching_imc_media.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go):
 
-- `processIMC` — session selection / strategy dispatch
-- `extendIMCCache` — append new messages to a matched session
-- `buildIMCCacheFromScratch` — fresh build (no usable prefix)
-- `rebuildIMCFromPartialPrefix` — salvage a token-prefix overlap
+- `processIMCTokenPlan` — complete-token text selection (`exact`, `append`, `rebuild`)
+- `buildPromptPlan` — canonical ordered text-token/media-unit plan
+- `processIMCMediaTokenPlan` — media selection (`exact`, `anchor`, `rebuild`)
+- `decodeMediaIntoCache` — authoritative mtmd cold/rebuild path
+- `imcCommitMediaAdvance` — atomic staged-store and metadata swap
 
 **Critical Implementation Details:**
 
-1. **Extension tokenization must use `special=true`**:
-   `llama.Tokenize(m.vocab, extension, m.addBOSToken, true)` — the `true`
-   in the 4th arg ensures ChatML tokens like `<|im_start|>` are recognized.
-   The `addBOS` arg uses the model's `addBOSToken` setting, not a hardcoded
-   value.
-2. **Prefix mismatch detection**: Use `strings.HasPrefix(fullPrompt, prefixPrompt)` to detect Jinja template nondeterminism.
-3. **`add_generation_prompt=false` for cached prefixes**: Creates valid prefix for extension. Generation prompt added only for final suffix.
+1. Stable and generation-ready prompts are rendered independently. The stable
+   render uses `add_generation_prompt=false`; the generation-ready render must
+   have a nonempty tail after the stable plan.
+2. Text plans tokenize the complete renders with special-token parsing enabled.
+   Media plans split on mtmd's marker, tokenize every text segment with
+   `addSpecial=false`, and add vocabulary BOS globally exactly once. Automatic
+   EOS disables token-v2 media reuse because the old EOS cannot remain inside
+   an appended conversation.
+3. Media units are indivisible ordered SHA-256 identities. Raw media and hashes
+   are not logged. Prefix reuse requires exact token/media-unit equality up to
+   the stored boundary and a text-only remainder.
 
-**IMC Algorithm — 5 strategies** (entry points in [caching_imc.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go)):
+**Token-v2 selection:**
 
-`processIMC` snapshots all sessions and picks one of:
-
-1. **Hash-prefix match** — a session's `cachedMsgsHash` matches the prefix
-   hash of the incoming messages. Two sub-paths:
-   - **Extend** (`cachedMsgCount < lastMsgIdxToCache`): decode the
-     extension and snapshot the new KV state.
-   - **Pure cache hit** (`cachedMsgCount == lastMsgIdxToCache`): no
-     extension to decode; restore externalized KV into the slot and
-     decode the suffix directly. Text-only pure hits also carry
-     `imcPureHitSkipSnapshot = true` if the session's
-     `cachedRenderInputHash` matches the request's `imcRenderFingerprint`,
-     qualifying for the snapshot-skip fast path documented below.
-2. **System-prompt preserve** — only the system prompt hash matches. The
-   sys prompt KV is preserved; the conversation body is rebuilt fresh on
-   top of it.
-3. **Token-prefix fallback** — no hash match, but a session's
-   `cachedTokens` shares a leading run with the incoming prompt's tokens.
-   Trim to the common prefix, rebuild the rest (`rebuildIMCFromPartialPrefix`).
-4. **Rebuild from scratch** — no usable overlap. Pick an empty session, or
-   evict the LRU session by `lastUsed`, and call
-   `buildIMCCacheFromScratch`.
-5. **KV-pressure eviction** runs alongside (1) before extend/hit: if total
-   VRAM-resident cached tokens across all sessions exceeds `n_ctx`, evict
-   mismatched non-pending sessions largest-first. Sessions in
-   `imcSeqIDUnbound` state (externalized to RAM, no live slot) are skipped
-   — they don't consume VRAM cells and `MemorySeqRm` on them is a no-op
-   at best, a race at worst.
+- Text: select the longest complete cached token sequence that prefixes the
+  stable target. Equal length is `exact`; a text suffix is `append`; no safe
+  complete prefix is `rebuild` into an empty/LRU session.
+- Media: require a valid nonempty target snapshot, internally consistent
+  physical/logical metadata, unchanged ordered media units, and a complete
+  plan prefix. Equal plans are `exact`; a text-only remainder is `anchor`;
+  any media change or earlier divergence is `rebuild` through mtmd.
+- Every selected session is reserved immediately. Read-only exact reservations
+  remain held through generation. Advancing media anchors also retain their
+  write reservation through generation because suffix routing still reads the
+  session's M-RoPE and physical-count metadata.
 
 **Pure-Hit Snapshot Skip** ([batch_slot_start.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go#L527-L595)):
 
-On every IMC cache hit `startSlot` normally calls `StateSeqGetData`
+On every mutating IMC cache hit `startSlot` normally calls `StateSeqGetData`
 after build/extend to refresh the externalized snapshot. For a
-text-only pure hit with no prefix mutation, the bytes it would write
+read-only exact text or media hit with no prefix mutation, the bytes it would write
 are byte-for-byte equal to the bytes it just restored — pure I/O. The
-skip predicate guards on: `imcPureHitSkipSnapshot`, no new cache
+skip predicate guards on: `imcReadOnlyReservation`, no new cache
 tokens, no media build, no trim, no clear, `cacheIdx == imcExpectedTokens`,
-and a re-validation under `cacheMu` (live session version still matches
-what `processIMC` observed, including `cachedRenderInputHash`). For
-MTP-equipped models the predicate also confirms `s.draftNPast == cacheIdx`
-and that `pendingH` is sized correctly. On success the engine logs
-`imc-snapshot-skip-pure-hit` and increments `imc_snapshot_skipped_total`;
+and a re-validation under `cacheMu` (live session version, physical/logical
+counts, and media prompt plan still match what planning observed). On success
+the engine logs `imc-snapshot-skip-read-only` with
+`snapshot_action=skip-read-only` and increments `imc_snapshot_skipped_total`;
 on the start-time version mismatch it fails with `imc-pure-hit-stale`
 (metric `imc_pure_hit_stale_session_total`) so the client retries.
 `llama_state_seq_get_data` is a host-side serializer, so skipping it
@@ -848,28 +839,39 @@ build/extend and restore via `StateSeqSetData` on the next request.
 `StateSeqGetData` captures raw KV bytes irrespective of whether they
 were produced by text tokens or media embeddings — there is no longer
 a "slot-dedicated" media path. The media-specific build/extend logic
-lives in
+lives in [caching_imc_media_tokens.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media_tokens.go),
+[prompt_plan.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/prompt_plan.go), and
 [caching_imc_media.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go);
 the `hasMedia`, `useMRoPE`, and `mediaKVCounts` fields on `imcSession`
-track media state so that text-only follow-ups can compute the correct
-KV-position offset for new text tokens without re-encoding the media.
-The pure-hit snapshot-skip optimization gates on `!hasMedia` to keep
-its predicate small, but media pure hits still take the normal
-restore + snapshot path.
+track media state. `totalTokensCached` is the physical KV-cell count;
+`nextLogicalPos` is the M-RoPE continuation position.
+
+An anchor restores the old snapshot and decodes only the text units after the
+stored plan. It serializes the enlarged target state into a newly allocated
+`SessionStore`; `imcCommitMediaAdvance` swaps the store, prompt plan,
+physical/logical counts, hashes, and render metadata under `cacheMu`. The old
+store is closed only after the swap. Decode/staging/snapshot failure leaves the
+old snapshot untouched. The legacy marker-token delta path is not used.
+
+Media commits erase own-KV `draftKVState` and `pendingH`, and media sessions do
+not publish an own-draft snapshot without proven media coverage. Linear
+shared-target-KV Gemma4 resumes MTP from target KV. Own-KV media and M-RoPE
+media anchors continue target-only.
 
 **IMC Lifecycle (All Sessions):**
 
-1. `processIMC()` scans **sessions** (not slots) for a hash match,
-   classifying the result into one of the strategies above and
+1. Token-v2 planning scans **sessions** (not slots) for a complete safe prefix,
+   classifying the result into one of the matches above and
    populating `cacheResult` with `imcSessionID` and the session pointer.
 2. `fillSlots()` assigns the job to the **first available slot**.
 3. `startSlot()` binds the session to the slot's `seqID` under
    `cacheMu`, restores cached KV from RAM via `StateSeqSetData`.
-4. Cache is extended/rebuilt as needed; `imcCommitSession` writes new
-   metadata. Unless the pure-hit snapshot-skip predicate fires,
-   `StateSeqGetData` snapshots the new prefix back to `session.kvState`.
-5. `imcPublishSession` clears `pending` once metadata and snapshot are
-   both committed.
+4. Cache is extended/rebuilt as needed. Ordinary mutations use
+   `imcCommitSession`; media anchors snapshot into a staged store and use
+   `imcCommitMediaAdvance` for the atomic swap. Exact hits skip serialization.
+5. Ordinary mutations call `imcPublishSession` after snapshot commit. Media
+   anchors retain `pending` until `finishSlot` because generation still reads
+   immutable routing/accounting metadata from the reserved session.
 6. Suffix tokens are decoded and generation runs.
 7. `finishSlot()` clears the full VRAM sequence and resets the
    session's `seqID` to `imcSeqIDUnbound` (cached prefix already lives
@@ -883,7 +885,8 @@ type imcSession struct {
     seqID                 llama.SeqId   // Bound slot's seq id while resident; imcSeqIDUnbound when externalized
     cachedMsgsHash        string        // Hash of all cached messages
     cachedTokens          []llama.Token // Full token sequence in KV cache (text-only sessions)
-    totalTokensCached     int           // Total KV positions cached (text + media)
+    totalTokensCached     int           // Physical KV cells in the cached prefix
+    nextLogicalPos        int           // Next logical position (differs for M-RoPE media)
     cachedMsgCount        int           // Number of messages cached
     kvState               SessionStore  // Externalized KV state (kvstorage backend)
     draftKVState          SessionStore  // Externalized MTP draft seq KV (nil unless MTP drafter present)
@@ -893,6 +896,7 @@ type imcSession struct {
     hasMedia              bool          // True if cached content includes media
     useMRoPE              bool          // True if cached media used M-RoPE 4D encoding
     mediaKVCounts         []int         // KV positions per media chunk (text-extend math)
+    promptPlan            promptPlan    // Ordered token/media identity plan
     sysPromptHash         string        // Hash of system prompt message
     sysPromptTokens       int           // Token count of system prompt
     cachedRenderInputHash string        // imcRenderFingerprint of the committed prefix (pure-hit snapshot-skip key)
@@ -1250,16 +1254,25 @@ The assigned slot is prepared for this request:
 1. **Restore cached KV state**: For IMC, the session's externalized KV state
    is restored from RAM into the slot's sequence via `StateSeqSetData`.
    Extension tokens are then decoded, or the sequence is cleared and rebuilt.
+   A media-anchor match restores the target KV without re-encoding unchanged
+   media, then decodes only the appended stable text. Shared-target-KV Gemma4
+   MTP resumes from that same target state; own-KV media MTP and M-RoPE media
+   anchors run target-only unless complete draft-state coverage is available.
 2. **Build the sampler**: A sampler chain is constructed from the request's
    sampling parameters (temperature, top_k, top_p, min_p, repetition
    penalties, etc.). If grammar-constrained output is requested, a separate
    grammar sampler is also created.
-3. **Snapshot cached prefix**: For IMC, after cache build/extend but before
-   suffix tokens are decoded, the cached prefix KV state is snapshotted to
-   RAM via `StateSeqGetData`. This captures the reusable prefix for the next
-   request.
+3. **Snapshot cached prefix**: For an ordinary IMC build/extension, after the
+   cache is prepared but before suffix tokens are decoded, the reusable prefix
+   is serialized via `StateSeqGetData`. A media-anchor advance instead stages
+   the larger snapshot in a separate `SessionStore` and swaps snapshot plus
+   prompt-plan metadata atomically. If staging, decode, or serialization fails,
+   the prior valid snapshot remains published.
 4. **Tokenize the prompt**: The prompt string is converted into a sequence of
-   token IDs. Only the non-cached portion of the prompt needs tokenization.
+   token IDs. Token-v2 planning retains canonical token tails, so only the
+   non-cached portion is scheduled for decode. Canonical media plans preserve
+   ordered text and media units separately because media KV cannot be
+   reconstructed from token IDs alone.
 5. **Context window check**: The total token count (cached + new) is verified
    against the model's context window limit.
 
@@ -1267,8 +1280,8 @@ The assigned slot is prepared for this request:
 
 - `startSlot()` ([model/batch_slot_start.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)) — resets the slot, ends the `queue-wait` span, and starts the `process-request` and `prefill` spans (§19.10).
 - `toSampler()` builds the llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat); a separate grammar sampler is created if requested.
-- IMC KV restore: `StateSeqSetData` from `session.kvState`, then `decodeTokensIntoCache()` for extend, or `MemorySeqRm` for rebuild, or partial trim.
-- IMC KV snapshot: `StateSeqGetData` into `session.kvState` after build/extend.
+- IMC KV restore: `StateSeqSetData` from `session.kvState`, then `decodeTokensIntoCache()` for text extension, media-anchor stable-text replay, or partial trim; `MemorySeqRm` starts a rebuild.
+- IMC KV snapshot: `StateSeqGetData` into `session.kvState` after an ordinary build/extension, or into a staged store before an atomic media-anchor publish. Exact read-only matches skip redundant serialization.
 - `llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)` — `special=true` ensures ChatML markers are recognized (§19.7.7).
 - Draft prompt assembly for speculative decoding.
 - First chunk added via `addPrefillChunk()`.
@@ -1762,7 +1775,8 @@ buffer policy.
 | `pendingH []float32`                     | Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `targetBatchStart / Count / BasePos`     | Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live.                                                                                                                                                                                                                                                                                                                                                                                         |
 | `mtpHasBatch`                            | True between `batch.Add()` and the post-decode mirror; cleared by the mirror.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `mtpDisabledForRequest`                  | Disables MTP for the remainder of the current request. Set at `startSlot` on IMC cache hits where the matched session has no draft-seq snapshot (or the draft restore returned 0 bytes) — MTP-aware IMC builds snapshot both target and draft seqs so this failsafe rarely fires on freshly-built caches. Also set inside `finalizeSpeculativeTokens` after a post-rollback mirror failure (the draft KV is wiped and the slot continues target-only). Cleared by `slot.reset()` when the slot is recycled for the next request. |
+| `mtpDisabledForRequest`                  | Disables MTP for the remainder of the current request. It is set when own-KV draft state cannot safely resume beside an IMC-restored target, including media anchors without complete draft-state coverage, and after a post-rollback mirror failure. Shared-target-KV Gemma4 resumes directly from target KV and does not require a separate draft snapshot. Cleared by `slot.reset()` when the slot is recycled for the next request. |
+| `mtpDisableReason`                       | Short machine-friendly reason reported in final usage and completion logs when MTP is disabled for the request.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `verifyH []float32`                      | Slot-local cache of the target's pre-norm hidden-state rows for the just-decoded spec batch range (1+nDraft rows of nEmbd floats). Captured at the top of `verifySpeculativeTokens` (Phase A) BEFORE any Phase B side-effect (notably `restoreTargetSpecSnapshot`'s re-decode on a hybrid target) can invalidate the per-context pre-norm buffer. `mirrorTargetBatchToMTPDraft` reads from this buffer when populated and clears it after consumption. Lazy-grow / never-shrink.                                                 |
 | `specSnapshot []byte`                    | Pre-spec target state buffer for hybrid rollback (§19.12.6). Lazy-grow.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `specRounds`                             | Counter used to throttle per-round verify logging (logs first round, then every 32nd).                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1774,13 +1788,13 @@ buffer policy.
 #### 19.12.8 Code Map
 
 | File                                                                                                                                       | Role for MTP                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------------------------------------------------------------------ |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`sdk/kronk/model/draft_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go)                   | `mtpNextNLayers`, `loadDraftModelMTP`, `selectAndLoadDraft`. Sole source for MTP load + detect.                                                                                                                                                                                                                                                   |
 | [`sdk/kronk/model/batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)                   | `mirrorTargetBatchToMTPDraft`, `generateDraftTokensMTP`, `decodeTokensIntoCacheMTP` (IMC cache build with mirror), `mirrorBuildChunkToMTPDraft`, helpers (`batchTokensAt`, `mirrorBatchCapacity`).                                                                                                                                                |
 | [`sdk/kronk/model/yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go)                             | FFI bindings for the three pre-norm symbols; `MTPAvailable`, `SetEmbeddingsPreNorm`, `GetEmbeddingsPreNorm{,Ith}`.                                                                                                                                                                                                                                |
 | [`sdk/kronk/model/model.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go)                           | `draftModel` struct extended with MTP fields (`mtp`, `nEmbd`, MTP batches, pinned embd slices). `Unload` skips shared `ModelFree`.                                                                                                                                                                                                                |
 | [`sdk/kronk/model/batch_slot.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go)                 | `slot` struct extended with per-slot MTP state (`pendingH`, target-batch range, `mtpHasBatch`, `mtpDisabledForRequest`, `specSnapshot`, `specRounds`).                                                                                                                                                                                            |
-| [`sdk/kronk/model/batch_slot_start.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)     | Skips separate-draft-prefill on MTP; dispatches the MTP-aware `decodeTokensIntoCacheMTP` during IMC cache build so draft KV is populated in lock-step; snapshots/restores the draft seq + pendingH alongside the target so cache hits keep MTP running. Only disables MTP for a cache-hit request when the matched session has no draft snapshot. |
+| [`sdk/kronk/model/batch_slot_start.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)     | Skips separate-draft-prefill on MTP; dispatches the MTP-aware `decodeTokensIntoCacheMTP` during text IMC cache builds; restores media anchors without re-encoding unchanged media; resumes shared-target-KV Gemma4 from target state; and disables own-KV media MTP when complete draft-state coverage is unavailable. |
 | [`sdk/kronk/model/batch_engine.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)             | `processBatch` integration: claims slot's target-batch range at every add site, mirrors after every successful decode, dispatches MTP vs separate-GGUF draft generation.                                                                                                                                                                          |
 | [`sdk/kronk/model/batch_prefill_text.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go) | `addPrefillChunk` claims (or extends) the slot's MTP target-batch range so prefill rows get mirrored.                                                                                                                                                                                                                                             |
 | [`sdk/kronk/model/batch_speculative.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go)   | Greedy-only MTP verify path; `originalSampled` snapshot; hybrid snapshot/restore; post-verify mirror; throttled `verify-done` log; MTP-specific `rollbackDraft`.                                                                                                                                                                                  |

@@ -115,6 +115,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// concurrent processIMC scanner never sees the new metadata against
 	// stale/empty kvState bytes.
 	var sessionWasCommitted bool
+	var restoredPhysicalKVCells int
 
 	switch {
 	case e.model.cfg.IncrementalCache() && job.imcCacheHit:
@@ -136,6 +137,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			e.model.cacheMu.Lock()
 			cacheIdx = llama.Pos(session.logicalPosition())
+			restoredPhysicalKVCells = session.totalTokensCached
 			kvState = session.kvState.Bytes()
 			sessionVersionOK := !(job.imcReadOnlyReservation || job.imcMediaAnchorAdvance) ||
 				(session.cachedMsgsHash == job.imcExpectedHash &&
@@ -182,7 +184,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 		if len(kvState) > 0 && !job.imcClearSeq {
 			e.model.log(job.ctx, "start-slot", "status", "imc-restore-start",
-				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+				"slot", s.id, "seq", s.seqID, "next_logical_position", cacheIdx,
+				"physical_kv_cells", restoredPhysicalKVCells,
 				"ram_bytes", fmtBytes(uint64(len(kvState))))
 
 			restoreStart := time.Now()
@@ -196,9 +199,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				e.finishSlot(s, fmt.Errorf("start-slot: imc restore failed for seq %d", s.seqID))
 				return
 			}
+			job.imcSnapshotReused = true
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-restore-done",
-				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+				"slot", s.id, "seq", s.seqID, "next_logical_position", cacheIdx,
+				"physical_kv_cells", restoredPhysicalKVCells,
 				"restored_bytes", fmtBytes(nRead), "elapsed", fmtDur(time.Since(restoreStart)))
 
 			// MTP: restore the draft seq state and pendingH alongside
@@ -555,6 +560,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// produced by text tokens or media embeddings (image/audio). For Hybrid
 	// models it also captures recurrent state (DeltaNet/SSM).
 	if e.model.cfg.IncrementalCache() && job.imcCacheHit && cacheIdx > 0 && job.imcSession != nil {
+		var snapshotPhysicalKVCells int
+		switch {
+		case job.imcMediaAnchorAdvance:
+			snapshotPhysicalKVCells = job.imcNewTotalCached
+		default:
+			e.model.cacheMu.RLock()
+			snapshotPhysicalKVCells = job.imcSession.totalTokensCached
+			e.model.cacheMu.RUnlock()
+		}
+
 		// Pure-hit snapshot skip: when processIMC marked this job as an
 		// exact pure hit AND no cached-prefix mutation happened
 		// in this startSlot (no extension tokens, no media build, no trim,
@@ -595,7 +610,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		if skipSnapshot {
 			metrics.AddIMCSnapshotSkipped(e.model.modelInfo.ID)
 			e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-skip-read-only", "snapshot_action", "skip-read-only",
-				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+				"slot", s.id, "seq", s.seqID, "next_logical_position", cacheIdx,
+				"physical_kv_cells", snapshotPhysicalKVCells,
 				"imc_slot", job.imcSessionID)
 
 			// Fall through to suffix decode; session.kvState,
@@ -607,7 +623,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 		} else {
 			e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-start",
-				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
+				"slot", s.id, "seq", s.seqID, "next_logical_position", cacheIdx,
+				"physical_kv_cells", snapshotPhysicalKVCells)
 
 			snapshotStart := time.Now()
 
@@ -657,7 +674,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			if snapshotOK {
 				e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-done",
-					"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+					"slot", s.id, "seq", s.seqID, "next_logical_position", cacheIdx,
+					"physical_kv_cells", snapshotPhysicalKVCells,
 					"snapshot_bytes", fmtBytes(nExtracted), "kv_alloc", fmtBytes(kvSize),
 					"buf_action", bufAction,
 					"buf_cap_before", fmtBytes(uint64(capBefore)),
@@ -665,7 +683,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					"elapsed", fmtDur(time.Since(snapshotStart)))
 			} else {
 				e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-failed",
-					"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+					"slot", s.id, "seq", s.seqID, "next_logical_position", cacheIdx,
+					"physical_kv_cells", snapshotPhysicalKVCells,
 					"extracted_bytes", fmtBytes(nExtracted), "stored_bytes", fmtBytes(uint64(storedSnapshotBytes)),
 					"kv_alloc", fmtBytes(kvSize),
 					"buf_action", bufAction,
@@ -818,7 +837,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	}
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
-		"total_prompt", s.nPrompt, "imc_cache_hit", job.imcCacheHit, "imc_slot", job.imcSessionID, "kv_used", kvUsed)
+		"total_prompt", s.nPrompt, "imc_active", job.imcCacheHit, "imc_cache_hit", job.imcSnapshotReused,
+		"imc_slot", job.imcSessionID, "kv_logical_positions", kvUsed)
 }
 
 // startSlotText initializes a text-only slot. Returns true on success.
@@ -1055,8 +1075,8 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		// draft position compatibility is proven, keep target reuse enabled
 		// but disable speculative decoding for this request.
 		s.mtpDisabledForRequest = true
-		s.mtpDisableReason = "media-anchor-mrope"
-		e.model.log(job.ctx, "speculative", "status", "mtp-disabled-media-anchor",
+		s.mtpDisableReason = "media-mrope"
+		e.model.log(job.ctx, "speculative", "status", "mtp-disabled-media-mrope",
 			"slot", s.id, "id", job.id, "reason", s.mtpDisableReason)
 	}
 

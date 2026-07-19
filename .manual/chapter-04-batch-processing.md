@@ -441,9 +441,11 @@ type or content type (text or media):
 IMC (all types, all content): Snapshot to RAM → Clear VRAM → Restore into any slot
 ```
 
-The only difference is that when a new media message appears in the
-conversation, the cache is rebuilt through the mtmd pipeline (projection
-model encodes image/audio into embeddings).
+The first media plan, or any plan with changed/reordered/removed/new media, is
+built through the mtmd pipeline (the projection model encodes image/audio into
+embeddings). A text-only follow-up to an unchanged media prefix restores the
+snapshot, decodes only appended stable text, and atomically advances the
+externalized snapshot; the media is not re-encoded.
 
 The snapshot/restore is a memory copy operation, typically 10-30ms depending
 on conversation size.
@@ -506,13 +508,15 @@ restore failures trigger expensive full rebuilds.
 | Log Message                  | Meaning                                                                                  |
 | ---------------------------- | ---------------------------------------------------------------------------------------- |
 | `imc-restore-start`          | About to restore externalized KV from `SessionStore` into the slot's sequence            |
-| `imc-restore-done`           | `StateSeqSetData` succeeded (shows `cached_tokens`, `ram_bytes`)                         |
-| `imc-snapshot-start`         | About to capture cached prefix KV via `StateSeqGetData` after build/extend               |
-| `imc-snapshot-done`          | Snapshot committed to `session.kvState` (shows duration, bytes)                          |
+| `imc-restore-done`           | `StateSeqSetData` succeeded (shows `next_logical_position`, `physical_kv_cells`, and `restored_bytes`) |
+| `imc-snapshot-start`         | About to capture cached prefix KV; distinguishes logical position from physical KV cells |
+| `imc-snapshot-done`          | Snapshot committed with logical position, physical KV cells, duration, and byte size     |
 | `imc-snapshot-failed`        | `StateSeqGetData` returned 0 bytes; session metadata reset                               |
-| `imc-snapshot-skip-pure-hit` | Pure-hit fast path took the snapshot-skip optimization (see §5.2 Pure Hit Snapshot Skip) |
+| `imc-snapshot-skip-read-only` | Exact text or media hit skipped redundant serialization; carries `snapshot_action=skip-read-only` |
 | `imc-pure-hit-stale`         | Pure-hit candidate found a concurrently-mutated session; client should retry             |
 | `imc-extend-stale`           | Extend candidate found a concurrently-mutated session; client should retry               |
+| `imc-media-anchor-advanced-in-slot` | Restored media prefix was extended with text only; media projection did not run     |
+| `imc-media-anchor-committed` | Staged target snapshot and physical/logical metadata were swapped atomically              |
 | `imc-rebuild-full`           | Hybrid (or corruption recovery): full clear + re-decode from position 0                  |
 | `imc-trim-prefix`            | Token-prefix fallback: trim from divergence point and re-decode the suffix               |
 | `imc-clear-seq`              | VRAM sequence cleared (`finishSlot`, eviction, or rebuild)                               |

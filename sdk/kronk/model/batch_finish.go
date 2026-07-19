@@ -29,7 +29,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	imcTokenPlan := s.job.imcTokenPlan
 	imcMatchKind := s.job.imcMatchKind
 	imcSessionID := s.job.imcSessionID
-	imcCacheHit := s.job.imcCacheHit
+	imcActive := s.job.imcCacheHit
+	imcSnapshotReused := s.job.imcSnapshotReused
 	imcTailTokens := len(s.job.tailTokens)
 	mtpResumeSource := s.mtpResumeSource
 
@@ -88,7 +89,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 				return "legacy"
 			}(),
 			"imc_slot", imcSessionID,
-			"imc_cache_hit", imcCacheHit,
+			"imc_active", imcActive,
+			"imc_cache_hit", imcSnapshotReused,
 			"imc_match_kind", imcMatchKind,
 			"imc_tail_tokens", imcTailTokens,
 			"elapsed", elapsed.String(),
@@ -101,7 +103,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		// due to a collapsed acceptance EMA). Models without a draft
 		// model omit the fields entirely.
 		if e.model.draft != nil {
-			if mtpResumeSource == "" {
+			switch {
+			case disableReason != "":
+				mtpResumeSource = "disabled"
+			case mtpResumeSource == "":
 				mtpResumeSource = "fresh-prefill"
 			}
 			var rate float64
@@ -367,7 +372,8 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	close(job.ch)
 
 	e.model.log(job.ctx, "batch-engine", "status", "job-failed", "id", job.id,
-		"imc_slot", job.imcSessionID, "imc_cache_hit", job.imcCacheHit,
+		"imc_slot", job.imcSessionID, "imc_active", job.imcCacheHit,
+		"imc_cache_hit", job.imcSnapshotReused,
 		"err", err, "active_streams", remaining)
 }
 

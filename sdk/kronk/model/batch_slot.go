@@ -41,11 +41,12 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
 
-	imcSession      *imcSession // Matched IMC session (the session-pool entry whose KV state will be restored into the assigned slot)
-	imcSessionMedia bool        // True if session has media (snapshot at job creation; safe to read without lock)
-	imcSessionID    int         // Session-pool index (== imcSession.id); used by imcClearPending lookup and log correlation. Not related to execution slot identity.
-	imcCacheHit     bool        // True if conversation history was found in cache
-	imcExpectedHash string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
+	imcSession        *imcSession // Matched IMC session (the session-pool entry whose KV state will be restored into the assigned slot)
+	imcSessionMedia   bool        // True if session has media (snapshot at job creation; safe to read without lock)
+	imcSessionID      int         // Session-pool index (== imcSession.id); used by imcClearPending lookup and log correlation. Not related to execution slot identity.
+	imcCacheHit       bool        // True when this request uses the IMC build/restore path.
+	imcSnapshotReused bool        // True after a prior externalized target snapshot is restored successfully.
+	imcExpectedHash   string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
 
 	// Pure-hit snapshot-skip state mirrored from cacheResult.
 	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot.
@@ -222,7 +223,8 @@ type slot struct {
 	// a request with a high DMAR also had low draft coverage. Empty
 	// while MTP is still active. Cleared in slot.reset(). Possible
 	// values mirror the speculative-log status names:
-	//   "imc-hit"      — IMC cache hit at startSlot.
+	//   "imc-hit"      — IMC cache hit lacked restorable draft state.
+	//   "media-mrope"  — M-RoPE media state cannot resume the draft safely.
 	//   "mirror-error" — post-verify mirror failed; draft KV wiped.
 	mtpDisableReason string
 	mtpResumeSource  string

@@ -238,17 +238,17 @@ On every IMC cache hit, the engine normally:
 2. After build/extend (or no-op for a pure hit), serializes the KV state
    back out via `StateSeqGetData` so the next request can restore it.
 
-For a pure hit on a text-only session, step 2 is a byte-for-byte round
-trip of the bytes that were just restored in step 1 — pure I/O with no
-information change. The **pure-hit snapshot-skip** optimization detects
-this case and skips `StateSeqGetData` entirely.
+For a pure hit, step 2 is a byte-for-byte round trip of the bytes that were
+just restored in step 1 — pure I/O with no information change. The
+**pure-hit snapshot-skip** optimization detects this case for exact text and
+media plans and skips `StateSeqGetData` entirely.
 
 Qualification (all must hold):
 
-- Text-only session — media sessions also externalize KV, but the
-  optimization gates on `!hasMedia` to keep the predicate small.
 - No prefix mutation in this request: no extension tokens, no media
   build, no trim, no clear.
+- For media sessions, the stored logical prompt plan exactly equals the
+  request's stable plan, including ordered media SHA-256 identities.
 - The session's committed render-input fingerprint
   (`cachedRenderInputHash`) equals the current request's fingerprint
   (template, tools, `add_generation_prompt`, `preserve_thinking`, exact
@@ -260,7 +260,8 @@ Qualification (all must hold):
 - For models with an MTP drafter, the draft sequence's state was
   restored successfully alongside the target.
 
-When the skip fires, the log emits `imc-snapshot-skip-pure-hit` and the
+When the skip fires, the log emits `imc-snapshot-skip-read-only` with
+`snapshot_action=skip-read-only`, and the
 `imc_snapshot_skipped_total` counter increments. When a pure-hit
 candidate races a concurrent extend, the request is failed with
 `imc-pure-hit-stale` and the client retries — the next attempt sees the
@@ -310,8 +311,9 @@ Prefill:  [user3 + gen_prompt]
 > append, and rebuild selections reserve their session immediately. The
 > reservation is released on submission failure, cancellation, decode failure,
 > panic before batch handoff, or normal slot completion. Media sessions are
-> reused only on exact logical-plan identity; changed or appended media rebuilds
-> through the authoritative mtmd pipeline.
+> reused on exact logical-plan identity or when the stored media plan is an
+> immutable prefix followed only by new text. Changed, reordered, removed, or
+> newly appended media rebuilds through the authoritative mtmd pipeline.
 
 The algorithm below documents pre token-v2 behavior for interpreting old logs.
 
@@ -456,15 +458,25 @@ need eviction depending on the remaining headroom.
 
 IMC supports mtmd image, audio, and multipart requests. A media prompt plan
 contains text-token units and ordered media identities derived from immutable
-input bytes. Raw media and identities are not logged. Exact plans restore the
-externalized KV state without re-encoding media. Changed, reordered, removed,
-or appended media rebuilds through mtmd so model-specific chunk boundaries and
-embeddings remain authoritative.
+input bytes. BOS is added globally exactly once; vocabularies that automatically
+append EOS conservatively fall back to mtmd rebuilds because an old terminal EOS
+cannot safely become an interior prefix token. Raw media and identities are not
+logged.
+
+Exact plans restore the externalized KV state without re-encoding media and
+skip redundant snapshot serialization. When the stored plan is a complete
+prefix of the new stable plan and everything after it is text, IMC selects an
+**anchor** match. It restores the media KV, decodes only the authoritative text
+extension, snapshots the enlarged prefix into a separate `SessionStore`, and
+atomically swaps the snapshot and metadata. A failed decode or staged snapshot
+leaves the previous anchor valid. Changed, reordered, removed, or newly appended
+media rebuilds through mtmd so model-specific chunk boundaries and embeddings
+remain authoritative.
 
 M-RoPE handling distinguishes physical image embeddings (`n_tokens`) from
 logical position advancement (`n_pos`). Images use `[t, y, x, 0]` positions;
 following text broadcasts each logical position across all four planes. An
-exact restored request resumes suffix decoding at the saved logical position.
+exact or anchor-restored request resumes suffix decoding at the saved logical position.
 Sessions persist both the physical KV-cell count (for capacity and prompt
 accounting) and the next logical position (for M-RoPE continuation).
 M-RoPE layouts whose embedding count is not the rectangular `nx*ny` grid are
@@ -476,12 +488,14 @@ Useful structured events are:
 | Event | Important fields |
 | ----- | ---------------- |
 | `imc status=plan-ready` | `cache_mode=token-v2`, `match_kind`, `match_reason`, `reusable_tokens`, `extension_tokens`, `tail_tokens`, `actual_tokens`, `stable_tokens` |
-| `imc-media-cache status=plan-ready` | `media_count`, `logical_units`, `text_tokens`, `match_kind`, `reusable_kv`, `position_mode` |
-| `start-slot status=imc-restore-done` | `cached_tokens`, `restored_bytes`, `elapsed` |
-| `start-slot status=imc-snapshot-done` | `cached_tokens`, `snapshot_bytes`, `buf_action`, `elapsed` |
-| `start-slot status=imc-snapshot-skip-pure-hit` | exact prefix reused without reserializing it |
+| `imc-media-cache status=plan-ready` | `media_count`, `logical_units`, `text_tokens`, `match_kind`, `match_reason`, `anchor_physical_kv`, `anchor_logical_position`, `extension_text` |
+| `start-slot status=imc-restore-done` | `next_logical_position`, `physical_kv_cells`, `restored_bytes`, `elapsed` |
+| `start-slot status=imc-snapshot-done` | `next_logical_position`, `physical_kv_cells`, `snapshot_bytes`, `buf_action`, `elapsed` |
+| `start-slot status=imc-snapshot-skip-read-only` | exact prefix reused without reserializing it; `snapshot_action=skip-read-only` |
+| `start-slot status=imc-media-anchor-advanced-in-slot` | appended stable text decoded without re-encoding media |
+| `start-slot status=imc-media-anchor-committed` | staged snapshot and matching physical/logical metadata swapped atomically |
 | `imc-media-cache status=complete` | `logical_positions`, `physical_kv_cells`, ordered `media_kv_cells` counts |
-| `slot-finished` | final `imc_cache_mode`, `imc_match_kind`, `imc_tail_tokens`, and MTP totals |
+| `slot-finished` | `imc_active` reports IMC participation; `imc_cache_hit` reports successful prior-snapshot restoration; also carries `imc_cache_mode`, `imc_match_kind`, `imc_tail_tokens`, and MTP totals |
 
 ##### Legacy token-prefix fallback (pre token-v2)
 
@@ -748,13 +762,11 @@ more time by restoring the model's cached prefill state.
 **IMC with Vision/Audio Models:**
 
 IMC supports mtmd image, audio, and multipart requests. Exact complete media
-plans restore text plus media KV from RAM without re-encoding. Any changed or
-appended media plan rebuilds through mtmd; this conservative rule keeps mtmd's
-model-specific token, embedding, and M-RoPE stream authoritative.
-
-> The examples and partial-media-extension internals below describe the legacy
-> pre token-v2 implementation. Current token-v2 media planning performs exact
-> reuse or a full mtmd rebuild.
+plans restore text plus media KV from RAM without re-encoding. Text-only
+follow-ups use an anchor restore and atomically advance the stored snapshot.
+Any changed, reordered, removed, or newly appended media rebuilds through mtmd;
+this rule keeps mtmd's model-specific token, embedding, and M-RoPE stream
+authoritative.
 
 For example, in a conversation like:
 
@@ -789,9 +801,9 @@ Request 4 (back to asking about the image):
 [user]         →  prefill (generation target)
 ```
 
-When an image appears mid-conversation (after text-only messages), IMC
-preserves the existing text cache and extends it with media instead of
-rebuilding from scratch:
+When an image first appears mid-conversation, the complete stable media plan is
+built through mtmd. Once that media snapshot exists, subsequent text-only turns
+anchor to it and do not rerun projection:
 
 ```
 Text-only conversation, then image appears mid-conversation:
@@ -803,10 +815,9 @@ Requests 1–3 (text-only):
 ...            →  conversation grows, all text cached incrementally
 
 Request 4 (image appears mid-conversation):
-[system]       →  cached (text tokens skipped via imcMediaSkipTextTokens)
-[earlier msgs] →  cached (text tokens skipped)
-[asst + user]  →  media extend from text (new text decoded from skip point)
-[user + image] →  media extend from text (image encoded through projection model)
+[system]       →  rebuilt through the stable media plan
+[earlier msgs] →  rebuilt through the stable media plan
+[user + image] →  image encoded once through the projection model
 [user]         →  prefill (generation target)
 
 Request 5 (text follow-up about the image):
@@ -817,42 +828,38 @@ Request 5 (text follow-up about the image):
 
 **How media caching works internally:**
 
-1. When `buildIMCCacheFromScratch` detects media content, it defers the build
-   to `startSlot` where the mtmd pipeline (projection model) is available. The
-   cache result carries `imcMediaBuild: true`.
+1. `buildPromptPlan` splits the stable and generation-ready renders at mtmd's
+   marker, tokenizes each text segment without per-segment special tokens, adds
+   BOS globally once, and inserts ordered SHA-256 media units.
 
-2. When media first appears in a conversation that started text-only,
-   `extendIMCTextCacheWithMedia` preserves the existing text prefix in the
-   KV cache. It sets `imcMediaSkipTextTokens` to the number of already-cached
-   text tokens, so `decodeMediaIntoCache` skips them and only decodes the new
-   text plus media embeddings. This avoids re-decoding potentially tens of
-   thousands of cached text tokens when an image is first introduced
-   mid-conversation.
+2. `processIMCMediaTokenPlan` selects `exact`, `anchor`, or `rebuild`. Anchors
+   require a nonempty valid snapshot, unchanged ordered media, a complete plan
+   prefix, and a text-only extension.
 
-3. `decodeMediaIntoCache` processes the prompt as interleaved chunks — text
+3. A rebuild defers to `startSlot`, where `decodeMediaIntoCache` processes the
+   prompt as interleaved chunks — text
    chunks are tokenized and decoded normally, while image/audio chunks are
    encoded through the projection model and their embeddings are decoded into
-   the KV cache. When `imcMediaSkipTextTokens` is set, the first text chunk
-   is partially skipped (only tokens beyond the skip point are decoded). For
-   models using M-RoPE (e.g., Qwen2.5-VL), 2D spatial positions are assigned
-   to image tokens.
+   the KV cache. For models using M-RoPE, 2D spatial positions are assigned to
+   image tokens.
 
 4. The session tracks `mediaKVCounts` — the number of KV positions consumed
    by each media chunk. This is needed because media embeddings occupy a
    different number of KV positions than the text marker tokens they replace
    in the tokenized prompt.
 
-5. On text-only follow-ups, `extendIMCMediaSlotWithText` uses the
-   `mediaKVCounts` to compute the correct offset between text token indices
-   and KV positions, then decodes only the new text tokens at the right
-   position — no image re-encoding occurs.
+5. On text-only follow-ups, the engine restores the target snapshot at the
+   stored logical position and decodes `imcNewCacheTokens`. Linear models use
+   normal text positions; M-RoPE models broadcast each new logical text
+   position across all four planes. No marker-token offset arithmetic or image
+   re-encoding is involved.
 
-6. If a new message being added contains media (a second image, for example),
-   `rebuildIMCWithMedia` triggers a full rebuild through the mtmd pipeline.
+6. The advanced target state is serialized into a new `SessionStore`. Only a
+   successful snapshot atomically replaces `kvState`, `promptPlan`, physical
+   KV count, logical position, message/hash metadata, and render fingerprint.
 
-7. Token prefix matching is skipped when the incoming request contains media
-   messages, since the tokenization path would mutate media content and corrupt
-   downstream processing.
+7. If a new message adds or changes media, prefix identity fails and the full
+   stable plan rebuilds through mtmd.
 
 **IMC Limitations:**
 
