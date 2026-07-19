@@ -908,7 +908,7 @@ jobs:
                 (.name | test("^main-latest-") | not)
                 and (.name | test("^main-[0-9a-f]{7,}-.+$"))
                 and (((.tag_last_pushed // .last_updated) // "1970-01-01T00:00:00Z")
-                     | fromdateiso8601) < $cutoff
+                     | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) < $cutoff
               )
             | [ .name, ((.tag_last_pushed // .last_updated) // "") ] | @tsv
           ')"
