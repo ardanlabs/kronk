@@ -35,8 +35,8 @@ http://localhost:11435/admin/
 
 It is bundled inside the `kronk` binary and served from the same address
 configured by `KRONK_WEB_API_HOST` (default `0.0.0.0:11435`).
-The server root does not redirect to the BUI. Leave the setting disabled for
-a headless deployment.
+When the BUI is enabled, the server root redirects to `/admin/`. Leave the
+setting disabled for a headless deployment.
 
 ### 13.2 Sidebar Layout
 
@@ -168,6 +168,8 @@ Enable the BUI with `KRONK_WEB_ADMIN_ENABLED=true` or
 `--web-admin-enabled`. It is served only below `/admin/`. For a protected BUI,
 also enable `KRONK_AUTH_ADMIN_ENABLED` and set the masked
 `KRONK_WEB_ADMIN_PASSWORD_SHA256` value. Login creates a one-hour,
-Secure/HttpOnly/SameSite=Strict `__Host-kronk-admin` cookie. The server applies
-same-origin CSRF checks to unsafe cookie-authenticated requests; explicit
-Bearer clients do not use browser CSRF checks.
+HttpOnly/SameSite=Strict session cookie. Direct TLS and ingresses that send
+`X-Forwarded-Proto: https` receive a Secure `__Host-kronk-admin` cookie; direct
+HTTP receives `kronk-admin` and remains supported for trusted networks. The
+server applies same-origin CSRF checks to unsafe cookie-authenticated requests;
+explicit Bearer clients do not use browser CSRF checks.

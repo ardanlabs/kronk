@@ -15,6 +15,28 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
 
+func TestAdminRedirects(t *testing.T) {
+	app := web.NewApp(func(context.Context, string, ...any) {})
+	registerAdminRoutes(app, Config{})
+	app.NotFoundHandler()
+
+	for _, path := range []string{"/", "/admin"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://example.test"+path, nil)
+			rr := httptest.NewRecorder()
+
+			app.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusPermanentRedirect {
+				t.Errorf("status: got %d, want %d", rr.Code, http.StatusPermanentRedirect)
+			}
+			if location := rr.Header().Get("Location"); location != "/admin/" {
+				t.Errorf("Location: got %q, want %q", location, "/admin/")
+			}
+		})
+	}
+}
+
 func TestAdminCookieMiddleware(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer cookie-token" {
@@ -25,7 +47,7 @@ func TestAdminCookieMiddleware(t *testing.T) {
 
 	t.Run("promotes cookie", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "https://example.test/v1/models", nil)
-		req.AddCookie(&http.Cookie{Name: adminCookieName, Value: "cookie-token"})
+		req.AddCookie(&http.Cookie{Name: adminHTTPSCookieName, Value: "cookie-token"})
 		rr := httptest.NewRecorder()
 		adminCookieMiddleware(next).ServeHTTP(rr, req)
 		if rr.Code != http.StatusNoContent {
@@ -36,7 +58,7 @@ func TestAdminCookieMiddleware(t *testing.T) {
 	t.Run("rejects unsafe cross origin cookie", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "https://example.test/v1/security/keys/add", nil)
 		req.Header.Set("Origin", "https://evil.test")
-		req.AddCookie(&http.Cookie{Name: adminCookieName, Value: "cookie-token"})
+		req.AddCookie(&http.Cookie{Name: adminHTTPSCookieName, Value: "cookie-token"})
 		rr := httptest.NewRecorder()
 		adminCookieMiddleware(next).ServeHTTP(rr, req)
 		if rr.Code != http.StatusForbidden {
@@ -46,15 +68,55 @@ func TestAdminCookieMiddleware(t *testing.T) {
 }
 
 func TestSetAdminCookie(t *testing.T) {
-	rr := httptest.NewRecorder()
-	setAdminCookie(rr, "token", time.Now().Add(time.Hour), 3600)
-	cookies := rr.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("cookies: got %d, want 1", len(cookies))
+	tests := []struct {
+		name   string
+		url    string
+		proto  string
+		cookie string
+		secure bool
+	}{
+		{"https", "https://example.test/admin/api/login", "", adminHTTPSCookieName, true},
+		{"https at ingress", "http://example.test/admin/api/login", "https", adminHTTPSCookieName, true},
+		{"http", "http://example.test/admin/api/login", "", adminHTTPCookieName, false},
 	}
-	cookie := cookies[0]
-	if cookie.Name != adminCookieName || !cookie.HttpOnly || !cookie.Secure || cookie.Path != "/" || cookie.SameSite != http.SameSiteStrictMode {
-		t.Errorf("cookie attributes are not secure: %+v", cookie)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tt.url, nil)
+			if tt.proto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.proto)
+			}
+			rr := httptest.NewRecorder()
+			setAdminCookie(rr, req, "token", time.Now().Add(time.Hour), 3600)
+			cookies := rr.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("cookies: got %d, want 1", len(cookies))
+			}
+			cookie := cookies[0]
+			if cookie.Name != tt.cookie || !cookie.HttpOnly || cookie.Secure != tt.secure || cookie.Path != "/" || cookie.SameSite != http.SameSiteStrictMode {
+				t.Errorf("cookie attributes: got %+v", cookie)
+			}
+		})
+	}
+}
+
+func TestClearAdminCookiesHTTPS(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "https://example.test/admin/api/logout", nil)
+	rr := httptest.NewRecorder()
+
+	clearAdminCookies(rr, req)
+
+	cookies := rr.Result().Cookies()
+	if len(cookies) != 2 {
+		t.Fatalf("cookies: got %d, want 2", len(cookies))
+	}
+	if cookies[0].Name != adminHTTPSCookieName || cookies[1].Name != adminHTTPCookieName {
+		t.Errorf("cookie names: got %q and %q", cookies[0].Name, cookies[1].Name)
+	}
+	for _, cookie := range cookies {
+		if cookie.MaxAge != -1 || !cookie.Secure {
+			t.Errorf("expired cookie: got %+v", cookie)
+		}
 	}
 }
 
@@ -123,7 +185,7 @@ func TestAdminLoginSession(t *testing.T) {
 	app.NotFoundHandler()
 	handler := adminCookieMiddleware(app)
 
-	sessionReq := httptest.NewRequest(http.MethodGet, "https://example.test/admin/api/session", nil)
+	sessionReq := httptest.NewRequest(http.MethodGet, "http://example.test/admin/api/session", nil)
 	sessionRR := httptest.NewRecorder()
 	handler.ServeHTTP(sessionRR, sessionReq)
 	if sessionRR.Code != http.StatusUnauthorized {
@@ -134,9 +196,9 @@ func TestAdminLoginSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	loginReq := httptest.NewRequest(http.MethodPost, "https://example.test/admin/api/login", bytes.NewReader(loginBody))
+	loginReq := httptest.NewRequest(http.MethodPost, "http://example.test/admin/api/login", bytes.NewReader(loginBody))
 	loginReq.Header.Set("Content-Type", "application/json")
-	loginReq.Header.Set("Origin", "https://example.test")
+	loginReq.Header.Set("Origin", "http://example.test")
 	loginRR := httptest.NewRecorder()
 	handler.ServeHTTP(loginRR, loginReq)
 	if loginRR.Code != http.StatusOK {
@@ -146,8 +208,11 @@ func TestAdminLoginSession(t *testing.T) {
 	if len(cookies) != 1 {
 		t.Fatalf("login cookies: got %d, want 1", len(cookies))
 	}
+	if cookies[0].Name != adminHTTPCookieName || cookies[0].Secure {
+		t.Fatalf("HTTP login cookie: got %+v", cookies[0])
+	}
 
-	sessionReq = httptest.NewRequest(http.MethodGet, "https://example.test/admin/api/session", nil)
+	sessionReq = httptest.NewRequest(http.MethodGet, "http://example.test/admin/api/session", nil)
 	sessionReq.AddCookie(cookies[0])
 	sessionRR = httptest.NewRecorder()
 	handler.ServeHTTP(sessionRR, sessionReq)

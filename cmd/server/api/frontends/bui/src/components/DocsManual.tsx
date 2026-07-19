@@ -760,13 +760,14 @@ kronk model list`}</code></pre>
           <p>Create scoped user tokens for inference clients rather than giving them the admin token. See <a href="chapter-12-security-authentication.md">Chapter 12</a> for token creation, endpoint grants, rate limits, and key rotation.</p>
           <p><strong>Internet deployment requirements</strong></p>
           <ul>
-            <li>Terminate HTTPS at a reverse proxy; Kronk itself serves plain HTTP.</li>
-            <li>Keep <code>/admin/</code> and <code>/v1</code> on the same public origin so the secure BUI session cookie can authenticate API calls.</li>
+            <li>Terminate HTTPS at an ingress or reverse proxy; Kronk itself may continue to receive plain HTTP behind that TLS termination point.</li>
+            <li>Keep <code>/admin/</code> and <code>/v1</code> on the same public origin so the BUI session cookie can authenticate API calls.</li>
             <li>Block <code>/admin/</code> at the proxy or firewall where browser administration should not be reachable.</li>
             <li>Password-based BUI login currently requires Kronk's local auth service; it is not available with <code>KRONK_AUTH_HOST</code>.</li>
             <li>Leave <code>KRONK_WEB_ADMIN_ENABLED</code> unset for a headless deployment.</li>
           </ul>
-          <p>The equivalent environment variables are <code>KRONK_AUTH_LOCAL_ENABLED</code>, <code>KRONK_AUTH_ADMIN_ENABLED</code>, <code>KRONK_WEB_ADMIN_ENABLED</code>, and the masked <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code>.</p>
+          <p>Password login also works over direct HTTP for trusted-network development. Kronk marks the session cookie <code>Secure</code> when the request uses TLS directly or the ingress sends <code>X-Forwarded-Proto: https</code>; otherwise it issues an HTTP-compatible cookie. Direct HTTP sends the session token without transport encryption and must not be exposed to an untrusted network.</p>
+          <p>The equivalent environment variables are <code>KRONK_AUTH_LOCAL_ENABLED</code>, <code>KRONK_AUTH_ADMIN_ENABLED</code>, <code>KRONK_WEB_ADMIN_ENABLED</code>, and the masked <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code>. The password digest may remain configured when admin authentication is disabled; it is ignored until admin authentication is enabled.</p>
           <h3 id="29-model-configuration-file">2.9 Model Configuration File</h3>
           <p>When Kronk starts the server for the first time, it automatically installs a default <code>model_config.yaml</code> file in the <code>~/.kronk/</code> directory. This file controls how each model behaves when loaded by the server — context window size, batch processing, caching, sampling parameters, and more.</p>
           <p><strong>How It Works</strong></p>
@@ -4224,7 +4225,7 @@ unsloth/Qwen3-0.6B-Q8_0:
   incremental-cache: true`}</code></pre>
           <hr />
           <h3 id="admin-ui-and-authentication-modes">Admin UI and authentication modes</h3>
-          <p>The embedded browser UI is disabled by default. Set <code>KRONK_WEB_ADMIN_ENABLED=true</code> (or <code>--web-admin-enabled</code>) to mount it at <code>/admin/</code>; the server root remains unmounted. With admin authentication off, the UI is intentionally open. With admin authentication on, configure <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code> with the 64-character hexadecimal SHA-256 digest of the UTF-8 password. Browser password login currently requires the local auth service and HTTPS.</p>
+          <p>The embedded browser UI is disabled by default. Set <code>KRONK_WEB_ADMIN_ENABLED=true</code> (or <code>--web-admin-enabled</code>) to mount it at <code>/admin/</code>; the server root redirects there. With admin authentication off, the UI is intentionally open. With admin authentication on, configure <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code> with the 64-character hexadecimal SHA-256 digest of the UTF-8 password. Browser password login requires the local auth service. It works over direct HTTP, direct HTTPS, or HTTPS terminated by an ingress or reverse proxy.</p>
           <h2 id="chapter-9-api-endpoints">Chapter 9: API Endpoints</h2>
           <p>Kronk provides an OpenAI-compatible REST API. This chapter documents the available endpoints and their usage.</p>
           <h3 id="91-endpoint-overview">9.1 Endpoint Overview</h3>
@@ -5707,7 +5708,7 @@ response = client.chat.completions.create(
           <h3 id="131-accessing-the-bui">13.1 Accessing the BUI</h3>
           <p>Enable the BUI with <code>KRONK_WEB_ADMIN_ENABLED=true</code>, then open:</p>
           <pre className="code-block"><code>{`http://localhost:11435/admin/`}</code></pre>
-          <p>It is bundled inside the <code>kronk</code> binary and served from the same address configured by <code>KRONK_WEB_API_HOST</code> (default <code>0.0.0.0:11435</code>). The server root does not redirect to the BUI. Leave the setting disabled for a headless deployment.</p>
+          <p>It is bundled inside the <code>kronk</code> binary and served from the same address configured by <code>KRONK_WEB_API_HOST</code> (default <code>0.0.0.0:11435</code>). When the BUI is enabled, the server root redirects to <code>/admin/</code>. Leave the setting disabled for a headless deployment.</p>
           <h3 id="132-sidebar-layout">13.2 Sidebar Layout</h3>
           <p>Navigation is grouped into the following top-level sections in the sidebar:</p>
           <ul>
@@ -5762,7 +5763,7 @@ response = client.chat.completions.create(
           <hr />
           <p><em>Next: &lt;a href="#chapter-14-client-integration"&gt;Chapter 14: Client Integration&lt;/a&gt;</em></p>
           <h3 id="secure-browser-administration">Secure browser administration</h3>
-          <p>Enable the BUI with <code>KRONK_WEB_ADMIN_ENABLED=true</code> or <code>--web-admin-enabled</code>. It is served only below <code>/admin/</code>. For a protected BUI, also enable <code>KRONK_AUTH_ADMIN_ENABLED</code> and set the masked <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code> value. Login creates a one-hour, Secure/HttpOnly/SameSite=Strict <code>__Host-kronk-admin</code> cookie. The server applies same-origin CSRF checks to unsafe cookie-authenticated requests; explicit Bearer clients do not use browser CSRF checks.</p>
+          <p>Enable the BUI with <code>KRONK_WEB_ADMIN_ENABLED=true</code> or <code>--web-admin-enabled</code>. It is served only below <code>/admin/</code>. For a protected BUI, also enable <code>KRONK_AUTH_ADMIN_ENABLED</code> and set the masked <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code> value. Login creates a one-hour, HttpOnly/SameSite=Strict session cookie. Direct TLS and ingresses that send <code>X-Forwarded-Proto: https</code> receive a Secure <code>__Host-kronk-admin</code> cookie; direct HTTP receives <code>kronk-admin</code> and remains supported for trusted networks. The server applies same-origin CSRF checks to unsafe cookie-authenticated requests; explicit Bearer clients do not use browser CSRF checks.</p>
           <h2 id="chapter-14-client-integration">Chapter 14: Client Integration</h2>
           <p>Kronk's OpenAI-compatible API works with popular AI clients, coding agents, and tools. OpenCode is the only coding agent the project supports and ships configuration for. This chapter covers installing OpenCode, wiring it into Kronk via the bundles in <code>.agents/</code>, swapping out the model OpenCode uses, plus a few general-purpose clients (OpenWebUI, Python SDK, curl, LangChain).</p>
           <h3 id="141-installing-opencode">14.1 Installing OpenCode</h3>

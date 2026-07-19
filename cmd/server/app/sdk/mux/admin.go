@@ -15,7 +15,10 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
 
-const adminCookieName = "__Host-kronk-admin"
+const (
+	adminHTTPSCookieName = "__Host-kronk-admin"
+	adminHTTPCookieName  = "kronk-admin"
+)
 
 type loginRequest struct {
 	Password string `json:"password"`
@@ -78,6 +81,10 @@ func remoteHost(remoteAddr string) string {
 func registerAdminRoutes(app *web.App, cfg Config) {
 	limiter := newLoginLimiter()
 
+	app.RawHandlerFunc(http.MethodGet, "", "/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/", http.StatusPermanentRedirect)
+	})
+
 	app.RawHandlerFunc(http.MethodGet, "", "/admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusPermanentRedirect)
 	})
@@ -119,7 +126,7 @@ func registerAdminRoutes(app *web.App, cfg Config) {
 			return
 		}
 
-		setAdminCookie(w, token, time.Now().Add(time.Hour), 3600)
+		setAdminCookie(w, r, token, time.Now().Add(time.Hour), 3600)
 		writeJSON(w, http.StatusOK, sessionResponse{Authenticated: true, AuthenticationRequired: true})
 	})
 
@@ -127,7 +134,7 @@ func registerAdminRoutes(app *web.App, cfg Config) {
 		securityHeaders(w)
 		authenticated := !cfg.AdminAuthEnabled
 		if cfg.AdminAuthEnabled {
-			if cookie, err := r.Cookie(adminCookieName); err == nil {
+			if cookie, err := r.Cookie(adminCookieName(r)); err == nil {
 				_, err = cfg.Security.Authenticate(r.Context(), "Bearer "+cookie.Value, true, "")
 				authenticated = err == nil
 			}
@@ -141,7 +148,7 @@ func registerAdminRoutes(app *web.App, cfg Config) {
 
 	app.RawHandlerFunc(http.MethodPost, "admin", "/api/logout", func(w http.ResponseWriter, r *http.Request) {
 		securityHeaders(w)
-		setAdminCookie(w, "", time.Unix(1, 0), -1)
+		clearAdminCookies(w, r)
 		writeJSON(w, http.StatusOK, sessionResponse{AuthenticationRequired: cfg.AdminAuthEnabled})
 	})
 }
@@ -158,7 +165,7 @@ func adminCookieMiddleware(next http.Handler) http.Handler {
 		}
 
 		if r.Header.Get("Authorization") == "" {
-			if cookie, err := r.Cookie(adminCookieName); err == nil {
+			if cookie, err := r.Cookie(adminCookieName(r)); err == nil {
 				if !isSafeMethod(r.Method) && !validOrigin(r) {
 					http.Error(w, "forbidden", http.StatusForbidden)
 					return
@@ -171,11 +178,40 @@ func adminCookieMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func setAdminCookie(w http.ResponseWriter, value string, expires time.Time, maxAge int) {
+func setAdminCookie(w http.ResponseWriter, r *http.Request, value string, expires time.Time, maxAge int) {
+	secure := requestUsesHTTPS(r)
+	setCookie(w, adminCookieName(r), value, expires, maxAge, secure)
+}
+
+func clearAdminCookies(w http.ResponseWriter, r *http.Request) {
+	secure := requestUsesHTTPS(r)
+	setCookie(w, adminCookieName(r), "", time.Unix(1, 0), -1, secure)
+	if secure {
+		setCookie(w, adminHTTPCookieName, "", time.Unix(1, 0), -1, true)
+	}
+}
+
+func setCookie(w http.ResponseWriter, name string, value string, expires time.Time, maxAge int, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name: adminCookieName, Value: value, Path: "/", Expires: expires,
-		MaxAge: maxAge, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+		Name: name, Value: value, Path: "/", Expires: expires,
+		MaxAge: maxAge, HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode,
 	})
+}
+
+func adminCookieName(r *http.Request) string {
+	if requestUsesHTTPS(r) {
+		return adminHTTPSCookieName
+	}
+	return adminHTTPCookieName
+}
+
+func requestUsesHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+
+	proto, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Proto"), ",")
+	return strings.EqualFold(strings.TrimSpace(proto), "https")
 }
 
 func validOrigin(r *http.Request) bool {

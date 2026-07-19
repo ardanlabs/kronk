@@ -109,7 +109,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		Auth struct {
 			Host         string // Leave empty to run the local auth service.
-			AdminEnabled bool   `conf:"default:true"`
+			AdminEnabled bool   `conf:"default:false"`
 			Local        struct {
 				Issuer  string `conf:"default:kronk project"`
 				Enabled bool   `conf:"default:false"`

@@ -853,8 +853,9 @@ creation, endpoint grants, rate limits, and key rotation.
 
 **Internet deployment requirements**
 
-- Terminate HTTPS at a reverse proxy; Kronk itself serves plain HTTP.
-- Keep `/admin/` and `/v1` on the same public origin so the secure BUI session
+- Terminate HTTPS at an ingress or reverse proxy; Kronk itself may continue to
+  receive plain HTTP behind that TLS termination point.
+- Keep `/admin/` and `/v1` on the same public origin so the BUI session
   cookie can authenticate API calls.
 - Block `/admin/` at the proxy or firewall where browser administration should
   not be reachable.
@@ -862,9 +863,17 @@ creation, endpoint grants, rate limits, and key rotation.
   not available with `KRONK_AUTH_HOST`.
 - Leave `KRONK_WEB_ADMIN_ENABLED` unset for a headless deployment.
 
+Password login also works over direct HTTP for trusted-network development.
+Kronk marks the session cookie `Secure` when the request uses TLS directly or
+the ingress sends `X-Forwarded-Proto: https`; otherwise it issues an
+HTTP-compatible cookie. Direct HTTP sends the session token without transport
+encryption and must not be exposed to an untrusted network.
+
 The equivalent environment variables are `KRONK_AUTH_LOCAL_ENABLED`,
 `KRONK_AUTH_ADMIN_ENABLED`, `KRONK_WEB_ADMIN_ENABLED`, and the masked
-`KRONK_WEB_ADMIN_PASSWORD_SHA256`.
+`KRONK_WEB_ADMIN_PASSWORD_SHA256`. The password digest may remain configured
+when admin authentication is disabled; it is ignored until admin authentication
+is enabled.
 
 ### 2.9 Model Configuration File
 

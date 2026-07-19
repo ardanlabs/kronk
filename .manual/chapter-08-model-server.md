@@ -534,8 +534,9 @@ unsloth/Qwen3-0.6B-Q8_0:
 
 The embedded browser UI is disabled by default. Set
 `KRONK_WEB_ADMIN_ENABLED=true` (or `--web-admin-enabled`) to mount it at
-`/admin/`; the server root remains unmounted. With admin authentication off,
-the UI is intentionally open. With admin authentication on, configure
+`/admin/`; the server root redirects there. With admin authentication off, the
+UI is intentionally open. With admin authentication on, configure
 `KRONK_WEB_ADMIN_PASSWORD_SHA256` with the 64-character hexadecimal SHA-256
-digest of the UTF-8 password. Browser password login currently requires the
-local auth service and HTTPS.
+digest of the UTF-8 password. Browser password login requires the local auth
+service. It works over direct HTTP, direct HTTPS, or HTTPS terminated by an
+ingress or reverse proxy.
