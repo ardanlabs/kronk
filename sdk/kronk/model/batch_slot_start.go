@@ -792,7 +792,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	// Tokenizing a marker with parseSpecial=true can NULL-deref deep inside
 	// libllama, which is an uncatchable cgo SIGSEGV. Fail the slot cleanly
 	// instead so the caller gets an error and the process stays up.
-	if marker := mtmd.DefaultMarker(); marker != "" && strings.Contains(job.prompt, marker) {
+	if marker := mtmd.DefaultMarker(); !job.imcTokenPlan && marker != "" && strings.Contains(job.prompt, marker) {
 		err := fmt.Errorf("start-slot: prompt routed to text path still contains media marker %q (object=%s, media_count=%d) — refusing to tokenize to avoid libllama SIGSEGV", marker, job.object, len(job.media))
 		e.finishSlot(s, err)
 		return false
