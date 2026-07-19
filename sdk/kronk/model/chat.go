@@ -317,12 +317,12 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 // clearIMCPendingIfReserved releases an IMC session reservation when
 // processCache marked one for build/extend but a subsequent step (e.g.,
 // createPrompt) failed before the batch engine took ownership. Pure cache
-// hits (no new tokens, no media build) hold no reservation and need no clear.
+// read-only exact/anchor hits carry an explicit reservation too.
 func (m *Model) clearIMCPendingIfReserved(cache cacheResult) {
 	if cache.imcSession == nil {
 		return
 	}
-	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild && !(cache.imcTokenPlan && cache.imcMatchKind == "exact") {
+	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild && !cache.imcReadOnlyReservation {
 		return
 	}
 	m.imcClearPending(cache.imcSessionID)
@@ -364,6 +364,11 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcExpectedTokens:      cache.imcExpectedTokens,
 		imcExpectedPosition:    cache.imcExpectedPosition,
 		imcExpectedRenderHash:  cache.imcExpectedRenderHash,
+		imcExpectedPromptPlan:  cache.imcExpectedPromptPlan,
+		imcReadOnlyReservation: cache.imcReadOnlyReservation,
+		imcMediaAnchorAdvance:  cache.imcMediaAnchorAdvance,
+		imcNewLogicalPosition:  cache.imcNewLogicalPosition,
+		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
 
 		imcNewCacheTokens:      cache.imcNewCacheTokens,

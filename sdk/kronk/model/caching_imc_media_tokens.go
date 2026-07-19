@@ -11,12 +11,12 @@ import (
 
 func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actualPrompt, stablePrompt string, actualMedia, stableMedia [][]byte, requestStart time.Time) cacheResult {
 	result := cacheResult{modifiedD: d}
-	actual, err := buildPromptPlan(m.vocab, actualPrompt, actualMedia, m.addBOSToken)
+	actual, err := buildPromptPlan(m.vocab, actualPrompt, actualMedia)
 	if err != nil {
 		m.log(ctx, "imc-media-cache", "status", "plan-fallback", "cache_mode", "token-v2", "reason", "actual-plan-invalid")
 		return result
 	}
-	stable, err := buildPromptPlan(m.vocab, stablePrompt, stableMedia, m.addBOSToken)
+	stable, err := buildPromptPlan(m.vocab, stablePrompt, stableMedia)
 	if err != nil || !actual.hasPrefix(stable) {
 		m.log(ctx, "imc-media-cache", "status", "plan-fallback", "cache_mode", "token-v2", "reason", "render-not-prefix-compatible")
 		return result
@@ -26,9 +26,13 @@ func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actu
 		m.log(ctx, "imc-media-cache", "status", "plan-fallback", "cache_mode", "token-v2", "reason", "non-text-or-empty-tail")
 		return result
 	}
+	return m.processIMCMediaPlans(ctx, d, stableD, actual, stable, tail, requestStart)
+}
 
+func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, stable promptPlan, defaultTail []llama.Token, requestStart time.Time) cacheResult {
+	result := cacheResult{modifiedD: d}
 	result.imcTokenPlan = true
-	result.imcTailTokens = slices.Clone(tail)
+	result.imcTailTokens = slices.Clone(defaultTail)
 	result.imcPromptPlan = stable
 	result.imcNewCachedMsgCount = messageCount(d)
 	result.imcNewMsgsHash = documentMessagesHash(d)
@@ -49,7 +53,12 @@ func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actu
 		if lru == nil || session.lastUsed.Before(lru.lastUsed) {
 			lru = session
 		}
-		if !session.hasMedia || len(session.kvState.Bytes()) == 0 || !stable.hasPrefix(session.promptPlan) {
+		if !validMediaAnchorSession(session) || !stable.hasPrefix(session.promptPlan) {
+			continue
+		}
+		_, stableTextOnly := stable.textTail(session.promptPlan)
+		actualTail, actualTextOnly := actual.textTail(session.promptPlan)
+		if !stableTextOnly || !actualTextOnly || len(actualTail) == 0 || stable.mediaCount != session.promptPlan.mediaCount {
 			continue
 		}
 		if match == nil || len(session.promptPlan.units) > len(match.promptPlan.units) {
@@ -62,18 +71,29 @@ func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actu
 	matchReason := "no-exact-media-plan"
 	if match != nil {
 		extension, _ := stable.textTail(match.promptPlan)
+		actualTail, _ := actual.textTail(match.promptPlan)
 		switch {
 		case len(extension) == 0 && stable.equal(match.promptPlan):
 			matchKind = "exact"
 			matchReason = "logical-plan-equal"
-			result.cacheIdx = llama.Pos(match.logicalPosition())
-			match.pending = true
+		case len(extension) > 0:
+			matchKind = "anchor"
+			matchReason = "media-prefix-text-replay"
+			result.imcMediaAnchorAdvance = true
+			result.imcNewCacheTokens = slices.Clone(extension)
+			result.imcNewTotalCached = match.totalTokensCached + len(extension)
+			result.imcNewLogicalPosition = match.logicalPosition() + len(extension)
+			result.imcMediaKVCounts = slices.Clone(match.mediaKVCounts)
+			result.imcTailTokens = slices.Clone(defaultTail)
 		default:
-			// A logical prompt plan does not prove that an appended text
-			// suffix exactly matches mtmd's model-specific decoded chunk
-			// stream. Preserve exact media reuse, but rebuild all changed
-			// media conversations through the authoritative mtmd pipeline.
 			selected = nil
+		}
+		if selected != nil {
+			result.cacheIdx = llama.Pos(match.logicalPosition())
+			if !result.imcMediaAnchorAdvance {
+				result.imcTailTokens = slices.Clone(actualTail)
+			}
+			match.pending = true
 		}
 	}
 	if selected == nil {
@@ -91,7 +111,9 @@ func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actu
 		result.imcMediaBuild = true
 		result.imcClearSeq = true
 	}
-	selected.lastUsed = time.Now()
+	if matchKind != "exact" && !result.imcMediaAnchorAdvance {
+		selected.lastUsed = time.Now()
+	}
 	result.imcSession = selected
 	result.imcSessionID = selected.id
 	result.imcMatchKind = matchKind
@@ -99,16 +121,45 @@ func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actu
 	result.imcExpectedCachedMsgs = selected.cachedMsgCount
 	result.imcExpectedTokens = selected.totalTokensCached
 	result.imcExpectedPosition = selected.logicalPosition()
+	result.imcExpectedPromptPlan = selected.promptPlan
 	if fingerprint, ok := m.imcRenderFingerprint(d, dMessages(d)); ok {
 		result.imcExpectedRenderHash = fingerprint
 	}
-	result.imcPureHitSkipSnapshot = matchKind == "exact"
+	result.imcReadOnlyReservation = matchKind == "exact"
+	result.imcPureHitSkipSnapshot = result.imcReadOnlyReservation
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc-media-cache", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
 		"media_count", stable.mediaCount, "logical_units", len(stable.units), "text_tokens", stable.textTokens,
-		"match_kind", matchKind, "match_reason", matchReason, "reusable_kv", result.cacheIdx, "extension_text", len(result.imcNewCacheTokens),
+		"match_kind", matchKind, "match_reason", matchReason, "reusable_kv", result.cacheIdx, "anchor_physical_kv", result.imcExpectedTokens,
+		"anchor_logical_position", result.imcExpectedPosition, "replay_text_tokens", len(result.imcTailTokens), "extension_text", len(result.imcNewCacheTokens),
 		"extension_media", 0, "position_mode", "linear-or-mrope", "request_age", fmtDur(time.Since(requestStart)))
 
 	return result
+}
+
+func validMediaAnchorSession(session *imcSession) bool {
+	if session == nil || !session.hasMedia || session.totalTokensCached <= 0 ||
+		session.promptPlan.mediaCount == 0 || session.kvState == nil || session.kvState.Len() == 0 ||
+		len(session.mediaKVCounts) != session.promptPlan.mediaCount {
+		return false
+	}
+
+	mediaCells := 0
+	for _, count := range session.mediaKVCounts {
+		if count <= 0 {
+			return false
+		}
+		mediaCells += count
+	}
+	if mediaCells > session.totalTokensCached {
+		return false
+	}
+
+	switch {
+	case session.useMRoPE:
+		return session.nextLogicalPos > 0
+	default:
+		return session.logicalPosition() == session.totalTokensCached
+	}
 }

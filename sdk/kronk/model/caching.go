@@ -43,7 +43,11 @@ type cacheResult struct {
 	imcExpectedTokens      int    // Expected physical KV cells at startSlot for the matched session.
 	imcExpectedPosition    int    // Expected next logical position at startSlot.
 	imcExpectedRenderHash  string // Expected cachedRenderInputHash at startSlot (set on hits; carried forward on builds/extends so commit can refresh the session field).
-	imcPureHitSkipSnapshot bool   // True when startSlot may skip the post-restore snapshot. Always false on append/rebuild plans.
+	imcExpectedPromptPlan  promptPlan
+	imcReadOnlyReservation bool // True when the session is reserved for restore/use without metadata or snapshot mutation.
+	imcMediaAnchorAdvance  bool // True when text after a media anchor should be atomically committed as a larger snapshot.
+	imcNewLogicalPosition  int  // Next logical position after a media-anchor advance.
+	imcPureHitSkipSnapshot bool // True when startSlot may skip the post-restore snapshot.
 
 	// imcSession is the matched session pointer; the SessionStore on it
 	// is the authoritative source of the cached prefix bytes restored

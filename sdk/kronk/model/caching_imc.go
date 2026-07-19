@@ -1402,6 +1402,20 @@ func (m *Model) imcClearPending(sessionID int) {
 	m.notifyIMCSlotAvailable()
 }
 
+// imcInvalidateReservedSession removes a corrupt snapshot while preserving
+// this request's reservation. finishSlot unbinds the session and performs the
+// single release, so no subsequent request can bind it during error cleanup.
+func (m *Model) imcInvalidateReservedSession(session *imcSession) {
+	if session == nil {
+		return
+	}
+
+	m.cacheMu.Lock()
+	imcResetSession(session)
+	session.pending = true
+	m.cacheMu.Unlock()
+}
+
 // imcCommitSession updates a session's metadata after a successful cache
 // build/extend/rebuild. The pending flag is intentionally LEFT SET so that
 // concurrent processIMC scans continue to skip this session until the
@@ -1445,10 +1459,48 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 	switch {
 	case hasMedia:
 		session.cachedTokens = nil
+		// Media is decoded only into the target context. An own-KV MTP
+		// snapshot cannot prove that it covers the projected media cells, so
+		// carrying it across a media commit would pair target and draft states
+		// from different prefixes. Shared-target-KV MTP does not use these
+		// fields and continues to resume from the target snapshot.
+		if session.draftKVState != nil {
+			session.draftKVState.Reset()
+		}
+		session.pendingH = session.pendingH[:0]
 	case len(cachedTokens) > 0:
 		session.cachedTokens = cachedTokens
 	}
 	m.cacheMu.Unlock()
+}
+
+// imcCommitMediaAdvance atomically swaps a fully staged target snapshot and
+// its matching media-prefix metadata. The caller owns the returned old store
+// and closes it after the swap. pending remains set until the caller publishes
+// or releases the reservation.
+func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, renderInputHash string) SessionStore {
+	if session == nil || staged == nil {
+		return nil
+	}
+
+	m.cacheMu.Lock()
+	oldStore := session.kvState
+	session.kvState = staged
+	session.cachedMsgsHash = hash
+	session.totalTokensCached = totalCached
+	session.nextLogicalPos = nextLogicalPos
+	session.cachedMsgCount = cachedMsgCount
+	session.promptPlan = plan
+	session.cachedRenderInputHash = renderInputHash
+	session.lastUsed = time.Now()
+	session.cachedTokens = nil
+	if session.draftKVState != nil {
+		session.draftKVState.Reset()
+	}
+	session.pendingH = session.pendingH[:0]
+	m.cacheMu.Unlock()
+
+	return oldStore
 }
 
 // imcPublishSession completes the publication started by imcCommitSession.

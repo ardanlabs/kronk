@@ -1316,6 +1316,46 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	}
 }
 
+func TestIMCCommitMediaInvalidatesOwnDraftState(t *testing.T) {
+	m := &Model{}
+	session := &imcSession{
+		kvState:      ramSessionStore(),
+		draftKVState: ramSessionStore(),
+		pendingH:     []float32{1, 2, 3},
+	}
+	buf := session.draftKVState.Prepare(3)
+	copy(buf, []byte{1, 2, 3})
+	session.draftKVState.Commit(len(buf))
+
+	m.imcCommitSession(session, "hash", 100, 2, nil, true, []int{50}, "", 0, "")
+
+	if session.draftKVState.Len() != 0 {
+		t.Errorf("draftKVState.Len() = %d, want 0", session.draftKVState.Len())
+	}
+	if len(session.pendingH) != 0 {
+		t.Errorf("len(pendingH) = %d, want 0", len(session.pendingH))
+	}
+}
+
+func TestIMCInvalidateReservedSessionRetainsOwnership(t *testing.T) {
+	m := &Model{}
+	session := &imcSession{
+		cachedMsgsHash:    "hash",
+		totalTokensCached: 10,
+		pending:           true,
+		kvState:           populatedTestSessionStore(),
+	}
+
+	m.imcInvalidateReservedSession(session)
+
+	if session.totalTokensCached != 0 || session.kvState.Len() != 0 {
+		t.Fatalf("invalidated session still has cache state: tokens=%d bytes=%d", session.totalTokensCached, session.kvState.Len())
+	}
+	if !session.pending {
+		t.Fatal("invalidated session released ownership before finishSlot cleanup")
+	}
+}
+
 // TestIMCCommitSessionNilSafe verifies that imcCommitSession handles a nil
 // session without panicking.
 func TestIMCCommitSessionNilSafe(t *testing.T) {
@@ -1931,9 +1971,20 @@ func TestClearIMCPendingIfReserved(t *testing.T) {
 		{
 			name: "session+token-v2 exact clears pending",
 			cache: cacheResult{
-				imcSessionID: 0,
-				imcTokenPlan: true,
-				imcMatchKind: "exact",
+				imcSessionID:           0,
+				imcTokenPlan:           true,
+				imcMatchKind:           "exact",
+				imcReadOnlyReservation: true,
+			},
+			wantPending: false,
+		},
+		{
+			name: "session+media anchor clears pending",
+			cache: cacheResult{
+				imcSessionID:           0,
+				imcTokenPlan:           true,
+				imcMatchKind:           "anchor",
+				imcReadOnlyReservation: true,
 			},
 			wantPending: false,
 		},

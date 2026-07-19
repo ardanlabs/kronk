@@ -112,6 +112,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	result.imcClearSeq = clearSeq
 	result.imcNewCachedTokens = target
 	result.imcMatchKind = matchKind
+	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = matchKind == "exact"
 	m.cacheMu.Unlock()
 

@@ -90,11 +90,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// session with pending=true. We failed before reaching the
 			// commit/publish/reset block in the IMC switch below, so
 			// the session would otherwise stay pending forever and
-			// deadlock waiters. Drop the reservation here.
-			if job.imcMediaBuild && job.imcSession != nil {
-				e.model.imcClearPending(job.imcSessionID)
-			}
-
+			// deadlock waiters. finishSlot releases the held reservation.
 			e.finishSlot(s, fmt.Errorf("start-slot: init per-request mtmd context: %w", err))
 			return
 		}
@@ -141,12 +137,12 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.cacheMu.Lock()
 			cacheIdx = llama.Pos(session.logicalPosition())
 			kvState = session.kvState.Bytes()
-			sessionVersionOK := !job.imcPureHitSkipSnapshot ||
+			sessionVersionOK := !(job.imcReadOnlyReservation || job.imcMediaAnchorAdvance) ||
 				(session.cachedMsgsHash == job.imcExpectedHash &&
 					session.cachedMsgCount == job.imcExpectedCachedMsgs &&
 					session.totalTokensCached == job.imcExpectedTokens &&
 					session.logicalPosition() == job.imcExpectedPosition &&
-					(!session.hasMedia || session.promptPlan.equal(job.imcPromptPlan)) &&
+					(!session.hasMedia || session.promptPlan.equal(job.imcExpectedPromptPlan)) &&
 					session.pending &&
 					len(kvState) > 0)
 
@@ -179,9 +175,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		// sequence was cleared in finishSlot, so we must restore before
 		// decoding extension tokens or processing the suffix.
 		if cacheIdx > 0 && len(kvState) == 0 && !job.imcClearSeq {
-			if job.imcMatchKind != "exact" {
-				e.model.imcClearPending(job.imcSessionID)
-			}
+			e.model.imcInvalidateReservedSession(job.imcSession)
 			e.finishSlot(s, fmt.Errorf("start-slot: imc externalized state is empty for seq %d", s.seqID))
 			return
 		}
@@ -198,9 +192,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.decodeMu.Unlock()
 
 			if nRead == 0 {
-				if job.imcMatchKind != "exact" {
-					e.model.imcClearPending(job.imcSessionID)
-				}
+				e.model.imcInvalidateReservedSession(job.imcSession)
 				e.finishSlot(s, fmt.Errorf("start-slot: imc restore failed for seq %d", s.seqID))
 				return
 			}
@@ -323,8 +315,6 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				}
 				e.model.decodeMu.Unlock()
 
-				e.model.imcClearPending(job.imcSessionID)
-
 				e.finishSlot(s, fmt.Errorf("start-slot: imc media build: %w", err))
 				return
 			}
@@ -356,6 +346,36 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					"physical_kv_cells", physicalKVCells, "next_logical_position", nextLogicalPos)
 			}
 
+		case job.imcMediaAnchorAdvance:
+			oldLogicalPosition := int(cacheIdx)
+			advanceTokens := job.imcNewCacheTokens
+			imcDecodeStart := time.Now()
+
+			var decodeErr error
+			switch {
+			case job.imcSession != nil && job.imcSession.useMRoPE:
+				_, decodeErr = e.model.decodeTextMRoPEIntoCache(advanceTokens, s.seqID, oldLogicalPosition)
+			case e.model.draft != nil:
+				if _, shared := e.model.draft.(*sharedMTPDrafter); shared {
+					decodeErr = e.decodeTokensIntoCacheMTP(job.ctx, s, advanceTokens, oldLogicalPosition)
+				} else {
+					decodeErr = e.model.decodeTokensIntoCache(job.ctx, advanceTokens, s.seqID, oldLogicalPosition)
+				}
+			default:
+				decodeErr = e.model.decodeTokensIntoCache(job.ctx, advanceTokens, s.seqID, oldLogicalPosition)
+			}
+			if decodeErr != nil {
+				e.finishSlot(s, fmt.Errorf("start-slot: imc media anchor advance: %w", decodeErr))
+				return
+			}
+
+			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
+			cacheIdx = llama.Pos(job.imcNewLogicalPosition)
+
+			e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-advanced-in-slot",
+				"slot", s.id, "seq", s.seqID, "replay_text_tokens", len(advanceTokens),
+				"physical_kv_cells", job.imcNewTotalCached, "next_logical_position", job.imcNewLogicalPosition)
+
 		case len(job.imcNewCacheTokens) > 0:
 			// Detect stale extension: if another request extended this slot
 			// between our scan and now, cacheIdx won't match the position
@@ -368,8 +388,6 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					e.model.log(job.ctx, "start-slot", "status", "imc-extend-stale", "slot", s.id, "seq", s.seqID,
 						"cache_idx", cacheIdx, "expected_start", expectedStart,
 						"new_total_cached", job.imcNewTotalCached)
-
-					e.model.imcClearPending(job.imcSessionID)
 
 					e.finishSlot(s, fmt.Errorf("start-slot: imc extend stale (cache moved from %d to %d), retry request", expectedStart, cacheIdx))
 					return
@@ -490,12 +508,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				}
 				e.model.decodeMu.Unlock()
 
-				if job.imcSession != nil {
-					e.model.cacheMu.Lock()
-					imcResetSession(job.imcSession)
-					e.model.cacheMu.Unlock()
-					e.model.notifyIMCSlotAvailable()
-				}
+				e.model.imcInvalidateReservedSession(job.imcSession)
 
 				e.finishSlot(s, fmt.Errorf("start-slot: imc decode: %w", decodeErr))
 				return
@@ -556,7 +569,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		// to its dst buffer); skipping it cannot leave KV state in a bad
 		// shape. See yzma pkg/llama/state.go for the FFI contract.
 		skipSnapshot := false
-		if job.imcPureHitSkipSnapshot &&
+		if job.imcReadOnlyReservation &&
 			len(job.imcNewCacheTokens) == 0 &&
 			!job.imcMediaBuild &&
 			len(job.imcMediaKVCounts) == 0 &&
@@ -571,7 +584,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				session.cachedMsgCount == job.imcExpectedCachedMsgs &&
 				session.totalTokensCached == job.imcExpectedTokens &&
 				session.logicalPosition() == job.imcExpectedPosition &&
-				(!session.hasMedia || session.promptPlan.equal(job.imcPromptPlan)) &&
+				(!session.hasMedia || session.promptPlan.equal(job.imcExpectedPromptPlan)) &&
 				session.kvState.Len() > 0 &&
 				session.pending
 			e.model.cacheMu.RUnlock()
@@ -581,7 +594,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 		if skipSnapshot {
 			metrics.AddIMCSnapshotSkipped(e.model.modelInfo.ID)
-			e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-skip-pure-hit",
+			e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-skip-read-only", "snapshot_action", "skip-read-only",
 				"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 				"imc_slot", job.imcSessionID)
 
@@ -609,16 +622,25 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// capBefore lets us log whether this snapshot grew the backing
 			// array (allocation) or reused it (zero allocation) — the central
 			// invariant we want to observe in production.
-			capBefore := job.imcSession.kvState.Cap()
+			snapshotStore := job.imcSession.kvState
+			if job.imcMediaAnchorAdvance {
+				var err error
+				snapshotStore, err = newSessionStore(e.model.cfg)
+				if err != nil {
+					e.finishSlot(s, fmt.Errorf("start-slot: create staged media snapshot: %w", err))
+					return
+				}
+			}
+			capBefore := snapshotStore.Cap()
 
 			e.model.decodeMu.Lock()
 			llama.Synchronize(e.model.lctx)
 			kvSize := llama.StateSeqGetSize(e.model.lctx, s.seqID)
-			kvBuf := job.imcSession.kvState.Prepare(int(kvSize))
+			kvBuf := snapshotStore.Prepare(int(kvSize))
 			nExtracted := llama.StateSeqGetData(e.model.lctx, kvBuf, s.seqID)
 			e.model.decodeMu.Unlock()
 
-			capAfter := job.imcSession.kvState.Cap()
+			capAfter := snapshotStore.Cap()
 			bufAction := "reuse"
 			if capAfter > capBefore {
 				bufAction = "grow"
@@ -628,8 +650,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// readers (LRU snapshot scans, future requests matching this
 			// session) see a consistent length.
 			e.model.cacheMu.Lock()
-			job.imcSession.kvState.Commit(int(nExtracted))
-			storedSnapshotBytes := job.imcSession.kvState.Len()
+			snapshotStore.Commit(int(nExtracted))
+			storedSnapshotBytes := snapshotStore.Len()
 			e.model.cacheMu.Unlock()
 			snapshotOK := nExtracted > 0 && storedSnapshotBytes == int(nExtracted)
 
@@ -661,7 +683,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// position hidden state. Gated on a successful target snapshot
 			// (nExtracted > 0) — without that the cache hit is going to
 			// fail anyway.
-			if ext, ok := e.model.draft.(draftKVExternalizer); ok && snapshotOK && job.imcSession.draftKVState != nil {
+			if ext, ok := e.model.draft.(draftKVExternalizer); ok && snapshotOK && !job.imcSession.hasMedia && job.imcSession.draftKVState != nil {
 				draft := ext.core()
 				dctx := ext.draftKVCtx()
 
@@ -725,15 +747,35 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// (nExtracted == 0) the externalized kvState is empty —
 			// reset the session so its metadata doesn't advertise N
 			// cached tokens backed by zero bytes.
-			if sessionWasCommitted {
+			if job.imcMediaAnchorAdvance {
+				if !snapshotOK {
+					_ = snapshotStore.Close()
+					e.finishSlot(s, fmt.Errorf("start-slot: staged media snapshot failed"))
+					return
+				}
+
+				oldStore := e.model.imcCommitMediaAdvance(job.imcSession, snapshotStore,
+					job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount,
+					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcExpectedRenderHash)
+				if oldStore != nil {
+					if err := oldStore.Close(); err != nil {
+						e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-old-store-close-failed", "err", err)
+					}
+				}
+				// Keep the reservation through suffix setup and generation. Those
+				// paths still read media/M-RoPE accounting from the session, so
+				// publishing here would allow an LRU reset to race those reads.
+				// finishSlot is the single release/publication point.
+				e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-committed",
+					"slot", s.id, "seq", s.seqID, "physical_kv_cells", job.imcNewTotalCached,
+					"next_logical_position", job.imcNewLogicalPosition, "replay_text_tokens", len(job.imcNewCacheTokens))
+			} else if sessionWasCommitted {
 				switch {
 				case snapshotOK:
 					e.model.imcPublishSession(job.imcSession)
+					job.imcReservationHeld = false
 				default:
-					e.model.cacheMu.Lock()
-					imcResetSession(job.imcSession)
-					e.model.cacheMu.Unlock()
-					e.model.notifyIMCSlotAvailable()
+					e.model.imcInvalidateReservedSession(job.imcSession)
 				}
 			}
 		}
@@ -1008,6 +1050,15 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 	}
 
 	s.useMRoPE = true
+	if e.model.draft != nil && e.model.draft.mtp() {
+		// M-RoPE media snapshots currently externalize target KV only. Until
+		// draft position compatibility is proven, keep target reuse enabled
+		// but disable speculative decoding for this request.
+		s.mtpDisabledForRequest = true
+		s.mtpDisableReason = "media-anchor-mrope"
+		e.model.log(job.ctx, "speculative", "status", "mtp-disabled-media-anchor",
+			"slot", s.id, "id", job.id, "reason", s.mtpDisableReason)
+	}
 
 	nBatch := e.model.cfg.NBatch()
 	for start := 0; start < len(tokens); start += nBatch {

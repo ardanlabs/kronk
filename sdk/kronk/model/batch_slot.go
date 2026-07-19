@@ -52,7 +52,12 @@ type chatJob struct {
 	imcExpectedTokens      int    // Expected physical KV cells at startSlot.
 	imcExpectedPosition    int    // Expected next logical position at startSlot.
 	imcExpectedRenderHash  string // Expected cachedRenderInputHash at startSlot (carried forward on builds/extends so commit can refresh the session field).
-	imcPureHitSkipSnapshot bool   // True when startSlot may skip the post-restore snapshot.
+	imcExpectedPromptPlan  promptPlan
+	imcReadOnlyReservation bool // True when the session is reserved for restore/use without metadata or snapshot mutation.
+	imcMediaAnchorAdvance  bool // True when text after a media anchor should be atomically committed as a larger snapshot.
+	imcNewLogicalPosition  int  // Next logical position after a media-anchor advance.
+	imcReservationHeld     bool // True until this request publishes or releases its reservation.
+	imcPureHitSkipSnapshot bool // True when startSlot may skip the post-restore snapshot.
 
 	// IMC dedicated slot fields.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
@@ -70,6 +75,10 @@ type chatJob struct {
 	imcMediaCacheD         D     // Document with cacheable messages + tools for media cache build
 	imcMediaKVCounts       []int // Media KV position counts to preserve during text-only media extend
 	imcMediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
+}
+
+func (j *chatJob) hasIMCReservation() bool {
+	return j != nil && j.imcSession != nil && j.imcReservationHeld
 }
 
 // slot represents a processing slot for parallel inference. Each slot can

@@ -169,10 +169,14 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// against this session's seqID.
 	if s.job.imcSession != nil {
 		e.model.cacheMu.Lock()
-		s.job.imcSession.seqID = imcSeqIDUnbound
+		// A newly published snapshot may already be serving another slot.
+		// Only unbind the sequence this request actually owned.
+		if s.job.imcSession.seqID == s.seqID {
+			s.job.imcSession.seqID = imcSeqIDUnbound
+		}
 		e.model.cacheMu.Unlock()
 	}
-	if s.job.imcTokenPlan && s.job.imcMatchKind == "exact" {
+	if s.job.hasIMCReservation() {
 		e.model.imcClearPending(s.job.imcSessionID)
 	}
 
@@ -351,7 +355,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	}
 
 	// Clear IMC pending reservation if this job reserved a slot.
-	if job.imcCacheHit && (len(job.imcNewCacheTokens) > 0 || job.imcMediaBuild || (job.imcTokenPlan && job.imcMatchKind == "exact")) {
+	if job.hasIMCReservation() {
 		e.model.imcClearPending(job.imcSessionID)
 	}
 
