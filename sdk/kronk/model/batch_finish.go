@@ -26,6 +26,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	slotID := s.id
 	seqID := s.seqID
 	nPrompt := s.nPrompt
+	imcTokenPlan := s.job.imcTokenPlan
+	imcMatchKind := s.job.imcMatchKind
+	imcSessionID := s.job.imcSessionID
+	imcCacheHit := s.job.imcCacheHit
+	imcTailTokens := len(s.job.tailTokens)
+	mtpResumeSource := s.mtpResumeSource
 
 	var elapsed time.Duration
 
@@ -75,6 +81,16 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"id", jobID,
 			"total_prompt", nPrompt,
 			"output_tokens", outputTokens,
+			"imc_cache_mode", func() string {
+				if imcTokenPlan {
+					return "token-v2"
+				}
+				return "legacy"
+			}(),
+			"imc_slot", imcSessionID,
+			"imc_cache_hit", imcCacheHit,
+			"imc_match_kind", imcMatchKind,
+			"imc_tail_tokens", imcTailTokens,
 			"elapsed", elapsed.String(),
 			"active_streams", remaining,
 		}
@@ -85,6 +101,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		// due to a collapsed acceptance EMA). Models without a draft
 		// model omit the fields entirely.
 		if e.model.draft != nil {
+			if mtpResumeSource == "" {
+				mtpResumeSource = "fresh-prefill"
+			}
 			var rate float64
 			if draftTokens > 0 {
 				rate = float64(draftAcceptedTokens) / float64(draftTokens)
@@ -98,6 +117,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 				"draft_accepted_tokens", draftAcceptedTokens,
 				"draft_acceptance_rate", fmt.Sprintf("%.2f", rate),
 				"draft_coverage", fmt.Sprintf("%.2f", coverage),
+				"draft_resume_source", mtpResumeSource,
 			)
 			if disableReason != "" {
 				args = append(args, "draft_disable_reason", disableReason)
@@ -151,6 +171,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.model.cacheMu.Lock()
 		s.job.imcSession.seqID = imcSeqIDUnbound
 		e.model.cacheMu.Unlock()
+	}
+	if s.job.imcTokenPlan && s.job.imcMatchKind == "exact" {
+		e.model.imcClearPending(s.job.imcSessionID)
 	}
 
 	// Handle error case.
@@ -328,7 +351,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	}
 
 	// Clear IMC pending reservation if this job reserved a slot.
-	if job.imcCacheHit && (len(job.imcNewCacheTokens) > 0 || job.imcMediaBuild) {
+	if job.imcCacheHit && (len(job.imcNewCacheTokens) > 0 || job.imcMediaBuild || (job.imcTokenPlan && job.imcMatchKind == "exact")) {
 		e.model.imcClearPending(job.imcSessionID)
 	}
 

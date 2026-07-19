@@ -1929,6 +1929,15 @@ func TestClearIMCPendingIfReserved(t *testing.T) {
 			wantPending: false,
 		},
 		{
+			name: "session+token-v2 exact clears pending",
+			cache: cacheResult{
+				imcSessionID: 0,
+				imcTokenPlan: true,
+				imcMatchKind: "exact",
+			},
+			wantPending: false,
+		},
+		{
 			name: "cache hit only (no reservation) leaves pending alone",
 			cache: cacheResult{
 				imcSessionID: 0,

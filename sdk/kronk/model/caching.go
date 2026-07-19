@@ -18,6 +18,15 @@ type cacheResult struct {
 	cacheIdx  llama.Pos // KV position where cached content ends; new tokens start here
 	err       error     // Any error that occurred
 
+	// Token-v2 plans render the complete request twice and split the actual
+	// token sequence at the stable-render boundary. The tail is consumed
+	// directly by startSlot; it is never rendered or tokenized independently.
+	imcTokenPlan    bool
+	imcActualTokens []llama.Token
+	imcTailTokens   []llama.Token
+	imcMatchKind    string
+	imcPromptPlan   promptPlan
+
 	// IMC session-routing field. Sessions externalize their KV state
 	// via SessionStore between requests, so the matched session may run
 	// on any free execution slot — the slot is chosen by the scheduler
@@ -27,15 +36,14 @@ type cacheResult struct {
 	imcExpectedHash string // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
 	imcPending      bool   // True if the matched session was already pending (caller should retry)
 
-	// Pure-hit snapshot-skip state. Populated for every IMC cache-result so
-	// imcCommitSession can refresh the session's cachedRenderInputHash;
-	// imcPureHitSkipSnapshot is true only on text-only exact pure hits when
-	// IMCPureHitSnapshotSkip is enabled and the live session's committed
-	// render-input hash equals imcExpectedRenderHash.
+	// Pure-hit snapshot-skip state. Token-v2 exact matches retain an exclusive
+	// reservation through restore and generation, so the externalized bytes
+	// can be reused without a redundant post-restore serialization.
 	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot for the matched session.
-	imcExpectedTokens      int    // Expected totalTokensCached at startSlot for the matched session.
+	imcExpectedTokens      int    // Expected physical KV cells at startSlot for the matched session.
+	imcExpectedPosition    int    // Expected next logical position at startSlot.
 	imcExpectedRenderHash  string // Expected cachedRenderInputHash at startSlot (set on hits; carried forward on builds/extends so commit can refresh the session field).
-	imcPureHitSkipSnapshot bool   // True when startSlot may skip the post-restore snapshot. Always false on extends/media/rebuilds.
+	imcPureHitSkipSnapshot bool   // True when startSlot may skip the post-restore snapshot. Always false on append/rebuild plans.
 
 	// imcSession is the matched session pointer; the SessionStore on it
 	// is the authoritative source of the cached prefix bytes restored
@@ -61,9 +69,8 @@ type cacheResult struct {
 	imcMediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
 }
 
-// processCache checks if incremental messages are being cached and updates
-// the caches as necessary. IMC caches all messages except the last one
-// (including the system prompt).
+// processCache runs the legacy message-boundary cache planner. The chat path
+// uses complete-prompt token-v2 planning before reaching this fallback.
 //
 // This function is thread-safe and handles concurrent requests appropriately.
 func (m *Model) processCache(ctx context.Context, d D, requestStart time.Time) cacheResult {

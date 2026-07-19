@@ -27,11 +27,16 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// Request Content
 
-	d      D        // Original request document (messages, parameters)
-	object string   // Request type: ObjectChatText or ObjectChatMedia
-	prompt string   // Templated prompt string ready for tokenization
-	media  [][]byte // Raw media bytes (images/audio) for vision/audio models
-	params Params   // Sampling and generation parameters
+	d             D             // Original request document (messages, parameters)
+	object        string        // Request type: ObjectChatText or ObjectChatMedia
+	prompt        string        // Templated prompt string ready for tokenization
+	media         [][]byte      // Raw media bytes (images/audio) for vision/audio models
+	params        Params        // Sampling and generation parameters
+	actualTokens  []llama.Token // Complete generation-ready token sequence for token-v2 IMC.
+	tailTokens    []llama.Token // Non-empty inference tail after the stable cached target.
+	imcTokenPlan  bool          // True when actualTokens/tailTokens are authoritative.
+	imcMatchKind  string        // exact, append, or rebuild; used for diagnostics.
+	imcPromptPlan promptPlan    // Logical stable prefix committed with the session.
 
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
@@ -44,7 +49,8 @@ type chatJob struct {
 
 	// Pure-hit snapshot-skip state mirrored from cacheResult.
 	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot.
-	imcExpectedTokens      int    // Expected totalTokensCached at startSlot.
+	imcExpectedTokens      int    // Expected physical KV cells at startSlot.
+	imcExpectedPosition    int    // Expected next logical position at startSlot.
 	imcExpectedRenderHash  string // Expected cachedRenderInputHash at startSlot (carried forward on builds/extends so commit can refresh the session field).
 	imcPureHitSkipSnapshot bool   // True when startSlot may skip the post-restore snapshot.
 
@@ -194,14 +200,10 @@ type slot struct {
 	// mirror step.
 	mtpHasBatch bool
 
-	// mtpDisabledForRequest is set true at startSlot when the request
-	// hit IMC cache. MTP requires the draft KV to track the entire
-	// sequence to make useful proposals, but IMC restores ONLY the
-	// target KV — there is no draft snapshot. Running MTP against an
-	// empty (or partial) draft context produces near-zero acceptance
-	// for the whole request, which is worse than no speculation.
-	// Also set inside finalizeSpeculativeTokens after a post-rollback
-	// mirror failure. Cleared in slot.reset().
+	// mtpDisabledForRequest is set when own-KV draft state cannot resume
+	// alongside an IMC-restored target, or after a post-rollback mirror
+	// failure. Shared-KV Gemma4 resumes from the target state directly.
+	// Cleared in slot.reset().
 	mtpDisabledForRequest bool
 
 	// mtpDisableReason is a short, machine-friendly label describing
@@ -214,6 +216,7 @@ type slot struct {
 	//   "imc-hit"      — IMC cache hit at startSlot.
 	//   "mirror-error" — post-verify mirror failed; draft KV wiped.
 	mtpDisableReason string
+	mtpResumeSource  string
 
 	// verifyH is a slot-local cache of the target context's pre-norm
 	// hidden-state rows for the slot's just-decoded spec batch range.
@@ -341,6 +344,7 @@ func (s *slot) reset() {
 	s.mtpHasBatch = false
 	s.mtpDisabledForRequest = false
 	s.mtpDisableReason = ""
+	s.mtpResumeSource = ""
 	if s.draftSampler != 0 {
 		llama.SamplerFree(s.draftSampler)
 		s.draftSampler = 0

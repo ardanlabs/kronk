@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/google/uuid"
+	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
 
@@ -71,9 +72,13 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
 
 		batching := false
+		var cache cacheResult
 
 		defer func() {
 			if rec := recover(); rec != nil {
+				if !batching {
+					m.clearIMCPendingIfReserved(cache)
+				}
 				m.recordChatFailure(ctx, requestStart, fmt.Errorf("panic: %v", rec))
 				m.sendChatError(ctx, ch, id, fmt.Errorf("%v", rec))
 			}
@@ -128,7 +133,9 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		// submit failure is already handled inside submitToBatchEngine via
 		// m.imcClearPending(cache.imcSessionID).
 
-		prompt, media, cache, err := m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
+		var prompt string
+		var media [][]byte
+		prompt, media, cache, err = m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
 		if err != nil {
 			prepSpan.End()
 			m.recordChatFailure(ctx, requestStart, err)
@@ -239,6 +246,40 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 	// images and audio remain in the KV cache across requests.
 	cachingEnabled := m.cfg.IncrementalCache() && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != ""))
 
+	// IMC uses complete-conversation token planning. Render from two
+	// independent clones because the Jinja path injects request defaults.
+	if cachingEnabled {
+		actualD := d.Clone()
+		stableD := d.Clone()
+		stableD["add_generation_prompt"] = false
+
+		actualPrompt, actualMedia, err := m.createPrompt(ctx, actualD)
+		if err != nil {
+			return "", nil, cache, fmt.Errorf("chat-streaming: render complete actual prompt: %w", err)
+		}
+		stablePrompt, stableMedia, err := m.createPrompt(ctx, stableD)
+		if err != nil {
+			return "", nil, cache, fmt.Errorf("chat-streaming: render complete stable prompt: %w", err)
+		}
+
+		if object == ObjectChatMedia {
+			cache = m.processIMCMediaTokenPlan(ctx, d, stableD, actualPrompt, stablePrompt, actualMedia, stableMedia, requestStart)
+		} else {
+			actualTokens := llama.Tokenize(m.vocab, actualPrompt, m.addBOSToken, true)
+			stableTokens := llama.Tokenize(m.vocab, stablePrompt, m.addBOSToken, true)
+			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, requestStart)
+		}
+		if cache.err != nil {
+			return "", nil, cache, cache.err
+		}
+		if cache.imcTokenPlan {
+			return actualPrompt, nil, cache, nil
+		}
+		m.log(ctx, "imc", "status", "token-plan-fallback", "cache_mode", "token-v2", "reason", "render-not-prefix-compatible")
+		cache.modifiedD = d
+		return actualPrompt, actualMedia, cache, nil
+	}
+
 	switch {
 	case !cachingEnabled:
 		cache.modifiedD = d
@@ -281,7 +322,7 @@ func (m *Model) clearIMCPendingIfReserved(cache cacheResult) {
 	if cache.imcSession == nil {
 		return
 	}
-	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild {
+	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild && !(cache.imcTokenPlan && cache.imcMatchKind == "exact") {
 		return
 	}
 	m.imcClearPending(cache.imcSessionID)
@@ -307,6 +348,11 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		media:         media,
 		params:        params,
 		ch:            ch,
+		actualTokens:  cache.imcActualTokens,
+		tailTokens:    cache.imcTailTokens,
+		imcTokenPlan:  cache.imcTokenPlan,
+		imcMatchKind:  cache.imcMatchKind,
+		imcPromptPlan: cache.imcPromptPlan,
 
 		imcSession:      cache.imcSession,
 		imcSessionMedia: cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
@@ -316,6 +362,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 
 		imcExpectedCachedMsgs:  cache.imcExpectedCachedMsgs,
 		imcExpectedTokens:      cache.imcExpectedTokens,
+		imcExpectedPosition:    cache.imcExpectedPosition,
 		imcExpectedRenderHash:  cache.imcExpectedRenderHash,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
 
@@ -337,12 +384,9 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	if err := m.batch.submit(&job); err != nil {
 		queueSpan.End()
 
-		// Clear IMC pending reservation if this job reserved a slot.
-		// pending is set during extendIMCCache/buildIMCCacheFromScratch
-		// and normally cleared in startSlot after decode.
-		if len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild {
-			m.imcClearPending(cache.imcSessionID)
-		}
+		// The batch engine never took ownership, so release any exact,
+		// append, or rebuild reservation made while planning the request.
+		m.clearIMCPendingIfReserved(cache)
 
 		m.sendChatError(ctx, ch, id, err)
 		return false

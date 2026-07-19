@@ -71,7 +71,8 @@ type imcSession struct {
 	seqID             llama.SeqId   // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
 	cachedMsgsHash    string        // Hash of all cached messages
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
-	totalTokensCached int           // Total KV positions cached (includes text + media tokens)
+	totalTokensCached int           // Physical KV cells in the cached prefix.
+	nextLogicalPos    int           // Next logical decode position; equals totalTokensCached except for M-RoPE media.
 	cachedMsgCount    int           // Number of messages cached
 	kvState           SessionStore  // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
 	draftKVState      SessionStore  // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
@@ -80,17 +81,21 @@ type imcSession struct {
 	pending           bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
-	mediaKVCounts     []int         // KV positions consumed per media chunk (image/audio); used for text-only extend math
+	mediaKVCounts     []int         // Physical KV cells consumed per media chunk (image/audio), retained for diagnostics and legacy media extension metadata.
+	promptPlan        promptPlan    // Immutable token-v2 logical plan for the cached prefix.
 	sysPromptHash     string        // Hash of the system prompt message (messages[0] when role="system")
 	sysPromptTokens   int           // Token count of the system prompt in the KV cache
 
-	// cachedRenderInputHash is the imcRenderFingerprint of the inputs that
-	// produced the currently-cached prefix (template, add_generation_prompt,
-	// preserve_thinking, cacheable messages, top-level tools). It is set by
-	// imcCommitSession and consumed by the pure-hit snapshot-skip predicate
-	// in startSlot. Empty string means "do not skip" — pre-rollout sessions
-	// and sessions for which fingerprinting failed naturally disqualify.
+	// cachedRenderInputHash is retained as diagnostic metadata for legacy
+	// sessions. Token-v2 cache authority comes from cachedTokens or promptPlan.
 	cachedRenderInputHash string
+}
+
+func (s *imcSession) logicalPosition() int {
+	if s.nextLogicalPos > 0 {
+		return s.nextLogicalPos
+	}
+	return s.totalTokensCached
 }
 
 // draftCore holds the llama resources shared by every speculative-decoding

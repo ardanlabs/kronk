@@ -1365,6 +1365,7 @@ func imcResetSession(s *imcSession) {
 	s.cachedMsgsHash = ""
 	s.cachedTokens = nil
 	s.totalTokensCached = 0
+	s.nextLogicalPos = 0
 	s.cachedMsgCount = 0
 	// Reset clears the valid contents (Len becomes 0) but retains the
 	// backing byte array. The next snapshot for whatever conversation
@@ -1381,6 +1382,7 @@ func imcResetSession(s *imcSession) {
 	s.hasMedia = false
 	s.useMRoPE = false
 	s.mediaKVCounts = nil
+	s.promptPlan = promptPlan{}
 	s.sysPromptHash = ""
 	s.sysPromptTokens = 0
 	s.cachedRenderInputHash = ""
@@ -1438,6 +1440,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 	session.cachedRenderInputHash = renderInputHash
 	if !hasMedia {
 		session.useMRoPE = false
+		session.nextLogicalPos = 0
 	}
 	switch {
 	case hasMedia:

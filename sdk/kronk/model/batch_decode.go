@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"runtime"
 	"unsafe"
 
@@ -13,7 +14,7 @@ import (
 
 // decodeTextMRoPE decodes text tokens for M-RoPE models.
 // M-RoPE uses 4D positions: [dim0, dim1, dim2, dim3] where each dimension has
-// n_tokens entries. For text: dim0=linear position, dims1-3=0.
+// n_tokens entries. Text uses the same logical position in all four planes.
 func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 	n := int32(len(tokens))
 	if n == 0 {
@@ -29,12 +30,7 @@ func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 	// Fill 4D position array for M-RoPE using pre-allocated buffer.
 	posData := e.mropePosData[:n*4]
 	pos0 := s.nPast
-	for i := range n {
-		posData[i] = pos0 + llama.Pos(i) // dim 0: linear position
-		posData[i+n] = 0                 // dim 1: 0 for text
-		posData[i+n*2] = 0               // dim 2: 0 for text
-		posData[i+n*3] = 0               // dim 3: 0 for text
-	}
+	fillMRoPETextPositions(posData, n, pos0)
 	batch.Pos = &posData[0]
 
 	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(n))
@@ -122,11 +118,15 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 //	[dim0: n_tokens] [dim1: n_tokens] [dim2: n_tokens] [dim3: n_tokens]
 //
 // For an image grid of nx columns × ny rows:
-//   - dim0 (linear):  pos_0 + i (unique per token for KV cache placement)
+//   - dim0 (temporal): pos_0
 //   - dim1 (row/y):   pos_0 + y
 //   - dim2 (col/x):   pos_0 + x
 //   - dim3 (unused):  0
 func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTokens int32, nx, ny int32) error {
+	if nTokens != nx*ny {
+		return fmt.Errorf("mrope image layout: unsupported token count %d for grid %dx%d", nTokens, nx, ny)
+	}
+
 	// For M-RoPE, we need 4x the position slots (4D positions).
 	nPosPerEmbd := int32(4)
 
@@ -145,24 +145,8 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	// Allocate our own position array for M-RoPE (4D).
 	posData := make([]llama.Pos, nTokens*nPosPerEmbd)
 
-	// Set up 2D M-RoPE positions for image grid.
 	pos0 := s.nPast
-	for y := range ny {
-		for x := range nx {
-			i := y*nx + x
-			if i >= nTokens {
-				break
-			}
-			// dim 0: linear position for unique KV cache placement
-			posData[i] = pos0 + llama.Pos(i)
-			// dim 1: y position (row)
-			posData[i+nTokens] = pos0 + llama.Pos(y)
-			// dim 2: x position (column)
-			posData[i+nTokens*2] = pos0 + llama.Pos(x)
-			// dim 3: unused (always 0)
-			posData[i+nTokens*3] = 0
-		}
-	}
+	fillMRoPEImagePositions(posData, nTokens, nx, ny, pos0)
 	batch.Pos = &posData[0]
 
 	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(nTokens))
@@ -201,9 +185,34 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 		return decodeError(ret, err)
 	}
 
-	s.nPast += llama.Pos(nTokens)
+	s.nPast += llama.Pos(max(nx, ny))
 
 	return nil
+}
+
+func fillMRoPETextPositions(positions []llama.Pos, n int32, start llama.Pos) {
+	for i := range n {
+		pos := start + llama.Pos(i)
+		positions[i] = pos
+		positions[i+n] = pos
+		positions[i+n*2] = pos
+		positions[i+n*3] = pos
+	}
+}
+
+func fillMRoPEImagePositions(positions []llama.Pos, nTokens, nx, ny int32, start llama.Pos) {
+	for y := range ny {
+		for x := range nx {
+			i := y*nx + x
+			if i >= nTokens {
+				break
+			}
+			positions[i] = start
+			positions[i+nTokens] = start + llama.Pos(y)
+			positions[i+nTokens*2] = start + llama.Pos(x)
+			positions[i+nTokens*3] = 0
+		}
+	}
 }
 
 // unsafeSlice creates a Go slice from a C pointer. This is used to access

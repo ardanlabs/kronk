@@ -172,10 +172,9 @@ are supported.
 - The target does not ship an MTP head — there is nothing to enable.
 - You require strict Leviathan-style distribution equivalence at
   `temperature > 0`. The MTP path runs greedy verify; see §6.7.
-- You are hitting IMC cache often and the MTP-disabled-on-cache-hit
-  behavior in §6.7 is removing most of your speculation opportunity.
-  In that case a separate-GGUF draft, which is unaffected by IMC, may
-  serve you better.
+- You use an own-KV MTP architecture whose IMC draft snapshot repeatedly fails
+  to restore. Shared-KV Gemma4 resumes directly from the restored target KV and
+  the guaranteed token-v2 inference tail, so normal IMC hits do not disable MTP.
 
 ### 6.4 Acceptance, `nDraft`, and the Adaptive Throttle
 
@@ -211,7 +210,7 @@ Two operator-visible consequences:
   cautiously rather than re-paying the discovery cost.
 
 The default starting `nDraft` is **5 for separate-GGUF drafts** and
-**4 for MTP** (MTP heads typically have high acceptance for the first
+**2 for MTP** (MTP heads typically have high acceptance for the first
 1–3 tokens and decay rapidly beyond that, so a lower cap is safer).
 
 For MTP you can override the starting `nDraft` ceiling — see the
@@ -275,6 +274,7 @@ speculation — so dashboards and log parsers see a stable schema.
 | `draft-model-mtp status=loading / loaded`        | Once at model startup when the MTP head is auto-detected and loaded.                                                                            |
 | `draft-model-mtp status=auto-detect-skipped`     | Once at model startup when MTP could not be enabled (no metadata, no pre-norm API).                                                             |
 | `speculative status=mtp-mirror-error`            | An MTP draft step failed. The slot continues target-only for the remainder of the request.                                                      |
+| `speculative status=mtp-resume`                  | Shared-KV Gemma4 resumed from restored target KV. Carries `resume_source=shared-target-kv`, `cached_tokens`, and the nonempty `tail_tokens`.     |
 | `speculative status=mtp-disabled-imc-hit`        | MTP disabled for this request because the IMC cache hit didn't carry a draft-seq snapshot (no draft state on the matched session, or the restore returned 0 bytes). MTP-aware IMC builds — the default since this fix — snapshot the draft seq state and pendingH alongside the target so cache hits keep MTP running. (See §6.7.) |
 | `start-slot status=imc-draft-snapshot-done`      | The cache-build path snapshotted both the target seq state and the MTP draft seq state into the session. Carries `snapshot_bytes`, `kv_alloc`, `buf_action`, `pending_h`.                  |
 | `start-slot status=imc-draft-restore-done`       | A cache hit restored both the target seq and the MTP draft seq state from the session, plus the slot's `pendingH`. Carries `restored_bytes`, `pending_h`, `elapsed`.                       |
@@ -297,9 +297,9 @@ speculation — so dashboards and log parsers see a stable schema.
 | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Separate-GGUF: single-slot only                     | `nseq-max` must be `1` on the target entry. If you need multi-slot speculation, use MTP on a target that ships the head.                              |
 | MTP: greedy verify only                             | The MTP path always runs greedy verification, so strict Leviathan-style distribution equivalence at `temperature > 0` is not guaranteed. The full slot sampler (temperature / top-k / top-p) is still applied at each accepted position, so output shape is preserved. |
-| MTP + IMC: draft state must come from an MTP-aware build | IMC cache hits keep MTP running by restoring the draft seq KV + `pendingH` snapshotted alongside the target during the cache build. Sessions whose cache was built before this fix (no draft snapshot on disk/RAM) fall back to disabling MTP for the cache-hit request only — they re-enable on the next request once the cache is rebuilt by an MTP-aware path. |
+| MTP + IMC: resume depends on KV ownership | Shared-KV Gemma4 resumes from restored target KV, then decodes the guaranteed nonempty token-v2 tail to capture fresh `pendingH`. Own-KV MTP restores draft KV + `pendingH` snapshotted alongside the target; if that draft restore is missing or fails, only that cache-hit request runs target-only. |
 | MTP + hybrid targets: lower throughput | Hybrid targets (e.g. Qwen3-Next, Qwen3.6-35B-A3B-MTP) now use the same Flash Attention and KV cache defaults as any other model — Kronk no longer forces `cache-type-k/v: f16` or disables Flash Attention. Flash Attention applies only to the attention layers. Throughput on hybrid + MTP is still meaningfully lower than dense / MoE targets regardless of `nseq-max`. |
-| MTP: `nDraft` ceiling defaults to 4                 | The adaptive throttle scales down from the ceiling. The ceiling defaults to 4 but can be raised or lowered per model with an MTP `nDraft` override — a `draft-model:` block that sets only `ndraft:` (no `model-id:`). See §6.5. |
+| MTP: `nDraft` ceiling defaults to 2                 | The adaptive throttle scales down from the ceiling. The ceiling defaults to 2 but can be raised or lowered per model with an MTP `nDraft` override — a `draft-model:` block that sets only `ndraft:` (no `model-id:`). See §6.5. |
 | Speculative decoding is text-only                   | Neither draft mode applies to vision or audio requests.                                                                                              |
 
 ---

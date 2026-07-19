@@ -4,13 +4,13 @@
 
 - [5.1 Overview](#51-overview)
 - [5.2 Incremental Message Cache (IMC)](#52-incremental-message-cache-imc)
-  - [Two-Tier Hash Design](#two-tier-hash-design)
+  - [Complete-Prompt Token Design](#complete-prompt-token-design)
   - [Session Pool (Decoupled from Slots)](#session-pool-decoupled-from-slots)
   - [Pure Hit Snapshot Skip](#pure-hit-snapshot-skip)
   - [KV Pressure Eviction](#kv-pressure-eviction)
-  - [Token Prefix Fallback](#token-prefix-fallback)
+  - [Media and M-RoPE](#media-and-m-rope)
   - [Model Type Interactions](#model-type-interactions)
-- [5.3 Single-User Caching](#53-single-user-caching)
+- [5.3 Multi-Session Caching](#53-multi-session-caching)
 - [5.4 When to Use IMC](#54-when-to-use-imc)
 - [5.5 Cache Invalidation](#55-cache-invalidation)
 - [5.6 Configuration Reference](#56-configuration-reference)
@@ -62,11 +62,15 @@ IMC (Incremental Message Cache):
 
 ### 5.2 Incremental Message Cache (IMC)
 
-Incremental Message Cache is designed for agentic workflows. It caches all
-messages except the last one and extends the cache incrementally on each turn.
-When a client or agent mutates the conversation history, IMC uses a two-tier
-hash to preserve the system prompt KV state and only rebuild the conversation
-body.
+Incremental Message Cache is designed for agentic workflows. For text requests
+it renders the complete conversation twice from independent request copies:
+the generation-ready form and a stable form without the generation prompt.
+Both are tokenized with BOS exactly once. Kronk caches a complete stable token
+prefix and always leaves at least one generation-ready token for inference.
+Cached token sequences are authoritative: the longest session whose entire
+sequence prefixes the new target is reused; divergence rebuilds an empty or
+LRU session. Tool-result turns therefore need neither synthetic user messages
+nor a separately rendered suffix.
 
 **Key Terminology:**
 
@@ -77,7 +81,32 @@ body.
 - **Sequence / seqID** — llama.cpp KV cache partition attached to the active
   slot during request processing.
 
-#### Two-Tier Hash Design
+#### Complete-Prompt Token Design
+
+The token-v2 path supersedes the older two-tier message-hash and arbitrary
+token-trimming design described in earlier releases. Text IMC now uses the
+complete rendered token stream as its cache authority:
+
+1. Clone and render the complete request twice: generation-ready, and stable
+   with `add_generation_prompt=false`.
+2. Tokenize both with BOS exactly once.
+3. Require the stable tokens to be a strict prefix of the generation-ready
+   tokens, leaving a nonempty inference tail.
+4. Select the longest session whose entire cached sequence prefixes the stable
+   tokens.
+5. Restore an exact prefix, append only at the end of a complete prefix, or
+   rebuild an empty/LRU session when content diverges.
+
+IMC never renders an independent message suffix and never trims at an arbitrary
+internal token boundary. Tool-call and tool-result turns therefore remain one
+template-valid conversation and require no synthetic user message. The
+nonempty tail also captures the fresh hidden state Gemma4's shared-KV MTP needs
+before drafting after a restore.
+
+##### Legacy design (pre token-v2)
+
+The following description is retained only to explain older log files. It is
+not the current matching algorithm.
 
 IMC tracks two independent hashes per session:
 
@@ -276,6 +305,16 @@ Prefill:  [user3 + gen_prompt]
 
 #### Session Selection Algorithm
 
+> **Current token-v2 behavior:** text sessions are selected by longest complete
+> token-prefix match, not by the legacy message-hash cascade below. Exact,
+> append, and rebuild selections reserve their session immediately. The
+> reservation is released on submission failure, cancellation, decode failure,
+> panic before batch handoff, or normal slot completion. Media sessions are
+> reused only on exact logical-plan identity; changed or appended media rebuilds
+> through the authoritative mtmd pipeline.
+
+The algorithm below documents pre token-v2 behavior for interpreting old logs.
+
 When a request arrives, IMC scans all sessions to find the best match.
 The algorithm has five steps, tried in order. After a session is selected,
 the batch engine assigns the request to the first available slot. The
@@ -413,7 +452,41 @@ need eviction depending on the remaining headroom.
 - No configuration needed — eviction triggers automatically when KV pressure
   is detected
 
-#### Token Prefix Fallback
+#### Media and M-RoPE
+
+IMC supports mtmd image, audio, and multipart requests. A media prompt plan
+contains text-token units and ordered media identities derived from immutable
+input bytes. Raw media and identities are not logged. Exact plans restore the
+externalized KV state without re-encoding media. Changed, reordered, removed,
+or appended media rebuilds through mtmd so model-specific chunk boundaries and
+embeddings remain authoritative.
+
+M-RoPE handling distinguishes physical image embeddings (`n_tokens`) from
+logical position advancement (`n_pos`). Images use `[t, y, x, 0]` positions;
+following text broadcasts each logical position across all four planes. An
+exact restored request resumes suffix decoding at the saved logical position.
+Sessions persist both the physical KV-cell count (for capacity and prompt
+accounting) and the next logical position (for M-RoPE continuation).
+M-RoPE layouts whose embedding count is not the rectangular `nx*ny` grid are
+rejected rather than decoded with guessed coordinates; they require mtmd's
+per-token decoder-position API to be exposed by the Go binding.
+
+Useful structured events are:
+
+| Event | Important fields |
+| ----- | ---------------- |
+| `imc status=plan-ready` | `cache_mode=token-v2`, `match_kind`, `match_reason`, `reusable_tokens`, `extension_tokens`, `tail_tokens`, `actual_tokens`, `stable_tokens` |
+| `imc-media-cache status=plan-ready` | `media_count`, `logical_units`, `text_tokens`, `match_kind`, `reusable_kv`, `position_mode` |
+| `start-slot status=imc-restore-done` | `cached_tokens`, `restored_bytes`, `elapsed` |
+| `start-slot status=imc-snapshot-done` | `cached_tokens`, `snapshot_bytes`, `buf_action`, `elapsed` |
+| `start-slot status=imc-snapshot-skip-pure-hit` | exact prefix reused without reserializing it |
+| `imc-media-cache status=complete` | `logical_positions`, `physical_kv_cells`, ordered `media_kv_cells` counts |
+| `slot-finished` | final `imc_cache_mode`, `imc_match_kind`, `imc_tail_tokens`, and MTP totals |
+
+##### Legacy token-prefix fallback (pre token-v2)
+
+The following section describes the retired trim-at-divergence fallback and is
+retained only for interpreting old logs.
 
 When hash matching fails — whether because the client edited messages, a
 template produced slightly different tokens, or the agent didn't send exactly
@@ -504,61 +577,52 @@ unsloth/LFM2-700M-Q8_0:
   cache-type-v: f16
 ```
 
-### 5.3 Single-User Caching
+### 5.3 Multi-Session Caching
 
-IMC is designed for single-user use. The session pool (sized at `NSeqMax × 3`,
-see [Session Pool (Decoupled from Slots)](#session-pool-decoupled-from-slots))
-gives multiple conversation branches their own cache identity; each branch
-independently tracks its own hash, system prompt, and cached tokens. Any
-session can run on any execution slot. This design is optimized for agentic
-workflows where multiple sub-agents send independent conversations (different
-system prompts, different message histories) without saturating the GPU's
-parallel decode capacity.
+The session pool (sized at `NSeqMax × 3`, see
+[Session Pool (Decoupled from Slots)](#session-pool-decoupled-from-slots)) gives
+multiple conversation branches independent cached token sequences or media
+plans. Any session can run on any execution slot. This supports concurrent
+clients and agent branches within the configured pool; clients do not need
+sticky slot routing.
 
 ### 5.4 When to Use IMC
 
-IMC caches the entire conversation history and uses hash matching with
-automatic token prefix fallback when changes are detected. It is best suited
-for:
+IMC caches a complete stable rendering of conversation history and uses full
+token-prefix matching. It is best suited for:
 
-- **Agentic workflows** — hash matching handles the common case, and token
-  prefix fallback automatically salvages 70-80% of cached tokens when changes
-  are detected
+- **Agentic workflows** — tool-result turns can append to a complete cached
+  rendering without independently templating a suffix
 - **AI coding agents** — long-running conversations with growing context
-- **Sub-agent architectures** — each sub-agent gets its own session via hash
-  matching, maintaining independent caches
+- **Sub-agent architectures** — each active branch can retain an independent
+  externalized session
 
 | Feature      | Behavior                                                                       |
 | ------------ | ------------------------------------------------------------------------------ |
-| Caches       | All messages except last                                                       |
+| Caches       | Complete stable rendering (`add_generation_prompt=false`)                      |
 | Extends      | Yes, incrementally                                                             |
-| Sessions     | Session pool sized at `NSeqMax × 3`, single-user                               |
+| Sessions     | Session pool sized at `NSeqMax × 3`                                            |
 | Slot routing | Any available slot (no session/slot affinity)                                  |
-| Sub-agents   | Each gets own session via hash matching                                        |
-| Pure hits    | Snapshot-skip fast path on text-only exact-match (no round-trip `GetData`)     |
+| Sub-agents   | Active branches select independent token-prefix sessions                       |
+| Pure hits    | Snapshot-skip fast path on exact text or media plans                           |
 | Best for     | Agentic workflows                                                              |
 | VRAM         | Unified `n_ctx` pool, not multiplied by `nseq-max`                             |
 | RAM          | One externalized KV snapshot per active session (lazy-grow / never-shrink)     |
 
 ### 5.5 Cache Invalidation
 
-Cached state doesn't last forever. Kronk uses hash comparisons to detect
-when cached tokens no longer match the incoming request, and automatically
-rebuilds the cache when a mismatch is found. Understanding what triggers
-invalidation helps you avoid unexpected prefill costs.
+Cached state doesn't last forever. Kronk compares complete rendered token
+sequences (or exact media plans) and rebuilds when no complete prefix is safe
+to reuse.
 
 **IMC Invalidation:**
 
-- Message prefix hash mismatch with same system prompt → system prompt KV
-  preserved, conversation body trimmed and re-decoded (Step 4 of the session
-  selection algorithm)
-- Message prefix hash mismatch with no system prompt match → token prefix
-  fallback attempted (see [Token Prefix Fallback](#token-prefix-fallback)).
-  If a common prefix ≥ `cache-min-tokens` is found, only the divergent suffix
-  is trimmed and rebuilt. Otherwise, cache is rebuilt from scratch.
-- System prompt changed → full cache rebuild from scratch
-- Conversation shrinks (client dropped messages or reasoning blocks) → system
-  prompt preserved if unchanged, conversation body re-decoded
+- Exact complete token prefix → restore without rebuilding
+- Complete append-only token prefix → restore and decode the extension
+- Earlier text changed, removed, or reordered → full rebuild in empty/LRU session
+- Media changed, removed, reordered, or appended → full rebuild through mtmd
+- Stable render is not a strict prefix of the generation-ready render → IMC is
+  rejected for that request rather than decoding an independently rendered suffix
 
 **Automatic Invalidation:**
 
@@ -675,24 +739,22 @@ KV pressure eviction only considers sessions whose cached KV is still
 resident in VRAM (sessions without an externalized `kvState`). Sessions
 with externalized state are excluded from VRAM pressure calculations.
 
-**IMC Token Prefix Fallback Performance:**
+**IMC Planning Cost:**
 
-When IMC falls back to token-level prefix matching, there is a one-time cost
-to tokenize the incoming messages for comparison. This is typically fast
-(< 5ms for most conversations). The savings from salvaging 70-80% of the
-cached tokens far outweigh this cost compared to a full rebuild.
+Text IMC renders and tokenizes two complete prompts for planning. This adds a
+small host-side cost but avoids unsafe suffix rendering and typically saves far
+more time by restoring the model's cached prefill state.
 
 **IMC with Vision/Audio Models:**
 
-IMC fully supports vision and audio models (models configured with a projection
-file). Text-only requests are cached normally. When a message containing media
-(image, video, or audio) appears in the conversation history, IMC caches the
-entire conversation — including the media embeddings — in the KV cache. The
-image or audio is encoded through the projection model once. After the request,
-the entire cached prefix (text + media KV) is snapshotted to RAM and restored
-on the next request — media is never re-encoded unless the cache is rebuilt
-from scratch. Text-only follow-up messages extend the cache without
-re-encoding the media.
+IMC supports mtmd image, audio, and multipart requests. Exact complete media
+plans restore text plus media KV from RAM without re-encoding. Any changed or
+appended media plan rebuilds through mtmd; this conservative rule keeps mtmd's
+model-specific token, embedding, and M-RoPE stream authoritative.
+
+> The examples and partial-media-extension internals below describe the legacy
+> pre token-v2 implementation. Current token-v2 media planning performs exact
+> reuse or a full mtmd rebuild.
 
 For example, in a conversation like:
 
@@ -794,17 +856,14 @@ Request 5 (text follow-up about the image):
 
 **IMC Limitations:**
 
-- Editing earlier messages requires a partial rebuild (system prompt KV is
-  preserved when the system prompt hasn't changed; conversation body is
-  re-decoded)
-- Changing the system prompt triggers a full cache rebuild
-- Designed for single-user use
+- Editing earlier messages triggers a full rebuild; arbitrary internal token
+  trimming is intentionally not used
 - Max concurrent conversation branches = `NSeqMax × 3` (session pool size);
   when all sessions are occupied, the least-recently-used session is evicted
 - Cache hits include a RAM→VRAM restore step (typically 10-30ms depending
   on conversation size). The pure-hit snapshot-skip fast path avoids the
-  subsequent VRAM→RAM round trip when the request is text-only and the
-  cached prefix is not mutated — see
+  subsequent VRAM→RAM round trip when an exact text or media prefix is not
+  mutated — see
   [Pure Hit Snapshot Skip](#pure-hit-snapshot-skip).
 - When a new media message appears in the conversation, the cache is
   rebuilt through the mtmd pipeline (projection model encodes image/audio
