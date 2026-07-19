@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import Layout from './components/Layout';
 import ModelList from './components/ModelList';
@@ -47,7 +48,7 @@ import TestingConfiguration from './components/TestingConfiguration';
 import Accuracy from './components/Accuracy';
 import Efficiency from './components/Efficiency';
 import { ModelListProvider } from './contexts/ModelListContext';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DownloadProvider } from './contexts/DownloadContext';
 import { ChatProvider } from './contexts/ChatContext';
 import { ChatHistoryProvider } from './contexts/ChatHistoryContext';
@@ -162,6 +163,22 @@ export const pathToPage: Record<string, Page> = Object.fromEntries(
 );
 
 function HomePage() {
+  const { authenticationRequired } = useAuth();
+  const [warningDismissed, setWarningDismissed] = useState(() => {
+    try {
+      return localStorage.getItem('kronk_insecure_admin_warning_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const dismissWarning = () => {
+    try {
+      localStorage.setItem('kronk_insecure_admin_warning_dismissed', 'true');
+    } catch { /* The warning remains dismissed for this page load. */ }
+    setWarningDismissed(true);
+  };
+
   return (
     <div className="home-page">
       <div className="hero-section">
@@ -170,6 +187,17 @@ function HomePage() {
           alt="Kronk Banner"
           className="hero-banner"
         />
+        {!authenticationRequired && !warningDismissed && (
+          <div className="insecure-admin-warning" role="status">
+            <div>
+              Your Kronk instance is running unsecured on all ports without an admin password. Consider setting a password.{' '}
+              <Link to="/docs/manual#28-securing-the-server-and-bui">View the security documentation.</Link>
+            </div>
+            <button type="button" onClick={dismissWarning} aria-label="Dismiss unsecured instance warning">
+              Dismiss
+            </button>
+          </div>
+        )}
         <p className="hero-tagline">
           Hardware-accelerated local inference with llama.cpp directly integrated into your Go applications
         </p>

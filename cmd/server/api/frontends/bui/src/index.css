@@ -909,6 +909,48 @@ tr.selected:hover td {
     margin-bottom: 24px;
 }
 
+.insecure-admin-warning {
+    max-width: 900px;
+    margin: 0 auto 24px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    text-align: left;
+    color: var(--color-warning-text-alt);
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    border-radius: 8px;
+}
+
+.insecure-admin-warning a {
+    color: inherit;
+    font-weight: 700;
+}
+
+.insecure-admin-warning button {
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    color: var(--color-warning-text-alt);
+    background: transparent;
+    border: 1px solid var(--color-warning-border);
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+}
+
+.insecure-admin-warning button:hover {
+    background: var(--color-warning-bg-light);
+}
+
+@media (max-width: 640px) {
+    .insecure-admin-warning {
+        align-items: flex-start;
+    }
+}
+
 .hero-tagline {
     font-size: 20px;
     color: var(--color-gray-600);
@@ -930,8 +972,8 @@ tr.selected:hover td {
     padding: 16px 40px;
     font-size: 18px;
     font-weight: 700;
-    color: var(--color-white);
-    background: var(--color-primary);
+    color: var(--color-blue);
+    background: var(--color-orange);
     border-radius: 12px;
     text-decoration: none;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
@@ -943,7 +985,7 @@ tr.selected:hover td {
 
 .hero-cta-button:hover {
     transform: translateY(-2px);
-    filter: brightness(1.08);
+    background: var(--color-orange-hover);
     box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2);
 }
 
