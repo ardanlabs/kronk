@@ -545,10 +545,11 @@ func TestModelsResolveSource_AcceptedInputForms(t *testing.T) {
 		Providers: []string{"unsloth"},
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-0.6B-Q8_0": {
-				Provider: "unsloth",
-				Family:   "Qwen3-0.6B-GGUF",
-				Revision: "main",
-				Files:    []string{"Qwen3-0.6B-Q8_0.gguf"},
+				Provider:   "unsloth",
+				Family:     "Qwen3-0.6B-GGUF",
+				Revision:   "main",
+				Files:      []string{"Qwen3-0.6B-Q8_0.gguf"},
+				MTPChecked: true,
 			},
 		},
 	}
@@ -939,6 +940,74 @@ func TestResolver_TagForm_HFLookup(t *testing.T) {
 	saved := loadResolved(t, rfile)
 	if _, ok := saved.Models[wantCanonical]; !ok {
 		t.Errorf("catalog missing %q; have %v", wantCanonical, mapKeys(saved.Models))
+	}
+}
+
+func TestResolver_PinnedFileIgnoresSameTagCacheEntries(t *testing.T) {
+	hfc := &fakeHF{
+		metas: map[string][]string{
+			"unsloth/gemma-4-26B-A4B-it-GGUF": {
+				"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf",
+				"mmproj-F16.gguf",
+				"mtp-gemma-4-26B-A4B-it.gguf",
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	rfile := filepath.Join(dir, "catalog.yaml")
+	cached := Catalog{
+		Providers: []string{"unsloth"},
+		Models: map[string]CatalogEntry{
+			"unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL": {
+				Provider:   "unsloth",
+				Family:     "gemma-4-26B-A4B-it-GGUF",
+				Revision:   "main",
+				Files:      []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+				MTPChecked: true,
+			},
+			"unsloth/other-model-UD-Q8_K_XL": {
+				Provider:   "unsloth",
+				Family:     "gemma-4-26B-A4B-it-GGUF",
+				Revision:   "main",
+				Files:      []string{"other-model-UD-Q8_K_XL.gguf"},
+				MTPChecked: true,
+			},
+			"unsloth/mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL": {
+				Provider:   "unsloth",
+				Family:     "gemma-4-26B-A4B-it-GGUF",
+				Revision:   "main",
+				Files:      []string{"mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+				MTPChecked: true,
+			},
+		},
+	}
+	data, _ := yaml.Marshal(cached)
+	mustWriteFile(t, rfile, string(data))
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+	res, err := r.resolvePinned(context.Background(), "unsloth", "gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-UD-Q8_K_XL", true)
+	if err != nil {
+		t.Fatalf("resolvePinned: %v", err)
+	}
+
+	wantModel := "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"
+	if !reflect.DeepEqual(res.DownloadURLs, []string{wantModel}) {
+		t.Errorf("DownloadURLs = %v, want [%s]", res.DownloadURLs, wantModel)
+	}
+	wantProj := "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-F16.gguf"
+	if res.DownloadProj != wantProj {
+		t.Errorf("DownloadProj = %q, want %q", res.DownloadProj, wantProj)
+	}
+	wantMTP := "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf"
+	if res.DownloadMTP != wantMTP {
+		t.Errorf("DownloadMTP = %q, want %q", res.DownloadMTP, wantMTP)
+	}
+	if res.FromCache {
+		t.Error("expected exact pinned lookup to bypass conflicting cache entries")
+	}
+	if !reflect.DeepEqual(hfc.calls, []string{"meta:unsloth/gemma-4-26B-A4B-it-GGUF"}) {
+		t.Errorf("HF calls = %v, want one exact repo metadata lookup", hfc.calls)
 	}
 }
 

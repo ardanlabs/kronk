@@ -8,6 +8,7 @@ import {
   modelIDFromFilename,
   isQuantOnly,
   isMMProjFile,
+  isMTPCompanion,
   matchesQuant,
   splitPaste,
   groupRepoFiles,
@@ -93,7 +94,10 @@ export default function ModelPull() {
       if (isQuantOnly(m)) {
         const lookup = await api.lookupHuggingFace(`${p}/${f}`);
         const matches = (lookup.repo_files ?? []).filter(
-          (file) => !isMMProjFile(file.filename) && matchesQuant(file.filename, m),
+          (file) =>
+            !isMMProjFile(file.filename) &&
+            !isMTPCompanion(file.filename, f) &&
+            matchesQuant(file.filename, m),
         );
 
         if (matches.length === 0) {
@@ -338,7 +342,12 @@ export default function ModelPull() {
         )}
 
         {repoFiles && (() => {
-          const rows = groupRepoFiles(repoFiles);
+          const modelFiles = repoFiles.filter(
+            (file) =>
+              !isMMProjFile(file.filename) &&
+              !isMTPCompanion(file.filename, family.trim()),
+          );
+          const rows = groupRepoFiles(modelFiles);
           return (
             <div className="card" style={{ background: 'var(--color-gray-100)', marginTop: '12px' }}>
               <div style={{ marginBottom: '12px' }}>

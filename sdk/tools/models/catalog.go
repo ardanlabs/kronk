@@ -370,6 +370,87 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 	return Resolution{}, fmt.Errorf("resolve: model %q not found in any of %v", id, providers)
 }
 
+// resolvePinned resolves an exact model id from an exact HuggingFace repo.
+// Unlike the public provider/repo:tag form, this path never scans catalog
+// entries by quant tag, so two files ending in the same tag cannot collide.
+func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID string, refresh bool) (Resolution, error) {
+	rm, err := r.Load()
+	if err != nil {
+		return Resolution{}, fmt.Errorf("resolve: %w", err)
+	}
+
+	online := hasNetwork()
+	canonical := canonicalID(provider, modelID)
+	if entry, ok := rm.Models[canonical]; ok &&
+		strings.EqualFold(entry.Provider, provider) &&
+		strings.EqualFold(entry.Family, repo) &&
+		len(entry.Files) > 0 &&
+		strings.EqualFold(siblingModelID(entry.Files[0]), modelID) {
+		cached := entryToResolution(canonical, entry)
+		needsRepair := !cached.MTPChecked ||
+			(cached.MMProj != "" && cached.DownloadProj == "") ||
+			(cached.MTP != "" && cached.DownloadMTP == "")
+		if (!refresh && !needsRepair) || !online {
+			cached.FromCache = true
+			r.attachLocal(&cached)
+			return cached, nil
+		}
+	}
+
+	if !online {
+		return Resolution{}, fmt.Errorf("resolve: %s/%s/%s not cached and no network available", provider, repo, modelID)
+	}
+
+	meta, err := r.hfClient.ModelMeta(ctx, provider, repo, "main")
+	if err != nil {
+		if isNotFound(err) {
+			return Resolution{}, fmt.Errorf("resolve: %s/%s not found", provider, repo)
+		}
+		return Resolution{}, fmt.Errorf("resolve: %s/%s: %w", provider, repo, err)
+	}
+
+	files, mmproj, mtp, ok := selectFiles(meta.Siblings, repo, modelID)
+	if !ok {
+		return Resolution{}, fmt.Errorf("resolve: model %q not found in %s/%s", modelID, provider, repo)
+	}
+
+	res := Resolution{
+		CanonicalID:  canonical,
+		Provider:     provider,
+		Family:       repo,
+		Revision:     "main",
+		Files:        files,
+		MMProj:       localProjName(repo, mmproj, files),
+		MMProjOrig:   mmproj,
+		MTP:          localMTPName(repo, mtp, files),
+		MTPOrig:      mtp,
+		MTPChecked:   true,
+		DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
+	}
+	if mmproj != "" {
+		res.DownloadProj = buildDownloadURL(provider, repo, "main", mmproj)
+	}
+	if mtp != "" {
+		res.DownloadMTP = buildDownloadURL(provider, repo, "main", mtp)
+	}
+
+	entry := r.buildEntry(provider, repo, "main", files, res.MMProj, res.MTP)
+	entry.MMProjOrig = mmproj
+	entry.MTPOrig = mtp
+	entry.MTPChecked = true
+	if rm.Models == nil {
+		rm.Models = map[string]CatalogEntry{}
+	}
+	rm.Models[canonical] = entry
+	if err := r.Save(rm); err != nil {
+		return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
+	}
+
+	r.attachLocal(&res)
+
+	return res, nil
+}
+
 // resolveByTag handles the "provider/repo:tag" input shape. It first tries
 // the catalog cache by (provider, family, tag); on a miss it calls
 // hfClient.ModelMeta directly (no SearchModels needed because the

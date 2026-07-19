@@ -170,7 +170,7 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "source is required")
 	}
 
-	res, err := a.models.ResolveSource(ctx, source)
+	res, err := a.models.ResolveSourceFresh(ctx, source)
 	if err != nil {
 		return errs.Errorf(errs.Internal, "resolve %q: %s", source, err)
 	}

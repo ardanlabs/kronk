@@ -41,6 +41,17 @@ import (
 // is not run; instead the returned Resolution carries RepoFiles listing
 // every GGUF in the repo so the caller can present a picker.
 func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, error) {
+	return m.resolveSource(ctx, source, false)
+}
+
+// ResolveSourceFresh maps a model source to a Resolution and refreshes an
+// explicitly pinned owner/repo/file from HuggingFace when online. Cached
+// metadata remains the fallback when the network is unavailable.
+func (m *Models) ResolveSourceFresh(ctx context.Context, source string) (Resolution, error) {
+	return m.resolveSource(ctx, source, true)
+}
+
+func (m *Models) resolveSource(ctx context.Context, source string, refreshPinned bool) (Resolution, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return Resolution{}, fmt.Errorf("resolve-source: empty source")
@@ -77,19 +88,17 @@ func (m *Models) ResolveSource(ctx context.Context, source string) (Resolution, 
 			}, nil
 		}
 
-		// The user pinned a specific repo (owner/repo/file). Preserve
-		// that pin by routing through the "provider/repo:tag" form so
-		// the resolver does not search HF and accidentally land in a
-		// sibling repo that happens to publish the same quant basename.
-		// When the file lacks a recognisable quant suffix, fall back
-		// to the bare canonical id — this only affects unusual repos
-		// whose GGUFs don't follow the standard quant naming.
+		// The user pinned a specific repo and file. Preserve both pins so
+		// another cached file in the same repo with the same quant tag
+		// cannot be returned instead. This is especially important for
+		// repos that contain an mtp-* drafter alongside the main model.
 		modelID := catalogModelID(repo, file)
-		if tag := extractQuantTag(modelID); tag != "" {
-			id = fmt.Sprintf("%s/%s:%s", owner, repo, tag)
-		} else {
-			id = fmt.Sprintf("%s/%s", owner, modelID)
+		res, rerr := NewResolver(m, rfile).resolvePinned(ctx, owner, repo, modelID, refreshPinned)
+		if rerr != nil {
+			return Resolution{}, fmt.Errorf("resolve-source: %w", rerr)
 		}
+
+		return res, nil
 	}
 
 	res, err := NewResolver(m, rfile).Resolve(ctx, id)
