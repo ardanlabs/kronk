@@ -1,307 +1,234 @@
-# Chapter 6: Speculative Decoding & MTP
+# Chapter 6: Speculative Decoding and MTP
 
 ## Table of Contents
 
-- [6.1 Overview — The Two Draft Modes](#61-overview-the-two-draft-modes)
-- [6.2 When to Use a Separate Draft Model](#62-when-to-use-a-separate-draft-model)
-- [6.3 When MTP Is Used](#63-when-mtp-is-used)
-- [6.4 Acceptance, `nDraft`, and the Adaptive Throttle](#64-acceptance-ndraft-and-the-adaptive-throttle)
-- [6.5 Configuration Recap](#65-configuration-recap)
-- [6.6 Observability](#66-observability)
-- [6.7 Known Limitations](#67-known-limitations)
+- [6.1 What Speculative Decoding Does](#61-what-speculative-decoding-does)
+- [6.2 Drafter Sources and Selection](#62-drafter-sources-and-selection)
+- [6.3 Choosing a Drafter](#63-choosing-a-drafter)
+- [6.4 Draft Size and Adaptive Throttling](#64-draft-size-and-adaptive-throttling)
+- [6.5 Configuration](#65-configuration)
+- [6.6 Measuring the Result](#66-measuring-the-result)
+- [6.7 Limitations and Fallbacks](#67-limitations-and-fallbacks)
 
 ---
 
-This chapter is the user-facing operation guide for speculative decoding
-in Kronk. It assumes you have read the introductory speculative-decoding
-section in [Chapter 3 §3.12](#312-speculative-decoding), which covers
-both draft modes at the configuration level and shows the `model_config.yaml`
-shapes. This chapter focuses on **when to choose each mode**, **how to
-read the acceptance metrics**, and **what to look for in the logs**. The
-engine internals (FFI plumbing, mirror step, three-pass dispatch,
-hybrid snapshot/restore) live in
-[Chapter 18 §18.12](#1812-mtp-internals).
+### 6.1 What Speculative Decoding Does
 
-### 6.1 Overview — The Two Draft Modes
+Speculative decoding uses a faster drafter to propose several continuation
+tokens. The target model verifies those proposals together. Accepted proposals
+reduce the number of target-model passes needed to produce the response;
+rejected proposals are discarded and the target remains authoritative.
 
-Kronk supports two interchangeable sources of draft tokens for
-speculative decoding. The drafter is selected once at model load and
-behaves the same way to a caller:
+This optimization does not change the chat, Responses, or SDK request shapes.
+It can improve generation throughput when the drafter is inexpensive and its
+proposals agree frequently with the target. It can also reduce performance when
+draft work is expensive or acceptance is poor. Always measure with the model,
+sampling settings, hardware, and prompts used in production.
 
-| Mode              | When used                                                                                          | Drafter origin                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| **Separate-GGUF** | You explicitly configure a `draft-model:` block on the target entry.                                | A second, smaller GGUF you download separately.         |
-| **MTP**           | Auto-enabled when the target GGUF ships a Multi-Token-Prediction head and the platform supports it. | The MTP head shipped inside the target GGUF — no extra download. |
+Kronk supports classic speculative decoding with a separate draft model and
+Multi-Token Prediction (MTP). MTP uses a prediction head designed for the
+target rather than a general-purpose smaller language model.
 
-A model can have at most one drafter active. If you configure
-`draft-model:` explicitly, that wins — the MTP head, even when present,
-is ignored on that load. If neither is available, the target serves
-traffic without speculation; nothing else changes.
+### 6.2 Drafter Sources and Selection
 
-Behavior an operator can rely on for both modes:
+Kronk can load a drafter from three sources:
 
-- The user-facing API (`/v1/chat/completions`, the Responses API, the
-  SDK) does not change. Speculation is invisible to the caller.
-- The same `draft_tokens`, `draft_accepted_tokens`, and
-  `acceptance_rate` fields appear on every final log line and in the
-  usage payload once a drafter is configured, even when speculation
-  produces zero tokens in a round.
-- A failed drafter never blocks a request. If draft generation fails
-  mid-stream, the slot continues target-only and the request still
-  completes correctly.
+| Source | How it is supplied | Slots |
+| ------ | ------------------ | ----- |
+| **Classic separate draft** | A `draft-model` configuration names another compatible GGUF. | Requires `nseq-max: 1` |
+| **Companion MTP assistant** | A model-specific assistant GGUF, currently used by Gemma4 models, is discovered with the downloaded target. | Supports multiple slots |
+| **Embedded MTP head** | The target GGUF contains supported `nextn_predict_layers` metadata, currently used by Qwen3.5/Qwen3.6 models. | Supports multiple slots |
 
-### 6.2 When to Use a Separate Draft Model
+Kronk checks these sources in that order. A `draft-model` block containing a
+`model-id` explicitly selects the classic separate draft and takes precedence
+over either MTP form. Without one, Kronk uses a compatible companion MTP file
+when present, then checks the target for an embedded MTP head. If no source is
+available, the model runs normally without speculation.
 
-A separate draft model is the classic speculative-decoding setup: a
-small, fast sibling of the target that proposes the next few tokens,
-and the target verifies them in a single forward pass.
+A `draft-model` block containing only `ndraft` is different: it changes the MTP
+draft ceiling and does not select a classic draft or disable MTP.
 
-**The conceptual model.** Think of the target as the authoritative
-writer and the draft as a fast typist who tries to anticipate the next
-few words. When the typist guesses right, the target accepts those
-words "for free" — they cost only one verification pass instead of
-one forward pass per token. When the typist guesses wrong, the target
-corrects the mistake and the wasted draft work is the price of the
-attempt. Net throughput depends entirely on how often the typist is
-right.
+MTP also requires support from the loaded llama.cpp library. When a model
+advertises MTP but the required API is unavailable, Kronk reports that MTP was
+disabled at model load and serves the model without speculation.
 
-#### Picking a draft model
+### 6.3 Choosing a Drafter
 
-The draft must share the target's tokenizer (same vocabulary). Within
-that constraint, the best practical choice is almost always **a
-quantized version of the same architecture** rather than a smaller
-dense model from a different family:
+#### 6.3.1 Classic separate draft
 
-| Target Model            | Recommended Draft          | Why                                                              |
-| ----------------------- | -------------------------- | ---------------------------------------------------------------- |
-| Qwen3-8B-Q8_0           | Qwen3-0.6B-Q8_0            | Same Qwen3 family; same tokenizer; small enough to be cheap.      |
-| Qwen3.5-35B-A3B-Q8_K_XL | Qwen3.5-35B-A3B-UD-Q2_K_XL | Same MoE architecture at lower quantization — much higher acceptance than a smaller dense model. |
+Use a classic separate draft when the target has no supported MTP source or
+when you have already measured a compatible draft that performs well for your
+workload.
 
-The second pattern (same architecture, lower quant) is usually the
-winner on MoE targets because the draft sees the same weight structure
-the target uses to make decisions, just rounded down. A tiny dense
-model from another family will tokenize the same words but reason
-very differently, and acceptance suffers accordingly.
+The draft must use the same tokenizer and token IDs as the target. Kronk checks
+that their vocabulary sizes match, but equal sizes alone cannot prove complete
+tokenizer compatibility. Select models documented as compatible and test them
+together. Similar names, parameter counts, or model families are not sufficient
+evidence by themselves.
 
-#### When a separate draft is the right choice
+A separate draft has additional model and KV-cache memory costs. It also limits
+the target entry to one execution slot. It is therefore a poor fit when:
 
-- The target ships **no MTP head**, so MTP is not an option.
-- You want **predictable behavior across architectures** — a separate
-  draft works the same way regardless of what the target is.
-- You have a **known-good draft** you trust more than an auto-detected
-  head — for example, a quantized sibling you have already benchmarked
-  on your workload.
-- You need **single-slot semantics** (`nseq-max: 1`) anyway. Separate-GGUF
-  drafts only work at single-slot today, so this constraint is a
-  no-op for you.
-- You are running at **temperature near zero** on a large MoE target.
-  This is the sweet spot for separate-GGUF speculation: low
-  temperature drives acceptance up, and the MoE target's sparse
-  activation makes verification cheap.
+- The target is already fast enough that drafting overhead dominates
+- The workload needs `nseq-max` greater than 1
+- No demonstrably tokenizer-compatible draft is available
+- Measured throughput or latency is worse with drafting enabled
 
-#### When a separate draft is the wrong choice
+Do not select a draft using a universal model-pair or quantization rule.
+Acceptance and cost can change substantially with sampling parameters and task
+type.
 
-- The target is **small and already fast** (e.g. an 8B dense model at
-  30+ TPS on your hardware). Drafting overhead can erase the win or
-  go net negative.
-- Your workload is **highly creative or reasoning-heavy** at high
-  temperature. Acceptance collapses and the adaptive throttle (§6.4)
-  will gate speculation off anyway — you are paying the draft load
-  cost for nothing.
-- You cannot find a draft that shares the target's tokenizer. There
-  is no workaround; speculation requires vocabulary parity.
-- You need **multi-slot batching** on this entry. Use MTP, or run
-  without speculation.
+#### 6.3.2 MTP
 
-#### Reading the acceptance signal
+MTP is normally the simpler choice when the downloaded model provides a
+supported embedded or companion head. It is architecture-matched to its target,
+supports multiple execution slots, and does not require a `model-id` in the
+`draft-model` configuration.
 
-Speculative decoding is a throughput bet, and the metric that matters
-is the running **acceptance rate**. It shows up in every final
-response log line as `acceptance_rate=` along with `draft_tokens=` and
-`draft_accepted_tokens=`. Rules of thumb:
+An embedded head requires no companion file. A companion MTP assistant is an
+additional model-specific file, but Kronk's catalog and download flow can
+discover and associate it with the target automatically. It is not configured
+as a classic `draft-model`.
 
-| Acceptance | Interpretation                                                                                                              |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------- |
-| > 0.70     | Strong win. Speculation is clearly paying off; the target is doing meaningfully fewer forward passes than tokens generated. |
-| 0.50–0.70  | Net positive on most workloads. Worth keeping enabled.                                                                      |
-| 0.30–0.50  | Marginal. The adaptive throttle (§6.4) will already be scaling `nDraft` down.                                                |
-| < 0.30     | Speculation is bypassed for that round. Check temperature, draft choice, and task type.                                     |
+MTP availability is a property of the downloaded files and the loaded
+llama.cpp library. Naming a model “MTP” or adding an `ndraft` override cannot
+create an MTP head that is not present.
 
-### 6.3 When MTP Is Used
+### 6.4 Draft Size and Adaptive Throttling
 
-MTP (Multi-Token Prediction) is the second draft mode, auto-enabled by
-Kronk when the target GGUF itself ships an MTP head. You do not
-configure it; Kronk decides at model-load time.
+`ndraft` is the maximum number of candidates the drafter attempts in one
+round. Larger values can save more target passes when acceptance remains high,
+but they also increase wasted draft and verification work when proposals are
+rejected.
 
-**Conceptually**, the MTP head is a small set of extra layers grafted
-onto the target that predict the **next N tokens** of the target's
-continuation given the most recent token and the target's own internal
-state. Because the head ships inside the same GGUF as the target and
-uses the target's tokenizer:
+Defaults are:
 
-- There is **nothing extra to download**.
-- There is **no risk of a vocabulary mismatch**.
-- The drafter is always perfectly architecture-matched to the target.
+- **Classic separate draft:** 5
+- **MTP:** 2
 
-Kronk turns MTP on when all of these hold:
+Kronk adapts the actual draft count independently for each execution slot. It
+tracks an exponential moving average (EMA) of recent acceptance and chooses the
+next round's size from the configured ceiling:
 
-- The target GGUF metadata declares `nextn_predict_layers > 0`. This
-  is the marker for "this file ships an MTP head."
-- The loaded llama.cpp library exposes the pre-norm hidden-state API
-  that the MTP path needs. Kronk's shipped libraries are current
-  enough; this matters only if you pin an older library.
-- You have **not** set a `draft-model:` block on this entry. Explicit
-  config always wins.
+| Acceptance EMA | Next draft size |
+| -------------- | --------------- |
+| Below 0.30 | Usually 0 |
+| 0.30 to below 0.50 | At most 1 |
+| 0.50 to below 0.70 | At most 2 |
+| 0.70 to below 0.85 | At most 3 |
+| 0.85 or higher | Configured ceiling |
 
-Both single-slot (`nseq-max: 1`) and multi-slot (`nseq-max: 2+`) loads
-are supported.
+When the EMA is below 0.30, Kronk normally bypasses speculation. It performs a
+one-token recovery probe every 32 fully throttled rounds so a slot can detect
+that its workload has become predictable again.
 
-#### When MTP is the right choice
+The EMA belongs to the execution slot and persists across requests assigned to
+that slot. A request can therefore begin with a reduced draft size after prior
+requests on the same slot had poor acceptance. This is expected adaptive
+behavior, not evidence that the configured ceiling was ignored.
 
-- The target is a Qwen3.5 / Qwen3.6 family GGUF (or any future
-  architecture that adopts the same metadata key) and you do not want
-  to manage a second GGUF download.
-- You want **multi-slot batching** on a target that has an MTP head.
-  This is the only way to get speculation under `nseq-max > 1` today.
-- You are running a target where the in-file MTP head is known to
-  have high first-token acceptance, and you are fine with the
-  greedy-verify trade-off (see §6.7).
+### 6.5 Configuration
 
-#### When MTP is the wrong choice
+Configuration belongs under the target model ID in
+`~/.kronk/models/model_config.yaml`.
 
-- The target does not ship an MTP head — there is nothing to enable.
-- You require strict Leviathan-style distribution equivalence at
-  `temperature > 0`. The MTP path runs greedy verify; see §6.7.
-- You use an own-KV MTP architecture whose IMC draft snapshot repeatedly fails
-  to restore. Shared-KV Gemma4 resumes directly from the restored target KV and
-  the guaranteed token-v2 inference tail, so normal IMC hits do not disable MTP.
+#### 6.5.1 Classic separate draft
 
-### 6.4 Acceptance, `nDraft`, and the Adaptive Throttle
+```yaml
+some-provider/target-model:
+  nseq-max: 1
+  draft-model:
+    model-id: some-provider/compatible-draft-model
+    ndraft: 5
+```
 
-Both modes generate `nDraft` candidate tokens per round and pay a
-fixed verification cost on the target. If acceptance is high, the win
-scales with `nDraft`. If acceptance is low, every wasted draft token
-costs you a target forward pass that produced nothing.
+The target and draft must already be downloaded. Kronk resolves the configured
+draft model ID to its local files. A classic draft with `nseq-max` greater than
+1 is rejected during configuration validation.
 
-To avoid burning forward passes when acceptance collapses (a long
-creative passage at high temperature, an unusual prompt the draft
-hasn't seen), Kronk runs an **adaptive throttle** on every slot. It
-tracks an exponential moving average of the slot's recent acceptance
-rate and scales `nDraft` for the next round accordingly:
+#### 6.5.2 MTP default
 
-| Recent acceptance EMA | `nDraft` used next round |
-| --------------------- | ------------------------ |
-| `< 0.30`              | `0` — speculation bypassed for this round |
-| `< 0.50`              | `min(1, configured max)` |
-| `< 0.70`              | `min(2, configured max)` |
-| `< 0.85`              | `min(3, configured max)` |
-| `≥ 0.85`              | `configured max`         |
+No model configuration is required. Downloading a supported target and its
+catalog-provided companion files is sufficient for automatic detection.
 
-Two operator-visible consequences:
+#### 6.5.3 MTP draft-count override
 
-- A slot whose acceptance falls into the gutter (`< 0.30`) will skip
-  speculation entirely for that round. You will still see the
-  `draft_tokens=0` / `draft_accepted_tokens=0` / `acceptance_rate=...`
-  fields on the final log line — they are emitted on every request
-  the moment the model has any drafter configured, so log schemas
-  stay stable.
-- The EMA **persists across requests on the same slot**. If a slot
-  has been seeing poor acceptance, it will start the next request
-  cautiously rather than re-paying the discovery cost.
+To change the MTP ceiling, set `ndraft` without a `model-id`:
 
-The default starting `nDraft` is **5 for separate-GGUF drafts** and
-**2 for MTP** (MTP heads typically have high acceptance for the first
-1–3 tokens and decay rapidly beyond that, so a lower cap is safer).
+```yaml
+some-provider/mtp-target-model:
+  draft-model:
+    ndraft: 6
+```
 
-For MTP you can override the starting `nDraft` ceiling — see the
-[MTP override](#mtp-ndraft-override) below. The adaptive throttle
-still scales down from whatever ceiling you set, all the way to 0.
+This form supports multiple slots. A value of 0 or an omitted value uses the
+MTP default of 2; a negative value is rejected. If neither a compatible
+companion nor an embedded MTP head is available, the override has no effect.
+The adaptive throttle can still select fewer candidates than the configured
+value.
 
-### 6.5 Configuration Recap
+See [Chapter 3](chapter-03-model-configuration.md) for the complete model
+configuration format.
 
-The YAML shapes live in
-[Chapter 3 §3.12](#312-speculative-decoding):
+### 6.6 Measuring the Result
 
-- **Separate-GGUF** — add a `draft-model:` block with a `model-id:`
-  under the target entry in `model_config.yaml` (or set
-  `model.Config.DraftModel` from the SDK). Requires `nseq-max: 1`.
-- **MTP (defaults)** — do nothing. Pull a target GGUF that ships an
-  MTP head, and make sure you have not set a `draft-model:` block with
-  a `model-id:` on that entry.
+Do not use acceptance rate alone to decide whether speculation helps. Review
+acceptance, coverage, throughput, latency, and resource use together.
 
-<a id="mtp-ndraft-override"></a>
-- **MTP (`nDraft` override)** — add a `draft-model:` block that sets
-  **only** `ndraft:` and omits `model-id:`. This keeps MTP
-  auto-detection but starts the adaptive throttle from your configured
-  ceiling instead of the default 4. Because there is no separate draft
-  GGUF, this mode does **not** require `nseq-max: 1`.
+The response `usage` object can include:
 
-  ```yaml
-  models:
-    - model-id: my-mtp-model
-      # ... target settings ...
-      draft-model:
-        ndraft: 6        # start speculation at 6 tokens/round, throttle down to 0
-  ```
+| Field | Meaning |
+| ----- | ------- |
+| `draft_tokens` | Candidate tokens proposed during the request |
+| `draft_accepted_tokens` | Proposed tokens accepted by the target |
+| `draft_acceptance_rate` | Accepted candidates divided by proposed candidates |
+| `draft_coverage` | Fraction of output positions produced through speculative rounds |
+| `draft_disable_reason` | Why MTP fell back to target-only execution during the request |
 
-  From the SDK, set `model.Config.DraftModel = &DraftModelConfig{NDraft: 6}`
-  with no `ModelFiles`. An `ndraft` of `0` (or unset) falls back to the
-  default of 4; a negative value is rejected at config validation. If
-  the target has no MTP head, the override is a harmless no-op.
+These fields use `omitempty`; zero-valued fields may be absent from JSON. A
+high acceptance rate with low coverage can mean speculation ran for only a
+small part of the response. Conversely, a moderate acceptance rate can still
+help when drafting is much cheaper than target decoding. Compare end-to-end
+latency or tokens per second against the same workload with no drafter.
 
-### 6.6 Observability
+Final `chat-completion` logs use `acceptance_rate`, while batch-engine completion
+logs use `draft_acceptance_rate`. Both also report draft and accepted-token
+counts when a drafter is loaded. Common MTP disable reasons include:
 
-Kronk emits a consistent set of log events for both draft modes.
-Operators should be able to answer "is speculation actually helping?"
-from logs alone.
+- `imc-hit` — target cache state was restored without compatible draft state
+- `media-mrope` — MTP is not enabled for that M-RoPE media request
+- `sync-error` — draft state could not be synchronized after verification
 
-**Always-present fields on the final response log line:**
+Startup events under `draft-model`, `draft-model-mtp`, and
+`draft-model-mtp-shared` show which source loaded or why MTP was skipped. See
+[Chapter 15](chapter-15-observability.md) for logging and metrics configuration.
 
-| Field                   | Meaning                                                              |
-| ----------------------- | -------------------------------------------------------------------- |
-| `draft_tokens`          | Total candidate tokens proposed by the drafter during the request.   |
-| `draft_accepted_tokens` | Of those, how many the target accepted.                              |
-| `acceptance_rate`       | `draft_accepted_tokens / draft_tokens`, or 0 when no drafts were run. |
+### 6.7 Limitations and Fallbacks
 
-These fields are emitted whenever the model has any drafter
-configured — even on requests where the adaptive throttle bypassed
-speculation — so dashboards and log parsers see a stable schema.
+- **Classic separate drafts require one slot.** Set `nseq-max: 1` on the
+  target entry.
+- **Tokenizer compatibility remains the user's responsibility.** Kronk rejects
+  unequal vocabulary sizes, but that check cannot establish identical token
+  mappings or templates.
+- **MTP at nonzero temperature is an approximation.** MTP proposals are greedy,
+  while target verification uses the request's sampler and accepts exact token
+  matches. Sampling parameters still shape output, but this does not provide
+  strict speculative-sampling distribution equivalence.
+- **MTP can fall back per request.** A synchronization or compatible-state
+  problem disables MTP for the affected request while target-only generation
+  continues. It does not make an incorrect draft token authoritative.
+- **IMC may restore target state without draft state.** Target-prefix reuse
+  remains valid, but own-KV MTP runs target-only for that request when its draft
+  snapshot is absent or cannot be restored. See
+  [Chapter 5](chapter-05-message-caching.md).
+- **Media support is conservative.** Media projection and media prefill run on
+  the target. Unsupported own-KV media combinations and all M-RoPE media
+  requests run without MTP, although target IMC can remain active. See
+  [Chapter 11](chapter-11-multi-modal-models.md).
+- **Drafting consumes resources.** A classic draft loads another model and KV
+  cache. MTP heads and companion assistants also require compute and memory.
+  Automatic detection does not guarantee a performance improvement.
 
-**MTP-specific log events:**
-
-| Event                                            | When                                                                                                                                            |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `draft-model-mtp status=loading / loaded`        | Once at model startup when the MTP head is auto-detected and loaded.                                                                            |
-| `draft-model-mtp status=auto-detect-skipped`     | Once at model startup when MTP could not be enabled (no metadata, no pre-norm API).                                                             |
-| `speculative status=mtp-mirror-error`            | An MTP draft step failed. The slot continues target-only for the remainder of the request.                                                      |
-| `speculative status=mtp-resume`                  | Shared-KV Gemma4 resumed from restored target KV. Carries `resume_source=shared-target-kv`, `cached_tokens`, and the nonempty `tail_tokens`.     |
-| `speculative status=mtp-disabled-media-mrope`    | An M-RoPE media request—rebuild or anchor reuse—kept target IMC active but disabled MTP because draft positional compatibility is not yet proven. |
-| `speculative status=mtp-disabled-imc-hit`        | MTP disabled for this request because the IMC cache hit didn't carry a draft-seq snapshot (no draft state on the matched session, or the restore returned 0 bytes). MTP-aware IMC builds — the default since this fix — snapshot the draft seq state and pendingH alongside the target so cache hits keep MTP running. (See §6.7.) |
-| `start-slot status=imc-draft-snapshot-done`      | The cache-build path snapshotted both the target seq state and the MTP draft seq state into the session. Carries `snapshot_bytes`, `kv_alloc`, `buf_action`, `pending_h`.                  |
-| `start-slot status=imc-draft-restore-done`       | A cache hit restored both the target seq and the MTP draft seq state from the session, plus the slot's `pendingH`. Carries `restored_bytes`, `pending_h`, `elapsed`.                       |
-| `start-slot status=imc-draft-restore-failed`     | The session had a draft snapshot but `StateSeqSetData(draft)` returned 0 bytes. The slot continues target-only; MTP is disabled for this request via `mtp-disabled-imc-hit`.               |
-| `start-slot status=imc-draft-restore-skip-empty` | The session has no draft snapshot (e.g., built before this fix or build-time draft snapshot failed). MTP is disabled for this request via `mtp-disabled-imc-hit`.                          |
-| `speculative status=mtp-disabled-mirror-error`   | MTP disabled for the remainder of the request after a post-verify mirror failure. The slot continues target-only.                               |
-| `speculative status=verify-prenorm-capture-error` | Phase A failed to capture the slot's pre-norm rows into `verifyH`. Phase B's mirror falls back to the live target buffer; on hybrid targets this may force a `mirror-error` disable if a restore also ran. |
-
-**Shared speculative-decoding log events:**
-
-| Event                                | When                                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `speculative status=verify-done`     | Throttled per slot: first verify round, then every 32nd. Carries `round`, `accepted`, `nDraft`, and `acc_ema` fields. |
-| `speculative status=restore-error`   | Hybrid snapshot restore failed during partial-reject rollback.                                                        |
-| `speculative status=snapshot-error`  | Hybrid snapshot capture failed before a spec round.                                                                   |
-
-### 6.7 Known Limitations
-
-| Limitation                                          | Notes                                                                                                                                                |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Separate-GGUF: single-slot only                     | `nseq-max` must be `1` on the target entry. If you need multi-slot speculation, use MTP on a target that ships the head.                              |
-| MTP: greedy verify only                             | The MTP path always runs greedy verification, so strict Leviathan-style distribution equivalence at `temperature > 0` is not guaranteed. The full slot sampler (temperature / top-k / top-p) is still applied at each accepted position, so output shape is preserved. |
-| MTP + text IMC: resume depends on KV ownership | Shared-KV Gemma4 resumes from restored target KV, then decodes the guaranteed nonempty token-v2 tail to capture fresh `pendingH`. Own-KV MTP restores draft KV + `pendingH` snapshotted alongside the target; if that draft restore is missing or fails, only that cache-hit request runs target-only. |
-| MTP + media IMC | Linear shared-target-KV Gemma4 resumes from restored media target KV and mirrors appended text. Own-KV media sessions deliberately discard draft snapshots that cannot prove complete projected-media coverage, so those requests run target-only. All M-RoPE media requests also run target-only and report `media-mrope`. Target IMC remains active in both fallback cases. |
-| MTP + hybrid targets: lower throughput | Hybrid targets (e.g. Qwen3-Next, Qwen3.6-35B-A3B-MTP) now use the same Flash Attention and KV cache defaults as any other model — Kronk no longer forces `cache-type-k/v: f16` or disables Flash Attention. Flash Attention applies only to the attention layers. Throughput on hybrid + MTP is still meaningfully lower than dense / MoE targets regardless of `nseq-max`. |
-| MTP: `nDraft` ceiling defaults to 2                 | The adaptive throttle scales down from the ceiling. The ceiling defaults to 2 but can be raised or lowered per model with an MTP `nDraft` override — a `draft-model:` block that sets only `ndraft:` (no `model-id:`). See §6.5. |
-| Media projection is not speculative                 | Image/audio encoding and media prefill always run on the target. Generated text after a linear shared-target-KV media prefix may still use MTP; unsupported own-KV or M-RoPE media combinations continue target-only. |
-
----
+Implementation details for drafting, verification, state synchronization, and
+hybrid-model rollback belong in
+[Chapter 19](chapter-19-developer-guide.md#1912-mtp-internals).

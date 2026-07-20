@@ -3,173 +3,166 @@
 ## Table of Contents
 
 - [13.1 Accessing the BUI](#131-accessing-the-bui)
-- [13.2 Sidebar Layout](#132-sidebar-layout)
-- [13.3 What the BUI Provides](#133-what-the-bui-provides)
-  - [Models](#models)
-  - [Catalog](#catalog)
-  - [Libraries](#libraries)
+- [13.2 Capabilities](#132-capabilities)
   - [Apps](#apps)
+  - [System](#system)
+  - [Kronk](#kronk)
+  - [Bucky](#bucky)
   - [Security](#security)
+  - [Testing](#testing)
   - [Docs](#docs)
-  - [Settings](#settings)
-- [13.4 Authentication](#134-authentication)
-- [13.5 Notes on Live State](#135-notes-on-live-state)
+- [13.3 Authentication](#133-authentication)
+- [13.4 Operational Notes](#134-operational-notes)
 
 ---
 
-Kronk ships with an optional Browser UI (BUI) served from the same port as
-the API under `/admin/`. It is a thin client over the Web API and exposes the same
-operations the CLI provides — pulling libraries and models, browsing the
-catalog, managing tokens, and running interactive experiments against a
-loaded model. This chapter is a high-level guide to what the BUI offers;
-it intentionally does not enumerate every tab, filter, or button so that
-the documentation stays accurate as the UI evolves.
+Kronk includes a Browser UI (BUI) for managing a local server and trying
+models interactively. It is bundled in the `kronk` binary, served from the
+same port as the Web API, and uses the server's `/v1` endpoints rather than
+maintaining separate state.
+
+This chapter describes the main areas of the BUI without cataloging every
+control. The CLI remains useful for scripting and headless administration;
+the BUI is not intended to duplicate every CLI command.
 
 ### 13.1 Accessing the BUI
 
-Enable the BUI with `KRONK_WEB_ADMIN_ENABLED=true`, then open:
+The BUI is enabled by default. Start the server and open:
 
 ```
 http://localhost:11435/admin/
 ```
 
-It is bundled inside the `kronk` binary and served from the same address
-configured by `KRONK_WEB_API_HOST` (default `0.0.0.0:11435`).
-When the BUI is enabled, the server root redirects to `/admin/`. Leave the
-setting disabled for a headless deployment.
+The address comes from `KRONK_WEB_API_HOST`, whose default is
+`0.0.0.0:11435`. The server root and `/admin` redirect to `/admin/` while
+the BUI is enabled.
 
-### 13.2 Sidebar Layout
+For a headless deployment, disable it with either form:
 
-Navigation is grouped into the following top-level sections in the
-sidebar:
+```shell
+export KRONK_WEB_ADMIN_ENABLED=false
+kronk server start
+```
 
-- **Home** — landing page with a project banner and feature overview
-- **Models** — local model file management
-- **Catalog** — personal catalog browsing
-- **Libraries** — llama.cpp library installs
-- **Apps** — interactive tools (Chat, Playground, VRAM Calculator)
-- **Security** — keys and tokens (relevant when auth is enabled)
-- **Docs** — bundled documentation (Manual, SDK, CLI, Web API)
-- **Settings** — BUI preferences and the admin token
+```shell
+kronk server start --web-admin-enabled=false
+```
 
-### 13.3 What the BUI Provides
+### 13.2 Capabilities
 
-#### Models
-
-The Models area lists every model file under `~/.kronk/models/` along
-with the currently running models and a page for pulling new ones by
-HuggingFace URL or canonical model id.
-
-It mirrors the CLI surface: `kronk model list`, `kronk model ps`,
-`kronk model pull`, `kronk model show`, and `kronk model remove`. Per-
-model details (configuration, sampling, template, GGUF metadata) are
-read-only views; persistent overrides live in
-`~/.kronk/model_config.yaml` (see Chapter 3).
-
-#### Catalog
-
-The Catalog area browses entries in `~/.kronk/catalog.yaml` — your
-**personal** catalog, seeded on first run from an embedded starter
-list and grown as you pull or resolve new models against HuggingFace.
-
-It mirrors `kronk catalog list`, `kronk catalog show`, and
-`kronk catalog remove`, plus model pulling via `kronk model pull`.
-There is no curated upstream catalog; Chapter 8 covers the catalog
-model in detail.
-
-#### Libraries
-
-The Libraries area downloads and manages llama.cpp shared libraries
-under `~/.kronk/libraries/<os>/<arch>/<processor>/`. The active
-install used at runtime is selected via `KRONK_LIB_PATH`; the BUI can
-stage additional `(arch, os, processor)` bundles for other targets but
-does not hot-reload the active install. See Chapter 2 and the
-`kronk libs` CLI for the same operations.
-
-The same screen also exposes the **whisper (Bucky)** libraries under
-`~/.kronk/bucky-libraries/`, selected at runtime via
-`KRONK_BUCKY_LIB_PATH`. See [Chapter 18 §18.2](chapter-18-bucky.md#182-installation-libraries).
+The sidebar groups related operations by subsystem.
 
 #### Apps
 
-Four interactive tools live under **Apps**:
-
-- **Chat** — a multi-turn chat interface with model selection, system
-  prompt, and full sampling controls. Useful for ad-hoc conversations
-  against any loaded model.
-- **Model Playground** — an interactive bench for exercising a model
-  under specific configuration (context window, batch sizes, cache
-  mode, sampling parameters) and for running automated sweeps. It
-  lets you load a session, send chat messages, inspect rendered
-  prompts, and probe tool-calling behaviour against a configurable
-  set of tool definitions.
-- **VRAM Calculator** — a standalone estimator for the VRAM a model
-  will consume given a chosen context window, slot count, KV cache
-  precision, and other parameters. The same calculator is embedded in
-  per-model detail views.
-- **Translator** — a speech-to-text workbench backed by Bucky
-  (whisper.cpp). Upload or record audio, pick a whisper model and
-  language (or auto-detect), choose response format, and view the
-  transcript with per-segment timestamps. See
+- **Chat** provides multi-turn conversations, model selection, system prompts,
+  chat history, and sampling controls.
+- **VRAM Calculator** estimates model memory requirements from a HuggingFace
+  model without downloading the entire model. A calculator is also available
+  in local model and catalog details.
+- **Translator** records or uploads audio for transcription through Bucky.
+  You can select a whisper model, language, and response format and inspect
+  timestamped segments. See
   [Chapter 18 §18.6](chapter-18-bucky.md#186-bui-usage).
+
+#### System
+
+- **Info** reports server, host, device, library, and model diagnostics.
+- **Running** shows models that are loading or resident in the pool, along
+  with the current resource budget. Models can also be unloaded here.
+
+#### Kronk
+
+- **Models** lists local GGUF models and their metadata, effective
+  configuration, sampling defaults, chat templates, and estimated VRAM.
+  Models can be pulled from HuggingFace, copied from another Kronk Model
+  Server (KMS), or removed. Persistent configuration is read from
+  `~/.kronk/models/model_config.yaml`; the model details are read-only.
+- **Catalog** browses the personal catalog at
+  `~/.kronk/catalog/catalog.yaml`. You can refresh its on-disk state, inspect
+  entries, pull their files, and remove entries. See Chapter 8 for how the
+  catalog is populated and resolved.
+- **Libs** downloads and removes llama.cpp bundles for supported operating
+  system, architecture, and processor combinations. Bundles are stored below
+  `~/.kronk/libraries/`.
+
+#### Bucky
+
+Bucky has separate pages for downloading and removing whisper models and
+managing whisper.cpp library bundles under `~/.kronk/bucky-libraries/`.
+See [Chapter 18](chapter-18-bucky.md) for installation and transcription
+details.
 
 #### Security
 
-When admin authentication is enabled (Chapter 12), the Security area lets
-you list, create, and delete signing keys and create user tokens with
-chosen durations, endpoint scopes, and rate limits. These pages use the
-authenticated browser admin session. With authentication disabled they remain
-accessible but are not meaningful.
+Security pages list, create, and delete signing keys and create user tokens.
+Token controls include duration, endpoint grants, and rate limits. The
+**Session** page reports whether browser administration authentication is
+enabled and whether the browser has an authenticated admin session.
+
+These tools remain available in open mode. This lets you prepare keys and
+tokens before enabling authentication, but anyone who can reach an open
+server can also use its management APIs. See Chapter 12 before exposing the
+server beyond a trusted machine or network.
+
+#### Testing
+
+Testing provides several model evaluation workflows:
+
+- **Accuracy** compares a model's reproduction of source functions with the
+  actual source, individually, in batches, or across models.
+- **Efficiency** compares generation throughput across selected models.
+- **Basic** exercises chat, prompt rendering, and tool calling against a
+  model loaded with a chosen runtime configuration.
+- **Sampling** runs automated sampling-parameter sweeps.
+- **Configuration** runs automated runtime-configuration sweeps.
+
+The Basic, Sampling, and Configuration tools create server-side playground
+sessions. Their configuration applies to that test session; it does not edit
+the persistent model configuration file.
 
 #### Docs
 
-The Docs area embeds the full Kronk documentation set so it is
-available offline next to the running server:
+The binary includes an offline documentation snapshot built with that Kronk
+release:
 
 - **Manual** — this manual, with chapter navigation
-- **SDK** — Kronk SDK and Model API references plus usage examples
-- **CLI** — reference for `kronk` subcommands (catalog, libs, model,
-  run, security, server)
-- **Web API** — reference for the HTTP endpoints (Chat, Messages,
-  Responses, Embeddings, Rerank, Tokenize, Tools)
+- **SDK** — SDK and model API references with examples
+- **CLI** — command reference
+- **Web API** — inference and management endpoint reference
 
-#### Settings
+### 13.3 Authentication
 
-Settings reports whether the current BUI is using an authenticated admin
-session or the server is running with administration authentication disabled.
+By default, the BUI and management APIs do not require a login. To protect
+browser administration, enable admin authentication and configure the SHA-256
+digest of the password:
 
-### 13.4 Authentication
+```shell
+export KRONK_AUTH_ADMIN_ENABLED=true
+export KRONK_WEB_ADMIN_PASSWORD_SHA256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
+kronk server start
+```
 
-The BUI talks to the same `/v1` API as any other client. When admin
-authentication is enabled, password login creates a short-lived admin JWT in
-an HttpOnly cookie. JavaScript cannot read the token, and the BUI sends the
-cookie only to the same server origin. With authentication disabled, the BUI
-works without a login. See Chapter 12 for key and token management.
+Login creates a one-hour admin token in an HttpOnly, SameSite cookie. The
+browser cannot read the token, and the server uses it to authenticate the
+BUI's same-origin `/v1` requests. Sign out from the sidebar to end the browser
+session.
 
-### 13.5 Notes on Live State
+General authentication also enables admin authentication. Chapter 12 explains
+the open, admin-only, and fully protected modes, including TLS and reverse
+proxy considerations.
 
-A few things the BUI deliberately does not do:
+### 13.4 Operational Notes
 
-- It does not switch the active llama.cpp install in-process. Changing
-  `KRONK_LIB_PATH` requires a server restart.
-- It does not edit `~/.kronk/model_config.yaml` from the model pages.
-  Persistent configuration changes are made by editing that file
-  directly (see Chapter 3); the BUI's per-model views are read-only.
-- The Playground's loaded model is held in server memory; closing
-  the browser tab does not unload the model. Use **Unload Model**
-  before adjusting model configuration.
+- Downloading a library bundle does not switch the libraries used by the
+  running process. Set `KRONK_LIB_PATH` or `KRONK_BUCKY_LIB_PATH` to the
+  selected bundle and restart the server.
+- Model and catalog detail pages display configuration but do not persist
+  model overrides. Edit `~/.kronk/models/model_config.yaml` and reload the
+  model when changing persistent configuration; see Chapter 3.
+- Closing a browser tab does not explicitly delete its playground session.
+  Use **Unload Model** when finished. Otherwise, the model remains subject to
+  the server pool's normal eviction policy and is removed on server restart.
 
 ---
 
-_Next: [Chapter 14: Client Integration](#chapter-14-client-integration)_
-### Secure browser administration
-
-Enable the BUI with `KRONK_WEB_ADMIN_ENABLED=true` or
-`--web-admin-enabled`. It is served only below `/admin/`. For a protected BUI,
-also enable `KRONK_AUTH_ADMIN_ENABLED` and set the masked
-`KRONK_WEB_ADMIN_PASSWORD_SHA256` value. Login creates a one-hour,
-HttpOnly/SameSite=Strict session cookie. Direct TLS and ingresses that send
-`X-Forwarded-Proto: https` receive a Secure `__Host-kronk-admin` cookie; direct
-HTTP receives `kronk-admin` and remains supported for trusted networks. The
-server applies same-origin CSRF checks to unsafe cookie-authenticated requests;
-explicit Bearer clients do not use browser CSRF checks.
+_Next: [Chapter 14: Client Integration](chapter-14-client-integration.md)_

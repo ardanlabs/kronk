@@ -2,2488 +2,718 @@
 
 ## Table of Contents
 
-- [19.1 Quick Reference](#191-quick-reference)
-- [19.2 Build & Test Commands](#192-build-test-commands)
-- [19.3 Developer Setup](#193-developer-setup)
-- [19.4 Project Architecture](#194-project-architecture)
-- [19.5 BUI Frontend Development](#195-bui-frontend-development)
-- [19.6 Code Style Guidelines](#196-code-style-guidelines)
-- [19.7 SDK Internals](#197-sdk-internals)
-  - [19.7.1 Package Structure](#1971-package-structure)
-  - [19.7.2 Streaming Architecture](#1972-streaming-architecture)
-  - [19.7.3 Concurrency Strategy](#1973-concurrency-strategy)
-  - [19.7.4 Model Acquire/Release & Cleanup](#1974-model-acquirerelease-cleanup)
-  - [19.7.5 Batch Engine Internals](#1975-batch-engine-internals)
-  - [19.7.6 Context Pooling](#1976-context-pooling)
-  - [19.7.7 IMC Implementation Details](#1977-imc-implementation-details)
-  - [19.7.8 Tool Call Internals](#1978-tool-call-internals)
-  - [19.7.9 Logprobs Implementation](#1979-logprobs-implementation)
-- [19.8 Responses API Normalization](#198-responses-api-normalization)
-- [19.9 Goroutine Budget](#199-goroutine-budget)
-- [19.10 Request Tracing Spans](#1910-request-tracing-spans)
-- [19.11 Inference Code Path](#1911-inference-code-path)
-- [19.12 MTP Internals](#1912-mtp-internals)
-  - [19.12.1 Auto-detection](#19121-auto-detection)
-  - [19.12.2 Pre-Norm Hidden-State Plumbing](#19122-pre-norm-hidden-state-plumbing)
-  - [19.12.3 Mirror Step and AR Draft Loop](#19123-mirror-step-and-ar-draft-loop)
-  - [19.12.4 Verification on the MTP Path](#19124-verification-on-the-mtp-path)
-  - [19.12.5 Three-pass `processBatch` and Phase A / Phase B Split](#19125-three-pass-processbatch-and-phase-a--phase-b-split)
-  - [19.12.6 Hybrid Target Rollback](#19126-hybrid-target-rollback)
-  - [19.12.7 Per-Slot MTP State](#19127-per-slot-mtp-state)
-  - [19.12.8 Code Map](#19128-code-map)
-  - [19.12.9 Testing](#19129-testing)
-- [19.13 Bucky Internals](#1913-bucky-internals)
-  - [19.13.1 Package Layout](#19131-package-layout)
-  - [19.13.2 Handle, Semaphore, and `whisper.State` Pool](#19132-handle-semaphore-and-whisperstate-pool)
-  - [19.13.3 Init, Load, and Degraded Mode](#19133-init-load-and-degraded-mode)
-  - [19.13.4 Pool Integration (Shared `resman`)](#19134-pool-integration-shared-resman)
-  - [19.13.5 `audioapp` HTTP Handler](#19135-audioapp-http-handler)
-  - [19.13.6 Tests](#19136-tests)
-- [19.14 Continuous Integration](#1914-continuous-integration)
-  - [19.14.1 Workflows](#19141-workflows)
-  - [19.14.2 Go Toolchain Pin (`go.mod` vs `.go-version`)](#19142-go-toolchain-pin-gomod-vs-go-version)
-  - [19.14.3 Linux Pipeline Layout (`linux.yml`)](#19143-linux-pipeline-layout-linuxyml)
-  - [19.14.4 Shared Setup Action & Caches](#19144-shared-setup-action--caches)
-  - [19.14.5 `test-models.txt` — Test Model Manifest](#19145-test-modelstxt--test-model-manifest)
-  - [19.14.6 Release Workflow (`release.yaml`)](#19146-release-workflow-releaseyaml)
-  - [19.14.7 Container Image Build & Publish (`docker.yml`)](#19147-container-image-build--publish-dockeryml)
-  - [19.14.8 Support Workflows (`cache-cleanup.yml`, `label-guard.yml`)](#19148-support-workflows-cache-cleanupyml-label-guardyml)
-  - [19.14.9 Version Constant & Release Guard](#19149-version-constant--release-guard)
+- [19.1 How to Use This Guide](#191-how-to-use-this-guide)
+- [19.2 Task-to-Owner and Verification Map](#192-task-to-owner-and-verification-map)
+- [19.3 Repository Ownership Map](#193-repository-ownership-map)
+- [19.4 Developer Setup and Daily Commands](#194-developer-setup-and-daily-commands)
+- [19.5 Request and Model Lifecycle](#195-request-and-model-lifecycle)
+- [19.6 Core Inference Invariants](#196-core-inference-invariants)
+- [19.7 Server, BUI, and Generated Documentation](#197-server-bui-and-generated-documentation)
+- [19.8 Bucky Implementation Map](#198-bucky-implementation-map)
+- [19.9 Verification for LLM Agents](#199-verification-for-llm-agents)
+- [19.10 CI, Release, Containers, and Nix](#1910-ci-release-containers-and-nix)
+- [19.11 Change and Release Checklists](#1911-change-and-release-checklists)
 
 ---
 
-This chapter covers development workflows, build commands, and code
-conventions for contributors to the Kronk project.
+### 19.1 How to Use This Guide
 
-### 19.1 Quick Reference
+This chapter is a durable orientation guide for contributors and coding agents. It
+describes ownership boundaries, lifecycle contracts, and the smallest useful checks
+for common changes. It intentionally does not narrate every function, reproduce
+private structures, or freeze today's source layout at the individual-file level.
 
-Here is a quick chart of some of the more important make commands.
+#### 19.1.1 Source-of-truth hierarchy
 
-| Task             | Command                                                      |
-| ---------------- | ------------------------------------------------------------ |
-| Install CLI      | `make install-kronk`                                         |
-| Run all tests    | `make test` (requires env vars below)                        |
-| Test prereqs     | `export RUN_IN_PARALLEL=yes; export GITHUB_WORKSPACE=$(pwd)` |
-| Single test      | `go test -v -count=1 -run TestName ./sdk/kronk/...`          |
-| Run server       | `make kronk-server`                                          |
-| Run server (bg)  | `make kronk-server-detach`                                   |
-| Tail server log  | `make kronk-server-logs`                                     |
-| Stop server      | `make kronk-server-stop`                                     |
-| Build BUI        | `make bui-build`                                             |
-| Generate docs    | `make kronk-docs`                                            |
-| Tidy modules     | `make tidy`                                                  |
-| Update deps      | `make deps-upgrade`                                          |
-| Post-edit checks | `gofmt -s -w <files> && go vet ./... && staticcheck ./...`   |
-| Developer setup  | `make setup` (configures git hooks)                          |
+When sources disagree, use this order:
 
-### 19.2 Build & Test Commands
+1. **Applicable `AGENTS.md` files.** Read the root instructions and every scoped
+   instruction file governing the path being changed. A deeper file overrides or
+   supplements broader guidance for its subtree.
+2. **Current source and tests.** Interfaces, call sites, focused tests, and generated
+   code establish actual behavior. For generated documentation, the authored input and
+   generator are authoritative over checked-in output from an older generation.
+   Confirm assumptions in code before editing.
+3. **Makefiles and GitHub workflows.** These establish supported build, generation,
+   CI, packaging, and deployment procedures.
+4. **This chapter.** It provides background and navigation, not a replacement for
+   scoped instructions or source inspection.
 
-**Install CLI locally:**
+Treat names and defaults in this chapter as wayfinding aids. Before relying on an
+exact flag, timeout, model capability, or API signature, inspect its current owner.
+Do not expand a task merely to make the repository resemble this overview.
+
+#### 19.1.2 A productive agent loop
+
+For most work, the safest loop is:
+
+1. Identify the public behavior being changed and its owning package.
+2. Read that package's scoped instructions, implementation, focused tests, and direct
+   caller. Avoid broad repository scans when a precise search will answer the question.
+3. Write down the invariants that must remain true: resource ownership, cancellation,
+   mutation semantics, compatibility, generated artifacts, and error translation.
+4. Make the smallest coherent change in the owner. Do not duplicate policy in a
+   transport or facade when the lower layer already owns it.
+5. Format and run package-scoped static checks, then focused tests. Regenerate only
+   artifacts derived from changed sources.
+6. Review the diff for accidental generated-file edits, private data in logs,
+   unrelated formatting, and stale documentation.
+
+### 19.2 Task-to-Owner and Verification Map
+
+The following table is a starting point, not permission to skip local instructions.
+“Focused verification” means the narrowest package or command that exercises the
+change. Go commands require the environment described in [§19.9](#199-verification-for-llm-agents).
+
+| Task | Primary owner | Read adjacent | Focused verification |
+| --- | --- | --- | --- |
+| CLI command, flag, or output | `cmd/kronk/` (command wiring is under its command tree) | corresponding `sdk/tools/` manager and server tool route when local/web modes share behavior | `go test` for changed command package; `go install ./cmd/kronk`; invoke the one command with harmless arguments |
+| HTTP endpoint or response shape | `cmd/server/app/domain/<domain>app/` | that domain's `route.go`, `cmd/server/foundation/web/`, public SDK method, and service composition | domain package tests; relevant service API test; build `./cmd/server/...` |
+| Server startup or dependency wiring | `cmd/server/api/services/` | `cmd/server/app/`, config tests, embedded assets | service package tests and `go build ./cmd/server/...` |
+| Middleware, request context, errors, or tracing | `cmd/server/foundation/web/` | all route registration using the middleware | foundation tests plus one affected domain test |
+| Public language-model SDK behavior | `sdk/kronk/` | `sdk/kronk/model/`, examples, generated SDK docs | focused `sdk/kronk` tests and compile an affected example when useful |
+| Batch scheduling, KV state, IMC, media, sampling, or speculative inference | `sdk/kronk/model/` | yzma boundary, `sdk/kronk/tests/` suite definitions, observability | focused unit tests in `sdk/kronk/model`; model-backed integration suites are human/CI work |
+| Tool/reasoning parser | `sdk/kronk/parsers/<family>/` and registry contract in `sdk/kronk/model/` | parser registration and model-family selection | parser-family tests and registry tests |
+| Multi-model loading or eviction | typed owners `sdk/kronk/pool/`, `sdk/bucky/pool/`; shared mechanics `sdk/pool/engine/`; app facade `sdk/pool/` | resource-manager APIs and server composition | engine eviction tests, typed-pool tests, failed-load and budget tests |
+| Resource accounting | shared resource manager used through `sdk/pool/engine/` | each typed loader's plan/display/unload methods | synthetic budget/reservation tests; never rely on host memory alone |
+| Bucky handle, transcription, or stream | `sdk/bucky/` and `sdk/bucky/model/` | `sdk/bucky/pool/`, audio route, Chapter 18 for user behavior | package unit tests and focused `sdk/bucky/tests/transcribe` tests where dependencies are available |
+| Bucky libraries/models tooling | `sdk/tools/bucky/` | `cmd/kronk/bucky/`, server `toolapp` routes | tooling package tests and a harmless `--local` listing command |
+| General library/model/catalog/device tooling | `sdk/tools/` | local CLI and `toolapp` web wrappers | changed package tests; compare local and default web behavior where both exist |
+| BUI page or API client | `cmd/server/api/frontends/bui/` | scoped component instructions and matching HTTP route | `npm run build` from the BUI directory; server embedding check |
+| Manual source | `.manual/` | docs manual generator and generated `DocsManual` | `make kronk-docs`, then BUI build |
+| SDK/example docs generation | `cmd/server/api/tooling/docs/` plus source Go docs and `examples/` | generated BUI docs components | `make kronk-docs`; inspect generated diff; BUI build |
+| Linux CI | `.github/workflows/linux.yml`, `.github/actions/setup-kronk/`, `.github/test-models.txt` | make targets and version-check scripts | syntax/action review; run changed scripts locally; package checks represented by changed job |
+| Release | `.github/workflows/release.yaml`, `.goreleaser.yaml`, `.release/`, version scripts | `sdk/kronk` version constant and tag convention | version scripts and GoReleaser snapshot/check when appropriate |
+| Container image | `.github/workflows/docker.yml`, `zarf/docker/` | entrypoint, native-library combinations, release tags | build the affected target/variant; workflow is authority for matrix and signing |
+| Nix development/package data | `zarf/nix/flake.nix` | Go module files and setup hook | evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change |
+
+Tests close to an owner are usually more diagnostic than a repository-wide command.
+If a change crosses rows, verify each changed contract rather than choosing only the
+largest command.
+
+### 19.3 Repository Ownership Map
+
+#### 19.3.1 Commands and server
+
+- **`cmd/kronk/`** owns the installed `kronk` executable, command hierarchy, flags,
+  local-versus-server dispatch, terminal presentation, and process control. Commands
+  should orchestrate reusable managers rather than become a second implementation of
+  catalogs, downloads, inference, or authentication. `make install-kronk` is simply
+  `go install ./cmd/kronk`; there are no project build tags required for installation.
+- **`cmd/server/api/`** composes executable services, startup configuration, embedded
+  assets, and tooling binaries. `cmd/server/api/services/kronk/main.go` is the Kronk
+  service composition root and the BUI embedding owner.
+- **`cmd/server/app/domain/`** owns HTTP domain behavior. Packages such as `chatapp`,
+  `respapp`, `embedapp`, `rerankapp`, `audioapp`, `toolapp`, and `playgroundapp`
+  register routes and translate HTTP requests to application/SDK calls. Keep protocol
+  validation and response formatting near the domain; keep inference policy in SDKs.
+- **`cmd/server/app/`** also contains application wiring and adapters shared by
+  domains. It is below service startup and above reusable SDK packages.
+- **`cmd/server/foundation/`** owns cross-cutting server infrastructure. `web/` owns
+  request lifecycle, context, middleware, error/response writing, and transport-level
+  tracing; `logger/` owns server logging primitives. Domain packages should use these
+  facilities rather than invent parallel conventions.
+
+#### 19.3.2 Language-model SDK and engine
+
+- **`sdk/kronk/`** is the public language-model handle and API surface. A
+  `kronk.Kronk` owns **one primary loaded model** and a semaphore governing admission
+  to that handle. Its low-level model may also own draft or MTP resources. The handle
+  exposes chat, streaming, Responses, embeddings, reranking, tokenization, model
+  information, and unload behavior. It is not a model pool.
+- **`sdk/kronk/model/`** owns low-level llama/yzma inference: model/context creation,
+  prompt planning, batch slots, sequence IDs, prefill/decode, media handling, IMC,
+  samplers, parser interfaces, and draft/MTP behavior. Changes here must preserve
+  cross-slot isolation and native-resource cleanup on every exit path.
+- **`sdk/kronk/parsers/`** contains model-family parser plug-ins. Family packages own
+  streaming state machines and extraction/normalization of reasoning and tool calls.
+  The model package owns the registry contract and selection boundary; parser packages
+  should not reach into batch-engine state.
+- **`sdk/kronk/observ/`**, `sdk/kronk/kvstorage/`, `sdk/kronk/vram/`, `sdk/kronk/gguf/`,
+  and `sdk/kronk/hf/` own their named concerns. Prefer these boundaries to embedding
+  format, storage, or resource calculations in request handlers.
+
+#### 19.3.3 Pools and shared resources
+
+- **`sdk/pool/`** is the server-facing application facade over the language and audio
+  typed pools and their shared resource manager. It coordinates backends; it does not
+  replace either SDK handle.
+- **`sdk/kronk/pool/`** adapts Kronk model discovery, planning, loading, display, and
+  unloading to the generic pool engine.
+- **`sdk/bucky/pool/`** performs the equivalent work for Whisper/Bucky models.
+- **`sdk/pool/engine/`** owns typed cache mechanics: acquisition coalescing, admission,
+  idle-entry selection, expiry, invalidation, and eviction callbacks. The shared
+  resource manager owns RAM/VRAM reservations and budget decisions across backends.
+  Eviction is therefore budget-aware and constrained by active use and releasable
+  reservations; it is not a simple model-ID LRU.
+
+The service supplies shared-pool settings to both typed pools. A typed pool used
+independently may therefore have different fallback values. Check the composition
+layer before documenting effective server behavior, and check the typed constructor
+before documenting standalone behavior.
+
+#### 19.3.4 Bucky, tools, UI, examples, and deployment
+
+- **`sdk/bucky/`** is the public concurrent audio handle. **`sdk/bucky/model/`** owns
+  whisper context/state operations, decoding, transcription, and stream mechanics.
+- **`sdk/tools/`** owns reusable catalog, downloader, backend, device, diagnostics,
+  library, and model-management operations used by CLI and server tools. Bucky-specific
+  installers and catalogs live below `sdk/tools/bucky/`.
+- **`cmd/server/api/frontends/bui/`** is the React/TypeScript browser application.
+  Component-level conventions are deliberately delegated to the applicable
+  `AGENTS.md`; this guide does not duplicate them.
+- **`examples/`** is a separate Go module of runnable public-SDK examples and a source
+  for generated documentation. Keep examples public and instructional: do not import
+  internal server implementation to make them convenient.
+- **`.manual/`** contains authored manual chapters. The docs tool converts manuals,
+  public SDK documentation, and examples into BUI components.
+- **`zarf/`**, `.github/workflows/`, `.goreleaser.yaml`, and `.release/`
+  own deployment, reproducibility, and release automation. Runtime image behavior must
+  agree with the Docker workflow and entrypoint, not with an old prose inventory.
+
+### 19.4 Developer Setup and Daily Commands
+
+From the repository root, install the CLI with:
+
+```shell
+go install ./cmd/kronk
+```
+
+The Make target is a convenient alias:
 
 ```shell
 make install-kronk
 ```
 
-This is the canonical install path used everywhere in the docs. Internally it
-runs `go install ./cmd/kronk` with the project's build tags.
-
-**Run all tests:**
-
-```shell
-# Set required environment variables (project root must be absolute)
-export RUN_IN_PARALLEL=yes
-export GITHUB_WORKSPACE=$(pwd)
-
-# Run from project root directory
-make test
-```
-
-`make test` expands to `test-only + lint + vuln-check + diff`. The `test-only`
-target depends on `install-libraries` and `install-test-models`, so the
-llama.cpp libraries and test GGUF models are downloaded automatically the
-first time you run it.
-
-> **CI parity note:** CI doesn't use these make targets directly. It
-> reads its model list from
-> [`.github/test-models.txt`](../.github/test-models.txt) (one
-> `<backend> <model-id>` per line) so the cache key for the models
-> cache can be tied to that file's hash. If you add a test that
-> requires a new model, you MUST add it to `test-models.txt` AND to
-> the local install path (`install-test-models`) or CI will silently
-> skip the dependency. See [§19.14.5](#19145-test-modelstxt--test-model-manifest).
-
-For fast iteration (skip `lint`, `vuln-check`, and `diff`):
-
-```shell
-make test-only
-```
-
-**Run a single test:**
-
-```shell
-go test -v -count=1 -run TestName ./sdk/kronk/...
-```
-
-The path can target any package (e.g. `./cmd/...` or a specific subpackage);
-`./sdk/kronk/...` is just where most inference tests live.
-
-### 19.3 Developer Setup
-
-Configure git hooks for automatic pre-commit checks:
+Configure repository hooks and optional development tooling with:
 
 ```shell
 make setup
+make install-gotooling
+make install-tooling
 ```
 
-This enables a pre-commit hook that automatically runs:
-
-- `make kronk-docs` - Regenerates documentation
-- `make bui-build` - Rebuilds the BUI frontend
-- `gomod2nix --dir . --outdir zarf/nix` - Regenerates the Nix lock file
-  (only if `gomod2nix` is on `PATH`)
-- `git add -A` - Stages all generated changes so they land in the same commit
-
-**Toolchain dependencies:**
-
-`make setup` only configures git hooks. The lint/vuln/codegen toolchain is
-installed separately:
+`make setup` configures the repository's hook workflow. Tool installation is separate;
+inspect the Make targets before running them on a platform where package-manager
+changes are undesirable. Common service commands include:
 
 ```shell
-make install-gotooling   # staticcheck, govulncheck, protoc-gen-go(-grpc), gomod2nix
-make install-tooling     # brew: protobuf, grpcurl, node (only needed for codegen / BUI work)
+make kronk-server
+make kronk-server-detach
+make kronk-server-logs
+make kronk-server-stop
 ```
 
-A fresh checkout that skips `install-gotooling` will fail the `lint` and
-`vuln-check` steps of `make test` and the post-edit checks listed in §19.1.
+Native llama and Whisper libraries and test models are large external prerequisites.
+Use the CLI and Make targets appropriate to the focused test rather than downloading
+every supported artifact. The Bucky CLI uses `--local` for direct filesystem work;
+web/server operation is the default and there is no `--web` flag.
 
-**Go toolchain version:**
+The exact development toolchain is pinned by `.go-version`, while `go.mod` declares
+the minimum language version. Patch versions may differ, but major and minor must
+match. The workflow version script enforces this relationship; read both files rather
+than copying their current values into new documentation.
 
-The repo carries two Go-version files with different roles:
+### 19.5 Request and Model Lifecycle
 
-| File                            | Role                                                                        | Value       |
-| ------------------------------- | --------------------------------------------------------------------------- | ----------- |
-| [`go.mod`](../go.mod)           | Minimum language version. Floor for downstream consumers.                   | `go 1.26.0` |
-| [`.go-version`](../.go-version) | Exact toolchain CI / dev managers install (asdf, mise, goenv, gvm, direnv). | `1.26.4`    |
+#### 19.5.1 Server request flow
 
-They are allowed to differ on the _patch_ component but must agree on
-`<major>.<minor>`. The Linux + Release workflows run
-[`.github/scripts/check-go-version.sh`](../.github/scripts/check-go-version.sh)
-to enforce this — bump both files together or CI fails. See
-[§19.14.2](#19142-go-toolchain-pin-gomod-vs-go-version).
+The stable request path is:
 
-### 19.4 Project Architecture
-
-**Directory Structure:**
-
-| Directory                      | Purpose                                                                                                            |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `cmd/kronk/`                   | CLI tool (subcommands: `catalog`, `client`, `devices`, `libs`, `model`, `run`, `security`, `server`)               |
-| `cmd/server/`                  | OpenAI-compatible HTTP model server with embedded BUI. Internal gRPC over `bufconn` for the embedded auth service. |
-| `cmd/server/api/`              | Transport layer: HTTP services, BUI frontend embed, tooling (docs generator, logfmt)                               |
-| `cmd/server/app/`              | Application layer: `domain/` (auth, mcp, model, etc. handlers) + `sdk/` (cache, mux, security wiring)              |
-| `cmd/server/foundation/`       | Cross-cutting infra: `logger/`, `web/` (request lifecycle, tracing helpers)                                        |
-| `cmd/server/api/tooling/docs/` | Documentation generator (SDK godoc + CLI command tree → BUI markdown)                                              |
-| `sdk/kronk/`                   | Public SDK API surface (`init.go`, `chat.go`, `embedding.go`, `rerank.go`, `tokenize.go`, concurrency)             |
-| `sdk/kronk/model/`             | Core inference and caching engine (batch, slots, IMC, sampler, prefill/decode)                                     |
-| `sdk/kronk/observ/`            | Observability packages: `metrics/`, `otel/`                                                                        |
-| `sdk/pool/`                    | Multi-model pool: keeps a capped set of `Kronk` APIs warm with TTL-based eviction; used by the model server        |
-| `sdk/tools/`                   | CLI tooling support: `defaults/`, `devices/`, `downloader/`, `github/`, `libs/`, `models/`                         |
-| `examples/`                    | Standalone module (own `go.mod`) with runnable SDK examples — source for auto-generated example docs               |
-| `zarf/`                        | Deployment assets: `docker/`, `kms/` (model config samples), `nix/` (gomod2nix lock)                               |
-
-**Core Technology:**
-
-Kronk uses [yzma](https://github.com/hybridgroup/yzma) (llama.cpp Go bindings)
-for local inference with GGUF models.
-
-### 19.5 BUI Frontend Development
-
-The Browser UI is a React application located at:
-
-```
-cmd/server/api/frontends/bui/src/
+```text
+HTTP request
+  -> foundation/web middleware and request context
+  -> domain route validation and protocol translation
+  -> sdk/pool facade
+  -> typed pool acquisition (Kronk or Bucky)
+  -> one-model public handle admission semaphore
+  -> model engine/state execution
+  -> SDK result or stream
+  -> protocol response
 ```
 
-**Directory Structure (`src/`):**
+Every arrow is an ownership boundary. Middleware owns transport concerns. Domains own
+HTTP compatibility. Pools own model residency and resource tickets. Handles own
+per-model admission and shutdown coordination. Engines own native contexts, sequences,
+and inference state. Preserve error identities long enough for the domain layer to map
+capacity, cancellation, validation, and internal failures correctly.
 
-| Directory/File | Purpose                                                 |
-| -------------- | ------------------------------------------------------- |
-| `components/`  | React components (pages and UI elements)                |
-| `contexts/`    | React context providers for shared state                |
-| `hooks/`       | Reusable hooks (e.g. `useDraftSession.ts`)              |
-| `lib/`         | Shared TypeScript utilities (`context.ts`, `format.ts`) |
-| `services/`    | API client (`api.ts`)                                   |
-| `types/`       | TypeScript type definitions                             |
-| `main.tsx`     | Vite entry point — mounts `<App>` into `index.html`     |
-| `App.tsx`      | Main app with routing configuration                     |
-| `index.css`    | Global styles (CSS variables, component styles)         |
+#### 19.5.2 Typed pool acquisition, loading, and eviction
 
-The BUI project root (`cmd/server/api/frontends/bui/`) also contains
-`index.html`, `package.json`, `vite.config.ts`, and `tsconfig.json`.
+An acquisition first checks/coalesces a typed cache entry. A cold load is planned by
+the backend loader, then reserved against the shared memory manager before expensive
+native loading. The loaded handle becomes visible only after initialization succeeds.
+Failed planning or loading must release its reservation and must not publish a partial
+cache entry. Concurrent acquisition of the same key should share load work rather than
+multiply memory commitments.
 
-**Build & Embed:**
+Item count and available RAM/VRAM are independent admission constraints. Normal
+admission-driven eviction selects only idle handles; the pool observes each handle's
+active-operation counter rather than owning a separate request lease. Explicit
+invalidation and shutdown may remove an active entry and rely on the handle's `Unload`
+method to drain active work according to its context.
 
-The BUI is a Vite + React + TypeScript app. The build output is **embedded
-into the Go binary** at compile time via `//go:embed static` in
-[`cmd/server/api/services/kronk/kronk.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/services/kronk/kronk.go#L37-L38).
-Editing source under `bui/src/` has no runtime effect until the bundle is
-rebuilt and the server is recompiled.
+Asynchronous invalidation does not imply that its eviction callback has finished.
+Synchronous invalidation waits for callback and reservation-ticket completion, but it
+does not prove native unload succeeded: the callback can report an unload error and
+still release the reservation. Preserve the engine-level distinction between a model
+that cannot fit the configured budget and temporary pressure where no idle candidate
+can be evicted; typed/public APIs may translate those errors differently.
 
-| Workflow            | Command                                              |
-| ------------------- | ---------------------------------------------------- |
-| HMR dev server      | `npm run dev` (from `cmd/server/api/frontends/bui/`) |
-| Production build    | `make bui-build` (or `npm run build`)                |
-| Build + embed + run | `make kronk-server-build`                            |
+#### 19.5.3 Semaphore lifetime and cancellation
 
-**Component Conventions:**
+The `Kronk` handle's semaphore is admission control around one model. A permit belongs
+to the operation, not merely to function setup. For a non-streaming call, hold it until
+the operation returns. For streaming, hold it until the stream is terminal or closed,
+including cancellation/error cleanup. Releasing at stream construction over-admits;
+forgetting to release on an early error deadlocks future work. The pool's active-use
+lease similarly spans the entire externally visible operation so eviction cannot unload
+native resources while output is still being consumed.
 
-Tooltip and form-label conventions are governed by
-[`bui/src/components/AGENTS.md`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/frontends/bui/src/components/AGENTS.md).
-All parameter explanations live in `PARAM_TOOLTIPS` and are accessed through
-the type-safe `TooltipKey`, `FieldLabel`, and `labelWithTip` helpers in
-`ParamTooltips.tsx`. Any new form field must add a `PARAM_TOOLTIPS` entry.
+Context cancellation must propagate inward to queue waits and inference. The layer
+that creates a goroutine, stream, native object, or lease owns its shutdown. Do not
+close caller-owned channels or unload a caller-owned handle. Unload prevents new work,
+waits for owned active work according to its context, then tears down engine/native
+resources. Pool shutdown owns handles created by that pool.
 
-**Routing:**
+#### 19.5.4 Batch slots and sequence isolation
 
-Uses `react-router-dom` with `BrowserRouter`. Routes are defined in
-`routeMap` in `App.tsx`.
+Text generation uses a batch engine. A slot is an execution reservation and mutable
+per-request state; its sequence ID partitions KV/cache operations in the shared native
+context. Scheduling several slots into one decode is safe only if every token, logit
+index, sampler, parser, cancellation flag, speculative buffer, media position, and KV
+operation remains associated with the correct slot/sequence.
 
-**Adding New Pages:**
+The main invariants are:
 
-1. Create component in `components/` (e.g., `DocsSDKKronk.tsx`)
-2. Add page type to `Page` union in `App.tsx`
-3. Add route path to `routeMap` in `App.tsx`
-4. Add `<Route>` element in `App.tsx`
-5. Add `<Link>` entry to menu in `components/Layout.tsx`
+- A slot has one active job and one sequence identity at a time.
+- Batch construction must preserve token-to-sequence and output-index mappings.
+- Completion/cancellation removes or resets only the finishing sequence's state.
+- Slot reuse starts from an intentionally clean state; no parser, sampler, media,
+  speculative, or error state may leak to the next job.
+- A blocked or cancelled caller must not strand a slot or semaphore permit.
+- Native decode failure is attributed to affected jobs and followed by deterministic
+  cleanup; it must not silently publish partly advanced session state.
 
-**Menu Structure (`Layout.tsx`):**
+#### 19.5.5 Text versus embedding and reranking contexts
 
-Uses `MenuCategory[]` with properties:
+Text generation benefits from shared batched execution and sequence-partitioned KV.
+Embeddings and reranking use a different context strategy: they acquire a context for
+the operation and perform their own decode/clear cycle. Reranking evaluates query and
+documents without allowing one document's KV state to contaminate the next. Embedding
+pooling and normalization are model/output concerns, not chat-slot concerns. Do not
+force these paths through text batching merely to share code; share only primitives
+whose lifecycle contracts match.
 
-- `id` - Unique identifier
-- `label` - Display text
-- `items` - Array of leaf pages
-- `subcategories` - Nested menu categories
+### 19.6 Core Inference Invariants
 
-**State Management:**
+#### 19.6.1 IMC sessions, slots, and external storage
 
-| Context            | Purpose                                          |
-| ------------------ | ------------------------------------------------ |
-| `AuthContext`      | Tracks the HttpOnly-cookie admin session         |
-| `ModelListContext` | Caches model list data with invalidation support |
+Incremental Message Cache (IMC) sessions are cache identities, not execution slots.
+A stable cache/session identifier allows a conversation prefix to survive movement
+between batch slots. A slot is short-lived compute capacity; binding a session to a
+slot would reduce concurrency and make slot reuse unsafe.
 
-Access via hooks: `useAuth()`, `useModelList()`
+The `SessionStore` contract externalizes each session's native KV snapshot. RAM and
+disk implementations differ in storage and I/O, but the model layer owns when a
+snapshot is read, prepared, committed, reset, and closed. Session metadata—cached
+tokens, render-sensitive identity/version, and snapshot—must describe the same prefix.
+Do not update one independently and call the session valid.
 
-**API Service (`services/api.ts`):**
+The session's reservation and `pending` state serialize mutation and hide the session
+from competing selection until metadata and snapshot bytes agree. Restore only a
+committed snapshot whose token/prompt identity still matches. Ordinary text
+build/extension prepares and commits through the session's existing store; if snapshot
+publication fails, invalidate that session so later work rebuilds it rather than
+claiming the old or partial state is valid.
 
-- `ApiService` class with methods for all endpoints
-- Streaming support for pull operations (models and libraries)
-- Same-origin requests use the browser admin session cookie
+Media-anchor advancement has a stronger replacement contract: it writes a separately
+staged store and swaps the store plus matching plan/count metadata only after success,
+so failure leaves the previous media snapshot published. Do not generalize that staged
+replacement guarantee to every IMC path. A `SessionStore` implementation must honor
+the interface's read/prepare/commit/reset lifetime rules and clean up temporary
+resources; callers must not assume bytes remain stable across the next mutation.
 
-The catalog is local and personal — there is no `catalog pull` stream.
+#### 19.6.2 Prompt plans: text and media
 
-**Styling Conventions:**
+Prompt planning converts normalized messages and parameters into the exact work the
+engine will execute. The plan, cache identity, token accounting, and decode positions
+must agree. Text-only plans can compare rendered/tokenized prefixes directly and may
+take optimized exact-hit paths. Media plans carry more than text tokens: ordered media
+parts, placeholder/embedding expansion, positions, and render-affecting metadata are
+part of identity and execution.
 
-- CSS variables defined in `:root` (colors: `--color-orange`, `--color-blue`, etc.)
-- Common classes: `.card`, `.btn`, `.btn-primary`, `.form-group`, `.alert`, `.table-container`
-- No CSS modules or styled-components; use global CSS classes
+Do not treat a media prompt as text with an attachment ignored by caching. A text
+prefix match is insufficient if image/audio/video content, ordering, sizing, or model
+projection changes. Media prefill must align embeddings and positions with the same
+sequence that receives surrounding text. When prompt construction or media decode
+fails, the prior valid IMC snapshot remains authoritative.
 
-**Documentation Generation:**
+#### 19.6.3 Parser registry ownership
 
-The single binary at `cmd/server/api/tooling/docs/main.go` runs three
-pipelines in order: SDK godoc → examples → manual chapters.
+Parser implementations live under `sdk/kronk/parsers/`, grouped by model family. The
+registry interface and registration entry point live in `sdk/kronk/model/`. A parser
+plug-in supplies factories/state machines for its advertised family and must tolerate
+stream chunk boundaries: tags, JSON, reasoning delimiters, and tool arguments may span
+chunks. It must keep request state per parser instance and produce equivalent logical
+results for streaming and non-streaming input.
 
-| Pipeline        | Generator Location                          | Source                        |
-| --------------- | ------------------------------------------- | ----------------------------- |
-| SDK godoc       | `cmd/server/api/tooling/docs/sdk/gofmt/`    | `go doc` output for `sdk/...` |
-| Examples        | `cmd/server/api/tooling/docs/sdk/examples/` | `examples/` module            |
-| Manual chapters | `cmd/server/api/tooling/docs/manual/`       | `.manual/chapter-*.md` files  |
+To add or change a parser, edit the family package, update registration/selection only
+where necessary, and test fragmented as well as complete input. Keep generic JSON
+repair separate from family recognition. Unknown families need an intentional fallback
+or error; registration order must not create accidental model-family selection.
 
-The manual chapters pipeline is what turns this very file into BUI React
-components — edits here flow into the BUI on the next `make kronk-docs`.
+#### 19.6.4 Responses normalization
 
-Generate all documentation:
+The Responses API adapts to the chat/inference pipeline in `sdk/kronk/response.go`.
+Normalization has a compatibility-sensitive mutation contract:
+
+- Preserve existing `messages`; they win when already supplied.
+- Convert Responses `input` into messages **only when messages are absent**.
+- Normalize Responses item/content/tool forms needed by chat processing.
+- Mutate the supplied `model.D` document map. Callers that require isolation must clone
+  before invoking the Responses path.
+
+Do not “clean up” this code by always rebuilding messages or silently switching to a
+copy. Either change breaks callers that combine compatibility fields or inspect the
+document after normalization. Add tests for existing messages, input-only requests,
+and observable in-place mutation.
+
+#### 19.6.5 Tracing and logging
+
+Tracing should identify major waits and ownership boundaries: request handling, model
+acquisition/load, queue wait, prompt/prefill, generation, and unload when relevant.
+Keep spans concise. Avoid a span per token, duplicated nested timing, giant model-config
+attribute sets, prompt/media payloads, and unbounded IDs. Propagate the request context
+instead of creating unrelated roots. Logs and metrics should help distinguish queue,
+capacity, cancellation, and inference failures without exposing user content unless an
+explicit insecure-logging mode authorizes it.
+
+#### 19.6.6 Speculative decoding and MTP
+
+Speculative support has three ownership shapes:
+
+1. **Separate GGUF draft model.** The draft has its own model/context/KV and proposes
+   tokens; the target verifies them. Loading, memory planning, sequence cleanup, and
+   rollback must account for both models.
+2. **Embedded MTP.** A target GGUF exposes an embedded multi-token-prediction head.
+   Model detection and MTP construction are owned by `draft_mtp.go`/`batch_mtp.go`,
+   while generic proposal verification and reconciliation remain in
+   `batch_speculative.go`.
+3. **Separate-file Gemma4/shared-target-KV MTP.** The MTP component is supplied as a
+   separate file but shares target KV semantics rather than behaving like an ordinary
+   independent draft model. Capabilities, not “has a draft path,” must decide whether
+   draft KV can be trimmed or externalized.
+
+Across all three, target output is authoritative. Proposal generation cannot expose a
+token until target verification accepts it or chooses the replacement/bonus token.
+Position counters, sampled-token history, target KV, draft/MTP state, and streamed
+output must describe one accepted prefix after every round.
+
+Verification in a multi-slot batch is explicitly read-before-mutate. First read all
+target logits/hidden-state rows and decide each slot's accepted prefix while the shared
+batch outputs are intact. Only then mutate KV, counters, slot buffers, stream output,
+or MTP mirror state. Mutating one slot during the read phase can invalidate indices or
+native output needed by another slot.
+
+Ordinary transformer KV can often remove a rejected suffix. Hybrid recurrent/state-
+space models cannot assume partial KV deletion restores prior state. Take the required
+pre-speculation per-sequence snapshot, and on rejection restore it and re-decode exactly
+the accepted prefix. Preserve captured target hidden-state rows needed to synchronize
+MTP. For own-KV MTP, rollback removes speculative draft state before mirroring accepted
+target state. For shared-target-KV Gemma4, do not apply independent-draft rollback to
+the shared target cache. If synchronization fails, safely disable MTP for that request
+and continue target-only rather than retaining ambiguous draft state.
+
+Unit-level owners are the batch/speculative files and tests in `sdk/kronk/model/`.
+Model-backed MTP suites live in `sdk/kronk/tests/mtp` and
+`sdk/kronk/tests/gemma4mtp`; they are CI/human suites, not commands agents should launch
+from the forbidden integration-test tree.
+
+### 19.7 Server, BUI, and Generated Documentation
+
+#### 19.7.1 Routes, middleware, and domains
+
+Route declarations belong with their domain package, normally in `route.go`. Keep
+authentication/authorization, tracing, request IDs, panic recovery, and common response
+behavior in foundation middleware. Domain handlers decode and validate protocol input,
+select the appropriate application capability, call SDK/facade methods, and encode the
+protocol result. They should not manipulate native model state or implement pool
+eviction.
+
+When adding an endpoint, follow a neighboring domain end to end: registration,
+middleware order, request model, error mapping, streaming behavior, and service wiring.
+Test malformed input and cancellation as well as success. A server build catches route
+composition errors that a leaf-package test may miss.
+
+#### 19.7.2 BUI ownership and embedding
+
+The BUI lives at `cmd/server/api/frontends/bui/`. Follow its own package scripts and
+the applicable component `AGENTS.md`; component structure and UI conventions change
+more quickly than this chapter. The production bundle is embedded by
+`cmd/server/api/services/kronk/main.go`. Editing TypeScript does not alter the server
+binary until the frontend is rebuilt and embedded output is rebuilt into Go.
+
+For frontend changes:
+
+```shell
+cd cmd/server/api/frontends/bui
+npm run build
+```
+
+Then build the server (or the narrow service package) and verify that the expected
+static bundle is present in the embedding location. Avoid hand-editing minified/static
+output.
+
+#### 19.7.3 Documentation generation
+
+`cmd/server/api/tooling/docs/main.go` orchestrates three conceptual pipelines:
+
+```text
+public SDK Go documentation -> SDK BUI documentation
+examples source             -> example BUI documentation
+.manual chapter Markdown    -> DocsManual.tsx
+```
+
+Author manual content in `.manual/`, public API descriptions in Go doc comments, and
+examples in `examples/`. `DocsManual.tsx` and generated SDK/example documentation are
+outputs and must not be hand-edited. Run:
 
 ```shell
 make kronk-docs
-# equivalent to: go run cmd/server/api/tooling/docs/*.go
 ```
 
-The generator takes no flags; it always rebuilds all three pipelines.
+Review generated diffs for malformed Markdown conversion and then run `npm run build`
+in the BUI. Finally build the server to check that generated components compile into
+the embedded bundle. Generation may update more than one documented package; do not
+discard legitimate generated changes. If the requested scope intentionally excludes
+generated artifacts, report that regeneration remains pending.
 
-### 19.6 Code Style Guidelines
+### 19.8 Bucky Implementation Map
 
-**Package Comments:**
+This is an implementation map only. Chapter 18 owns installation, configuration,
+streaming usage, and API examples.
 
-```go
-// Package kronk provides the core inference API.
-```
+#### 19.8.1 Owners
 
-**Error Handling:**
+- **`sdk/bucky/`** owns initialization and the public `Bucky` handle. A handle owns one
+  Whisper model and admission/shutdown coordination.
+- **`sdk/bucky/model/`** owns the Whisper context, its pool of model states, audio
+  decode/transcription primitives, language operations, and stream implementation.
+  Model weights/context are shared by the handle while state isolates concurrent work.
+- **`sdk/bucky/pool/`** adapts Bucky model planning, loading, status, unloading, and
+  reservations to the generic typed pool.
+- **`sdk/pool/` and `sdk/pool/engine/`** let Bucky and Kronk share one resource budget
+  while retaining backend-specific loaders and handles.
+- **`sdk/tools/bucky/`** owns Whisper shared-library and model catalog/download work.
+- **`cmd/kronk/bucky/`** exposes those tools. Web/server mode is default; `--local`
+  requests direct local operation.
+- **`cmd/server/app/domain/audioapp/`** owns the OpenAI-compatible transcription route.
+  Administrative library/model routes are in `toolapp`. Service startup wires the
+  Bucky backend and shared pool.
 
-```go
-// Wrap errors with lowercase context prefix
-return fmt.Errorf("loading model: %w", err)
+#### 19.8.2 Lifecycle invariants
 
-// Declare package-level sentinel errors
-var ErrModelNotFound = errors.New("model not found")
-```
+`Init` registers/resolves/loads the backend. Technically, a failed `Init` can be called
+again and retry. The current server calls it only during startup, however. Installing
+missing libraries through CLI or BUI does **not** promise automatic server re-init;
+restart the server so startup calls `Init` again.
 
-**Struct Design:**
+A transcription acquires handle capacity and a model state, performs decode/inference,
+then releases both on every completion path. A streaming session is longer-lived:
+opening it reserves a state and capacity until its worker exits. `Close` requests the
+normal final flush and waits for that exit; a terminal worker error also exits and
+releases automatically. Callers should still defer the idempotent `Close`, including
+when feed/event handling fails. Unload must not destroy the Whisper context while
+transcriptions or streams remain active.
 
-- Consumer-facing structs (`Config`, `Result`, request/response DTOs) expose
-  exported fields the caller fills in.
-- Internal state structs keep fields unexported and surface behavior through
-  methods on the exported type.
-- Use the `Config` pattern for constructors.
+The audio HTTP handler delegates file decoding and transcription to
+`Bucky.TranscribeFile`. It explicitly enforces the 25 MB upload limit before allowing
+unbounded work. Keep protocol field validation/format selection in the handler and
+audio/model mechanics in Bucky.
 
-```go
-type Config struct {
-    Host string
-    Port int
-}
+Focused tests that exist include unit tests under `sdk/bucky/model/` and
+`sdk/bucky/ffmpeg/`, transcription/pool/stream suites under
+`sdk/bucky/tests/transcribe/`, and the server audio API tests under
+`cmd/server/api/services/kronk/tests/`. Choose the narrowest test whose native library
+and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.
 
-func New(cfg Config) *Server {
-    // ...
-}
-```
+### 19.9 Verification for LLM Agents
 
-**Testing:**
+#### 19.9.1 Required Go post-edit sequence
 
-Tests link against yzma (llama.cpp Go bindings), so they the
-installed libraries plus test models. Always go through `make test` (or
-`make test-only` for fast iteration) per §19.2.
-
-**Post-edit Checks (per [AGENTS.md](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/AGENTS.md)):**
-
-After modifying any `.go` file, run on the changed files / package:
+After changing Go, obey the root instructions and scope work to the changed package.
+For each changed Go file/package:
 
 ```shell
-gofmt -s -w <changed files>
-go vet ./...
-staticcheck ./...
-go fix <changed package>
+go fix ./path/to/changed/package
+gofmt -s -w path/to/all-changed.go
+go vet ./path/to/changed/package
+staticcheck ./path/to/changed/package
 ```
 
-These are non-negotiable; they are also what `make test`'s `lint` step runs.
-
-**Comment Conventions:**
-
-- Doc comments are full sentences ending with a period.
-- Package doc lives on the file that declares the package's main type or
-  entry point (e.g. `package kronk` doc on `kronk.go`).
-- Use a block separator between logical sections in larger files:
-
-```go
-// =============================================================================
-// Tiered Replace
-// =============================================================================
-```
-
-See [fuzzyedit.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp/fuzzyedit.go#L58-L60) for the canonical pattern.
-
-**Import Order:**
-
-Imports are grouped into three blocks separated by blank lines and sorted by
-`goimports -local github.com/ardanlabs/kronk`:
-
-1. Standard library
-2. External packages
-3. Internal packages (`github.com/ardanlabs/kronk/...`)
-
-**Control Flow:**
-
-- Avoid `else` and `else if` clauses
-- Prefer `switch` statements or early returns
-
-```go
-// Preferred: early return
-if err != nil {
-    return err
-}
-// continue with main logic
-
-// Preferred: switch over if-else chains
-switch state {
-case "active":
-    // ...
-
-case "pending":
-    // ...
-
-default:
-    // ...
-}
-```
-
-### 19.7 SDK Internals
-
-This section documents implementation details for developers working on
-the Kronk SDK packages.
-
-#### 19.7.1 Package Structure
-
-**sdk/kronk/** - Public SDK API surface:
-
-| File             | Purpose                                                   |
-| ---------------- | --------------------------------------------------------- |
-| `acquire.go`     | Model pool acquire/release (top-level wrapper)            |
-| `chat.go`        | Chat completion API                                       |
-| `concurrency.go` | Generic streaming utilities, semaphore-based backpressure |
-| `embedding.go`   | Embedding API                                             |
-| `init.go`        | Initialization and configuration                          |
-| `kronk.go`       | Main `Kronk` type, model pool management                  |
-| `logger.go`      | Streaming response logger (used when insecure-logging on) |
-| `rerank.go`      | Reranking API                                             |
-| `response.go`    | OpenAI Responses API streaming                            |
-| `tokenize.go`    | Token-count API                                           |
-
-**sdk/kronk/model/** - Low-level inference engine.
-
-The package is large (30+ files); files are grouped here by concern.
-
-_Core types and lifecycle:_
-
-| File          | Purpose                                                       |
-| ------------- | ------------------------------------------------------------- |
-| `model.go`    | `Model` type, llama context management, lifecycle             |
-| `config.go`   | Model configuration (GPU, cache, batching, YaRN, etc.)        |
-| `params.go`   | Sampling parameters                                           |
-| `models.go`   | OpenAI-compatible types (`ChatMessage`, `ToolCall`, etc.)     |
-| `chat.go`     | Chat inference entry point, request validation, batch routing |
-| `embed.go`    | Embedding inference                                           |
-| `rerank.go`   | Reranking inference                                           |
-| `prompts.go`  | Jinja2 chat template application                              |
-| `tokenize.go` | Token-count helper                                            |
-| `media.go`    | Vision/audio media detection and conversion                   |
-| `check.go`    | Model file SHA validation                                     |
-| `logging.go`  | Streaming response logger (mirrors final response for log)    |
-| `yzma.go`     | Workarounds for yzma FFI issues not yet fixed upstream        |
-
-_Batch engine_ (`batch_*.go`):
-
-| File                     | Purpose                                                            |
-| ------------------------ | ------------------------------------------------------------------ |
-| `batch_engine.go`        | `batchEngine` — parallel inference slots, request queue, wake loop |
-| `batch_schedule.go`      | Slot assignment (first-available for all sessions)                 |
-| `batch_slot.go`          | `chatJob` and slot state structures                                |
-| `batch_slot_start.go`    | Slot init: KV restore from RAM, sampler build, prefix snapshot     |
-| `batch_decode.go`        | MTMD batch decode helpers                                          |
-| `batch_prefill_text.go`  | Round-robin token prefill across slots                             |
-| `batch_prefill_media.go` | Vision/audio chunk prefill (interleaves embeddings with text)      |
-| `batch_tokens.go`        | Per-token sampling and pipeline (logprobs, EOG, classify, stream)  |
-| `batch_utf8.go`          | Partial-codepoint buffering across token boundaries                |
-| `batch_finish.go`        | Request completion, metrics, KV cleanup per model type             |
-| `batch_errors.go`        | Slot cancellation / shutdown error helpers                         |
-| `batch_shutdown.go`      | Drain active slots and pending jobs on shutdown                    |
-| `batch_speculative.go`   | Speculative decoding (draft model prefill + verify)                |
-
-_Caching:_
-
-| File                   | Purpose                                                      |
-| ---------------------- | ------------------------------------------------------------ |
-| `caching.go`           | Cache orchestration and routing (`cacheResult`)              |
-| `caching_imc.go`       | IMC session matching, two-tier hash scan, prefix trim/extend |
-| `caching_imc_media.go` | IMC media cache build/extend (vision/audio)                  |
-
-_Sampling and grammar:_
-
-| File                    | Purpose                                                       |
-| ----------------------- | ------------------------------------------------------------- |
-| `grammar.go`            | JSON Schema → GBNF conversion for grammar-constrained output  |
-| `logprobs.go`           | Top-k token log probability extraction                        |
-| `speculative_sparse.go` | Sparse candidate sampling for speculative decode verification |
-
-_Content processors_ (per-template tool/reasoning classification):
-
-| File                   | Purpose                                               |
-| ---------------------- | ----------------------------------------------------- |
-| `processor.go`         | Processor interface, content classifier state machine |
-| `processor_parse.go`   | Router: dispatches to model-specific tool parser      |
-| `processor_gemma.go`   | Gemma4-style tool calls                               |
-| `processor_glm.go`     | GLM `<arg_key>`/`<arg_value>` tag tool calls          |
-| `processor_gpt.go`     | GPT-OSS Harmony tool calls                            |
-| `processor_qwen.go`    | Qwen3-Coder XML-like tool tags                        |
-| `processor_mistral.go` | Mistral / Devstral tool calls                         |
-| `processor_json.go`    | Standard JSON tool calls                              |
-
-_Misc:_
-
-| File      | Purpose                                                                |
-| --------- | ---------------------------------------------------------------------- |
-| `pool.go` | `contextPool` — parallel llama contexts for embedding/rerank workloads |
-
-**sdk/pool/** - Multi-model pool used by the model server.
-
-Holds a capped LRU-style cache of live `*kronk.Kronk` instances keyed by
-model ID, so multiple models can stay warm and be acquired on demand
-without paying the load cost on every request. Cache size and idle TTL
-are configurable.
-
-| File       | Purpose                                                                                          |
-| ---------- | ------------------------------------------------------------------------------------------------ |
-| `pool.go`  | `Pool` type, `Config`, `New`, `AquireModel`, `AquireCustom`, `ModelStatus`, `Shutdown`, eviction |
-| `model.go` | `ModelDetail` struct returned by `ModelStatus()`                                                 |
-
-Key behaviors:
-
-- **Singleflight load** — concurrent `AquireModel` calls for the same model
-  ID coalesce into a single load.
-- **Pre-emptive eviction** — when the pool is full, the coldest idle entry
-  is unloaded _before_ the new model is loaded so two large models never
-  sit in VRAM at the same time.
-- **Active-stream protection** — automatic TTL eviction of an entry with
-  in-flight streams is rejected; the entry is re-inserted to keep it
-  resident until the stream finishes.
-- **Shutdown** — `Shutdown(ctx)` invalidates the cache and blocks until
-  every entry has finished unloading (or `ctx` expires).
-
-#### 19.7.2 Streaming Architecture
-
-**Two streaming primitives** (`concurrency.go`):
-
-- `streaming[T]` — 1:1 relay. Used by `ChatStreaming` to forward
-  `model.ChatResponse` chunks straight to the caller.
-- `streamingWith[T, U]` — 1:N event transformation. Used by
-  `ResponseStreaming` to fan out a single upstream chunk into multiple SSE
-  event types.
-
-Both acquire the model on entry and release it from a `defer` when the
-user-facing channel closes (see §19.7.4) — the lifecycle is not hand-rolled
-in the per-API files.
-
-**Response Streaming Pattern** (`response.go`, `concurrency.go`):
-
-- `streamProcessor` has three phases: `Start()`, `Process(chunk)`, `Complete(lastChunk)`
-- Phase flow: `Start` runs once before the upstream channel opens,
-  `Process` runs once per upstream chunk, `Complete` runs once after the
-  upstream channel closes and receives the last chunk seen.
-- `streamState` struct maintains response ID, sequence numbers, aggregated usage
-- SSE format: `event: <type>\ndata: <json>\n\n`
-
-**FinishReason Handling:**
-
-- `FinishReasonPtr *string` field with `FinishReason()` accessor
-- Only three constants exist (`models.go`):
-  `FinishReasonStop="stop"`, `FinishReasonTool="tool_calls"`,
-  `FinishReasonError="error"`. There is no `"length"` — a `max_tokens` cap
-  is reported as `FinishReasonStop`, unlike the OpenAI API.
-- When `FinishReasonPtr != nil`, skip text/reasoning deltas (they duplicate previous content)
-- Always process tool calls even with FinishReason set (may only arrive in final chunk)
-
-#### 19.7.3 Concurrency Strategy
-
-All concurrent requests on a single `Kronk` block on one semaphore; its
-capacity is fixed at `New()` time and depends on the model class.
-`acquireModel()` is the gate (see §19.7.4).
-
-`NSeqMax` is the `nseq-max` knob from `model_config.yaml`, and behaves
-differently depending on model type:
-
-**Embedding and Reranking Models**:
-
-- `NSeqMax` controls the internal context pool size (see §19.7.6)
-- Model weights are shared, only KV cache memory is multiplied
-- Inputs within a request are partitioned across pool contexts for parallel processing
-- Semaphore capacity = `NSeqMax`
-
-**Text Inference Models** (chat, completion, vision, audio):
-
-- `NSeqMax` controls batch parallelism within the batch engine — the number
-  of concurrent slots (see §19.7.5)
-- Only one `model.Model` instance is created with multiple slots
-- Semaphore capacity = `NSeqMax * queueDepth` (default `queueDepth=2`)
-- Why ×2: with `queueDepth=2`, one request can sit on the batch engine's
-  request queue while another is in prefill/decode, smoothing throughput
-  across acquire → prefill → decode → release. Increase to absorb bursty
-  load; decrease to bound queued memory.
-
-**Detection Logic** ([kronk.go:63-83](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/kronk.go#L63-L83)):
-
-```go
-queueDepth := cfg.QueueDepth()
-if queueDepth == 0 {
-    queueDepth = 2
-}
-
-var semCapacity int
-
-switch {
-case mi.IsEmbedModel || mi.IsRerankModel:
-    semCapacity = max(cfg.NSeqMax(), 1)
-default:
-    semCapacity = max(cfg.NSeqMax(), 1) * queueDepth
-}
-```
-
-#### 19.7.4 Model Acquire/Release & Cleanup
-
-The wrappers in `concurrency.go` (`streaming` / `streamingWith`, see §19.7.2)
-are what call `acquireModel` and `releaseModel` — per-API files do not call
-them directly.
-
-**Acquisition** ([acquire.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go)):
-
-1. **Shutdown check**: take `shutdown.Lock()`; if `shutdownFlag` is set,
-   return `"acquire-model: kronk has been unloaded"`.
-2. **Active stream accounting**: increment the `activeStreams` atomic counter
-   while still holding the shutdown lock (the unload path waits on this
-   counter to drain).
-3. **Backpressure slot**: block on the semaphore (`krn.sem <- struct{}{}`),
-   respecting `ctx.Done()` — on context cancellation, decrement
-   `activeStreams` and return `ctx.Err()`.
-4. **Return model**: return the single `*model.Model` (`krn.model`).
-
-**Release** (`acquire.go`):
-
-1. Drain a slot from the semaphore (`<-krn.sem`).
-2. Decrement `activeStreams`.
-
-**Cleanup Flow:**
-
-All chat requests go through the batch engine; per-slot KV cleanup happens
-inside the engine in
-[batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go),
-which clears each slot's sequence and frees per-request resources.
-
-On the failure path in [chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go)
-(submit error from `m.batch.submit`, e.g. engine shutdown or `ctx.Done()`),
-per-request IMC cleanup is handled by `m.imcClearPending(cache.imcSlotID)`
-inside `submitToBatchEngine`. The handler does **not** call any
-context-wide reset: a `llama.MemoryClear(mem, true)` here would wipe the
-entire KV cache — including the IMC sessions of other in-flight batched
-requests — and would race with the batch engine's `llama.Decode` (the
-engine holds `m.decodeMu` for decode; a context-wide reset has no safe
-moment to take that lock without corrupting other slots).
-
-`releaseModel()` then runs from the wrapper `defer` in `concurrency.go`
-after the user-facing channel closes.
-
-**Key invariant:** the semaphore guarantees the model is never released
-while a request is in flight — `releaseModel()` is only called from the
-streaming wrapper's `defer`, which fires after the user-facing channel
-closes.
-
-#### 19.7.5 Batch Engine Internals
-
-**ChatStreaming Decision Logic** ([chat.go:258-315](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go#L258-L315)):
-
-All chat requests — text and media (`ObjectChatText` and `ObjectChatMedia`) —
-flow through `submitToBatchEngine`. It builds a `chatJob` (carrying request
-data plus the resolved IMC fields from `cacheResult`) and unconditionally
-calls `m.batch.submit(&job)`. Returns:
-
-- `true` on successful submit; the caller sets `batching = true` in `chat.go`
-  so the non-batched cleanup defer is skipped (see §19.7.4).
-- `false` only on submit error. The error has already been streamed to the
-  caller via `sendChatError` and any IMC pending reservation cleared.
-
-There is no longer an `m.batch == nil || object != ObjectChatText` early
-return — vision/audio also runs through the batch engine.
-
-**Batch Engine Architecture** ([batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)):
-
-- `batchEngine` manages `nSlots` parallel `*slot` structs (slot type lives
-  in [batch_slot.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go))
-- Constructed via `newBatchEngine(m, nSlots)` during model setup;
-  `nSlots = NSeqMax` (see §19.7.3)
-- Queueing: `requestQ chan *chatJob` (buffered `nSlots*2`) is the public
-  inbox; `pendingJobs` holds jobs already dequeued but unable to start
-  because no slot was free, and is checked before reading `requestQ` again
-- Each slot tracks: `seqID`, prompt tokens, decode state, sampler, response
-  channel, logprobs, prefill state
-- Signal-based wake: `wakeCh chan struct{}` (buffered size 1) is poked on
-  every successful submit, eliminating up-to-1ms scheduling latency on
-  request pickup
-- Polling intervals when no wake signal arrives: 100µs (active slots
-  generating), 5ms (idle, no active slots)
-
-**Slots, Sequences, and Sessions:**
-
-- `slot.id` = slot index (batch-engine execution lane)
-- `slot.seqID` = llama.cpp sequence ID (KV cache partition for the active slot)
-- `slot.seqIDs` = pre-allocated slice for efficient `batchAdd` calls
-- `imcSession` = logical cached conversation branch (hash, tokens, KV state)
-
-Sequences are isolated partitions in the shared KV cache memory. Slot seqIDs
-always start at 0. IMC sessions are **decoupled** from execution slots: the
-session pool is sized at `NSeqMax * imcSessionMultiplier` (3×, see
-[model.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L40-L58)),
-so the number of cache identities the server can keep warm exceeds the
-number of parallel decodes. Session state is externalized to RAM after each
-request and restored into any free slot on the next request via
-`StateSeqSetData`; `StateSeqGetData` captures raw KV bytes regardless of
-whether they originated from text tokens or media embeddings.
-`imcSession.seqID` is dynamic — set in `startSlot` when the session binds
-to a slot's sequence, reset to `imcSeqIDUnbound` (`-1`) in `finishSlot` —
-and the KV-pressure eviction path uses that sentinel to skip `MemorySeqRm`
-on sessions whose bytes only live in host RAM. Full IMC lifecycle is detailed
-in §19.7.7.
-
-#### 19.7.6 Context Pooling
-
-Kronk uses two distinct context strategies depending on the workload.
-
-**Text inference: single shared context.**
-
-- One `llama.Context` is created in `NewModel` and reused across requests.
-- KV cleanup is per-slot inside the batch engine
-  ([batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go));
-  see §19.7.4.
-- Reusing a single context avoids GPU memory fragmentation on all backends
-  (CUDA, Metal, Vulkan, ROCm) caused by repeated context alloc/free.
-
-**Embedding & rerank: `contextPool`** ([pool.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/pool.go)):
-
-- `newContextPool(model, ctxParams, log, n)` creates `n = NSeqMax`
-  parallel `llama.Context` instances. All share the same `llama.Model`
-  (weights), so only KV cache memory is multiplied per context.
-- Available context indices are tracked via a buffered `avail chan int`;
-  callers acquire by receiving from the channel and release by sending the
-  index back.
-- Inputs within a single embed/rerank request are partitioned across pool
-  contexts for parallel processing — this is the concurrency semantic
-  documented in §19.7.3 for embedding/reranking models.
-
-#### 19.7.7 IMC Implementation Details
-
-**Key Functions:**
-
-The principal entry points live in
-[caching_imc_tokens.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_tokens.go),
-[caching_imc_media_tokens.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media_tokens.go),
-[prompt_plan.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/prompt_plan.go), and
-[caching_imc_media.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go):
-
-- `processIMCTokenPlan` — complete-token text selection (`exact`, `append`, `rebuild`)
-- `buildPromptPlan` — canonical ordered text-token/media-unit plan
-- `processIMCMediaTokenPlan` — media selection (`exact`, `anchor`, `rebuild`)
-- `decodeMediaIntoCache` — authoritative mtmd cold/rebuild path
-- `imcCommitMediaAdvance` — atomic staged-store and metadata swap
-
-**Critical Implementation Details:**
-
-1. Stable and generation-ready prompts are rendered independently. The stable
-   render uses `add_generation_prompt=false`; the generation-ready render must
-   have a nonempty tail after the stable plan.
-2. Text plans tokenize the complete renders with special-token parsing enabled.
-   Media plans split on mtmd's marker, tokenize every text segment with
-   `addSpecial=false`, and add vocabulary BOS globally exactly once. Automatic
-   EOS disables token-v2 media reuse because the old EOS cannot remain inside
-   an appended conversation.
-3. Media units are indivisible ordered SHA-256 identities. Raw media and hashes
-   are not logged. Prefix reuse requires exact token/media-unit equality up to
-   the stored boundary and a text-only remainder.
-
-**Token-v2 selection:**
-
-- Text: select the longest complete cached token sequence that prefixes the
-  stable target. Equal length is `exact`; a text suffix is `append`; no safe
-  complete prefix is `rebuild` into an empty/LRU session.
-- Media: require a valid nonempty target snapshot, internally consistent
-  physical/logical metadata, unchanged ordered media units, and a complete
-  plan prefix. Equal plans are `exact`; a text-only remainder is `anchor`;
-  any media change or earlier divergence is `rebuild` through mtmd.
-- Every selected session is reserved immediately. Read-only exact reservations
-  remain held through generation. Advancing media anchors also retain their
-  write reservation through generation because suffix routing still reads the
-  session's M-RoPE and physical-count metadata.
-
-**Pure-Hit Snapshot Skip** ([batch_slot_start.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go#L527-L595)):
-
-On every mutating IMC cache hit `startSlot` normally calls `StateSeqGetData`
-after build/extend to refresh the externalized snapshot. For a
-read-only exact text or media hit with no prefix mutation, the bytes it would write
-are byte-for-byte equal to the bytes it just restored — pure I/O. The
-skip predicate guards on: `imcReadOnlyReservation`, no new cache
-tokens, no media build, no trim, no clear, `cacheIdx == imcExpectedTokens`,
-and a re-validation under `cacheMu` (live session version, physical/logical
-counts, and media prompt plan still match what planning observed). On success
-the engine logs `imc-snapshot-skip-read-only` with
-`snapshot_action=skip-read-only` and increments `imc_snapshot_skipped_total`;
-on the start-time version mismatch it fails with `imc-pure-hit-stale`
-(metric `imc_pure_hit_stale_session_total`) so the client retries.
-`llama_state_seq_get_data` is a host-side serializer, so skipping it
-cannot leave KV state in a bad shape — see `yzma pkg/llama/state.go`
-(`StateSeqGetData`) for the FFI contract.
-
-**Two-Phase Session Publish** ([caching_imc.go imcCommitSession/imcPublishSession](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go#L1373-L1437)):
-
-The publish path is split to close a race in which a concurrent scanner
-would otherwise see fresh metadata but stale `kvState` bytes:
-
-1. `imcCommitSession(session, hash, ...)` updates metadata under
-   `cacheMu` but **leaves `pending` set**. Concurrent scanners still
-   skip the session.
-2. `imcPublishSession(session)` clears `pending` and broadcasts on the
-   IMC-slot-available condition variable — but the caller must only
-   invoke it after `startSlot` has externalized the KV state into
-   `session.kvState`. Now metadata and bytes are guaranteed consistent.
-
-**Multi-Session IMC:**
-
-The session pool holds `NSeqMax * imcSessionMultiplier` (currently 3×)
-independent conversation branches. Concurrent users and sub-agents land
-in different sessions via hash matching, so they don't trample each
-other's caches. When all sessions are full, the LRU session is evicted
-on `lastUsed`. The decoupling lets the cache identity count exceed the
-execution slot count, which matches the realistic agentic shape (a
-driver loop plus a handful of sub-agents plus the occasional side
-conversation) without requiring you to raise `nseq-max` and pay the
-VRAM cost.
-
-**Text and Media IMC:**
-
-Both text and media sessions externalize KV via `StateSeqGetData` after
-build/extend and restore via `StateSeqSetData` on the next request.
-`StateSeqGetData` captures raw KV bytes irrespective of whether they
-were produced by text tokens or media embeddings — there is no longer
-a "slot-dedicated" media path. The media-specific build/extend logic
-lives in [caching_imc_media_tokens.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media_tokens.go),
-[prompt_plan.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/prompt_plan.go), and
-[caching_imc_media.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc_media.go);
-the `hasMedia`, `useMRoPE`, and `mediaKVCounts` fields on `imcSession`
-track media state. `totalTokensCached` is the physical KV-cell count;
-`nextLogicalPos` is the M-RoPE continuation position.
-
-An anchor restores the old snapshot and decodes only the text units after the
-stored plan. It serializes the enlarged target state into a newly allocated
-`SessionStore`; `imcCommitMediaAdvance` swaps the store, prompt plan,
-physical/logical counts, hashes, and render metadata under `cacheMu`. The old
-store is closed only after the swap. Decode/staging/snapshot failure leaves the
-old snapshot untouched. The legacy marker-token delta path is not used.
-
-Media commits erase own-KV `draftKVState` and `pendingH`, and media sessions do
-not publish an own-draft snapshot without proven media coverage. Linear
-shared-target-KV Gemma4 resumes MTP from target KV. Own-KV media and M-RoPE
-media anchors continue target-only.
-
-**IMC Lifecycle (All Sessions):**
-
-1. Token-v2 planning scans **sessions** (not slots) for a complete safe prefix,
-   classifying the result into one of the matches above and
-   populating `cacheResult` with `imcSessionID` and the session pointer.
-2. `fillSlots()` assigns the job to the **first available slot**.
-3. `startSlot()` binds the session to the slot's `seqID` under
-   `cacheMu`, restores cached KV from RAM via `StateSeqSetData`.
-4. Cache is extended/rebuilt as needed. Ordinary mutations use
-   `imcCommitSession`; media anchors snapshot into a staged store and use
-   `imcCommitMediaAdvance` for the atomic swap. Exact hits skip serialization.
-5. Ordinary mutations call `imcPublishSession` after snapshot commit. Media
-   anchors retain `pending` until `finishSlot` because generation still reads
-   immutable routing/accounting metadata from the reserved session.
-6. Suffix tokens are decoded and generation runs.
-7. `finishSlot()` clears the full VRAM sequence and resets the
-   session's `seqID` to `imcSeqIDUnbound` (cached prefix already lives
-   in RAM via `SessionStore`).
-
-**IMC Session State** ([model.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go#L60-L93)):
-
-```go
-type imcSession struct {
-    id                    int           // Stable session-pool index (NOT a slot identity)
-    seqID                 llama.SeqId   // Bound slot's seq id while resident; imcSeqIDUnbound when externalized
-    cachedMsgsHash        string        // Hash of all cached messages
-    cachedTokens          []llama.Token // Full token sequence in KV cache (text-only sessions)
-    totalTokensCached     int           // Physical KV cells in the cached prefix
-    nextLogicalPos        int           // Next logical position (differs for M-RoPE media)
-    cachedMsgCount        int           // Number of messages cached
-    kvState               SessionStore  // Externalized KV state (kvstorage backend)
-    draftKVState          SessionStore  // Externalized MTP draft seq KV (nil unless MTP drafter present)
-    pendingH              []float32     // MTP drafter's pre-norm hidden row at snapshot time
-    lastUsed              time.Time     // Last access time (for LRU eviction)
-    pending               bool          // True between imcCommitSession and imcPublishSession
-    hasMedia              bool          // True if cached content includes media
-    useMRoPE              bool          // True if cached media used M-RoPE 4D encoding
-    mediaKVCounts         []int         // KV positions per media chunk (text-extend math)
-    promptPlan            promptPlan    // Ordered token/media identity plan
-    sysPromptHash         string        // Hash of system prompt message
-    sysPromptTokens       int           // Token count of system prompt
-    cachedRenderInputHash string        // imcRenderFingerprint of the committed prefix (pure-hit snapshot-skip key)
-}
-```
-
-The pool is sized `NSeqMax * imcSessionMultiplier` at startup in
-`NewModel`; sessions are **not** bound to slots. `kvState` (a
-[SessionStore](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/session_store.go#L57-L97))
-externalizes the cached KV bytes between requests so any matched
-session can run on any free slot. The default RAM impl
-(`kvstorage/ram.Store`) uses lazy-grow / never-shrink semantics —
-once a session has stored its peak conversation, subsequent turns
-reuse the backing array without allocation churn. `id` is the stable
-pool index used for `imcClearPending` lookups and log correlation;
-`seqID` is dynamic and only meaningful while the session is bound
-to an execution slot (used by KV-pressure eviction to know whether
-to call `MemorySeqRm`). `pending` is the per-session in-flight latch
-that protects `kvState` from concurrent writers across the
-`imcCommitSession`/`imcPublishSession` two-phase publish.
-
-#### 19.7.8 Tool Call Internals
-
-**Processor state machine** ([processor.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor.go)):
-
-A per-slot `processor` classifies streaming output token-by-token into one
-of four statuses (`processor.go:10-15`):
-
-| Constant           | Value | Meaning                                |
-| ------------------ | ----- | -------------------------------------- |
-| `statusNone`       | 0     | Initial / between segments             |
-| `statusReasoning`  | 1     | Inside `<think>` (or model equivalent) |
-| `statusCompletion` | 2     | Regular response text                  |
-| `statusTooling`    | 3     | Inside a tool call                     |
-
-While in `statusTooling`, tokens are appended to `toolCallBuf` and not
-streamed to the caller as completion text. When the tool-call segment
-closes, the buffered content is handed to `parseToolCall` for structured
-extraction.
-
-**Tool call format dispatch** ([processor_parse.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go)):
-
-`parseToolCall` routes accumulated tool-call content to a model-specific
-parser based on its format:
-
-| File                   | Format                                                                |
-| ---------------------- | --------------------------------------------------------------------- |
-| `processor_json.go`    | Standard JSON `{"name":..., "arguments":...}`                         |
-| `parsers/deepseek`     | DeepSeek DSML `<｜DSML｜tool_calls>` / `<｜DSML｜invoke>` blocks         |
-| `processor_qwen.go`    | Qwen3-Coder XML-like `<tool_call>` / `<function=...>` tags            |
-| `processor_gpt.go`     | GPT-OSS Harmony (`<\|channel\|>commentary to=NAME<\|constrain\|>...`) |
-| `processor_glm.go`     | GLM `<arg_key>` / `<arg_value>` pairs                                 |
-| `processor_gemma.go`   | Gemma4 tool calls                                                     |
-| `processor_mistral.go` | Mistral / Devstral tool calls                                         |
-
-**Split-token tag handling:**
-
-Some models (Qwen3-Coder variants) emit a bare `<function=...>` without the
-`<tool_call>` wrapper, and the tag itself can be tokenized across multiple
-tokens (e.g. `<`, `function`, `=`). The processor uses `pendingTagBuf` /
-`inPendingTag` to accumulate fragments until the tag is complete or
-disproven.
-
-**GPT-OSS Harmony channel handling:**
-
-For GPT-OSS, the processor accumulates the channel name (`channelBuf`) and
-watches for `<|constrain|>` (`awaitingConstrain`). The function name is
-extracted from `to=NAME` in the channel and stored in `toolFuncName` for
-later assembly into a structured `ResponseToolCall`.
-
-**Tool call ID:**
-
-IDs are generated by `newToolCallID()` as `"call_" + uuid.NewString()` —
-stable contract for the OpenAI-compatible response wire format.
-
-**chatMessage unmarshaling** (`models.go`):
-
-- `Content` can be `nil` for assistant messages with `tool_calls`.
-- Handle `len(app.Content) == 0 || string(app.Content) == "null"` as valid
-  empty content.
-
-**ToolCallArguments type:**
-
-- Custom type that marshals to a JSON string (OpenAI spec).
-- Unmarshals from either a string or an object for non-compliant clients.
-
-#### 19.7.9 Logprobs Implementation
-
-**Implementation** ([logprobs.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go)):
-
-- `extractLogprobs(lctx, vocab, sampledToken, iBatch, topK, buf)`: retrieves
-  logits via `llama.GetLogitsIth(lctx, iBatch, nVocab)` and converts them
-  to log probabilities. `iBatch` identifies which slot's logits row to read
-  when multiple slots are batched in one forward pass (see §19.7.5). `buf`
-  is a pre-allocated byte buffer reused across tokens to avoid per-token
-  allocations during top-K decoding.
-- `logSoftmax()`: numerically stable log-softmax using the log-sum-exp trick.
-- `getTopKLogprobs()`: `container/heap` min-heap for O(n log k) top-k
-  extraction.
-
-**Gating:**
-
-The extraction path runs only when `params.TopLogprobs > 0`. With logprobs
-disabled, this work is skipped entirely on the hot path.
-
-**Critical ordering — extract before `llama.SamplerAccept`** ([batch_tokens.go:38, 57](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_tokens.go#L38-L57)):
-
-`SamplerAccept` mutates sampler state (repetition history, penalty
-buffers, dry/xtc state). Reading logits after acceptance would no longer
-reflect the probability landscape for the token we're trying to score.
-
-This corresponds to step 12.1 of the request flow in §19.11.
-
-### 19.8 Responses API Normalization
-
-The SDK's [response.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go)
-exposes the OpenAI Responses API on top of the same `model.Chat` engine that
-serves Chat Completions. To do that, the input document is normalized into a
-Chat-Completions-style `messages` array before `model.Chat` /
-`model.ChatStreaming` is invoked.
-
-**Owner**: the SDK methods `Response` ([line 140](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go#L140))
-and `ResponseStreaming` ([line 163](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/response.go#L163))
-call `convertInputToMessages(d)` themselves as the first step. Callers (CLI,
-MCP, server handlers) do not need to invoke it.
-
-**Why it exists**: lets the SDK accept both the Chat-style `messages` payload
-and the Responses-style `input` payload (string, message list, or
-function-call/output items).
-
-**Normalization helpers** (all in `response.go`):
-
-| Function                    | Responsibility                                                                                                                                                                |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `convertInputToMessages`    | Top-level entrypoint; orchestrates the helpers below                                                                                                                          |
-| `inputToMessages`           | Turns the `input` field (string / messages / items) into `[]model.D`                                                                                                          |
-| `normalizeResponsesItems`   | Maps Responses items (`function_call`, `function_call_output`, …) to Chat messages; groups consecutive `function_call`s into one assistant message with multiple `tool_calls` |
-| `normalizeResponsesContent` | Translates Responses content parts (`input_text`, `output_text`, …) inside existing messages into Chat-format content                                                         |
-| `normalizeTools`            | Converts Responses' flat tool definitions into the Chat-Completions `{ "function": {...} }` shape                                                                             |
-| `injectInstructions`        | Promotes the Responses `instructions` field into a leading `role:"system"` message                                                                                            |
-| `extractInputParams`        | Pulls Responses-only parameters (e.g. `Instructions`) into `inputParams` for downstream handling                                                                              |
-| `extractTools`              | Reads the (already-normalized) tool list out of the document                                                                                                                  |
-
-### 19.9 Goroutine Budget
-
-A running Kronk server typically shows ~25 baseline goroutines before any
-requests arrive. When requests are active, expect roughly 3-5 additional
-goroutines per in-flight request. For example, 3 concurrent requests for the
-same model will show ~40 goroutines total. This is normal.
-
-**Baseline goroutines (~25, always running):**
-
-| Source                                         | Goroutines | Location                                 |
-| ---------------------------------------------- | ---------- | ---------------------------------------- |
-| Go runtime (GC, finalizer, netpoller, etc.)    | ~4-6       | runtime internals                        |
-| API `http.Server` (listener + idle conns)      | ~3         | `cmd/server/api/services/kronk/kronk.go` |
-| Debug `http.Server` (pprof, metrics, statsviz) | ~3         | `cmd/server/api/services/kronk/kronk.go` |
-| `statsviz.Register` (websocket handler)        | ~2         | `cmd/server/app/sdk/debug/debug.go`      |
-| gRPC auth server (`gs.Serve`)                  | ~2-3       | `cmd/server/app/domain/authapp/start.go` |
-| Embedded MCP `http.Server` (listener + conns)  | ~2-3       | `cmd/server/app/domain/mcpapp/start.go`  |
-| OTEL background collector probe                | 1          | `sdk/kronk/observ/otel/otel.go`          |
-| `otelhttp.NewHandler` internals                | ~1-2       | `cmd/server/foundation/web/web.go`       |
-| Batch engine `processLoop`                     | 1          | `sdk/kronk/model/batch_engine.go`        |
-
-The baseline assumes embedded auth and embedded MCP — the defaults when
-`KRONK_AUTH_HOST` and `KRONK_MCP_HOST` are unset. Pointing either at an
-external service removes its row from the table.
-
-**Per-request goroutines (~3-5 each):**
-
-The floor is three: the `http.Server` connection handler, the SDK wrapper
-goroutine (`streaming` or `streamingWith`), and the
-`ChatStreaming`/`ResponseStreaming` request goroutine. `wrapChannelForLogging`
-adds one more when `InsecureLogging` is enabled.
-
-| Source                                                       | Location                   |
-| ------------------------------------------------------------ | -------------------------- |
-| `http.Server` connection handler                             | Go stdlib                  |
-| `ChatStreaming` request goroutine                            | `sdk/kronk/model/chat.go`  |
-| `streaming()` wrapper goroutine (Chat / Embedding paths)     | `sdk/kronk/concurrency.go` |
-| `streamingWith()` wrapper goroutine (ResponseStreaming path) | `sdk/kronk/concurrency.go` |
-| `wrapChannelForLogging` (only when `InsecureLogging` is on)  | `sdk/kronk/model/chat.go`  |
-
-The goroutine metric is a point-in-time snapshot from `runtime.NumGoroutine()`
-captured every 10th request by the metrics middleware. It includes everything
-in the process, including Go runtime internals. After active requests complete,
-the count drops back to the baseline.
-
-### 19.10 Request Tracing Spans
-
-Each chat completion request produces the following trace hierarchy.
-`prepare-request`, `queue-wait`, and `process-request` are sibling spans
-under the request's root context — none is a child of another.
-
-```
-POST /v1/chat/completions
-├── prepare-request                          Validation, caching, prompt creation
-│   ├── process-cache                        Cache lookup/update (IMC, when enabled)
-│   │   ├── cache-tokenize-imc-prefix-match  Token-prefix fallback (§19.7.7 strategy 4)
-│   │   ├── cache-tokenize-imc-extend        Hash-prefix extend (strategy 2)
-│   │   ├── cache-tokenize-imc-sysprompt-preserve  System-prompt preserve (strategy 3)
-│   │   ├── cache-tokenize-imc-scratch       Rebuild from scratch (strategy 5)
-│   │   ├── cache-tokenize-imc-media-text-extend  Media-IMC text extend
-│   │   └── cache-decode                     KV-fill decode for build/extend
-│   └── create-prompt                        Jinja template application
-│
-├── queue-wait                               Job sits in requestQ until a slot picks it up
-│
-└── process-request                          Batch engine slot processing
-    ├── prefill                              Tokenize + KV fill (ends at first token)
-    └── token-generation                     Decode loop producing output tokens
-```
-
-**Phase 1: prepare-request** runs in the `ChatStreaming` request goroutine.
-It validates the document, processes the IMC cache, and creates the prompt
-via the Jinja template. When caching is enabled, `process-cache` and its
-`cache-tokenize-imc-*` and `cache-decode` children appear here. Only the
-tokenize variant matching the strategy chosen by `processIMC` is emitted on
-any given request.
-
-**queue-wait** is its own top-level span (not an attribute). It is started
-at the very end of `prepare-request` in the request goroutine and ended by
-`startSlot` ([batch_slot_start.go:36-39](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go#L36-L39))
-when the batch engine picks the job up off `requestQ`. Its duration is the
-gap between `prepare-request` ending and `process-request` starting.
-
-**Phase 2: process-request** runs in the batch engine's `processLoop`
-goroutine. The `prefill` span covers tokenization and KV cache filling.
-Time to first token (TTFT) is measured from prefill start to the first
-output token. The `token-generation` span covers the decode loop that
-produces output tokens.
-
-Additional spans that may appear at the top level:
-
-| Span                    | When                      | Description                                         |
-| ----------------------- | ------------------------- | --------------------------------------------------- |
-| `model-file-load-time`  | First request for a model | Loading the GGUF model file                         |
-| `proj-file-load-time`   | Vision/audio requests     | Loading the multimodal projection file              |
-| `imc-media-cache-build` | Vision/audio IMC builds   | Media-IMC cache build (separate from the text path) |
-
-### 19.11 Inference Code Path
-
-This section traces a `ChatStreaming` request end-to-end. Each step has a
-high-level description followed by a **Code:** sub-block listing the
-function calls and file locations the agent will navigate.
-
-#### Step 1: Receive the Request
-
-The caller provides a document containing messages and sampling parameters.
-The SDK validates that the request's context has a deadline to prevent
-unbounded processing.
-
-**Code:**
-
-- `Kronk.ChatStreaming` ([sdk/kronk/chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/chat.go)) — validates the context deadline and wraps `Model.ChatStreaming` in a closure.
-
-#### Step 2: Acquire the Model
-
-The kronk-level semaphore controls how many requests can be in-flight at
-once. The request blocks here until a slot opens up, providing backpressure
-when the system is under load. See §19.7.4 for the full acquire/release
-contract.
-
-**Code:**
-
-- `streaming()` / `streamingWith()` ([sdk/kronk/concurrency.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/concurrency.go)) calls `acquireModel()` ([sdk/kronk/acquire.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go)) — checks the shutdown flag, increments the kronk-level `krn.activeStreams`, and blocks on the semaphore (with `ctx.Done` cancellation).
-- The wrapper goroutine `defer`s `releaseModel()` and `close(ch)`.
-
-#### Step 3: Validate the Document
-
-The request document is validated to ensure it contains properly structured
-messages. Sampling parameters (temperature, top_p, top_k, min_p, max_tokens,
-grammar, etc.) are extracted and resolved against model defaults. The document
-is shallow-cloned so downstream processing can modify it without affecting the
-caller.
-
-**Code:**
-
-- `Model.ChatStreaming` ([model/chat.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/chat.go)) creates the response channel, wraps it with `wrapChannelForLogging` if `InsecureLogging` is on, increments the **model-level** `m.activeStreams` (a separate counter from the kronk-level one in Step 2 — both are waited on independently during unload), and spawns the request goroutine with the `prepare-request` span (§19.10).
-- `validateAndCloneDocument()` (`model/chat.go`) — validates the `messages` field, calls `parseParams()` to extract sampling parameters, shallow-clones the document.
-
-#### Step 4: Prepare the Context
-
-The system determines whether this is a text-only or media (vision/audio)
-request:
-
-- **Text**: multi-part content arrays are flattened into plain strings.
-- **Media**: the projection model is loaded; media content (images or
-  audio) is detected and converted into raw bytes for the encoder pipeline.
-
-**Code:**
-
-- `prepareContext()` (`model/chat.go`) returns `ObjectChatText` or `ObjectChatMedia`.
-  - Text path: `prepareTextContext()`.
-  - Media path: `prepareMediaContext()` — loads the projection file via `mtmd.InitFromFile()` and converts the OpenAI media format to byte slices.
-
-#### Step 5: Process the Cache
-
-If caching is enabled, the system checks whether any portion of the
-conversation is already in the KV cache to avoid redundant computation. The
-IMC algorithm picks one of **5 strategies** — see §19.7.7 for the full
-decision tree (pure cache hit, hash-prefix extend, system-prompt preserve,
-token-prefix fallback, or rebuild from scratch with LRU eviction).
-
-Tool response messages are also enriched with their originating function
-names so templates can render tool results correctly.
-
-**Code:**
-
-- `prepareCacheAndPrompt()` (`model/chat.go`):
-  - `injectToolResponseNames()` — adds `name`/`tool_call_name` to `role:"tool"` messages by matching `tool_call_id`.
-  - `processCache()` (`model/caching.go`) → `processIMC()` ([model/caching_imc.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/caching_imc.go)) — runs the §19.7.7 5-strategy selection across all `NSeqMax` sessions, tokenizes any extension tokens, and sets the `pending` flag on the chosen session.
-
-#### Step 6: Apply the Chat Template
-
-The remaining (non-cached) messages are run through the model's Jinja2 chat
-template. This converts the structured message array into the exact prompt
-string the model expects, including any special tokens, role markers, and
-tool definitions. For media requests, raw media bytes are returned alongside
-the text prompt.
-
-**Code:**
-
-- `createPrompt()` → `applyRequestJinjaTemplate()` (`model/chat.go`) — returns the prompt string plus media byte slices.
-
-#### Step 7: Submit to the Batch Engine
-
-The fully prepared request — prompt string, media bytes, sampling parameters,
-and cache state — is packaged into a job and placed on the batch engine's
-request queue. A wake signal is sent so the batch engine picks it up
-immediately rather than waiting for its next poll cycle.
-
-**Code:**
-
-- `submitToBatchEngine()` (`model/chat.go`) — builds the `chatJob` struct (request data, cache state, IMC fields) and calls `batch.submit()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)), which pushes onto `requestQ` and pokes `wakeCh`. The `queue-wait` span (§19.10) starts here.
-
-#### Step 8: Assign to a Slot
-
-The batch engine's processing loop wakes up and checks for pending work. It
-dequeues the job and assigns it to the first available processing slot. All
-IMC sessions (text and media) use first-available slot assignment. If all
-slots are busy, the longest-running slot is preempted after a configurable
-timeout (`cache-slot-timeout`, see §19.7.5).
-
-**Code:**
-
-- `processLoop()` ([model/batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)) — signal-based wake on `wakeCh` (§19.7.5); polls at 100µs when active, 5ms when idle.
-- `processBatch()` clears the batch buffer, runs any pending slot preemption, prefills the draft model for speculative slots, adds 1 generation token per active slot, then continues text prefill via round-robin `addPrefillChunk()` and media prefill via `addPrefillMediaChunk()`.
-- `fillSlots()` ([model/batch_schedule.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_schedule.go)) dequeues the job and assigns it to a slot.
-
-#### Step 9: Initialize the Slot
-
-The assigned slot is prepared for this request:
-
-1. **Restore cached KV state**: For IMC, the session's externalized KV state
-   is restored from RAM into the slot's sequence via `StateSeqSetData`.
-   Extension tokens are then decoded, or the sequence is cleared and rebuilt.
-   A media-anchor match restores the target KV without re-encoding unchanged
-   media, then decodes only the appended stable text. Shared-target-KV Gemma4
-   MTP resumes from that same target state; own-KV media MTP and M-RoPE media
-   anchors run target-only unless complete draft-state coverage is available.
-2. **Build the sampler**: A sampler chain is constructed from the request's
-   sampling parameters (temperature, top_k, top_p, min_p, repetition
-   penalties, etc.). If grammar-constrained output is requested, a separate
-   grammar sampler is also created.
-3. **Snapshot cached prefix**: For an ordinary IMC build/extension, after the
-   cache is prepared but before suffix tokens are decoded, the reusable prefix
-   is serialized via `StateSeqGetData`. A media-anchor advance instead stages
-   the larger snapshot in a separate `SessionStore` and swaps snapshot plus
-   prompt-plan metadata atomically. If staging, decode, or serialization fails,
-   the prior valid snapshot remains published.
-4. **Tokenize the prompt**: The prompt string is converted into a sequence of
-   token IDs. Token-v2 planning retains canonical token tails, so only the
-   non-cached portion is scheduled for decode. Canonical media plans preserve
-   ordered text and media units separately because media KV cannot be
-   reconstructed from token IDs alone.
-5. **Context window check**: The total token count (cached + new) is verified
-   against the model's context window limit.
-
-**Code:**
-
-- `startSlot()` ([model/batch_slot_start.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)) — resets the slot, ends the `queue-wait` span, and starts the `process-request` and `prefill` spans (§19.10).
-- `toSampler()` builds the llama.cpp sampler chain (temperature, top_k, top_p, min_p, repetition penalties, DRY, XTC, mirostat); a separate grammar sampler is created if requested.
-- IMC KV restore: `StateSeqSetData` from `session.kvState`, then `decodeTokensIntoCache()` for text extension, media-anchor stable-text replay, or partial trim; `MemorySeqRm` starts a rebuild.
-- IMC KV snapshot: `StateSeqGetData` into `session.kvState` after an ordinary build/extension, or into a staged store before an atomic media-anchor publish. Exact read-only matches skip redundant serialization.
-- `llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)` — `special=true` ensures ChatML markers are recognized (§19.7.7).
-- Draft prompt assembly for speculative decoding.
-- First chunk added via `addPrefillChunk()`.
-
-#### Step 10: Prefill (KV Cache Fill)
-
-The prompt tokens are fed through the model in chunks to build up the KV
-cache — this is the "prefill" phase. Tokens are added to a batch buffer up
-to the configured batch size limit, then a GPU forward pass (decode) is
-executed. When multiple slots are active, tokens are allocated round-robin
-across slots so no single request can starve others. This repeats until all
-prompt tokens have been processed.
-
-For media requests, image or audio embeddings are interleaved with text
-tokens and decoded through the model's multimodal pipeline.
-
-**Code:**
-
-- `addPrefillChunk()` ([model/batch_prefill_text.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go)) — adds tokens up to the `NBatch` cap; round-robin chunk size is `NUBatch`.
-- Each token: `batch.Add(token, position, seqIDs, isLast)`.
-- `llama.Decode(lctx, batch)` — GPU forward pass, fills KV cache.
-- `llama.Synchronize(lctx)` — waits for GPU completion.
-- Repeats until all prefill tokens are consumed.
-- Media path: `addPrefillMediaChunk()` ([model/batch_prefill_media.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_media.go)) interleaves embeddings with text tokens.
-
-#### Step 11: Token Generation (Decode Loop)
-
-Once prefill is complete, the model enters the decode loop — generating one
-output token per iteration:
-
-1. **Forward pass**: The most recently sampled token is added to the batch and
-   decoded through the model. With multiple active slots, all their tokens
-   are batched together in a single forward pass for efficiency.
-2. **Sampling**: The model's output logits are processed through the sampler
-   chain to select the next token. If grammar constraints are active, the
-   sampler respects the grammar rules.
-3. **Speculative decoding** (optional): A smaller draft model generates
-   candidate tokens ahead of the main model. These drafts are verified in
-   a single batch forward pass, accepting correct predictions and rejecting
-   mismatches. This can significantly increase tokens per second.
-
-**Code:**
-
-- Back in `processBatch` (`model/batch_engine.go`), for each active slot with `prefillDone=true`: `batch.Add(sampled, nPast, seqIDs, true)` then `llama.Decode()`.
-- Speculative path: `generateDraftTokens()` → batch in draft + sampled → `verifySpeculativeTokens()` ([model/batch_speculative.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go)).
-- `processSlotToken()` ([model/batch_tokens.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_tokens.go)) samples via `llama.SamplerSample(sampler, lctx, iBatch)` or, when grammar is active, `grammarSampler.SampleWithGrammar(lctx, sampler, iBatch)` ([model/grammar.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/grammar.go)).
-
-#### Step 12: Process Each Token
-
-Each sampled token goes through a processing pipeline:
-
-1. **Logprobs extraction**: If requested, token log-probabilities are
-   extracted from the model's logits before the sampler state is updated
-   (§19.7.9 explains why the order matters).
-2. **End-of-generation check**: If the token is an EOG (end-of-generation)
-   token, generation stops and the request moves to the finish phase.
-3. **UTF-8 assembly**: Tokens are converted to text bytes. Since a single
-   Unicode character can span multiple tokens, partial bytes are buffered
-   until a complete codepoint is available.
-4. **Content classification**: A state machine categorizes the output into
-   reasoning (think tags), completion (regular response), or tool call
-   content. This determines how the text is accumulated and streamed.
-5. **Token counting**: Each generated token is counted as either a reasoning
-   token or a completion token for usage reporting.
-6. **Max tokens check**: If the output token count reaches the requested
-   limit, generation stops.
-7. **Stream to client**: For non-tool content, each complete text fragment
-   is sent as an SSE delta event through the response channel.
-
-**Code:**
-
-- `handleSampledToken()` (`model/batch_tokens.go`) drives the pipeline:
-  - `extractLogprobs()` ([model/logprobs.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/logprobs.go)) — `llama.GetLogitsIth` + log-softmax + top-k heap. Runs **before** `llama.SamplerAccept()` (§19.7.9).
-  - `llama.SamplerAccept()` (and grammar accept).
-  - `llama.VocabIsEOG()` → if true, jump to `finishSlot()`.
-  - `llama.TokenToPiece()` → buffer partial multi-byte codepoints, then `extractCompleteUTF8()` ([model/batch_utf8.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_utf8.go)).
-  - First token: records `prefillDone=true`, computes TTFT, ends the `prefill` span, starts the `token-generation` span.
-  - Processor classification: `stepGPT()` for GPT-OSS, `stepStandard()` for everything else (§19.7.8). Classifies content into reasoning / completion / tooling and detects tool-call markers.
-  - Counter increment: `reasonTokens` or `completionTokens`.
-  - Max-tokens check: if `outputTokens >= maxTokens`, `finishSlot()`.
-  - Accumulate into `finalContent` / `finalReasoning` / `finalTooling`.
-  - `sendDeltaResponse()` for non-tool content (tool content is buffered until parse).
-
-#### Step 13: Finish the Request
-
-When generation ends (EOG token, max tokens, or error), the request is
-finalized:
-
-1. **Flush remaining text**: Any buffered UTF-8 bytes are flushed into the
-   final response accumulators.
-2. **Parse tool calls**: If the model generated tool call content, it is
-   parsed into structured function calls with validated JSON arguments.
-3. **Calculate metrics**: Tokens per second (TPS), time to first token
-   (TTFT), and draft acceptance rates are computed.
-4. **Send final response**: The complete response — including content,
-   reasoning, tool calls, logprobs, and usage statistics — is sent through
-   the response channel.
-5. **Clean up the KV cache**:
-   - IMC (all model types): the entire VRAM sequence is cleared. The cached
-     conversation prefix was already snapshotted to RAM during slot
-     initialization and will be restored on the next request.
-   - Without caching, the entire sequence is cleared.
-6. **Free resources**: The sampler, grammar sampler, and any multimodal
-   resources (bitmaps, projection context) are freed.
-
-**Code:**
-
-- `finishSlot()` ([model/batch_finish.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go)):
-  - Flushes the UTF-8 buffer.
-  - Tool-call parse: GPT-OSS path calls `parseGPTToolCall()` directly ([batch_finish.go:177](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go#L177)); all other models route through `parseToolCall` ([model/processor_parse.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/processor_parse.go)) — see §19.7.8.
-  - Metrics: TPS = `(outputTokens - 1) / elapsed`, TTFT, draft-acceptance rate.
-  - `sendFinalResponse()` with usage, content, reasoning, tool calls, logprobs.
-  - KV cleanup: `MemorySeqRm(mem, seqID, -1, -1)` clears the full VRAM sequence; the IMC prefix is already in RAM from Step 9.
-  - Frees the sampler, grammar sampler, MTMD bitmaps/chunks, and `mtmdCtx`.
-  - Closes the job channel; the `streaming()` wrapper drains and closes the caller's channel.
-  - Decrements the **model-level** `m.activeStreams`.
-
-#### Step 14: Release the Model
-
-The response channel is closed, signaling to the caller that streaming is
-complete. The kronk-level semaphore slot is released, allowing the next
-queued request to begin processing.
-
-**Code:**
-
-- `releaseModel()` ([sdk/kronk/acquire.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/acquire.go)) — drains a slot from the kronk-level semaphore (`<-krn.sem`) and decrements `krn.activeStreams` (the kronk-level counter; the model-level one was already decremented in Step 13).
-
-### 19.12 MTP Internals
-
-This section documents the engine internals of the MTP (Multi-Token
-Prediction) drafter shipped in
-[PR #593](https://github.com/ardanlabs/kronk/pull/593). The user-facing
-operation guide lives in
-[Chapter 6](#chapter-6-speculative-decoding--mtp); the configuration
-surface lives in [Chapter 3 §3.12](#312-speculative-decoding). This
-section is the only place that goes inside the FFI bindings, mirror
-step, three-pass dispatch, and hybrid snapshot/restore.
-
-The drafter sits behind a single `*draftModel` type
-([model.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go)),
-selected once at model load by `selectAndLoadDraft`
-([draft_mtp.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go)).
-In separate-GGUF mode it loads a second `llama_model`; in MTP mode it
-shares the target's `llama_model` and binds an MTP head that lives
-inside the target GGUF.
-
-Reference: `common/speculative.cpp common_speculative_impl_draft_mtp`
-in upstream llama.cpp. Kronk's implementation lives in
-[`draft_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go)
-(load), [`batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)
-(mirror + AR loop), and integration changes in
-[`batch_engine.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go),
-[`batch_slot.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go),
-[`batch_slot_start.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go),
-[`batch_speculative.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go),
-[`batch_prefill_text.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go),
-[`batch_finish.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go),
-and the FFI bindings in
-[`yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go).
-
-#### 19.12.1 Auto-detection
-
-`selectAndLoadDraft` runs once during model initialization
-(`initGenerationRuntime` in `model.go`) and decides which drafter, if
-any, to load:
-
-```diagram
-                       ╭───────────────────────╮
-                       │ cfg.DraftModel != nil │──── yes ──▶  loadDraftModel  (separate-GGUF)
-                       ╰──────────┬────────────╯
-                                  │ no
-                                  ▼
-                       ╭───────────────────────╮
-                       │ mtpNextNLayers(target)│──── 0 ──▶  return (nil, nil) — no drafter
-                       ╰──────────┬────────────╯
-                                  │ > 0
-                                  ▼
-                       ╭───────────────────────╮
-                       │     MTPAvailable()    │──── false ──▶ skip (log reason: old llama.cpp)
-                       ╰──────────┬────────────╯
-                                  │ true
-                                  ▼
-                       loadDraftModelMTP  (auto-enabled; inherits NSeqMax)
-```
-
-`mtpNextNLayers` looks up the GGUF metadata key
-`<arch>.nextn_predict_layers` (a uint32). Kronk matches by the unique
-substring `nextn_predict_layers` so the same lookup works for every
-architecture variant without first reading `general.architecture`.
-
-`MTPAvailable()` probes whether the loaded llama.cpp library exports
-the three pre-norm symbols listed in §19.12.2. Older builds (pre
-`src/llama-ext.h`) won't have them — Kronk logs and starts up without
-MTP rather than crashing on a missing symbol mid-request.
-
-The historical `NSeqMax == 1` gate (present through earlier revisions
-of PR #593) has been removed: the draft context inherits `NSeqMax`
-from the target and hosts as many sequences as the target does. The
-three-pass post-decode in `processBatch` (§19.12.5) makes the spec
-verify path multi-slot safe.
-
-When any of the gates fail, `selectAndLoadDraft` logs the specific
-reason and returns `(nil, nil)`. The target still loads and serves
-traffic — just without speculation.
-
-#### 19.12.2 Pre-Norm Hidden-State Plumbing
-
-The MTP path needs three llama.cpp C symbols that yzma upstream does
-not yet bind. Kronk adds them locally in
-[`yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go)
-via the `jupiterrider/ffi` package:
-
-| Symbol                              | Go wrapper                                          | Purpose                                                                                                                       |
-| ----------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `llama_set_embeddings_pre_norm`     | `SetEmbeddingsPreNorm(ctx, value, masked)`          | Toggle pre-norm extraction on a context. `masked=false` = dense (all rows); `masked=true` = sparse (logit-flagged rows only). |
-| `llama_get_embeddings_pre_norm`     | `GetEmbeddingsPreNorm(ctx, nRows, nEmbd) []float32` | Return the dense buffer produced by the most recent `llama_decode`. Used on the target.                                       |
-| `llama_get_embeddings_pre_norm_ith` | `GetEmbeddingsPreNormIth(ctx, i, nEmbd) []float32`  | Return a single row by output-table index. Used on the draft (masked) context.                                                |
-
-Two binding details worth highlighting:
-
-- **Symbol probing is dual.** Each prep tries the C-linkage name first
-  and falls back to the Itanium C++ ABI mangled form (e.g.
-  `_Z29llama_set_embeddings_pre_normP13llama_contextbb`) so kronk
-  binds against llama.cpp builds compiled with or without `LLAMA_API`
-  on these declarations.
-- **Best-effort init.** `InitYzmaWorkarounds` never fails on a missing
-  pre-norm symbol. The corresponding `ffi.Fun` stays zero-valued and
-  `MTPAvailable()` returns false, gating §19.12.1.
-
-At load time `loadDraftModelMTP` sets:
-
-- `SetEmbeddingsPreNorm(targetCtx, true, false)` — dense, every row
-  accessible by raw batch index. Required for the mirror step
-  (§19.12.3), which reads arbitrary rows from each completed target
-  batch.
-- `SetEmbeddingsPreNorm(draftCtx, true, true)` — sparse, only
-  logits-flagged rows stored. The draft only needs the single output
-  row of each AR step.
-
-The flag is consumed at graph-build time, so it must be set **before**
-the first decode on either context.
-
-#### 19.12.3 Mirror Step and AR Draft Loop
-
-Two functions in [`batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)
-do the heavy lifting.
-
-##### Mirror: `mirrorTargetBatchToMTPDraft`
-
-After every successful target `llama_decode` + `llama_synchronize`, the
-post-decode pass in `processBatch` calls the mirror to replay the
-slot's just-decoded range into the draft context with `batch.embd`
-populated from the target's pre-norm buffer.
-
-Per-position alignment is **shift-right-by-1**, matching
-`common_speculative_impl_draft_mtp`:
-
-```
-mirror[0]   : token = tgt[start+0],  embd = pendingH (slot's pre-batch h)
-mirror[k>0] : token = tgt[start+k],  embd = h_tgt[start+k-1]
-```
-
-`pendingH` is a per-slot copy of the hidden row at the last committed
-target position. On the very first decode of a sequence, no `h` has
-been observed yet — that slot of the mirror batch is zeroed (the MTP
-head's first prediction at position 0 is on a BOS / instruction
-sentinel where exact `h` does not matter).
-
-After the mirror succeeds, `pendingH` is updated to the last
-target-batch row so it's ready as the slot-0 input of the next
-mirror.
-
-A few non-obvious correctness points enforced in the function:
-
-- **Chunking by mirror capacity.** The mirror batch is allocated at
-  `NBatch` capacity. When `effectiveCount > NBatch` the mirror is run
-  in chunks, with `llama.Synchronize(draft)` **inside the chunk loop**
-  before the next chunk overwrites `mirror.Embd`. Without the per-chunk
-  sync, the next chunk's `copy()` into the Go-owned embd slice races
-  the still-in-flight C read on async backends (Metal/CUDA) and
-  corrupts the input.
-- **`effectiveCount` is caller-provided.** Prefill chunks and plain
-  gen-token decodes mirror `targetBatchCount` positions; the spec
-  path mirrors only `1 + accepted` rows so rejected draft tokens are
-  never reflected into draft KV.
-- **`logits=true` only on the last row.** The mirror only needs the
-  pre-norm row of the very last position (as the next `pendingH`), so
-  only the last row is logits-flagged.
-
-##### AR Draft: `generateDraftTokensMTP`
-
-The drafter runs an auto-regressive loop on the MTP context. Each
-iteration:
-
-1. Build a single-token batch with `(curToken, pos, seqIDs)` and copy
-   `curEmbd` into the embd slot.
-2. `llama.Decode` + `llama.Synchronize` (async-backend safety again).
-3. `llama.SamplerSample(greedy, ctx, -1)` to pick the next draft token.
-4. `GetEmbeddingsPreNormIth(ctx, 0, nEmbd)` to read back the next
-   hidden state.
-5. EOG check; copy `nextEmbd` into `pendingH`; advance.
-
-The loop stops on `chooseNDraft(s, draft.nDraft)` rounds (see
-§19.12.4 acceptance scaling), or earlier on EOG or decode failure.
-
-**Why MTP-only batches?** `llama.BatchInit(N, embd, nSeqMax)` allocates
-**either** the token buffer **or** the embd buffer — never both —
-based on its `embd` arg. MTP needs both per position. Kronk works
-around this by calling `BatchInit(N, 0, 1)` to get a token-only batch
-(with `pos`, `seq_id`, and `logits` arrays sized to `N`) and then
-attaching a Go-allocated `[]float32` of size `N*nEmbd` as the embd
-buffer. The Go slice is pinned (`runtime.Pinner`) for the batch's
-lifetime and the `Batch.Embd` pointer is cleared **before**
-`BatchFree` so llama.cpp's unconditional `free(batch.embd)` doesn't
-`free()` a Go heap allocation.
-
-These two MTP-only batches live on `draftModel`:
-
-- `draftBatchMTP` — capacity 1, used by `generateDraftTokensMTP` per
-  step.
-- `mirrorBatchMTP` — capacity `NBatch`, used by the mirror step.
-
-#### 19.12.4 Verification on the MTP Path
-
-`verifySpeculativeTokens` is shared between separate-GGUF and MTP, but
-the MTP path forces **greedy verification** unconditionally because
-the MTP head currently runs only greedy sampling (`SamplerInitGreedy`)
-and the AR loop does not capture sparse draft distributions. Running
-the probabilistic verify path without a draft distribution would fall
-through to `sampleFromProbs(target)` at every position and reject
-every draft token unconditionally.
-
-To compensate, the greedy branch is taught — only on the MTP path
-(`mtpGreedy == true`) — to invoke the slot's **full sampler** at each
-position instead of taking the raw target argmax. That preserves the
-user's `temperature` / `top_k` / `top_p` shape on the emitted
-sequence. The mathematical guarantee of distribution-equivalent
-output (Leviathan et al., 2023) is lost on the MTP path — it is the
-standard approximation when the draft distribution is unavailable.
-
-`originalSampled` is also snapshotted before the verify loop, because
-`handleSampledToken` mutates `s.sampled` as each accepted draft token
-flows through the streaming pipeline. The hybrid re-decode path
-(§19.12.6) needs the **original** sampled token at the base position;
-using the mutated value would re-decode the wrong token and corrupt
-every subsequent round.
-
-After verify, the MTP mirror runs again over `1 + accepted` rows to
-overwrite the AR-loop draft KV entries with target-derived hidden
-states. That update is what makes the next round's `pendingH` reflect
-reality.
-
-`rollbackDraft` for MTP is also different from the separate-GGUF
-path: it `MemorySeqRm`s the **entire** drafted range from the draft
-KV before the post-verify mirror runs. llama.cpp's transformer KV
-does not overwrite by `(seq, pos)` on re-decode — it appends another
-slot, leaving duplicate entries that corrupt subsequent attention.
-The mirror then writes the correct target-derived entries into clean
-slots.
-
-**Adaptive `nDraft` (acceptance EMA).** `chooseNDraft(s, maxDraft)`
-in
-[`batch_speculative.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go)
-scales `nDraft` down based on the slot's exponential moving average
-of acceptance rate (`specAccEMA`). The EMA formula is
-`0.9*old + 0.1*(accepted/nDraft)` and persists across requests on the
-slot. The user-visible buckets (`< 0.30` → 0, `< 0.50` → 1, etc.) are
-documented in Chapter 6 §6.4.
-
-When the EMA collapses to ~0, `chooseNDraft` returns 0 and the spec
-path is bypassed for that round — but the draft-tokens / accepted /
-acceptance-rate fields are still emitted on the final slot log line
-so dashboards see a stable schema. See `finishSlot` and
-`sendFinalResponse`.
-
-#### 19.12.5 Three-pass `processBatch` and Phase A / Phase B Split
-
-When `nseq-max > 1` and two or more spec slots verify in the same
-shared batch, the original monolithic `verifySpeculativeTokens` could
-corrupt the target context's logit buffer for one slot while a peer
-was still trying to read it. The hybrid `restoreTargetSpecSnapshot`
-(§19.12.6) re-decodes a small batch on the target context, and that
-re-decode **replaces the per-context logit buffer with logits for
-only the re-decoded rows** — every other slot's batch rows return
-`nullptr` from `llama_get_logits_ith`, crashing
-`llama_sampler_sample` (`GGML_ASSERT(logits != nullptr)` at
-`llama-sampler.cpp:850`).
-
-The fix has two parts:
-
-1. **`verifySpeculativeTokens` is split** in
-   [batch_speculative.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go):
-   - **Phase A (`verifySpeculativeTokens`) — read-only.** Runs the
-     verify loop (logit reads, accept / reject, per-accepted
-     `handleSampledToken`), samples the bonus token, updates the
-     acceptance EMA. Stashes `accepted`, `bonusToken`, and
-     `originalSampled` on the slot via new `specPending*` fields and
-     sets `specPendingFinalize = true`. Does NOT touch target KV,
-     draft KV, `s.nPast`, or `s.iBatch`. `s.specDraftTokens` is
-     deliberately retained for Phase B.
-   - **Phase B (`finalizeSpeculativeTokens`) — mutating.** Runs the
-     rollback (hybrid restore or `MemorySeqRm`), draft KV rollback,
-     MTP mirror, sets `s.nPast`, emits the throttled `verify-done`
-     log, streams the bonus token, sets `s.iBatch = -1`, and clears
-     the pending fields. Early-returns silently when
-     `specPendingFinalize` is false (Phase A short-circuited on EOG).
-
-2. **`processBatch` post-decode is three-pass** in
-   [batch_engine.go](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go):
-
-| Pass | Slots                                   | Work                                                                                                                                                        |
-| ---- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Non-spec (`s.specDraftTokens == nil`)   | MTP mirror (if applicable) + `processSlotToken`. Target logit buffer is fully intact.                                                                       |
-| 2A   | Spec (`s.specDraftTokens != nil`)       | Phase A — `verifySpeculativeTokens`. Pure reads on the target logit buffer, so all spec slots run safely back to back.                                      |
-| 2B   | Spec with `specPendingFinalize == true` | Phase B — `finalizeSpeculativeTokens`. Hybrid restores can wipe the logit buffer here; by this point every other spec slot has already consumed its logits. |
-
-EOG handling: when `handleSampledToken` inside Phase A finishes the
-slot (`finishSlot` → `reset`), the `specPending*` fields stay
-defaulted and Phase B's first-line guard skips the slot. The
-deferred EMA update in Phase A still fires once via `defer` so the
-EMA is updated exactly once per round.
-
-Under `nseq-max == 1` the ordering Phase A → Phase B for a single
-spec slot is functionally identical to the old monolithic
-`verifySpeculativeTokens`, so this split has no behavioral effect on
-the single-slot path.
-
-A subtle logprobs note: Phase B's bonus-token `handleSampledToken`
-runs **after** any hybrid restore. The restore's re-decode marks
-`logits = true` only on the last re-decoded position
-(`basePast + accepted`), which is exactly the bonus token's iBatch
-position, so logprob extraction at that site still works on the
-hybrid path.
-
-#### 19.12.6 Hybrid Target Rollback
-
-Hybrid target models (transformer + recurrent layers) introduce a
-problem the regular `MemorySeqRm` rollback cannot solve: the
-recurrent layer has been **advanced through all `1+nDraft` decoded
-positions** and there is no per-position trim. A partial-rejection
-round would leave the recurrent state advanced past the accepted
-boundary, and the next `llama_decode` would fail with `-1`.
-
-Two helpers in `batch_speculative.go` solve this:
-
-| Helper                         | What it does                                                                                                                                                  |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `captureTargetSpecSnapshot(s)` | Sizes `s.specSnapshot` via `StateSeqGetSize` and reads the full per-sequence state with `StateSeqGetData`. Called **before** the spec batch is decoded.       |
-| `restoreTargetSpecSnapshot(s)` | `StateSeqSetData` to rewind, then re-decode `(sampledAtBase + first accepted drafts)` so the seq ends at exactly `basePast + 1 + accepted` correct positions. |
-
-The snapshot buffer is lazy-grow / never-shrink on the slot
-(`s.specSnapshot`). Size scales with current KV occupancy, so the cost
-grows with context length. Dense / pure-attention targets skip this
-path entirely — `MemorySeqRm` is correct and much cheaper for them.
-
-The captureTarget/restoreTarget hooks are gated on
-`e.model.modelInfo.Type == ModelTypeHybrid` so the dense fast path is
-untouched. If `captureTargetSpecSnapshot` errors,
-`verifySpeculativeTokens` clears `s.specSnapshot` and falls through
-to `MemorySeqRm`. The fallback is broken on hybrid partial-reject
-rounds, but full-accept rounds still work, and the next request
-begins with a fresh sequence anyway.
-
-**Multi-slot interaction.** `restoreTargetSpecSnapshot`'s re-decode
-invalidates the target's per-context logit buffer for every other
-batch row. With `nseq-max > 1` this is benign because the restore
-only runs in Pass 2B (`finalizeSpeculativeTokens`), after every other
-spec slot has read its logits in Pass 2A. See §19.12.5.
-
-**MTP mirror interaction.** The same re-decode also overwrites the
-target's per-context **pre-norm** buffer with rows indexed against the
-small rebatch, not the original shared `e.batch`. Phase B's MTP mirror
-(`mirrorTargetBatchToMTPDraft`) would then read the wrong pre-norm
-rows. To decouple the mirror from the restore, Phase A
-(`verifySpeculativeTokens`) copies the slot's pre-norm rows into a
-slot-local `s.verifyH` buffer via `captureVerifyPreNorm` **before** any
-Phase B side-effect can mutate the live buffer. Phase B's mirror reads
-from `s.verifyH` when populated, so MTP keeps running across partial
-rejections on hybrid targets instead of being disabled for the rest of
-the request.
-
-#### 19.12.7 Per-Slot MTP State
-
-PR #593 added the following fields to `slot` in
-[`batch_slot.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go).
-All are reset in `slot.reset()` with lazy-grow / never-shrink
-buffer policy.
-
-| Field                                    | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pendingH []float32`                     | Copy of the most-recently committed target pre-norm row. Slot-0 input of the next mirror batch.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `targetBatchStart / Count / BasePos`     | Slot's contiguous range inside the shared target batch — captured at batch-add time so the post-decode mirror knows where its rows live.                                                                                                                                                                                                                                                                                                                                                                                         |
-| `mtpHasBatch`                            | True between `batch.Add()` and the post-decode mirror; cleared by the mirror.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `mtpDisabledForRequest`                  | Disables MTP for the remainder of the current request. It is set when own-KV draft state cannot safely resume beside an IMC-restored target, including media anchors without complete draft-state coverage, and after a post-rollback mirror failure. Shared-target-KV Gemma4 resumes directly from target KV and does not require a separate draft snapshot. Cleared by `slot.reset()` when the slot is recycled for the next request. |
-| `mtpDisableReason`                       | Short machine-friendly reason reported in final usage and completion logs when MTP is disabled for the request.                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `verifyH []float32`                      | Slot-local cache of the target's pre-norm hidden-state rows for the just-decoded spec batch range (1+nDraft rows of nEmbd floats). Captured at the top of `verifySpeculativeTokens` (Phase A) BEFORE any Phase B side-effect (notably `restoreTargetSpecSnapshot`'s re-decode on a hybrid target) can invalidate the per-context pre-norm buffer. `mirrorTargetBatchToMTPDraft` reads from this buffer when populated and clears it after consumption. Lazy-grow / never-shrink.                                                 |
-| `specSnapshot []byte`                    | Pre-spec target state buffer for hybrid rollback (§19.12.6). Lazy-grow.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `specRounds`                             | Counter used to throttle per-round verify logging (logs first round, then every 32nd).                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `specPendingFinalize bool`               | Gates Phase B (§19.12.5). True between a successful Phase A and the matching Phase B. EOG in Phase A leaves it false so Phase B silently skips.                                                                                                                                                                                                                                                                                                                                                                                  |
-| `specPendingAccepted int`                | Phase A → Phase B hand-off: accepted draft count.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `specPendingBonusToken llama.Token`      | Phase A → Phase B hand-off: bonus token sampled at `baseBatch + accepted`.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `specPendingOriginalSampled llama.Token` | Phase A → Phase B hand-off: snapshot of `s.sampled` taken before any `handleSampledToken` mutated it. Hybrid restore needs this for the re-decode at `basePast`.                                                                                                                                                                                                                                                                                                                                                                 |
-
-#### 19.12.8 Code Map
-
-| File                                                                                                                                       | Role for MTP                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`sdk/kronk/model/draft_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/draft_mtp.go)                   | `mtpNextNLayers`, `loadDraftModelMTP`, `selectAndLoadDraft`. Sole source for MTP load + detect.                                                                                                                                                                                                                                                   |
-| [`sdk/kronk/model/batch_mtp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_mtp.go)                   | `mirrorTargetBatchToMTPDraft`, `generateDraftTokensMTP`, `decodeTokensIntoCacheMTP` (IMC cache build with mirror), `mirrorBuildChunkToMTPDraft`, helpers (`batchTokensAt`, `mirrorBatchCapacity`).                                                                                                                                                |
-| [`sdk/kronk/model/yzma.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/yzma.go)                             | FFI bindings for the three pre-norm symbols; `MTPAvailable`, `SetEmbeddingsPreNorm`, `GetEmbeddingsPreNorm{,Ith}`.                                                                                                                                                                                                                                |
-| [`sdk/kronk/model/model.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/model.go)                           | `draftModel` struct extended with MTP fields (`mtp`, `nEmbd`, MTP batches, pinned embd slices). `Unload` skips shared `ModelFree`.                                                                                                                                                                                                                |
-| [`sdk/kronk/model/batch_slot.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot.go)                 | `slot` struct extended with per-slot MTP state (`pendingH`, target-batch range, `mtpHasBatch`, `mtpDisabledForRequest`, `specSnapshot`, `specRounds`).                                                                                                                                                                                            |
-| [`sdk/kronk/model/batch_slot_start.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_slot_start.go)     | Skips separate-draft-prefill on MTP; dispatches the MTP-aware `decodeTokensIntoCacheMTP` during text IMC cache builds; restores media anchors without re-encoding unchanged media; resumes shared-target-KV Gemma4 from target state; and disables own-KV media MTP when complete draft-state coverage is unavailable. |
-| [`sdk/kronk/model/batch_engine.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_engine.go)             | `processBatch` integration: claims slot's target-batch range at every add site, mirrors after every successful decode, dispatches MTP vs separate-GGUF draft generation.                                                                                                                                                                          |
-| [`sdk/kronk/model/batch_prefill_text.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_prefill_text.go) | `addPrefillChunk` claims (or extends) the slot's MTP target-batch range so prefill rows get mirrored.                                                                                                                                                                                                                                             |
-| [`sdk/kronk/model/batch_speculative.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_speculative.go)   | Greedy-only MTP verify path; `originalSampled` snapshot; hybrid snapshot/restore; post-verify mirror; throttled `verify-done` log; MTP-specific `rollbackDraft`.                                                                                                                                                                                  |
-| [`sdk/kronk/model/batch_finish.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/batch_finish.go)             | Always-emit draft metrics when a drafter is configured.                                                                                                                                                                                                                                                                                           |
-| [`sdk/kronk/model/params.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/model/params.go)                         | `top_p == 0                                                                                                                                                                                                                                                                                                                                       |     | == 1`from the request is treated as unset so the model-config`top_p` survives. |
-
-#### 19.12.9 Testing
-
-Test package: [`sdk/kronk/tests/mtp/`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/kronk/tests/mtp).
-
-The suite is a smoke test against the
-`unsloth/Qwen3.6-35B-A3B-MTP-UD-Q2_K_XL` target via `testlib.CfgMTPChat()`.
-A successful `Chat` and `ChatStreaming` response implicitly verifies
-that:
-
-- The MTP draft context loaded (auto-detection passed).
-- Pre-norm extraction is wired correctly on both contexts.
-- The mirror step is in sync after every target decode.
-- Speculation produced valid drafts and the target accepted and
-  emitted clean text.
-
-`TestMain` skips the whole suite when the MTP model file is not
-downloaded, so contributors without the GGUF locally still get a green
-run.
-
-Run from the project root:
+Use exact package paths rather than `./...`. If several packages changed, list those
+packages explicitly or run commands separately so failures remain attributable. Review
+`go fix` output/diff because it may modify additional files; include every resulting Go
+file in the subsequent `gofmt` and review.
+
+Before focused Go tests, set:
 
 ```shell
 export RUN_IN_PARALLEL=yes
-export GITHUB_WORKSPACE=$(pwd)
-go test -v -count=1 ./sdk/kronk/tests/mtp/...
+export GITHUB_WORKSPACE="$(pwd -P)"
 ```
 
-### 19.13 Bucky Internals
-
-This section is the developer-facing companion to
-[Chapter 18: Bucky (Audio Transcription)](chapter-18-bucky.md). It
-covers the code layout, concurrency model, lifecycle, and HTTP plumbing
-of the whisper.cpp backend.
-
-#### 19.13.1 Package Layout
-
-| Package                                                                                                                      | Role                                                                                                                               |
-| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [`sdk/bucky`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky)                                           | High-level handle (`*Bucky`). Owns one model + outer semaphore. Mirrors the role `sdk/kronk` plays for llama.                      |
-| [`sdk/bucky/model`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/model)                               | Low-level whisper.cpp wrapper: `Config`, `Model`, `Transcribe`, `DetectLanguage`, `statePool`, language helpers, ggml-header info. |
-| [`sdk/bucky/pool`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool)                                 | Multi-model `engine.Pool[*Bucky]` cache, shared `resman.Manager` reservations, `ModelStatus` aggregation (loaded + loading).       |
-| [`sdk/tools/bucky/libs`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/libs)                     | Cross-platform whisper.cpp shared-library installer (triples, default bundle resolution, prebuilt-archive downloader).             |
-| [`sdk/tools/bucky/models`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/tools/bucky/models)                 | Bundled whisper catalog, GGML downloader, ggml-header parser, on-disk index for `bucky-models/`.                                   |
-| [`cmd/kronk/bucky`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/kronk/bucky)                               | CLI: `kronk bucky libs` and `kronk bucky model {catalog,list,pull,remove}`. Each verb has a `--local` and a `--web` mode.          |
-| [`cmd/server/app/domain/audioapp`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp) | HTTP handler for `POST /v1/audio/transcriptions` (multipart upload, format dispatch).                                              |
-| [`cmd/server/app/domain/toolapp`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp)   | HTTP handlers for `/v1/bucky/libs/*` and `/v1/bucky/models/*` admin endpoints (`bucky_libs.go`, `bucky_models.go`).                |
-
-#### 19.13.2 Handle, Semaphore, and `whisper.State` Pool
-
-There are **two** concurrency gates in front of a transcribe:
-
-1. **Outer semaphore** (`Bucky.sem`) sized at construction time to
-   `max(NSeqMax, 1)`. Sized 1:1 with NSeqMax to match the embedding
-   /rerank rule in `sdk/kronk` — whisper has no batch engine, so
-   `NSeqMax * QueueDepth` would over-subscribe.
-2. **Inner `statePool`** ([`sdk/bucky/model/pool.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/model/pool.go))
-   of `NSeqMax` `whisper.State` instances. The model weights live
-   once in the shared `whisper.Context`; each `State` owns its own
-   mel spectrogram, KV cache, and compute buffer.
-
-`Bucky.Transcribe` flow:
-
-```diagram
-caller ─▶ acquireModel(ctx)
-            ├─ shutdown check + activeStreams++
-            └─ block on b.sem (outer semaphore)
-        ─▶ model.Transcribe
-            ├─ buildFullParams (StringRefs.KeepAlive defer)
-            ├─ statePool.acquire (block on internal pool channel)
-            ├─ whisper.FullWithState (the actual decode)
-            ├─ statePool.release
-            └─ collectTranscription
-        ─▶ releaseModel
-            └─ release b.sem + activeStreams--
-```
-
-The state pool's `release` is intentionally bare — `whisper_full_with_state`
-resets the state internally on the next call, so no explicit clear is
-needed.
-
-`Unload` ([`sdk/bucky/bucky.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/bucky.go))
-takes the shutdown mutex, sets `shutdownFlag`, then polls
-`activeStreams` at 100 ms until either it reaches zero or the
-context expires. The default deadline is 5 s if the caller didn't
-set one. Subsequent acquires fail fast with
-`whisper has been unloaded`.
-
-#### 19.13.3 Init, Load, and Degraded Mode
-
-`bucky.Init` ([`sdk/bucky/init.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/init.go))
-does three things in order:
-
-1. **Registers** the whisper backend with the cross-backend registry
-   under `backend.KindWhisper`, including `NewLibs` and `NewCatalog`
-   factories. This happens **before** the shared-library load so the
-   CLI / BUI / server can construct libs + catalog managers even when
-   the `.so`/`.dylib`/`.dll` is missing.
-2. **Adjusts** `LD_LIBRARY_PATH` (POSIX) or `PATH` (Windows) so the
-   dynamic loader can find sibling deps next to `libwhisper`.
-3. **Loads** `libwhisper` via `whisper.Load(libPath)`, then installs
-   the C-side log callback (`LogSilent` by default to suppress the
-   noisy `whisper_init_*` / `ggml_metal_*` lines).
-
-`Init` is idempotent and re-entrant: failures **do not** set
-`initDone`, so the server can call it again after the user downloads
-the missing libraries through the BUI without restarting.
-
-In `cmd/server/api/services/kronk/main.go` an `Init` failure logs a
-warning ("bucky init failed, running in degraded mode…") instead of
-aborting startup. The `/v1/audio/transcriptions` endpoint will fail
-until a successful re-init, but `/v1/bucky/libs/*` and
-`/v1/bucky/models/*` stay live so libraries / models can be downloaded.
-
-#### 19.13.4 Pool Integration (Shared `resman`)
-
-`sdk/bucky/pool` constructs a `engine.Pool[*bucky.Bucky]` ([`sdk/bucky/pool/pool.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool/pool.go))
-using the **same** `resman.Manager` instance the kronk pool uses.
-That single shared manager is what unifies VRAM / RAM accounting
-across backends:
-
-- Whisper loads the entire context into memory at once, so a pool
-  reservation total (`VRAMBytes + RAMBytes`) is a faithful proxy for
-  the live footprint — unlike llama.cpp's mmap + paged-experts model.
-- `Pool.ModelStatus` reports both **loaded** entries (from
-  `engine.Coldest`) and **loading** entries (`resman.Usage` filtered
-  by `engine.HasTicket` so this pool only surfaces its own
-  in-flight reservations, not the llama pool's).
-- The pool loader lives in [`sdk/bucky/pool/whisper.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/pool/whisper.go);
-  it resolves the model file via the bucky catalog, charges the
-  resman, calls `bucky.New`, and on eviction calls `Bucky.Unload`.
-
-Defaults: `ModelsInPool = 10`, `TTL = 5m` (`sdk/bucky/pool/pool.go`).
-
-#### 19.13.5 `audioapp` HTTP Handler
-
-`audioapp.transcriptions` ([`cmd/server/app/domain/audioapp/audioapp.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp/audioapp.go))
-is a thin OpenAI-compatible wrapper:
-
-1. `ParseMultipartForm(25 << 20)` — 25 MB cap matching OpenAI.
-2. Read form fields (`model`, `file`, `language`, `prompt`,
-   `translate`, `response_format`, `timestamp_granularities[]`).
-3. `audio.Decode` ([`github.com/ardanlabs/bucky/pkg/audio`](https://github.com/ardanlabs/bucky/tree/main/pkg/audio))
-   converts the upload to 16 kHz mono float32 PCM. Anything `audio.Decode`
-   can read is accepted; everything else returns `InvalidArgument`.
-4. `pool.Bucky.AquireModel(ctx, modelID)` triggers a load if cold.
-5. **English-only guard** — when `ModelInfo().IsMultilingual` is
-   false and the caller passed a non-empty / non-`en` language, the
-   request is rejected before any decode work.
-6. `Bucky.Transcribe` runs under a 30-minute per-request timeout.
-7. Format dispatch: `text` and `srt` / `vtt` emit `rawResponse` blobs;
-   `json` and `verbose_json` go through `jsonResponse`.
-
-Word-level timestamps are not yet plumbed from whisper.cpp, so when
-`timestamp_granularities[]=word` is set the handler emits `words: []`
-to keep the response shape compatible.
-
-#### 19.13.6 Tests
-
-| Test                                                                                                                                                               | Scope                                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| [`sdk/bucky/tests/transcribe`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/tests/transcribe)                                               | SDK-level: `Bucky.Transcribe` (greedy + `OnSegment`) and pool concurrency.               |
-| [`sdk/bucky/init_test.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/sdk/bucky/init_test.go)                                                       | `Init` idempotency, degraded-mode fallback, log-level wiring.                            |
-| [`cmd/server/api/services/kronk/tests/audio_test.go`](file:///Users/bill/code/go/src/github.com/ardanlabs/kronk/cmd/server/api/services/kronk/tests/audio_test.go) | End-to-end HTTP: `POST /v1/audio/transcriptions` with every supported `response_format`. |
-
-Tests follow the repo's standard env-var contract:
+`GITHUB_WORKSPACE` must be the absolute repository root. Then run a package test or a
+specific test, for example:
 
 ```shell
-export RUN_IN_PARALLEL=yes
-export GITHUB_WORKSPACE=$(pwd)
-go test -v -count=1 ./sdk/bucky/tests/transcribe/...
+go test -count=1 ./sdk/kronk/model
+go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen
 ```
 
-The transcribe tests skip themselves when no whisper model is on
-disk, so contributors without a pulled model still get a green run.
+Agents must **never prescribe or run a full repository test run**, and must **never
+launch tests from `sdk/kronk/tests`**. Those suites require managed libraries/models
+and belong to CI or deliberate human integration runs. Commands such as `make test`
+exist as broad human/CI-maintainer context, but they are not the agent default. Do not
+use a broad command merely because focused ownership is unclear; inspect the owner.
 
-### 19.14 Continuous Integration
+#### 19.9.2 Choosing effective checks
 
-#### 19.14.1 Workflows
+- Pure logic changes: focused unit test plus package static checks.
+- Public API changes: owner tests, direct dependent package build/test, and generated
+  SDK docs when comments/signatures changed.
+- Batch/native changes: focused model unit tests first; report model-backed validation
+  as unavailable if prerequisites are absent rather than substituting unrelated tests.
+- Pool changes: engine tests plus the affected typed pool's reservation/load tests.
+  Include failure and cancellation, not only warm acquisition.
+- Route changes: domain tests and a server build. Use the relevant API test only when
+  its server/model prerequisites are available.
+- CLI changes: command package tests, `go install ./cmd/kronk`, and one safe invocation.
+- Bucky changes: package tests; transcription integration only with installed Whisper
+  libraries/model. Streaming changes require close/cancellation coverage.
 
-Five GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
+#### 19.9.3 Markdown, generated docs, and BUI
 
-| Workflow                                                      | Triggers                                                   | Purpose                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`linux.yml`](../.github/workflows/linux.yml)                 | PRs + push to `main` (Go/mod/CI paths)                     | Three parallel jobs: `static` (vet/staticcheck/govulncheck/gofmt/gofix/tidy/goreleaser-check/-race unit tests), `api-tests` (`cmd/server/...`), `sdk-tests` (`sdk/...`).                                                                                                        |
-| [`release.yaml`](../.github/workflows/release.yaml)           | Push of tag `v*`                                           | Pinned-toolchain `goreleaser release --clean`, SBOM generation via syft, SLSA build-provenance attestation, Homebrew cask refresh.                                                                                                                                              |
-| [`docker.yml`](../.github/workflows/docker.yml)               | PRs, push to `main`, push of tag `v*`, `workflow_dispatch` | Builds the **five** container variants defined in [`zarf/docker/kronk/Dockerfile`](../zarf/docker/kronk/Dockerfile). Tag pushes (`v*`) publish + cosign-sign to the release repos (`ghcr.io/ardanlabs/kronk` + Docker Hub); main pushes publish + cosign-sign trunk snapshots to separate repos on both registries (`ghcr.io/ardanlabs/kronk-main` + `ardanlabs/kronk-main`, `main-<sha>` / `main-latest` tags). Both smoke-test cpu/amd64 before publishing. |
-| [`cache-cleanup.yml`](../.github/workflows/cache-cleanup.yml) | Daily cron + manual                                        | Prunes stale GHA cache entries and stale `kronk-buildcache` GHCR tags older than the cutoff.                                                                                                                                                                                    |
-| [`label-guard.yml`](../.github/workflows/label-guard.yml)     | Label events on PRs/issues                                 | Removes unauthorized `build *` labels (PRs from non-maintainers; any application on an issue).                                                                                                                                                                                  |
+For a manual-only edit, run formatting/sanity checks appropriate to the task, including
+`git diff --check`. `make kronk-docs` validates the manual conversion pipeline but also
+changes generated `DocsManual`; honor any task restriction on edited files. For normal
+documentation changes, commit source and generated output together, then run the BUI
+build.
 
-The three Linux jobs run in parallel and all use
-[`actions/setup-go`](https://github.com/actions/setup-go) keyed on
-[`.go-version`](../.go-version), so they share one Go module +
-build cache (`setup-go`'s key encodes OS + Go version + `go.sum` hash).
-That's also why bumping `.go-version` invalidates the `go install ./cmd/kronk`
-step's cache exactly once per Go-version bump.
+For BUI changes, install dependencies according to its lockfile/workflow and run:
 
-#### 19.14.2 Go Toolchain Pin (`go.mod` vs `.go-version`)
-
-Two files, two roles:
-
-```diagram
-╭──────────────╮      minimum language version (floor)
-│   go.mod     │ ───► `go 1.26.0`
-╰──────────────╯      used by downstream consumers of the modules
-                      and by `GOTOOLCHAIN=auto` resolution
-
-╭──────────────╮      exact toolchain CI + dev managers install
-│ .go-version  │ ───► `1.26.4`
-╰──────────────╯      picked up by asdf, mise, goenv, gvm, direnv,
-                      and actions/setup-go's `go-version-file:` input
+```shell
+npm run build
 ```
 
-[`.github/scripts/check-go-version.sh`](../.github/scripts/check-go-version.sh)
-parses the `go` directive from `go.mod` and the bare version from
-`.go-version`, then fails the workflow when their `<major>.<minor>`
-components disagree. Patch-level drift is allowed (and expected: CI
-typically pins a patched toolchain ahead of the language minimum) —
-minor-level drift means someone bumped one file and forgot the other.
-
-Where the guard runs:
-
-- `linux.yml` → the `static` job, as the first step after checkout.
-- `release.yaml` → before `goreleaser`, so a release can never be cut
-  with a mismatched toolchain.
-
-All CI jobs export `GOTOOLCHAIN=local`. A transitive dependency that
-bumps its `go` directive above `.go-version` therefore fails loudly
-instead of silently triggering a toolchain auto-download — the correct
-fix is to bump `.go-version` (and re-run `check-go-version.sh`).
-
-The Docker build performs the same pin: the
-[Dockerfile](../zarf/docker/kronk/Dockerfile) reads `.go-version` at
-build time and downloads exactly that toolchain, so binaries published
-to registries are built with the same compiler CI tested against.
-
-#### 19.14.3 Linux Pipeline Layout (`linux.yml`)
-
-`linux.yml` runs three jobs in parallel after the `paths:` filter
-matches. There is no `lint` / `test` serialisation — the heavyweight
-`api-tests` / `sdk-tests` jobs start at the same time as the lightweight
-`static` job.
-
-```diagram
-                       push / pull_request
-                              │
-                              ▼
-              ╭───────── paths filter ─────────╮
-              │ **.go, go.mod, go.sum,         │
-              │ .go-version, .goreleaser.yaml, │
-              │ .github/workflows/linux.yml,   │
-              │ .github/actions/setup-kronk/**,│
-              │ .github/scripts/check-go-...,  │
-              │ .github/test-models.txt        │
-              ╰────────────────┬───────────────╯
-                               │
-        ┌──────────────────────┼──────────────────────┐
-        ▼                      ▼                      ▼
- ╭────────────╮         ╭─────────────╮        ╭─────────────╮
- │   static   │         │ api-tests   │        │ sdk-tests   │
- │            │         │             │        │             │
- │ check-go-  │         │ setup-kronk │        │ setup-kronk │
- │ version    │         │ (composite) │        │ (composite) │
- │ gofmt -l   │         │             │        │             │
- │ go mod tidy│         │ cmd/server/ │        │ sdk/...     │
- │ go vet     │         │ (RUN_IN_    │        │ (excluding  │
- │ staticcheck│         │  PARALLEL=  │        │  /sdk/kronk/│
- │ govulncheck│         │  no)        │        │  tests)     │
- │ go fix     │         │             │        │             │
- │ goreleaser │         │ saves       │        │             │
- │ check      │         │ models      │        │             │
- │ -race      │         │ cache on    │        │             │
- │ unit tests │         │ main + miss │        │             │
- ╰────────────╯         ╰─────────────╯        ╰─────────────╯
-```
-
-Key design decisions:
-
-- **Concurrency group** keyed on `${{ github.head_ref || github.ref }}`
-  cancels in-progress runs when a PR is force-pushed, collapsing
-  duplicate `push` + `pull_request` runs on the same branch.
-- **Minimum permissions** (`contents: read` workflow-wide); `api-tests`
-  alone gets `actions: write` so it can save the models cache.
-- **Only `api-tests` saves the models cache** (`actions/cache/save`)
-  and only on a cache miss on `main`. Two save jobs would race on the
-  same key; PR runs and cache hits don't need to save at all.
-- The `static` job also runs `-race -short` over the SDK packages that
-  don't spin up the full inference stack — catches concurrency bugs in
-  parsers, kvstorage, pool primitives without doubling test wall-clock.
-- The `paths:` filter explicitly includes CI infra files
-  (`.go-version`, `setup-kronk/**`, `check-go-version.sh`,
-  `test-models.txt`, `.goreleaser.yaml`) so changes to CI itself
-  trigger CI.
-
-#### 19.14.4 Shared Setup Action & Caches
-
-Both test jobs delegate to
-[`.github/actions/setup-kronk`](../.github/actions/setup-kronk/action.yml),
-a composite action that:
-
-1. Frees ~25 GB on the runner (drops dotnet, android, ghc, CodeQL).
-2. Installs Go via `actions/setup-go` with `go-version-file: .go-version`.
-3. Restores two **independent** caches:
-
-   | Cache     | Path                                             | Key                                                                                                      | Why separate                                                                                  |
-   | --------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-   | Libraries | `~/.kronk/libraries`, `~/.kronk/bucky-libraries` | `${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}` | Libs change far less often than models; keep them hot.                                        |
-   | Models    | `~/.kronk/models`, `~/.kronk/bucky-models`       | `${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}`                                    | Tied to the test-model manifest — see [§19.14.5](#19145-test-modelstxt--test-model-manifest). |
-
-4. `go install ./cmd/kronk` — fast because the Go module + build cache
-   restored by `setup-go` is shared with the `static` job (same Go
-   version, same `go.sum`).
-5. `kronk libs --local` + `kronk bucky libs --local` to install the
-   llama.cpp + whisper.cpp native libraries (idempotent on a cache hit).
-6. On models-cache miss only, walks `.github/test-models.txt` and pulls
-   every listed model via `kronk model pull --local` or
-   `kronk bucky model pull --local`.
-
-The composite emits `models-cache-hit` and `models-cache-key` as
-outputs so the caller can decide whether to re-save the cache.
-
-#### 19.14.5 `test-models.txt` — Test Model Manifest
-
-> ⚠️ **MAINTAIN THIS FILE.** [`.github/test-models.txt`](../.github/test-models.txt) is the
-> **single source of truth** for the models CI pulls into its test
-> environment. The file's hash is mixed into the models-cache key, so
-> adding / removing / renaming a model automatically invalidates the
-> cache on the next run and forces a fresh download. Forgetting to
-> update this file when a test gains a new model dependency means CI
-> will silently restore a stale cache and the new test will fail with
-> a "model not found" error.
-
-Format — one entry per line:
-
-```
-<backend> <model-id>
-```
-
-- `backend` is `kronk` (LLM/embed/rerank, pulled with `kronk model pull`)
-  or `bucky` (audio transcription, pulled with `kronk bucky model pull`).
-- Blank lines and lines starting with `#` are ignored.
-- **Do not add inline comments at the end of model lines** — the
-  parser word-splits each entry and treats the third field as garbage.
-
-Current manifest:
-
-| Backend | Model                                   |
-| ------- | --------------------------------------- |
-| `kronk` | `unsloth/Qwen3.5-0.8B-Q8_0`             |
-| `kronk` | `Qwen/Qwen3-8B-Q8_0`                    |
-| `kronk` | `ggml-org/embeddinggemma-300m-qat-Q8_0` |
-| `kronk` | `gpustack/bge-reranker-v2-m3-Q8_0`      |
-| `bucky` | `ggml-tiny.bin`                         |
-
-Checklist when adding a test that needs a new model:
-
-1. Add the `<backend> <model-id>` line to `.github/test-models.txt`.
-2. Also wire it into the local `install-test-models` make target so
-   `make test` keeps working for contributors who don't go through CI.
-3. Push — the cache key changes automatically, CI pulls the new model
-   once, then everyone else picks it up from cache.
-
-#### 19.14.6 Release Workflow (`release.yaml`)
-
-Triggered only by `v*` tag pushes. Runs inside a maintainer-gated
-`release` GitHub environment (configure required reviewers + tag
-patterns in **Settings → Environments**), so the `HOMEBREW_TAP_GITHUB_TOKEN`
-PAT and signing capabilities can never fire from an unattended branch
-push.
-
-Sequence:
-
-1. **`check-go-version.sh`** — same drift guard as `linux.yml`.
-2. **`actions/setup-go` with `.go-version`** — same pinned toolchain
-   as the test jobs, so the release binary is built with the compiler
-   CI tested against.
-3. **`check-version.sh`** — pushed tag must match `const Version` in
-   `sdk/kronk/kronk.go` (see [§19.14.9](#19149-version-constant--release-guard)).
-4. **Install syft** (`anchore/sbom-action/download-syft`) — GoReleaser's
-   `sboms:` section in [`.goreleaser.yaml`](../.goreleaser.yaml) shells
-   out to it to produce a CycloneDX-flavoured SPDX SBOM per archive
-   (e.g. `kronk_Linux_x86_64.tar.gz.sbom.json`).
-5. **`goreleaser release --clean`** — produces per-OS/arch archives,
-   `checksums.txt`, the SBOMs, and refreshes the Homebrew cask in
-   `ardanlabs/homebrew-kronk`.
-6. **`actions/attest-build-provenance`** — attaches SLSA build
-   provenance to every archive, the checksums file, and every SBOM.
-   Consumers can verify with:
-
-   ```shell
-   gh attestation verify dist/kronk_<...>.tar.gz --repo ardanlabs/kronk
-   gh attestation verify dist/kronk_<...>.tar.gz.sbom.json --repo ardanlabs/kronk
-   ```
-
-Permissions are limited to exactly what's needed: `contents: write`
-(release assets), `id-token: write` + `attestations: write` (SLSA OIDC).
-
-#### 19.14.7 Container Image Build & Publish (`docker.yml`)
-
-The Docker workflow is matrix-driven. The `plan` job synthesises the
-build matrix at runtime from the event type (and from any `build <variant>`
-PR labels — see [§19.14.8](#19148-support-workflows-cache-cleanupyml-label-guardyml)).
-**Five** variants are produced (the previous `jetson` variant was
-removed; reintroduce it only on user demand):
-
-| Variant  | `LLAMA_PROCESSORS`     | `BUCKY_PROCESSORS` | Platforms                    | Dockerfile target |
-| -------- | ---------------------- | ------------------ | ---------------------------- | ----------------- |
-| `cpu`    | `cpu`                  | `cpu`              | `linux/amd64`, `linux/arm64` | `runtime`         |
-| `cuda`   | `cuda`                 | `cuda`             | `linux/amd64`, `linux/arm64` | `runtime`         |
-| `vulkan` | `vulkan`               | `vulkan`           | `linux/amd64`, `linux/arm64` | `runtime`         |
-| `rocm`   | `rocm`                 | `vulkan` ¹         | `linux/amd64` only           | `runtime`         |
-| `all`    | `cpu cuda vulkan rocm` | `cpu cuda vulkan`  | `linux/amd64`, `linux/arm64` | `runtime`         |
-
-¹ Upstream whisper.cpp has no rocm build target
-([combinations.go](../sdk/tools/bucky/libs/combinations.go)), so the rocm
-variant ships the vulkan bucky bundle and the container entrypoint
-([entrypoint.sh](../zarf/docker/kronk/entrypoint.sh)) sets
-`KRONK_BUCKY_LIB_PATH` to point at it on ROCm hosts so transcription stays
-GPU-accelerated via the RADV Vulkan driver.
-
-**Native multi-arch builds.** Each `(variant, arch)` matrix entry runs
-on its own runner — `ubuntu-24.04` (amd64) or `ubuntu-24.04-arm`
-(arm64) — never under QEMU.
-
-**Separate per-registry buildx invocations.** On push events, each
-matrix entry runs **two** `docker/build-push-action` steps: one pushes
-by digest to GHCR, one pushes by digest to Docker Hub. Why two:
-
-```diagram
-                ╭──── build job (variant, arch) ────╮
-                │                                   │
-                │  ╭──── push by digest → GHCR ──╮  │
-                │  │   provenance attestation    │  │
-                │  │   names ghcr.io/...         │  │
-                │  │   surfaces outputs.digest A │  │
-                │  ╰─────────────────────────────╯  │
-                │                                   │
-                │  ╭──── push by digest → DH ────╮  │
-                │  │   provenance attestation    │  │
-                │  │   names docker.io/...       │  │
-                │  │   surfaces outputs.digest B │  │
-                │  ╰─────────────────────────────╯  │
-                │                                   │
-                │   uploads two artifacts:          │
-                │     digests-ghcr-<v>-<a>          │
-                │     digests-dh-<v>-<a>            │
-                ╰───────────────────────────────────╯
-```
-
-A single buildx invocation with two `outputs:` lines pushes
-**different index-manifest digests to each registry** (provenance
-embeds the destination registry name), but `steps.build.outputs.digest`
-exposes only one. The downstream `merge` job then can't reconstruct
-working references for the other registry — it sees `manifest unknown`
-and fails (the bug that broke an earlier version of this workflow).
-Splitting the pushes gives each step its own `outputs.digest`,
-preserves provenance on both registries, and only re-uploads layers to
-the second registry (the BuildKit cache picks up everything else).
-
-**Per-registry digest artifacts.** Each push uploads a tiny
-`digests-<registry>-<variant>-<arch>` artifact whose filename is the
-bare hex of the digest. The `merge` job downloads the matching
-artifacts for its variant with
-`actions/download-artifact@v8`'s `merge-multiple: true` — that flag is
-**required**: without it, `download-artifact@v8` has a documented
-asymmetry where 2+ matching artifacts get per-artifact subdirectories
-but exactly 1 match (the single-arch `rocm` case) extracts straight
-into `path/` with no subdir. Flattening unconditionally makes the
-layout uniform and is collision-free because filenames are unique
-digests.
-
-**Merge + sign.** The `merge` job per variant (tag pushes only — main
-pushes never reach this job):
-
-1. Downloads the per-registry digest artifacts for its variant.
-2. Stitches the multi-arch manifest with `docker buildx imagetools create -t <image>:<tag> <image>@sha256:<arch1>...` against both
-   registries independently. The first invocation per registry uses
-   `--metadata-file` so the resulting manifest-list digest can be
-   captured deterministically (no read-after-write inspect).
-3. Signs **once per (registry, manifest-list digest)** with **cosign
-   keyless** (OIDC) using `--recursive` (which walks the index and
-   signs each per-arch child too). `id-token: write` is granted on
-   this job only; cosign exchanges the workflow's OIDC token for a
-   short-lived Fulcio cert tied to the workflow identity and records
-   the signature + Rekor log entry. Signing by digest (rather than
-   once per tag) collapses N tags-of-the-same-content into a single
-   signature — a tag release produces `<version>-<variant>`,
-   `latest-<variant>` and (cpu only) `latest`, all pointing at the
-   same digest. Consumers verify by tag as usual; cosign resolves
-   the tag to a digest at verify time.
-   - **GHCR** signatures are stored co-located with the image
-     (default cosign layout).
-   - **Docker Hub** signatures are redirected to the sibling repo
-     [`ardanlabs/kronk-signatures`](https://hub.docker.com/r/ardanlabs/kronk-signatures)
-     via `COSIGN_REPOSITORY` so they don't pollute the `ardanlabs/kronk`
-     tag list with `sha256-*.sig` entries. That repo must exist and be
-     public for keyless verification to work.
-
-   > **Sync note.** If you change the signing layout (rename the
-   > signatures repo, switch to OCI 1.1 referrers, add another
-   > registry), update both [`docker.yml`](../.github/workflows/docker.yml)
-   > **and** [`DockerHub.md`](../DockerHub.md) (the "Verifying Image
-   > Signatures" section, then paste the rendered contents into the
-   > Docker Hub repo description — `DockerHub.md` is not auto-synced).
-
-   Consumers verify with:
-
-   ```shell
-   # GHCR (signatures co-located):
-   cosign verify ghcr.io/ardanlabs/kronk:v1.26.4-cpu \
-     --certificate-identity-regexp \
-       'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
-     --certificate-oidc-issuer https://token.actions.githubusercontent.com
-
-   # Docker Hub (signatures in sibling repo):
-   COSIGN_REPOSITORY=ardanlabs/kronk-signatures \
-     cosign verify ardanlabs/kronk:v1.26.4-cpu \
-       --certificate-identity-regexp \
-         'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
-       --certificate-oidc-issuer https://token.actions.githubusercontent.com
-   ```
-
-**Merge + sign (main).** The `merge_main` job is the main-branch
-counterpart to `merge` (runs only when `is_main == 'true'`). It is the
-same shape — download digests → `imagetools create` → cosign keyless
-sign each manifest-list digest — and publishes to **both** registries'
-trunk-snapshot repos, `ghcr.io/ardanlabs/kronk-main` and Docker Hub
-`ardanlabs/kronk-main`. Per variant it applies two tags to each repo:
-
-- `main-<sha>-<variant>` — immutable per-commit snapshot (the `<sha>`
-  is the same `main-<sha>` version string stamped into the binary).
-- `main-latest-<variant>` — a floating pointer to the newest main build.
-
-There is no floating `latest` / `main` alias on the snapshot repos, so a
-consumer always names a variant (`.../kronk-main:main-latest-cpu`). GHCR
-signatures are co-located (default cosign layout); Docker Hub signatures
-are redirected to the sibling `ardanlabs/kronk-main-signatures` repo via
-`COSIGN_REPOSITORY` (mirroring how the release path uses
-`kronk-signatures`). Verify:
-
-   ```shell
-   # GHCR (signatures co-located):
-   cosign verify ghcr.io/ardanlabs/kronk-main:main-latest-cpu \
-     --certificate-identity-regexp \
-       'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
-     --certificate-oidc-issuer https://token.actions.githubusercontent.com
-
-   # Docker Hub (signatures in sibling repo):
-   COSIGN_REPOSITORY=ardanlabs/kronk-main-signatures \
-     cosign verify ardanlabs/kronk-main:main-latest-cpu \
-       --certificate-identity-regexp \
-         'https://github.com/ardanlabs/kronk/.github/workflows/docker.yml@.*' \
-       --certificate-oidc-issuer https://token.actions.githubusercontent.com
-   ```
-
-> **One-time setup.** The first `push → main` build creates the
-> `kronk-main` GHCR package, which GHCR makes **private** by default and
-> does not link to the repo — a maintainer must set its visibility to
-> public (and grant the repo write access) on the package settings page.
-> On Docker Hub, create the `ardanlabs/kronk-main` and
-> `ardanlabs/kronk-main-signatures` repos as **public** before the first
-> main build. Until both are done, `docker pull` / `cosign verify` of
-> `main-latest-*` will fail for anyone outside the org.
-
-> **Retention.** `cache-cleanup.yml` prunes both snapshot repos on its
-> daily cron: immutable `main-<sha>-<variant>` tags age out after
-> `cutoff_days` (default 15), while the floating `main-latest-<variant>`
-> pointers are kept forever. Five cooperating jobs handle it —
-> `prune-snapshot-tags-ghcr-main` + `prune-snapshot-tags-dh-main` remove
-> aged snapshots, then `prune-untagged-ghcr-main` (GHCR only; DH
-> auto-collects untagged manifests) and
-> `prune-orphan-signatures-{ghcr,dh}-main` reap the per-arch children
-> and cosign signatures those leave behind.
-
-**Event → variants → tags:**
-
-| Event                  | Variants                                             | Push? | Tags applied                                                             |
-| ---------------------- | ---------------------------------------------------- | ----- | ------------------------------------------------------------------------ |
-| PR (no labels)         | `cpu` (linux/amd64 only)                             | no    | — (plus a `kronk --version` / `kronk --help` smoke test on cpu/amd64)    |
-| PR + label `build all` | all 5 (all supported arches)                         | no    | —                                                                        |
-| PR + label `build <v>` | `cpu` + each labeled variant (all supported arches)  | no    | —                                                                        |
-| Push to `main`         | all 5                                                | yes   | `main-<sha>-<variant>` + `main-latest-<variant>` on `ghcr.io/ardanlabs/kronk-main` **and** `ardanlabs/kronk-main` (both cosign-signed); smoke-tests cpu/amd64; refreshes the BuildKit cache |
-| Push to tag `v*`       | all 5                                                | yes   | `<tag>-<variant>` + `latest-<variant>`; plus `latest` → cpu (all signed) |
-| `workflow_dispatch`    | input `variants` (default `all`, or comma-separated) | no    | —                                                                        |
-
-**PR relevance gate.** The trigger has no `paths:` filter — `paths:` is
-incompatible with `labeled` / `unlabeled` events (those carry no
-changeset, so GitHub silently drops every label event). The `plan` job
-replicates the relevance check inside its script: it calls
-`gh api .../pulls/N/files` and skips the build unless the diff touches
-`.go`, `go.{mod,sum}`, `.go-version`, `.dockerignore`,
-`cmd/server/api/frontends/bui/`, `zarf/docker/kronk/`, `zarf/kms/`, or
-`.github/workflows/docker.yml`.
-
-**PR smoke test.** The cpu/amd64 PR build additionally loads the
-resulting image into the local Docker daemon (`load: true`) and runs
-`docker run --rm kronk-smoke:latest kronk --version` /
-`kronk --help`. Catches breakage like a missing shared library or a
-bad ENTRYPOINT path that a non-load build wouldn't notice.
-
-**Registry-backed BuildKit cache.** `cache-to`/`cache-from` write to
-`ghcr.io/ardanlabs/kronk-buildcache:<variant>-<arch>`. On PR builds the
-cache is read-only — PR validation builds don't seed the trunk cache.
-On push builds the GHCR step writes the cache (`image-manifest=true`
-so it renders as a proper GHCR package) and the Docker Hub step reuses
-it (`cache-from` only). The `cache-cleanup.yml` workflow prunes stale
-entries — see [§19.14.8](#19148-support-workflows-cache-cleanupyml-label-guardyml).
-
-#### 19.14.8 Support Workflows (`cache-cleanup.yml`, `label-guard.yml`)
-
-**`cache-cleanup.yml`** — daily cron at 04:17 UTC + manual dispatch.
-Two cleanup passes:
-
-1. **GHA cache entries** older than `cutoff_days` (default 15) are
-   deleted via `gh cache delete`. GitHub's built-in 7-day-unused
-   eviction resets the timer on every read, so busy hot scopes never
-   expire on their own — this job enforces an absolute age cap.
-2. **GHCR `kronk-buildcache` package versions** older than the cutoff
-   are deleted via the GHCR packages API. The script handles the
-   first-run case where the package doesn't exist yet (404 → "nothing
-   to prune") so the workflow doesn't fail before any cache has been
-   pushed.
-
-Both passes support a `dry_run` input for safe inspection.
-
-**`label-guard.yml`** — `pull_request_target: labeled` + `issues: labeled`.
-`build *` labels expand the Docker workflow's matrix to expensive
-multi-arch builds, so they're maintainer-only. Two enforcement rules:
-
-- On PRs — only users with `write`, `maintain`, or `admin` permission
-  may apply a `build *` label. Unauthorized applications are removed
-  with an explanatory comment.
-- On issues — `build *` labels are PR-only; any application is removed.
-
-The workflow runs with minimum permissions (`issues: write` only —
-PR labels and comments both go through `/issues/` endpoints). It is a
-**cleanup pass**: it removes the label but cannot itself cancel an
-in-flight Docker build, because `GITHUB_TOKEN`-driven label removals
-don't trigger downstream workflow runs. The authoritative gate
-therefore lives in `docker.yml`'s `plan` job, which performs the same
-permission check and strips unauthorized `build *` labels from the
-matrix before expanding it. Belt + braces.
-
-`pull_request_target` (not `pull_request`) is required so the job runs
-in the base repo's context with write permissions, which is what lets
-it police labels on PRs from forks. The job never checks out or
-executes PR-author code — it only calls GitHub APIs with
-`github.event.label` / `github.event.sender` data — so the standard
-`pull_request_target` pwn-the-CI risk doesn't apply.
-
-#### 19.14.9 Version Constant & Release Guard
-
-The CLI's reported version is the value of the
-[`Version` constant in `sdk/kronk/kronk.go`](../sdk/kronk/kronk.go) — a
-plain `const string` with no link-time override.
-[`sdk/bucky.Version`](../sdk/bucky/bucky.go) is `const Version =
-kronk.Version` so the two SDKs always report the same string. Bumping the
-version is therefore part of the same commit that prepares a `v<X.Y.Z>`
-release tag.
-
-Both the release and Docker workflows enforce this with a shared guard:
-[`.github/scripts/check-version.sh`](../.github/scripts/check-version.sh)
-parses `const Version` out of `sdk/kronk/kronk.go`, strips the leading `v`
-from the pushed tag (`$GITHUB_REF`), and fails the workflow when the two
-don't match — before any binary, archive, or container image is produced.
-
-- [`release.yaml`](../.github/workflows/release.yaml) runs the script
-  immediately before `goreleaser`.
-- [`docker.yml`](../.github/workflows/docker.yml) runs it in the `plan`
-  job, gated on `startsWith(github.ref, 'refs/tags/v')`.
-
-The `KRONK_VERSION` build-arg consumed by the Dockerfile is purely
-cosmetic: it flows into the OCI image labels (`org.opencontainers.image
-.version`) so registry metadata can encode the variant / SHA / tag combo
-that produced an image. The kronk binary inside that image still reports
-the value of `const Version`, not `KRONK_VERSION`.
-
-Release checklist when cutting `v<X.Y.Z>`:
-
-1. Bump `const Version` in [`sdk/kronk/kronk.go`](../sdk/kronk/kronk.go).
-2. (Optional) bump `.go-version` to the latest patched Go in the
-   current minor line; `check-go-version.sh` will block the release
-   if `go.mod`'s minor doesn't match.
-3. Commit, then tag the same commit `v<X.Y.Z>` and push.
-4. CI's tag-guard step refuses the release if step 1 was forgotten.
-5. The maintainer approving the `release` environment unblocks the
-   `goreleaser` + SBOM + attestation pipeline.
+Run it from `cmd/server/api/frontends/bui/`. For docs or BUI work that affects the
+production bundle, also build the server to verify the bundle embedded by
+`cmd/server/api/services/kronk/main.go` exists and compiles. A successful Vite build
+alone does not prove the Go binary contains current assets.
+
+Always report what actually ran, including skipped integration prerequisites. Never
+claim CI parity from a narrower local test.
+
+### 19.10 CI, Release, Containers, and Nix
+
+#### 19.10.1 Linux CI
+
+`.github/workflows/linux.yml` is the authoritative Linux pipeline. It currently has
+four parallel jobs:
+
+- `static`: source/static quality checks;
+- `race`: race-enabled focused coverage separated from static checks;
+- `api-tests`: server/API integration coverage;
+- `sdk-tests`: SDK/model integration coverage.
+
+The shared setup action is under `.github/actions/setup-kronk/`. CI model dependencies
+are declared in `.github/test-models.txt`; its contents also participate in cache
+behavior. When a CI test gains a required model, update the manifest with the correct
+backend and model ID and check the setup action's parser. Keep local human setup in
+sync where the Make workflow maintains a separate install list.
+
+The exact CI toolchain comes from `.go-version`, while `go.mod` declares the minimum
+language version. Their major/minor versions must match. Update workflow assumptions
+and run `.github/scripts/check-go-version.sh` when changing either.
+
+#### 19.10.2 Release
+
+The release workflow, GoReleaser configuration, scripts, and release notes divide
+responsibility:
+
+- `.github/workflows/release.yaml` owns trigger, permissions, setup, checks, and release
+  execution.
+- `.goreleaser.yaml` owns binary/archive packaging and related release products.
+- `.github/scripts/check-version.sh` enforces the release identity.
+- `sdk/kronk/kronk.go` owns the exported `Version` constant.
+- `.release/` owns maintained release-note/checklist material.
+
+The release tag must equal `v` plus the `Version` constant. Update the constant and
+release material intentionally before creating the tag; do not bypass the guard. Also
+confirm the Go major/minor guard, generated docs/BUI, clean tree, and relevant Linux
+jobs before tagging.
+
+#### 19.10.3 Containers
+
+`.github/workflows/docker.yml` is authoritative for image variants, target/platform
+matrix, registry publication, attestations, and signing. `zarf/docker/` owns Dockerfile,
+runtime configuration, and entrypoint behavior. Native llama and Bucky processor
+availability can differ by image variant, so inspect the workflow matrix and tooling
+combination tables before changing an image. Avoid copying a variant table into docs;
+it becomes stale faster than the workflow.
+
+For a container change, build the affected target and architecture where practical,
+exercise entrypoint startup/configuration, and verify expected native libraries. Do not
+infer publication or signature behavior from a local build; review the workflow.
+
+#### 19.10.4 Nix
+
+The flake at `zarf/nix/flake.nix` defines how developers/users enter or build the
+project; generated Go dependency data lives beside it. Entering a development shell
+runs `gomod2nix import` from its shell hook and may dirty that generated material. When
+Go module dependencies change, update the Nix dependency material with the repository's
+configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix
+owners rather than adding environment special cases to Go code.
+
+### 19.11 Change and Release Checklists
+
+#### 19.11.1 Focused change checklist
+
+- [ ] Read all applicable `AGENTS.md` files.
+- [ ] Locate the owning package, direct caller, and focused tests.
+- [ ] State lifecycle/mutation/resource invariants before editing.
+- [ ] Change the owner rather than duplicating logic in a facade or transport.
+- [ ] Preserve cancellation and release behavior on every return path.
+- [ ] For Go: run `gofmt -s`, `go fix`, `go vet`, and `staticcheck` scoped to changed
+      files/packages.
+- [ ] Set `RUN_IN_PARALLEL=yes` and absolute `GITHUB_WORKSPACE` for focused tests.
+- [ ] Do not run a full repository suite or launch tests from `sdk/kronk/tests` as an
+      agent.
+- [ ] Regenerate docs/BUI/Nix artifacts only when their sources changed and task scope
+      permits it.
+- [ ] Run `git diff --check` and inspect the complete diff for unrelated changes.
+- [ ] Report commands, results, skipped prerequisites, and residual uncertainty.
+
+#### 19.11.2 Release checklist
+
+- [ ] Choose the release version and update `sdk/kronk`'s `Version` constant.
+- [ ] Ensure the intended tag is exactly `v<Version>` and run the version guard.
+- [ ] Confirm `.go-version` and `go.mod` major/minor agreement and run the Go-version
+      guard.
+- [ ] Update release notes/changelog material under the repository's release process.
+- [ ] Ensure `.github/test-models.txt` covers model-backed CI requirements.
+- [ ] Regenerate documentation and BUI assets; build the BUI and server embedding.
+- [ ] Confirm focused package checks and the four Linux CI jobs are green.
+- [ ] Review `.github/workflows/docker.yml` for the intended image variants and
+      publication/signing behavior.
+- [ ] Review Nix dependency outputs if Go dependencies changed.
+- [ ] Verify GoReleaser configuration with an appropriate non-publishing check or
+      snapshot.
+- [ ] Confirm the release commit is clean, then create/push the guarded tag through the
+      maintainer release process.
+
+The purpose of these lists is to protect ownership and lifecycle contracts, not to
+turn every patch into a release. Use the focused list for ordinary work and reserve
+broad integration/release machinery for humans and CI with the required models,
+native libraries, credentials, and platforms.

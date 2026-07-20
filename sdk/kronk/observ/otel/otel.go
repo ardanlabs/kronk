@@ -20,7 +20,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/noop"
 )
 
 const defaultTraceID = "00000000000000000000000000000000"
@@ -33,22 +32,19 @@ type Config struct {
 	Probability    float64
 }
 
-// InitTracing configures open telemetry to be used with the service. It starts
-// with a noop tracer provider and if a host is configured, launches a background
-// goroutine that checks every 60 seconds for collector availability. When the
-// collector becomes reachable, it swaps in a real tracer provider.
+// InitTracing configures open telemetry to be used with the service. It leaves
+// the global forwarding provider in place and, if a host is configured,
+// launches a background goroutine that checks every 60 seconds for collector
+// availability. When the collector becomes reachable, it installs a real
+// tracer provider that activates tracers obtained during startup.
 func InitTracing(log applog.Logger, cfg Config) (trace.TracerProvider, func(ctx context.Context), error) {
-
-	// Always start with a noop provider so the service can run without
-	// a collector being available.
-	otel.SetTracerProvider(noop.NewTracerProvider())
-
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
 
-	// If no host is configured, return noop with no background work.
+	// If no host is configured, return the non-recording forwarding provider
+	// with no background work.
 	if cfg.Host == "" {
 		log(context.Background(), "OTEL", "tracer", "NOOP", "status", "no host configured")
 

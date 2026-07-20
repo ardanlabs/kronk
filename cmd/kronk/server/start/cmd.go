@@ -36,6 +36,10 @@ func init() {
 	Cmd.Flags().String("auth-issuer", "", "Local auth issuer name")
 	Cmd.Flags().String("web-admin-password-sha256", "", "SHA-256 digest for browser admin login")
 
+	// MCP settings
+	Cmd.Flags().String("mcp-host", "", "Disable the embedded MCP service when an external host is configured")
+	Cmd.Flags().String("mcp-brave-api-key", "", "Brave Search API key for the embedded MCP service")
+
 	// Tempo/tracing settings
 	Cmd.Flags().String("tempo-host", "", "Tempo host address (e.g., localhost:4317)")
 	Cmd.Flags().String("tempo-service-name", "", "Tempo service name")
@@ -57,7 +61,7 @@ func init() {
 	Cmd.Flags().String("os", "", "OS override")
 	Cmd.Flags().String("processor", "", "Processor type (e.g., vulkan, metal, cuda, rocm)")
 	Cmd.Flags().String("hf-token", "", "Hugging Face API token")
-	Cmd.Flags().Bool("allow-upgrade", true, "Allow automatic upgrades")
+	Cmd.Flags().Bool("allow-upgrade", false, "Allow automatic upgrades")
 	Cmd.Flags().Int("llama-log", -1, "Llama log level (0=off, 1=on)")
 	Cmd.Flags().Bool("insecure-logging", false, "Enable logging of sensitive data (messages, model config)")
 

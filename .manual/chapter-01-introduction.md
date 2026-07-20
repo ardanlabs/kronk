@@ -2,244 +2,133 @@
 
 ## Table of Contents
 
-- [1.1 What is Kronk](#11-what-is-kronk)
-- [1.2 Key Features](#12-key-features)
-- [1.3 Supported Platforms and Hardware](#13-supported-platforms-and-hardware)
-- [1.4 Architecture Overview](#14-architecture-overview)
-- [1.5 Getting Started](#15-getting-started)
-  - [1.5.1 Quick Start — Copy, Paste, Run](#151-quick-start--copy-paste-run)
-  - [1.5.2 Which One Should I Use?](#152-which-one-should-i-use)
-  - [1.5.3 Going to Production](#153-going-to-production)
+- [1.1 What Is Kronk?](#11-what-is-kronk)
+- [1.2 SDK or Model Server?](#12-sdk-or-model-server)
+- [1.3 Capabilities](#13-capabilities)
+- [1.4 Architecture](#14-architecture)
+- [1.5 Where to Go Next](#15-where-to-go-next)
 
 ---
 
-### 1.1 What is Kronk
+### 1.1 What Is Kronk?
 
-Kronk is a Go SDK and Model Server for running local inference with open-source
-models. It's built on top of two best-in-class C++ inference engines (llama.cpp
-and whisper.cpp).
+Kronk is a Go SDK and model server for running open-source models on your own
+hardware. It uses two C++ inference engines:
 
-- **llama.cpp** — for GGUF text, vision, embedding, and reranking models.
-- **whisper.cpp** — for GGML speech-to-text models, exposed through Kronk's
-  **Bucky** subsystem. See [Chapter 18: Bucky (Audio Transcription)](chapter-18-bucky.md).
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) runs GGUF text, vision,
+  embedding, and reranking models.
+- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) runs speech-to-text
+  models through Kronk's **Bucky** subsystem.
 
-Together these give Kronk hardware-accelerated inference for text generation,
-vision, audio transcription, embeddings, and reranking — all from a single Go
-process, with no Python and no CGO build chain. Kronk is being designed to be
-your personal engine for running open source models locally.
+Kronk provides hardware-accelerated text generation, image understanding,
+audio transcription, embeddings, and reranking from Go without requiring
+Python or a CGO build toolchain.
 
-**The SDK is the foundation.**
+### 1.2 SDK or Model Server?
 
-The Kronk Model Server is built entirely on top of the SDK — we "dog food" our
-own library. Everything the model server can do is available to you as a SDK
-developer to help you write your own applications.
+The model server's inference functionality is built on the same public SDK
+that is available to Go applications. You can either embed inference directly
+in an application or run the server for network access.
 
-**You don't need a model server.**
+| Use the SDK when you need... | Use the Model Server when you need... |
+| ---------------------------- | ------------------------------------- |
+| Inference inside a Go process | HTTP APIs for one or more clients |
+| Direct control over model loading and lifetime | OpenAI-compatible APIs and an Anthropic-compatible Messages API |
+| No separate server process | A browser interface for managing and testing models |
+| Application-specific caching and concurrency | Authentication, authorization, and rate limiting |
 
-The real power of Kronk is that you can embed
-model inference directly into your Go applications. Load models, run inference,
-manage caching, and handle concurrent requests — all without running the models
-in a separate server process. The [examples](sdk/examples) directory demonstrates
-building standalone applications with the SDK.
+Standalone SDK examples are available in the
+[`examples`](../examples) directory.
 
-**The Model Server is optional.**
+### 1.3 Capabilities
 
-When you do need an model server (for web UIs,
-multi-client access, or OpenAI-compatible endpoints), the Kronk Model Server
-provides:
+**Inference**
 
-- OpenAI and Anthropic compatible REST APIs
-- OpenWebUI integration
-- Agent and tool support for local models
-- Any OpenAI-compatible client
-
-### 1.2 Key Features
-
-**Model Types**
-
-- **Text Generation** - Chat completions and streaming responses with reasoning support.
-- **Vision** - Image understanding and analysis.
-- **Audio** - Speech-to-text transcription via the **Bucky** subsystem (whisper.cpp). See [Chapter 18: Bucky (Audio Transcription)](chapter-18-bucky.md).
-- **Embeddings** - Vector embeddings for semantic search and RAG.
-- **Reranking** - Document relevance scoring.
+- **Text generation** — chat completions and responses, including streaming,
+  reasoning, and tool calls.
+- **Vision** — image understanding with compatible multimodal models.
+- **Audio transcription** — speech-to-text through Bucky and whisper.cpp. See
+  [Chapter 18: Bucky](chapter-18-bucky.md).
+- **Embeddings and reranking** — vector generation and document relevance
+  scoring for search and retrieval systems.
 
 **Performance**
 
-- **Batch Processing** - Process multiple requests concurrently within a set of partitioned KV cache sequences.
-- **Message Caching** - System prompt and incremental message caching to reduce redundant computation.
-- **YaRN Context Extension** - Extend context windows 2-4x beyond native training length.
-- **Model Pooling** - Keep a number of models loaded in memory with configurable TTL.
+- **Concurrent processing** — partition a model's KV cache into sequences so
+  it can process multiple requests.
+- **Message caching** — reuse computed prompt prefixes instead of evaluating
+  them again for every request.
+- **Extended context** — configure YaRN context extension for compatible
+  models.
+- **Model pooling** — keep a configurable number of models loaded and evict
+  inactive models after a time-to-live period.
 
-**Operations**
+**Operation**
 
-- **Catalog System** - Your personal catalog of downloaded models, seeded with a starter list and managed via the CLI and BUI.
-- **Browser UI (BUI)** - Web interface for model management, downloads, and configuration.
-- **Authentication** - JWT-based security with key management, endpoint authorization and rate limiting.
-- **Observability** - Tracing and metrics integration with Grafana support.
-- **Local Storage** - Everything Kronk manages — catalog, downloaded models, llama.cpp libraries, and per-model configuration — lives under `~/.kronk/`.
+- **Model catalog** — discover, download, and configure a curated set of
+  models through the CLI or Browser UI (BUI).
+- **Client APIs** — use OpenAI-compatible endpoints, the Anthropic-compatible
+  Messages endpoint, or integrations such as OpenWebUI and OpenCode.
+- **Security** — protect endpoints with JWT authentication, scoped
+  authorization, and rate limits.
+- **Observability** — collect traces and Prometheus metrics for external
+  observability systems.
 
-### 1.3 Supported Platforms and Hardware
+Kronk stores its managed files under `~/.kronk/` by default. The location is
+configurable; the official containers use `/kronk` so the directory can be
+mounted as persistent storage.
 
-Kronk supports full hardware acceleration across major platforms:
+Hardware support differs by operating system, architecture, inference engine,
+and release artifact. Kronk can use CPU inference and GPU backends such as
+Metal, CUDA, Vulkan, and ROCm where a compatible library bundle is available.
+See [Chapter 2: Installation & Quick Start](chapter-02-installation.md) for the
+currently distributed native and container options.
 
-| **OS**  | **CPU**      | **GPU**                         |
-| ------- | ------------ | ------------------------------- |
-| Linux   | amd64, arm64 | CUDA, Vulkan, HIP, ROCm, SYCL   |
-| macOS   | arm64        | Metal                           |
-| Windows | amd64        | CUDA, Vulkan, HIP, SYCL, OpenCL |
+Memory requirements depend on more than model parameter count. Quantization,
+context size, KV cache type, batch size, concurrency, and multimodal
+projections all affect RAM and VRAM use. See
+[Chapter 3: Model Configuration](chapter-03-model-configuration.md) before
+selecting a large model or context window.
 
-**Hardware Requirements**
+### 1.4 Architecture
 
-- Minimum 8GB RAM for small models (1-3B parameters)
-- 16GB+ RAM recommended for medium models (7-8B parameters)
-- 32GB+ RAM or dedicated GPU VRAM for large models (30B+ parameters)
-- GPU with Metal, CUDA, or Vulkan support recommended for optimal performance
+Kronk is layered so applications and the model server use the same inference
+SDKs. The two engine paths provide different model capabilities and may have
+different platform support.
 
-### 1.4 Architecture Overview
-
-Kronk is designed as a layered architecture where the SDK provides all core
-functionality and the Model Server is one application built on top of it.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-dark.png?raw=true">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-light.png?raw=true">
-  <img alt="Kronk SDK Architecture" src="https://github.com/ardanlabs/kronk/blob/main/images/project/sdk-light.png?raw=true">
-</picture>
-
-**Layer Breakdown:**
-
-| Layer           | Component                         | Purpose                                    |
-| --------------- | --------------------------------- | ------------------------------------------ |
-| **Application** | Kronk Model Server                | REST API server (or your own app)          |
-| **SDK Tools**   | Models, Libs, Downloader, Devices | High-level APIs for common tasks           |
-| **SDK Core**    | Kronk SDK API, Model SDK API      | Model loading, inference, pooling, caching |
-| **Bindings**    | yzma (non-CGO FFI via purego)     | Go bindings to llama.cpp without CGO       |
-| **Engine**      | llama.cpp                         | Hardware-accelerated inference             |
-| **Hardware**    | Metal, CUDA, Vulkan, CPU          | GPU/CPU acceleration                       |
-
-Your application sits at the same level as the Kronk Model Server. You have access
-to the exact same SDK APIs. Whether you're building a CLI tool, a web service,
-an embedded system, or a desktop app — you get the full power of local model
-inference without any server overhead.
-
-**SDK vs Server Usage:**
-
-```go
-// Direct SDK usage - no server needed
-cfg := model.Config{
-    ModelFiles: modelPath.ModelFiles,
-    CacheTypeK: model.GGMLTypeQ8_0,
-    CacheTypeV: model.GGMLTypeQ8_0,
-}
-
-krn, _ := kronk.New(cfg)
-defer krn.Unload(ctx)
-
-ch, _ := krn.ChatStreaming(ctx, model.D{
-    "messages":   model.DocumentArray(model.TextMessage(model.RoleUser, "Hello")),
-    "max_tokens": 2048,
-})
-
-for resp := range ch {
-    fmt.Print(resp.Choice[0].Delta.Content)
-}
+```diagram
+Your Go Application                 Kronk Model Server
+        |                                   |
+        +----------------+------------------+
+                         |
+              +----------+----------+
+              |                     |
+          Kronk SDK             Bucky SDK
+    text, vision, embedding,      speech-to-text
+           reranking                  |
+              |                       |
+            yzma                Bucky bindings
+              |                       |
+          llama.cpp               whisper.cpp
+              +-----------+-----------+
+                          |
+              CPU / Metal / CUDA / Vulkan / ROCm
 ```
 
-```shell
-# Or use the Model Server for OpenAI-compatible API.
-# Server-side per-model tuning lives in ~/.kronk/model_config.yaml.
-kronk server start
-curl http://localhost:11435/v1/chat/completions -d '{"model":"Qwen3-0.6B-Q8_0","messages":[...]}'
-```
+The SDK layer owns model loading, inference, caching, and concurrency. The
+model server adds HTTP transport, model pooling, the BUI, security, and
+operational services. Your application can use the SDK without starting the
+model server.
 
-### 1.5 Getting Started
+### 1.5 Where to Go Next
 
-Kronk is your personal engine for running open source models locally. Find
-your hardware below, copy the one command, and run it. Then open
-http://localhost:11435 in your browser to download a model and start
-chatting.
-
-#### 1.5.1 Quick Start — Copy, Paste, Run
-
-**🍎 On a Mac (MacBook, Mac mini, Mac Studio, iMac)**
-
-Installs Kronk as a normal app and uses your Mac's GPU automatically. Paste
-this into the Terminal app:
-
-```shell
-brew tap ardanlabs/kronk && brew trust ardanlabs/kronk && brew install kronk
-KRONK_DOWNLOAD_ENABLED=true kronk server start
-```
-
-**🟩 If you have an NVIDIA graphics card (Linux or Windows)**
-
-Runs in Docker with GPU acceleration. Needs Docker + the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html):
-
-```shell
-docker run -d --name kronk --restart unless-stopped --runtime=nvidia --gpus all \
-  -e KRONK_DOWNLOAD_ENABLED=true \
-  -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:latest-cuda
-```
-
-**🖥️ If you have an AMD graphics card (Linux)**
-
-Runs in Docker using ROCm. Needs Docker and access to `/dev/kfd` and
-`/dev/dri`:
-
-```shell
-docker run -d --name kronk --restart unless-stopped \
-  --device=/dev/kfd --device=/dev/dri --group-add video --group-add render \
-  --security-opt seccomp=unconfined \
-  -e KRONK_DOWNLOAD_ENABLED=true \
-  -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:latest-rocm
-```
-
-**🤷 Not sure, or none of the above**
-
-This runs on any computer with Docker, using just the CPU. It works
-everywhere, but don't expect great performance — larger models will be slow:
-
-```shell
-docker run -d --name kronk --restart unless-stopped \
-  -e KRONK_DOWNLOAD_ENABLED=true \
-  -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:latest
-```
-
-**Now open http://localhost:11435** in your browser. Go to **Catalog**,
-download a small model to try (e.g. `Qwopus3.5-4B-Coder.Q8_0`), then open
-**Chat** and ask it something. That's it — Kronk is running locally, at zero
-per-token cost, and nothing you type leaves your machine.
-
-> **Heads up:** the Docker commands above publish port `11435` on every
-> network interface with no authentication and downloads enabled — fine on
-> your own machine, but if the host is reachable by anyone else (a cloud VM,
-> a shared network), turn on auth and lock down the port first. See
-> [Going to Production](#153-going-to-production) below.
-
-#### 1.5.2 Which One Should I Use?
-
-The quick start above already picked for you, but here's the difference in
-plain terms:
-
-- **Standalone app** (the Mac command) — Kronk installed like any normal
-  program. Best for your own laptop or desktop. Full details in
-  [2.3 Installing the CLI](chapter-02-installation.md#23-installing-the-cli).
-- **Docker container** (the graphics-card and CPU commands) — Kronk runs from
-  a ready-made image, nothing to install but Docker itself. Best for a server
-  or remote machine that should keep running on its own. Full details in
-  [2.4 Docker / OCI Container](chapter-02-installation.md#24-docker--oci-container).
-
-#### 1.5.3 Going to Production
-
-Before you expose Kronk beyond your own machine, turn on authentication:
-enable it, retrieve the admin token, and mint scoped user tokens. See
-[Chapter 12: Security & Authentication](chapter-12-security-authentication.md).
-For unattended remote hosts,
-[Chapter 2.4: Docker / OCI Container](chapter-02-installation.md#24-docker--oci-container)
-covers running headless with auto-restart, updates, and uninstalling.
+- **Install Kronk and run your first model:**
+  [Chapter 2: Installation & Quick Start](chapter-02-installation.md)
+- **Choose memory, context, and GPU settings:**
+  [Chapter 3: Model Configuration](chapter-03-model-configuration.md)
+- **Connect an editor, agent, or other client:**
+  [Chapter 14: Client Integration](chapter-14-client-integration.md)
+- **Run speech-to-text models:**
+  [Chapter 18: Bucky](chapter-18-bucky.md)
 
 ---

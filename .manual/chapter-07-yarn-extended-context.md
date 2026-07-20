@@ -2,217 +2,150 @@
 
 ## Table of Contents
 
-- [7.1 Understanding Context Extension](#71-understanding-context-extension)
+- [7.1 Context Size and RoPE Scaling](#71-context-size-and-rope-scaling)
 - [7.2 When to Use YaRN](#72-when-to-use-yarn)
-- [7.3 Configuration](#73-configuration)
-- [7.4 Scaling Types](#74-scaling-types)
-- [7.5 Parameter Reference](#75-parameter-reference)
-- [7.6 Model-Specific Examples](#76-model-specific-examples)
-- [7.7 Memory Impact](#77-memory-impact)
-- [7.8 Quality Considerations](#78-quality-considerations)
-- [7.9 Example: Long Document Processing](#79-example-long-document-processing)
+- [7.3 Qwen3 Configuration](#73-qwen3-configuration)
+- [7.4 Scaling Types and Parameters](#74-scaling-types-and-parameters)
+- [7.5 Memory and Concurrency](#75-memory-and-concurrency)
+- [7.6 Validate Quality](#76-validate-quality)
 
 ---
 
+## 7.1 Context Size and RoPE Scaling
 
+`context-window` sets the token capacity available to one sequence. Input,
+chat-template tokens, and generated output all consume this capacity.
 
-YaRN (Yet another RoPE extensioN) allows models to handle context windows
-beyond their native training length. This is essential for long documents,
-extended conversations, and complex agentic workflows.
+Increasing that value allocates more KV-cache space, but it does not by itself
+give the model reliable long-context behavior. Models using Rotary Position
+Embeddings (RoPE) may require a scaling method when the requested context
+exceeds the length for which the model was trained.
 
-### 7.1 Understanding Context Extension
+YaRN is one RoPE scaling method. It applies different interpolation behavior
+across RoPE frequencies and adjusts attention scaling. Whether it works, and
+which factor to use, depends on the specific model. Do not enable it solely
+because a larger KV cache fits in memory.
 
-Language models are trained with a fixed context length (e.g., 8K, 32K tokens).
-RoPE (Rotary Position Embedding) encodes position information, but naive
-extension beyond training length causes quality degradation.
+## 7.2 When to Use YaRN
 
-YaRN applies frequency-dependent interpolation with attention scaling to
-maintain quality at extended lengths.
+Use YaRN only when all of the following are true:
 
-```
-Native Context:     32K tokens (training length)
-Extended Context:   131K tokens (4x extension with YaRN)
-```
+- The model's documentation explicitly supports YaRN or compatible RoPE
+  scaling.
+- The required input plus output exceeds the model's native context.
+- The documented extension factor covers the context you need.
+- The larger KV cache fits while leaving enough memory for the model and active
+  requests.
+- Representative long-context tests produce acceptable results.
 
-### 7.2 When to Use YaRN
+Avoid YaRN when the workload fits within the native context. llama.cpp uses
+static YaRN: the configured scale applies at short positions too and can reduce
+quality on shorter prompts. Do not assume that one model family's settings are
+valid for another model, even when both use RoPE.
 
-**Good candidates for YaRN:**
+## 7.3 Qwen3 Configuration
 
-- Qwen3 models (trained at 32K, support 131K with YaRN)
-- Llama models with RoPE scaling support
-- Any model where you need 2-4x the native context
+The Qwen3-8B model documentation identifies 32,768 tokens as the native context
+and reports validation up to 131,072 tokens with YaRN. It recommends matching
+the scale to the context actually needed.
 
-**When NOT to use YaRN:**
-
-- If native context is sufficient for your use case
-- Extensions beyond 4x (quality degrades significantly)
-- Models without RoPE (older architectures)
-
-### 7.3 Configuration
-
-**Basic YaRN Setup:**
-
-```yaml
-# ~/.kronk/model_config.yaml
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 131072    # Extended context (131K)
-  rope-scaling-type: yarn   # Enable YaRN
-```
-
-That's often all you need—Kronk auto-calculates the other YaRN parameters
-from the context extension ratio.
-
-**Full Configuration (Advanced):**
+For a 2× extension to 65,536 tokens:
 
 ```yaml
-# ~/.kronk/model_config.yaml
+# ~/.kronk/models/model_config.yaml
 Qwen/Qwen3-8B-Q8_0:
-  context-window: 131072
+  context-window: 65536
   rope-scaling-type: yarn
-  rope-freq-base: 1000000   # Model-specific (Qwen3 uses 1M)
-  rope-freq-scale: null     # Auto-calculate
-  yarn-ext-factor: null     # Auto-calculate
-  yarn-attn-factor: 1.0     # Attention scaling
-  yarn-beta-fast: 32.0      # Low correction dimension
-  yarn-beta-slow: 1.0       # High correction dimension
-  yarn-orig-ctx: 32768      # Original training context
+  rope-freq-scale: 0.5
+  yarn-orig-ctx: 32768
 ```
 
-### 7.4 Scaling Types
-
-Kronk supports three RoPE scaling methods:
-
-**None (Default)**
+For a 4× extension to 131,072 tokens:
 
 ```yaml
-rope-scaling-type: none
-```
-
-Uses native context length. No scaling applied.
-
-**Linear**
-
-```yaml
-rope-scaling-type: linear
-```
-
-Simple linear interpolation. Works but quality degrades faster than YaRN
-at high extension ratios.
-
-**YaRN (Recommended)**
-
-```yaml
-rope-scaling-type: yarn
-```
-
-Frequency-dependent interpolation with attention scaling. Maintains quality
-better at 2-4x extensions.
-
-### 7.5 Parameter Reference
-
-| Parameter          | Default        | Description                                         |
-| ------------------ | -------------- | --------------------------------------------------- |
-| `rope-scaling-type`     | none           | Scaling method: `none`, `linear`, `yarn`            |
-| `rope-freq-base`   | model default  | Base frequency (10000 for Llama, 1000000 for Qwen3) |
-| `rope-freq-scale`  | auto           | Frequency scaling factor                            |
-| `yarn-ext-factor`  | auto           | Extrapolation mix factor (0 = disable)              |
-| `yarn-attn-factor` | 1.0            | Attention magnitude scaling                         |
-| `yarn-beta-fast`   | 32.0           | Low correction dimension                            |
-| `yarn-beta-slow`   | 1.0            | High correction dimension                           |
-| `yarn-orig-ctx`    | model metadata | Original training context size                      |
-
-### 7.6 Model-Specific Examples
-
-**Qwen3 (32K → 131K)**
-
-```yaml
-# ~/.kronk/model_config.yaml
+# ~/.kronk/models/model_config.yaml
 Qwen/Qwen3-8B-Q8_0:
   context-window: 131072
   rope-scaling-type: yarn
+  rope-freq-scale: 0.25
+  yarn-orig-ctx: 32768
 ```
 
-Qwen3 models are specifically designed to support 131K context with YaRN.
-The default parameters work well.
+`rope-freq-scale` is the raw frequency multiplier, so it is the reciprocal of
+the extension factor:
 
-**Llama 3 (8K → 32K)**
-
-```yaml
-# ~/.kronk/model_config.yaml
-unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
-  context-window: 32768
-  rope-scaling-type: yarn
-  rope-freq-base: 10000
+```text
+rope-freq-scale = native context / configured context
 ```
 
-4x extension from 8K to 32K is within the recommended range.
+For this model, `0.5` represents a 2× extension and `0.25` represents a 4×
+extension. This is equivalent to llama.cpp's `--rope-scale 2` and
+`--rope-scale 4`, respectively.
 
-### 7.7 Memory Impact
+Kronk does not derive `rope-freq-scale` from `context-window`. If the setting is
+omitted, llama.cpp uses scaling metadata from the GGUF. That is correct only
+when the downloaded GGUF already contains the intended scale. Follow the model
+or GGUF provider's documentation rather than copying the Qwen3 values to an
+unrelated model.
 
-Extended context significantly increases memory requirements:
+## 7.4 Scaling Types and Parameters
 
-```
-Qwen3-8B with F16 KV cache:
+Kronk accepts three `rope-scaling-type` values:
 
-32K context:   ~1.6 GB KV cache
-64K context:   ~3.2 GB KV cache
-131K context:  ~6.5 GB KV cache
-```
+| Value | Behavior |
+| ----- | -------- |
+| `none` | Applies no RoPE scaling. It does not prevent a separately configured oversized context window. |
+| `linear` | Applies the same interpolation scale across RoPE frequencies. Use only when the model documentation calls for it. |
+| `yarn` | Applies YaRN frequency-dependent interpolation and attention scaling. |
 
-**Mitigation strategies:**
+The available controls are:
 
-1. Use KV cache quantization:
+| Setting | Meaning when explicitly configured |
+| ------- | ---------------------------------- |
+| `rope-freq-base` | Overrides the model's RoPE base frequency. Normally leave this to GGUF metadata. |
+| `rope-freq-scale` | Raw frequency multiplier; an extension factor of \(N\) uses \(1/N\) when the model's instructions require explicit scaling. |
+| `yarn-orig-ctx` | Original context length used by the YaRN calculation. |
+| `yarn-ext-factor` | Mix between interpolation and extrapolation. |
+| `yarn-attn-factor` | Attention magnitude scaling. |
+| `yarn-beta-fast` | YaRN low correction dimension. |
+| `yarn-beta-slow` | YaRN high correction dimension. |
 
-```yaml
-cache-type-k: q8_0
-cache-type-v: q8_0
-```
+When these settings are omitted, Kronk leaves the llama.cpp or GGUF defaults in
+place. An omitted or YAML `null` value does not ask Kronk to calculate a value
+from the context ratio. Override the advanced YaRN factors only when the model
+provider supplies values or controlled evaluation shows they are needed.
 
-2. Reduce batch parallelism:
+## 7.5 Memory and Concurrency
 
-```yaml
-nseq-max: 1 # Fewer concurrent requests
-```
+KV-cache capacity grows approximately linearly with the context window. The
+actual size depends on the model architecture, layer count, KV heads, head
+dimensions, cache data types, backend, and alignment. With multiple generation
+slots, the unified KV pool has capacity based on `context-window × nseq-max`.
 
-3. Keep KV cache on CPU (slower but saves VRAM):
+If a long-context model does not fit, consider:
 
-```yaml
-offload-kqv: false
-```
+- reducing `nseq-max`;
+- selecting supported quantized KV-cache types; or
+- keeping the KV cache on the CPU with `offload-kqv: false`, at a likely
+  performance cost.
 
-### 7.8 Quality Considerations
+Do not rely on fixed memory figures from another model. Use Kronk's hardware
+analysis and observe actual memory consumption. See
+[Chapter 3](chapter-03-model-configuration.md) for KV-cache configuration and
+[Chapter 4](chapter-04-batch-processing.md) for concurrency effects.
 
-**Extension ratio guidelines:**
+## 7.6 Validate Quality
 
-- 2x extension: Minimal quality loss
-- 3x extension: Slight degradation, usually acceptable
-- 4x extension: Noticeable but often usable
-- > 4x extension: Not recommended
+An accepted configuration is not proof that the model can use the entire
+context reliably. Test the intended model and GGUF with representative data:
 
-**Testing your configuration:**
+1. Establish baseline quality within the native context.
+2. Test retrieval and reasoning at several positions near the target length.
+3. Reserve enough context for the expected generated output.
+4. Compare short-prompt quality with scaling enabled and disabled.
+5. Reduce the extension factor if quality or performance is unacceptable.
 
-1. Start with a known-good prompt at native context
-2. Extend to your target length
-3. Compare output quality
-4. Adjust if needed (reduce extension or try different parameters)
-
-### 7.9 Example: Long Document Processing
-
-Configuration for processing long documents:
-
-```yaml
-# ~/.kronk/model_config.yaml
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 65536      # 64K context
-  rope-scaling-type: yarn
-  nubatch: 4096              # Larger GPU bite for faster long-prompt prefill
-                             # (nbatch derives to nubatch × nseq-max = 4096)
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  nseq-max: 1                # Single request (memory intensive)
-```
-
-This configuration can process documents up to ~50K tokens while leaving
-room for generation.
-
----
+Prefer the smallest context and scale that satisfy the workload. For Qwen3-8B,
+use the native context when average requests remain within 32,768 tokens, a 2×
+configuration for workloads around 65,536, and the documented 4× configuration
+only when requests genuinely require it.

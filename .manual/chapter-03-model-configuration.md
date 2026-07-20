@@ -2,1371 +2,450 @@
 
 ## Table of Contents
 
-- [3.1 Basic Configuration](#31-basic-configuration)
-- [3.2 Processor Selection](#32-processor-selection)
-  - [How Processor Selection Works](#how-processor-selection-works)
-  - [Platform Detection Details](#platform-detection-details)
-  - [Supported Processors](#supported-processors)
-  - [Integrated GPUs (iGPUs)](#integrated-gpus-igpus)
-- [3.3 GPU Configuration](#33-gpu-configuration)
-- [3.4 KV Cache Quantization](#34-kv-cache-quantization)
-- [3.5 Flash Attention](#35-flash-attention)
-- [3.6 Sliding Window Attention (SWA)](#36-sliding-window-attention-swa)
-- [3.7 Parallel Inference (NSeqMax)](#37-parallel-inference-nseqmax)
-- [3.8 Understanding GGUF Quantization](#38-understanding-gguf-quantization)
-  - [What is Quantization?](#what-is-quantization)
-  - [What are K-Quants?](#what-are-k-quants)
-  - [Standard Quantization Formats](#standard-quantization-formats)
-  - [IQ (Importance Matrix) Quantization](#iq-importance-matrix-quantization)
-  - [UD (Ultra-Dynamic) Quantization](#ud-ultra-dynamic-quantization)
-- [3.9 Choosing the Right Quantization](#39-choosing-the-right-quantization)
-- [3.10 VRAM Estimation](#310-vram-estimation)
-  - [Slots and Sequences](#slots-and-sequences)
-  - [What Affects KV Cache Memory Per Sequence](#what-affects-kv-cache-memory-per-sequence)
-  - [What Affects Total KV Cache (Slot Memory)](#what-affects-total-kv-cache-slot-memory)
-  - [Caching Modes](#caching-modes)
-  - [Example: Real Model Calculation](#example-real-model-calculation)
-- [3.11 Model-Specific Tuning](#311-model-specific-tuning)
-- [3.12 Speculative Decoding](#312-speculative-decoding)
-- [3.13 Sampling Parameters](#313-sampling-parameters)
-- [3.14 Model Config File Example](#314-model-config-file-example)
+- [3.1 Configuration File](#31-configuration-file)
+- [3.2 Automatic Tuning](#32-automatic-tuning)
+- [3.3 Core Runtime Settings](#33-core-runtime-settings)
+- [3.4 GPU and Memory Placement](#34-gpu-and-memory-placement)
+- [3.5 Concurrency and Batching](#35-concurrency-and-batching)
+- [3.6 Memory Planning and Quantization](#36-memory-planning-and-quantization)
+- [3.7 Advanced Features](#37-advanced-features)
+- [3.8 Complete Example and Key Reference](#38-complete-example-and-key-reference)
 
 ---
 
-Model configuration controls how Kronk configures models to run inference.
-There are exactly two ways to configure a model:
+Kronk analyzes each model and the available hardware before loading it. Most
+models run well without manual tuning. Use per-model configuration when you
+need a different context window, more concurrent requests, explicit device
+placement, or an advanced feature such as speculative decoding.
 
-1. **`~/.kronk/model_config.yaml`** — per-model overrides keyed by model id,
-   used by the model server and any tool that goes through
-   `models.KronkResolvedConfig`.
-2. **`model.Config` (Go struct)** — passed directly to `kronk.New(cfg)` when
-   you embed the SDK in your own application.
+This chapter documents model runtime configuration. Server settings such as
+the listen address, authentication, and the number of models kept in the pool
+are covered in [Chapter 8](chapter-08-model-server.md).
 
-The catalog (`~/.kronk/catalog.yaml`) is **not** a source of tuning knobs —
-it is a resolution cache (provider, family, revision, files). All tuning
-described in this chapter lives in `model_config.yaml` or `model.Config`.
+### 3.1 Configuration File
 
-### 3.1 Basic Configuration
+The model server reads per-model overrides from:
 
-For most models you will want to touch these basic settings. There are many more
-which will be presented later. Each model has GGUF metadata that Kronk can read
-for defaults like setting the context window size when not provided. Kronk also
-has default settings for things like `temperature` and `top_p` when not provided.
-
-#### Automatic Tuning (AutoTune)
-
-Rather than hand-pick the settings below, you can let Kronk derive them from a
-hardware-aware analysis of the model and the machine it is loading on. AutoTune
-inspects the model (architecture, size) and the available devices, then seeds
-any setting you left unset:
-
-- **Context window** — the largest size that still fits the model weights and
-  KV cache in the GPU budget, capped at **128K** even when the model supports
-  more. This replaces the conservative 8K fallback so clients like OpenCode
-  start with a usable window out of the box.
-- **KV cache type** (`f16`, falling back to `q8_0` if `f16` will not fit)
-- **Slots** (`n_seq_max`)
-- **Flash attention** and **multi-GPU split mode**
-
-Two key guarantees: **any value you set explicitly always wins** over the
-analysis, and if the analysis fails for any reason the original config is used
-unchanged — AutoTune never blocks a load.
-
-**SDK.** AutoTune is opt-in via the `WithAutoTune` option and is applied by
-`kronk.New` (it has no effect when you use the low-level `model` package
-directly):
-
-```go
-krn, err := kronk.New(
-    model.WithModelFiles(mp.ModelFiles),
-    model.WithAutoTune(true),
-    // model.WithContextWindow(32768), // an explicit value would override AutoTune
-)
+```text
+~/.kronk/models/model_config.yaml
 ```
 
-**Model server / KMS.** The server applies the same hardware analysis
-automatically through `models.KronkResolvedConfig`, so models loaded by the
-pool already start from analysis-derived defaults. Per-model overrides in
-`~/.kronk/model_config.yaml` (described below) still take precedence over the
-analysis.
-
-The individual settings AutoTune seeds are documented in the rest of this
-chapter; set any of them explicitly when you want to override what the analysis
-chose.
-
-#### Context Window
-
-The context window is the maximum number of tokens the KV cache can hold, and it's
-consumed by both input tokens (system prompt, user messages) and output tokens
-(model responses). Once the cumulative tokens from all inputs and outputs in a
-session reach the context window limit, the model can't process more without some
-form of truncation, sliding window, or cache eviction.
+Kronk creates this file on first use. The file is a flat YAML map keyed by the
+canonical model ID. Use the same ID shown by `kronk model list` or the
+`/v1/models` endpoint:
 
 ```yaml
-context_window: 8192 # This represent 8192 tokens.
-```
-
-_Note: A common rule of thumb is that 1 token ≈ 0.75 words (or roughly 4
-characters in English). So an 8K context window can handle approximately 6,000
-words of combined input and output._
-
-Larger context windows require more VRAM for the KV cache. The actual cost
-depends on the model's layer count, number of KV heads, head dimension, KV
-cache data type (f16, q8_0, q4_0), and the number of parallel sequences (slots).
-
-As a rough guide for a single slot for a given model size:
-
-| Context Size | ~7B (q8_0) | ~7B (f16) | ~70B (q8_0) | ~70B (f16) |
-| ------------ | ---------- | --------- | ----------- | ---------- |
-| 8K           | ~0.5 GB    | ~1 GB     | ~1.25 GB    | ~2.5 GB    |
-| 32K          | ~2 GB      | ~4 GB     | ~5 GB       | ~10 GB     |
-| 128K         | ~8 GB      | ~16 GB    | ~20 GB      | ~40 GB     |
-
-Using q4_0 KV cache quantization can reduce costs further to roughly ¼ of f16.
-
-128K context typically requires YaRN scaling for models not natively trained
-at that length.
-
-_Note: YaRN is a way to extend the natural size of context windows for
-small models. Kronk supports YaRN and talked about in Chapter 7._
-
-#### Batch Size Configuration
-
-When you send a prompt to a model, the model doesn't process all your input
-tokens at once. It breaks them into smaller chunks and processes each chunk
-through the GPU in a series of steps called forward passes. These two
-parameters control the size of those chunks:
-
-- `n_batch` - Maximum tokens per decode call (kronk default: `n_ubatch × n_seq_max`)
-- `n_ubatch` - GPU compute chunk size within each decode call (kronk default: 2048)
-
-Both defaults are applied at load time when left unset. `n_ubatch` defaults to
-**2048** because most models Kronk serves are multi-modal (mtmd) models whose
-image encoder uses non-causal attention and requires every patch token of an
-image chunk to land in a single physical `n_ubatch`; dropping below that breaks
-image input. Text-only models share the same value for one predictable setting.
-(MoE models with CPU expert offload raise the `n_ubatch` floor to 4096.)
-
-**`n_batch` is the capacity of the work tray** — the maximum number of tokens
-you can load onto the tray before handing it to the GPU. When the batch engine
-is running multiple slots in parallel (NSeqMax > 1), all their tokens share
-this tray.
-
-**`n_ubatch` is the GPU's bite size** — when the tray arrives at the GPU, it
-doesn't process all the tokens at once. It chews through them in
-`n_ubatch`-sized bites. This is a hardware optimization: different GPUs have
-different optimal bite sizes based on their memory architecture.
-
-**`n_ubatch` also controls fair sharing of the tray.** When multiple slots need
-prefill, the batch engine uses `n_ubatch` as the round-robin chunk size. It
-pulls up to `n_ubatch` tokens from slot 0, then up to `n_ubatch` from slot 1,
-then slot 2, and so on — cycling through until the tray is full. This prevents
-one slot's large prefill from starving the others.
-
-**This is why `n_batch` defaults to `n_ubatch × n_seq_max`.** Sizing the tray to
-exactly one full `n_ubatch` chunk per slot means every active slot can land a
-complete chunk in a single pass — the slots iterated last are never starved by
-the tray filling up early.
-
-The flow works like this:
-
-1. Add generation tokens from all active slots (1 token each — always fits)
-2. Round-robin prefill: pull `n_ubatch` tokens from each prefilling slot in
-   turn until the tray reaches `n_batch` capacity
-3. Hand tray to the GPU
-4. GPU processes the tray in `n_ubatch`-sized bites
-
-For example, with 4 slots at the defaults (`n_ubatch: 2048`, so
-`n_batch: 8192`), each round pulls 2048 tokens from S0, then S1, then S2, then
-S3 — filling the tray with one full chunk per slot so no slot waits.
-
-For example, if you send a 4096-token prompt to a single slot at the defaults
-(`n_ubatch: 2048`, `n_batch: 2048`), the prompt is split into 2 decode calls of
-2048 tokens each, each processed as a single GPU compute pass. Larger
-`n_ubatch` values mean faster prompt processing but use more compute-buffer
-VRAM. The `n_ubatch` value must always be less than or equal to `n_batch`.
-
-```yaml
-# Both default automatically; shown here for illustration with n_seq_max: 4.
-n_ubatch: 2048 # GPU bite size (default 2048; must be ≤ n_batch)
-n_batch: 8192  # Work tray capacity (default n_ubatch × n_seq_max = 2048 × 4)
-```
-
-#### Overriding the defaults
-
-Most deployments should leave both unset and let Kronk derive them. Set them
-explicitly only when you have a specific reason:
-
-| Goal                                | What to set                                              |
-| ----------------------------------- | ------------------------------------------------------- |
-| Faster prompt ingestion (big VRAM)  | Raise `n_ubatch` (e.g. 4096); `n_batch` tracks it ×slots |
-| Lower compute-buffer VRAM           | Lower `n_ubatch` (text-only models; breaks image input) |
-| Fixed tray regardless of slot count | Set `n_batch` explicitly (must stay ≥ `n_ubatch`)       |
-
-### 3.2 Processor Selection
-
-The **processor** determines which hardware backend Kronk uses for inference:
-CPU, CUDA, Metal, ROCm, or Vulkan. Each processor corresponds to a different
-build of the llama.cpp shared libraries, so the processor must be resolved
-**before** libraries are downloaded. Once the wrong libraries are installed,
-switching processors requires re-downloading them.
-
-This means processor selection happens early — before `libs.New()` in the SDK,
-and before `kronk libs` or any server startup on the CLI. Each install lands
-in its own per-triple folder under the libraries root
-(`<base>/libraries/<os>/<arch>/<processor>/`), so multiple processor bundles
-can coexist; switch active install at runtime by exporting `KRONK_LIB_PATH` to
-that folder and restarting the server. Everything downstream (model loading,
-layer offloading, KV cache placement) depends on having the correct libraries
-for your hardware.
-
-#### How Processor Selection Works
-
-Kronk resolves the processor through a two-step priority:
-
-1. **Environment variable** — If `KRONK_PROCESSOR` is set (e.g., `cpu`, `cuda`,
-   `metal`, `vulkan`, `rocm`), that value is used directly. This gives you
-   explicit control and overrides all auto-detection.
-
-2. **Auto-detection** — If `KRONK_PROCESSOR` is not set, Kronk calls
-   `DetectGPU()` to probe your system for available GPU hardware and selects
-   the best processor automatically.
-
-```
-KRONK_PROCESSOR set?
-  ├─ Yes → Use that value
-  └─ No  → DetectGPU()
-              ├─ CUDA found?   → cuda
-              ├─ ROCm found?   → rocm   (Linux only)
-              ├─ Vulkan found? → vulkan
-              └─ Nothing found → cpu
-```
-
-Auto-detection was introduced in release v1.21.5
-so that Kronk selects the best available GPU automatically rather than silently
-defaulting to CPU. Because hardware configurations vary widely, auto-detection
-ensures GPU acceleration is enabled when supported — users who need a specific
-backend can always override via `KRONK_PROCESSOR`.
-
-For SDK users, `defaults.Processor("")` calls `DetectGPU()` internally. This
-must be called before library initialization:
-
-```go
-lbs, err := libs.New(
-    libs.WithVersion(defaults.LibVersion("")),
-    libs.WithProcessor(defaults.Processor("")),
-)
-```
-
-#### Platform Detection Details
-
-Detection varies by platform because each operating system exposes GPU
-information differently.
-
-**macOS (Darwin)**
-
-| Architecture | Result | Reason |
-| ------------ | ------ | ------ |
-| ARM64 (Apple Silicon) | `metal` | Native Metal support via unified memory |
-| AMD64 (Intel Mac) | `cpu` | The x64 macOS `cpu` binary already includes Metal support |
-
-On macOS, GPU detection is straightforward. Apple Silicon machines always use
-Metal. Intel Macs return `cpu` because yzma's precompiled Metal libraries are
-ARM64-only — but the x64 `cpu` binary already includes Metal acceleration, so
-Intel Macs still get GPU support through the CPU processor selection.
-
-**Windows**
-
-| Priority | Check | Processor |
-| -------- | ----- | --------- |
-| 1 | `nvidia-smi` found | `cuda` |
-| 2 | `vulkaninfo` or `vulkan-1.dll` present | `vulkan` |
-| 3 | None | `cpu` |
-
-**Linux**
-
-| Priority | Check | Processor |
-| -------- | ----- | --------- |
-| 1 | `nvidia-smi` found | `cuda` |
-| 2 | `rocminfo` found | `rocm` |
-| 3 | `vulkaninfo --summary` succeeds | `vulkan` |
-| 4 | None | `cpu` |
-
-#### Supported Processors
-
-| Processor | Hardware | Platforms | Notes |
-| --------- | -------- | --------- | ----- |
-| `metal` | Apple Silicon (M1/M2/M3/M4) | macOS | Unified memory — CPU and GPU share RAM |
-| `cuda` | NVIDIA discrete GPUs | Windows, Linux | Requires NVIDIA drivers with `nvidia-smi` |
-| `rocm` | AMD discrete GPUs | Linux | Requires ROCm runtime with `rocminfo` |
-| `vulkan` | Cross-platform GPUs | Windows, Linux | Intel, AMD, NVIDIA — including integrated GPUs |
-| `cpu` | Any | All | No GPU acceleration, uses system RAM only |
-
-#### Integrated GPUs (iGPUs)
-
-Machines without a discrete GPU but with an integrated GPU (Intel UHD/Iris, AMD
-APU) will auto-detect as `vulkan` if Vulkan drivers are installed.
-
-_**Warning:** On systems with low RAM (8GB or less) or older integrated GPUs,
-Vulkan may perform worse than CPU-only inference. Integrated GPUs share system
-RAM with the CPU, and the overhead of GPU dispatch may outweigh any acceleration
-benefit. If you suspect this applies to your hardware, benchmark both options
-and override with `KRONK_PROCESSOR=cpu` if CPU performs better._
-
-### 3.3 GPU Configuration
-
-A model is made up of layers, and each layer contains the weights (numbers)
-the model learned during training. When you run inference, the model processes
-your input through these layers one at a time. The key performance question is:
-where do those layers live — on the GPU or the CPU?
-
-GPUs are dramatically faster at the math required for inference, but they have
-limited memory (VRAM). If your model doesn't fit entirely in VRAM, you can
-split the work: keep some layers on the GPU for speed and let the rest run on
-the CPU. This section covers how to control that split and other GPU-related
-settings.
-
-#### Layer Offloading
-
-A typical model might have anywhere from 28 to 80+ layers depending on its
-size. For example, a 7B parameter model usually has around 32 layers, while a
-70B model might have 80. Each layer you place on the GPU runs significantly
-faster, but consumes VRAM. If your GPU doesn't have enough VRAM to hold every
-layer, you can choose how many to offload — the rest will run on the CPU,
-which is slower but has access to your full system RAM.
-
-The goal is to put as many layers on the GPU as your VRAM allows. If you run
-out of VRAM, lower this number until the model fits.
-
-Control how many model layers run on GPU:
-
-```yaml
-n_gpu_layers: 0      # 0 = all layers on GPU (default)
-n_gpu_layers: -1     # All layers on CPU
-n_gpu_layers: 20     # First 20 layers on GPU
-```
-
-_Note: On Apple Silicon (Metal), the CPU and GPU share the same unified
-memory pool, so there is no separate VRAM. All layers run on the GPU by
-default and this setting does not need to be configured. Layer offloading
-applies to discrete GPU systems (NVIDIA CUDA, Vulkan)._
-
-#### KV Cache Location
-
-As the model processes your conversation, it builds up a cache of intermediate
-calculations called the KV (Key-Value) cache. Think of it as the model's
-short-term memory — it stores what the model has already "read" so it doesn't
-have to reprocess the entire conversation for every new token it generates.
-The longer the conversation, the larger this cache grows.
-
-By default the KV cache lives on the GPU for speed, but it can consume a
-significant amount of VRAM — especially with large context windows or multiple
-concurrent requests. If you're running low on VRAM, moving the KV cache to
-the CPU frees up GPU memory at the cost of slower inference.
-
-Control where the KV cache is stored:
-
-```yaml
-offload_kqv: true    # KV cache on GPU (default, faster)
-offload_kqv: false   # KV cache on CPU (saves VRAM, slower)
-```
-
-_Note: On Apple Silicon (Metal), the CPU and GPU share unified memory, so
-this setting has no practical effect. KV cache location applies to discrete GPU
-systems (NVIDIA CUDA, Vulkan)._
-
-#### Tensor Operations Offload
-
-Beyond the model layers and KV cache, there are additional math operations
-(called tensor operations) that happen during inference — things like
-matrix multiplications and attention score calculations. These operations
-are separate from the layer weights themselves and can independently be
-placed on the GPU or CPU. By default they run on the GPU, but if VRAM is
-tight you can move them to the CPU while still keeping your model layers
-on the GPU.
-
-Control where these tensor computations run:
-
-```yaml
-op_offload: true     # Tensor ops on GPU (default)
-op_offload: false    # Tensor ops on CPU
-```
-
-_Note: On Apple Silicon (Metal), the CPU and GPU share unified memory, so
-this setting has no practical effect. Offloading applies to discrete GPU
-systems (NVIDIA CUDA, Vulkan)._
-
-#### Multi-GPU Split Mode
-
-If you have more than one GPU in your system, you can spread a model across
-them. This is useful when a model is too large to fit in a single GPU's VRAM.
-There are two strategies,`layer mode` and `row mode`.
-
-`layer mode` assigns entire layers to different GPUs
-(simple and works well for most models).
-
-`row mode` splits individual tensor operations across GPUs in parallel (better
-for Mixture of Experts models like Qwen3-MoE, Mixtral, or DeepSeek where different
-"experts" can run simultaneously on different GPUs).
-
-Control how the model is distributed across GPUs:
-
-```yaml
-split_mode: none     # Single GPU (default)
-split_mode: layer    # Split layers across GPUs
-split_mode: row      # Tensor parallelism (best for MoE models)
-```
-
-_Note: Use this setting for Mixture of Experts models like Qwen3-MoE, Mixtral, or
-DeepSeek._
-
-#### Configuration Reference
-
-Here is a chart for all these GPU settings. These only apply to discrete GPU systems
-(NVIDIA CUDA, Vulkan). On Apple Silicon, the CPU and GPU share unified memory and
-these settings can be ignored.
-
-| Field      | YAML Key       | Values         | Default | Description                    |
-| ---------- | -------------- | -------------- | ------- | ------------------------------ |
-| NGpuLayers | `n_gpu_layers` | 0, -1, N       | 0       | Layers on GPU (0=all, -1=none) |
-| OffloadKQV | `offload_kqv`  | true/false     | true    | KV cache on GPU                |
-| OpOffload  | `op_offload`   | true/false     | true    | Tensor ops on GPU              |
-| SplitMode  | `split_mode`   | none/layer/row | auto*   | Multi-GPU distribution         |
-
-\* `split_mode` default is device-count aware: `row` (tensor parallelism) only
-when more than one GPU is present, otherwise `layer`. Tensor parallelism on a
-single GPU is a no-op that performs worse and can crash MoE models with view
-tensors (e.g. gemma4).
-
-### 3.4 KV Cache Quantization
-
-As discussed in the previous section, the KV cache is the model's short-term
-memory of your conversation. By default it stores values in half precision
-(f16), which gives the best accuracy but uses the most VRAM. Quantization
-reduces the precision of those stored values — using fewer bits to represent
-each number. It's a trade-off: you lose a small amount of accuracy in
-exchange for meaningful VRAM savings. For most use cases, `q8_0` (8-bit)
-gives nearly identical output quality while cutting KV cache memory by about
-25%. More aggressive options like `q4_0` save even more but can start to
-affect generation quality.
-
-Control the precision of the key and value caches independently:
-
-```yaml
-cache_type_k: q8_0 # Key cache precision
-cache_type_v: q8_0 # Value cache precision
-```
-
-#### Available types
-
-- `f16` - Half precision (default, best quality)
-- `q8_0` - 8-bit quantization (good balance)
-- `q4_0` - 4-bit quantization (aggressive, may affect quality)
-- `bf16` - Brain float 16 (for supported hardware)
-
-#### When to use f16 vs q8_0
-
-| Consideration       | f16 (default)                                    | q8_0                                                      |
-| ------------------- | ------------------------------------------------ | --------------------------------------------------------- |
-| VRAM usage          | Higher                                           | ~50% less for KV cache                                    |
-| Output quality      | Best possible                                    | Nearly identical for most tasks                           |
-| MoE models          | Recommended — routing is sensitive to precision  | May degrade expert routing decisions                      |
-| Dense models        | Safe but uses more memory                        | Recommended — minimal quality loss with good VRAM savings |
-| Long-context (64K+) | Safer — avoids compounding                       | Small precision errors can                                |
-|                     | precision errors                                 | accumulate over long sequences                            |
-
-Start with `q8_0` for dense models. Use `f16` for MoE models or if you
-notice quality issues (incoherent outputs, reasoning failures).
-
-#### Example: MoE Model with F16 Cache
-
-```yaml
-models:
-  # MoE models benefit from f16 cache for routing accuracy
-  Qwen3.5-35B-A3B-Q8_0:
-    context_window: 32768
-    cache_type_k: f16 # Preserve routing precision
-    cache_type_v: f16
-    split_mode: row # Best for MoE multi-GPU
-
-  # Dense models can often use q8_0 cache without issues
-  Qwen3-8B-Q8_0:
-    context_window: 32768
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-```
-
-**Recommendation:** If you notice quality degradation (incoherent outputs,
-reasoning failures, or code bugs) with quantized cache, try `f16` first
-before adjusting other parameters. The VRAM cost is typically 25-50% more
-for the cache, but the quality improvement for sensitive workloads is
-substantial.
-
-### 3.5 Flash Attention
-
-> **TL;DR (new to this?)** Flash Attention is a speed trick for the
-> **transformer attention layers** in an LLM — the part that figures out
-> "how much should each word pay attention to every other word." It works
-> by being clever about how it uses fast on-chip memory so it doesn't
-> have to write huge intermediate results to slower memory. It's on by
-> default and works on every model type, including **hybrid models**
-> (see the note at the end of this section).
-
-Attention is the core mechanism that lets a model figure out which parts of
-your input are relevant to each other. For example, in the sentence "The cat
-sat on the mat because it was tired," attention is how the model connects
-"it" back to "the cat." The standard attention algorithm needs to hold a
-large matrix of scores in memory — one score for every pair of tokens in your
-input. As context windows grow, this matrix grows quadratically and can
-become both slow and memory-hungry.
-
-Flash Attention is an optimized implementation that computes the same result
-but processes the matrix in small tiles that fit in the GPU's fast on-chip
-memory (SRAM) instead of slower VRAM. The result is lower memory usage and
-faster computation — especially noticeable with large context windows (32K+).
-It's enabled by default and should rarely need to be changed.
-
-Control whether Flash Attention is used:
-
-```yaml
-flash_attention: enabled   # Default: enabled
-flash_attention: disabled  # Disable if causing issues
-flash_attention: auto      # Let llama.cpp decide
-```
-
-_Note: **Hybrid models** mix two kinds of layers: regular transformer
-attention layers _and_ a different kind (like Mamba, Gated DeltaNet, or
-convolutional layers in models such as Jamba, Granite-Hybrid, LFM2, or
-Qwen3-Next) that don't do attention at all — they have their own way of
-remembering past tokens. Flash Attention only speeds up the attention
-layers, and current llama.cpp scopes it correctly: the recurrent layers
-in a hybrid model never reach the Flash Attention kernel, so enabling it
-only affects the genuine attention layers and is safe. Earlier versions
-of llama.cpp could crash on hybrid models, which is why older Kronk
-releases force-disabled Flash Attention (and forced an f16 KV cache) for
-them. That override has been removed — hybrid models now use the same
-defaults as every other model, and you control `flash_attention` and the
-KV cache types yourself. If you run a hybrid model on a backend that
-can't do Flash Attention, use `flash_attention: auto` and llama.cpp will
-probe device support and fall back to disabled automatically. Remember
-that quantized KV caches (`q8_0`, `q4_0`) require flash attention to be
-active._
-
-### 3.6 Sliding Window Attention (SWA)
-
-Some models use a **mixed attention pattern** that interleaves sliding
-window attention (SWA) layers with full global attention layers. In SWA
-layers, each token only attends to a small local window of recent tokens
-(e.g., 1024 tokens) rather than the entire context. The global attention
-layers still see everything, which keeps the model coherent over long
-contexts while the SWA layers provide efficient local processing.
-
-> **Not the same as a "hybrid model".** SWA still uses transformer
-> attention in every layer — some layers just attend to a smaller window
-> than others. A "hybrid model" (Section 3.5) replaces some attention
-> layers entirely with a non-attention mechanism like Mamba or
-> convolutions. Flash Attention works fine with both SWA and hybrid
-> models — in a hybrid model it simply applies to the attention layers
-> and skips the recurrent ones.
-
-Models that use sliding window attention include:
-
-| Model                | SWA Window | Architecture |
-| -------------------- | ---------- | ------------ |
-| Gemma 4 26B-A4B      | 1024       | MoE          |
-| Gemma 4 31B          | 1024       | Dense        |
-| Gemma 4 E2B / E4B    | 512        | Dense        |
-| Gemma 3 (all sizes)  | 1024       | Dense        |
-
-Kronk automatically detects sliding window metadata from the GGUF file —
-you don't need to configure the window size. By default, llama.cpp allocates
-a compact KV cache for SWA layers (sized to the window), which saves
-significant VRAM compared to allocating the full context window for every
-layer. However, this compact cache prevents advanced operations like context
-shifting and full prefix caching on SWA layers.
-
-#### SWA Full Cache Mode
-
-When accuracy is more important than memory savings, you can force SWA layers
-to use the full context window for their KV cache:
-
-```yaml
-swa_full: true    # Full-size KV cache for SWA layers (more VRAM, better accuracy)
-swa_full: false   # Compact SWA cache (default, less VRAM)
-```
-
-When `swa_full` is enabled, SWA layers allocate the same KV cache size as
-global attention layers. This preserves all cached context for SWA layers
-and enables full context shifting and prefix caching, but increases VRAM
-usage proportionally.
-
-#### VRAM Impact
-
-The VRAM difference depends on what fraction of layers use SWA. For example,
-Gemma 4 26B-A4B has 30 layers with a pattern where roughly 5/6 of attention
-layers are SWA. With a 32K context window and f16 KV cache:
-
-| Setting            | SWA Layer Cache | Approximate KV Savings |
-| ------------------ | --------------- | ---------------------- |
-| `swa_full: false`  | 1024 tokens     | ~40-50% less KV VRAM   |
-| `swa_full: true`   | 32768 tokens    | None (full allocation) |
-
-_Note: Not all models use sliding window attention. Dense models (Llama,
-Qwen3, Mistral-large), hybrid models (Qwen3.5/3.6), and most MoE models
-(Qwen3-MoE, DeepSeek) use full attention on all layers. The `swa_full`
-setting has no effect on these models._
-
-### 3.7 Parallel Inference (NSeqMax)
-
-When multiple users (or applications) send requests to the same model at the
-same time, the model needs a way to handle them concurrently. That's what
-`NSeqMax` controls — it determines how many requests the model can process in
-parallel.
-
-Behind the scenes, when a model is loaded, Kronk creates one processing slot
-for each unit of `n_seq_max` (e.g., `n_seq_max: 4` creates four slots).
-Each slot gets its own isolated partition in the KV cache (the model's
-short-term memory from earlier sections). All slots share the same model weights
-and GPU, but each one maintains its own conversation state independently.
-
-Consider what happens when `n_seq_max` is set to 1 and two requests arrive.
-The first request is assigned to the only available slot and begins
-generating tokens. The second request has no slot available, so it waits in
-a queue. Once the first request finishes and the slot is released, the
-second request is assigned to that slot and begins processing. With a single
-slot, requests are handled one at a time.
-
-When `n_seq_max` is set to 4, then four requests can each be assigned a slot
-at the same time and generate tokens simultaneously. Kronk combines the next
-token from each active slot into a single batch and sends that batch through
-the GPU in one forward pass — so the GPU processes all four tokens together
-rather than one at a time. That's where we get some performance optimization.
-
-The trade-off is VRAM. Each slot reserves its full KV cache partition when the
-model loads, whether or not it's actively handling a request. Setting
-`n_seq_max: 4` means four KV cache partitions are allocated upfront. If each
-partition costs 3 GB, that's 12 GB of VRAM just for the cache — on top of the
-model weights. More slots means more concurrency but more VRAM.
-
-Control how many requests can be processed in parallel:
-
-```yaml
-n_seq_max: 4 # Process up to 4 requests concurrently
-```
-
-#### How Caching Strategy Affects Slot Behavior
-
-Enabling a [caching strategy](#chapter-5-message-caching) does not add any
-extra memory to the system — caching works within the KV cache already
-allocated to each slot. The difference between strategies is what happens to
-the data in the KV cache between requests:
-
-**No Caching** — The simplest mode. When a request finishes, the slot's KV
-cache is cleared. The next request that lands in that slot starts from
-scratch, processing the full prompt from the beginning. Every request pays
-the full cost of prompt processing regardless of how similar it is to a
-previous one.
-
-**IMC (Incremental Message Cache)** — Designed for single-user, multi-turn
-conversations. IMC maintains logical sessions that cache the conversation
-history. All sessions (text and media) externalize their cached KV state to
-RAM after each request and restore it into any available slot on the next
-request — slots are not dedicated to conversations. When the user sends a
-new message, only the new tokens need to be processed — the model doesn't
-re-read the entire conversation. This gives the best performance for chat
-and agentic applications.
-
-| Mode | Session Lifetime          | Best For    | Cache Strategy                                                           |
-| ---- | ------------------------- | ----------- | ------------------------------------------------------------------------ |
-| Off  | Cleared after request     | Stateless   | None                                                                     |
-| IMC  | Persists across requests  | Single-user | Conversation cached in session; externalizes to RAM between requests      |
-
-#### Embedding and Reranking Models
-
-Embedding and reranking models work differently. Instead of slots sharing a
-single context, `NSeqMax` creates a pool of independent contexts. When a
-request contains multiple inputs (for example, 100 sentences to embed), those
-inputs are spread across the pool contexts and processed in parallel. Model
-weights are shared, but each context has its own KV cache memory.
-
-### 3.8 Understanding GGUF Quantization
-
-GGUF models come in various quantization formats that trade off between file
-size, VRAM usage, and output quality. Understanding these formats helps you
-choose the right model variant for your hardware and use case.
-
-#### What is Quantization?
-
-Quantization reduces model precision from the original 16-bit or 32-bit
-floating-point weights to lower bit representations. This dramatically
-decreases:
-
-- **File size** - A 7B model can go from ~14GB (FP16) to ~3GB (Q4)
-- **VRAM usage** - More aggressive quantization allows larger models on limited hardware
-- **Inference speed** - Smaller models load faster and may run faster on memory-constrained systems
-
-The tradeoff is **quality degradation** - lower precision means less accurate
-representations of the original weights, which can affect output coherence,
-reasoning ability and factual accuracy.
-
-#### What are K-Quants?
-
-K-quants (introduced by llama.cpp) use **per-block scaling** with importance
-weighting. Instead of applying uniform quantization across all weights, K-quants:
-
-1. Divide weights into small blocks (typically 32 or 256 values)
-2. Calculate optimal scale factors per block
-3. Preserve more precision for important weights
-
-This produces better quality than naive quantization at the same bit rate.
-K-quant variants include size suffixes:
-
-- **S** (Small) - Smallest file size, lowest quality within that bit level
-- **M** (Medium) - Balanced size and quality
-- **L** (Large) - Larger file, better quality
-
-#### Standard Quantization Formats
-
-| Format     | Bits/Weight | Quality     | VRAM (7B Model) | Use Case                                     |
-| ---------- | ----------- | ----------- | --------------- | -------------------------------------------- |
-| **Q4_0**   | 4.5         | Low         | ~4 GB           | Maximum compression, quality loss noticeable |
-| **Q4_1**   | 5.0         | Low-Med     | ~4.3 GB         | Slightly better than Q4_0                    |
-| **Q4_K_S** | 4.5         | Medium      | ~4 GB           | K-quant, good balance for limited VRAM       |
-| **Q4_K_M** | 4.8         | Medium      | ~4.5 GB         | K-quant, recommended 4-bit option            |
-| **Q5_K_S** | 5.5         | Medium-High | ~5 GB           | Good quality, moderate size                  |
-| **Q5_K_M** | 5.7         | High        | ~5.3 GB         | Recommended for most users                   |
-| **Q6_K**   | 6.5         | High        | ~6 GB           | Near-original quality                        |
-| **Q8_0**   | 8.5         | Highest     | ~8 GB           | Best quality, largest size                   |
-
-#### IQ (Importance Matrix) Quantization
-
-IQ formats use **learned importance matrices** to determine which weights
-matter most. They achieve extreme compression with minimal quality loss by:
-
-1. Analyzing weight importance during quantization
-2. Allocating more bits to critical weights
-3. Aggressively compressing less important weights
-
-| Format      | Bits/Weight | Quality     | Use Case                          |
-| ----------- | ----------- | ----------- | --------------------------------- |
-| **IQ1_S**   | ~1.5        | Very Low    | Extreme compression, experimental |
-| **IQ1_M**   | ~1.75       | Low         | Extreme compression, experimental |
-| **IQ2_XXS** | ~2.0        | Low         | Ultra-low VRAM situations         |
-| **IQ2_XS**  | ~2.3        | Low-Med     | Very constrained hardware         |
-| **IQ2_S**   | ~2.5        | Medium      | Constrained hardware              |
-| **IQ3_XXS** | ~3.0        | Medium      | Good balance for low VRAM         |
-| **IQ3_XS**  | ~3.3        | Medium-High | Better quality low-bit option     |
-| **IQ4_XS**  | ~4.0        | High        | Alternative to Q4_K variants      |
-
-#### UD (Ultra-Dynamic) Quantization
-
-UD quantization applies **different precision levels per layer**. Neural
-network layers have varying sensitivity to quantization:
-
-- Early layers (embeddings, first attention blocks) - More sensitive
-- Middle layers - Moderately sensitive
-- Later layers - Often more tolerant of compression
-
-UD variants analyze each layer and assign optimal bit depths, achieving
-better quality than uniform quantization at similar average bits per weight.
-
-Common UD naming: `UD-Q5_K_XL` means Ultra-Dynamic with Q5 K-quant base, XL quality tier.
-
-### 3.9 Choosing the Right Quantization
-
-The right quantization depends on how much VRAM you have and what quality you need.
-
-#### By Available VRAM
-
-| VRAM   | 7B Model | 13B Model | 30B Model | 70B Model |
-| ------ | -------- | --------- | --------- | --------- |
-| 6 GB   | Q4_K_M   | IQ3_XXS   | -         | -         |
-| 8 GB   | Q6_K     | Q4_K_M    | IQ2_XXS   | -         |
-| 12 GB  | Q8_0     | Q5_K_M    | IQ3_XXS   | -         |
-| 16 GB  | Q8_0     | Q8_0      | Q4_K_M    | -         |
-| 24 GB  | Q8_0     | Q8_0      | Q6_K      | IQ3_XXS   |
-| 48 GB  | Q8_0     | Q8_0      | Q8_0      | Q4_K_M    |
-| 64 GB+ | Q8_0     | Q8_0      | Q8_0      | Q6_K/Q8_0 |
-
-#### By Use Case
-
-- **Production/Quality-Critical**: Q8_0 or Q6_K - Minimal quality loss
-- **General Use**: Q5_K_M - Best balance of quality and efficiency
-- **VRAM-Constrained**: Q4_K_M - Good quality at low VRAM cost
-- **Experimental/Testing**: IQ3_XXS or IQ2_XS - Run larger models on limited hardware
-
-#### Quality Guidelines
-
-1. **Start with Q5_K_M** - It's the sweet spot for most use cases
-2. **Use Q8_0 for reasoning-heavy tasks** - Math, code, complex logic benefit from higher precision
-3. **Q4_K_M is the floor** - Below this, quality degrades noticeably for most models
-4. **IQ formats are specialized** - Great for running models that wouldn't otherwise fit, but expect some quality loss
-5. **Larger models at lower quant often beat smaller models at higher quant** - A 70B Q4 may outperform a 7B Q8
-
-#### Example Configuration
-
-```yaml
-models:
-  # Quality-focused: Q8_0 for a model that fits in VRAM
-  Qwen3-8B-Q8_0:
-    context_window: 32768
-    cache_type_k: q8_0
-    cache_type_v: q8_0
-
-  # VRAM-constrained: Q4_K_M to fit larger model
-  Llama-3.3-70B-Instruct-Q4_K_M:
-    context_window: 8192
-    split_mode: row
-    n_gpu_layers: 0
-```
-
-### 3.10 VRAM Estimation
-
-Before loading a model, you need to know whether it will fit in your GPU's
-memory. VRAM usage comes from two things: the model weights (fixed cost
-determined by the model you chose) and the KV cache (variable cost determined
-by your configuration choices from the previous sections — context window size,
-number of slots, and cache precision). If the total exceeds your available
-VRAM, the model either won't load or will partially fall back to the CPU,
-which significantly slows inference. This section walks through how to
-estimate the total.
-
-#### Model Weights + KV Cache
-
-Model weights are the learned numerical parameters (billions of floating-point values)
-that encode the model's knowledge and reasoning ability — they represent the fixed
-cost of loading a model into memory. Model weights are determined by the GGUF file
-size (e.g., ~8GB for a 7B Q8_0 model). The KV cache is the variable cost you
-control through configuration. Together they determine total VRAM usage:
-
-Total VRAM = Model Weights + KV Cache.
-
-#### Model Weights (Q8_0 quantization)
-
-The following table provides rough VRAM estimates for model weights at Q8_0
-quantization, grouped by parameter count.
-
-| Parameters | VRAM     |
-| ---------- | -------- |
-| 1-3B       | 2-4 GB   |
-| 7-8B       | 8-10 GB  |
-| 13B        | 14-16 GB |
-| 30B        | 32-36 GB |
-| 70B        | 72-80 GB |
-
-#### Slots and Sequences
-
-A slot is a processing unit that handles one request at a time. Each slot is
-assigned a unique sequence ID that maps to an isolated partition in the shared
-KV cache. The mapping is always 1:1 in Kronk.
-
-```
-NSeqMax = 4 (set via n_seq_max in model config)
-
-Slot 0  →  Sequence 0  →  KV cache partition 0
-Slot 1  →  Sequence 1  →  KV cache partition 1
-Slot 2  →  Sequence 2  →  KV cache partition 2
-Slot 3  →  Sequence 3  →  KV cache partition 3
-```
-
-Remember as shared previously, `NSeqMax` controls how many slots (and sequences)
-are created. More slots means more concurrent requests, but each slot reserves
-its own KV cache partition in VRAM whether or not it is actively used.
-
-#### What Affects KV Cache Memory Per Sequence
-
-Each sequence's KV cache partition size is determined by three factors:
-
-| Factor             | Config Key          | Description                                                                                                                                                   |
-| ------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Context Window     | `n_ctx`             | Maximum tokens the sequence can hold. Memory scales linearly — 32K context uses 4× the memory of 8K.                                                          |
-| Number of Layers   | `block_count`       | Every transformer layer stores its own key and value tensors per token. A 70B model (80 layers) uses ~2.5× more per-token memory than a 7B model (32 layers). |
-| KV Cache Precision | `bytes_per_element` | Data type for cached keys and values: `f16` = 2 bytes/element (default, best quality), `q8_0` = 1 byte/element (50% VRAM savings, good quality).              |
-
-The remaining values (`head_count_kv`, `key_length`, `value_length`) are baked
-into the model itself and cannot be changed — Kronk reads them automatically
-from the GGUF file.
-
-The formula:
-
-```
-KV_Per_Token_Per_Layer = head_count_kv × (key_length + value_length) × bytes_per_element
-KV_Per_Sequence        = n_ctx × n_layers × KV_Per_Token_Per_Layer
-```
-
-#### What Affects Total KV Cache (Slot Memory)
-
-Total KV cache (Slot Memory) is the per-sequence cost multiplied by the number
-of slots:
-
-```
-Slot_Memory = NSeqMax × KV_Per_Sequence
-Total_VRAM  = Model_Weights + Slot_Memory
-```
-
-Memory is statically allocated upfront when the model loads. All slots reserve
-their full KV cache partition regardless of whether they are actively processing
-a request.
-
-#### Example: Real Model Calculation
-
-```
-Model                   : Qwen3.5-35B-A3B-Q8_0
-Model Weights           : 36.0 GB
-Context Window (n_ctx)  : 131,072 (128K)
-Bytes Per Element       : 1 (q8_0)
-block_count (n_layers)  : 48
-attention.head_count_kv : 4
-attention.key_length    : 128
-attention.value_length  : 128
-
-Step 1 — Per-token-per-layer cost:
-
-  KV_Per_Token_Per_Layer = 4 × (128 + 128) × 1 = 1,024 bytes
-
-Step 2 — Per-sequence cost:
-
-  KV_Per_Sequence = 131,072 × 48 × 1,024 = ~6.4 GB
-
-Step 3 — Total KV cache (NSeqMax = 2):
-
-  Slot_Memory = 2 × 6.4 GB = ~12.8 GB
-
-Step 4 — Total VRAM:
-
-  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB
-```
-
-### 3.11 Model-Specific Tuning
-
-The previous sections covered general configuration that applies to all
-models. However, different model architectures — Dense, Mixture of Experts
-(MoE), and Hybrid — each have their own characteristics that benefit from
-specific tuning. Vision and audio models also need adjusted batch settings
-because they process media as large token batches. This section provides
-recommended configurations for each model type so you can get the best
-performance out of the box.
-
-#### Dense Models
-
-Dense models are the most common architecture. Every parameter participates
-in every token, producing sequential memory access patterns that saturate
-bandwidth efficiently. No special configuration is needed — the defaults
-from the previous sections apply directly.
-
-| Do                                        | Don't                                           |
-| ----------------------------------------- | ----------------------------------------------- |
-| Use `q8_0` KV cache to save VRAM          | Use `f16` cache unless you need maximum quality |
-| Start with default `n_batch` / `n_ubatch` | Over-tune batch settings without benchmarking   |
-| Use flash attention when available        | Disable flash attention without reason          |
-
-#### MoE Models
-
-MoE (Mixture of Experts) models have many total parameters but only activate
-a small subset per token. For example, `Qwen3-Coder-30B-A3B` has 30B total
-parameters but only 3B are active per token (that's what "A3B" means).
-
-| Do                                                              | Don't                                                 |
-| --------------------------------------------------------------- | ----------------------------------------------------- |
-| Use `split_mode: row` for multi-GPU                             | Use `split_mode: layer` — it doesn't suit MoE routing |
-| Start with `q8_0` KV cache, fall back to `f16` if quality drops | Assume `q8_0` cache works for all MoE models          |
-| Prefer dense Q4 over MoE Q8 on Apple Silicon                    | Assume fewer active parameters means faster inference |
-
-_Note: On unified memory systems (like Apple Silicon), inference speed depends on
-memory bandwidth, not compute. MoE models create scattered memory access
-patterns (jumping between expert weights) that underutilize bandwidth
-compared to the sequential access of dense models. A dense model at Q4 may
-outperform a larger MoE at Q8 on Apple Silicon — fewer total bytes moved and
-a more efficient access pattern._
-
-#### Hybrid Models
-
-Hybrid models mix traditional attention layers with recurrent layers
-(DeltaNet or SSM/Mamba). Like dense models, every parameter participates in
-every token. Kronk detects hybrid models automatically at load time.
-
-| Do                                                    | Don't                                                       |
-| ----------------------------------------------------- | ----------------------------------------------------------- |
-| Enable `incremental_cache` for conversation workloads | Assume the same KV cache savings as dense models            |
-| Use `flash_attention: auto` on backends without FA    | Forget that quantized KV caches need flash attention active |
-| Use a quantized KV cache only with flash attention on | Pair a quantized KV cache with flash attention disabled     |
-
-See [IMC Hybrid](#imc-hybrid) for details on how caching works with
-recurrent state.
-
-#### Vision and Audio Models
-
-Vision and audio models process media (image tiles, audio frames) as large
-token batches. The image encoder uses non-causal attention, so every patch
-token of an image chunk must fit in a single `n_ubatch`. The default
-`n_ubatch` of 2048 already satisfies this for typical models, so media
-workloads work out of the box — `n_batch` auto-derives to `n_ubatch × n_seq_max`.
-
-| Do                                                          | Don't                                                            |
-| ----------------------------------------------------------- | --------------------------------------------------------------- |
-| Rely on the default `n_ubatch` (2048) for most media models | Lower `n_ubatch` below a single image's patch count — it breaks image input |
-| Raise `n_ubatch` only if one image chunk exceeds 2048 tokens | Set `n_seq_max` high — media processing is memory-intensive      |
-
-#### Embedding Models
-
-Embedding models process complete inputs in a single pass rather than
-generating tokens one at a time.
-
-| Do                                               | Don't                                          |
-| ------------------------------------------------ | ---------------------------------------------- |
-| Set `n_batch` high (up to `context_window`)      | Use small `n_batch` — it limits throughput     |
-| Use multiple slots (`n_seq_max`) for concurrency | Over-allocate slots beyond your request volume |
-
-#### SWA Models
-
-Models with sliding window attention (Gemma 4, Gemma 3) interleave local
-SWA layers with global attention layers. By default, SWA layers use a compact
-KV cache sized to the sliding window (e.g., 1024 tokens), which saves
-significant VRAM. Enable `swa_full` when accuracy matters more than memory.
-
-| Do                                                        | Don't                                                          |
-| --------------------------------------------------------- | -------------------------------------------------------------- |
-| Enable `swa_full: true` when accuracy is the priority     | Enable `swa_full` on models without SWA — it has no effect     |
-| Use `f16` KV cache for MoE SWA models (e.g., Gemma 4)    | Assume `swa_full` is needed — test without it first            |
-| Budget extra VRAM when `swa_full` is enabled              | Use large context windows + `swa_full` without checking VRAM   |
-
-```yaml
-# Example: Gemma 4 26B-A4B with full SWA cache
-unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
+unsloth/Qwen3-0.6B-Q8_0:
   context-window: 32768
-  swa-full: true
-  incremental-cache: true
+  nseq-max: 2
 ```
 
-### 3.12 Speculative Decoding
+Do not add a `models:` wrapper. Top-level setting names use kebab-case, such as
+`context-window` and `nseq-max`. Keys nested under `sampling-parameters` use
+the API's snake_case names, such as `top_p`.
 
-Speculative decoding uses a small, fast source of draft tokens to predict
-candidates ahead of the target model, then verifies them in a single target
-forward pass. When the drafts match what the target would have produced,
-multiple tokens are accepted per decode step — improving throughput without
-changing output quality.
+The server reads this file during startup. Restart the server after changing
+it. To test a different file without replacing the default, run:
 
-Kronk supports two interchangeable sources of draft tokens:
+```shell
+kronk server start --model-config-file=./my-model-config.yaml
+```
 
-| Mode              | Drafter                                                              | How enabled                                                                                          |
-| ----------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Separate-GGUF** | A second, smaller GGUF you download and configure                    | Explicit `draft-model:` block in `model_config.yaml` (or `model.Config.DraftModel` from the SDK)     |
-| **MTP**           | A Multi-Token-Prediction head baked into the target GGUF             | Auto-enabled when the target GGUF ships an MTP head; no extra configuration                          |
+You can also set `KRONK_POOL_MODEL_CONFIG_FILE` to an alternative path. See
+[Chapter 8 §8.5](chapter-08-model-server.md#85-model-configuration-files) for
+model config file management and
+[Chapter 2 §2.5](chapter-02-installation.md#25-models-and-data-paths) for all
+data paths.
 
-A model can have at most one drafter active. If you set a `draft-model:`
-block with a `model-id:`, the separate-GGUF drafter wins — the MTP head,
-even when present, is ignored on that load. A `draft-model:` block with
-**only** `ndraft:` (no `model-id:`) does not select a separate drafter;
-it just overrides the starting `ndraft` for the auto-detected MTP head
-(see [MTP nDraft Override](#mtp-ndraft-override) below).
+#### Model variants
 
-For the user-facing operation guide (when to choose each mode, how to read
-acceptance metrics, observability), see [Chapter 6: Speculative Decoding & MTP](#chapter-6-speculative-decoding--mtp).
-
-#### How It Works
-
-| Step      | What Happens                                                                                       |
-| --------- | -------------------------------------------------------------------------------------------------- |
-| 1. Draft  | The drafter generates N candidate tokens (default 5 for separate-GGUF, 4 for MTP)                  |
-| 2. Batch  | All candidates plus the last accepted token are decoded by the target model in one forward pass    |
-| 3. Verify | Each candidate is accepted with probability `min(1, p_target / q_draft)`                           |
-| 4. Reject | On rejection, a corrective token is sampled from the target and remaining candidates are discarded |
-| 5. Bonus  | If all candidates are accepted, a bonus token is sampled from the target                           |
-
-The speedup depends on the drafter's acceptance rate. Higher acceptance
-means more tokens per forward pass.
-
-| Factor              | Effect on Acceptance Rate                                                                                                     |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Draft model quality | Larger, more capable drafts produce better predictions. Q4 of the same architecture tends to outperform a much smaller model. |
-| Temperature         | Lower temperatures yield higher acceptance. At 0.8, expect ~30% of steps to accept zero draft tokens.                         |
-| Task type           | Predictable text (boilerplate, common patterns) accepts more often than creative or reasoning-heavy output.                   |
-
-#### Separate-GGUF Draft
-
-Requirements:
-
-- Draft and target models must share the **same vocabulary** (same tokenizer)
-- `n_seq_max` must be `1` (single-slot mode only)
-- The draft model must be downloaded and available locally
-- Only text generation is supported (not vision/audio)
-
-Configured via the `draft-model` block under a target model entry in
-`model_config.yaml` (or via `model.Config.DraftModel` when you embed the
-SDK directly):
+A suffix creates another configuration for the same downloaded model:
 
 ```yaml
-# In ~/.kronk/model_config.yaml
-Qwen/Qwen3-8B-Q8_0:
+unsloth/Qwen3-0.6B-Q8_0:
   context-window: 32768
+
+unsloth/Qwen3-0.6B-Q8_0/LONG:
+  context-window: 65536
+```
+
+Select the variant by sending the complete name, including `/LONG`, as the API
+request's `model` value. Variants let applications use different runtime
+settings without keeping duplicate model files.
+
+#### Other configuration surfaces
+
+Applications embedding the Go SDK can construct a `model.Config` directly.
+Request fields such as `temperature`, `top_p`, and `max_tokens` can override
+generation behavior for an individual request. Those request fields are
+documented in [Chapter 10](chapter-10-request-parameters.md).
+
+The hardware processor (`cpu`, `metal`, `cuda`, `rocm`, or `vulkan`) selects a
+native library bundle rather than a per-model setting. Kronk detects it during
+library installation. Set `KRONK_PROCESSOR` before installing libraries only
+when you need to override detection; see
+[Chapter 2 §2.4](chapter-02-installation.md#24-libraries).
+
+### 3.2 Automatic Tuning
+
+The model server derives a starting configuration from GGUF metadata and the
+available hardware. This analysis chooses values such as:
+
+- context window;
+- KV cache types;
+- maximum parallel sequences;
+- GPU layer placement;
+- Flash Attention mode; and
+- multi-GPU split mode.
+
+A concrete override in `model_config.yaml` replaces the analyzed value. The
+special cache type `auto` is treated as unset and therefore does not clear an
+analyzed `f16` or `q8_0` choice. This makes the usual workflow:
+
+1. Start with no override and let Kronk analyze the model.
+2. Use the model normally and monitor memory and latency.
+3. Override only the setting needed for the workload.
+
+The balanced analysis limits the selected context to the model's training
+context and a maximum of 128K tokens. It estimates the largest supported
+context bucket that fits its GPU budget, with a 4K minimum recommendation. It
+starts with an f16 KV cache and tries q8_0 if the minimum f16 configuration
+does not fit. CPU-only analysis and systems without a known GPU budget cannot
+perform the same fit check. All recommendations are estimates, not a guarantee
+that every backend and workload will fit or have identical memory use.
+
+In the Go SDK, the same analysis is opt-in through `WithAutoTune`. It is not
+applied when an application uses the low-level `model` package directly.
+Explicit SDK options still take precedence over analyzed values.
+
+### 3.3 Core Runtime Settings
+
+#### Context window
+
+`context-window` is the maximum number of tokens available to one sequence.
+Input and generated tokens both consume this capacity.
+
+```yaml
+unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 32768
+```
+
+A larger window increases KV-cache memory and can reduce the number of parallel
+sequences that fit. It also cannot create model capability that was absent
+during training. If the requested window exceeds the model's native context,
+the model may require RoPE scaling; see [Chapter 7](chapter-07-yarn-extended-context.md).
+
+#### KV cache types
+
+The KV cache stores attention state for tokens already processed. Configure
+the key and value caches independently:
+
+```yaml
+unsloth/Qwen3-0.6B-Q8_0:
   cache-type-k: q8_0
   cache-type-v: q8_0
+```
+
+Common choices are:
+
+| Value | Meaning |
+| ----- | ------- |
+| `f16` | Higher precision and larger cache |
+| `q8_0` | Smaller quantized cache |
+| `q4_0` | More aggressive compression |
+
+The actual memory reduction includes block and alignment overhead, so it is not
+an exact ratio for every model and backend. Start with automatic tuning. If an
+explicit quantized cache changes output quality, compare the same workload with
+`f16` before changing unrelated settings.
+
+#### Flash Attention
+
+Flash Attention can reduce attention memory traffic and improve performance,
+especially at longer contexts:
+
+```yaml
+unsloth/Qwen3-0.6B-Q8_0:
+  flash-attention: auto
+```
+
+Valid values are `enabled`, `disabled`, and `auto`. Automatic tuning uses
+`auto` when a GPU is available and disables it for CPU-only analysis. Set an
+explicit value only for backend compatibility or controlled benchmarking.
+
+#### Sliding Window Attention
+
+Kronk reads the sliding-window size from model metadata. `swa-full` controls
+the cache allocation used by models with sliding window attention:
+
+```yaml
+some-provider/some-swa-model:
+  swa-full: false
+```
+
+When unset, llama.cpp currently uses a full-size SWA cache. Explicitly setting
+`false` uses the compact sliding-window cache, which can save memory but limits
+context caching and shifting. Setting `true` preserves the full cache at a
+higher memory cost. This key has no effect on models without SWA metadata.
+
+### 3.4 GPU and Memory Placement
+
+Automatic tuning normally places model layers and operations. Use these
+settings when a model does not fit or when a multi-GPU deployment needs an
+explicit layout.
+
+#### Model layers
+
+`ngpu-layers` controls how many model layers are offloaded to the GPU:
+
+```yaml
+some-provider/some-model:
+  ngpu-layers: 20
+```
+
+| Value | Behavior |
+| ----- | -------- |
+| `0` | Offload all layers to the GPU |
+| `-1` | Keep all layers on the CPU |
+| Positive integer | Offload that many layers |
+
+Partial offload can make a model fit in limited VRAM, but CPU-resident layers
+usually reduce inference speed. On unified-memory systems, CPU and GPU do not
+have separate memory pools, although placement can still affect performance.
+
+#### KV cache and operations
+
+The KV cache and host tensor operations are offloaded to the GPU by default:
+
+```yaml
+some-provider/some-model:
+  offload-kqv: false
+  op-offload: false
+```
+
+`offload-kqv: false` keeps the KV cache on the CPU. `op-offload: false` keeps
+host tensor operations on the CPU. These options can reduce discrete-GPU VRAM
+pressure at a performance cost. They do not reduce total memory requirements.
+
+For multimodal models, `proj-on-cpu: true` keeps the media projector on the
+CPU without changing placement of the language model itself.
+
+#### Multiple GPUs
+
+`split-mode` accepts:
+
+| Value | Behavior |
+| ----- | -------- |
+| `none` | Use one GPU |
+| `layer` | Distribute whole layers across GPUs |
+| `row` | Split tensor rows across GPUs |
+
+When the setting is omitted, Kronk selects `row` when more than one GPU is
+present and `layer` otherwise. This is a hardware-derived default, not a rule
+that one mode is always fastest for a particular model architecture.
+
+For explicit placement, `devices` names the devices and `tensor-split` gives
+their proportional shares:
+
+```yaml
+some-provider/some-model:
+  devices: [CUDA0, CUDA1]
+  split-mode: layer
+  tensor-split: [0.6, 0.4]
+```
+
+The number of `tensor-split` values must match the number of devices. Omit the
+split to let the backend derive it from available memory. `main-gpu` selects
+the primary device when `split-mode` is `none`.
+
+### 3.5 Concurrency and Batching
+
+`nseq-max` controls model concurrency:
+
+```yaml
+unsloth/Qwen3-0.6B-Q8_0:
+  nseq-max: 4
+```
+
+For text generation, this creates up to four batch-engine slots. Their
+sequence state is isolated, while the text engine uses a unified KV pool with
+total capacity based on `context-window × nseq-max`. Idle slots do not own
+permanent fixed partitions, but increasing `nseq-max` still increases the
+capacity Kronk must budget and can substantially increase memory use.
+
+Embedding and reranking models use `nseq-max` to size a pool of independent
+contexts rather than text-generation slots. See
+[Chapter 4](chapter-04-batch-processing.md) for request scheduling and the
+differences between model types.
+
+Two settings control prompt batching:
+
+| Key | Load-time default | Purpose |
+| --- | ----------------- | ------- |
+| `nubatch` | `2048`; `4096` with MoE expert CPU offload | Physical compute chunk size |
+| `nbatch` | `nubatch × nseq-max` | Maximum logical decode batch |
+
+Most deployments should leave both unset. Larger values can improve prompt
+throughput but require larger compute buffers. `nubatch` must not exceed
+`nbatch`. Multimodal encoders may require an entire media token chunk to fit in
+one `nubatch`, so do not lower it for a multimodal model without testing media
+input.
+
+Incremental Message Caching is configured separately with
+`incremental-cache` and related cache settings. See
+[Chapter 5](chapter-05-message-caching.md) rather than treating cached
+conversations as dedicated physical slots.
+
+### 3.6 Memory Planning and Quantization
+
+Model memory is not just the GGUF file size plus a simple KV-cache formula.
+Depending on the model and backend, memory use can include:
+
+- model weights placed on each device;
+- KV cache or recurrent state;
+- compute and output buffers;
+- multimodal projector weights and buffers;
+- speculative drafter weights and state; and
+- backend allocations and safety margins.
+
+Context length, `nseq-max`, cache precision, layer placement, SWA, and model
+architecture all affect the result. Use **Apps → VRAM Calculator** in the BUI
+to inspect the GGUF metadata and estimate a specific configuration. Treat the
+result as planning guidance and retain headroom for the backend and other
+processes.
+
+If a configuration does not fit, consider these changes one at a time:
+
+1. Reduce `context-window`.
+2. Reduce `nseq-max`.
+3. Let automatic tuning use q8_0, or explicitly compare a quantized KV cache.
+4. Move the KV cache or some model layers to CPU.
+5. Choose a smaller or more heavily quantized GGUF.
+
+#### Weight quantization versus KV-cache quantization
+
+The quantization in a GGUF filename describes the model's stored weights. It
+is selected when downloading the model and cannot be changed in
+`model_config.yaml`. Lower-bit files generally use less storage and memory,
+but the quality and speed trade-offs depend on the model, quantizer, and
+hardware. Parameter count alone is not enough to predict whether a model fits.
+
+`cache-type-k` and `cache-type-v` quantize runtime attention state instead.
+They do not change model weights. Evaluate weight format and KV-cache format as
+separate choices.
+
+### 3.7 Advanced Features
+
+#### Speculative decoding and MTP
+
+Kronk supports a separate draft GGUF and Multi-Token Prediction (MTP). MTP may
+be embedded in the target GGUF or supplied as a model-specific companion file
+that Kronk's catalog and download flow associates with the target. A separate
+classic draft must already be downloaded, must have a compatible vocabulary,
+and requires `nseq-max: 1`:
+
+```yaml
+some-provider/target-model:
   nseq-max: 1
-  incremental-cache: true
   draft-model:
-    model-id: unsloth/Qwen3-0.6B-Q8_0  # Draft model ID (must be downloaded)
-    ndraft: 5                          # Candidates per step (default: 5)
-    ngpu-layers: 0                     # GPU layers (0=all, -1=none)
-    devices: []                        # Pin to specific GPUs (e.g., ["CUDA0"])
+    model-id: some-provider/compatible-draft-model
+    ndraft: 5
 ```
 
-| Field      | YAML Key      | Default | Description                                 |
-| ---------- | ------------- | ------- | ------------------------------------------- |
-| ModelID    | `model-id`    | (none)  | Draft model ID (must be downloaded)         |
-| NDraft     | `ndraft`      | 5       | Number of candidate tokens per step         |
-| NGpuLayers | `ngpu-layers` | 0 (all) | GPU layers for draft model                  |
-| Devices    | `devices`     | `[]`    | Pin draft model to specific GPUs (by name)  |
-| MainGPU    | `main-gpu`    | (auto)  | Main GPU index for the draft model          |
-| TensorSplit | `tensor-split` | `[]`  | Tensor split ratios across draft GPUs       |
-
-#### Draft Model Selection
-
-Choose a draft model that shares the same tokenizer family as the target.
-A quantized version of the same architecture at lower precision works well:
-
-| Target Model            | Recommended Draft          |
-| ----------------------- | -------------------------- |
-| Qwen3-8B-Q8_0           | Qwen3-0.6B-Q8_0            |
-| Qwen3.5-35B-A3B-Q8_K_XL | Qwen3.5-35B-A3B-UD-Q2_K_XL |
-
-The second example uses the same MoE architecture at lower quantization,
-which shares more of the target's weight structure and produces higher
-acceptance rates than a smaller dense model.
-
-#### Performance Characteristics
-
-Speculative decoding helps most when the target model is large relative to the
-draft. For dense models where the target is already fast (e.g., 8B at 33+ TPS),
-the overhead of running a draft model may not provide a net speedup. MoE models
-with large parameter counts but sparse activation (e.g., 30B-A3B) are better
-candidates, but only when using a high-quality draft.
-
-The `ndraft` parameter controls how many candidates to generate. Higher values
-increase the potential speedup but also increase wasted work when predictions
-are rejected. The default of 5 is a good starting point; tune based on your
-observed acceptance rates.
-
-#### MTP (Multi-Token Prediction)
-
-Some modern target GGUFs (Qwen3.5 / Qwen3.6 architectures, and other
-architectures that adopt the same metadata key) ship a Multi-Token
-Prediction head baked into the same file as the target weights. The head
-is not a standalone language model — it is a few extra layers grafted
-onto the target that predict the next N tokens of the target's
-continuation. Because the head shares the target's weights and
-tokenizer, there is no separate file to download and no vocabulary
-mismatch to worry about.
-
-MTP is **auto-enabled** — there is no MTP block in `model_config.yaml`.
-Kronk turns it on when:
-
-- The target GGUF metadata contains `nextn_predict_layers > 0`.
-- The loaded llama.cpp library is recent enough to expose the
-  pre-norm hidden-state API (the libraries Kronk ships with are
-  current; this matters only if you pin an older library).
-- You have **not** set `draft-model:` on the same entry (an explicit
-  separate-GGUF draft always wins).
-
-Both single-slot (`nseq-max: 1`) and multi-slot (`nseq-max: 2+`) are
-supported.
-
-Minimal `model_config.yaml` snippet for a Qwen3.6 MTP target:
+MTP is detected automatically from the downloaded target and its companion
+files. To override only its starting draft-token count, omit `model-id`:
 
 ```yaml
-mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
-  context-window: 131072
-  cache-type-k: f16
-  cache-type-v: f16
-  nseq-max: 2
-  incremental-cache: true
-```
-
-On a successful load the server logs a line like:
-
-```
-draft-model-mtp status=loaded source=auto-detected nDraft=4 nextn-layers=1 nEmbd=2048 nCtx=8192
-```
-
-The default `nDraft` for MTP is `4`, which is conservative because MTP
-heads typically have high acceptance for the first 1–3 tokens and decay
-rapidly beyond that. See Chapter 6 for the full operation guide,
-including the adaptive throttle, observability events, and known
-limitations.
-
-<a id="mtp-ndraft-override"></a>
-#### MTP nDraft Override
-
-You can change the starting (ceiling) draft-token count for the
-auto-detected MTP head without supplying a separate draft GGUF. Add a
-`draft-model:` block that sets **only** `ndraft:` and omits `model-id:`:
-
-```yaml
-mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
-  context-window: 131072
-  cache-type-k: f16
-  cache-type-v: f16
-  nseq-max: 2
-  incremental-cache: true
+some-provider/mtp-target-model:
   draft-model:
-    ndraft: 6        # start MTP speculation at 6 tokens/round (default: 4)
+    ndraft: 6
 ```
 
-Notes:
+Do not use model names or benchmark results as universal draft-selection rules.
+Measure acceptance and throughput on the actual workload. See
+[Chapter 6](chapter-06-speculative-decoding-mtp.md) for drafter selection,
+adaptive throttling, observability, and limitations.
 
-- The adaptive throttle still scales `ndraft` down from this ceiling to
-  `0` per slot as acceptance drops — you are only raising/lowering the
-  starting point.
-- Because there is no separate draft GGUF, this override does **not**
-  require `nseq-max: 1`; multi-slot MTP is still supported.
-- An `ndraft` of `0` or unset falls back to the default of `4`; a
-  negative value is rejected at config validation.
-- If the target has no MTP head, the override is a harmless no-op.
-- On load the server logs `source=auto-detected-configured` (instead of
-  `source=auto-detected`) so you can confirm the override took effect.
+#### Extended context with YaRN
 
-From the SDK, set:
+Do not add RoPE scaling merely because a large `context-window` fits in memory.
+Scaling must match the model and its native training context. Configuration
+uses `rope-scaling-type` and the `yarn-*` keys described in
+[Chapter 7](chapter-07-yarn-extended-context.md).
 
-```go
-cfg.DraftModel = &model.DraftModelConfig{NDraft: 6} // no ModelFiles
-```
+#### Per-model sampling defaults
 
-### 3.13 Sampling Parameters
-
-Sampling parameters control the randomness and quality of generated text.
-These are set per-request in the API call.
-
-For most models you will want to touch these basic sampling parameters. There
-are [many more](#chapter-10-request-parameters) which will be presented later.
-
-#### Temperature
-
-Temperature controls how "random" the model's output is. At each step, the
-model produces a probability distribution over all possible next tokens.
-Temperature scales those probabilities — lower values sharpen the
-distribution (making the top choice dominant), higher values flatten it
-(giving lower-ranked tokens a better chance of being selected).
-
-```json
-{
-  "temperature": 0.8
-}
-```
-
-- `0.0 - 0.3` - Focused, deterministic (good for code, factual Q&A)
-- `0.5 - 0.8` - Balanced (good for general chat)
-- `0.9 - 1.2` - Creative (good for storytelling, brainstorming)
-
-#### Top-K and Top-P
-
-After temperature adjusts the probability distribution, Top-K and Top-P
-narrow the pool of tokens the model can choose from. They work together —
-Top-K sets a hard cap on how many tokens to consider, and Top-P trims that
-pool further by cumulative probability.
-
-```json
-{
-  "top_k": 40,
-  "top_p": 0.9
-}
-```
-
-- `top_k` - Consider only the K most probable tokens (default: 40). Lower values make output more focused, higher values allow more variety.
-- `top_p` - After Top-K filtering, keep only enough tokens so their combined probability reaches P (default: 0.9). This removes the long tail of unlikely tokens while adapting to how confident the model is at each step.
-
-#### Repetition Control
-
-Models sometimes get stuck in loops, repeating the same word, phrase, or
-sentence pattern. Repetition penalty discourages this by reducing the
-probability of tokens that have already appeared in recent output.
-
-```json
-{
-  "repeat_penalty": 1.1,
-  "repeat_last_n": 64
-}
-```
-
-- `repeat_penalty` - How strongly to penalize repeated tokens. `1.0` means no penalty, `1.1` is a mild penalty that works well for most use cases. Values above `1.3` can start to make output sound unnatural.
-- `repeat_last_n` - How many recent tokens to check for repeats (default: 64). A larger window catches longer repeated patterns but may over-penalize common words like "the" or "is."
-
-#### DRY Sampler (Don't Repeat Yourself)
-
-DRY is a more targeted approach to repetition than `repeat_penalty`. Instead
-of penalizing individual repeated tokens, it detects repeated n-gram
-sequences (multi-word patterns) and penalizes them with an exponentially
-increasing cost. This catches structural repetition — like repeated
-sentences or paragraphs — while leaving single-word reuse alone.
-
-```json
-{
-  "dry_multiplier": 1.05,
-  "dry_base": 1.75,
-  "dry_allowed_length": 2
-}
-```
-
-- `dry_multiplier` - Strength of the penalty. `0` disables DRY. Start with `1.05` and increase if you still see repeated patterns.
-- `dry_base` - Controls how fast the penalty grows for longer repeated sequences. Higher values penalize longer repeats more aggressively.
-- `dry_allowed_length` - N-grams up to this length are allowed to repeat without penalty (default: 2). This prevents penalizing common short phrases like "of the" or "it is."
-
-#### Max Tokens
-
-Controls the maximum number of tokens the model will generate in a single
-response. Once the limit is reached, generation stops. This is useful for
-controlling costs, response time, and preventing runaway output.
-
-```json
-{
-  "max_tokens": 2048
-}
-```
-
-If not set, the model will generate until it produces a stop token or
-reaches the context window limit.
-
-### 3.14 Model Config File Example
-
-`~/.kronk/model_config.yaml` is a flat map keyed by canonical model id
-(`provider/modelID`, optionally with a `/variant` suffix). Each entry's
-fields use kebab-case YAML keys that map 1:1 to `model.Config`:
+`sampling-parameters` supplies defaults for requests using one model:
 
 ```yaml
-# ~/.kronk/model_config.yaml
-
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 32768
-  nseq-max: 2
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: enabled
-  incremental-cache: true
+unsloth/Qwen3-0.6B-Q8_0:
   sampling-parameters:
     temperature: 0.7
     top_p: 0.8
     top_k: 20
-
-Qwen/Qwen3-8B-Q8_0/YARN:
-  context-window: 131072
-  rope-scaling-type: yarn
-  yarn-orig-ctx: 32768
-
-unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
-  context-window: 8192
-  ngpu-layers: 0
-  split-mode: row
-  offload-kqv: true
 ```
 
-The `/YARN` suffix is a **config variant** — multiple entries can target
-the same on-disk model and be selected per request by passing the full
-variant name as the `model` field.
+The nested keys use snake_case because they match request parameter names.
+Clients can provide request-specific values. See
+[Chapter 10](chapter-10-request-parameters.md) for behavior and the full
+parameter reference.
 
-Kronk seeds this file from an embedded default on first server start;
-your edits are preserved across upgrades. To point at an alternative file
-for testing, use the `--model-config-file` server flag:
+### 3.8 Complete Example and Key Reference
 
-```shell
-kronk server start --model-config-file=./my-test-config.yaml
+This example shows the file structure and naming conventions. It is not a
+recommendation that every model needs these overrides:
+
+```yaml
+# ~/.kronk/models/model_config.yaml
+
+unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 32768
+  nseq-max: 2
+  cache-type-k: q8_0
+  cache-type-v: q8_0
+  flash-attention: auto
+  incremental-cache: true
+  sampling-parameters:
+    temperature: 0.7
+    top_p: 0.8
+
+unsloth/Qwen3-0.6B-Q8_0/LONG:
+  context-window: 65536
+  nseq-max: 1
+
+some-provider/large-model:
+  context-window: 16384
+  ngpu-layers: 20
+  offload-kqv: false
 ```
+
+Common top-level keys are summarized below. An omitted hardware-related value
+is normally supplied by analysis or by the load-time defaults.
+
+| Key | Values | Purpose |
+| --- | ------ | ------- |
+| `context-window` | Positive token count | Per-sequence context capacity |
+| `cache-type-k`, `cache-type-v` | `f16`, `q8_0`, `q4_0`, and supported GGML types | KV-cache precision |
+| `flash-attention` | `enabled`, `disabled`, `auto` | Attention implementation mode |
+| `nseq-max` | Positive integer | Parallel sequences or context-pool size |
+| `nubatch`, `nbatch` | Positive token counts | Physical and logical batch sizes |
+| `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
+| `offload-kqv` | Boolean | Place KV cache on GPU when true |
+| `op-offload` | Boolean | Place host tensor operations on GPU when true |
+| `proj-on-cpu` | Boolean | Keep multimodal projector on CPU |
+| `devices` | Device-name list | Devices available to the model |
+| `split-mode` | `none`, `layer`, `row` | Multi-GPU distribution mode |
+| `main-gpu` | Device index | Primary device in single-GPU mode |
+| `tensor-split` | Numeric share list | Proportional multi-GPU placement |
+| `swa-full` | Boolean | Full or compact SWA cache |
+| `incremental-cache` | Boolean | Incremental Message Cache |
+| `draft-model` | Mapping | Separate drafter or MTP draft-count override |
+| `rope-scaling-type` | Supported scaling mode | Extended-context scaling |
+| `sampling-parameters` | Mapping | Per-model generation defaults |
+| `template` | File path | Override the model's chat template |
+
+Prefer the automatic values until a measured workload gives you a reason to
+override them. Change one setting at a time so memory, quality, and throughput
+effects remain attributable.
 
 ---

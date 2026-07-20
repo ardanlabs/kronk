@@ -16,9 +16,13 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool"
 )
 
-// maxUploadBytes matches OpenAI's documented 25 MB cap for the audio
-// transcriptions endpoint.
-const maxUploadBytes = 25 << 20
+// maxUploadBytes matches OpenAI's documented 25 MB file cap for the audio
+// transcriptions endpoint. The request limit allows a small amount of space
+// for multipart headers and form fields.
+const (
+	maxUploadBytes       = 25 << 20
+	maxMultipartOverhead = 1 << 20
+)
 
 type app struct {
 	log  *logger.Logger
@@ -33,9 +37,11 @@ func newApp(cfg Config) *app {
 }
 
 func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxUploadBytes+maxMultipartOverhead)
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		return errs.New(errs.InvalidArgument, fmt.Errorf("parse multipart form: %w", err))
 	}
+	defer r.MultipartForm.RemoveAll()
 
 	modelID := r.FormValue("model")
 	if modelID == "" {
@@ -47,6 +53,9 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, fmt.Errorf("file form field: %w", err))
 	}
 	defer file.Close()
+	if hdr.Size > maxUploadBytes {
+		return errs.Errorf(errs.InvalidArgument, "file exceeds 25 MB limit")
+	}
 
 	language := r.FormValue("language")
 	prompt := r.FormValue("prompt")

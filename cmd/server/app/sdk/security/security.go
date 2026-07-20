@@ -199,6 +199,10 @@ func (sec *Security) AddPrivateKey() error {
 // DeletePrivateKey removes a key from the system. Once this happens no tokens
 // created with this key will authenticate.
 func (sec *Security) DeletePrivateKey(keyID string) error {
+	if keyID == masterFile {
+		return errors.New("delete-private-key: master key cannot be deleted")
+	}
+
 	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
 	keysPath := filepath.Join(basePath, localFolder)
 	keyFile := filepath.Join(keysPath, fmt.Sprintf("%s.pem", keyID))

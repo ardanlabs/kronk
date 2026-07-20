@@ -352,7 +352,6 @@ func parseURLPath(raw string) string {
 // short-name input works against both surfaces.
 var catalog = map[string]CatalogEntry{
 	"tiny":           {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin", Size: "75 MB", Notes: "multilingual, fastest, lowest accuracy"},
-	"ggml-tiny.bin":  {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-ggml-tiny.bin.bin", Size: "75 MB", Notes: "english-only, fastest"},
 	"base":           {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin", Size: "142 MB", Notes: "multilingual, fast"},
 	"base.en":        {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin", Size: "142 MB", Notes: "english-only, fast"},
 	"small":          {URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin", Size: "466 MB", Notes: "multilingual, balanced"},

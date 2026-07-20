@@ -267,12 +267,14 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // RopeFreqBase overrides the RoPE base frequency. When nil, uses model default.
 // Common values: 10000 (Llama), 1000000 (Qwen3).
 //
-// RopeFreqScale overrides the RoPE frequency scaling factor. When nil, uses
-// model default or auto-calculates based on context extension ratio.
+// RopeFreqScale overrides the raw RoPE frequency multiplier. When nil, uses
+// the value from model metadata. Kronk does not derive this value from
+// ContextWindow; an N-times extension generally uses 1/N when the model's
+// documentation requires explicit scaling.
 //
 // RopeScaling controls the RoPE scaling method for extended context support.
-// Set to RopeScalingYaRN to enable YaRN scaling for models like Qwen3 that
-// support extended context (e.g., 32k training → 131k with YaRN).
+// Set to RopeScalingYaRN only when the model supports YaRN and configure the
+// frequency scale required by that model.
 //
 // SessionStoreDir is the directory where the disk session store
 // backend persists per-session KV cache files. Required when
@@ -333,16 +335,16 @@ func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 // cross-socket memory access can cause significant bandwidth collapse.
 //
 // YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil,
-// uses default of 1.0.
+// uses the model or llama.cpp default.
 //
-// YarnBetaFast sets the YaRN low correction dimension. When nil, uses default
-// of 32.0.
+// YarnBetaFast sets the YaRN low correction dimension. When nil, uses the
+// model or llama.cpp default.
 //
-// YarnBetaSlow sets the YaRN high correction dimension. When nil, uses default
-// of 1.0.
+// YarnBetaSlow sets the YaRN high correction dimension. When nil, uses the
+// model or llama.cpp default.
 //
-// YarnExtFactor sets the YaRN extrapolation mix factor. When nil, auto-calculated
-// from context scaling ratio. Set to 0 to disable extrapolation.
+// YarnExtFactor sets the YaRN extrapolation mix factor. When nil, uses the
+// model or llama.cpp default. Set to 0 to disable extrapolation.
 //
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
@@ -1286,16 +1288,17 @@ func ParseSplitMode(s string) (SplitMode, error) {
 type RopeScalingType int32
 
 const (
-	// RopeScalingNone disables RoPE scaling (use native context length).
+	// RopeScalingNone disables RoPE scaling. ContextWindow is configured
+	// independently and may still exceed the model's training context.
 	RopeScalingNone RopeScalingType = 0
 
 	// RopeScalingLinear uses linear interpolation scaling.
-	// Simple but less effective for large extensions.
+	// Use only when required by the model's scaling guidance.
 	RopeScalingLinear RopeScalingType = 1
 
 	// RopeScalingYaRN uses YaRN (Yet another RoPE extensioN) scaling.
-	// Recommended for extending context 2-4x beyond training length.
-	// Applies frequency-dependent interpolation with attention scaling.
+	// It applies frequency-dependent interpolation with attention scaling.
+	// Use only with scaling values supported by the model.
 	RopeScalingYaRN RopeScalingType = 2
 )
 

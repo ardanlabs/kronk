@@ -2,822 +2,385 @@
 
 ## Table of Contents
 
-- [17.1 Library Issues](#171-library-issues)
-- [17.2 Model Loading Failures](#172-model-loading-failures)
-- [17.3 Memory Errors](#173-memory-errors)
-- [17.4 Request Timeouts](#174-request-timeouts)
-- [17.5 Authentication Errors](#175-authentication-errors)
-- [17.6 Streaming Issues](#176-streaming-issues)
-- [17.7 Performance Issues](#177-performance-issues)
-- [17.8 IMC Caching Issues](#178-imc-caching-issues)
-- [17.9 Viewing Logs](#179-viewing-logs)
-- [17.10 Common Error Messages](#1710-common-error-messages)
-- [17.11 Catalog & Model Pull Issues](#1711-catalog--model-pull-issues)
-- [17.12 MCP Service Issues](#1712-mcp-service-issues)
-- [17.13 Port Conflicts & Filesystem](#1713-port-conflicts--filesystem)
-- [17.14 Getting Help](#1714-getting-help)
+- [17.1 Start with Diagnostics](#171-start-with-diagnostics)
+- [17.2 Libraries and Devices](#172-libraries-and-devices)
+- [17.3 Models, Catalog, and Storage](#173-models-catalog-and-storage)
+- [17.4 Memory and Performance](#174-memory-and-performance)
+- [17.5 Requests and Streaming](#175-requests-and-streaming)
+- [17.6 Authentication](#176-authentication)
+- [17.7 IMC](#177-imc)
+- [17.8 MCP](#178-mcp)
+- [17.9 Ports, Processes, and Permissions](#179-ports-processes-and-permissions)
+- [17.10 Reporting a Problem](#1710-reporting-a-problem)
 
 ---
 
-This chapter covers common issues, their causes, and solutions.
+This chapter is a symptom-first guide to common failures. For configuration
+details, follow the links to the chapter that owns that subsystem.
 
-### 17.1 Library Issues
+### 17.1 Start with Diagnostics
 
-**Error: "unable to load library"**
+Run the built-in diagnostic before changing configuration:
 
-The llama.cpp shared libraries are missing or incompatible with your hardware.
+```shell
+kronk diagnose
+```
 
-**Solution:**
+It reports Kronk and yzma versions, host hardware, the active llama.cpp
+installation, detected compute devices, and a small benchmark. It does not
+download anything unless `--install` is supplied. Useful variants are:
+
+```shell
+kronk diagnose --no-bench
+kronk diagnose --format json
+kronk diagnose --format yaml
+```
+
+Run the server in the foreground to see JSON logs on stdout:
+
+```shell
+kronk server start
+```
+
+For a server started with `-d`, follow its log file with:
+
+```shell
+kronk server logs
+```
+
+`--insecure-logging` includes prompts, responses, and detailed model
+configuration. Use it only for local diagnosis because the output can contain
+sensitive data. `--llama-log 1` enables lower-level llama.cpp messages;
+`--llama-log 0` disables them.
+
+The main API exposes two unauthenticated process health checks:
+
+```shell
+curl http://localhost:11435/v1/liveness
+curl -i http://localhost:11435/v1/readiness
+```
+
+Readiness currently returns an empty `200 OK` when the HTTP service is running.
+It does not verify libraries, devices, memory, loaded models, or inference.
+Metrics and profiles are served from the unauthenticated debug server; see
+[Chapter 15](chapter-15-observability.md#151-debug-and-health-endpoints) before
+exposing that port.
+
+### 17.2 Libraries and Devices
+
+#### `unable to load library`
+
+Install the bundle selected for the current operating system, architecture,
+and processor:
 
 ```shell
 kronk libs --local
+kronk devices
 ```
 
-Or download via the BUI Libraries page.
-
-Kronk auto-detects your GPU hardware and selects the correct library bundle.
-If auto-detection fails, set the processor explicitly:
+If detection selected the wrong backend, install explicitly:
 
 ```shell
-# For Mac with Apple Silicon
 KRONK_PROCESSOR=metal kronk libs --local
-
-# For NVIDIA GPU
 KRONK_PROCESSOR=cuda kronk libs --local
-
-# For AMD GPU (ROCm, Linux only)
 KRONK_PROCESSOR=rocm kronk libs --local
-
-# For Vulkan (cross-platform, including iGPUs)
 KRONK_PROCESSOR=vulkan kronk libs --local
-
-# For CPU only
 KRONK_PROCESSOR=cpu kronk libs --local
 ```
 
-See [Chapter 3: Processor Selection](#32-processor-selection)
-for details on how auto-detection works on each platform.
+Not every combination is published. Check the live matrix with
+`kronk libs --list-combinations`. See
+[Chapter 2: Libraries](chapter-02-installation.md#24-libraries) for installation
+and path details.
 
-**Problem: New library version causes crashes or bad output**
+#### NVIDIA is visible but llama.cpp uses the CPU
 
-The standalone `kronk libs` CLI installs the well-known default version
-of llama.cpp by default, which is conservative and changes only when the
-Kronk release bumps it. The model server (`kronk server start`) defaults
-to `--allow-upgrade=true` and tracks the latest llama.cpp release, so a
-long-running server can pick up a regression — crashes during model
-loading, decode errors, or degraded output quality. When this happens,
-pin the library to a known-good version using `KRONK_LIB_VERSION` (or
-`--version` on the CLI).
-
-**Pin to a specific version:**
+`nvidia-smi` proves that the driver is available, but a native CUDA bundle also
+needs the CUDA runtime libraries against which it was linked. On Linux, find
+the active library path in `kronk diagnose`, then inspect the backend for
+unresolved dependencies:
 
 ```shell
-# Install a specific version
-kronk libs --version=b5490 --local
-
-# Or use the environment variable
-KRONK_LIB_VERSION=b5490 kronk libs --local
+ldd <lib-path>/libggml-cuda.so | grep -iE 'not found|cudart|cublas'
 ```
 
-**Start the server with a pinned version:**
+Install the matching CUDA runtime packages for the bundle and operating system.
+For containers, use the current `latest-cuda` image and grant GPU access with
+`--runtime=nvidia --gpus all`; the required runtime libraries are included in
+that image.
+
+#### A library update introduced crashes or bad output
+
+The normal CLI installs Kronk's pinned default. `--upgrade` and the server's
+`--allow-upgrade=true` opt into newer llama.cpp releases. List installed
+bundles and pin a known-good version when investigating a regression:
 
 ```shell
+kronk libs --list-installs
+kronk libs --local --version=b5490
 kronk server start --lib-version=b5490
 ```
 
-Or set it globally so both `kronk libs` and `kronk server start` use the
-same version:
+Unset `KRONK_LIB_VERSION` after the pinned default contains the required fix.
+Libraries are not hot-reloaded; restart the server after switching
+`KRONK_LIB_PATH`.
+
+### 17.3 Models, Catalog, and Storage
+
+#### A downloaded model is not listed
+
+Kronk stores data beneath `KRONK_BASE_PATH`, which defaults to `~/.kronk`.
+Inspect the model index rather than relying on a hard-coded directory:
 
 ```shell
-export KRONK_LIB_VERSION=b5490
-kronk libs --local
-kronk server start
+kronk model list --local
+kronk model index --local
 ```
 
-**Check your current installed version:**
+Indexing scans model files and checks available size and SHA metadata. An
+arbitrary GGUF without corresponding checksum metadata cannot receive the same
+integrity validation as a model downloaded by Kronk.
 
-```shell
-kronk libs --version
-```
+#### A model is missing, incomplete, or corrupt
 
-This shows the installed version, architecture, OS, processor, and the
-latest available version. The CLI will only upgrade past the installed
-version when you pass `--upgrade`; otherwise it sticks to the well-known
-default version (or whatever is on disk if it is already newer).
-
-**When to pin:** Pin whenever a new llama.cpp release breaks something
-you depend on. Unset `KRONK_LIB_VERSION` once the upstream fix is released
-to resume tracking either the default version (CLI) or latest (server with
-`--allow-upgrade=true`).
-
-See [Chapter 2: Installing Libraries](#23-installing-libraries)
-for the full compatibility matrix.
-
-**Error: "unknown device"**
-
-The specified GPU device is not recognized by the loaded library.
-
-**Causes:**
-
-- Wrong processor for your hardware (e.g., `cuda` library on a Mac)
-- GPU drivers not installed or outdated
-- Library/processor mismatch (CPU library loaded but GPU device requested)
-
-**Solution:**
-
-Verify your processor and re-download libraries:
-
-```shell
-# Check what Kronk detects
-kronk devices
-
-# Re-install matching libraries
-kronk libs --local
-```
-
-**Problem: NVIDIA GPU present (`nvidia-smi` works) but Kronk runs on CPU**
-
-On Linux the `cuda` bundle's `libggml-cuda.so` is dynamically linked
-against the CUDA **runtime** libraries `libcudart.so.13` and
-`libcublas.so.13`. These are **not** part of the bundle and are **not**
-provided by the NVIDIA driver/container runtime — `nvidia-smi` only proves
-the *driver* is present. If they are missing, `libggml-cuda.so` fails to
-`dlopen` and llama.cpp silently loads only the CPU backend, so
-`llama-bench --list-devices` shows `(none)` even though the GPU is
-visible.
-
-**Diagnose** — look for `not found` lines:
-
-```shell
-ldd ~/.kronk/libraries/linux/amd64/cuda/libggml-cuda.so | grep -iE 'cudart|cublas'
-# In a container:
-# ldd /kronk/libraries/linux/amd64/cuda/libggml-cuda.so | grep -iE 'cudart|cublas'
-```
-
-**Fix (native Linux)** — install the CUDA runtime packages (no full
-toolkit needed) on the host:
-
-```shell
-# Ubuntu 24.04, after adding NVIDIA's repo via the cuda-keyring package:
-sudo apt-get install -y cuda-cudart-13-0 libcublas-13-0
-```
-
-**Fix (Docker)** — use a `:latest-cuda` image built after this fix (the
-CUDA runtime is baked in), and run with `--runtime=nvidia --gpus all`.
-
-This is a **Linux-only** gap. On Windows the CUDA runtime redistributable
-is fetched automatically alongside the bundle.
-
-**Problem: "unable to load library" pointing at the wrong folder**
-
-Library bundles now live at `<base>/libraries/<os>/<arch>/<processor>/`,
-one folder per `(arch, os, processor)` triple. If `dlopen` reports a path
-like `<base>/libraries/libllama.dylib` (libraries directly under the
-root), you have an installation from before the per-triple layout. The
-SDK migrates the legacy layout into the correct triple folder
-automatically on first call to `libs.New()`/`libs.Path()`. If migration
-fails, just re-run:
-
-```shell
-kronk libs --local
-```
-
-The new install lands at `<base>/libraries/<os>/<arch>/<processor>/` and
-the runtime resolves to the same folder.
-
-**Problem: Server is loading the wrong install**
-
-To switch the active install (for example to a previously downloaded
-CUDA or CPU bundle), point `KRONK_LIB_PATH` at its triple folder and
-restart the server. Libraries are not hot-reloaded.
-
-```shell
-# List installed bundles
-kronk libs --list-installs
-
-# Switch active install
-export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
-kronk server start
-```
-
-If `KRONK_LIB_PATH` points at a directory containing `version.json`,
-Kronk uses it as-is. If it points at a non-empty directory without a
-`version.json`, Kronk treats it as a read-only user-managed build and
-will refuse mutating operations against it (errors will mention
-`read-only` or `ErrReadOnly`).
-
-### 17.2 Model Loading Failures
-
-**Error: "unable to load model"**
-
-The model file is missing, corrupted, or incompatible.
-
-**Check model exists:**
-
-```shell
-ls ~/.kronk/models/
-```
-
-**Re-download the model:**
+Pull it again using any supported source form:
 
 ```shell
 kronk model pull <model-id> --local
 ```
 
-**Problem: Model exists but server says "model not found"**
-
-The model files are on disk but Kronk can't find them. This happens when the
-model index (`.index.yaml`) is out of sync — for example after manually
-moving model files, a failed download, or removing a model outside of Kronk.
-
-**Solution — rebuild the model index:**
+`model pull` checks the catalog and automatically walks configured providers
+when an ID has not been resolved before. A separate `model resolve` step is not
+normally required. Interrupted downloads are resumable; if a file remains
+invalid, remove that model through Kronk and pull it again:
 
 ```shell
-# With the server running (triggers re-index via API)
-kronk model index
-
-# Without the server (rebuilds index directly on disk)
-kronk model index --local
+kronk model remove <model-id> --local
+kronk model pull <model-id> --local
 ```
 
-This scans `~/.kronk/models/`, validates each GGUF file, and rebuilds the
-`.index.yaml` that Kronk uses for fast model lookups. You can also trigger
-a rebuild from the BUI Models page.
-
-**When to rebuild the index:**
-
-- Model files were moved or renamed manually
-- A download was interrupted and left partial files
-- `kronk model list` doesn't show a model you know is downloaded
-- After deleting model files outside of `kronk model remove`
-
-### 17.3 Memory Errors
-
-**Error: "unable to init context" or "unable to get memory"**
-
-Insufficient memory for the model plus its KV cache at the configured
-context window size.
-
-**Causes:**
-
-- Context window too large for available VRAM/RAM
-- Too many parallel sequences (`nseq-max`)
-- Model weights don't fit in available memory
-
-**Solutions:**
-
-Reduce context window:
-
-```yaml
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 8192 # Reduce from 32768
-```
-
-Reduce parallel sequences:
-
-```yaml
-Qwen/Qwen3-8B-Q8_0:
-  nseq-max: 1 # Single request at a time
-```
-
-Use quantized KV cache:
-
-```yaml
-Qwen/Qwen3-8B-Q8_0:
-  cache-type-k: q8_0 # ~50% less KV cache memory vs f16
-  cache-type-v: q8_0
-```
-
-See [Chapter 3: VRAM Estimation](#39-vram-estimation)
-for how to calculate whether a model fits in your hardware.
-
-**Error: "the context window is full"**
-
-The total token count (input + cached + generated) exceeds the configured
-context window during inference.
-
-**Solutions:**
-
-- Reduce input size (fewer messages, shorter prompts)
-- Increase `context-window` in model config (requires more VRAM)
-- Enable YaRN for extended context (see
-  [Chapter 7](#chapter-7-yarn-extended-context))
-
-**Error: "input tokens [N] exceed context window [M]"**
-
-The prompt itself (after tokenization) is larger than the context window,
-before any generation can begin.
-
-**Solutions:**
-
-- Shorten the prompt or system message
-- Increase `context-window`
-- If using IMC, the cached prefix counts toward the limit
-
-### 17.4 Request Timeouts
-
-**Error: "context deadline exceeded"**
-
-The request took longer than the configured HTTP timeout.
-
-**Causes:**
-
-- Large prefill with many input tokens
-- Server under heavy load with all slots busy
-- Model too slow for the requested output length
-
-**Solutions:**
-
-Increase HTTP timeouts:
-
-```shell
-kronk server start \
-  --read-timeout 5m \
-  --write-timeout 30m
-```
-
-Or via environment variables:
-
-```shell
-export KRONK_WEB_READ_TIMEOUT=5m
-export KRONK_WEB_WRITE_TIMEOUT=30m
-```
-
-**Error: "server busy processing other requests, try again shortly"**
-
-All IMC sessions have pending cache builds in-flight, or the slot preemption
-timeout was reached.
-
-**Causes:**
-
-- All sessions are busy building caches simultaneously
-- A long-running request is occupying the slot pool
-
-**Solutions:**
-
-- Wait and retry the request — the error is transient
-- Increase `nseq-max` to allow more concurrent sessions
-- Increase `cache-slot-timeout` (default: 30 seconds) if requests need
-  more time
-
-### 17.5 Authentication Errors
-
-**Error: "unauthorized: no authorization header"**
-
-Authentication is enabled but no token was provided.
-
-**Solution:**
-
-Include the Authorization header:
-
-```shell
-curl http://localhost:11435/v1/chat/completions \
-  -H "Authorization: Bearer $(cat ~/.kronk/keys/master.jwt)" \
-  -H "Content-Type: application/json" \
-  -d '{...}'
-```
-
-**Error: "invalid token"**
-
-The token is malformed, expired, or signed with an unknown key.
-
-**Causes:**
-
-- Token has expired (check `--duration` when created)
-- Signing key was deleted or rotated
-- Token is truncated or corrupted
-
-**Solution:**
-
-Create a new token:
-
-```shell
-export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)
-kronk security token create \
-  --duration 720h \
-  --endpoints chat-completions,embeddings
-```
-
-**Error: "endpoint not authorized"**
-
-The token doesn't include the requested endpoint in its allowed list.
-
-**Solution:**
-
-Create a new token with the required endpoints:
-
-```shell
-kronk security token create \
-  --duration 720h \
-  --endpoints chat-completions,embeddings,rerank,responses,messages
-```
-
-**Error: "rate limit exceeded"**
-
-The token has exceeded its configured rate limit.
-
-**Solution:**
-
-Wait for the rate limit window to reset, or create a new token with
-higher limits:
-
-```shell
-kronk security token create \
-  --duration 720h \
-  --endpoints "chat-completions:10000/day"
-```
-
-### 17.6 Streaming Issues
-
-**Problem: Streaming stops mid-response**
-
-**Causes:**
-
-- Client disconnected (network timeout, browser tab closed)
-- HTTP write timeout reached on the server
-- Model generated an end-of-generation token (normal completion)
-
-**Solutions:**
-
-- Check if the response includes a `finish_reason` — if it does, the model
-  stopped normally
-- Increase `--write-timeout` if large responses are being cut off
-- Run the server in foreground to see logs:
-
-```shell
-kronk server start  # Logs print to stdout
-```
-
-**Problem: SSE events not parsing correctly**
-
-Ensure your client handles Server-Sent Events (SSE) format. Each event is
-prefixed with `data: ` and terminated by two newlines:
-
-```
-data: {"id":"...","choices":[{"delta":{"content":"Hello"}}],...}\n\n
-data: [DONE]\n\n
-```
-
-### 17.7 Performance Issues
-
-**Problem: Slow time to first token (TTFT)**
-
-**Causes:**
-
-- Large conversation prefix being re-processed from scratch
-- IMC not enabled (every request re-processes the full prompt)
-- Cold model load on first request
-
-**Solutions:**
-
-Enable IMC to cache the conversation prefix:
-
-```yaml
-Qwen3.6-35B-A3B-UD-Q4_K_M/AGENT:
-  incremental-cache: true
-```
-
-With IMC, only the new message is prefilled — cached tokens are restored
-from RAM in ~10-30ms regardless of conversation length.
-
-**Problem: Slow token generation (tokens/second)**
-
-**Causes:**
-
-- Running on CPU instead of GPU
-- Model too large for available VRAM (partial CPU offload)
-- MoE model on Apple Silicon (scattered memory access patterns)
-
-**Solutions:**
-
-Check GPU is being used:
-
-```shell
-# On macOS, check Metal usage
-sudo powermetrics --samplers gpu_power
-
-# On Linux with NVIDIA
-nvidia-smi
-```
-
-Ensure all layers are on GPU (default):
-
-```yaml
-Qwen/Qwen3-8B-Q8_0:
-  ngpu-layers: 0 # 0 = all layers on GPU (default)
-```
-
-For MoE models on Apple Silicon, consider a dense model at lower
-quantization — the sequential memory access pattern is faster than MoE's
-scattered expert routing (see
-[Chapter 3: Model-Specific Tuning](#310-model-specific-tuning)).
-
-### 17.8 IMC Caching Issues
-
-**Problem: Every request triggers a full cache rebuild**
-
-**Causes:**
-
-- Client is modifying earlier messages between requests
-- Non-deterministic Jinja template producing different tokens for the same
-  messages
-- `nseq-max` too low for the number of concurrent sub-agents (cache
-  thrashing)
-
-**Diagnosis:**
-
-Look for these log patterns:
-
-| Log Message                                | Meaning                                       |
-| ------------------------------------------ | --------------------------------------------- |
-| `session[N] mismatch`                      | Hash changed — messages were modified         |
-| `sys-prompt-match`                         | System prompt preserved, conversation rebuilt |
-| `token prefix match found`                 | Partial prefix salvaged via token comparison  |
-| `no usable token prefix match`             | No salvageable prefix, full rebuild required  |
-| `kv-pressure-evict`                        | Stale session evicted to free KV space        |
-| `all sessions pending, waiting`            | All sessions busy, request is waiting         |
-| `imc-restore-start` / `imc-restore-done`   | KV state being restored from RAM              |
-| `imc-snapshot-start` / `imc-snapshot-done` | KV state being snapshotted to RAM             |
-
-**Solutions:**
-
-- Increase `nseq-max` to match the number of concurrent sub-agents
-- Check if the client is modifying conversation history between requests
-- If using a non-deterministic template, IMC falls back to token prefix
-  matching automatically — this is expected behavior
-
-**Problem: IMC restore fails**
-
-**Error:** `imc restore failed for seq N`
-
-The RAM-to-VRAM restore (`StateSeqSetData`) failed for a session.
-
-**Cause:** Usually indicates the KV cache memory could not be allocated
-(VRAM pressure from other sessions or models).
-
-**Solution:** The session is automatically reset and the next request
-triggers a full rebuild. If this happens frequently, reduce `nseq-max`
-or `context-window` to lower VRAM pressure.
-
-### 17.9 Viewing Logs
-
-**Run server in foreground:**
-
-```shell
-kronk server start
-```
-
-All logs print to stdout with structured key-value format.
-
-**Enable verbose logging:**
-
-```shell
-kronk server start --insecure-logging
-```
-
-This logs full message content including prompts and responses. Never use
-in production — it exposes sensitive conversation data.
-
-**Enable llama.cpp logging:**
-
-```shell
-kronk server start --llama-log 1
-```
-
-Shows low-level inference engine messages from llama.cpp. Useful for
-debugging GPU issues, memory allocation failures, and decode errors.
-
-**Disable llama.cpp logging:**
-
-```shell
-kronk server start --llama-log 0
-```
-
-### 17.10 Common Error Messages
-
-| Error                                        | Cause                            | Solution                               |
-| -------------------------------------------- | -------------------------------- | -------------------------------------- |
-| `unable to load library`                     | Missing llama.cpp libraries      | `kronk libs --local`                   |
-| `unknown device`                             | Wrong processor for hardware     | Check `kronk devices`, re-install libs |
-| `unable to load model`                       | Missing or corrupt model file    | Re-download with `kronk model pull`    |
-| `unable to init context`                     | Insufficient VRAM/RAM            | Reduce context-window or nseq-max      |
-| `input tokens [N] exceed context window [M]` | Prompt too large                 | Shorten prompt or increase context     |
-| `the context window is full`                 | KV cache exhausted during decode | Reduce input size or increase context  |
-| `context deadline exceeded`                  | HTTP timeout reached             | Increase `--write-timeout`             |
-| `server busy processing other requests`      | All IMC sessions busy            | Retry, or increase nseq-max            |
-| `no authorization header`                    | Missing auth token               | Add `Authorization: Bearer <token>`    |
-| `invalid token`                              | Expired or malformed JWT         | Create a new token                     |
-| `endpoint not authorized`                    | Token missing endpoint scope     | Create token with correct endpoints    |
-| `rate limit exceeded`                        | Quota exhausted                  | Wait for reset or increase limit       |
-| `engine shutting down`                       | Server is stopping               | Wait for shutdown, restart server      |
-| `huggingface 401 / 403`                      | Gated/private repo or rate limit | Set `KRONK_HF_TOKEN` env var           |
-| `model doesn't support embedding`            | Wrong model for endpoint         | Use an embedding model                 |
-| `model doesn't support reranking`            | Wrong model for endpoint         | Use a reranking model                  |
-| `imc restore failed`                         | RAM→VRAM restore failed          | Auto-recovers; reduce VRAM pressure    |
-| `imc extend stale`                           | Concurrent cache modification    | Auto-retries; transient                |
-
-### 17.11 Catalog & Model Pull Issues
-
-**Error: `huggingface 401` / `403` during `kronk model pull`**
-
-The repo is gated/private or the request was throttled.
-
-**Solution:** export a HuggingFace token before pulling. The token must
-have read access to any gated repos you intend to use:
+For a gated or private Hugging Face repository, provide a read token:
 
 ```shell
 export KRONK_HF_TOKEN=hf_xxx
-kronk model pull <provider/model-id>
+kronk model pull <model-id> --local
 ```
 
-**Problem: `kronk model pull <id>` says "model not found in catalog"**
+#### `catalog.yaml` was hand-edited and no longer parses
 
-The id has not been resolved against HuggingFace yet. Use `model resolve`
-to look it up and seed the local catalog:
+The default catalog is `<base>/catalog/catalog.yaml`. Restore valid YAML from a
+backup before running catalog commands; those commands must parse the file and
+cannot repair malformed YAML. Do not use `catalog remove` as a syntax-repair
+tool because it also removes the selected model's downloaded files.
+
+Catalog administration is covered in
+[Chapter 8](chapter-08-model-server.md#86-catalog-operations).
+
+### 17.4 Memory and Performance
+
+#### `unable to init context` or `unable to get memory`
+
+The model, runtime buffers, and configured context do not fit. Change one
+variable at a time:
+
+1. Reduce `context-window`.
+2. Reduce `nseq-max`.
+3. Use a quantized KV cache such as `q8_0`.
+4. Move KV state or model layers to CPU.
+5. Choose a smaller or more heavily quantized GGUF.
+
+Use the BUI VRAM Calculator for a model-specific estimate and retain headroom.
+See [Chapter 3: Memory Planning](chapter-03-model-configuration.md#36-memory-planning-and-quantization).
+
+#### `input tokens [N] exceed context window [M]`
+
+The rendered prompt is already larger than the configured context. Shorten the
+conversation or system prompt, or increase `context-window` if memory permits.
+Cached prefix tokens still consume context capacity.
+
+#### `the context window is full`
+
+Input plus generated tokens exhausted the context during inference. Request
+fewer output tokens, shorten the input, or increase the context. YaRN may extend
+supported RoPE models, but it is not a generic memory fix; follow
+[Chapter 7](chapter-07-yarn-extended-context.md).
+
+#### Slow inference or slow time to first token
+
+Start with `kronk diagnose` and confirm that llama.cpp sees the expected GPU.
+A cold request includes model loading, and a large uncached prompt includes
+prefill. Partial CPU offload can reduce token throughput. Compare representative
+requests after the model is warm rather than relying on the first request.
+
+Use Chapter 15's request, queue, prefill, TTFT, token-rate, and pool metrics to
+separate loading, waiting, prompt processing, and generation. IMC-specific
+diagnosis is below.
+
+### 17.5 Requests and Streaming
+
+#### `context deadline exceeded`
+
+The source of the deadline matters:
+
+- a client or reverse proxy may cancel first;
+- chat handlers impose a 180-minute request context deadline;
+- the HTTP server defaults to a 30-second read timeout and a 60-minute write
+  timeout.
+
+`--read-timeout` covers reading the request, not model execution. Increase
+`--write-timeout` only when a long response is being cut off by the server:
 
 ```shell
-kronk model resolve https://huggingface.co/<owner>/<repo>
-kronk model pull <provider/model-id>
+kronk server start --write-timeout 90m
 ```
 
-**Problem: `catalog.yaml` was hand-edited and Kronk now refuses to start**
+Check client and proxy timeouts separately. Large prompts and queued requests
+should be diagnosed with the timing metrics rather than masking them with a
+larger HTTP read timeout.
 
-The catalog file is YAML keyed by canonical id with strict typing. Run
-`kronk catalog list --local` to validate it; remove the broken entry with
-`kronk catalog remove <id> --local` and re-add it via `kronk model resolve`.
+#### A stream stops or does not parse
 
-**Problem: pull failed mid-download, `kronk model list` shows the model
-as invalid**
+OpenAI-compatible chat streaming uses SSE records of the form:
 
-Partial files are left behind under
-`~/.kronk/models/<provider>/<family>/`. Remove the model and re-pull:
+```text
+data: {"id":"...","choices":[...]}
+
+data: [DONE]
+```
+
+Kronk sends an SSE comment every 15 seconds as a keepalive. Clients must ignore
+comment lines and handle normal `finish_reason` values. `/v1/messages` uses
+named `event:` records instead of the OpenAI chat format.
+
+A missing `[DONE]` commonly means the client disconnected, a proxy timed out,
+or the server encountered an error. Correlate the request with its `trace_id`
+in the JSON logs.
+
+### 17.6 Authentication
+
+HTTP clients receive a generic authentication failure. The server's JSON log
+contains the specific cause, commonly one of these:
+
+- no authorization header — add a bearer token;
+- `invalid token:` — the JWT is malformed, expired, or signed by an unknown
+  key;
+- `not authorized:` — the token lacks the endpoint grant;
+- `rate limit exceeded:` — the grant's current window is exhausted.
+
+Use the generated master token for administration on a default local setup:
 
 ```shell
-kronk model remove <provider/model-id> --local
-kronk model pull <provider/model-id>
-kronk model index --local
+export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)
 ```
 
-### 17.12 MCP Service Issues
-
-**Error: `/mcp` returns 404**
-
-The MCP endpoint is `http://localhost:9000/mcp` (no trailing slash). The
-client must use the Streamable HTTP transport — OpenCode spells it
-`remote` in `opencode.jsonc`.
-
-**Error: `web_search` reports "missing Brave API key"**
-
-The Brave Search key is unset. Provide it before starting the server:
+Create a replacement user token with only the required grants:
 
 ```shell
-# Embedded mode (kronk server start)
-export KRONK_MCP_BRAVEAPIKEY=<your-brave-api-key>
-
-# Standalone (make mcp-server)
-export MCP_MCP_BRAVEAPIKEY=<your-brave-api-key>
+kronk security token create \
+  --duration 720h \
+  --endpoints chat-completions,embeddings,rerank,responses,messages,tokenize,transcriptions
 ```
 
-**Problem: model can't find the tool ("unknown tool kronk_fuzzy_edit")**
+Rate limits use forms such as `chat-completions:10000/day`. Token creation,
+key rotation, and production hardening are covered in
+[Chapter 12](chapter-12-security-authentication.md).
 
-OpenCode prefixes MCP tool names with the (lowercase) server key. With
-the shipped `opencode.jsonc` the server key is `kronk`, so the tools
-are exposed to the model as:
+### 17.7 IMC
 
-- `kronk_web_search`
-- `kronk_fuzzy_edit`
+IMC is enabled by default. It externalizes cached session state to RAM by
+default or to the configured disk session store. See
+[Chapter 5](chapter-05-message-caching.md) for its lifecycle and settings.
 
-If you renamed the server key in `opencode.jsonc`, the prefix changes
-to match.
+#### Every turn rebuilds the cache
 
-**Error: `fuzzy_edit` returns "old_string not found in file (even with
-fuzzy matching)"**
+Common causes are changed earlier messages, changed template inputs, a prompt
+below `cache-min-tokens`, or cache pressure. Relevant JSON log statuses include
+`session[N] mismatch`, `sys-prompt-match`, `token prefix match found`,
+`no usable token prefix match`, and `kv-pressure-evict`.
 
-The search snippet is either absent from the file or matches more than
-once. Tighten the snippet to a unique block of lines, or break the edit
-into a smaller anchor that appears exactly once.
+Keep earlier conversation messages stable and use a deterministic template.
+Increase `nseq-max` only when additional inference concurrency and its memory
+cost are both appropriate; IMC maintains more session identities than active
+decode slots.
 
-**Problem: embedded MCP server is not starting**
+#### `server busy processing other requests, try again shortly`
 
-Setting `KRONK_MCP_HOST` to a non-empty value tells `kronk server` to
-defer to an external MCP host instead of starting its own. Unset it (or
-run the standalone service via `make mcp-server`) if you want the
-embedded mode back.
+No IMC session was available. Depending on the planning path, Kronk may return
+this immediately or after waiting up to `cache-slot-timeout`. It is a transient
+request failure: wait and retry from the client. If it is frequent, inspect
+long-running requests and queue/cache metrics before increasing `nseq-max`.
+Increasing `cache-slot-timeout` affects only paths that wait for a session.
 
-### 17.13 Port Conflicts & Filesystem
+#### `imc restore failed` or `imc extend stale`
 
-**Error: `bind: address already in use`**
+The current request fails. Retry it from the client; the server does not
+automatically repeat the request. Repeated restore failures warrant checking
+memory pressure, the session-store configuration, and nearby low-level errors.
+Reducing `context-window` or concurrency can lower memory pressure.
 
-Another process is already listening on the port Kronk is trying to
-bind. Default ports are `11435` (API), `11445` (debug), and `9000` (MCP).
+### 17.8 MCP
 
-**Solutions:**
+The endpoint is `http://localhost:9000/mcp` without a trailing slash and uses
+Streamable HTTP. Common failures are:
+
+- **404 after a server restart:** discard the stale in-memory session ID and
+  initialize a new MCP session.
+- **Brave authentication failure:** set `KRONK_MCP_BRAVE_API_KEY` for embedded
+  mode or `MCP_MCP_BRAVE_API_KEY` for standalone mode before startup.
+- **Unknown `kronk_fuzzy_edit`:** with the shipped OpenCode configuration, the
+  exposed names are `kronk_fuzzy_edit` and `kronk_web_search`.
+- **`old_string not found`:** read the current file and provide one unique
+  block; the same error also covers ambiguous matches.
+- **Embedded server absent:** a non-empty `KRONK_MCP_HOST` disables it but does
+  not configure a proxy or client connection.
+
+The service is unauthenticated and `fuzzy_edit` has the process's filesystem
+access. Keep it on loopback. See [Chapter 16](chapter-16-mcp-service.md) for
+configuration and the complete handshake.
+
+### 17.9 Ports, Processes, and Permissions
+
+Default listeners are `11435` for the API, `11445` for model-server debugging,
+and `9000` for embedded MCP. Standalone MCP also starts a debug listener on
+`9010`. Find a conflicting process before changing ports:
 
 ```shell
-# Find the offending process
-lsof -i :11435
-
-# Or move Kronk to a different port
-kronk server start --api-host 0.0.0.0:21435
+lsof -nP -iTCP:11435 -sTCP:LISTEN
+lsof -nP -iTCP:9000 -sTCP:LISTEN
 ```
 
-**Error: `permission denied` reading or writing `~/.kronk/`**
+Move the API or debug listener with `--api-host` or `--debug-host`. Standalone
+MCP uses `MCP_MCP_HOST` and `MCP_WEB_DEBUG_HOST`.
 
-Ensure your user owns the kronk base directory. Auth in particular
-expects `~/.kronk/keys/` to be `0700`:
+Detached mode stores `kronk.pid` and `kronk.log` under `KRONK_BASE_PATH`. If
+`kronk server stop` encounters a stale PID, verify that no Kronk process owns
+the API or debug port before removing only the stale PID file.
 
-```shell
-chmod -R u+rwX ~/.kronk
-chmod 700 ~/.kronk/keys
-```
+BadgerDB also permits only one model-server process to use the rate-limit
+database. A lock error means another process owns `<base>/badger`; stop that
+process. Do not delete Badger's `LOCK` file while a server may be running.
 
-**Error: `lock file already exists` from BadgerDB
-(`~/.kronk/badger/LOCK`)**
+For permission errors, make the selected base path writable by the service
+user. The server enforces mode `0700` on `<base>/keys` and `0600` on private
+key files. Avoid recursively making credentials readable by other users.
 
-Only one Kronk process may hold the rate-limit DB at a time. Confirm no
-other server is running, then remove the lock:
+Whisper-specific failures are listed in
+[Chapter 18 §18.11](chapter-18-bucky.md#1811-troubleshooting).
 
-```shell
-ps aux | grep "kronk server"
-rm ~/.kronk/badger/LOCK   # only if no process is using it
-```
+### 17.10 Reporting a Problem
 
-**Problem: `kronk server start -d` says "already running" but no process
-exists**
+Include:
 
-The PID file is stale. Remove it and start again:
+- `kronk diagnose --format json` output, or `--no-bench` if benchmarking fails;
+- the Kronk version and relevant JSON log records;
+- operating system, architecture, GPU, and driver/runtime versions;
+- model ID and non-default configuration;
+- the complete error text and reproducible steps; and
+- whether the failure occurs on the first request, after warmup, or only under
+  concurrency.
 
-```shell
-rm ~/.kronk/kronk.pid
-kronk server start -d
-```
-
-**Problem: model pull fails with "no space left on device"**
-
-The models directory is full. Free space by removing unused models:
-
-```shell
-kronk model list --local
-kronk model remove <provider/model-id> --local
-```
-
-Models live under `~/.kronk/models/`; check available space with
-`df -h ~/.kronk/models`.
-
-**Audio (Bucky):** whisper-specific failure modes (missing libraries,
-degraded init, English-only model rejecting a language hint,
-multipart upload size, etc.) are documented in
-[Chapter 18 §18.10](chapter-18-bucky.md#1810-troubleshooting).
-
-### 17.14 Getting Help
-
-**Check server liveness:**
-
-```shell
-curl http://localhost:11435/v1/liveness
-```
-
-**Check server readiness (model loaded):**
-
-```shell
-curl http://localhost:11435/v1/readiness
-```
-
-**List loaded models:**
-
-```shell
-curl http://localhost:11435/v1/models
-```
-
-**Check Prometheus metrics:**
-
-```shell
-curl http://localhost:11445/metrics
-```
-
-**View goroutine stacks (for hangs):**
-
-```shell
-curl http://localhost:11445/debug/pprof/goroutine?debug=2
-```
-
-**CPU profile (for slow inference):**
-
-```shell
-curl http://localhost:11445/debug/pprof/profile?seconds=30 > cpu.prof
-go tool pprof cpu.prof
-```
-
-**Report issues:**
-
-Include the following when reporting bugs:
-
-- Kronk version (`kronk --version`)
-- Operating system and architecture
-- GPU type and driver version
-- Model name and configuration
-- Full error message and stack trace
-- Steps to reproduce
+Remove tokens, prompts, responses, filesystem secrets, and other sensitive
+values before sharing diagnostic output.
 
 ---
 

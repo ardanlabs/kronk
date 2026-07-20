@@ -2,525 +2,243 @@
 
 ## Table of Contents
 
-- [4.1 Architecture Overview](#41-architecture-overview)
-- [4.2 Slots and Sequences](#42-slots-and-sequences)
-- [4.3 Request Flow](#43-request-flow)
-- [4.4 Configuring Batch Processing](#44-configuring-batch-processing)
-- [4.5 Concurrency by Model Type](#45-concurrency-by-model-type)
-- [4.6 Performance Tuning](#46-performance-tuning)
-- [4.7 Example Configuration](#47-example-configuration)
-- [4.8 IMC Slot Scheduling](#48-imc-slot-scheduling)
-- [4.9 Model Types and State Management](#49-model-types-and-state-management)
-- [4.10 Debugging State Management](#410-debugging-state-management)
+- [4.1 Concurrency at a Glance](#41-concurrency-at-a-glance)
+- [4.2 Generation Slots and Sequences](#42-generation-slots-and-sequences)
+- [4.3 Admission, Waiting, and Cancellation](#43-admission-waiting-and-cancellation)
+- [4.4 Prompt and Token Scheduling](#44-prompt-and-token-scheduling)
+- [4.5 Embedding and Reranking](#45-embedding-and-reranking)
+- [4.6 Configuration and Tuning](#46-configuration-and-tuning)
+- [4.7 Interaction with Message Caching](#47-interaction-with-message-caching)
+- [4.8 Observing Queue Behavior](#48-observing-queue-behavior)
 
 ---
 
-Batch processing allows Kronk to handle multiple concurrent requests
-efficiently by sharing model resources. This chapter explains the architecture
-and how to optimize for your workload.
+Kronk can process requests concurrently while sharing one loaded copy of a
+model's weights. The `nseq-max` model setting controls how much concurrency a
+model instance provides, but its exact behavior depends on the model's task.
 
-### 4.1 Architecture Overview
+This chapter covers user-visible scheduling and configuration. Model memory,
+batch sizes, and KV-cache precision are covered in
+[Chapter 3](chapter-03-model-configuration.md). Message-cache session behavior
+is covered in [Chapter 5](chapter-05-message-caching.md).
 
-For text inference models (including vision/audio), Kronk always creates a
-batch engine with `NSeqMax` slots (defaulting to 1). `NSeqMax` controls how
-many sequences are processed in parallel within a single model instance.
+### 4.1 Concurrency at a Glance
 
-```
-                    ┌───────────────────────────────────┐
-    Request 1 ─────▶│                                   │
-                    │          Request Queue            │   Incoming requests are buffered.
-    Request 2 ─────▶│      (capacity: NSeqMax × 2)      │   R3 waits because all slots are
-                    │                                   │   occupied (NSeqMax=2).
-Request 3 (WAIT) ──▶│                                   │
-                    └────────────────┬──────────────────┘
-                                     │
-                                     ▼
-                    ┌───────────────────────────────────┐
-                    │            Batch Engine           │
-                    │                                   │
-                    │  ┌───────────┐    ┌───────────┐   │
-                    │  │  Slot 0   │    │  Slot 1   │   │   Each request is assigned to a slot.
-                    │  │   (R1)    │    │   (R2)    │   │   The slot tracks prompt tokens,
-                    │  │  seqID=0  │    │  seqID=1  │   │   decode position, and sampler state.
-                    │  └─────┬─────┘    └─────┬─────┘   │
-                    │        │                │         │
-                    │        ▼                ▼         │
-                    │  ┌───────────┐    ┌───────────┐   │
-                    │  │ KV Cache  │    │ KV Cache  │   │   Each slot writes to its own KV cache
-                    │  │   (R1)    │    │   (R2)    │   │   partition, isolated by sequence ID.
-                    │  │   seq0    │    │   seq1    │   │   Requests never share attention state.
-                    │  └─────┬─────┘    └─────┬─────┘   │
-                    │        │                │         │
-                    │        └───────┬────────┘         │
-                    │                ▼                  │
-                    │        ┌────────────────┐         │   Tokens from all active slots are
-                    │        │  Decode Loop   │         │   collected into a single batch using
-                    │        │(parallel batch)│         │   round-robin n_ubatch-sized chunks
-                    │        └───────┬────────┘         │   and decoded together each iteration.
-                    └────────────────┼──────────────────┘
-                                     │
-                                     ▼
-                    ┌───────────────────────────────────┐   llama.cpp processes the full batch
-                    │         llama.cpp Backend         │   on the GPU, computing all sequences
-                    │        (GPU/CPU Inference)        │   in parallel in one forward pass.
-                    └───────────────────────────────────┘
-```
+Kronk uses two concurrency designs:
 
-### 4.2 Slots and Sequences
+| Workload | `nseq-max` controls | Execution design |
+| -------- | ------------------- | ---------------- |
+| Text generation | Active generation slots | One model context and a shared batch engine |
+| Multimodal generation | Active generation slots | The same batch engine, with specialized media prefill |
+| Embedding | Independent contexts | Context pool with shared model weights |
+| Reranking | Independent contexts | Context pool with shared model weights |
 
-The batch engine divides its capacity into slots and sequences. Together they
-provide the mechanism for processing multiple requests concurrently while
-keeping each request's data isolated inside the shared KV cache.
+Multimodal generation includes requests that provide images or audio to a
+compatible language model. Bucky speech transcription is a separate
+whisper.cpp service and is not scheduled by this batch engine; see
+[Chapter 18](chapter-18-bucky.md).
 
-**Slots** are processing units that handle individual requests. Each slot
-tracks its own state: prompt tokens, decode position, sampler, and response
-channel.
+Increasing `nseq-max` allows more work to proceed concurrently. It can improve
+aggregate throughput when requests overlap, but it also increases memory
+capacity and gives each request a smaller share of the same compute resources.
+Higher concurrency can therefore increase individual response latency. There
+is no universal value that is best for every model, device, and workload.
 
-**Sequences** are isolated partitions in the shared KV cache. Each slot is
-assigned a unique sequence ID, ensuring requests don't interfere with each
-other's attention state.
+### 4.2 Generation Slots and Sequences
 
-The slot/sequence layout is the same for all caching strategies in Kronk:
+For text and multimodal generation, the batch engine creates `nseq-max`
+execution slots. A slot tracks one active request's prompt position, sampler,
+streaming response, and sequence ID.
 
-```
-NSeqMax = 4
-
-Slot 0  →  seqID = 0  →  KV cache partition 0
-Slot 1  →  seqID = 1  →  KV cache partition 1
-Slot 2  →  seqID = 2  →  KV cache partition 2
-Slot 3  →  seqID = 3  →  KV cache partition 3
+```diagram
+┌───────────────┐       ┌──────────────────────────────────┐
+│ Waiting jobs  │──────▶│ Batch engine                     │
+└───────────────┘       │                                  │
+                        │  Slot 0 ── sequence 0 ── request A│
+                        │  Slot 1 ── sequence 1 ── request B│
+                        │  Slot 2 ── sequence 2 ── request C│
+                        └────────────────┬─────────────────┘
+                                         │
+                                         ▼
+                        ┌──────────────────────────────────┐
+                        │ Shared model context and weights │
+                        └──────────────────────────────────┘
 ```
 
-How a slot uses its sequence depends on the caching strategy. Without caching,
-the sequence is cleared between requests. With IMC, all sessions (text and
-media) externalize their cached KV state to RAM after each request and
-restore it into any available slot on the next request. See
-[Section 3.7](#37-parallel-inference-nseqmax) for details on how each caching
-strategy affects slot behavior.
+Sequence IDs isolate attention state, so one request cannot attend to another
+request's tokens. They are not fixed physical KV-cache partitions. With more
+than one sequence, Kronk enables a unified KV pool whose total capacity is
+based on:
 
-### 4.3 Request Flow
+```text
+context-window × nseq-max
+```
 
-Each request moves through the batch engine in the following stages:
+Each slot is limited to one `context-window`, while unused capacity remains
+available to active sequences. Idle slots do not permanently own a slice of
+the pool. Even so, increasing `nseq-max` increases the total capacity Kronk
+must allocate and budget.
 
-1. **Queue**: Request enters the queue (backpressure if full)
-2. **Assign**: Available slot picks up the request
-3. **Cache Setup**: Prepare the slot's sequence based on caching strategy:
-   - Clear the sequence (no caching)
-   - IMC: restore cached KV from RAM, extend or rebuild
-4. **Prefill**: Tokenize and process remaining prompt tokens (round-robin
-   across slots in `n_ubatch`-sized chunks to prevent starvation)
-5. **Decode**: Generate tokens one at a time, streaming to client
-6. **Complete**: Release the slot:
-   - Clear the entire sequence (no caching)
-   - IMC (all model types): clear the entire VRAM sequence (cached prefix already snapshotted to RAM)
+When a request finishes, its slot becomes available for another waiting job.
+Scheduling uses the first available slot; jobs do not reserve a particular
+slot between requests.
 
-### 4.4 Configuring Batch Processing
+### 4.3 Admission, Waiting, and Cancellation
 
-Batch processing is controlled primarily through the model configuration. The
-key setting is `NSeqMax`, which determines how many slots the batch engine
-creates and therefore how many requests can be processed in parallel. Increasing
-`NSeqMax` improves concurrency but requires proportionally more KV cache memory,
-so it's important to balance throughput against available VRAM.
+The outer Kronk API applies the user-visible admission limit before a request
+reaches the model. For generation, its default capacity is
+`nseq-max × queue-depth`, where the default queue depth is 2.
 
-#### Enable Batch Processing
+Internally, the batch engine receives admitted jobs through a bounded handoff
+channel and drains them into its pending-job list until slots become available.
+The channel is not a second user-visible queue budget. The direct Go SDK option
+`model.WithQueueDepth(n)` changes the outer admission multiplier; it does not
+resize that internal handoff channel. Embedding and reranking use an admission
+capacity of `nseq-max` rather than the queue-depth multiplier.
 
-By default, the batch engine runs with a single slot (`NSeqMax=1`). To enable
-parallel request processing, set `nseq-max > 1` in
-`~/.kronk/model_config.yaml`:
+At the default generation admission depth, `nseq-max: 4` permits up to eight
+requests through the outer admission gate. At most four can occupy execution
+slots at once; the remainder wait for a slot. Additional callers block at the
+admission gate until capacity is released.
+
+Waiting honors request cancellation. If a request's context is cancelled
+before admission or while submitting to the engine, the request returns that
+cancellation. During model shutdown, the engine rejects new submissions and
+finishes active and pending jobs with a shutdown error.
+
+The engine does **not** cancel a long-running request merely because another
+job has waited for a slot. Applications that require a maximum generation time
+should use request cancellation, server timeouts, or generation limits such as
+`max_tokens`.
+
+### 4.4 Prompt and Token Scheduling
+
+Generation work moves through these stages:
+
+1. Prepare the request and plan any reusable cached state.
+2. Submit the job and wait for an execution slot.
+3. Restore or build cached state and tokenize or prefill remaining input.
+4. Generate and stream output tokens.
+5. Clear the active sequence and release the slot.
+
+Some preparation and IMC tokenization occurs before submission. Ordinary
+non-cached tokenization can occur when the slot starts. The exact boundary is
+an implementation detail; the visible queue wait begins around engine
+submission and ends when a slot is assigned.
+
+For ordinary text prefill, active slots contribute prompt tokens in
+round-robin chunks of up to `nubatch` tokens until the shared `nbatch` capacity
+is reached. This prevents one large prompt from consuming every prefill pass
+while other slots wait. Generated tokens from active slots can be processed in
+the same shared decode loop.
+
+Media input requires specialized encoder and prefill steps, so it is not
+always combined with text work in one forward pass. Multi-Token Prediction
+(MTP) also changes how some prefill and verification batches are formed. These
+special cases preserve the same user-visible slot limit but should not be
+treated as identical scheduling at the backend level.
+
+Most users should leave `nbatch` and `nubatch` unset. Kronk derives their
+load-time values as described in
+[Chapter 3 §3.5](chapter-03-model-configuration.md#35-concurrency-and-batching).
+
+### 4.5 Embedding and Reranking
+
+Embedding and reranking models do not use generation slots. Kronk creates a
+pool of `nseq-max` independent model contexts that share the model weights.
+
+```diagram
+┌──────────┐       ┌──────────────────────────────┐
+│ Requests │──────▶│ Context pool                │
+└──────────┘       │  Context 0 ── request A     │
+                   │  Context 1 ── request B     │
+                   │  Context 2 ── available     │
+                   └──────────────────────────────┘
+```
+
+Each admitted request acquires one context, performs its work independently,
+and returns the context to the pool. If every context is busy, another request
+waits until one is released or its context is cancelled. Work from separate
+contexts is not combined into the generation engine's shared token batch.
+
+Additional contexts require memory even though model weights are shared. Raise
+`nseq-max` only when concurrent embedding or reranking traffic benefits from
+the extra contexts.
+
+### 4.6 Configuration and Tuning
+
+Configure concurrency in `~/.kronk/models/model_config.yaml`:
 
 ```yaml
-Qwen/Qwen3-8B-Q8_0:
-  nseq-max: 4 # 4 concurrent requests
+mradermacher/Qwopus3.5-4B-Coder.Q8_0:
+  context-window: 32768
+  nseq-max: 2
 ```
 
-#### Queue Depth
-
-A bounded request queue sits in front of the batch engine to absorb bursts
-of incoming requests without rejecting them immediately.
-
-The request queue holds `NSeqMax × 2` requests by default. With `NSeqMax=4`,
-up to 8 requests can be in-flight: 4 actively processing in slots and 4
-waiting in the queue. This multiplier is configurable via `WithQueueDepth`
-when using the SDK:
-
-```go
-krn, err := kronk.New(ctx, cfg, kronk.WithQueueDepth(3))
-```
-
-When all slots and queue positions are occupied, new requests block until a
-slot becomes available or the request's context is cancelled. If a queued
-request waits longer than `CacheSlotTimeout` (default: 30 seconds), the
-engine preempts the longest-running slot — cancelling that in-flight request
-with a "preempted by queued request" error — and assigns the slot to the
-waiting request. If the engine is shutting down, queued requests receive an
-immediate error. This backpressure and preemption mechanism prevents any
-single request from starving others indefinitely.
-
-#### Memory and Caching
-
-Adding slots increases throughput but costs memory. Each additional slot
-allocates its own KV cache partition proportional to the full context window.
-
-Each slot reserves its own KV cache partition, so increasing `NSeqMax`
-increases VRAM usage proportionally. IMC does not add extra sequences.
-For details on how slot memory is allocated and how to estimate total VRAM, see
-[Section 3.7 — Parallel Inference (NSeqMax)](#37-parallel-inference-nseqmax)
-and [Section 3.10 — VRAM Estimation](#310-vram-estimation).
-
-### 4.5 Concurrency by Model Type
-
-Not all model types achieve concurrency the same way. Text inference models
-(including vision and audio) use the batch engine described in the previous
-sections, where multiple slots share a single model context and their tokens
-are combined into one decode call. Embedding and reranking models take a
-different approach — they create a pool of independent contexts that each
-process requests separately. The table below summarizes the distinction, and
-the diagrams that follow show the request flow for each approach.
-
-| Model Type              | NSeqMax Behavior  | Concurrency Method                |
-| ----------------------- | ----------------- | --------------------------------- |
-| Text (chat, completion) | Batch parallelism | Shared model, multiple slots      |
-| Vision/Audio            | Batch parallelism | Shared model, multiple slots      |
-| Embedding               | Context pool      | Shared weights, multiple contexts |
-| Reranking               | Context pool      | Shared weights, multiple contexts |
-
-#### Embedding/Rerank Request Flow (NSeqMax=4)
-
-Embedding and reranking models don't use the batch engine. Instead, Kronk
-creates a pool of independent contexts — one per `NSeqMax` slot. When a
-request arrives, it acquires a context from the pool, processes its inputs,
-and releases the context back. If all contexts are in use, the request blocks
-until one becomes available. The following diagram shows this flow:
-
-```
-                    ┌──────────────────────────────────┐
-   Request 1 ──────▶│                                  │   Requests acquire a context from the
-                    │           Context Pool           │   pool. If all contexts are in use,
-   Request 2 ──────▶│       (capacity: NSeqMax)        │   the request blocks until one is
-                    │                                  │   released.
-Request 3 (WAIT) ──▶│                                  │
-                    └────────────────┬─────────────────┘
-                                     │
-                                     ▼
-                    ┌──────────────────────────────────┐
-                    │     Independent Contexts         │
-                    │                                  │
-                    │  ┌───────────┐    ┌───────────┐  │   Each context has its own KV cache.
-                    │  │ Context 0 │    │ Context 1 │  │   Unlike the batch engine, there is
-                    │  │   (R1)    │    │   (R2)    │  │   no shared state between contexts.
-                    │  └─────┬─────┘    └─────┬─────┘  │
-                    │        │                │        │
-                    │        ▼                ▼        │
-                    │  ┌───────────┐    ┌───────────┐  │   Each request runs its own decode
-                    │  │  Decode   │    │  Decode   │  │   call independently. Efficiency
-                    │  │   (R1)    │    │   (R2)    │  │   comes from sharing model weights,
-                    │  └─────┬─────┘    └─────┬─────┘  │   not from batching work together.
-                    │        │                │        │
-                    └────────┼────────────────┼────────┘
-                             │                │
-                             ▼                ▼
-                    ┌──────────────────────────────────┐   llama.cpp processes each context
-                    │         llama.cpp Backend        │   separately on the GPU. Model weights
-                    │        (GPU/CPU Inference)       │   are shared, only KV cache is per-ctx.
-                    └──────────────────────────────────┘
-```
-
-Unlike the batch engine, each request runs its own separate decode call —
-there is no combining of work across requests. The efficiency comes from
-sharing the model weights across all contexts, so only the KV cache memory
-is duplicated.
-
-### 4.6 Performance Tuning
-
-The right `NSeqMax` value depends on your workload. More slots increase
-throughput by serving more requests in parallel, but each additional slot
-shares the same GPU, so individual requests may take slightly longer to
-complete. The goal is to find the balance point where you have enough
-concurrency for your users without saturating the GPU or running out of VRAM.
-
-**Throughput vs Latency**
-
-- Higher `NSeqMax`: Better throughput, potentially higher per-request latency
-- Lower `NSeqMax`: Lower latency, less concurrent capacity
-
-**Recommended Settings**
-
-- Single user, interactive: `nseq-max: 1-2`
-- Multi-user API server: `nseq-max: 4-8`
-- High-throughput batch jobs: `nseq-max: 8-16`
-
-**Monitoring**
-
-Use request tracing to watch for long `queue-wait` spans, which indicate
-requests are waiting for an available slot. If you see consistently long
-queue waits, consider:
-
-1. Increasing `nseq-max` (if VRAM allows)
-2. Reducing `context-window` to fit more slots
-3. Using KV cache quantization (`cache-type-k`/`cache-type-v: q8_0`)
-
-See [Chapter 15: Observability](#chapter-15-observability) for details on
-tracing and metrics.
-
-### 4.7 Example Configuration
-
-The following config shows a high-throughput setup that balances concurrency,
-memory, and caching for a multi-user API server:
-
-```yaml
-# ~/.kronk/model_config.yaml
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 8192
-  nseq-max: 8
-  # nbatch / nubatch left unset — Kronk derives nubatch=2048 and
-  # nbatch=nubatch×nseq-max (16384) for fair round-robin prefill.
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  incremental-cache: true
-```
-
-This configuration handles 8 concurrent requests, uses quantized KV cache to
-reduce memory, and caches conversations incrementally for faster prefill. Here is the
-VRAM estimate (see [Section 3.10 — VRAM Estimation](#310-vram-estimation) for the full formula):
-
-```
-Model                   : Qwen3-8B-Q8_0
-Model Weights           : ~9 GB
-Context Window (n_ctx)  : 8,192
-Bytes Per Element       : 1 (q8_0)
-block_count (n_layers)  : 36
-attention.head_count_kv : 8
-attention.key_length    : 128
-attention.value_length  : 128
-
-Step 1 — Per-token-per-layer cost:
-
-  KV_Per_Token_Per_Layer = 8 × (128 + 128) × 1 = 2,048 bytes
-
-Step 2 — Per-sequence cost:
-
-  KV_Per_Sequence = 8,192 × 36 × 2,048 = ~0.6 GB
-
-Step 3 — Total KV cache (NSeqMax = 8):
-
-  Slot_Memory = 8 × 0.6 GB = ~4.8 GB
-
-Step 4 — Total VRAM:
-
-  Total_VRAM = 9.0 GB + 4.8 GB = ~13.8 GB
-```
-
-### 4.8 IMC Slot Scheduling
-
-When IMC is enabled, the batch engine uses a scheduling algorithm to
-assign requests to slots. This section explains how IMC scheduling works
-and the mechanisms that prevent requests from stalling.
-
-#### Normal Scheduling (No Caching)
-
-Without IMC, the algorithm assigns the next queued request to any available
-slot. If all slots are busy, the request stays in the queue until a slot
-finishes. This is simple and works well because requests have no slot
-affinity.
-
-#### IMC Scheduling
-
-All IMC requests have no slot affinity — cached KV state is externalized to
-RAM and can be restored into any available slot. These requests are scheduled
-identically to non-IMC requests (first available slot).
-
-#### Slot Preemption
-
-If all slots are busy when a queued job needs to be assigned, and the job
-waits longer than `CacheSlotTimeout` seconds (default: 30), the algorithm
-triggers preemption. This is a safety mechanism for pathologically long
-generations.
-
-Preemption uses a two-phase approach for safety:
-
-1. **Schedule** — The algorithm marks the victim slot for preemption and
-   defers the waiting job. No slot state is modified yet.
-
-2. **Execute** — At the top of the next processing loop iteration, after
-   the batch is cleared but before any tokens are added, the victim slot is
-   finished with a preemption error. This ordering is critical — the victim
-   slot must have no tokens in the current batch, otherwise cleaning up its
-   KV state could corrupt a subsequent decode.
-
-The preempted request receives an error response and the client can retry.
-The waiting job is then assigned to the freed slot. The longest-running
-slot is preempted.
-
-#### CacheSlotTimeout
-
-The `cache_slot_timeout` setting (default: 30 seconds) controls two distinct
-timeout scenarios in the IMC scheduling path:
-
-| Scenario                | Phase              | What Happens at Timeout                          |
-| ----------------------- | ------------------ | ------------------------------------------------ |
-| Wait for slot available | Before batch queue | Error returned: "server busy"                    |
-| Queued job waiting      | Inside batch queue | Longest-running slot preempted, job assigned     |
-
-```
-                          CacheSlotTimeout (30s)
-                          ┌──────────────────────────────────────┐
-                          │                                      │
-    ┌─────────────────────┼──────────────────┐   ┌───────────────┼──────────────┐
-    │  Before Batch Queue │                  │   │ Inside Batch  │              │
-    │                     │                  │   │ Queue         │              │
-    │  All slots have     │                  │   │  All slots    │              │
-    │  cache builds       ▼                  │   │  are busy     ▼              │
-    │  in-flight     ──► Error               │   │  generating ──► Preempt      │
-    │                     "server busy"      │   │                victim slot   │
-    └────────────────────────────────────────┘   └──────────────────────────────┘
-```
-
-The first scenario fires before the job enters the batch engine — it blocks
-during cache preparation when all IMC sessions have pending cache builds
-in-flight. The second scenario fires inside the batch engine — the job is
-already queued but all slots are actively generating tokens for other
-requests.
-
-**Important:** The preemption timeout is measured from when the job enters
-the batch engine queue, not from when the HTTP request arrived. Time spent
-waiting for cache builds does not count against the preemption budget. This
-prevents false preemptions when a request waits for a long cache build
-before entering the queue.
-
-#### Debugging IMC Scheduling
-
-| Log Message                           | Meaning                                            |
-| ------------------------------------- | -------------------------------------------------- |
-| `all slots pending, waiting for slot` | Waiting for a cache build to finish (timeout 1)    |
-| `slot became available, retrying`     | A cache build finished, retrying slot scan         |
-| `server busy`                         | Wait for slot timed out (timeout 1)                |
-| `preempting-slot`                     | Preemption scheduled (timeout 2, shows wait time)  |
-| `preempted by queued request`         | Victim slot finished with preemption error         |
-| `slot-finished` (after preemption)    | Victim cleaned up, slot available for deferred job |
-
-### 4.9 Model Types and State Management
-
-Kronk supports three model architectures. The model type is detected
-automatically at load time and affects how the batch engine manages
-sequence state. The caching system's session matching and cache building
-are the same for all model types — the difference is in the batch engine's
-cleanup behavior after a request completes.
-
-**All IMC sessions** (text and media) use the same lifecycle for all model
-types: the cached prefix is snapshotted to RAM (via `StateSeqGetData`)
-during slot initialization, and the entire VRAM sequence is cleared after
-the request completes. The next request restores the cached state from RAM
-into any available slot. `StateSeqGetData` captures raw KV bytes regardless
-of whether they originated from text tokens or media embeddings. For Hybrid
-models, `StateSeqGetData` captures both KV cache and recurrent state
-(DeltaNet/SSM), so the unified snapshot/restore path naturally handles them.
-
-| Model Type | Architecture                         | IMC Cleanup             | Detection                     |
-| ---------- | ------------------------------------ | ----------------------- | ----------------------------- |
-| Dense      | Standard transformer                 | Full clear (snapshot)   | Default (not MoE, not Hybrid) |
-| MoE        | Mixture of Experts                   | Full clear (snapshot)   | GGUF `expert_count` metadata  |
-| Hybrid     | Attention + Recurrent (DeltaNet/SSM) | Full clear (snapshot)   | `llama.ModelIsHybrid`         |
-
-#### Snapshot to RAM (All Model Types)
-
-All IMC sessions use the same snapshot/restore approach regardless of model
-type or content type (text or media):
-
-1. **Snapshot**: After the IMC cache is built or extended but before suffix
-   tokens are decoded, the engine captures the full sequence state (KV cache
-   and recurrent hidden state for Hybrid models) into a byte buffer in RAM
-   via `StateSeqGetData`.
-
-2. **Clear**: After the request completes, the entire VRAM sequence is
-   cleared. The cached prefix lives in the session's RAM buffer.
-
-3. **Restore**: On the next request, the cached state is restored from RAM
-   into any available slot via `StateSeqSetData`.
-
-```
-IMC (all types, all content): Snapshot to RAM → Clear VRAM → Restore into any slot
-```
-
-The first media plan, or any plan with changed/reordered/removed/new media, is
-built through the mtmd pipeline (the projection model encodes image/audio into
-embeddings). A text-only follow-up to an unchanged media prefix restores the
-snapshot, decodes only appended stable text, and atomically advances the
-externalized snapshot; the media is not re-encoded.
-
-The snapshot/restore is a memory copy operation, typically 10-30ms depending
-on conversation size.
-
-#### Partial Prefix Rebuilds (Hybrid)
-
-Partial prefix matches are more expensive for hybrid models because the
-recurrent state must be rebuilt from the beginning.
-
-When a request matches a partial token prefix (the token prefix fallback
-path), Dense/MoE models trim from the divergence point and re-decode only
-the new tokens. Hybrid models cannot do partial trims, so the engine
-performs a full sequence clear and re-decodes the entire cached token
-sequence from position 0. This is more expensive but guarantees the
-recurrent state is built correctly.
-
-#### MoE Performance Characteristics
-
-While MoE models share the same state management as Dense, their architecture
-introduces unique performance trade-offs worth understanding.
-
-MoE models use the same state management as Dense (snapshot/restore),
-but have different performance profiles that affect configuration:
-
-- Lower tokens/sec than comparably-sized dense models on Apple Silicon
-  due to scattered memory access patterns from expert routing
-- Sensitive to aggressive KV cache quantization — use `f16` cache types
-  if quality degrades with `q8_0`
-- Use `split_mode: row` for multi-GPU setups to enable expert-parallel
-  execution
-
-#### Hybrid Configuration
-
-Hybrid models use the same defaults as every other model type — Kronk no
-longer overrides flash attention or the KV cache for them.
-
-- Flash attention is supported. It applies only to the attention layers;
-  the recurrent layers never reach the Flash Attention kernel. Use
-  `flash_attention: auto` on backends that can't do FA so llama.cpp
-  falls back to disabled automatically.
-- A quantized KV cache (e.g., `q8_0`) is allowed, but only while flash
-  attention is active. With flash attention disabled, use `f16`.
-
-#### Hybrid Guardrails
-
-Kronk protects against corrupted state by automatically recovering when
-snapshot operations fail.
-
-If a snapshot restore fails, Kronk clears the session's IMC metadata so the
-session is not reused with a corrupted state. The next request for that
-session triggers a full cache rebuild from scratch.
-
-### 4.10 Debugging State Management
-
-Use these log messages to diagnose how the batch engine is managing KV cache
-state between requests. Snapshot/restore is used by all IMC sessions (to
-externalize KV state to RAM). These messages are especially useful when
-restore failures trigger expensive full rebuilds.
-
-| Log Message                  | Meaning                                                                                  |
-| ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `imc-restore-start`          | About to restore externalized KV from `SessionStore` into the slot's sequence            |
-| `imc-restore-done`           | `StateSeqSetData` succeeded (shows `next_logical_position`, `physical_kv_cells`, and `restored_bytes`) |
-| `imc-snapshot-start`         | About to capture cached prefix KV; distinguishes logical position from physical KV cells |
-| `imc-snapshot-done`          | Snapshot committed with logical position, physical KV cells, duration, and byte size     |
-| `imc-snapshot-failed`        | `StateSeqGetData` returned 0 bytes; session metadata reset                               |
-| `imc-snapshot-skip-read-only` | Exact text or media hit skipped redundant serialization; carries `snapshot_action=skip-read-only` |
-| `imc-pure-hit-stale`         | Pure-hit candidate found a concurrently-mutated session; client should retry             |
-| `imc-extend-stale`           | Extend candidate found a concurrently-mutated session; client should retry               |
-| `imc-media-anchor-advanced-in-slot` | Restored media prefix was extended with text only; media projection did not run     |
-| `imc-media-anchor-committed` | Staged target snapshot and physical/logical metadata were swapped atomically              |
-| `imc-rebuild-full`           | Hybrid (or corruption recovery): full clear + re-decode from position 0                  |
-| `imc-trim-prefix`            | Token-prefix fallback: trim from divergence point and re-decode the suffix               |
-| `imc-clear-seq`              | VRAM sequence cleared (`finishSlot`, eviction, or rebuild)                               |
-| `imc-draft-snapshot-done`    | MTP draft KV snapshotted alongside the target (only with an MTP drafter)                 |
-| `imc-draft-restore-done`     | MTP draft KV restored alongside the target                                               |
+The file is read at server startup. Restart the server after changing it. The
+top-level key must match the model ID used by requests.
+
+Tune from a measured baseline rather than a generic slot recommendation:
+
+1. Start with automatic tuning or `nseq-max: 1` for a controlled baseline.
+2. Run the expected number and shape of concurrent requests.
+3. Measure aggregate throughput, time to first token, queue wait, and memory.
+4. Increase `nseq-max` one step at a time while throughput improves acceptably.
+5. Stop when memory pressure, queueing, or per-request latency becomes worse
+   than the workload can tolerate.
+
+If requests spend too long waiting for slots, possible responses include:
+
+- increase `nseq-max` if the model and device have sufficient memory;
+- reduce `context-window` when the workload does not need it;
+- evaluate a smaller KV-cache type or a smaller model; or
+- distribute traffic across more model-server instances.
+
+Do not treat weight size plus a hand-calculated KV value as total VRAM. Use the
+BUI's **Apps → VRAM Calculator** and retain operating headroom. See
+[Chapter 3 §3.6](chapter-03-model-configuration.md#36-memory-planning-and-quantization)
+for the components that affect an estimate.
+
+### 4.7 Interaction with Message Caching
+
+Incremental Message Caching (IMC) keeps reusable conversation state in a
+logical session, not in a permanently assigned execution slot. Cached state is
+externalized to a session store between requests. A later request can restore
+that state into any free slot, extend it, and continue generation.
+
+While a request is active, its restored or newly built state consumes cells in
+the unified KV pool. Kronk normally snapshots a built or extended stable prefix
+during slot startup, before generating the request's suffix. Exact read-only
+hits can skip a redundant snapshot. Completion clears the slot's active
+sequence. This allows the number of cached conversation identities to differ
+from the number of concurrent execution slots.
+
+If every IMC session has work pending, current token-based planning returns a
+server-busy error rather than preempting a generation already running in a
+batch slot.
+
+Session matching, RAM and disk stores, media caching, invalidation, and cache
+settings are documented in [Chapter 5](chapter-05-message-caching.md).
+
+### 4.8 Observing Queue Behavior
+
+Kronk records two direct indicators of generation-slot contention:
+
+- the `queue-wait` trace span, which wraps the submit attempt and subsequent
+  slot wait for successful jobs; and
+- the `chat_queue_wait_seconds` Prometheus histogram, recorded when a slot is
+  assigned.
+
+For a successful job, timing starts immediately before attempting submission
+to the batch engine and ends at slot assignment. It does not include time
+blocked at the outer SDK admission gate or time spent preparing an IMC session
+before the submit attempt. Compare it with end-to-end request duration and
+time-to-first-token measurements when diagnosing latency.
+
+Consistently increasing queue-wait time means requests are arriving faster
+than slots complete them. Before raising `nseq-max`, confirm that the device
+has memory headroom and that aggregate throughput improves under a realistic
+concurrent load. See [Chapter 15](chapter-15-observability.md) for metrics,
+tracing, and profiling.
 
 ---

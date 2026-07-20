@@ -2,181 +2,102 @@
 
 ## Table of Contents
 
-- [15.1 Debug Server](#151-debug-server)
-- [15.2 Debug Endpoints](#152-debug-endpoints)
-- [15.3 Health Check Endpoints](#153-health-check-endpoints)
-- [15.4 Prometheus Metrics](#154-prometheus-metrics)
-- [15.5 Prometheus Integration](#155-prometheus-integration)
-- [15.6 Distributed Tracing with Tempo](#156-distributed-tracing-with-tempo)
-- [15.7 Tracing Architecture](#157-tracing-architecture)
-- [15.8 Tempo Setup with Docker](#158-tempo-setup-with-docker)
-- [15.9 pprof Profiling](#159-pprof-profiling)
-- [15.10 Statsviz Real-Time Monitoring](#1510-statsviz-real-time-monitoring)
-- [15.11 Logging](#1511-logging)
-- [15.12 Configuration Reference](#1512-configuration-reference)
+- [15.1 Debug and Health Endpoints](#151-debug-and-health-endpoints)
+  - [Debug Server](#debug-server)
+  - [Health Checks](#health-checks)
+- [15.2 Prometheus Metrics](#152-prometheus-metrics)
+  - [Metric Groups](#metric-groups)
+  - [PromQL Examples](#promql-examples)
+- [15.3 Bundled Observability Stack](#153-bundled-observability-stack)
+- [15.4 OpenTelemetry Tracing](#154-opentelemetry-tracing)
+- [15.5 Profiling and Runtime Visualization](#155-profiling-and-runtime-visualization)
+- [15.6 Logging](#156-logging)
 
 ---
 
+Kronk exposes health checks on the Web API and runs a separate debug server
+for metrics, profiling, and runtime visualization. It can also export traces
+to an OTLP gRPC collector such as Grafana Tempo. Structured logs are written
+to standard output.
 
+### 15.1 Debug and Health Endpoints
 
-Kronk provides comprehensive observability through distributed tracing,
-Prometheus metrics, pprof profiling, and real-time visualizations.
+#### Debug Server
 
-### 15.1 Debug Server
+The main API binds to `0.0.0.0:11435` by default. Observability endpoints use
+a separate server at `0.0.0.0:11445`:
 
-Kronk runs a separate debug server for observability endpoints, isolated
-from the main API for security.
+| Path | Purpose |
+| ---- | ------- |
+| `/metrics` | Prometheus metrics |
+| `/debug/pprof/` | Go profile index |
+| `/debug/pprof/profile` | CPU profile |
+| `/debug/pprof/heap` | Heap profile |
+| `/debug/pprof/goroutine` | Goroutine profile |
+| `/debug/pprof/trace` | Go execution trace |
+| `/debug/statsviz` | Live Go runtime charts |
 
-**Default Ports:**
+> **Security:** The debug server has no authentication and its default address
+> listens on every interface. Profiles and runtime data can reveal sensitive
+> operational details. Bind it to loopback or restrict port `11445` at the
+> network boundary unless remote scraping is required.
 
-- Main API: `localhost:11435`
-- Debug server: `localhost:11445`
-
-**Configure Debug Host:**
+To bind it to loopback:
 
 ```shell
-kronk server start --debug-host localhost:9090
+kronk server start --debug-host localhost:11445
 ```
 
-Or via environment variable:
+The equivalent environment variable is
+`KRONK_WEB_DEBUG_HOST=localhost:11445`.
 
-```shell
-export KRONK_WEB_DEBUG_HOST=localhost:9090
-kronk server start
-```
+#### Health Checks
 
-### 15.2 Debug Endpoints
-
-The debug server exposes these endpoints:
-
-**Prometheus Metrics:**
-
-```
-http://localhost:11445/metrics
-```
-
-**pprof Profiling:**
-
-- `http://localhost:11445/debug/pprof/` - Index page
-- `http://localhost:11445/debug/pprof/profile` - CPU profile
-- `http://localhost:11445/debug/pprof/heap` - Heap profile
-- `http://localhost:11445/debug/pprof/goroutine` - Goroutine stacks
-- `http://localhost:11445/debug/pprof/trace` - Execution trace
-
-**Statsviz (Real-time Visualizations):**
-
-```
-http://localhost:11445/debug/statsviz
-```
-
-Provides live charts for memory, goroutines, GC, and more.
-
-### 15.3 Health Check Endpoints
-
-Available on the main API port (no authentication required):
-
-**Liveness Check:**
+The unauthenticated health routes are served from the main API port:
 
 ```shell
 curl http://localhost:11435/v1/liveness
-```
-
-Response:
-
-```json
-{
-  "status": "up",
-  "build": "v1.0.0",
-  "host": "hostname",
-  "GOMAXPROCS": 8
-}
-```
-
-**Readiness Check:**
-
-```shell
 curl http://localhost:11435/v1/readiness
 ```
 
-Returns 200 OK when the server is ready to accept requests.
+Liveness returns JSON containing `status`, `build`, `host`, and `GOMAXPROCS`.
+Readiness currently returns an empty `200 OK` when the HTTP service is
+running. It does not validate model files, inference libraries, devices,
+available memory, or a loaded model.
 
-### 15.4 Prometheus Metrics
+### 15.2 Prometheus Metrics
 
-Kronk exposes detailed inference metrics in Prometheus format.
-
-**Fetch Metrics:**
+Fetch the current metric inventory and its `HELP` descriptions from:
 
 ```shell
 curl http://localhost:11445/metrics
 ```
 
-**Available Metrics:**
+The endpoint includes Go `go_*` metrics, process `process_*` metrics, and
+Kronk metrics. The following groups are useful starting points; `/metrics` is
+the authoritative list.
 
-System metrics:
+#### Metric Groups
 
-- `goroutines` - Current goroutine count
-- `requests` - Total request count
-- `errors` - Total error count
-- `panics` - Total panic count
+| Area | Representative metrics |
+| ---- | ---------------------- |
+| HTTP | `requests`, `errors`, `panics`, `goroutines` |
+| Model loading | `model_load_seconds`, `model_load_proj_seconds` |
+| Inference latency | `model_prompt_creation_seconds`, `model_prefill_seconds`, `model_prefill_ttft_seconds`, `model_request_ttft_seconds` |
+| Requests | `chat_requests_total`, `chat_errors_total`, `chat_request_duration_seconds`, `chat_queue_wait_seconds` |
+| Tokens | `usage_tokens_total`, `usage_tokens_per_second` |
+| Model memory | `vram_total_bytes`, `vram_slot_memory_bytes` |
+| Pool | `pool_acquire_total`, `pool_evictions_total`, `pool_items_in_pool`, `pool_max_items_in_pool`, `pool_active_streams`, `pool_inflight_loads` |
+| Resource manager | `resman_ram_used_bytes`, `resman_device_used_bytes`, `resman_reservation_bytes`, `resman_reserve_rejections_total` |
+| IMC | `imc_snapshot_skipped_total`, `imc_pure_hit_stale_session_total` |
 
-All timing distributions are exposed as Prometheus **histograms** (suffix
-`_seconds`), which emit `_bucket`, `_sum`, and `_count` series. Compute
-averages with `rate(X_sum[5m]) / rate(X_count[5m])` and percentiles with
-`histogram_quantile(...)`.
+Most model and request metrics have a `model_id` label. Histograms expose
+`_bucket`, `_sum`, and `_count` series. Counters such as
+`usage_tokens_total` should normally be queried with `rate()` or `increase()`.
 
-Model loading histograms (seconds):
-
-- `model_load_seconds` — model file load time
-- `model_load_proj_seconds` — multimodal proj file load time
-
-Inference timing histograms (seconds):
-
-- `model_prompt_creation_seconds`
-- `model_prefill_seconds` (labeled by `kind="text|media|imc-decode"`)
-- `model_prefill_ttft_seconds` (prefill-start to first sampled token)
-- `model_request_ttft_seconds` (end-to-end request to first sampled token)
-
-Token usage:
-
-- `usage_tokens_total` — counter, labeled by `kind="prompt|reasoning|completion"`. Use `rate(...)` for fleet throughput. Output and total are linear combinations and can be derived in PromQL.
-- `usage_tokens_per_second` — histogram of per-request decode rate (computed after TTFT).
-
-Request lifecycle:
-
-- `chat_requests_total{model_id, status="ok|error|cancel"}` — counter of chat completion outcomes.
-- `chat_errors_total{model_id, class}` — counter of chat errors by class (`pre-batch`, `fail-job`, `context-cancelled`, …).
-- `chat_request_duration_seconds` — histogram of end-to-end chat request duration.
-- `chat_queue_wait_seconds` — histogram of time spent waiting in the batch engine queue.
-
-Pool (sdk/pool):
-
-- `pool_acquire_total{result="hit|miss|dedup|busy|error"}` — counter of acquire outcomes.
-- `pool_acquire_duration_seconds{cache="hit|miss"}` — histogram of acquire latency.
-- `pool_singleflight_wait_seconds` — histogram of duplicate-load wait time.
-- `pool_evictions_total{reason, selection}` — counter labelled by reason (`ttl|cap|budget|replacement|invalidation|unknown`) and selection (`smallest-fit|coldest-idle|n/a`).
-- `pool_evict_before_load_total` — counter of pre-admission evictions.
-- `pool_evict_wait_seconds` — histogram of time waiting for an eviction callback to release its reservation.
-- `pool_unload_duration_seconds{model_id}` — histogram of unload duration.
-- `pool_load_failures_total{stage="plan|reserve|evict|load"}` — counter of load failures by stage.
-- `pool_items_in_cache`, `pool_max_items_in_cache` — gauges for current/configured cache occupancy.
-- `pool_active_streams{model_id}` — gauge of streaming requests per model.
-- `pool_inflight_loads` — gauge of loads currently holding a reservation but not yet visible in the cache.
-
-Resource manager (sdk/pool/resman):
-
-- `resman_budget_percent`, `resman_headroom_bytes`, `resman_unified_memory` — configuration gauges.
-- `resman_reservations` — gauge of active reservations.
-- `resman_ram_total_bytes`, `resman_ram_budget_bytes`, `resman_ram_used_bytes`, `resman_ram_free_bytes` — RAM accounting.
-- `resman_device_total_bytes{device,type}`, `resman_device_budget_bytes`, `resman_device_used_bytes`, `resman_device_free_bytes` — per-GPU accounting.
-- `resman_reservation_bytes{model_id, kind="ram|vram", device}` — per-reservation memory commitment.
-- `resman_reserve_rejections_total{reason="no_capacity|unknown_device|invalid_plan|duplicate_key|no_gpus|other"}` — counter of `Reserve` rejections.
-
-### 15.5 Prometheus Integration
-
-**Example Prometheus Configuration:**
+For an external Prometheus process on the same host:
 
 ```yaml
-# prometheus.yml
 scrape_configs:
   - job_name: "kronk"
     static_configs:
@@ -184,255 +105,130 @@ scrape_configs:
     scrape_interval: 15s
 ```
 
-**Grafana Dashboard Query Examples:**
+When Prometheus runs in Docker while Kronk runs on the host, use
+`host.docker.internal:11445`, as the repository's configuration does.
 
-Average end-to-end time to first token:
+#### PromQL Examples
+
+Average end-to-end time to first token by model:
 
 ```promql
 rate(model_request_ttft_seconds_sum[5m])
   / rate(model_request_ttft_seconds_count[5m])
 ```
 
-P99 end-to-end time to first token:
+P99 time to first token by model:
 
 ```promql
 histogram_quantile(0.99,
   sum by (le, model_id) (rate(model_request_ttft_seconds_bucket[5m])))
 ```
 
-Fleet token throughput by kind (tokens/second):
+Token throughput by model and kind:
 
 ```promql
 sum by (model_id, kind) (rate(usage_tokens_total[5m]))
 ```
 
-Average per-request tokens-per-second:
+### 15.3 Bundled Observability Stack
 
-```promql
-rate(usage_tokens_per_second_sum[5m])
-  / rate(usage_tokens_per_second_count[5m])
+The repository includes a Docker Compose stack containing Grafana, Prometheus,
+Tempo, Loki, and Promtail. It provisions the data sources and a Kronk dashboard
+without manual Grafana setup.
+
+Download the pinned images once, start the stack, and open Grafana:
+
+```shell
+make install-docker
+make grafana-up
+make grafana-browse
 ```
 
-Request rate:
+Grafana is served at `http://localhost:3100/`. Prometheus scrapes the host's
+Kronk debug server, and Tempo accepts OTLP gRPC traces on port `4317`.
 
-```promql
-rate(requests[5m])
+Stop the stack with:
+
+```shell
+make grafana-down
 ```
 
-Error rate:
+### 15.4 OpenTelemetry Tracing
 
-```promql
-rate(errors[5m]) / rate(requests[5m])
-```
+Kronk exports OpenTelemetry traces over unencrypted OTLP gRPC. The defaults are:
 
-### 15.6 Distributed Tracing with Tempo
+| Setting | Flag | Environment variable | Default |
+| ------- | ---- | -------------------- | ------- |
+| Collector | `--tempo-host` | `KRONK_TEMPO_HOST` | `localhost:4317` |
+| Service | `--tempo-service-name` | `KRONK_TEMPO_SERVICE_NAME` | `kronk` |
+| Sampling | `--tempo-probability` | `KRONK_TEMPO_PROBABILITY` | `0.25` |
 
-Kronk supports OpenTelemetry tracing with Grafana Tempo integration.
+No collector is required for startup. Until one is reachable, spans are
+non-recording and Kronk probes the configured address every 60 seconds. A
+later successful connection activates tracing without restarting the server.
 
-**Enable Tracing:**
+For a remote collector or a different sampling rate:
 
 ```shell
 kronk server start \
-  --tempo-host localhost:4317 \
-  --tempo-service-name kronk \
-  --tempo-probability 0.25
+  --tempo-host otel-collector.example.com:4317 \
+  --tempo-probability 0.05
 ```
 
-Or via environment variables:
+The HTTP layer accepts W3C Trace Context headers and creates request and route
+spans. Inference adds spans for request preparation, cache processing,
+queueing, prefill, token generation, and selected model operations. Liveness
+and readiness routes are excluded from sampling.
 
-```shell
-export KRONK_TEMPO_HOST=localhost:4317
-export KRONK_TEMPO_SERVICE_NAME=kronk
-export KRONK_TEMPO_PROBABILITY=0.25
-kronk server start
-```
+Set the probability to `1.0` when every trace is needed for focused debugging,
+or `0.0` to disable sampling. Choose a lower nonzero value for sustained
+production traffic based on its volume and storage budget.
 
-**Configuration Options:**
+### 15.5 Profiling and Runtime Visualization
 
-- `--tempo-host` - Tempo collector address (OTLP gRPC endpoint)
-- `--tempo-service-name` - Service name in traces (default: `kronk`)
-- `--tempo-probability` - Sampling probability 0.0-1.0 (default: `0.25`)
-
-**Sampling Probability:**
-
-- `1.0` - Trace every request (development only)
-- `0.25` - Trace 25% of requests (recommended for production)
-- `0.05` - Trace 5% of requests (high-traffic production)
-
-**Excluded Routes:**
-
-Health check endpoints are automatically excluded from tracing:
-
-- `/v1/liveness`
-- `/v1/readiness`
-
-### 15.7 Tracing Architecture
-
-**Request Flow with Tracing:**
-
-```
-Client Request
-      │
-      ▼
-┌─────────────────────────────┐
-│  Kronk Server               │
-│  ┌───────────────────────┐  │
-│  │ Inject Trace Context  │  │
-│  │ (trace_id, span_id)   │  │
-│  └───────────┬───────────┘  │
-│              ▼              │
-│  ┌───────────────────────┐  │
-│  │ Handler Span          │  │
-│  │ (chat, embed, etc.)   │  │
-│  └───────────┬───────────┘  │
-│              ▼              │
-│  ┌───────────────────────┐  │
-│  │ Inference Span        │  │
-│  │ (model operations)    │  │
-│  └───────────────────────┘  │
-└─────────────────────────────┘
-      │
-      ▼
-   Tempo Collector (OTLP gRPC)
-      │
-      ▼
-   Grafana (Visualization)
-```
-
-**What Gets Traced:**
-
-- HTTP request handling
-- Model acquisition from pool
-- Prefill and generation phases
-- Token streaming
-
-### 15.8 Tempo Setup with Docker
-
-**Run Tempo Locally:**
-
-```shell
-docker run -d --name tempo \
-  -p 3200:3200 \
-  -p 4317:4317 \
-  grafana/tempo:latest \
-  -config.file=/etc/tempo/tempo.yaml
-```
-
-**Run Grafana:**
-
-```shell
-docker run -d --name grafana \
-  -p 3000:3000 \
-  grafana/grafana:latest
-```
-
-**Configure Grafana:**
-
-1. Open http://localhost:3000 (admin/admin)
-2. Add data source → Tempo
-3. Set URL: `http://tempo:3200`
-4. Save and explore traces
-
-### 15.9 pprof Profiling
-
-Use Go's pprof tools for performance analysis.
-
-**Capture CPU Profile (30 seconds):**
+Use Go's pprof tooling against the debug server. For example:
 
 ```shell
 go tool pprof http://localhost:11445/debug/pprof/profile?seconds=30
-```
-
-**Capture Heap Profile:**
-
-```shell
 go tool pprof http://localhost:11445/debug/pprof/heap
-```
-
-**View Goroutine Stacks:**
-
-```shell
 curl http://localhost:11445/debug/pprof/goroutine?debug=2
 ```
 
-**Generate Flame Graph:**
+Start pprof's interactive web interface with:
 
 ```shell
-go tool pprof -http=:8081 \
+go tool pprof -http=localhost:8081 \
   http://localhost:11445/debug/pprof/profile?seconds=30
 ```
 
-Opens interactive web UI with flame graph visualization.
+Statsviz displays live heap, allocation, goroutine, garbage collection, and
+scheduler charts at:
 
-### 15.10 Statsviz Real-Time Monitoring
-
-Statsviz provides live runtime visualizations in your browser.
-
-**Access Statsviz:**
-
-```
+```text
 http://localhost:11445/debug/statsviz
 ```
 
-**Available Charts:**
+The same unauthenticated-access warning as the rest of the debug server applies
+to pprof and Statsviz.
 
-- Heap size and allocations
-- Goroutine count
-- GC pause times
-- CPU scheduler latency
-- Memory by size class
-
-Useful for real-time monitoring during load testing or debugging
-memory issues.
-
-### 15.11 Logging
+### 15.6 Logging
 
 Kronk logs structured JSON to stdout by default.
 
-**Log Levels:**
+Log records include the service name, source location, severity, and a trace
+ID. A generated request ID is used when a sampled OpenTelemetry trace ID is not
+available, so logs remain correlatable even without a collector.
 
-Logs include context like trace IDs, request details, and timing.
-
-**Insecure Logging:**
-
-For debugging, enable verbose logging that includes message content:
+Sensitive prompts, responses, and detailed model configuration are omitted by
+default. They can be included temporarily for local debugging:
 
 ```shell
 kronk server start --insecure-logging
 ```
 
-**Warning:** Insecure logging exposes user prompts and model responses.
-Never enable in production.
-
-**Environment Variable:**
-
-```shell
-export KRONK_INSECURE_LOGGING=true
-```
-
-### 15.12 Configuration Reference
-
-**Debug Server:**
-
-- `--debug-host` - Debug server address (env: `KRONK_WEB_DEBUG_HOST`,
-  default: `0.0.0.0:11445`)
-
-**Tracing:**
-
-- `--tempo-host` - Tempo collector address (env: `KRONK_TEMPO_HOST`,
-  default: `localhost:4317`)
-- `--tempo-service-name` - Service name (env: `KRONK_TEMPO_SERVICE_NAME`,
-  default: `kronk`)
-- `--tempo-probability` - Sampling rate 0.0-1.0
-  (env: `KRONK_TEMPO_PROBABILITY`, default: `0.25`)
-
-**Logging:**
-
-- `--insecure-logging` - Log message content
-  (env: `KRONK_INSECURE_LOGGING`, default: `false`)
-- `--llama-log` - llama.cpp log level, 0=off, 1=on
-  (env: `KRONK_LLAMA_LOG`, default: `1`)
+The environment equivalent is `KRONK_INSECURE_LOGGING=true`. Do not enable
+this on production systems or when logs are sent to a shared collector.
 
 ---
 
-_Next: [Chapter 16: MCP Service](#chapter-16-mcp-service)_
+_Next: [Chapter 16: MCP Service](chapter-16-mcp-service.md)_

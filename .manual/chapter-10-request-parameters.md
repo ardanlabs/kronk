@@ -2,286 +2,178 @@
 
 ## Table of Contents
 
-- [10.1 Sampling Parameters](#101-sampling-parameters)
-- [10.2 Repetition Control](#102-repetition-control)
-- [10.3 Advanced Sampling](#103-advanced-sampling)
-- [10.4 Generation Control](#104-generation-control)
-- [10.5 Grammar Constrained Output](#105-grammar-constrained-output)
-- [10.6 Logprobs (Token Probabilities)](#106-logprobs-token-probabilities)
-- [10.7 Parameter Reference](#107-parameter-reference)
+- [10.1 Scope and Defaults](#101-scope-and-defaults)
+- [10.2 Core Sampling](#102-core-sampling)
+- [10.3 Repetition Control](#103-repetition-control)
+- [10.4 Advanced Sampling](#104-advanced-sampling)
+- [10.5 Generation and Reasoning](#105-generation-and-reasoning)
+- [10.6 Structured Output](#106-structured-output)
+- [10.7 Token Log Probabilities](#107-token-log-probabilities)
 
 ---
 
+This chapter covers generation parameters used by Chat Completions and the Go
+SDK. Other API formats expose compatible subsets or translate their own field
+names into these parameters. See [Chapter 9](chapter-09-api-endpoints.md) for
+endpoint-specific request formats and streaming behavior.
 
+## 10.1 Scope and Defaults
 
-This chapter documents the request parameters available for controlling model output through both the SDK and REST API.
+The defaults below are Kronk's baseline values. A model configuration can
+provide different sampling defaults, and a request can override them. See
+[Chapter 3 §3.7](chapter-03-model-configuration.md#37-advanced-features)
+for per-model `sampling-parameters`.
 
-### 10.1 Sampling Parameters
+JSON requests use `number`, `integer`, `boolean`, and `string` values. The Go
+SDK accepts the corresponding Go values in `model.D`.
 
-These parameters control the randomness and diversity of generated text.
+Avoid changing several samplers at once. Start with the model's defaults,
+change one parameter, and evaluate the result against representative prompts.
+Parameters that improve creative prose can reduce the reliability of JSON and
+tool calls.
 
-| Parameter   | JSON Key      | Type    | Default | Description                                                                                             |
-| ----------- | ------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------- |
-| Temperature | `temperature` | float32 | 0.8     | Controls randomness of output. Higher values produce more varied text, lower values more deterministic. |
-| Top-K       | `top_k`       | int32   | 40      | Limits token pool to K most probable tokens before sampling.                                            |
-| Top-P       | `top_p`       | float32 | 0.9     | Nucleus sampling threshold. Only tokens with cumulative probability ≤ top_p are considered.             |
-| Min-P       | `min_p`       | float32 | 0.0     | Dynamic sampling threshold. Tokens with probability < min_p × max_probability are excluded.             |
+## 10.2 Core Sampling
 
-### 10.2 Repetition Control
+These parameters control how Kronk selects the next token:
 
-These parameters help prevent repetitive output.
+| JSON key      | Type      | Baseline | Behavior |
+| ------------- | --------- | -------- | -------- |
+| `temperature` | number    | `0.8`    | Rescales token probabilities. Higher values generally increase variation. |
+| `top_k`       | integer   | `40`     | Keeps only the K most probable candidates. |
+| `top_p`       | number    | `0.9`    | Keeps the smallest candidate set whose cumulative probability reaches P. |
+| `min_p`       | number    | `0.0`    | Removes candidates below `min_p × probability_of_most_likely_token`; `0` disables it. |
 
-| Parameter      | JSON Key         | Type    | Default | Description                                                                 |
-| -------------- | ---------------- | ------- | ------- | --------------------------------------------------------------------------- |
-| Repeat Penalty | `repeat_penalty` | float32 | 1.0     | Penalty multiplier for repeated tokens. Values > 1.0 discourage repetition. |
-| Repeat Last N  | `repeat_last_n`  | int32   | 64      | Window size for repetition check. Only the last N tokens are considered.    |
+Request values `top_p: 0` and `top_p: 1` are treated as unset so clients that
+send those common defaults do not override model-specific tuning. A model
+configuration can still set `top_p: 1` explicitly. Nonpositive values for
+`temperature` and `top_k` also resolve to configured or baseline defaults;
+`temperature: 0` is therefore not a deterministic-mode switch in Kronk.
 
-**DRY Parameters (Don't Repeat Yourself):**
+## 10.3 Repetition Control
 
-DRY penalizes n-gram repetitions to prevent the model from repeating phrases.
+Kronk supports both token penalties and DRY n-gram penalties:
 
-| Parameter          | JSON Key             | Type    | Default | Description                                                                 |
-| ------------------ | -------------------- | ------- | ------- | --------------------------------------------------------------------------- |
-| DRY Multiplier     | `dry_multiplier`     | float32 | 1.05    | N-gram repetition penalty strength. Higher values penalize repetition more. |
-| DRY Base           | `dry_base`           | float32 | 1.75    | Exponential penalty base for longer n-grams.                                |
-| DRY Allowed Length | `dry_allowed_length` | int32   | 2       | Minimum n-gram length to consider for penalties.                            |
-| DRY Penalty Last N | `dry_penalty_last_n` | int32   | 0       | Number of recent tokens to consider for DRY. 0 means all tokens.            |
+| JSON key             | Type    | Baseline | Behavior |
+| -------------------- | ------- | -------- | -------- |
+| `repeat_penalty`     | number  | `1.0`    | Multiplies penalties for tokens seen in the recent window; `1.0` disables it. |
+| `repeat_last_n`      | integer | `64`     | Number of recent tokens considered by repetition penalties. |
+| `frequency_penalty`  | number  | `0.0`    | Penalizes tokens in proportion to how often they appeared. |
+| `presence_penalty`   | number  | `0.0`    | Applies a flat penalty to tokens that appeared at least once. |
+| `dry_multiplier`     | number  | `0.0`    | Enables DRY and controls its strength; `0` disables it. |
+| `dry_base`           | number  | `1.75`   | Exponential penalty growth for longer repeated sequences. |
+| `dry_allowed_length` | integer | `2`      | Minimum repeated sequence length before DRY applies. |
+| `dry_penalty_last_n` | integer | `0`      | Recent-token window for DRY; `0` uses the full context. |
 
-### 10.3 Advanced Sampling
+The repetition and DRY samplers are disabled by default because penalties can
+also suppress structural tokens needed by tool-call and JSON formats. Enable
+them only after testing the selected model and template.
 
-**XTC (eXtreme Token Culling):**
+## 10.4 Advanced Sampling
 
-XTC probabilistically removes high-probability tokens to increase diversity.
+XTC probabilistically removes likely candidates to increase diversity:
 
-| Parameter       | JSON Key          | Type    | Default | Description                                                  |
-| --------------- | ----------------- | ------- | ------- | ------------------------------------------------------------ |
-| XTC Probability | `xtc_probability` | float32 | 0.0     | Probability of activating XTC on each token. 0 disables XTC. |
-| XTC Threshold   | `xtc_threshold`   | float32 | 0.1     | Probability threshold for token culling.                     |
-| XTC Min Keep    | `xtc_min_keep`    | uint32  | 1       | Minimum number of tokens to keep after culling.              |
+| JSON key         | Type    | Baseline | Behavior |
+| ---------------- | ------- | -------- | -------- |
+| `xtc_probability` | number  | `0.0`    | Probability that XTC runs for a token; `0` disables it. |
+| `xtc_threshold`   | number  | `0.1`    | Probability threshold used when culling candidates. |
+| `xtc_min_keep`    | integer | `1`      | Minimum candidates retained by XTC. |
 
-**Adaptive-P:**
+Adaptive-P dynamically adjusts a probability threshold as generation
+continues:
 
-Adaptive-P dynamically adjusts the sampling threshold based on output probability.
+| JSON key           | Type   | Baseline | Behavior |
+| ------------------ | ------ | -------- | -------- |
+| `adaptive_p_target` | number | `0.0`    | Target probability; values above `0` enable Adaptive-P. |
+| `adaptive_p_decay`  | number | `0.0`    | Controls how quickly the adaptive state changes. |
 
-| Parameter         | JSON Key            | Type    | Default | Description                                                 |
-| ----------------- | ------------------- | ------- | ------- | ----------------------------------------------------------- |
-| Adaptive-P Target | `adaptive_p_target` | float32 | 0.0     | Target probability threshold. 0 disables adaptive sampling. |
-| Adaptive-P Decay  | `adaptive_p_decay`  | float32 | 0.0     | Speed of threshold adjustment toward target.                |
+These samplers are specialized controls. Leave them disabled unless you can
+measure an improvement for a specific workload.
 
-### 10.4 Generation Control
+## 10.5 Generation and Reasoning
 
-| Parameter        | JSON Key           | Type   | Default  | Description                                                                |
-| ---------------- | ------------------ | ------ | -------- | -------------------------------------------------------------------------- |
-| Max Tokens       | `max_tokens`       | int    | 4096     | Maximum tokens to generate.                                                |
-| Enable Thinking  | `enable_thinking`  | string | "true"   | Enable model thinking/reasoning mode. Set to "false" for direct responses. |
-| Reasoning Effort | `reasoning_effort` | string | "medium" | GPT reasoning level: none, minimal, low, medium, high.                     |
-| Stream           | `stream`           | bool   | false    | Stream response chunks via SSE.                                            |
-| Include Usage    | `include_usage`    | bool   | true     | Include token usage statistics in streaming responses.                     |
+| JSON key           | Type    | Baseline | Behavior |
+| ------------------ | ------- | -------- | -------- |
+| `max_tokens`       | integer | model-dependent | Maximum output tokens requested. |
+| `enable_thinking`  | boolean | `true`   | Requests thinking from models and templates that support it. |
+| `reasoning_effort` | string  | `medium` | Requests `none`, `minimal`, `low`, `medium`, or `high` effort from supported reasoning templates. |
+| `return_prompt`    | boolean | `false`  | Includes the rendered prompt in the final Chat Completions response. |
 
-### 10.5 Grammar Constrained Output
+If neither the request nor model configuration supplies a positive
+`max_tokens`, Kronk uses the model's configured context window. The actual
+output can be shorter because the prompt and generated text share that window,
+the model can stop naturally, or another limit can end generation.
 
-Grammars force the model to only produce tokens that match a specified pattern, guaranteeing structured output.
+Reasoning controls are model- and template-dependent. Unsupported models may
+ignore them. A parser can also normalize `reasoning_effort` to values accepted
+by its template; for example, a template that supports only `none` and `high`
+cannot honor every intermediate value.
 
-**Built-in Presets:**
+## 10.6 Structured Output
 
-| Preset              | Description                   |
-| ------------------- | ----------------------------- |
-| `GrammarJSON`       | Valid JSON objects or arrays  |
-| `GrammarJSONObject` | JSON objects only             |
-| `GrammarJSONArray`  | JSON arrays only              |
-| `GrammarBoolean`    | "true" or "false"             |
-| `GrammarYesNo`      | "yes" or "no"                 |
-| `GrammarInteger`    | Integer values                |
-| `GrammarNumber`     | Numeric values (int or float) |
-
-**Using Grammar Presets (SDK):**
-
-```go
-d := model.D{
-    "messages": model.DocumentArray(
-        model.TextMessage(model.RoleUser, "List 3 languages in JSON"),
-    ),
-    "grammar": model.GrammarJSONObject,
-}
-```
-
-**Using Grammar via API:**
-
-```shell
-curl http://localhost:11435/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "Qwen/Qwen3-8B-Q8_0",
-    "messages": [{"role": "user", "content": "List 3 languages in JSON"}],
-    "grammar": "root ::= object\nvalue ::= object | array | string | number | \"true\" | \"false\" | \"null\"\nobject ::= \"{\" ws ( string \":\" ws value (\",\" ws string \":\" ws value)* )? ws \"}\"\narray ::= \"[\" ws ( value (\",\" ws value)* )? ws \"]\"\nstring ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" [\"\\\\bfnrt/] | \"\\\\u\" [0-9a-fA-F]{4})* \"\\\"\"\nnumber ::= \"-\"? (\"0\" | [1-9][0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?\nws ::= [ \\t\\n\\r]*"
-  }'
-```
-
-**JSON Schema Auto-Conversion:**
-
-```go
-schema := model.D{
-    "type": "object",
-    "properties": model.D{
-        "name": model.D{"type": "string"},
-        "year": model.D{"type": "integer"},
-    },
-    "required": []string{"name", "year"},
-}
-
-d := model.D{
-    "messages": model.DocumentArray(...),
-    "json_schema": schema,
-    "enable_thinking": false,
-}
-```
-
-Via API with `json_schema` field:
+Kronk can convert JSON Schema to a GBNF grammar and constrain emitted tokens.
+For OpenAI-compatible clients, prefer `response_format`:
 
 ```json
 {
   "model": "Qwen/Qwen3-8B-Q8_0",
-  "messages": [...],
-  "json_schema": {
-    "type": "object",
-    "properties": {
-      "name": {"type": "string"},
-      "year": {"type": "integer"}
-    },
-    "required": ["name", "year"]
-  },
-  "enable_thinking": false
+  "messages": [
+    {"role": "user", "content": "Return a language and its year of creation."}
+  ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "language",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "year": {"type": "integer"}
+        },
+        "required": ["name", "year"]
+      }
+    }
+  }
 }
 ```
 
-**Custom GBNF Grammars:**
+Supported `response_format.type` values are `text`, `json_object`, and
+`json_schema`. Kronk also accepts a schema directly in the top-level
+`json_schema` field and accepts a custom GBNF string in `grammar`. Use one
+structured-output mechanism per request.
 
-```go
-sentimentGrammar := `root ::= sentiment
-sentiment ::= "positive" | "negative" | "neutral"`
+When a constraint is present and `enable_thinking` is omitted, Kronk disables
+thinking automatically so free-form reasoning does not precede the structured
+answer. Explicitly enabling thinking overrides that default, but is generally
+counterproductive for constrained output.
 
-d := model.D{
-    "messages": model.DocumentArray(...),
-    "grammar": sentimentGrammar,
-    "enable_thinking": false,
-}
-```
+A grammar restricts which tokens can be emitted; it does not guarantee a
+complete result. A response cut short by `max_tokens`, context limits, or
+cancellation can still contain an incomplete JSON value.
 
-**Important:** When using grammar constraints, set `enable_thinking: false` because the grammar applies from the first output token.
+## 10.7 Token Log Probabilities
 
-### 10.6 Logprobs (Token Probabilities)
-
-Request log probabilities for generated tokens to understand model confidence
-or implement custom sampling strategies.
-
-**Request Parameters:**
-
-| Parameter      | Type | Default | Description                           |
-| -------------- | ---- | ------- | ------------------------------------- |
-| `logprobs`     | bool | false   | Return log probability for each token |
-| `top_logprobs` | int  | 0       | Number of top alternatives (0-5)      |
-
-Setting `top_logprobs > 0` implicitly enables `logprobs`.
-
-**Request:**
-
-```shell
-curl http://localhost:11435/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "Qwen/Qwen3-8B-Q8_0",
-    "messages": [
-      {"role": "user", "content": "What is 2+2?"}
-    ],
-    "logprobs": true,
-    "top_logprobs": 3,
-    "max_tokens": 10
-  }'
-```
-
-**Response with Logprobs:**
+Set `logprobs: true` to return the log probability of each generated token.
+`top_logprobs` requests likely alternatives and is clamped to the range 0–5.
+Any positive `top_logprobs` value implicitly enables `logprobs`.
 
 ```json
 {
-  "id": "chatcmpl-xxx",
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": "4"
-      },
-      "logprobs": {
-        "content": [
-          {
-            "token": "4",
-            "logprob": -0.0012,
-            "bytes": [52],
-            "top_logprobs": [
-              { "token": "4", "logprob": -0.0012, "bytes": [52] },
-              { "token": "The", "logprob": -6.82, "bytes": [84, 104, 101] },
-              {
-                "token": "Four",
-                "logprob": -7.15,
-                "bytes": [70, 111, 117, 114]
-              }
-            ]
-          }
-        ]
-      },
-      "finish_reason": "stop"
-    }
-  ]
+  "model": "Qwen/Qwen3-8B-Q8_0",
+  "messages": [
+    {"role": "user", "content": "What is 2 + 2?"}
+  ],
+  "logprobs": true,
+  "top_logprobs": 3,
+  "max_tokens": 10
 }
 ```
 
-**Response Structure:**
+Each entry in `choices[].logprobs.content` contains the generated `token`, its
+`logprob`, its UTF-8 `bytes`, and up to `top_logprobs` alternatives. Values
+closer to zero were more probable under that generation step, but they are not
+proof of factual correctness.
 
-- `logprobs.content[]` - Array of per-token probability data
-- `token` - The generated token string
-- `logprob` - Log probability (always ≤ 0; closer to 0 = higher confidence)
-- `bytes` - UTF-8 byte representation of the token
-- `top_logprobs[]` - Alternative tokens with their probabilities
-
-**Streaming Behavior:**
-
-- **Streaming**: Logprobs sent in each delta chunk
-- **Non-streaming**: All logprobs in final response
-
-**Use Cases:**
-
-- Confidence scoring for model outputs
-- Detecting hallucinations (low probability sequences)
-- Custom rejection sampling
-- Token-level analysis for debugging
-
-### 10.7 Parameter Reference
-
-| Parameter          | JSON Key             | Type    | Default  | Description                          |
-| ------------------ | -------------------- | ------- | -------- | ------------------------------------ |
-| Temperature        | `temperature`        | float32 | 0.8      | Controls randomness of output        |
-| Top-K              | `top_k`              | int32   | 40       | Limits token pool to K most probable |
-| Top-P              | `top_p`              | float32 | 0.9      | Nucleus sampling threshold           |
-| Min-P              | `min_p`              | float32 | 0.0      | Dynamic sampling threshold           |
-| Max Tokens         | `max_tokens`         | int     | 4096     | Maximum tokens to generate           |
-| Repeat Penalty     | `repeat_penalty`     | float32 | 1.0      | Penalty for repeated tokens          |
-| Repeat Last N      | `repeat_last_n`      | int32   | 64       | Window for repetition check          |
-| DRY Multiplier     | `dry_multiplier`     | float32 | 1.05     | N-gram repetition penalty            |
-| DRY Base           | `dry_base`           | float32 | 1.75     | Exponential penalty base             |
-| DRY Allowed Length | `dry_allowed_length` | int32   | 2        | Min n-gram length for DRY            |
-| DRY Penalty Last N | `dry_penalty_last_n` | int32   | 0        | Recent tokens for DRY (0=all)        |
-| XTC Probability    | `xtc_probability`    | float32 | 0.0      | XTC activation probability           |
-| XTC Threshold      | `xtc_threshold`      | float32 | 0.1      | XTC probability threshold            |
-| XTC Min Keep       | `xtc_min_keep`       | uint32  | 1        | Min tokens after XTC                 |
-| Adaptive-P Target  | `adaptive_p_target`  | float32 | 0.0      | Adaptive sampling target             |
-| Adaptive-P Decay   | `adaptive_p_decay`   | float32 | 0.0      | Adaptive adjustment speed            |
-| Enable Thinking    | `enable_thinking`    | string  | "true"   | Enable model thinking                |
-| Reasoning Effort   | `reasoning_effort`   | string  | "medium" | GPT reasoning level                  |
-| Grammar            | `grammar`            | string  | ""       | GBNF grammar constraint              |
-| Logprobs           | `logprobs`           | bool    | false    | Return token probabilities           |
-| Top Logprobs       | `top_logprobs`       | int     | 0        | Number of top alternatives           |
-| Stream             | `stream`             | bool    | false    | Stream response                      |
-| Include Usage      | `include_usage`      | bool    | true     | Include usage in streaming           |
-| Return Prompt      | `return_prompt`      | bool    | false    | Include prompt in response           |
-
----
+Streaming responses attach logprob data to individual delta chunks.
+Non-streaming responses collect the entries in the final choice. This data is
+useful for token-level diagnostics and comparative scoring; it does not alter
+sampling after generation has occurred.

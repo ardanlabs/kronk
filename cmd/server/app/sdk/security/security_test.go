@@ -136,6 +136,27 @@ func TestDeletePrivateKey_NotFound(t *testing.T) {
 	}
 }
 
+func TestDeletePrivateKey_Master(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sec, err := security.New(security.Config{
+		OverrideBaseKeysFolder: tmpDir,
+		Issuer:                 "test-issuer",
+	})
+	if err != nil {
+		t.Fatalf("failed to create security: %v", err)
+	}
+
+	if err := sec.DeletePrivateKey("master"); err == nil {
+		t.Fatal("expected error for master key")
+	}
+
+	masterFile := filepath.Join(tmpDir, "keys", "master.pem")
+	if _, err := os.Stat(masterFile); err != nil {
+		t.Fatalf("master key should still exist: %v", err)
+	}
+}
+
 // =============================================================================
 
 func countKeys(t *testing.T, keysPath string) int {
