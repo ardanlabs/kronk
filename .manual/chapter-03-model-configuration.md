@@ -336,6 +336,55 @@ separate choices.
 
 ### 3.7 Advanced Features
 
+#### LoRA adapters
+
+Kronk can apply one or more user-provided, llama.cpp-compatible LoRA or QLoRA
+adapter GGUF files when it loads a base model. The adapter must be compatible
+with that base model. An incompatible or invalid adapter prevents the model
+from loading.
+
+An `id` resolves beneath the Kronk data root's `lora` directory. Do not include
+the `.gguf` extension:
+
+```yaml
+some-provider/base-model:
+  adapters:
+    - id: acme/support
+    - id: concise
+      scale: 0.5
+```
+
+With the default data root, these IDs resolve to:
+
+```text
+~/.kronk/lora/acme/support.gguf
+~/.kronk/lora/concise.gguf
+```
+
+Create the directories as needed and place the files there before loading the
+model. `KRONK_BASE_PATH` or `--base-path` moves the `lora` directory with the
+rest of the Kronk data root.
+
+To keep an adapter elsewhere, specify its absolute path instead:
+
+```yaml
+some-provider/base-model:
+  adapters:
+    - path: /opt/adapters/support.gguf
+      scale: 1.0
+```
+
+Each entry must set exactly one of `id` or `path`. The file must exist, be a
+regular file, and have a `.gguf` extension. The optional `scale` must be a
+finite, non-negative number and defaults to `1.0`; an explicit `0` disables
+that adapter's contribution while keeping the configured set unchanged.
+Multiple adapters compose additively using their configured scales.
+
+Adapter files and scales are fixed for the lifetime of the loaded model. After
+changing them, restart the server or otherwise unload and reload that model.
+Kronk does not download adapters, resolve them through the model catalog, or
+accept per-request adapter changes.
+
 #### Speculative decoding and MTP
 
 Kronk supports a separate draft GGUF and Multi-Token Prediction (MTP). MTP may
@@ -439,6 +488,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `tensor-split` | Numeric share list | Proportional multi-GPU placement |
 | `swa-full` | Boolean | Full or compact SWA cache |
 | `incremental-cache` | Boolean | Incremental Message Cache |
+| `adapters` | List of `id` or absolute `path`, plus optional `scale` | Fixed load-time LoRA adapters |
 | `draft-model` | Mapping | Separate drafter or MTP draft-count override |
 | `rope-scaling-type` | Supported scaling mode | Extended-context scaling |
 | `sampling-parameters` | Mapping | Per-model generation defaults |

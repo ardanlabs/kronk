@@ -290,6 +290,8 @@ The default data layout is:
 │   └── catalog.yaml
 ├── libraries/
 │   └── <os>/<arch>/<processor>/
+├── lora/
+│   └── [<organization>/]<adapter>.gguf
 ├── models/
 │   ├── model_config.yaml
 │   ├── .index.yaml
@@ -305,6 +307,11 @@ used.
 
 Set `KRONK_BASE_PATH` or the global `--base-path` flag to move the entire data
 root. Official containers set it to `/kronk`.
+
+The `lora` directory holds optional, user-provided LoRA adapter GGUF files.
+Kronk does not download these files. See
+[Chapter 3 §3.7](chapter-03-model-configuration.md#lora-adapters) for placement
+and configuration.
 
 The model configuration file contains per-model and per-variant overrides. Do
 not copy configuration values based only on model size; use

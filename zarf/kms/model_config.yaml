@@ -46,6 +46,15 @@
 #     mode: experts_cpu                  # auto, experts_cpu, experts_gpu, keep_top_n, custom
 #     keep-experts-top-n: 4              # Keep experts on GPU for top N layers (only when mode: keep_top_n)
 #
+#   # Fixed load-time LoRA adapters. Set exactly one of id or path per entry.
+#   # An id omits .gguf and resolves under <base-path>/lora; path is absolute.
+#   # Kronk does not download adapter files. Scale defaults to 1.0.
+#   adapters:
+#     - id: org/support                  # Resolves to <base-path>/lora/org/support.gguf
+#       scale: 1.0                       # Finite non-negative scale, fixed until model reload
+#     - path: /opt/adapters/concise.gguf # Existing llama.cpp-compatible adapter GGUF
+#       scale: 0.5
+#
 #   # Speculative decoding (nested). Set model-id for a separate draft GGUF
 #   # (requires nseq-max: 1); omit model-id and set only ndraft to override the
 #   # draft-token count for an auto-detected MTP head on the target.

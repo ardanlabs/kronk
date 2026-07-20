@@ -333,6 +333,8 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
 │   └── catalog.yaml
 ├── libraries/
 │   └── <os>/<arch>/<processor>/
+├── lora/
+│   └── [<organization>/]<adapter>.gguf
 ├── models/
 │   ├── model_config.yaml
 │   ├── .index.yaml
@@ -342,6 +344,7 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
 └── keys/`}</code></pre>
           <p>Older installations that stored <code>catalog.yaml</code> or <code>model_config.yaml</code> directly under <code>~/.kronk/</code> are migrated automatically when the new location is first used.</p>
           <p>Set <code>KRONK_BASE_PATH</code> or the global <code>--base-path</code> flag to move the entire data root. Official containers set it to <code>/kronk</code>.</p>
+          <p>The <code>lora</code> directory holds optional, user-provided LoRA adapter GGUF files. Kronk does not download these files. See <a href="chapter-03-model-configuration.md#lora-adapters">Chapter 3 §3.7</a> for placement and configuration.</p>
           <p>The model configuration file contains per-model and per-variant overrides. Do not copy configuration values based only on model size; use <a href="chapter-03-model-configuration.md">Chapter 3</a> for context, cache, GPU, and sampling settings.</p>
           <h3 id="26-running-the-server">2.6 Running the Server</h3>
           <p>Start in the foreground:</p>
@@ -590,6 +593,25 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <p>The quantization in a GGUF filename describes the model's stored weights. It is selected when downloading the model and cannot be changed in <code>model_config.yaml</code>. Lower-bit files generally use less storage and memory, but the quality and speed trade-offs depend on the model, quantizer, and hardware. Parameter count alone is not enough to predict whether a model fits.</p>
           <p><code>cache-type-k</code> and <code>cache-type-v</code> quantize runtime attention state instead. They do not change model weights. Evaluate weight format and KV-cache format as separate choices.</p>
           <h3 id="37-advanced-features">3.7 Advanced Features</h3>
+          <h4 id="lora-adapters">LoRA adapters</h4>
+          <p>Kronk can apply one or more user-provided, llama.cpp-compatible LoRA or QLoRA adapter GGUF files when it loads a base model. The adapter must be compatible with that base model. An incompatible or invalid adapter prevents the model from loading.</p>
+          <p>An <code>id</code> resolves beneath the Kronk data root's <code>lora</code> directory. Do not include the <code>.gguf</code> extension:</p>
+          <pre className="code-block"><code className="language-yaml">{`some-provider/base-model:
+  adapters:
+    - id: acme/support
+    - id: concise
+      scale: 0.5`}</code></pre>
+          <p>With the default data root, these IDs resolve to:</p>
+          <pre className="code-block"><code className="language-text">{`~/.kronk/lora/acme/support.gguf
+~/.kronk/lora/concise.gguf`}</code></pre>
+          <p>Create the directories as needed and place the files there before loading the model. <code>KRONK_BASE_PATH</code> or <code>--base-path</code> moves the <code>lora</code> directory with the rest of the Kronk data root.</p>
+          <p>To keep an adapter elsewhere, specify its absolute path instead:</p>
+          <pre className="code-block"><code className="language-yaml">{`some-provider/base-model:
+  adapters:
+    - path: /opt/adapters/support.gguf
+      scale: 1.0`}</code></pre>
+          <p>Each entry must set exactly one of <code>id</code> or <code>path</code>. The file must exist, be a regular file, and have a <code>.gguf</code> extension. The optional <code>scale</code> must be a finite, non-negative number and defaults to <code>1.0</code>; an explicit <code>0</code> disables that adapter's contribution while keeping the configured set unchanged. Multiple adapters compose additively using their configured scales.</p>
+          <p>Adapter files and scales are fixed for the lifetime of the loaded model. After changing them, restart the server or otherwise unload and reload that model. Kronk does not download adapters, resolve them through the model catalog, or accept per-request adapter changes.</p>
           <h4 id="speculative-decoding-and-mtp">Speculative decoding and MTP</h4>
           <p>Kronk supports a separate draft GGUF and Multi-Token Prediction (MTP). MTP may be embedded in the target GGUF or supplied as a model-specific companion file that Kronk's catalog and download flow associates with the target. A separate classic draft must already be downloaded, must have a compatible vocabulary, and requires <code>nseq-max: 1</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/target-model:
@@ -719,6 +741,11 @@ some-provider/large-model:
                 <td><code>incremental-cache</code></td>
                 <td>Boolean</td>
                 <td>Incremental Message Cache</td>
+              </tr>
+              <tr>
+                <td><code>adapters</code></td>
+                <td>List of <code>id</code> or absolute <code>path</code>, plus optional <code>scale</code></td>
+                <td>Fixed load-time LoRA adapters</td>
               </tr>
               <tr>
                 <td><code>draft-model</code></td>
