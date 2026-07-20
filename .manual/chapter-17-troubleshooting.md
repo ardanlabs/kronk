@@ -331,12 +331,18 @@ Streamable HTTP. Common failures are:
   exposed names are `kronk_fuzzy_edit` and `kronk_web_search`.
 - **`old_string not found`:** read the current file and provide one unique
   block; the same error also covers ambiguous matches.
-- **Embedded server absent:** a non-empty `KRONK_MCP_HOST` disables it but does
-  not configure a proxy or client connection.
+- **Embedded server absent:** `KRONK_MCP_ENABLED=false` or a non-empty
+  `KRONK_MCP_HOST` disables it. The host setting does not configure a proxy or
+  client connection.
+- **401 Unauthorized:** when MCP authentication is enabled, send the same
+  Kronk admin bearer token on every request, including session initialization
+  and notifications. Inference-scoped application tokens are not accepted.
 
-The service is unauthenticated and `fuzzy_edit` has the process's filesystem
-access. Keep it on loopback. See [Chapter 16](chapter-16-mcp-service.md) for
-configuration and the complete handshake.
+MCP authentication is disabled by default, and `fuzzy_edit` has the process's
+filesystem access. Keep it on loopback unless bearer authentication, TLS, and
+network restrictions are configured. See
+[Chapter 16](chapter-16-mcp-service.md) for configuration and the complete
+handshake.
 
 ### 17.9 Ports, Processes, and Permissions
 

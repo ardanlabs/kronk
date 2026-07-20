@@ -3,6 +3,7 @@ package authclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -71,6 +73,8 @@ func (cln *Client) Close() error {
 
 const traceIDHeader = "x-trace-id"
 
+var errAuthenticationDisabled = errors.New("authentication is disabled by auth service")
+
 // injectTrace passes the web package's trace ID as gRPC metadata.
 func injectTrace(ctx context.Context) context.Context {
 	traceID := web.GetTraceID(ctx)
@@ -93,6 +97,20 @@ func (cln *Client) Authenticate(ctx context.Context, bearerToken string, admin b
 	}
 
 	return toAuthenticateReponse(req), nil
+}
+
+// AuthenticateRequired authenticates the user and rejects an auth service
+// configured to bypass authentication.
+func (cln *Client) AuthenticateRequired(ctx context.Context, bearerToken string, admin bool, endpoint string) (AuthenticateReponse, error) {
+	resp, err := cln.Authenticate(ctx, bearerToken, admin, endpoint)
+	if err != nil {
+		return AuthenticateReponse{}, err
+	}
+	if resp.Subject == uuid.Nil.String() {
+		return AuthenticateReponse{}, errAuthenticationDisabled
+	}
+
+	return resp, nil
 }
 
 // CreateToken calls the auth service to create a new token.

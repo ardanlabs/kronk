@@ -58,16 +58,16 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	returnCh := make(chan ChatResponse, streamChBuffer)
 	ch := m.wrapChannelForLogging(ctx, returnCh)
+	requestStart := time.Now()
 
 	// Increment active streams before launching the goroutine to prevent a race
 	// where Unload sees zero active streams and frees the model before the
 	// goroutine starts executing.
 	active := m.activeStreams.Add(1)
-	metrics.SetPoolActiveStreams(m.modelInfo.ID, int(active))
+	metrics.AddPoolActiveStreams(m.modelInfo.ID, 1)
 
 	go func() {
 		id := "chatcmpl-" + uuid.NewString()
-		requestStart := time.Now()
 
 		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
 
@@ -94,7 +94,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 				// requests against a one-slot pool flake with "no idle pool
 				// entry available to evict".
 				remaining := m.activeStreams.Add(-1)
-				metrics.SetPoolActiveStreams(m.modelInfo.ID, int(remaining))
+				metrics.AddPoolActiveStreams(m.modelInfo.ID, -1)
 				close(ch)
 				m.log(ctx, "chat-streaming", "status", "finished", "id", id, "active_streams", remaining)
 			}
@@ -387,12 +387,17 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	}
 
 	if err := m.batch.submit(&job); err != nil {
+		queueSpan.RecordError(err)
 		queueSpan.End()
+		if !job.queuedAt.IsZero() {
+			metrics.ObserveChatQueueWait(m.modelInfo.ID, time.Since(job.queuedAt))
+		}
 
 		// The batch engine never took ownership, so release any exact,
 		// append, or rebuild reservation made while planning the request.
 		m.clearIMCPendingIfReserved(cache)
 
+		m.recordChatFailure(ctx, requestStart, err)
 		m.sendChatError(ctx, ch, id, err)
 		return false
 	}

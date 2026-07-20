@@ -59,9 +59,10 @@ func peekJSONRPC(r *http.Request) (rpcMethod, toolName, rpcID string, err error)
 
 // Config holds the dependencies for the MCP handlers.
 type Config struct {
-	Log         *logger.Logger
-	Listener    net.Listener
-	BraveAPIKey string
+	Log          *logger.Logger
+	Listener     net.Listener
+	BraveAPIKey  string
+	Authenticate func(context.Context, string) error
 }
 
 // Start constructs and starts the MCP server.
@@ -137,8 +138,10 @@ func Start(ctx context.Context, cfg Config) *App {
 		)
 	})
 
+	authenticated := authenticate(cfg, logged)
+
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", logged)
+	mux.Handle("/mcp", authenticated)
 
 	api.httpServer = &http.Server{
 		Handler: mux,
@@ -151,4 +154,21 @@ func Start(ctx context.Context, cfg Config) *App {
 	}()
 
 	return api
+}
+
+func authenticate(cfg Config, next http.Handler) http.Handler {
+	if cfg.Authenticate == nil {
+		return next
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := cfg.Authenticate(r.Context(), r.Header.Get("Authorization")); err != nil {
+			cfg.Log.Error(r.Context(), "mcp authentication", "err", err)
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

@@ -451,7 +451,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 				accepted++
 				s.specAcceptedTotal++
 				s.nPast = basePast + llama.Pos(1+i)
-				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
+				e.handleSpeculativeToken(s, draftToken, baseBatch+int32(i), buf)
 
 				if !s.active {
 					e.model.log(ctx, "speculative", "status", "verify-done-eog",
@@ -504,7 +504,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 				accepted++
 				s.specAcceptedTotal++
 				s.nPast = basePast + llama.Pos(1+i)
-				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
+				e.handleSpeculativeToken(s, draftToken, baseBatch+int32(i), buf)
 				if !s.active {
 					e.model.log(ctx, "speculative", "status", "verify-done-eog",
 						"slot", s.id, "accepted", accepted, "nDraft", nDraft)
@@ -561,7 +561,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 				accepted++
 				s.specAcceptedTotal++
 				s.nPast = basePast + llama.Pos(1+i)
-				e.handleSampledToken(s, draftToken, baseBatch+int32(i), buf)
+				e.handleSpeculativeToken(s, draftToken, baseBatch+int32(i), buf)
 
 				if !s.active {
 					e.model.log(ctx, "speculative", "status", "verify-done-eog",
@@ -757,7 +757,7 @@ func (e *batchEngine) finalizeSpeculativeTokens(s *slot, buf []byte) {
 	// marked logits=true only on the last re-decoded position
 	// (basePast+accepted) — which is exactly the bonus token's iBatch
 	// position — so logprob extraction at this site still works.
-	e.handleSampledToken(s, bonusToken, baseBatch+int32(accepted), buf)
+	e.handleSpeculativeToken(s, bonusToken, baseBatch+int32(accepted), buf)
 
 	if !s.active {
 		return

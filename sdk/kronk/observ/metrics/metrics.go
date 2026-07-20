@@ -540,6 +540,11 @@ func SetPoolActiveStreams(modelID string, n int) {
 	m.poolActiveStreams.WithLabelValues(normalizeModelID(modelID)).Set(float64(n))
 }
 
+// AddPoolActiveStreams adjusts the active streams gauge for a model.
+func AddPoolActiveStreams(modelID string, delta int) {
+	m.poolActiveStreams.WithLabelValues(normalizeModelID(modelID)).Add(float64(delta))
+}
+
 // ClearPoolActiveStreams removes the active streams gauge for an unloaded model.
 func ClearPoolActiveStreams(modelID string) {
 	m.poolActiveStreams.DeleteLabelValues(normalizeModelID(modelID))

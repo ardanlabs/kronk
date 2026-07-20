@@ -37,7 +37,9 @@ func init() {
 	Cmd.Flags().String("web-admin-password-sha256", "", "SHA-256 digest for browser admin login")
 
 	// MCP settings
+	Cmd.Flags().Bool("mcp-enabled", true, "Enable or disable the embedded MCP service")
 	Cmd.Flags().String("mcp-host", "", "Disable the embedded MCP service when an external host is configured")
+	Cmd.Flags().Bool("mcp-auth-enabled", false, "Require a Kronk admin bearer token for MCP access")
 	Cmd.Flags().String("mcp-brave-api-key", "", "Brave Search API key for the embedded MCP service")
 
 	// Tempo/tracing settings

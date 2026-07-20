@@ -133,6 +133,9 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 		default:
 			s.completionTokens++
 		}
+		if s.processingSpecToken {
+			s.specCoveredTotal++
+		}
 
 		outputTokens := s.reasonTokens + s.completionTokens
 
@@ -182,6 +185,9 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 	default:
 		s.completionTokens++
 	}
+	if s.processingSpecToken {
+		s.specCoveredTotal++
+	}
 
 	// Non-streamable tokens (ChannelNone) have been counted above but have
 	// no content to stream or further process.
@@ -226,6 +232,16 @@ func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int3
 	}
 
 	s.iBatch = -1
+}
+
+// handleSpeculativeToken processes an accepted draft or bonus token and marks
+// emitted output for speculative coverage accounting.
+func (e *batchEngine) handleSpeculativeToken(s *slot, token llama.Token, iBatch int32, buf []byte) {
+	s.processingSpecToken = true
+	e.handleSampledToken(s, token, iBatch, buf)
+	if s.active {
+		s.processingSpecToken = false
+	}
 }
 
 // sampleFirstToken samples the first output token after prefill completes.

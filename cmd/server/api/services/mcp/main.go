@@ -14,6 +14,7 @@ import (
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -59,7 +60,11 @@ func run(ctx context.Context, log *logger.Logger) error {
 		}
 		MCP struct {
 			Host        string `conf:"default:localhost:9000"`
+			AuthEnabled bool   `conf:"default:false"`
 			BraveAPIKey string `conf:"mask"`
+		}
+		Auth struct {
+			Host string
 		}
 	}{
 		Version: conf.Version{
@@ -112,15 +117,34 @@ func run(ctx context.Context, log *logger.Logger) error {
 
 	log.Info(ctx, "startup", "status", "initializing mcp server")
 
+	var authenticate func(context.Context, string) error
+	if cfg.MCP.AuthEnabled {
+		if cfg.Auth.Host == "" {
+			return errors.New("configuration: MCP authentication requires an auth host")
+		}
+
+		authClient, err := authclient.New(log, cfg.Auth.Host)
+		if err != nil {
+			return fmt.Errorf("failed to initialize authentication client: %w", err)
+		}
+		defer authClient.Close()
+
+		authenticate = func(ctx context.Context, bearerToken string) error {
+			_, err := authClient.AuthenticateRequired(ctx, bearerToken, true, "")
+			return err
+		}
+	}
+
 	lis, err := net.Listen("tcp", cfg.MCP.Host)
 	if err != nil {
 		return fmt.Errorf("failed to listen on host %s : %w", cfg.MCP.Host, err)
 	}
 
 	mcpApp := mcpapp.Start(ctx, mcpapp.Config{
-		Log:         log,
-		Listener:    lis,
-		BraveAPIKey: cfg.MCP.BraveAPIKey,
+		Log:          log,
+		Listener:     lis,
+		BraveAPIKey:  cfg.MCP.BraveAPIKey,
+		Authenticate: authenticate,
 	})
 
 	defer mcpApp.Shutdown(ctx)

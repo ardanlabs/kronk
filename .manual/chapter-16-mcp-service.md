@@ -30,7 +30,8 @@ Chapter 14.
 The service can run in either of these modes:
 
 - **Embedded (default):** `kronk server start` listens on
-  `localhost:9000` when `KRONK_MCP_HOST` is empty.
+  `localhost:9000` when `KRONK_MCP_ENABLED` is true and
+  `KRONK_MCP_HOST` is empty.
 - **Standalone:** `make mcp-server` runs the MCP service without the model
   server. It listens on `localhost:9000` and starts a debug server on
   `localhost:9010` by default.
@@ -41,11 +42,12 @@ The standalone service can also be run directly:
 go run cmd/server/api/services/mcp/main.go
 ```
 
-> **Security:** The MCP and standalone debug endpoints have no
-> authentication. `fuzzy_edit` can read and overwrite any file accessible to
-> the service process when given its absolute path. Keep both endpoints bound
-> to loopback. If remote access is required, place them behind a trusted
-> network boundary or authenticated tunnel.
+`fuzzy_edit` can read and overwrite any file accessible to the service process
+when given its absolute path. Keep MCP and debug endpoints bound to loopback by
+default. MCP bearer authentication can be enabled as described below, but it
+does not provide TLS or protect the separate debug endpoint. If remote access
+is required, also use TLS, firewall the listeners, and keep debug endpoints
+private.
 
 MCP sessions and replay data are stored in process memory. A restart
 invalidates existing session IDs. Compliant clients reinitialize after the
@@ -64,10 +66,14 @@ filesystem permissions as the Kronk process.
 
 | Variable | Purpose | Default |
 | -------- | ------- | ------- |
+| `KRONK_MCP_ENABLED` | Enable the embedded MCP listener | `true` |
+| `KRONK_MCP_AUTH_ENABLED` | Require a Kronk admin bearer token for embedded MCP | `false` |
 | `KRONK_MCP_BRAVE_API_KEY` | Brave key for embedded mode | — |
 | `KRONK_MCP_HOST` | Non-empty value disables embedded MCP | — |
+| `MCP_MCP_AUTH_ENABLED` | Require admin bearer authentication for standalone MCP | `false` |
 | `MCP_MCP_BRAVE_API_KEY` | Brave key for standalone mode | — |
 | `MCP_MCP_HOST` | Standalone MCP listen address | `localhost:9000` |
+| `MCP_AUTH_HOST` | Auth gRPC service used by protected standalone MCP | — |
 | `MCP_WEB_DEBUG_HOST` | Standalone debug listen address | `localhost:9010` |
 
 Start the model server with embedded MCP:
@@ -77,10 +83,27 @@ export KRONK_MCP_BRAVE_API_KEY=<your-brave-api-key>
 kronk server start
 ```
 
-The corresponding CLI option is `--mcp-brave-api-key`. To use a separately
-managed MCP service, set `KRONK_MCP_HOST` or pass `--mcp-host`. A non-empty
-value only prevents the embedded service from starting; Kronk does not connect
-or proxy to that address. Configure the MCP client with the external endpoint.
+The corresponding CLI option is `--mcp-brave-api-key`. Disable embedded MCP
+with `--mcp-enabled=false` or `KRONK_MCP_ENABLED=false`. To use a separately
+managed MCP service, set `KRONK_MCP_HOST` or pass `--mcp-host`; a non-empty
+value only prevents the embedded service from starting. Kronk does not connect
+or proxy to that address.
+
+Protect embedded MCP with the existing Kronk JWT system:
+
+```shell
+kronk server start --mcp-auth-enabled
+```
+
+This requires an admin bearer token on every MCP request and also enables
+administrative authentication for the REST API and BUI. Configure the MCP
+client to send `Authorization: Bearer <admin-token>`. Application tokens with
+inference endpoint grants are not sufficient for MCP access. Before exposing
+the model server outside a trusted host, replace the BUI's default `kronk`
+password as described in
+[Chapter 13](chapter-13-browser-ui.md#133-authentication-and-session-behavior) or
+disable the BUI; otherwise that known password can be exchanged for an admin
+session.
 
 Start the standalone service with:
 
@@ -88,6 +111,19 @@ Start the standalone service with:
 export MCP_MCP_BRAVE_API_KEY=<your-brave-api-key>
 make mcp-server
 ```
+
+To protect a standalone MCP listener, connect it to an auth service that has
+authentication enabled:
+
+```shell
+export MCP_MCP_AUTH_ENABLED=true
+export MCP_AUTH_HOST=localhost:6000
+make mcp-server
+```
+
+The standalone MCP service then requires an admin token issued by that auth
+service. Startup fails if MCP authentication is enabled without
+`MCP_AUTH_HOST`.
 
 ### 16.4 Available Tools
 
@@ -173,6 +209,10 @@ The session can now list and call tools:
 make curl-mcp-tools-list SESSIONID=<session-id>
 make curl-mcp-web-search SESSIONID=<session-id>
 ```
+
+When MCP authentication is enabled, include
+`Authorization: Bearer <admin-token>` in every initialization, notification,
+tool-listing, tool-call, and session-deletion request.
 
 If the service restarts, initialize a new session instead of reusing the old
 ID.

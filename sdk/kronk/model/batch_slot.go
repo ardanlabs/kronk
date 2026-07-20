@@ -153,18 +153,20 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Speculative Decoding
 
-	draftNPast         llama.Pos     // Draft model's KV cache position
-	draftPrefillNeeded bool          // True when draft model needs prefill after target prefill
-	draftPromptTokens  []llama.Token // Full prompt tokens for draft model prefill
-	specDraftTokens    []llama.Token // Draft tokens for current speculative step
-	specDraftProbs     [][]float32   // Draft probability distributions per drafted token
-	specBasePast       llama.Pos     // Target nPast before speculative tokens were added
-	specBaseBatch      int32         // Batch index where speculative tokens start
-	specDraftedTotal   int           // Total draft tokens generated across all speculative steps
-	specAcceptedTotal  int           // Total draft tokens accepted across all speculative steps
-	specAccEMA         float64       // Exponential moving average of acceptance rate (persists across requests)
-	specRounds         int           // Verify rounds completed this request (used to throttle per-round logging)
-	mtpProbeTick       int           // Counts decode rounds spent fully throttled (EMA < floor); drives the periodic recovery probe in chooseNDraft. Persists across requests.
+	draftNPast          llama.Pos     // Draft model's KV cache position
+	draftPrefillNeeded  bool          // True when draft model needs prefill after target prefill
+	draftPromptTokens   []llama.Token // Full prompt tokens for draft model prefill
+	specDraftTokens     []llama.Token // Draft tokens for current speculative step
+	specDraftProbs      [][]float32   // Draft probability distributions per drafted token
+	specBasePast        llama.Pos     // Target nPast before speculative tokens were added
+	specBaseBatch       int32         // Batch index where speculative tokens start
+	specDraftedTotal    int           // Total draft tokens generated across all speculative steps
+	specAcceptedTotal   int           // Total draft tokens accepted across all speculative steps
+	specCoveredTotal    int           // Emitted output tokens processed through speculative verification
+	processingSpecToken bool          // True while an accepted draft or bonus token is being processed
+	specAccEMA          float64       // Exponential moving average of acceptance rate (persists across requests)
+	specRounds          int           // Verify rounds completed this request (used to throttle per-round logging)
+	mtpProbeTick        int           // Counts decode rounds spent fully throttled (EMA < floor); drives the periodic recovery probe in chooseNDraft. Persists across requests.
 
 	// Per-slot owned buffers for speculative decoding. Avoids shared buffer
 	// corruption when multiple slots generate draft tokens in the same
@@ -334,6 +336,8 @@ func (s *slot) reset() {
 	s.specBaseBatch = 0
 	s.specDraftedTotal = 0
 	s.specAcceptedTotal = 0
+	s.specCoveredTotal = 0
+	s.processingSpecToken = false
 	s.specRounds = 0
 	s.specPendingFinalize = false
 	s.specPendingAccepted = 0

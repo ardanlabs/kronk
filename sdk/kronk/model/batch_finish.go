@@ -53,10 +53,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		outputTokens := s.reasonTokens + s.completionTokens
 		draftTokens := s.specDraftedTotal
 		draftAcceptedTokens := s.specAcceptedTotal
-		// Coverage = (1 bonus per spec round) + accepted drafts. Each
-		// spec round emits one bonus token plus its accepted drafts;
-		// every other output token came from the plain target path.
-		draftCoveredTokens := s.specRounds + draftAcceptedTokens
+		draftCoveredTokens := s.specCoveredTotal
 		disableReason := s.mtpDisableReason
 
 		s.span.End()
@@ -73,6 +70,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		// same reason. Note: s.reset() above sets s.job = nil, so we
 		// must close via the locally captured jobCh, not s.job.ch.
 		remaining := e.model.activeStreams.Add(-1)
+		metrics.AddPoolActiveStreams(e.model.modelInfo.ID, -1)
 		close(jobCh)
 
 		args := []any{
@@ -211,7 +209,32 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			usage.DraftAcceptanceRate = float64(usage.DraftAcceptedTokens) / float64(usage.DraftTokens)
 		}
 		if outputTokens > 0 && e.model.draft != nil {
-			usage.DraftCoverage = float64(s.specRounds+s.specAcceptedTotal) / float64(outputTokens)
+			usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
+		}
+
+		status := "error"
+		class := "active-slot"
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			status = "cancel"
+			class = "context-cancelled"
+		}
+		s.span.RecordError(err)
+		s.span.SetAttributes(
+			attribute.String("request_status", status),
+			attribute.Int("prompt_tokens", s.nPrompt),
+			attribute.Int("reasoning_tokens", s.reasonTokens),
+			attribute.Int("completion_tokens", s.completionTokens),
+			attribute.Int("output_tokens", outputTokens),
+			attribute.Int("total_tokens", usage.TotalTokens),
+			attribute.Float64("tokens_per_second", tokensPerSecond),
+			attribute.Int("draft_tokens", s.specDraftedTotal),
+			attribute.Int("draft_accepted_tokens", s.specAcceptedTotal),
+			attribute.Int("draft_covered_tokens", s.specCoveredTotal),
+		)
+		metrics.AddChatRequest(e.model.modelInfo.ID, status)
+		metrics.AddChatError(e.model.modelInfo.ID, class)
+		if !s.job.requestStart.IsZero() {
+			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
 		}
 
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
@@ -305,7 +328,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		usage.DraftAcceptanceRate = float64(usage.DraftAcceptedTokens) / float64(usage.DraftTokens)
 	}
 	if outputTokens > 0 && e.model.draft != nil {
-		usage.DraftCoverage = float64(s.specRounds+s.specAcceptedTotal) / float64(outputTokens)
+		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
 	}
 
 	// Add span attributes and end span.
@@ -318,6 +341,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		attribute.Float64("tokens_per_second", tokensPerSecond),
 		attribute.Int("draft_tokens", s.specDraftedTotal),
 		attribute.Int("draft_accepted_tokens", s.specAcceptedTotal),
+		attribute.Int("draft_covered_tokens", s.specCoveredTotal),
 	)
 
 	// Add metrics.
@@ -344,7 +368,11 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "", err, Usage{})
 
 	if job.queueWaitSpan != nil {
+		job.queueWaitSpan.RecordError(err)
 		job.queueWaitSpan.End()
+	}
+	if !job.queuedAt.IsZero() {
+		metrics.ObserveChatQueueWait(e.model.modelInfo.ID, time.Since(job.queuedAt))
 	}
 
 	status := "error"
@@ -369,6 +397,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	// where the next sequential request can hit ErrServerBusy while
 	// this stream's count is still in flight.
 	remaining := e.model.activeStreams.Add(-1)
+	metrics.AddPoolActiveStreams(e.model.modelInfo.ID, -1)
 	close(job.ch)
 
 	e.model.log(job.ctx, "batch-engine", "status", "job-failed", "id", job.id,

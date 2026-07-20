@@ -2600,16 +2600,12 @@ curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
           <h3 id="161-architecture-and-security">16.1 Architecture and Security</h3>
           <p>The service can run in either of these modes:</p>
           <ul>
-            <li><strong>Embedded (default):</strong> <code>kronk server start</code> listens on <code>localhost:9000</code> when <code>KRONK_MCP_HOST</code> is empty.</li>
+            <li><strong>Embedded (default):</strong> <code>kronk server start</code> listens on <code>localhost:9000</code> when <code>KRONK_MCP_ENABLED</code> is true and <code>KRONK_MCP_HOST</code> is empty.</li>
             <li><strong>Standalone:</strong> <code>make mcp-server</code> runs the MCP service without the model server. It listens on <code>localhost:9000</code> and starts a debug server on <code>localhost:9010</code> by default.</li>
           </ul>
           <p>The standalone service can also be run directly:</p>
           <pre className="code-block"><code className="language-shell">{`go run cmd/server/api/services/mcp/main.go`}</code></pre>
-          <blockquote><strong>Security:</strong> The MCP and standalone debug endpoints have no</blockquote>
-          <blockquote>authentication. <code>fuzzy_edit</code> can read and overwrite any file accessible to</blockquote>
-          <blockquote>the service process when given its absolute path. Keep both endpoints bound</blockquote>
-          <blockquote>to loopback. If remote access is required, place them behind a trusted</blockquote>
-          <blockquote>network boundary or authenticated tunnel.</blockquote>
+          <p><code>fuzzy_edit</code> can read and overwrite any file accessible to the service process when given its absolute path. Keep MCP and debug endpoints bound to loopback by default. MCP bearer authentication can be enabled as described below, but it does not provide TLS or protect the separate debug endpoint. If remote access is required, also use TLS, firewall the listeners, and keep debug endpoints private.</p>
           <p>MCP sessions and replay data are stored in process memory. A restart invalidates existing session IDs. Compliant clients reinitialize after the server responds to a stale session with HTTP 404.</p>
           <h3 id="162-prerequisites">16.2 Prerequisites</h3>
           <p><code>web_search</code> requires a Brave Search API key. Obtain one from the <a href="https://brave.com/search/api/">Brave Search API</a> site. Search queries are sent to Brave and are also included in Kronk's structured logs.</p>
@@ -2625,6 +2621,16 @@ curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
             </thead>
             <tbody>
               <tr>
+                <td><code>KRONK_MCP_ENABLED</code></td>
+                <td>Enable the embedded MCP listener</td>
+                <td><code>true</code></td>
+              </tr>
+              <tr>
+                <td><code>KRONK_MCP_AUTH_ENABLED</code></td>
+                <td>Require a Kronk admin bearer token for embedded MCP</td>
+                <td><code>false</code></td>
+              </tr>
+              <tr>
                 <td><code>KRONK_MCP_BRAVE_API_KEY</code></td>
                 <td>Brave key for embedded mode</td>
                 <td>—</td>
@@ -2633,6 +2639,11 @@ curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
                 <td><code>KRONK_MCP_HOST</code></td>
                 <td>Non-empty value disables embedded MCP</td>
                 <td>—</td>
+              </tr>
+              <tr>
+                <td><code>MCP_MCP_AUTH_ENABLED</code></td>
+                <td>Require admin bearer authentication for standalone MCP</td>
+                <td><code>false</code></td>
               </tr>
               <tr>
                 <td><code>MCP_MCP_BRAVE_API_KEY</code></td>
@@ -2645,6 +2656,11 @@ curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
                 <td><code>localhost:9000</code></td>
               </tr>
               <tr>
+                <td><code>MCP_AUTH_HOST</code></td>
+                <td>Auth gRPC service used by protected standalone MCP</td>
+                <td>—</td>
+              </tr>
+              <tr>
                 <td><code>MCP_WEB_DEBUG_HOST</code></td>
                 <td>Standalone debug listen address</td>
                 <td><code>localhost:9010</code></td>
@@ -2654,10 +2670,18 @@ curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
           <p>Start the model server with embedded MCP:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_MCP_BRAVE_API_KEY=<your-brave-api-key>
 kronk server start`}</code></pre>
-          <p>The corresponding CLI option is <code>--mcp-brave-api-key</code>. To use a separately managed MCP service, set <code>KRONK_MCP_HOST</code> or pass <code>--mcp-host</code>. A non-empty value only prevents the embedded service from starting; Kronk does not connect or proxy to that address. Configure the MCP client with the external endpoint.</p>
+          <p>The corresponding CLI option is <code>--mcp-brave-api-key</code>. Disable embedded MCP with <code>--mcp-enabled=false</code> or <code>KRONK_MCP_ENABLED=false</code>. To use a separately managed MCP service, set <code>KRONK_MCP_HOST</code> or pass <code>--mcp-host</code>; a non-empty value only prevents the embedded service from starting. Kronk does not connect or proxy to that address.</p>
+          <p>Protect embedded MCP with the existing Kronk JWT system:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --mcp-auth-enabled`}</code></pre>
+          <p>This requires an admin bearer token on every MCP request and also enables administrative authentication for the REST API and BUI. Configure the MCP client to send <code>Authorization: Bearer &lt;admin-token&gt;</code>. Application tokens with inference endpoint grants are not sufficient for MCP access. Before exposing the model server outside a trusted host, replace the BUI's default <code>kronk</code> password as described in <a href="chapter-13-browser-ui.md#133-authentication-and-session-behavior">Chapter 13</a> or disable the BUI; otherwise that known password can be exchanged for an admin session.</p>
           <p>Start the standalone service with:</p>
           <pre className="code-block"><code className="language-shell">{`export MCP_MCP_BRAVE_API_KEY=<your-brave-api-key>
 make mcp-server`}</code></pre>
+          <p>To protect a standalone MCP listener, connect it to an auth service that has authentication enabled:</p>
+          <pre className="code-block"><code className="language-shell">{`export MCP_MCP_AUTH_ENABLED=true
+export MCP_AUTH_HOST=localhost:6000
+make mcp-server`}</code></pre>
+          <p>The standalone MCP service then requires an admin token issued by that auth service. Startup fails if MCP authentication is enabled without <code>MCP_AUTH_HOST</code>.</p>
           <h3 id="164-available-tools">16.4 Available Tools</h3>
           <h4 id="web_search">web_search</h4>
           <p>Returns matching page titles, URLs, and descriptions as plain text.</p>
@@ -2764,6 +2788,7 @@ make mcp-server`}</code></pre>
           <p>The session can now list and call tools:</p>
           <pre className="code-block"><code className="language-shell">{`make curl-mcp-tools-list SESSIONID=<session-id>
 make curl-mcp-web-search SESSIONID=<session-id>`}</code></pre>
+          <p>When MCP authentication is enabled, include <code>Authorization: Bearer &lt;admin-token&gt;</code> in every initialization, notification, tool-listing, tool-call, and session-deletion request.</p>
           <p>If the service restarts, initialize a new session instead of reusing the old ID.</p>
           <hr />
           <p><em>Next: &lt;a href="chapter-17-troubleshooting.md"&gt;Chapter 17: Troubleshooting&lt;/a&gt;</em></p>
@@ -2892,9 +2917,10 @@ data: [DONE]`}</code></pre>
             <li><strong>Brave authentication failure:</strong> set <code>KRONK_MCP_BRAVE_API_KEY</code> for embedded mode or <code>MCP_MCP_BRAVE_API_KEY</code> for standalone mode before startup.</li>
             <li><strong>Unknown &lt;code&gt;kronk_fuzzy_edit&lt;/code&gt;:</strong> with the shipped OpenCode configuration, the exposed names are <code>kronk_fuzzy_edit</code> and <code>kronk_web_search</code>.</li>
             <li><strong>&lt;code&gt;old_string not found&lt;/code&gt;:</strong> read the current file and provide one unique block; the same error also covers ambiguous matches.</li>
-            <li><strong>Embedded server absent:</strong> a non-empty <code>KRONK_MCP_HOST</code> disables it but does not configure a proxy or client connection.</li>
+            <li><strong>Embedded server absent:</strong> <code>KRONK_MCP_ENABLED=false</code> or a non-empty <code>KRONK_MCP_HOST</code> disables it. The host setting does not configure a proxy or client connection.</li>
+            <li><strong>401 Unauthorized:</strong> when MCP authentication is enabled, send the same Kronk admin bearer token on every request, including session initialization and notifications. Inference-scoped application tokens are not accepted.</li>
           </ul>
-          <p>The service is unauthenticated and <code>fuzzy_edit</code> has the process's filesystem access. Keep it on loopback. See <a href="chapter-16-mcp-service.md">Chapter 16</a> for configuration and the complete handshake.</p>
+          <p>MCP authentication is disabled by default, and <code>fuzzy_edit</code> has the process's filesystem access. Keep it on loopback unless bearer authentication, TLS, and network restrictions are configured. See <a href="chapter-16-mcp-service.md">Chapter 16</a> for configuration and the complete handshake.</p>
           <h3 id="179-ports-processes-and-permissions">17.9 Ports, Processes, and Permissions</h3>
           <p>Default listeners are <code>11435</code> for the API, <code>11445</code> for model-server debugging, and <code>9000</code> for embedded MCP. Standalone MCP also starts a debug listener on <code>9010</code>. Find a conflicting process before changing ports:</p>
           <pre className="code-block"><code className="language-shell">{`lsof -nP -iTCP:11435 -sTCP:LISTEN

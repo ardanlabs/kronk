@@ -116,7 +116,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			}
 		}
 		MCP struct {
+			Enabled     bool   `conf:"default:true"`
 			Host        string // Leave empty to run the local MCP service.
+			AuthEnabled bool   `conf:"default:false"`
 			BraveAPIKey string `conf:"mask"`
 		}
 		Download struct {
@@ -169,7 +171,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		return fmt.Errorf("parsing config: %w", err)
 	}
-	cfg.Auth.AdminEnabled = cfg.Auth.AdminEnabled || cfg.Auth.Local.Enabled
+	mcpAuthEnabled := cfg.MCP.Enabled && cfg.MCP.Host == "" && cfg.MCP.AuthEnabled
+	cfg.Auth.AdminEnabled = cfg.Auth.AdminEnabled || cfg.Auth.Local.Enabled || mcpAuthEnabled
 	if err := validateAdminConfig(cfg.Auth.AdminEnabled, cfg.Web.Admin.Enabled, cfg.Web.Admin.PasswordSHA256, cfg.Auth.Host); err != nil {
 		return err
 	}
@@ -439,9 +442,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Start the MCP server
 
-	// If no host is provided for the MCP service, we will start it ourselves
-	// with a local listener.
-	if cfg.MCP.Host == "" {
+	if cfg.MCP.Enabled && cfg.MCP.Host == "" {
 		log.Info(ctx, "startup", "status", "starting local mcp server")
 
 		mcpLis, err := net.Listen("tcp", "localhost:9000")
@@ -449,10 +450,19 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			return fmt.Errorf("failed to listen for mcp: %w", err)
 		}
 
+		var authenticate func(context.Context, string) error
+		if mcpAuthEnabled {
+			authenticate = func(ctx context.Context, bearerToken string) error {
+				_, err := authClient.AuthenticateRequired(ctx, bearerToken, true, "")
+				return err
+			}
+		}
+
 		mcpApp := mcpapp.Start(ctx, mcpapp.Config{
-			Log:         log,
-			Listener:    mcpLis,
-			BraveAPIKey: cfg.MCP.BraveAPIKey,
+			Log:          log,
+			Listener:     mcpLis,
+			BraveAPIKey:  cfg.MCP.BraveAPIKey,
+			Authenticate: authenticate,
 		})
 
 		defer mcpApp.Shutdown(ctx)
