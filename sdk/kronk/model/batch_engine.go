@@ -22,6 +22,11 @@ type batchEngine struct {
 	wg         sync.WaitGroup
 	stopped    atomic.Bool
 
+	// submitMu is held for read across an in-flight submit and taken for
+	// write by stop, so stop can wait for every in-flight submit to leave
+	// before it treats requestQ as frozen. See submit and stop.
+	submitMu sync.RWMutex
+
 	// pendingJobs holds jobs that were dequeued from requestQ but couldn't
 	// be assigned to a slot yet (e.g., all slots busy, media slot occupied).
 	// Checked before reading requestQ in fillSlots.
@@ -89,13 +94,42 @@ func (e *batchEngine) start(ctx context.Context) {
 
 // stop signals shutdown and waits for completion.
 func (e *batchEngine) stop(ctx context.Context) {
+	// Only the CAS winner owns draining and cleanup; a loser just waits for
+	// processLoop to exit. This is safe because stop is never called
+	// concurrently with itself (Model.Unload calls it once; the load-path
+	// error branches call it sequentially in one goroutine) — a loser is a
+	// repeat call, not a racing one, so the winner has already frozen the
+	// queue by the time the loser returns.
 	if !e.stopped.CompareAndSwap(false, true) {
 		e.wg.Wait() // Still wait for processLoop to exit
 		return
 	}
 
+	// stopped is already true and shutdownCh closes before the write lock
+	// is taken, so a submit parked in its select is released by the
+	// shutdownCh arm and drops its read lock rather than deadlocking
+	// against the Lock below.
 	close(e.shutdownCh)
+
+	// Wait out every in-flight submit and keep later submits blocked until
+	// requestQ has been drained. Every later submit observes stopped after
+	// the lock is released, so nothing further can be enqueued.
+	e.submitMu.Lock()
+
 	e.wg.Wait()
+
+	// processLoop drains requestQ before it exits, but a submit that had
+	// already passed the stopped check could have enqueued after that
+	// drain and before the queue froze. No reader remains, so those jobs
+	// are this goroutine's to fail. A nonzero count here is the only signal
+	// that the concurrent-submit window actually fired on live traffic, so
+	// log it even though it is usually zero.
+	drained := e.drainQueue(fmt.Errorf("stop: engine shutting down"))
+	e.submitMu.Unlock()
+
+	if drained > 0 {
+		e.model.log(ctx, "batch-engine", "status", "stop-drained-straggler", "drained", drained)
+	}
 
 	// Free samplers - batch is freed separately in Unload.
 	for _, s := range e.slots {
@@ -120,7 +154,38 @@ func (e *batchEngine) freeBatch() {
 }
 
 // submit adds a job to the processing queue.
+//
+// A nil return means the engine has taken ownership of the job and will
+// complete it (finishSlot or failJob, either of which closes job.ch and
+// decrements activeStreams). ChatStreaming relies on that: its
+// batching=true path returns without closing ch and without decrementing
+// activeStreams. A job accepted but never completed would therefore hang
+// its caller on ch forever and pin activeStreams above zero, which makes
+// Model.Unload fail with "cannot unload N active streams".
+//
+// Honouring that contract takes more than selecting on shutdownCh. Once
+// shutdownCh is closed, a bare select has both `requestQ <- job` (the
+// buffer has room) and `<-shutdownCh` ready at once, and Go picks a ready
+// case uniformly at random — so roughly half of all post-shutdown submits
+// would enqueue onto a queue processLoop will never read again. Checking
+// stopped first removes that coin flip, and holding submitMu for read
+// lets stop wait out the submits that already passed the check.
+//
+// The read lock is deliberately held across the blocking `requestQ <- job`
+// send below, not just around the stopped check. That is what lets stop's
+// write lock prove no send is in flight before it drains. The send can block
+// (the buffer is nSlots*2), but only ever until processLoop drains it or
+// shutdownCh closes, so a reader never pins the lock indefinitely and stop's
+// close(shutdownCh) always releases a parked submit before it takes the write
+// lock. Narrowing this hold to the check alone would reopen the window.
 func (e *batchEngine) submit(job *chatJob) error {
+	e.submitMu.RLock()
+	defer e.submitMu.RUnlock()
+
+	if e.stopped.Load() {
+		return fmt.Errorf("submit: engine shutting down")
+	}
+
 	select {
 	case e.requestQ <- job:
 		select {

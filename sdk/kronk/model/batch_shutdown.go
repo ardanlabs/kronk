@@ -34,17 +34,26 @@ func (e *batchEngine) drainSlots() {
 	}
 	e.pendingJobs = nil
 
-	// Drain pending jobs still in the request queue.
+	// Drain pending jobs still in the request queue. This is not the last
+	// word: a submit already past its stopped check can still enqueue
+	// after this returns, so stop drains again once the queue is frozen.
+	drained := e.drainQueue(shutdownErr)
+	e.model.log(ctx, "batch-engine", "status", "drain-finished", "drained_pending", drained)
+}
+
+// drainQueue fails every job currently in requestQ and reports how many
+// it drained. Callers own the jobs they drain: failJob closes job.ch and
+// decrements activeStreams, which is what unblocks the waiting caller.
+func (e *batchEngine) drainQueue(err error) int {
 	drained := 0
 	for {
 		select {
 		case job := <-e.requestQ:
-			e.failJob(job, shutdownErr)
+			e.failJob(job, err)
 			drained++
 
 		default:
-			e.model.log(ctx, "batch-engine", "status", "drain-finished", "drained_pending", drained)
-			return
+			return drained
 		}
 	}
 }
