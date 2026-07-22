@@ -3,9 +3,35 @@ package devices
 
 import (
 	"strings"
+	"sync/atomic"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+// llamaReady reports whether the llama.cpp FFI bindings have been fully
+// loaded. It is false until llama.Load succeeds. The device enumeration
+// functions in this package call into those bindings, which panic on a nil
+// FFI binding if invoked before a successful load (e.g. when the server runs
+// in degraded mode because llama.cpp could not be installed).
+//
+// This flag lives in the devices package because it is a low-level leaf
+// (importing only yzma/llama). Both sdk/kronk (which sets it) and sdk/bucky
+// (which reads it) can depend on it without creating an import cycle, whereas
+// they could not share a flag owned by sdk/kronk.
+var llamaReady atomic.Bool
+
+// SetReady records whether the llama.cpp FFI bindings are loaded. sdk/kronk
+// calls this with true immediately after llama.Load succeeds.
+func SetReady(v bool) {
+	llamaReady.Store(v)
+}
+
+// Ready reports whether the llama.cpp FFI bindings are loaded and therefore
+// safe to call. Callers that would otherwise invoke llama FFI functions must
+// check this first to avoid a nil-binding panic in degraded mode.
+func Ready() bool {
+	return llamaReady.Load()
+}
 
 // DeviceInfo provides information about a single compute device.
 type DeviceInfo struct {
@@ -66,6 +92,13 @@ func WithIncludeMemory(v bool) Option {
 
 // List enumerates all available compute devices via the llama.cpp backend.
 func List(opts ...Option) Devices {
+	// In degraded mode the llama.cpp FFI bindings are not loaded, so any call
+	// into them (GGMLBackendDeviceCount, SupportsGpuOffload, MaxDevices, ...)
+	// would dereference a nil binding and panic. Report zero devices instead.
+	if !Ready() {
+		return Devices{}
+	}
+
 	cfg := defaultOptions()
 	for _, o := range opts {
 		o(&cfg)

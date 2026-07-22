@@ -9,6 +9,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -119,6 +120,12 @@ func Init(opts ...InitOption) error {
 	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("init: unable to load library: %w", err)
 	}
+
+	// The llama.cpp FFI bindings are now resolved, so device enumeration is
+	// safe. Record readiness so devices.List (and callers like bucky.Init)
+	// can tell they are running with a loaded backend rather than in degraded
+	// mode. On a failed Load above we return early and the flag stays false.
+	devices.SetReady(true)
 
 	if err := mtmd.Load(libPath); err != nil {
 		return fmt.Errorf("init: unable to load mtmd library: %w", err)
