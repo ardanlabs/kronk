@@ -9,6 +9,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -116,9 +117,11 @@ func Init(opts ...InitOption) error {
 		}
 	}
 
+	devices.SetReady(false)
 	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("init: unable to load library: %w", err)
 	}
+	devices.SetReady(true)
 
 	if err := mtmd.Load(libPath); err != nil {
 		return fmt.Errorf("init: unable to load mtmd library: %w", err)

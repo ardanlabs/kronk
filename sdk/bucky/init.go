@@ -21,6 +21,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -128,11 +129,10 @@ func Init(opts ...InitOption) error {
 	// constructor publishes a duplicate Vulkan0 / Vulkan1 / CPU entry. The
 	// resman snapshot then rejects the load with "duplicate device name".
 	//
-	// llama.LibPath() == "" means llama.Load was never called in this
-	// process, so the GGMLBackendDeviceCount ffi binding is unresolved and
-	// would segfault if called. In that case we definitely need to register
-	// the backends ourselves.
-	if llama.LibPath() == "" || llama.GGMLBackendDeviceCount() == 0 {
+	// Ready is false when llama.Load has not succeeded, so the
+	// GGMLBackendDeviceCount FFI binding is unresolved. The short-circuit
+	// prevents calling that binding while running in degraded mode.
+	if !devices.Ready() || llama.GGMLBackendDeviceCount() == 0 {
 		if err := whisper.Init(libPath); err != nil {
 			return fmt.Errorf("init: unable to init whisper library: %w", err)
 		}

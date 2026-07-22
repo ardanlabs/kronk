@@ -2,6 +2,27 @@ package devices
 
 import "testing"
 
+func TestListNotReady(t *testing.T) {
+	wasReady := Ready()
+	SetReady(false)
+	t.Cleanup(func() {
+		SetReady(wasReady)
+	})
+
+	got := List()
+	if len(got.Devices) != 0 {
+		t.Fatalf("Devices: got %d, want 0", len(got.Devices))
+	}
+	if got.SystemRAMBytes != SystemRAMBytes() {
+		t.Errorf("SystemRAMBytes: got %d, want %d", got.SystemRAMBytes, SystemRAMBytes())
+	}
+
+	got = List(WithIncludeMemory(false))
+	if got.SystemRAMBytes != 0 {
+		t.Errorf("SystemRAMBytes without memory: got %d, want 0", got.SystemRAMBytes)
+	}
+}
+
 func TestClassifyDeviceType(t *testing.T) {
 	tests := []struct {
 		name string

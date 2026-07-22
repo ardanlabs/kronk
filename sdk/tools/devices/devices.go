@@ -3,9 +3,23 @@ package devices
 
 import (
 	"strings"
+	"sync/atomic"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+// llamaReady reports whether the llama.cpp FFI bindings are loaded.
+var llamaReady atomic.Bool
+
+// SetReady records whether the llama.cpp FFI bindings are loaded.
+func SetReady(ready bool) {
+	llamaReady.Store(ready)
+}
+
+// Ready reports whether the llama.cpp FFI bindings are safe to call.
+func Ready() bool {
+	return llamaReady.Load()
+}
 
 // DeviceInfo provides information about a single compute device.
 type DeviceInfo struct {
@@ -69,6 +83,17 @@ func List(opts ...Option) Devices {
 	cfg := defaultOptions()
 	for _, o := range opts {
 		o(&cfg)
+	}
+
+	// llama.cpp functions dereference unresolved FFI bindings when Load has
+	// not succeeded. Preserve the system RAM information that does not depend
+	// on llama.cpp while reporting no backend devices in degraded mode.
+	if !Ready() {
+		var out Devices
+		if cfg.includeMemory {
+			out.SystemRAMBytes = SystemRAMBytes()
+		}
+		return out
 	}
 
 	count := llama.GGMLBackendDeviceCount()
