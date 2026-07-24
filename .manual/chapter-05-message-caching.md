@@ -31,22 +31,6 @@ Short, one-shot prompts generally gain little from caching. IMC also performs
 host-side rendering, tokenization, snapshot, and restore work, so it is not a
 replacement for choosing an appropriate context window and concurrency level.
 
-For text requests, Kronk creates two complete prompt renderings:
-
-1. A **stable rendering** without the generation prompt. This is the reusable
-   prefix stored by IMC.
-2. A **generation-ready rendering** used for inference. This includes a
-   nonempty tail after the stable prefix.
-
-The stable tokens must be a prefix of the generation-ready tokens. This lets
-Kronk reuse a complete, template-valid conversation rather than rendering an
-independent suffix that might have different template semantics.
-
-The `cache-min-tokens` setting controls the minimum stable-render token length
-required to create or reuse an IMC session. Its default is 100. Requests below
-the threshold still work, but Kronk processes the complete generation-ready
-prompt without IMC.
-
 ### 5.1.1 Quick Semantic Understanding
 
 IMC is best understood as **prompt planning backed by reusable model state**.
@@ -356,12 +340,16 @@ Qwen/Qwen3-8B-Q8_0:
 
 The relevant settings are:
 
-| Setting | Default | Description |
-| ------- | ------- | ----------- |
-| `incremental-cache` | `true` | Enables IMC for the model. |
-| `cache-min-tokens` | `100` | Minimum stable-render length required to create or reuse a session. |
-| `session-store-kind` | `ram` | Stores inactive session snapshots in `ram` or on `disk`. |
-| `session-store-dir` | None | Existing writable directory required by the `disk` store. |
+| Setting              | Default | Description                                                         |
+| -------------------- | ------- | ------------------------------------------------------------------- |
+| `incremental-cache`  | `true`  | Enables IMC for the model.                                          |
+| `cache-min-tokens`   | `100`   | Minimum stable-render length required to create or reuse a session. |
+| `session-store-kind` | `ram`   | Stores inactive session snapshots in `ram` or on `disk`.            |
+| `session-store-dir`  | None    | Existing writable directory required by the `disk` store.           |
+
+The `cache-min-tokens` setting applies to the stable-render token length. A
+request below the threshold still works, but Kronk processes its complete
+generation-ready prompt without creating or reusing an IMC session.
 
 Set `incremental-cache: false` if a workload is entirely short-lived or if you
 need to compare behavior without prompt caching.

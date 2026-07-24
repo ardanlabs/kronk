@@ -964,13 +964,6 @@ some-provider/large-model:
             <li>Prompts with expensive media that remains unchanged across follow-up turns</li>
           </ul>
           <p>Short, one-shot prompts generally gain little from caching. IMC also performs host-side rendering, tokenization, snapshot, and restore work, so it is not a replacement for choosing an appropriate context window and concurrency level.</p>
-          <p>For text requests, Kronk creates two complete prompt renderings:</p>
-          <ol>
-            <li>A <strong>stable rendering</strong> without the generation prompt. This is the reusable prefix stored by IMC.</li>
-            <li>A <strong>generation-ready rendering</strong> used for inference. This includes a nonempty tail after the stable prefix.</li>
-          </ol>
-          <p>The stable tokens must be a prefix of the generation-ready tokens. This lets Kronk reuse a complete, template-valid conversation rather than rendering an independent suffix that might have different template semantics.</p>
-          <p>The <code>cache-min-tokens</code> setting controls the minimum stable-render token length required to create or reuse an IMC session. Its default is 100. Requests below the threshold still work, but Kronk processes the complete generation-ready prompt without IMC.</p>
           <h3 id="511-quick-semantic-understanding">5.1.1 Quick Semantic Understanding</h3>
           <p>IMC is best understood as <strong>prompt planning backed by reusable model state</strong>. Before assigning a request to an execution slot, Kronk determines the exact rendered prompt, its reusable stable portion, the inference-only tail, the compatible saved state, and the work required to move from that state to the current request.</p>
           <p>This is prompt-oriented rather than message-oriented because the model does not consume message objects directly. It consumes rendered tokens, media embeddings, and positions. Requests with apparently unchanged messages can render differently when tools, thinking settings, templates, media, or other render-affecting inputs change.</p>
@@ -1126,6 +1119,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
               </tr>
             </tbody>
           </table>
+          <p>The <code>cache-min-tokens</code> setting applies to the stable-render token length. A request below the threshold still works, but Kronk processes its complete generation-ready prompt without creating or reusing an IMC session.</p>
           <p>Set <code>incremental-cache: false</code> if a workload is entirely short-lived or if you need to compare behavior without prompt caching.</p>
           <h3 id="ram-storage">RAM storage</h3>
           <p>The default <code>ram</code> store keeps snapshots in process memory. Each session buffer grows as needed and retains its peak allocation for reuse. Actual memory use depends on the model, cached conversation lengths, KV data types, and number of sessions that have been used. Budget for peak conversation state across the branches you expect to keep warm, not just the <code>nseq-max</code> requests that can run simultaneously.</p>
