@@ -7,6 +7,31 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+func TestSessionConfigApplyTo_LoadMode(t *testing.T) {
+	tests := []struct {
+		name string
+		base model.LoadMode
+		sc   SessionConfig
+		want model.LoadMode
+	}{
+		{"unset leaves base untouched", model.LoadModeDirectIO, SessionConfig{}, model.LoadModeDirectIO},
+		{"mmap overrides a non-default base", model.LoadModeDirectIO, SessionConfig{LoadMode: new(model.LoadModeMMap)}, model.LoadModeMMap},
+		{"mlock overrides base", model.LoadModeMMap, SessionConfig{LoadMode: new(model.LoadModeMLock)}, model.LoadModeMLock},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.sc.ApplyTo(model.Config{LoadMode: tt.base})
+			if got.LoadMode != tt.want {
+				t.Errorf("LoadMode = %v, want %v", got.LoadMode, tt.want)
+			}
+			if gotHasOverrides := tt.sc.HasOverrides(); gotHasOverrides != (tt.sc.LoadMode != nil) {
+				t.Errorf("HasOverrides() = %v, want %v", gotHasOverrides, tt.sc.LoadMode != nil)
+			}
+		})
+	}
+}
+
 func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 	tests := []struct {
 		name      string

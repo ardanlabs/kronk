@@ -5,8 +5,64 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
+	cfg := Config{
+		AutoTune:      true,
+		DefaultParams: Params{Grammar: "secret grammar"},
+		PtrQueueDepth: new(7),
+	}
+
+	got := cfg.String()
+	for _, want := range []string{
+		"AutoTune[true]",
+		"DefaultParams[",
+		"grammar[true]",
+		"QueueDepth[7]",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Config.String() missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, cfg.DefaultParams.Grammar) {
+		t.Errorf("Config.String() exposed grammar contents in %q", got)
+	}
+}
+
+func TestConfigStringUsesEffectiveQueueDepthDefault(t *testing.T) {
+	got := (Config{}).String()
+	if !strings.Contains(got, "QueueDepth[2]") {
+		t.Errorf("Config.String() missing effective queue-depth default in %q", got)
+	}
+}
+
+func TestParamsStringIncludesZeroAndFalseValues(t *testing.T) {
+	got := (Params{Grammar: "secret grammar"}).String()
+	for _, want := range []string{
+		"adaptive_p_decay[0]",
+		"frequency_penalty[0]",
+		"grammar[true]",
+		"include_usage[false]",
+		"logprobs[false]",
+		"min_p[0]",
+		"return_prompt[false]",
+		"stream[false]",
+		"top_logprobs[0]",
+		"xtc_probability[0]",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Params.String() missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "secret grammar") {
+		t.Errorf("Params.String() exposed grammar contents in %q", got)
+	}
+}
 
 func TestGGMLTypeString(t *testing.T) {
 	tests := []struct {
@@ -77,6 +133,57 @@ func TestParseGGMLType(t *testing.T) {
 				t.Errorf("ParseGGMLType() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    LoadMode
+		wantStr string
+		wantErr bool
+	}{
+		{"default", "", LoadModeMMap, "mmap", false},
+		{"mmap", "mmap", LoadModeMMap, "mmap", false},
+		{"none", "none", LoadModeNone, "none", false},
+		{"mlock", "mlock", LoadModeMLock, "mlock", false},
+		{"direct io", "direct-io", LoadModeDirectIO, "direct-io", false},
+		{"dio alias", "dio", LoadModeDirectIO, "direct-io", false},
+		{"invalid", "buffered", LoadModeMMap, "mmap", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseLoadMode(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseLoadMode() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("ParseLoadMode() = %v, want %v", got, tt.want)
+			}
+			if got.String() != tt.wantStr {
+				t.Errorf("LoadMode.String() = %q, want %q", got.String(), tt.wantStr)
+			}
+		})
+	}
+}
+
+func TestLoadModeToYZMAType(t *testing.T) {
+	tests := []struct {
+		mode LoadMode
+		want llama.LoadMode
+	}{
+		{LoadModeMMap, llama.LoadModeMmap},
+		{LoadModeNone, llama.LoadModeNone},
+		{LoadModeMLock, llama.LoadModeMlock},
+		{LoadModeDirectIO, llama.LoadModeDirectIO},
+	}
+
+	for _, tt := range tests {
+		if got := tt.mode.ToYZMAType(); got != tt.want {
+			t.Errorf("LoadMode(%s).ToYZMAType() = %v, want %v", tt.mode, got, tt.want)
+		}
 	}
 }
 

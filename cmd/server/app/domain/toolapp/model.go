@@ -330,8 +330,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			NThreadsBatch:       rmc.PtrNThreadsBatch,
 			CacheTypeK:          rmc.CacheTypeK,
 			CacheTypeV:          rmc.CacheTypeV,
-			UseDirectIO:         rmc.PtrUseDirectIO,
-			PtrUseMMap:          rmc.PtrUseMMap,
+			LoadMode:            model.DerefLoadMode(rmc.PtrLoadMode),
 			NUMA:                rmc.NUMA,
 			FlashAttention:      model.DerefFlashAttention(rmc.FlashAttention),
 			NSeqMax:             rmc.PtrNSeqMax,
@@ -710,8 +709,7 @@ type ModelConfig struct {
 	NThreadsBatch       *int                     `json:"nthreads-batch"`
 	CacheTypeK          model.GGMLType           `json:"cache-type-k"`
 	CacheTypeV          model.GGMLType           `json:"cache-type-v"`
-	UseDirectIO         *bool                    `json:"use-direct-io"`
-	PtrUseMMap          *bool                    `json:"use-mmap,omitempty"`
+	LoadMode            model.LoadMode           `json:"load-mode"`
 	NUMA                string                   `json:"numa,omitempty"`
 	FlashAttention      model.FlashAttentionType `json:"flash-attention"`
 	NSeqMax             *int                     `json:"nseq-max"`

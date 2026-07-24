@@ -119,6 +119,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"flash-attention", krn.ModelConfig().FlashAttention.String(),
 		"cache-type-k", krn.ModelConfig().CacheTypeK.String(),
 		"cache-type-v", krn.ModelConfig().CacheTypeV.String(),
+		"load-mode", krn.ModelConfig().LoadMode.String(),
 		"nseq-max", krn.ModelConfig().NSeqMax(),
 	)
 
@@ -137,6 +138,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"flash_attention":   krn.ModelConfig().FlashAttention.String(),
 		"cache_type_k":      krn.ModelConfig().CacheTypeK.String(),
 		"cache_type_v":      krn.ModelConfig().CacheTypeV.String(),
+		"load_mode":         krn.ModelConfig().LoadMode.String(),
 		"incremental_cache": krn.ModelConfig().IncrementalCache(),
 		"split_mode":        formatSplitMode(krn.ModelConfig().PtrSplitMode),
 		"model_type":        krn.ModelInfo().Type.String(),

@@ -47,7 +47,7 @@ func run() error {
 	modelFile := filepath.Join(home, ".kronk/models/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf")
 
 	mparams := llama.ModelDefaultParams()
-	mparams.UseMmap = 1
+	mparams.LoadMode = llama.LoadModeMmap
 
 	fmt.Println("Loading Model From File...")
 

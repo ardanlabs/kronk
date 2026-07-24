@@ -156,9 +156,12 @@ proxy considerations.
 - Downloading a library bundle does not switch the libraries used by the
   running process. Set `KRONK_LIB_PATH` or `KRONK_BUCKY_LIB_PATH` to the
   selected bundle and restart the server.
-- Model and catalog detail pages display configuration but do not persist
-  model overrides. Edit `~/.kronk/models/model_config.yaml` and reload the
-  model when changing persistent configuration; see Chapter 3.
+- Model details display the effective configuration but do not persist model
+  overrides. Catalog details display catalog metadata, files, templates, and
+  VRAM estimates rather than the effective model configuration. Playground
+  settings, including load mode, apply only to that test session. Edit
+  `~/.kronk/models/model_config.yaml` and reload the model when changing
+  persistent configuration; see Chapter 3.
 - Closing a browser tab does not explicitly delete its playground session.
   Use **Unload Model** when finished. Otherwise, the model remains subject to
   the server pool's normal eviction policy and is removed on server restart.

@@ -212,6 +212,14 @@ A cold request includes model loading, and a large uncached prompt includes
 prefill. Partial CPU offload can reduce token throughput. Compare representative
 requests after the model is warm rather than relying on the first request.
 
+Model loading defaults to `load-mode: mmap`. Do not switch to `direct-io`
+solely because a GPU is present: its performance depends on the model's actual
+storage device and filesystem, and bypassing the page cache can make repeated
+loads slower. `mlock` stabilizes residency after loading but requires enough
+lockable RAM; it is not a general cold-start optimization. See
+[Chapter 3 §3.4](chapter-03-model-configuration.md#model-weight-loading) before
+changing the mode.
+
 Use Chapter 15's request, queue, prefill, TTFT, token-rate, and pool metrics to
 separate loading, waiting, prompt processing, and generation. IMC-specific
 diagnosis is below.

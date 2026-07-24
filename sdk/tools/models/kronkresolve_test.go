@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -136,5 +137,31 @@ func TestMergeModelConfigAdapters(t *testing.T) {
 
 	if len(dst.Adapters) != 1 || dst.Adapters[0].ID != "new" {
 		t.Errorf("Adapters = %+v, want replacement adapter", dst.Adapters)
+	}
+}
+
+func TestModelConfigLoadMode(t *testing.T) {
+	data := []byte(`test-model:
+  load-mode: mlock
+`)
+
+	var configs map[string]ModelConfig
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	cfg := configs["test-model"]
+	if cfg.PtrLoadMode == nil || *cfg.PtrLoadMode != model.LoadModeMLock {
+		t.Fatalf("PtrLoadMode = %v, want pointer to mlock", cfg.PtrLoadMode)
+	}
+	if got := cfg.ToKronkConfig().LoadMode; got != model.LoadModeMLock {
+		t.Errorf("ToKronkConfig().LoadMode = %v, want %v", got, model.LoadModeMLock)
+	}
+
+	mmap := model.LoadModeMMap
+	dst := ModelConfig{PtrLoadMode: new(model.LoadModeDirectIO)}
+	MergeModelConfig(&dst, ModelConfig{PtrLoadMode: &mmap})
+	if dst.PtrLoadMode == nil || *dst.PtrLoadMode != model.LoadModeMMap {
+		t.Errorf("merged PtrLoadMode = %v, want pointer to mmap", dst.PtrLoadMode)
 	}
 }

@@ -12,6 +12,7 @@ import type {
   ChatStreamResponse,
   ChatToolCall,
   ModelConfig,
+  ModelLoadMode,
   VRAM,
 } from '../types';
 import AutomatedTestingPanel from './AutomatedTestingPanel';
@@ -57,6 +58,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
+    loadMode, setLoadMode,
     cacheMode, setCacheMode,
     moeMode, setMoeMode,
     moeKeepTopN, setMoeKeepTopN,
@@ -205,6 +207,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
           setNSeqMax(mc['nseq-max'] || 1);
           setFlashAttention(mc['flash-attention'] || 'enabled');
           setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
+          setLoadMode(mc['load-mode'] || 'mmap');
           setCacheMode(mc['incremental-cache'] ? 'imc' : 'none');
           setMoeMode(mc.moe?.mode || '');
           setMoeKeepTopN(mc.moe?.['keep-experts-top-n'] ?? 0);
@@ -324,6 +327,9 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       if (!catalogConfig || cacheType !== (catalogConfig['cache-type-k'] || '')) {
         config['cache_type_k'] = cacheType || 'f16';
         config['cache_type_v'] = cacheType || 'f16';
+      }
+      if (!catalogConfig || loadMode !== (catalogConfig['load-mode'] || 'mmap')) {
+        config['load_mode'] = loadMode;
       }
       const catalogCacheMode = catalogConfig?.['incremental-cache'] ? 'imc' : 'none';
       if (!catalogConfig || cacheMode !== catalogCacheMode) {
@@ -809,6 +815,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                     flash_attention: flashAttention,
                     cache_type_k: cacheType || undefined,
                     cache_type_v: cacheType || undefined,
+                    load_mode: loadMode,
                     incremental_cache: cacheMode === 'imc',
                     moe_mode: moeMode || undefined,
                     moe_keep_experts_top_n: moeMode === 'keep_top_n' ? moeKeepTopN : undefined,
@@ -948,6 +955,20 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                 <option value="f16">f16</option>
                 <option value="q8_0">q8_0</option>
                 <option value="q4_0">q4_0</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <FieldLabel htmlFor="pg-load-mode" tooltipKey="loadMode">Load Mode</FieldLabel>
+              <select
+                id="pg-load-mode"
+                value={loadMode}
+                onChange={(e) => setLoadMode(e.target.value as ModelLoadMode)}
+                disabled={!!session}
+              >
+                <option value="mmap">mmap (default)</option>
+                <option value="none">none</option>
+                <option value="mlock">mlock</option>
+                <option value="direct-io">direct-io</option>
               </select>
             </div>
             <div className="form-group">

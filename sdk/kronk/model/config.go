@@ -331,13 +331,11 @@ type AdapterConfig struct {
 // GPUs. The length must match the number of devices. When empty, the split is
 // determined automatically based on available VRAM.
 //
-// UseDirectIO enables direct I/O for model loading.
-//
-// UseMMap controls whether mmap is used for model loading. When nil, mmap is
-// enabled by default (llama.cpp default). Set to false to disable mmap, which
-// is recommended for multi-socket NUMA systems running MoE models with CPU
-// experts — without mmap, tensor data is directly allocated and can be placed
-// on the appropriate NUMA node. UseDirectIO takes precedence over UseMMap.
+// LoadMode controls how model weights are loaded. The default is LoadModeMMap.
+// LoadModeNone disables mmap, which can improve tensor placement on multi-socket
+// NUMA systems running MoE models with CPU experts. LoadModeMLock keeps mapped
+// model pages resident in RAM, while LoadModeDirectIO bypasses the page cache
+// where the platform and filesystem support it.
 //
 // NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
 // most when expert tensors are on CPU and the system has multiple NUMA nodes.
@@ -374,6 +372,7 @@ type Config struct {
 	PtrIncrementalCache  *bool
 	PtrInsecureLogging   *bool
 	JinjaFile            string
+	LoadMode             LoadMode
 	Log                  applog.Logger
 	PtrMainGPU           *int
 	MoE                  *MoEConfig
@@ -401,8 +400,6 @@ type Config struct {
 	PtrSWAFull           *bool
 	TensorBuftOverrides  []string
 	TensorSplit          []float32
-	PtrUseDirectIO       *bool
-	PtrUseMMap           *bool
 	PtrYarnAttnFactor    *float32
 	PtrYarnBetaFast      *float32
 	PtrYarnBetaSlow      *float32
@@ -431,7 +428,6 @@ func (cfg Config) YarnExtFactor() float32  { return float32Or(cfg.PtrYarnExtFact
 func (cfg Config) YarnOrigCtx() int        { return intOr(cfg.PtrYarnOrigCtx, 0) }
 func (cfg Config) IncrementalCache() bool  { return boolOr(cfg.PtrIncrementalCache, false) }
 func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLogging, false) }
-func (cfg Config) UseDirectIO() bool       { return boolOr(cfg.PtrUseDirectIO, false) }
 
 // sessionStoreKind returns the configured SessionStore backend, or
 // defaultSessionStoreKind ("ram") if unset. Lowercase because Go does
@@ -446,6 +442,11 @@ func (cfg Config) sessionStoreKind() string {
 }
 
 func (cfg Config) String() string {
+	queueDepth := cfg.QueueDepth()
+	if queueDepth == 0 {
+		queueDepth = 2
+	}
+
 	formatBoolPtr := func(p *bool) string {
 		if p == nil {
 			return "nil"
@@ -485,19 +486,18 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseDirectIO[%s]\nUseMMap[%s]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
-		cfg.Adapters, formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
-		formatIntPtr(cfg.PtrContextWindow), cfg.Devices, cfg.FlashAttention,
+	return fmt.Sprintf("\nAdapters[%v]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+		cfg.Adapters, cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
+		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.Devices, cfg.FlashAttention,
 		formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
-		formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
+		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrNUBatch),
 		cfg.NUMA,
-		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU),
+		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), queueDepth,
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
 		cfg.SessionStoreDir, cfg.sessionStoreKind(),
 		formatSplitModePtr(cfg.PtrSplitMode),
-		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit, formatBoolPtr(cfg.PtrUseDirectIO),
-		formatBoolPtr(cfg.PtrUseMMap),
+		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit,
 		formatFloat32Ptr(cfg.PtrYarnAttnFactor),
 		formatFloat32Ptr(cfg.PtrYarnBetaFast), formatFloat32Ptr(cfg.PtrYarnBetaSlow), formatFloat32Ptr(cfg.PtrYarnExtFactor), formatIntPtr(cfg.PtrYarnOrigCtx), cfg.DraftModel)
 }
@@ -543,6 +543,13 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		// valid
 	default:
 		return fmt.Errorf("validate-config: unknown NUMA strategy: %s (valid: distribute, isolate, numactl, mirror)", cfg.NUMA)
+	}
+
+	switch cfg.LoadMode {
+	case LoadModeMMap, LoadModeNone, LoadModeMLock, LoadModeDirectIO:
+		// valid
+	default:
+		return fmt.Errorf("validate-config: unknown load mode: %d (valid: mmap, none, mlock, direct-io)", cfg.LoadMode)
 	}
 
 	if cfg.DraftModel != nil {
@@ -729,9 +736,6 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	// Ensure remaining pointer fields are non-nil after adjustment.
 	if cfg.PtrInsecureLogging == nil {
 		cfg.PtrInsecureLogging = new(false)
-	}
-	if cfg.PtrUseDirectIO == nil {
-		cfg.PtrUseDirectIO = new(false)
 	}
 	if cfg.PtrOpOffloadMinBatch == nil {
 		cfg.PtrOpOffloadMinBatch = new(0)
@@ -1202,6 +1206,124 @@ func DerefFlashAttention(p *FlashAttentionType) FlashAttentionType {
 
 // =============================================================================
 
+// LoadMode controls how model weights are loaded from storage.
+type LoadMode int32
+
+const (
+	// LoadModeMMap memory maps model weights. This is the default.
+	LoadModeMMap LoadMode = iota
+
+	// LoadModeNone loads model weights without mmap, mlock, or direct I/O.
+	LoadModeNone
+
+	// LoadModeMLock memory maps model weights and keeps them resident in RAM.
+	LoadModeMLock
+
+	// LoadModeDirectIO loads model weights using direct I/O where supported.
+	LoadModeDirectIO
+)
+
+// String returns the string representation of a LoadMode.
+func (lm LoadMode) String() string {
+	switch lm {
+	case LoadModeMMap:
+		return "mmap"
+	case LoadModeNone:
+		return "none"
+	case LoadModeMLock:
+		return "mlock"
+	case LoadModeDirectIO:
+		return "direct-io"
+	default:
+		return fmt.Sprintf("unknown(%d)", lm)
+	}
+}
+
+// ToYZMAType converts to the yzma/llama.cpp LoadMode type.
+func (lm LoadMode) ToYZMAType() llama.LoadMode {
+	switch lm {
+	case LoadModeNone:
+		return llama.LoadModeNone
+	case LoadModeMLock:
+		return llama.LoadModeMlock
+	case LoadModeDirectIO:
+		return llama.LoadModeDirectIO
+	default:
+		return llama.LoadModeMmap
+	}
+}
+
+// MarshalYAML implements yaml.Marshaler.
+func (lm LoadMode) MarshalYAML() (any, error) {
+	return lm.String(), nil
+}
+
+// MarshalJSON implements json.Marshaler.
+func (lm LoadMode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(lm.String())
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (lm *LoadMode) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+
+	parsed, err := ParseLoadMode(str)
+	if err != nil {
+		return err
+	}
+
+	*lm = parsed
+
+	return nil
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (lm *LoadMode) UnmarshalYAML(unmarshal func(any) error) error {
+	var str string
+	if err := unmarshal(&str); err != nil {
+		return err
+	}
+
+	parsed, err := ParseLoadMode(str)
+	if err != nil {
+		return err
+	}
+
+	*lm = parsed
+
+	return nil
+}
+
+// ParseLoadMode parses a string into a LoadMode.
+func ParseLoadMode(s string) (LoadMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "mmap", "":
+		return LoadModeMMap, nil
+	case "none":
+		return LoadModeNone, nil
+	case "mlock":
+		return LoadModeMLock, nil
+	case "direct-io", "directio", "dio":
+		return LoadModeDirectIO, nil
+	default:
+		return LoadModeMMap, fmt.Errorf("parse-load-mode: unknown load mode: %s (valid: mmap, none, mlock, direct-io)", s)
+	}
+}
+
+// DerefLoadMode returns the value of a LoadMode pointer, defaulting to
+// LoadModeMMap when nil.
+func DerefLoadMode(lm *LoadMode) LoadMode {
+	if lm == nil {
+		return LoadModeMMap
+	}
+	return *lm
+}
+
+// =============================================================================
+
 // SplitMode controls how the model is split across multiple GPUs.
 // This is particularly important for Mixture of Experts (MoE) models.
 type SplitMode int32
@@ -1526,6 +1648,7 @@ func WithFlashAttention(v FlashAttentionType) Option { return func(c *Config) { 
 func WithIncrementalCache(v bool) Option             { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
 func WithInsecureLogging(v bool) Option              { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
 func WithJinjaFile(v string) Option                  { return func(c *Config) { c.JinjaFile = v } }
+func WithLoadMode(v LoadMode) Option                 { return func(c *Config) { c.LoadMode = v } }
 func WithLog(v applog.Logger) Option                 { return func(c *Config) { c.Log = v } }
 func WithMainGPU(v int) Option                       { return func(c *Config) { c.PtrMainGPU = new(v) } }
 func WithMoE(v *MoEConfig) Option                    { return func(c *Config) { c.MoE = v } }
@@ -1550,8 +1673,6 @@ func WithSplitMode(v SplitMode) Option               { return func(c *Config) { 
 func WithSWAFull(v bool) Option                      { return func(c *Config) { c.PtrSWAFull = new(v) } }
 func WithTensorBuftOverrides(v []string) Option      { return func(c *Config) { c.TensorBuftOverrides = v } }
 func WithTensorSplit(v []float32) Option             { return func(c *Config) { c.TensorSplit = v } }
-func WithUseDirectIO(v bool) Option                  { return func(c *Config) { c.PtrUseDirectIO = new(v) } }
-func WithUseMMap(v bool) Option                      { return func(c *Config) { c.PtrUseMMap = new(v) } }
 func WithYarnAttnFactor(v float32) Option            { return func(c *Config) { c.PtrYarnAttnFactor = new(v) } }
 func WithYarnBetaFast(v float32) Option              { return func(c *Config) { c.PtrYarnBetaFast = new(v) } }
 func WithYarnBetaSlow(v float32) Option              { return func(c *Config) { c.PtrYarnBetaSlow = new(v) } }
