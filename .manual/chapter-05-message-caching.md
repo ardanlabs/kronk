@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [5.1 What IMC Does](#51-what-imc-does)
+  - [5.1.1 Quick Semantic Understanding](#511-quick-semantic-understanding)
 - [5.2 How Kronk Reuses a Text Prefix](#52-how-kronk-reuses-a-text-prefix)
 - [5.3 Sessions, Slots, and Snapshots](#53-sessions-slots-and-snapshots)
 - [5.4 Media Requests](#54-media-requests)
@@ -30,21 +31,201 @@ Short, one-shot prompts generally gain little from caching. IMC also performs
 host-side rendering, tokenization, snapshot, and restore work, so it is not a
 replacement for choosing an appropriate context window and concurrency level.
 
-For text requests, Kronk creates two complete prompt renderings:
+### 5.1.1 Quick Semantic Understanding
 
-1. A **stable rendering** without the generation prompt. This is the reusable
-   prefix stored by IMC.
-2. A **generation-ready rendering** used for inference. This includes a
-   nonempty tail after the stable prefix.
+IMC is best understood as **prompt planning backed by reusable model state**.
+Before assigning a request to an execution slot, Kronk determines the exact
+rendered prompt, its reusable stable portion, the inference-only tail, the
+compatible saved state, and the work required to move from that state to the
+current request.
 
-The stable tokens must be a prefix of the generation-ready tokens. This lets
-Kronk reuse a complete, template-valid conversation rather than rendering an
-independent suffix that might have different template semantics.
+This is prompt-oriented rather than message-oriented because the model does not
+consume message objects directly. It consumes rendered tokens, media
+embeddings, and positions. Requests with apparently unchanged messages can
+render differently when tools, thinking settings, templates, media, or other
+render-affecting inputs change.
 
-The `cache-min-tokens` setting controls the minimum stable-render token length
-required to create or reuse an IMC session. Its default is 100. Requests below
-the threshold still work, but Kronk processes the complete generation-ready
-prompt without IMC.
+The planning process has five steps.
+
+#### Step 1: Render the complete prompt with and without the generation suffix
+
+Kronk independently renders the complete conversation in two forms:
+
+```text
+Stable rendering:           [complete conversation]
+Generation-ready rendering: [complete conversation][generation suffix]
+```
+
+The stable rendering disables the generation prompt and becomes the reusable
+cache target. The generation-ready rendering is the prompt used for inference.
+Its suffix is normally template material that begins the next assistant turn,
+such as an assistant header or control tokens; it is not the answer generated
+by the model.
+
+The stable rendering must be an exact prefix of the generation-ready rendering,
+and the generation-ready rendering must contribute a nonempty tail. Kronk
+renders both complete prompts instead of independently rendering a suffix
+because a chat template can make separators, control tokens, and role formatting
+depend on the surrounding messages. If the two renderings are not
+prefix-compatible, Kronk safely processes the complete generation-ready prompt
+without IMC reuse.
+
+#### Step 2: Build a canonical token or media plan
+
+For text, the canonical plan is the complete sequence of rendered token IDs:
+
+```text
+Stable plan: [A B C D]
+Actual plan: [A B C D][G]
+```
+
+`[G]` is the generation-ready tail. It is processed for inference but is not
+part of the reusable stable snapshot.
+
+For media, token equality alone is insufficient. Kronk builds an ordered
+logical plan containing text tokens and media-content identities:
+
+```text
+[token][token][image digest][token][audio digest][token]
+```
+
+This plan captures media content, count, order, and placement relative to text.
+It is called canonical because it is the authoritative logical description of
+what the engine must execute, not merely a normalized version of the client's
+messages.
+
+A media item is one logical plan unit, but the multimodal pipeline may expand it
+into many physical KV cells. Models using M-RoPE can also distinguish the next
+logical decode position from the physical KV-cell count. IMC therefore keeps
+the logical plan, logical position, and physical snapshot accounting consistent
+without pretending that media is an ordinary text token.
+
+#### Step 3: Find the longest complete safe prefix
+
+Kronk searches available sessions for the longest complete saved plan that is
+a prefix of the new stable plan:
+
+```text
+New stable plan: [A B C D E F]
+
+Session 1: [A B]          -> safe prefix
+Session 2: [A B C D]      -> safe prefix and better
+Session 3: [A B X]        -> not safe
+Session 4: [A B C D E F]  -> exact and best
+```
+
+Choosing the longest compatible session minimizes new prefill work. A prefix is
+safe only when:
+
+- It ends at a complete, committed session boundary.
+- The saved plan and snapshot metadata describe the same model state.
+- The complete saved plan prefixes the new stable plan.
+- The session is available rather than reserved by another request.
+- For media, the saved media plan is unchanged and anything added after the
+  anchor is text-only.
+
+"Longest complete prefix" does not mean the longest coincidental token overlap.
+For example, `[A B C D]` is not reused for `[A B X D]`, even though `[A B]`
+matches. Kronk does not trim an existing session at an arbitrary internal point.
+This conservative rule avoids assuming that an internal KV cut remains valid
+across template boundaries, media embeddings, M-RoPE positions, hybrid
+recurrent state, or draft/MTP state.
+
+#### Step 4: Select exact, append, anchor, or rebuild
+
+The selected action follows from the stable plan and the best safe session.
+
+**Exact** means the cached stable plan and new stable plan are identical:
+
+```text
+Cached stable: [A B C D]
+New stable:    [A B C D]
+Actual:        [A B C D][G]
+```
+
+Kronk restores the snapshot and processes only `[G]`. Because the stable state
+did not change, it can usually skip serializing the same snapshot again.
+
+**Append** applies to a text-only stable extension:
+
+```text
+Cached stable: [A B C D]
+New stable:    [A B C D E F]
+Actual:        [A B C D E F][G]
+```
+
+Kronk restores `[A B C D]`, prefills `[E F]`, snapshots the new reusable state
+`[A B C D E F]`, and then processes `[G]` without adding it to that stable
+snapshot.
+
+**Anchor** is the media-safe form of append:
+
+```text
+Cached plan: [A B][image-1][C D]
+New plan:    [A B][image-1][C D E F]
+```
+
+The unchanged media-bearing plan acts as an anchor. Kronk restores its snapshot,
+does not encode `image-1` again, prefills only `[E F]`, and stages an advanced
+snapshot before processing the generation tail. The staged snapshot and its
+matching metadata are published together only after success, so a failed
+advance leaves the previous media snapshot authoritative.
+
+Changing, appending, removing, or reordering media is not an anchor extension:
+
+```text
+[A B][image-2][C D]             -> rebuild: changed media
+[A B][image-1][image-2][C D]    -> rebuild: appended media
+[A B][C D][image-1]             -> rebuild: reordered media
+[A B][C D]                      -> rebuild: removed media
+```
+
+**Rebuild** means no complete saved session prefixes the stable plan. Kronk
+selects an empty session or the least recently used available session, resets
+it, processes the stable plan from the beginning, snapshots the resulting
+state, and then processes the generation tail. Rebuild is not a request
+failure; it means only that the request receives no saved-prefill benefit.
+
+#### Step 5: Reserve the selected session
+
+Planning and execution do not happen at the same instant. A request may wait
+for an execution slot after selecting a session, so Kronk immediately marks the
+session pending while holding the cache lock:
+
+```text
+select session -> reserve -> restore/extend/snapshot/generate -> release
+```
+
+Other planners skip pending sessions. Reservations apply to exact matches,
+appends, media anchors, empty sessions selected for rebuild, and LRU sessions
+selected for replacement. Even an exact match needs a reservation: another
+request must not rebuild or replace its snapshot between selection and restore.
+
+If every session is pending, Kronk returns a retryable busy error rather than
+evicting an active session. The reservation also prevents a partially updated
+session from becoming visible. Snapshot bytes and metadata must describe the
+same stable prefix before the session can be selected again.
+
+#### Why this is called prompt planning
+
+The old mental model, "which messages have been cached?", is no longer precise
+enough. The planner now produces an execution contract containing:
+
+- The complete rendered prompt and reusable stable rendering
+- The generation-only tail
+- The canonical token or media identity
+- The longest reusable session boundary
+- The stable extension that must be prefilled
+- The exact, append, anchor, or rebuild action
+- Logical positions and expected physical KV state
+- The selected session and the state version execution must observe
+
+The batch engine executes this plan rather than independently interpreting a
+reduced message document. Put another way:
+
+> Prompt planning asks, "What exact prompt will the model execute, and what is
+> the safest minimum work needed to reach it?" IMC supplies the reusable model
+> state that makes the answer efficient.
 
 ## 5.2 How Kronk Reuses a Text Prefix
 
@@ -159,12 +340,16 @@ Qwen/Qwen3-8B-Q8_0:
 
 The relevant settings are:
 
-| Setting | Default | Description |
-| ------- | ------- | ----------- |
-| `incremental-cache` | `true` | Enables IMC for the model. |
-| `cache-min-tokens` | `100` | Minimum stable-render length required to create or reuse a session. |
-| `session-store-kind` | `ram` | Stores inactive session snapshots in `ram` or on `disk`. |
-| `session-store-dir` | None | Existing writable directory required by the `disk` store. |
+| Setting              | Default | Description                                                         |
+| -------------------- | ------- | ------------------------------------------------------------------- |
+| `incremental-cache`  | `true`  | Enables IMC for the model.                                          |
+| `cache-min-tokens`   | `100`   | Minimum stable-render length required to create or reuse a session. |
+| `session-store-kind` | `ram`   | Stores inactive session snapshots in `ram` or on `disk`.            |
+| `session-store-dir`  | None    | Existing writable directory required by the `disk` store.           |
+
+The `cache-min-tokens` setting applies to the stable-render token length. A
+request below the threshold still works, but Kronk processes its complete
+generation-ready prompt without creating or reusing an IMC session.
 
 Set `incremental-cache: false` if a workload is entirely short-lived or if you
 need to compare behavior without prompt caching.
