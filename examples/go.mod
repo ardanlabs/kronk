@@ -7,10 +7,10 @@ replace github.com/ardanlabs/kronk => ../
 require (
 	github.com/ardanlabs/bucky v1.0.6
 	github.com/ardanlabs/kronk v1.29.0
-	github.com/duckdb/duckdb-go/v2 v2.10504.0
+	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.25
 	github.com/google/uuid v1.6.0
-	github.com/hybridgroup/yzma v1.19.0
+	github.com/hybridgroup/yzma v1.20.0
 )
 
 require (
@@ -22,9 +22,9 @@ require (
 	cloud.google.com/go/iam v1.12.0 // indirect
 	cloud.google.com/go/monitoring v1.30.0 // indirect
 	cloud.google.com/go/storage v1.64.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.34.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.58.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.58.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.35.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.59.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.59.0 // indirect
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/ardanlabs/jinja v1.5.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.43.0 // indirect
@@ -68,7 +68,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.18 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.19 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
@@ -89,7 +89,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.27 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.24.0 // indirect
+	github.com/prometheus/client_golang v1.24.1 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
@@ -108,7 +108,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260718201538-764159d718ef // indirect
@@ -120,9 +120,9 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.290.0 // indirect
-	google.golang.org/genproto v0.0.0-20260720211330-0afa2a65878a // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260720211330-0afa2a65878a // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260720211330-0afa2a65878a // indirect
+	google.golang.org/genproto v0.0.0-20260724162435-b2f20204f0df // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260724162435-b2f20204f0df // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260724162435-b2f20204f0df // indirect
 	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

@@ -89,6 +89,8 @@ export interface PoolBudgetResponse {
   reservations: Reservation[];
 }
 
+export type ModelLoadMode = 'mmap' | 'none' | 'mlock' | 'direct-io';
+
 export interface ModelConfig {
   'context-window': number;
   nbatch: number;
@@ -97,7 +99,7 @@ export interface ModelConfig {
   'nthreads-batch': number;
   'cache-type-k': string;
   'cache-type-v': string;
-  'use-direct-io': boolean;
+  'load-mode': ModelLoadMode;
   'flash-attention': string;
   'nseq-max': number;
   'offload-kqv': boolean | null;
@@ -132,8 +134,7 @@ export interface ModelConfig {
     'keep-experts-top-n'?: number | null;
   };
 
-  // NUMA / mmap configuration for multi-socket systems.
-  'use-mmap'?: boolean | null;
+  // NUMA configuration for multi-socket systems.
   numa?: string | null;
 
   // Speculative decoding (draft model).
@@ -649,6 +650,7 @@ export interface PlaygroundModelConfig {
   'flash_attention'?: string;
   'cache_type_k'?: string;
   'cache_type_v'?: string;
+  'load_mode'?: ModelLoadMode;
   'ngpu_layers'?: number | null;
   'incremental_cache'?: boolean;
   'split_mode'?: string;

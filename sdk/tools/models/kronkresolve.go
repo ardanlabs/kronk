@@ -264,11 +264,8 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.FlashAttention != nil {
 		dst.FlashAttention = src.FlashAttention
 	}
-	if src.PtrUseDirectIO != nil {
-		dst.PtrUseDirectIO = src.PtrUseDirectIO
-	}
-	if src.PtrUseMMap != nil {
-		dst.PtrUseMMap = src.PtrUseMMap
+	if src.PtrLoadMode != nil {
+		dst.PtrLoadMode = src.PtrLoadMode
 	}
 	if src.NUMA != "" {
 		dst.NUMA = src.NUMA

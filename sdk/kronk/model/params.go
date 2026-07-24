@@ -272,89 +272,39 @@ type Params struct {
 	XtcThreshold float32 `json:"xtc_threshold"`
 }
 
-// String returns a string representation of the Params containing only
-// non-zero values in the format key[value]\nkey[value]\n ...
+// String returns a string representation of all resolved Params values in the
+// format key[value]\nkey[value]\n ... Grammar contents are intentionally
+// redacted; only whether a grammar is active is reported.
 func (p Params) String() string {
 	var b strings.Builder
 
 	fmt.Fprintln(&b)
-
-	if p.AdaptivePDecay != 0 {
-		fmt.Fprintf(&b, "adaptive_p_decay[%v]\n", p.AdaptivePDecay)
-	}
-	if p.AdaptivePTarget != 0 {
-		fmt.Fprintf(&b, "adaptive_p_target[%v]\n", p.AdaptivePTarget)
-	}
-	if p.DryAllowedLen != 0 {
-		fmt.Fprintf(&b, "dry_allowed_length[%v]\n", p.DryAllowedLen)
-	}
-	if p.DryBase != 0 {
-		fmt.Fprintf(&b, "dry_base[%v]\n", p.DryBase)
-	}
-	if p.DryMultiplier != 0 {
-		fmt.Fprintf(&b, "dry_multiplier[%v]\n", p.DryMultiplier)
-	}
-	if p.DryPenaltyLast != 0 {
-		fmt.Fprintf(&b, "dry_penalty_last_n[%v]\n", p.DryPenaltyLast)
-	}
-	if p.FrequencyPenalty != 0 {
-		fmt.Fprintf(&b, "frequency_penalty[%v]\n", p.FrequencyPenalty)
-	}
+	fmt.Fprintf(&b, "adaptive_p_decay[%v]\n", p.AdaptivePDecay)
+	fmt.Fprintf(&b, "adaptive_p_target[%v]\n", p.AdaptivePTarget)
+	fmt.Fprintf(&b, "dry_allowed_length[%v]\n", p.DryAllowedLen)
+	fmt.Fprintf(&b, "dry_base[%v]\n", p.DryBase)
+	fmt.Fprintf(&b, "dry_multiplier[%v]\n", p.DryMultiplier)
+	fmt.Fprintf(&b, "dry_penalty_last_n[%v]\n", p.DryPenaltyLast)
+	fmt.Fprintf(&b, "frequency_penalty[%v]\n", p.FrequencyPenalty)
 	fmt.Fprintf(&b, "grammar[%v]\n", p.Grammar != "")
-	if p.IncludeUsage {
-		fmt.Fprintf(&b, "include_usage[%v]\n", p.IncludeUsage)
-	}
-	if p.Logprobs {
-		fmt.Fprintf(&b, "logprobs[%v]\n", p.Logprobs)
-	}
-	if p.MaxTokens != 0 {
-		fmt.Fprintf(&b, "max_tokens[%v]\n", p.MaxTokens)
-	}
-	if p.MinP != 0 {
-		fmt.Fprintf(&b, "min_p[%v]\n", p.MinP)
-	}
-	if p.PresencePenalty != 0 {
-		fmt.Fprintf(&b, "presence_penalty[%v]\n", p.PresencePenalty)
-	}
-	if p.ReasoningEffort != "" {
-		fmt.Fprintf(&b, "reasoning_effort[%v]\n", p.ReasoningEffort)
-	}
-	if p.RepeatLastN != 0 {
-		fmt.Fprintf(&b, "repeat_last_n[%v]\n", p.RepeatLastN)
-	}
-	if p.RepeatPenalty != 0 {
-		fmt.Fprintf(&b, "repeat_penalty[%v]\n", p.RepeatPenalty)
-	}
-	if p.ReturnPrompt {
-		fmt.Fprintf(&b, "return_prompt[%v]\n", p.ReturnPrompt)
-	}
-	if p.Stream {
-		fmt.Fprintf(&b, "stream[%v]\n", p.Stream)
-	}
-	if p.Temperature != 0 {
-		fmt.Fprintf(&b, "temperature[%v]\n", p.Temperature)
-	}
-	if p.Thinking != "" {
-		fmt.Fprintf(&b, "enable_thinking[%v]\n", p.Thinking)
-	}
-	if p.TopK != 0 {
-		fmt.Fprintf(&b, "top_k[%v]\n", p.TopK)
-	}
-	if p.TopLogprobs != 0 {
-		fmt.Fprintf(&b, "top_logprobs[%v]\n", p.TopLogprobs)
-	}
-	if p.TopP != 0 {
-		fmt.Fprintf(&b, "top_p[%v]\n", p.TopP)
-	}
-	if p.XtcMinKeep != 0 {
-		fmt.Fprintf(&b, "xtc_min_keep[%v]\n", p.XtcMinKeep)
-	}
-	if p.XtcProbability != 0 {
-		fmt.Fprintf(&b, "xtc_probability[%v]\n", p.XtcProbability)
-	}
-	if p.XtcThreshold != 0 {
-		fmt.Fprintf(&b, "xtc_threshold[%v]\n", p.XtcThreshold)
-	}
+	fmt.Fprintf(&b, "include_usage[%v]\n", p.IncludeUsage)
+	fmt.Fprintf(&b, "logprobs[%v]\n", p.Logprobs)
+	fmt.Fprintf(&b, "max_tokens[%v]\n", p.MaxTokens)
+	fmt.Fprintf(&b, "min_p[%v]\n", p.MinP)
+	fmt.Fprintf(&b, "presence_penalty[%v]\n", p.PresencePenalty)
+	fmt.Fprintf(&b, "reasoning_effort[%v]\n", p.ReasoningEffort)
+	fmt.Fprintf(&b, "repeat_last_n[%v]\n", p.RepeatLastN)
+	fmt.Fprintf(&b, "repeat_penalty[%v]\n", p.RepeatPenalty)
+	fmt.Fprintf(&b, "return_prompt[%v]\n", p.ReturnPrompt)
+	fmt.Fprintf(&b, "stream[%v]\n", p.Stream)
+	fmt.Fprintf(&b, "temperature[%v]\n", p.Temperature)
+	fmt.Fprintf(&b, "enable_thinking[%v]\n", p.Thinking)
+	fmt.Fprintf(&b, "top_k[%v]\n", p.TopK)
+	fmt.Fprintf(&b, "top_logprobs[%v]\n", p.TopLogprobs)
+	fmt.Fprintf(&b, "top_p[%v]\n", p.TopP)
+	fmt.Fprintf(&b, "xtc_min_keep[%v]\n", p.XtcMinKeep)
+	fmt.Fprintf(&b, "xtc_probability[%v]\n", p.XtcProbability)
+	fmt.Fprintf(&b, "xtc_threshold[%v]\n", p.XtcThreshold)
 
 	return strings.TrimSuffix(b.String(), " ")
 }

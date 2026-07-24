@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react';
 import type { DisplayMessage } from './ChatContext';
-import type { PlaygroundSessionResponse } from '../types';
+import type { ModelLoadMode, PlaygroundSessionResponse } from '../types';
 
 interface PlaygroundState {
   // Session
@@ -55,6 +55,8 @@ interface PlaygroundState {
   setFlashAttention: React.Dispatch<React.SetStateAction<string>>;
   cacheType: string;
   setCacheType: React.Dispatch<React.SetStateAction<string>>;
+  loadMode: ModelLoadMode;
+  setLoadMode: React.Dispatch<React.SetStateAction<ModelLoadMode>>;
   cacheMode: string;
   setCacheMode: React.Dispatch<React.SetStateAction<string>>;
   moeMode: string;
@@ -90,6 +92,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [nSeqMax, setNSeqMax] = useState(1);
   const [flashAttention, setFlashAttention] = useState('auto');
   const [cacheType, setCacheType] = useState('');
+  const [loadMode, setLoadMode] = useState<ModelLoadMode>('mmap');
   const [cacheMode, setCacheMode] = useState('none');
   const [moeMode, setMoeMode] = useState('');
   const [moeKeepTopN, setMoeKeepTopN] = useState(0);
@@ -114,6 +117,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
+    loadMode, setLoadMode,
     cacheMode, setCacheMode,
     moeMode, setMoeMode,
     moeKeepTopN, setMoeKeepTopN,
@@ -122,7 +126,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   }), [
     session, chatMessages, selectedModel, playgroundMode, sweepMode, activeTab, systemPrompt, lastTPS,
     templateMode, selectedTemplate, customScript, contextWindow, nBatch, nUBatch,
-    nSeqMax, flashAttention, cacheType, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
+    nSeqMax, flashAttention, cacheType, loadMode, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
   ]);
 
   return (

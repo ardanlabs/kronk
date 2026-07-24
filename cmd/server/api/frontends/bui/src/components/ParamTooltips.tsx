@@ -48,8 +48,8 @@ export const PARAM_TOOLTIPS = {
   moeTipComputeBuffer: 'Larger NUBatch increases compute buffer VRAM usage. Monitor with the VRAM calculator when tuning MoE batch sizes.',
   availableVRAM: 'Total GPU VRAM available (in GB). When set, config candidates estimated to exceed this are auto-skipped before the sweep runs. Set to 0 or leave empty to disable VRAM filtering.',
 
-  // NUMA / mmap / Op-offload (Phase F2/F3)
-  useMMap: 'Controls whether mmap is used for model loading. Disabling mmap (--no-mmap) is recommended for multi-socket NUMA systems running MoE models with CPU experts — tensor data is directly allocated on the appropriate NUMA node instead of being memory-mapped.',
+  // NUMA / model loading / Op-offload (Phase F2/F3)
+  loadMode: 'Controls how model weights are loaded. mmap is the default; none disables memory mapping; mlock keeps mapped pages resident in RAM; direct-io bypasses the OS page cache where supported.',
   numa: 'NUMA (Non-Uniform Memory Access) strategy for multi-socket systems. "distribute" spreads memory across NUMA nodes (recommended for MoE CPU-expert setups). "isolate" pins to one node. "numactl" defers to system numactl. "mirror" mirrors across nodes. Leave empty to disable.',
   opOffloadMinBatch: 'Minimum batch size before enabling GPU offload for certain host-side operations during prompt processing. 0 = use server default. For large MoE models with many CPU weights, values of 200–500+ may improve prompt ingestion speed.',
 
@@ -117,8 +117,6 @@ export const PARAM_TOOLTIPS = {
   cacheTypeK: 'Precision format for the key portion of the KV cache. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit (most savings).',
   cacheTypeV: 'Precision format for the value portion of the KV cache. Same options as Cache Type K. Some models benefit from asymmetric K/V quantization.',
   cacheMinTokens: 'Minimum token count required before cache reuse kicks in. Higher values avoid caching very short prompts; lower values maximize reuse but can consume more memory for small requests.',
-  useDirectIO: 'Uses direct I/O for model file reads, bypassing the OS page cache. Can reduce double-buffering and cache pressure for large model loads, but may be slower or unsupported on some filesystems.',
-
   offloadKQV: 'Offloads key/query/value attention operations to GPU. Can improve performance on GPU-backed inference but increases VRAM usage.',
   opOffload: 'Allows selected host-side tensor operations to be offloaded to GPU during prompt processing. Can improve throughput for large or CPU-heavy workloads.',
   projOnCpu: 'Forces the multimodal projector (mmproj) onto the CPU regardless of GPU availability. Use this for audio models hit by llama.cpp Metal kernel regressions; the main LLM still runs on GPU.',

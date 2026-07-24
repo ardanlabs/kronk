@@ -63,6 +63,7 @@ type SessionConfig struct {
 	FlashAttention      *model.FlashAttentionType `json:"flash_attention"`
 	CacheTypeK          *model.GGMLType           `json:"cache_type_k"`
 	CacheTypeV          *model.GGMLType           `json:"cache_type_v"`
+	LoadMode            *model.LoadMode           `json:"load_mode"`
 	NGpuLayers          *int                      `json:"ngpu_layers"`
 	IncrementalCache    *bool                     `json:"incremental_cache"`
 	RopeScaling         *model.RopeScalingType    `json:"rope_scaling_type"`
@@ -106,6 +107,9 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	}
 	if sc.CacheTypeV != nil {
 		cfg.CacheTypeV = *sc.CacheTypeV
+	}
+	if sc.LoadMode != nil {
+		cfg.LoadMode = *sc.LoadMode
 	}
 	if sc.NGpuLayers != nil {
 		cfg.PtrNGpuLayers = sc.NGpuLayers
@@ -186,6 +190,7 @@ func (sc SessionConfig) HasOverrides() bool {
 		sc.FlashAttention != nil ||
 		sc.CacheTypeK != nil ||
 		sc.CacheTypeV != nil ||
+		sc.LoadMode != nil ||
 		sc.NGpuLayers != nil ||
 		sc.IncrementalCache != nil ||
 		sc.RopeScaling != nil ||

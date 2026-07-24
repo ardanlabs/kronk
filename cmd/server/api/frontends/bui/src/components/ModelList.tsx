@@ -449,6 +449,7 @@ export default function ModelList() {
                         { key: 'flash-attention', label: labelWithTip('flash-attention', 'flashAttention'), value: mc['flash-attention'] || 'default' },
 
                         { key: 'incremental-cache', label: labelWithTip('incremental-cache', 'incrementalCache'), value: boolBadge(mc['incremental-cache']) },
+                        { key: 'load-mode', label: labelWithTip('load-mode', 'loadMode'), value: mc['load-mode'] || 'mmap' },
                         { key: 'main-gpu', label: labelWithTip('main-gpu', 'mainGpu'), value: fmtVal(mc['main-gpu']) },
                         { key: 'moe.keep-experts-top-n', label: labelWithTip('moe.keep-experts-top-n', 'moeKeepExpertsTopN'), value: fmtVal(mc.moe?.['keep-experts-top-n']) },
                         { key: 'moe.mode', label: labelWithTip('moe.mode', 'moeMode'), value: mc.moe?.mode || '—' },
@@ -470,8 +471,6 @@ export default function ModelList() {
                         { key: 'swa-full', label: labelWithTip('swa-full', 'swaFull'), value: mc['swa-full'] == null ? <span className="badge badge-yes">Yes (default)</span> : boolBadge(mc['swa-full']) },
                         { key: 'tensor-buft-overrides', label: labelWithTip('tensor-buft-overrides', 'tensorBuftOverrides'), value: mc['tensor-buft-overrides']?.join(', ') || '—' },
                         { key: 'tensor-split', label: labelWithTip('tensor-split', 'tensorSplit'), value: mc['tensor-split']?.join(', ') || '—' },
-                        { key: 'use-direct-io', label: labelWithTip('use-direct-io', 'useDirectIO'), value: boolBadge(mc['use-direct-io']) },
-                        { key: 'use-mmap', label: labelWithTip('use-mmap', 'useMMap'), value: fmtVal(mc['use-mmap']) },
                         { key: 'yarn-attn-factor', label: labelWithTip('yarn-attn-factor', 'yarnAttnFactor'), value: fmtVal(mc['yarn-attn-factor']) },
                         { key: 'yarn-beta-fast', label: labelWithTip('yarn-beta-fast', 'yarnBetaFast'), value: fmtVal(mc['yarn-beta-fast']) },
                         { key: 'yarn-beta-slow', label: labelWithTip('yarn-beta-slow', 'yarnBetaSlow'), value: fmtVal(mc['yarn-beta-slow']) },

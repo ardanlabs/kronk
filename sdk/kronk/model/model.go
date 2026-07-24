@@ -514,15 +514,8 @@ func buildModelParams(ctx context.Context, cfg *Config, l applog.Logger) (llama.
 		ka.tensorBuft = overrides
 	}
 
-	// UseMMap: controls mmap for model loading.
-	// When nil, use llama.cpp default (mmap enabled). UseDirectIO takes precedence.
-	if cfg.PtrUseMMap != nil {
-		if *cfg.PtrUseMMap {
-			mParams.UseMmap = 1
-		} else {
-			mParams.UseMmap = 0
-		}
-	}
+	mParams.LoadMode = cfg.LoadMode.ToYZMAType()
+	logModelParamsTrace(ctx, mParams, cfg.Devices, cfg.TensorSplit, cfg.TensorBuftOverrides, l)
 
 	return mParams, ka, nil
 }
@@ -627,13 +620,25 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l
 	typeKName := GGMLTypeFromYZMA(ctxParams.TypeK).String()
 	typeVName := GGMLTypeFromYZMA(ctxParams.TypeV).String()
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nEmbeddings[%d]\nFlashAttentionType[%s]\nNBatch[%d]\nNCtx[%d]\nNOutputsMax[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
-		ctxParams.Embeddings, faName, ctxParams.NBatch, ctxParams.NCtx, ctxParams.NOutputsMax,
-		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch,
-		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType,
-		ctxParams.RopeFreqBase, ctxParams.RopeFreqScale, ctxParams.RopeScalingType,
-		ctxParams.SwaFull, typeKName, typeVName, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast,
-		ctxParams.YarnBetaSlow, ctxParams.YarnExtFactor, ctxParams.YarnOrigCtx))
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nAbortCallbackSet[%t]\nAttentionType[%d]\nCtxOtherSet[%t]\nCtxType[%d]\nDefragThold[%g]\nEmbeddings[%d]\nEvalCallbackSet[%t]\nFlashAttentionType[%s]\nKVUnified[%d]\nNBatch[%d]\nNCtx[%d]\nNOutputsMax[%d]\nNRsSeq[%d]\nNSamplers[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNoPerf[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSamplersSet[%t]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+		ctxParams.AbortCallback != 0, ctxParams.AttentionType, ctxParams.CtxOther != 0, ctxParams.CtxType,
+		ctxParams.DefragThold, ctxParams.Embeddings, ctxParams.CbEval != 0, faName, ctxParams.KVUnified,
+		ctxParams.NBatch, ctxParams.NCtx, ctxParams.NOutputsMax, ctxParams.NRsSeq, ctxParams.NSamplers,
+		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch, ctxParams.NoPerf,
+		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType, ctxParams.RopeFreqBase,
+		ctxParams.RopeFreqScale, ctxParams.RopeScalingType, ctxParams.Samplers != 0, ctxParams.SwaFull,
+		typeKName, typeVName, ctxParams.YarnAttnFactor, ctxParams.YarnBetaFast, ctxParams.YarnBetaSlow,
+		ctxParams.YarnExtFactor, ctxParams.YarnOrigCtx))
+}
+
+// logModelParamsTrace emits the translated llama.ModelParams before loading.
+// Pointer-backed arrays use their configured values so diagnostics remain
+// readable without exposing process addresses.
+func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNames []string, tensorSplit []float32, tensorBuftOverrides []string, l applog.Logger) {
+	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLoadMode[%s]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
+		params.CheckTensors, deviceNames, params.KvOverrides != 0, loadModeName(params.LoadMode), params.MainGpu,
+		params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitMode(params.SplitMode).String(),
+		tensorBuftOverrides, tensorSplit, params.UseExtraBufts, params.VocabOnly))
 }
 
 // initGenerationRuntime wires up the generation-only runtime: primary llama
@@ -806,6 +811,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 
 	// Load draft model.
 	mParams := llama.ModelDefaultParams()
+	mParams.LoadMode = cfg.LoadMode.ToYZMAType()
 	switch {
 	case dCfg.PtrNGpuLayers == nil:
 		mParams.NGpuLayers = -1
@@ -839,6 +845,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 		copy(draftTensorSplitBuf, dCfg.TensorSplit)
 		mParams.TensorSplit = &draftTensorSplitBuf[0]
 	}
+	logModelParamsTrace(ctx, mParams, dCfg.Devices, dCfg.TensorSplit, nil, log)
 
 	log(ctx, "draft-model", "status", "loading",
 		"files", fmt.Sprintf("%v", dCfg.ModelFiles),
@@ -953,9 +960,10 @@ func buildDraftSampler(params Params) llama.Sampler {
 
 func loadModelFromFiles(ctx context.Context, log applog.Logger, modelFiles []string, params llama.ModelParams) (llama.Model, error) {
 	baseModelFile := path.Base(modelFiles[0])
+	loadMode := loadModeName(params.LoadMode)
 
-	log(ctx, "loading model from file", "status", "started", "model", baseModelFile)
-	defer log(ctx, "loading model from file", "status", "completed", "model", baseModelFile)
+	log(ctx, "loading model from file", "status", "started", "model", baseModelFile, "load-mode", loadMode)
+	defer log(ctx, "loading model from file", "status", "completed", "model", baseModelFile, "load-mode", loadMode)
 
 	_, span := otel.AddSpan(ctx, "model-file-load-time",
 		attribute.String("model-file", baseModelFile),
@@ -980,6 +988,13 @@ func loadModelFromFiles(ctx context.Context, log applog.Logger, modelFiles []str
 	}
 
 	return mdl, nil
+}
+
+func loadModeName(loadMode llama.LoadMode) string {
+	if loadMode == llama.LoadModeDirectIO {
+		return LoadModeDirectIO.String()
+	}
+	return llama.LoadModeName(loadMode)
 }
 
 // retrieveTemplate resolves the Jinja chat template for a model. The

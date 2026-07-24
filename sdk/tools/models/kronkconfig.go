@@ -200,6 +200,7 @@ type ModelConfig struct {
 	FlashAttention       *model.FlashAttentionType `yaml:"flash-attention,omitempty"`
 	PtrIncrementalCache  *bool                     `yaml:"incremental-cache,omitempty"`
 	PtrInsecureLogging   *bool                     `yaml:"insecure-logging,omitempty"`
+	PtrLoadMode          *model.LoadMode           `yaml:"load-mode,omitempty"`
 	PtrMainGPU           *int                      `yaml:"main-gpu,omitempty"`
 	MoE                  *model.MoEConfig          `yaml:"moe,omitempty"`
 	PtrNBatch            *int                      `yaml:"nbatch,omitempty"`
@@ -224,8 +225,6 @@ type ModelConfig struct {
 	TensorBuftOverrides  []string                  `yaml:"tensor-buft-overrides,omitempty"`
 	TensorSplit          []float32                 `yaml:"tensor-split,omitempty"`
 	Template             string                    `yaml:"template,omitempty"`
-	PtrUseDirectIO       *bool                     `yaml:"use-direct-io,omitempty"`
-	PtrUseMMap           *bool                     `yaml:"use-mmap,omitempty"`
 	PtrYarnAttnFactor    *float32                  `yaml:"yarn-attn-factor,omitempty"`
 	PtrYarnBetaFast      *float32                  `yaml:"yarn-beta-fast,omitempty"`
 	PtrYarnBetaSlow      *float32                  `yaml:"yarn-beta-slow,omitempty"`
@@ -272,6 +271,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrIncrementalCache:  mc.PtrIncrementalCache,
 		PtrInsecureLogging:   mc.PtrInsecureLogging,
 		JinjaFile:            mc.Template,
+		LoadMode:             model.DerefLoadMode(mc.PtrLoadMode),
 		PtrMainGPU:           mc.PtrMainGPU,
 		MoE:                  mc.MoE,
 		PtrNBatch:            mc.PtrNBatch,
@@ -294,8 +294,6 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrSWAFull:           mc.PtrSWAFull,
 		TensorBuftOverrides:  mc.TensorBuftOverrides,
 		TensorSplit:          mc.TensorSplit,
-		PtrUseDirectIO:       mc.PtrUseDirectIO,
-		PtrUseMMap:           mc.PtrUseMMap,
 		PtrYarnAttnFactor:    mc.PtrYarnAttnFactor,
 		PtrYarnBetaFast:      mc.PtrYarnBetaFast,
 		PtrYarnBetaSlow:      mc.PtrYarnBetaSlow,
