@@ -34,7 +34,7 @@ func init() {
 	Cmd.Flags().Bool("web-admin-enabled", false, "Serve the browser admin UI at /admin/")
 	Cmd.Flags().String("auth-host", "", "External auth service host")
 	Cmd.Flags().String("auth-issuer", "", "Local auth issuer name")
-	Cmd.Flags().String("web-admin-password-sha256", "", "SHA-256 digest for browser admin login")
+	Cmd.Flags().String("web-admin-password-sha-256", "", "SHA-256 digest for browser admin login")
 
 	// MCP settings
 	Cmd.Flags().Bool("mcp-enabled", true, "Enable or disable the embedded MCP service")

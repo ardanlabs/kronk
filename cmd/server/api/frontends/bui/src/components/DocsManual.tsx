@@ -2392,7 +2392,7 @@ kronk server start`}</code></pre>
           <h3 id="133-authentication">13.3 Authentication</h3>
           <p>By default, the BUI and management APIs do not require a login. To protect browser administration, enable admin authentication and configure the SHA-256 digest of the password:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_AUTH_ADMIN_ENABLED=true
-export KRONK_WEB_ADMIN_PASSWORD_SHA256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
+export KRONK_WEB_ADMIN_PASSWORD_SHA_256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
 kronk server start`}</code></pre>
           <p>Login creates a one-hour admin token in an HttpOnly, SameSite cookie. The browser cannot read the token, and the server uses it to authenticate the BUI's same-origin <code>/v1</code> requests. Sign out from the sidebar to end the browser session.</p>
           <p>General authentication also enables admin authentication. Chapter 12 explains the open, admin-only, and fully protected modes, including TLS and reverse proxy considerations.</p>
