@@ -149,10 +149,10 @@ pool of `nseq-max` independent model contexts that share the model weights.
 
 ```diagram
 ┌──────────┐       ┌──────────────────────────────┐
-│ Requests │──────▶│ Context pool                │
-└──────────┘       │  Context 0 ── request A     │
-                   │  Context 1 ── request B     │
-                   │  Context 2 ── available     │
+│ Requests │──────▶│ Context pool                 │
+└──────────┘       │  Context 0 ── request A      │
+                   │  Context 1 ── request B      │
+                   │  Context 2 ── available      │
                    └──────────────────────────────┘
 ```
 
