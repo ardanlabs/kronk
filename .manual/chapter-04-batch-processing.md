@@ -26,12 +26,12 @@ is covered in [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-cachi
 
 Kronk uses two concurrency designs:
 
-| Workload | `nseq-max` controls | Execution design |
-| -------- | ------------------- | ---------------- |
-| Text generation | Active generation slots | One model context and a shared batch engine |
+| Workload              | `nseq-max` controls     | Execution design                                      |
+| --------------------- | ----------------------- | ----------------------------------------------------- |
+| Text generation       | Active generation slots | One model context and a shared batch engine           |
 | Multimodal generation | Active generation slots | The same batch engine, with specialized media prefill |
-| Embedding | Independent contexts | Context pool with shared model weights |
-| Reranking | Independent contexts | Context pool with shared model weights |
+| Embedding             | Independent contexts    | Context pool with shared model weights                |
+| Reranking             | Independent contexts    | Context pool with shared model weights                |
 
 Multimodal generation includes requests that provide images or audio to a
 compatible language model. Bucky speech transcription is a separate
@@ -51,13 +51,13 @@ execution slots. A slot tracks one active request's prompt position, sampler,
 streaming response, and sequence ID.
 
 ```diagram
-┌───────────────┐       ┌──────────────────────────────────┐
-│ Waiting jobs  │──────▶│ Batch engine                     │
-└───────────────┘       │                                  │
-                        │  Slot 0 ── sequence 0 ── request A│
-                        │  Slot 1 ── sequence 1 ── request B│
-                        │  Slot 2 ── sequence 2 ── request C│
-                        └────────────────┬─────────────────┘
+┌───────────────┐       ┌────────────────────────────────────┐
+│ Waiting jobs  │──────▶│ Batch engine                       │
+└───────────────┘       │                                    │
+                        │  Slot 0 ── sequence 0 ── request A │
+                        │  Slot 1 ── sequence 1 ── request B │
+                        │  Slot 2 ── sequence 2 ── request C │
+                        └────────────────┬───────────────────┘
                                          │
                                          ▼
                         ┌──────────────────────────────────┐
