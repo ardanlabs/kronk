@@ -872,13 +872,13 @@ some-provider/large-model:
           <p>Increasing <code>nseq-max</code> allows more work to proceed concurrently. It can improve aggregate throughput when requests overlap, but it also increases memory capacity and gives each request a smaller share of the same compute resources. Higher concurrency can therefore increase individual response latency. There is no universal value that is best for every model, device, and workload.</p>
           <h3 id="42-generation-slots-and-sequences">4.2 Generation Slots and Sequences</h3>
           <p>For text and multimodal generation, the batch engine creates <code>nseq-max</code> execution slots. A slot tracks one active request's prompt position, sampler, streaming response, and sequence ID.</p>
-          <pre className="code-block"><code className="language-diagram">{`┌───────────────┐       ┌──────────────────────────────────┐
-│ Waiting jobs  │──────▶│ Batch engine                     │
-└───────────────┘       │                                  │
-                        │  Slot 0 ── sequence 0 ── request A│
-                        │  Slot 1 ── sequence 1 ── request B│
-                        │  Slot 2 ── sequence 2 ── request C│
-                        └────────────────┬─────────────────┘
+          <pre className="code-block"><code className="language-diagram">{`┌───────────────┐       ┌────────────────────────────────────┐
+│ Waiting jobs  │──────▶│ Batch engine                       │
+└───────────────┘       │                                    │
+                        │  Slot 0 ── sequence 0 ── request A │
+                        │  Slot 1 ── sequence 1 ── request B │
+                        │  Slot 2 ── sequence 2 ── request C │
+                        └────────────────┬───────────────────┘
                                          │
                                          ▼
                         ┌──────────────────────────────────┐
