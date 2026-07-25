@@ -63,7 +63,7 @@ curl -i http://localhost:11435/v1/readiness
 Readiness currently returns an empty `200 OK` when the HTTP service is running.
 It does not verify libraries, devices, memory, loaded models, or inference.
 Metrics and profiles are served from the unauthenticated debug server; see
-[Chapter 15](chapter-15-observability.md#151-debug-and-health-endpoints) before
+[Chapter 15](https://www.kronkai.com/manual#151-debug-and-health-endpoints) before
 exposing that port.
 
 ### 17.2 Libraries and Devices
@@ -90,7 +90,7 @@ KRONK_PROCESSOR=cpu kronk libs --local
 
 Not every combination is published. Check the live matrix with
 `kronk libs --list-combinations`. See
-[Chapter 2: Libraries](chapter-02-installation.md#24-libraries) for installation
+[Chapter 2: Libraries](https://www.kronkai.com/manual#24-libraries) for installation
 and path details.
 
 #### NVIDIA is visible but llama.cpp uses the CPU
@@ -174,7 +174,7 @@ cannot repair malformed YAML. Do not use `catalog remove` as a syntax-repair
 tool because it also removes the selected model's downloaded files.
 
 Catalog administration is covered in
-[Chapter 8](chapter-08-model-server.md#86-catalog-operations).
+[Chapter 8](https://www.kronkai.com/manual#86-catalog-operations).
 
 ### 17.4 Memory and Performance
 
@@ -190,7 +190,7 @@ variable at a time:
 5. Choose a smaller or more heavily quantized GGUF.
 
 Use the BUI VRAM Calculator for a model-specific estimate and retain headroom.
-See [Chapter 3: Memory Planning](chapter-03-model-configuration.md#36-memory-planning-and-quantization).
+See [Chapter 3: Memory Planning](https://www.kronkai.com/manual#36-memory-planning-and-quantization).
 
 #### `input tokens [N] exceed context window [M]`
 
@@ -203,7 +203,7 @@ Cached prefix tokens still consume context capacity.
 Input plus generated tokens exhausted the context during inference. Request
 fewer output tokens, shorten the input, or increase the context. YaRN may extend
 supported RoPE models, but it is not a generic memory fix; follow
-[Chapter 7](chapter-07-yarn-extended-context.md).
+[Chapter 7](https://www.kronkai.com/manual#chapter-7-yarn-extended-context).
 
 #### Slow inference or slow time to first token
 
@@ -217,7 +217,7 @@ solely because a GPU is present: its performance depends on the model's actual
 storage device and filesystem, and bypassing the page cache can make repeated
 loads slower. `mlock` stabilizes residency after loading but requires enough
 lockable RAM; it is not a general cold-start optimization. See
-[Chapter 3 §3.4](chapter-03-model-configuration.md#model-weight-loading) before
+[Chapter 3 §3.4](https://www.kronkai.com/manual#model-weight-loading) before
 changing the mode.
 
 Use Chapter 15's request, queue, prefill, TTFT, token-rate, and pool metrics to
@@ -291,13 +291,13 @@ kronk security token create \
 
 Rate limits use forms such as `chat-completions:10000/day`. Token creation,
 key rotation, and production hardening are covered in
-[Chapter 12](chapter-12-security-authentication.md).
+[Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication).
 
 ### 17.7 IMC
 
 IMC is enabled by default. It externalizes cached session state to RAM by
 default or to the configured disk session store. See
-[Chapter 5](chapter-05-message-caching.md) for its lifecycle and settings.
+[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) for its lifecycle and settings.
 
 #### Every turn rebuilds the cache
 
@@ -349,7 +349,7 @@ Streamable HTTP. Common failures are:
 MCP authentication is disabled by default, and `fuzzy_edit` has the process's
 filesystem access. Keep it on loopback unless bearer authentication, TLS, and
 network restrictions are configured. See
-[Chapter 16](chapter-16-mcp-service.md) for configuration and the complete
+[Chapter 16](https://www.kronkai.com/manual#chapter-16-mcp-service) for configuration and the complete
 handshake.
 
 ### 17.9 Ports, Processes, and Permissions
@@ -379,7 +379,7 @@ user. The server enforces mode `0700` on `<base>/keys` and `0600` on private
 key files. Avoid recursively making credentials readable by other users.
 
 Whisper-specific failures are listed in
-[Chapter 18 §18.11](chapter-18-bucky.md#1811-troubleshooting).
+[Chapter 18 §18.9](https://www.kronkai.com/manual#189-troubleshooting).
 
 ### 17.10 Reporting a Problem
 
@@ -398,4 +398,4 @@ values before sharing diagnostic output.
 
 ---
 
-_Next: [Chapter 18: Bucky (Audio Transcription)](chapter-18-bucky.md)_
+_Next: [Chapter 18: Bucky (Audio Transcription)](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription)_

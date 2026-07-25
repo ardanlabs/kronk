@@ -108,7 +108,7 @@ export default function DocsManual() {
           <ul>
             <li><strong>Text generation</strong> — chat completions and responses, including streaming, reasoning, and tool calls.</li>
             <li><strong>Vision</strong> — image understanding with compatible multimodal models.</li>
-            <li><strong>Audio transcription</strong> — speech-to-text through Bucky and whisper.cpp. See <a href="chapter-18-bucky.md">Chapter 18: Bucky</a>.</li>
+            <li><strong>Audio transcription</strong> — speech-to-text through Bucky and whisper.cpp. See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a>.</li>
             <li><strong>Embeddings and reranking</strong> — vector generation and document relevance scoring for search and retrieval systems.</li>
           </ul>
           <p><strong>Performance</strong></p>
@@ -126,8 +126,8 @@ export default function DocsManual() {
             <li><strong>Observability</strong> — collect traces and Prometheus metrics for external observability systems.</li>
           </ul>
           <p>Kronk stores its managed files under <code>~/.kronk/</code> by default. The location is configurable; the official containers use <code>/kronk</code> so the directory can be mounted as persistent storage.</p>
-          <p>Hardware support differs by operating system, architecture, inference engine, and release artifact. Kronk can use CPU inference and GPU backends such as Metal, CUDA, Vulkan, and ROCm where a compatible library bundle is available. See <a href="chapter-02-installation.md">Chapter 2: Installation & Quick Start</a> for the currently distributed native and container options.</p>
-          <p>Memory requirements depend on more than model parameter count. Quantization, context size, KV cache type, batch size, concurrency, and multimodal projections all affect RAM and VRAM use. See <a href="chapter-03-model-configuration.md">Chapter 3: Model Configuration</a> before selecting a large model or context window.</p>
+          <p>Hardware support differs by operating system, architecture, inference engine, and release artifact. Kronk can use CPU inference and GPU backends such as Metal, CUDA, Vulkan, and ROCm where a compatible library bundle is available. See <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2: Installation & Quick Start</a> for the currently distributed native and container options.</p>
+          <p>Memory requirements depend on more than model parameter count. Quantization, context size, KV cache type, batch size, concurrency, and multimodal projections all affect RAM and VRAM use. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a> before selecting a large model or context window.</p>
           <h3 id="14-architecture">1.4 Architecture</h3>
           <p>Kronk is layered so applications and the model server use the same inference SDKs. The two engine paths provide different model capabilities and may have different platform support.</p>
           <pre className="code-block"><code className="language-diagram">{`Your Go Application                 Kronk Model Server
@@ -149,10 +149,10 @@ export default function DocsManual() {
           <p>The SDK layer owns model loading, inference, caching, and concurrency. The model server adds HTTP transport, model pooling, the BUI, security, and operational services. Your application can use the SDK without starting the model server.</p>
           <h3 id="15-where-to-go-next">1.5 Where to Go Next</h3>
           <ul>
-            <li><strong>Install Kronk and run your first model:</strong> <a href="chapter-02-installation.md">Chapter 2: Installation & Quick Start</a></li>
-            <li><strong>Choose memory, context, and GPU settings:</strong> <a href="chapter-03-model-configuration.md">Chapter 3: Model Configuration</a></li>
-            <li><strong>Connect an editor, agent, or other client:</strong> <a href="chapter-14-client-integration.md">Chapter 14: Client Integration</a></li>
-            <li><strong>Run speech-to-text models:</strong> <a href="chapter-18-bucky.md">Chapter 18: Bucky</a></li>
+            <li><strong>Install Kronk and run your first model:</strong> <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2: Installation & Quick Start</a></li>
+            <li><strong>Choose memory, context, and GPU settings:</strong> <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a></li>
+            <li><strong>Connect an editor, agent, or other client:</strong> <a href="https://www.kronkai.com/manual#chapter-14-client-integration">Chapter 14: Client Integration</a></li>
+            <li><strong>Run speech-to-text models:</strong> <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a></li>
           </ul>
           <hr />
           <h2 id="chapter-2-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
@@ -217,7 +217,7 @@ brew install kronk`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Regardless of installation method, model downloads require enough disk space, and inference requires enough RAM or VRAM for the selected model and configuration. Quantization, context size, KV cache type, and concurrency all affect memory use; parameter count alone is not a reliable requirement. See <a href="chapter-03-model-configuration.md">Chapter 3: Model Configuration</a>.</p>
+          <p>Regardless of installation method, model downloads require enough disk space, and inference requires enough RAM or VRAM for the selected model and configuration. Quantization, context size, KV cache type, and concurrency all affect memory use; parameter count alone is not a reliable requirement. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a>.</p>
           <h4 id="homebrew">Homebrew</h4>
           <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk
 brew trust ardanlabs/kronk
@@ -296,7 +296,7 @@ kronk --help`}</code></pre>
           <p>The container runs as UID/GID <code>10001</code>. A named volume needs no preparation. If you use a host directory such as <code>/srv/kronk</code>, make it writable by that user before starting the container:</p>
           <pre className="code-block"><code className="language-shell">{`sudo mkdir -p /srv/kronk
 sudo chown -R 10001:10001 /srv/kronk`}</code></pre>
-          <p>For pinned releases, updates, and remote operation, see <a href="chapter-08-model-server.md#87-container-operations">Chapter 8: Model Server</a>.</p>
+          <p>For pinned releases, updates, and remote operation, see <a href="https://www.kronkai.com/manual#87-container-operations">Chapter 8: Model Server</a>.</p>
           <h3 id="24-libraries">2.4 Libraries</h3>
           <p>Kronk needs a native llama.cpp library bundle before it can run GGUF models. The server checks the selected bundle during startup and installs it when needed. To install it explicitly before starting the server, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
@@ -321,7 +321,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A working <code>nvidia-smi</code> confirms the driver but not necessarily the CUDA runtime. If the CUDA backend does not load, inspect <code>libggml-cuda.so</code> with <code>ldd</code> and install the runtime packages appropriate for the CUDA version used by the current bundle. The CUDA container image already includes its matching runtime.</p>
           <p>Speech-to-text uses a separate whisper.cpp bundle:</p>
           <pre className="code-block"><code className="language-shell">{`kronk bucky libs --local`}</code></pre>
-          <p>See <a href="chapter-18-bucky.md#182-installation-libraries">Chapter 18: Bucky</a> for Bucky platforms, models, and configuration.</p>
+          <p>See <a href="https://www.kronkai.com/manual#182-install-whisper-libraries">Chapter 18: Bucky</a> for Bucky platforms, models, and configuration.</p>
           <h3 id="25-models-and-data-paths">2.5 Models and Data Paths</h3>
           <p>List the starter catalog and download a model directly on the host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local
@@ -344,8 +344,8 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
 └── keys/`}</code></pre>
           <p>Older installations that stored <code>catalog.yaml</code> or <code>model_config.yaml</code> directly under <code>~/.kronk/</code> are migrated automatically when the new location is first used.</p>
           <p>Set <code>KRONK_BASE_PATH</code> or the global <code>--base-path</code> flag to move the entire data root. Official containers set it to <code>/kronk</code>.</p>
-          <p>The <code>lora</code> directory holds optional, user-provided LoRA adapter GGUF files. Kronk does not download these files. See <a href="chapter-03-model-configuration.md#lora-adapters">Chapter 3 §3.7</a> for placement and configuration.</p>
-          <p>The model configuration file contains per-model and per-variant overrides. Do not copy configuration values based only on model size; use <a href="chapter-03-model-configuration.md">Chapter 3</a> for context, cache, GPU, and sampling settings.</p>
+          <p>The <code>lora</code> directory holds optional, user-provided LoRA adapter GGUF files. Kronk does not download these files. See <a href="https://www.kronkai.com/manual#lora-adapters">Chapter 3 §3.7</a> for placement and configuration.</p>
+          <p>The model configuration file contains per-model and per-variant overrides. Do not copy configuration values based only on model size; use <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for context, cache, GPU, and sampling settings.</p>
           <h3 id="26-running-the-server">2.6 Running the Server</h3>
           <p>Start in the foreground:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=127.0.0.1:11435`}</code></pre>
@@ -359,7 +359,7 @@ kronk server stop`}</code></pre>
   --api-host=127.0.0.1:11435 \\
   --web-admin-enabled=false`}</code></pre>
           <p>Server-side downloading is separately controlled by <code>KRONK_DOWNLOAD_ENABLED</code> and defaults to <code>false</code>. Local CLI commands using <code>--local</code> are not affected by this setting.</p>
-          <p>See <a href="chapter-08-model-server.md">Chapter 8</a> for server flags, model pooling, runtime paths, and deployment operations.</p>
+          <p>See <a href="https://www.kronkai.com/manual#chapter-8-model-server">Chapter 8</a> for server flags, model pooling, runtime paths, and deployment operations.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
@@ -375,19 +375,19 @@ kronk server stop`}</code></pre>
   }'`}</code></pre>
           <p>If authentication is enabled, add <code>-H "Authorization: Bearer $KRONK_TOKEN"</code> to API requests.</p>
           <h3 id="28-security-and-next-steps">2.8 Security and Next Steps</h3>
-          <p>Authentication is disabled by default. Do not publish port <code>11435</code> to an untrusted network until authentication and TLS termination are configured. The BUI, management endpoints, and inference endpoints have separate security controls; see <a href="chapter-12-security-authentication.md">Chapter 12: Security & Authentication</a> before operating a shared or internet-reachable server.</p>
+          <p>Authentication is disabled by default. Do not publish port <code>11435</code> to an untrusted network until authentication and TLS termination are configured. The BUI, management endpoints, and inference endpoints have separate security controls; see <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12: Security & Authentication</a> before operating a shared or internet-reachable server.</p>
           <p>Continue with:</p>
           <ul>
-            <li><a href="chapter-03-model-configuration.md">Chapter 3: Model Configuration</a> for memory, context, GPU, cache, and sampling settings.</li>
-            <li><a href="chapter-08-model-server.md">Chapter 8: Model Server</a> for server operation and deployment.</li>
-            <li><a href="chapter-12-security-authentication.md">Chapter 12: Security & Authentication</a> before exposing the service.</li>
-            <li><a href="chapter-14-client-integration.md">Chapter 14: Client Integration</a> to connect an editor or coding agent.</li>
-            <li><a href="chapter-18-bucky.md">Chapter 18: Bucky</a> for speech-to-text.</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a> for memory, context, GPU, cache, and sampling settings.</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-8-model-server">Chapter 8: Model Server</a> for server operation and deployment.</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12: Security & Authentication</a> before exposing the service.</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-14-client-integration">Chapter 14: Client Integration</a> to connect an editor or coding agent.</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a> for speech-to-text.</li>
           </ul>
           <hr />
           <h2 id="chapter-3-model-configuration">Chapter 3: Model Configuration</h2>
           <p>Kronk analyzes each model and the available hardware before loading it. Most models run well without manual tuning. Use per-model configuration when you need a different context window, more concurrent requests, explicit device placement, or an advanced feature such as speculative decoding.</p>
-          <p>This chapter documents model runtime configuration. Server settings such as the listen address, authentication, and the number of models kept in the pool are covered in <a href="chapter-08-model-server.md">Chapter 8</a>.</p>
+          <p>This chapter documents model runtime configuration. Server settings such as the listen address, authentication, and the number of models kept in the pool are covered in <a href="https://www.kronkai.com/manual#chapter-8-model-server">Chapter 8</a>.</p>
           <h3 id="31-configuration-file">3.1 Configuration File</h3>
           <p>The model server reads per-model overrides from:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/models/model_config.yaml`}</code></pre>
@@ -398,7 +398,7 @@ kronk server stop`}</code></pre>
           <p>Do not add a <code>models:</code> wrapper. Top-level setting names use kebab-case, such as <code>context-window</code> and <code>nseq-max</code>. Keys nested under <code>sampling-parameters</code> use the API's snake_case names, such as <code>top_p</code>.</p>
           <p>The server reads this file during startup. Restart the server after changing it. To test a different file without replacing the default, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model-config.yaml`}</code></pre>
-          <p>You can also set <code>KRONK_POOL_MODEL_CONFIG_FILE</code> to an alternative path. See <a href="chapter-08-model-server.md#85-model-configuration-files">Chapter 8 §8.5</a> for model config file management and <a href="chapter-02-installation.md#25-models-and-data-paths">Chapter 2 §2.5</a> for all data paths.</p>
+          <p>You can also set <code>KRONK_POOL_MODEL_CONFIG_FILE</code> to an alternative path. See <a href="https://www.kronkai.com/manual#85-model-configuration-files">Chapter 8 §8.5</a> for model config file management and <a href="https://www.kronkai.com/manual#25-models-and-data-paths">Chapter 2 §2.5</a> for all data paths.</p>
           <h4 id="model-variants">Model variants</h4>
           <p>A suffix creates another configuration for the same downloaded model:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
@@ -408,8 +408,8 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
   context-window: 65536`}</code></pre>
           <p>Select the variant by sending the complete name, including <code>/LONG</code>, as the API request's <code>model</code> value. Variants let applications use different runtime settings without keeping duplicate model files.</p>
           <h4 id="other-configuration-surfaces">Other configuration surfaces</h4>
-          <p>Applications embedding the Go SDK can construct a <code>model.Config</code> directly. Request fields such as <code>temperature</code>, <code>top_p</code>, and <code>max_tokens</code> can override generation behavior for an individual request. Those request fields are documented in <a href="chapter-10-request-parameters.md">Chapter 10</a>.</p>
-          <p>The hardware processor (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>rocm</code>, or <code>vulkan</code>) selects a native library bundle rather than a per-model setting. Kronk detects it during library installation. Set <code>KRONK_PROCESSOR</code> before installing libraries only when you need to override detection; see <a href="chapter-02-installation.md#24-libraries">Chapter 2 §2.4</a>.</p>
+          <p>Applications embedding the Go SDK can construct a <code>model.Config</code> directly. Request fields such as <code>temperature</code>, <code>top_p</code>, and <code>max_tokens</code> can override generation behavior for an individual request. Those request fields are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>.</p>
+          <p>The hardware processor (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>rocm</code>, or <code>vulkan</code>) selects a native library bundle rather than a per-model setting. Kronk detects it during library installation. Set <code>KRONK_PROCESSOR</code> before installing libraries only when you need to override detection; see <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2 §2.4</a>.</p>
           <h3 id="32-automatic-tuning">3.2 Automatic Tuning</h3>
           <p>The model server derives a starting configuration from GGUF metadata and the available hardware. This analysis chooses values such as:</p>
           <ul>
@@ -434,7 +434,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <p><code>context-window</code> is the maximum number of tokens available to one sequence. Input and generated tokens both consume this capacity.</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
   context-window: 32768`}</code></pre>
-          <p>A larger window increases KV-cache memory and can reduce the number of parallel sequences that fit. It also cannot create model capability that was absent during training. If the requested window exceeds the model's native context, the model may require RoPE scaling; see <a href="chapter-07-yarn-extended-context.md">Chapter 7</a>.</p>
+          <p>A larger window increases KV-cache memory and can reduce the number of parallel sequences that fit. It also cannot create model capability that was absent during training. If the requested window exceeds the model's native context, the model may require RoPE scaling; see <a href="https://www.kronkai.com/manual#chapter-7-yarn-extended-context">Chapter 7</a>.</p>
           <h4 id="kv-cache-types">KV cache types</h4>
           <p>The KV cache stores attention state for tokens already processed. Configure the key and value caches independently:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
@@ -601,7 +601,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
   nseq-max: 4`}</code></pre>
           <p>For text generation, this creates up to four batch-engine slots. Their sequence state is isolated, while the text engine uses a unified KV pool with total capacity based on <code>context-window × nseq-max</code>. Idle slots do not own permanent fixed partitions, but increasing <code>nseq-max</code> still increases the capacity Kronk must budget and can substantially increase memory use.</p>
-          <p>Embedding and reranking models use <code>nseq-max</code> to size a pool of independent contexts rather than text-generation slots. See <a href="chapter-04-batch-processing.md">Chapter 4</a> for request scheduling and the differences between model types.</p>
+          <p>Embedding and reranking models use <code>nseq-max</code> to size a pool of independent contexts rather than text-generation slots. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
           <p>Two settings control prompt batching:</p>
           <table className="flags-table">
             <thead>
@@ -625,7 +625,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
             </tbody>
           </table>
           <p>Most deployments should leave both unset. Larger values can improve prompt throughput but require larger compute buffers. <code>nubatch</code> must not exceed <code>nbatch</code>. Multimodal encoders may require an entire media token chunk to fit in one <code>nubatch</code>, so do not lower it for a multimodal model without testing media input.</p>
-          <p>Incremental Message Caching is configured separately with <code>incremental-cache</code> and related cache settings. See <a href="chapter-05-message-caching.md">Chapter 5</a> rather than treating cached conversations as dedicated physical slots.</p>
+          <p>Incremental Message Caching is configured separately with <code>incremental-cache</code> and related cache settings. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> rather than treating cached conversations as dedicated physical slots.</p>
           <h3 id="36-memory-planning-and-quantization">3.6 Memory Planning and Quantization</h3>
           <p>Model memory is not just the GGUF file size plus a simple KV-cache formula. Depending on the model and backend, memory use can include:</p>
           <ul>
@@ -679,9 +679,9 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <pre className="code-block"><code className="language-yaml">{`some-provider/mtp-target-model:
   draft-model:
     ndraft: 6`}</code></pre>
-          <p>Do not use model names or benchmark results as universal draft-selection rules. Measure acceptance and throughput on the actual workload. See <a href="chapter-06-speculative-decoding-mtp.md">Chapter 6</a> for drafter selection, adaptive throttling, observability, and limitations.</p>
+          <p>Do not use model names or benchmark results as universal draft-selection rules. Measure acceptance and throughput on the actual workload. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for drafter selection, adaptive throttling, observability, and limitations.</p>
           <h4 id="extended-context-with-yarn">Extended context with YaRN</h4>
-          <p>Do not add RoPE scaling merely because a large <code>context-window</code> fits in memory. Scaling must match the model and its native training context. Configuration uses <code>rope-scaling-type</code> and the <code>yarn-*</code> keys described in <a href="chapter-07-yarn-extended-context.md">Chapter 7</a>.</p>
+          <p>Do not add RoPE scaling merely because a large <code>context-window</code> fits in memory. Scaling must match the model and its native training context. Configuration uses <code>rope-scaling-type</code> and the <code>yarn-*</code> keys described in <a href="https://www.kronkai.com/manual#chapter-7-yarn-extended-context">Chapter 7</a>.</p>
           <h4 id="per-model-sampling-defaults">Per-model sampling defaults</h4>
           <p><code>sampling-parameters</code> supplies defaults for requests using one model:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
@@ -689,7 +689,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
     temperature: 0.7
     top_p: 0.8
     top_k: 20`}</code></pre>
-          <p>The nested keys use snake_case because they match request parameter names. Clients can provide request-specific values. See <a href="chapter-10-request-parameters.md">Chapter 10</a> for behavior and the full parameter reference.</p>
+          <p>The nested keys use snake_case because they match request parameter names. Clients can provide request-specific values. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for behavior and the full parameter reference.</p>
           <h3 id="38-complete-example-and-key-reference">3.8 Complete Example and Key Reference</h3>
           <p>This example shows the file structure and naming conventions. It is not a recommendation that every model needs these overrides:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
@@ -834,7 +834,7 @@ some-provider/large-model:
           <hr />
           <h2 id="chapter-4-batch-processing">Chapter 4: Batch Processing</h2>
           <p>Kronk can process requests concurrently while sharing one loaded copy of a model's weights. The <code>nseq-max</code> model setting controls how much concurrency a model instance provides, but its exact behavior depends on the model's task.</p>
-          <p>This chapter covers user-visible scheduling and configuration. Model memory, batch sizes, and KV-cache precision are covered in <a href="chapter-03-model-configuration.md">Chapter 3</a>. Message-cache session behavior is covered in <a href="chapter-05-message-caching.md">Chapter 5</a>.</p>
+          <p>This chapter covers user-visible scheduling and configuration. Model memory, batch sizes, and KV-cache precision are covered in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>. Message-cache session behavior is covered in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
           <h3 id="41-concurrency-at-a-glance">4.1 Concurrency at a Glance</h3>
           <p>Kronk uses two concurrency designs:</p>
           <table className="flags-table">
@@ -868,7 +868,7 @@ some-provider/large-model:
               </tr>
             </tbody>
           </table>
-          <p>Multimodal generation includes requests that provide images or audio to a compatible language model. Bucky speech transcription is a separate whisper.cpp service and is not scheduled by this batch engine; see <a href="chapter-18-bucky.md">Chapter 18</a>.</p>
+          <p>Multimodal generation includes requests that provide images or audio to a compatible language model. Bucky speech transcription is a separate whisper.cpp service and is not scheduled by this batch engine; see <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a>.</p>
           <p>Increasing <code>nseq-max</code> allows more work to proceed concurrently. It can improve aggregate throughput when requests overlap, but it also increases memory capacity and gives each request a smaller share of the same compute resources. Higher concurrency can therefore increase individual response latency. There is no universal value that is best for every model, device, and workload.</p>
           <h3 id="42-generation-slots-and-sequences">4.2 Generation Slots and Sequences</h3>
           <p>For text and multimodal generation, the batch engine creates <code>nseq-max</code> execution slots. A slot tracks one active request's prompt position, sampler, streaming response, and sequence ID.</p>
@@ -906,7 +906,7 @@ some-provider/large-model:
           <p>Some preparation and IMC tokenization occurs before submission. Ordinary non-cached tokenization can occur when the slot starts. The exact boundary is an implementation detail; the visible queue wait begins around engine submission and ends when a slot is assigned.</p>
           <p>For ordinary text prefill, active slots contribute prompt tokens in round-robin chunks of up to <code>nubatch</code> tokens until the shared <code>nbatch</code> capacity is reached. This prevents one large prompt from consuming every prefill pass while other slots wait. Generated tokens from active slots can be processed in the same shared decode loop.</p>
           <p>Media input requires specialized encoder and prefill steps, so it is not always combined with text work in one forward pass. Multi-Token Prediction (MTP) also changes how some prefill and verification batches are formed. These special cases preserve the same user-visible slot limit but should not be treated as identical scheduling at the backend level.</p>
-          <p>Most users should leave <code>nbatch</code> and <code>nubatch</code> unset. Kronk derives their load-time values as described in <a href="chapter-03-model-configuration.md#35-concurrency-and-batching">Chapter 3 §3.5</a>.</p>
+          <p>Most users should leave <code>nbatch</code> and <code>nubatch</code> unset. Kronk derives their load-time values as described in <a href="https://www.kronkai.com/manual#35-concurrency-and-batching">Chapter 3 §3.5</a>.</p>
           <h3 id="45-embedding-and-reranking">4.5 Embedding and Reranking</h3>
           <p>Embedding and reranking models do not use generation slots. Kronk creates a pool of <code>nseq-max</code> independent model contexts that share the model weights.</p>
           <pre className="code-block"><code className="language-diagram">{`┌──────────┐       ┌──────────────────────────────┐
@@ -938,12 +938,12 @@ some-provider/large-model:
             <li>evaluate a smaller KV-cache type or a smaller model; or</li>
             <li>distribute traffic across more model-server instances.</li>
           </ul>
-          <p>Do not treat weight size plus a hand-calculated KV value as total VRAM. Use the BUI's <strong>Apps → VRAM Calculator</strong> and retain operating headroom. See <a href="chapter-03-model-configuration.md#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for the components that affect an estimate.</p>
+          <p>Do not treat weight size plus a hand-calculated KV value as total VRAM. Use the BUI's <strong>Apps → VRAM Calculator</strong> and retain operating headroom. See <a href="https://www.kronkai.com/manual#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for the components that affect an estimate.</p>
           <h3 id="47-interaction-with-message-caching">4.7 Interaction with Message Caching</h3>
           <p>Incremental Message Caching (IMC) keeps reusable conversation state in a logical session, not in a permanently assigned execution slot. Cached state is externalized to a session store between requests. A later request can restore that state into any free slot, extend it, and continue generation.</p>
           <p>While a request is active, its restored or newly built state consumes cells in the unified KV pool. Kronk normally snapshots a built or extended stable prefix during slot startup, before generating the request's suffix. Exact read-only hits can skip a redundant snapshot. Completion clears the slot's active sequence. This allows the number of cached conversation identities to differ from the number of concurrent execution slots.</p>
           <p>If every IMC session has work pending, current token-based planning returns a server-busy error rather than preempting a generation already running in a batch slot.</p>
-          <p>Session matching, RAM and disk stores, media caching, invalidation, and cache settings are documented in <a href="chapter-05-message-caching.md">Chapter 5</a>.</p>
+          <p>Session matching, RAM and disk stores, media caching, invalidation, and cache settings are documented in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
           <h3 id="48-observing-queue-behavior">4.8 Observing Queue Behavior</h3>
           <p>Kronk records two direct indicators of generation-slot contention:</p>
           <ul>
@@ -951,7 +951,7 @@ some-provider/large-model:
             <li>the <code>chat_queue_wait_seconds</code> Prometheus histogram, recorded when a slot is assigned.</li>
           </ul>
           <p>For a successful job, timing starts immediately before attempting submission to the batch engine and ends at slot assignment. It does not include time blocked at the outer SDK admission gate or time spent preparing an IMC session before the submit attempt. Compare it with end-to-end request duration and time-to-first-token measurements when diagnosing latency.</p>
-          <p>Consistently increasing queue-wait time means requests are arriving faster than slots complete them. Before raising <code>nseq-max</code>, confirm that the device has memory headroom and that aggregate throughput improves under a realistic concurrent load. See <a href="chapter-15-observability.md">Chapter 15</a> for metrics, tracing, and profiling.</p>
+          <p>Consistently increasing queue-wait time means requests are arriving faster than slots complete them. Before raising <code>nseq-max</code>, confirm that the device has memory headroom and that aggregate throughput improves under a realistic concurrent load. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for metrics, tracing, and profiling.</p>
           <hr />
           <h2 id="chapter-5-message-caching">Chapter 5: Message Caching</h2>
           <h2 id="51-what-imc-does">5.1 What IMC Does</h2>
@@ -1066,7 +1066,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
             <li>A session can be restored into any available execution slot; it is not tied permanently to one slot.</li>
             <li>Session storage is allocated lazily as conversations begin using it.</li>
           </ul>
-          <p>For example, <code>nseq-max: 2</code> provides two concurrent decode slots and up to six warm IMC session identities. Raising <code>nseq-max</code> also increases the unified KV cache capacity and its memory cost, so do not raise it solely to retain more conversation branches without considering the effects described in <a href="chapter-04-batch-processing.md">Chapter 4</a>.</p>
+          <p>For example, <code>nseq-max: 2</code> provides two concurrent decode slots and up to six warm IMC session identities. Raising <code>nseq-max</code> also increases the unified KV cache capacity and its memory cost, so do not raise it solely to retain more conversation branches without considering the effects described in <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a>.</p>
           <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is pending. If all session identities are pending, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
           <p>An exact match may skip rewriting the snapshot when the stable state has not changed. This avoids an unnecessary serialization of the state that was just restored. Exact media-plan reuse can receive the same optimization. These are implementation optimizations; they do not change which content is considered part of the cache.</p>
@@ -1080,7 +1080,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           </ul>
           <p>Kronk rebuilds the stable plan when media is changed, reordered, removed, or newly appended. This conservative rule lets the model-specific multimodal pipeline remain authoritative for media embeddings, token placement, and position handling.</p>
           <p>For example, a user can submit an image and then ask several text-only follow-up questions. The saved media plan acts as an anchor for those turns. Replacing the image or adding another one requires a rebuild.</p>
-          <p>See <a href="chapter-11-multi-modal-models.md">Chapter 11</a> for supported media inputs and model requirements.</p>
+          <p>See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a> for supported media inputs and model requirements.</p>
           <h2 id="55-configuration-and-storage">5.5 Configuration and Storage</h2>
           <p>IMC settings belong under the model ID in <code>~/.kronk/models/model_config.yaml</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
@@ -1131,7 +1131,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
   session-store-dir: /var/lib/kronk/sessions`}</code></pre>
           <p>The directory must already exist and be writable by the Kronk process. Kronk creates a temporary file for each used session and removes it during a normal model unload. Files can remain after a process crash, so use a dedicated directory and arrange cleanup appropriate for your deployment.</p>
           <p>Disk storage changes where inactive snapshots are retained, but it does not eliminate snapshot-sized RAM usage. Snapshot and restore operations require memory buffers, and a session can retain buffers sized to its largest state. Disk also adds I/O latency. Measure both memory and request latency with your model and storage device before relying on it as a capacity solution.</p>
-          <p>Some MTP configurations maintain draft-model cached state and saved hidden state in addition to the target model snapshot. Account for this extra storage when sizing memory. See <a href="chapter-06-speculative-decoding-mtp.md">Chapter 6</a> for MTP configuration and behavior.</p>
+          <p>Some MTP configurations maintain draft-model cached state and saved hidden state in addition to the target model snapshot. Account for this extra storage when sizing memory. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for MTP configuration and behavior.</p>
           <h2 id="56-invalidation-and-limitations">5.6 Invalidation and Limitations</h2>
           <p>IMC favors safe reuse over partial recovery. A session is rebuilt when Kronk cannot prove that its complete saved prefix matches the new stable prompt. Common causes include:</p>
           <ul>
@@ -1154,7 +1154,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <h2 id="57-observability">5.7 Observability</h2>
           <p>At debug log level, IMC planning events identify the selected <code>match_kind</code> (<code>exact</code>, <code>append</code>, or <code>rebuild</code>) and report reusable, extension, stable, and tail token counts. Media planning events similarly identify exact, anchor, and rebuild decisions. Request-completion events include whether IMC participated and whether a prior snapshot was restored.</p>
           <p>The Prometheus counters <code>imc_snapshot_skipped_total</code> and <code>imc_pure_hit_stale_session_total</code> expose exact-hit snapshot skips and rejected stale-session races. A rising rebuild rate usually means clients are changing earlier prompt content, media, tools, or rendering inputs rather than appending to a stable conversation.</p>
-          <p>See <a href="chapter-15-observability.md">Chapter 15</a> for logging, metrics, tracing, and profiling configuration.</p>
+          <p>See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging, metrics, tracing, and profiling configuration.</p>
           <h2 id="chapter-6-speculative-decoding-and-mtp">Chapter 6: Speculative Decoding and MTP</h2>
           <h3 id="61-what-speculative-decoding-does">6.1 What Speculative Decoding Does</h3>
           <p>Speculative decoding uses a faster drafter to propose several continuation tokens. The target model verifies those proposals together. Accepted proposals reduce the number of target-model passes needed to produce the response; rejected proposals are discarded and the target remains authoritative.</p>
@@ -1264,7 +1264,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
   draft-model:
     ndraft: 6`}</code></pre>
           <p>This form supports multiple slots. A value of 0 or an omitted value uses the MTP default of 2; a negative value is rejected. If neither a compatible companion nor an embedded MTP head is available, the override has no effect. The adaptive throttle can still select fewer candidates than the configured value.</p>
-          <p>See <a href="chapter-03-model-configuration.md">Chapter 3</a> for the complete model configuration format.</p>
+          <p>See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for the complete model configuration format.</p>
           <h3 id="66-measuring-the-result">6.6 Measuring the Result</h3>
           <p>Do not use acceptance rate alone to decide whether speculation helps. Review acceptance, coverage, throughput, latency, and resource use together.</p>
           <p>The response <code>usage</code> object can include:</p>
@@ -1305,18 +1305,18 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
             <li><code>media-mrope</code> — MTP is not enabled for that M-RoPE media request</li>
             <li><code>sync-error</code> — draft state could not be synchronized after verification</li>
           </ul>
-          <p>Startup events under <code>draft-model</code>, <code>draft-model-mtp</code>, and <code>draft-model-mtp-shared</code> show which source loaded or why MTP was skipped. See <a href="chapter-15-observability.md">Chapter 15</a> for logging and metrics configuration.</p>
+          <p>Startup events under <code>draft-model</code>, <code>draft-model-mtp</code>, and <code>draft-model-mtp-shared</code> show which source loaded or why MTP was skipped. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging and metrics configuration.</p>
           <h3 id="67-limitations-and-fallbacks">6.7 Limitations and Fallbacks</h3>
           <ul>
             <li><strong>Classic separate drafts require one slot.</strong> Set <code>nseq-max: 1</code> on the target entry.</li>
             <li><strong>Tokenizer compatibility remains the user's responsibility.</strong> Kronk rejects unequal vocabulary sizes, but that check cannot establish identical token mappings or templates.</li>
             <li><strong>MTP at nonzero temperature is an approximation.</strong> MTP proposals are greedy, while target verification uses the request's sampler and accepts exact token matches. Sampling parameters still shape output, but this does not provide strict speculative-sampling distribution equivalence.</li>
             <li><strong>MTP can fall back per request.</strong> A synchronization or compatible-state problem disables MTP for the affected request while target-only generation continues. It does not make an incorrect draft token authoritative.</li>
-            <li><strong>IMC may restore target state without draft state.</strong> Target-prefix reuse remains valid, but own-KV MTP runs target-only for that request when its draft snapshot is absent or cannot be restored. See <a href="chapter-05-message-caching.md">Chapter 5</a>.</li>
-            <li><strong>Media support is conservative.</strong> Media projection and media prefill run on the target. Unsupported own-KV media combinations and all M-RoPE media requests run without MTP, although target IMC can remain active. See <a href="chapter-11-multi-modal-models.md">Chapter 11</a>.</li>
+            <li><strong>IMC may restore target state without draft state.</strong> Target-prefix reuse remains valid, but own-KV MTP runs target-only for that request when its draft snapshot is absent or cannot be restored. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</li>
+            <li><strong>Media support is conservative.</strong> Media projection and media prefill run on the target. Unsupported own-KV media combinations and all M-RoPE media requests run without MTP, although target IMC can remain active. See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a>.</li>
             <li><strong>Drafting consumes resources.</strong> A classic draft loads another model and KV cache. MTP heads and companion assistants also require compute and memory. Automatic detection does not guarantee a performance improvement.</li>
           </ul>
-          <p>Implementation details for drafting, verification, state synchronization, and hybrid-model rollback belong in <a href="chapter-19-developer-guide.md#1912-mtp-internals">Chapter 19</a>.</p>
+          <p>Implementation details for drafting, verification, state synchronization, and hybrid-model rollback belong in <a href="https://www.kronkai.com/manual#1966-speculative-decoding-and-mtp">Chapter 19</a>.</p>
           <h2 id="chapter-7-yarn-extended-context">Chapter 7: YaRN Extended Context</h2>
           <h2 id="71-context-size-and-rope-scaling">7.1 Context Size and RoPE Scaling</h2>
           <p><code>context-window</code> sets the token capacity available to one sequence. Input, chat-template tokens, and generated output all consume this capacity.</p>
@@ -1424,7 +1424,7 @@ Qwen/Qwen3-8B-Q8_0:
             <li>selecting supported quantized KV-cache types; or</li>
             <li>keeping the KV cache on the CPU with <code>offload-kqv: false</code>, at a likely performance cost.</li>
           </ul>
-          <p>Do not rely on fixed memory figures from another model. Use Kronk's hardware analysis and observe actual memory consumption. See <a href="chapter-03-model-configuration.md">Chapter 3</a> for KV-cache configuration and <a href="chapter-04-batch-processing.md">Chapter 4</a> for concurrency effects.</p>
+          <p>Do not rely on fixed memory figures from another model. Use Kronk's hardware analysis and observe actual memory consumption. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for KV-cache configuration and <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for concurrency effects.</p>
           <h2 id="76-validate-quality">7.6 Validate Quality</h2>
           <p>An accepted configuration is not proof that the model can use the entire context reliably. Test the intended model and GGUF with representative data:</p>
           <ol>
@@ -1436,11 +1436,11 @@ Qwen/Qwen3-8B-Q8_0:
           </ol>
           <p>Prefer the smallest context and scale that satisfy the workload. For Qwen3-8B, use the native context when average requests remain within 32,768 tokens, a 2× configuration for workloads around 65,536, and the documented 4× configuration only when requests genuinely require it.</p>
           <h2 id="chapter-8-model-server">Chapter 8: Model Server</h2>
-          <p>The Kronk model server provides OpenAI-compatible inference APIs and manages downloaded models, native libraries, and loaded model instances. This chapter focuses on operating that server. Installation is covered in <a href="chapter-02-installation.md">Chapter 2</a>, while model-level tuning belongs in <a href="chapter-03-model-configuration.md">Chapter 3</a>.</p>
+          <p>The Kronk model server provides OpenAI-compatible inference APIs and manages downloaded models, native libraries, and loaded model instances. This chapter focuses on operating that server. Installation is covered in <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a>, while model-level tuning belongs in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>.</p>
           <h2 id="81-server-lifecycle">8.1 Server Lifecycle</h2>
           <p>Start the server in the foreground:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
-          <p>The API listens on <code>0.0.0.0:11435</code> by default. <code>localhost:11435</code> works for a client on the same machine, but the server is bound to all network interfaces. Authentication is disabled by default. Before using an untrusted network, bind to loopback, restrict access with a firewall or private network, or enable the authentication described in <a href="chapter-12-security-authentication.md">Chapter 12</a>.</p>
+          <p>The API listens on <code>0.0.0.0:11435</code> by default. <code>localhost:11435</code> works for a client on the same machine, but the server is bound to all network interfaces. Authentication is disabled by default. Before using an untrusted network, bind to loopback, restrict access with a firewall or private network, or enable the authentication described in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
           <p>To bind only to the local machine:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=127.0.0.1:11435`}</code></pre>
           <p>Run the server in the background with:</p>
@@ -1565,8 +1565,8 @@ kronk libs --local`}</code></pre>
           <p>Admission uses predicted model, KV-cache, and runtime memory. These predictions are planning estimates, not a guarantee that every backend allocation will succeed. Context size, cache types, sequence count, CPU offload, and model architecture all affect the estimate.</p>
           <p>On multi-GPU systems, Kronk accounts for llama.cpp's model distribution across the selected devices. Automatic splits use available GPUs, while explicit <code>devices</code> and <code>tensor-split</code> configuration control the proportions. Each assigned share must fit within that GPU's individual budget; unused capacity on another card cannot satisfy an over-budget share.</p>
           <p>When a new load exceeds the count or memory budget, Kronk evicts an idle model. For memory pressure it prefers an idle entry that frees enough memory without unloading a needlessly large model, then falls back to the coldest idle entry. Models with active streams are not evicted. If no idle entry can make room, the request returns a server-busy error and the client should retry later.</p>
-          <p>The Bucky and LLM pools share the same byte budget, so transcription and language-model loads can compete for memory. Bucky installation and pool behavior are covered in <a href="chapter-18-bucky.md">Chapter 18</a>.</p>
-          <p>Resource usage and eviction events are available through the logging and metrics described in <a href="chapter-15-observability.md">Chapter 15</a>.</p>
+          <p>The Bucky and LLM pools share the same byte budget, so transcription and language-model loads can compete for memory. Bucky installation and pool behavior are covered in <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a>.</p>
+          <p>Resource usage and eviction events are available through the logging and metrics described in <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a>.</p>
           <h2 id="85-model-configuration-files">8.5 Model Configuration Files</h2>
           <p>The server reads per-model overrides from:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/models/model_config.yaml`}</code></pre>
@@ -1575,7 +1575,7 @@ kronk libs --local`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model_config.yaml`}</code></pre>
           <p>or:</p>
           <pre className="code-block"><code className="language-shell">{`KRONK_POOL_MODEL_CONFIG_FILE=./my-model_config.yaml kronk server start`}</code></pre>
-          <p>The file format, variants, configuration keys, and tuning workflow are documented in <a href="chapter-03-model-configuration.md">Chapter 3</a>. The repository's commented reference file is <code>zarf/kms/model_config.yaml</code>.</p>
+          <p>The file format, variants, configuration keys, and tuning workflow are documented in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>. The repository's commented reference file is <code>zarf/kms/model_config.yaml</code>.</p>
           <h2 id="86-catalog-operations">8.6 Catalog Operations</h2>
           <p>The personal model catalog is stored at <code>~/.kronk/catalog/catalog.yaml</code>. Kronk seeds it with a starter catalog and adds resolved model information as models are discovered or downloaded.</p>
           <p>Common operations are:</p>
@@ -1591,7 +1591,7 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0
 # Remove the catalog entry and its downloaded files.
 kronk catalog remove unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
           <p>Catalog entries identify the provider, source family, revision, files, sizes, and detected capabilities. Chat templates come from downloaded GGUF metadata and are not stored as catalog configuration.</p>
-          <p>Use <code>--local</code> for the same operations when the server is stopped. The BUI also provides catalog and model views when enabled; see <a href="chapter-13-browser-ui.md">Chapter 13</a>.</p>
+          <p>Use <code>--local</code> for the same operations when the server is stopped. The BUI also provides catalog and model views when enabled; see <a href="https://www.kronkai.com/manual#chapter-13-browser-ui-bui">Chapter 13</a>.</p>
           <h2 id="87-container-operations">8.7 Container Operations</h2>
           <p>Chapter 2 covers image variants and initial container startup. For a persistent deployment, use a versioned image tag and retain <code>/kronk</code> in a volume. This headless example enables local authentication and exposes the API only through the host loopback interface:</p>
           <pre className="code-block"><code className="language-shell">{`docker run -d \\
@@ -1602,7 +1602,7 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
   -p 127.0.0.1:11435:11435 \\
   -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:vX.Y.Z-cpu`}</code></pre>
-          <p>Choose the processor-specific tag documented in Chapter 2. Terminate TLS at a reverse proxy or keep the service on a trusted private network. Read <a href="chapter-12-security-authentication.md">Chapter 12</a> before exposing an authenticated server remotely.</p>
+          <p>Choose the processor-specific tag documented in Chapter 2. Terminate TLS at a reverse proxy or keep the service on a trusted private network. Read <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> before exposing an authenticated server remotely.</p>
           <p>Install and inspect models directly in the persistent volume without enabling browser downloads:</p>
           <pre className="code-block"><code className="language-shell">{`docker exec kronk kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
 docker exec kronk kronk catalog list --local`}</code></pre>
@@ -1619,20 +1619,20 @@ docker rm kronk
           <h2 id="88-related-administration-guides">8.8 Related Administration Guides</h2>
           <p>Detailed administration is divided by responsibility:</p>
           <ul>
-            <li><a href="chapter-02-installation.md">Chapter 2</a> — installation, libraries, image variants, and data paths</li>
-            <li><a href="chapter-03-model-configuration.md">Chapter 3</a> — per-model runtime settings</li>
-            <li><a href="chapter-12-security-authentication.md">Chapter 12</a> — authentication, keys, tokens, and remote exposure</li>
-            <li><a href="chapter-13-browser-ui.md">Chapter 13</a> — BUI operation and browser login</li>
-            <li><a href="chapter-15-observability.md">Chapter 15</a> — logs, health checks, metrics, tracing, and profiling</li>
-            <li><a href="chapter-18-bucky.md">Chapter 18</a> — transcription libraries, models, and pool behavior</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a> — installation, libraries, image variants, and data paths</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> — per-model runtime settings</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> — authentication, keys, tokens, and remote exposure</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-13-browser-ui-bui">Chapter 13</a> — BUI operation and browser login</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> — logs, health checks, metrics, tracing, and profiling</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a> — transcription libraries, models, and pool behavior</li>
           </ul>
           <h2 id="chapter-9-api-endpoints">Chapter 9: API Endpoints</h2>
-          <p>Kronk exposes several familiar inference API formats. This chapter describes their wire contracts and the Kronk-specific details needed to use them. See <a href="chapter-10-request-parameters.md">Chapter 10</a> for generation and sampling parameters.</p>
+          <p>Kronk exposes several familiar inference API formats. This chapter describes their wire contracts and the Kronk-specific details needed to use them. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for generation and sampling parameters.</p>
           <h2 id="91-api-conventions">9.1 API Conventions</h2>
           <p>The examples use the default server address, <code>http://localhost:11435</code>. JSON endpoints accept <code>Content-Type: application/json</code>. Streaming endpoints use Server-Sent Events (SSE).</p>
           <p>When server authentication is enabled, inference requests require a bearer token with access to the requested endpoint:</p>
           <pre className="code-block"><code className="language-text">{`Authorization: Bearer <token>`}</code></pre>
-          <p>Authentication is bypassed only when the server is configured with authentication disabled. See <a href="chapter-12-security-authentication.md">Chapter 12</a> for token creation, endpoint grants, and rate limits.</p>
+          <p>Authentication is bypassed only when the server is configured with authentication disabled. See <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> for token creation, endpoint grants, and rate limits.</p>
           <p>Application errors use a top-level code and message:</p>
           <pre className="code-block"><code className="language-json">{`{
   "code": "invalid_argument",
@@ -1804,11 +1804,11 @@ data: {"type":"response.completed",...}`}</code></pre>
 }`}</code></pre>
           <h2 id="99-models-and-audio-transcription">9.9 Models and Audio Transcription</h2>
           <p><code>GET /v1/models</code> returns an OpenAI-style list of models and configured model extensions available locally. It is not limited to models currently loaded in memory. Each item includes <code>id</code>, <code>object</code>, <code>created</code>, and <code>owned_by</code>. <code>owned_by</code> comes from model metadata when available and otherwise defaults to <code>kronk</code>.</p>
-          <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. Its request fields, formats, and administrative operations are documented in <a href="chapter-18-bucky.md#1871-post-v1audiotranscriptions">Chapter 18</a>.</p>
+          <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. Its request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
           <h2 id="chapter-10-request-parameters">Chapter 10: Request Parameters</h2>
-          <p>This chapter covers generation parameters used by Chat Completions and the Go SDK. Other API formats expose compatible subsets or translate their own field names into these parameters. See <a href="chapter-09-api-endpoints.md">Chapter 9</a> for endpoint-specific request formats and streaming behavior.</p>
+          <p>This chapter covers generation parameters used by Chat Completions and the Go SDK. Other API formats expose compatible subsets or translate their own field names into these parameters. See <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> for endpoint-specific request formats and streaming behavior.</p>
           <h2 id="101-scope-and-defaults">10.1 Scope and Defaults</h2>
-          <p>The defaults below are Kronk's baseline values. A model configuration can provide different sampling defaults, and a request can override them. See <a href="chapter-03-model-configuration.md#37-advanced-features">Chapter 3 §3.7</a> for per-model <code>sampling-parameters</code>.</p>
+          <p>The defaults below are Kronk's baseline values. A model configuration can provide different sampling defaults, and a request can override them. See <a href="https://www.kronkai.com/manual#37-advanced-features">Chapter 3 §3.7</a> for per-model <code>sampling-parameters</code>.</p>
           <p>JSON requests use <code>number</code>, <code>integer</code>, <code>boolean</code>, and <code>string</code> values. The Go SDK accepts the corresponding Go values in <code>model.D</code>.</p>
           <p>Avoid changing several samplers at once. Start with the model's defaults, change one parameter, and evaluate the result against representative prompts. Parameters that improve creative prose can reduce the reliability of JSON and tool calls.</p>
           <h2 id="102-core-sampling">10.2 Core Sampling</h2>
@@ -2049,7 +2049,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p>Each entry in <code>choices[].logprobs.content</code> contains the generated <code>token</code>, its <code>logprob</code>, its UTF-8 <code>bytes</code>, and up to <code>top_logprobs</code> alternatives. Values closer to zero were more probable under that generation step, but they are not proof of factual correctness.</p>
           <p>Streaming responses attach logprob data to individual delta chunks. Non-streaming responses collect the entries in the final choice. This data is useful for token-level diagnostics and comparative scoring; it does not alter sampling after generation has occurred.</p>
           <h2 id="chapter-11-multimodal-models">Chapter 11: Multimodal Models</h2>
-          <p>Multimodal models combine a language model with a media projector that turns images or audio into input the language model can process. They use the Chat Completions endpoint described in <a href="chapter-09-api-endpoints.md">Chapter 9</a>.</p>
+          <p>Multimodal models combine a language model with a media projector that turns images or audio into input the language model can process. They use the Chat Completions endpoint described in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>.</p>
           <h2 id="111-models-and-projectors">11.1 Models and Projectors</h2>
           <p>Use the catalog to find models with image or audio capabilities:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list`}</code></pre>
@@ -2087,6 +2087,9 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p>Actual video containers such as MP4 and WebM are not decoded by the current media path. For video analysis, extract frames and send them as supported images in the intended order.</p>
           <h2 id="113-sending-an-image">11.3 Sending an Image</h2>
           <p>Place media before the question unless the selected model documents another order. Several multimodal templates were trained with the media token first, and Kronk preserves the order of all content parts.</p>
+          <blockquote><strong>Note:</strong> Despite the <code>image_url</code> field name, Kronk does not download images</blockquote>
+          <blockquote>from <code>http://</code> or <code>https://</code> URLs. The client must download the image and send</blockquote>
+          <blockquote>it as a base64 data URL or raw base64 value.</blockquote>
           <p>This shell example expands the base64 value before sending the request:</p>
           <pre className="code-block"><code className="language-shell">{`IMAGE_B64=$(base64 < photo.jpg | tr -d '\\n')
 
@@ -2121,7 +2124,7 @@ EOF`}</code></pre>
   }
 }`}</code></pre>
           <p>Put this part before the text question. The <code>format</code> field is accepted for client compatibility, but Kronk currently determines the actual format from the decoded bytes rather than this value.</p>
-          <p>Use a multimodal chat model when you need conversational questions, summaries, or reasoning about audio. For a dedicated speech-to-text API, use Bucky's <code>POST /v1/audio/transcriptions</code> endpoint described in <a href="chapter-18-bucky.md#1871-post-v1audiotranscriptions">Chapter 18</a>.</p>
+          <p>Use a multimodal chat model when you need conversational questions, summaries, or reasoning about audio. For a dedicated speech-to-text API, use Bucky's <code>POST /v1/audio/transcriptions</code> endpoint described in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
           <h2 id="115-go-sdk-helpers">11.5 Go SDK Helpers</h2>
           <p>Go applications can read media into a byte slice and use:</p>
           <ul>
@@ -2130,10 +2133,10 @@ EOF`}</code></pre>
           </ul>
           <p>These helpers create one user turn with media before text. <code>model.VideoMessage</code> constructs a <code>video_url</code> part, but it does not add video-container decoding; send extracted frames with <code>ImageMessage</code> for the current media path.</p>
           <h2 id="116-configuration-and-resources">11.6 Configuration and Resources</h2>
-          <p>Multimodal requests use the same batch engine and concurrency controls as text requests. The projector adds weights and runtime buffers, while image resolution, audio duration, context length, and <code>nseq-max</code> affect resource use. Use the BUI VRAM Calculator rather than adding model, projector, and KV file sizes as a complete memory estimate. See <a href="chapter-03-model-configuration.md#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for memory planning and <a href="chapter-04-batch-processing.md">Chapter 4</a> for concurrency.</p>
+          <p>Multimodal requests use the same batch engine and concurrency controls as text requests. The projector adds weights and runtime buffers, while image resolution, audio duration, context length, and <code>nseq-max</code> affect resource use. Use the BUI VRAM Calculator rather than adding model, projector, and KV file sizes as a complete memory estimate. See <a href="https://www.kronkai.com/manual#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for memory planning and <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for concurrency.</p>
           <p>Most deployments should leave <code>nubatch</code> unset. Its normal default is 2048, but MoE expert CPU offload can raise it to 4096. A multimodal encoder may require an entire media-token chunk to fit in one physical batch, so lowering <code>nubatch</code> can break media input. <code>proj-on-cpu: true</code> can keep the projector on the CPU when accelerator memory is constrained, at a performance cost.</p>
           <h2 id="117-message-caching">11.7 Message Caching</h2>
-          <p>Incremental Message Caching can reuse unchanged media state for text-only follow-up turns without encoding the media again. Changing, reordering, removing, or appending media rebuilds the stable media plan through the multimodal pipeline. See <a href="chapter-05-message-caching.md#54-media-requests">Chapter 5 §5.4</a> for the cache behavior and limitations.</p>
+          <p>Incremental Message Caching can reuse unchanged media state for text-only follow-up turns without encoding the media again. Changing, reordering, removing, or appending media rebuilds the stable media plan through the multimodal pipeline. See <a href="https://www.kronkai.com/manual#54-media-requests">Chapter 5 §5.4</a> for the cache behavior and limitations.</p>
           <h2 id="118-limitations">11.8 Limitations</h2>
           <ul>
             <li>Media must be embedded as base64; Kronk does not fetch remote URLs.</li>
@@ -2143,7 +2146,7 @@ EOF`}</code></pre>
             <li>Model quality and practical media limits vary by model and projector.</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="chapter-12-security-authentication.md"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
           <h2 id="chapter-12-security-and-authentication">Chapter 12: Security and Authentication</h2>
           <p>Kronk signs JWT bearer tokens with local RSA keys. A token can be an unrestricted administrator credential or a user credential limited to specific inference endpoints and request quotas.</p>
           <h2 id="121-authentication-modes">12.1 Authentication Modes</h2>
@@ -2332,7 +2335,7 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
             <li>rotate non-master signing keys deliberately, accounting for all tokens that a deletion will revoke.</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="chapter-13-browser-ui.md"&gt;Chapter 13: Browser UI (BUI)&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-13-browser-ui-bui"&gt;Chapter 13: Browser UI (BUI)&lt;/a&gt;</em></p>
           <h2 id="chapter-13-browser-ui-bui">Chapter 13: Browser UI (BUI)</h2>
           <p>Kronk includes a Browser UI (BUI) for managing a local server and trying models interactively. It is bundled in the <code>kronk</code> binary, served from the same port as the Web API, and uses the server's <code>/v1</code> endpoints rather than maintaining separate state.</p>
           <p>This chapter describes the main areas of the BUI without cataloging every control. The CLI remains useful for scripting and headless administration; the BUI is not intended to duplicate every CLI command.</p>
@@ -2350,7 +2353,7 @@ kronk server start`}</code></pre>
           <ul>
             <li><strong>Chat</strong> provides multi-turn conversations, model selection, system prompts, chat history, and sampling controls.</li>
             <li><strong>VRAM Calculator</strong> estimates model memory requirements from a HuggingFace model without downloading the entire model. A calculator is also available in local model and catalog details.</li>
-            <li><strong>Translator</strong> records or uploads audio for transcription through Bucky. You can select a whisper model, language, and response format and inspect timestamped segments. See <a href="chapter-18-bucky.md#186-bui-usage">Chapter 18 §18.6</a>.</li>
+            <li><strong>Translator</strong> records or uploads audio for transcription through Bucky. You can select a whisper model, language, and response format and inspect timestamped segments. See <a href="https://www.kronkai.com/manual#185-browser-ui">Chapter 18 §18.5</a>.</li>
           </ul>
           <h4 id="system">System</h4>
           <ul>
@@ -2364,7 +2367,7 @@ kronk server start`}</code></pre>
             <li><strong>Libs</strong> downloads and removes llama.cpp bundles for supported operating system, architecture, and processor combinations. Bundles are stored below <code>~/.kronk/libraries/</code>.</li>
           </ul>
           <h4 id="bucky">Bucky</h4>
-          <p>Bucky has separate pages for downloading and removing whisper models and managing whisper.cpp library bundles under <code>~/.kronk/bucky-libraries/</code>. See <a href="chapter-18-bucky.md">Chapter 18</a> for installation and transcription details.</p>
+          <p>Bucky has separate pages for downloading and removing whisper models and managing whisper.cpp library bundles under <code>~/.kronk/bucky-libraries/</code>. See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a> for installation and transcription details.</p>
           <h4 id="security">Security</h4>
           <p>Security pages list, create, and delete signing keys and create user tokens. Token controls include duration, endpoint grants, and rate limits. The <strong>Session</strong> page reports whether browser administration authentication is enabled and whether the browser has an authenticated admin session.</p>
           <p>These tools remain available in open mode. This lets you prepare keys and tokens before enabling authentication, but anyone who can reach an open server can also use its management APIs. See Chapter 12 before exposing the server beyond a trusted machine or network.</p>
@@ -2400,7 +2403,7 @@ kronk server start`}</code></pre>
             <li>Closing a browser tab does not explicitly delete its playground session. Use <strong>Unload Model</strong> when finished. Otherwise, the model remains subject to the server pool's normal eviction policy and is removed on server restart.</li>
           </ul>
           <hr />
-          <p><em>Next: &lt;a href="chapter-14-client-integration.md"&gt;Chapter 14: Client Integration&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-14-client-integration"&gt;Chapter 14: Client Integration&lt;/a&gt;</em></p>
           <h2 id="chapter-14-client-integration">Chapter 14: Client Integration</h2>
           <p>Kronk's OpenAI-compatible API works with clients that let you configure a base URL and API key. This chapter covers the OpenCode configuration shipped with the repository and representative setups for OpenWebUI, the OpenAI Python SDK, curl, and LangChain.</p>
           <h3 id="141-connection-settings">14.1 Connection Settings</h3>
@@ -2560,7 +2563,7 @@ llm = ChatOpenAI(
 response = llm.invoke("Explain quantum computing briefly.")
 print(response.content)`}</code></pre>
           <hr />
-          <p><em>Next: &lt;a href="chapter-15-observability.md"&gt;Chapter 15: Observability&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-15-observability"&gt;Chapter 15: Observability&lt;/a&gt;</em></p>
           <h2 id="chapter-15-observability">Chapter 15: Observability</h2>
           <p>Kronk exposes health checks on the Web API and runs a separate debug server for metrics, profiling, and runtime visualization. It can also export traces to an OTLP gRPC collector such as Grafana Tempo. Structured logs are written to standard output.</p>
           <h3 id="151-debug-and-health-endpoints">15.1 Debug and Health Endpoints</h3>
@@ -2750,7 +2753,7 @@ curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start --insecure-logging`}</code></pre>
           <p>The environment equivalent is <code>KRONK_INSECURE_LOGGING=true</code>. Do not enable this on production systems or when logs are sent to a shared collector.</p>
           <hr />
-          <p><em>Next: &lt;a href="chapter-16-mcp-service.md"&gt;Chapter 16: MCP Service&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-16-mcp-service"&gt;Chapter 16: MCP Service&lt;/a&gt;</em></p>
           <h2 id="chapter-16-mcp-service">Chapter 16: MCP Service</h2>
           <p>Kronk includes a <a href="https://modelcontextprotocol.io/">Model Context Protocol (MCP)</a> service with two tools:</p>
           <ul>
@@ -2834,7 +2837,7 @@ kronk server start`}</code></pre>
           <p>The corresponding CLI option is <code>--mcp-brave-api-key</code>. Disable embedded MCP with <code>--mcp-enabled=false</code> or <code>KRONK_MCP_ENABLED=false</code>. To use a separately managed MCP service, set <code>KRONK_MCP_HOST</code> or pass <code>--mcp-host</code>; a non-empty value only prevents the embedded service from starting. Kronk does not connect or proxy to that address.</p>
           <p>Protect embedded MCP with the existing Kronk JWT system:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --mcp-auth-enabled`}</code></pre>
-          <p>This requires an admin bearer token on every MCP request and also enables administrative authentication for the REST API and BUI. Configure the MCP client to send <code>Authorization: Bearer &lt;admin-token&gt;</code>. Application tokens with inference endpoint grants are not sufficient for MCP access. Before exposing the model server outside a trusted host, replace the BUI's default <code>kronk</code> password as described in <a href="chapter-13-browser-ui.md#133-authentication-and-session-behavior">Chapter 13</a> or disable the BUI; otherwise that known password can be exchanged for an admin session.</p>
+          <p>This requires an admin bearer token on every MCP request and also enables administrative authentication for the REST API and BUI. Configure the MCP client to send <code>Authorization: Bearer &lt;admin-token&gt;</code>. Application tokens with inference endpoint grants are not sufficient for MCP access. Before exposing the model server outside a trusted host, replace the BUI's default <code>kronk</code> password as described in <a href="https://www.kronkai.com/manual#133-authentication">Chapter 13</a> or disable the BUI; otherwise that known password can be exchanged for an admin session.</p>
           <p>Start the standalone service with:</p>
           <pre className="code-block"><code className="language-shell">{`export MCP_MCP_BRAVE_API_KEY=<your-brave-api-key>
 make mcp-server`}</code></pre>
@@ -2952,7 +2955,7 @@ make curl-mcp-web-search SESSIONID=<session-id>`}</code></pre>
           <p>When MCP authentication is enabled, include <code>Authorization: Bearer &lt;admin-token&gt;</code> in every initialization, notification, tool-listing, tool-call, and session-deletion request.</p>
           <p>If the service restarts, initialize a new session instead of reusing the old ID.</p>
           <hr />
-          <p><em>Next: &lt;a href="chapter-17-troubleshooting.md"&gt;Chapter 17: Troubleshooting&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-17-troubleshooting"&gt;Chapter 17: Troubleshooting&lt;/a&gt;</em></p>
           <h2 id="chapter-17-troubleshooting">Chapter 17: Troubleshooting</h2>
           <p>This chapter is a symptom-first guide to common failures. For configuration details, follow the links to the chapter that owns that subsystem.</p>
           <h3 id="171-start-with-diagnostics">17.1 Start with Diagnostics</h3>
@@ -2970,7 +2973,7 @@ kronk diagnose --format yaml`}</code></pre>
           <p>The main API exposes two unauthenticated process health checks:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness
 curl -i http://localhost:11435/v1/readiness`}</code></pre>
-          <p>Readiness currently returns an empty <code>200 OK</code> when the HTTP service is running. It does not verify libraries, devices, memory, loaded models, or inference. Metrics and profiles are served from the unauthenticated debug server; see <a href="chapter-15-observability.md#151-debug-and-health-endpoints">Chapter 15</a> before exposing that port.</p>
+          <p>Readiness currently returns an empty <code>200 OK</code> when the HTTP service is running. It does not verify libraries, devices, memory, loaded models, or inference. Metrics and profiles are served from the unauthenticated debug server; see <a href="https://www.kronkai.com/manual#151-debug-and-health-endpoints">Chapter 15</a> before exposing that port.</p>
           <h3 id="172-libraries-and-devices">17.2 Libraries and Devices</h3>
           <h4 id="`unable-to-load-library`">`unable to load library`</h4>
           <p>Install the bundle selected for the current operating system, architecture, and processor:</p>
@@ -2982,7 +2985,7 @@ KRONK_PROCESSOR=cuda kronk libs --local
 KRONK_PROCESSOR=rocm kronk libs --local
 KRONK_PROCESSOR=vulkan kronk libs --local
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
-          <p>Not every combination is published. Check the live matrix with <code>kronk libs --list-combinations</code>. See <a href="chapter-02-installation.md#24-libraries">Chapter 2: Libraries</a> for installation and path details.</p>
+          <p>Not every combination is published. Check the live matrix with <code>kronk libs --list-combinations</code>. See <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2: Libraries</a> for installation and path details.</p>
           <h4 id="nvidia-is-visible-but-llamacpp-uses-the-cpu">NVIDIA is visible but llama.cpp uses the CPU</h4>
           <p><code>nvidia-smi</code> proves that the driver is available, but a native CUDA bundle also needs the CUDA runtime libraries against which it was linked. On Linux, find the active library path in <code>kronk diagnose</code>, then inspect the backend for unresolved dependencies:</p>
           <pre className="code-block"><code className="language-shell">{`ldd <lib-path>/libggml-cuda.so | grep -iE 'not found|cudart|cublas'`}</code></pre>
@@ -3010,7 +3013,7 @@ kronk model pull <model-id> --local`}</code></pre>
 kronk model pull <model-id> --local`}</code></pre>
           <h4 id="`catalogyaml`-was-hand-edited-and-no-longer-parses">`catalog.yaml` was hand-edited and no longer parses</h4>
           <p>The default catalog is <code>&lt;base&gt;/catalog/catalog.yaml</code>. Restore valid YAML from a backup before running catalog commands; those commands must parse the file and cannot repair malformed YAML. Do not use <code>catalog remove</code> as a syntax-repair tool because it also removes the selected model's downloaded files.</p>
-          <p>Catalog administration is covered in <a href="chapter-08-model-server.md#86-catalog-operations">Chapter 8</a>.</p>
+          <p>Catalog administration is covered in <a href="https://www.kronkai.com/manual#86-catalog-operations">Chapter 8</a>.</p>
           <h3 id="174-memory-and-performance">17.4 Memory and Performance</h3>
           <h4 id="`unable-to-init-context`-or-`unable-to-get-memory`">`unable to init context` or `unable to get memory`</h4>
           <p>The model, runtime buffers, and configured context do not fit. Change one variable at a time:</p>
@@ -3021,14 +3024,14 @@ kronk model pull <model-id> --local`}</code></pre>
             <li>Move KV state or model layers to CPU.</li>
             <li>Choose a smaller or more heavily quantized GGUF.</li>
           </ol>
-          <p>Use the BUI VRAM Calculator for a model-specific estimate and retain headroom. See <a href="chapter-03-model-configuration.md#36-memory-planning-and-quantization">Chapter 3: Memory Planning</a>.</p>
+          <p>Use the BUI VRAM Calculator for a model-specific estimate and retain headroom. See <a href="https://www.kronkai.com/manual#36-memory-planning-and-quantization">Chapter 3: Memory Planning</a>.</p>
           <h4 id="`input-tokens-[n]-exceed-context-window-[m]`">`input tokens [N] exceed context window [M]`</h4>
           <p>The rendered prompt is already larger than the configured context. Shorten the conversation or system prompt, or increase <code>context-window</code> if memory permits. Cached prefix tokens still consume context capacity.</p>
           <h4 id="`the-context-window-is-full`">`the context window is full`</h4>
-          <p>Input plus generated tokens exhausted the context during inference. Request fewer output tokens, shorten the input, or increase the context. YaRN may extend supported RoPE models, but it is not a generic memory fix; follow <a href="chapter-07-yarn-extended-context.md">Chapter 7</a>.</p>
+          <p>Input plus generated tokens exhausted the context during inference. Request fewer output tokens, shorten the input, or increase the context. YaRN may extend supported RoPE models, but it is not a generic memory fix; follow <a href="https://www.kronkai.com/manual#chapter-7-yarn-extended-context">Chapter 7</a>.</p>
           <h4 id="slow-inference-or-slow-time-to-first-token">Slow inference or slow time to first token</h4>
           <p>Start with <code>kronk diagnose</code> and confirm that llama.cpp sees the expected GPU. A cold request includes model loading, and a large uncached prompt includes prefill. Partial CPU offload can reduce token throughput. Compare representative requests after the model is warm rather than relying on the first request.</p>
-          <p>Model loading defaults to <code>load-mode: mmap</code>. Do not switch to <code>direct-io</code> solely because a GPU is present: its performance depends on the model's actual storage device and filesystem, and bypassing the page cache can make repeated loads slower. <code>mlock</code> stabilizes residency after loading but requires enough lockable RAM; it is not a general cold-start optimization. See <a href="chapter-03-model-configuration.md#model-weight-loading">Chapter 3 §3.4</a> before changing the mode.</p>
+          <p>Model loading defaults to <code>load-mode: mmap</code>. Do not switch to <code>direct-io</code> solely because a GPU is present: its performance depends on the model's actual storage device and filesystem, and bypassing the page cache can make repeated loads slower. <code>mlock</code> stabilizes residency after loading but requires enough lockable RAM; it is not a general cold-start optimization. See <a href="https://www.kronkai.com/manual#model-weight-loading">Chapter 3 §3.4</a> before changing the mode.</p>
           <p>Use Chapter 15's request, queue, prefill, TTFT, token-rate, and pool metrics to separate loading, waiting, prompt processing, and generation. IMC-specific diagnosis is below.</p>
           <h3 id="175-requests-and-streaming">17.5 Requests and Streaming</h3>
           <h4 id="`context-deadline-exceeded`">`context deadline exceeded`</h4>
@@ -3062,9 +3065,9 @@ data: [DONE]`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 720h \\
   --endpoints chat-completions,embeddings,rerank,responses,messages,tokenize,transcriptions`}</code></pre>
-          <p>Rate limits use forms such as <code>chat-completions:10000/day</code>. Token creation, key rotation, and production hardening are covered in <a href="chapter-12-security-authentication.md">Chapter 12</a>.</p>
+          <p>Rate limits use forms such as <code>chat-completions:10000/day</code>. Token creation, key rotation, and production hardening are covered in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
           <h3 id="177-imc">17.7 IMC</h3>
-          <p>IMC is enabled by default. It externalizes cached session state to RAM by default or to the configured disk session store. See <a href="chapter-05-message-caching.md">Chapter 5</a> for its lifecycle and settings.</p>
+          <p>IMC is enabled by default. It externalizes cached session state to RAM by default or to the configured disk session store. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for its lifecycle and settings.</p>
           <h4 id="every-turn-rebuilds-the-cache">Every turn rebuilds the cache</h4>
           <p>Common causes are changed earlier messages, changed template inputs, a prompt below <code>cache-min-tokens</code>, or cache pressure. Relevant JSON log statuses include <code>session[N] mismatch</code>, <code>sys-prompt-match</code>, <code>token prefix match found</code>, <code>no usable token prefix match</code>, and <code>kv-pressure-evict</code>.</p>
           <p>Keep earlier conversation messages stable and use a deterministic template. Increase <code>nseq-max</code> only when additional inference concurrency and its memory cost are both appropriate; IMC maintains more session identities than active decode slots.</p>
@@ -3082,7 +3085,7 @@ data: [DONE]`}</code></pre>
             <li><strong>Embedded server absent:</strong> <code>KRONK_MCP_ENABLED=false</code> or a non-empty <code>KRONK_MCP_HOST</code> disables it. The host setting does not configure a proxy or client connection.</li>
             <li><strong>401 Unauthorized:</strong> when MCP authentication is enabled, send the same Kronk admin bearer token on every request, including session initialization and notifications. Inference-scoped application tokens are not accepted.</li>
           </ul>
-          <p>MCP authentication is disabled by default, and <code>fuzzy_edit</code> has the process's filesystem access. Keep it on loopback unless bearer authentication, TLS, and network restrictions are configured. See <a href="chapter-16-mcp-service.md">Chapter 16</a> for configuration and the complete handshake.</p>
+          <p>MCP authentication is disabled by default, and <code>fuzzy_edit</code> has the process's filesystem access. Keep it on loopback unless bearer authentication, TLS, and network restrictions are configured. See <a href="https://www.kronkai.com/manual#chapter-16-mcp-service">Chapter 16</a> for configuration and the complete handshake.</p>
           <h3 id="179-ports-processes-and-permissions">17.9 Ports, Processes, and Permissions</h3>
           <p>Default listeners are <code>11435</code> for the API, <code>11445</code> for model-server debugging, and <code>9000</code> for embedded MCP. Standalone MCP also starts a debug listener on <code>9010</code>. Find a conflicting process before changing ports:</p>
           <pre className="code-block"><code className="language-shell">{`lsof -nP -iTCP:11435 -sTCP:LISTEN
@@ -3091,7 +3094,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           <p>Detached mode stores <code>kronk.pid</code> and <code>kronk.log</code> under <code>KRONK_BASE_PATH</code>. If <code>kronk server stop</code> encounters a stale PID, verify that no Kronk process owns the API or debug port before removing only the stale PID file.</p>
           <p>BadgerDB also permits only one model-server process to use the rate-limit database. A lock error means another process owns <code>&lt;base&gt;/badger</code>; stop that process. Do not delete Badger's <code>LOCK</code> file while a server may be running.</p>
           <p>For permission errors, make the selected base path writable by the service user. The server enforces mode <code>0700</code> on <code>&lt;base&gt;/keys</code> and <code>0600</code> on private key files. Avoid recursively making credentials readable by other users.</p>
-          <p>Whisper-specific failures are listed in <a href="chapter-18-bucky.md#1811-troubleshooting">Chapter 18 §18.11</a>.</p>
+          <p>Whisper-specific failures are listed in <a href="https://www.kronkai.com/manual#189-troubleshooting">Chapter 18 §18.9</a>.</p>
           <h3 id="1710-reporting-a-problem">17.10 Reporting a Problem</h3>
           <p>Include:</p>
           <ul>
@@ -3104,7 +3107,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           </ul>
           <p>Remove tokens, prompts, responses, filesystem secrets, and other sensitive values before sharing diagnostic output.</p>
           <hr />
-          <p><em>Next: &lt;a href="chapter-18-bucky.md"&gt;Chapter 18: Bucky (Audio Transcription)&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription"&gt;Chapter 18: Bucky (Audio Transcription)&lt;/a&gt;</em></p>
           <h2 id="chapter-18-bucky-audio-transcription">Chapter 18: Bucky (Audio Transcription)</h2>
           <p>Bucky is Kronk's speech-to-text subsystem. It uses <a href="https://github.com/ggerganov/whisper.cpp"><code>whisper.cpp</code></a> and is available through:</p>
           <ul>
@@ -3114,7 +3117,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
             <li>the Go packages under <code>sdk/bucky</code>.</li>
           </ul>
           <p>Using Bucky requires both a compatible whisper.cpp library bundle and a Whisper model. The libraries run the inference engine; the model contains the speech-recognition weights.</p>
-          <p>Developer-level package, lifecycle, and test information belongs in <a href="chapter-19-developer-guide.md">Chapter 19: Developer Guide</a>.</p>
+          <p>Developer-level package, lifecycle, and test information belongs in <a href="https://www.kronkai.com/manual#chapter-19-developer-guide">Chapter 19: Developer Guide</a>.</p>
           <h3 id="181-overview">18.1 Overview</h3>
           <p>Bucky supports these common workflows:</p>
           <ul>
@@ -3583,7 +3586,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             </tbody>
           </table>
           <hr />
-          <p><em>Next: &lt;a href="chapter-19-developer-guide.md"&gt;Chapter 19: Developer Guide&lt;/a&gt;</em></p>
+          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-19-developer-guide"&gt;Chapter 19: Developer Guide&lt;/a&gt;</em></p>
           <h2 id="chapter-19-developer-guide">Chapter 19: Developer Guide</h2>
           <h3 id="191-how-to-use-this-guide">19.1 How to Use This Guide</h3>
           <p>This chapter is a durable orientation guide for contributors and coding agents. It describes ownership boundaries, lifecycle contracts, and the smallest useful checks for common changes. It intentionally does not narrate every function, reproduce private structures, or freeze today's source layout at the individual-file level.</p>

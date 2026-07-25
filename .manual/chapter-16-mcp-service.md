@@ -101,7 +101,7 @@ client to send `Authorization: Bearer <admin-token>`. Application tokens with
 inference endpoint grants are not sufficient for MCP access. Before exposing
 the model server outside a trusted host, replace the BUI's default `kronk`
 password as described in
-[Chapter 13](chapter-13-browser-ui.md#133-authentication-and-session-behavior) or
+[Chapter 13](https://www.kronkai.com/manual#133-authentication) or
 disable the BUI; otherwise that known password can be exchanged for an admin
 session.
 
@@ -219,4 +219,4 @@ ID.
 
 ---
 
-_Next: [Chapter 17: Troubleshooting](chapter-17-troubleshooting.md)_
+_Next: [Chapter 17: Troubleshooting](https://www.kronkai.com/manual#chapter-17-troubleshooting)_

@@ -16,8 +16,8 @@
 The Kronk model server provides OpenAI-compatible inference APIs and manages
 downloaded models, native libraries, and loaded model instances. This chapter
 focuses on operating that server. Installation is covered in
-[Chapter 2](chapter-02-installation.md), while model-level tuning belongs in
-[Chapter 3](chapter-03-model-configuration.md).
+[Chapter 2](https://www.kronkai.com/manual#chapter-2-installation-quick-start), while model-level tuning belongs in
+[Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration).
 
 ## 8.1 Server Lifecycle
 
@@ -31,7 +31,7 @@ The API listens on `0.0.0.0:11435` by default. `localhost:11435` works for a
 client on the same machine, but the server is bound to all network interfaces.
 Authentication is disabled by default. Before using an untrusted network,
 bind to loopback, restrict access with a firewall or private network, or enable
-the authentication described in [Chapter 12](chapter-12-security-authentication.md).
+the authentication described in [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication).
 
 To bind only to the local machine:
 
@@ -166,10 +166,10 @@ request returns a server-busy error and the client should retry later.
 
 The Bucky and LLM pools share the same byte budget, so transcription and
 language-model loads can compete for memory. Bucky installation and pool
-behavior are covered in [Chapter 18](chapter-18-bucky.md).
+behavior are covered in [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
 
 Resource usage and eviction events are available through the logging and
-metrics described in [Chapter 15](chapter-15-observability.md).
+metrics described in [Chapter 15](https://www.kronkai.com/manual#chapter-15-observability).
 
 ## 8.5 Model Configuration Files
 
@@ -196,7 +196,7 @@ KRONK_POOL_MODEL_CONFIG_FILE=./my-model_config.yaml kronk server start
 ```
 
 The file format, variants, configuration keys, and tuning workflow are
-documented in [Chapter 3](chapter-03-model-configuration.md). The repository's
+documented in [Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration). The repository's
 commented reference file is `zarf/kms/model_config.yaml`.
 
 ## 8.6 Catalog Operations
@@ -227,7 +227,7 @@ and are not stored as catalog configuration.
 
 Use `--local` for the same operations when the server is stopped. The BUI also
 provides catalog and model views when enabled; see
-[Chapter 13](chapter-13-browser-ui.md).
+[Chapter 13](https://www.kronkai.com/manual#chapter-13-browser-ui-bui).
 
 ## 8.7 Container Operations
 
@@ -249,7 +249,7 @@ docker run -d \
 
 Choose the processor-specific tag documented in Chapter 2. Terminate TLS at a
 reverse proxy or keep the service on a trusted private network. Read
-[Chapter 12](chapter-12-security-authentication.md) before exposing an
+[Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication) before exposing an
 authenticated server remotely.
 
 Install and inspect models directly in the persistent volume without enabling
@@ -286,13 +286,13 @@ part of a normal image update.
 
 Detailed administration is divided by responsibility:
 
-- [Chapter 2](chapter-02-installation.md) — installation, libraries, image
+- [Chapter 2](https://www.kronkai.com/manual#chapter-2-installation-quick-start) — installation, libraries, image
   variants, and data paths
-- [Chapter 3](chapter-03-model-configuration.md) — per-model runtime settings
-- [Chapter 12](chapter-12-security-authentication.md) — authentication, keys,
+- [Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration) — per-model runtime settings
+- [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication) — authentication, keys,
   tokens, and remote exposure
-- [Chapter 13](chapter-13-browser-ui.md) — BUI operation and browser login
-- [Chapter 15](chapter-15-observability.md) — logs, health checks, metrics,
+- [Chapter 13](https://www.kronkai.com/manual#chapter-13-browser-ui-bui) — BUI operation and browser login
+- [Chapter 15](https://www.kronkai.com/manual#chapter-15-observability) — logs, health checks, metrics,
   tracing, and profiling
-- [Chapter 18](chapter-18-bucky.md) — transcription libraries, models, and pool
+- [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription) — transcription libraries, models, and pool
   behavior

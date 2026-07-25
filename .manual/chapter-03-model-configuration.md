@@ -20,7 +20,7 @@ placement, or an advanced feature such as speculative decoding.
 
 This chapter documents model runtime configuration. Server settings such as
 the listen address, authentication, and the number of models kept in the pool
-are covered in [Chapter 8](chapter-08-model-server.md).
+are covered in [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server).
 
 ### 3.1 Configuration File
 
@@ -52,9 +52,9 @@ kronk server start --model-config-file=./my-model-config.yaml
 ```
 
 You can also set `KRONK_POOL_MODEL_CONFIG_FILE` to an alternative path. See
-[Chapter 8 §8.5](chapter-08-model-server.md#85-model-configuration-files) for
+[Chapter 8 §8.5](https://www.kronkai.com/manual#85-model-configuration-files) for
 model config file management and
-[Chapter 2 §2.5](chapter-02-installation.md#25-models-and-data-paths) for all
+[Chapter 2 §2.5](https://www.kronkai.com/manual#25-models-and-data-paths) for all
 data paths.
 
 #### Model variants
@@ -78,13 +78,13 @@ settings without keeping duplicate model files.
 Applications embedding the Go SDK can construct a `model.Config` directly.
 Request fields such as `temperature`, `top_p`, and `max_tokens` can override
 generation behavior for an individual request. Those request fields are
-documented in [Chapter 10](chapter-10-request-parameters.md).
+documented in [Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters).
 
 The hardware processor (`cpu`, `metal`, `cuda`, `rocm`, or `vulkan`) selects a
 native library bundle rather than a per-model setting. Kronk detects it during
 library installation. Set `KRONK_PROCESSOR` before installing libraries only
 when you need to override detection; see
-[Chapter 2 §2.4](chapter-02-installation.md#24-libraries).
+[Chapter 2 §2.4](https://www.kronkai.com/manual#24-libraries).
 
 ### 3.2 Automatic Tuning
 
@@ -138,7 +138,7 @@ unsloth/Qwen3-0.6B-Q8_0:
 A larger window increases KV-cache memory and can reduce the number of parallel
 sequences that fit. It also cannot create model capability that was absent
 during training. If the requested window exceeds the model's native context,
-the model may require RoPE scaling; see [Chapter 7](chapter-07-yarn-extended-context.md).
+the model may require RoPE scaling; see [Chapter 7](https://www.kronkai.com/manual#chapter-7-yarn-extended-context).
 
 #### KV cache types
 
@@ -318,7 +318,7 @@ capacity Kronk must budget and can substantially increase memory use.
 
 Embedding and reranking models use `nseq-max` to size a pool of independent
 contexts rather than text-generation slots. See
-[Chapter 4](chapter-04-batch-processing.md) for request scheduling and the
+[Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for request scheduling and the
 differences between model types.
 
 Two settings control prompt batching:
@@ -336,7 +336,7 @@ input.
 
 Incremental Message Caching is configured separately with
 `incremental-cache` and related cache settings. See
-[Chapter 5](chapter-05-message-caching.md) rather than treating cached
+[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) rather than treating cached
 conversations as dedicated physical slots.
 
 ### 3.6 Memory Planning and Quantization
@@ -455,7 +455,7 @@ some-provider/mtp-target-model:
 
 Do not use model names or benchmark results as universal draft-selection rules.
 Measure acceptance and throughput on the actual workload. See
-[Chapter 6](chapter-06-speculative-decoding-mtp.md) for drafter selection,
+[Chapter 6](https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp) for drafter selection,
 adaptive throttling, observability, and limitations.
 
 #### Extended context with YaRN
@@ -463,7 +463,7 @@ adaptive throttling, observability, and limitations.
 Do not add RoPE scaling merely because a large `context-window` fits in memory.
 Scaling must match the model and its native training context. Configuration
 uses `rope-scaling-type` and the `yarn-*` keys described in
-[Chapter 7](chapter-07-yarn-extended-context.md).
+[Chapter 7](https://www.kronkai.com/manual#chapter-7-yarn-extended-context).
 
 #### Per-model sampling defaults
 
@@ -479,7 +479,7 @@ unsloth/Qwen3-0.6B-Q8_0:
 
 The nested keys use snake_case because they match request parameter names.
 Clients can provide request-specific values. See
-[Chapter 10](chapter-10-request-parameters.md) for behavior and the full
+[Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters) for behavior and the full
 parameter reference.
 
 ### 3.8 Complete Example and Key Reference

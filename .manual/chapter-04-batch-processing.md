@@ -19,8 +19,8 @@ model instance provides, but its exact behavior depends on the model's task.
 
 This chapter covers user-visible scheduling and configuration. Model memory,
 batch sizes, and KV-cache precision are covered in
-[Chapter 3](chapter-03-model-configuration.md). Message-cache session behavior
-is covered in [Chapter 5](chapter-05-message-caching.md).
+[Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration). Message-cache session behavior
+is covered in [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
 
 ### 4.1 Concurrency at a Glance
 
@@ -36,7 +36,7 @@ Kronk uses two concurrency designs:
 Multimodal generation includes requests that provide images or audio to a
 compatible language model. Bucky speech transcription is a separate
 whisper.cpp service and is not scheduled by this batch engine; see
-[Chapter 18](chapter-18-bucky.md).
+[Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
 
 Increasing `nseq-max` allows more work to proceed concurrently. It can improve
 aggregate throughput when requests overlap, but it also increases memory
@@ -140,7 +140,7 @@ treated as identical scheduling at the backend level.
 
 Most users should leave `nbatch` and `nubatch` unset. Kronk derives their
 load-time values as described in
-[Chapter 3 §3.5](chapter-03-model-configuration.md#35-concurrency-and-batching).
+[Chapter 3 §3.5](https://www.kronkai.com/manual#35-concurrency-and-batching).
 
 ### 4.5 Embedding and Reranking
 
@@ -196,7 +196,7 @@ If requests spend too long waiting for slots, possible responses include:
 
 Do not treat weight size plus a hand-calculated KV value as total VRAM. Use the
 BUI's **Apps → VRAM Calculator** and retain operating headroom. See
-[Chapter 3 §3.6](chapter-03-model-configuration.md#36-memory-planning-and-quantization)
+[Chapter 3 §3.6](https://www.kronkai.com/manual#36-memory-planning-and-quantization)
 for the components that affect an estimate.
 
 ### 4.7 Interaction with Message Caching
@@ -218,7 +218,7 @@ server-busy error rather than preempting a generation already running in a
 batch slot.
 
 Session matching, RAM and disk stores, media caching, invalidation, and cache
-settings are documented in [Chapter 5](chapter-05-message-caching.md).
+settings are documented in [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
 
 ### 4.8 Observing Queue Behavior
 
@@ -238,7 +238,7 @@ time-to-first-token measurements when diagnosing latency.
 Consistently increasing queue-wait time means requests are arriving faster
 than slots complete them. Before raising `nseq-max`, confirm that the device
 has memory headroom and that aggregate throughput improves under a realistic
-concurrent load. See [Chapter 15](chapter-15-observability.md) for metrics,
+concurrent load. See [Chapter 15](https://www.kronkai.com/manual#chapter-15-observability) for metrics,
 tracing, and profiling.
 
 ---

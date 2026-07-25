@@ -167,7 +167,7 @@ companion nor an embedded MTP head is available, the override has no effect.
 The adaptive throttle can still select fewer candidates than the configured
 value.
 
-See [Chapter 3](chapter-03-model-configuration.md) for the complete model
+See [Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration) for the complete model
 configuration format.
 
 ### 6.6 Measuring the Result
@@ -201,7 +201,7 @@ counts when a drafter is loaded. Common MTP disable reasons include:
 
 Startup events under `draft-model`, `draft-model-mtp`, and
 `draft-model-mtp-shared` show which source loaded or why MTP was skipped. See
-[Chapter 15](chapter-15-observability.md) for logging and metrics configuration.
+[Chapter 15](https://www.kronkai.com/manual#chapter-15-observability) for logging and metrics configuration.
 
 ### 6.7 Limitations and Fallbacks
 
@@ -220,15 +220,15 @@ Startup events under `draft-model`, `draft-model-mtp`, and
 - **IMC may restore target state without draft state.** Target-prefix reuse
   remains valid, but own-KV MTP runs target-only for that request when its draft
   snapshot is absent or cannot be restored. See
-  [Chapter 5](chapter-05-message-caching.md).
+  [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
 - **Media support is conservative.** Media projection and media prefill run on
   the target. Unsupported own-KV media combinations and all M-RoPE media
   requests run without MTP, although target IMC can remain active. See
-  [Chapter 11](chapter-11-multi-modal-models.md).
+  [Chapter 11](https://www.kronkai.com/manual#chapter-11-multimodal-models).
 - **Drafting consumes resources.** A classic draft loads another model and KV
   cache. MTP heads and companion assistants also require compute and memory.
   Automatic detection does not guarantee a performance improvement.
 
 Implementation details for drafting, verification, state synchronization, and
 hybrid-model rollback belong in
-[Chapter 19](chapter-19-developer-guide.md#1912-mtp-internals).
+[Chapter 19](https://www.kronkai.com/manual#1966-speculative-decoding-and-mtp).
