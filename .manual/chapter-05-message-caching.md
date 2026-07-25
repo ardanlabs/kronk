@@ -277,7 +277,7 @@ For example, `nseq-max: 2` provides two concurrent decode slots and up to six
 warm IMC session identities. Raising `nseq-max` also increases the unified KV
 cache capacity and its memory cost, so do not raise it solely to retain more
 conversation branches without considering the effects described in
-[Chapter 4](chapter-04-batch-processing.md).
+[Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing).
 
 Kronk reserves a session as soon as it selects it for an exact match, append,
 or rebuild. Other requests cannot select that identity while the reservation
@@ -323,7 +323,7 @@ For example, a user can submit an image and then ask several text-only
 follow-up questions. The saved media plan acts as an anchor for those turns.
 Replacing the image or adding another one requires a rebuild.
 
-See [Chapter 11](chapter-11-multi-modal-models.md) for supported media inputs and
+See [Chapter 11](https://www.kronkai.com/manual#chapter-11-multimodal-models) for supported media inputs and
 model requirements.
 
 ## 5.5 Configuration and Storage
@@ -387,7 +387,7 @@ model and storage device before relying on it as a capacity solution.
 
 Some MTP configurations maintain draft-model cached state and saved hidden
 state in addition to the target model snapshot. Account for this extra storage
-when sizing memory. See [Chapter 6](chapter-06-speculative-decoding-mtp.md) for
+when sizing memory. See [Chapter 6](https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp) for
 MTP configuration and behavior.
 
 ## 5.6 Invalidation and Limitations
@@ -437,5 +437,5 @@ stale-session races. A rising rebuild rate usually means clients are changing
 earlier prompt content, media, tools, or rendering inputs rather than appending
 to a stable conversation.
 
-See [Chapter 15](chapter-15-observability.md) for logging, metrics, tracing, and
+See [Chapter 15](https://www.kronkai.com/manual#chapter-15-observability) for logging, metrics, tracing, and
 profiling configuration.

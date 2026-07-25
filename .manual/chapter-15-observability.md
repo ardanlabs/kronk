@@ -231,4 +231,4 @@ this on production systems or when logs are sent to a shared collector.
 
 ---
 
-_Next: [Chapter 16: MCP Service](chapter-16-mcp-service.md)_
+_Next: [Chapter 16: MCP Service](https://www.kronkai.com/manual#chapter-16-mcp-service)_

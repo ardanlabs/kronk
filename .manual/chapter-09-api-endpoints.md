@@ -16,7 +16,7 @@
 
 Kronk exposes several familiar inference API formats. This chapter describes
 their wire contracts and the Kronk-specific details needed to use them. See
-[Chapter 10](chapter-10-request-parameters.md) for generation and sampling
+[Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters) for generation and sampling
 parameters.
 
 ## 9.1 API Conventions
@@ -33,7 +33,7 @@ Authorization: Bearer <token>
 ```
 
 Authentication is bypassed only when the server is configured with
-authentication disabled. See [Chapter 12](chapter-12-security-authentication.md)
+authentication disabled. See [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
 for token creation, endpoint grants, and rate limits.
 
 Application errors use a top-level code and message:
@@ -270,4 +270,4 @@ memory. Each item includes `id`, `object`, `created`, and `owned_by`.
 
 `POST /v1/audio/transcriptions` accepts multipart audio uploads and uses the
 Bucky speech-to-text runtime. Its request fields, formats, and administrative
-operations are documented in [Chapter 18](chapter-18-bucky.md#1871-post-v1audiotranscriptions).
+operations are documented in [Chapter 18](https://www.kronkai.com/manual#1861-request-and-response).

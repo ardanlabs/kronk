@@ -14,14 +14,14 @@
 
 This chapter covers generation parameters used by Chat Completions and the Go
 SDK. Other API formats expose compatible subsets or translate their own field
-names into these parameters. See [Chapter 9](chapter-09-api-endpoints.md) for
+names into these parameters. See [Chapter 9](https://www.kronkai.com/manual#chapter-9-api-endpoints) for
 endpoint-specific request formats and streaming behavior.
 
 ## 10.1 Scope and Defaults
 
 The defaults below are Kronk's baseline values. A model configuration can
 provide different sampling defaults, and a request can override them. See
-[Chapter 3 §3.7](chapter-03-model-configuration.md#37-advanced-features)
+[Chapter 3 §3.7](https://www.kronkai.com/manual#37-advanced-features)
 for per-model `sampling-parameters`.
 
 JSON requests use `number`, `integer`, `boolean`, and `string` values. The Go

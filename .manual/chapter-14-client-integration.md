@@ -268,4 +268,4 @@ print(response.content)
 
 ---
 
-_Next: [Chapter 15: Observability](chapter-15-observability.md)_
+_Next: [Chapter 15: Observability](https://www.kronkai.com/manual#chapter-15-observability)_

@@ -97,7 +97,7 @@ Regardless of installation method, model downloads require enough disk space,
 and inference requires enough RAM or VRAM for the selected model and
 configuration. Quantization, context size, KV cache type, and concurrency all
 affect memory use; parameter count alone is not a reliable requirement. See
-[Chapter 3: Model Configuration](chapter-03-model-configuration.md).
+[Chapter 3: Model Configuration](https://www.kronkai.com/manual#chapter-3-model-configuration).
 
 #### Homebrew
 
@@ -204,7 +204,7 @@ sudo chown -R 10001:10001 /srv/kronk
 ```
 
 For pinned releases, updates, and remote operation,
-see [Chapter 8: Model Server](chapter-08-model-server.md#87-container-operations).
+see [Chapter 8: Model Server](https://www.kronkai.com/manual#87-container-operations).
 
 ### 2.4 Libraries
 
@@ -266,7 +266,7 @@ Speech-to-text uses a separate whisper.cpp bundle:
 kronk bucky libs --local
 ```
 
-See [Chapter 18: Bucky](chapter-18-bucky.md#182-installation-libraries) for
+See [Chapter 18: Bucky](https://www.kronkai.com/manual#182-install-whisper-libraries) for
 Bucky platforms, models, and configuration.
 
 ### 2.5 Models and Data Paths
@@ -310,12 +310,12 @@ root. Official containers set it to `/kronk`.
 
 The `lora` directory holds optional, user-provided LoRA adapter GGUF files.
 Kronk does not download these files. See
-[Chapter 3 §3.7](chapter-03-model-configuration.md#lora-adapters) for placement
+[Chapter 3 §3.7](https://www.kronkai.com/manual#lora-adapters) for placement
 and configuration.
 
 The model configuration file contains per-model and per-variant overrides. Do
 not copy configuration values based only on model size; use
-[Chapter 3](chapter-03-model-configuration.md) for context, cache, GPU, and
+[Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration) for context, cache, GPU, and
 sampling settings.
 
 ### 2.6 Running the Server
@@ -354,7 +354,7 @@ Server-side downloading is separately controlled by
 `KRONK_DOWNLOAD_ENABLED` and defaults to `false`. Local CLI commands using
 `--local` are not affected by this setting.
 
-See [Chapter 8](chapter-08-model-server.md) for server flags, model pooling,
+See [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server) for server flags, model pooling,
 runtime paths, and deployment operations.
 
 ### 2.7 Verify the Installation
@@ -391,19 +391,19 @@ If authentication is enabled, add
 Authentication is disabled by default. Do not publish port `11435` to an
 untrusted network until authentication and TLS termination are configured.
 The BUI, management endpoints, and inference endpoints have separate security
-controls; see [Chapter 12: Security & Authentication](chapter-12-security-authentication.md)
+controls; see [Chapter 12: Security & Authentication](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
 before operating a shared or internet-reachable server.
 
 Continue with:
 
-- [Chapter 3: Model Configuration](chapter-03-model-configuration.md) for
+- [Chapter 3: Model Configuration](https://www.kronkai.com/manual#chapter-3-model-configuration) for
   memory, context, GPU, cache, and sampling settings.
-- [Chapter 8: Model Server](chapter-08-model-server.md) for server operation
+- [Chapter 8: Model Server](https://www.kronkai.com/manual#chapter-8-model-server) for server operation
   and deployment.
-- [Chapter 12: Security & Authentication](chapter-12-security-authentication.md)
+- [Chapter 12: Security & Authentication](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
   before exposing the service.
-- [Chapter 14: Client Integration](chapter-14-client-integration.md) to connect
+- [Chapter 14: Client Integration](https://www.kronkai.com/manual#chapter-14-client-integration) to connect
   an editor or coding agent.
-- [Chapter 18: Bucky](chapter-18-bucky.md) for speech-to-text.
+- [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription) for speech-to-text.
 
 ---

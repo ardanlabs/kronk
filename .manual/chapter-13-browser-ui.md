@@ -62,7 +62,7 @@ The sidebar groups related operations by subsystem.
 - **Translator** records or uploads audio for transcription through Bucky.
   You can select a whisper model, language, and response format and inspect
   timestamped segments. See
-  [Chapter 18 §18.6](chapter-18-bucky.md#186-bui-usage).
+  [Chapter 18 §18.5](https://www.kronkai.com/manual#185-browser-ui).
 
 #### System
 
@@ -89,7 +89,7 @@ The sidebar groups related operations by subsystem.
 
 Bucky has separate pages for downloading and removing whisper models and
 managing whisper.cpp library bundles under `~/.kronk/bucky-libraries/`.
-See [Chapter 18](chapter-18-bucky.md) for installation and transcription
+See [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription) for installation and transcription
 details.
 
 #### Security
@@ -168,4 +168,4 @@ proxy considerations.
 
 ---
 
-_Next: [Chapter 14: Client Integration](chapter-14-client-integration.md)_
+_Next: [Chapter 14: Client Integration](https://www.kronkai.com/manual#chapter-14-client-integration)_

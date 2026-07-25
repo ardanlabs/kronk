@@ -48,7 +48,7 @@ Standalone SDK examples are available in the
   reasoning, and tool calls.
 - **Vision** — image understanding with compatible multimodal models.
 - **Audio transcription** — speech-to-text through Bucky and whisper.cpp. See
-  [Chapter 18: Bucky](chapter-18-bucky.md).
+  [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
 - **Embeddings and reranking** — vector generation and document relevance
   scoring for search and retrieval systems.
 
@@ -81,13 +81,13 @@ mounted as persistent storage.
 Hardware support differs by operating system, architecture, inference engine,
 and release artifact. Kronk can use CPU inference and GPU backends such as
 Metal, CUDA, Vulkan, and ROCm where a compatible library bundle is available.
-See [Chapter 2: Installation & Quick Start](chapter-02-installation.md) for the
+See [Chapter 2: Installation & Quick Start](https://www.kronkai.com/manual#chapter-2-installation-quick-start) for the
 currently distributed native and container options.
 
 Memory requirements depend on more than model parameter count. Quantization,
 context size, KV cache type, batch size, concurrency, and multimodal
 projections all affect RAM and VRAM use. See
-[Chapter 3: Model Configuration](chapter-03-model-configuration.md) before
+[Chapter 3: Model Configuration](https://www.kronkai.com/manual#chapter-3-model-configuration) before
 selecting a large model or context window.
 
 ### 1.4 Architecture
@@ -123,12 +123,12 @@ model server.
 ### 1.5 Where to Go Next
 
 - **Install Kronk and run your first model:**
-  [Chapter 2: Installation & Quick Start](chapter-02-installation.md)
+  [Chapter 2: Installation & Quick Start](https://www.kronkai.com/manual#chapter-2-installation-quick-start)
 - **Choose memory, context, and GPU settings:**
-  [Chapter 3: Model Configuration](chapter-03-model-configuration.md)
+  [Chapter 3: Model Configuration](https://www.kronkai.com/manual#chapter-3-model-configuration)
 - **Connect an editor, agent, or other client:**
-  [Chapter 14: Client Integration](chapter-14-client-integration.md)
+  [Chapter 14: Client Integration](https://www.kronkai.com/manual#chapter-14-client-integration)
 - **Run speech-to-text models:**
-  [Chapter 18: Bucky](chapter-18-bucky.md)
+  [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription)
 
 ---

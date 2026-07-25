@@ -131,8 +131,8 @@ If a long-context model does not fit, consider:
 
 Do not rely on fixed memory figures from another model. Use Kronk's hardware
 analysis and observe actual memory consumption. See
-[Chapter 3](chapter-03-model-configuration.md) for KV-cache configuration and
-[Chapter 4](chapter-04-batch-processing.md) for concurrency effects.
+[Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration) for KV-cache configuration and
+[Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for concurrency effects.
 
 ## 7.6 Validate Quality
 

@@ -224,4 +224,4 @@ traffic outside a trusted host:
 
 ---
 
-_Next: [Chapter 13: Browser UI (BUI)](chapter-13-browser-ui.md)_
+_Next: [Chapter 13: Browser UI (BUI)](https://www.kronkai.com/manual#chapter-13-browser-ui-bui)_
