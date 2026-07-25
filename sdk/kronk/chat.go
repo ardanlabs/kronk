@@ -56,6 +56,9 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: context has no deadline, provide a reasonable timeout")
 	}
 
+	// [DEBUG]: Show raw input content.
+	// fmt.Printf("[DEBUG]: {\"req\":%s}\n", debugChatRequest(d))
+
 	var stream bool
 	streamReq, ok := d["stream"].(bool)
 	if ok {
@@ -158,3 +161,26 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 		}
 	}
 }
+
+// func debugChatRequest(d model.D) string {
+// 	d = d.Clone()
+
+// 	messages, _ := d["messages"].([]model.D)
+// 	for _, message := range messages {
+// 		content, _ := message["content"].([]model.D)
+// 		for _, part := range content {
+// 			imageURL, _ := part["image_url"].(model.D)
+// 			url, _ := imageURL["url"].(string)
+// 			if url != "" {
+// 				imageURL["url"] = fmt.Sprintf("[omitted image data: %d bytes]", len(url))
+// 			}
+// 		}
+// 	}
+
+// 	b, err := json.Marshal(d)
+// 	if err != nil {
+// 		return fmt.Sprintf("[unable to marshal request: %v]", err)
+// 	}
+
+// 	return string(b)
+// }
