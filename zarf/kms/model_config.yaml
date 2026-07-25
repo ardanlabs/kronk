@@ -3,7 +3,7 @@
 #
 # example-model:
 #   cache-min-tokens: 100                # Min tokens before IMC caches a message (default: 100)
-#   cache-slot-timeout: 30               # Seconds to wait for an IMC slot / before preempting a busy slot (default: 30)
+#   cache-slot-timeout: 30               # Seconds to wait when all IMC sessions are reserved (default: 30)
 #   cache-type-k: q8_0                   # KV cache key type: f32, f16, q8_0, q4_0, q4_1, q5_0, q5_1, bf16, auto
 #   cache-type-v: q8_0                   # KV cache value type: f32, f16, q8_0, q4_0, q4_1, q5_0, q5_1, bf16, auto
 #   context-window: 8192                 # Max tokens model can process (default: 8192)
