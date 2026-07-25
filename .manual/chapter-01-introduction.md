@@ -38,7 +38,7 @@ in an application or run the server for network access.
 | Application-specific caching and concurrency | Authentication, authorization, and rate limiting |
 
 Standalone SDK examples are available in the
-[`examples`](../examples) directory.
+[`examples`](https://github.com/ardanlabs/kronk/tree/main/examples) directory.
 
 ### 1.3 Capabilities
 

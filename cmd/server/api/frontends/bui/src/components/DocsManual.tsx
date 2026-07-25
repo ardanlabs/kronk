@@ -102,7 +102,7 @@ export default function DocsManual() {
               </tr>
             </tbody>
           </table>
-          <p>Standalone SDK examples are available in the <a href="../examples"><code>examples</code></a> directory.</p>
+          <p>Standalone SDK examples are available in the <a href="https://github.com/ardanlabs/kronk/tree/main/examples"><code>examples</code></a> directory.</p>
           <h3 id="13-capabilities">1.3 Capabilities</h3>
           <p><strong>Inference</strong></p>
           <ul>
