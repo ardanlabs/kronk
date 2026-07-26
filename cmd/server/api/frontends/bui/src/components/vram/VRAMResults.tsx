@@ -2,7 +2,15 @@ import { useState, type ReactNode } from 'react';
 import KeyValueTable from '../KeyValueTable';
 import { formatBytes } from '../../lib/format';
 import { labelWithTip } from '../ParamTooltips';
-import type { VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM, DeviceInfo } from '../../types';
+import type { VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM, DeviceInfo, AutoTuneRecommendation } from '../../types';
+
+export interface CatalogConfigDefaults {
+  contextWindow: number;
+  nseqMax: number;
+  cacheTypeK: string;
+  cacheTypeV: string;
+  flashAttention: string;
+}
 
 interface VRAMResultsProps {
   totalVram: number;
@@ -32,6 +40,8 @@ interface VRAMResultsProps {
   tensorSplit?: string;
   isHardwareOverridden?: boolean;
   modelUrl?: string;
+  catalogConfigName?: string;
+  catalogConfigDefaults?: CatalogConfigDefaults;
   /** True while a debounced recompute is in flight after a control change. */
   recomputing?: boolean;
 }
@@ -64,6 +74,8 @@ export default function VRAMResults({
   tensorSplit,
   isHardwareOverridden,
   modelUrl,
+  catalogConfigName,
+  catalogConfigDefaults,
   recomputing,
 }: VRAMResultsProps) {
   const isMoE = moe?.is_moe === true && weights != null;
@@ -306,6 +318,8 @@ export default function VRAMResults({
         deviceCount={deviceCount}
         tensorSplit={tensorSplit}
         modelUrl={modelUrl}
+        configName={catalogConfigName}
+        defaults={catalogConfigDefaults}
       />
 
       <div className="vram-breakdown">
@@ -336,6 +350,18 @@ function cacheTypeName(bytesPerElement: number): string {
   }
 }
 
+export function getCatalogConfigDefaults(recommended?: AutoTuneRecommendation): CatalogConfigDefaults | undefined {
+  if (!recommended) return undefined;
+
+  return {
+    contextWindow: recommended.context_window,
+    nseqMax: recommended.nseq_max,
+    cacheTypeK: recommended.cache_type_k,
+    cacheTypeV: recommended.cache_type_v,
+    flashAttention: recommended.flash_attention,
+  };
+}
+
 export interface VramComputedConfig {
   contextWindow: number;
   nseqMax: number;
@@ -358,6 +384,7 @@ function buildComputedCatalogConfig(
   kvCacheOnCPU?: boolean,
   deviceCount?: number,
   tensorSplit?: string,
+  flashAttention = 'enabled',
 ): VramComputedConfig {
   const cacheType = cacheTypeName(input.bytes_per_element);
   const gpuCount = deviceCount ?? 1;
@@ -403,7 +430,7 @@ function buildComputedCatalogConfig(
     nseqMax: input.slots,
     cacheTypeK: cacheType,
     cacheTypeV: cacheType,
-    flashAttention: 'enabled',
+    flashAttention,
     ngpuLayers,
     offloadKQV: kvCacheOnCPU ? false : null,
     splitMode,
@@ -413,14 +440,18 @@ function buildComputedCatalogConfig(
   };
 }
 
-function configToYAML(config: VramComputedConfig): string {
+function defaultComment(isDefault: boolean): string {
+  return isDefault ? ' # AutoTune default' : '';
+}
+
+function configToYAML(config: VramComputedConfig, configName?: string, defaults?: CatalogConfigDefaults): string {
   const lines: string[] = [];
-  lines.push('model-name/variant:');
-  lines.push(`  context-window: ${config.contextWindow}`);
-  lines.push(`  nseq-max: ${config.nseqMax}`);
-  lines.push(`  cache-type-k: ${config.cacheTypeK}`);
-  lines.push(`  cache-type-v: ${config.cacheTypeV}`);
-  lines.push(`  flash-attention: ${config.flashAttention}`);
+  lines.push(`${configName ?? 'model-name/variant'}:`);
+  lines.push(`  context-window: ${config.contextWindow}${defaultComment(config.contextWindow === defaults?.contextWindow)}`);
+  lines.push(`  nseq-max: ${config.nseqMax}${defaultComment(config.nseqMax === defaults?.nseqMax)}`);
+  lines.push(`  cache-type-k: ${config.cacheTypeK}${defaultComment(config.cacheTypeK === defaults?.cacheTypeK)}`);
+  lines.push(`  cache-type-v: ${config.cacheTypeV}${defaultComment(config.cacheTypeV === defaults?.cacheTypeV)}`);
+  lines.push(`  flash-attention: ${config.flashAttention}${defaultComment(config.flashAttention === defaults?.flashAttention)}`);
 
   if (config.ngpuLayers != null) {
     lines.push(`  ngpu-layers: ${config.ngpuLayers}`);
@@ -448,7 +479,7 @@ function configToYAML(config: VramComputedConfig): string {
   return lines.join('\n');
 }
 
-function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit }: {
+function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit, configName, defaults }: {
   input: VRAMInput;
   isMoE: boolean;
   gpuLayers?: number;
@@ -457,10 +488,12 @@ function CatalogConfigSection({ input, isMoE, gpuLayers, expertLayersOnGPU, kvCa
   deviceCount?: number;
   tensorSplit?: string;
   modelUrl?: string;
+  configName?: string;
+  defaults?: CatalogConfigDefaults;
 }) {
   const [open, setOpen] = useState(false);
-  const config = buildComputedCatalogConfig(input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit);
-  const yaml = configToYAML(config);
+  const config = buildComputedCatalogConfig(input, isMoE, gpuLayers, expertLayersOnGPU, kvCacheOnCPU, deviceCount, tensorSplit, defaults?.flashAttention);
+  const yaml = configToYAML(config, configName, defaults);
 
   return (
     <div style={{ marginTop: '0px', padding: '0px 12px 25px 0px', background: 'var(--color-gray-50)', borderRadius: '6px' }}>

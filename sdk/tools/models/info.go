@@ -73,21 +73,26 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 		return ModelInfo{}, fmt.Errorf("model-information: %w", err)
 	}
 
+	return ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", mtpFile != ""), nil
+}
+
+// ModelInfoFromMetadata builds ModelInfo from an already-parsed GGUF header.
+// This lets callers run model analysis without loading the model or rereading
+// header bytes they already hold.
+func ModelInfoFromMetadata(id string, metadata map[string]string, size uint64, hasProjection bool, hasMTP bool) ModelInfo {
 	lowerID := strings.ToLower(id)
 
-	mi := ModelInfo{
+	return ModelInfo{
 		ID:            id,
-		HasProjection: projFile != "",
-		HasMTP:        mtpFile != "",
+		HasProjection: hasProjection,
+		HasMTP:        hasMTP,
 		Desc:          metadata["general.name"],
-		Size:          totalSize,
+		Size:          size,
 		IsGPTModel:    strings.Contains(lowerID, "gpt"),
 		IsEmbedModel:  strings.Contains(lowerID, "embed"),
 		IsRerankModel: strings.Contains(lowerID, "rerank"),
 		Metadata:      metadata,
 	}
-
-	return mi, nil
 }
 
 // TokenizerFingerprint reads a model's GGUF file and extracts a fingerprint

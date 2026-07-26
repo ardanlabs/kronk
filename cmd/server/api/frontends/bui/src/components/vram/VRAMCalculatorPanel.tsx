@@ -1,6 +1,7 @@
 import VRAMControls from './VRAMControls';
 import VRAMResults from './VRAMResults';
 import type { VRAMControlsState, VRAMResultsState } from './useVRAMState';
+import type { CatalogConfigDefaults } from './VRAMResults';
 import type { ContextInfo } from '../../lib/context';
 
 interface VRAMCalculatorPanelProps {
@@ -14,6 +15,10 @@ interface VRAMCalculatorPanelProps {
   hideResults?: boolean;
   /** The model URL/shorthand from the VRAM Calculator input (enables export to catalog editor). */
   modelUrl?: string;
+  /** Catalog model id used as the generated YAML configuration key. */
+  catalogConfigName?: string;
+  /** Initial calculator values marked as defaults in the generated YAML. */
+  catalogConfigDefaults?: CatalogConfigDefaults;
 }
 
 export default function VRAMCalculatorPanel({
@@ -24,6 +29,8 @@ export default function VRAMCalculatorPanel({
   hideControls,
   hideResults,
   modelUrl,
+  catalogConfigName,
+  catalogConfigDefaults,
 }: VRAMCalculatorPanelProps) {
   return (
     <>
@@ -71,6 +78,8 @@ export default function VRAMCalculatorPanel({
           tensorSplit={resultsProps.tensorSplit}
           isHardwareOverridden={resultsProps.isHardwareOverridden}
           modelUrl={modelUrl}
+          catalogConfigName={catalogConfigName}
+          catalogConfigDefaults={catalogConfigDefaults}
           recomputing={resultsProps.recomputing}
         />
       )}

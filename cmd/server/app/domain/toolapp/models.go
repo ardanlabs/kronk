@@ -12,10 +12,12 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -348,6 +350,61 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	return toVRAMResponse(v, repoFiles)
+}
+
+func (a *app) autoTuneModel(ctx context.Context, r *http.Request) web.Encoder {
+	var req AutoTuneRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	req.ModelID = strings.TrimSpace(req.ModelID)
+	req.CatalogID = strings.TrimSpace(req.CatalogID)
+	if (req.ModelID == "") == (req.CatalogID == "") {
+		return errs.Errorf(errs.InvalidArgument, "exactly one of model_id or catalog_id is required")
+	}
+
+	if req.ModelID != "" {
+		analysis, err := a.models.ModelAnalysis(req.ModelID)
+		if err != nil {
+			return errs.Errorf(errs.Internal, "auto-tune model %q: %s", req.ModelID, err)
+		}
+
+		return AutoTuneResponse{Analysis: analysis}
+	}
+
+	entry, ok, err := a.models.CatalogEntry(req.CatalogID)
+	if err != nil {
+		return errs.Errorf(errs.Internal, "lookup catalog entry: %s", err)
+	}
+	if !ok {
+		return errs.Errorf(errs.NotFound, "catalog entry %q not found", req.CatalogID)
+	}
+
+	data, err := a.models.GGUFHead(ctx, entry)
+	if err != nil {
+		return errs.Errorf(errs.Internal, "read catalog GGUF header: %s", err)
+	}
+
+	metadata, err := gguf.ParseMetadata(data)
+	if err != nil {
+		return errs.Errorf(errs.Internal, "parse catalog GGUF header: %s", err)
+	}
+
+	var totalSize uint64
+	for _, size := range entry.FileSizes {
+		if size > 0 {
+			totalSize += uint64(size)
+		}
+	}
+
+	info := models.ModelInfoFromMetadata(req.CatalogID, metadata, totalSize, entry.MMProj != "", entry.MTP != "")
+	analysis, err := models.Analyze(info, devices.List())
+	if err != nil {
+		return errs.Errorf(errs.Internal, "auto-tune catalog model %q: %s", req.CatalogID, err)
+	}
+
+	return AutoTuneResponse{Analysis: analysis}
 }
 
 // computeVRAM dispatches to the local-model or HuggingFace path based on
