@@ -4,6 +4,7 @@ package chatapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -55,6 +56,9 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 	d := model.MapToModelD(req)
 
 	if _, err := krn.ChatStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
+		if errors.Is(err, model.ErrFileInputsUnsupported) {
+			return errs.New(errs.InvalidArgument, err)
+		}
 		return errs.New(errs.Internal, err)
 	}
 

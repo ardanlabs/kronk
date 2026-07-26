@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -142,7 +143,10 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 		return ResponseResponse{}, fmt.Errorf("response: context has no deadline, provide a reasonable timeout")
 	}
 
-	d = convertInputToMessages(d)
+	d, err := convertInputToMessages(d)
+	if err != nil {
+		return ResponseResponse{}, fmt.Errorf("response: %w", err)
+	}
 
 	f := func(m *model.Model) (model.ChatResponse, error) {
 		return m.Chat(ctx, d)
@@ -165,7 +169,10 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 		return nil, fmt.Errorf("responses-streaming: context has no deadline, provide a reasonable timeout")
 	}
 
-	d = convertInputToMessages(d)
+	d, err := convertInputToMessages(d)
+	if err != nil {
+		return nil, fmt.Errorf("responses-streaming: %w", err)
+	}
 
 	f := func(m *model.Model) <-chan model.ChatResponse {
 		return m.ChatStreaming(ctx, d)
@@ -837,11 +844,15 @@ func extractTools(d model.D) []any {
 	return result
 }
 
-func convertInputToMessages(d model.D) model.D {
+func convertInputToMessages(d model.D) (model.D, error) {
+	if containsUnsupportedFileInput(d["input"]) || containsUnsupportedFileInput(d["messages"]) {
+		return nil, fmt.Errorf("convert-input-to-messages: %w", model.ErrFileInputsUnsupported)
+	}
+
 	if _, hasMessages := d["messages"]; !hasMessages {
 		input, hasInput := d["input"]
 		if !hasInput {
-			return d
+			return d, nil
 		}
 
 		d["messages"] = inputToMessages(input)
@@ -853,7 +864,46 @@ func convertInputToMessages(d model.D) model.D {
 	normalizeTools(d)
 	injectInstructions(d)
 
-	return d
+	return d, nil
+}
+
+func containsUnsupportedFileInput(v any) bool {
+	switch value := v.(type) {
+	case model.D:
+		switch value["type"] {
+		case "file", "input_file":
+			return true
+		}
+		return containsUnsupportedFileInput(value["content"])
+
+	case map[string]any:
+		switch value["type"] {
+		case "file", "input_file":
+			return true
+		}
+		return containsUnsupportedFileInput(value["content"])
+
+	case []model.D:
+		for _, item := range value {
+			if containsUnsupportedFileInput(item) {
+				return true
+			}
+		}
+
+	case []map[string]any:
+		for _, item := range value {
+			if containsUnsupportedFileInput(item) {
+				return true
+			}
+		}
+
+	case []any:
+		if slices.ContainsFunc(value, containsUnsupportedFileInput) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // normalizeResponsesItems converts Open Responses item types (function_call,
@@ -961,6 +1011,20 @@ func normalizeResponsesContent(d model.D) {
 				content[j] = model.D{
 					"type": "text",
 					"text": part["text"],
+				}
+
+			case "input_image":
+				if !modified {
+					newContent := make([]model.D, len(content))
+					copy(newContent, content)
+					content = newContent
+					modified = true
+				}
+				content[j] = model.D{
+					"type": "image_url",
+					"image_url": model.D{
+						"url": part["image_url"],
+					},
 				}
 			}
 		}

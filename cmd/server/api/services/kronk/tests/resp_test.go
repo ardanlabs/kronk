@@ -1,6 +1,7 @@
 package chatapi_test
 
 import (
+	"encoding/base64"
 	"net/http"
 	"testing"
 
@@ -70,6 +71,8 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 		t.Fatalf("read image: %s", err)
 	}
 
+	imageURL := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(image)
+
 	return []apitest.Table{
 		{
 			Name:       "image-good-token",
@@ -78,8 +81,16 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "Qwen3.5-0.8B-Q8_0",
-				"input":       model.ImageMessage("what's in the picture", image, "jpg"),
+				"model": "Qwen3.5-0.8B-Q8_0",
+				"input": []model.D{
+					{
+						"role": "user",
+						"content": []model.D{
+							{"type": "input_image", "image_url": imageURL},
+							{"type": "input_text", "text": "what's in the picture"},
+						},
+					},
+				},
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"top_p":       0.9,

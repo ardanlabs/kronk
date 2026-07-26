@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -66,6 +67,43 @@ func TestDeserializeToolCallArguments(t *testing.T) {
 
 			if !reflect.DeepEqual(arguments, tt.want) {
 				t.Errorf("arguments = %#v, want %#v", arguments, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateDocumentRejectsFileInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		partType string
+	}{
+		{name: "chat completions file", partType: "file"},
+		{name: "responses input file", partType: "input_file"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{
+				"messages": []D{
+					{
+						"role": "user",
+						"content": []D{
+							{"type": tt.partType},
+						},
+					},
+				},
+			}
+
+			var m Model
+			_, err := m.validateDocument(d)
+			if err == nil {
+				t.Fatal("validateDocument: expected error")
+			}
+			if !errors.Is(err, ErrFileInputsUnsupported) {
+				t.Errorf("error: got %v, want ErrFileInputsUnsupported", err)
+			}
+			if got, want := err.Error(), "validate-document: messages[0].content[0]: file inputs are not currently supported"; got != want {
+				t.Errorf("error: got %q, want %q", got, want)
 			}
 		})
 	}
