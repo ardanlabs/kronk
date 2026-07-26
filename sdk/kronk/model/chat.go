@@ -17,6 +17,9 @@ import (
 
 const streamChBuffer = 32
 
+// ErrFileInputsUnsupported indicates file content parts are not supported.
+var ErrFileInputsUnsupported = errors.New("file inputs are not currently supported")
+
 // Chat performs a chat request and returns the final response.
 // All requests (including vision/audio) use batch processing and can run
 // concurrently based on the NSeqMax config value, which controls parallel
@@ -597,8 +600,12 @@ func (m *Model) validateDocument(d D) (Params, error) {
 		return Params{}, errors.New("validate-document: no messages found in request")
 	}
 
-	if _, ok := messages.([]D); !ok {
+	docs, ok := messages.([]D)
+	if !ok {
 		return Params{}, errors.New("validate-document: messages is not a slice of documents")
+	}
+	if err := validateMessageContentParts(docs); err != nil {
+		return Params{}, err
 	}
 
 	p, err := m.parseParams(d)
@@ -607,6 +614,46 @@ func (m *Model) validateDocument(d D) (Params, error) {
 	}
 
 	return p, nil
+}
+
+func validateMessageContentParts(messages []D) error {
+	for i, msg := range messages {
+		content, exists := msg["content"]
+		if !exists {
+			continue
+		}
+
+		var parts []any
+		switch value := content.(type) {
+		case []D:
+			parts = make([]any, len(value))
+			for j, part := range value {
+				parts[j] = part
+			}
+		case []map[string]any:
+			parts = make([]any, len(value))
+			for j, part := range value {
+				parts[j] = part
+			}
+		case []any:
+			parts = value
+		default:
+			continue
+		}
+
+		for j, part := range parts {
+			partMap, ok := mapFromPart(part)
+			if !ok {
+				continue
+			}
+			switch partMap["type"] {
+			case "file", "input_file":
+				return fmt.Errorf("validate-document: messages[%d].content[%d]: %w", i, j, ErrFileInputsUnsupported)
+			}
+		}
+	}
+
+	return nil
 }
 
 // recordChatFailure emits the request_total/error counters and the

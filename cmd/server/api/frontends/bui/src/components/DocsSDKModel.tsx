@@ -1713,6 +1713,18 @@ export default function DocsSDKModel() {
               <p className="doc-description">ExpertsAllOnGPU is the sentinel value used for vram.Config.ExpertLayersOnGPU to request that every routed-expert layer be charged against GPU VRAM. The vram package treats any value greater than or equal to the model's block count as "all layers on GPU", so a large constant works regardless of model depth and avoids a metadata round-trip just to discover it.</p>
             </div>
           </div>
+
+          <div className="card" id="variables">
+            <h3>Variables</h3>
+
+            <div className="doc-section" id="var-errfileinputsunsupported">
+              <h4>ErrFileInputsUnsupported</h4>
+              <pre className="code-block">
+                <code>{`var ErrFileInputsUnsupported = errors.New("file inputs are not currently supported")`}</code>
+              </pre>
+              <p className="doc-description">ErrFileInputsUnsupported indicates file content parts are not supported.</p>
+            </div>
+          </div>
         </div>
 
         <nav className="doc-sidebar">
@@ -1882,6 +1894,12 @@ export default function DocsSDKModel() {
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
                 <li><a href="#const-sessionstorekindram">SessionStoreKindRAM</a></li>
                 <li><a href="#const-expertsallongpu">ExpertsAllOnGPU</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#variables" className="doc-index-header">Variables</a>
+              <ul>
+                <li><a href="#var-errfileinputsunsupported">ErrFileInputsUnsupported</a></li>
               </ul>
             </div>
           </div>

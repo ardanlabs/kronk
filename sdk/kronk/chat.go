@@ -19,6 +19,9 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 	if _, exists := ctx.Deadline(); !exists {
 		return model.ChatResponse{}, fmt.Errorf("chat: context has no deadline, provide a reasonable timeout")
 	}
+	if containsUnsupportedFileInput(d["messages"]) {
+		return model.ChatResponse{}, fmt.Errorf("chat: %w", model.ErrFileInputsUnsupported)
+	}
 
 	f := func(m *model.Model) (model.ChatResponse, error) {
 		return m.Chat(ctx, d)
@@ -34,6 +37,9 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
 	if _, exists := ctx.Deadline(); !exists {
 		return nil, fmt.Errorf("chat-streaming: context has no deadline, provide a reasonable timeout")
+	}
+	if containsUnsupportedFileInput(d["messages"]) {
+		return nil, fmt.Errorf("chat-streaming: %w", model.ErrFileInputsUnsupported)
 	}
 
 	f := func(m *model.Model) <-chan model.ChatResponse {
