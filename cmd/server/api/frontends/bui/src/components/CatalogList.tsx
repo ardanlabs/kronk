@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
-import type { CatalogModelResponse, CatalogModelsResponse, CatalogCapabilities, VRAMCalculatorResponse } from '../types';
+import type { AutoTuneRecommendation, CatalogModelResponse, CatalogModelsResponse, CatalogCapabilities, VRAMCalculatorResponse } from '../types';
 import { labelWithTip } from './ParamTooltips';
 import { extractContextInfo } from '../lib/context';
 import { formatBytes } from '../lib/format';
@@ -11,7 +11,7 @@ import ModelCard from './ModelCard';
 import CodeBlock from './CodeBlock';
 import DownloadInfoTable from './DownloadInfoTable';
 import DownloadProgressBar from './DownloadProgressBar';
-import { VRAMFormulaModal, VRAMCalculatorPanel, useVRAMState } from './vram';
+import { VRAMFormulaModal, VRAMCalculatorPanel, getCatalogConfigDefaults, useVRAMState } from './vram';
 
 type DetailSection = 'model-card' | 'catalog' | 'template' | 'vram' | 'pull';
 
@@ -159,6 +159,7 @@ export default function CatalogList() {
   const [remoteVram, setRemoteVram] = useState<Record<string, VRAMCalculatorResponse>>({});
   const [remoteVramLoading, setRemoteVramLoading] = useState<string | null>(null);
   const [remoteVramError, setRemoteVramError] = useState<string | null>(null);
+  const [autoTuneRecommendation, setAutoTuneRecommendation] = useState<AutoTuneRecommendation>();
 
   // ── Filter state ──────────────────────────────────────────────────────────
 
@@ -431,8 +432,24 @@ export default function CatalogList() {
     setRemoteVramError(null);
   }, [modelInfo?.id]);
 
+  useEffect(() => {
+    if (!modelInfo?.id) {
+      setAutoTuneRecommendation(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    setAutoTuneRecommendation(undefined);
+    api.autoTuneModel({ catalog_id: modelInfo.id })
+      .then(resp => { if (!cancelled) setAutoTuneRecommendation(resp.recommended); })
+      .catch(() => { /* AutoTune annotations are best-effort. */ });
+
+    return () => { cancelled = true; };
+  }, [modelInfo?.id]);
+
   // VRAM calculator: derive effective response and wire hook
   const effectiveVram = modelInfo?.vram ?? (modelInfo ? remoteVram[modelInfo.id] : undefined);
+  const catalogConfigDefaults = getCatalogConfigDefaults(autoTuneRecommendation);
   const catalogModelUrl = modelInfo?.files?.model?.[0]?.url;
   const { controlsProps: vramControls, resultsProps: vramResults } = useVRAMState({
     initialContextWindow: 131072,
@@ -966,6 +983,8 @@ export default function CatalogList() {
                           resultsProps={vramResults}
                           variant="compact"
                           contextInfo={contextInfo}
+                          catalogConfigName={modelInfo.id}
+                          catalogConfigDefaults={catalogConfigDefaults}
                         />
                       </>
                     ) : (

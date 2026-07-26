@@ -910,10 +910,10 @@ some-provider/large-model:
           <h3 id="45-embedding-and-reranking">4.5 Embedding and Reranking</h3>
           <p>Embedding and reranking models do not use generation slots. Kronk creates a pool of <code>nseq-max</code> independent model contexts that share the model weights.</p>
           <pre className="code-block"><code className="language-diagram">{`┌──────────┐       ┌──────────────────────────────┐
-│ Requests │──────▶│ Context pool                │
-└──────────┘       │  Context 0 ── request A     │
-                   │  Context 1 ── request B     │
-                   │  Context 2 ── available     │
+│ Requests │──────▶│ Context pool                 │
+└──────────┘       │  Context 0 ── request A      │
+                   │  Context 1 ── request B      │
+                   │  Context 2 ── available      │
                    └──────────────────────────────┘`}</code></pre>
           <p>Each admitted request acquires one context, performs its work independently, and returns the context to the pool. If every context is busy, another request waits until one is released or its context is cancelled. Work from separate contexts is not combined into the generation engine's shared token batch.</p>
           <p>Additional contexts require memory even though model weights are shared. Raise <code>nseq-max</code> only when concurrent embedding or reranking traffic benefits from the extra contexts.</p>

@@ -584,6 +584,31 @@ export interface ResolveSourceResponse {
   repo_files?: HFRepoFile[];
 }
 
+export interface AutoTuneRequest {
+  model_id?: string;
+  catalog_id?: string;
+}
+
+export interface AutoTuneRecommendation {
+  name: string;
+  context_window: number;
+  nseq_max: number;
+  cache_type_k: string;
+  cache_type_v: string;
+  flash_attention: string;
+  split_mode: string;
+  ngpu_layers: number;
+  estimated_vram_bytes: number;
+  fits: boolean;
+  reason?: string;
+}
+
+export interface AutoTuneResponse {
+  recommended: AutoTuneRecommendation;
+  profiles?: AutoTuneRecommendation[];
+  warnings?: string[];
+}
+
 export interface VRAMRequest {
   model_url?: string;
   model_id?: string;

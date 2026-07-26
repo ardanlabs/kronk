@@ -13,6 +13,8 @@ import type {
   VersionResponse,
   ChatRequest,
   ChatStreamResponse,
+  AutoTuneRequest,
+  AutoTuneResponse,
   VRAMRequest,
   VRAMCalculatorResponse,
   HFLookupResponse,
@@ -523,6 +525,13 @@ class ApiService {
 
   async calculateVRAM(request: VRAMRequest): Promise<VRAMCalculatorResponse> {
     return this.request<VRAMCalculatorResponse>('/kronk/models/vram', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async autoTuneModel(request: AutoTuneRequest): Promise<AutoTuneResponse> {
+    return this.request<AutoTuneResponse>('/kronk/models/autotune', {
       method: 'POST',
       body: JSON.stringify(request),
     });

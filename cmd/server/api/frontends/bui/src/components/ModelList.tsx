@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { useModelList } from '../contexts/ModelListContext';
-import type { ModelInfoResponse, ListModelDetail } from '../types';
+import type { AutoTuneRecommendation, ModelInfoResponse, ListModelDetail } from '../types';
 import { formatBytes, fmtNum, fmtVal } from '../lib/format';
 import { labelWithTip } from './ParamTooltips';
 import { extractContextInfo } from '../lib/context';
 import KeyValueTable from './KeyValueTable';
 import ModelCard from './ModelCard';
 import CodeBlock from './CodeBlock';
-import { VRAMFormulaModal, VRAMCalculatorPanel, useVRAMState } from './vram';
+import { VRAMFormulaModal, VRAMCalculatorPanel, getCatalogConfigDefaults, useVRAMState } from './vram';
 
 type ModelListSection = 'model-card' | 'draft-card' | 'config' | 'sampling' | 'template' | 'vram';
 
@@ -65,6 +65,8 @@ export default function ModelList() {
 
   // VRAM calculator state (shared hook)
   const vramServerResponse = modelInfo?.vram ?? null;
+  const [autoTuneRecommendation, setAutoTuneRecommendation] = useState<AutoTuneRecommendation>();
+  const catalogConfigDefaults = getCatalogConfigDefaults(autoTuneRecommendation);
   const { controlsProps: vramControls, resultsProps: vramResults } = useVRAMState({
     initialContextWindow: 131072,
     initialBytesPerElement: 2,
@@ -94,6 +96,7 @@ export default function ModelList() {
     if (!selectedModelId) {
       setModelInfo(null);
       setInfoError(null);
+      setAutoTuneRecommendation(undefined);
       return;
     }
 
@@ -106,6 +109,11 @@ export default function ModelList() {
       .then((resp) => { if (!cancelled) setModelInfo(resp); })
       .catch((err) => { if (!cancelled) setInfoError(err?.message ?? 'Failed to load model info'); })
       .finally(() => { if (!cancelled) setInfoLoading(false); });
+
+    setAutoTuneRecommendation(undefined);
+    api.autoTuneModel({ model_id: selectedModelId })
+      .then(resp => { if (!cancelled) setAutoTuneRecommendation(resp.recommended); })
+      .catch(() => { /* AutoTune annotations are best-effort. */ });
 
     return () => { cancelled = true; };
   }, [selectedModelId]);
@@ -613,6 +621,8 @@ export default function ModelList() {
                       resultsProps={vramResults}
                       variant="compact"
                       contextInfo={contextInfo}
+                      catalogConfigName={selectedModelId ?? undefined}
+                      catalogConfigDefaults={catalogConfigDefaults}
                     />
                   </>
                 ) : (

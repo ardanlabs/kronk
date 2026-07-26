@@ -832,6 +832,30 @@ func (app *VRAMRequest) Decode(data []byte) error {
 	return json.Unmarshal(data, app)
 }
 
+// AutoTuneRequest identifies a local or catalog model to analyze. Exactly one
+// identifier must be provided.
+type AutoTuneRequest struct {
+	ModelID   string `json:"model_id,omitempty"`
+	CatalogID string `json:"catalog_id,omitempty"`
+}
+
+// Decode implements the decoder interface.
+func (app *AutoTuneRequest) Decode(data []byte) error {
+	return json.Unmarshal(data, app)
+}
+
+// AutoTuneResponse contains hardware-aware model analysis and runtime
+// recommendations produced without loading the model.
+type AutoTuneResponse struct {
+	models.Analysis
+}
+
+// Encode implements the encoder interface.
+func (app AutoTuneResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
 // VRAMResponse represents the VRAM calculation results.
 type VRAMResponse struct {
 	Input              VRAMInput        `json:"input"`
