@@ -41,8 +41,8 @@ schema = 3
     version = "v1.0.6"
     hash = "sha256-XjacSUsH4hnVKeiAKzeRZjyMU1qv1LlhkCpeJtzJ0oU="
   [mod."github.com/ardanlabs/conf/v3"]
-    version = "v3.12.0"
-    hash = "sha256-lywKaxHXxsGBNlIOu0c4kLPB4U3oaX0INu56qv6/V3A="
+    version = "v3.13.0"
+    hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="
   [mod."github.com/ardanlabs/jinja"]
     version = "v1.5.0"
     hash = "sha256-ZwN11ft8Pjk4B7LU09tkz7PPv0BkidZIktblrUEbBO8="
@@ -371,8 +371,8 @@ schema = 3
     version = "v2.4.4"
     hash = "sha256-ecT2ZXw7iT+63J4210xA6sMz0fUFXmDzLwZe2FzaNFU="
   [mod."go.yaml.in/yaml/v3"]
-    version = "v3.0.4"
-    hash = "sha256-NkGFiDPoCxbr3LFsI6OCygjjkY0rdmg5ggvVVwpyDQ4="
+    version = "v3.0.5"
+    hash = "sha256-ygho+GU5kE7vPMx+dZYyNfCaeMjNxj66XmrcVf3afFE="
   [mod."golang.org/x/crypto"]
     version = "v0.54.0"
     hash = "sha256-m8jsqlPuoPxGDjClzcAVbXf1aiU07L+9j7vYcqJu/0Q="
