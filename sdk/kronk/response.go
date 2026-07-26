@@ -962,6 +962,20 @@ func normalizeResponsesContent(d model.D) {
 					"type": "text",
 					"text": part["text"],
 				}
+
+			case "input_image":
+				if !modified {
+					newContent := make([]model.D, len(content))
+					copy(newContent, content)
+					content = newContent
+					modified = true
+				}
+				content[j] = model.D{
+					"type": "image_url",
+					"image_url": model.D{
+						"url": part["image_url"],
+					},
+				}
 			}
 		}
 
