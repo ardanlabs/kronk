@@ -101,8 +101,8 @@ schema = 3
     version = "v1.45.0"
     hash = "sha256-5CuJRPHxwORAl/YYeLFW9JSlT4J1AqDUaOSfqxG6vgE="
   [mod."github.com/aws/smithy-go"]
-    version = "v1.27.4"
-    hash = "sha256-V4BvRCkpbkBbFRKyxV+hGDPDKUd1nZYcr+WQ09GqC/k="
+    version = "v1.27.5"
+    hash = "sha256-gHS/8dNgYAG5GOBajouE32KrjPyRTh0JpNbtUapLbzE="
   [mod."github.com/beorn7/perks"]
     version = "v1.0.1"
     hash = "sha256-h75GUqfwJKngCJQVE5Ao5wnO3cfKD9lSIteoLp/3xJ4="
@@ -236,8 +236,8 @@ schema = 3
     version = "v3.0.6"
     hash = "sha256-gmHPNPCPq/Vn4s1PBYoSqlNaPNmXsnNTef9nL+6K+3M="
   [mod."github.com/lestrrat-go/jwx/v3"]
-    version = "v3.1.1"
-    hash = "sha256-yffwvtN4QQbN9TyvuUEABXKtOQJv7Trfw8qqz3HzKhw="
+    version = "v3.2.0"
+    hash = "sha256-+zd5Dhz6HC/UXPSZCAUEo5I+c8xaEJjFF+l2OtYzqJw="
   [mod."github.com/lestrrat-go/option/v2"]
     version = "v2.0.0"
     hash = "sha256-ZmegDY7E3+tLd+kkNal1aeq3nfNH/dlWPpXOJfI3L5Q="
@@ -401,13 +401,13 @@ schema = 3
     version = "v0.290.0"
     hash = "sha256-qqNG4ExSaHNa9iRHq/F4JXqdnegRrWFx8oMKEEMgApA="
   [mod."google.golang.org/genproto"]
-    version = "v0.0.0-20260724162435-b2f20204f0df"
-    hash = "sha256-WSuY4RSdq8QpyooxYjqany3KmsWuoXulRxCF5fpJqqc="
+    version = "v0.0.0-20260727163830-6c54dddc4772"
+    hash = "sha256-Oxb49rSL/Y6GDyV1L9V+NM117PZ3OX2T9QZENLovgbQ="
   [mod."google.golang.org/genproto/googleapis/api"]
-    version = "v0.0.0-20260724162435-b2f20204f0df"
+    version = "v0.0.0-20260727163830-6c54dddc4772"
     hash = "sha256-At6v+tTZ/GyNQzNOM7w596n692hbw0n4/ixl+EJxQ38="
   [mod."google.golang.org/genproto/googleapis/rpc"]
-    version = "v0.0.0-20260724162435-b2f20204f0df"
+    version = "v0.0.0-20260727163830-6c54dddc4772"
     hash = "sha256-ldJTTb7hhj1mdmzTn9IEkQVwCoj3KRlENZtUSEKHABU="
   [mod."google.golang.org/grpc"]
     version = "v1.82.1"
