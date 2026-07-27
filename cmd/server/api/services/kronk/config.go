@@ -3,7 +3,19 @@ package kronk
 import (
 	"encoding/hex"
 	"errors"
+	"time"
 )
+
+func validateTimeoutConfig(inferenceTimeout, writeTimeout time.Duration) error {
+	if inferenceTimeout <= 0 {
+		return errors.New("configuration: web inference timeout must be greater than zero")
+	}
+	if writeTimeout != 0 && writeTimeout <= inferenceTimeout {
+		return errors.New("configuration: web write timeout must be disabled or greater than the inference timeout")
+	}
+
+	return nil
+}
 
 func validateAdminConfig(adminAuth, webAdmin bool, passwordSHA256, authHost string) error {
 	if passwordSHA256 != "" {

@@ -15,7 +15,7 @@ func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgHybridVisionIMC(), func(t *testing.T, krn *kronk.Kronk) {
 		t.Run("IMCMediaBuild", func(t *testing.T) { testIMCMediaBuild(t, krn) })
 		t.Run("IMCMediaTextExtend", func(t *testing.T) { testIMCMediaTextExtend(t, krn) })
-		t.Run("IMCTextThenMediaExtend", func(t *testing.T) { testIMCTextThenMediaExtend(t, krn) })
+		t.Run("IMCTextThenMediaTransition", func(t *testing.T) { testIMCTextThenMediaTransition(t, krn) })
 	})
 }
 
@@ -132,13 +132,10 @@ func testIMCMediaTextExtend(t *testing.T, krn *kronk.Kronk) {
 	t.Logf("step 4: back to image OK: %s", truncate(contentFromResp(resp4), 100))
 }
 
-// testIMCTextThenMediaExtend starts with a text-only conversation to build a
-// text cache, then sends a request that includes an image. This exercises the
-// partial media extend path (extendIMCTextCacheWithMedia) which preserves the
-// existing text KV cache and only decodes the new media content, avoiding a
-// full rebuild of the text prefix. Tests this path on a Hybrid architecture
-// with snapshot/restore state management.
-func testIMCTextThenMediaExtend(t *testing.T, krn *kronk.Kronk) {
+// testIMCTextThenMediaTransition starts with a text-only conversation, then
+// verifies that the same conversation can transition to media and continue
+// with a text-only follow-up on a hybrid architecture.
+func testIMCTextThenMediaTransition(t *testing.T, krn *kronk.Kronk) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
@@ -157,8 +154,7 @@ func testIMCTextThenMediaExtend(t *testing.T, krn *kronk.Kronk) {
 	}
 	t.Logf("step 1: text request OK: %s", truncate(contentFromResp(resp), 100))
 
-	// Step 2: Send image in the same conversation — should use partial media
-	// extend (skip cached text tokens, only decode new text + image).
+	// Step 2: Send an image in the same conversation.
 	imageMessages := testlib.DMedia["messages"].([]model.D)
 
 	step2Msgs := appendMessages(

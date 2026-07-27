@@ -84,7 +84,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 				if imcTokenPlan {
 					return "token-v2"
 				}
-				return "legacy"
+				return "none"
 			}(),
 			"imc_slot", imcSessionID,
 			"imc_active", imcActive,
@@ -180,7 +180,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.model.cacheMu.Unlock()
 	}
 	if s.job.hasIMCReservation() {
-		e.model.imcClearPending(s.job.imcSessionID)
+		e.model.imcReleaseReservation(s.job.imcSessionID)
 	}
 
 	// Handle error case.
@@ -363,7 +363,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 // failJob fails a job that was dequeued but never assigned to a slot. It sends
 // an error response, ends the queue-wait span, closes the channel, clears any
-// pending IMC reservation, and decrements activeStreams.
+// held IMC reservation, and decrements activeStreams.
 func (e *batchEngine) failJob(job *chatJob, err error) {
 	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "", err, Usage{})
 
@@ -387,9 +387,9 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(job.requestStart))
 	}
 
-	// Clear IMC pending reservation if this job reserved a slot.
+	// Release the IMC reservation if this job reserved a session.
 	if job.hasIMCReservation() {
-		e.model.imcClearPending(job.imcSessionID)
+		e.model.imcReleaseReservation(job.imcSessionID)
 	}
 
 	// Decrement activeStreams BEFORE close(job.ch). See finishSlot's

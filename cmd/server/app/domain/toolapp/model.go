@@ -347,7 +347,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			PtrSWAFull:          rmc.PtrSWAFull,
 			IncrementalCache:    rmc.PtrIncrementalCache,
 			CacheMinTokens:      rmc.PtrCacheMinTokens,
-			CacheSlotTimeout:    rmc.PtrCacheSlotTimeout,
 			SessionStoreDir:     rmc.SessionStoreDir,
 			SessionStoreKind:    rmc.SessionStoreKind,
 			RopeScaling:         rmc.RopeScaling,
@@ -726,7 +725,6 @@ type ModelConfig struct {
 	PtrSWAFull          *bool                    `json:"swa-full"`
 	IncrementalCache    *bool                    `json:"incremental-cache"`
 	CacheMinTokens      *int                     `json:"cache-min-tokens"`
-	CacheSlotTimeout    *int                     `json:"cache-slot-timeout"`
 	SessionStoreDir     string                   `json:"session-store-dir,omitempty"`
 	SessionStoreKind    string                   `json:"session-store-kind,omitempty"`
 	Sampling            SamplingConfig           `json:"sampling-parameters"`

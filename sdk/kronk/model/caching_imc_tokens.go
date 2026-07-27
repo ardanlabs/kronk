@@ -41,7 +41,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	var empty *imcSession
 	var lru *imcSession
 	for _, session := range m.imcSessions {
-		if session.pending {
+		if session.reserved {
 			continue
 		}
 		if session.totalTokensCached == 0 {
@@ -74,11 +74,11 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 		if len(extension) == 0 {
 			matchKind = "exact"
 			matchReason = "complete-prefix-equal"
-			best.pending = true
+			best.reserved = true
 		} else {
 			matchKind = "append"
 			matchReason = "complete-prefix-append"
-			best.pending = true
+			best.reserved = true
 		}
 		best.lastUsed = time.Now()
 	} else {
@@ -92,7 +92,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 			return result
 		}
 		imcResetSession(selected)
-		selected.pending = true
+		selected.reserved = true
 	}
 
 	result.cacheIdx = llama.Pos(reusable)

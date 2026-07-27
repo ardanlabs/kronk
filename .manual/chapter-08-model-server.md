@@ -104,6 +104,8 @@ Common settings can be supplied as flags or environment variables:
 | ---- | -------------------- | ----------------- | ------- |
 | `--api-host` | `KRONK_WEB_API_HOST` | `0.0.0.0:11435` | Main API bind address |
 | `--debug-host` | `KRONK_WEB_DEBUG_HOST` | `0.0.0.0:11445` | Metrics and profiling bind address |
+| `--inference-timeout` | `KRONK_WEB_INFERENCE_TIMEOUT` | `60m` | Total timeout for inference admission, preparation, slot waiting, and generation |
+| `--write-timeout` | `KRONK_WEB_WRITE_TIMEOUT` | `61m` | HTTP response write timeout; `0` disables it, otherwise it must exceed the inference timeout |
 | `--base-path` | `KRONK_BASE_PATH` | `~/.kronk` | Root for Kronk data |
 | `--model-config-file` | `KRONK_POOL_MODEL_CONFIG_FILE` | `<base>/models/model_config.yaml` | Per-model overrides |
 | `--budget-percent` | `KRONK_POOL_BUDGET_PERCENT` | `80` | Memory-budget input for loaded models |

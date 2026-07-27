@@ -91,8 +91,8 @@ func TestProcessIMCTokenPlanReservesExactMatch(t *testing.T) {
 	if !result.imcPureHitSkipSnapshot {
 		t.Error("imcPureHitSkipSnapshot = false, want true")
 	}
-	if !session.pending {
-		t.Error("session.pending = false, want true")
+	if !session.reserved {
+		t.Error("session.reserved = false, want true")
 	}
 }
 

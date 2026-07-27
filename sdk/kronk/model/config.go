@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -46,13 +47,14 @@ const (
 )
 
 const (
-	defContextWindow    = 8 * 1024
-	defNUBatch          = 2 * 1024
-	defMinCacheTokens   = 100
-	defThreadZero       = 0
-	defNSeqMax          = 1
-	defNDraft           = 5
-	defCacheSlotTimeout = 30
+	defContextWindow        = 8 * 1024
+	defNUBatch              = 2 * 1024
+	defMinCacheTokens       = 100
+	defThreadZero           = 0
+	defNSeqMax              = 1
+	defNDraft               = 5
+	defaultQueueDepth       = 2
+	defaultAdmissionTimeout = 3 * time.Minute
 )
 
 // Logger provides a function for logging messages from different APIs.
@@ -146,19 +148,9 @@ type AdapterConfig struct {
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
 //
-// CacheSlotTimeout sets the maximum number of seconds used for two IMC timeout
-// scenarios:
-//
-//  1. Wait for slot availability: When all IMC slots have cache builds
-//     in-flight (pending), incoming requests wait up to this duration for a
-//     slot to become available before returning a "server busy" error.
-//
-//  2. Slot preemption: When a request's target slot is busy generating,
-//     the request is deferred. If the deferred job waits longer than this
-//     duration (measured from batch queue entry, not HTTP arrival), the
-//     busy slot is preempted so the waiting request can proceed.
-//
-// When set to 0, defaults to 30 seconds.
+// AdmissionTimeout limits how long a request waits for an admission permit.
+// The timeout applies only to admission, not request processing after a permit
+// is acquired. When unset or set to 0, the default is 3 minutes.
 //
 // CacheTypeK is the data type for the K (key) cache. This controls the precision
 // of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
@@ -359,9 +351,9 @@ type AdapterConfig struct {
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
 	Adapters             []AdapterConfig
+	PtrAdmissionTimeout  *time.Duration
 	AutoTune             bool
 	PtrCacheMinTokens    *int
-	PtrCacheSlotTimeout  *int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
 	PtrContextWindow     *int
@@ -407,6 +399,12 @@ type Config struct {
 	PtrYarnOrigCtx       *int
 }
 
+func (cfg Config) AdmissionTimeout() time.Duration {
+	if cfg.PtrAdmissionTimeout == nil {
+		return 0
+	}
+	return *cfg.PtrAdmissionTimeout
+}
 func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) }
 func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
 func (cfg Config) NBatch() int             { return intOr(cfg.PtrNBatch, 0) }
@@ -415,7 +413,6 @@ func (cfg Config) NSeqMax() int            { return intOr(cfg.PtrNSeqMax, 0) }
 func (cfg Config) NThreads() int           { return intOr(cfg.PtrNThreads, 0) }
 func (cfg Config) NThreadsBatch() int      { return intOr(cfg.PtrNThreadsBatch, 0) }
 func (cfg Config) CacheMinTokens() int     { return intOr(cfg.PtrCacheMinTokens, 0) }
-func (cfg Config) CacheSlotTimeout() int   { return intOr(cfg.PtrCacheSlotTimeout, 0) }
 func (cfg Config) OpOffloadMinBatch() int  { return intOr(cfg.PtrOpOffloadMinBatch, 0) }
 func (cfg Config) MainGPU() int            { return intOr(cfg.PtrMainGPU, 0) }
 func (cfg Config) NGpuLayers() int         { return intOr(cfg.PtrNGpuLayers, 0) }
@@ -442,11 +439,6 @@ func (cfg Config) sessionStoreKind() string {
 }
 
 func (cfg Config) String() string {
-	queueDepth := cfg.QueueDepth()
-	if queueDepth == 0 {
-		queueDepth = 2
-	}
-
 	formatBoolPtr := func(p *bool) string {
 		if p == nil {
 			return "nil"
@@ -468,6 +460,13 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("%d", *p)
 	}
 
+	formatDurationPtr := func(p *time.Duration) string {
+		if p == nil {
+			return "nil"
+		}
+		return p.String()
+	}
+
 	formatSplitModePtr := func(p *SplitMode) string {
 		if p == nil {
 			return "nil"
@@ -486,14 +485,14 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheSlotTimeout[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
-		cfg.Adapters, cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), formatIntPtr(cfg.PtrCacheSlotTimeout), cfg.CacheTypeK, cfg.CacheTypeV,
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.Devices, cfg.FlashAttention,
 		formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrNUBatch),
 		cfg.NUMA,
-		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), queueDepth,
+		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
 		cfg.SessionStoreDir, cfg.sessionStoreKind(),
 		formatSplitModePtr(cfg.PtrSplitMode),
@@ -505,6 +504,12 @@ func (cfg Config) String() string {
 func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
+	}
+	if cfg.QueueDepth() < 0 {
+		return fmt.Errorf("validate-config: queue depth must be >= 0, got %d", cfg.QueueDepth())
+	}
+	if cfg.AdmissionTimeout() < 0 {
+		return fmt.Errorf("validate-config: admission timeout must be >= 0, got %s", cfg.AdmissionTimeout())
 	}
 
 	seenAdapters := make(map[string]struct{}, len(cfg.Adapters))
@@ -646,7 +651,26 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	return nil
 }
 
+func adjustQueueDepth(cfg Config) Config {
+	if cfg.QueueDepth() == 0 {
+		cfg.PtrQueueDepth = new(defaultQueueDepth)
+	}
+
+	return cfg
+}
+
+func adjustAdmissionTimeout(cfg Config) Config {
+	if cfg.AdmissionTimeout() == 0 {
+		cfg.PtrAdmissionTimeout = new(defaultAdmissionTimeout)
+	}
+
+	return cfg
+}
+
 func adjustConfig(cfg Config, model llama.Model) Config {
+	cfg = adjustQueueDepth(cfg)
+	cfg = adjustAdmissionTimeout(cfg)
+
 	cfg = adjustContextWindow(cfg, model)
 
 	// Resolve the number of parallel sequence slots first; the batch sizing
@@ -713,14 +737,6 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 	if cfg.PtrCacheMinTokens == nil {
 		cfg.PtrCacheMinTokens = new(0)
-	}
-
-	// Default slot wait timeout for IMC.
-	if cfg.IncrementalCache() && cfg.CacheSlotTimeout() <= 0 {
-		cfg.PtrCacheSlotTimeout = new(defCacheSlotTimeout)
-	}
-	if cfg.PtrCacheSlotTimeout == nil {
-		cfg.PtrCacheSlotTimeout = new(0)
 	}
 
 	if cfg.DraftModel != nil && cfg.DraftModel.NDraft <= 0 {
@@ -1633,11 +1649,13 @@ func NewConfig(opts ...Option) Config {
 	return cfg
 }
 
-func WithConfig(src Config) Option                   { return func(c *Config) { *c = src } }
-func WithAdapters(v []AdapterConfig) Option          { return func(c *Config) { c.Adapters = v } }
+func WithConfig(src Config) Option          { return func(c *Config) { *c = src } }
+func WithAdapters(v []AdapterConfig) Option { return func(c *Config) { c.Adapters = v } }
+func WithAdmissionTimeout(v time.Duration) Option {
+	return func(c *Config) { c.PtrAdmissionTimeout = new(v) }
+}
 func WithAutoTune(v bool) Option                     { return func(c *Config) { c.AutoTune = v } }
 func WithCacheMinTokens(v int) Option                { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
-func WithCacheSlotTimeout(v int) Option              { return func(c *Config) { c.PtrCacheSlotTimeout = new(v) } }
 func WithCacheTypeK(v GGMLType) Option               { return func(c *Config) { c.CacheTypeK = v } }
 func WithCacheTypeV(v GGMLType) Option               { return func(c *Config) { c.CacheTypeV = v } }
 func WithContextWindow(v int) Option                 { return func(c *Config) { c.PtrContextWindow = new(v) } }
@@ -1680,8 +1698,6 @@ func WithYarnExtFactor(v float32) Option             { return func(c *Config) { 
 func WithYarnOrigCtx(v int) Option                   { return func(c *Config) { c.PtrYarnOrigCtx = new(v) } }
 func WithQueueDepth(v int) Option {
 	return func(c *Config) {
-		if v > 0 {
-			c.PtrQueueDepth = new(v)
-		}
+		c.PtrQueueDepth = new(v)
 	}
 }

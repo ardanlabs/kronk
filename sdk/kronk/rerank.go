@@ -26,10 +26,6 @@ func (krn *Kronk) Rerank(ctx context.Context, d model.D) (model.RerankResponse, 
 		return model.RerankResponse{}, fmt.Errorf("rerank: model doesn't support reranking")
 	}
 
-	if _, exists := ctx.Deadline(); !exists {
-		return model.RerankResponse{}, fmt.Errorf("rerank: context has no deadline, provide a reasonable timeout")
-	}
-
 	f := func(m *model.Model) (model.RerankResponse, error) {
 		return m.Rerank(ctx, d)
 	}
@@ -39,10 +35,6 @@ func (krn *Kronk) Rerank(ctx context.Context, d model.D) (model.RerankResponse, 
 
 // RerankHTTP provides http handler support for a rerank call.
 func (krn *Kronk) RerankHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.RerankResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return model.RerankResponse{}, fmt.Errorf("rerank-http: context has no deadline, provide a reasonable timeout")
-	}
-
 	resp, err := krn.Rerank(ctx, d)
 	if err != nil {
 		return model.RerankResponse{}, fmt.Errorf("rerank-http: %w", err)

@@ -44,15 +44,17 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	chatapp.Routes(app, chatapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
+		Log:              cfg.Log,
+		AuthClient:       cfg.AuthClient,
+		Pool:             cfg.Pool,
+		InferenceTimeout: cfg.InferenceTimeout,
 	})
 
 	embedapp.Routes(app, embedapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
+		Log:              cfg.Log,
+		AuthClient:       cfg.AuthClient,
+		Pool:             cfg.Pool,
+		InferenceTimeout: cfg.InferenceTimeout,
 	})
 
 	audioapp.Routes(app, audioapp.Config{
@@ -62,27 +64,31 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	rerankapp.Routes(app, rerankapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
+		Log:              cfg.Log,
+		AuthClient:       cfg.AuthClient,
+		Pool:             cfg.Pool,
+		InferenceTimeout: cfg.InferenceTimeout,
 	})
 
 	tokenapp.Routes(app, tokenapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
+		Log:              cfg.Log,
+		AuthClient:       cfg.AuthClient,
+		Pool:             cfg.Pool,
+		InferenceTimeout: cfg.InferenceTimeout,
 	})
 
 	respapp.Routes(app, respapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
+		Log:              cfg.Log,
+		AuthClient:       cfg.AuthClient,
+		Pool:             cfg.Pool,
+		InferenceTimeout: cfg.InferenceTimeout,
 	})
 
 	msgsapp.Routes(app, msgsapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
+		Log:              cfg.Log,
+		AuthClient:       cfg.AuthClient,
+		Pool:             cfg.Pool,
+		InferenceTimeout: cfg.InferenceTimeout,
 	})
 
 	playgroundapp.Routes(app, playgroundapp.Config{

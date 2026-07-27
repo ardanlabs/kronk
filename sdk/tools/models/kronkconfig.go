@@ -1,8 +1,35 @@
 package models
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
+
+// Duration is a YAML duration represented using time.ParseDuration syntax.
+type Duration time.Duration
+
+// UnmarshalYAML parses a duration string such as "3m".
+func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
+	var value string
+	if err := unmarshal(&value); err != nil {
+		return err
+	}
+
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("parse duration %q: %w", value, err)
+	}
+
+	*d = Duration(duration)
+	return nil
+}
+
+// MarshalYAML formats the duration using time.Duration.String.
+func (d Duration) MarshalYAML() (any, error) {
+	return time.Duration(d).String(), nil
+}
 
 // SamplingConfig represents sampling parameters for model inference.
 type SamplingConfig struct {
@@ -190,8 +217,8 @@ func (s SamplingConfig) toParams() model.Params {
 // ModelConfig represents default model config settings.
 type ModelConfig struct {
 	Adapters             []AdapterConfig           `yaml:"adapters,omitempty"`
+	PtrAdmissionTimeout  *Duration                 `yaml:"admission-timeout,omitempty"`
 	PtrCacheMinTokens    *int                      `yaml:"cache-min-tokens,omitempty"`
-	PtrCacheSlotTimeout  *int                      `yaml:"cache-slot-timeout,omitempty"`
 	CacheTypeK           model.GGMLType            `yaml:"cache-type-k,omitempty"`
 	CacheTypeV           model.GGMLType            `yaml:"cache-type-v,omitempty"`
 	PtrContextWindow     *int                      `yaml:"context-window,omitempty"`
@@ -214,6 +241,7 @@ type ModelConfig struct {
 	PtrOpOffload         *bool                     `yaml:"op-offload,omitempty"`
 	PtrOpOffloadMinBatch *int                      `yaml:"op-offload-min-batch,omitempty"`
 	PtrProjOnCPU         *bool                     `yaml:"proj-on-cpu,omitempty"`
+	PtrQueueDepth        *int                      `yaml:"queue-depth,omitempty"`
 	PtrRopeFreqBase      *float32                  `yaml:"rope-freq-base,omitempty"`
 	PtrRopeFreqScale     *float32                  `yaml:"rope-freq-scale,omitempty"`
 	RopeScaling          model.RopeScalingType     `yaml:"rope-scaling-type,omitempty"`
@@ -261,7 +289,6 @@ type DraftModelConfig struct {
 func (mc ModelConfig) ToKronkConfig() model.Config {
 	cfg := model.Config{
 		PtrCacheMinTokens:    mc.PtrCacheMinTokens,
-		PtrCacheSlotTimeout:  mc.PtrCacheSlotTimeout,
 		CacheTypeK:           mc.CacheTypeK,
 		CacheTypeV:           mc.CacheTypeV,
 		PtrContextWindow:     mc.PtrContextWindow,
@@ -285,6 +312,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrOpOffload:         mc.PtrOpOffload,
 		PtrOpOffloadMinBatch: mc.PtrOpOffloadMinBatch,
 		PtrProjOnCPU:         mc.PtrProjOnCPU,
+		PtrQueueDepth:        mc.PtrQueueDepth,
 		PtrRopeFreqBase:      mc.PtrRopeFreqBase,
 		PtrRopeFreqScale:     mc.PtrRopeFreqScale,
 		RopeScaling:          mc.RopeScaling,
@@ -299,6 +327,9 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrYarnBetaSlow:      mc.PtrYarnBetaSlow,
 		PtrYarnExtFactor:     mc.PtrYarnExtFactor,
 		PtrYarnOrigCtx:       mc.PtrYarnOrigCtx,
+	}
+	if mc.PtrAdmissionTimeout != nil {
+		cfg.PtrAdmissionTimeout = new(time.Duration(*mc.PtrAdmissionTimeout))
 	}
 
 	if mc.DraftModel != nil {

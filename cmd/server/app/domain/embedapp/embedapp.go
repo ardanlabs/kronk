@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
@@ -52,9 +51,6 @@ func (a *app) embeddings(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	a.log.Info(ctx, "embedding", "REQUEST-INPUT", req.String())
-
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
-	defer cancel()
 
 	d := model.MapToModelD(req)
 

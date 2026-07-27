@@ -80,7 +80,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		defer func() {
 			if rec := recover(); rec != nil {
 				if !batching {
-					m.clearIMCPendingIfReserved(cache)
+					m.releaseIMCReservationIfHeld(cache)
 				}
 				m.recordChatFailure(ctx, requestStart, fmt.Errorf("panic: %v", rec))
 				m.sendChatError(ctx, ch, id, fmt.Errorf("%v", rec))
@@ -134,7 +134,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		// m.decodeMu, which is the SIGSEGV we hit when VS Code cancelled
 		// one of three concurrent chat streams. Per-request IMC cleanup on
 		// submit failure is already handled inside submitToBatchEngine via
-		// m.imcClearPending(cache.imcSessionID).
+		// m.imcReleaseReservation(cache.imcSessionID).
 
 		var prompt string
 		var media [][]byte
@@ -283,52 +283,27 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 		return actualPrompt, actualMedia, cache, nil
 	}
 
-	switch {
-	case !cachingEnabled:
-		cache.modifiedD = d
-
-	default:
-		ctx, cacheSpan := otel.AddSpan(ctx, "process-cache")
-
-		cache = m.processCache(ctx, d, requestStart)
-
-		cacheSpan.End()
-
-		if cache.err != nil {
-			return "", nil, cache, cache.err
-		}
-
-		d = cache.modifiedD
-	}
+	cache.modifiedD = d
 
 	prompt, media, err := m.createPrompt(ctx, d)
 	if err != nil {
-		// processCache marks the matched session pending and relies on
-		// startSlot (success) or submitToBatchEngine (submit failure) to
-		// clear it. createPrompt sits between those two and is the one
-		// uncovered window: if it errors after a reservation, pending
-		// leaks and every subsequent request hangs on the session until
-		// waitForIMCSlot times out and returns "server busy". Clear the
-		// reservation here so the failure is local to this request.
-		m.clearIMCPendingIfReserved(cache)
 		return "", nil, cache, fmt.Errorf("chat-streaming: unable to apply jinja template: %w", err)
 	}
 
 	return prompt, media, cache, nil
 }
 
-// clearIMCPendingIfReserved releases an IMC session reservation when
-// processCache marked one for build/extend but a subsequent step (e.g.,
-// createPrompt) failed before the batch engine took ownership. Pure cache
-// read-only exact/anchor hits carry an explicit reservation too.
-func (m *Model) clearIMCPendingIfReserved(cache cacheResult) {
+// releaseIMCReservationIfHeld releases an IMC session reservation when the
+// batch engine does not take ownership. Pure cache read-only exact/anchor hits
+// carry an explicit reservation too.
+func (m *Model) releaseIMCReservationIfHeld(cache cacheResult) {
 	if cache.imcSession == nil {
 		return
 	}
 	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild && !cache.imcReadOnlyReservation {
 		return
 	}
-	m.imcClearPending(cache.imcSessionID)
+	m.imcReleaseReservation(cache.imcSessionID)
 }
 
 // submitToBatchEngine attempts to submit the request to the batch engine.
@@ -374,19 +349,15 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
 
-		imcNewCacheTokens:      cache.imcNewCacheTokens,
-		imcNewTotalCached:      cache.imcNewTotalCached,
-		imcNewCachedMsgCount:   cache.imcNewCachedMsgCount,
-		imcNewMsgsHash:         cache.imcNewMsgsHash,
-		imcClearSeq:            cache.imcClearSeq,
-		imcNewCachedTokens:     cache.imcNewCachedTokens,
-		imcTrimPos:             cache.imcTrimPos,
-		imcSysPromptHash:       cache.imcSysPromptHash,
-		imcSysPromptTokens:     cache.imcSysPromptTokens,
-		imcMediaBuild:          cache.imcMediaBuild,
-		imcMediaCacheD:         cache.imcMediaCacheD,
-		imcMediaKVCounts:       cache.imcMediaKVCounts,
-		imcMediaSkipTextTokens: cache.imcMediaSkipTextTokens,
+		imcNewCacheTokens:    cache.imcNewCacheTokens,
+		imcNewTotalCached:    cache.imcNewTotalCached,
+		imcNewCachedMsgCount: cache.imcNewCachedMsgCount,
+		imcNewMsgsHash:       cache.imcNewMsgsHash,
+		imcClearSeq:          cache.imcClearSeq,
+		imcNewCachedTokens:   cache.imcNewCachedTokens,
+		imcMediaBuild:        cache.imcMediaBuild,
+		imcMediaCacheD:       cache.imcMediaCacheD,
+		imcMediaKVCounts:     cache.imcMediaKVCounts,
 	}
 
 	if err := m.batch.submit(&job); err != nil {
@@ -398,7 +369,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 
 		// The batch engine never took ownership, so release any exact,
 		// append, or rebuild reservation made while planning the request.
-		m.clearIMCPendingIfReserved(cache)
+		m.releaseIMCReservationIfHeld(cache)
 
 		m.recordChatFailure(ctx, requestStart, err)
 		m.sendChatError(ctx, ch, id, err)

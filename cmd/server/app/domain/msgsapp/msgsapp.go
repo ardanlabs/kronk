@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
@@ -48,9 +47,6 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	a.log.Info(ctx, "messages", "model", req.Model)
-
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Minute)
-	defer cancel()
 
 	d := toOpenAI(req)
 

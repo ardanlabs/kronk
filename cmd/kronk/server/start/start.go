@@ -75,6 +75,9 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	if v, _ := cmd.Flags().GetString("read-timeout"); v != "" {
 		envVars = append(envVars, "KRONK_WEB_READ_TIMEOUT="+v)
 	}
+	if v, _ := cmd.Flags().GetString("inference-timeout"); v != "" {
+		envVars = append(envVars, "KRONK_WEB_INFERENCE_TIMEOUT="+v)
+	}
 	if v, _ := cmd.Flags().GetString("write-timeout"); v != "" {
 		envVars = append(envVars, "KRONK_WEB_WRITE_TIMEOUT="+v)
 	}

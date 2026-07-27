@@ -96,7 +96,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		conf.Version
 		Web struct {
 			ReadTimeout        time.Duration `conf:"default:30s"`
-			WriteTimeout       time.Duration `conf:"default:60m"`
+			WriteTimeout       time.Duration `conf:"default:61m"`
+			InferenceTimeout   time.Duration `conf:"default:60m"`
 			IdleTimeout        time.Duration `conf:"default:1m"`
 			ShutdownTimeout    time.Duration `conf:"default:1m"`
 			APIHost            string        `conf:"default:0.0.0.0:11435"`
@@ -174,6 +175,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	mcpAuthEnabled := cfg.MCP.Enabled && cfg.MCP.Host == "" && cfg.MCP.AuthEnabled
 	cfg.Auth.AdminEnabled = cfg.Auth.AdminEnabled || cfg.Auth.Local.Enabled || mcpAuthEnabled
 	if err := validateAdminConfig(cfg.Auth.AdminEnabled, cfg.Web.Admin.Enabled, cfg.Web.Admin.PasswordSHA256, cfg.Auth.Host); err != nil {
+		return err
+	}
+	if err := validateTimeoutConfig(cfg.Web.InferenceTimeout, cfg.Web.WriteTimeout); err != nil {
 		return err
 	}
 
@@ -503,6 +507,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		WebAdminEnabled:     cfg.Web.Admin.Enabled,
 		AdminPasswordSHA256: cfg.Web.Admin.PasswordSHA256,
 		Security:            sec,
+		InferenceTimeout:    cfg.Web.InferenceTimeout,
 	}
 
 	options := []func(*mux.Options){mux.WithCORS(cfg.Web.CORSAllowedOrigins)}

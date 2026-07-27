@@ -329,7 +329,7 @@ func init() {
 		}, []string{"model_id"}),
 		imcPureHitStaleSessionTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "imc_pure_hit_stale_session_total",
-			Help: "Total IMC pure-hit snapshot-skip candidates that failed start-time session-version validation (session moved between processIMC and startSlot).",
+			Help: "Total IMC pure-hit snapshot-skip candidates that failed start-time session-version validation (session changed between planning and slot startup).",
 		}, []string{"model_id"}),
 	}
 }
@@ -688,7 +688,7 @@ func AddIMCSnapshotSkipped(modelID string) {
 
 // AddIMCPureHitStaleSession records a pure-hit snapshot-skip candidate that
 // failed start-time session-version validation (the session was extended or
-// rebuilt by another goroutine between processIMC and startSlot).
+// rebuilt by another goroutine between planning and slot startup).
 func AddIMCPureHitStaleSession(modelID string) {
 	m.imcPureHitStaleSessionTotal.WithLabelValues(normalizeModelID(modelID)).Inc()
 }

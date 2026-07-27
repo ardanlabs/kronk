@@ -15,11 +15,11 @@ type nonStreamingFunc[T any] func(llama *model.Model) (T, error)
 func nonStreaming[T any](ctx context.Context, krn *Kronk, f nonStreamingFunc[T]) (T, error) {
 	var zero T
 
-	mdl, err := krn.acquireModel(ctx)
+	mdl, err := krn.acquireAdmission(ctx)
 	if err != nil {
 		return zero, err
 	}
-	defer krn.releaseModel()
+	defer krn.releaseAdmission()
 
 	return f(mdl)
 }
@@ -30,7 +30,7 @@ type streamingFunc[T any] func(llama *model.Model) <-chan T
 type errorFunc[T any] func(err error) T
 
 func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef errorFunc[T]) (<-chan T, error) {
-	mdl, err := krn.acquireModel(ctx)
+	mdl, err := krn.acquireAdmission(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 				sendError(ch, ef, rec)
 			}
 
-			// Release the model BEFORE closing the channel. The HTTP
+			// Release the admission permit BEFORE closing the channel. The HTTP
 			// handler (and any caller ranging over ch) unblocks on
 			// close, so the request is considered done by the caller
 			// the instant close fires. The pool's evictOneIdle reads
@@ -52,7 +52,7 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 			// releasing leaves a race window where the next sequential
 			// request against a one-slot pool can flake with
 			// "no idle pool entry available to evict".
-			krn.releaseModel()
+			krn.releaseAdmission()
 			close(ch)
 		}()
 
@@ -100,7 +100,7 @@ type streamProcessor[T, U any] struct {
 }
 
 func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T], p streamProcessor[T, U], ef errorFunc[U]) (<-chan U, error) {
-	mdl, err := krn.acquireModel(ctx)
+	mdl, err := krn.acquireAdmission(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -119,12 +119,12 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 				sendError(ch, ef, ctx.Err())
 			}
 
-			// Release the model BEFORE closing the channel — same
+			// Release the admission permit BEFORE closing the channel — same
 			// rationale as in streaming() above: the pool reads
 			// krn.ActiveStreams() once with no retry, so back-to-back
 			// requests against a one-slot pool flake if release runs
 			// after close.
-			krn.releaseModel()
+			krn.releaseAdmission()
 			close(ch)
 		}()
 

@@ -39,17 +39,21 @@ type compiledTemplate struct {
 	err  error
 }
 
-// imcSessionMultiplier is the per-slot multiplier for the IMC session
+// imcMinSessionsPerSlot is the minimum per-slot size of the IMC session
 // pool. With NSeqMax execution slots the pool holds NSeqMax *
-// imcSessionMultiplier cache identities, which decouples how many
-// distinct conversation prefixes the server can keep warm from how
-// many requests can decode in parallel. 3x matches the realistic
+// max(imcMinSessionsPerSlot, QueueDepth) cache identities, which decouples
+// how many distinct conversation prefixes the server can keep warm from
+// how many requests can decode in parallel. 3x matches the realistic
 // agentic shape of a driver loop plus a handful of sub-agents plus
 // the occasional side conversation. Session structs cost only a few
 // hundred bytes when idle; the SessionStore backing buffer is
 // allocated lazily on first use, so unused sessions cost essentially
 // nothing.
-const imcSessionMultiplier = 3
+const imcMinSessionsPerSlot = 3
+
+func imcSessionCapacity(nSlots, queueDepth int) int {
+	return nSlots * max(imcMinSessionsPerSlot, queueDepth)
+}
 
 // imcSeqIDUnbound marks an IMC session that is not currently resident
 // in any execution slot's KV sequence. A session's seqID is set when
@@ -61,14 +65,15 @@ const imcSeqIDUnbound llama.SeqId = -1
 
 // imcSession holds the state for a single IMC (Incremental Message Cache)
 // session. Sessions are session-pool entries, sized at NSeqMax *
-// imcSessionMultiplier so the cache identity count is larger than the
-// execution slot count. Each session externalizes its cached KV state
-// via SessionStore between requests; the scheduler binds a session to
+// max(imcMinSessionsPerSlot, QueueDepth) so the cache identity count is at
+// least as large as generation admission capacity and the execution slot
+// count. Each session externalizes its cached KV state via SessionStore
+// between requests; the scheduler binds a session to
 // whichever execution slot is free at startSlot time. The seqID field
 // is dynamic: it holds the bound slot's KV sequence id while a
 // request is in flight, and imcSeqIDUnbound otherwise.
 type imcSession struct {
-	id                int           // Stable session-pool index. Used by imcClearPending lookup and for log correlation; not related to execution slot identity.
+	id                int           // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
 	seqID             llama.SeqId   // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
 	cachedMsgsHash    string        // Hash of all cached messages
 	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
@@ -79,16 +84,14 @@ type imcSession struct {
 	draftKVState      SessionStore  // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
 	pendingH          []float32     // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
 	lastUsed          time.Time     // Last access time (for eviction)
-	pending           bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
+	reserved          bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
-	mediaKVCounts     []int         // Physical KV cells consumed per media chunk (image/audio), retained for diagnostics and legacy media extension metadata.
+	mediaKVCounts     []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
 	promptPlan        promptPlan    // Immutable token-v2 logical plan for the cached prefix.
-	sysPromptHash     string        // Hash of the system prompt message (messages[0] when role="system")
-	sysPromptTokens   int           // Token count of the system prompt in the KV cache
 
-	// cachedRenderInputHash is retained as diagnostic metadata for legacy
-	// sessions. Token-v2 cache authority comes from cachedTokens or promptPlan.
+	// cachedRenderInputHash guards token-v2 pure-hit snapshot reuse against
+	// changes to template inputs that are not represented by message tokens.
 	cachedRenderInputHash string
 }
 
@@ -199,20 +202,17 @@ type Model struct {
 	// to a single request and cannot bleed across requests.
 	// Zero when projFile == "" (text-only models) or for embed/rerank
 	// models.
-	mtmdMetaCtx       mtmd.Context
-	modelInfo         ModelInfo
-	activeStreams     atomic.Int32
-	unloaded          atomic.Bool
-	decodeMu          sync.Mutex
-	cacheMu           sync.RWMutex
-	cacheCond         *sync.Cond    // Signaled when an IMC session's pending flag is cleared (a build/extend has finished).
-	imcSessions       []*imcSession // IMC session pool, sized NSeqMax * imcSessionMultiplier; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
-	addBOSToken       bool          // Whether to add BOS token (from model metadata)
-	mediaMarkerTokens int           // Token count for the media marker string; computed once via mediaMarkerOnce
-	mediaMarkerOnce   sync.Once     // Guards one-time computation of mediaMarkerTokens
-	pool              *contextPool  // Context pool for parallel embed/rerank
-	parser            Parser        // Selected via selectParser at load time; nil for embed/rerank.
-	draft             drafter       // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
+	mtmdMetaCtx   mtmd.Context
+	modelInfo     ModelInfo
+	activeStreams atomic.Int32
+	unloaded      atomic.Bool
+	decodeMu      sync.Mutex
+	cacheMu       sync.RWMutex
+	imcSessions   []*imcSession // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	addBOSToken   bool          // Whether to add BOS token (from model metadata)
+	pool          *contextPool  // Context pool for parallel embed/rerank
+	parser        Parser        // Selected via selectParser at load time; nil for embed/rerank.
+	draft         drafter       // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns
@@ -663,8 +663,9 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	m.mem = mem
 
 	// Initialize the IMC session pool. Sized at nSlots *
-	// imcSessionMultiplier so the cache identity count is larger than
-	// the execution slot count: multi-agent workloads keep N distinct
+	// max(imcMinSessionsPerSlot, QueueDepth) so the cache identity count is
+	// at least as large as generation admission capacity and retains at least
+	// three sessions per execution slot: multi-agent workloads keep N distinct
 	// prefixes warm without LRU thrashing, while actual decode
 	// concurrency stays capped at nSlots in the batch engine. Sessions
 	// externalize their KV state via SessionStore so any session can
@@ -672,7 +673,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	// allocated lazily on first use, so unused sessions cost only the
 	// imcSession struct itself.
 	if m.cfg.IncrementalCache() {
-		nSessions := nSlots * imcSessionMultiplier
+		nSessions := imcSessionCapacity(nSlots, m.cfg.QueueDepth())
 		m.imcSessions = make([]*imcSession, nSessions)
 		for i := range nSessions {
 			store, err := newSessionStore(m.cfg)
@@ -685,7 +686,6 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 				kvState: store,
 			}
 		}
-		m.cacheCond = sync.NewCond(&m.cacheMu)
 	}
 
 	// Select the parser plugin once at load time. The selected
@@ -797,7 +797,6 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 		}
 	}
 	m.imcSessions = nil
-	m.cacheCond = nil
 	m.parser = nil
 
 	return errors.Join(cleanupErrs...)

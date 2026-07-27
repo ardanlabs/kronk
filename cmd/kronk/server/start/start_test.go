@@ -21,3 +21,18 @@ func TestBuildEnvVarsAdminPassword(t *testing.T) {
 		t.Errorf("buildEnvVars: got %v, want entry %q", envVars, want)
 	}
 }
+
+func TestBuildEnvVarsInferenceTimeout(t *testing.T) {
+	const value = "45m"
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("inference-timeout", "", "")
+	if err := cmd.Flags().Set("inference-timeout", value); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	want := "KRONK_WEB_INFERENCE_TIMEOUT=" + value
+	if envVars := buildEnvVars(cmd); !slices.Contains(envVars, want) {
+		t.Errorf("buildEnvVars: got %v, want entry %q", envVars, want)
+	}
+}

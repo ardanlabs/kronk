@@ -26,7 +26,7 @@ const Version = "1.29.3"
 type Kronk struct {
 	cfg           model.Config
 	model         *model.Model
-	sem           chan struct{}
+	admissionCh   chan struct{}
 	activeStreams atomic.Int32
 	shutdown      sync.Mutex
 	shutdownFlag  bool
@@ -70,36 +70,36 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 	}
 
 	mi := mdl.ModelInfo()
+	adjustedCfg := mdl.Config()
 
 	// -------------------------------------------------------------------------
 	// Embed/rerank models use an internal context pool for parallelism.
 	// Text/vision/audio models use the batch engine with queue depth.
 
-	queueDepth := cfg.QueueDepth()
-	if queueDepth == 0 {
-		queueDepth = 2
-	}
-
 	var semCapacity int
 
 	switch {
 	case mi.IsEmbedModel || mi.IsRerankModel:
-		semCapacity = max(cfg.NSeqMax(), 1)
+		semCapacity = max(adjustedCfg.NSeqMax(), 1)
 
 	default:
-		semCapacity = max(cfg.NSeqMax(), 1) * queueDepth
+		semCapacity = generationAdmissionCapacity(adjustedCfg)
 	}
 
 	// -------------------------------------------------------------------------
 
 	krn := Kronk{
-		cfg:       mdl.Config(),
-		model:     mdl,
-		sem:       make(chan struct{}, semCapacity),
-		modelInfo: mi,
+		cfg:         adjustedCfg,
+		model:       mdl,
+		admissionCh: make(chan struct{}, semCapacity),
+		modelInfo:   mi,
 	}
 
 	return &krn, nil
+}
+
+func generationAdmissionCapacity(cfg model.Config) int {
+	return max(cfg.NSeqMax(), 1) * cfg.QueueDepth()
 }
 
 // ModelConfig returns a copy of the configuration being used. This may be

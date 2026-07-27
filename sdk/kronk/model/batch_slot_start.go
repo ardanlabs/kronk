@@ -86,11 +86,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	if needsMTMD {
 		mtmdCtx, err := mtmd.InitFromFile(e.model.projFile, e.model.model, mtmdContextParams(e.model.cfg))
 		if err != nil {
-			// For IMC media builds processIMC already reserved the
-			// session with pending=true. We failed before reaching the
+			// For IMC media builds token-v2 planner already reserved the
+			// session with reserved=true. We failed before reaching the
 			// commit/publish/reset block in the IMC switch below, so
-			// the session would otherwise stay pending forever and
-			// deadlock waiters. finishSlot releases the held reservation.
+			// the session would otherwise stay reserved forever and become
+			// unavailable. finishSlot releases the held reservation.
 			e.finishSlot(s, fmt.Errorf("start-slot: init per-request mtmd context: %w", err))
 			return
 		}
@@ -102,17 +102,18 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// finishSlot, so we always restore from RAM.
 	//
 	// Read cache state from the MATCHED session (job.imcSession). The IMC
-	// session pool is sized NSeqMax * imcSessionMultiplier, so there is no
+	// session pool is sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth),
+	// so there is no
 	// fixed slot-to-session correspondence: the session is bound to this
 	// slot's KV sequence here and unbound in finishSlot.
 	var cacheIdx llama.Pos
 
 	// sessionWasCommitted records whether we called imcCommitSession in
 	// the cache-build / cache-extend branches below. When true, the
-	// session's metadata is up to date but its pending flag is still set;
+	// session's metadata is up to date but its reserved flag is still set;
 	// the snapshot block must finalize publication (imcPublishSession on
 	// snapshot success, or imcResetSession on snapshot failure) so a
-	// concurrent processIMC scanner never sees the new metadata against
+	// concurrent token-v2 planner scanner never sees the new metadata against
 	// stale/empty kvState bytes.
 	var sessionWasCommitted bool
 	var restoredPhysicalKVCells int
@@ -124,13 +125,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		// goroutine's eviction, so we must copy the slice header atomically.
 		//
 		// For pure-hit snapshot-skip candidates we additionally validate
-		// that the live session still matches the version processIMC
-		// observed. A concurrent extend/rebuild between processIMC and
+		// that the live session still matches the version token-v2 planner
+		// observed. A concurrent extend/rebuild between token-v2 planner and
 		// startSlot would change cachedMsgsHash / cachedMsgCount /
 		// totalTokensCached / cachedRenderInputHash; restoring that newer
 		// state against a suffix prompt rendered for the older boundary
 		// would corrupt the request. On mismatch we fail with a retryable
-		// error so the caller re-runs processIMC against the new boundary.
+		// error so the caller re-runs token-v2 planner against the new boundary.
 		var kvState []byte
 		if job.imcSession != nil {
 			session := job.imcSession
@@ -145,7 +146,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					session.totalTokensCached == job.imcExpectedTokens &&
 					session.logicalPosition() == job.imcExpectedPosition &&
 					(!session.hasMedia || session.promptPlan.equal(job.imcExpectedPromptPlan)) &&
-					session.pending &&
+					session.reserved &&
 					len(kvState) > 0)
 
 			// Bind the session to this slot's KV sequence id. Sessions
@@ -289,35 +290,18 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		// Decode new cache extension tokens into the slot's sequence if any.
 		switch {
 		case job.imcMediaBuild:
-			skipTokens := job.imcMediaSkipTextTokens
+			e.model.log(job.ctx, "start-slot", "status", "imc-media-build", "slot", s.id, "seq", s.seqID)
 
-			if skipTokens > 0 {
-				// Partial media extend: keep existing text cache, only decode
-				// new content (text suffix + media + post-media text).
-				e.model.log(job.ctx, "start-slot", "status", "imc-media-extend", "slot", s.id, "seq", s.seqID,
-					"skip_text_tokens", skipTokens)
-			} else {
-				// Full media rebuild: clear sequence and decode all cached
-				// messages through the mtmd pipeline.
-				e.model.log(job.ctx, "start-slot", "status", "imc-media-build", "slot", s.id, "seq", s.seqID)
-
-				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-				e.model.decodeMu.Unlock()
-			}
+			e.model.decodeMu.Lock()
+			llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+			e.model.decodeMu.Unlock()
 
 			imcDecodeStart := time.Now()
 
-			nextLogicalPos, physicalKVCells, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx, skipTokens)
+			nextLogicalPos, physicalKVCells, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx)
 			if err != nil {
 				e.model.decodeMu.Lock()
-				if skipTokens > 0 {
-					// Partial extend failed: remove only the newly decoded
-					// content, preserving the original text cache.
-					llama.MemorySeqRm(e.model.mem, s.seqID, llama.Pos(skipTokens), -1)
-				} else {
-					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-				}
+				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 				e.model.decodeMu.Unlock()
 
 				e.finishSlot(s, fmt.Errorf("start-slot: imc media build: %w", err))
@@ -325,31 +309,23 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			}
 
 			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
-
 			cacheIdx = llama.Pos(nextLogicalPos)
 
-			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcSysPromptHash, job.imcSysPromptTokens, job.imcExpectedRenderHash)
+			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash)
 			e.model.cacheMu.Lock()
 			job.imcSession.promptPlan = job.imcPromptPlan
 			job.imcSession.nextLogicalPos = nextLogicalPos
 			e.model.cacheMu.Unlock()
 			sessionWasCommitted = true
 
-			// Store whether this media build used M-RoPE so follow-up
-			// text-only requests on this session can use the correct position format.
 			if s.mtmdCtx != 0 && job.imcSession != nil {
 				e.model.cacheMu.Lock()
 				job.imcSession.useMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
 				e.model.cacheMu.Unlock()
 			}
 
-			if skipTokens > 0 {
-				e.model.log(job.ctx, "start-slot", "status", "imc-media-extended", "slot", s.id, "seq", s.seqID,
-					"physical_kv_cells", physicalKVCells, "next_logical_position", nextLogicalPos, "skipped_text_tokens", skipTokens)
-			} else {
-				e.model.log(job.ctx, "start-slot", "status", "imc-media-built", "slot", s.id, "seq", s.seqID,
-					"physical_kv_cells", physicalKVCells, "next_logical_position", nextLogicalPos)
-			}
+			e.model.log(job.ctx, "start-slot", "status", "imc-media-built", "slot", s.id, "seq", s.seqID,
+				"physical_kv_cells", physicalKVCells, "next_logical_position", nextLogicalPos)
 
 		case job.imcMediaAnchorAdvance:
 			oldLogicalPosition := int(cacheIdx)
@@ -384,10 +360,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		case len(job.imcNewCacheTokens) > 0:
 			// Detect stale extension: if another request extended this slot
 			// between our scan and now, cacheIdx won't match the position
-			// these tokens were sliced from. For extends (not rebuilds or
-			// partial prefix trims), the expected start position is
+			// these tokens were sliced from. For appends (not rebuilds), the
+			// expected start position is
 			// imcNewTotalCached - len(imcNewCacheTokens).
-			if !job.imcClearSeq && job.imcTrimPos == 0 {
+			if !job.imcClearSeq {
 				expectedStart := llama.Pos(job.imcNewTotalCached - len(job.imcNewCacheTokens))
 				if cacheIdx != expectedStart {
 					e.model.log(job.ctx, "start-slot", "status", "imc-extend-stale", "slot", s.id, "seq", s.seqID,
@@ -426,61 +402,6 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 				e.model.log(job.ctx, "start-slot", "status", "imc-build", "slot", s.id, "seq", s.seqID,
 					"tokens", len(job.imcNewCacheTokens))
-
-			case job.imcTrimPos > 0:
-				// Token prefix fallback or sys-prompt-preserve: trim the
-				// divergent suffix and re-decode only the new tokens.
-				//
-				// Dense/MoE: partial MemorySeqRm is safe — delete from
-				// trimPos onward and decode only the new conversation body.
-				// This preserves the system prompt KV state.
-				//
-				// Hybrid: partial MemorySeqRm corrupts recurrent state
-				// (DeltaNet/SSM), so clear the entire sequence and
-				// re-decode everything from scratch.
-				if e.model.modelInfo.Type == ModelTypeHybrid {
-					e.model.log(job.ctx, "start-slot", "status", "imc-rebuild-full", "slot", s.id, "seq", s.seqID,
-						"trim_pos", job.imcTrimPos, "total_tokens", len(job.imcNewCachedTokens))
-
-					e.model.decodeMu.Lock()
-					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-					// MTP: clear the draft seq in lock-step (see the
-					// imcClearSeq branch above for the rationale).
-					if e.model.draft != nil && e.model.draft.mtp() {
-						llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
-						s.draftNPast = 0
-						s.pendingH = s.pendingH[:0]
-					}
-					e.model.decodeMu.Unlock()
-
-					job.imcNewCacheTokens = job.imcNewCachedTokens
-					cacheIdx = 0
-				} else {
-					e.model.log(job.ctx, "start-slot", "status", "imc-trim-prefix", "slot", s.id, "seq", s.seqID,
-						"trim_pos", job.imcTrimPos, "kept_tokens", job.imcTrimPos,
-						"new_tokens", len(job.imcNewCacheTokens))
-
-					e.model.decodeMu.Lock()
-					llama.MemorySeqRm(e.model.mem, s.seqID, llama.Pos(job.imcTrimPos), -1)
-					// MTP: trim the draft seq KV symmetrically so the
-					// upcoming mirror decode doesn't collide with stale
-					// positions in [trimPos..oldEnd). Roll draftNPast
-					// back to trimPos and drop pendingH (the last-row
-					// h carried over from beyond trimPos is no longer
-					// the previous-position h for the new tokens; the
-					// mirror's first chunk will fall back to zeros at
-					// slot 0, which matches what a fresh build does).
-					if e.model.draft != nil && e.model.draft.mtp() {
-						llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, llama.Pos(job.imcTrimPos), -1)
-						if s.draftNPast > llama.Pos(job.imcTrimPos) {
-							s.draftNPast = llama.Pos(job.imcTrimPos)
-						}
-						s.pendingH = s.pendingH[:0]
-					}
-					e.model.decodeMu.Unlock()
-
-					cacheIdx = llama.Pos(job.imcTrimPos)
-				}
 
 			default:
 				e.model.log(job.ctx, "start-slot", "status", "imc-extend", "slot", s.id, "seq", s.seqID,
@@ -524,7 +445,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 
 			hasMedia := len(job.imcMediaKVCounts) > 0
-			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcSysPromptHash, job.imcSysPromptTokens, job.imcExpectedRenderHash)
+			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcExpectedRenderHash)
 			e.model.cacheMu.Lock()
 			job.imcSession.promptPlan = job.imcPromptPlan
 			e.model.cacheMu.Unlock()
@@ -570,10 +491,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.cacheMu.RUnlock()
 		}
 
-		// Pure-hit snapshot skip: when processIMC marked this job as an
-		// exact pure hit AND no cached-prefix mutation happened
-		// in this startSlot (no extension tokens, no media build, no trim,
-		// no clear), the session's externalized kvState already contains
+		// Pure-hit snapshot skip: when token-v2 planner marked this job as an
+		// exact pure hit AND no cached-prefix mutation happened in this
+		// startSlot (no extension tokens, media build, or clear), the
+		// session's externalized kvState already contains
 		// the bytes we just restored from. Re-snapshotting would be a
 		// byte-for-byte round trip. We re-validate the live session
 		// version under cacheMu (a concurrent extend could have moved it
@@ -589,7 +510,6 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			!job.imcMediaBuild &&
 			len(job.imcMediaKVCounts) == 0 &&
 			!job.imcClearSeq &&
-			job.imcTrimPos == 0 &&
 			cacheIdx == llama.Pos(job.imcExpectedPosition) {
 
 			e.model.cacheMu.RLock()
@@ -601,7 +521,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				session.logicalPosition() == job.imcExpectedPosition &&
 				(!session.hasMedia || session.promptPlan.equal(job.imcExpectedPromptPlan)) &&
 				session.kvState.Len() > 0 &&
-				session.pending
+				session.reserved
 			e.model.cacheMu.RUnlock()
 
 			skipSnapshot = versionOK
@@ -632,7 +552,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// of length kvSize, reusing the existing backing array when its
 			// capacity is sufficient (the common case after the first turn)
 			// and allocating only when the conversation has grown beyond any
-			// previous peak. Per-session serialization (the pending flag and
+			// previous peak. Per-session serialization (the reserved flag and
 			// the imcSessions ownership model) guarantees no concurrent reader
 			// holds a reference to this buffer while we fill it.
 			//
@@ -759,9 +679,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			}
 
 			// Finalize publication for sessions whose metadata was
-			// committed above. Sessions still carry pending=true at
+			// committed above. Sessions still carry reserved=true at
 			// this point; publishing makes the new metadata + kvState
-			// pair visible to processIMC atomically with respect to
+			// pair visible to token-v2 planner atomically with respect to
 			// concurrent scanners. If the target snapshot failed
 			// (nExtracted == 0) the externalized kvState is empty —
 			// reset the session so its metadata doesn't advertise N
@@ -880,7 +800,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 			if job.imcTokenPlan {
 				return "token-v2"
 			}
-			return "legacy"
+			return "none"
 		}(),
 		"match_kind", job.imcMatchKind,
 		"suffix_tokens", suffixTokens,

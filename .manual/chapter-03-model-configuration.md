@@ -38,6 +38,8 @@ canonical model ID. Use the same ID shown by `kronk model list` or the
 unsloth/Qwen3-0.6B-Q8_0:
   context-window: 32768
   nseq-max: 2
+  admission-timeout: 3m
+  queue-depth: 2
 ```
 
 Do not add a `models:` wrapper. Top-level setting names use kebab-case, such as
@@ -520,6 +522,8 @@ is normally supplied by analysis or by the load-time defaults.
 | `cache-type-k`, `cache-type-v` | `f16`, `q8_0`, `q4_0`, and supported GGML types | KV-cache precision |
 | `flash-attention` | `enabled`, `disabled`, `auto` | Attention implementation mode |
 | `nseq-max` | Positive integer | Parallel sequences or context-pool size |
+| `admission-timeout` | Go duration, default `3m` | Maximum SDK admission-permit wait; separate from the server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`) |
+| `queue-depth` | Non-negative integer, default `2` | Generation admission and handoff capacity multiplier |
 | `nubatch`, `nbatch` | Positive token counts | Physical and logical batch sizes |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
 | `load-mode` | `mmap`, `none`, `mlock`, `direct-io` | Model weight loading strategy |

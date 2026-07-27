@@ -36,7 +36,7 @@ const defaultSessionStoreKind = SessionStoreKindRAM
 //
 // One instance is owned by each imcSession. Implementations are NOT
 // required to be safe for concurrent use; callers serialize access via
-// the per-session pending invariant (at most one in-flight request
+// the per-session reserved invariant (at most one in-flight request
 // touches a given session's store at a time).
 //
 // The default implementation is the in-process RAM buffer in the

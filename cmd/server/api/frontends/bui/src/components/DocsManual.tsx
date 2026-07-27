@@ -394,7 +394,9 @@ kronk server stop`}</code></pre>
           <p>Kronk creates this file on first use. The file is a flat YAML map keyed by the canonical model ID. Use the same ID shown by <code>kronk model list</code> or the <code>/v1/models</code> endpoint:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
   context-window: 32768
-  nseq-max: 2`}</code></pre>
+  nseq-max: 2
+  admission-timeout: 3m
+  queue-depth: 2`}</code></pre>
           <p>Do not add a <code>models:</code> wrapper. Top-level setting names use kebab-case, such as <code>context-window</code> and <code>nseq-max</code>. Keys nested under <code>sampling-parameters</code> use the API's snake_case names, such as <code>top_p</code>.</p>
           <p>The server reads this file during startup. Restart the server after changing it. To test a different file without replacing the default, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model-config.yaml`}</code></pre>
@@ -744,6 +746,16 @@ some-provider/large-model:
                 <td>Parallel sequences or context-pool size</td>
               </tr>
               <tr>
+                <td><code>admission-timeout</code></td>
+                <td>Go duration, default <code>3m</code></td>
+                <td>Maximum SDK admission-permit wait; separate from the server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>)</td>
+              </tr>
+              <tr>
+                <td><code>queue-depth</code></td>
+                <td>Non-negative integer, default <code>2</code></td>
+                <td>Generation admission and handoff capacity multiplier</td>
+              </tr>
+              <tr>
                 <td><code>nubatch</code>, <code>nbatch</code></td>
                 <td>Positive token counts</td>
                 <td>Physical and logical batch sizes</td>
@@ -888,12 +900,17 @@ some-provider/large-model:
           <pre className="code-block"><code className="language-text">{`context-window × nseq-max`}</code></pre>
           <p>Each slot is limited to one <code>context-window</code>, while unused capacity remains available to active sequences. Idle slots do not permanently own a slice of the pool. Even so, increasing <code>nseq-max</code> increases the total capacity Kronk must allocate and budget.</p>
           <p>When a request finishes, its slot becomes available for another waiting job. Scheduling uses the first available slot; jobs do not reserve a particular slot between requests.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/request-session-slot-assignment.svg" alt="Request admission, IMC session reservation, and execution slot assignment" /></p>
           <h3 id="43-admission-waiting-and-cancellation">4.3 Admission, Waiting, and Cancellation</h3>
-          <p>The outer Kronk API applies the user-visible admission limit before a request reaches the model. For generation, its default capacity is <code>nseq-max × queue-depth</code>, where the default queue depth is 2.</p>
-          <p>Internally, the batch engine receives admitted jobs through a bounded handoff channel and drains them into its pending-job list until slots become available. The channel is not a second user-visible queue budget. The direct Go SDK option <code>model.WithQueueDepth(n)</code> changes the outer admission multiplier; it does not resize that internal handoff channel. Embedding and reranking use an admission capacity of <code>nseq-max</code> rather than the queue-depth multiplier.</p>
+          <p>The outer Kronk API applies the user-visible admission limit before a request reaches model preparation. For generation, the capacity is:</p>
+          <pre className="code-block"><code className="language-text">{`admission capacity = max(nseq-max, 1) × queue-depth`}</code></pre>
+          <p>An unset <code>queue-depth</code> resolves to 2. Negative values are invalid. Embedding and reranking do not use the queue-depth multiplier; their admission capacity is <code>max(nseq-max, 1)</code>.</p>
+          <p>If admission is full, Kronk waits for a permit for at most <code>admission-timeout</code>, a per-model SDK setting that defaults to three minutes. This deadline is local to the admission wait. Kronk discards that child deadline as soon as the request is admitted, so prompt preparation, slot waiting, and generation do <strong>not</strong> inherit a three-minute completion deadline. A caller's own earlier cancellation or deadline still applies throughout the request.</p>
+          <p>The admission permit remains held until the request finishes. It therefore bounds the total number of requests that can be preparing, waiting for an execution slot, or generating—not merely the number in the handoff channel.</p>
+          <p>Internally, the batch engine receives admitted jobs through a bounded handoff channel and drains them into its pending-job list until slots become available. The channel is not a second user-visible queue budget. The direct Go SDK option <code>model.WithQueueDepth(n)</code> changes both the outer admission multiplier and the handoff channel capacity. The handoff capacity is <code>NSeqMax × QueueDepth</code>; <code>pendingJobs</code> remains responsible for jobs drained while every slot is busy.</p>
           <p>At the default generation admission depth, <code>nseq-max: 4</code> permits up to eight requests through the outer admission gate. At most four can occupy execution slots at once; the remainder wait for a slot. Additional callers block at the admission gate until capacity is released.</p>
-          <p>Waiting honors request cancellation. If a request's context is cancelled before admission or while submitting to the engine, the request returns that cancellation. During model shutdown, the engine rejects new submissions and finishes active and pending jobs with a shutdown error.</p>
-          <p>The engine does <strong>not</strong> cancel a long-running request merely because another job has waited for a slot. Applications that require a maximum generation time should use request cancellation, server timeouts, or generation limits such as <code>max_tokens</code>.</p>
+          <p>Waiting honors request cancellation. If a request's context is cancelled while waiting for admission, preparing, submitting, waiting for a slot, or generating, the request returns that cancellation. During model shutdown, the engine rejects new submissions and finishes active and pending jobs with a shutdown error.</p>
+          <p>The engine does <strong>not</strong> cancel a long-running request merely because another job has waited for a slot. The model server applies a total inference timeout of 60 minutes by default. It bounds the entire inference route, including admission, IMC session reservation, execution-slot waiting, and generation. The admission-specific three-minute limit normally expires first in Stage 1. Direct SDK callers should use request cancellation or generation limits such as <code>max_tokens</code>.</p>
           <h3 id="44-prompt-and-token-scheduling">4.4 Prompt and Token Scheduling</h3>
           <p>Generation work moves through these stages:</p>
           <ol>
@@ -921,8 +938,11 @@ some-provider/large-model:
           <p>Configure concurrency in <code>~/.kronk/models/model_config.yaml</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`mradermacher/Qwopus3.5-4B-Coder.Q8_0:
   context-window: 32768
-  nseq-max: 2`}</code></pre>
+  nseq-max: 2
+  admission-timeout: 3m
+  queue-depth: 2`}</code></pre>
           <p>The file is read at server startup. Restart the server after changing it. The top-level key must match the model ID used by requests.</p>
+          <p>The Go SDK equivalents are <code>model.WithAdmissionTimeout(3*time.Minute)</code> and <code>model.WithQueueDepth(2)</code>. <code>admission-timeout</code> is separate from the model server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>): admission timeout only bounds waiting for a permit, while inference timeout bounds admitted request processing at the server/web/CLI layer.</p>
           <p>Tune from a measured baseline rather than a generic slot recommendation:</p>
           <ol>
             <li>Start with automatic tuning or <code>nseq-max: 1</code> for a controlled baseline.</li>
@@ -942,7 +962,13 @@ some-provider/large-model:
           <h3 id="47-interaction-with-message-caching">4.7 Interaction with Message Caching</h3>
           <p>Incremental Message Caching (IMC) keeps reusable conversation state in a logical session, not in a permanently assigned execution slot. Cached state is externalized to a session store between requests. A later request can restore that state into any free slot, extend it, and continue generation.</p>
           <p>While a request is active, its restored or newly built state consumes cells in the unified KV pool. Kronk normally snapshots a built or extended stable prefix during slot startup, before generating the request's suffix. Exact read-only hits can skip a redundant snapshot. Completion clears the slot's active sequence. This allows the number of cached conversation identities to differ from the number of concurrent execution slots.</p>
-          <p>If every IMC session has work pending, current token-based planning returns a server-busy error rather than preempting a generation already running in a batch slot.</p>
+          <p>The IMC pool contains:</p>
+          <pre className="code-block"><code className="language-text">{`session capacity = max(nseq-max, 1) × max(3, queue-depth)`}</code></pre>
+          <p>The minimum of three sessions per execution slot preserves reusable conversation state beyond the number of requests that can execute at once. When <code>queue-depth</code> is greater than 3, the pool expands with admission capacity. Therefore, for generation through the Kronk SDK:</p>
+          <pre className="code-block"><code className="language-text">{`session capacity ≥ admission capacity`}</code></pre>
+          <p>This invariant prevents Kronk from admitting more concurrent generation requests than the IMC planner has session identities available to reserve. It avoids moving an admitted request into preparation when every session is already owned by another admitted request.</p>
+          <p>A session is <strong>reserved</strong> while one request has exclusive ownership of its IMC state and other planners must skip it. Reservation does not necessarily mean that token generation is active. Cache append or rebuild paths can publish a stable snapshot and release the reservation before generation finishes, while exact, read-only, and some media paths can retain it longer.</p>
+          <p>If every IMC session is reserved, current token-based planning returns a server-busy error rather than preempting another request's session. With the capacity invariant, this remains a defensive path for direct low-level model callers, leaked reservations, or an internal invariant violation rather than the expected result of a valid SDK queue-depth configuration.</p>
           <p>Session matching, RAM and disk stores, media caching, invalidation, and cache settings are documented in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
           <h3 id="48-observing-queue-behavior">4.8 Observing Queue Behavior</h3>
           <p>Kronk records two direct indicators of generation-slot contention:</p>
@@ -1023,10 +1049,10 @@ New plan:    [A B][image-1][C D E F]`}</code></pre>
 [A B][C D]                      -> rebuild: removed media`}</code></pre>
           <p><strong>Rebuild</strong> means no complete saved session prefixes the stable plan. Kronk selects an empty session or the least recently used available session, resets it, processes the stable plan from the beginning, snapshots the resulting state, and then processes the generation tail. Rebuild is not a request failure; it means only that the request receives no saved-prefill benefit.</p>
           <h4 id="step-5-reserve-the-selected-session">Step 5: Reserve the selected session</h4>
-          <p>Planning and execution do not happen at the same instant. A request may wait for an execution slot after selecting a session, so Kronk immediately marks the session pending while holding the cache lock:</p>
+          <p>Planning and execution do not happen at the same instant. A request may wait for an execution slot after selecting a session, so Kronk immediately marks the session reserved while holding the cache lock:</p>
           <pre className="code-block"><code className="language-text">{`select session -> reserve -> restore/extend/snapshot/generate -> release`}</code></pre>
-          <p>Other planners skip pending sessions. Reservations apply to exact matches, appends, media anchors, empty sessions selected for rebuild, and LRU sessions selected for replacement. Even an exact match needs a reservation: another request must not rebuild or replace its snapshot between selection and restore.</p>
-          <p>If every session is pending, Kronk returns a retryable busy error rather than evicting an active session. The reservation also prevents a partially updated session from becoming visible. Snapshot bytes and metadata must describe the same stable prefix before the session can be selected again.</p>
+          <p>Other planners skip reserved sessions. Reservations apply to exact matches, appends, media anchors, empty sessions selected for rebuild, and LRU sessions selected for replacement. Even an exact match needs a reservation: another request must not rebuild or replace its snapshot between selection and restore.</p>
+          <p>If every session is reserved, Kronk returns a retryable busy error rather than evicting an active session. The reservation also prevents a partially updated session from becoming visible. Snapshot bytes and metadata must describe the same stable prefix before the session can be selected again.</p>
           <h4 id="why-this-is-called-prompt-planning">Why this is called prompt planning</h4>
           <p>The old mental model, "which messages have been cached?", is no longer precise enough. The planner now produces an execution contract containing:</p>
           <ul>
@@ -1061,13 +1087,14 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <h2 id="53-sessions-slots-and-snapshots">5.3 Sessions, Slots, and Snapshots</h2>
           <p>An IMC <strong>session</strong> is a reusable conversation identity and its saved model state. An execution <strong>slot</strong> is a lane that can actively run a request. These are deliberately separate:</p>
           <ul>
-            <li>Kronk retains up to <code>nseq-max × 3</code> IMC sessions.</li>
+            <li>Kronk retains <code>max(nseq-max, 1) × max(3, queue-depth)</code> IMC sessions.</li>
             <li>Only <code>nseq-max</code> requests can decode concurrently.</li>
             <li>A session can be restored into any available execution slot; it is not tied permanently to one slot.</li>
             <li>Session storage is allocated lazily as conversations begin using it.</li>
           </ul>
-          <p>For example, <code>nseq-max: 2</code> provides two concurrent decode slots and up to six warm IMC session identities. Raising <code>nseq-max</code> also increases the unified KV cache capacity and its memory cost, so do not raise it solely to retain more conversation branches without considering the effects described in <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a>.</p>
-          <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is pending. If all session identities are pending, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
+          <p>For example, <code>nseq-max: 2</code> with the default <code>queue-depth: 2</code> provides two concurrent decode slots and six warm IMC session identities. A queue depth greater than 3 expands the session pool so it remains at least as large as the generation admission capacity. Raising <code>nseq-max</code> also increases the unified KV cache capacity and its memory cost, so do not raise it solely to retain more conversation branches without considering the effects described in <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a>.</p>
+          <p>Admission waiting is controlled separately by the per-model <code>admission-timeout</code> setting (default <code>3m</code>). It only bounds the wait for an SDK admission permit. The server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>) instead bounds admitted preparation, slot waiting, and inference; neither setting changes IMC session retention.</p>
+          <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is held. If all session identities are reserved, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
           <p>An exact match may skip rewriting the snapshot when the stable state has not changed. This avoids an unnecessary serialization of the state that was just restored. Exact media-plan reuse can receive the same optimization. These are implementation optimizations; they do not change which content is considered part of the cache.</p>
           <p>Snapshots externalize inactive session state from the model's active KV cache. They therefore do not permanently occupy an execution slot or pin their state in accelerator KV memory between requests. They do consume host or disk storage, as described in <a href="#55-configuration-and-storage">Configuration and Storage</a>.</p>
@@ -1487,6 +1514,18 @@ kronk libs --local`}</code></pre>
                 <td><code>KRONK_WEB_DEBUG_HOST</code></td>
                 <td><code>0.0.0.0:11445</code></td>
                 <td>Metrics and profiling bind address</td>
+              </tr>
+              <tr>
+                <td><code>--inference-timeout</code></td>
+                <td><code>KRONK_WEB_INFERENCE_TIMEOUT</code></td>
+                <td><code>60m</code></td>
+                <td>Total timeout for inference admission, preparation, slot waiting, and generation</td>
+              </tr>
+              <tr>
+                <td><code>--write-timeout</code></td>
+                <td><code>KRONK_WEB_WRITE_TIMEOUT</code></td>
+                <td><code>61m</code></td>
+                <td>HTTP response write timeout; <code>0</code> disables it, otherwise it must exceed the inference timeout</td>
               </tr>
               <tr>
                 <td><code>--base-path</code></td>
@@ -3038,7 +3077,7 @@ kronk model pull <model-id> --local`}</code></pre>
           <p>The source of the deadline matters:</p>
           <ul>
             <li>a client or reverse proxy may cancel first;</li>
-            <li>chat handlers impose a 180-minute request context deadline;</li>
+            <li>admission waits are capped at three minutes before model processing starts;</li>
             <li>the HTTP server defaults to a 30-second read timeout and a 60-minute write timeout.</li>
           </ul>
           <p><code>--read-timeout</code> covers reading the request, not model execution. Increase <code>--write-timeout</code> only when a long response is being cut off by the server:</p>
@@ -3069,10 +3108,10 @@ data: [DONE]`}</code></pre>
           <h3 id="177-imc">17.7 IMC</h3>
           <p>IMC is enabled by default. It externalizes cached session state to RAM by default or to the configured disk session store. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for its lifecycle and settings.</p>
           <h4 id="every-turn-rebuilds-the-cache">Every turn rebuilds the cache</h4>
-          <p>Common causes are changed earlier messages, changed template inputs, a prompt below <code>cache-min-tokens</code>, or cache pressure. Relevant JSON log statuses include <code>session[N] mismatch</code>, <code>sys-prompt-match</code>, <code>token prefix match found</code>, <code>no usable token prefix match</code>, and <code>kv-pressure-evict</code>.</p>
+          <p>Common causes are changed earlier messages, changed template inputs, a prompt below <code>cache-min-tokens</code>, or cache pressure. Relevant JSON logs use status <code>plan-ready</code>; inspect <code>match_kind</code> (<code>exact</code>, <code>append</code>, <code>anchor</code>, or <code>rebuild</code>), <code>match_reason</code>, and the reusable/extension token counts. Status <code>plan-fallback</code> identifies prompts that cannot use the token planner safely.</p>
           <p>Keep earlier conversation messages stable and use a deterministic template. Increase <code>nseq-max</code> only when additional inference concurrency and its memory cost are both appropriate; IMC maintains more session identities than active decode slots.</p>
           <h4 id="`server-busy-processing-other-requests-try-again-shortly`">`server busy processing other requests, try again shortly`</h4>
-          <p>No IMC session was available. Depending on the planning path, Kronk may return this immediately or after waiting up to <code>cache-slot-timeout</code>. It is a transient request failure: wait and retry from the client. If it is frequent, inspect long-running requests and queue/cache metrics before increasing <code>nseq-max</code>. Increasing <code>cache-slot-timeout</code> affects only paths that wait for a session.</p>
+          <p>No IMC session was available. Kronk returns this retryable error immediately rather than waiting at the session-planning stage. Wait and retry from the client. If it is frequent, inspect long-running requests and queue/cache metrics before increasing <code>nseq-max</code>.</p>
           <h4 id="`imc-restore-failed`-or-`imc-extend-stale`">`imc restore failed` or `imc extend stale`</h4>
           <p>The current request fails. Retry it from the client; the server does not automatically repeat the request. Repeated restore failures warrant checking memory pressure, the session-store configuration, and nearby low-level errors. Reducing <code>context-window</code> or concurrency can lower memory pressure.</p>
           <h3 id="178-mcp">17.8 MCP</h3>

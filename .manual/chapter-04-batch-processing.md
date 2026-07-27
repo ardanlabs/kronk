@@ -83,18 +83,38 @@ When a request finishes, its slot becomes available for another waiting job.
 Scheduling uses the first available slot; jobs do not reserve a particular
 slot between requests.
 
+![Request admission, IMC session reservation, and execution slot assignment](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/request-session-slot-assignment.svg)
+
 ### 4.3 Admission, Waiting, and Cancellation
 
 The outer Kronk API applies the user-visible admission limit before a request
-reaches the model. For generation, its default capacity is
-`nseq-max × queue-depth`, where the default queue depth is 2.
+reaches model preparation. For generation, the capacity is:
+
+```text
+admission capacity = max(nseq-max, 1) × queue-depth
+```
+
+An unset `queue-depth` resolves to 2. Negative values are invalid. Embedding
+and reranking do not use the queue-depth multiplier; their admission capacity
+is `max(nseq-max, 1)`.
+
+If admission is full, Kronk waits for a permit for at most `admission-timeout`,
+a per-model SDK setting that defaults to three minutes. This deadline is local
+to the admission wait. Kronk discards that child deadline as
+soon as the request is admitted, so prompt preparation, slot waiting, and
+generation do **not** inherit a three-minute completion deadline. A caller's
+own earlier cancellation or deadline still applies throughout the request.
+
+The admission permit remains held until the request finishes. It therefore
+bounds the total number of requests that can be preparing, waiting for an
+execution slot, or generating—not merely the number in the handoff channel.
 
 Internally, the batch engine receives admitted jobs through a bounded handoff
 channel and drains them into its pending-job list until slots become available.
 The channel is not a second user-visible queue budget. The direct Go SDK option
-`model.WithQueueDepth(n)` changes the outer admission multiplier; it does not
-resize that internal handoff channel. Embedding and reranking use an admission
-capacity of `nseq-max` rather than the queue-depth multiplier.
+`model.WithQueueDepth(n)` changes both the outer admission multiplier and the
+handoff channel capacity. The handoff capacity is `NSeqMax × QueueDepth`;
+`pendingJobs` remains responsible for jobs drained while every slot is busy.
 
 At the default generation admission depth, `nseq-max: 4` permits up to eight
 requests through the outer admission gate. At most four can occupy execution
@@ -102,13 +122,17 @@ slots at once; the remainder wait for a slot. Additional callers block at the
 admission gate until capacity is released.
 
 Waiting honors request cancellation. If a request's context is cancelled
-before admission or while submitting to the engine, the request returns that
-cancellation. During model shutdown, the engine rejects new submissions and
-finishes active and pending jobs with a shutdown error.
+while waiting for admission, preparing, submitting, waiting for a slot, or
+generating, the request returns that cancellation. During model shutdown, the
+engine rejects new submissions and finishes active and pending jobs with a
+shutdown error.
 
 The engine does **not** cancel a long-running request merely because another
-job has waited for a slot. Applications that require a maximum generation time
-should use request cancellation, server timeouts, or generation limits such as
+job has waited for a slot. The model server applies a total inference timeout of
+60 minutes by default. It bounds the entire inference route, including
+admission, IMC session reservation, execution-slot waiting, and generation.
+The admission-specific three-minute limit normally expires first in Stage 1.
+Direct SDK callers should use request cancellation or generation limits such as
 `max_tokens`.
 
 ### 4.4 Prompt and Token Scheduling
@@ -173,10 +197,18 @@ Configure concurrency in `~/.kronk/models/model_config.yaml`:
 mradermacher/Qwopus3.5-4B-Coder.Q8_0:
   context-window: 32768
   nseq-max: 2
+  admission-timeout: 3m
+  queue-depth: 2
 ```
 
 The file is read at server startup. Restart the server after changing it. The
 top-level key must match the model ID used by requests.
+
+The Go SDK equivalents are `model.WithAdmissionTimeout(3*time.Minute)` and
+`model.WithQueueDepth(2)`. `admission-timeout` is separate from the model
+server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`): admission timeout only
+bounds waiting for a permit, while inference timeout bounds admitted request
+processing at the server/web/CLI layer.
 
 Tune from a measured baseline rather than a generic slot recommendation:
 
@@ -213,9 +245,37 @@ hits can skip a redundant snapshot. Completion clears the slot's active
 sequence. This allows the number of cached conversation identities to differ
 from the number of concurrent execution slots.
 
-If every IMC session has work pending, current token-based planning returns a
-server-busy error rather than preempting a generation already running in a
-batch slot.
+The IMC pool contains:
+
+```text
+session capacity = max(nseq-max, 1) × max(3, queue-depth)
+```
+
+The minimum of three sessions per execution slot preserves reusable
+conversation state beyond the number of requests that can execute at once.
+When `queue-depth` is greater than 3, the pool expands with admission capacity.
+Therefore, for generation through the Kronk SDK:
+
+```text
+session capacity ≥ admission capacity
+```
+
+This invariant prevents Kronk from admitting more concurrent generation
+requests than the IMC planner has session identities available to reserve. It
+avoids moving an admitted request into preparation when every session is
+already owned by another admitted request.
+
+A session is **reserved** while one request has exclusive ownership of its IMC
+state and other planners must skip it. Reservation does not necessarily mean
+that token generation is active. Cache append or rebuild paths can publish a
+stable snapshot and release the reservation before generation finishes, while
+exact, read-only, and some media paths can retain it longer.
+
+If every IMC session is reserved, current token-based planning returns a
+server-busy error rather than preempting another request's session. With the
+capacity invariant, this remains a defensive path for direct low-level model
+callers, leaked reservations, or an internal invariant violation rather than
+the expected result of a valid SDK queue-depth configuration.
 
 Session matching, RAM and disk stores, media caching, invalidation, and cache
 settings are documented in [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
