@@ -130,23 +130,8 @@ export default function DocsManual() {
           <p>Memory requirements depend on more than model parameter count. Quantization, context size, KV cache type, batch size, concurrency, and multimodal projections all affect RAM and VRAM use. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a> before selecting a large model or context window.</p>
           <h3 id="14-architecture">1.4 Architecture</h3>
           <p>Kronk is layered so applications and the model server use the same inference SDKs. The two engine paths provide different model capabilities and may have different platform support.</p>
-          <pre className="code-block"><code className="language-diagram">{`Your Go Application                 Kronk Model Server
-        |                                   |
-        +----------------+------------------+
-                         |
-              +----------+----------+
-              |                     |
-          Kronk SDK             Bucky SDK
-    text, vision, embedding,      speech-to-text
-           reranking                  |
-              |                       |
-            yzma                Bucky bindings
-              |                       |
-          llama.cpp               whisper.cpp
-              +-----------+-----------+
-                          |
-              CPU / Metal / CUDA / Vulkan / ROCm`}</code></pre>
-          <p>The SDK layer owns model loading, inference, caching, and concurrency. The model server adds HTTP transport, model pooling, the BUI, security, and operational services. Your application can use the SDK without starting the model server.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-01/kronk-architecture.svg" alt="Kronk architecture: application access, SDKs, bindings, native engines, and models" /></p>
+          <p>The SDK layer owns model loading, inference, caching, and concurrency. The model server adds HTTP transport, model pooling, the BUI, security, and operational services. The model server reaches both typed SDKs through the shared <code>sdk/pool</code> facade. Your application can call <code>sdk/kronk</code> or <code>sdk/bucky</code> directly without starting the model server, or use the pool when it needs a coordinated multi-model lifecycle.</p>
           <h3 id="15-where-to-go-next">1.5 Where to Go Next</h3>
           <ul>
             <li><strong>Install Kronk and run your first model:</strong> <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2: Installation & Quick Start</a></li>
@@ -412,6 +397,17 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <h4 id="other-configuration-surfaces">Other configuration surfaces</h4>
           <p>Applications embedding the Go SDK can construct a <code>model.Config</code> directly. Request fields such as <code>temperature</code>, <code>top_p</code>, and <code>max_tokens</code> can override generation behavior for an individual request. Those request fields are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>.</p>
           <p>The hardware processor (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>rocm</code>, or <code>vulkan</code>) selects a native library bundle rather than a per-model setting. Kronk detects it during library installation. Set <code>KRONK_PROCESSOR</code> before installing libraries only when you need to override detection; see <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2 §2.4</a>.</p>
+          <h4 id="311-chat-templates-define-the-model-protocol">3.1.1 Chat Templates Define the Model Protocol</h4>
+          <p>A chat template is not cosmetic string formatting. It is executable, model-specific protocol logic that converts portable request data—messages, roles, tools, optional media, and supported reasoning controls—into the exact prompt syntax the model learned during training. The model never receives the original message objects.</p>
+          <p>The correct template is therefore part of model compatibility, much like the tokenizer. A mismatched template can use the wrong role markers, serialize tool definitions incorrectly, omit media placeholders, or fail to append the cue that tells the model to begin an assistant response. These failures can be subtle: the model may still generate fluent text while instruction following, tool calling, reasoning, or multimodal behavior degrades.</p>
+          <p>Kronk resolves the template when the model loads, in this order:</p>
+          <ol>
+            <li>The explicit <code>template</code> path in <code>model_config.yaml</code>.</li>
+            <li>A matching Jinja file discovered under Kronk's Jinja directory.</li>
+            <li>The <code>tokenizer.chat_template</code> embedded in GGUF metadata.</li>
+          </ol>
+          <p>Prefer the model's supplied template unless you are correcting known-bad metadata or deliberately testing a custom protocol. A template override must remain compatible with the model and with any tool-call output parser. Sampling controls such as <code>temperature</code>, <code>top_p</code>, penalties, and <code>max_tokens</code> do not become prompt text; they govern token selection and stopping after the template has rendered.</p>
+          <p><a href="https://www.kronkai.com/manual#45-stage-2-—-prepare-model-work">Chapter 4 §4.5</a> shows this template protocol as part of Stage 2 request preparation, where the portable request becomes the exact prompt that Kronk tokenizes and executes. <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> explains why IMC renders the complete conversation both with and without the generation suffix. <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> documents the portable API message formats that templates consume.</p>
           <h3 id="32-automatic-tuning">3.2 Automatic Tuning</h3>
           <p>The model server derives a starting configuration from GGUF metadata and the available hardware. This analysis chooses values such as:</p>
           <ul>
@@ -616,7 +612,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
             <tbody>
               <tr>
                 <td><code>nubatch</code></td>
-                <td><code>2048</code>; <code>4096</code> with MoE expert CPU offload</td>
+                <td><code>2048</code></td>
                 <td>Physical compute chunk size</td>
               </tr>
               <tr>
@@ -846,8 +842,8 @@ some-provider/large-model:
           <hr />
           <h2 id="chapter-4-batch-processing">Chapter 4: Batch Processing</h2>
           <p>Kronk can process requests concurrently while sharing one loaded copy of a model's weights. The <code>nseq-max</code> model setting controls how much concurrency a model instance provides, but its exact behavior depends on the model's task.</p>
-          <p>This chapter covers user-visible scheduling and configuration. Model memory, batch sizes, and KV-cache precision are covered in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>. Message-cache session behavior is covered in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
-          <h3 id="41-concurrency-at-a-glance">4.1 Concurrency at a Glance</h3>
+          <p>This chapter provides the runtime story for generation: how a request is admitted, turned into model work, scheduled, and executed. Model memory, batch-size configuration, and KV-cache precision are covered in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>. Message-cache session behavior is covered in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
+          <h3 id="41-runtime-mental-model">4.1 Runtime Mental Model</h3>
           <p>Kronk uses two concurrency designs:</p>
           <table className="flags-table">
             <thead>
@@ -882,7 +878,7 @@ some-provider/large-model:
           </table>
           <p>Multimodal generation includes requests that provide images or audio to a compatible language model. Bucky speech transcription is a separate whisper.cpp service and is not scheduled by this batch engine; see <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a>.</p>
           <p>Increasing <code>nseq-max</code> allows more work to proceed concurrently. It can improve aggregate throughput when requests overlap, but it also increases memory capacity and gives each request a smaller share of the same compute resources. Higher concurrency can therefore increase individual response latency. There is no universal value that is best for every model, device, and workload.</p>
-          <h3 id="42-generation-slots-and-sequences">4.2 Generation Slots and Sequences</h3>
+          <h4 id="generation-slots-and-sequences">Generation slots and sequences</h4>
           <p>For text and multimodal generation, the batch engine creates <code>nseq-max</code> execution slots. A slot tracks one active request's prompt position, sampler, streaming response, and sequence ID.</p>
           <pre className="code-block"><code className="language-diagram">{`┌───────────────┐       ┌────────────────────────────────────┐
 │ Waiting jobs  │──────▶│ Batch engine                       │
@@ -900,31 +896,56 @@ some-provider/large-model:
           <pre className="code-block"><code className="language-text">{`context-window × nseq-max`}</code></pre>
           <p>Each slot is limited to one <code>context-window</code>, while unused capacity remains available to active sequences. Idle slots do not permanently own a slice of the pool. Even so, increasing <code>nseq-max</code> increases the total capacity Kronk must allocate and budget.</p>
           <p>When a request finishes, its slot becomes available for another waiting job. Scheduling uses the first available slot; jobs do not reserve a particular slot between requests.</p>
-          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/request-session-slot-assignment.svg" alt="Request admission, IMC session reservation, and execution slot assignment" /></p>
-          <h3 id="43-admission-waiting-and-cancellation">4.3 Admission, Waiting, and Cancellation</h3>
+          <h3 id="42-the-four-stage-request-lifecycle">4.2 The Four-Stage Request Lifecycle</h3>
+          <p>Every generation request passes through the same four lifecycle stages:</p>
+          <ol>
+            <li><strong>Admit request</strong> — apply the route deadline and acquire SDK admission capacity.</li>
+            <li><strong>Prepare request and reserve session</strong> — validate the request, render and tokenize the prompt, and reserve compatible IMC state when eligible.</li>
+            <li><strong>Schedule job and wait for slot</strong> — submit prepared work to the batch scheduler and wait for the first inactive execution slot.</li>
+            <li><strong>Execute in assigned slot and release resources</strong> — bind state to the slot's sequence, restore or prefill model state, generate output, then clear the sequence and release ownership.</li>
+          </ol>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/request-lifecycle-stages.svg" alt="The four stages of a Kronk generation request" /></p>
+          <p>An IMC session and an execution slot are deliberately separate. A session is a reusable conversation and model-state identity selected during Stage 2. A slot is a temporary execution resource assigned during Stage 3 and occupied during Stage 4. A session can therefore be restored into different slots on different requests.</p>
+          <h3 id="43-the-generation-inference-lifecycle">4.3 The Generation Inference Lifecycle</h3>
+          <p>The four stages describe ownership and waiting. The next view zooms into the generation path: Stage 2 turns portable request objects into an exact prompt plan, Stage 3 schedules that plan, and Stage 4 executes it in one slot.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/generation-inference-lifecycle.svg" alt="Generation inference from request preparation through slot execution" /></p>
+          <p>This lifecycle is the map for the detailed views below. Chat-template rendering is part of Stage 2. Prefill batching and token generation are parts of Stage 4. IMC and speculative decoding specialize those stages without changing the top-level four-stage request lifecycle.</p>
+          <h3 id="44-stage-1-—-admit-the-request">4.4 Stage 1 — Admit the Request</h3>
           <p>The outer Kronk API applies the user-visible admission limit before a request reaches model preparation. For generation, the capacity is:</p>
           <pre className="code-block"><code className="language-text">{`admission capacity = max(nseq-max, 1) × queue-depth`}</code></pre>
           <p>An unset <code>queue-depth</code> resolves to 2. Negative values are invalid. Embedding and reranking do not use the queue-depth multiplier; their admission capacity is <code>max(nseq-max, 1)</code>.</p>
           <p>If admission is full, Kronk waits for a permit for at most <code>admission-timeout</code>, a per-model SDK setting that defaults to three minutes. This deadline is local to the admission wait. Kronk discards that child deadline as soon as the request is admitted, so prompt preparation, slot waiting, and generation do <strong>not</strong> inherit a three-minute completion deadline. A caller's own earlier cancellation or deadline still applies throughout the request.</p>
           <p>The admission permit remains held until the request finishes. It therefore bounds the total number of requests that can be preparing, waiting for an execution slot, or generating—not merely the number in the handoff channel.</p>
-          <p>Internally, the batch engine receives admitted jobs through a bounded handoff channel and drains them into its pending-job list until slots become available. The channel is not a second user-visible queue budget. The direct Go SDK option <code>model.WithQueueDepth(n)</code> changes both the outer admission multiplier and the handoff channel capacity. The handoff capacity is <code>NSeqMax × QueueDepth</code>; <code>pendingJobs</code> remains responsible for jobs drained while every slot is busy.</p>
           <p>At the default generation admission depth, <code>nseq-max: 4</code> permits up to eight requests through the outer admission gate. At most four can occupy execution slots at once; the remainder wait for a slot. Additional callers block at the admission gate until capacity is released.</p>
+          <p>The model server applies a total inference timeout of 60 minutes by default. It bounds the entire inference route, including admission, IMC session reservation, execution-slot waiting, and generation. The admission-specific three-minute limit normally expires first in Stage 1. Direct SDK callers should use request cancellation or generation limits such as <code>max_tokens</code>.</p>
+          <h3 id="45-stage-2-—-prepare-model-work">4.5 Stage 2 — Prepare Model Work</h3>
+          <p>After admission, Kronk validates generation parameters and translates the portable request into exact model work. A model-specific chat template renders messages, roles, tools, media markers, reasoning controls, and the assistant generation cue into the protocol the selected model learned during training.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/stage2-chat-template-protocol.svg" alt="A chat template translates request context into the selected model's prompt protocol" /></p>
+          <p>The rendered prompt—not the original message objects—is tokenized and executed. For an IMC-eligible request, Kronk also builds a canonical prompt plan, finds the longest complete safe reusable prefix, and reserves the selected session before batch submission. <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> zooms further into this planning step.</p>
+          <p>Ordinary non-cached tokenization can occur when the slot starts. The exact internal boundary does not change the ownership story: request preparation defines the model work, while Stage 4 performs the model computation.</p>
+          <h3 id="46-stage-3-—-schedule-the-job">4.6 Stage 3 — Schedule the Job</h3>
+          <p>Internally, the batch engine receives admitted jobs through a bounded handoff channel and drains them into its pending-job list until slots become available. The channel is not a second user-visible queue budget. The direct Go SDK option <code>model.WithQueueDepth(n)</code> changes both the outer admission multiplier and the handoff channel capacity. The handoff capacity is <code>NSeqMax × QueueDepth</code>; <code>pendingJobs</code> remains responsible for jobs drained while every slot is busy.</p>
           <p>Waiting honors request cancellation. If a request's context is cancelled while waiting for admission, preparing, submitting, waiting for a slot, or generating, the request returns that cancellation. During model shutdown, the engine rejects new submissions and finishes active and pending jobs with a shutdown error.</p>
-          <p>The engine does <strong>not</strong> cancel a long-running request merely because another job has waited for a slot. The model server applies a total inference timeout of 60 minutes by default. It bounds the entire inference route, including admission, IMC session reservation, execution-slot waiting, and generation. The admission-specific three-minute limit normally expires first in Stage 1. Direct SDK callers should use request cancellation or generation limits such as <code>max_tokens</code>.</p>
-          <h3 id="44-prompt-and-token-scheduling">4.4 Prompt and Token Scheduling</h3>
-          <p>Generation work moves through these stages:</p>
-          <ol>
-            <li>Prepare the request and plan any reusable cached state.</li>
-            <li>Submit the job and wait for an execution slot.</li>
-            <li>Restore or build cached state and tokenize or prefill remaining input.</li>
-            <li>Generate and stream output tokens.</li>
-            <li>Clear the active sequence and release the slot.</li>
-          </ol>
-          <p>Some preparation and IMC tokenization occurs before submission. Ordinary non-cached tokenization can occur when the slot starts. The exact boundary is an implementation detail; the visible queue wait begins around engine submission and ends when a slot is assigned.</p>
+          <p>The engine does <strong>not</strong> cancel a long-running request merely because another job has waited for a slot. The visible queue wait begins around engine submission and ends when the first inactive slot is assigned. It remains bounded by the route deadline and caller cancellation.</p>
+          <h3 id="47-stage-4-—-execute-in-the-slot">4.7 Stage 4 — Execute in the Slot</h3>
+          <h4 id="471-bind-and-restore">4.7.1 Bind and Restore</h4>
+          <p>When the scheduler assigns a slot, Kronk binds any reserved IMC session to that slot's fixed llama sequence ID. A compatible saved prefix is restored from the session store; otherwise the sequence starts from an empty state. The session identity is not permanently attached to the slot.</p>
+          <h4 id="472-prefill-uncached-work">4.7.2 Prefill Uncached Work</h4>
           <p>For ordinary text prefill, active slots contribute prompt tokens in round-robin chunks of up to <code>nubatch</code> tokens until the shared <code>nbatch</code> capacity is reached. This prevents one large prompt from consuming every prefill pass while other slots wait. Generated tokens from active slots can be processed in the same shared decode loop.</p>
-          <p>Media input requires specialized encoder and prefill steps, so it is not always combined with text work in one forward pass. Multi-Token Prediction (MTP) also changes how some prefill and verification batches are formed. These special cases preserve the same user-visible slot limit but should not be treated as identical scheduling at the backend level.</p>
+          <p>More precisely, <code>nubatch</code> caps one slot's contribution during one scheduler visit, while <code>nbatch</code> caps the complete logical batch passed to <code>llama.Decode</code>. For each ready text slot, Kronk adds:</p>
+          <pre className="code-block"><code className="language-text">{`min(remaining prompt tokens, available nbatch space, nubatch)`}</code></pre>
+          <p>The scheduler makes another sweep over ready slots while the tray still has space. A slot can therefore contribute more than <code>nubatch</code> to one logical batch through multiple visits; no individual visit or backend physical chunk exceeds <code>nubatch</code>. Generated and speculative tokens are added before ordinary prefill and reduce the <code>nbatch</code> space available to prompt chunks.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/stage4-prefill-batching.svg" alt="How nbatch and nubatch cooperate during Stage 4 text prefill" /></p>
+          <p>By default, Kronk sets <code>nbatch</code> to <code>nubatch × nseq-max</code>. For prefill-only work, that gives every active slot room to contribute one full <code>nubatch</code> chunk during the first sweep. A shorter remaining prompt contributes a smaller chunk, and the scheduler can use the remaining tray capacity in another sweep. An explicitly smaller <code>nbatch</code> may fill before every slot contributes a full chunk. Kronk enforces <code>nubatch ≤ nbatch</code>.</p>
+          <h4 id="473-generate-output">4.7.3 Generate Output</h4>
+          <p>Once the final prefill row produces logits, ordinary non-speculative generation repeats the decode-and-sample loop below. The first output token is sampled directly from the final prefill logits. On later iterations, Kronk decodes the previously selected token into that slot's sequence state, samples from the new logits, processes and streams the resulting text, and retains the selected token for the next iteration. A newly selected token is therefore not committed to KV state until the following decode.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/stage4-token-generation-loop.svg" alt="Stage 4 ordinary token generation from batched decode through sampling and streaming" /></p>
+          <p>Vocabulary EOG, parser-signaled completion, and <code>max_tokens</code> end generation normally. Cancellation, context or decode failure, streaming failure, and engine shutdown use the error path. Sampling controls and generation limits are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>, while endpoint-specific stream framing is documented in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>.</p>
+          <p>Media input requires specialized encoder and prefill steps, so it is not always combined with text work in one forward pass. Multi-Token Prediction (MTP) also changes how some prefill and verification batches are formed. These special cases preserve the same user-visible slot limit but should not be treated as identical scheduling at the backend level. <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> zooms into proposal, verification, acceptance, and state synchronization.</p>
+          <h4 id="474-finish-and-release-resources">4.7.4 Finish and Release Resources</h4>
+          <p>On normal completion or error, Kronk finishes the response, clears the active sequence, releases the slot, completes or releases any IMC reservation, and returns the outer admission permit. The next pending job can then occupy the slot; it does not inherit the prior request's sampler, parser, or sequence state.</p>
           <p>Most users should leave <code>nbatch</code> and <code>nubatch</code> unset. Kronk derives their load-time values as described in <a href="https://www.kronkai.com/manual#35-concurrency-and-batching">Chapter 3 §3.5</a>.</p>
-          <h3 id="45-embedding-and-reranking">4.5 Embedding and Reranking</h3>
+          <h3 id="48-embedding-and-reranking">4.8 Embedding and Reranking</h3>
           <p>Embedding and reranking models do not use generation slots. Kronk creates a pool of <code>nseq-max</code> independent model contexts that share the model weights.</p>
           <pre className="code-block"><code className="language-diagram">{`┌──────────┐       ┌──────────────────────────────┐
 │ Requests │──────▶│ Context pool                 │
@@ -934,7 +955,7 @@ some-provider/large-model:
                    └──────────────────────────────┘`}</code></pre>
           <p>Each admitted request acquires one context, performs its work independently, and returns the context to the pool. If every context is busy, another request waits until one is released or its context is cancelled. Work from separate contexts is not combined into the generation engine's shared token batch.</p>
           <p>Additional contexts require memory even though model weights are shared. Raise <code>nseq-max</code> only when concurrent embedding or reranking traffic benefits from the extra contexts.</p>
-          <h3 id="46-configuration-and-tuning">4.6 Configuration and Tuning</h3>
+          <h3 id="49-configuration-and-tuning">4.9 Configuration and Tuning</h3>
           <p>Configure concurrency in <code>~/.kronk/models/model_config.yaml</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`mradermacher/Qwopus3.5-4B-Coder.Q8_0:
   context-window: 32768
@@ -959,7 +980,7 @@ some-provider/large-model:
             <li>distribute traffic across more model-server instances.</li>
           </ul>
           <p>Do not treat weight size plus a hand-calculated KV value as total VRAM. Use the BUI's <strong>Apps → VRAM Calculator</strong> and retain operating headroom. See <a href="https://www.kronkai.com/manual#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for the components that affect an estimate.</p>
-          <h3 id="47-interaction-with-message-caching">4.7 Interaction with Message Caching</h3>
+          <h3 id="410-interaction-with-message-caching">4.10 Interaction with Message Caching</h3>
           <p>Incremental Message Caching (IMC) keeps reusable conversation state in a logical session, not in a permanently assigned execution slot. Cached state is externalized to a session store between requests. A later request can restore that state into any free slot, extend it, and continue generation.</p>
           <p>While a request is active, its restored or newly built state consumes cells in the unified KV pool. Kronk normally snapshots a built or extended stable prefix during slot startup, before generating the request's suffix. Exact read-only hits can skip a redundant snapshot. Completion clears the slot's active sequence. This allows the number of cached conversation identities to differ from the number of concurrent execution slots.</p>
           <p>The IMC pool contains:</p>
@@ -970,7 +991,7 @@ some-provider/large-model:
           <p>A session is <strong>reserved</strong> while one request has exclusive ownership of its IMC state and other planners must skip it. Reservation does not necessarily mean that token generation is active. Cache append or rebuild paths can publish a stable snapshot and release the reservation before generation finishes, while exact, read-only, and some media paths can retain it longer.</p>
           <p>If every IMC session is reserved, current token-based planning returns a server-busy error rather than preempting another request's session. With the capacity invariant, this remains a defensive path for direct low-level model callers, leaked reservations, or an internal invariant violation rather than the expected result of a valid SDK queue-depth configuration.</p>
           <p>Session matching, RAM and disk stores, media caching, invalidation, and cache settings are documented in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
-          <h3 id="48-observing-queue-behavior">4.8 Observing Queue Behavior</h3>
+          <h3 id="411-observing-queue-behavior">4.11 Observing Queue Behavior</h3>
           <p>Kronk records two direct indicators of generation-slot contention:</p>
           <ul>
             <li>the <code>queue-wait</code> trace span, which wraps the submit attempt and subsequent slot wait for successful jobs; and</li>
@@ -981,6 +1002,7 @@ some-provider/large-model:
           <hr />
           <h2 id="chapter-5-message-caching">Chapter 5: Message Caching</h2>
           <h2 id="51-what-imc-does">5.1 What IMC Does</h2>
+          <p>Chapter 4 explains where IMC participates in the generation lifecycle. This chapter explains how Kronk chooses reusable state and preserves it safely.</p>
           <p>Incremental Message Cache (IMC) reduces repeated prompt processing in multi-turn conversations. Without IMC, the model must prefill the complete conversation before generating each response. With IMC, Kronk can restore a previously processed prompt prefix and prefill only the new portion.</p>
           <p>IMC is enabled by default for generation models. It is most useful for:</p>
           <ul>
@@ -993,6 +1015,8 @@ some-provider/large-model:
           <h3 id="511-quick-semantic-understanding">5.1.1 Quick Semantic Understanding</h3>
           <p>IMC is best understood as <strong>prompt planning backed by reusable model state</strong>. Before assigning a request to an execution slot, Kronk determines the exact rendered prompt, its reusable stable portion, the inference-only tail, the compatible saved state, and the work required to move from that state to the current request.</p>
           <p>This is prompt-oriented rather than message-oriented because the model does not consume message objects directly. It consumes rendered tokens, media embeddings, and positions. Requests with apparently unchanged messages can render differently when tools, thinking settings, templates, media, or other render-affecting inputs change.</p>
+          <p>The complete generation lifecycle is introduced in <a href="https://www.kronkai.com/manual#43-the-generation-inference-lifecycle">Chapter 4 §4.3</a>. The focused view below zooms into IMC's Stage 2 responsibility: deciding the safest minimum work and reserving the session that owns reusable state.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/stage2-imc-prompt-planning.svg" alt="Stage 2 IMC prompt planning from dual rendering through session reservation" /></p>
           <p>The planning process has five steps.</p>
           <h4 id="step-1-render-the-complete-prompt-with-and-without-the-generation-suffix">Step 1: Render the complete prompt with and without the generation suffix</h4>
           <p>Kronk independently renders the complete conversation in two forms:</p>
@@ -1187,6 +1211,9 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <p>Speculative decoding uses a faster drafter to propose several continuation tokens. The target model verifies those proposals together. Accepted proposals reduce the number of target-model passes needed to produce the response; rejected proposals are discarded and the target remains authoritative.</p>
           <p>This optimization does not change the chat, Responses, or SDK request shapes. It can improve generation throughput when the drafter is inexpensive and its proposals agree frequently with the target. It can also reduce performance when draft work is expensive or acceptance is poor. Always measure with the model, sampling settings, hardware, and prompts used in production.</p>
           <p>Kronk supports classic speculative decoding with a separate draft model and Multi-Token Prediction (MTP). MTP uses a prediction head designed for the target rather than a general-purpose smaller language model.</p>
+          <p>This is a specialized Stage 4 generation loop. The drafter proposes multiple candidates, but the target model verifies them and remains authoritative. At a divergence Kronk accepts only the verified prefix and chooses a target replacement token; when all candidates are accepted it chooses a target bonus token. That final target token becomes input to the next decode and is not yet committed to KV state when selected.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/stage4-speculative-decoding.svg" alt="Stage 4 speculative decoding proposal, target verification, acceptance, and state synchronization" /></p>
+          <p>Classic speculative sampling uses the target and draft distributions to decide acceptance and replacement. Kronk's MTP path uses exact token-match verification against the target sampler. Both paths keep the target authoritative and emit an accepted prefix of zero to <code>ndraft</code> candidates followed by a target-derived replacement or bonus token.</p>
           <h3 id="62-drafter-sources-and-selection">6.2 Drafter Sources and Selection</h3>
           <p>Kronk can load a drafter from three sources:</p>
           <table className="flags-table">
@@ -2173,7 +2200,7 @@ EOF`}</code></pre>
           <p>These helpers create one user turn with media before text. <code>model.VideoMessage</code> constructs a <code>video_url</code> part, but it does not add video-container decoding; send extracted frames with <code>ImageMessage</code> for the current media path.</p>
           <h2 id="116-configuration-and-resources">11.6 Configuration and Resources</h2>
           <p>Multimodal requests use the same batch engine and concurrency controls as text requests. The projector adds weights and runtime buffers, while image resolution, audio duration, context length, and <code>nseq-max</code> affect resource use. Use the BUI VRAM Calculator rather than adding model, projector, and KV file sizes as a complete memory estimate. See <a href="https://www.kronkai.com/manual#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for memory planning and <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for concurrency.</p>
-          <p>Most deployments should leave <code>nubatch</code> unset. Its normal default is 2048, but MoE expert CPU offload can raise it to 4096. A multimodal encoder may require an entire media-token chunk to fit in one physical batch, so lowering <code>nubatch</code> can break media input. <code>proj-on-cpu: true</code> can keep the projector on the CPU when accelerator memory is constrained, at a performance cost.</p>
+          <p>Most deployments should leave <code>nubatch</code> unset. Its default is 2048 for every model. A multimodal encoder may require an entire media-token chunk to fit in one physical batch, so lowering <code>nubatch</code> can break media input. <code>proj-on-cpu: true</code> can keep the projector on the CPU when accelerator memory is constrained, at a performance cost.</p>
           <h2 id="117-message-caching">11.7 Message Caching</h2>
           <p>Incremental Message Caching can reuse unchanged media state for text-only follow-up turns without encoding the media again. Changing, reordering, removing, or appending media rebuilds the stable media plan through the multimodal pipeline. See <a href="https://www.kronkai.com/manual#54-media-requests">Chapter 5 §5.4</a> for the cache behavior and limitations.</p>
           <h2 id="118-limitations">11.8 Limitations</h2>
@@ -4058,14 +4085,17 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <div className="doc-index-section">
               <a href="#chapter-4-batch-processing" className={`doc-index-header ${activeSection === 'chapter-4-batch-processing' ? 'active' : ''}`}>Chapter 4: Batch Processing</a>
               <ul>
-                <li><a href="#41-concurrency-at-a-glance" className={activeSection === '41-concurrency-at-a-glance' ? 'active' : ''}>4.1 Concurrency at a Glance</a></li>
-                <li><a href="#42-generation-slots-and-sequences" className={activeSection === '42-generation-slots-and-sequences' ? 'active' : ''}>4.2 Generation Slots and Sequences</a></li>
-                <li><a href="#43-admission-waiting-and-cancellation" className={activeSection === '43-admission-waiting-and-cancellation' ? 'active' : ''}>4.3 Admission, Waiting, and Cancellation</a></li>
-                <li><a href="#44-prompt-and-token-scheduling" className={activeSection === '44-prompt-and-token-scheduling' ? 'active' : ''}>4.4 Prompt and Token Scheduling</a></li>
-                <li><a href="#45-embedding-and-reranking" className={activeSection === '45-embedding-and-reranking' ? 'active' : ''}>4.5 Embedding and Reranking</a></li>
-                <li><a href="#46-configuration-and-tuning" className={activeSection === '46-configuration-and-tuning' ? 'active' : ''}>4.6 Configuration and Tuning</a></li>
-                <li><a href="#47-interaction-with-message-caching" className={activeSection === '47-interaction-with-message-caching' ? 'active' : ''}>4.7 Interaction with Message Caching</a></li>
-                <li><a href="#48-observing-queue-behavior" className={activeSection === '48-observing-queue-behavior' ? 'active' : ''}>4.8 Observing Queue Behavior</a></li>
+                <li><a href="#41-runtime-mental-model" className={activeSection === '41-runtime-mental-model' ? 'active' : ''}>4.1 Runtime Mental Model</a></li>
+                <li><a href="#42-the-four-stage-request-lifecycle" className={activeSection === '42-the-four-stage-request-lifecycle' ? 'active' : ''}>4.2 The Four-Stage Request Lifecycle</a></li>
+                <li><a href="#43-the-generation-inference-lifecycle" className={activeSection === '43-the-generation-inference-lifecycle' ? 'active' : ''}>4.3 The Generation Inference Lifecycle</a></li>
+                <li><a href="#44-stage-1-—-admit-the-request" className={activeSection === '44-stage-1-—-admit-the-request' ? 'active' : ''}>4.4 Stage 1 — Admit the Request</a></li>
+                <li><a href="#45-stage-2-—-prepare-model-work" className={activeSection === '45-stage-2-—-prepare-model-work' ? 'active' : ''}>4.5 Stage 2 — Prepare Model Work</a></li>
+                <li><a href="#46-stage-3-—-schedule-the-job" className={activeSection === '46-stage-3-—-schedule-the-job' ? 'active' : ''}>4.6 Stage 3 — Schedule the Job</a></li>
+                <li><a href="#47-stage-4-—-execute-in-the-slot" className={activeSection === '47-stage-4-—-execute-in-the-slot' ? 'active' : ''}>4.7 Stage 4 — Execute in the Slot</a></li>
+                <li><a href="#48-embedding-and-reranking" className={activeSection === '48-embedding-and-reranking' ? 'active' : ''}>4.8 Embedding and Reranking</a></li>
+                <li><a href="#49-configuration-and-tuning" className={activeSection === '49-configuration-and-tuning' ? 'active' : ''}>4.9 Configuration and Tuning</a></li>
+                <li><a href="#410-interaction-with-message-caching" className={activeSection === '410-interaction-with-message-caching' ? 'active' : ''}>4.10 Interaction with Message Caching</a></li>
+                <li><a href="#411-observing-queue-behavior" className={activeSection === '411-observing-queue-behavior' ? 'active' : ''}>4.11 Observing Queue Behavior</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

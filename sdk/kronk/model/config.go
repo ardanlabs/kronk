@@ -25,7 +25,7 @@ NUBatch defaults to 2048 because most models we serve are mtmd (vision)
 models whose image encoder uses non-causal attention and needs every patch
 token of an image chunk in a single physical ubatch; dropping below that
 breaks image input. Text-only models share the same value for one predictable
-setting. MoE expert-CPU offload raises the NUBatch floor to 4096.
+setting. Workloads that benefit from a different size can override it.
 
 NBatch is the shared tray the round-robin batch engine fills across slots:
 each active slot may contribute up to NUBatch tokens per pass, so sizing it to
@@ -683,17 +683,10 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	// are mtmd (vision) models whose image encoder uses non-causal attention
 	// and requires every patch token of an image chunk to land in a single
 	// physical ubatch, so n_ubatch must never drop below the largest image
-	// chunk. We use the same value for text-only models for one shared,
-	// predictable setting. MoE expert-CPU offload uses a larger floor for
-	// prompt-ingestion throughput.
+	// chunk. We use the same value for every model for one shared, predictable
+	// setting. Workloads that benefit from a different size can override it.
 	if cfg.NUBatch() <= 0 {
-		moeExperts := cfg.MoE != nil && (cfg.MoE.Mode == MoEModeExpertsCPU || cfg.MoE.Mode == MoEModeKeepTopN)
-		switch moeExperts {
-		case true:
-			cfg.PtrNUBatch = new(4096)
-		case false:
-			cfg.PtrNUBatch = new(defNUBatch)
-		}
+		cfg.PtrNUBatch = new(defNUBatch)
 	}
 
 	// Logical batch size (n_batch) is the shared "tray" the round-robin batch

@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Stage 4 speculative decoding</title>
+  <desc id="desc">A drafter proposes multiple candidate tokens. The target verifies them in one forward pass, accepts a prefix, chooses a replacement at divergence or a bonus after full acceptance, synchronizes model state to the accepted prefix, emits accepted candidates plus the target token, and retains that target token for the next decode.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .heading { font: 700 22px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .eyebrow { font: 700 15px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.3px; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .mono { font: 600 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #334155; }
+      .white { fill: #ffffff; }
+      .muted { fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect width="1920" height="12" fill="#0f766e"/>
+  <text class="title" x="72" y="70">SPECULATIVE DECODING</text>
+  <text class="subtitle" x="72" y="108">LIFECYCLE STAGE 4 · Verify several draft candidates per target pass while keeping the target authoritative.</text>
+
+  <!-- Main connectors -->
+  <path d="M 400 400 H 438" stroke="#334155" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M 805 400 H 843" stroke="#334155" stroke-width="5" marker-end="url(#arrow)"/>
+  <path d="M 1290 400 H 1328" stroke="#334155" stroke-width="5" marker-end="url(#arrow)"/>
+
+  <!-- 1: proposal -->
+  <g filter="url(#shadow)"><rect x="70" y="160" width="330" height="580" rx="24" fill="#ffffff" stroke="#5eead4" stroke-width="3"/></g>
+  <rect x="70" y="160" width="330" height="72" rx="24" fill="#ccfbf1"/>
+  <path d="M 70 204 Q 70 232 98 232 H 372 Q 400 232 400 204" fill="#ccfbf1"/>
+  <circle cx="108" cy="196" r="20" fill="#0f766e"/><text x="102" y="204" style="font:700 19px Inter, sans-serif" class="white">1</text>
+  <text class="heading" x="140" y="203">Propose candidates</text>
+  <text class="eyebrow" x="100" y="274" fill="#0f766e">ACCEPTED TARGET STATE</text>
+  <rect x="100" y="294" width="270" height="72" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text class="mono" x="124" y="324">KV  [t₁][t₂] … [tₖ]</text>
+  <text class="small" x="124" y="350">current sampled token retained</text>
+  <path d="M 235 378 V 420" stroke="#0f766e" stroke-width="4" marker-end="url(#arrow)"/>
+  <rect x="100" y="434" width="270" height="158" rx="16" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="eyebrow" x="124" y="468" fill="#1d4ed8">DRAFTER</text>
+  <text class="body" x="124" y="504">Propose up to N tokens</text>
+  <rect x="124" y="530" width="44" height="38" rx="8" fill="#bfdbfe"/><rect x="176" y="530" width="44" height="38" rx="8" fill="#bfdbfe"/><rect x="228" y="530" width="44" height="38" rx="8" fill="#bfdbfe"/><rect x="280" y="530" width="64" height="38" rx="8" fill="#bfdbfe"/>
+  <text class="mono" x="138" y="555">c₁</text><text class="mono" x="190" y="555">c₂</text><text class="mono" x="242" y="555">c₃</text><text class="mono" x="293" y="555">… cₙ</text>
+  <rect x="100" y="620" width="270" height="88" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="small" x="124" y="652">Candidates are provisional.</text>
+  <text class="small" x="124" y="682">They are not target output yet.</text>
+
+  <!-- 2: target verify -->
+  <g filter="url(#shadow)"><rect x="440" y="160" width="365" height="580" rx="24" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/></g>
+  <rect x="440" y="160" width="365" height="72" rx="24" fill="#dbeafe"/>
+  <path d="M 440 204 Q 440 232 468 232 H 777 Q 805 232 805 204" fill="#dbeafe"/>
+  <circle cx="478" cy="196" r="20" fill="#2563eb"/><text x="472" y="204" style="font:700 19px Inter, sans-serif" class="white">2</text>
+  <text class="heading" x="510" y="203">Target verifies once</text>
+  <text class="eyebrow" x="470" y="274" fill="#1d4ed8">ONE TARGET FORWARD PASS</text>
+  <rect x="470" y="294" width="305" height="90" rx="14" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="small" x="494" y="326">Decode retained token + candidates</text>
+  <text class="mono" x="494" y="360">[s][c₁][c₂][c₃] … [cₙ]</text>
+  <rect x="470" y="414" width="305" height="124" rx="16" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+  <text class="eyebrow" x="494" y="448" fill="#6d28d9">VERIFY IN ORDER</text>
+  <text class="body" x="494" y="484">Accept matching candidates</text>
+  <text class="body" x="494" y="516">Stop at first divergence</text>
+  <rect x="470" y="566" width="305" height="142" rx="16" fill="#0f172a"/>
+  <text class="eyebrow" x="494" y="600" fill="#5eead4">TARGET IS AUTHORITATIVE</text>
+  <text class="small white" x="494" y="636">Classic: distribution-aware</text>
+  <text class="small white" x="494" y="666">MTP: exact target token match</text>
+  <text class="small" x="494" y="694" style="fill:#93c5fd">Accepted prefix: 0 … N tokens</text>
+
+  <!-- 3: decision -->
+  <g filter="url(#shadow)"><rect x="845" y="160" width="445" height="580" rx="24" fill="#ffffff" stroke="#fbbf24" stroke-width="3"/></g>
+  <rect x="845" y="160" width="445" height="72" rx="24" fill="#fef3c7"/>
+  <path d="M 845 204 Q 845 232 873 232 H 1262 Q 1290 232 1290 204" fill="#fef3c7"/>
+  <circle cx="883" cy="196" r="20" fill="#d97706"/><text x="877" y="204" style="font:700 19px Inter, sans-serif" class="white">3</text>
+  <text class="heading" x="915" y="203">Choose target token</text>
+  <rect x="875" y="270" width="385" height="188" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
+  <text class="eyebrow" x="900" y="306" fill="#c2410c">DIVERGENCE AT Cⱼ</text>
+  <text class="body" x="900" y="342">Accept c₁ … cⱼ₋₁</text>
+  <text class="body" x="900" y="378">Reject cⱼ … cₙ</text>
+  <rect x="900" y="402" width="335" height="38" rx="10" fill="#fee2e2" stroke="#fca5a5" stroke-width="2"/>
+  <text class="small" x="922" y="427">Target chooses replacement token r</text>
+  <rect x="875" y="482" width="385" height="188" rx="16" fill="#ecfdf5" stroke="#34d399" stroke-width="2"/>
+  <text class="eyebrow" x="900" y="518" fill="#047857">ALL CANDIDATES ACCEPTED</text>
+  <text class="body" x="900" y="554">Accept c₁ … cₙ</text>
+  <text class="body" x="900" y="590">Use logits after cₙ</text>
+  <rect x="900" y="614" width="335" height="38" rx="10" fill="#dcfce7" stroke="#86efac" stroke-width="2"/>
+  <text class="small" x="922" y="639">Target chooses bonus token b</text>
+  <rect x="875" y="690" width="385" height="28" rx="9" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="small" x="930" y="710">r or b is the final target-derived token</text>
+
+  <!-- 4: synchronize and emit -->
+  <g filter="url(#shadow)"><rect x="1330" y="160" width="520" height="580" rx="24" fill="#ffffff" stroke="#a78bfa" stroke-width="3"/></g>
+  <rect x="1330" y="160" width="520" height="72" rx="24" fill="#ede9fe"/>
+  <path d="M 1330 204 Q 1330 232 1358 232 H 1822 Q 1850 232 1850 204" fill="#ede9fe"/>
+  <circle cx="1368" cy="196" r="20" fill="#7c3aed"/><text x="1362" y="204" style="font:700 19px Inter, sans-serif" class="white">4</text>
+  <text class="heading" x="1400" y="203">Synchronize, emit, repeat</text>
+  <rect x="1360" y="270" width="460" height="120" rx="16" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+  <text class="eyebrow" x="1386" y="304" fill="#6d28d9">ROLL BACK + SYNCHRONIZE</text>
+  <text class="body" x="1386" y="340">Keep target and drafter state only</text>
+  <text class="body" x="1386" y="370">through the accepted candidate prefix.</text>
+  <path d="M 1590 402 V 432" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow)"/>
+  <rect x="1360" y="446" width="460" height="116" rx="16" fill="#ecfdf5" stroke="#34d399" stroke-width="2"/>
+  <text class="eyebrow" x="1386" y="480" fill="#047857">EMIT THIS ROUND</text>
+  <text class="body" x="1386" y="516">accepted candidates + target token</text>
+  <text class="mono" x="1386" y="546">[c₁ … cⱼ₋₁][r]  or  [c₁ … cₙ][b]</text>
+  <path d="M 1590 574 V 604" stroke="#0f766e" stroke-width="4" marker-end="url(#arrow)"/>
+  <rect x="1360" y="618" width="460" height="90" rx="16" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="eyebrow" x="1386" y="650" fill="#1d4ed8">NEXT ROUND INPUT</text>
+  <text class="body" x="1386" y="682">Retain final target token r or b.</text>
+
+  <!-- Timing and guarantees -->
+  <rect x="70" y="790" width="1780" height="212" rx="24" fill="#0f172a"/>
+  <text class="eyebrow" x="104" y="828" fill="#5eead4">WHAT SPECULATION CHANGES — AND WHAT IT DOES NOT</text>
+  <rect x="104" y="854" width="510" height="112" rx="16" fill="#1e293b" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="heading white" x="132" y="890">More output per target pass</text>
+  <text class="small white" x="132" y="922">One round emits 1 to N+1 tokens.</text>
+  <text class="small" x="132" y="948" style="fill:#99f6e4">Accepted candidates avoid separate target passes.</text>
+  <rect x="644" y="854" width="510" height="112" rx="16" fill="#1e293b" stroke="#60a5fa" stroke-width="2"/>
+  <text class="heading white" x="672" y="890">Target remains authoritative</text>
+  <text class="small white" x="672" y="922">Rejected draft tokens never become output.</text>
+  <text class="small" x="672" y="948" style="fill:#bfdbfe">Target chooses every replacement or bonus.</text>
+  <rect x="1184" y="854" width="632" height="112" rx="16" fill="#1e293b" stroke="#fbbf24" stroke-width="2"/>
+  <text class="heading white" x="1212" y="890">The final token is not in KV yet</text>
+  <text class="small white" x="1212" y="922">The replacement or bonus is selected and emitted now.</text>
+  <text class="small" x="1212" y="948" style="fill:#fde68a">The next decode commits it, exactly like ordinary generation.</text>
+
+  <text class="small muted" x="72" y="1048">Adaptive throttling can reduce N or bypass speculation; classic and MTP differ in proposal state and acceptance details but preserve these target-authority semantics.</text>
+</svg>

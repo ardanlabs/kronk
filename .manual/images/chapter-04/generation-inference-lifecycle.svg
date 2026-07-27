@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Kronk generation inference lifecycle with Incremental Message Cache</title>
+  <desc id="desc">A two-phase flow. Host planning renders and tokenizes a generation request, builds an IMC prompt plan, reserves a reusable session, and waits for an execution slot. Model execution binds the session to a slot, optionally restores a saved prefix, prefills stable work, snapshots reusable state when needed, processes the generation tail, decodes the response, and clears the sequence. Model execution may use CPU or an accelerator.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#0f766e"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#d97706"/>
+    </marker>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .phase { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .eyebrow { font: 700 15px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.5px; }
+      .heading { font: 700 22px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .mono { font: 600 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #334155; }
+      .white { fill: #ffffff; }
+      .muted { fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
+
+  <text class="title" x="72" y="70">GENERATION INFERENCE</text>
+  <text class="subtitle" x="72" y="108">Host planning prepares exact work. An execution slot runs the model on CPU or a compatible accelerator.</text>
+
+  <!-- Legend -->
+  <rect x="1232" y="45" width="172" height="52" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <circle cx="1260" cy="71" r="10" fill="#2563eb"/>
+  <text class="small" x="1280" y="77">Host planning</text>
+  <rect x="1420" y="45" width="195" height="52" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <circle cx="1448" cy="71" r="10" fill="#0f766e"/>
+  <text class="small" x="1468" y="77">Model compute</text>
+  <rect x="1631" y="45" width="217" height="52" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <circle cx="1659" cy="71" r="10" fill="#7c3aed"/>
+  <text class="small" x="1679" y="77">Session state I/O</text>
+
+  <!-- Phase panels -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="145" width="830" height="865" rx="28" fill="#f8fbff" stroke="#93c5fd" stroke-width="3"/>
+    <rect x="1020" y="145" width="830" height="865" rx="28" fill="#f7fdfa" stroke="#99f6e4" stroke-width="3"/>
+  </g>
+  <rect x="70" y="145" width="830" height="64" rx="28" fill="#dbeafe"/>
+  <path d="M 70 181 Q 70 209 98 209 H 872 Q 900 209 900 181" fill="#dbeafe"/>
+  <rect x="1020" y="145" width="830" height="64" rx="28" fill="#ccfbf1"/>
+  <path d="M 1020 181 Q 1020 209 1048 209 H 1822 Q 1850 209 1850 181" fill="#ccfbf1"/>
+  <text class="eyebrow" x="105" y="172" fill="#1d4ed8">PHASE 1 · LIFECYCLE STAGES 2 + 3</text>
+  <text class="phase" x="105" y="199">HOST PLANNING + SCHEDULING</text>
+  <text class="small" x="580" y="194">Runs before an execution slot is assigned</text>
+  <text class="eyebrow" x="1055" y="172" fill="#0f766e">PHASE 2 · LIFECYCLE STAGE 4</text>
+  <text class="phase" x="1055" y="199">MODEL EXECUTION</text>
+  <text class="small" x="1390" y="194">Runs inside one slot and llama sequence</text>
+
+  <!-- Connectors: host planning -->
+  <path d="M 485 288 L 485 316" stroke="#2563eb" stroke-width="4" fill="none" marker-end="url(#arrow-blue)"/>
+  <path d="M 485 424 L 485 452" stroke="#2563eb" stroke-width="4" fill="none" marker-end="url(#arrow-blue)"/>
+  <path d="M 485 577 L 485 605" stroke="#2563eb" stroke-width="4" fill="none" marker-end="url(#arrow-blue)"/>
+  <path d="M 485 755 L 485 783" stroke="#2563eb" stroke-width="4" fill="none" marker-end="url(#arrow-blue)"/>
+
+  <!-- Connectors: model execution -->
+  <path d="M 1435 282 L 1435 306" stroke="#0f766e" stroke-width="4" fill="none" marker-end="url(#arrow-green)"/>
+  <path d="M 1435 398 L 1435 422" stroke="#0f766e" stroke-width="4" fill="none" marker-end="url(#arrow-green)"/>
+  <path d="M 1435 514 L 1435 538" stroke="#0f766e" stroke-width="4" fill="none" marker-end="url(#arrow-green)"/>
+  <path d="M 1435 630 L 1435 654" stroke="#0f766e" stroke-width="4" fill="none" marker-end="url(#arrow-green)"/>
+  <path d="M 1435 746 L 1435 770" stroke="#0f766e" stroke-width="4" fill="none" marker-end="url(#arrow-green)"/>
+  <path d="M 1435 862 L 1435 878" stroke="#64748b" stroke-width="4" fill="none" marker-end="url(#arrow-green)"/>
+
+  <!-- Slot assignment bridge is routed through the gutter. -->
+  <path d="M 860 830 H 960 V 246 H 1054" stroke="#d97706" stroke-width="5" fill="none" marker-end="url(#arrow-amber)"/>
+  <rect x="925" y="488" width="70" height="164" rx="18" fill="#fffbeb" stroke="#fbbf24" stroke-width="2"/>
+  <text x="965" y="626" transform="rotate(-90 965 626)" style="font:700 15px Inter, sans-serif; letter-spacing:1.5px; fill:#b45309">SLOT ASSIGNED</text>
+
+  <!-- Host cards -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="224" width="750" height="64" rx="16" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+    <rect x="110" y="332" width="750" height="92" rx="16" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+    <rect x="110" y="468" width="750" height="109" rx="16" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+    <rect x="110" y="621" width="750" height="134" rx="18" fill="#dbeafe" stroke="#3b82f6" stroke-width="3"/>
+    <rect x="110" y="799" width="750" height="86" rx="18" fill="#fffbeb" stroke="#f59e0b" stroke-width="3"/>
+  </g>
+
+  <circle cx="150" cy="256" r="17" fill="#2563eb"/>
+  <text x="145" y="263" style="font:700 18px Inter, sans-serif" class="white">1</text>
+  <text class="heading" x="185" y="264">Request arrives</text>
+  <text class="small" x="690" y="263">chat or response generation</text>
+
+  <circle cx="150" cy="378" r="17" fill="#2563eb"/>
+  <text x="145" y="385" style="font:700 18px Inter, sans-serif" class="white">2</text>
+  <text class="heading" x="185" y="368">Render complete prompt</text>
+  <text class="body" x="185" y="398">Stable rendering + generation-ready rendering</text>
+
+  <circle cx="150" cy="522" r="17" fill="#2563eb"/>
+  <text x="145" y="529" style="font:700 18px Inter, sans-serif" class="white">3</text>
+  <text class="heading" x="185" y="511">Tokenize and build canonical plan</text>
+  <text class="body" x="185" y="541">Token IDs · media identities · logical positions</text>
+  <text class="small" x="185" y="565">The model executes this plan—not the original message objects</text>
+
+  <circle cx="150" cy="688" r="17" fill="#2563eb"/>
+  <text x="145" y="695" style="font:700 18px Inter, sans-serif" class="white">4</text>
+  <text class="eyebrow" x="185" y="652" fill="#1d4ed8">IMC PROMPT PLANNING</text>
+  <text class="heading" x="185" y="684">Choose the safest minimum work</text>
+  <text class="body" x="185" y="716">Find longest complete prefix · select exact / append / anchor / rebuild</text>
+  <text class="body" x="185" y="744">Reserve a compatible session, or an empty / LRU session for rebuild</text>
+
+  <circle cx="150" cy="842" r="17" fill="#d97706"/>
+  <text x="145" y="849" style="font:700 18px Inter, sans-serif" class="white">5</text>
+  <text class="eyebrow" x="185" y="830" fill="#b45309">BATCH SCHEDULER</text>
+  <text class="heading" x="185" y="862">Submit job and wait for an execution slot</text>
+
+  <rect x="110" y="917" width="750" height="62" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="8 7"/>
+  <circle cx="150" cy="948" r="17" fill="#64748b"/>
+  <text x="147" y="955" style="font:700 18px Inter, sans-serif" class="white">i</text>
+  <text class="eyebrow" x="185" y="942" fill="#475569">NON-IMC REQUESTS</text>
+  <text class="small" x="185" y="967">Skip session reuse and process the complete generation-ready prompt.</text>
+
+  <!-- Model execution cards -->
+  <g filter="url(#shadow)">
+    <rect x="1060" y="222" width="750" height="60" rx="16" fill="#ffffff" stroke="#5eead4" stroke-width="2"/>
+    <rect x="1060" y="322" width="750" height="76" rx="16" fill="#f5f3ff" stroke="#a78bfa" stroke-width="3"/>
+    <rect x="1060" y="438" width="750" height="76" rx="16" fill="#ecfdf5" stroke="#34d399" stroke-width="3"/>
+    <rect x="1060" y="554" width="750" height="76" rx="16" fill="#f5f3ff" stroke="#a78bfa" stroke-width="3"/>
+    <rect x="1060" y="670" width="750" height="76" rx="16" fill="#ecfdf5" stroke="#34d399" stroke-width="3"/>
+    <rect x="1060" y="786" width="750" height="76" rx="16" fill="#dcfce7" stroke="#22c55e" stroke-width="3"/>
+    <rect x="1060" y="894" width="750" height="60" rx="16" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+  </g>
+
+  <text class="eyebrow" x="1090" y="247" fill="#0f766e">SLOT START</text>
+  <text class="heading" x="1240" y="257">Bind reserved session to the slot's sequence ID</text>
+
+  <text class="eyebrow" x="1090" y="350" fill="#6d28d9">SESSION STATE I/O</text>
+  <text class="heading" x="1090" y="380">Restore reusable prefix when selected</text>
+  <text class="small" x="1580" y="379">session store → model context</text>
+
+  <text class="eyebrow" x="1090" y="466" fill="#0f766e">MODEL FORWARD PASS</text>
+  <text class="heading" x="1090" y="496">Prefill stable work</text>
+  <text class="small" x="1360" y="495">full prefix, text extension, or media anchor extension</text>
+
+  <text class="eyebrow" x="1090" y="582" fill="#6d28d9">SESSION STATE I/O</text>
+  <text class="heading" x="1090" y="612">Snapshot the stable prefix when required</text>
+  <text class="small" x="1575" y="611">exact hits may skip this</text>
+
+  <text class="eyebrow" x="1090" y="698" fill="#0f766e">MODEL FORWARD PASS</text>
+  <text class="heading" x="1090" y="728">Process the generation-only tail</text>
+  <text class="small" x="1510" y="727">not part of the stable snapshot</text>
+
+  <text class="eyebrow" x="1090" y="814" fill="#15803d">DECODE LOOP</text>
+  <text class="heading" x="1090" y="844">Generate and stream response tokens</text>
+  <text class="small" x="1590" y="843">one step at a time</text>
+
+  <text class="eyebrow" x="1090" y="920" fill="#475569">FINISH</text>
+  <text class="heading" x="1205" y="934">Clear sequence · free slot · finish session reservation</text>
+
+  <text class="small muted" x="1080" y="981">Session snapshots may use RAM or disk storage.</text>
+  <text class="small muted" x="1080" y="1002">Model compute may use CPU, Metal, CUDA, Vulkan, or ROCm.</text>
+  <text class="small muted" x="72" y="1050">Generation lifecycle shown with the IMC-enabled path · embedding, reranking, and Bucky transcription use different execution designs</text>
+</svg>

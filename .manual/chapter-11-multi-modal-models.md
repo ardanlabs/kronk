@@ -154,11 +154,11 @@ sizes as a complete memory estimate. See
 for memory planning and [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for
 concurrency.
 
-Most deployments should leave `nubatch` unset. Its normal default is 2048, but
-MoE expert CPU offload can raise it to 4096. A multimodal encoder may require
-an entire media-token chunk to fit in one physical batch, so lowering
-`nubatch` can break media input. `proj-on-cpu: true` can keep the projector on
-the CPU when accelerator memory is constrained, at a performance cost.
+Most deployments should leave `nubatch` unset. Its default is 2048 for every
+model. A multimodal encoder may require an entire media-token chunk to fit in
+one physical batch, so lowering `nubatch` can break media input.
+`proj-on-cpu: true` can keep the projector on the CPU when accelerator memory
+is constrained, at a performance cost.
 
 ## 11.7 Message Caching
 

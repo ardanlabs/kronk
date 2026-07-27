@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [3.1 Configuration File](#31-configuration-file)
+  - [3.1.1 Chat Templates Define the Model Protocol](#311-chat-templates-define-the-model-protocol)
 - [3.2 Automatic Tuning](#32-automatic-tuning)
 - [3.3 Core Runtime Settings](#33-core-runtime-settings)
 - [3.4 GPU and Memory Placement](#34-gpu-and-memory-placement)
@@ -87,6 +88,42 @@ native library bundle rather than a per-model setting. Kronk detects it during
 library installation. Set `KRONK_PROCESSOR` before installing libraries only
 when you need to override detection; see
 [Chapter 2 §2.4](https://www.kronkai.com/manual#24-libraries).
+
+#### 3.1.1 Chat Templates Define the Model Protocol
+
+A chat template is not cosmetic string formatting. It is executable,
+model-specific protocol logic that converts portable request data—messages,
+roles, tools, optional media, and supported reasoning controls—into the exact
+prompt syntax the model learned during training. The model never receives the
+original message objects.
+
+The correct template is therefore part of model compatibility, much like the
+tokenizer. A mismatched template can use the wrong role markers, serialize tool
+definitions incorrectly, omit media placeholders, or fail to append the cue
+that tells the model to begin an assistant response. These failures can be
+subtle: the model may still generate fluent text while instruction following,
+tool calling, reasoning, or multimodal behavior degrades.
+
+Kronk resolves the template when the model loads, in this order:
+
+1. The explicit `template` path in `model_config.yaml`.
+2. A matching Jinja file discovered under Kronk's Jinja directory.
+3. The `tokenizer.chat_template` embedded in GGUF metadata.
+
+Prefer the model's supplied template unless you are correcting known-bad
+metadata or deliberately testing a custom protocol. A template override must
+remain compatible with the model and with any tool-call output parser.
+Sampling controls such as `temperature`, `top_p`, penalties, and `max_tokens`
+do not become prompt text; they govern token selection and stopping after the
+template has rendered.
+
+[Chapter 4 §4.5](https://www.kronkai.com/manual#45-stage-2-—-prepare-model-work)
+shows this template protocol as part of Stage 2 request preparation, where the
+portable request becomes the exact prompt that Kronk tokenizes and executes.
+[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) explains
+why IMC renders the complete conversation both with and without the generation
+suffix. [Chapter 9](https://www.kronkai.com/manual#chapter-9-api-endpoints)
+documents the portable API message formats that templates consume.
 
 ### 3.2 Automatic Tuning
 
@@ -327,7 +364,7 @@ Two settings control prompt batching:
 
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
-| `nubatch` | `2048`; `4096` with MoE expert CPU offload | Physical compute chunk size |
+| `nubatch` | `2048` | Physical compute chunk size |
 | `nbatch` | `nubatch × nseq-max` | Maximum logical decode batch |
 
 Most deployments should leave both unset. Larger values can improve prompt

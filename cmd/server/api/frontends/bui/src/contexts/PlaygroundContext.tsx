@@ -88,7 +88,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [customScript, setCustomScript] = useState('');
   const [contextWindow, setContextWindow] = useState(8192);
   const [nBatch, setNBatch] = useState(2048);
-  const [nUBatch, setNUBatch] = useState(512);
+  const [nUBatch, setNUBatch] = useState(2048);
   const [nSeqMax, setNSeqMax] = useState(1);
   const [flashAttention, setFlashAttention] = useState('auto');
   const [cacheType, setCacheType] = useState('');

@@ -15,6 +15,9 @@
 
 ## 5.1 What IMC Does
 
+Chapter 4 explains where IMC participates in the generation lifecycle. This
+chapter explains how Kronk chooses reusable state and preserves it safely.
+
 Incremental Message Cache (IMC) reduces repeated prompt processing in
 multi-turn conversations. Without IMC, the model must prefill the complete
 conversation before generating each response. With IMC, Kronk can restore a
@@ -44,6 +47,13 @@ consume message objects directly. It consumes rendered tokens, media
 embeddings, and positions. Requests with apparently unchanged messages can
 render differently when tools, thinking settings, templates, media, or other
 render-affecting inputs change.
+
+The complete generation lifecycle is introduced in
+[Chapter 4 §4.3](https://www.kronkai.com/manual#43-the-generation-inference-lifecycle).
+The focused view below zooms into IMC's Stage 2 responsibility: deciding the
+safest minimum work and reserving the session that owns reusable state.
+
+![Stage 2 IMC prompt planning from dual rendering through session reservation](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/stage2-imc-prompt-planning.svg)
 
 The planning process has five steps.
 

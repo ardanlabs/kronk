@@ -72,6 +72,29 @@ func TestAdjustQueueDepthDefault(t *testing.T) {
 	}
 }
 
+func TestAdjustConfigUsesOneBatchDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+	}{
+		{"text", NewConfig(WithContextWindow(8192), WithNSeqMax(4))},
+		{"projection", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithProjFile("mmproj.gguf"))},
+		{"MoE CPU experts", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithMoE(&MoEConfig{Mode: MoEModeExpertsCPU}))},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := adjustConfig(tt.cfg, 0)
+			if got := cfg.NUBatch(); got != defNUBatch {
+				t.Errorf("NUBatch: got %d, want %d", got, defNUBatch)
+			}
+			if got, want := cfg.NBatch(), defNUBatch*cfg.NSeqMax(); got != want {
+				t.Errorf("NBatch: got %d, want %d", got, want)
+			}
+		})
+	}
+}
+
 func TestParamsStringIncludesZeroAndFalseValues(t *testing.T) {
 	got := (Params{Grammar: "secret grammar"}).String()
 	for _, want := range []string{

@@ -29,6 +29,21 @@ Kronk supports classic speculative decoding with a separate draft model and
 Multi-Token Prediction (MTP). MTP uses a prediction head designed for the
 target rather than a general-purpose smaller language model.
 
+This is a specialized Stage 4 generation loop. The drafter proposes multiple
+candidates, but the target model verifies them and remains authoritative. At a
+divergence Kronk accepts only the verified prefix and chooses a target
+replacement token; when all candidates are accepted it chooses a target bonus
+token. That final target token becomes input to the next decode and is not yet
+committed to KV state when selected.
+
+![Stage 4 speculative decoding proposal, target verification, acceptance, and state synchronization](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/stage4-speculative-decoding.svg)
+
+Classic speculative sampling uses the target and draft distributions to decide
+acceptance and replacement. Kronk's MTP path uses exact token-match verification
+against the target sampler. Both paths keep the target authoritative and emit
+an accepted prefix of zero to `ndraft` candidates followed by a target-derived
+replacement or bonus token.
+
 ### 6.2 Drafter Sources and Selection
 
 Kronk can load a drafter from three sources:

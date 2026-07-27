@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Request admission, IMC session reservation, and execution slot assignment</title>
-  <desc id="desc">A four-stage flow showing a route-wide 60-minute inference timeout, a three-minute admission-only timeout, IMC session reservation before batch scheduling, and later execution-slot assignment.</desc>
+  <title id="title">Kronk generation request lifecycle</title>
+  <desc id="desc">A four-stage flow showing request admission, preparation and IMC session reservation, batch scheduling, execution-slot assignment, model execution, and resource release.</desc>
 
   <defs>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
@@ -27,8 +27,8 @@
   <rect width="1920" height="1080" fill="#f8fafc"/>
   <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
 
-  <text class="title" x="72" y="78">REQUEST → SESSION RESERVATION → SLOT ASSIGNMENT</text>
-  <text class="subtitle" x="72" y="116">A session preserves reusable conversation state. A slot executes one request. They are different resources.</text>
+  <text class="title" x="72" y="78">KRONK GENERATION REQUEST LIFECYCLE</text>
+  <text class="subtitle" x="72" y="116">A request is admitted, prepared, scheduled, and executed through four distinct stages.</text>
 
   <!-- Stage connectors -->
   <path d="M 445 405 L 493 405" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
@@ -42,7 +42,7 @@
   <rect x="62" y="164" width="383" height="68" rx="24" fill="#ccfbf1"/>
   <path d="M 62 208 Q 62 232 86 232 H 421 Q 445 232 445 208" fill="#ccfbf1"/>
   <text class="eyebrow" x="90" y="192" fill="#0f766e">STAGE 1</text>
-  <text class="stage" x="90" y="220">HTTP + SDK ADMISSION</text>
+  <text class="stage" x="90" y="220">ADMIT REQUEST</text>
 
   <circle cx="98" cy="273" r="16" fill="#0f766e"/>
   <text class="white" x="93" y="280" style="font:700 18px Inter, sans-serif">1</text>
@@ -61,11 +61,11 @@
   <text class="mono" x="108" y="517">NSeqMax × QueueDepth</text>
   <text class="small" x="108" y="544">QueueDepth defaults to 2</text>
 
-  <rect x="88" y="578" width="329" height="108" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
-  <text class="eyebrow" x="108" y="605" fill="#c2410c">WHEN ADMISSION IS FULL</text>
-  <text class="body" x="108" y="633">Caller waits for a permit</text>
-  <text class="small" x="108" y="658">Ends on capacity or cancellation</text>
-  <text class="small" x="108" y="680">AdmissionTimeout defaults to 3m</text>
+  <rect x="88" y="570" width="329" height="125" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+  <text class="eyebrow" x="108" y="598" fill="#c2410c">WHEN ADMISSION IS FULL</text>
+  <text class="body" x="108" y="626">Caller waits for a permit</text>
+  <text class="small" x="108" y="653">Ends on capacity or cancellation</text>
+  <text class="small" x="108" y="677">AdmissionTimeout defaults to 3m</text>
 
   <!-- Stage 2 -->
   <g filter="url(#shadow)">
@@ -74,7 +74,7 @@
   <rect x="532" y="164" width="383" height="68" rx="24" fill="#dbeafe"/>
   <path d="M 532 208 Q 532 232 556 232 H 891 Q 915 232 915 208" fill="#dbeafe"/>
   <text class="eyebrow" x="560" y="192" fill="#1d4ed8">STAGE 2</text>
-  <text class="stage" x="560" y="220">PREPARE + RESERVE SESSION</text>
+  <text class="stage" x="560" y="220">PREPARE + RESERVE</text>
 
   <text class="body" x="560" y="275">Validate, render, and tokenize prompt</text>
   <text class="small" x="560" y="305">If eligible, reserve before batch submission</text>
@@ -97,9 +97,9 @@
   <rect x="558" y="562" width="331" height="55" rx="12" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
   <text class="body" x="578" y="596">Select session; mark reserved</text>
 
-  <rect x="558" y="636" width="331" height="50" rx="12" fill="#fff1f2" stroke="#fda4af" stroke-width="2"/>
-  <text class="small" x="578" y="658" style="fill:#be123c">All reserved → defensive “server busy”</text>
-  <text class="small" x="578" y="678" style="fill:#be123c">Capacity invariant should prevent this</text>
+  <rect x="558" y="630" width="331" height="62" rx="12" fill="#fff1f2" stroke="#fda4af" stroke-width="2"/>
+  <text class="small" x="578" y="655" style="fill:#be123c">All reserved → defensive “server busy”</text>
+  <text class="small" x="578" y="679" style="fill:#be123c">Capacity invariant should prevent this</text>
 
   <!-- Stage 3 -->
   <g filter="url(#shadow)">
@@ -108,7 +108,7 @@
   <rect x="1002" y="164" width="383" height="68" rx="24" fill="#ede9fe"/>
   <path d="M 1002 208 Q 1002 232 1026 232 H 1361 Q 1385 232 1385 208" fill="#ede9fe"/>
   <text class="eyebrow" x="1030" y="192" fill="#6d28d9">STAGE 3</text>
-  <text class="stage" x="1030" y="220">BATCH SCHEDULER</text>
+  <text class="stage" x="1030" y="220">SCHEDULE + WAIT</text>
 
   <rect x="1028" y="261" width="331" height="128" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
   <text class="eyebrow" x="1048" y="288" fill="#6d28d9">CHAT JOB</text>
@@ -126,9 +126,9 @@
   <text class="mono compact" x="1048" y="570">pendingJobs: FIFO waiting list</text>
   <text class="small" x="1048" y="594">scheduler chooses first inactive slot</text>
 
-  <rect x="1028" y="628" width="331" height="58" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
-  <text class="eyebrow" x="1048" y="652" fill="#c2410c">NO SLOT-WAIT TIMER</text>
-  <text class="small" x="1048" y="676">Wait ends on slot, ctx, or shutdown</text>
+  <rect x="1028" y="622" width="331" height="70" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+  <text class="eyebrow" x="1048" y="647" fill="#c2410c">NO SLOT-WAIT TIMER</text>
+  <text class="small" x="1048" y="675">Wait ends on slot, ctx, or shutdown</text>
 
   <!-- Stage 4 -->
   <g filter="url(#shadow)">
@@ -137,7 +137,7 @@
   <rect x="1472" y="164" width="383" height="68" rx="24" fill="#dcfce7"/>
   <path d="M 1472 208 Q 1472 232 1496 232 H 1831 Q 1855 232 1855 208" fill="#dcfce7"/>
   <text class="eyebrow" x="1500" y="192" fill="#15803d">STAGE 4</text>
-  <text class="stage" x="1500" y="220">EXECUTION SLOT ASSIGNED</text>
+  <text class="stage" x="1500" y="220">EXECUTE + RELEASE</text>
 
   <text class="body" x="1500" y="272">Exactly NSeqMax execution slots</text>
   <text class="small" x="1500" y="300">Each slot owns one fixed llama seqID</text>
@@ -166,7 +166,7 @@
   <rect x="92" y="811" width="505" height="86" rx="14" fill="#1e293b" stroke="#60a5fa" stroke-width="2"/>
   <text class="stage white" x="116" y="842">IMC SESSION</text>
   <text class="small white" x="116" y="870">Reusable conversation/KV identity in host storage</text>
-  <text class="small" x="116" y="891" style="fill:#bfdbfe">Reserved before the batch queue; migrates across slots</text>
+  <text class="small" x="116" y="891" style="fill:#bfdbfe">Reserved before scheduling · reusable across slots</text>
 
   <text x="625" y="866" style="font:700 42px Inter, sans-serif; fill:#94a3b8">≠</text>
 
@@ -183,7 +183,7 @@
   <!-- Completion lane -->
   <path d="M 1664 713 L 1664 738 L 254 738 L 254 716" stroke="#64748b" stroke-width="3" fill="none" stroke-dasharray="10 9" marker-end="url(#arrow)"/>
   <rect x="593" y="720" width="740" height="36" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="note" x="618" y="744">finish: unbind session · clear seqID · free slot · release admission permit</text>
+  <text class="note" x="618" y="744">finish: unbind session if used · clear seqID · free slot · release admission permit</text>
 
   <!-- Footnotes -->
   <text class="small" x="72" y="974">InferenceTimeout (default 60m) starts at route entry and bounds all four stages; AdmissionTimeout (default 3m) bounds only the permit wait.</text>

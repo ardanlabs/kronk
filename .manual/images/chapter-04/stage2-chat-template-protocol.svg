@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">A chat template defines the model's conversation protocol</title>
+  <desc id="desc">Structured request context and a model-specific Jinja chat template combine to produce the exact rendered prompt expected by the model. The template formats roles, message boundaries, tools, optional media markers, and the assistant generation cue. A correct template follows the model's training protocol; a mismatched template can produce wrong role markers, malformed tools, and a missing generation cue.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .stage { font: 700 24px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .eyebrow { font: 700 15px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.5px; }
+      .heading { font: 700 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .mono { font: 600 17px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #e2e8f0; }
+      .mono-small { font: 600 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #334155; }
+      .white { fill: #ffffff; }
+      .muted { fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
+
+  <text class="title" x="72" y="70">CHAT TEMPLATES ARE THE MODEL PROTOCOL</text>
+  <text class="subtitle" x="72" y="108">LIFECYCLE STAGE 2 · REQUEST PREPARATION — Structured conversation in, exact model dialect out.</text>
+
+  <!-- Equation connectors are behind the cards. -->
+  <path d="M 488 397 H 548" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1268 397 H 1328" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+  <circle cx="518" cy="397" r="22" fill="#0f172a"/>
+  <text x="509" y="406" style="font:700 28px Inter, sans-serif" class="white">+</text>
+  <circle cx="1298" cy="397" r="22" fill="#0f172a"/>
+  <text x="1289" y="406" style="font:700 28px Inter, sans-serif" class="white">=</text>
+
+  <!-- Input context -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="150" width="418" height="540" rx="26" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/>
+  </g>
+  <rect x="70" y="150" width="418" height="74" rx="26" fill="#dbeafe"/>
+  <path d="M 70 196 Q 70 224 98 224 H 460 Q 488 224 488 196" fill="#dbeafe"/>
+  <text class="eyebrow" x="105" y="180" fill="#1d4ed8">RUNTIME DATA</text>
+  <text class="stage" x="105" y="210">REQUEST CONTEXT</text>
+
+  <rect x="100" y="252" width="358" height="208" rx="16" fill="#0f172a"/>
+  <text class="mono" x="125" y="286">{</text>
+  <text class="mono" x="145" y="320" style="fill:#93c5fd">messages:</text>
+  <text class="mono" x="245" y="320">[</text>
+  <text class="mono" x="165" y="354">{ role: </text>
+  <text class="mono" x="275" y="354" style="fill:#86efac">"system"</text>
+  <text class="mono" x="363" y="354">, … },</text>
+  <text class="mono" x="165" y="388">{ role: </text>
+  <text class="mono" x="275" y="388" style="fill:#86efac">"user"</text>
+  <text class="mono" x="345" y="388">, … }</text>
+  <text class="mono" x="145" y="422">]</text>
+  <text class="mono" x="125" y="446">}</text>
+
+  <rect x="100" y="480" width="358" height="53" rx="12" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="eyebrow" x="122" y="512" fill="#6d28d9">TOOLS + TOOL RESULTS · OPTIONAL</text>
+  <rect x="100" y="548" width="358" height="53" rx="12" fill="#ecfeff" stroke="#67e8f9" stroke-width="2"/>
+  <text class="eyebrow" x="122" y="580" fill="#0e7490">TEXT + MEDIA PARTS · OPTIONAL</text>
+  <rect x="100" y="616" width="358" height="46" rx="12" fill="#fffbeb" stroke="#fbbf24" stroke-width="2"/>
+  <text class="small" x="122" y="645">thinking · reasoning · generation flag</text>
+
+  <!-- Jinja template -->
+  <g filter="url(#shadow)">
+    <rect x="550" y="150" width="718" height="540" rx="26" fill="#ffffff" stroke="#c4b5fd" stroke-width="3"/>
+  </g>
+  <rect x="550" y="150" width="718" height="74" rx="26" fill="#ede9fe"/>
+  <path d="M 550 196 Q 550 224 578 224 H 1240 Q 1268 224 1268 196" fill="#ede9fe"/>
+  <text class="eyebrow" x="585" y="180" fill="#6d28d9">MODEL-SPECIFIC PROGRAM</text>
+  <text class="stage" x="585" y="210">JINJA CHAT TEMPLATE</text>
+  <rect x="585" y="252" width="648" height="334" rx="16" fill="#0f172a"/>
+
+  <text class="mono" x="615" y="292" style="fill:#c4b5fd">{% for message in messages %}</text>
+  <text class="mono" x="645" y="330">{{ role_start[message.role] }}</text>
+  <text class="mono" x="645" y="368">{{ render_content(message.content) }}</text>
+  <text class="mono" x="645" y="406">{{ role_end }}</text>
+  <text class="mono" x="615" y="444" style="fill:#c4b5fd">{% endfor %}</text>
+  <text class="mono" x="615" y="492" style="fill:#5eead4">{% if tools %}</text>
+  <text class="mono" x="645" y="530">{{ render_tools(tools) }}</text>
+  <text class="mono" x="615" y="568" style="fill:#5eead4">{% endif %}</text>
+  <text class="mono" x="875" y="492" style="fill:#fbbf24">{% if add_generation_prompt %}</text>
+  <text class="mono" x="905" y="530">{{ assistant_start }}</text>
+  <text class="mono" x="875" y="568" style="fill:#fbbf24">{% endif %}</text>
+
+  <text class="small" x="585" y="619">Illustrative Jinja—the selected model defines the real rules and markers.</text>
+  <rect x="585" y="638" width="648" height="34" rx="12" fill="#f5f3ff"/>
+  <text class="mono-small" x="605" y="661">explicit override → discovered Jinja file → GGUF chat template</text>
+
+  <!-- Rendered output -->
+  <g filter="url(#shadow)">
+    <rect x="1330" y="150" width="518" height="540" rx="26" fill="#ffffff" stroke="#5eead4" stroke-width="3"/>
+  </g>
+  <rect x="1330" y="150" width="518" height="74" rx="26" fill="#ccfbf1"/>
+  <path d="M 1330 196 Q 1330 224 1358 224 H 1820 Q 1848 224 1848 196" fill="#ccfbf1"/>
+  <text class="eyebrow" x="1365" y="180" fill="#0f766e">EXACT MODEL DIALECT</text>
+  <text class="stage" x="1365" y="210">RENDERED PROMPT</text>
+
+  <rect x="1360" y="252" width="458" height="334" rx="16" fill="#0f172a"/>
+  <text class="mono" x="1390" y="294" style="fill:#5eead4">&lt;|system|&gt;</text>
+  <text class="mono" x="1390" y="330">You are a helpful assistant.</text>
+  <text class="mono" x="1390" y="366" style="fill:#94a3b8">&lt;|end|&gt;</text>
+  <text class="mono" x="1390" y="414" style="fill:#5eead4">&lt;|tools|&gt;</text>
+  <text class="mono" x="1390" y="450">{"name":"get_weather", …}</text>
+  <text class="mono" x="1390" y="486" style="fill:#94a3b8">&lt;|end|&gt;</text>
+  <text class="mono" x="1390" y="534" style="fill:#5eead4">&lt;|user|&gt; Weather in SF?</text>
+  <text class="mono" x="1390" y="570" style="fill:#fbbf24">&lt;|assistant_start|&gt;</text>
+
+  <rect x="1360" y="608" width="458" height="54" rx="12" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text class="heading" x="1385" y="642">This string is tokenized and sent to the model</text>
+
+  <!-- Why this matters -->
+  <rect x="70" y="730" width="1778" height="264" rx="26" fill="#0f172a"/>
+  <text class="eyebrow" x="105" y="766" fill="#5eead4">WHY THE TEMPLATE IS CRITICAL</text>
+  <text class="heading white" x="105" y="802">The template is part of model compatibility—not cosmetic presentation.</text>
+
+  <rect x="105" y="830" width="788" height="128" rx="18" fill="#052e2b" stroke="#2dd4bf" stroke-width="3"/>
+  <circle cx="145" cy="870" r="20" fill="#16a34a"/>
+  <path d="M 135 870 L 143 878 L 157 861" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text class="eyebrow" x="180" y="858" fill="#86efac">CORRECT TEMPLATE</text>
+  <text class="body white" x="180" y="890">Expected role tokens · valid tool syntax · correct media markers</text>
+  <text class="small" x="180" y="925" style="fill:#99f6e4">The model sees the same conversation protocol used during training.</text>
+
+  <rect x="1025" y="830" width="788" height="128" rx="18" fill="#450a0a" stroke="#fb7185" stroke-width="3"/>
+  <circle cx="1065" cy="870" r="20" fill="#e11d48"/>
+  <path d="M 1057 862 L 1073 878 M 1073 862 L 1057 878" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+  <text class="eyebrow" x="1100" y="858" fill="#fda4af">MISMATCHED TEMPLATE</text>
+  <text class="body white" x="1100" y="890">Wrong role markers · malformed tools · missing answer cue</text>
+  <text class="small" x="1100" y="925" style="fill:#fecdd3">Responses may degrade or fail even though the model still generates text.</text>
+
+  <text class="small muted" x="72" y="1034">Message JSON is a portable API contract. The chat template translates it into the selected model's non-portable conversation protocol.</text>
+  <text class="small muted" x="72" y="1058">Tool, reasoning, and media behavior requires a compatible model, template, projection, and output parser.</text>
+</svg>
