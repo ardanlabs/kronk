@@ -15,6 +15,9 @@
 
 ## 5.1 What IMC Does
 
+Chapter 4 explains where IMC participates in the generation lifecycle. This
+chapter explains how Kronk chooses reusable state and preserves it safely.
+
 Incremental Message Cache (IMC) reduces repeated prompt processing in
 multi-turn conversations. Without IMC, the model must prefill the complete
 conversation before generating each response. With IMC, Kronk can restore a
@@ -44,6 +47,13 @@ consume message objects directly. It consumes rendered tokens, media
 embeddings, and positions. Requests with apparently unchanged messages can
 render differently when tools, thinking settings, templates, media, or other
 render-affecting inputs change.
+
+The complete generation lifecycle is introduced in
+[Chapter 4 §4.3](https://www.kronkai.com/manual#43-the-generation-inference-lifecycle).
+The focused view below zooms into IMC's Stage 2 responsibility: deciding the
+safest minimum work and reserving the session that owns reusable state.
+
+![Stage 2 IMC prompt planning from dual rendering through session reservation](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/stage2-imc-prompt-planning.svg)
 
 The planning process has five steps.
 
@@ -190,18 +200,18 @@ failure; it means only that the request receives no saved-prefill benefit.
 
 Planning and execution do not happen at the same instant. A request may wait
 for an execution slot after selecting a session, so Kronk immediately marks the
-session pending while holding the cache lock:
+session reserved while holding the cache lock:
 
 ```text
 select session -> reserve -> restore/extend/snapshot/generate -> release
 ```
 
-Other planners skip pending sessions. Reservations apply to exact matches,
+Other planners skip reserved sessions. Reservations apply to exact matches,
 appends, media anchors, empty sessions selected for rebuild, and LRU sessions
 selected for replacement. Even an exact match needs a reservation: another
 request must not rebuild or replace its snapshot between selection and restore.
 
-If every session is pending, Kronk returns a retryable busy error rather than
+If every session is reserved, Kronk returns a retryable busy error rather than
 evicting an active session. The reservation also prevents a partially updated
 session from becoming visible. Snapshot bytes and metadata must describe the
 same stable prefix before the session can be selected again.
@@ -267,21 +277,29 @@ An IMC **session** is a reusable conversation identity and its saved model
 state. An execution **slot** is a lane that can actively run a request. These
 are deliberately separate:
 
-- Kronk retains up to `nseq-max × 3` IMC sessions.
+- Kronk retains `max(nseq-max, 1) × max(3, queue-depth)` IMC sessions.
 - Only `nseq-max` requests can decode concurrently.
 - A session can be restored into any available execution slot; it is not tied
   permanently to one slot.
 - Session storage is allocated lazily as conversations begin using it.
 
-For example, `nseq-max: 2` provides two concurrent decode slots and up to six
-warm IMC session identities. Raising `nseq-max` also increases the unified KV
-cache capacity and its memory cost, so do not raise it solely to retain more
-conversation branches without considering the effects described in
+For example, `nseq-max: 2` with the default `queue-depth: 2` provides two
+concurrent decode slots and six warm IMC session identities. A queue depth
+greater than 3 expands the session pool so it remains at least as large as the
+generation admission capacity. Raising `nseq-max` also increases the unified
+KV cache capacity and its memory cost, so do not raise it solely to retain
+more conversation branches without considering the effects described in
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing).
+
+Admission waiting is controlled separately by the per-model
+`admission-timeout` setting (default `3m`). It only bounds the wait for an SDK
+admission permit. The server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`)
+instead bounds admitted preparation, slot waiting, and inference; neither
+setting changes IMC session retention.
 
 Kronk reserves a session as soon as it selects it for an exact match, append,
 or rebuild. Other requests cannot select that identity while the reservation
-is pending. If all session identities are pending, the request returns a busy
+is held. If all session identities are reserved, the request returns a busy
 error and should be retried. Kronk does not evict an active session to make
 room.
 

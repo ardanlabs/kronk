@@ -41,7 +41,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	m.cacheMu.Lock()
 	var match, empty, lru *imcSession
 	for _, session := range m.imcSessions {
-		if session.pending {
+		if session.reserved {
 			continue
 		}
 		if session.totalTokensCached == 0 {
@@ -93,7 +93,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 			if !result.imcMediaAnchorAdvance {
 				result.imcTailTokens = slices.Clone(actualTail)
 			}
-			match.pending = true
+			match.reserved = true
 		}
 	}
 	if selected == nil {
@@ -107,7 +107,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 			return result
 		}
 		imcResetSession(selected)
-		selected.pending = true
+		selected.reserved = true
 		result.imcMediaBuild = true
 		result.imcClearSeq = true
 	}

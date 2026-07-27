@@ -237,6 +237,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if len(src.Adapters) > 0 {
 		dst.Adapters = src.Adapters
 	}
+	if src.PtrAdmissionTimeout != nil {
+		dst.PtrAdmissionTimeout = src.PtrAdmissionTimeout
+	}
 	if src.Template != "" {
 		dst.Template = src.Template
 	}
@@ -272,6 +275,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	}
 	if src.PtrNSeqMax != nil {
 		dst.PtrNSeqMax = src.PtrNSeqMax
+	}
+	if src.PtrQueueDepth != nil {
+		dst.PtrQueueDepth = src.PtrQueueDepth
 	}
 	if src.PtrOffloadKQV != nil {
 		dst.PtrOffloadKQV = src.PtrOffloadKQV
@@ -311,9 +317,6 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	}
 	if src.PtrCacheMinTokens != nil {
 		dst.PtrCacheMinTokens = src.PtrCacheMinTokens
-	}
-	if src.PtrCacheSlotTimeout != nil {
-		dst.PtrCacheSlotTimeout = src.PtrCacheSlotTimeout
 	}
 	if src.SessionStoreDir != "" {
 		dst.SessionStoreDir = src.SessionStoreDir

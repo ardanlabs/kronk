@@ -7,20 +7,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	cfg := Config{
-		AutoTune:      true,
-		DefaultParams: Params{Grammar: "secret grammar"},
-		PtrQueueDepth: new(7),
+		AutoTune:            true,
+		DefaultParams:       Params{Grammar: "secret grammar"},
+		PtrAdmissionTimeout: new(5 * time.Minute),
+		PtrQueueDepth:       new(7),
 	}
 
 	got := cfg.String()
 	for _, want := range []string{
 		"AutoTune[true]",
+		"AdmissionTimeout[5m0s]",
 		"DefaultParams[",
 		"grammar[true]",
 		"QueueDepth[7]",
@@ -34,10 +37,61 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	}
 }
 
-func TestConfigStringUsesEffectiveQueueDepthDefault(t *testing.T) {
-	got := (Config{}).String()
-	if !strings.Contains(got, "QueueDepth[2]") {
-		t.Errorf("Config.String() missing effective queue-depth default in %q", got)
+func TestAdjustAdmissionTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want time.Duration
+	}{
+		{"unset defaults", Config{}, defaultAdmissionTimeout},
+		{"zero defaults", NewConfig(WithAdmissionTimeout(0)), defaultAdmissionTimeout},
+		{"override preserved", NewConfig(WithAdmissionTimeout(45 * time.Second)), 45 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := adjustAdmissionTimeout(tt.cfg)
+			if got := cfg.AdmissionTimeout(); got != tt.want {
+				t.Errorf("AdmissionTimeout: got %s, want %s", got, tt.want)
+			}
+		})
+	}
+
+	if got := (Config{}).String(); !strings.Contains(got, "AdmissionTimeout[nil]") {
+		t.Errorf("unadjusted Config.String() = %q, want nil admission timeout diagnostic", got)
+	}
+}
+
+func TestAdjustQueueDepthDefault(t *testing.T) {
+	cfg := adjustQueueDepth(Config{})
+	if got := cfg.QueueDepth(); got != defaultQueueDepth {
+		t.Errorf("QueueDepth: got %d, want %d", got, defaultQueueDepth)
+	}
+	if !strings.Contains(cfg.String(), "QueueDepth[2]") {
+		t.Errorf("adjusted Config.String() missing effective queue-depth default in %q", cfg.String())
+	}
+}
+
+func TestAdjustConfigUsesOneBatchDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+	}{
+		{"text", NewConfig(WithContextWindow(8192), WithNSeqMax(4))},
+		{"projection", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithProjFile("mmproj.gguf"))},
+		{"MoE CPU experts", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithMoE(&MoEConfig{Mode: MoEModeExpertsCPU}))},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := adjustConfig(tt.cfg, 0)
+			if got := cfg.NUBatch(); got != defNUBatch {
+				t.Errorf("NUBatch: got %d, want %d", got, defNUBatch)
+			}
+			if got, want := cfg.NBatch(), defNUBatch*cfg.NSeqMax(); got != want {
+				t.Errorf("NBatch: got %d, want %d", got, want)
+			}
+		})
 	}
 }
 
@@ -276,6 +330,14 @@ func TestValidateConfig(t *testing.T) {
 		{"duplicate adapter path is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithAdapters([]AdapterConfig{{Path: adapterFile, Scale: 1}, {Path: adapterFile, Scale: 0.5}}),
+		), true},
+		{"negative queue depth is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithQueueDepth(-1),
+		), true},
+		{"negative admission timeout is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithAdmissionTimeout(-time.Second),
 		), true},
 	}
 	{

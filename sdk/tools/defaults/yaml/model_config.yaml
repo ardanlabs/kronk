@@ -3,7 +3,8 @@
 #
 # example-model:
 #   cache-min-tokens: 100                # Min tokens before IMC caches a message (default: 100)
-#   cache-slot-timeout: 30               # Seconds to wait when all IMC sessions are reserved (default: 30)
+#   admission-timeout: 3m                # Maximum wait for an SDK admission permit (default: 3m)
+#   queue-depth: 2                       # Generation admission capacity multiplier (default: 2)
 #   cache-type-k: q8_0                   # KV cache key type: f32, f16, q8_0, q4_0, q4_1, q5_0, q5_1, bf16, auto
 #   cache-type-v: q8_0                   # KV cache value type: f32, f16, q8_0, q4_0, q4_1, q5_0, q5_1, bf16, auto
 #   context-window: 8192                 # Max tokens model can process (default: 8192)
@@ -12,12 +13,12 @@
 #   incremental-cache: true              # Incremental message caching (IMC) for agentic workflows (default: true)
 #   insecure-logging: false              # Log potentially sensitive data like message content (debug only)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
-#   nbatch: 2048                         # Logical batch size (default: 2048)
+#   nbatch: 2048                         # Logical batch size (default: nubatch * nseq-max)
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   nseq-max: 0                          # Max parallel sequences for batched inference (0 = default 1)
 #   nthreads: 0                          # Threads for generation (0 = llama.cpp default)
 #   nthreads-batch: 0                    # Threads for batch processing (0 = llama.cpp default)
-#   nubatch: 512                         # Physical batch size for prompt ingestion (default: 512)
+#   nubatch: 2048                        # Physical batch size for prompt ingestion (default: 2048)
 #   numa: distribute                     # NUMA strategy: "" (off), distribute, isolate, numactl, mirror
 #   offload-kqv: true                    # Offload KV cache to GPU (false = keep on CPU)
 #   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)

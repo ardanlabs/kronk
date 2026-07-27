@@ -1,13 +1,11 @@
 package model
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -31,10 +29,9 @@ type cacheResult struct {
 	// via SessionStore between requests, so the matched session may run
 	// on any free execution slot — the slot is chosen by the scheduler
 	// at startSlot. imcSessionID identifies the matched session pool
-	// entry (used by imcClearPending lookup and log correlation).
+	// entry (used by imcReleaseReservation lookup and log correlation).
 	imcSessionID    int    // Session-pool index (== imcSession.id) of the matched session.
-	imcExpectedHash string // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
-	imcPending      bool   // True if the matched session was already pending (caller should retry)
+	imcExpectedHash string // Expected cachedMsgsHash for stale detection at startSlot
 
 	// Pure-hit snapshot-skip state. Token-v2 exact matches retain an exclusive
 	// reservation through restore and generation, so the externalized bytes
@@ -61,28 +58,12 @@ type cacheResult struct {
 	imcNewMsgsHash       string        // New cachedMsgsHash after extension
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild from scratch)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
-	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
-	imcSysPromptHash     string        // Hash of system prompt message for the new cache state
-	imcSysPromptTokens   int           // Token count of the system prompt in the new cache state
 
 	// IMC media cache build — deferred to startSlot because media decoding
 	// requires the mtmd pipeline (projection model + embedding decode).
-	imcMediaBuild          bool  // True if cache build requires the mtmd pipeline (images/audio in cached messages)
-	imcMediaCacheD         D     // Document with cacheable messages + tools for media cache build
-	imcMediaKVCounts       []int // Media KV position counts to preserve during text-only media extend
-	imcMediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
-}
-
-// processCache runs the legacy message-boundary cache planner. The chat path
-// uses complete-prompt token-v2 planning before reaching this fallback.
-//
-// This function is thread-safe and handles concurrent requests appropriately.
-func (m *Model) processCache(ctx context.Context, d D, requestStart time.Time) cacheResult {
-	if !m.cfg.IncrementalCache() {
-		return cacheResult{modifiedD: d}
-	}
-
-	return m.processIMC(ctx, d, requestStart)
+	imcMediaBuild    bool  // True if cache build requires the mtmd pipeline (images/audio in cached messages)
+	imcMediaCacheD   D     // Document with cacheable messages + tools for media cache build
+	imcMediaKVCounts []int // Media KV position counts to preserve during text-only media extend
 }
 
 // clearCaches clears all cached prompt states.
@@ -102,20 +83,6 @@ func (m *Model) clearCaches() {
 }
 
 // =============================================================================
-
-// cacheableMessage contains information about a message that can be cached.
-type cacheableMessage struct {
-	role    string
-	content string
-}
-
-// hashMessage computes a SHA-256 hash of a message.
-// Includes the role in the hash to differentiate between same content with different roles.
-func hashMessage(cm cacheableMessage) string {
-	data := fmt.Sprintf("%s:%s", cm.role, cm.content)
-	h := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(h[:])
-}
 
 // hashMessages computes a SHA-256 hash of a slice of messages.
 // Used by IMC to validate that the cached prefix matches the current request.
@@ -211,71 +178,6 @@ func textFromPart(part any) string {
 	return text
 }
 
-// removeFirstNMessages removes the first n messages from d.
-func removeFirstNMessages(d D, n int) D {
-	messages, ok := d["messages"].([]D)
-	if !ok || len(messages) == 0 || n <= 0 {
-		return d
-	}
-
-	if n >= len(messages) {
-		d["messages"] = []D{
-			{"role": RoleUser, "content": "Tell the user you are ready to help them."},
-		}
-		return d
-	}
-
-	newMessages := make([]D, len(messages)-n)
-	copy(newMessages, messages[n:])
-
-	// Remove tools and system-level keys from the suffix document. These
-	// were already rendered in the cached prefix. Re-rendering them in the
-	// suffix causes a duplicate system/tools header mid-conversation, which
-	// corrupts the prompt and causes models (e.g., Gemma 4) to loop on
-	// tool calls or stop generating prematurely.
-	delete(d, "tools")
-	delete(d, "tool_choice")
-
-	d["messages"] = newMessages
-
-	return d
-}
-
-// removeMessagesAtIndices returns D with messages at the specified indices removed.
-// If no messages remain after removal, adds a default user message prompting the
-// agent to greet the user. Mutates d in place.
-func removeMessagesAtIndices(d D, indices []int) D {
-	messages, ok := d["messages"].([]D)
-	if !ok || len(messages) == 0 || len(indices) == 0 {
-		return d
-	}
-
-	// Build a set of indices to remove for O(1) lookup.
-	removeSet := make(map[int]bool, len(indices))
-	for _, idx := range indices {
-		removeSet[idx] = true
-	}
-
-	// Build new messages slice excluding removed indices.
-	newMessages := make([]D, 0, len(messages)-len(indices))
-	for i, msg := range messages {
-		if !removeSet[i] {
-			newMessages = append(newMessages, msg)
-		}
-	}
-
-	// If no messages remain, add a prompt for the agent to greet the user.
-	if len(newMessages) == 0 {
-		newMessages = []D{
-			{"role": RoleUser, "content": "Tell the user you are ready to help them."},
-		}
-	}
-
-	d["messages"] = newMessages
-
-	return d
-}
-
 // =============================================================================
 
 // imcRenderFingerprintInput is the canonical render-input structure hashed by
@@ -295,13 +197,12 @@ type imcRenderFingerprintInput struct {
 // imcRenderFingerprint computes a SHA-256 fingerprint of the logical inputs
 // that determine what the Jinja template will render for an IMC prefix:
 // template script, add_generation_prompt=false (the IMC fixed setting),
-// preserve_thinking, the cacheable message slice (post imcEnsureUserMessage),
+// preserve_thinking, the cached message slice,
 // and top-level tools.
 //
 // Returned ok=false on marshal failure so callers can disable any optimization
-// that depends on a stable fingerprint. This is stricter than hashMessages,
-// which intentionally ignores tools and assistant tool-call metadata for
-// hit-selection scope. Used as the safety guard for IMCPureHitSnapshotSkip.
+// that depends on a stable fingerprint. Used as the safety guard for
+// IMCPureHitSnapshotSkip.
 func (m *Model) imcRenderFingerprint(d D, msgs []D) (string, bool) {
 	templateSum := sha256.Sum256([]byte(m.template.Script))
 

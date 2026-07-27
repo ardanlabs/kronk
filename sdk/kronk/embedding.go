@@ -26,10 +26,6 @@ func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse
 		return model.EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")
 	}
 
-	if _, exists := ctx.Deadline(); !exists {
-		return model.EmbedReponse{}, fmt.Errorf("embeddings: context has no deadline, provide a reasonable timeout")
-	}
-
 	f := func(m *model.Model) (model.EmbedReponse, error) {
 		return m.Embeddings(ctx, d)
 	}
@@ -39,10 +35,6 @@ func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse
 
 // EmbeddingsHTTP provides http handler support for an embeddings call.
 func (krn *Kronk) EmbeddingsHTTP(ctx context.Context, log Logger, w http.ResponseWriter, d model.D) (model.EmbedReponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return model.EmbedReponse{}, fmt.Errorf("embeddings-http: context has no deadline, provide a reasonable timeout")
-	}
-
 	resp, err := krn.Embeddings(ctx, d)
 	if err != nil {
 		return model.EmbedReponse{}, fmt.Errorf("embeddings-http: stream-response: %w", err)

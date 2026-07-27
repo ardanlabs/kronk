@@ -62,7 +62,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		nSlots:     nSlots,
 		slots:      slots,
 		batch:      batch,
-		requestQ:   make(chan *chatJob, nSlots*2),
+		requestQ:   make(chan *chatJob, nSlots*m.cfg.QueueDepth()),
 		wakeCh:     make(chan struct{}, 1),
 		shutdownCh: make(chan struct{}),
 	}

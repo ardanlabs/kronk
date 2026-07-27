@@ -1,0 +1,181 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">How nbatch and nubatch control text prefill batching</title>
+  <desc id="desc">Four active text-generation slots contribute uncached prompt tokens to a shared logical tray. On each scheduler visit, a slot contributes the minimum of its remaining prompt tokens, available nbatch tray space, and nubatch. The scheduler makes additional sweeps while room remains. The logical batch is sent through llama Decode and processed in physical chunks no larger than nubatch, updating isolated sequence state in the shared KV pool.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .stage { font: 700 23px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .eyebrow { font: 700 15px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.4px; }
+      .heading { font: 700 20px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .mono { font: 600 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1e293b; }
+      .white { fill: #ffffff; }
+      .muted { fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
+
+  <text class="title" x="72" y="70">PREFILL BATCHING: NBATCH + NUBATCH</text>
+  <text class="subtitle" x="72" y="108">LIFECYCLE STAGE 4 · MODEL EXECUTION — Fair logical tray fill, then bounded physical compute.</text>
+
+  <!-- Definitions -->
+  <rect x="1040" y="42" width="380" height="68" rx="16" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <rect x="1058" y="58" width="36" height="36" rx="8" fill="#2563eb"/>
+  <text class="eyebrow" x="1110" y="69" fill="#1d4ed8">NUBATCH</text>
+  <text class="small" x="1110" y="94">Per scheduler visit + physical chunk ceiling</text>
+  <rect x="1440" y="42" width="408" height="68" rx="16" fill="#ecfeff" stroke="#5eead4" stroke-width="2"/>
+  <rect x="1458" y="58" width="36" height="36" rx="8" fill="#0f766e"/>
+  <text class="eyebrow" x="1510" y="69" fill="#0f766e">NBATCH</text>
+  <text class="small" x="1510" y="94">Total tokens in one shared logical batch</text>
+
+  <!-- Main connectors behind cards -->
+  <path d="M 500 430 H 548" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1130 430 H 1178" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- Step 1: active slots -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="150" width="430" height="610" rx="26" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/>
+  </g>
+  <rect x="70" y="150" width="430" height="72" rx="26" fill="#dbeafe"/>
+  <path d="M 70 194 Q 70 222 98 222 H 472 Q 500 222 500 194" fill="#dbeafe"/>
+  <text class="eyebrow" x="104" y="180" fill="#1d4ed8">STEP 1</text>
+  <text class="stage" x="104" y="208">ACTIVE SLOTS · UNCACHED TOKENS</text>
+
+  <rect x="100" y="250" width="370" height="92" rx="16" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <rect x="100" y="360" width="370" height="92" rx="16" fill="#ecfdf5" stroke="#34d399" stroke-width="2"/>
+  <rect x="100" y="470" width="370" height="92" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
+  <rect x="100" y="580" width="370" height="92" rx="16" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+
+  <rect x="120" y="271" width="48" height="48" rx="12" fill="#2563eb"/>
+  <rect x="120" y="381" width="48" height="48" rx="12" fill="#059669"/>
+  <rect x="120" y="491" width="48" height="48" rx="12" fill="#ea580c"/>
+  <rect x="120" y="601" width="48" height="48" rx="12" fill="#7c3aed"/>
+  <text x="137" y="304" style="font:700 22px Inter, sans-serif" class="white">0</text>
+  <text x="137" y="414" style="font:700 22px Inter, sans-serif" class="white">1</text>
+  <text x="137" y="524" style="font:700 22px Inter, sans-serif" class="white">2</text>
+  <text x="137" y="634" style="font:700 22px Inter, sans-serif" class="white">3</text>
+
+  <text class="heading" x="190" y="284">Slot 0 · sequence 0</text>
+  <text class="small" x="190" y="316">3,000 prompt tokens remaining</text>
+  <text class="heading" x="190" y="394">Slot 1 · sequence 1</text>
+  <text class="small" x="190" y="426">2,600 prompt tokens remaining</text>
+  <text class="heading" x="190" y="504">Slot 2 · sequence 2</text>
+  <text class="small" x="190" y="536">1,200 prompt tokens remaining</text>
+  <text class="heading" x="190" y="614">Slot 3 · sequence 3</text>
+  <text class="small" x="190" y="646">2,400 prompt tokens remaining</text>
+
+  <rect x="100" y="696" width="370" height="42" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="small" x="120" y="723">Each color follows one isolated llama sequence.</text>
+
+  <!-- Step 2: scheduler and tray -->
+  <g filter="url(#shadow)">
+    <rect x="550" y="150" width="580" height="610" rx="26" fill="#ffffff" stroke="#c4b5fd" stroke-width="3"/>
+  </g>
+  <rect x="550" y="150" width="580" height="72" rx="26" fill="#ede9fe"/>
+  <path d="M 550 194 Q 550 222 578 222 H 1102 Q 1130 222 1130 194" fill="#ede9fe"/>
+  <text class="eyebrow" x="584" y="180" fill="#6d28d9">STEP 2</text>
+  <text class="stage" x="584" y="208">ROUND-ROBIN TRAY FILL</text>
+
+  <rect x="580" y="246" width="520" height="60" rx="14" fill="#0f172a"/>
+  <text class="mono white" x="606" y="283">take = min(remaining, tray space, nubatch)</text>
+
+  <text class="eyebrow" x="584" y="340" fill="#6d28d9">SWEEP 1 · NUBATCH = 2048</text>
+  <rect x="580" y="359" width="520" height="57" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <rect x="580" y="426" width="520" height="57" rx="12" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <rect x="580" y="493" width="520" height="57" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+  <rect x="580" y="560" width="520" height="57" rx="12" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="mono" x="604" y="394">seq 0  →  2048 tokens</text>
+  <text class="small" x="870" y="393">tray: 2048 / 8192</text>
+  <text class="mono" x="604" y="461">seq 1  →  2048 tokens</text>
+  <text class="small" x="870" y="460">tray: 4096 / 8192</text>
+  <text class="mono" x="604" y="528">seq 2  →  1200 tokens</text>
+  <text class="small" x="870" y="527">tray: 5296 / 8192</text>
+  <text class="mono" x="604" y="595">seq 3  →  2048 tokens</text>
+  <text class="small" x="870" y="594">tray: 7344 / 8192</text>
+
+  <rect x="580" y="635" width="520" height="92" rx="14" fill="#fffbeb" stroke="#fbbf24" stroke-width="2"/>
+  <text class="eyebrow" x="604" y="665" fill="#b45309">SWEEP 2 · ROOM REMAINS</text>
+  <text class="body" x="604" y="696">seq 0 adds 848 more → tray reaches 8192 / 8192</text>
+  <text class="small" x="604" y="718">nubatch caps one visit—not total contribution to this tray.</text>
+
+  <!-- Step 3: model execution and KV -->
+  <g filter="url(#shadow)">
+    <rect x="1180" y="150" width="668" height="610" rx="26" fill="#ffffff" stroke="#5eead4" stroke-width="3"/>
+  </g>
+  <rect x="1180" y="150" width="668" height="72" rx="26" fill="#ccfbf1"/>
+  <path d="M 1180 194 Q 1180 222 1208 222 H 1820 Q 1848 222 1848 194" fill="#ccfbf1"/>
+  <text class="eyebrow" x="1214" y="180" fill="#0f766e">STEP 3</text>
+  <text class="stage" x="1214" y="208">LOGICAL BATCH → PHYSICAL COMPUTE → KV</text>
+
+  <text class="eyebrow" x="1214" y="260" fill="#0f766e">ONE LLAMA.DECODE CALL · NBATCH = 8192</text>
+  <rect x="1214" y="280" width="600" height="62" rx="14" fill="#ecfeff" stroke="#5eead4" stroke-width="2"/>
+  <rect x="1230" y="296" width="142" height="30" rx="8" fill="#93c5fd"/>
+  <rect x="1372" y="296" width="142" height="30" rx="8" fill="#6ee7b7"/>
+  <rect x="1514" y="296" width="83" height="30" rx="8" fill="#fdba74"/>
+  <rect x="1597" y="296" width="142" height="30" rx="8" fill="#c4b5fd"/>
+  <rect x="1739" y="296" width="59" height="30" rx="8" fill="#93c5fd"/>
+  <text class="small" x="1244" y="319">s0 · 2048</text>
+  <text class="small" x="1386" y="319">s1 · 2048</text>
+  <text class="small" x="1519" y="319">s2 · 1200</text>
+  <text class="small" x="1611" y="319">s3 · 2048</text>
+  <text class="small" x="1752" y="319">848</text>
+
+  <path d="M 1514 350 V 384" stroke="#334155" stroke-width="4" marker-end="url(#arrow)"/>
+  <text class="eyebrow" x="1214" y="406" fill="#1d4ed8">BACKEND PHYSICAL CHUNKS · EACH ≤ NUBATCH = 2048</text>
+  <rect x="1214" y="426" width="138" height="68" rx="12" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <rect x="1368" y="426" width="138" height="68" rx="12" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <rect x="1522" y="426" width="138" height="68" rx="12" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <rect x="1676" y="426" width="138" height="68" rx="12" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="mono" x="1240" y="466">chunk 1</text>
+  <text class="mono" x="1394" y="466">chunk 2</text>
+  <text class="mono" x="1548" y="466">chunk 3</text>
+  <text class="mono" x="1702" y="466">chunk 4</text>
+
+  <rect x="1214" y="518" width="600" height="50" rx="13" fill="#0f172a"/>
+  <text class="body white" x="1285" y="550">Model compute runs on CPU or a compatible accelerator</text>
+  <path d="M 1514 576 V 608" stroke="#334155" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <rect x="1214" y="620" width="600" height="107" rx="16" fill="#ecfdf5" stroke="#4ade80" stroke-width="2"/>
+  <text class="eyebrow" x="1240" y="650" fill="#15803d">SHARED KV POOL · STATE ISOLATED BY SEQUENCE ID</text>
+  <rect x="1240" y="670" width="126" height="32" rx="8" fill="#93c5fd"/>
+  <rect x="1381" y="670" width="126" height="32" rx="8" fill="#6ee7b7"/>
+  <rect x="1522" y="670" width="126" height="32" rx="8" fill="#fdba74"/>
+  <rect x="1663" y="670" width="126" height="32" rx="8" fill="#c4b5fd"/>
+  <text class="small" x="1272" y="692">seq 0 KV</text>
+  <text class="small" x="1413" y="692">seq 1 KV</text>
+  <text class="small" x="1554" y="692">seq 2 KV</text>
+  <text class="small" x="1695" y="692">seq 3 KV</text>
+
+  <!-- Summary strip -->
+  <rect x="70" y="800" width="1778" height="202" rx="26" fill="#0f172a"/>
+  <text class="eyebrow" x="105" y="837" fill="#5eead4">HOW THE SETTINGS WORK TOGETHER</text>
+
+  <rect x="105" y="862" width="505" height="104" rx="16" fill="#1e293b" stroke="#60a5fa" stroke-width="2"/>
+  <text class="heading white" x="135" y="895">nubatch = 2048</text>
+  <text class="small white" x="135" y="926">At most 2048 tokens from one slot per scheduler visit.</text>
+  <text class="small" x="135" y="951" style="fill:#bfdbfe">Also bounds each backend physical chunk.</text>
+
+  <rect x="640" y="862" width="505" height="104" rx="16" fill="#1e293b" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="heading white" x="670" y="895">nbatch = 8192</text>
+  <text class="small white" x="670" y="926">At most 8192 total tokens in the logical tray.</text>
+  <text class="small" x="670" y="951" style="fill:#99f6e4">Generated/speculative tokens take capacity first.</text>
+
+  <rect x="1175" y="862" width="638" height="104" rx="16" fill="#1e293b" stroke="#fbbf24" stroke-width="2"/>
+  <text class="heading white" x="1205" y="895">Default: nbatch = nubatch × nseq-max</text>
+  <text class="small white" x="1205" y="926">With prefill-only work, every active slot can contribute one full</text>
+  <text class="small" x="1205" y="951" style="fill:#fde68a">nubatch chunk before the default tray fills.</text>
+
+  <text class="small muted" x="72" y="1044">Ordinary text prefill shown. Media prefill, M-RoPE, embeddings, reranking, and speculative verification use specialized batching paths.</text>
+  <text class="small muted" x="72" y="1067">Most users should leave both values unset; larger physical chunks and logical batches require larger compute buffers.</text>
+</svg>

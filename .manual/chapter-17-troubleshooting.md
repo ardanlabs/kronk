@@ -231,7 +231,7 @@ diagnosis is below.
 The source of the deadline matters:
 
 - a client or reverse proxy may cancel first;
-- chat handlers impose a 180-minute request context deadline;
+- admission waits are capped at three minutes before model processing starts;
 - the HTTP server defaults to a 30-second read timeout and a 60-minute write
   timeout.
 
@@ -302,9 +302,10 @@ default or to the configured disk session store. See
 #### Every turn rebuilds the cache
 
 Common causes are changed earlier messages, changed template inputs, a prompt
-below `cache-min-tokens`, or cache pressure. Relevant JSON log statuses include
-`session[N] mismatch`, `sys-prompt-match`, `token prefix match found`,
-`no usable token prefix match`, and `kv-pressure-evict`.
+below `cache-min-tokens`, or cache pressure. Relevant JSON logs use status
+`plan-ready`; inspect `match_kind` (`exact`, `append`, `anchor`, or `rebuild`),
+`match_reason`, and the reusable/extension token counts. Status `plan-fallback`
+identifies prompts that cannot use the token planner safely.
 
 Keep earlier conversation messages stable and use a deterministic template.
 Increase `nseq-max` only when additional inference concurrency and its memory
@@ -313,11 +314,10 @@ decode slots.
 
 #### `server busy processing other requests, try again shortly`
 
-No IMC session was available. Depending on the planning path, Kronk may return
-this immediately or after waiting up to `cache-slot-timeout`. It is a transient
-request failure: wait and retry from the client. If it is frequent, inspect
-long-running requests and queue/cache metrics before increasing `nseq-max`.
-Increasing `cache-slot-timeout` affects only paths that wait for a session.
+No IMC session was available. Kronk returns this retryable error immediately
+rather than waiting at the session-planning stage. Wait and retry from the
+client. If it is frequent, inspect long-running requests and queue/cache
+metrics before increasing `nseq-max`.
 
 #### `imc restore failed` or `imc extend stale`
 

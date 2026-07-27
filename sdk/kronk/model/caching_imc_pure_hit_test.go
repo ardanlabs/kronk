@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"maps"
-	"sync"
 	"testing"
 )
 
@@ -22,7 +21,6 @@ func newFingerprintTestModel(templateScript string) *Model {
 		log:         noopLog,
 	}
 	m.template.Script = templateScript
-	m.cacheCond = sync.NewCond(&m.cacheMu)
 	return m
 }
 
@@ -263,34 +261,34 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 	m := newFingerprintTestModel("template-x")
 
 	session := &imcSession{
-		kvState: ramSessionStore(),
-		id:      0,
-		seqID:   0,
-		pending: true,
+		kvState:  ramSessionStore(),
+		id:       0,
+		seqID:    0,
+		reserved: true,
 	}
 	m.imcSessions[0] = session
 
-	m.imcCommitSession(session, "h1", 500, 3, nil, false, nil, "syshash", 50, "render-hash-1")
+	m.imcCommitSession(session, "h1", 500, 3, nil, false, nil, "render-hash-1")
 
 	if session.cachedRenderInputHash != "render-hash-1" {
 		t.Errorf("after commit: cachedRenderInputHash = %q, want %q",
 			session.cachedRenderInputHash, "render-hash-1")
 	}
-	// imcCommitSession deliberately leaves pending=true so concurrent
-	// processIMC scanners cannot pick up the session's new metadata
+	// imcCommitSession deliberately leaves reserved=true so concurrent
+	// token-v2 planners cannot pick up the session's new metadata
 	// before kvState has been re-snapshotted. imcPublishSession is the
 	// matched call that finalizes publication.
-	if !session.pending {
-		t.Error("after commit (no publish): pending should still be true")
+	if !session.reserved {
+		t.Error("after commit (no publish): reserved should still be true")
 	}
 
 	m.imcPublishSession(session)
-	if session.pending {
-		t.Error("after publish: pending should be false")
+	if session.reserved {
+		t.Error("after publish: reserved should be false")
 	}
 
 	// A subsequent commit (e.g. extend) refreshes the fingerprint.
-	m.imcCommitSession(session, "h2", 700, 4, nil, false, nil, "syshash", 50, "render-hash-2")
+	m.imcCommitSession(session, "h2", 700, 4, nil, false, nil, "render-hash-2")
 	if session.cachedRenderInputHash != "render-hash-2" {
 		t.Errorf("after re-commit: cachedRenderInputHash = %q, want %q",
 			session.cachedRenderInputHash, "render-hash-2")
@@ -313,14 +311,14 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 func TestIMCCommitEmptyRenderHashDisqualifiesSkip(t *testing.T) {
 	m := newFingerprintTestModel("template-x")
 	session := &imcSession{
-		kvState: ramSessionStore(),
-		id:      0,
-		seqID:   0,
-		pending: true,
+		kvState:  ramSessionStore(),
+		id:       0,
+		seqID:    0,
+		reserved: true,
 	}
 	m.imcSessions[0] = session
 
-	m.imcCommitSession(session, "h", 100, 2, nil, false, nil, "", 0, "")
+	m.imcCommitSession(session, "h", 100, 2, nil, false, nil, "")
 
 	if session.cachedRenderInputHash != "" {
 		t.Errorf("cachedRenderInputHash = %q, want empty (pre-rollout sentinel)",

@@ -43,10 +43,10 @@ type chatJob struct {
 
 	imcSession        *imcSession // Matched IMC session (the session-pool entry whose KV state will be restored into the assigned slot)
 	imcSessionMedia   bool        // True if session has media (snapshot at job creation; safe to read without lock)
-	imcSessionID      int         // Session-pool index (== imcSession.id); used by imcClearPending lookup and log correlation. Not related to execution slot identity.
+	imcSessionID      int         // Session-pool index (== imcSession.id); used by imcReleaseReservation lookup and log correlation. Not related to execution slot identity.
 	imcCacheHit       bool        // True when this request uses the IMC build/restore path.
 	imcSnapshotReused bool        // True after a prior externalized target snapshot is restored successfully.
-	imcExpectedHash   string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward between processIMC and startSlot)
+	imcExpectedHash   string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward)
 
 	// Pure-hit snapshot-skip state mirrored from cacheResult.
 	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot.
@@ -67,15 +67,11 @@ type chatJob struct {
 	imcNewMsgsHash       string        // New cachedMsgsHash after extension
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
-	imcTrimPos           llama.Pos     // Position to trim KV cache from (for partial prefix rebuild)
-	imcSysPromptHash     string        // Hash of system prompt message for the new cache state
-	imcSysPromptTokens   int           // Token count of the system prompt in the new cache state
 
 	// IMC media cache build — deferred media decode using mtmd pipeline.
-	imcMediaBuild          bool  // True if cache build requires the mtmd pipeline (images/audio)
-	imcMediaCacheD         D     // Document with cacheable messages + tools for media cache build
-	imcMediaKVCounts       []int // Media KV position counts to preserve during text-only media extend
-	imcMediaSkipTextTokens int   // Text tokens already in KV cache to skip during partial media extend
+	imcMediaBuild    bool  // True if cache build requires the mtmd pipeline (images/audio)
+	imcMediaCacheD   D     // Document with cacheable messages + tools for media cache build
+	imcMediaKVCounts []int // Media KV position counts to preserve during text-only media extend
 }
 
 func (j *chatJob) hasIMCReservation() bool {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"go.yaml.in/yaml/v2"
@@ -163,5 +164,40 @@ func TestModelConfigLoadMode(t *testing.T) {
 	MergeModelConfig(&dst, ModelConfig{PtrLoadMode: &mmap})
 	if dst.PtrLoadMode == nil || *dst.PtrLoadMode != model.LoadModeMMap {
 		t.Errorf("merged PtrLoadMode = %v, want pointer to mmap", dst.PtrLoadMode)
+	}
+}
+
+func TestModelConfigAdmissionAndQueue(t *testing.T) {
+	data := []byte(`test-model:
+  admission-timeout: 3m
+  queue-depth: 2
+`)
+
+	var configs map[string]ModelConfig
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	cfg := configs["test-model"]
+	kronkCfg := cfg.ToKronkConfig()
+	if got := kronkCfg.AdmissionTimeout(); got != 3*time.Minute {
+		t.Errorf("AdmissionTimeout() = %s, want %s", got, 3*time.Minute)
+	}
+	if got := kronkCfg.QueueDepth(); got != 2 {
+		t.Errorf("QueueDepth() = %d, want 2", got)
+	}
+
+	overrideTimeout := Duration(45 * time.Second)
+	overrideDepth := 4
+	MergeModelConfig(&cfg, ModelConfig{
+		PtrAdmissionTimeout: &overrideTimeout,
+		PtrQueueDepth:       &overrideDepth,
+	})
+	kronkCfg = cfg.ToKronkConfig()
+	if got := kronkCfg.AdmissionTimeout(); got != 45*time.Second {
+		t.Errorf("merged AdmissionTimeout() = %s, want %s", got, 45*time.Second)
+	}
+	if got := kronkCfg.QueueDepth(); got != 4 {
+		t.Errorf("merged QueueDepth() = %d, want 4", got)
 	}
 }

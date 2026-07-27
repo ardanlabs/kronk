@@ -139,10 +139,6 @@ type ResponseStreamEvent struct {
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return ResponseResponse{}, fmt.Errorf("response: context has no deadline, provide a reasonable timeout")
-	}
-
 	d, err := convertInputToMessages(d)
 	if err != nil {
 		return ResponseResponse{}, fmt.Errorf("response: %w", err)
@@ -165,10 +161,6 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan ResponseStreamEvent, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return nil, fmt.Errorf("responses-streaming: context has no deadline, provide a reasonable timeout")
-	}
-
 	d, err := convertInputToMessages(d)
 	if err != nil {
 		return nil, fmt.Errorf("responses-streaming: %w", err)
@@ -207,10 +199,6 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (ResponseResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return ResponseResponse{}, fmt.Errorf("responses-streaming-http: context has no deadline, provide a reasonable timeout")
-	}
-
 	var stream bool
 	if streamReq, ok := d["stream"].(bool); ok {
 		stream = streamReq

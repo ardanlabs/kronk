@@ -73,6 +73,12 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		id := "chatcmpl-" + uuid.NewString()
 
 		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
+		m.log(ctx, "request-lifecycle",
+			"stage", 2,
+			"stage_name", "prepare-model-work",
+			"status", "started",
+			"id", id,
+		)
 
 		batching := false
 		var cache cacheResult
@@ -80,7 +86,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		defer func() {
 			if rec := recover(); rec != nil {
 				if !batching {
-					m.clearIMCPendingIfReserved(cache)
+					m.releaseIMCReservationIfHeld(cache)
 				}
 				m.recordChatFailure(ctx, requestStart, fmt.Errorf("panic: %v", rec))
 				m.sendChatError(ctx, ch, id, fmt.Errorf("%v", rec))
@@ -108,6 +114,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		params, d, err := m.validateAndCloneDocument(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
+			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -116,6 +124,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		d, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
+			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -134,13 +144,15 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		// m.decodeMu, which is the SIGSEGV we hit when VS Code cancelled
 		// one of three concurrent chat streams. Per-request IMC cleanup on
 		// submit failure is already handled inside submitToBatchEngine via
-		// m.imcClearPending(cache.imcSessionID).
+		// m.imcReleaseReservation(cache.imcSessionID).
 
 		var prompt string
 		var media [][]byte
 		prompt, media, cache, err = m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
 		if err != nil {
 			prepSpan.End()
+			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -153,6 +165,15 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		}
 
 		prepSpan.End()
+		m.log(ctx, "request-lifecycle",
+			"stage", 2,
+			"stage_name", "prepare-model-work",
+			"status", "complete",
+			"id", id,
+			"elapsed", time.Since(requestStart),
+			"imc_session", cache.imcSessionID,
+			"imc_match_kind", cache.imcMatchKind,
+		)
 
 		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, cache, requestStart) {
 			batching = true
@@ -283,52 +304,27 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 		return actualPrompt, actualMedia, cache, nil
 	}
 
-	switch {
-	case !cachingEnabled:
-		cache.modifiedD = d
-
-	default:
-		ctx, cacheSpan := otel.AddSpan(ctx, "process-cache")
-
-		cache = m.processCache(ctx, d, requestStart)
-
-		cacheSpan.End()
-
-		if cache.err != nil {
-			return "", nil, cache, cache.err
-		}
-
-		d = cache.modifiedD
-	}
+	cache.modifiedD = d
 
 	prompt, media, err := m.createPrompt(ctx, d)
 	if err != nil {
-		// processCache marks the matched session pending and relies on
-		// startSlot (success) or submitToBatchEngine (submit failure) to
-		// clear it. createPrompt sits between those two and is the one
-		// uncovered window: if it errors after a reservation, pending
-		// leaks and every subsequent request hangs on the session until
-		// waitForIMCSlot times out and returns "server busy". Clear the
-		// reservation here so the failure is local to this request.
-		m.clearIMCPendingIfReserved(cache)
 		return "", nil, cache, fmt.Errorf("chat-streaming: unable to apply jinja template: %w", err)
 	}
 
 	return prompt, media, cache, nil
 }
 
-// clearIMCPendingIfReserved releases an IMC session reservation when
-// processCache marked one for build/extend but a subsequent step (e.g.,
-// createPrompt) failed before the batch engine took ownership. Pure cache
-// read-only exact/anchor hits carry an explicit reservation too.
-func (m *Model) clearIMCPendingIfReserved(cache cacheResult) {
+// releaseIMCReservationIfHeld releases an IMC session reservation when the
+// batch engine does not take ownership. Pure cache read-only exact/anchor hits
+// carry an explicit reservation too.
+func (m *Model) releaseIMCReservationIfHeld(cache cacheResult) {
 	if cache.imcSession == nil {
 		return
 	}
 	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild && !cache.imcReadOnlyReservation {
 		return
 	}
-	m.imcClearPending(cache.imcSessionID)
+	m.imcReleaseReservation(cache.imcSessionID)
 }
 
 // submitToBatchEngine attempts to submit the request to the batch engine.
@@ -338,6 +334,12 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
+	m.log(ctx, "request-lifecycle",
+		"stage", 3,
+		"stage_name", "schedule-job",
+		"status", "started",
+		"id", id,
+	)
 
 	job := chatJob{
 		id:            id,
@@ -374,19 +376,15 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
 
-		imcNewCacheTokens:      cache.imcNewCacheTokens,
-		imcNewTotalCached:      cache.imcNewTotalCached,
-		imcNewCachedMsgCount:   cache.imcNewCachedMsgCount,
-		imcNewMsgsHash:         cache.imcNewMsgsHash,
-		imcClearSeq:            cache.imcClearSeq,
-		imcNewCachedTokens:     cache.imcNewCachedTokens,
-		imcTrimPos:             cache.imcTrimPos,
-		imcSysPromptHash:       cache.imcSysPromptHash,
-		imcSysPromptTokens:     cache.imcSysPromptTokens,
-		imcMediaBuild:          cache.imcMediaBuild,
-		imcMediaCacheD:         cache.imcMediaCacheD,
-		imcMediaKVCounts:       cache.imcMediaKVCounts,
-		imcMediaSkipTextTokens: cache.imcMediaSkipTextTokens,
+		imcNewCacheTokens:    cache.imcNewCacheTokens,
+		imcNewTotalCached:    cache.imcNewTotalCached,
+		imcNewCachedMsgCount: cache.imcNewCachedMsgCount,
+		imcNewMsgsHash:       cache.imcNewMsgsHash,
+		imcClearSeq:          cache.imcClearSeq,
+		imcNewCachedTokens:   cache.imcNewCachedTokens,
+		imcMediaBuild:        cache.imcMediaBuild,
+		imcMediaCacheD:       cache.imcMediaCacheD,
+		imcMediaKVCounts:     cache.imcMediaKVCounts,
 	}
 
 	if err := m.batch.submit(&job); err != nil {
@@ -398,7 +396,15 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 
 		// The batch engine never took ownership, so release any exact,
 		// append, or rebuild reservation made while planning the request.
-		m.clearIMCPendingIfReserved(cache)
+		m.releaseIMCReservationIfHeld(cache)
+		m.log(ctx, "request-lifecycle",
+			"stage", 3,
+			"stage_name", "schedule-job",
+			"status", lifecycleStatus(err),
+			"id", id,
+			"elapsed", time.Since(job.queuedAt),
+			"err", err,
+		)
 
 		m.recordChatFailure(ctx, requestStart, err)
 		m.sendChatError(ctx, ch, id, err)
@@ -678,6 +684,19 @@ func (m *Model) recordChatFailure(ctx context.Context, requestStart time.Time, e
 	metrics.AddChatError(m.modelInfo.ID, class)
 	if !requestStart.IsZero() {
 		metrics.ObserveChatRequestDuration(m.modelInfo.ID, time.Since(requestStart))
+	}
+}
+
+func lifecycleStatus(err error) string {
+	switch {
+	case err == nil:
+		return "complete"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "cancel"
+	default:
+		return "error"
 	}
 }
 

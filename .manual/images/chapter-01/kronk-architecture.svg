@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Kronk software architecture</title>
+  <desc id="desc">Kronk applications can use the Kronk and Bucky SDKs directly or through the shared model pool used by the Kronk model server. The Kronk SDK uses yzma bindings to llama.cpp for GGUF models. The Bucky SDK uses Bucky bindings to whisper.cpp for speech-to-text models. Both binding layers use FFI and purego and run on compatible native compute backends.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <pattern id="modelPattern" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="10" stroke="#86efac" stroke-width="2" opacity="0.25"/>
+    </pattern>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .heading { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .eyebrow { font: 700 15px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.5px; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .mono { font: 700 18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1e293b; }
+      .white { fill: #ffffff; }
+      .light { fill: #cbd5e1; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
+
+  <text class="title" x="72" y="70">KRONK ARCHITECTURE</text>
+  <text class="subtitle" x="72" y="108">Two public Go SDKs, two inference engines, and no Python or CGO build toolchain.</text>
+
+  <!-- Connectors are drawn behind the cards. -->
+  <path d="M 470 228 L 470 278" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1450 228 L 1450 278" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 485 398 L 485 428" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1435 398 L 1435 428" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 485 538 L 485 568" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1435 538 L 1435 568" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 485 730 L 485 757" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1435 730 L 1435 757" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 485 839 L 485 866" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1435 839 L 1435 866" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- Entry points -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="138" width="800" height="90" rx="20" fill="#ffffff" stroke="#5eead4" stroke-width="3"/>
+    <rect x="1050" y="138" width="800" height="90" rx="20" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/>
+  </g>
+  <rect x="70" y="138" width="12" height="90" rx="6" fill="#0f766e"/>
+  <rect x="1050" y="138" width="12" height="90" rx="6" fill="#2563eb"/>
+  <text class="eyebrow" x="110" y="169" fill="#0f766e">EMBEDDED</text>
+  <text class="heading" x="110" y="200">YOUR GO APPLICATION</text>
+  <text class="small" x="430" y="198">Direct SDK calls or optional pooled lifecycle</text>
+  <text class="eyebrow" x="1090" y="169" fill="#1d4ed8">NETWORK SERVICE</text>
+  <text class="heading" x="1090" y="200">KRONK MODEL SERVER</text>
+  <text class="small" x="1455" y="198">HTTP APIs · BUI · security · operations</text>
+
+  <!-- Access layer -->
+  <rect x="70" y="278" width="1780" height="120" rx="22" fill="#0f172a"/>
+  <text class="eyebrow" x="100" y="307" fill="#5eead4">APPLICATION ACCESS</text>
+  <rect x="100" y="321" width="1720" height="55" rx="12" fill="#1e293b" stroke="#60a5fa" stroke-width="2"/>
+  <text class="heading white" x="128" y="355">DIRECT SDK ACCESS</text>
+  <text x="420" y="354" style="font:700 20px Inter, sans-serif; fill:#94a3b8">OR</text>
+  <text class="heading white" x="475" y="355">SHARED MODEL POOL</text>
+  <text class="small light" x="850" y="353">Embedded apps may choose either · the model server uses sdk/pool</text>
+
+  <!-- Public SDKs -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="438" width="830" height="100" rx="20" fill="#ecfeff" stroke="#2dd4bf" stroke-width="3"/>
+    <rect x="1020" y="438" width="830" height="100" rx="20" fill="#eff6ff" stroke="#60a5fa" stroke-width="3"/>
+  </g>
+  <text class="eyebrow" x="105" y="468" fill="#0f766e">PUBLIC GO API</text>
+  <text class="heading" x="105" y="502">KRONK SDK</text>
+  <text class="body" x="285" y="501">text · vision · embeddings · reranking</text>
+  <text class="eyebrow" x="1055" y="468" fill="#1d4ed8">PUBLIC GO API</text>
+  <text class="heading" x="1055" y="502">BUCKY SDK</text>
+  <text class="body" x="1240" y="501">speech-to-text · streaming transcription</text>
+
+  <!-- Binding layers -->
+  <rect x="70" y="578" width="830" height="152" rx="22" fill="#f5f3ff" stroke="#a78bfa" stroke-width="3"/>
+  <rect x="1020" y="578" width="830" height="152" rx="22" fill="#f5f3ff" stroke="#a78bfa" stroke-width="3"/>
+  <text class="eyebrow" x="105" y="610" fill="#6d28d9">GO → NATIVE BINDINGS</text>
+  <text class="heading" x="105" y="646">YZMA</text>
+  <text class="small" x="230" y="644">github.com/hybridgroup/yzma</text>
+  <rect x="105" y="666" width="360" height="42" rx="10" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
+  <rect x="505" y="666" width="360" height="42" rx="10" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="mono" x="255" y="693">FFI</text>
+  <text class="mono" x="650" y="693">PUREGO</text>
+
+  <text class="eyebrow" x="1055" y="610" fill="#6d28d9">GO → NATIVE BINDINGS</text>
+  <text class="heading" x="1055" y="646">BUCKY</text>
+  <text class="small" x="1195" y="644">github.com/ardanlabs/bucky</text>
+  <rect x="1055" y="666" width="360" height="42" rx="10" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
+  <rect x="1455" y="666" width="360" height="42" rx="10" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="mono" x="1205" y="693">FFI</text>
+  <text class="mono" x="1600" y="693">PUREGO</text>
+
+  <!-- Native engines -->
+  <rect x="70" y="767" width="830" height="72" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-width="3"/>
+  <rect x="1020" y="767" width="830" height="72" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-width="3"/>
+  <text class="eyebrow" x="105" y="796" fill="#c2410c">NATIVE INFERENCE ENGINE</text>
+  <text class="heading" x="515" y="815" text-anchor="middle">llama.cpp</text>
+  <text class="eyebrow" x="1055" y="796" fill="#c2410c">NATIVE INFERENCE ENGINE</text>
+  <text class="heading" x="1465" y="815" text-anchor="middle">whisper.cpp</text>
+
+  <!-- Model artifacts -->
+  <rect x="70" y="876" width="395" height="70" rx="15" fill="#ecfdf5" stroke="#4ade80" stroke-width="2"/>
+  <rect x="505" y="876" width="395" height="70" rx="15" fill="#ecfdf5" stroke="#4ade80" stroke-width="2"/>
+  <rect x="1020" y="876" width="395" height="70" rx="15" fill="#ecfdf5" stroke="#4ade80" stroke-width="2"/>
+  <rect x="1455" y="876" width="395" height="70" rx="15" fill="#ecfdf5" stroke="#4ade80" stroke-width="2"/>
+  <rect x="70" y="876" width="395" height="70" rx="15" fill="url(#modelPattern)"/>
+  <rect x="505" y="876" width="395" height="70" rx="15" fill="url(#modelPattern)"/>
+  <rect x="1020" y="876" width="395" height="70" rx="15" fill="url(#modelPattern)"/>
+  <rect x="1455" y="876" width="395" height="70" rx="15" fill="url(#modelPattern)"/>
+  <text class="mono" x="267" y="918" text-anchor="middle">GGUF MODEL</text>
+  <text class="mono" x="702" y="918" text-anchor="middle">GGUF MODEL</text>
+  <text class="mono" x="1217" y="918" text-anchor="middle">WHISPER MODEL</text>
+  <text class="mono" x="1652" y="918" text-anchor="middle">WHISPER MODEL</text>
+
+  <!-- Shared native backends -->
+  <rect x="70" y="982" width="1780" height="68" rx="18" fill="#0f172a"/>
+  <text class="eyebrow" x="100" y="1012" fill="#86efac">NATIVE COMPUTE BACKENDS</text>
+  <text class="heading white" x="435" y="1027">CPU · METAL · CUDA · VULKAN · ROCm</text>
+  <text class="small light" x="1125" y="1025">Availability depends on engine, platform, and library bundle</text>
+</svg>

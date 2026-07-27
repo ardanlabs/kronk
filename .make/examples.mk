@@ -28,6 +28,9 @@ example-embedding:
 example-grammar:
 	cd examples && go run ./grammar/main.go
 
+example-lifecycle-load:
+	cd examples && go run ./lifecycle-load/main.go
+
 example-pool:
 	cd examples && go run ./pool/main.go
 

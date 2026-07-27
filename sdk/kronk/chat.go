@@ -16,9 +16,6 @@ import (
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return model.ChatResponse{}, fmt.Errorf("chat: context has no deadline, provide a reasonable timeout")
-	}
 	if containsUnsupportedFileInput(d["messages"]) {
 		return model.ChatResponse{}, fmt.Errorf("chat: %w", model.ErrFileInputsUnsupported)
 	}
@@ -35,9 +32,6 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return nil, fmt.Errorf("chat-streaming: context has no deadline, provide a reasonable timeout")
-	}
 	if containsUnsupportedFileInput(d["messages"]) {
 		return nil, fmt.Errorf("chat-streaming: %w", model.ErrFileInputsUnsupported)
 	}
@@ -58,10 +52,6 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, d model.D) (model.ChatResponse, error) {
-	if _, exists := ctx.Deadline(); !exists {
-		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: context has no deadline, provide a reasonable timeout")
-	}
-
 	// [DEBUG]: Show raw input content.
 	// fmt.Printf("[DEBUG]: {\"req\":%s}\n", debugChatRequest(d))
 

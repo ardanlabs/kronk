@@ -215,14 +215,15 @@ func New(t *testing.T, testName string) *Test {
 	// -------------------------------------------------------------------------
 
 	cfgMux := mux.Config{
-		Build:       "test",
-		Log:         log,
-		AuthClient:  authClient,
-		Pool:        p,
-		Libs:        libs,
-		Models:      models,
-		BuckyLibs:   buckyLibs,
-		BuckyModels: buckyModels,
+		Build:            "test",
+		Log:              log,
+		AuthClient:       authClient,
+		Pool:             p,
+		Libs:             libs,
+		Models:           models,
+		BuckyLibs:        buckyLibs,
+		BuckyModels:      buckyModels,
+		InferenceTimeout: 60 * time.Minute,
 	}
 
 	mux := mux.WebAPI(cfgMux,

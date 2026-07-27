@@ -25,6 +25,13 @@ func (e *batchEngine) fillSlots(buf []byte) {
 		select {
 		case job := <-e.requestQ:
 			e.pendingJobs = append(e.pendingJobs, job)
+			e.model.log(job.ctx, "request-lifecycle",
+				"stage", 3,
+				"stage_name", "schedule-job",
+				"status", "queued",
+				"id", job.id,
+				"pending_jobs", len(e.pendingJobs),
+			)
 		default:
 			goto assign
 		}

@@ -76,7 +76,7 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 			if result.imcMatchKind != tt.wantMatch {
 				t.Fatalf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
 			}
-			if (tt.wantMatch == "exact" || tt.wantMatch == "anchor") && !session.pending {
+			if (tt.wantMatch == "exact" || tt.wantMatch == "anchor") && !session.reserved {
 				t.Fatal("media match did not reserve the session")
 			}
 			if tt.wantMatch == "anchor" && (!result.imcMediaAnchorAdvance || result.imcReadOnlyReservation) {
@@ -144,7 +144,7 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 		promptPlan:        base,
 		mediaKVCounts:     []int{8},
 		kvState:           oldStore,
-		pending:           true,
+		reserved:          true,
 	}
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
@@ -160,7 +160,7 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	if exact.imcMatchKind != "exact" {
 		t.Fatalf("advanced exact match = %q, want exact", exact.imcMatchKind)
 	}
-	m.imcClearPending(session.id)
+	m.imcReleaseReservation(session.id)
 
 	nextActual := mediaPlan(append(append([]promptUnit{}, next.units...), promptUnit{token: 9})...)
 	appendResult := m.processIMCMediaPlans(context.Background(), d, d, nextActual, next, []llama.Token{9}, time.Now())

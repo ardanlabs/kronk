@@ -200,11 +200,13 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
         if (cancelled) return;
         const mc = info.model_config;
         if (mc) {
+          const nUBatch = mc.nubatch || 2048;
+          const nSeqMax = mc['nseq-max'] || 1;
           setCatalogConfig(mc);
           setContextWindow(mc['context-window'] || 8192);
-          setNBatch(mc.nbatch || 2048);
-          setNUBatch(mc.nubatch || 512);
-          setNSeqMax(mc['nseq-max'] || 1);
+          setNBatch(mc.nbatch || nUBatch * nSeqMax);
+          setNUBatch(nUBatch);
+          setNSeqMax(nSeqMax);
           setFlashAttention(mc['flash-attention'] || 'enabled');
           setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
           setLoadMode(mc['load-mode'] || 'mmap');
@@ -312,10 +314,12 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       if (!catalogConfig || contextWindow !== (catalogConfig['context-window'] || 8192)) {
         config['context_window'] = contextWindow;
       }
-      if (!catalogConfig || nBatch !== (catalogConfig.nbatch || 2048)) {
+      const catalogNUBatch = catalogConfig?.nubatch || 2048;
+      const catalogNSeqMax = catalogConfig?.['nseq-max'] || 1;
+      if (!catalogConfig || nBatch !== (catalogConfig.nbatch || catalogNUBatch * catalogNSeqMax)) {
         config['nbatch'] = nBatch;
       }
-      if (!catalogConfig || nUBatch !== (catalogConfig.nubatch || 512)) {
+      if (!catalogConfig || nUBatch !== catalogNUBatch) {
         config['nubatch'] = nUBatch;
       }
       if (!catalogConfig || nSeqMax !== (catalogConfig['nseq-max'] || 1)) {

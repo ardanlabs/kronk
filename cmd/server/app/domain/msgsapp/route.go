@@ -2,6 +2,7 @@ package msgsapp
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
@@ -12,9 +13,10 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log        *logger.Logger
-	AuthClient *authclient.Client
-	Pool       *pool.Pool
+	Log              *logger.Logger
+	AuthClient       *authclient.Client
+	Pool             *pool.Pool
+	InferenceTimeout time.Duration
 }
 
 // Routes adds specific routes for this group.
@@ -25,5 +27,5 @@ func Routes(app *web.App, cfg Config) {
 
 	auth := mid.Authenticate(cfg.AuthClient, false, "messages")
 
-	app.HandlerFunc(http.MethodPost, version, "/messages", api.messages, auth)
+	app.HandlerFunc(http.MethodPost, version, "/messages", api.messages, mid.Timeout(cfg.InferenceTimeout), auth)
 }

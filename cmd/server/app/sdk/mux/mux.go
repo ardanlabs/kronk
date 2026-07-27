@@ -5,6 +5,7 @@ package mux
 import (
 	"embed"
 	"net/http"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
@@ -68,6 +69,7 @@ type Config struct {
 	WebAdminEnabled     bool
 	AdminPasswordSHA256 string
 	Security            *security.Security
+	InferenceTimeout    time.Duration
 }
 
 // RouteAdder defines behavior that sets the routes to bind for an instance

@@ -96,29 +96,14 @@ Kronk is layered so applications and the model server use the same inference
 SDKs. The two engine paths provide different model capabilities and may have
 different platform support.
 
-```diagram
-Your Go Application                 Kronk Model Server
-        |                                   |
-        +----------------+------------------+
-                         |
-              +----------+----------+
-              |                     |
-          Kronk SDK             Bucky SDK
-    text, vision, embedding,      speech-to-text
-           reranking                  |
-              |                       |
-            yzma                Bucky bindings
-              |                       |
-          llama.cpp               whisper.cpp
-              +-----------+-----------+
-                          |
-              CPU / Metal / CUDA / Vulkan / ROCm
-```
+![Kronk architecture: application access, SDKs, bindings, native engines, and models](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-01/kronk-architecture.svg)
 
 The SDK layer owns model loading, inference, caching, and concurrency. The
 model server adds HTTP transport, model pooling, the BUI, security, and
-operational services. Your application can use the SDK without starting the
-model server.
+operational services. The model server reaches both typed SDKs through the
+shared `sdk/pool` facade. Your application can call `sdk/kronk` or `sdk/bucky`
+directly without starting the model server, or use the pool when it needs a
+coordinated multi-model lifecycle.
 
 ### 1.5 Where to Go Next
 
