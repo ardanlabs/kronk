@@ -3,11 +3,23 @@ package kronk
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
 func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
+	started := time.Now()
+	if krn.cfg.Log != nil {
+		krn.cfg.Log(ctx, "request-lifecycle",
+			"stage", 1,
+			"stage_name", "admit-request",
+			"status", "started",
+			"capacity", cap(krn.admissionCh),
+			"admitted", len(krn.admissionCh),
+		)
+	}
+
 	err := func() error {
 		krn.shutdown.Lock()
 		defer krn.shutdown.Unlock()
@@ -21,6 +33,15 @@ func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
 	}()
 
 	if err != nil {
+		if krn.cfg.Log != nil {
+			krn.cfg.Log(ctx, "request-lifecycle",
+				"stage", 1,
+				"stage_name", "admit-request",
+				"status", "error",
+				"elapsed", time.Since(started),
+				"err", err,
+			)
+		}
 		return nil, err
 	}
 
@@ -32,9 +53,35 @@ func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
 	select {
 	case <-admissionCtx.Done():
 		krn.activeStreams.Add(-1)
+		if krn.cfg.Log != nil {
+			status := "cancel"
+			if admissionCtx.Err() == context.DeadlineExceeded {
+				status = "timeout"
+			}
+			krn.cfg.Log(ctx, "request-lifecycle",
+				"stage", 1,
+				"stage_name", "admit-request",
+				"status", status,
+				"elapsed", time.Since(started),
+				"capacity", cap(krn.admissionCh),
+				"admitted", len(krn.admissionCh),
+				"err", admissionCtx.Err(),
+			)
+		}
 		return nil, admissionCtx.Err()
 
 	case krn.admissionCh <- struct{}{}:
+	}
+
+	if krn.cfg.Log != nil {
+		krn.cfg.Log(ctx, "request-lifecycle",
+			"stage", 1,
+			"stage_name", "admit-request",
+			"status", "complete",
+			"elapsed", time.Since(started),
+			"capacity", cap(krn.admissionCh),
+			"admitted", len(krn.admissionCh),
+		)
 	}
 
 	return krn.model, nil

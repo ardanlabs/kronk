@@ -45,12 +45,22 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	}
 
 	// End the queue-wait span now that the job has been picked up.
+	var queueWait time.Duration
 	if job.queueWaitSpan != nil {
 		job.queueWaitSpan.End()
 	}
 	if !job.queuedAt.IsZero() {
-		metrics.ObserveChatQueueWait(e.model.modelInfo.ID, time.Since(job.queuedAt))
+		queueWait = time.Since(job.queuedAt)
+		metrics.ObserveChatQueueWait(e.model.modelInfo.ID, queueWait)
 	}
+	e.model.log(job.ctx, "request-lifecycle",
+		"stage", 3,
+		"stage_name", "schedule-job",
+		"status", "complete",
+		"id", job.id,
+		"slot", s.id,
+		"queue_wait", queueWait,
+	)
 
 	// Start span for this chat request. Store the span context so child
 	// spans (prefill, token-generation) are nested under process-request.
@@ -66,6 +76,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		attribute.Int("slot", s.id),
 	)
 	s.prefillStart = time.Now()
+	e.model.log(job.ctx, "request-lifecycle",
+		"stage", 4,
+		"stage_name", "execute-in-slot",
+		"status", "started",
+		"id", job.id,
+		"slot", s.id,
+		"seq", s.seqID,
+	)
 
 	// Create sampler for this request.
 	s.sampler = e.model.toSampler(job.ctx, job.params)

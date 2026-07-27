@@ -73,6 +73,12 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		id := "chatcmpl-" + uuid.NewString()
 
 		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
+		m.log(ctx, "request-lifecycle",
+			"stage", 2,
+			"stage_name", "prepare-model-work",
+			"status", "started",
+			"id", id,
+		)
 
 		batching := false
 		var cache cacheResult
@@ -108,6 +114,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		params, d, err := m.validateAndCloneDocument(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
+			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -116,6 +124,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		d, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
+			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -141,6 +151,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		prompt, media, cache, err = m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
 		if err != nil {
 			prepSpan.End()
+			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -153,6 +165,15 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		}
 
 		prepSpan.End()
+		m.log(ctx, "request-lifecycle",
+			"stage", 2,
+			"stage_name", "prepare-model-work",
+			"status", "complete",
+			"id", id,
+			"elapsed", time.Since(requestStart),
+			"imc_session", cache.imcSessionID,
+			"imc_match_kind", cache.imcMatchKind,
+		)
 
 		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, cache, requestStart) {
 			batching = true
@@ -313,6 +334,12 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
+	m.log(ctx, "request-lifecycle",
+		"stage", 3,
+		"stage_name", "schedule-job",
+		"status", "started",
+		"id", id,
+	)
 
 	job := chatJob{
 		id:            id,
@@ -370,6 +397,14 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		// The batch engine never took ownership, so release any exact,
 		// append, or rebuild reservation made while planning the request.
 		m.releaseIMCReservationIfHeld(cache)
+		m.log(ctx, "request-lifecycle",
+			"stage", 3,
+			"stage_name", "schedule-job",
+			"status", lifecycleStatus(err),
+			"id", id,
+			"elapsed", time.Since(job.queuedAt),
+			"err", err,
+		)
 
 		m.recordChatFailure(ctx, requestStart, err)
 		m.sendChatError(ctx, ch, id, err)
@@ -649,6 +684,19 @@ func (m *Model) recordChatFailure(ctx context.Context, requestStart time.Time, e
 	metrics.AddChatError(m.modelInfo.ID, class)
 	if !requestStart.IsZero() {
 		metrics.ObserveChatRequestDuration(m.modelInfo.ID, time.Since(requestStart))
+	}
+}
+
+func lifecycleStatus(err error) string {
+	switch {
+	case err == nil:
+		return "complete"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "cancel"
+	default:
+		return "error"
 	}
 }
 

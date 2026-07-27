@@ -33,6 +33,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	imcSnapshotReused := s.job.imcSnapshotReused
 	imcTailTokens := len(s.job.tailTokens)
 	mtpResumeSource := s.mtpResumeSource
+	stageStarted := s.prefillStart
 
 	var elapsed time.Duration
 
@@ -71,7 +72,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		// must close via the locally captured jobCh, not s.job.ch.
 		remaining := e.model.activeStreams.Add(-1)
 		metrics.AddPoolActiveStreams(e.model.modelInfo.ID, -1)
-		close(jobCh)
+
+		var lifecycleElapsed time.Duration
+		if !stageStarted.IsZero() {
+			lifecycleElapsed = time.Since(stageStarted)
+		}
 
 		args := []any{
 			"status", "slot-finished",
@@ -128,6 +133,17 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 
 		e.model.log(ctx, "batch-engine", args...)
+		e.model.log(ctx, "request-lifecycle",
+			"stage", 4,
+			"stage_name", "execute-in-slot",
+			"status", lifecycleStatus(err),
+			"id", jobID,
+			"slot", slotID,
+			"seq", seqID,
+			"elapsed", lifecycleElapsed,
+			"err", err,
+		)
+		close(jobCh)
 	}()
 
 	if !s.startTime.IsZero() {
@@ -365,8 +381,6 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 // an error response, ends the queue-wait span, closes the channel, clears any
 // held IMC reservation, and decrements activeStreams.
 func (e *batchEngine) failJob(job *chatJob, err error) {
-	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "", err, Usage{})
-
 	if job.queueWaitSpan != nil {
 		job.queueWaitSpan.RecordError(err)
 		job.queueWaitSpan.End()
@@ -398,12 +412,22 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	// this stream's count is still in flight.
 	remaining := e.model.activeStreams.Add(-1)
 	metrics.AddPoolActiveStreams(e.model.modelInfo.ID, -1)
-	close(job.ch)
 
+	e.model.log(job.ctx, "request-lifecycle",
+		"stage", 3,
+		"stage_name", "schedule-job",
+		"status", lifecycleStatus(err),
+		"id", job.id,
+		"elapsed", time.Since(job.queuedAt),
+		"err", err,
+	)
 	e.model.log(job.ctx, "batch-engine", "status", "job-failed", "id", job.id,
 		"imc_slot", job.imcSessionID, "imc_active", job.imcCacheHit,
 		"imc_cache_hit", job.imcSnapshotReused,
 		"err", err, "active_streams", remaining)
+
+	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "", err, Usage{})
+	close(job.ch)
 }
 
 func (e *batchEngine) freeSlotResources(s *slot) {
