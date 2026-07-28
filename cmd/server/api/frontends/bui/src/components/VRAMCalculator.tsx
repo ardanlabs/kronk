@@ -45,12 +45,15 @@ export default function VRAMCalculator() {
 
   const [result, setResult] = useState<VRAMCalculatorResponse | null>(null);
   const [calculatedModelLabel, setCalculatedModelLabel] = useState('');
+  const [calculatedModelId, setCalculatedModelId] = useState('');
+  const [calculatedModelUrl, setCalculatedModelUrl] = useState('');
   const cachedKeyRef = useRef('');
 
   const { controlsProps, resultsProps } = useVRAMState({
     serverResponse: result,
     enableHardwareOverrides: true,
-    modelUrl: calculatedModelLabel || undefined,
+    modelId: calculatedModelId || undefined,
+    modelUrl: calculatedModelUrl || undefined,
   });
 
   const canResolve = provider.trim().length > 0 && family.trim().length > 0;
@@ -141,10 +144,13 @@ export default function VRAMCalculator() {
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
           expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
+          swa_full: controlsProps.swaFull,
         },
       );
       setResult(response);
       setCalculatedModelLabel(localID);
+      setCalculatedModelId(localID);
+      setCalculatedModelUrl('');
       setLoading(false);
       return;
     } catch (err) {
@@ -183,6 +189,7 @@ export default function VRAMCalculator() {
       controlsProps.gpuLayers,
       controlsProps.expertLayersOnGPU,
       controlsProps.kvCacheOnCPU,
+      controlsProps.swaFull,
       controlsProps.deviceCount,
       controlsProps.tensorSplit,
     ].join('|');
@@ -202,10 +209,13 @@ export default function VRAMCalculator() {
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
           expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
+          swa_full: controlsProps.swaFull,
         },
       );
       setResult(response);
       setCalculatedModelLabel(label);
+      setCalculatedModelId('');
+      setCalculatedModelUrl(url);
       cachedKeyRef.current = cacheKey;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate VRAM');
@@ -244,6 +254,8 @@ export default function VRAMCalculator() {
     setError(null);
     setResult(null);
     setCalculatedModelLabel('');
+    setCalculatedModelId('');
+    setCalculatedModelUrl('');
     cachedKeyRef.current = '';
   };
 

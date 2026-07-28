@@ -130,6 +130,13 @@ export default function VRAMResults({
     { label: labelWithTip('Value Length', 'valueLength'), value: String(input.value_length) },
   ];
 
+  if ((input.sliding_window_layers ?? 0) > 0) {
+    headerRows.push(
+      { label: labelWithTip('SWA Layers', 'swaFull'), value: `${input.sliding_window_layers} of ${input.block_count}` },
+      { label: labelWithTip('SWA Cache Mode', 'swaFull'), value: input.swa_full ? 'Full context' : `Compact (${input.sliding_window?.toLocaleString() ?? 'model default'} tokens)` },
+    );
+  }
+
   if (isMoE) {
     headerRows.push(
       { label: labelWithTip('Expert Count', 'expertCount'), value: String(moe!.expert_count) },
@@ -370,6 +377,7 @@ export interface VramComputedConfig {
   flashAttention: string;
   ngpuLayers: number | null;
   offloadKQV: boolean | null;
+  swaFull: boolean;
   splitMode: string;
   tensorSplit: string;
   moeMode: string;
@@ -433,6 +441,7 @@ function buildComputedCatalogConfig(
     flashAttention,
     ngpuLayers,
     offloadKQV: kvCacheOnCPU ? false : null,
+    swaFull: input.swa_full,
     splitMode,
     tensorSplit: effectiveTensorSplit,
     moeMode,
@@ -459,6 +468,10 @@ function configToYAML(config: VramComputedConfig, configName?: string, defaults?
 
   if (config.offloadKQV === false) {
     lines.push('  offload-kqv: false');
+  }
+
+  if (!config.swaFull) {
+    lines.push('  swa-full: false');
   }
 
   if (config.moeMode) {

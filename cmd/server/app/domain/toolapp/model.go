@@ -647,6 +647,7 @@ type VRAMInput struct {
 	GPULayers           int64            `json:"gpu_layers,omitempty"`
 	ExpertLayersOnGPU   int64            `json:"expert_layers_on_gpu,omitempty"`
 	KVCacheOnCPU        bool             `json:"kv_cache_on_cpu,omitempty"`
+	SWAFull             bool             `json:"swa_full"`
 }
 
 // PerDeviceVRAM is the per-GPU VRAM split used when tensor_split /
@@ -803,13 +804,15 @@ func (app TokenResponse) Encode() ([]byte, string, error) {
 
 // VRAMRequest represents the input for VRAM calculation.
 //
-// Either ModelURL (HuggingFace URL or owner/repo path) or ModelID (a
-// local model id known to the server) must be supplied. When AutoFit is
-// true the server runs the layer/expert-offload search using the
-// supplied hardware constraints (GPUFreeBytes, SystemRAMBytes,
-// DeviceCount, TensorSplit) and returns the best-fitting configuration.
+// ModelURL (a HuggingFace URL or owner/repo path), ModelURLs (resolved
+// split-model files), or ModelID (a local model id known to the server) must
+// be supplied. When AutoFit is true the server runs the layer/expert-offload
+// search using the supplied hardware constraints (GPUFreeBytes,
+// SystemRAMBytes, DeviceCount, TensorSplit) and returns the best-fitting
+// configuration.
 type VRAMRequest struct {
 	ModelURL          string    `json:"model_url"`
+	ModelURLs         []string  `json:"model_urls,omitempty"`
 	ModelID           string    `json:"model_id,omitempty"`
 	ContextWindow     int64     `json:"context_window"`
 	BytesPerElement   int64     `json:"bytes_per_element"`
@@ -817,6 +820,7 @@ type VRAMRequest struct {
 	GPULayers         int64     `json:"gpu_layers,omitempty"`
 	ExpertLayersOnGPU int64     `json:"expert_layers_on_gpu,omitempty"`
 	KVCacheOnCPU      bool      `json:"kv_cache_on_cpu,omitempty"`
+	SWAFull           *bool     `json:"swa_full,omitempty"`
 	DeviceCount       int64     `json:"device_count,omitempty"`
 	TensorSplit       []float64 `json:"tensor_split,omitempty"`
 
@@ -909,6 +913,7 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 			GPULayers:           v.Input.GPULayers,
 			ExpertLayersOnGPU:   v.Input.ExpertLayersOnGPU,
 			KVCacheOnCPU:        v.Input.KVCacheOnCPU,
+			SWAFull:             v.Input.SWAFull,
 		},
 		KVPerTokenPerLayer:   v.KVPerTokenPerLayer,
 		KVPerSlot:            v.KVPerSlot,

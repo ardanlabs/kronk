@@ -298,11 +298,15 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	if req.ModelURL == "" && req.ModelID == "" {
-		return errs.Errorf(errs.InvalidArgument, "either model_url or model_id is required")
+	if req.ModelURL == "" && len(req.ModelURLs) == 0 && req.ModelID == "" {
+		return errs.Errorf(errs.InvalidArgument, "model_url, model_urls, or model_id is required")
 	}
 
 	slots := max(req.Slots, 1)
+	swaFull := true
+	if req.SWAFull != nil {
+		swaFull = *req.SWAFull
+	}
 
 	cfg := vram.Config{
 		ContextWindow:     req.ContextWindow,
@@ -311,6 +315,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		GPULayers:         req.GPULayers,
 		ExpertLayersOnGPU: req.ExpertLayersOnGPU,
 		KVCacheOnCPU:      req.KVCacheOnCPU,
+		SWAFull:           swaFull,
 	}
 
 	v, err := a.computeVRAM(ctx, req, cfg)
@@ -412,6 +417,9 @@ func (a *app) autoTuneModel(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) computeVRAM(ctx context.Context, req VRAMRequest, cfg vram.Config) (vram.Result, error) {
 	if req.ModelID != "" {
 		return a.models.CalculateVRAM(req.ModelID, cfg)
+	}
+	if len(req.ModelURLs) > 0 {
+		return vram.FromHuggingFaceFiles(ctx, req.ModelURLs, cfg)
 	}
 	return vram.FromHuggingFace(ctx, req.ModelURL, cfg)
 }
