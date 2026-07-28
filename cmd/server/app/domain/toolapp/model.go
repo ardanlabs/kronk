@@ -972,6 +972,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 		BytesPerElement:   bpe,
 		Slots:             slots,
 		ExpertLayersOnGPU: rmc.ToKronkConfig().ExpertLayersOnGPU(),
+		SWAFull:           rmc.ToKronkConfig().SWAFull(),
 	}
 }
 

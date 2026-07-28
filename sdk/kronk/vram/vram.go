@@ -55,6 +55,7 @@ type Config struct {
 	GPULayers         int64 // Number of layers on GPU (0 or -1 = all layers).
 	ExpertLayersOnGPU int64 // 0 = all experts on CPU.
 	KVCacheOnCPU      bool  // Move KV cache off the GPU (offload-kqv: false).
+	SWAFull           bool  // Size SWA layers against the full context window.
 }
 
 // Input contains all parameters needed to calculate VRAM requirements.
@@ -75,6 +76,7 @@ type Input struct {
 	GPULayers           int64                 // Number of layers on GPU (0 or -1 = all layers)
 	ExpertLayersOnGPU   int64                 // 0 = all experts on CPU
 	KVCacheOnCPU        bool                  // Move KV cache off the GPU (offload-kqv: false)
+	SWAFull             bool                  // Size SWA layers against the full context window.
 }
 
 // PerDeviceVRAM is the per-GPU breakdown of model weights, KV cache, and
@@ -124,6 +126,13 @@ type Result struct {
 // delegated to sdk/kronk/gguf.CalculateKVCache so the SDK and tools sides
 // share a single implementation.
 func Calculate(input Input) Result {
+	slidingWindow := input.SlidingWindow
+	slidingWindowLayers := input.SlidingWindowLayers
+	if input.SWAFull {
+		slidingWindow = 0
+		slidingWindowLayers = 0
+	}
+
 	kv := gguf.CalculateKVCache(gguf.KVCacheInput{
 		ContextWindow:       input.ContextWindow,
 		BlockCount:          input.BlockCount,
@@ -132,8 +141,8 @@ func Calculate(input Input) Result {
 		ValueLength:         input.ValueLength,
 		BytesPerElement:     input.BytesPerElement,
 		Slots:               input.Slots,
-		SlidingWindow:       input.SlidingWindow,
-		SlidingWindowLayers: input.SlidingWindowLayers,
+		SlidingWindow:       slidingWindow,
+		SlidingWindowLayers: slidingWindowLayers,
 	})
 	kvPerTokenPerLayer := kv.KVPerTokenPerLayer
 	kvPerSlot := kv.KVPerSlot

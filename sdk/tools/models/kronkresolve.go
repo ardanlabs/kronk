@@ -181,6 +181,11 @@ func AutoTune(info ModelInfo, devs devices.Devices) (ModelConfig, error) {
 	cfg.PtrContextWindow = new(int(rec.ContextWindow))
 	cfg.PtrNSeqMax = new(int(rec.NSeqMax))
 
+	// The analyzer sizes hybrid models with their compact sliding-window
+	// cache. Persist that assumption in the generated runtime config so
+	// llama.cpp does not allocate a full-context cache after the fit check.
+	cfg.PtrSWAFull = new(false)
+
 	if k, err := model.ParseGGMLType(rec.CacheTypeK); err == nil {
 		cfg.CacheTypeK = k
 	}

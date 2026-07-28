@@ -167,6 +167,7 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		GPULayers:           cfg.GPULayers,
 		ExpertLayersOnGPU:   cfg.ExpertLayersOnGPU,
 		KVCacheOnCPU:        cfg.KVCacheOnCPU,
+		SWAFull:             cfg.SWAFull,
 	}
 
 	return Calculate(input), nil
