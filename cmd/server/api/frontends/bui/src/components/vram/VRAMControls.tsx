@@ -227,6 +227,9 @@ interface VRAMControlsProps {
   onExpertLayersOnGPUChange?: (v: number) => void;
   kvCacheOnCPU?: boolean;
   onKvCacheOnCPUChange?: (v: boolean) => void;
+  hasSWA?: boolean;
+  swaFull?: boolean;
+  onSwaFullChange?: (v: boolean) => void;
   deviceCount?: number;
   onDeviceCountChange?: (v: number) => void;
   tensorSplit?: string;
@@ -261,6 +264,7 @@ export default function VRAMControls({
   gpuLayers, onGpuLayersChange,
   expertLayersOnGPU, onExpertLayersOnGPUChange,
   kvCacheOnCPU, onKvCacheOnCPUChange,
+  hasSWA, swaFull, onSwaFullChange,
   deviceCount, onDeviceCountChange,
   tensorSplit, onTensorSplitChange,
   contextInfo,
@@ -393,6 +397,9 @@ export default function VRAMControls({
           <CompactAdvancedContent
             kvCacheOnCPU={kvCacheOnCPU}
             onKvCacheOnCPUChange={onKvCacheOnCPUChange}
+            hasSWA={hasSWA}
+            swaFull={swaFull}
+            onSwaFullChange={onSwaFullChange}
             maxDeviceCount={maxDeviceCount}
             deviceCount={deviceCount}
             onDeviceCountChange={onDeviceCountChange}
@@ -535,6 +542,22 @@ export default function VRAMControls({
         </FieldLabel>
       </div>
 
+      <div className="playground-sweep-param">
+        <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-swaFull" tooltipKey="swaFull" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <input
+            id="vram-swaFull"
+            type="checkbox"
+            checked={swaFull ?? true}
+            onChange={(e) => onSwaFullChange?.(e.target.checked)}
+            disabled={!hasSWA}
+          />
+          Full SWA Cache
+        </FieldLabel>
+        <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+          {hasSWA ? (swaFull ? 'Full-context cache for SWA layers' : 'Compact model-defined sliding-window cache') : 'No sliding-window layers detected'}
+        </div>
+      </div>
+
       {!showHardwareOverrides && (
       <div className="playground-sweep-param">
         <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-deviceCount" tooltipKey="gpuCount">GPU Count</FieldLabel>
@@ -617,6 +640,9 @@ export default function VRAMControls({
 interface AdvancedSectionProps {
   kvCacheOnCPU?: boolean;
   onKvCacheOnCPUChange?: (v: boolean) => void;
+  hasSWA?: boolean;
+  swaFull?: boolean;
+  onSwaFullChange?: (v: boolean) => void;
   maxDeviceCount?: number;
   deviceCount?: number;
   onDeviceCountChange?: (v: number) => void;
@@ -652,6 +678,7 @@ function CompactAdvancedToggle({ open, onToggle }: { open: boolean; onToggle: ()
 
 function CompactAdvancedContent({
   kvCacheOnCPU, onKvCacheOnCPUChange,
+  hasSWA, swaFull, onSwaFullChange,
   maxDeviceCount, deviceCount, onDeviceCountChange,
   tensorSplit, onTensorSplitChange,
 }: AdvancedSectionProps) {
@@ -667,6 +694,21 @@ function CompactAdvancedContent({
           />
           KV Cache on CPU
         </FieldLabel>
+      </div>
+      <div className="control-field">
+        <FieldLabel htmlFor="vram-compact-swaFull" tooltipKey="swaFull" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <input
+            id="vram-compact-swaFull"
+            type="checkbox"
+            checked={swaFull ?? true}
+            onChange={(e) => onSwaFullChange?.(e.target.checked)}
+            disabled={!hasSWA}
+          />
+          Full SWA Cache
+        </FieldLabel>
+        <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+          {hasSWA ? (swaFull ? 'Full context' : 'Compact window') : 'No SWA layers'}
+        </div>
       </div>
       <div className="control-field">
         <FieldLabel htmlFor="vram-compact-deviceCount" tooltipKey="gpuCount">GPU Count</FieldLabel>

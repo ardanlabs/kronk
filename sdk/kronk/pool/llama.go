@@ -101,6 +101,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		BytesPerElement:   bpe,
 		Slots:             nseq,
 		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
+		SWAFull:           cfg.SWAFull(),
 	}
 
 	result, source, err := predictResult(l.models, req.ModelID, vramCfg)
@@ -244,6 +245,7 @@ func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
 		BytesPerElement:   bytesPerElement(cfg.CacheTypeK, cfg.CacheTypeV),
 		Slots:             nseq,
 		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
+		SWAFull:           cfg.SWAFull(),
 	}
 
 	out := loader.Display{

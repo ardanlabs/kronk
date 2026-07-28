@@ -72,6 +72,26 @@ func TestAdjustQueueDepthDefault(t *testing.T) {
 	}
 }
 
+func TestSWAFull(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want bool
+	}{
+		{"unset uses llama default", Config{}, true},
+		{"enabled", NewConfig(WithSWAFull(true)), true},
+		{"disabled", NewConfig(WithSWAFull(false)), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.SWAFull(); got != tt.want {
+				t.Errorf("SWAFull: got %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAdjustConfigUsesOneBatchDefault(t *testing.T) {
 	tests := []struct {
 		name string

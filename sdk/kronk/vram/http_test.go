@@ -2,6 +2,35 @@ package vram
 
 import "testing"
 
+func TestCalculateSWAFull(t *testing.T) {
+	input := Input{
+		ContextWindow:       128,
+		BlockCount:          4,
+		HeadCountKV:         2,
+		KeyLength:           8,
+		ValueLength:         8,
+		BytesPerElement:     1,
+		Slots:               2,
+		SlidingWindow:       16,
+		SlidingWindowLayers: 3,
+	}
+
+	compact := Calculate(input)
+	input.SWAFull = true
+	full := Calculate(input)
+
+	const kvPerTokenPerLayer int64 = 2 * (8 + 8)
+	wantCompact := int64(2) * (128 + 3*16) * kvPerTokenPerLayer
+	wantFull := int64(2) * 4 * 128 * kvPerTokenPerLayer
+
+	if compact.SlotMemory != wantCompact {
+		t.Errorf("compact SlotMemory: got %d, want %d", compact.SlotMemory, wantCompact)
+	}
+	if full.SlotMemory != wantFull {
+		t.Errorf("full SlotMemory: got %d, want %d", full.SlotMemory, wantFull)
+	}
+}
+
 func TestIsFolderURL(t *testing.T) {
 	tests := []struct {
 		name string

@@ -204,6 +204,7 @@ export interface VRAMInput {
   gpu_layers?: number;
   expert_layers_on_gpu?: number;
   kv_cache_on_cpu?: boolean;
+  swa_full: boolean;
 }
 
 export interface MoEInfo {
@@ -611,6 +612,7 @@ export interface AutoTuneResponse {
 
 export interface VRAMRequest {
   model_url?: string;
+  model_urls?: string[];
   model_id?: string;
   context_window: number;
   bytes_per_element: number;
@@ -618,6 +620,7 @@ export interface VRAMRequest {
   gpu_layers?: number;
   expert_layers_on_gpu?: number;
   kv_cache_on_cpu?: boolean;
+  swa_full?: boolean;
   device_count?: number;
   tensor_split?: number[];
   auto_fit?: boolean;

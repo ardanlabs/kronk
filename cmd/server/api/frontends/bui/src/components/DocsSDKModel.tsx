@@ -1035,6 +1035,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-config-swafull">
+              <h4>Config.SWAFull</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) SWAFull() bool</code>
+              </pre>
+              <p className="doc-description">SWAFull reports whether sliding-window attention layers use the full context window. An unset value follows llama.cpp's default of true.</p>
+            </div>
+
             <div className="doc-section" id="method-config-string">
               <h4>Config.String</h4>
               <pre className="code-block">
@@ -1822,6 +1830,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-queuedepth">Config.QueueDepth</a></li>
                 <li><a href="#method-config-ropefreqbase">Config.RopeFreqBase</a></li>
                 <li><a href="#method-config-ropefreqscale">Config.RopeFreqScale</a></li>
+                <li><a href="#method-config-swafull">Config.SWAFull</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-config-yarnattnfactor">Config.YarnAttnFactor</a></li>
                 <li><a href="#method-config-yarnbetafast">Config.YarnBetaFast</a></li>

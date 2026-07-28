@@ -426,6 +426,10 @@ func (cfg Config) YarnOrigCtx() int        { return intOr(cfg.PtrYarnOrigCtx, 0)
 func (cfg Config) IncrementalCache() bool  { return boolOr(cfg.PtrIncrementalCache, false) }
 func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLogging, false) }
 
+// SWAFull reports whether sliding-window attention layers use the full
+// context window. An unset value follows llama.cpp's default of true.
+func (cfg Config) SWAFull() bool { return boolOr(cfg.PtrSWAFull, true) }
+
 // sessionStoreKind returns the configured SessionStore backend, or
 // defaultSessionStoreKind ("ram") if unset. Lowercase because Go does
 // not allow a method and field to share a name; callers outside the
@@ -911,13 +915,12 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 	// When enabled, SWA layers use the full context window for their KV
 	// cache instead of the compact n_swa-sized cache, preserving accuracy
 	// at the cost of higher memory usage.
-	// When nil, llama.cpp's default (true/on) is used.
-	if cfg.PtrSWAFull != nil {
-		if *cfg.PtrSWAFull {
-			ctxParams.SwaFull = 1
-		} else {
-			ctxParams.SwaFull = 0
-		}
+	// Resolve the nil default explicitly so runtime allocation and the VRAM
+	// planner use the same setting even if llama.cpp changes its default.
+	if cfg.SWAFull() {
+		ctxParams.SwaFull = 1
+	} else {
+		ctxParams.SwaFull = 0
 	}
 
 	// YaRN RoPE scaling for extended context windows.
