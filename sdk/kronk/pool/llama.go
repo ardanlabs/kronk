@@ -186,6 +186,18 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 	}
 
 	cfg.Log = l.log
+	if req.Custom == nil && cfg.AutoTune && cfg.AutoTuned {
+		l.log(ctx, "AUTO-TUNE",
+			"status", "pre-applied",
+			"context_window", cfg.ContextWindow(),
+			"nseq_max", cfg.NSeqMax(),
+			"cache_type_k", cfg.CacheTypeK,
+			"cache_type_v", cfg.CacheTypeV,
+			"flash_attention", cfg.FlashAttention(),
+			"split_mode", splitModeName(cfg.PtrSplitMode),
+			"ngpu_layers", nGpuLayersName(cfg.PtrNGpuLayers),
+		)
+	}
 
 	krn, err := kronk.NewWithContext(ctx, model.WithConfig(cfg))
 	if err != nil {
@@ -215,6 +227,20 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 	l.log(ctx, "load", info...)
 
 	return krn, nil
+}
+
+func splitModeName(p *model.SplitMode) string {
+	if p == nil {
+		return "auto"
+	}
+	return p.String()
+}
+
+func nGpuLayersName(p *int) string {
+	if p == nil {
+		return "all"
+	}
+	return fmt.Sprintf("%d", *p)
 }
 
 // Display implements loader.Loader.Display for the llama backend.

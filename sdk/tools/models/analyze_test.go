@@ -111,6 +111,12 @@ func TestAnalyzeModelDense(t *testing.T) {
 	if a.Recommended.FlashAttention != "auto" {
 		t.Errorf("Recommended.FlashAttention = %q, want %q", a.Recommended.FlashAttention, "auto")
 	}
+	if a.Recommended.SplitMode != "layer" {
+		t.Errorf("Recommended.SplitMode = %q, want %q", a.Recommended.SplitMode, "layer")
+	}
+	if a.Recommended.NGPULayers != 0 {
+		t.Errorf("Recommended.NGPULayers = %d, want 0", a.Recommended.NGPULayers)
+	}
 
 	if a.Recommended.ContextWindow < vram.ContextWindow8K {
 		t.Errorf("Recommended.ContextWindow = %d, want >= %d", a.Recommended.ContextWindow, vram.ContextWindow8K)
@@ -585,9 +591,15 @@ func TestAutoTuneWithConfigPreservesExplicitSizing(t *testing.T) {
 	}
 	contextWindow := 131072
 	nSeqMax := 2
+	flashAttention := model.FlashAttentionEnabled
+	splitMode := model.SplitModeNone
+	nGpuLayers := 0
 	constraints := ModelConfig{
 		PtrContextWindow: &contextWindow,
 		PtrNSeqMax:       &nSeqMax,
+		FlashAttention:   &flashAttention,
+		PtrSplitMode:     &splitMode,
+		PtrNGpuLayers:    &nGpuLayers,
 	}
 
 	cfg, err := AutoTuneWithConfig(info, devs, constraints)
@@ -606,6 +618,15 @@ func TestAutoTuneWithConfigPreservesExplicitSizing(t *testing.T) {
 	}
 	if cfg.PtrNUBatch != nil {
 		t.Errorf("PtrNUBatch: got %v, want nil", cfg.PtrNUBatch)
+	}
+	if cfg.FlashAttention == nil || *cfg.FlashAttention != flashAttention {
+		t.Errorf("FlashAttention: got %v, want %s", cfg.FlashAttention, flashAttention)
+	}
+	if cfg.PtrSplitMode == nil || *cfg.PtrSplitMode != splitMode {
+		t.Errorf("PtrSplitMode: got %v, want %s", cfg.PtrSplitMode, splitMode)
+	}
+	if cfg.PtrNGpuLayers == nil || *cfg.PtrNGpuLayers != nGpuLayers {
+		t.Errorf("PtrNGpuLayers: got %v, want %d", cfg.PtrNGpuLayers, nGpuLayers)
 	}
 	if cfg.CacheTypeK == model.GGMLTypeAuto || cfg.CacheTypeV == model.GGMLTypeAuto {
 		t.Errorf("cache types: got %s/%s, want AutoTune recommendation", cfg.CacheTypeK, cfg.CacheTypeV)

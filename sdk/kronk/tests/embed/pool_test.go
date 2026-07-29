@@ -19,14 +19,14 @@ func Test_PooledEmbeddings(t *testing.T) {
 	defer cancel()
 
 	krn, err := kronk.New(model.WithConfig(model.Config{
-		ModelFiles:       testlib.MPEmbed.ModelFiles,
-		PtrContextWindow: new(2048),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
-		FlashAttention:   model.FlashAttentionEnabled,
-		PtrNSeqMax:       new(numInstances),
+		ModelFiles:        testlib.MPEmbed.ModelFiles,
+		PtrContextWindow:  new(2048),
+		PtrNBatch:         new(2048),
+		PtrNUBatch:        new(512),
+		CacheTypeK:        model.GGMLTypeQ8_0,
+		CacheTypeV:        model.GGMLTypeQ8_0,
+		PtrFlashAttention: new(model.FlashAttentionEnabled),
+		PtrNSeqMax:        new(numInstances),
 	}))
 	if err != nil {
 		t.Fatalf("Failed to create embedding model with NSeqMax=%d: %v", numInstances, err)

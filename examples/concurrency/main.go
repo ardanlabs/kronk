@@ -140,7 +140,7 @@ func printModelInfo(krn *kronk.Kronk) {
 
 	fmt.Println("- contextWindow  :", cfg.ContextWindow())
 	fmt.Printf("- k/v            : %s/%s\n", cfg.CacheTypeK, cfg.CacheTypeV)
-	fmt.Println("- flashAttention :", cfg.FlashAttention)
+	fmt.Println("- flashAttention :", cfg.FlashAttention())
 	fmt.Println("- nBatch         :", cfg.NBatch())
 	fmt.Println("- nuBatch        :", cfg.NUBatch())
 	fmt.Println("- modelType      :", mi.Type)
