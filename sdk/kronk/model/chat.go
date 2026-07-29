@@ -20,6 +20,12 @@ const streamChBuffer = 32
 // ErrFileInputsUnsupported indicates file content parts are not supported.
 var ErrFileInputsUnsupported = errors.New("file inputs are not currently supported")
 
+// ErrMessagesMissing indicates that a chat request has no messages field.
+var ErrMessagesMissing = errors.New("validate-document: no messages found in request")
+
+// ErrMessagesInvalid indicates that a chat request's messages field has an invalid type.
+var ErrMessagesInvalid = errors.New("validate-document: messages is not a slice of documents")
+
 // Chat performs a chat request and returns the final response.
 // All requests (including vision/audio) use batch processing and can run
 // concurrently based on the NSeqMax config value, which controls parallel
@@ -603,12 +609,12 @@ func deserializeToolCallArguments(d D) D {
 func (m *Model) validateDocument(d D) (Params, error) {
 	messages, exists := d["messages"]
 	if !exists {
-		return Params{}, errors.New("validate-document: no messages found in request")
+		return Params{}, ErrMessagesMissing
 	}
 
 	docs, ok := messages.([]D)
 	if !ok {
-		return Params{}, errors.New("validate-document: messages is not a slice of documents")
+		return Params{}, ErrMessagesInvalid
 	}
 	if err := validateMessageContentParts(docs); err != nil {
 		return Params{}, err

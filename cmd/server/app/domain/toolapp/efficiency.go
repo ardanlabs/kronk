@@ -108,7 +108,7 @@ func (a *app) runEfficiency(ctx context.Context, r *http.Request) web.Encoder {
 	// prompt and re-running reuses the loaded model rather than reloading it.
 	krn, err := a.pool.Kronk.AquireCustom(ctx, req.Model+"/efficiency", cfg)
 	if err != nil {
-		return errs.FromKronk(err)
+		return errs.FromSDK(err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -125,7 +125,7 @@ func (a *app) runEfficiency(ctx context.Context, r *http.Request) web.Encoder {
 		"enable_thinking": false,
 	}
 	if _, err := krn.Chat(ctx, warmup); err != nil {
-		return errs.FromKronk(fmt.Errorf("warm-up failed: %w", err))
+		return errs.FromSDK(fmt.Errorf("warm-up failed: %w", err))
 	}
 
 	messages := []model.D{
@@ -143,7 +143,7 @@ func (a *app) runEfficiency(ctx context.Context, r *http.Request) web.Encoder {
 	resp, err := krn.Chat(ctx, d)
 	wallclock := time.Since(start)
 	if err != nil {
-		return errs.FromKronk(err)
+		return errs.FromSDK(err)
 	}
 
 	if len(resp.Choices) == 0 || resp.Choices[0].Message == nil {

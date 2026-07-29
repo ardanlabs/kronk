@@ -86,7 +86,7 @@ func newError(code ErrCode, err error, callerSkip int) *Error {
 	}
 }
 
-// FromKronk translates a Kronk SDK error into its HTTP application error.
+// FromSDK translates an SDK error into its HTTP application error.
 //
 // Every sentinel error defined across the SDK is listed here so that this
 // function is the single place to audit the full error-mapping surface.
@@ -94,7 +94,7 @@ func newError(code ErrCode, err error, callerSkip int) *Error {
 // Errors marked with a TODO comment are recognized but intentionally left
 // at the default (Internal) code — they need discussion before a more
 // specific code is assigned.
-func FromKronk(err error) *Error {
+func FromSDK(err error) *Error {
 	code := Internal
 	switch {
 	// -----------------------------------------------------------------
@@ -110,6 +110,10 @@ func FromKronk(err error) *Error {
 	// sdk/kronk/model — request validation
 	// -----------------------------------------------------------------
 	case errors.Is(err, model.ErrFileInputsUnsupported):
+		code = InvalidArgument
+	case errors.Is(err, model.ErrMessagesMissing):
+		code = InvalidArgument
+	case errors.Is(err, model.ErrMessagesInvalid):
 		code = InvalidArgument
 
 	// -----------------------------------------------------------------

@@ -20,7 +20,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
 
-func TestFromKronk(t *testing.T) {
+func TestFromSDK(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -29,6 +29,8 @@ func TestFromKronk(t *testing.T) {
 		{name: "context canceled", err: context.Canceled, code: Canceled},
 		{name: "context deadline", err: context.DeadlineExceeded, code: DeadlineExceeded},
 		{name: "file inputs unsupported", err: model.ErrFileInputsUnsupported, code: InvalidArgument},
+		{name: "messages missing", err: model.ErrMessagesMissing, code: InvalidArgument},
+		{name: "messages invalid", err: model.ErrMessagesInvalid, code: InvalidArgument},
 		{name: "kronk pool server busy", err: kronkpool.ErrServerBusy, code: Unavailable},
 		{name: "kronk pool no capacity", err: kronkpool.ErrNoCapacity, code: ResourceExhausted},
 		{name: "admission timeout", err: kronk.ErrAdmissionTimeout, code: ResourceExhausted},
@@ -51,7 +53,7 @@ func TestFromKronk(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := fmt.Errorf("wrapped: %w", tt.err)
-			got := FromKronk(err)
+			got := FromSDK(err)
 
 			if !got.Code.Equal(tt.code) {
 				t.Errorf("Code: got %s, want %s", got.Code, tt.code)
@@ -59,8 +61,8 @@ func TestFromKronk(t *testing.T) {
 			if got.Message != err.Error() {
 				t.Errorf("Message: got %q, want %q", got.Message, err)
 			}
-			if !strings.Contains(got.FuncName, "TestFromKronk") {
-				t.Errorf("FuncName: got %q, want TestFromKronk caller", got.FuncName)
+			if !strings.Contains(got.FuncName, "TestFromSDK") {
+				t.Errorf("FuncName: got %q, want TestFromSDK caller", got.FuncName)
 			}
 			if !strings.Contains(got.FileName, "errs_test.go:") {
 				t.Errorf("FileName: got %q, want errs_test.go caller", got.FileName)

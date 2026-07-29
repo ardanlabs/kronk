@@ -82,7 +82,7 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 
 	b, err := a.pool.Bucky.AquireModel(ctx, modelID)
 	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
+		return errs.FromSDK(err)
 	}
 
 	if !b.ModelInfo().IsMultilingual && language != "" && language != "en" {
@@ -105,7 +105,7 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 
 	tr, err := b.TranscribeFile(ctx, file, opts...)
 	if err != nil {
-		return errs.New(errs.Internal, fmt.Errorf("transcribe: %w", err))
+		return errs.FromSDK(fmt.Errorf("transcribe: %w", err))
 	}
 
 	duration := tr.Duration

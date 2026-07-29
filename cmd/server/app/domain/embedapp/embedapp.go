@@ -43,7 +43,7 @@ func (a *app) embeddings(ctx context.Context, r *http.Request) web.Encoder {
 
 	krn, err := a.pool.Kronk.AquireModel(ctx, modelID)
 	if err != nil {
-		return errs.FromKronk(err)
+		return errs.FromSDK(err)
 	}
 
 	if !krn.ModelInfo().IsEmbedModel {
@@ -55,7 +55,7 @@ func (a *app) embeddings(ctx context.Context, r *http.Request) web.Encoder {
 	d := model.MapToModelD(req)
 
 	if _, err := krn.EmbeddingsHTTP(ctx, a.log.Info, web.GetWriter(ctx), d); err != nil {
-		return errs.FromKronk(err)
+		return errs.FromSDK(err)
 	}
 
 	return web.NewNoResponse()

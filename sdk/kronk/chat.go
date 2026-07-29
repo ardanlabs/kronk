@@ -3,7 +3,6 @@ package kronk
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -110,7 +109,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	for {
 		select {
 		case <-ctx.Done():
-			return lr, errors.New("chat-streaming-http: context canceled, do not send response")
+			return lr, fmt.Errorf("chat-streaming-http: context canceled, do not send response: %w", ctx.Err())
 
 		case resp, ok := <-ch:
 			if !ok {

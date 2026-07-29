@@ -108,3 +108,38 @@ func TestValidateDocumentRejectsFileInput(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateDocumentValidationErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		d    D
+		want error
+	}{
+		{
+			name: "missing messages",
+			d:    D{},
+			want: ErrMessagesMissing,
+		},
+		{
+			name: "messages wrong type",
+			d:    D{"messages": "invalid"},
+			want: ErrMessagesInvalid,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m Model
+			_, err := m.validateDocument(tt.d)
+			if err == nil {
+				t.Fatal("validateDocument: expected error")
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("error: got %v, want %v", err, tt.want)
+			}
+			if err.Error() != tt.want.Error() {
+				t.Errorf("error: got %q, want %q", err, tt.want)
+			}
+		})
+	}
+}

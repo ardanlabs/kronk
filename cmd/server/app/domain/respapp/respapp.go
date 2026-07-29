@@ -43,7 +43,7 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 
 	krn, err := a.pool.Kronk.AquireModel(ctx, modelID)
 	if err != nil {
-		return errs.FromKronk(err)
+		return errs.FromSDK(err)
 	}
 
 	a.log.Info(ctx, "response", "REQUEST-INPUT", req.String())
@@ -51,7 +51,7 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 	d := model.MapToModelD(req)
 
 	if _, err := krn.ResponseStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
-		return errs.FromKronk(err)
+		return errs.FromSDK(err)
 	}
 
 	return web.NewNoResponse()

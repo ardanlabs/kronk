@@ -3,7 +3,6 @@ package kronk
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -245,9 +244,7 @@ func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWrit
 
 	for event := range ch {
 		if err := ctx.Err(); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return lr, errors.New("responses-streaming-http: client disconnected, do not send response")
-			}
+			return lr, fmt.Errorf("responses-streaming-http: client disconnected, do not send response: %w", err)
 		}
 
 		data, err := json.Marshal(event)

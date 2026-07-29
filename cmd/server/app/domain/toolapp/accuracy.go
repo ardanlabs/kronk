@@ -181,7 +181,7 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 
 	krn, err := a.pool.Kronk.AquireCustom(ctx, req.Model+"/accuracy", cfg)
 	if err != nil {
-		return errs.FromKronk(err)
+		return errs.FromSDK(err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -203,7 +203,7 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 
 	resp, err := krn.Chat(ctx, d)
 	if err != nil {
-		return errs.FromKronk(err)
+		return errs.FromSDK(err)
 	}
 
 	if len(resp.Choices) == 0 || resp.Choices[0].Message == nil {
