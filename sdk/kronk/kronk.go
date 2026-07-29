@@ -97,7 +97,6 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 
 	return &krn, nil
 }
-
 func generationAdmissionCapacity(cfg model.Config) int {
 	return max(cfg.NSeqMax(), 1) * cfg.QueueDepth()
 }

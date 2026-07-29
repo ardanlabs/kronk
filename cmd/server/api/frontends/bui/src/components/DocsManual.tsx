@@ -409,7 +409,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <p>Prefer the model's supplied template unless you are correcting known-bad metadata or deliberately testing a custom protocol. A template override must remain compatible with the model and with any tool-call output parser. Sampling controls such as <code>temperature</code>, <code>top_p</code>, penalties, and <code>max_tokens</code> do not become prompt text; they govern token selection and stopping after the template has rendered.</p>
           <p><a href="https://www.kronkai.com/manual#45-stage-2-—-prepare-model-work">Chapter 4 §4.5</a> shows this template protocol as part of Stage 2 request preparation, where the portable request becomes the exact prompt that Kronk tokenizes and executes. <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> explains why IMC renders the complete conversation both with and without the generation suffix. <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> documents the portable API message formats that templates consume.</p>
           <h3 id="32-automatic-tuning">3.2 Automatic Tuning</h3>
-          <p>The model server derives a starting configuration from GGUF metadata and the available hardware. This analysis chooses values such as:</p>
+          <p>The Kronk Model Server runs automatic tuning by default for every model it loads. No <code>auto-tune</code> key is required in <code>model_config.yaml</code>. The server derives a starting configuration from GGUF metadata and the available hardware. This analysis chooses values such as:</p>
           <ul>
             <li>context window;</li>
             <li>KV cache types;</li>
@@ -419,13 +419,25 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
             <li>multi-GPU split mode.</li>
           </ul>
           <p>Automatic tuning does not select the model weight loading mode. Storage, filesystem support, page-cache reuse, memory-lock limits, and workload lifetime matter more than GPU or RAM inventory alone, so <code>load-mode</code> remains <code>mmap</code> unless explicitly configured.</p>
-          <p>A concrete override in <code>model_config.yaml</code> replaces the analyzed value. The special cache type <code>auto</code> is treated as unset and therefore does not clear an analyzed <code>f16</code> or <code>q8_0</code> choice. This makes the usual workflow:</p>
+          <p>A concrete override in <code>model_config.yaml</code> constrains the analysis. Explicit <code>context-window</code> and <code>nseq-max</code> values are fixed: automatic tuning includes them in its memory calculation and never silently reduces them. The special cache type <code>auto</code> is treated as unset and therefore does not clear an analyzed <code>f16</code> or <code>q8_0</code> choice. This makes the usual workflow:</p>
           <ol>
             <li>Start with no override and let Kronk analyze the model.</li>
             <li>Use the model normally and monitor memory and latency.</li>
             <li>Override only the setting needed for the workload.</li>
           </ol>
-          <p>The balanced analysis limits the selected context to the model's training context and a maximum of 128K tokens. It estimates the largest supported context bucket that fits its GPU budget, with a 4K minimum recommendation. It starts with an f16 KV cache and tries q8_0 if the minimum f16 configuration does not fit. CPU-only analysis and systems without a known GPU budget cannot perform the same fit check. All recommendations are estimates, not a guarantee that every backend and workload will fit or have identical memory use.</p>
+          <p>When <code>context-window</code> and <code>nseq-max</code> are specified but the KV cache types are omitted, automatic tuning uses this priority:</p>
+          <ol>
+            <li>Preserve the configured context window and concurrency.</li>
+            <li>Try <code>f16</code> for both KV caches.</li>
+            <li>If <code>f16</code> does not fit, try <code>q8_0</code> at the same context and concurrency.</li>
+            <li>If <code>q8_0</code> does not fit, keep the configured values and report that the recommendation does not fit. Automatic tuning does not select a cache type below <code>q8_0</code> and does not reduce the configured context or concurrency.</li>
+          </ol>
+          <p>This is the recommended server configuration style:</p>
+          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+  context-window: 131072
+  nseq-max: 2`}</code></pre>
+          <p>Leave <code>cache-type-k</code> and <code>cache-type-v</code> out unless the workload requires a specific cache format. In this example, Kronk sizes the exact 131072-token, two-sequence configuration with <code>f16</code> first and then <code>q8_0</code> if necessary.</p>
+          <p>When context and concurrency are not specified, the balanced analysis limits the selected context to the model's training context and a maximum of 128K tokens. It searches supported context buckets from largest to smallest. At each context it tries <code>f16</code> first and then <code>q8_0</code> before considering a smaller context. The minimum recommendation is 4K. CPU-only analysis and systems without a known GPU budget cannot perform the same fit check. All recommendations are estimates, not a guarantee that every backend and workload will fit or have identical memory use.</p>
           <p>In the Go SDK, the same analysis is opt-in through <code>WithAutoTune</code>. It is not applied when an application uses the low-level <code>model</code> package directly. Explicit SDK options still take precedence over analyzed values.</p>
           <h3 id="33-core-runtime-settings">3.3 Core Runtime Settings</h3>
           <h4 id="context-window">Context window</h4>
@@ -1637,6 +1649,7 @@ kronk libs --local`}</code></pre>
           <p>The server reads per-model overrides from:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/models/model_config.yaml`}</code></pre>
           <p>Kronk seeds the file on first use and preserves edits across upgrades. Entries are merged over hardware-analysis recommendations rather than replacing the entire runtime configuration.</p>
+          <p>Automatic tuning is enabled by default in the model server. An explicit <code>context-window</code> or <code>nseq-max</code> in this file is treated as a fixed sizing constraint, not a value the tuner may reduce. When KV cache types are omitted, the server tries <code>f16</code> and then <code>q8_0</code> for that exact context and concurrency; it never automatically quantizes below <code>q8_0</code>. See <a href="https://www.kronkai.com/manual#32-automatic-tuning">Chapter 3 §3.2</a> for the complete selection order and recommended configuration style.</p>
           <p>Use another file without replacing the default:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model_config.yaml`}</code></pre>
           <p>or:</p>

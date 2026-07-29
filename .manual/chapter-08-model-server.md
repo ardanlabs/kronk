@@ -185,6 +185,14 @@ Kronk seeds the file on first use and preserves edits across upgrades. Entries
 are merged over hardware-analysis recommendations rather than replacing the
 entire runtime configuration.
 
+Automatic tuning is enabled by default in the model server. An explicit
+`context-window` or `nseq-max` in this file is treated as a fixed sizing
+constraint, not a value the tuner may reduce. When KV cache types are omitted,
+the server tries `f16` and then `q8_0` for that exact context and concurrency;
+it never automatically quantizes below `q8_0`. See
+[Chapter 3 §3.2](https://www.kronkai.com/manual#32-automatic-tuning) for the
+complete selection order and recommended configuration style.
+
 Use another file without replacing the default:
 
 ```shell
