@@ -17,7 +17,7 @@ import (
 
 // LoadData loads the specified chunks file into a duckdb database that is
 // configured to use the VSS extension for vector similarity search.
-func LoadData(dbPath string, krn *kronk.Kronk, dimentions int, chunksFile string) (*sql.DB, error) {
+func LoadData(dbPath string, krn *kronk.Kronk, dimensions int, chunksFile string) (*sql.DB, error) {
 	connector, err := duckdb.NewConnector(dbPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating connector: %w", err)
@@ -80,7 +80,7 @@ func LoadData(dbPath string, krn *kronk.Kronk, dimentions int, chunksFile string
 		);
 	`
 
-	sql = fmt.Sprintf(sql, dimentions)
+	sql = fmt.Sprintf(sql, dimensions)
 
 	if _, err = db.Exec(sql); err != nil {
 		return nil, fmt.Errorf("error creating table: %w", err)

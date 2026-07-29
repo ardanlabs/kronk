@@ -32,7 +32,7 @@ const (
 	modelEmbedSource = "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
 	dbPath           = "rag/docs/duck-rag.db" // ":memory:"
 	chunksFile       = "rag/docs/book.chunks"
-	dimentions       = 768
+	dimensions       = 1024
 )
 
 func main() {
@@ -72,7 +72,7 @@ func run() error {
 
 	// -------------------------------------------------------------------------
 
-	db, err := duck.LoadData(dbPath, krnEmbed, dimentions, chunksFile)
+	db, err := duck.LoadData(dbPath, krnEmbed, dimensions, chunksFile)
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
