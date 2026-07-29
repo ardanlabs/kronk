@@ -233,3 +233,29 @@ func TestRestoreAutoTunedSizing(t *testing.T) {
 		t.Errorf("CacheTypeV: got %s, want q8_0", cfg.CacheTypeV)
 	}
 }
+
+func TestRestoreAutoTunedSizingEmpty(t *testing.T) {
+	contextWindow := 131072
+	nSeqMax := 2
+	cfg := ModelConfig{
+		PtrContextWindow: &contextWindow,
+		PtrNSeqMax:       &nSeqMax,
+		CacheTypeK:       model.GGMLTypeQ8_0,
+		CacheTypeV:       model.GGMLTypeQ8_0,
+	}
+
+	restoreAutoTunedSizing(&cfg, ModelConfig{})
+
+	if cfg.PtrContextWindow == nil || *cfg.PtrContextWindow != contextWindow {
+		t.Errorf("PtrContextWindow: got %v, want %d", cfg.PtrContextWindow, contextWindow)
+	}
+	if cfg.PtrNSeqMax == nil || *cfg.PtrNSeqMax != nSeqMax {
+		t.Errorf("PtrNSeqMax: got %v, want %d", cfg.PtrNSeqMax, nSeqMax)
+	}
+	if cfg.CacheTypeK != model.GGMLTypeQ8_0 {
+		t.Errorf("CacheTypeK: got %s, want q8_0", cfg.CacheTypeK)
+	}
+	if cfg.CacheTypeV != model.GGMLTypeQ8_0 {
+		t.Errorf("CacheTypeV: got %s, want q8_0", cfg.CacheTypeV)
+	}
+}

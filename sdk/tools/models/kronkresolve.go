@@ -92,10 +92,18 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 // restoreAutoTunedSizing ensures the resolved config uses the sizing values
 // included in the AutoTune memory calculation.
 func restoreAutoTunedSizing(cfg *ModelConfig, sizing ModelConfig) {
-	cfg.PtrContextWindow = sizing.PtrContextWindow
-	cfg.PtrNSeqMax = sizing.PtrNSeqMax
-	cfg.CacheTypeK = sizing.CacheTypeK
-	cfg.CacheTypeV = sizing.CacheTypeV
+	if sizing.PtrContextWindow != nil {
+		cfg.PtrContextWindow = sizing.PtrContextWindow
+	}
+	if sizing.PtrNSeqMax != nil {
+		cfg.PtrNSeqMax = sizing.PtrNSeqMax
+	}
+	if sizing.CacheTypeK != model.GGMLTypeAuto {
+		cfg.CacheTypeK = sizing.CacheTypeK
+	}
+	if sizing.CacheTypeV != model.GGMLTypeAuto {
+		cfg.CacheTypeV = sizing.CacheTypeV
+	}
 }
 
 // resolveAdapters converts user-facing adapter ids and paths into concrete
