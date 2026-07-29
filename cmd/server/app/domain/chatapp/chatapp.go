@@ -4,7 +4,6 @@ package chatapp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
@@ -44,7 +43,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 
 	krn, err := a.pool.Kronk.AquireModel(ctx, modelID)
 	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
+		return errs.FromKronk(err)
 	}
 
 	a.log.Info(ctx, "chat-completions", "REQUEST-PARAMS", req.String())
@@ -52,10 +51,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 	d := model.MapToModelD(req)
 
 	if _, err := krn.ChatStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
-		if errors.Is(err, model.ErrFileInputsUnsupported) {
-			return errs.New(errs.InvalidArgument, err)
-		}
-		return errs.New(errs.Internal, err)
+		return errs.FromKronk(err)
 	}
 
 	return web.NewNoResponse()

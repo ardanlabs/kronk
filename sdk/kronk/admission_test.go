@@ -63,8 +63,34 @@ func TestAcquireAdmissionConfiguredTimeout(t *testing.T) {
 	krn.admissionCh <- struct{}{}
 
 	_, err := krn.acquireAdmission(t.Context())
+	if !errors.Is(err, ErrAdmissionTimeout) {
+		t.Fatalf("acquireAdmission: got error %v, want %v", err, ErrAdmissionTimeout)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("acquireAdmission: got context deadline for admission timeout: %v", err)
+	}
+
+	if active := krn.ActiveStreams(); active != 0 {
+		t.Errorf("ActiveStreams: got %d, want 0", active)
+	}
+}
+
+func TestAcquireAdmissionCallerDeadline(t *testing.T) {
+	krn := Kronk{
+		cfg:         model.NewConfig(model.WithAdmissionTimeout(time.Hour)),
+		admissionCh: make(chan struct{}, 1),
+	}
+	krn.admissionCh <- struct{}{}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+	defer cancel()
+
+	_, err := krn.acquireAdmission(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("acquireAdmission: got error %v, want %v", err, context.DeadlineExceeded)
+	}
+	if errors.Is(err, ErrAdmissionTimeout) {
+		t.Fatalf("acquireAdmission: got admission timeout for caller deadline: %v", err)
 	}
 
 	if active := krn.ActiveStreams(); active != 0 {

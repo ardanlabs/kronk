@@ -43,7 +43,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 
 	krn, err := a.pool.Kronk.AquireModel(ctx, req.Model)
 	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
+		return errs.FromKronk(err)
 	}
 
 	a.log.Info(ctx, "messages", "model", req.Model)
@@ -52,7 +52,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 
 	if req.Stream {
 		if err := a.handleStreaming(ctx, krn, d, req.Model); err != nil {
-			return errs.New(errs.Internal, err)
+			return errs.FromKronk(err)
 		}
 
 		return web.NewNoResponse()
@@ -60,7 +60,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 
 	resp, err := krn.Chat(ctx, d)
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromKronk(err)
 	}
 
 	// Set anthropic-request-id header for API compatibility

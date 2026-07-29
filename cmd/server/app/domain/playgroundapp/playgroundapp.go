@@ -104,7 +104,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		krn, err = a.pool.Kronk.AquireModel(ctx, req.ModelID)
 	}
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromKronk(err)
 	}
 
 	a.log.Info(ctx, "playground-session",
@@ -279,7 +279,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 			return web.NewNoResponse()
 		}
 
-		return errs.New(errs.Internal, err)
+		return errs.FromKronk(err)
 	}
 
 	return web.NewNoResponse()
