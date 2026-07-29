@@ -9,7 +9,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// prefillDraft decodes prompt tokens into the draft model's KV cache.
+// prefillDraft decodes generation prompt tokens into the draft model's KV cache.
 // Called once after the target model's prefill completes. Uses incremental
 // caching: finds the common prefix with the previous request's tokens and
 // only decodes the new suffix, avoiding redundant re-prefill of the entire

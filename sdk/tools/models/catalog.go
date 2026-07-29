@@ -42,7 +42,10 @@ import (
 //     support never recorded a co-located mtp-*.gguf companion; the
 //     schema-upgrade reconcile re-scans HuggingFace once per entry to
 //     fill in MTP/MTPOrig and stamp mtp_checked.
-const SchemaVersion = 2
+//   - v3: embedding capability detection also considers model name, basename,
+//     and tags when the architecture is generic. Replaced embedded defaults
+//     are retired from existing catalogs without deleting downloaded files.
+const SchemaVersion = 3
 
 // Catalog is the on-disk schema for catalog.yaml. It owns the provider
 // priority list and the cache of previously-resolved canonical model IDs.
@@ -680,7 +683,7 @@ func (r *Resolver) enrichCatalogEntry(ctx context.Context, canonical string, log
 		return nil
 	}
 
-	updated, changed := r.models.enrichEntry(ctx, entry, log)
+	updated, changed, _ := r.models.enrichEntry(ctx, entry, log)
 	if !changed {
 		return nil
 	}

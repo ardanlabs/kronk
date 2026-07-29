@@ -239,6 +239,12 @@ func TemplateName(metadata map[string]string) string {
 // "audio" and "video" tokens turn on the matching modality only.
 func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapabilities {
 	arch := strings.ToLower(gguf.DetectArchitecture(metadata))
+	hint := strings.ToLower(strings.Join([]string{
+		arch,
+		gguf.GeneralName(metadata),
+		gguf.GeneralBasename(metadata),
+		gguf.GeneralTags(metadata),
+	}, " "))
 
 	caps := CatalogCapabilities{
 		Streaming: true,
@@ -246,13 +252,13 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 
 	hasTemplate := gguf.HasChatTemplate(metadata)
 	switch {
-	case strings.Contains(arch, "embed"):
-		caps.Endpoint = "embeddings"
-		caps.Embedding = true
-		caps.Streaming = false
 	case strings.Contains(arch, "rerank") || strings.Contains(arch, "bert"):
 		caps.Endpoint = "rerank"
 		caps.Rerank = true
+		caps.Streaming = false
+	case strings.Contains(hint, "embed"):
+		caps.Endpoint = "embeddings"
+		caps.Embedding = true
 		caps.Streaming = false
 	default:
 		caps.Endpoint = "chat_completion"
@@ -262,13 +268,6 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 
 	if hasProjection {
 		caps.Images = true
-
-		hint := strings.ToLower(strings.Join([]string{
-			arch,
-			gguf.GeneralName(metadata),
-			gguf.GeneralBasename(metadata),
-			gguf.GeneralTags(metadata),
-		}, " "))
 
 		anyToAny := strings.Contains(hint, "any-to-any") || strings.Contains(hint, "omni")
 

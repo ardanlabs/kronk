@@ -32,14 +32,14 @@ is covered in [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-cachi
 
 ### 4.1 Runtime Mental Model
 
-Kronk uses two concurrency designs:
+Kronk uses three concurrency designs:
 
-| Workload              | `nseq-max` controls     | Execution design                                      |
-| --------------------- | ----------------------- | ----------------------------------------------------- |
-| Text generation       | Active generation slots | One model context and a shared batch engine           |
-| Multimodal generation | Active generation slots | The same batch engine, with specialized media prefill |
-| Embedding             | Independent contexts    | Context pool with shared model weights                |
-| Reranking             | Independent contexts    | Context pool with shared model weights                |
+| Workload | `nseq-max` controls | Execution design |
+| --- | --- | --- |
+| Text generation | Active generation slots | One model context and the generation batch engine |
+| Multimodal generation | Active generation slots | The generation batch engine with specialized media prefill |
+| Supported embedding/reranking | Sequences per native batch | One model context and the sequence-batch engine |
+| Other embedding/reranking | Independent contexts | Context-pool fallback with shared model weights |
 
 Multimodal generation includes requests that provide images or audio to a
 compatible language model. Bucky speech transcription is a separate
@@ -282,26 +282,42 @@ load-time values as described in
 
 ### 4.8 Embedding and Reranking
 
-Embedding and reranking models do not use generation slots. Kronk creates a
-pool of `nseq-max` independent model contexts that share the model weights.
+Embedding and reranking models do not use generation slots. Kronk chooses a
+separate runtime from the GGUF architecture metadata. Architectures proven
+safe for multi-sequence pooled evaluation use the sequence-batch engine. The
+current compatibility set is Qwen3 embedding and BERT reranking models.
 
 ```diagram
-┌──────────┐       ┌──────────────────────────────┐
-│ Requests │──────▶│ Context pool                 │
-└──────────┘       │  Context 0 ── request A      │
-                   │  Context 1 ── request B      │
-                   │  Context 2 ── available      │
-                   └──────────────────────────────┘
+┌──────────────┐       ┌────────────────────────────────┐
+│ Request jobs │──────▶│ Sequence-batch scheduler       │
+└──────────────┘       │ seq 0 ── request A, input 0    │
+                       │ seq 1 ── request A, input 1    │
+                       │ seq 2 ── request B, input 0    │
+                       └───────────────┬────────────────┘
+                                       ▼
+                       ┌───────────────────────────────┐
+                       │ One model context and weights │
+                       └───────────────────────────────┘
 ```
 
-Each admitted request acquires one context, performs its work independently,
-and returns the context to the pool. If every context is busy, another request
-waits until one is released or its context is cancelled. Work from separate
-contexts is not combined into the generation engine's shared token batch.
+The scheduler keeps each embedding input or reranking query-document pair as a
+complete sequence. It coalesces already queued requests, fills a native batch
+up to the `nseq-max` and token limits, and schedules requests round-robin when
+one request cannot fit in a single batch. The engine is intentionally separate
+from generation because it does not own long-lived generation slots, samplers,
+or streaming state.
 
-Additional contexts require memory even though model weights are shared. Raise
-`nseq-max` only when concurrent embedding or reranking traffic benefits from
-the extra contexts.
+Unknown or unsafe architectures use the context-pool fallback. Each admitted
+request acquires one independent single-sequence context, performs its work,
+and returns the context to the pool. This avoids native assertions seen with
+some architectures during multi-sequence initialization. Additional fallback
+contexts require memory even though model weights are shared.
+
+Runtime selection is conservative: a model name identifies the task, while
+GGUF `general.architecture` metadata must match the compatibility allowlist to
+select sequence batching. Missing or unrecognized architecture metadata uses
+the fallback. Raise `nseq-max` only after measuring throughput and memory for
+the selected runtime.
 
 ### 4.9 Configuration and Tuning
 
@@ -323,6 +339,20 @@ The Go SDK equivalents are `model.WithAdmissionTimeout(3*time.Minute)` and
 server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`): admission timeout only
 bounds waiting for a permit, while inference timeout bounds admitted request
 processing at the server/web/CLI layer.
+
+Local representative benchmarks are available for both embedding and
+reranking runtimes:
+
+```shell
+make benchmark-embedding-fallback
+make benchmark-embedding-batchseq
+make benchmark-rerank-fallback
+make benchmark-rerank-batchseq
+```
+
+Each path uses a model known to select that runtime, so these are deployment
+baselines rather than controlled measurements of scheduler overhead: model
+architecture and weights differ between each fallback/sequence-batch pair.
 
 Tune from a measured baseline rather than a generic slot recommendation:
 
@@ -408,6 +438,17 @@ to the batch engine and ends at slot assignment. It does not include time
 blocked at the outer SDK admission gate or time spent preparing an IMC session
 before the submit attempt. Compare it with end-to-end request duration and
 time-to-first-token measurements when diagnosing latency.
+
+Embedding and reranking expose `inference_requests_total`,
+`inference_request_duration_seconds`, and `inference_active_requests`, labeled
+by operation and runtime (`batchseq` or `context_pool`). Sequence batching also
+publishes `batchseq_queue_wait_seconds`, `batchseq_items`, and
+`batchseq_batches_total`. These distinguish outer request concurrency from the
+number and width of native batches actually evaluated.
+
+The `inference_*` metrics begin after the outer SDK admission permit is
+acquired. They describe admitted model-layer work and do not count admission
+wait time or requests that time out or are cancelled before admission.
 
 Consistently increasing queue-wait time means requests are arriving faster
 than slots complete them. Before raising `nseq-max`, confirm that the device

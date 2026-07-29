@@ -28,16 +28,18 @@ var (
 
 // Model paths resolved during Setup.
 var (
-	MPThinkToolChat models.Path
-	MPGPTChat       models.Path
-	MPHybridVision  models.Path
-	MPSimpleVision  models.Path
-	MPMoEVision     models.Path
-	MPAudio         models.Path
-	MPEmbed         models.Path
-	MPRerank        models.Path
-	MPMTP           models.Path
-	MPDraft         models.Path
+	MPThinkToolChat  models.Path
+	MPGPTChat        models.Path
+	MPHybridVision   models.Path
+	MPSimpleVision   models.Path
+	MPMoEVision      models.Path
+	MPAudio          models.Path
+	MPEmbedFallback  models.Path
+	MPEmbedBatchSeq  models.Path
+	MPRerankFallback models.Path
+	MPRerankBatchSeq models.Path
+	MPMTP            models.Path
+	MPDraft          models.Path
 )
 
 // Setup initializes the test environment. Call from each package's TestMain.
@@ -64,8 +66,10 @@ func Setup() {
 	resolveModel(mdls, "Qwen3-8B-Q8_0", &MPThinkToolChat)
 	resolveModel(mdls, "Qwen3.5-0.8B-Q8_0", &MPSimpleVision)
 	resolveModel(mdls, "gemma-4-26B-A4B-it-UD-Q4_K_M", &MPMoEVision)
-	resolveModel(mdls, "embeddinggemma-300m-qat-Q8_0", &MPEmbed)
-	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerank)
+	resolveModel(mdls, "embeddinggemma-300m-qat-Q8_0", &MPEmbedFallback)
+	resolveModel(mdls, "Qwen3-Embedding-0.6B-Q8_0", &MPEmbedBatchSeq)
+	resolveModel(mdls, "qwen3-reranker-0.6b-q8_0", &MPRerankFallback)
+	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerankBatchSeq)
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "Qwen2.5-Omni-3B-Q8_0", &MPAudio)
 	resolveModel(mdls, "Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
@@ -292,25 +296,55 @@ func CfgMoEVisionIMC() model.Config {
 	}
 }
 
-func CfgEmbed() model.Config {
+// CfgEmbedFallback returns the EmbeddingGemma context-pool configuration.
+func CfgEmbedFallback() model.Config {
 	return model.Config{
-		ModelFiles:       MPEmbed.ModelFiles,
+		ModelFiles:       MPEmbedFallback.ModelFiles,
 		PtrContextWindow: new(2048),
 		PtrNBatch:        new(2048),
 		PtrNUBatch:       new(512),
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(2),
 	}
 }
 
-func CfgRerank() model.Config {
+// CfgEmbedBatchSeq returns the Qwen3 sequence-batch configuration.
+func CfgEmbedBatchSeq() model.Config {
 	return model.Config{
-		ModelFiles:       MPRerank.ModelFiles,
+		ModelFiles:       MPEmbedBatchSeq.ModelFiles,
+		PtrContextWindow: new(8192),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(2048),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(4),
+	}
+}
+
+// CfgRerankFallback returns the Qwen3 context-pool configuration.
+func CfgRerankFallback() model.Config {
+	return model.Config{
+		ModelFiles:       MPRerankFallback.ModelFiles,
 		PtrContextWindow: new(2048),
 		PtrNBatch:        new(2048),
 		PtrNUBatch:       new(512),
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(2),
+	}
+}
+
+// CfgRerankBatchSeq returns the BGE sequence-batch configuration.
+func CfgRerankBatchSeq() model.Config {
+	return model.Config{
+		ModelFiles:       MPRerankBatchSeq.ModelFiles,
+		PtrContextWindow: new(2048),
+		PtrNBatch:        new(2048),
+		PtrNUBatch:       new(512),
+		CacheTypeK:       model.GGMLTypeF16,
+		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(4),
 	}
 }
 

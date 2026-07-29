@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// drainSlots finishes all active slots and pending jobs during shutdown.
+// drainSlots finishes all active generation slots and pending jobs during shutdown.
 func (e *batchEngine) drainSlots() {
 	ctx := context.Background()
 	shutdownErr := fmt.Errorf("drain-slots: engine shutting down")

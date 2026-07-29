@@ -11,8 +11,8 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPRerank.ModelFiles) == 0 {
-		fmt.Println("model bge-reranker-v2-m3-Q8_0 not downloaded, skipping rerank tests")
+	if len(testlib.MPRerankFallback.ModelFiles) == 0 && len(testlib.MPRerankBatchSeq.ModelFiles) == 0 {
+		fmt.Println("reranker models not downloaded, skipping rerank tests")
 		os.Exit(0)
 	}
 

@@ -15,16 +15,27 @@ import (
 )
 
 func TestSuite(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgRerank(), func(t *testing.T, krn *kronk.Kronk) {
-		t.Run("Rerank", func(t *testing.T) { testRerank(t, krn) })
-	})
+	tests := []struct {
+		name      string
+		available bool
+		cfg       model.Config
+	}{
+		{"Qwen3ContextPoolFallback", len(testlib.MPRerankFallback.ModelFiles) > 0, testlib.CfgRerankFallback()},
+		{"BGEBatchSeq", len(testlib.MPRerankBatchSeq.ModelFiles) > 0, testlib.CfgRerankBatchSeq()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !tt.available {
+				t.Skip("model not downloaded")
+			}
+
+			testlib.WithModel(t, tt.cfg, testRerank)
+		})
+	}
 }
 
 func testRerank(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	query := "What is the capital of France?"
 	documents := []string{
 		"Paris is the capital and largest city of France.",

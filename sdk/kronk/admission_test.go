@@ -11,6 +11,28 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
+func TestEmbedOrRerankAdmissionCapacity(t *testing.T) {
+	tests := []struct {
+		name       string
+		nSeqMax    int
+		queueDepth int
+		want       int
+	}{
+		{"minimum", 0, 2, 1},
+		{"single sequence", 1, 4, 1},
+		{"multiple sequences", 4, 7, 4},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := model.NewConfig(model.WithNSeqMax(tt.nSeqMax), model.WithQueueDepth(tt.queueDepth))
+			if got := embedOrRerankAdmissionCapacity(cfg); got != tt.want {
+				t.Errorf("embedOrRerankAdmissionCapacity: got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGenerationAdmissionCapacity(t *testing.T) {
 	tests := []struct {
 		name       string

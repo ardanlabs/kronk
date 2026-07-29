@@ -611,7 +611,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
   nseq-max: 4`}</code></pre>
           <p>For text generation, this creates up to four batch-engine slots. Their sequence state is isolated, while the text engine uses a unified KV pool with total capacity based on <code>context-window × nseq-max</code>. Idle slots do not own permanent fixed partitions, but increasing <code>nseq-max</code> still increases the capacity Kronk must budget and can substantially increase memory use.</p>
-          <p>Embedding and reranking models use <code>nseq-max</code> to size a pool of independent contexts rather than text-generation slots. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
+          <p>For supported embedding and reranking architectures, <code>nseq-max</code> is the maximum number of complete inputs or query-document pairs in one sequence batch on a shared context. Architectures that have not been proven safe for that runtime use <code>nseq-max</code> to size a pool of independent single-sequence contexts instead. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
           <p>Two settings control prompt batching:</p>
           <table className="flags-table">
             <thead>
@@ -751,7 +751,7 @@ some-provider/large-model:
               <tr>
                 <td><code>nseq-max</code></td>
                 <td>Positive integer</td>
-                <td>Parallel sequences or context-pool size</td>
+                <td>Generation slots, sequence-batch width, or fallback context-pool size</td>
               </tr>
               <tr>
                 <td><code>admission-timeout</code></td>
@@ -856,7 +856,7 @@ some-provider/large-model:
           <p>Kronk can process requests concurrently while sharing one loaded copy of a model's weights. The <code>nseq-max</code> model setting controls how much concurrency a model instance provides, but its exact behavior depends on the model's task.</p>
           <p>This chapter provides the runtime story for generation: how a request is admitted, turned into model work, scheduled, and executed. Model memory, batch-size configuration, and KV-cache precision are covered in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>. Message-cache session behavior is covered in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
           <h3 id="41-runtime-mental-model">4.1 Runtime Mental Model</h3>
-          <p>Kronk uses two concurrency designs:</p>
+          <p>Kronk uses three concurrency designs:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -869,22 +869,22 @@ some-provider/large-model:
               <tr>
                 <td>Text generation</td>
                 <td>Active generation slots</td>
-                <td>One model context and a shared batch engine</td>
+                <td>One model context and the generation batch engine</td>
               </tr>
               <tr>
                 <td>Multimodal generation</td>
                 <td>Active generation slots</td>
-                <td>The same batch engine, with specialized media prefill</td>
+                <td>The generation batch engine with specialized media prefill</td>
               </tr>
               <tr>
-                <td>Embedding</td>
-                <td>Independent contexts</td>
-                <td>Context pool with shared model weights</td>
+                <td>Supported embedding/reranking</td>
+                <td>Sequences per native batch</td>
+                <td>One model context and the sequence-batch engine</td>
               </tr>
               <tr>
-                <td>Reranking</td>
+                <td>Other embedding/reranking</td>
                 <td>Independent contexts</td>
-                <td>Context pool with shared model weights</td>
+                <td>Context-pool fallback with shared model weights</td>
               </tr>
             </tbody>
           </table>
@@ -958,15 +958,20 @@ some-provider/large-model:
           <p>On normal completion or error, Kronk finishes the response, clears the active sequence, releases the slot, completes or releases any IMC reservation, and returns the outer admission permit. The next pending job can then occupy the slot; it does not inherit the prior request's sampler, parser, or sequence state.</p>
           <p>Most users should leave <code>nbatch</code> and <code>nubatch</code> unset. Kronk derives their load-time values as described in <a href="https://www.kronkai.com/manual#35-concurrency-and-batching">Chapter 3 §3.5</a>.</p>
           <h3 id="48-embedding-and-reranking">4.8 Embedding and Reranking</h3>
-          <p>Embedding and reranking models do not use generation slots. Kronk creates a pool of <code>nseq-max</code> independent model contexts that share the model weights.</p>
-          <pre className="code-block"><code className="language-diagram">{`┌──────────┐       ┌──────────────────────────────┐
-│ Requests │──────▶│ Context pool                 │
-└──────────┘       │  Context 0 ── request A      │
-                   │  Context 1 ── request B      │
-                   │  Context 2 ── available      │
-                   └──────────────────────────────┘`}</code></pre>
-          <p>Each admitted request acquires one context, performs its work independently, and returns the context to the pool. If every context is busy, another request waits until one is released or its context is cancelled. Work from separate contexts is not combined into the generation engine's shared token batch.</p>
-          <p>Additional contexts require memory even though model weights are shared. Raise <code>nseq-max</code> only when concurrent embedding or reranking traffic benefits from the extra contexts.</p>
+          <p>Embedding and reranking models do not use generation slots. Kronk chooses a separate runtime from the GGUF architecture metadata. Architectures proven safe for multi-sequence pooled evaluation use the sequence-batch engine. The current compatibility set is Qwen3 embedding and BERT reranking models.</p>
+          <pre className="code-block"><code className="language-diagram">{`┌──────────────┐       ┌────────────────────────────────┐
+│ Request jobs │──────▶│ Sequence-batch scheduler       │
+└──────────────┘       │ seq 0 ── request A, input 0    │
+                       │ seq 1 ── request A, input 1    │
+                       │ seq 2 ── request B, input 0    │
+                       └───────────────┬────────────────┘
+                                       ▼
+                       ┌───────────────────────────────┐
+                       │ One model context and weights │
+                       └───────────────────────────────┘`}</code></pre>
+          <p>The scheduler keeps each embedding input or reranking query-document pair as a complete sequence. It coalesces already queued requests, fills a native batch up to the <code>nseq-max</code> and token limits, and schedules requests round-robin when one request cannot fit in a single batch. The engine is intentionally separate from generation because it does not own long-lived generation slots, samplers, or streaming state.</p>
+          <p>Unknown or unsafe architectures use the context-pool fallback. Each admitted request acquires one independent single-sequence context, performs its work, and returns the context to the pool. This avoids native assertions seen with some architectures during multi-sequence initialization. Additional fallback contexts require memory even though model weights are shared.</p>
+          <p>Runtime selection is conservative: a model name identifies the task, while GGUF <code>general.architecture</code> metadata must match the compatibility allowlist to select sequence batching. Missing or unrecognized architecture metadata uses the fallback. Raise <code>nseq-max</code> only after measuring throughput and memory for the selected runtime.</p>
           <h3 id="49-configuration-and-tuning">4.9 Configuration and Tuning</h3>
           <p>Configure concurrency in <code>~/.kronk/models/model_config.yaml</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`mradermacher/Qwopus3.5-4B-Coder.Q8_0:
@@ -976,6 +981,12 @@ some-provider/large-model:
   queue-depth: 2`}</code></pre>
           <p>The file is read at server startup. Restart the server after changing it. The top-level key must match the model ID used by requests.</p>
           <p>The Go SDK equivalents are <code>model.WithAdmissionTimeout(3*time.Minute)</code> and <code>model.WithQueueDepth(2)</code>. <code>admission-timeout</code> is separate from the model server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>): admission timeout only bounds waiting for a permit, while inference timeout bounds admitted request processing at the server/web/CLI layer.</p>
+          <p>Local representative benchmarks are available for both embedding and reranking runtimes:</p>
+          <pre className="code-block"><code className="language-shell">{`make benchmark-embedding-fallback
+make benchmark-embedding-batchseq
+make benchmark-rerank-fallback
+make benchmark-rerank-batchseq`}</code></pre>
+          <p>Each path uses a model known to select that runtime, so these are deployment baselines rather than controlled measurements of scheduler overhead: model architecture and weights differ between each fallback/sequence-batch pair.</p>
           <p>Tune from a measured baseline rather than a generic slot recommendation:</p>
           <ol>
             <li>Start with automatic tuning or <code>nseq-max: 1</code> for a controlled baseline.</li>
@@ -1010,6 +1021,8 @@ some-provider/large-model:
             <li>the <code>chat_queue_wait_seconds</code> Prometheus histogram, recorded when a slot is assigned.</li>
           </ul>
           <p>For a successful job, timing starts immediately before attempting submission to the batch engine and ends at slot assignment. It does not include time blocked at the outer SDK admission gate or time spent preparing an IMC session before the submit attempt. Compare it with end-to-end request duration and time-to-first-token measurements when diagnosing latency.</p>
+          <p>Embedding and reranking expose <code>inference_requests_total</code>, <code>inference_request_duration_seconds</code>, and <code>inference_active_requests</code>, labeled by operation and runtime (<code>batchseq</code> or <code>context_pool</code>). Sequence batching also publishes <code>batchseq_queue_wait_seconds</code>, <code>batchseq_items</code>, and <code>batchseq_batches_total</code>. These distinguish outer request concurrency from the number and width of native batches actually evaluated.</p>
+          <p>The <code>inference_*</code> metrics begin after the outer SDK admission permit is acquired. They describe admitted model-layer work and do not count admission wait time or requests that time out or are cancelled before admission.</p>
           <p>Consistently increasing queue-wait time means requests are arriving faster than slots complete them. Before raising <code>nseq-max</code>, confirm that the device has memory headroom and that aggregate throughput improves under a realistic concurrent load. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for metrics, tracing, and profiling.</p>
           <hr />
           <h2 id="chapter-5-message-caching">Chapter 5: Message Caching</h2>
@@ -1839,7 +1852,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h2 id="96-embeddings">9.6 Embeddings</h2>
           <p><code>POST /v1/embeddings</code> accepts one string or an array of strings:</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "ggml-org/embeddinggemma-300m-qat-Q8_0",
+  "model": "Qwen/Qwen3-Embedding-0.6B-Q8_0",
   "input": ["First document", "Second document"]
 }`}</code></pre>
           <p>The response contains <code>object</code>, <code>created</code>, <code>model</code>, a <code>data</code> array, and <code>usage</code>. Each data item has an <code>index</code> and an <code>embedding</code> vector. Use an embedding model; ordinary text-generation models do not provide useful embedding behavior.</p>
@@ -2728,6 +2741,14 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
                 <td><code>chat_requests_total</code>, <code>chat_errors_total</code>, <code>chat_request_duration_seconds</code>, <code>chat_queue_wait_seconds</code></td>
               </tr>
               <tr>
+                <td>Embedding/reranking</td>
+                <td><code>inference_requests_total</code>, <code>inference_request_duration_seconds</code>, <code>inference_active_requests</code></td>
+              </tr>
+              <tr>
+                <td>Sequence batching</td>
+                <td><code>batchseq_queue_wait_seconds</code>, <code>batchseq_items</code>, <code>batchseq_batches_total</code></td>
+              </tr>
+              <tr>
                 <td>Tokens</td>
                 <td><code>usage_tokens_total</code>, <code>usage_tokens_per_second</code></td>
               </tr>
@@ -2766,6 +2787,10 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
   sum by (le, model_id) (rate(model_request_ttft_seconds_bucket[5m])))`}</code></pre>
           <p>Token throughput by model and kind:</p>
           <pre className="code-block"><code className="language-promql">{`sum by (model_id, kind) (rate(usage_tokens_total[5m]))`}</code></pre>
+          <p>Average sequence-batch width by model and operation:</p>
+          <pre className="code-block"><code className="language-promql">{`rate(batchseq_items_sum[5m])
+  / rate(batchseq_items_count[5m])`}</code></pre>
+          <p>Embedding and reranking request metrics include <code>operation</code> (<code>embedding</code> or <code>rerank</code>) and <code>runtime</code> (<code>batchseq</code> or <code>context_pool</code>) labels. Resource-manager reservation metrics already account for both runtime types because they are published for every loaded model, independently of its inference engine. The <code>inference_*</code> request metrics start after SDK admission, so they exclude admission wait and attempts that fail or are cancelled before a permit is acquired.</p>
           <h3 id="153-bundled-observability-stack">15.3 Bundled Observability Stack</h3>
           <p>The repository includes a Docker Compose stack containing Grafana, Prometheus, Tempo, Loki, and Promtail. It provisions the data sources and a Kronk dashboard without manual Grafana setup.</p>
           <p>Download the pinned images once, start the stack, and open Grafana:</p>
@@ -3897,8 +3922,9 @@ make kronk-server-stop`}</code></pre>
             <li>A blocked or cancelled caller must not strand a slot or semaphore permit.</li>
             <li>Native decode failure is attributed to affected jobs and followed by deterministic cleanup; it must not silently publish partly advanced session state.</li>
           </ul>
-          <h4 id="1955-text-versus-embedding-and-reranking-contexts">19.5.5 Text versus embedding and reranking contexts</h4>
-          <p>Text generation benefits from shared batched execution and sequence-partitioned KV. Embeddings and reranking use a different context strategy: they acquire a context for the operation and perform their own decode/clear cycle. Reranking evaluates query and documents without allowing one document's KV state to contaminate the next. Embedding pooling and normalization are model/output concerns, not chat-slot concerns. Do not force these paths through text batching merely to share code; share only primitives whose lifecycle contracts match.</p>
+          <h4 id="1955-generation-versus-embedding-and-reranking-engines">19.5.5 Generation versus embedding and reranking engines</h4>
+          <p>Text generation benefits from shared batched execution and sequence-partitioned KV. Embeddings and reranking never use generation slots. Proven architectures use the separate sequence-batch engine, which schedules complete embedding inputs or query-document pairs across sequence IDs on one context. Unsupported architectures acquire an independent context from the fallback pool and perform their own decode/clear cycle. Reranking must not allow one document's state to contaminate the next. Embedding pooling and normalization are model/output concerns, not chat-slot concerns. Do not merge the sequence-batch and generation engines merely to share code; their lifecycle contracts differ.</p>
+          <p>Compatibility is an explicit allowlist based on <code>general.architecture</code>. Add an architecture only after a native yzma proof, model-backed concurrent tests, and a benchmark. Some llama.cpp failures assert instead of returning an error, so probing an unknown architecture at runtime is not a safe fallback strategy.</p>
           <h3 id="196-core-inference-invariants">19.6 Core Inference Invariants</h3>
           <h4 id="1961-imc-sessions-slots-and-external-storage">19.6.1 IMC sessions, slots, and external storage</h4>
           <p>Incremental Message Cache (IMC) sessions are cache identities, not execution slots. A stable cache/session identifier allows a conversation prefix to survive movement between batch slots. A slot is short-lived compute capacity; binding a session to a slot would reduce concurrency and make slot reuse unsafe.</p>
@@ -3922,11 +3948,12 @@ make kronk-server-stop`}</code></pre>
           <p>Do not “clean up” this code by always rebuilding messages or silently switching to a copy. Either change breaks callers that combine compatibility fields or inspect the document after normalization. Add tests for existing messages, input-only requests, and observable in-place mutation.</p>
           <h4 id="1965-tracing-and-logging">19.6.5 Tracing and logging</h4>
           <p>Tracing should identify major waits and ownership boundaries: request handling, model acquisition/load, queue wait, prompt/prefill, generation, and unload when relevant. Keep spans concise. Avoid a span per token, duplicated nested timing, giant model-config attribute sets, prompt/media payloads, and unbounded IDs. Propagate the request context instead of creating unrelated roots. Logs and metrics should help distinguish queue, capacity, cancellation, and inference failures without exposing user content unless an explicit insecure-logging mode authorizes it.</p>
+          <p>Embedding/reranking metrics distinguish the operation and selected runtime. Sequence- batch queue wait and batch width are engine-level measurements; request duration, active requests, status, and prompt-token usage are operation-level measurements. Resource reservations remain owned by the shared pool/resource manager and must not be duplicated inside either inference engine.</p>
           <h4 id="1966-speculative-decoding-and-mtp">19.6.6 Speculative decoding and MTP</h4>
           <p>Speculative support has three ownership shapes:</p>
           <ol>
             <li><strong>Separate GGUF draft model.</strong> The draft has its own model/context/KV and proposes tokens; the target verifies them. Loading, memory planning, sequence cleanup, and rollback must account for both models.</li>
-            <li><strong>Embedded MTP.</strong> A target GGUF exposes an embedded multi-token-prediction head. Model detection and MTP construction are owned by <code>draft_mtp.go</code>/<code>batch_mtp.go</code>, while generic proposal verification and reconciliation remain in <code>batch_speculative.go</code>.</li>
+            <li><strong>Embedded MTP.</strong> A target GGUF exposes an embedded multi-token-prediction head. Model detection and MTP construction are owned by <code>draft_mtp.go</code>/<code>batchgen_mtp.go</code>, while generic proposal verification and reconciliation remain in <code>batchgen_speculative.go</code>.</li>
             <li><strong>Separate-file Gemma4/shared-target-KV MTP.</strong> The MTP component is supplied as a separate file but shares target KV semantics rather than behaving like an ordinary independent draft model. Capabilities, not “has a draft path,” must decide whether draft KV can be trimmed or externalized.</li>
           </ol>
           <p>Across all three, target output is authoritative. Proposal generation cannot expose a token until target verification accepts it or chooses the replacement/bonus token. Position counters, sampled-token history, target KV, draft/MTP state, and streamed output must describe one accepted prefix after every round.</p>

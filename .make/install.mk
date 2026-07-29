@@ -63,7 +63,7 @@ install-test-gh-models: install-kronk
 	@echo
 	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
+	kronk model pull --local "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
@@ -89,6 +89,10 @@ install-test-models: install-kronk
 	@echo
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
 	@echo
+	kronk model pull --local "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
+	@echo
+	kronk model pull --local "ggml-org/qwen3-reranker-0.6b-q8_0"
+	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 	kronk bucky model pull --local "ggml-tiny.bin"
@@ -112,6 +116,10 @@ install-class-models: install-kronk
 	kronk model pull --local "unsloth/LFM2-700M-Q8_0"
 	@echo
 	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
+	@echo
+	kronk model pull --local "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
+	@echo
+	kronk model pull --local "ggml-org/qwen3-reranker-0.6b-q8_0"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo

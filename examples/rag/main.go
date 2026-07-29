@@ -29,7 +29,7 @@ import (
 
 const (
 	modelChatSource  = "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
-	modelEmbedSource = "ggml-org/embeddinggemma-300m-qat-Q8_0"
+	modelEmbedSource = "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
 	dbPath           = "rag/docs/duck-rag.db" // ":memory:"
 	chunksFile       = "rag/docs/book.chunks"
 	dimentions       = 768

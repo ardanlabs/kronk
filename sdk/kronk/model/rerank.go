@@ -2,11 +2,13 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -20,12 +22,31 @@ import (
 //   - top_n (int): return only the top N results (optional, default: all)
 //   - return_documents (bool): include document text in results (default: false)
 //
-// When NSeqMax > 1, multiple concurrent requests can be processed in parallel,
-// each using one context from the internal pool.
-func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
+// Supported models process documents together as a multi-sequence batch.
+// Other models use the context-pool fallback.
+func (m *Model) Rerank(ctx context.Context, d D) (response RerankResponse, err error) {
 	if !m.modelInfo.IsRerankModel {
 		return RerankResponse{}, fmt.Errorf("rerank: model doesn't support reranking")
 	}
+
+	started := time.Now()
+	runtimeName := "context_pool"
+	if m.batchSeq != nil {
+		runtimeName = "batchseq"
+	}
+	totalPromptTokens := 0
+	metrics.AddInferenceActiveRequests(m.modelInfo.ID, "rerank", runtimeName, 1)
+	defer func() {
+		metrics.AddInferenceActiveRequests(m.modelInfo.ID, "rerank", runtimeName, -1)
+		status := "ok"
+		if err != nil {
+			status = "error"
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				status = "cancel"
+			}
+		}
+		metrics.ObserveInferenceRequest(m.modelInfo.ID, "rerank", runtimeName, status, time.Since(started), totalPromptTokens)
+	}()
 
 	query, ok := d["query"].(string)
 	if !ok || query == "" {
@@ -69,16 +90,21 @@ func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
 
 	// -------------------------------------------------------------------------
 
-	// Acquire a single context from the pool. This allows NSeqMax concurrent
-	// requests to run in parallel, which is more important for server workloads
-	// than parallelizing within a single request.
-	pc, err := m.pool.acquire(ctx)
-	if err != nil {
-		return RerankResponse{}, err
-	}
-	defer m.pool.release(pc)
+	var results []RerankResult
 
-	results, totalPromptTokens, err := m.processRerank(ctx, pc, query, documents, returnDocuments)
+	if m.batchSeq != nil {
+		results, totalPromptTokens, err = m.processRerankBatchSeq(ctx, query, documents, returnDocuments)
+	} else {
+		// The fallback runtime processes concurrent requests on independent
+		// single-sequence contexts.
+		pc, acquireErr := m.pool.acquire(ctx)
+		if acquireErr != nil {
+			return RerankResponse{}, acquireErr
+		}
+		defer m.pool.release(pc)
+
+		results, totalPromptTokens, err = m.processRerank(ctx, pc, query, documents, returnDocuments)
+	}
 	if err != nil {
 		return RerankResponse{}, err
 	}
@@ -111,13 +137,57 @@ func (m *Model) Rerank(ctx context.Context, d D) (RerankResponse, error) {
 	return rr, nil
 }
 
+// processRerankBatchSeq processes query-document pairs as multi-sequence
+// batches on one llama context.
+func (m *Model) processRerankBatchSeq(ctx context.Context, query string, documents []string, returnDocuments bool) ([]RerankResult, int, error) {
+	maxTokens := rerankTokenLimit(m.batchSeq.maxTokens, m.cfg.ContextWindow())
+
+	nClsOut := int(llama.ModelNClsOut(m.model))
+	if nClsOut == 0 {
+		nClsOut = 1
+	}
+
+	items := make([]batchSeqItem, len(documents))
+	totalTokens := 0
+	for i, doc := range documents {
+		if err := ctx.Err(); err != nil {
+			return nil, 0, err
+		}
+
+		pairText := formatRerankPair(query, doc)
+		tokens := llama.Tokenize(m.vocab, pairText, m.addBOSToken, true)
+		if len(tokens) > maxTokens {
+			m.log(ctx, "rerank", "status", "truncating input", "index", i, "original_tokens", len(tokens), "max_tokens", maxTokens)
+			tokens = tokens[:maxTokens]
+		}
+
+		items[i] = batchSeqItem{index: i, tokens: tokens}
+		totalTokens += len(tokens)
+	}
+
+	outputs, err := m.batchSeq.run(ctx, items, nClsOut)
+	if err != nil {
+		return nil, 0, fmt.Errorf("rerank: batchseq inference: %w", err)
+	}
+
+	results := make([]RerankResult, len(documents))
+	for i, output := range outputs {
+		result := RerankResult{
+			Index:          i,
+			RelevanceScore: sigmoid(output[0]),
+		}
+		if returnDocuments {
+			result.Document = documents[i]
+		}
+		results[i] = result
+	}
+
+	return results, totalTokens, nil
+}
+
 // processRerank processes all documents on a single context.
 func (m *Model) processRerank(ctx context.Context, pc poolContext, query string, documents []string, returnDocuments bool) ([]RerankResult, int, error) {
-	maxTokens := int(llama.NUBatch(pc.lctx))
-	ctxTokens := int(llama.NCtx(pc.lctx))
-	if ctxTokens < maxTokens {
-		maxTokens = ctxTokens
-	}
+	maxTokens := rerankTokenLimit(int(llama.NUBatch(pc.lctx)), m.cfg.ContextWindow())
 
 	nClsOut := llama.ModelNClsOut(m.model)
 	if nClsOut == 0 {
@@ -190,6 +260,10 @@ func (m *Model) processRerank(ctx context.Context, pc poolContext, query string,
 // Most BGE-style rerankers expect pairs without explicit prefixes.
 func formatRerankPair(query, document string) string {
 	return fmt.Sprintf("%s %s", query, document)
+}
+
+func rerankTokenLimit(batchTokens, contextTokens int) int {
+	return min(batchTokens, contextTokens)
 }
 
 // sigmoid applies the sigmoid function to normalize a raw logit to [0, 1].

@@ -74,6 +74,18 @@ benchmark-hybrid-nc:
 benchmark-hybrid-imc:
 	go test -run=none -bench=BenchmarkHybrid_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
 
+benchmark-embedding-fallback:
+	go test -tags=kronk_benchmark -run=none -bench='^BenchmarkEmbedding_Qwen3_ContextPoolFallback$$' -benchtime=10s -cpu=4 -timeout=30m ./sdk/kronk/tests/benchmarks/
+
+benchmark-embedding-batchseq:
+	go test -tags=kronk_benchmark -run=none -bench='^BenchmarkEmbedding_Qwen3_BatchSeq$$' -benchtime=10s -cpu=4 -timeout=30m ./sdk/kronk/tests/benchmarks/
+
+benchmark-rerank-fallback:
+	go test -run=none -bench=BenchmarkRerank_Qwen3_ContextPoolFallback -benchtime=10s -timeout=30m ./sdk/kronk/tests/benchmarks/
+
+benchmark-rerank-batchseq:
+	go test -run=none -bench=BenchmarkRerank_BGE_BatchSeq -benchtime=10s -timeout=30m ./sdk/kronk/tests/benchmarks/
+
 # Run all benchmarks sequentially (each target loads/unloads its own model)
 # and write combined raw output to a single file under runs/.
 # Usage: make benchmark-all BENCH_KRONK=v1.20.4

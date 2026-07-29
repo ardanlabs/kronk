@@ -146,6 +146,16 @@ type promMetrics struct {
 	chatQueueWaitSeconds *prometheus.HistogramVec // labels: model_id.
 
 	// -------------------------------------------------------------------------
+	// Embedding/reranking request and sequence-batch metrics.
+
+	inferenceRequestsTotal   *prometheus.CounterVec   // labels: model_id, operation, runtime, status.
+	inferenceRequestDuration *prometheus.HistogramVec // labels: model_id, operation, runtime.
+	inferenceActiveRequests  *prometheus.GaugeVec     // labels: model_id, operation, runtime.
+	batchSeqQueueWaitSeconds *prometheus.HistogramVec // labels: model_id, operation.
+	batchSeqItems            *prometheus.HistogramVec // labels: model_id, operation.
+	batchSeqBatchesTotal     *prometheus.CounterVec   // labels: model_id, operation, status.
+
+	// -------------------------------------------------------------------------
 	// IMC pure-hit snapshot-skip metrics.
 
 	imcSnapshotSkippedTotal     *prometheus.CounterVec // labels: model_id.
@@ -322,6 +332,34 @@ func init() {
 		}, []string{"model_id", "class"}),
 		chatRequestDuration:  newHistVec("chat_request_duration_seconds", "End-to-end chat request duration in seconds.", requestTTFTBuckets),
 		chatQueueWaitSeconds: newHistVec("chat_queue_wait_seconds", "Time spent waiting in the batch engine queue before being assigned a slot.", subSecondBuckets),
+
+		inferenceRequestsTotal: auto.NewCounterVec(prometheus.CounterOpts{
+			Name: "inference_requests_total",
+			Help: "Total admitted embedding and reranking requests by model_id, operation, runtime, and status (ok|error|cancel).",
+		}, []string{"model_id", "operation", "runtime", "status"}),
+		inferenceRequestDuration: auto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "inference_request_duration_seconds",
+			Help:    "Embedding and reranking model-processing duration after SDK admission, in seconds.",
+			Buckets: requestTTFTBuckets,
+		}, []string{"model_id", "operation", "runtime"}),
+		inferenceActiveRequests: auto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "inference_active_requests",
+			Help: "Current admitted embedding and reranking requests in model processing, by model_id, operation, and runtime.",
+		}, []string{"model_id", "operation", "runtime"}),
+		batchSeqQueueWaitSeconds: auto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "batchseq_queue_wait_seconds",
+			Help:    "Time a sequence-batch request waited before its first scheduled batch.",
+			Buckets: subSecondBuckets,
+		}, []string{"model_id", "operation"}),
+		batchSeqItems: auto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "batchseq_items",
+			Help:    "Number of complete embedding inputs or reranking documents evaluated per native sequence batch.",
+			Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128},
+		}, []string{"model_id", "operation"}),
+		batchSeqBatchesTotal: auto.NewCounterVec(prometheus.CounterOpts{
+			Name: "batchseq_batches_total",
+			Help: "Total native sequence batches by model_id, operation, and status (ok|error).",
+		}, []string{"model_id", "operation", "status"}),
 
 		imcSnapshotSkippedTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "imc_snapshot_skipped_total",
@@ -675,6 +713,40 @@ func ObserveChatRequestDuration(modelID string, d time.Duration) {
 // engine queue before being assigned to a slot.
 func ObserveChatQueueWait(modelID string, d time.Duration) {
 	m.chatQueueWaitSeconds.WithLabelValues(normalizeModelID(modelID)).Observe(d.Seconds())
+}
+
+// ObserveInferenceRequest records one completed embedding or reranking request.
+// Operation values are "embedding" and "rerank"; runtime values are
+// "batchseq" and "context_pool"; status values are "ok", "error", and
+// "cancel". Prompt tokens share usage_tokens_total with chat completions.
+func ObserveInferenceRequest(modelID, operation, runtimeName, status string, d time.Duration, promptTokens int) {
+	id := normalizeModelID(modelID)
+	m.inferenceRequestsTotal.WithLabelValues(id, operation, runtimeName, status).Inc()
+	m.inferenceRequestDuration.WithLabelValues(id, operation, runtimeName).Observe(d.Seconds())
+	if promptTokens > 0 {
+		m.tokensTotal.WithLabelValues(id, "prompt").Add(float64(promptTokens))
+	}
+}
+
+// AddInferenceActiveRequests adjusts the active embedding/reranking request
+// gauge for one model runtime.
+func AddInferenceActiveRequests(modelID, operation, runtimeName string, delta int) {
+	m.inferenceActiveRequests.WithLabelValues(normalizeModelID(modelID), operation, runtimeName).Add(float64(delta))
+}
+
+// ObserveBatchSeqQueueWait records how long a sequence-batch request waited
+// before any of its items entered native evaluation.
+func ObserveBatchSeqQueueWait(modelID, operation string, d time.Duration) {
+	m.batchSeqQueueWaitSeconds.WithLabelValues(normalizeModelID(modelID), operation).Observe(d.Seconds())
+}
+
+// ObserveBatchSeqBatch records one native sequence batch and its item count.
+func ObserveBatchSeqBatch(modelID, operation, status string, items int) {
+	id := normalizeModelID(modelID)
+	m.batchSeqBatchesTotal.WithLabelValues(id, operation, status).Inc()
+	if items > 0 {
+		m.batchSeqItems.WithLabelValues(id, operation).Observe(float64(items))
+	}
 }
 
 // =============================================================================

@@ -211,7 +211,9 @@ type AdapterConfig struct {
 // performance (throughput) if your hardware can handle it, as it better
 // utilizes parallel computation. However, a very high n_batch can lead to
 // out-of-memory errors on systems with limited VRAM.
-// When set to 0, the default value is NUBatch * NSeqMax.
+// When set to 0, generation models default to NUBatch * NSeqMax. Embedding and
+// reranking models default to NUBatch because non-causal pooled evaluation
+// cannot necessarily split a logical batch into smaller physical batches.
 //
 // MainGPU is the index of the GPU to use as the primary device when SplitMode
 // is SplitModeNone. When nil, the default GPU (usually index 0) is used.
@@ -221,10 +223,11 @@ type AdapterConfig struct {
 // positive value specifies the exact number of layers to offload.
 //
 // NSeqMax controls concurrency behavior based on model type. For text inference
-// models (including vision/audio), it sets the maximum number of sequences
-// processed in parallel within the batch engine. For embedding and reranking
-// models, it sets the number of contexts in the internal pool for parallel
-// request processing. When set to 0, a default of 1 is used.
+// models (including vision/audio), it sets the maximum number of generation
+// slots. For supported embedding and reranking architectures, it sets the
+// maximum sequence width of the sequence-batch engine. Other embedding and
+// reranking architectures use it as the context-pool size. When set to 0, a
+// default of 1 is used.
 //
 // NThreads is the number of threads to use for generation. When set to 0, the
 // default llama.cpp value is used.
@@ -707,12 +710,16 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	// Logical batch size (n_batch) is the shared "tray" the round-robin batch
-	// engine fills across slots: each active slot may contribute up to
-	// n_ubatch tokens per pass. Size it to n_ubatch * NSeqMax so every slot
-	// can land a full n_ubatch chunk in a single pass without starving the
-	// slots iterated last.
+	// engine fills across slots. Generation models size it to n_ubatch *
+	// NSeqMax so every slot can land a full n_ubatch chunk in one pass. Pooled
+	// embedding and reranking evaluation cannot necessarily split a logical
+	// batch into smaller physical batches, so use n_ubatch as the safe default.
 	if cfg.NBatch() <= 0 {
-		cfg.PtrNBatch = new(cfg.NUBatch() * cfg.NSeqMax())
+		nBatch := cfg.NUBatch() * cfg.NSeqMax()
+		if isEmbedOrRerankConfig(cfg) {
+			nBatch = cfg.NUBatch()
+		}
+		cfg.PtrNBatch = new(nBatch)
 	}
 
 	if cfg.NThreads() < 0 {
@@ -768,6 +775,27 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	return cfg
+}
+
+func isEmbedOrRerankConfig(cfg Config) bool {
+	if len(cfg.ModelFiles) == 0 {
+		return false
+	}
+
+	isEmbed, isRerank := detectEmbedRerank(modelIDFromFiles(cfg.ModelFiles))
+
+	return isEmbed || isRerank
+}
+
+func batchSeqTokenLimit(nBatch, nUBatch int) int {
+	switch {
+	case nBatch <= 0:
+		return max(nUBatch, 0)
+	case nUBatch <= 0:
+		return nBatch
+	default:
+		return min(nBatch, nUBatch)
+	}
 }
 
 func adjustContextWindow(cfg Config, model llama.Model) Config {

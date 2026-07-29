@@ -122,7 +122,7 @@ func (s *imcSession) logicalPosition() int {
 //     position, so every target llama_decode must be mirrored into the
 //     draft context with batch.embd populated from
 //     llama_get_embeddings_pre_norm. See loadDraftModelMTP and the
-//     batch_mtp.go mirroring helpers.
+//     batchgen_mtp.go mirroring helpers.
 type draftCore struct {
 	model        llama.Model
 	vocab        llama.Vocab
@@ -208,11 +208,12 @@ type Model struct {
 	unloaded      atomic.Bool
 	decodeMu      sync.Mutex
 	cacheMu       sync.RWMutex
-	imcSessions   []*imcSession // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
-	addBOSToken   bool          // Whether to add BOS token (from model metadata)
-	pool          *contextPool  // Context pool for parallel embed/rerank
-	parser        Parser        // Selected via selectParser at load time; nil for embed/rerank.
-	draft         drafter       // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
+	imcSessions   []*imcSession   // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	addBOSToken   bool            // Whether to add BOS token (from model metadata)
+	pool          *contextPool    // Context pool for parallel embed/rerank
+	batchSeq      *batchSeqEngine // Sequence-batch engine for supported embed/rerank models.
+	parser        Parser          // Selected via selectParser at load time; nil for embed/rerank.
+	draft         drafter         // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns
@@ -221,8 +222,9 @@ type Model struct {
 // GGUF load (serialized via a process-wide mutex to guard the
 // GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics,
 // retrieves the chat template, and initializes the per-model runtime —
-// either a context pool for embed/rerank models or a batch engine plus
-// parser plugin and optional draft model for generation models.
+// either the sequence-batch runtime or context-pool fallback for embed/rerank
+// models, or a batch engine plus parser plugin and optional draft model for
+// generation models.
 //
 // The returned *Model owns the underlying llama.Model, llama.Context, KV
 // memory, batch engine, and (when configured) draft model; release them
@@ -329,9 +331,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		addBOSToken: addBOSToken,
 	}
 
-	// Initialize either context pool (for embed/rerank) or batch engine (for generation).
-	// Embed/rerank models use a pool of contexts for parallel processing.
-	// Generation models use the batch engine with a primary context.
+	// Initialize the runtime selected for this model. Supported embed/rerank
+	// models use the sequence-batch engine, other embed/rerank models use the
+	// context-pool fallback, and generation models use the generation engine.
 	nSlots := max(cfg.NSeqMax(), 1)
 
 	// Load a single, long-lived mtmd context used ONLY for metadata
@@ -366,6 +368,13 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	switch {
+	case useBatchSeq(modelInfo):
+		if err := initBatchSeqRuntime(ctx, &m); err != nil {
+			adapterErr := m.freeAdapters()
+			llama.ModelFree(mdl)
+			return nil, errors.Join(err, adapterErr)
+		}
+
 	case !isGenerationModel:
 		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
 		if err != nil {
@@ -1093,6 +1102,12 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.batch.stop(ctx)
 	}
 
+	hasBatchSeq := m.batchSeq != nil
+	var batchSeqErr error
+	if hasBatchSeq {
+		batchSeqErr = m.batchSeq.stop()
+	}
+
 	m.log(ctx, "unload", "status", "waiting-for-streams", "active", m.activeStreams.Load())
 
 	for m.activeStreams.Load() > 0 {
@@ -1125,10 +1140,21 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.pool.close()
 	}
 
-	// Free primary context if it exists (generation models only).
+	// Free the primary generation or sequence-batch context if it exists. The
+	// sequence-batch owner and reusable batch are already gone at this point.
+	var batchSeqContextErr error
 	if m.lctx != 0 {
-		llama.Synchronize(m.lctx)
-		llama.Free(m.lctx)
+		if hasBatchSeq {
+			batchSeqContextErr = freeBatchSeqContext(m.lctx)
+		} else {
+			llama.Synchronize(m.lctx)
+			llama.Free(m.lctx)
+		}
+	}
+	if hasBatchSeq {
+		m.batchSeq = nil
+		m.lctx = 0
+		m.mem = 0
 	}
 
 	// Release per-session SessionStore resources (e.g. on-disk files).
@@ -1162,8 +1188,8 @@ func (m *Model) Unload(ctx context.Context) error {
 	adapterErr := m.freeAdapters()
 	llama.ModelFree(m.model)
 
-	if adapterErr != nil {
-		return fmt.Errorf("unload: %w", adapterErr)
+	if err := errors.Join(batchSeqErr, batchSeqContextErr, adapterErr); err != nil {
+		return fmt.Errorf("unload: %w", err)
 	}
 
 	return nil
