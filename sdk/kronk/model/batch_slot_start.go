@@ -33,14 +33,21 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// Skip reasoning mode when grammar is specified — grammar constrains
 	// the output format, so free-form thinking is counterproductive and
 	// would consume max_tokens before producing any constrained content.
-	if strings.HasSuffix(strings.TrimRight(job.prompt, " \t\r\n"), "<think>") && job.params.Grammar == "" {
+	trimmedPrompt := strings.TrimRight(job.prompt, " \t\r\n")
+	standardThinking := strings.HasSuffix(trimmedPrompt, "<think>")
+	kimiThinking := strings.HasSuffix(trimmedPrompt, "<|open|>think<|sep|>")
+	if (standardThinking || kimiThinking) && job.params.Grammar == "" {
 		// Drive the state machine into reasoning mode by feeding the same
 		// marker the model would have emitted. Parsers that recognize
 		// <think> (standard, qwen, mistral, glm) flip to ChannelReasoning;
 		// parsers that don't (gemma, gpt) treat it as content — but
 		// those parsers do not produce a "<think>\n" suffix in the
 		// prompt, so this branch never runs for them.
-		s.stateMachine.Classify("<think>")
+		thinkingMarker := "<think>"
+		if kimiThinking {
+			thinkingMarker = "<|open|>think<|sep|>"
+		}
+		s.stateMachine.Classify(thinkingMarker)
 		s.reasonFlag = 1
 	}
 
