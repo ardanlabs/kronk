@@ -30,6 +30,29 @@ func TestValidateTimeoutConfig(t *testing.T) {
 	}
 }
 
+func TestValidateSessionsConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		enabled      bool
+		maxCompleted int
+		wantErr      bool
+	}{
+		{name: "disabled"},
+		{name: "enabled", enabled: true, maxCompleted: 10_000},
+		{name: "enabled zero", enabled: true, wantErr: true},
+		{name: "enabled negative", enabled: true, maxCompleted: -1, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSessionsConfig(tt.enabled, tt.maxCompleted)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateSessionsConfig() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateAdminConfig(t *testing.T) {
 	sha := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	tests := []struct {

@@ -12,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/session"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
@@ -69,6 +70,7 @@ type Config struct {
 	WebAdminEnabled     bool
 	AdminPasswordSHA256 string
 	Security            *security.Security
+	Sessions            *session.Tracker
 	InferenceTimeout    time.Duration
 }
 

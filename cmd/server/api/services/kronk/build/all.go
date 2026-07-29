@@ -8,6 +8,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/downapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/embedapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/observapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/playgroundapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/rerankapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/respapp"
@@ -30,6 +31,12 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	checkapp.Routes(app, checkapp.Config{
 		Build: cfg.Build,
 		Log:   cfg.Log,
+	})
+
+	observapp.Routes(app, observapp.Config{
+		AuthClient:       cfg.AuthClient,
+		Sessions:         cfg.Sessions,
+		AdminAuthEnabled: cfg.AdminAuthEnabled,
 	})
 
 	toolapp.Routes(app, toolapp.Config{

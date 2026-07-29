@@ -29,6 +29,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	sessionobs "github.com/ardanlabs/kronk/sdk/kronk/observ/session"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
@@ -133,6 +134,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			// 25% should be enough for most systems. Some might want to have
 			// this even lower.
 		}
+		Sessions struct {
+			Enabled      bool `conf:"default:false"`
+			MaxCompleted int  `conf:"default:10000"`
+		}
 		Pool struct {
 			ModelConfigFile string
 			BudgetPercent   int           `conf:"default:80"`
@@ -178,6 +183,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return err
 	}
 	if err := validateTimeoutConfig(cfg.Web.InferenceTimeout, cfg.Web.WriteTimeout); err != nil {
+		return err
+	}
+	if err := validateSessionsConfig(cfg.Sessions.Enabled, cfg.Sessions.MaxCompleted); err != nil {
 		return err
 	}
 
@@ -444,6 +452,31 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}()
 
 	// -------------------------------------------------------------------------
+	// Context Session Observability
+
+	var sessions *sessionobs.Tracker
+	if cfg.Sessions.Enabled {
+		sessionPath := filepath.Join(defaults.BaseDir(cfg.BasePath), "observ", "sessions")
+		sessions, err = sessionobs.New(sessionobs.Config{
+			StorePath:    sessionPath,
+			MaxCompleted: cfg.Sessions.MaxCompleted,
+		})
+		if err != nil {
+			return fmt.Errorf("initializing context session observability: %w", err)
+		}
+
+		log.Info(ctx, "startup", "status", "context session observability enabled", "path", sessionPath, "max-completed", cfg.Sessions.MaxCompleted)
+		defer func() {
+			log.Info(ctx, "shutdown", "status", "shutting down context session observability")
+			if err := sessions.Shutdown(context.Background()); err != nil {
+				log.Error(ctx, "context-sessions", "ERROR", err)
+			}
+		}()
+	} else {
+		log.Info(ctx, "startup", "status", "context session observability disabled")
+	}
+
+	// -------------------------------------------------------------------------
 	// Start the MCP server
 
 	if cfg.MCP.Enabled && cfg.MCP.Host == "" {
@@ -507,6 +540,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		WebAdminEnabled:     cfg.Web.Admin.Enabled,
 		AdminPasswordSHA256: cfg.Web.Admin.PasswordSHA256,
 		Security:            sec,
+		Sessions:            sessions,
 		InferenceTimeout:    cfg.Web.InferenceTimeout,
 	}
 
