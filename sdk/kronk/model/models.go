@@ -862,6 +862,7 @@ type ChatResponse struct {
 	Choices           []Choice `json:"choices"`
 	Usage             *Usage   `json:"usage,omitempty"`
 	Prompt            string   `json:"prompt,omitempty"`
+	err               error
 }
 
 func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool, logprob *ContentLogprob) ChatResponse {
@@ -969,6 +970,7 @@ func ChatResponseErr(id string, object string, model string, index int, prompt s
 		},
 		Usage:  &u,
 		Prompt: prompt,
+		err:    err,
 	}
 }
 

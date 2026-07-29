@@ -38,9 +38,13 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		lastMsg = msg
 	}
 
-	// If the response is an error, extract the error message from Delta
-	// (where ChatResponseErr stores it) and return it as a Go error.
+	// If the response is an error, return the original in-process error when
+	// available. Fall back to the Delta text for externally built responses.
 	if len(lastMsg.Choices) > 0 && lastMsg.Choices[0].FinishReason() == FinishReasonError {
+		if lastMsg.err != nil {
+			return lastMsg, lastMsg.err
+		}
+
 		errMsg := "unknown error"
 		if lastMsg.Choices[0].Delta != nil && lastMsg.Choices[0].Delta.Content != "" {
 			errMsg = lastMsg.Choices[0].Delta.Content

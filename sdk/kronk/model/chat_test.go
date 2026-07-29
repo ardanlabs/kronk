@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -139,6 +140,38 @@ func TestValidateDocumentValidationErrors(t *testing.T) {
 			}
 			if err.Error() != tt.want.Error() {
 				t.Errorf("error: got %q, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestChatPreservesValidationErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		d    D
+		want error
+	}{
+		{
+			name: "missing messages",
+			d:    D{},
+			want: ErrMessagesMissing,
+		},
+		{
+			name: "messages wrong type",
+			d:    D{"messages": "invalid"},
+			want: ErrMessagesInvalid,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				log: func(context.Context, string, ...any) {},
+			}
+
+			_, err := m.Chat(t.Context(), tt.d)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("Chat: got %v, want wraps %v", err, tt.want)
 			}
 		})
 	}
