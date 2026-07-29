@@ -92,6 +92,33 @@ func TestSWAFull(t *testing.T) {
 	}
 }
 
+func TestFlashAttentionPresence(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       Config
+		wantSet   bool
+		wantValue FlashAttentionType
+	}{
+		{"unset", NewConfig(), false, FlashAttentionEnabled},
+		{"explicit enabled", NewConfig(WithFlashAttention(FlashAttentionEnabled)), true, FlashAttentionEnabled},
+		{"explicit disabled", NewConfig(WithFlashAttention(FlashAttentionDisabled)), true, FlashAttentionDisabled},
+		{"explicit auto", NewConfig(WithFlashAttention(FlashAttentionAuto)), true, FlashAttentionAuto},
+		{"with config preserves explicit", NewConfig(WithConfig(NewConfig(WithFlashAttention(FlashAttentionEnabled)))), true, FlashAttentionEnabled},
+		{"with config preserves unset", NewConfig(WithConfig(Config{})), false, FlashAttentionEnabled},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.PtrFlashAttention != nil; got != tt.wantSet {
+				t.Errorf("PtrFlashAttention presence: got %t, want %t", got, tt.wantSet)
+			}
+			if got := tt.cfg.FlashAttention(); got != tt.wantValue {
+				t.Errorf("FlashAttention: got %s, want %s", got, tt.wantValue)
+			}
+		})
+	}
+}
+
 func TestAdjustConfigUsesOneBatchDefault(t *testing.T) {
 	tests := []struct {
 		name string

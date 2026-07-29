@@ -47,7 +47,7 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	// Convert to model.Config and attach on-disk paths.
 	out := cfg.ToKronkConfig()
 	out.AutoTune = true
-	out.AutoTuned = true
+	out.AutoTuned = autoTuneApplied(sizing)
 	out.ModelFiles = fp.ModelFiles
 	out.ProjFile = fp.ProjFile
 
@@ -87,6 +87,10 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	}
 
 	return out, nil
+}
+
+func autoTuneApplied(cfg ModelConfig) bool {
+	return cfg.PtrContextWindow != nil && cfg.PtrNSeqMax != nil
 }
 
 // restoreAutoTunedSizing ensures the resolved config uses the sizing values
@@ -194,7 +198,7 @@ func AutoTune(info ModelInfo, devs devices.Devices) (ModelConfig, error) {
 }
 
 // AutoTuneWithConfig returns hardware-aware defaults while treating explicitly
-// configured context, concurrency, and cache types as fixed constraints.
+// configured AutoTune-owned values as fixed constraints.
 func AutoTuneWithConfig(info ModelInfo, devs devices.Devices, constraints ModelConfig) (ModelConfig, error) {
 	analysis, err := analyzeModelWithConfig(info, devs, constraints)
 	if err != nil {
@@ -235,8 +239,11 @@ func AutoTuneWithConfig(info ModelInfo, devs devices.Devices, constraints ModelC
 	}
 
 	// model.Config: PtrNGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
-	// Only set when we explicitly want CPU-only.
-	if rec.NGPULayers < 0 {
+	// Preserve an explicit constraint, including pointer-to-zero. Otherwise only
+	// set the pointer when AutoTune explicitly recommends CPU-only execution.
+	if constraints.PtrNGpuLayers != nil {
+		cfg.PtrNGpuLayers = constraints.PtrNGpuLayers
+	} else if rec.NGPULayers < 0 {
 		n := int(rec.NGPULayers)
 		cfg.PtrNGpuLayers = &n
 	}

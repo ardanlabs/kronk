@@ -202,6 +202,22 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	}
 }
 
+func TestModelConfigFlashAttentionPresence(t *testing.T) {
+	unset := ModelConfig{}.ToKronkConfig()
+	if unset.PtrFlashAttention != nil {
+		t.Errorf("unset PtrFlashAttention: got %v, want nil", unset.PtrFlashAttention)
+	}
+
+	enabled := model.FlashAttentionEnabled
+	explicit := ModelConfig{FlashAttention: &enabled}.ToKronkConfig()
+	if explicit.PtrFlashAttention == nil {
+		t.Fatal("explicit PtrFlashAttention: got nil, want enabled")
+	}
+	if explicit.FlashAttention() != model.FlashAttentionEnabled {
+		t.Errorf("FlashAttention: got %s, want enabled", explicit.FlashAttention())
+	}
+}
+
 func TestRestoreAutoTunedSizing(t *testing.T) {
 	contextWindow := 131072
 	nSeqMax := 2
@@ -257,5 +273,28 @@ func TestRestoreAutoTunedSizingEmpty(t *testing.T) {
 	}
 	if cfg.CacheTypeV != model.GGMLTypeQ8_0 {
 		t.Errorf("CacheTypeV: got %s, want q8_0", cfg.CacheTypeV)
+	}
+}
+
+func TestAutoTuneApplied(t *testing.T) {
+	contextWindow := 131072
+	nSeqMax := 2
+
+	tests := []struct {
+		name string
+		cfg  ModelConfig
+		want bool
+	}{
+		{"empty analysis", ModelConfig{}, false},
+		{"context only", ModelConfig{PtrContextWindow: &contextWindow}, false},
+		{"complete recommendation", ModelConfig{PtrContextWindow: &contextWindow, PtrNSeqMax: &nSeqMax}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := autoTuneApplied(tt.cfg); got != tt.want {
+				t.Errorf("autoTuneApplied: got %t, want %t", got, tt.want)
+			}
+		})
 	}
 }

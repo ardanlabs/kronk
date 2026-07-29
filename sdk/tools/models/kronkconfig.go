@@ -294,7 +294,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrContextWindow:     mc.PtrContextWindow,
 		DefaultParams:        mc.Sampling.toParams(),
 		Devices:              mc.Devices,
-		FlashAttention:       model.DerefFlashAttention(mc.FlashAttention),
+		PtrFlashAttention:    mc.FlashAttention,
 		PtrIncrementalCache:  mc.PtrIncrementalCache,
 		PtrInsecureLogging:   mc.PtrInsecureLogging,
 		JinjaFile:            mc.Template,
@@ -331,7 +331,6 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 	if mc.PtrAdmissionTimeout != nil {
 		cfg.PtrAdmissionTimeout = new(time.Duration(*mc.PtrAdmissionTimeout))
 	}
-
 	if mc.DraftModel != nil {
 		cfg.DraftModel = &model.DraftModelConfig{
 			Devices:       mc.DraftModel.Devices,

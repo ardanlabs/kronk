@@ -141,7 +141,7 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 }
 
 // analyzeModelWithConfig performs the analysis while treating explicitly set
-// context, concurrency, and cache types as fixed constraints.
+// AutoTune-owned values as fixed constraints.
 func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfig) (Analysis, error) {
 	md := info.Metadata
 
@@ -234,22 +234,25 @@ func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfi
 	cfg = normalizeAnalysisConfig(cfg, trainingCtx)
 
 	profileInput := profileInput{
-		modelSize:     modelSize,
-		blockCount:    blockCount,
-		headCountKV:   headCountKV,
-		keyLength:     keyLength,
-		valueLength:   valueLength,
-		embLen:        embeddingLength,
-		trainingCtx:   trainingCtx,
-		class:         class,
-		gpuBudget:     gpuBudget,
-		hasGPU:        sf.SupportsGPUOffload,
-		gpuCount:      devs.GPUCount,
-		attn:          attn,
-		contextWindow: cfg.PtrContextWindow,
-		nSeqMax:       cfg.PtrNSeqMax,
-		cacheTypeK:    cfg.CacheTypeK,
-		cacheTypeV:    cfg.CacheTypeV,
+		modelSize:      modelSize,
+		blockCount:     blockCount,
+		headCountKV:    headCountKV,
+		keyLength:      keyLength,
+		valueLength:    valueLength,
+		embLen:         embeddingLength,
+		trainingCtx:    trainingCtx,
+		class:          class,
+		gpuBudget:      gpuBudget,
+		hasGPU:         sf.SupportsGPUOffload,
+		gpuCount:       devs.GPUCount,
+		attn:           attn,
+		contextWindow:  cfg.PtrContextWindow,
+		nSeqMax:        cfg.PtrNSeqMax,
+		cacheTypeK:     cfg.CacheTypeK,
+		cacheTypeV:     cfg.CacheTypeV,
+		flashAttention: cfg.FlashAttention,
+		splitMode:      cfg.PtrSplitMode,
+		nGpuLayers:     cfg.PtrNGpuLayers,
 	}
 
 	balanced := buildProfile("balanced", profileInput, 0, 0)
@@ -309,22 +312,25 @@ func normalizeAnalysisConfig(cfg ModelConfig, trainingCtx int64) ModelConfig {
 // Profile building
 
 type profileInput struct {
-	modelSize     int64
-	blockCount    int64
-	headCountKV   int64
-	keyLength     int64
-	valueLength   int64
-	embLen        int64
-	trainingCtx   int64
-	class         string
-	gpuBudget     int64
-	hasGPU        bool
-	gpuCount      int
-	attn          AttentionFacts
-	contextWindow *int
-	nSeqMax       *int
-	cacheTypeK    model.GGMLType
-	cacheTypeV    model.GGMLType
+	modelSize      int64
+	blockCount     int64
+	headCountKV    int64
+	keyLength      int64
+	valueLength    int64
+	embLen         int64
+	trainingCtx    int64
+	class          string
+	gpuBudget      int64
+	hasGPU         bool
+	gpuCount       int
+	attn           AttentionFacts
+	contextWindow  *int
+	nSeqMax        *int
+	cacheTypeK     model.GGMLType
+	cacheTypeV     model.GGMLType
+	flashAttention *model.FlashAttentionType
+	splitMode      *model.SplitMode
+	nGpuLayers     *int
 }
 
 type cacheRecommendation struct {
@@ -343,7 +349,9 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	}
 
 	// Determine flash attention.
-	if p.hasGPU {
+	if p.flashAttention != nil {
+		rec.FlashAttention = p.flashAttention.String()
+	} else if p.hasGPU {
 		rec.FlashAttention = "auto"
 	} else {
 		rec.FlashAttention = "disabled"
@@ -352,7 +360,11 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	// Determine split mode from the GPU count. Uses the same single source of
 	// truth as the in-load default so the analysis and the load path can never
 	// disagree: SplitModeRow only with multiple GPUs, otherwise SplitModeLayer.
-	rec.SplitMode = model.DefaultSplitMode(p.gpuCount).String()
+	if p.splitMode != nil {
+		rec.SplitMode = p.splitMode.String()
+	} else {
+		rec.SplitMode = model.DefaultSplitMode(p.gpuCount).String()
+	}
 
 	// Determine target slots. An explicit value is a sizing constraint, not an
 	// override to apply after the recommendation has been calculated.
@@ -461,7 +473,9 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	}
 
 	// GPU layers: model.Config uses 0 = all on GPU, -1 = all on CPU.
-	if p.hasGPU {
+	if p.nGpuLayers != nil {
+		rec.NGPULayers = int64(*p.nGpuLayers)
+	} else if p.hasGPU {
 		rec.NGPULayers = 0
 	} else {
 		rec.NGPULayers = -1
