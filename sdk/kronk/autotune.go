@@ -14,10 +14,11 @@ import (
 // returns the resulting Config. It uses the same shared models.AutoTune logic as
 // the model pool so the SDK and pool seed defaults identically; the only
 // SDK-specific part is the override mechanism: the analysis result is the base
-// and the caller's functional options are re-applied on top, so explicit options
-// always win. The original opts are required (not just the built cfg) to
-// preserve "explicitly set" vs "left at zero". On any failure the original cfg
-// is returned unchanged so auto-tune never blocks a load.
+// and the caller's functional options are re-applied on top. The analyzed
+// context, concurrency, and cache types are then restored because they already
+// include explicit sizing constraints and must match the configuration that was
+// sized. On any failure the original cfg is returned unchanged so auto-tune
+// never blocks a load.
 func autoTune(ctx context.Context, cfg model.Config, opts []model.Option) model.Config {
 	if len(cfg.ModelFiles) == 0 {
 		logAutoTune(ctx, cfg.Log, "status", "skipped", "reason", "no model files configured")
@@ -30,18 +31,29 @@ func autoTune(ctx context.Context, cfg model.Config, opts []model.Option) model.
 		return cfg
 	}
 
-	base, err := models.AutoTune(info, devices.List())
+	constraints := models.ModelConfig{
+		PtrContextWindow: cfg.PtrContextWindow,
+		PtrNSeqMax:       cfg.PtrNSeqMax,
+		CacheTypeK:       cfg.CacheTypeK,
+		CacheTypeV:       cfg.CacheTypeV,
+	}
+	base, err := models.AutoTuneWithConfig(info, devices.List(), constraints)
 	if err != nil {
 		logAutoTune(ctx, cfg.Log, "status", "skipped", "error", err.Error())
 		return cfg
 	}
 
-	// Analysis recommendation is the base; the user's explicit options override.
-	tuned := base.ToKronkConfig()
-	tuned.AutoTune = true
+	// Analysis recommendation is the base; the user's non-sizing options
+	// override it. Restore the analyzed sizing after replay because WithConfig
+	// and explicit auto cache options can otherwise erase the recommendation.
+	recommended := base.ToKronkConfig()
+	tuned := recommended
 	for _, opt := range opts {
 		opt(&tuned)
 	}
+	restoreAutoTunedSizing(&tuned, recommended)
+	tuned.AutoTune = true
+	tuned.AutoTuned = true
 
 	logAutoTune(ctx, cfg.Log,
 		"status", "applied",
@@ -53,6 +65,15 @@ func autoTune(ctx context.Context, cfg model.Config, opts []model.Option) model.
 	)
 
 	return tuned
+}
+
+// restoreAutoTunedSizing ensures the runtime uses the exact context,
+// concurrency, and cache types included in the AutoTune memory calculation.
+func restoreAutoTunedSizing(tuned *model.Config, recommended model.Config) {
+	tuned.PtrContextWindow = recommended.PtrContextWindow
+	tuned.PtrNSeqMax = recommended.PtrNSeqMax
+	tuned.CacheTypeK = recommended.CacheTypeK
+	tuned.CacheTypeV = recommended.CacheTypeV
 }
 
 // splitModeName renders a split-mode pointer for logging; nil means the

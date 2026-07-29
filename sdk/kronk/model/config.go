@@ -144,6 +144,11 @@ type AdapterConfig struct {
 // effect when using the low-level model package directly (only kronk.New
 // applies it).
 //
+// AutoTuned records that an upstream owner such as the Kronk Model Server has
+// already applied AutoTune. When AutoTune and AutoTuned are both true,
+// kronk.New preserves the enabled state for diagnostics without repeating the
+// hardware analysis.
+//
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
@@ -353,6 +358,7 @@ type Config struct {
 	Adapters             []AdapterConfig
 	PtrAdmissionTimeout  *time.Duration
 	AutoTune             bool
+	AutoTuned            bool
 	PtrCacheMinTokens    *int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType

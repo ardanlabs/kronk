@@ -58,7 +58,7 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 	// When opted in, seed unset settings from a hardware-aware analysis of the
 	// model. Explicit options always win; on any failure the original config is
 	// used unchanged so auto-tune never blocks a load.
-	if cfg.AutoTune {
+	if cfg.AutoTune && !cfg.AutoTuned {
 		cfg = autoTune(ctx, cfg, opts)
 	}
 

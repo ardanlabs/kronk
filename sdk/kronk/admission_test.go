@@ -35,6 +35,36 @@ func TestGenerationAdmissionCapacity(t *testing.T) {
 	}
 }
 
+func TestRestoreAutoTunedSizing(t *testing.T) {
+	recommended := model.NewConfig(
+		model.WithContextWindow(131072),
+		model.WithNSeqMax(2),
+		model.WithCacheTypeK(model.GGMLTypeQ8_0),
+		model.WithCacheTypeV(model.GGMLTypeQ8_0),
+	)
+	tuned := model.NewConfig(
+		model.WithContextWindow(8192),
+		model.WithNSeqMax(8),
+		model.WithCacheTypeK(model.GGMLTypeAuto),
+		model.WithCacheTypeV(model.GGMLTypeAuto),
+	)
+
+	restoreAutoTunedSizing(&tuned, recommended)
+
+	if tuned.ContextWindow() != recommended.ContextWindow() {
+		t.Errorf("ContextWindow: got %d, want %d", tuned.ContextWindow(), recommended.ContextWindow())
+	}
+	if tuned.NSeqMax() != recommended.NSeqMax() {
+		t.Errorf("NSeqMax: got %d, want %d", tuned.NSeqMax(), recommended.NSeqMax())
+	}
+	if tuned.CacheTypeK != recommended.CacheTypeK {
+		t.Errorf("CacheTypeK: got %s, want %s", tuned.CacheTypeK, recommended.CacheTypeK)
+	}
+	if tuned.CacheTypeV != recommended.CacheTypeV {
+		t.Errorf("CacheTypeV: got %s, want %s", tuned.CacheTypeV, recommended.CacheTypeV)
+	}
+}
+
 func TestAcquireAdmissionWait(t *testing.T) {
 	krn := Kronk{
 		cfg:         model.NewConfig(model.WithAdmissionTimeout(time.Hour)),

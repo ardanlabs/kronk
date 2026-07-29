@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -108,13 +109,19 @@ type RuntimeRecommendation struct {
 // point (no disk or hardware I/O) shared by the catalog-based ModelAnalysis and
 // path-based callers such as the SDK auto-tune flow in kronk.New.
 func Analyze(info ModelInfo, devs devices.Devices) (Analysis, error) {
-	return analyzeModel(info, devs)
+	return analyzeModelWithConfig(info, devs, ModelConfig{})
 }
 
 // ModelAnalysis reads a GGUF model file and produces an analysis with
 // recommended runtime settings based on the model's architecture and
 // the available system hardware.
 func (m *Models) ModelAnalysis(modelID string) (Analysis, error) {
+	return m.ModelAnalysisWithConfig(modelID, ModelConfig{})
+}
+
+// ModelAnalysisWithConfig reads a GGUF model file and produces an analysis
+// while treating explicitly configured sizing values as fixed constraints.
+func (m *Models) ModelAnalysisWithConfig(modelID string, constraints ModelConfig) (Analysis, error) {
 	info, err := m.ModelInformation(modelID)
 	if err != nil {
 		return Analysis{}, fmt.Errorf("model-analysis: %w", err)
@@ -122,7 +129,7 @@ func (m *Models) ModelAnalysis(modelID string) (Analysis, error) {
 
 	devs := devices.List()
 
-	return analyzeModel(info, devs)
+	return analyzeModelWithConfig(info, devs, constraints)
 }
 
 // =============================================================================
@@ -130,6 +137,12 @@ func (m *Models) ModelAnalysis(modelID string) (Analysis, error) {
 
 // analyzeModel performs the analysis given parsed model info and hardware.
 func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
+	return analyzeModelWithConfig(info, devs, ModelConfig{})
+}
+
+// analyzeModelWithConfig performs the analysis while treating explicitly set
+// context, concurrency, and cache types as fixed constraints.
+func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfig) (Analysis, error) {
 	md := info.Metadata
 
 	arch := gguf.DetectArchitecture(md)
@@ -218,20 +231,25 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 
 	// -------------------------------------------------------------------------
 	// Build profiles.
+	cfg = normalizeAnalysisConfig(cfg, trainingCtx)
 
 	profileInput := profileInput{
-		modelSize:   modelSize,
-		blockCount:  blockCount,
-		headCountKV: headCountKV,
-		keyLength:   keyLength,
-		valueLength: valueLength,
-		embLen:      embeddingLength,
-		trainingCtx: trainingCtx,
-		class:       class,
-		gpuBudget:   gpuBudget,
-		hasGPU:      sf.SupportsGPUOffload,
-		gpuCount:    devs.GPUCount,
-		attn:        attn,
+		modelSize:     modelSize,
+		blockCount:    blockCount,
+		headCountKV:   headCountKV,
+		keyLength:     keyLength,
+		valueLength:   valueLength,
+		embLen:        embeddingLength,
+		trainingCtx:   trainingCtx,
+		class:         class,
+		gpuBudget:     gpuBudget,
+		hasGPU:        sf.SupportsGPUOffload,
+		gpuCount:      devs.GPUCount,
+		attn:          attn,
+		contextWindow: cfg.PtrContextWindow,
+		nSeqMax:       cfg.PtrNSeqMax,
+		cacheTypeK:    cfg.CacheTypeK,
+		cacheTypeV:    cfg.CacheTypeV,
 	}
 
 	balanced := buildProfile("balanced", profileInput, 0, 0)
@@ -259,11 +277,6 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 			balanced.ContextWindow, trainingCtx))
 	}
 
-	if attn.SlidingWindow > 0 {
-		warnings = append(warnings, fmt.Sprintf("Model uses sliding window attention (window=%d); SWA layers use less KV cache than estimated",
-			attn.SlidingWindow))
-	}
-
 	return Analysis{
 		Model:       mf,
 		System:      sf,
@@ -274,22 +287,50 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 	}, nil
 }
 
+// normalizeAnalysisConfig resolves non-positive explicit sizing values using
+// the same effective defaults as the runtime before memory is calculated.
+func normalizeAnalysisConfig(cfg ModelConfig, trainingCtx int64) ModelConfig {
+	if cfg.PtrContextWindow != nil && *cfg.PtrContextWindow <= 0 {
+		contextWindow := int64(vram.ContextWindow8K)
+		if trainingCtx > 0 {
+			contextWindow = min(trainingCtx, contextWindow)
+		}
+		cfg.PtrContextWindow = new(int(contextWindow))
+	}
+
+	if cfg.PtrNSeqMax != nil && *cfg.PtrNSeqMax <= 0 {
+		cfg.PtrNSeqMax = new(1)
+	}
+
+	return cfg
+}
+
 // =============================================================================
 // Profile building
 
 type profileInput struct {
-	modelSize   int64
-	blockCount  int64
-	headCountKV int64
-	keyLength   int64
-	valueLength int64
-	embLen      int64
-	trainingCtx int64
-	class       string
-	gpuBudget   int64
-	hasGPU      bool
-	gpuCount    int
-	attn        AttentionFacts
+	modelSize     int64
+	blockCount    int64
+	headCountKV   int64
+	keyLength     int64
+	valueLength   int64
+	embLen        int64
+	trainingCtx   int64
+	class         string
+	gpuBudget     int64
+	hasGPU        bool
+	gpuCount      int
+	attn          AttentionFacts
+	contextWindow *int
+	nSeqMax       *int
+	cacheTypeK    model.GGMLType
+	cacheTypeV    model.GGMLType
+}
+
+type cacheRecommendation struct {
+	typeK           string
+	typeV           string
+	bytesPerElement int64
 }
 
 // buildProfile creates a RuntimeRecommendation for a given profile strategy.
@@ -313,8 +354,11 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	// disagree: SplitModeRow only with multiple GPUs, otherwise SplitModeLayer.
 	rec.SplitMode = model.DefaultSplitMode(p.gpuCount).String()
 
-	// Determine target slots.
+	// Determine target slots. An explicit value is a sizing constraint, not an
+	// override to apply after the recommendation has been calculated.
 	switch {
+	case p.nSeqMax != nil:
+		rec.NSeqMax = int64(*p.nSeqMax)
 	case overrideSlots > 0:
 		rec.NSeqMax = overrideSlots
 	case overrideConcurrency > 0:
@@ -339,16 +383,23 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	case "max_concurrency":
 		ctxCap = minInt64(ctxCap, vram.ContextWindow8K)
 	}
+	if p.contextWindow != nil {
+		ctxCap = int64(*p.contextWindow)
+	}
 
-	// Select the largest context bucket that fits within the GPU budget.
+	// Select the largest context bucket that fits within the GPU budget. An
+	// explicit context is the only candidate: cache precision may be reduced to
+	// preserve it, but AutoTune must not silently reduce a requested context.
+	// Prefer f16 at each context length, then try q8_0 before reducing the
+	// context. This preserves the profile's context objective whenever KV
+	// quantization is enough to make it fit.
 	buckets := []int64{
 		vram.ContextWindow4K, vram.ContextWindow8K, vram.ContextWindow16K,
 		vram.ContextWindow32K, vram.ContextWindow64K, vram.ContextWindow128K, vram.ContextWindow256K,
 	}
-
-	rec.CacheTypeK = "f16"
-	rec.CacheTypeV = "f16"
-	bytesPerElem := vram.BytesPerElementF16
+	if p.contextWindow != nil {
+		buckets = []int64{int64(*p.contextWindow)}
+	}
 
 	computeBuf := vram.EstimateComputeBuffer(vram.Input{
 		ModelSizeBytes:  p.modelSize,
@@ -356,51 +407,47 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 		Slots:           rec.NSeqMax,
 	})
 
-	bestCtx := vram.ContextWindow4K
-	for _, bucket := range buckets {
+	cacheTypes := cacheRecommendations(p.cacheTypeK, p.cacheTypeV)
+	fallback := cacheTypes[len(cacheTypes)-1]
+	bestCtx := min(ctxCap, vram.ContextWindow4K)
+	if p.contextWindow != nil {
+		bestCtx = int64(*p.contextWindow)
+	}
+	bytesPerElem := fallback.bytesPerElement
+	rec.CacheTypeK = fallback.typeK
+	rec.CacheTypeV = fallback.typeV
+
+	found := false
+	for _, bucket := range slices.Backward(buckets) {
 		if bucket > ctxCap {
+			continue
+		}
+
+		for _, cacheType := range cacheTypes {
+			kvPerSlot := bucket * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * cacheType.bytesPerElement
+			totalVRAM := p.modelSize + (rec.NSeqMax * kvPerSlot) + computeBuf
+			if p.gpuBudget > 0 && totalVRAM > p.gpuBudget {
+				continue
+			}
+
+			bestCtx = bucket
+			bytesPerElem = cacheType.bytesPerElement
+			rec.CacheTypeK = cacheType.typeK
+			rec.CacheTypeV = cacheType.typeV
+			found = true
 			break
 		}
 
-		kvPerSlot := bucket * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * bytesPerElem
-		totalVRAM := p.modelSize + (rec.NSeqMax * kvPerSlot) + computeBuf
-
-		if p.gpuBudget > 0 && totalVRAM <= p.gpuBudget {
-			bestCtx = bucket
-		} else if p.gpuBudget <= 0 {
-			// No GPU budget info — just use the capped context.
-			bestCtx = bucket
-		}
-	}
-
-	// If f16 doesn't fit at all with the minimum bucket, try q8_0.
-	minKVF16 := vram.ContextWindow4K * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * vram.BytesPerElementF16
-	minTotalF16 := p.modelSize + (rec.NSeqMax * minKVF16) + computeBuf
-
-	if p.gpuBudget > 0 && minTotalF16 > p.gpuBudget {
-		rec.CacheTypeK = "q8_0"
-		rec.CacheTypeV = "q8_0"
-		bytesPerElem = vram.BytesPerElementQ8_0
-
-		bestCtx = vram.ContextWindow4K
-		for _, bucket := range buckets {
-			if bucket > ctxCap {
-				break
-			}
-
-			kvPerSlot := bucket * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * bytesPerElem
-			totalVRAM := p.modelSize + (rec.NSeqMax * kvPerSlot) + computeBuf
-
-			if totalVRAM <= p.gpuBudget {
-				bestCtx = bucket
-			}
+		if found {
+			break
 		}
 	}
 
 	rec.ContextWindow = bestCtx
 
-	// For max_concurrency, see how many slots we can actually fit.
-	if overrideConcurrency > 0 && p.gpuBudget > 0 {
+	// For max_concurrency, see how many slots we can actually fit unless the
+	// user fixed NSeqMax. AutoTune never changes an explicit concurrency.
+	if overrideConcurrency > 0 && p.nSeqMax == nil && p.gpuBudget > 0 {
 		kvPerSlot := bestCtx * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * bytesPerElem
 		if kvPerSlot > 0 {
 			available := p.gpuBudget - p.modelSize - computeBuf
@@ -429,6 +476,36 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	rec.Reason = buildReason(name, rec, p)
 
 	return rec
+}
+
+// cacheRecommendations returns cache candidates in quality order while
+// preserving either cache type explicitly selected by the user.
+func cacheRecommendations(typeK, typeV model.GGMLType) []cacheRecommendation {
+	build := func(defaultType model.GGMLType) cacheRecommendation {
+		k := typeK
+		if k == model.GGMLTypeAuto {
+			k = defaultType
+		}
+
+		v := typeV
+		if v == model.GGMLTypeAuto {
+			v = defaultType
+		}
+
+		return cacheRecommendation{
+			typeK:           k.String(),
+			typeV:           v.String(),
+			bytesPerElement: gguf.MaxBytesPerElement(int32(k), int32(v)),
+		}
+	}
+
+	f16 := build(model.GGMLTypeF16)
+	q8 := build(model.GGMLTypeQ8_0)
+	if f16.typeK == q8.typeK && f16.typeV == q8.typeV {
+		return []cacheRecommendation{f16}
+	}
+
+	return []cacheRecommendation{f16, q8}
 }
 
 func buildReason(name string, rec RuntimeRecommendation, p profileInput) string {
