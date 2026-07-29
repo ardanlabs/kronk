@@ -16,6 +16,7 @@ import (
 	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
+	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/github"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
@@ -46,6 +47,7 @@ func TestFromSDK(t *testing.T) {
 		{name: "ffmpeg not installed", err: buckyffmpeg.ErrNotInstalled, code: Internal},
 		{name: "llama libraries read only", err: libs.ErrReadOnly, code: Internal},
 		{name: "bucky libraries read only", err: buckylibs.ErrReadOnly, code: Internal},
+		{name: "bucky model not found", err: buckymodels.ErrModelNotFound, code: InvalidArgument},
 		{name: "github rate limited", err: github.ErrRateLimited, code: TooManyRequests},
 		{name: "unknown", err: errors.New("unknown"), code: Internal},
 	}

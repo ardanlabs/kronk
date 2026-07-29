@@ -144,6 +144,9 @@ func TestToPCM16_ContextCancel(t *testing.T) {
 		if err == nil {
 			t.Fatalf("ToPCM16Bytes: got nil, want error from cancelled context")
 		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("ToPCM16Bytes: got %v, want context.DeadlineExceeded", err)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatalf("ToPCM16Bytes: did not return after ctx cancel")
 	}

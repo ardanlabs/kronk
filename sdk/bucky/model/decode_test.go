@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/bucky/pkg/audio"
+	"github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 )
 
@@ -87,6 +88,9 @@ func TestDecode_NonNative_FFmpegMissing(t *testing.T) {
 	}
 	if !errors.Is(err, audio.ErrUnsupportedFormat) {
 		t.Fatalf("Decode: got %v, want wraps audio.ErrUnsupportedFormat", err)
+	}
+	if !errors.Is(err, ffmpeg.ErrNotInstalled) {
+		t.Fatalf("Decode: got %v, want wraps ffmpeg.ErrNotInstalled", err)
 	}
 }
 

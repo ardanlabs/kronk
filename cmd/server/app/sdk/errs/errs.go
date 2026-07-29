@@ -17,6 +17,7 @@ import (
 	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
+	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/github"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
@@ -193,6 +194,12 @@ func FromSDK(err error) *Error {
 	// -----------------------------------------------------------------
 	case errors.Is(err, buckylibs.ErrReadOnly):
 		// TODO: Discuss — likely FailedPrecondition.
+
+	// -----------------------------------------------------------------
+	// sdk/tools/bucky/models — whisper model management
+	// -----------------------------------------------------------------
+	case errors.Is(err, buckymodels.ErrModelNotFound):
+		code = InvalidArgument
 
 	// -----------------------------------------------------------------
 	// sdk/tools/github — GitHub API client
