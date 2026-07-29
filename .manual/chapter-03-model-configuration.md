@@ -127,8 +127,10 @@ documents the portable API message formats that templates consume.
 
 ### 3.2 Automatic Tuning
 
-The model server derives a starting configuration from GGUF metadata and the
-available hardware. This analysis chooses values such as:
+The Kronk Model Server runs automatic tuning by default for every model it
+loads. No `auto-tune` key is required in `model_config.yaml`. The server derives
+a starting configuration from GGUF metadata and the available hardware. This
+analysis chooses values such as:
 
 - context window;
 - KV cache types;
@@ -142,21 +144,46 @@ filesystem support, page-cache reuse, memory-lock limits, and workload lifetime
 matter more than GPU or RAM inventory alone, so `load-mode` remains `mmap`
 unless explicitly configured.
 
-A concrete override in `model_config.yaml` replaces the analyzed value. The
-special cache type `auto` is treated as unset and therefore does not clear an
-analyzed `f16` or `q8_0` choice. This makes the usual workflow:
+A concrete override in `model_config.yaml` constrains the analysis. Explicit
+`context-window` and `nseq-max` values are fixed: automatic tuning includes
+them in its memory calculation and never silently reduces them. The special
+cache type `auto` is treated as unset and therefore does not clear an analyzed
+`f16` or `q8_0` choice. This makes the usual workflow:
 
 1. Start with no override and let Kronk analyze the model.
 2. Use the model normally and monitor memory and latency.
 3. Override only the setting needed for the workload.
 
-The balanced analysis limits the selected context to the model's training
-context and a maximum of 128K tokens. It estimates the largest supported
-context bucket that fits its GPU budget, with a 4K minimum recommendation. It
-starts with an f16 KV cache and tries q8_0 if the minimum f16 configuration
-does not fit. CPU-only analysis and systems without a known GPU budget cannot
-perform the same fit check. All recommendations are estimates, not a guarantee
-that every backend and workload will fit or have identical memory use.
+When `context-window` and `nseq-max` are specified but the KV cache types are
+omitted, automatic tuning uses this priority:
+
+1. Preserve the configured context window and concurrency.
+2. Try `f16` for both KV caches.
+3. If `f16` does not fit, try `q8_0` at the same context and concurrency.
+4. If `q8_0` does not fit, keep the configured values and report that the
+   recommendation does not fit. Automatic tuning does not select a cache type
+   below `q8_0` and does not reduce the configured context or concurrency.
+
+This is the recommended server configuration style:
+
+```yaml
+unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+  context-window: 131072
+  nseq-max: 2
+```
+
+Leave `cache-type-k` and `cache-type-v` out unless the workload requires a
+specific cache format. In this example, Kronk sizes the exact 131072-token,
+two-sequence configuration with `f16` first and then `q8_0` if necessary.
+
+When context and concurrency are not specified, the balanced analysis limits
+the selected context to the model's training context and a maximum of 128K
+tokens. It searches supported context buckets from largest to smallest. At
+each context it tries `f16` first and then `q8_0` before considering a smaller
+context. The minimum recommendation is 4K. CPU-only analysis and systems
+without a known GPU budget cannot perform the same fit check. All
+recommendations are estimates, not a guarantee that every backend and workload
+will fit or have identical memory use.
 
 In the Go SDK, the same analysis is opt-in through `WithAutoTune`. It is not
 applied when an application uses the low-level `model` package directly.

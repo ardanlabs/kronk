@@ -129,10 +129,16 @@ func (a *app) collectModelFiles() ([]models.File, error) {
 // resolvedModelConfig assembles the analysis-derived defaults overlaid
 // with the user-supplied model_config.yaml entry for the given model.
 func (a *app) resolvedModelConfig(modelID string) models.ModelConfig {
-	cfg := a.models.AnalysisDefaults(modelID)
+	override, ok := a.pool.Kronk.ModelConfig()[modelID]
+	cfg := a.models.AnalysisDefaultsWithConfig(modelID, override)
 
-	if override, ok := a.pool.Kronk.ModelConfig()[modelID]; ok {
+	if ok {
+		sizing := cfg
 		models.MergeModelConfig(&cfg, override)
+		cfg.PtrContextWindow = sizing.PtrContextWindow
+		cfg.PtrNSeqMax = sizing.PtrNSeqMax
+		cfg.CacheTypeK = sizing.CacheTypeK
+		cfg.CacheTypeV = sizing.CacheTypeV
 	}
 
 	return cfg
@@ -370,7 +376,8 @@ func (a *app) autoTuneModel(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	if req.ModelID != "" {
-		analysis, err := a.models.ModelAnalysis(req.ModelID)
+		constraints := a.pool.Kronk.ModelConfig()[req.ModelID]
+		analysis, err := a.models.ModelAnalysisWithConfig(req.ModelID, constraints)
 		if err != nil {
 			return errs.Errorf(errs.Internal, "auto-tune model %q: %s", req.ModelID, err)
 		}

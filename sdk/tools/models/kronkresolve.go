@@ -27,11 +27,16 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	}
 
 	// Layer 1: hardware-aware defaults derived from the GGUF file metadata.
-	cfg := m.AnalysisDefaults(modelID)
+	// Memory-affecting user settings participate in the analysis so the
+	// recommendation is sized for the final overlaid configuration.
+	override := mc[modelID]
+	cfg := m.AnalysisDefaultsWithConfig(modelID, override)
+	sizing := cfg
 
 	// Layer 3: user overrides from model_config.yaml.
-	if override, ok := mc[modelID]; ok {
+	if _, ok := mc[modelID]; ok {
 		MergeModelConfig(&cfg, override)
+		restoreAutoTunedSizing(&cfg, sizing)
 	}
 
 	// Resolve grammar (.grm filename -> contents) before converting.
@@ -41,6 +46,8 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 
 	// Convert to model.Config and attach on-disk paths.
 	out := cfg.ToKronkConfig()
+	out.AutoTune = true
+	out.AutoTuned = true
 	out.ModelFiles = fp.ModelFiles
 	out.ProjFile = fp.ProjFile
 
@@ -80,6 +87,15 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	}
 
 	return out, nil
+}
+
+// restoreAutoTunedSizing ensures the resolved config uses the sizing values
+// included in the AutoTune memory calculation.
+func restoreAutoTunedSizing(cfg *ModelConfig, sizing ModelConfig) {
+	cfg.PtrContextWindow = sizing.PtrContextWindow
+	cfg.PtrNSeqMax = sizing.PtrNSeqMax
+	cfg.CacheTypeK = sizing.CacheTypeK
+	cfg.CacheTypeV = sizing.CacheTypeV
 }
 
 // resolveAdapters converts user-facing adapter ids and paths into concrete
@@ -166,7 +182,13 @@ func validateAdapterID(id string) error {
 // call it so the two never seed defaults differently. Callers overlay their own
 // explicit settings on top of the returned config.
 func AutoTune(info ModelInfo, devs devices.Devices) (ModelConfig, error) {
-	analysis, err := Analyze(info, devs)
+	return AutoTuneWithConfig(info, devs, ModelConfig{})
+}
+
+// AutoTuneWithConfig returns hardware-aware defaults while treating explicitly
+// configured context, concurrency, and cache types as fixed constraints.
+func AutoTuneWithConfig(info ModelInfo, devs devices.Devices, constraints ModelConfig) (ModelConfig, error) {
+	analysis, err := analyzeModelWithConfig(info, devs, constraints)
 	if err != nil {
 		return ModelConfig{}, fmt.Errorf("auto-tune: %w", err)
 	}
@@ -219,12 +241,18 @@ func AutoTune(info ModelInfo, devs devices.Devices) (ModelConfig, error) {
 // entry point onto the shared AutoTune logic. If the model is not downloaded or
 // analysis fails, an empty ModelConfig is returned.
 func (m *Models) AnalysisDefaults(modelID string) ModelConfig {
+	return m.AnalysisDefaultsWithConfig(modelID, ModelConfig{})
+}
+
+// AnalysisDefaultsWithConfig returns analysis-derived defaults while treating
+// explicitly configured context, concurrency, and cache types as constraints.
+func (m *Models) AnalysisDefaultsWithConfig(modelID string, constraints ModelConfig) ModelConfig {
 	info, err := m.ModelInformation(modelID)
 	if err != nil {
 		return ModelConfig{}
 	}
 
-	cfg, err := AutoTune(info, devices.List())
+	cfg, err := AutoTuneWithConfig(info, devices.List(), constraints)
 	if err != nil {
 		return ModelConfig{}
 	}
