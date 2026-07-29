@@ -97,7 +97,7 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 
 	for resp := range ch {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("client disconnected")
+			return fmt.Errorf("chat-streaming-http: context canceled, do not send response: %w", err)
 		}
 
 		// Set anthropic-request-id header from first response

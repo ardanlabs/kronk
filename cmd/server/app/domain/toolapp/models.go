@@ -335,7 +335,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 
 	v, err := a.computeVRAM(ctx, req, cfg)
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	// Auto-fit: re-run with the search loop using the supplied hardware
@@ -404,7 +404,7 @@ func (a *app) autoTuneModel(ctx context.Context, r *http.Request) web.Encoder {
 
 	data, err := a.models.GGUFHead(ctx, entry)
 	if err != nil {
-		return errs.Errorf(errs.Internal, "read catalog GGUF header: %s", err)
+		return errs.FromSDK(fmt.Errorf("read catalog GGUF header: %w", err))
 	}
 
 	metadata, err := gguf.ParseMetadata(data)
@@ -552,7 +552,7 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 		// the user sees stale "Used" / "Free in Budget" numbers
 		// until they manually hit the Refresh button.
 		if err := a.pool.Kronk.InvalidateSync(ctx, req.ID); err != nil {
-			return errs.Errorf(errs.Internal, "unload: %s", err)
+			return errs.FromSDK(fmt.Errorf("unload: %w", err))
 		}
 
 		return UnloadResponse{Status: "unloaded", ID: req.ID}
@@ -565,7 +565,7 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 			}
 
 			if err := a.pool.Bucky.InvalidateSync(ctx, req.ID); err != nil {
-				return errs.Errorf(errs.Internal, "unload: %s", err)
+				return errs.FromSDK(fmt.Errorf("unload: %w", err))
 			}
 
 			return UnloadResponse{Status: "unloaded", ID: req.ID}

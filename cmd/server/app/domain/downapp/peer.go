@@ -218,7 +218,7 @@ func (a *app) listPeerLibsBundles(ctx context.Context, r *http.Request) web.Enco
 
 	bundles, err := libs.FetchPeerBundles(ctx, host)
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return toAppPeerBundleList(bundles)
