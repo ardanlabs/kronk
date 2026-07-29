@@ -551,6 +551,67 @@ func TestBuildProfileExplicitConstraints(t *testing.T) {
 	}
 }
 
+func TestAutoTuneWithConfigPreservesExplicitSizing(t *testing.T) {
+	info := ModelInfo{
+		ID:   "mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL",
+		Desc: "Qwen3.6 35B A3B",
+		Size: 40_000_000_000,
+		Metadata: map[string]string{
+			"general.architecture":              "qwen35moe",
+			"general.file_type":                 "7",
+			"qwen35moe.block_count":             "41",
+			"qwen35moe.context_length":          "262144",
+			"qwen35moe.embedding_length":        "2048",
+			"qwen35moe.attention.head_count":    "16",
+			"qwen35moe.attention.head_count_kv": "2",
+			"qwen35moe.attention.key_length":    "256",
+			"qwen35moe.attention.value_length":  "256",
+		},
+	}
+	devs := devices.Devices{
+		Devices: []devices.DeviceInfo{
+			{
+				Index:      0,
+				Name:       "Apple M5 Max",
+				Type:       "gpu_metal",
+				FreeBytes:  115_000_000_000,
+				TotalBytes: 128_000_000_000,
+			},
+		},
+		GPUCount:           1,
+		GPUTotalBytes:      128_000_000_000,
+		SupportsGPUOffload: true,
+		SystemRAMBytes:     128_000_000_000,
+	}
+	contextWindow := 131072
+	nSeqMax := 2
+	constraints := ModelConfig{
+		PtrContextWindow: &contextWindow,
+		PtrNSeqMax:       &nSeqMax,
+	}
+
+	cfg, err := AutoTuneWithConfig(info, devs, constraints)
+	if err != nil {
+		t.Fatalf("AutoTuneWithConfig failed: %v", err)
+	}
+
+	if cfg.PtrContextWindow == nil || *cfg.PtrContextWindow != contextWindow {
+		t.Errorf("PtrContextWindow: got %v, want %d", cfg.PtrContextWindow, contextWindow)
+	}
+	if cfg.PtrNSeqMax == nil || *cfg.PtrNSeqMax != nSeqMax {
+		t.Errorf("PtrNSeqMax: got %v, want %d", cfg.PtrNSeqMax, nSeqMax)
+	}
+	if cfg.PtrNBatch != nil {
+		t.Errorf("PtrNBatch: got %v, want nil", cfg.PtrNBatch)
+	}
+	if cfg.PtrNUBatch != nil {
+		t.Errorf("PtrNUBatch: got %v, want nil", cfg.PtrNUBatch)
+	}
+	if cfg.CacheTypeK == model.GGMLTypeAuto || cfg.CacheTypeV == model.GGMLTypeAuto {
+		t.Errorf("cache types: got %s/%s, want AutoTune recommendation", cfg.CacheTypeK, cfg.CacheTypeV)
+	}
+}
+
 func TestNormalizeAnalysisConfig(t *testing.T) {
 	zero := 0
 	negative := -1
