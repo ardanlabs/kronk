@@ -8,6 +8,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gemma"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/glm"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gpt"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/kimi"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/mistral"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/qwen"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/standard"
@@ -46,6 +47,7 @@ func registerDefaultParsers() {
 	defaultParsersOnce.Do(func() {
 		model.RegisterParser(gpt.New) // template-only — must be first
 		model.RegisterParser(deepseek.New)
+		model.RegisterParser(kimi.New)
 		model.RegisterParser(qwen.New)
 		model.RegisterParser(gemma.New)
 		model.RegisterParser(glm.New)

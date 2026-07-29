@@ -19,11 +19,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.active = true
 	s.job = job
 
-	// If the rendered prompt ends with "<think>" followed by any trailing
-	// whitespace, the template has already opened a reasoning block. Prime
-	// the parser and slot to start in reasoning mode so generated tokens
-	// are correctly classified until </think>. Setting reasonFlag ensures
-	// grammar sampling is skipped during the thinking phase.
+	// If the rendered prompt ends with a reasoning opener followed by any
+	// trailing whitespace, the template has already opened a reasoning block.
+	// Prime the parser and slot to start in reasoning mode so generated tokens
+	// are correctly classified until the corresponding close marker. Setting
+	// reasonFlag ensures grammar sampling is skipped during the thinking phase.
 	//
 	// Templates differ in trailing whitespace after the <think> opener:
 	// Qwen emits exactly "<think>\n", Nemotron emits "<think>\n\n", and
@@ -33,14 +33,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// Skip reasoning mode when grammar is specified — grammar constrains
 	// the output format, so free-form thinking is counterproductive and
 	// would consume max_tokens before producing any constrained content.
-	if strings.HasSuffix(strings.TrimRight(job.prompt, " \t\r\n"), "<think>") && job.params.Grammar == "" {
+	prompt := strings.TrimRight(job.prompt, " \t\r\n")
+	if (strings.HasSuffix(prompt, "<think>") || strings.HasSuffix(prompt, "<|open|>think<|sep|>")) && job.params.Grammar == "" {
 		// Drive the state machine into reasoning mode by feeding the same
-		// marker the model would have emitted. Parsers that recognize
-		// <think> (standard, qwen, mistral, glm) flip to ChannelReasoning;
-		// parsers that don't (gemma, gpt) treat it as content — but
-		// those parsers do not produce a "<think>\n" suffix in the
-		// prompt, so this branch never runs for them.
-		s.stateMachine.Classify("<think>")
+		// marker the model would have emitted. Kimi K3 uses an XTML opener;
+		// the other reasoning parsers use <think>.
+		marker := "<think>"
+		if strings.HasSuffix(prompt, "<|open|>think<|sep|>") {
+			marker = "<|open|>think<|sep|>"
+		}
+		s.stateMachine.Classify(marker)
 		s.reasonFlag = 1
 	}
 
