@@ -3,10 +3,12 @@ package kronk
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 func TestGenerationAdmissionCapacity(t *testing.T) {
@@ -32,6 +34,91 @@ func TestGenerationAdmissionCapacity(t *testing.T) {
 				t.Errorf("generationAdmissionCapacity: got %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRestoreAutoTunedSizing(t *testing.T) {
+	recommended := model.NewConfig(
+		model.WithContextWindow(131072),
+		model.WithNSeqMax(2),
+		model.WithCacheTypeK(model.GGMLTypeQ8_0),
+		model.WithCacheTypeV(model.GGMLTypeQ8_0),
+		model.WithFlashAttention(model.FlashAttentionEnabled),
+		model.WithSplitMode(model.SplitModeNone),
+		model.WithNGpuLayers(0),
+	)
+	tuned := model.NewConfig(
+		model.WithContextWindow(8192),
+		model.WithNSeqMax(8),
+		model.WithCacheTypeK(model.GGMLTypeAuto),
+		model.WithCacheTypeV(model.GGMLTypeAuto),
+		model.WithFlashAttention(model.FlashAttentionDisabled),
+		model.WithSplitMode(model.SplitModeRow),
+		model.WithNGpuLayers(17),
+	)
+
+	restoreAutoTunedFields(&tuned, recommended)
+
+	if tuned.ContextWindow() != recommended.ContextWindow() {
+		t.Errorf("ContextWindow: got %d, want %d", tuned.ContextWindow(), recommended.ContextWindow())
+	}
+	if tuned.NSeqMax() != recommended.NSeqMax() {
+		t.Errorf("NSeqMax: got %d, want %d", tuned.NSeqMax(), recommended.NSeqMax())
+	}
+	if tuned.CacheTypeK != recommended.CacheTypeK {
+		t.Errorf("CacheTypeK: got %s, want %s", tuned.CacheTypeK, recommended.CacheTypeK)
+	}
+	if tuned.CacheTypeV != recommended.CacheTypeV {
+		t.Errorf("CacheTypeV: got %s, want %s", tuned.CacheTypeV, recommended.CacheTypeV)
+	}
+	if tuned.FlashAttention() != recommended.FlashAttention() {
+		t.Errorf("FlashAttention: got %s, want %s", tuned.FlashAttention(), recommended.FlashAttention())
+	}
+	if tuned.PtrSplitMode == nil || *tuned.PtrSplitMode != *recommended.PtrSplitMode {
+		t.Errorf("PtrSplitMode: got %v, want %v", tuned.PtrSplitMode, recommended.PtrSplitMode)
+	}
+	if tuned.PtrNGpuLayers == nil || *tuned.PtrNGpuLayers != *recommended.PtrNGpuLayers {
+		t.Errorf("PtrNGpuLayers: got %v, want %v", tuned.PtrNGpuLayers, recommended.PtrNGpuLayers)
+	}
+}
+
+func TestAutoTuneLogValues(t *testing.T) {
+	contextWindow := 131072
+	flashAttention := model.FlashAttentionEnabled
+	nGpuLayers := 0
+	cfg := model.NewConfig(
+		model.WithContextWindow(contextWindow),
+		model.WithNSeqMax(2),
+		model.WithCacheTypeK(model.GGMLTypeQ8_0),
+		model.WithCacheTypeV(model.GGMLTypeQ8_0),
+		model.WithFlashAttention(flashAttention),
+		model.WithSplitMode(model.SplitModeNone),
+		model.WithNGpuLayers(nGpuLayers),
+	)
+	constraints := models.ModelConfig{
+		PtrContextWindow: &contextWindow,
+		FlashAttention:   &flashAttention,
+		PtrNGpuLayers:    &nGpuLayers,
+	}
+
+	selected, constrained := autoTuneLogValues(cfg, constraints)
+	wantSelected := []string{
+		"nseq_max=2",
+		"cache_type_k=q8_0",
+		"cache_type_v=q8_0",
+		"split_mode=none",
+	}
+	wantConstrained := []string{
+		"context_window=131072",
+		"flash_attention=enabled",
+		"ngpu_layers=0",
+	}
+
+	if !slices.Equal(selected, wantSelected) {
+		t.Errorf("selected: got %v, want %v", selected, wantSelected)
+	}
+	if !slices.Equal(constrained, wantConstrained) {
+		t.Errorf("constrained: got %v, want %v", constrained, wantConstrained)
 	}
 }
 

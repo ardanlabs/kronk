@@ -400,6 +400,7 @@ export default function CatalogList() {
         context_window: 8192,
         bytes_per_element: 1,
         slots: 2,
+        swa_full: true,
       });
       if (signal?.cancelled) return;
       setRemoteVram(prev => ({ ...prev, [id]: resp }));
@@ -450,13 +451,17 @@ export default function CatalogList() {
   // VRAM calculator: derive effective response and wire hook
   const effectiveVram = modelInfo?.vram ?? (modelInfo ? remoteVram[modelInfo.id] : undefined);
   const catalogConfigDefaults = getCatalogConfigDefaults(autoTuneRecommendation);
-  const catalogModelUrl = modelInfo?.files?.model?.[0]?.url;
+  const catalogModelUrls = useMemo(
+    () => modelInfo?.files?.model?.map(file => file.url) ?? [],
+    [modelInfo?.files?.model],
+  );
+  const useLocalModel = modelInfo?.downloaded === true && modelInfo.validated === true;
   const { controlsProps: vramControls, resultsProps: vramResults } = useVRAMState({
     initialContextWindow: 131072,
     initialBytesPerElement: 2,
     serverResponse: effectiveVram ?? null,
-    modelId: modelInfo?.vram ? modelInfo.id : undefined,
-    modelUrl: !modelInfo?.vram ? catalogModelUrl : undefined,
+    modelId: useLocalModel ? modelInfo?.id : undefined,
+    modelUrls: !useLocalModel ? catalogModelUrls : undefined,
   });
   const contextInfo = extractContextInfo(modelInfo?.model_metadata);
 

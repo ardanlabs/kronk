@@ -98,6 +98,7 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		ContextWindow:   vram.ContextWindow128K,
 		BytesPerElement: vram.BytesPerElementF16,
 		Slots:           vram.Slots1,
+		SWAFull:         true,
 	}
 
 	if v, vErr := vram.FromBytes(data, totalSize, cfg); vErr != nil {

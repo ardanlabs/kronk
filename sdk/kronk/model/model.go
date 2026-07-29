@@ -456,7 +456,7 @@ func buildModelParams(ctx context.Context, cfg *Config, l applog.Logger) (llama.
 		// diagnostics honest whether or not auto-tune ran, and confirms tensor
 		// parallelism is never silently used on a single GPU.
 		cfg.PtrSplitMode = &split
-		l(ctx, "BUILD-MODEL-PARAMS", "split_mode", "resolved", split.String())
+		l(ctx, "BUILD-MODEL-PARAMS", "split_mode", split.String(), "source", "resolved")
 	default:
 		mParams.SplitMode = (*cfg.PtrSplitMode).ToYZMAType()
 	}
@@ -1293,6 +1293,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		BytesPerElement:   int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
 		Slots:             int64(max(cfg.NSeqMax(), 1)),
 		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
+		SWAFull:           cfg.SWAFull(),
 	}
 
 	result, err := vram.FromFiles(cfg.ModelFiles, vramCfg)

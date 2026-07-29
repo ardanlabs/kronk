@@ -144,6 +144,11 @@ type AdapterConfig struct {
 // effect when using the low-level model package directly (only kronk.New
 // applies it).
 //
+// AutoTuned records that an upstream owner such as the Kronk Model Server has
+// already applied AutoTune. When AutoTune and AutoTuned are both true,
+// kronk.New preserves the enabled state for diagnostics without repeating the
+// hardware analysis.
+//
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
@@ -175,10 +180,11 @@ type AdapterConfig struct {
 // the output of llama-bench --list-devices (e.g., "CUDA0", "CUDA1", "Metal").
 // When empty, the default device selection is used.
 //
-// FlashAttention controls Flash Attention mode. Flash Attention reduces memory
-// usage and speeds up attention computation, especially for large context windows.
-// When left as zero value, FlashAttentionEnabled is used (default on).
-// Set to FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp decide.
+// PtrFlashAttention controls Flash Attention mode. Flash Attention reduces
+// memory usage and speeds up attention computation, especially for large
+// context windows. When nil, FlashAttentionEnabled is used (default on). Set to
+// FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp
+// decide.
 //
 // IncrementalCache enables Incremental Message Caching (IMC) for agentic
 // workflows. It caches all messages except the last one (which triggers
@@ -353,6 +359,7 @@ type Config struct {
 	Adapters             []AdapterConfig
 	PtrAdmissionTimeout  *time.Duration
 	AutoTune             bool
+	AutoTuned            bool
 	PtrCacheMinTokens    *int
 	CacheTypeK           GGMLType
 	CacheTypeV           GGMLType
@@ -360,7 +367,7 @@ type Config struct {
 	DefaultParams        Params
 	DraftModel           *DraftModelConfig
 	Devices              []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
-	FlashAttention       FlashAttentionType
+	PtrFlashAttention    *FlashAttentionType
 	PtrIncrementalCache  *bool
 	PtrInsecureLogging   *bool
 	JinjaFile            string
@@ -426,6 +433,16 @@ func (cfg Config) YarnOrigCtx() int        { return intOr(cfg.PtrYarnOrigCtx, 0)
 func (cfg Config) IncrementalCache() bool  { return boolOr(cfg.PtrIncrementalCache, false) }
 func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLogging, false) }
 
+// FlashAttention returns the configured flash attention mode. An unset value
+// preserves the existing default of enabled.
+func (cfg Config) FlashAttention() FlashAttentionType {
+	return DerefFlashAttention(cfg.PtrFlashAttention)
+}
+
+// SWAFull reports whether sliding-window attention layers use the full
+// context window. An unset value follows llama.cpp's default of true.
+func (cfg Config) SWAFull() bool { return boolOr(cfg.PtrSWAFull, true) }
+
 // sessionStoreKind returns the configured SessionStore backend, or
 // defaultSessionStoreKind ("ram") if unset. Lowercase because Go does
 // not allow a method and field to share a name; callers outside the
@@ -487,7 +504,7 @@ func (cfg Config) String() string {
 
 	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
-		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.Devices, cfg.FlashAttention,
+		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.Devices, cfg.FlashAttention(),
 		formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.MoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrNUBatch),
@@ -824,11 +841,11 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		ctxParams.TypeV = cfg.CacheTypeV.ToYZMAType()
 	}
 
-	switch {
-	case cfg.FlashAttention == FlashAttentionDisabled:
+	switch cfg.FlashAttention() {
+	case FlashAttentionDisabled:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
 
-	case cfg.FlashAttention == FlashAttentionAuto:
+	case FlashAttentionAuto:
 		ctxParams.FlashAttentionType = llama.FlashAttentionTypeAuto
 
 	default:
@@ -911,13 +928,12 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 	// When enabled, SWA layers use the full context window for their KV
 	// cache instead of the compact n_swa-sized cache, preserving accuracy
 	// at the cost of higher memory usage.
-	// When nil, llama.cpp's default (true/on) is used.
-	if cfg.PtrSWAFull != nil {
-		if *cfg.PtrSWAFull {
-			ctxParams.SwaFull = 1
-		} else {
-			ctxParams.SwaFull = 0
-		}
+	// Resolve the nil default explicitly so runtime allocation and the VRAM
+	// planner use the same setting even if llama.cpp changes its default.
+	if cfg.SWAFull() {
+		ctxParams.SwaFull = 1
+	} else {
+		ctxParams.SwaFull = 0
 	}
 
 	// YaRN RoPE scaling for extended context windows.
@@ -1642,53 +1658,59 @@ func NewConfig(opts ...Option) Config {
 	return cfg
 }
 
-func WithConfig(src Config) Option          { return func(c *Config) { *c = src } }
+func WithConfig(src Config) Option {
+	return func(c *Config) {
+		*c = src
+	}
+}
 func WithAdapters(v []AdapterConfig) Option { return func(c *Config) { c.Adapters = v } }
 func WithAdmissionTimeout(v time.Duration) Option {
 	return func(c *Config) { c.PtrAdmissionTimeout = new(v) }
 }
-func WithAutoTune(v bool) Option                     { return func(c *Config) { c.AutoTune = v } }
-func WithCacheMinTokens(v int) Option                { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
-func WithCacheTypeK(v GGMLType) Option               { return func(c *Config) { c.CacheTypeK = v } }
-func WithCacheTypeV(v GGMLType) Option               { return func(c *Config) { c.CacheTypeV = v } }
-func WithContextWindow(v int) Option                 { return func(c *Config) { c.PtrContextWindow = new(v) } }
-func WithDefaultParams(v Params) Option              { return func(c *Config) { c.DefaultParams = v } }
-func WithDevices(v []string) Option                  { return func(c *Config) { c.Devices = v } }
-func WithDraftModel(v *DraftModelConfig) Option      { return func(c *Config) { c.DraftModel = v } }
-func WithFlashAttention(v FlashAttentionType) Option { return func(c *Config) { c.FlashAttention = v } }
-func WithIncrementalCache(v bool) Option             { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
-func WithInsecureLogging(v bool) Option              { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
-func WithJinjaFile(v string) Option                  { return func(c *Config) { c.JinjaFile = v } }
-func WithLoadMode(v LoadMode) Option                 { return func(c *Config) { c.LoadMode = v } }
-func WithLog(v applog.Logger) Option                 { return func(c *Config) { c.Log = v } }
-func WithMainGPU(v int) Option                       { return func(c *Config) { c.PtrMainGPU = new(v) } }
-func WithMoE(v *MoEConfig) Option                    { return func(c *Config) { c.MoE = v } }
-func WithModelFiles(v []string) Option               { return func(c *Config) { c.ModelFiles = v } }
-func WithNBatch(v int) Option                        { return func(c *Config) { c.PtrNBatch = new(v) } }
-func WithNGpuLayers(v int) Option                    { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
-func WithNSeqMax(v int) Option                       { return func(c *Config) { c.PtrNSeqMax = new(v) } }
-func WithNThreads(v int) Option                      { return func(c *Config) { c.PtrNThreads = new(v) } }
-func WithNThreadsBatch(v int) Option                 { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
-func WithNUBatch(v int) Option                       { return func(c *Config) { c.PtrNUBatch = new(v) } }
-func WithNUMA(v string) Option                       { return func(c *Config) { c.NUMA = v } }
-func WithOffloadKQV(v bool) Option                   { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
-func WithOpOffload(v bool) Option                    { return func(c *Config) { c.PtrOpOffload = new(v) } }
-func WithOpOffloadMinBatch(v int) Option             { return func(c *Config) { c.PtrOpOffloadMinBatch = new(v) } }
-func WithProjFile(v string) Option                   { return func(c *Config) { c.ProjFile = v } }
-func WithMTPDrafterFile(v string) Option             { return func(c *Config) { c.MTPDrafterFile = v } }
-func WithProjOnCPU(v bool) Option                    { return func(c *Config) { c.PtrProjOnCPU = new(v) } }
-func WithRopeFreqBase(v float32) Option              { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
-func WithRopeFreqScale(v float32) Option             { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
-func WithRopeScaling(v RopeScalingType) Option       { return func(c *Config) { c.RopeScaling = v } }
-func WithSplitMode(v SplitMode) Option               { return func(c *Config) { c.PtrSplitMode = new(v) } }
-func WithSWAFull(v bool) Option                      { return func(c *Config) { c.PtrSWAFull = new(v) } }
-func WithTensorBuftOverrides(v []string) Option      { return func(c *Config) { c.TensorBuftOverrides = v } }
-func WithTensorSplit(v []float32) Option             { return func(c *Config) { c.TensorSplit = v } }
-func WithYarnAttnFactor(v float32) Option            { return func(c *Config) { c.PtrYarnAttnFactor = new(v) } }
-func WithYarnBetaFast(v float32) Option              { return func(c *Config) { c.PtrYarnBetaFast = new(v) } }
-func WithYarnBetaSlow(v float32) Option              { return func(c *Config) { c.PtrYarnBetaSlow = new(v) } }
-func WithYarnExtFactor(v float32) Option             { return func(c *Config) { c.PtrYarnExtFactor = new(v) } }
-func WithYarnOrigCtx(v int) Option                   { return func(c *Config) { c.PtrYarnOrigCtx = new(v) } }
+func WithAutoTune(v bool) Option                { return func(c *Config) { c.AutoTune = v } }
+func WithCacheMinTokens(v int) Option           { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
+func WithCacheTypeK(v GGMLType) Option          { return func(c *Config) { c.CacheTypeK = v } }
+func WithCacheTypeV(v GGMLType) Option          { return func(c *Config) { c.CacheTypeV = v } }
+func WithContextWindow(v int) Option            { return func(c *Config) { c.PtrContextWindow = new(v) } }
+func WithDefaultParams(v Params) Option         { return func(c *Config) { c.DefaultParams = v } }
+func WithDevices(v []string) Option             { return func(c *Config) { c.Devices = v } }
+func WithDraftModel(v *DraftModelConfig) Option { return func(c *Config) { c.DraftModel = v } }
+func WithFlashAttention(v FlashAttentionType) Option {
+	return func(c *Config) { c.PtrFlashAttention = new(v) }
+}
+func WithIncrementalCache(v bool) Option        { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
+func WithInsecureLogging(v bool) Option         { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
+func WithJinjaFile(v string) Option             { return func(c *Config) { c.JinjaFile = v } }
+func WithLoadMode(v LoadMode) Option            { return func(c *Config) { c.LoadMode = v } }
+func WithLog(v applog.Logger) Option            { return func(c *Config) { c.Log = v } }
+func WithMainGPU(v int) Option                  { return func(c *Config) { c.PtrMainGPU = new(v) } }
+func WithMoE(v *MoEConfig) Option               { return func(c *Config) { c.MoE = v } }
+func WithModelFiles(v []string) Option          { return func(c *Config) { c.ModelFiles = v } }
+func WithNBatch(v int) Option                   { return func(c *Config) { c.PtrNBatch = new(v) } }
+func WithNGpuLayers(v int) Option               { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
+func WithNSeqMax(v int) Option                  { return func(c *Config) { c.PtrNSeqMax = new(v) } }
+func WithNThreads(v int) Option                 { return func(c *Config) { c.PtrNThreads = new(v) } }
+func WithNThreadsBatch(v int) Option            { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
+func WithNUBatch(v int) Option                  { return func(c *Config) { c.PtrNUBatch = new(v) } }
+func WithNUMA(v string) Option                  { return func(c *Config) { c.NUMA = v } }
+func WithOffloadKQV(v bool) Option              { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
+func WithOpOffload(v bool) Option               { return func(c *Config) { c.PtrOpOffload = new(v) } }
+func WithOpOffloadMinBatch(v int) Option        { return func(c *Config) { c.PtrOpOffloadMinBatch = new(v) } }
+func WithProjFile(v string) Option              { return func(c *Config) { c.ProjFile = v } }
+func WithMTPDrafterFile(v string) Option        { return func(c *Config) { c.MTPDrafterFile = v } }
+func WithProjOnCPU(v bool) Option               { return func(c *Config) { c.PtrProjOnCPU = new(v) } }
+func WithRopeFreqBase(v float32) Option         { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
+func WithRopeFreqScale(v float32) Option        { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
+func WithRopeScaling(v RopeScalingType) Option  { return func(c *Config) { c.RopeScaling = v } }
+func WithSplitMode(v SplitMode) Option          { return func(c *Config) { c.PtrSplitMode = new(v) } }
+func WithSWAFull(v bool) Option                 { return func(c *Config) { c.PtrSWAFull = new(v) } }
+func WithTensorBuftOverrides(v []string) Option { return func(c *Config) { c.TensorBuftOverrides = v } }
+func WithTensorSplit(v []float32) Option        { return func(c *Config) { c.TensorSplit = v } }
+func WithYarnAttnFactor(v float32) Option       { return func(c *Config) { c.PtrYarnAttnFactor = new(v) } }
+func WithYarnBetaFast(v float32) Option         { return func(c *Config) { c.PtrYarnBetaFast = new(v) } }
+func WithYarnBetaSlow(v float32) Option         { return func(c *Config) { c.PtrYarnBetaSlow = new(v) } }
+func WithYarnExtFactor(v float32) Option        { return func(c *Config) { c.PtrYarnExtFactor = new(v) } }
+func WithYarnOrigCtx(v int) Option              { return func(c *Config) { c.PtrYarnOrigCtx = new(v) } }
 func WithQueueDepth(v int) Option {
 	return func(c *Config) {
 		c.PtrQueueDepth = new(v)

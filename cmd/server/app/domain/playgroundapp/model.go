@@ -100,7 +100,7 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 		cfg.PtrNSeqMax = sc.NSeqMax
 	}
 	if sc.FlashAttention != nil {
-		cfg.FlashAttention = *sc.FlashAttention
+		cfg.PtrFlashAttention = sc.FlashAttention
 	}
 	if sc.CacheTypeK != nil {
 		cfg.CacheTypeK = *sc.CacheTypeK

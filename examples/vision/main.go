@@ -117,7 +117,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow())
 	fmt.Printf("- k/v            : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention)
+	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention())
 	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
 	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
 	fmt.Println("- modelType      :", krn.ModelInfo().Type)

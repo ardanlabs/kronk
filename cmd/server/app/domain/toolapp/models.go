@@ -14,6 +14,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -129,10 +130,24 @@ func (a *app) collectModelFiles() ([]models.File, error) {
 // resolvedModelConfig assembles the analysis-derived defaults overlaid
 // with the user-supplied model_config.yaml entry for the given model.
 func (a *app) resolvedModelConfig(modelID string) models.ModelConfig {
-	cfg := a.models.AnalysisDefaults(modelID)
+	override, ok := a.pool.Kronk.ModelConfig()[modelID]
+	cfg := a.models.AnalysisDefaultsWithConfig(modelID, override)
 
-	if override, ok := a.pool.Kronk.ModelConfig()[modelID]; ok {
+	if ok {
+		sizing := cfg
 		models.MergeModelConfig(&cfg, override)
+		if sizing.PtrContextWindow != nil {
+			cfg.PtrContextWindow = sizing.PtrContextWindow
+		}
+		if sizing.PtrNSeqMax != nil {
+			cfg.PtrNSeqMax = sizing.PtrNSeqMax
+		}
+		if sizing.CacheTypeK != model.GGMLTypeAuto {
+			cfg.CacheTypeK = sizing.CacheTypeK
+		}
+		if sizing.CacheTypeV != model.GGMLTypeAuto {
+			cfg.CacheTypeV = sizing.CacheTypeV
+		}
 	}
 
 	return cfg
@@ -298,11 +313,15 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	if req.ModelURL == "" && req.ModelID == "" {
-		return errs.Errorf(errs.InvalidArgument, "either model_url or model_id is required")
+	if req.ModelURL == "" && len(req.ModelURLs) == 0 && req.ModelID == "" {
+		return errs.Errorf(errs.InvalidArgument, "model_url, model_urls, or model_id is required")
 	}
 
 	slots := max(req.Slots, 1)
+	swaFull := true
+	if req.SWAFull != nil {
+		swaFull = *req.SWAFull
+	}
 
 	cfg := vram.Config{
 		ContextWindow:     req.ContextWindow,
@@ -311,6 +330,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		GPULayers:         req.GPULayers,
 		ExpertLayersOnGPU: req.ExpertLayersOnGPU,
 		KVCacheOnCPU:      req.KVCacheOnCPU,
+		SWAFull:           swaFull,
 	}
 
 	v, err := a.computeVRAM(ctx, req, cfg)
@@ -365,7 +385,8 @@ func (a *app) autoTuneModel(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	if req.ModelID != "" {
-		analysis, err := a.models.ModelAnalysis(req.ModelID)
+		constraints := a.pool.Kronk.ModelConfig()[req.ModelID]
+		analysis, err := a.models.ModelAnalysisWithConfig(req.ModelID, constraints)
 		if err != nil {
 			return errs.Errorf(errs.Internal, "auto-tune model %q: %s", req.ModelID, err)
 		}
@@ -412,6 +433,9 @@ func (a *app) autoTuneModel(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) computeVRAM(ctx context.Context, req VRAMRequest, cfg vram.Config) (vram.Result, error) {
 	if req.ModelID != "" {
 		return a.models.CalculateVRAM(req.ModelID, cfg)
+	}
+	if len(req.ModelURLs) > 0 {
+		return vram.FromHuggingFaceFiles(ctx, req.ModelURLs, cfg)
 	}
 	return vram.FromHuggingFace(ctx, req.ModelURL, cfg)
 }

@@ -14,6 +14,8 @@ export interface UseVRAMStateOptions {
   enableHardwareOverrides?: boolean;
   /** HuggingFace URL to use for incremental recomputes (catalog / standalone). */
   modelUrl?: string;
+  /** Resolved HuggingFace file URLs to use for split-model recomputes. */
+  modelUrls?: string[];
   /** Local model id to use for incremental recomputes (model details tab). */
   modelId?: string;
 }
@@ -53,6 +55,9 @@ export interface VRAMControlsState {
   onExpertLayersOnGPUChange: (v: number) => void;
   kvCacheOnCPU: boolean;
   onKvCacheOnCPUChange: (v: boolean) => void;
+  hasSWA: boolean;
+  swaFull: boolean;
+  onSwaFullChange: (v: boolean) => void;
   deviceCount: number;
   onDeviceCountChange: (v: number) => void;
   tensorSplit: string;
@@ -100,6 +105,7 @@ export interface VRAMResultsState {
   gpuLayers: number;
   expertLayersOnGPU: number;
   kvCacheOnCPU: boolean;
+  swaFull: boolean;
   perDevice: PerDeviceVRAM[] | undefined;
   deviceCount: number;
   systemRAMBytes: number | undefined;
@@ -138,6 +144,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     serverResponse,
     enableHardwareOverrides = false,
     modelUrl,
+    modelUrls,
     modelId,
   } = opts;
 
@@ -152,6 +159,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   // slider then drives real 0..blockCount values.
   const [expertLayersOnGPU, setExpertLayersOnGPU] = useState<number>(EXPERTS_ALL_ON_GPU);
   const [kvCacheOnCPU, setKvCacheOnCPU] = useState(false);
+  const [swaFull, setSwaFull] = useState(true);
   const [deviceCount, setDeviceCount] = useState(1);
   const [tensorSplit, setTensorSplit] = useState('');
 
@@ -235,6 +243,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       setSlots(input.slots);
       setGpuLayers(input.block_count ?? 0);
       setExpertLayersOnGPU(input.block_count ?? 0);
+      setSwaFull(input.swa_full ?? true);
     }
   }, [serverResponse]);
 
@@ -269,7 +278,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
 
   useEffect(() => {
     // Need a model identifier to recompute.
-    if (!modelUrl && !modelId) return;
+    if (!modelUrl && !modelId && !modelUrls?.length) return;
     if (!liveResponse && !serverResponse) return;
 
     // The seed effect above sets contextWindow/bpe/slots/gpuLayers from the
@@ -286,6 +295,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     const handle = setTimeout(async () => {
       const req: VRAMRequest = {
         model_url: modelUrl,
+        model_urls: modelUrls,
         model_id: modelId,
         context_window: contextWindow,
         bytes_per_element: bytesPerElement,
@@ -293,6 +303,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
         gpu_layers: gpuLayers,
         expert_layers_on_gpu: expertLayersOnGPU,
         kv_cache_on_cpu: kvCacheOnCPU,
+        swa_full: swaFull,
         device_count: effectiveDeviceCount,
         tensor_split: parsedTensorSplit.length > 0 ? parsedTensorSplit : undefined,
       };
@@ -315,23 +326,23 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     // by the seed effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    modelUrl, modelId,
+    modelUrl, modelUrls, modelId,
     contextWindow, bytesPerElement, slots,
-    gpuLayers, expertLayersOnGPU, kvCacheOnCPU,
+    gpuLayers, expertLayersOnGPU, kvCacheOnCPU, swaFull,
     effectiveDeviceCount, parsedTensorSplit,
   ]);
 
   // ── Auto-fit (server-side single call) ──────────────────────────────────
   const autoFitKeyRef = useRef('');
   useEffect(() => {
-    if (!modelUrl && !modelId) return;
+    if (!modelUrl && !modelId && !modelUrls?.length) return;
     if (!liveResponse && !serverResponse) return;
     if (effectiveGpuDevices.length === 0 && effectiveDeviceCount <= 0) return;
 
     const fitDeviceCount = Math.max(1, effectiveDeviceCount);
     const selectedGpuDevices = effectiveGpuDevices.slice(0, fitDeviceCount);
     const baseInput = (liveResponse ?? serverResponse)!.input;
-    const fitKey = `${baseInput.block_count}|${contextWindow}|${bytesPerElement}|${slots}|${kvCacheOnCPU}|${fitDeviceCount}|${effectiveGpuTotalBytes}|${selectedGpuDevices.map(d => d.free_bytes).join(',')}|${effectiveSystemRAMBytes ?? 0}|${parsedTensorSplit.join(',')}`;
+    const fitKey = `${baseInput.block_count}|${contextWindow}|${bytesPerElement}|${slots}|${kvCacheOnCPU}|${swaFull}|${fitDeviceCount}|${effectiveGpuTotalBytes}|${selectedGpuDevices.map(d => d.free_bytes).join(',')}|${effectiveSystemRAMBytes ?? 0}|${parsedTensorSplit.join(',')}`;
     if (fitKey === autoFitKeyRef.current) return;
     autoFitKeyRef.current = fitKey;
 
@@ -347,11 +358,13 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     const id = ++latestRequestIdRef.current;
     const req: VRAMRequest = {
       model_url: modelUrl,
+      model_urls: modelUrls,
       model_id: modelId,
       context_window: contextWindow,
       bytes_per_element: bytesPerElement,
       slots,
       kv_cache_on_cpu: kvCacheOnCPU,
+      swa_full: swaFull,
       device_count: fitDeviceCount,
       tensor_split: parsedTensorSplit.length > 0 ? parsedTensorSplit : undefined,
       auto_fit: true,
@@ -370,15 +383,16 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       })
       .catch(() => { /* ignore */ });
   }, [
-    modelUrl, modelId,
+    modelUrl, modelUrls, modelId,
     liveResponse, serverResponse,
     effectiveDeviceCount, effectiveGpuTotalBytes, effectiveGpuDevices, effectiveSystemRAMBytes,
-    contextWindow, bytesPerElement, slots, kvCacheOnCPU, parsedTensorSplit,
+    contextWindow, bytesPerElement, slots, kvCacheOnCPU, swaFull, parsedTensorSplit,
   ]);
 
   // ── Derived view ────────────────────────────────────────────────────────
   const activeResponse = liveResponse ?? serverResponse ?? null;
   const vramInput = activeResponse?.input;
+  const hasSWA = (vramInput?.sliding_window ?? 0) > 0 && (vramInput?.sliding_window_layers ?? 0) > 0;
   const isMoE = activeResponse?.moe?.is_moe === true && activeResponse?.weights != null;
   const vramResult = useMemo<VRAMResultView | null>(() => {
     if (!activeResponse) return null;
@@ -403,6 +417,9 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     onExpertLayersOnGPUChange: setExpertLayersOnGPU,
     kvCacheOnCPU,
     onKvCacheOnCPUChange: setKvCacheOnCPU,
+    hasSWA,
+    swaFull,
+    onSwaFullChange: setSwaFull,
     deviceCount: effectiveDeviceCount,
     onDeviceCountChange: handleDeviceCountChange,
     tensorSplit,
@@ -429,6 +446,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     gpuLayers,
     expertLayersOnGPU,
     kvCacheOnCPU,
+    swaFull,
     perDevice,
     deviceCount: effectiveDeviceCount,
     systemRAMBytes: effectiveSystemRAMBytes,

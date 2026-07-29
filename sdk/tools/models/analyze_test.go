@@ -3,6 +3,7 @@ package models
 import (
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
@@ -109,6 +110,12 @@ func TestAnalyzeModelDense(t *testing.T) {
 
 	if a.Recommended.FlashAttention != "auto" {
 		t.Errorf("Recommended.FlashAttention = %q, want %q", a.Recommended.FlashAttention, "auto")
+	}
+	if a.Recommended.SplitMode != "layer" {
+		t.Errorf("Recommended.SplitMode = %q, want %q", a.Recommended.SplitMode, "layer")
+	}
+	if a.Recommended.NGPULayers != 0 {
+		t.Errorf("Recommended.NGPULayers = %d, want 0", a.Recommended.NGPULayers)
 	}
 
 	if a.Recommended.ContextWindow < vram.ContextWindow8K {
@@ -270,18 +277,6 @@ func TestAnalyzeModelSlidingWindow(t *testing.T) {
 	if a.Model.Attention.LogitSoftcapping != 30 {
 		t.Errorf("LogitSoftcapping = %v, want 30", a.Model.Attention.LogitSoftcapping)
 	}
-
-	// Should have a warning about SWA.
-	found := false
-	for _, w := range a.Warnings {
-		if contains(w, "sliding window") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("Expected a sliding window warning")
-	}
 }
 
 func TestAnalyzeModelNoGPU(t *testing.T) {
@@ -383,6 +378,291 @@ func TestAnalyzeModelTightMemory(t *testing.T) {
 
 	if a.Recommended.EstimatedVRAMBytes <= 0 {
 		t.Error("EstimatedVRAMBytes should be > 0")
+	}
+}
+
+func TestBuildProfileContextAndCachePriority(t *testing.T) {
+	tests := []struct {
+		name        string
+		gpuBudget   int64
+		wantContext int64
+		wantCache   string
+	}{
+		{"f16 at target context", 3_000_000_000, vram.ContextWindow64K, "f16"},
+		{"q8 preserves target context", 2_200_000_000, vram.ContextWindow64K, "q8_0"},
+		{"q8 before reducing context again", 1_800_000_000, vram.ContextWindow32K, "q8_0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := profileInput{
+				modelSize:   1_000_000_000,
+				blockCount:  10,
+				headCountKV: 4,
+				keyLength:   128,
+				valueLength: 128,
+				trainingCtx: vram.ContextWindow64K,
+				class:       "dense",
+				gpuBudget:   tt.gpuBudget,
+				hasGPU:      true,
+				gpuCount:    1,
+			}
+
+			rec := buildProfile("balanced", p, 0, 0)
+
+			if rec.ContextWindow != tt.wantContext {
+				t.Errorf("ContextWindow: got %d, want %d", rec.ContextWindow, tt.wantContext)
+			}
+			if rec.CacheTypeK != tt.wantCache || rec.CacheTypeV != tt.wantCache {
+				t.Errorf("cache types: got %s/%s, want %s/%s", rec.CacheTypeK, rec.CacheTypeV, tt.wantCache, tt.wantCache)
+			}
+			if !rec.Fits {
+				t.Error("Fits: got false, want true")
+			}
+		})
+	}
+
+}
+
+func TestBuildProfileExplicitConstraints(t *testing.T) {
+	context64K := int(vram.ContextWindow64K)
+	context256K := int(vram.ContextWindow256K)
+	twoSlots := 2
+
+	tests := []struct {
+		name           string
+		gpuBudget      int64
+		contextWindow  *int
+		nSeqMax        *int
+		cacheTypeK     model.GGMLType
+		cacheTypeV     model.GGMLType
+		wantContext    int64
+		wantNSeqMax    int64
+		wantCacheTypeK string
+		wantCacheTypeV string
+		wantFits       bool
+	}{
+		{
+			name:           "preserve explicit context with q8",
+			gpuBudget:      2_200_000_000,
+			contextWindow:  &context64K,
+			wantContext:    vram.ContextWindow64K,
+			wantNSeqMax:    1,
+			wantCacheTypeK: "q8_0",
+			wantCacheTypeV: "q8_0",
+			wantFits:       true,
+		},
+		{
+			name:           "explicit context can exceed profile cap",
+			gpuBudget:      5_000_000_000,
+			contextWindow:  &context256K,
+			wantContext:    vram.ContextWindow256K,
+			wantNSeqMax:    1,
+			wantCacheTypeK: "q8_0",
+			wantCacheTypeV: "q8_0",
+			wantFits:       true,
+		},
+		{
+			name:           "preserve explicit f16 when it does not fit",
+			gpuBudget:      2_200_000_000,
+			contextWindow:  &context64K,
+			cacheTypeK:     model.GGMLTypeF16,
+			cacheTypeV:     model.GGMLTypeF16,
+			wantContext:    vram.ContextWindow64K,
+			wantNSeqMax:    1,
+			wantCacheTypeK: "f16",
+			wantCacheTypeV: "f16",
+			wantFits:       false,
+		},
+		{
+			name:           "q8 is the quantization floor",
+			gpuBudget:      1_200_000_000,
+			contextWindow:  &context64K,
+			wantContext:    vram.ContextWindow64K,
+			wantNSeqMax:    1,
+			wantCacheTypeK: "q8_0",
+			wantCacheTypeV: "q8_0",
+			wantFits:       false,
+		},
+		{
+			name:           "size explicit concurrency",
+			gpuBudget:      3_000_000_000,
+			contextWindow:  &context64K,
+			nSeqMax:        &twoSlots,
+			wantContext:    vram.ContextWindow64K,
+			wantNSeqMax:    2,
+			wantCacheTypeK: "q8_0",
+			wantCacheTypeV: "q8_0",
+			wantFits:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := profileInput{
+				modelSize:     1_000_000_000,
+				blockCount:    10,
+				headCountKV:   4,
+				keyLength:     128,
+				valueLength:   128,
+				embLen:        1024,
+				trainingCtx:   vram.ContextWindow256K,
+				class:         "dense",
+				gpuBudget:     tt.gpuBudget,
+				hasGPU:        true,
+				gpuCount:      1,
+				contextWindow: tt.contextWindow,
+				nSeqMax:       tt.nSeqMax,
+				cacheTypeK:    tt.cacheTypeK,
+				cacheTypeV:    tt.cacheTypeV,
+			}
+
+			rec := buildProfile("balanced", p, 0, 0)
+			if rec.ContextWindow != tt.wantContext {
+				t.Errorf("ContextWindow: got %d, want %d", rec.ContextWindow, tt.wantContext)
+			}
+			if rec.NSeqMax != tt.wantNSeqMax {
+				t.Errorf("NSeqMax: got %d, want %d", rec.NSeqMax, tt.wantNSeqMax)
+			}
+			if rec.CacheTypeK != tt.wantCacheTypeK {
+				t.Errorf("CacheTypeK: got %q, want %q", rec.CacheTypeK, tt.wantCacheTypeK)
+			}
+			if rec.CacheTypeV != tt.wantCacheTypeV {
+				t.Errorf("CacheTypeV: got %q, want %q", rec.CacheTypeV, tt.wantCacheTypeV)
+			}
+			if rec.Fits != tt.wantFits {
+				t.Errorf("Fits: got %t, want %t", rec.Fits, tt.wantFits)
+			}
+		})
+	}
+
+	p := profileInput{
+		modelSize:     1_000_000_000,
+		blockCount:    10,
+		headCountKV:   4,
+		keyLength:     128,
+		valueLength:   128,
+		embLen:        1024,
+		trainingCtx:   vram.ContextWindow64K,
+		class:         "dense",
+		gpuBudget:     10_000_000_000,
+		hasGPU:        true,
+		gpuCount:      1,
+		contextWindow: &context64K,
+		nSeqMax:       &twoSlots,
+	}
+	rec := buildProfile("max_concurrency", p, 0, 1)
+	if rec.NSeqMax != int64(twoSlots) {
+		t.Errorf("explicit max-concurrency NSeqMax: got %d, want %d", rec.NSeqMax, twoSlots)
+	}
+}
+
+func TestAutoTuneWithConfigPreservesExplicitSizing(t *testing.T) {
+	info := ModelInfo{
+		ID:   "mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL",
+		Desc: "Qwen3.6 35B A3B",
+		Size: 40_000_000_000,
+		Metadata: map[string]string{
+			"general.architecture":              "qwen35moe",
+			"general.file_type":                 "7",
+			"qwen35moe.block_count":             "41",
+			"qwen35moe.context_length":          "262144",
+			"qwen35moe.embedding_length":        "2048",
+			"qwen35moe.attention.head_count":    "16",
+			"qwen35moe.attention.head_count_kv": "2",
+			"qwen35moe.attention.key_length":    "256",
+			"qwen35moe.attention.value_length":  "256",
+		},
+	}
+	devs := devices.Devices{
+		Devices: []devices.DeviceInfo{
+			{
+				Index:      0,
+				Name:       "Apple M5 Max",
+				Type:       "gpu_metal",
+				FreeBytes:  115_000_000_000,
+				TotalBytes: 128_000_000_000,
+			},
+		},
+		GPUCount:           1,
+		GPUTotalBytes:      128_000_000_000,
+		SupportsGPUOffload: true,
+		SystemRAMBytes:     128_000_000_000,
+	}
+	contextWindow := 131072
+	nSeqMax := 2
+	flashAttention := model.FlashAttentionEnabled
+	splitMode := model.SplitModeNone
+	nGpuLayers := 0
+	constraints := ModelConfig{
+		PtrContextWindow: &contextWindow,
+		PtrNSeqMax:       &nSeqMax,
+		FlashAttention:   &flashAttention,
+		PtrSplitMode:     &splitMode,
+		PtrNGpuLayers:    &nGpuLayers,
+	}
+
+	cfg, err := AutoTuneWithConfig(info, devs, constraints)
+	if err != nil {
+		t.Fatalf("AutoTuneWithConfig failed: %v", err)
+	}
+
+	if cfg.PtrContextWindow == nil || *cfg.PtrContextWindow != contextWindow {
+		t.Errorf("PtrContextWindow: got %v, want %d", cfg.PtrContextWindow, contextWindow)
+	}
+	if cfg.PtrNSeqMax == nil || *cfg.PtrNSeqMax != nSeqMax {
+		t.Errorf("PtrNSeqMax: got %v, want %d", cfg.PtrNSeqMax, nSeqMax)
+	}
+	if cfg.PtrNBatch != nil {
+		t.Errorf("PtrNBatch: got %v, want nil", cfg.PtrNBatch)
+	}
+	if cfg.PtrNUBatch != nil {
+		t.Errorf("PtrNUBatch: got %v, want nil", cfg.PtrNUBatch)
+	}
+	if cfg.FlashAttention == nil || *cfg.FlashAttention != flashAttention {
+		t.Errorf("FlashAttention: got %v, want %s", cfg.FlashAttention, flashAttention)
+	}
+	if cfg.PtrSplitMode == nil || *cfg.PtrSplitMode != splitMode {
+		t.Errorf("PtrSplitMode: got %v, want %s", cfg.PtrSplitMode, splitMode)
+	}
+	if cfg.PtrNGpuLayers == nil || *cfg.PtrNGpuLayers != nGpuLayers {
+		t.Errorf("PtrNGpuLayers: got %v, want %d", cfg.PtrNGpuLayers, nGpuLayers)
+	}
+	if cfg.CacheTypeK == model.GGMLTypeAuto || cfg.CacheTypeV == model.GGMLTypeAuto {
+		t.Errorf("cache types: got %s/%s, want AutoTune recommendation", cfg.CacheTypeK, cfg.CacheTypeV)
+	}
+}
+
+func TestNormalizeAnalysisConfig(t *testing.T) {
+	zero := 0
+	negative := -1
+
+	tests := []struct {
+		name            string
+		contextWindow   *int
+		nSeqMax         *int
+		trainingContext int64
+		wantContext     int
+		wantNSeqMax     int
+	}{
+		{"zero uses runtime defaults", &zero, &zero, vram.ContextWindow64K, int(vram.ContextWindow8K), 1},
+		{"negative uses short training context", &negative, &negative, 2048, 2048, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := normalizeAnalysisConfig(ModelConfig{
+				PtrContextWindow: tt.contextWindow,
+				PtrNSeqMax:       tt.nSeqMax,
+			}, tt.trainingContext)
+
+			if cfg.PtrContextWindow == nil || *cfg.PtrContextWindow != tt.wantContext {
+				t.Errorf("PtrContextWindow: got %v, want %d", cfg.PtrContextWindow, tt.wantContext)
+			}
+			if cfg.PtrNSeqMax == nil || *cfg.PtrNSeqMax != tt.wantNSeqMax {
+				t.Errorf("PtrNSeqMax: got %v, want %d", cfg.PtrNSeqMax, tt.wantNSeqMax)
+			}
+		})
 	}
 }
 
