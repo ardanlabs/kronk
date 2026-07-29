@@ -14,6 +14,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -135,10 +136,18 @@ func (a *app) resolvedModelConfig(modelID string) models.ModelConfig {
 	if ok {
 		sizing := cfg
 		models.MergeModelConfig(&cfg, override)
-		cfg.PtrContextWindow = sizing.PtrContextWindow
-		cfg.PtrNSeqMax = sizing.PtrNSeqMax
-		cfg.CacheTypeK = sizing.CacheTypeK
-		cfg.CacheTypeV = sizing.CacheTypeV
+		if sizing.PtrContextWindow != nil {
+			cfg.PtrContextWindow = sizing.PtrContextWindow
+		}
+		if sizing.PtrNSeqMax != nil {
+			cfg.PtrNSeqMax = sizing.PtrNSeqMax
+		}
+		if sizing.CacheTypeK != model.GGMLTypeAuto {
+			cfg.CacheTypeK = sizing.CacheTypeK
+		}
+		if sizing.CacheTypeV != model.GGMLTypeAuto {
+			cfg.CacheTypeV = sizing.CacheTypeV
+		}
 	}
 
 	return cfg
