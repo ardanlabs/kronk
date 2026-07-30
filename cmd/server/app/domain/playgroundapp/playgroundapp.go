@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -61,7 +62,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 
 	baseCfg, err := a.models.KronkResolvedConfig(req.ModelID, a.pool.Kronk.ModelConfig())
 	if err != nil {
-		return errs.New(errs.Internal, fmt.Errorf("resolving model config: %w", err))
+		return errs.FromSDK(fmt.Errorf("resolving model config: %w", err))
 	}
 
 	sessionID, err := generateSessionID()
@@ -75,7 +76,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	if req.Config.DraftModelID != nil && *req.Config.DraftModelID != "" {
 		draftPath, err := a.models.FullPath(*req.Config.DraftModelID)
 		if err != nil {
-			return errs.New(errs.InvalidArgument, fmt.Errorf("resolving draft model: %w", err))
+			return errs.FromSDK(fmt.Errorf("resolving draft model: %w", err))
 		}
 		if cfg.DraftModel == nil {
 			cfg.DraftModel = &model.DraftModelConfig{}
@@ -104,7 +105,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		krn, err = a.pool.Kronk.AquireModel(ctx, req.ModelID)
 	}
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	a.log.Info(ctx, "playground-session",
@@ -278,8 +279,11 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 		if ctx.Err() != nil {
 			return web.NewNoResponse()
 		}
+		if errors.Is(err, kronk.ErrResponseCommitted) {
+			return web.NewNoResponse()
+		}
 
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return web.NewNoResponse()

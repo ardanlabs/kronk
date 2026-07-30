@@ -463,6 +463,22 @@ export default function DocsSDKKronk() {
               <p className="doc-description">DiscardLogger discards logging.</p>
             </div>
 
+            <div className="doc-section" id="var-erradmissiontimeout">
+              <h4>ErrAdmissionTimeout</h4>
+              <pre className="code-block">
+                <code>{`var ErrAdmissionTimeout = errors.New("admission timeout")`}</code>
+              </pre>
+              <p className="doc-description">ErrAdmissionTimeout indicates that a request could not obtain an admission permit within the configured admission timeout.</p>
+            </div>
+
+            <div className="doc-section" id="var-errresponsecommitted">
+              <h4>ErrResponseCommitted</h4>
+              <pre className="code-block">
+                <code>{`var ErrResponseCommitted = errors.New("response already committed")`}</code>
+              </pre>
+              <p className="doc-description">ErrResponseCommitted indicates that an HTTP streaming response was already committed before the operation failed.</p>
+            </div>
+
             <div className="doc-section" id="var-fmtlogger">
               <h4>FmtLogger</h4>
               <pre className="code-block">
@@ -539,6 +555,8 @@ export default function DocsSDKKronk() {
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
                 <li><a href="#var-discardlogger">DiscardLogger</a></li>
+                <li><a href="#var-erradmissiontimeout">ErrAdmissionTimeout</a></li>
+                <li><a href="#var-errresponsecommitted">ErrResponseCommitted</a></li>
                 <li><a href="#var-fmtlogger">FmtLogger</a></li>
               </ul>
             </div>

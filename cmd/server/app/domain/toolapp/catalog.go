@@ -2,6 +2,7 @@ package toolapp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -132,7 +133,7 @@ func (a *app) lookupCatalog(ctx context.Context, r *http.Request) web.Encoder {
 
 	all, err := hf.RepoFiles(ctx, owner, repo, "main", "", true)
 	if err != nil {
-		return errs.Errorf(errs.Internal, "fetch repo files: %s", err)
+		return errs.FromSDK(fmt.Errorf("fetch repo files: %w", err))
 	}
 
 	var ggufFiles []HFRepoFile
@@ -173,7 +174,7 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 
 	res, err := a.models.ResolveSourceFresh(ctx, source)
 	if err != nil {
-		return errs.Errorf(errs.Internal, "resolve %q: %s", source, err)
+		return errs.FromSDK(fmt.Errorf("resolve %q: %w", source, err))
 	}
 
 	// Repo-only input: the resolver returned a file list instead of a

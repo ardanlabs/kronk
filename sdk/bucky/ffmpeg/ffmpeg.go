@@ -101,6 +101,10 @@ func (f *FFmpeg) ToPCM16(ctx context.Context, dst io.Writer, src io.Reader) erro
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("ffmpeg: %w: process: %w", ctxErr, err)
+		}
+
 		tail := tailBytes(stderr.Bytes(), stderrTailBytes)
 		if len(tail) == 0 {
 			return fmt.Errorf("ffmpeg: %w", err)

@@ -40,10 +40,13 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 	if req.MaxTokens == 0 {
 		return errs.Errorf(errs.InvalidArgument, "missing max_tokens field")
 	}
+	if len(req.Messages) == 0 {
+		return errs.FromSDK(model.ErrMessagesMissing)
+	}
 
 	krn, err := a.pool.Kronk.AquireModel(ctx, req.Model)
 	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
+		return errs.FromSDK(err)
 	}
 
 	a.log.Info(ctx, "messages", "model", req.Model)
@@ -51,8 +54,12 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 	d := toOpenAI(req)
 
 	if req.Stream {
-		if err := a.handleStreaming(ctx, krn, d, req.Model); err != nil {
-			return errs.New(errs.Internal, err)
+		committed, err := a.handleStreaming(ctx, krn, d, req.Model)
+		if err != nil {
+			if committed {
+				return web.NewNoResponse()
+			}
+			return errs.FromSDK(err)
 		}
 
 		return web.NewNoResponse()
@@ -60,7 +67,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 
 	resp, err := krn.Chat(ctx, d)
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	// Set anthropic-request-id header for API compatibility
@@ -72,17 +79,17 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 	return toMessagesResponse(resp)
 }
 
-func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, modelName string) error {
+func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, modelName string) (bool, error) {
 	w := web.GetWriter(ctx)
 
 	f, ok := w.(http.Flusher)
 	if !ok {
-		return fmt.Errorf("streaming not supported")
+		return false, fmt.Errorf("streaming not supported")
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
 	if err != nil {
-		return fmt.Errorf("chat streaming: %w", err)
+		return false, fmt.Errorf("chat streaming: %w", err)
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -94,10 +101,11 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 		f:         f,
 		modelName: modelName,
 	}
+	committed := false
 
 	for resp := range ch {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("client disconnected")
+			return committed, fmt.Errorf("chat-streaming-http: context canceled, do not send response: %w", err)
 		}
 
 		// Set anthropic-request-id header from first response
@@ -105,14 +113,16 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 			w.Header().Set("anthropic-request-id", resp.ID)
 			w.WriteHeader(http.StatusOK)
 			f.Flush()
+			committed = true
 		}
 
+		committed = true
 		if err := state.processChunk(resp); err != nil {
-			return err
+			return committed, err
 		}
 	}
 
-	return state.finish()
+	return true, state.finish()
 }
 
 // =============================================================================

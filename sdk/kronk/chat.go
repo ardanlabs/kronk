@@ -11,13 +11,17 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+// ErrResponseCommitted indicates that an HTTP streaming response was already
+// committed before the operation failed.
+var ErrResponseCommitted = errors.New("response already committed")
+
 // Chat provides support to interact with an inference model.
 // For text models, NSeqMax controls parallel sequence processing within a single
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, error) {
-	if containsUnsupportedFileInput(d["messages"]) {
-		return model.ChatResponse{}, fmt.Errorf("chat: %w", model.ErrFileInputsUnsupported)
+	if err := model.ValidateMessages(d); err != nil {
+		return model.ChatResponse{}, fmt.Errorf("chat: %w", err)
 	}
 
 	f := func(m *model.Model) (model.ChatResponse, error) {
@@ -32,8 +36,8 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
-	if containsUnsupportedFileInput(d["messages"]) {
-		return nil, fmt.Errorf("chat-streaming: %w", model.ErrFileInputsUnsupported)
+	if err := model.ValidateMessages(d); err != nil {
+		return nil, fmt.Errorf("chat-streaming: %w", err)
 	}
 
 	f := func(m *model.Model) <-chan model.ChatResponse {
@@ -110,7 +114,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	for {
 		select {
 		case <-ctx.Done():
-			return lr, errors.New("chat-streaming-http: context canceled, do not send response")
+			return lr, fmt.Errorf("chat-streaming-http: %w: %w", ErrResponseCommitted, ctx.Err())
 
 		case resp, ok := <-ch:
 			if !ok {
@@ -136,7 +140,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 			d, err := json.Marshal(resp)
 			if err != nil {
-				return resp, fmt.Errorf("chat-streaming-http: marshal: %w", err)
+				return resp, fmt.Errorf("chat-streaming-http: %w: marshal: %w", ErrResponseCommitted, err)
 			}
 
 			// [DEBUG]: Show raw output content.

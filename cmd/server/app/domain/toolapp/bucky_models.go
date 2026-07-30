@@ -247,7 +247,7 @@ func (a *app) removeBuckyModel(ctx context.Context, r *http.Request) web.Encoder
 
 	mp, err := a.buckyModels.FullPath(modelID)
 	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
+		return errs.FromSDK(err)
 	}
 
 	if err := a.buckyModels.Remove(mp, a.log.Info); err != nil {
@@ -262,7 +262,7 @@ func (a *app) detailsBuckyModel(ctx context.Context, r *http.Request) web.Encode
 
 	h, err := a.buckyModels.CatalogHeader(ctx, modelID)
 	if err != nil {
-		return errs.Errorf(errs.Internal, "failed to read bucky model header: %s", err)
+		return errs.FromSDK(fmt.Errorf("failed to read bucky model header: %w", err))
 	}
 
 	return BuckyModelDetails{

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,9 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"go.yaml.in/yaml/v2"
 )
+
+// ErrModelNotFound is returned when a requested model is not installed.
+var ErrModelNotFound = errors.New("model not found")
 
 // File provides information about a model.
 type File struct {
@@ -200,7 +204,7 @@ func (m *Models) FullPath(modelID string) (Path, error) {
 		}
 	}
 
-	return Path{}, fmt.Errorf("retrieve-path: model %q not found", modelID)
+	return Path{}, fmt.Errorf("retrieve-path: %w: %q", ErrModelNotFound, modelID)
 }
 
 // LookupFile resolves a model identifier to its catalog File entry using
