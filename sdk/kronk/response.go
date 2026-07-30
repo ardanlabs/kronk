@@ -3,7 +3,6 @@ package kronk
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -143,6 +142,9 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 	if err != nil {
 		return ResponseResponse{}, fmt.Errorf("response: %w", err)
 	}
+	if err := model.ValidateMessages(d); err != nil {
+		return ResponseResponse{}, fmt.Errorf("response: %w", err)
+	}
 
 	f := func(m *model.Model) (model.ChatResponse, error) {
 		return m.Chat(ctx, d)
@@ -163,6 +165,9 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan ResponseStreamEvent, error) {
 	d, err := convertInputToMessages(d)
 	if err != nil {
+		return nil, fmt.Errorf("responses-streaming: %w", err)
+	}
+	if err := model.ValidateMessages(d); err != nil {
 		return nil, fmt.Errorf("responses-streaming: %w", err)
 	}
 
@@ -245,14 +250,12 @@ func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWrit
 
 	for event := range ch {
 		if err := ctx.Err(); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return lr, errors.New("responses-streaming-http: client disconnected, do not send response")
-			}
+			return lr, fmt.Errorf("responses-streaming-http: %w: %w", ErrResponseCommitted, err)
 		}
 
 		data, err := json.Marshal(event)
 		if err != nil {
-			return lr, fmt.Errorf("responses-streaming-http: marshal: %w", err)
+			return lr, fmt.Errorf("responses-streaming-http: %w: marshal: %w", ErrResponseCommitted, err)
 		}
 
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data)
@@ -843,7 +846,12 @@ func convertInputToMessages(d model.D) (model.D, error) {
 			return d, nil
 		}
 
-		d["messages"] = inputToMessages(input)
+		messages, err := inputToMessages(input)
+		if err != nil {
+			return nil, fmt.Errorf("convert-input-to-messages: %w", err)
+		}
+
+		d["messages"] = messages
 		delete(d, "input")
 	}
 
@@ -1108,22 +1116,22 @@ func injectInstructions(d model.D) {
 	delete(d, "instructions")
 }
 
-func inputToMessages(input any) []model.D {
+func inputToMessages(input any) ([]model.D, error) {
 	inputItems, ok := input.([]any)
 	if !ok {
 		if str, ok := input.(string); ok {
 			return []model.D{
 				{"role": "user", "content": str},
-			}
+			}, nil
 		}
 		if docs, ok := input.([]model.D); ok {
-			return docs
+			return docs, nil
 		}
-		return nil
+		return nil, model.ErrMessagesInvalid
 	}
 
 	if len(inputItems) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	firstItem, ok := inputItems[0].(map[string]any)
@@ -1133,7 +1141,7 @@ func inputToMessages(input any) []model.D {
 		case true:
 			firstItem = firstDoc
 		case false:
-			return nil
+			return nil, model.ErrMessagesInvalid
 		}
 	}
 
@@ -1145,9 +1153,11 @@ func inputToMessages(input any) []model.D {
 				messages = append(messages, model.D(v))
 			case model.D:
 				messages = append(messages, v)
+			default:
+				return nil, model.ErrMessagesInvalid
 			}
 		}
-		return messages
+		return messages, nil
 	}
 
 	var content []model.D
@@ -1181,5 +1191,5 @@ func inputToMessages(input any) []model.D {
 
 	return []model.D{
 		{"role": "user", "content": content},
-	}
+	}, nil
 }

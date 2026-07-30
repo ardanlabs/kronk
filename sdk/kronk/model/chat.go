@@ -20,11 +20,21 @@ const streamChBuffer = 32
 // ErrFileInputsUnsupported indicates file content parts are not supported.
 var ErrFileInputsUnsupported = errors.New("file inputs are not currently supported")
 
+// ErrMessagesMissing indicates that a chat request has no messages field.
+var ErrMessagesMissing = errors.New("validate-document: no messages found in request")
+
+// ErrMessagesInvalid indicates that a chat request's messages field has an invalid type.
+var ErrMessagesInvalid = errors.New("validate-document: messages is not a slice of documents")
+
 // Chat performs a chat request and returns the final response.
 // All requests (including vision/audio) use batch processing and can run
 // concurrently based on the NSeqMax config value, which controls parallel
 // sequence processing.
 func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
+	if err := ValidateMessages(d); err != nil {
+		return ChatResponse{}, err
+	}
+
 	ch := m.ChatStreaming(ctx, d)
 
 	var lastMsg ChatResponse
@@ -35,6 +45,10 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 	// If the response is an error, extract the error message from Delta
 	// (where ChatResponseErr stores it) and return it as a Go error.
 	if len(lastMsg.Choices) > 0 && lastMsg.Choices[0].FinishReason() == FinishReasonError {
+		if err := ctx.Err(); err != nil {
+			return lastMsg, err
+		}
+
 		errMsg := "unknown error"
 		if lastMsg.Choices[0].Delta != nil && lastMsg.Choices[0].Delta.Content != "" {
 			errMsg = lastMsg.Choices[0].Delta.Content
@@ -601,16 +615,7 @@ func deserializeToolCallArguments(d D) D {
 }
 
 func (m *Model) validateDocument(d D) (Params, error) {
-	messages, exists := d["messages"]
-	if !exists {
-		return Params{}, errors.New("validate-document: no messages found in request")
-	}
-
-	docs, ok := messages.([]D)
-	if !ok {
-		return Params{}, errors.New("validate-document: messages is not a slice of documents")
-	}
-	if err := validateMessageContentParts(docs); err != nil {
+	if err := ValidateMessages(d); err != nil {
 		return Params{}, err
 	}
 
@@ -620,6 +625,24 @@ func (m *Model) validateDocument(d D) (Params, error) {
 	}
 
 	return p, nil
+}
+
+// ValidateMessages validates the messages field of a chat document.
+func ValidateMessages(d D) error {
+	messages, exists := d["messages"]
+	if !exists {
+		return ErrMessagesMissing
+	}
+
+	docs, ok := messages.([]D)
+	if !ok {
+		return ErrMessagesInvalid
+	}
+	if len(docs) == 0 {
+		return ErrMessagesMissing
+	}
+
+	return validateMessageContentParts(docs)
 }
 
 func validateMessageContentParts(messages []D) error {

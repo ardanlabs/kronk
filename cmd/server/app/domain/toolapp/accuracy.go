@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -15,7 +14,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
 )
 
 // accuracyCode is the fixed source the Accuracy app tests against. The
@@ -173,7 +171,7 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 	// and acquire a dedicated instance.
 	cfg, err := a.models.KronkResolvedConfig(req.Model, a.pool.Kronk.ModelConfig())
 	if err != nil {
-		return errs.New(errs.InvalidArgument, fmt.Errorf("resolving model config: %w", err))
+		return errs.FromSDK(fmt.Errorf("resolving model config: %w", err))
 	}
 
 	cw := accuracyContextWindow
@@ -183,14 +181,7 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 
 	krn, err := a.pool.Kronk.AquireCustom(ctx, req.Model+"/accuracy", cfg)
 	if err != nil {
-		switch {
-		case errors.Is(err, kronkpool.ErrNoCapacity):
-			return errs.Errorf(errs.ResourceExhausted, "not enough GPU memory to run %q at the accuracy context window; try a smaller model", req.Model)
-		case errors.Is(err, kronkpool.ErrServerBusy):
-			return errs.Errorf(errs.Unavailable, "server is busy; try again in a moment")
-		default:
-			return errs.New(errs.Internal, err)
-		}
+		return errs.FromSDK(err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -212,7 +203,7 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 
 	resp, err := krn.Chat(ctx, d)
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	if len(resp.Choices) == 0 || resp.Choices[0].Message == nil {

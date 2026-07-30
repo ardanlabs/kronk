@@ -2,9 +2,24 @@
 package errs
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
+
+	"github.com/ardanlabs/bucky/pkg/audio"
+	buckyffmpeg "github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
+	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
+	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
+	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	"github.com/ardanlabs/kronk/sdk/tools/github"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 // ErrCode represents an error code in the system.
@@ -58,7 +73,11 @@ type Error struct {
 
 // New constructs an error based on an app error.
 func New(code ErrCode, err error) *Error {
-	pc, filename, line, _ := runtime.Caller(1)
+	return newError(code, err, 2)
+}
+
+func newError(code ErrCode, err error, callerSkip int) *Error {
+	pc, filename, line, _ := runtime.Caller(callerSkip)
 
 	return &Error{
 		Code:     code,
@@ -66,6 +85,52 @@ func New(code ErrCode, err error) *Error {
 		FuncName: runtime.FuncForPC(pc).Name(),
 		FileName: fmt.Sprintf("%s:%d", filename, line),
 	}
+}
+
+// FromSDK translates an SDK error into its HTTP application error.
+func FromSDK(err error) *Error {
+	code := Internal
+
+	switch {
+	case errors.Is(err, kronk.ErrAdmissionTimeout):
+		code = ResourceExhausted
+	case errors.Is(err, context.Canceled):
+		code = Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		code = DeadlineExceeded
+	case errors.Is(err, model.ErrFileInputsUnsupported):
+		code = InvalidArgument
+	case errors.Is(err, model.ErrMessagesMissing):
+		code = InvalidArgument
+	case errors.Is(err, model.ErrMessagesInvalid):
+		code = InvalidArgument
+	case errors.Is(err, llamamodels.ErrModelNotFound):
+		code = NotFound
+	case errors.Is(err, buckymodels.ErrModelNotFound):
+		code = NotFound
+	case errors.Is(err, kronkpool.ErrServerBusy):
+		code = Unavailable
+	case errors.Is(err, kronkpool.ErrNoCapacity):
+		code = ResourceExhausted
+	case errors.Is(err, resman.ErrNoCapacity):
+		code = ResourceExhausted
+	case errors.Is(err, hf.ErrNotFound):
+		code = NotFound
+	case errors.Is(err, hf.ErrThrottled):
+		code = TooManyRequests
+	case errors.Is(err, github.ErrRateLimited):
+		code = TooManyRequests
+	case errors.Is(err, buckyffmpeg.ErrNotInstalled):
+		code = FailedPrecondition
+	case errors.Is(err, audio.ErrUnsupportedFormat):
+		code = InvalidArgument
+	case errors.Is(err, libs.ErrReadOnly):
+		code = FailedPrecondition
+	case errors.Is(err, buckylibs.ErrReadOnly):
+		code = FailedPrecondition
+	}
+
+	return newError(code, err, 2)
 }
 
 // Errorf constructs an error based on a error message.

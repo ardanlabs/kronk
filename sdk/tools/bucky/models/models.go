@@ -6,6 +6,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net/url"
@@ -25,6 +26,9 @@ import (
 )
 
 var (
+	// ErrModelNotFound is returned when a requested whisper model is not installed.
+	ErrModelNotFound = errors.New("model not found")
+
 	localFolder = "bucky-models"
 	indexFile   = ".index.yaml"
 )
@@ -241,7 +245,7 @@ func (m *Models) FullPath(modelID string) (Path, error) {
 		return mp, nil
 	}
 
-	return Path{}, fmt.Errorf("retrieve-path: model %q not found", modelID)
+	return Path{}, fmt.Errorf("retrieve-path: %w: %q", ErrModelNotFound, modelID)
 }
 
 // Remove deletes the supplied whisper model from disk. The on-disk

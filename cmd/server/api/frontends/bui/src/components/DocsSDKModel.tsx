@@ -161,6 +161,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">SetEmbeddingsPreNorm enables (or disables) pre-norm hidden-state extraction on the given context. - value == true: the next llama_decode will produce a pre-norm embedding buffer accessible via GetEmbeddingsPreNorm / GetEmbeddingsPreNormIth. - masked == false: rows are stored densely, indexed by raw batch position. Used on the target context (caller wants every row). - masked == true: rows are stored only for batch positions whose logits flag is non-zero, indexed via the output_ids table. Used on the MTP draft context (caller only needs the output rows). Mirrors llama_set_embeddings_pre_norm in src/llama-ext.h.</p>
             </div>
 
+            <div className="doc-section" id="func-validatemessages">
+              <h4>ValidateMessages</h4>
+              <pre className="code-block">
+                <code>func ValidateMessages(d D) error</code>
+              </pre>
+              <p className="doc-description">ValidateMessages validates the messages field of a chat document.</p>
+            </div>
+
             <div className="doc-section" id="func-newgrammarsampler">
               <h4>NewGrammarSampler</h4>
               <pre className="code-block">
@@ -1741,6 +1749,22 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">ErrFileInputsUnsupported indicates file content parts are not supported.</p>
             </div>
+
+            <div className="doc-section" id="var-errmessagesinvalid">
+              <h4>ErrMessagesInvalid</h4>
+              <pre className="code-block">
+                <code>{`var ErrMessagesInvalid = errors.New("validate-document: messages is not a slice of documents")`}</code>
+              </pre>
+              <p className="doc-description">ErrMessagesInvalid indicates that a chat request's messages field has an invalid type.</p>
+            </div>
+
+            <div className="doc-section" id="var-errmessagesmissing">
+              <h4>ErrMessagesMissing</h4>
+              <pre className="code-block">
+                <code>{`var ErrMessagesMissing = errors.New("validate-document: no messages found in request")`}</code>
+              </pre>
+              <p className="doc-description">ErrMessagesMissing indicates that a chat request has no messages field.</p>
+            </div>
           </div>
         </div>
 
@@ -1764,6 +1788,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-removeverifiedsentinel">RemoveVerifiedSentinel</a></li>
                 <li><a href="#func-setembeddingsprenorm">SetEmbeddingsPreNorm</a></li>
+                <li><a href="#func-validatemessages">ValidateMessages</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
               </ul>
             </div>
@@ -1919,6 +1944,8 @@ export default function DocsSDKModel() {
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
                 <li><a href="#var-errfileinputsunsupported">ErrFileInputsUnsupported</a></li>
+                <li><a href="#var-errmessagesinvalid">ErrMessagesInvalid</a></li>
+                <li><a href="#var-errmessagesmissing">ErrMessagesMissing</a></li>
               </ul>
             </div>
           </div>

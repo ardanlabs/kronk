@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -16,6 +17,15 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 )
+
+func TestFullPathNotFound(t *testing.T) {
+	var m Models
+
+	_, err := m.FullPath("missing")
+	if !errors.Is(err, ErrModelNotFound) {
+		t.Fatalf("FullPath: got %v, want %v", err, ErrModelNotFound)
+	}
+}
 
 // =============================================================================
 // fake getter — hermetic stand-in for downloader.Download. Mirrors the

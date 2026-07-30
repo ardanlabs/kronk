@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/pool"
 )
@@ -44,7 +45,7 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 
 	krn, err := a.pool.Kronk.AquireModel(ctx, modelID)
 	if err != nil {
-		return errs.New(errs.InvalidArgument, err)
+		return errs.FromSDK(err)
 	}
 
 	a.log.Info(ctx, "response", "REQUEST-INPUT", req.String())
@@ -52,10 +53,10 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 	d := model.MapToModelD(req)
 
 	if _, err := krn.ResponseStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
-		if errors.Is(err, model.ErrFileInputsUnsupported) {
-			return errs.New(errs.InvalidArgument, err)
+		if errors.Is(err, kronk.ErrResponseCommitted) {
+			return web.NewNoResponse()
 		}
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return web.NewNoResponse()

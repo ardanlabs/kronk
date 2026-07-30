@@ -189,7 +189,7 @@ func (m *Models) CatalogHeader(ctx context.Context, modelID string) (Header, err
 
 	entry, ok := catalog[short]
 	if !ok {
-		return Header{}, fmt.Errorf("catalog-header: unknown model %q", modelID)
+		return Header{}, fmt.Errorf("catalog-header: %w: %q", ErrModelNotFound, modelID)
 	}
 
 	cacheFile := m.headerCacheFile(short)

@@ -218,7 +218,7 @@ func (a *app) listPeerLibsBundles(ctx context.Context, r *http.Request) web.Enco
 
 	bundles, err := libs.FetchPeerBundles(ctx, host)
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return toAppPeerBundleList(bundles)
@@ -243,6 +243,9 @@ func (a *app) pullLibsFromPeer(ctx context.Context, r *http.Request) web.Encoder
 	}
 	if !libs.IsSupported(arch, opSys, processor) {
 		return errs.Errorf(errs.InvalidArgument, "unsupported combination arch=%q os=%q processor=%q", arch, opSys, processor)
+	}
+	if a.libs.ReadOnly() {
+		return errs.FromSDK(libs.ErrReadOnly)
 	}
 
 	w := web.GetWriter(ctx)
