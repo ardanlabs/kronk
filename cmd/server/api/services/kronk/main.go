@@ -135,7 +135,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			// this even lower.
 		}
 		Sessions struct {
-			Enabled      bool `conf:"default:false"`
+			Enabled      bool `conf:"default:true"`
 			MaxCompleted int  `conf:"default:10000"`
 		}
 		Pool struct {

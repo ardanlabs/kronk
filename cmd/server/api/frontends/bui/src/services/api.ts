@@ -3,6 +3,11 @@ import type {
   ModelDetailsResponse,
   ModelInfoResponse,
   PoolBudgetResponse,
+  SessionListQuery,
+  SessionPageResponse,
+  SessionState,
+  SessionStatusResponse,
+  SessionSummaryResponse,
   CatalogModelsResponse,
   CatalogModelResponse,
   KeysResponse,
@@ -119,6 +124,26 @@ class ApiService {
 
   async getPoolBudget(): Promise<PoolBudgetResponse> {
     return this.request<PoolBudgetResponse>('/pool/budget');
+  }
+
+  async getSessionStatus(): Promise<SessionStatusResponse> {
+    return this.request<SessionStatusResponse>('/kronk/sessions/status');
+  }
+
+  async getSessionSummary(): Promise<SessionSummaryResponse> {
+    return this.request<SessionSummaryResponse>('/kronk/sessions/summary');
+  }
+
+  async listSessions(state: SessionState, query: SessionListQuery = {}): Promise<SessionPageResponse> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set('limit', String(query.limit));
+    if (query.offset !== undefined) params.set('offset', String(query.offset));
+    if (query.model_id) params.set('model_id', query.model_id);
+    if (query.min_utilization !== undefined) {
+      params.set('min_utilization', String(query.min_utilization));
+    }
+    const qs = params.toString();
+    return this.request<SessionPageResponse>(`/kronk/sessions/${state}${qs ? `?${qs}` : ''}`);
   }
 
   async getDiagnose(bench = false, processor = ''): Promise<DiagnoseResponse> {

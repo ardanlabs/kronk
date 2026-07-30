@@ -2975,6 +2975,137 @@ code[class*="language-"] {
     margin-bottom: 0;
 }
 
+.sessions-section {
+    margin-top: 32px;
+}
+
+.sessions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 20px;
+}
+
+.sessions-header h3 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    color: var(--color-page-title);
+}
+
+.sessions-header p {
+    margin: 0;
+    color: var(--color-gray-600);
+    font-size: 14px;
+}
+
+.session-summary {
+    flex: 0 1 680px;
+    padding: 14px 16px;
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    overflow-x: auto;
+}
+
+.session-summary-counts {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin-bottom: 10px;
+    color: var(--color-gray-600);
+    font-size: 13px;
+}
+
+.session-summary-counts strong {
+    color: var(--color-gray-900);
+    margin-right: 3px;
+}
+
+.session-summary table {
+    font-size: 12px;
+}
+
+.session-summary th,
+.session-summary td {
+    padding: 6px 10px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.session-summary th:first-child,
+.session-summary td:first-child {
+    text-align: left;
+}
+
+.session-table-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.session-table-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 18px 24px 12px;
+}
+
+.session-table-heading h4 {
+    margin: 0;
+    font-size: 17px;
+}
+
+.session-table-heading span {
+    color: var(--color-gray-600);
+    font-size: 12px;
+}
+
+.session-id-cell {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.session-context-full {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background: rgba(255, 68, 68, 0.1);
+    color: var(--color-error);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.session-empty {
+    padding: 28px 24px;
+    text-align: center;
+    color: var(--color-gray-600);
+}
+
+.session-pagination {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 24px 16px;
+    border-top: 1px solid var(--color-gray-200);
+}
+
+@media (max-width: 1000px) {
+    .sessions-header {
+        flex-direction: column;
+    }
+
+    .session-summary {
+        width: 100%;
+        flex-basis: auto;
+    }
+}
+
 .vram-formula-content {
     white-space: pre-wrap;
     font-family: "SF Mono", "Monaco", "Consolas", monospace;
