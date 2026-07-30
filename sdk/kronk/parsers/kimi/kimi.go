@@ -32,18 +32,20 @@ const (
 // Parser implements model.Parser for Kimi structured output.
 type Parser struct{}
 
-// New returns a Parser when the fingerprint identifies a Kimi model or its
-// chat template constructs the Kimi structured output protocol.
+// New returns a Parser when the fingerprint identifies a Kimi K3 model or its
+// chat template constructs the Kimi K3 structured output protocol.
 func New(fp model.Fingerprint) (model.Parser, bool) {
 	if containsKimiMarkers(fp.ChatTemplate) {
 		return Parser{}, true
 	}
 
-	if strings.HasPrefix(strings.ToLower(fp.Architecture), "kimi") {
+	architecture := strings.ToLower(fp.Architecture)
+	if strings.Contains(architecture, "kimi") && strings.Contains(architecture, "k3") {
 		return Parser{}, true
 	}
 
-	if strings.Contains(strings.ToLower(fp.ModelName), "kimi") {
+	modelName := strings.ToLower(fp.ModelName)
+	if strings.Contains(modelName, "kimi") && strings.Contains(modelName, "k3") {
 		return Parser{}, true
 	}
 

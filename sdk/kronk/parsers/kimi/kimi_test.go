@@ -8,7 +8,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-func TestNewClaimsKimi(t *testing.T) {
+func TestNewClaimsKimiK3(t *testing.T) {
 	constructedTemplate := `{{- '<|open|>' + tag -}}{{- '<|sep|>' -}}
 {{- '<|close|>' + tag + '<|sep|>' -}}
 {{- otag('response') -}}{{- otag('tools') -}}{{- otag('call', attrs) -}}`
@@ -23,6 +23,9 @@ func TestNewClaimsKimi(t *testing.T) {
 		{"architecture", model.Fingerprint{Architecture: "kimi-k3"}, true},
 		{"architecture-case", model.Fingerprint{Architecture: "KimiK3"}, true},
 		{"model-name", model.Fingerprint{ModelName: "Moonshot-Kimi-K3-Instruct"}, true},
+		{"k2-architecture", model.Fingerprint{Architecture: "kimi-k2"}, false},
+		{"k2-model-name", model.Fingerprint{ModelName: "Kimi-K2-Instruct"}, false},
+		{"k25-model-name", model.Fingerprint{ModelName: "Kimi-K2.5"}, false},
 		{"incomplete-template", model.Fingerprint{ChatTemplate: thinkOpen + responseOpen}, false},
 		{"unrelated", model.Fingerprint{Architecture: "llama", ModelName: "Llama-3"}, false},
 		{"empty", model.Fingerprint{}, false},
