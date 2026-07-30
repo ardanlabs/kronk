@@ -317,11 +317,23 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
-	if _, err := libs.Download(ctx, log.Info); err != nil {
+	if _, err := libs.Download(downloadCtx, log.Info); err != nil {
 		log.Info(ctx, "startup", "WARNING", "unable to install llama.cpp, running in degraded mode", "ERROR", err)
+	}
+
+	// Capability fallback applies only to automatic processor selection. An
+	// explicit processor or library path remains a strict user choice.
+	if cfg.Processor == "" && cfg.LibPath == "" {
+		selected, decision, err := libs.SelectInstalledRuntime(ctx, log.Info)
+		if err != nil {
+			log.Info(ctx, "startup", "WARNING", "unable to select installed llama.cpp runtime", "ERROR", err)
+		} else {
+			libs = selected
+			log.Info(ctx, "startup", "status", "selected llama.cpp runtime", "preferred", decision.PreferredProcessor, "selected", decision.SelectedProcessor, "reason", decision.Reason)
+		}
 	}
 
 	// -------------------------------------------------------------------------

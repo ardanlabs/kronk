@@ -303,6 +303,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>The normal command installs the llama.cpp version selected for the installed Kronk release. <code>--upgrade</code> opts into the latest published llama.cpp build, which may introduce upstream compatibility changes:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
           <p>Use <code>kronk libs --help</code> for cross-platform bundle installation and removal. Changing the active library path requires a server restart; libraries are not hot-reloaded.</p>
+          <p>When the server selects a processor automatically, it verifies that processor's installed bundle before loading native libraries. If the bundle explicitly reports no accelerator and another installed bundle for the same llama.cpp version reports a device, the server uses that alternative. This check never downloads an additional bundle. <code>KRONK_PROCESSOR</code>, <code>KRONK_LIB_PATH</code>, and the corresponding server flags remain strict overrides and disable fallback.</p>
           <p>Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A working <code>nvidia-smi</code> confirms the driver but not necessarily the CUDA runtime. If the CUDA backend does not load, inspect <code>libggml-cuda.so</code> with <code>ldd</code> and install the runtime packages appropriate for the CUDA version used by the current bundle. The CUDA container image already includes its matching runtime.</p>
           <p>Speech-to-text uses a separate whisper.cpp bundle:</p>
           <pre className="code-block"><code className="language-shell">{`kronk bucky libs --local`}</code></pre>
@@ -3090,6 +3091,7 @@ KRONK_PROCESSOR=cuda kronk libs --local
 KRONK_PROCESSOR=rocm kronk libs --local
 KRONK_PROCESSOR=vulkan kronk libs --local
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
+          <p><code>kronk diagnose</code> probes every installed bundle independently. When the selected backend reports no GPU but a same-version installed alternative detects one, the report recommends the corresponding <code>KRONK_PROCESSOR</code> override. Restart Kronk after applying it.</p>
           <p>Not every combination is published. Check the live matrix with <code>kronk libs --list-combinations</code>. See <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2: Libraries</a> for installation and path details.</p>
           <h4 id="nvidia-is-visible-but-llamacpp-uses-the-cpu">NVIDIA is visible but llama.cpp uses the CPU</h4>
           <p><code>nvidia-smi</code> proves that the driver is available, but a native CUDA bundle also needs the CUDA runtime libraries against which it was linked. On Linux, find the active library path in <code>kronk diagnose</code>, then inspect the backend for unresolved dependencies:</p>

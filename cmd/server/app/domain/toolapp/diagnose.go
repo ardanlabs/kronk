@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
@@ -56,6 +58,11 @@ func (a *app) diagnose(ctx context.Context, r *http.Request) web.Encoder {
 	// to enrich an error if the command fails.
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Env = os.Environ()
+	if basePath, ok := canonicalRuntimeBasePath(a.libs.Root(), a.libs.LibsPath(), a.libs.OS(), a.libs.Arch(), a.libs.Processor()); ok {
+		cmd.Env = setDiagnoseEnv(cmd.Env, "KRONK_BASE_PATH", basePath)
+	}
+	cmd.Env = setDiagnoseEnv(cmd.Env, "KRONK_PROCESSOR", a.libs.Processor())
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -71,6 +78,25 @@ func (a *app) diagnose(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	return diagnoseRaw(stdout.Bytes())
+}
+
+func canonicalRuntimeBasePath(root string, libPath string, opSys string, arch string, processor string) (string, bool) {
+	canonical := filepath.Join(root, opSys, arch, processor)
+	if filepath.Clean(libPath) != filepath.Clean(canonical) {
+		return "", false
+	}
+	return filepath.Dir(root), true
+}
+
+func setDiagnoseEnv(env []string, key string, value string) []string {
+	prefix := key + "="
+	for i, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 // diagnoseRaw is the JSON report produced by the diagnose subprocess, returned
