@@ -6,7 +6,7 @@ replace github.com/ardanlabs/kronk => ../
 
 require (
 	github.com/ardanlabs/bucky v1.0.6
-	github.com/ardanlabs/kronk v1.29.7
+	github.com/ardanlabs/kronk v1.29.8
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.25
 	github.com/google/uuid v1.6.0
@@ -123,7 +123,7 @@ require (
 	google.golang.org/genproto v0.0.0-20260729162451-8efbd57d26e0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260729162451-8efbd57d26e0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260729162451-8efbd57d26e0 // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	google.golang.org/grpc v1.83.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
