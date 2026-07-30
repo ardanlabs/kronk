@@ -18,7 +18,7 @@ import (
 //
 // The catalog YAML middle layer used by the legacy resolution path is not
 // applied here.
-func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) (model.Config, error) {
+func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig, nativeSWAFull ...bool) (model.Config, error) {
 
 	// Confirm the model is on disk before resolving anything else.
 	fp, err := m.FullPath(modelID)
@@ -30,7 +30,11 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig) 
 	// Memory-affecting user settings participate in the analysis so the
 	// recommendation is sized for the final overlaid configuration.
 	override := mc[modelID]
-	cfg := m.AnalysisDefaultsWithConfig(modelID, override)
+	analysisOverride := override
+	if analysisOverride.PtrSWAFull == nil && len(nativeSWAFull) > 0 {
+		analysisOverride.PtrSWAFull = new(nativeSWAFull[0])
+	}
+	cfg := m.AnalysisDefaultsWithConfig(modelID, analysisOverride)
 	sizing := cfg
 
 	// Layer 3: user overrides from model_config.yaml.
@@ -232,11 +236,10 @@ func AutoTuneWithConfig(info ModelInfo, devs devices.Devices, constraints ModelC
 		cfg.FlashAttention = new(model.FlashAttentionEnabled)
 	}
 
-	// Set the hardware-aware split mode so the resolved config is explicit
-	// rather than relying on the in-load default (which uses the same rule).
-	if sm, err := model.ParseSplitMode(rec.SplitMode); err == nil && rec.SplitMode != "" {
-		cfg.PtrSplitMode = &sm
-	}
+	// Preserve an explicit split mode. When unset, leave it unset so the load
+	// path can resolve it from the devices selected by the final configuration,
+	// rather than all devices visible during analysis.
+	cfg.PtrSplitMode = constraints.PtrSplitMode
 
 	// model.Config: PtrNGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
 	// Preserve an explicit constraint, including pointer-to-zero. Otherwise only

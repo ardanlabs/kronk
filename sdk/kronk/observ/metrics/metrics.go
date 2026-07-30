@@ -85,10 +85,11 @@ var (
 )
 
 type promMetrics struct {
-	goroutines prometheus.Gauge
-	requests   prometheus.Counter
-	errors     prometheus.Counter
-	panics     prometheus.Counter
+	goroutines  prometheus.Gauge
+	requests    prometheus.Counter
+	errors      prometheus.Counter
+	panics      prometheus.Counter
+	imcSessions *imcSessionsCollector
 
 	modelLoadSeconds      *prometheus.HistogramVec // labels: model_id.
 	modelLoadProjSeconds  *prometheus.HistogramVec // labels: model_id.
@@ -175,7 +176,11 @@ func init() {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 
+	imcSessions := newIMCSessionsCollector()
+	reg.MustRegister(imcSessions)
+
 	m = promMetrics{
+		imcSessions: imcSessions,
 		goroutines: auto.NewGauge(prometheus.GaugeOpts{
 			Name: "goroutines",
 			Help: "Number of goroutines",
@@ -394,6 +399,13 @@ func normalizeModelID(modelID string) string {
 		return "unknown"
 	}
 	return modelID
+}
+
+// RegisterIMCSessionsProvider registers the source for current IMC cache entry
+// metrics. Only one provider may be registered at a time. The returned function
+// removes the provider and may be called more than once.
+func RegisterIMCSessionsProvider(provider IMCSessionsProvider) (func(), error) {
+	return m.imcSessions.register(provider)
 }
 
 // UpdateGoroutines refreshes the goroutine metric.

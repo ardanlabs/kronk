@@ -483,7 +483,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <p>Kronk reads the sliding-window size from model metadata. <code>swa-full</code> controls the cache allocation used by models with sliding window attention:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-swa-model:
   swa-full: false`}</code></pre>
-          <p>When unset, llama.cpp currently uses a full-size SWA cache. Explicitly setting <code>false</code> uses the compact sliding-window cache, which can save memory but limits context caching and shifting. Setting <code>true</code> preserves the full cache at a higher memory cost. This key has no effect on models without SWA metadata.</p>
+          <p>When unset, Kronk leaves the choice to llama.cpp. Explicitly setting <code>false</code> uses the compact sliding-window cache, which can save memory but limits context caching and shifting. Setting <code>true</code> requests the full cache at a higher memory cost. This key has no effect on models without SWA metadata.</p>
           <h3 id="34-gpu-and-memory-placement">3.4 GPU and Memory Placement</h3>
           <p>Automatic tuning normally places model layers and operations. Use these settings when a model does not fit or when a multi-GPU deployment needs an explicit layout.</p>
           <h4 id="model-layers">Model layers</h4>
@@ -2766,7 +2766,7 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
               </tr>
               <tr>
                 <td>IMC</td>
-                <td><code>imc_snapshot_skipped_total</code>, <code>imc_pure_hit_stale_session_total</code></td>
+                <td><code>imc_session_state</code>, <code>imc_session_messages</code>, <code>imc_session_context_tokens</code>, <code>imc_session_allocated_tokens</code>, <code>imc_session_window_tokens</code>, <code>imc_session_used_percent</code>, <code>imc_session_has_media</code>, <code>imc_session_last_used_timestamp_seconds</code>, <code>imc_snapshot_skipped_total</code>, <code>imc_pure_hit_stale_session_total</code></td>
               </tr>
             </tbody>
           </table>
@@ -2791,6 +2791,7 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
           <pre className="code-block"><code className="language-promql">{`rate(batchseq_items_sum[5m])
   / rate(batchseq_items_count[5m])`}</code></pre>
           <p>Embedding and reranking request metrics include <code>operation</code> (<code>embedding</code> or <code>rerank</code>) and <code>runtime</code> (<code>batchseq</code> or <code>context_pool</code>) labels. Resource-manager reservation metrics already account for both runtime types because they are published for every loaded model, independently of its inference engine. The <code>inference_*</code> request metrics start after SDK admission, so they exclude admission wait and attempts that fail or are cancelled before a permit is acquired.</p>
+          <p>Current IMC cache entries are exposed with <code>model_id</code> and <code>entry</code> labels. These gauges report the same bounded scalar snapshot as the BUI <strong>IMC Sessions</strong> page; they do not retain session history. The bundled Grafana dashboard presents the values in an <strong>IMC Sessions</strong> table. <code>imc_session_state</code> has a <code>state</code> label of <code>active</code>, <code>idle</code>, or <code>empty</code> and a value of <code>1</code>. <code>imc_session_has_media</code> uses <code>1</code> for yes and <code>0</code> for no. A never-used entry has a <code>imc_session_last_used_timestamp_seconds</code> value of <code>0</code>.</p>
           <h3 id="153-bundled-observability-stack">15.3 Bundled Observability Stack</h3>
           <p>The repository includes a Docker Compose stack containing Grafana, Prometheus, Tempo, Loki, and Promtail. It provisions the data sources and a Kronk dashboard without manual Grafana setup.</p>
           <p>Download the pinned images once, start the stack, and open Grafana:</p>

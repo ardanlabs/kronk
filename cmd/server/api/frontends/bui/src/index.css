@@ -784,6 +784,21 @@ tr.selected:hover td {
     color: var(--color-gray-600);
 }
 
+.badge-active {
+    background: rgba(245, 166, 35, 0.15);
+    color: var(--color-warning-text);
+}
+
+.badge-idle {
+    background: rgba(68, 187, 68, 0.15);
+    color: var(--color-success);
+}
+
+.badge-empty {
+    background: rgba(110, 110, 115, 0.15);
+    color: var(--color-gray-600);
+}
+
 .empty-state {
     text-align: center;
     padding: 60px 20px;
@@ -1076,6 +1091,51 @@ tr.selected:hover td {
 .tab:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.imc-model-tabs {
+    overflow-x: auto;
+    gap: 4px;
+    border-bottom-width: 1px;
+    margin-bottom: -1px;
+}
+
+.imc-model-tabs .tab {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border: 1px solid var(--color-gray-200);
+    border-bottom: none;
+    border-radius: 7px 7px 0 0;
+    background: var(--color-gray-100);
+    white-space: nowrap;
+}
+
+.imc-model-tabs .tab:hover:not(:disabled) {
+    background: var(--color-white);
+}
+
+.imc-model-tabs .tab.active {
+    background: var(--color-white);
+    border-color: var(--color-gray-300);
+    border-bottom: 1px solid var(--color-white);
+    margin-bottom: -1px;
+}
+
+.imc-model-tab {
+    display: flex;
+    align-items: center;
+}
+
+.imc-model-tab-label {
+    display: inline-block;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.imc-model-tabs + .card {
+    border-top-left-radius: 0;
 }
 
 /* Documentation Styles */

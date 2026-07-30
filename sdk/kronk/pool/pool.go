@@ -13,9 +13,11 @@
 package pool
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -183,6 +185,9 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 // models.
 func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
 	modelID, _, _ := strings.Cut(key, "/")
+	if cfg.AutoTune && !cfg.AutoTuned {
+		cfg = kronk.AutoTuneConfig(ctx, cfg)
+	}
 	krn, err := p.engine.Acquire(ctx, loader.LoadRequest{
 		ModelID: modelID,
 		Key:     key,
@@ -311,4 +316,28 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	}
 
 	return ps, nil
+}
+
+// IMCSessions returns the current IMC cache entries for loaded models. It does
+// not load models or retain session history.
+func (p *Pool) IMCSessions() []IMCSessionDetail {
+	details := make([]IMCSessionDetail, 0)
+
+	for key, krn := range p.engine.All() {
+		for _, session := range krn.IMCSessions() {
+			details = append(details, IMCSessionDetail{
+				ModelID:          key,
+				IMCSessionDetail: session,
+			})
+		}
+	}
+
+	slices.SortFunc(details, func(a, b IMCSessionDetail) int {
+		if n := cmp.Compare(a.ModelID, b.ModelID); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+
+	return details
 }

@@ -205,6 +205,13 @@ func (c *Pool[H]) Coldest() iter.Seq[otter.Entry[string, H]] {
 	return c.cache.Coldest()
 }
 
+// All returns a weakly consistent iterator over the current cached handles.
+// Unlike Coldest, it does not run cache maintenance or hold the eviction-policy
+// lock while the caller consumes the iterator.
+func (c *Pool[H]) All() iter.Seq2[string, H] {
+	return c.cache.All()
+}
+
 // Loader returns the loader bound to this core.
 func (c *Pool[H]) Loader() loader.Loader[H] {
 	return c.loader

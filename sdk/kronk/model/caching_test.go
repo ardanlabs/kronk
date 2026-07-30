@@ -759,6 +759,53 @@ func TestIMCSessionCapacity(t *testing.T) {
 	}
 }
 
+func TestIMCSessions(t *testing.T) {
+	lastUsed := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+	m := &Model{
+		cfg: Config{PtrContextWindow: new(8192)},
+		imcSessions: []*imcSession{
+			{id: 0, kvState: ramSessionStore()},
+			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
+			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore()},
+		},
+	}
+
+	got := m.IMCSessions()
+	if len(got) != len(m.imcSessions) {
+		t.Fatalf("len(IMCSessions) = %d, want %d", len(got), len(m.imcSessions))
+	}
+
+	if got[0].State != IMCSessionStateEmpty {
+		t.Errorf("session 0 state = %q, want %q", got[0].State, IMCSessionStateEmpty)
+	}
+	if got[1].State != IMCSessionStateActive {
+		t.Errorf("session 1 state = %q, want %q", got[1].State, IMCSessionStateActive)
+	}
+	if got[2].State != IMCSessionStateIdle {
+		t.Errorf("session 2 state = %q, want %q", got[2].State, IMCSessionStateIdle)
+	}
+	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].Messages != 4 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
+		t.Errorf("session 2 detail = %+v, want populated scalar snapshot", got[2])
+	}
+
+	got[2].Context = 1
+	if m.imcSessions[2].logicalPosition() != 2100 {
+		t.Fatal("mutating snapshot changed the IMC cache entry")
+	}
+
+	m.imcCommitSession(m.imcSessions[0], "hash", 3000, 2, nil, false, nil, "")
+	m.imcPublishSession(m.imcSessions[0])
+	m.imcCommitSession(m.imcSessions[0], "hash", 1000, 2, nil, false, nil, "")
+	m.imcPublishSession(m.imcSessions[0])
+	if m.imcSessions[0].allocatedContext != 3000 {
+		t.Errorf("allocatedContext = %d, want high-water context 3000", m.imcSessions[0].allocatedContext)
+	}
+	imcResetSession(m.imcSessions[0])
+	if m.imcSessions[0].allocatedContext != 3000 {
+		t.Errorf("allocatedContext after reset = %d, want retained high-water context 3000", m.imcSessions[0].allocatedContext)
+	}
+}
+
 // TestIMCSeqIDUnboundSentinel guards the unbound sentinel value used by
 // the dynamic seqID binding contract. The KV-pressure eviction path
 // relies on this sentinel to skip MemorySeqRm for sessions whose bytes

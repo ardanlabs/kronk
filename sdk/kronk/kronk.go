@@ -59,7 +59,7 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 	// model. Explicit options always win; on any failure the original config is
 	// used unchanged so auto-tune never blocks a load.
 	if cfg.AutoTune && !cfg.AutoTuned {
-		cfg = autoTune(ctx, cfg, opts)
+		cfg = AutoTuneConfig(ctx, cfg)
 	}
 
 	// -------------------------------------------------------------------------
@@ -151,6 +151,19 @@ func (krn *Kronk) ModelInfo() model.ModelInfo {
 // ActiveStreams returns the number of active streams.
 func (krn *Kronk) ActiveStreams() int {
 	return int(krn.activeStreams.Load())
+}
+
+// IMCSessions returns the current state of the model's allocated IMC cache
+// entries. An unloaded model has no sessions.
+func (krn *Kronk) IMCSessions() []model.IMCSessionDetail {
+	krn.shutdown.Lock()
+	defer krn.shutdown.Unlock()
+
+	if krn.shutdownFlag {
+		return nil
+	}
+
+	return krn.model.IMCSessions()
 }
 
 // Unload will close down the loaded model. You should call this only when you

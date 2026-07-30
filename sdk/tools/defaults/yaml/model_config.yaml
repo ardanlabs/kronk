@@ -37,7 +37,7 @@
 #   session-store-dir: /var/lib/kronk    # Directory for disk session-store files (required when session-store-kind: disk)
 #   session-store-kind: ram              # IMC session KV-state backend: ram (default), disk
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
-#   swa-full: true                       # Full KV cache for SWA layers (default: true; false uses compact SWA)
+#   swa-full: true                       # Full KV cache for SWA layers (unset = llama.cpp default; false = compact SWA)
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)
 #   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
 #   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)

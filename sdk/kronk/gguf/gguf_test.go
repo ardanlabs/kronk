@@ -183,20 +183,26 @@ func TestCalculateKVCache_Gemma4_SWA(t *testing.T) {
 	in := KVCacheInput{
 		ContextWindow:       131072,
 		BlockCount:          60,
-		HeadCountKV:         14,
+		HeadCountKV:         4,
 		KeyLength:           512,
 		ValueLength:         512,
+		SWAHeadCountKV:      16,
+		SWAKeyLength:        256,
+		SWAValueLength:      256,
 		BytesPerElement:     BytesPerElementF16,
 		Slots:               2,
 		SlidingWindow:       4096,
 		SlidingWindowLayers: 50,
+		NUBatch:             2048,
+		KVUnified:           true,
 	}
 
 	out := CalculateKVCache(in)
 
-	const kvPerToken int64 = 14 * (512 + 512) * 2
+	const fullKVPerToken int64 = 4 * (512 + 512) * 2
+	const swaKVPerToken int64 = 16 * (256 + 256) * 2
 
-	wantPerSlot := int64(131072)*10*kvPerToken + int64(4096)*50*kvPerToken
+	wantPerSlot := int64(131072)*10*fullKVPerToken + int64(5120)*50*swaKVPerToken
 	if out.KVPerSlot != wantPerSlot {
 		t.Fatalf("KVPerSlot got %d, want %d", out.KVPerSlot, wantPerSlot)
 	}
@@ -208,8 +214,89 @@ func TestCalculateKVCache_Gemma4_SWA(t *testing.T) {
 
 	// Sanity: SWA path must produce a strictly smaller footprint than
 	// the all-full-attention formula it replaces.
-	fullAll := int64(131072) * 60 * kvPerToken * 2
+	fullAll := (int64(131072)*10*fullKVPerToken + int64(131072)*50*swaKVPerToken) * 2
 	if out.SlotMemory >= fullAll {
 		t.Fatalf("SWA result (%d) is not smaller than full-attention fallback (%d)", out.SlotMemory, fullAll)
+	}
+}
+
+func TestCalculateKVCacheSharedLayers(t *testing.T) {
+	in := KVCacheInput{
+		ContextWindow:   1024,
+		BlockCount:      6,
+		SharedKVLayers:  2,
+		HeadCountKV:     1,
+		KeyLength:       1,
+		ValueLength:     1,
+		BytesPerElement: 1,
+		Slots:           1,
+	}
+
+	out := CalculateKVCache(in)
+	if len(out.LayerMemory) != 4 {
+		t.Fatalf("allocated layers: got %d, want 4", len(out.LayerMemory))
+	}
+	if out.SlotMemory != 4*1024*2 {
+		t.Fatalf("SlotMemory: got %d, want %d", out.SlotMemory, 4*1024*2)
+	}
+}
+
+func TestCalculateKVCacheQ8RowSize(t *testing.T) {
+	in := KVCacheInput{
+		ContextWindow:   256,
+		BlockCount:      1,
+		HeadCountKV:     1,
+		KeyLength:       128,
+		ValueLength:     128,
+		BytesPerElement: 1,
+		TypeK:           8,
+		TypeV:           8,
+		Slots:           1,
+	}
+
+	out := CalculateKVCache(in)
+	want := int64(256 * (136 + 136))
+	if out.SlotMemory != want {
+		t.Fatalf("SlotMemory: got %d, want Q8_0 row-sized %d", out.SlotMemory, want)
+	}
+}
+
+func TestCalculateKVCachePerLayerHeadsAndTransposedV(t *testing.T) {
+	in := KVCacheInput{
+		ContextWindow:      256,
+		BlockCount:         2,
+		HeadCountKV:        1,
+		HeadCountKVByLayer: []int64{1, 2},
+		KeyLength:          16,
+		ValueLength:        16,
+		BytesPerElement:    2,
+		Slots:              1,
+		VTransposed:        true,
+	}
+
+	out := CalculateKVCache(in)
+	// K widths are 16 and 32. Transposed V uses the model-wide max width 32
+	// for both layers.
+	want := int64(256 * 2 * (16 + 32 + 32 + 32))
+	if out.SlotMemory != want {
+		t.Fatalf("SlotMemory: got %d, want %d", out.SlotMemory, want)
+	}
+}
+
+func TestCalculateKVCachePadsContext(t *testing.T) {
+	in := KVCacheInput{
+		ContextWindow:   300,
+		BlockCount:      1,
+		HeadCountKV:     1,
+		KeyLength:       1,
+		ValueLength:     1,
+		BytesPerElement: 1,
+		Slots:           2,
+		KVUnified:       true,
+	}
+
+	out := CalculateKVCache(in)
+	if out.SlotMemory != 768*2 {
+		t.Fatalf("SlotMemory: got %d, want padded %d", out.SlotMemory, 768*2)
 	}
 }

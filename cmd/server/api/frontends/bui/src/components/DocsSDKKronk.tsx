@@ -41,6 +41,14 @@ export default function DocsSDKKronk() {
           <div className="card" id="functions">
             <h3>Functions</h3>
 
+            <div className="doc-section" id="func-autotuneconfig">
+              <h4>AutoTuneConfig</h4>
+              <pre className="code-block">
+                <code>func AutoTuneConfig(ctx context.Context, cfg model.Config) model.Config</code>
+              </pre>
+              <p className="doc-description">AutoTuneConfig seeds unset settings from a hardware-aware analysis of the model and returns the resulting Config. It uses the same shared models.AutoTune logic as the model pool so the SDK and pool seed defaults identically; the only SDK-specific part is preserving all settings outside AutoTune's ownership. On any failure the original cfg is returned unchanged so auto-tune never blocks a load.</p>
+            </div>
+
             <div className="doc-section" id="func-init">
               <h4>Init</h4>
               <pre className="code-block">
@@ -340,6 +348,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">EmbeddingsHTTP provides http handler support for an embeddings call.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-imcsessions">
+              <h4>Kronk.IMCSessions</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) IMCSessions() []model.IMCSessionDetail</code>
+              </pre>
+              <p className="doc-description">IMCSessions returns the current state of the model's allocated IMC cache entries. An unloaded model has no sessions.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-modelconfig">
               <h4>Kronk.ModelConfig</h4>
               <pre className="code-block">
@@ -494,6 +510,7 @@ export default function DocsSDKKronk() {
             <div className="doc-index-section">
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
+                <li><a href="#func-autotuneconfig">AutoTuneConfig</a></li>
                 <li><a href="#func-init">Init</a></li>
                 <li><a href="#func-initialized">Initialized</a></li>
                 <li><a href="#func-setfmtloggertraceid">SetFmtLoggerTraceID</a></li>
@@ -531,6 +548,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-chatstreaminghttp">Kronk.ChatStreamingHTTP</a></li>
                 <li><a href="#method-kronk-embeddings">Kronk.Embeddings</a></li>
                 <li><a href="#method-kronk-embeddingshttp">Kronk.EmbeddingsHTTP</a></li>
+                <li><a href="#method-kronk-imcsessions">Kronk.IMCSessions</a></li>
                 <li><a href="#method-kronk-modelconfig">Kronk.ModelConfig</a></li>
                 <li><a href="#method-kronk-modelinfo">Kronk.ModelInfo</a></li>
                 <li><a href="#method-kronk-rerank">Kronk.Rerank</a></li>

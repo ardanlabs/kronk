@@ -91,7 +91,7 @@ the authoritative list.
 | Model memory | `vram_total_bytes`, `vram_slot_memory_bytes` |
 | Pool | `pool_acquire_total`, `pool_evictions_total`, `pool_items_in_pool`, `pool_max_items_in_pool`, `pool_active_streams`, `pool_inflight_loads` |
 | Resource manager | `resman_ram_used_bytes`, `resman_device_used_bytes`, `resman_reservation_bytes`, `resman_reserve_rejections_total` |
-| IMC | `imc_snapshot_skipped_total`, `imc_pure_hit_stale_session_total` |
+| IMC | `imc_session_state`, `imc_session_messages`, `imc_session_context_tokens`, `imc_session_allocated_tokens`, `imc_session_window_tokens`, `imc_session_used_percent`, `imc_session_has_media`, `imc_session_last_used_timestamp_seconds`, `imc_snapshot_skipped_total`, `imc_pure_hit_stale_session_total` |
 
 Most model and request metrics have a `model_id` label. Histograms expose
 `_bucket`, `_sum`, and `_count` series. Counters such as
@@ -146,6 +146,14 @@ published for every loaded model, independently of its inference engine.
 The `inference_*` request metrics start after SDK admission, so they exclude
 admission wait and attempts that fail or are cancelled before a permit is
 acquired.
+
+Current IMC cache entries are exposed with `model_id` and `entry` labels. These
+gauges report the same bounded scalar snapshot as the BUI **IMC Sessions** page;
+they do not retain session history. The bundled Grafana dashboard presents the
+values in an **IMC Sessions** table. `imc_session_state` has a `state` label of
+`active`, `idle`, or `empty` and a value of `1`. `imc_session_has_media` uses
+`1` for yes and `0` for no. A never-used entry has a
+`imc_session_last_used_timestamp_seconds` value of `0`.
 
 ### 15.3 Bundled Observability Stack
 

@@ -149,6 +149,15 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 	}
 
 	att := gguf.ParseAttentionFacts(metadata, arch, blockCount)
+	if att.FullHeadCountKV > 0 {
+		headCountKV = att.FullHeadCountKV
+	}
+	if att.FullKeyLength > 0 {
+		keyLength = att.FullKeyLength
+	}
+	if att.FullValueLength > 0 {
+		valueLength = att.FullValueLength
+	}
 
 	input := Input{
 		ModelSizeBytes:      modelSizeBytes,
@@ -157,10 +166,20 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		HeadCountKV:         headCountKV,
 		KeyLength:           keyLength,
 		ValueLength:         valueLength,
+		SWAHeadCountKV:      att.SWAHeadCountKV,
+		SWAKeyLength:        att.SWAKeyLength,
+		SWAValueLength:      att.SWAValueLength,
+		HeadCountKVByLayer:  att.HeadCountKV,
 		BytesPerElement:     cfg.BytesPerElement,
+		TypeK:               cfg.TypeK,
+		TypeV:               cfg.TypeV,
 		Slots:               cfg.Slots,
 		SlidingWindow:       att.SlidingWindow,
 		SlidingWindowLayers: att.SlidingWindowLayers,
+		SharedKVLayers:      att.SharedKVLayers,
+		SWAPattern:          att.SWAPattern,
+		NUBatch:             cfg.NUBatch,
+		KVUnified:           cfg.Slots > 1,
 		EmbeddingLength:     embeddingLength,
 		MoE:                 moePtr,
 		Weights:             weights,
@@ -168,6 +187,7 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		ExpertLayersOnGPU:   cfg.ExpertLayersOnGPU,
 		KVCacheOnCPU:        cfg.KVCacheOnCPU,
 		SWAFull:             cfg.SWAFull,
+		VTransposed:         cfg.VTransposed,
 	}
 
 	return Calculate(input), nil

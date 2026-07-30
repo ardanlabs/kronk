@@ -56,6 +56,22 @@ export interface ModelDetail {
 
 export type ModelDetailsResponse = ModelDetail[];
 
+export type IMCSessionState = 'active' | 'idle' | 'empty';
+
+export interface IMCSessionDetail {
+  model_id: string;
+  id: number;
+  state: IMCSessionState;
+  context: number;
+  allocated: number;
+  messages: number;
+  context_window: number;
+  last_used: string;
+  has_media: boolean;
+}
+
+export type IMCSessionsResponse = IMCSessionDetail[];
+
 export interface DeviceBudget {
   index: number;
   name: string;

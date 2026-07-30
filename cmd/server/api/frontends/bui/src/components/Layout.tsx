@@ -46,6 +46,7 @@ const menuStructure: MenuCategory[] = [
     items: [
       { page: 'diagnose', label: 'Info' },
       { page: 'model-ps', label: 'Running' },
+      { page: 'imc-sessions', label: 'IMC Sessions' },
     ],
   },
   {

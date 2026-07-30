@@ -509,6 +509,14 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 	return resp
 }
 
+func (a *app) imcSessions(ctx context.Context, r *http.Request) web.Encoder {
+	sessions := a.pool.Kronk.IMCSessions()
+
+	a.log.Info(ctx, "imc-sessions", "len", len(sessions))
+
+	return toIMCSessions(sessions)
+}
+
 func (a *app) poolBudget(ctx context.Context, r *http.Request) web.Encoder {
 	rm := a.pool.Resman
 	if rm == nil {

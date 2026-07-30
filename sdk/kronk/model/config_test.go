@@ -78,7 +78,7 @@ func TestSWAFull(t *testing.T) {
 		cfg  Config
 		want bool
 	}{
-		{"unset uses llama default", Config{}, true},
+		{"unset is not explicitly enabled", Config{}, false},
 		{"enabled", NewConfig(WithSWAFull(true)), true},
 		{"disabled", NewConfig(WithSWAFull(false)), false},
 	}

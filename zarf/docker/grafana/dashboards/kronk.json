@@ -982,16 +982,16 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "editorMode": "code",
-          "expr": "pool_items_in_cache",
-          "legendFormat": "items in cache",
+          "expr": "pool_items_in_pool",
+          "legendFormat": "items in pool",
           "range": true,
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "editorMode": "code",
-          "expr": "pool_max_items_in_cache",
-          "legendFormat": "max items in cache",
+          "expr": "pool_max_items_in_pool",
+          "legendFormat": "max items in pool",
           "range": true,
           "refId": "B"
         },
@@ -1008,6 +1008,192 @@
       "type": "timeseries"
     },
     {
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Used" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "decimals", "value": 1 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Media" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": { "index": 0, "text": "no" },
+                      "1": { "index": 1, "text": "yes" }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Last Used" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeAsLocal" },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": { "0": { "index": 0, "text": "—" } },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 60 },
+      "id": 13,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "imc_session_state{model_id=~\"$model_id\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "imc_session_messages{model_id=~\"$model_id\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "imc_session_context_tokens{model_id=~\"$model_id\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "imc_session_allocated_tokens{model_id=~\"$model_id\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "D"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "imc_session_window_tokens{model_id=~\"$model_id\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "E"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "imc_session_used_percent{model_id=~\"$model_id\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "F"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "imc_session_has_media{model_id=~\"$model_id\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "G"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "editorMode": "code",
+          "expr": "imc_session_last_used_timestamp_seconds{model_id=~\"$model_id\"} * 1000",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "H"
+        }
+      ],
+      "title": "IMC Sessions",
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true,
+              "__name__": true
+            },
+            "indexByName": {
+              "model_id": 0,
+              "entry": 1,
+              "state": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5,
+              "Value #E": 6,
+              "Value #F": 7,
+              "Value #G": 8,
+              "Value #H": 9
+            },
+            "renameByName": {
+              "Value #B": "Messages",
+              "Value #C": "Context",
+              "Value #D": "Allocated",
+              "Value #E": "Window",
+              "Value #F": "Used",
+              "Value #G": "Media",
+              "Value #H": "Last Used",
+              "entry": "Entry",
+              "model_id": "Model",
+              "state": "State"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [{ "desc": true, "field": "Allocated" }]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
       "datasource": {
         "type": "loki",
         "uid": "P8E80F9AEF21F6940"
@@ -1016,7 +1202,7 @@
         "h": 19,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 72
       },
       "id": 3,
       "options": {

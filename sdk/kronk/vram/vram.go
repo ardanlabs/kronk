@@ -51,11 +51,15 @@ const (
 type Config struct {
 	ContextWindow     int64 // n_ctx - context window size (e.g., 8192, 131072)
 	BytesPerElement   int64 // Depends on cache type: q8_0=1, f16=2
+	TypeK             int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV             int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
 	Slots             int64 // n_seq_max - number of concurrent sequences
-	GPULayers         int64 // Number of layers on GPU (0 or -1 = all layers).
+	NUBatch           int64 // Effective physical batch size.
+	GPULayers         int64 // Number of layers on GPU (0 = all, -1 = none).
 	ExpertLayersOnGPU int64 // 0 = all experts on CPU.
 	KVCacheOnCPU      bool  // Move KV cache off the GPU (offload-kqv: false).
 	SWAFull           bool  // Size SWA layers against the full context window.
+	VTransposed       bool  // Size V using the model-wide transposed layout.
 }
 
 // Input contains all parameters needed to calculate VRAM requirements.
@@ -66,17 +70,28 @@ type Input struct {
 	HeadCountKV         int64                 // Number of KV attention heads
 	KeyLength           int64                 // K dimension per head (typically 128)
 	ValueLength         int64                 // V dimension per head (typically 128)
+	SWAHeadCountKV      int64                 // Number of KV heads in SWA layers (0 = HeadCountKV)
+	SWAKeyLength        int64                 // K dimension in SWA layers (0 = KeyLength)
+	SWAValueLength      int64                 // V dimension in SWA layers (0 = ValueLength)
+	HeadCountKVByLayer  []int64               // Exact per-layer KV head counts when available.
 	BytesPerElement     int64                 // Depends on cache type: q8_0=1, f16=2
+	TypeK               int32                 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV               int32                 // Kronk GGML cache type ID (0 = use BytesPerElement).
 	Slots               int64                 // n_seq_max - number of concurrent sequences
 	SlidingWindow       int64                 // Sliding-window size in tokens (0 = no SWA layers).
 	SlidingWindowLayers int64                 // Layer count using SWA (0 = treat all BlockCount as full attention).
+	SharedKVLayers      int64                 // Trailing layers that reuse another layer's KV tensors.
+	SWAPattern          []bool                // Per-layer SWA classification when available.
+	NUBatch             int64                 // Effective physical batch size.
+	KVUnified           bool                  // Whether all sequence slots share one KV pool.
 	EmbeddingLength     int64                 // needed for compute buffer estimate
 	MoE                 *gguf.MoEInfo         //
 	Weights             *gguf.WeightBreakdown //
-	GPULayers           int64                 // Number of layers on GPU (0 or -1 = all layers)
+	GPULayers           int64                 // Number of layers on GPU (0 = all, -1 = none)
 	ExpertLayersOnGPU   int64                 // 0 = all experts on CPU
 	KVCacheOnCPU        bool                  // Move KV cache off the GPU (offload-kqv: false)
 	SWAFull             bool                  // Size SWA layers against the full context window.
+	VTransposed         bool                  // Size V using the model-wide transposed layout.
 }
 
 // PerDeviceVRAM is the per-GPU breakdown of model weights, KV cache, and
@@ -126,23 +141,28 @@ type Result struct {
 // delegated to sdk/kronk/gguf.CalculateKVCache so the SDK and tools sides
 // share a single implementation.
 func Calculate(input Input) Result {
-	slidingWindow := input.SlidingWindow
-	slidingWindowLayers := input.SlidingWindowLayers
-	if input.SWAFull {
-		slidingWindow = 0
-		slidingWindowLayers = 0
-	}
-
 	kv := gguf.CalculateKVCache(gguf.KVCacheInput{
 		ContextWindow:       input.ContextWindow,
 		BlockCount:          input.BlockCount,
 		HeadCountKV:         input.HeadCountKV,
 		KeyLength:           input.KeyLength,
 		ValueLength:         input.ValueLength,
+		SWAHeadCountKV:      input.SWAHeadCountKV,
+		SWAKeyLength:        input.SWAKeyLength,
+		SWAValueLength:      input.SWAValueLength,
+		HeadCountKVByLayer:  input.HeadCountKVByLayer,
 		BytesPerElement:     input.BytesPerElement,
+		TypeK:               input.TypeK,
+		TypeV:               input.TypeV,
 		Slots:               input.Slots,
-		SlidingWindow:       slidingWindow,
-		SlidingWindowLayers: slidingWindowLayers,
+		SlidingWindow:       input.SlidingWindow,
+		SlidingWindowLayers: input.SlidingWindowLayers,
+		SharedKVLayers:      input.SharedKVLayers,
+		SWAPattern:          input.SWAPattern,
+		NUBatch:             input.NUBatch,
+		KVUnified:           input.KVUnified,
+		SWAFull:             input.SWAFull,
+		VTransposed:         input.VTransposed,
 	})
 	kvPerTokenPerLayer := kv.KVPerTokenPerLayer
 	kvPerSlot := kv.KVPerSlot
@@ -208,10 +228,13 @@ func Calculate(input Input) Result {
 	computeBufferEst := EstimateComputeBuffer(input)
 
 	var kvVRAMBytes, kvCPUBytes int64
-	if input.KVCacheOnCPU {
-		kvCPUBytes = slotMemory
-	} else {
-		kvVRAMBytes = slotMemory
+	gpuLayerStart := input.BlockCount - gpuLayers
+	for layer, bytes := range kv.LayerMemory {
+		if !input.KVCacheOnCPU && int64(layer) >= gpuLayerStart {
+			kvVRAMBytes += bytes
+		} else {
+			kvCPUBytes += bytes
+		}
 	}
 
 	totalVRAM := modelWeightsGPU + kvVRAMBytes + computeBufferEst
@@ -495,9 +518,11 @@ func (r Result) UnifiedFootprint() int64 {
 }
 
 // clampGPULayers returns the effective number of GPU layers. A zero value
-// (the default) or -1 means all layers on GPU, preserving backward
-// compatibility with callers that don't set GPULayers.
+// preserves the default of all layers on GPU; -1 explicitly selects CPU-only.
 func clampGPULayers(gpuLayers, blockCount int64) int64 {
+	if gpuLayers == -1 {
+		return 0
+	}
 	if gpuLayers <= 0 || gpuLayers > blockCount {
 		return blockCount
 	}
