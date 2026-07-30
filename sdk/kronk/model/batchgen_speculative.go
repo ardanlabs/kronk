@@ -193,7 +193,7 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	sampler := draft.sampler
 	if !greedy {
 		if s.draftSampler == 0 {
-			s.draftSampler = buildDraftSampler(s.job.params)
+			s.draftSampler = buildDraftSampler(draft.vocab, draft.suppressTokens, s.job.params)
 		} else {
 			llama.SamplerReset(s.draftSampler)
 		}
@@ -444,6 +444,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 					bonusToken = targetTok
 					break
 				}
+				maskSuppressTokenLogits(targetLogits, e.model.suppressTokens)
 				targetTok = argmax(targetLogits)
 			}
 
@@ -494,7 +495,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			}
 
 			draftRef := e.model.draft.core()
-			draftRef.sortIndices = applySamplerFilters(targetLogits, draftRef.targetProbs, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draftRef.sortIndices, &draftRef.filterBuf)
+			draftRef.sortIndices = applySamplerFilters(targetLogits, draftRef.targetProbs, e.model.suppressTokens, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draftRef.sortIndices, &draftRef.filterBuf)
 
 			pTarget := draftRef.targetProbs[draftToken]
 
@@ -539,7 +540,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 		}
 
 		draft := e.model.draft.core()
-		draft.sortIndices = applySamplerFilters(targetLogits, draft.targetProbs, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draft.sortIndices, &draft.filterBuf)
+		draft.sortIndices = applySamplerFilters(targetLogits, draft.targetProbs, e.model.suppressTokens, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draft.sortIndices, &draft.filterBuf)
 
 		pTarget := draft.targetProbs[draftToken]
 
@@ -590,11 +591,12 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			}
 
 		case greedy:
+			maskSuppressTokenLogits(targetLogits, e.model.suppressTokens)
 			bonusToken = argmax(targetLogits)
 
 		default:
 			draft := e.model.draft.core()
-			draft.sortIndices = applySamplerFilters(targetLogits, draft.targetProbs, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draft.sortIndices, &draft.filterBuf)
+			draft.sortIndices = applySamplerFilters(targetLogits, draft.targetProbs, e.model.suppressTokens, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draft.sortIndices, &draft.filterBuf)
 			bonusToken = sampleFromProbs(draft.targetProbs)
 		}
 	}

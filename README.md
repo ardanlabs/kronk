@@ -69,6 +69,7 @@ You can use this environment variable: `export KRONK_LIB_VERSION=b9163`
 | b9750+    | v1.18.0 | 1.28.3 |
 | b9979+    | v1.19.0 | 1.28.7 |
 | b10105+   | v1.20.0 | 1.29.1 |
+| b10182+   | v1.21.0 | 1.29.8 |
 
 ## Owner Information
 

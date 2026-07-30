@@ -124,16 +124,17 @@ func (s *imcSession) logicalPosition() int {
 //     llama_get_embeddings_pre_norm. See loadDraftModelMTP and the
 //     batchgen_mtp.go mirroring helpers.
 type draftCore struct {
-	model        llama.Model
-	vocab        llama.Vocab
-	lctx         llama.Context
-	mem          llama.Memory
-	sampler      llama.Sampler
-	batch        llama.Batch
-	prefillBatch llama.Batch // Reusable batch for prefill decoding (sized to nBatch)
-	nDraft       int
-	promptBuf    []llama.Token // Reusable buffer for assembling draft prompt tokens
-	draftBuf     []llama.Token // Reusable buffer for generateDraftTokens output
+	model          llama.Model
+	vocab          llama.Vocab
+	suppressTokens []llama.Token
+	lctx           llama.Context
+	mem            llama.Memory
+	sampler        llama.Sampler
+	batch          llama.Batch
+	prefillBatch   llama.Batch // Reusable batch for prefill decoding (sized to nBatch)
+	nDraft         int
+	promptBuf      []llama.Token // Reusable buffer for assembling draft prompt tokens
+	draftBuf       []llama.Token // Reusable buffer for generateDraftTokens output
 
 	// nEmbd is the model embedding width (size of one pre-norm hidden
 	// row). Set only for MTP strategies; zero for classic drafts.
@@ -182,6 +183,7 @@ type Model struct {
 	log            applog.Logger
 	model          llama.Model
 	vocab          llama.Vocab
+	suppressTokens []llama.Token
 	ctxParams      llama.ContextParams
 	lctx           llama.Context
 	mem            llama.Memory
@@ -319,16 +321,18 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
+	vocab := llama.ModelGetVocab(mdl)
 	m := Model{
-		cfg:         cfg,
-		log:         l,
-		model:       mdl,
-		vocab:       llama.ModelGetVocab(mdl),
-		ctxParams:   ctxParams,
-		template:    template,
-		projFile:    cfg.ProjFile,
-		modelInfo:   modelInfo,
-		addBOSToken: addBOSToken,
+		cfg:            cfg,
+		log:            l,
+		model:          mdl,
+		vocab:          vocab,
+		suppressTokens: copySuppressTokens(vocab),
+		ctxParams:      ctxParams,
+		template:       template,
+		projFile:       cfg.ProjFile,
+		modelInfo:      modelInfo,
+		addBOSToken:    addBOSToken,
 	}
 
 	// Initialize the runtime selected for this model. Supported embed/rerank
@@ -913,7 +917,9 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 	// (yzma FFI return-type mismatch overruns Go heap by 7 bytes). See
 	// detailed comment in toSampler in params.go.
 	// TODO: fix yzma's ffiSamplerChainParams type registration upstream.
+	draftSuppressTokens := copySuppressTokens(dVocab)
 	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	addSuppressTokenSampler(sampler, dVocab, draftSuppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
 
 	// Create reusable batch for drafting (1 token at a time).
@@ -930,18 +936,19 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 	}
 
 	return &classicDrafter{c: &draftCore{
-		model:        dModel,
-		vocab:        dVocab,
-		lctx:         dLctx,
-		mem:          dMem,
-		sampler:      sampler,
-		batch:        batch,
-		prefillBatch: prefillBatch,
-		nDraft:       dCfg.NDraft,
-		draftBuf:     make([]llama.Token, 0, dCfg.NDraft),
-		draftProbs:   draftProbs,
-		targetProbs:  make([]float32, nVocab),
-		adjusted:     make([]float32, nVocab),
+		model:          dModel,
+		vocab:          dVocab,
+		suppressTokens: draftSuppressTokens,
+		lctx:           dLctx,
+		mem:            dMem,
+		sampler:        sampler,
+		batch:          batch,
+		prefillBatch:   prefillBatch,
+		nDraft:         dCfg.NDraft,
+		draftBuf:       make([]llama.Token, 0, dCfg.NDraft),
+		draftProbs:     draftProbs,
+		targetProbs:    make([]float32, nVocab),
+		adjusted:       make([]float32, nVocab),
 	}}, nil
 }
 
@@ -949,12 +956,13 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 // matches the request's sampling parameters. This ensures the draft model's
 // proposal distribution q(x) is consistent with the request's temperature,
 // top-k, and other settings.
-func buildDraftSampler(params Params) llama.Sampler {
+func buildDraftSampler(vocab llama.Vocab, suppressTokens []llama.Token, params Params) llama.Sampler {
 	// HEAP-CORRUPTION WORKAROUND: do NOT call SamplerChainDefaultParams
 	// (yzma FFI return-type mismatch overruns Go heap by 7 bytes). See
 	// detailed comment in toSampler in params.go.
 	// TODO: fix yzma's ffiSamplerChainParams type registration upstream.
 	chain := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	addSuppressTokenSampler(chain, vocab, suppressTokens)
 
 	// Build chain in the standard order: truncation → temperature → dist.
 	llama.SamplerChainAdd(chain, llama.SamplerInitTopK(params.TopK))

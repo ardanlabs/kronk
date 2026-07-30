@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
@@ -31,11 +32,16 @@ func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 // logprobs extraction, grammar/sampler acceptance, EOG check, state machine,
 // streaming, and token counting. Used by both processSlotToken and sampleFirstToken.
 func (e *batchEngine) handleSampledToken(s *slot, token llama.Token, iBatch int32, buf []byte) {
+	if isSuppressedToken(e.model.suppressTokens, token) {
+		e.finishSlot(s, fmt.Errorf("sampler selected model-suppressed token %d", token))
+		return
+	}
+
 	// Extract logprobs BEFORE accepting - Accept modifies sampler state.
 	// Reset currentLogprob each token; it's used for streaming.
 	s.currentLogprob = nil
 	if s.job.params.Logprobs {
-		logprob, err := extractLogprobs(e.model.lctx, e.model.vocab, token, iBatch, s.job.params.TopLogprobs, buf)
+		logprob, err := extractLogprobs(e.model.lctx, e.model.vocab, e.model.suppressTokens, token, iBatch, s.job.params.TopLogprobs, buf)
 		switch {
 		case err != nil:
 			e.model.log(s.job.ctx, "batch-engine", "status", "logprobs-error", "slot", s.id, "error", err.Error())

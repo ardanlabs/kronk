@@ -3,6 +3,8 @@ package model
 import (
 	"math"
 	"testing"
+
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 func TestLogSoftmax(t *testing.T) {
@@ -98,5 +100,54 @@ func TestGetTopKLogprobs(t *testing.T) {
 
 	if maxIdx != 1 {
 		t.Errorf("max logprob at index %d, want 1 (logit 5.0)", maxIdx)
+	}
+}
+
+func TestSuppressTokenLogitBiases(t *testing.T) {
+	tokens := []llama.Token{1, 3}
+	biases := suppressTokenLogitBiases(tokens)
+
+	if len(biases) != len(tokens) {
+		t.Fatalf("bias count: got %d, want %d", len(biases), len(tokens))
+	}
+	for i, bias := range biases {
+		if bias.Token != tokens[i] {
+			t.Errorf("bias %d token: got %d, want %d", i, bias.Token, tokens[i])
+		}
+		if !math.IsInf(float64(bias.Bias), -1) {
+			t.Errorf("bias %d value: got %v, want -Inf", i, bias.Bias)
+		}
+	}
+}
+
+func TestMaskSuppressTokenLogits(t *testing.T) {
+	logits := []float32{100, 2, 3}
+	maskSuppressTokenLogits(logits, []llama.Token{0})
+
+	if !math.IsInf(float64(logits[0]), -1) {
+		t.Errorf("suppressed logit: got %v, want -Inf", logits[0])
+	}
+	if got := argmax(logits); got != 2 {
+		t.Errorf("argmax: got %d, want 2", got)
+	}
+
+	logprobs := logSoftmax(logits)
+	if !math.IsInf(float64(logprobs[0]), -1) {
+		t.Errorf("suppressed logprob: got %v, want -Inf", logprobs[0])
+	}
+}
+
+func TestApplySamplerFiltersSuppressesBeforeTopK(t *testing.T) {
+	logits := []float32{100, 2, 3}
+	probs := make([]float32, len(logits))
+	var fs filterState
+
+	applySamplerFilters(logits, probs, []llama.Token{0}, 1, 1, 0, 1, nil, &fs)
+
+	if probs[0] != 0 {
+		t.Errorf("suppressed probability: got %v, want 0", probs[0])
+	}
+	if probs[2] != 1 {
+		t.Errorf("highest allowed probability: got %v, want 1", probs[2])
 	}
 }
