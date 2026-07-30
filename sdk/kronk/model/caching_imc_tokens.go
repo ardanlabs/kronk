@@ -67,6 +67,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	extension := target
 	clearSeq := true
 	selected := best
+	var completedSessionID string
 	if best != nil {
 		reusable = len(best.cachedTokens)
 		extension = slices.Clone(target[reusable:])
@@ -91,7 +92,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 			result.err = fmt.Errorf("imc: server busy processing other requests, try again shortly")
 			return result
 		}
-		imcResetSession(selected)
+		completedSessionID = imcResetSession(selected)
 		selected.reserved = true
 	}
 
@@ -115,6 +116,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = matchKind == "exact"
 	m.cacheMu.Unlock()
+	m.completeObservedSession(ctx, completedSessionID)
 
 	m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
 		"imc_slot", selected.id, "match_kind", matchKind, "match_reason", matchReason, "reusable_tokens", reusable,

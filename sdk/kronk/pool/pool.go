@@ -21,6 +21,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/session"
 	"github.com/ardanlabs/kronk/sdk/pool/engine"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
@@ -74,6 +75,7 @@ type Config struct {
 	ModelsInPool    int
 	TTL             time.Duration
 	InsecureLogging bool
+	SessionObserver session.Observer
 }
 
 // Default config values applied when the corresponding field is zero.
@@ -132,7 +134,7 @@ func New(cfg Config) (*Pool, error) {
 		mc = map[string]models.ModelConfig{}
 	}
 
-	llama := newLlama(cfg.Log, cfg.Models, mc, cfg.Resman, cfg.InsecureLogging)
+	llama := newLlama(cfg.Log, cfg.Models, mc, cfg.Resman, cfg.InsecureLogging, cfg.SessionObserver)
 
 	c, err := engine.New(engine.Config{
 		Log:      cfg.Log,

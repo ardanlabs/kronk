@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/session"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/attribute"
@@ -56,6 +57,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		draftAcceptedTokens := s.specAcceptedTotal
 		draftCoveredTokens := s.specCoveredTotal
 		disableReason := s.mtpDisableReason
+		e.model.observeRequestCompleted(s, err, outputTokens)
+		if s.job.hasIMCReservation() {
+			e.model.imcReleaseReservation(s.job.imcSessionID)
+		}
 
 		s.span.End()
 		e.freeSlotResources(s)
@@ -195,10 +200,6 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 		e.model.cacheMu.Unlock()
 	}
-	if s.job.hasIMCReservation() {
-		e.model.imcReleaseReservation(s.job.imcSessionID)
-	}
-
 	// Handle error case.
 	if err != nil {
 		outputTokens := s.reasonTokens + s.completionTokens
@@ -375,6 +376,88 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.job.params.Stream, usage)
+}
+
+func (m *Model) observeRequestStarted(s *slot) {
+	job := s.job
+	if job == nil || job.observStarted || m.cfg.SessionObserver == nil {
+		return
+	}
+
+	sessionID := job.id
+	if job.imcSession != nil {
+		m.cacheMu.Lock()
+		if job.imcSession.observSessionID == "" {
+			job.imcSession.observSessionID = job.id
+		}
+		sessionID = job.imcSession.observSessionID
+		m.cacheMu.Unlock()
+	}
+
+	event := session.RequestStart{
+		Key: session.Key{
+			ModelID:   m.modelInfo.ID,
+			SessionID: sessionID,
+		},
+		RequestID:     job.id,
+		StartedAt:     job.requestStart,
+		ContextWindow: m.cfg.ContextWindow(),
+		PromptTokens:  s.nPrompt,
+	}
+	if err := m.cfg.SessionObserver.RequestStarted(event); err != nil {
+		m.log(job.ctx, "session-observability", "status", "request-start-failed", "id", job.id, "err", err)
+		return
+	}
+
+	job.observSessionID = sessionID
+	job.observStarted = true
+}
+
+func (m *Model) observeRequestCompleted(s *slot, requestErr error, outputTokens int) {
+	job := s.job
+	if job == nil || !job.observStarted || m.cfg.SessionObserver == nil {
+		return
+	}
+
+	reusable := false
+	if job.imcSession != nil {
+		m.cacheMu.Lock()
+		reusable = job.imcSession.observSessionID == job.observSessionID &&
+			job.imcSession.totalTokensCached > 0 && job.imcSession.kvState.Len() > 0
+		if !reusable && job.imcSession.observSessionID == job.observSessionID {
+			job.imcSession.observSessionID = ""
+		}
+		m.cacheMu.Unlock()
+	}
+
+	event := session.RequestCompletion{
+		Key: session.Key{
+			ModelID:   m.modelInfo.ID,
+			SessionID: job.observSessionID,
+		},
+		RequestID:    job.id,
+		CompletedAt:  time.Now().UTC(),
+		PromptTokens: s.nPrompt,
+		CachedTokens: min(max(job.imcExpectedTokens, 0), s.nPrompt),
+		OutputTokens: outputTokens,
+		ContextFull: errors.Is(requestErr, errContextFull) ||
+			(m.cfg.ContextWindow() > 0 && s.nPrompt+outputTokens >= m.cfg.ContextWindow()),
+		Reusable: reusable,
+	}
+	if err := m.cfg.SessionObserver.RequestCompleted(context.WithoutCancel(job.ctx), event); err != nil {
+		m.log(job.ctx, "session-observability", "status", "request-completion-failed", "id", job.id, "err", err)
+	}
+}
+
+func (m *Model) completeObservedSession(ctx context.Context, sessionID string) {
+	if sessionID == "" || m.cfg.SessionObserver == nil {
+		return
+	}
+
+	key := session.Key{ModelID: m.modelInfo.ID, SessionID: sessionID}
+	if err := m.cfg.SessionObserver.SessionCompleted(context.WithoutCancel(ctx), key); err != nil {
+		m.log(ctx, "session-observability", "status", "session-completion-failed", "session", sessionID, "err", err)
+	}
 }
 
 // failJob fails a job that was dequeued but never assigned to a slot. It sends

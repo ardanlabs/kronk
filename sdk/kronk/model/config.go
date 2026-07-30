@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/session"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -393,6 +394,7 @@ type Config struct {
 	PtrRopeFreqBase      *float32
 	PtrRopeFreqScale     *float32
 	RopeScaling          RopeScalingType
+	SessionObserver      session.Observer
 	SessionStoreDir      string
 	SessionStoreKind     string
 	PtrSplitMode         *SplitMode
@@ -1677,6 +1679,9 @@ func WithDevices(v []string) Option             { return func(c *Config) { c.Dev
 func WithDraftModel(v *DraftModelConfig) Option { return func(c *Config) { c.DraftModel = v } }
 func WithFlashAttention(v FlashAttentionType) Option {
 	return func(c *Config) { c.PtrFlashAttention = new(v) }
+}
+func WithSessionObserver(v session.Observer) Option {
+	return func(c *Config) { c.SessionObserver = v }
 }
 func WithIncrementalCache(v bool) Option        { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
 func WithInsecureLogging(v bool) Option         { return func(c *Config) { c.PtrInsecureLogging = new(v) } }

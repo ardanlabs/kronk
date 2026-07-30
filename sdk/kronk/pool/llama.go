@@ -17,6 +17,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/session"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
@@ -32,12 +33,13 @@ type Llama struct {
 	modelConfig     map[string]models.ModelConfig
 	resman          *resman.Manager
 	insecureLogging bool
+	sessionObserver session.Observer
 }
 
 // newLlama constructs a llama loader.
 //
 // modelConfig may be nil; an empty map will be used.
-func newLlama(log applog.Logger, mdls *models.Models, modelConfig map[string]models.ModelConfig, rm *resman.Manager, insecureLogging bool) *Llama {
+func newLlama(log applog.Logger, mdls *models.Models, modelConfig map[string]models.ModelConfig, rm *resman.Manager, insecureLogging bool, sessionObserver session.Observer) *Llama {
 	if modelConfig == nil {
 		modelConfig = map[string]models.ModelConfig{}
 	}
@@ -48,6 +50,7 @@ func newLlama(log applog.Logger, mdls *models.Models, modelConfig map[string]mod
 		modelConfig:     modelConfig,
 		resman:          rm,
 		insecureLogging: insecureLogging,
+		sessionObserver: sessionObserver,
 	}
 
 	return &l
@@ -186,6 +189,7 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 	}
 
 	cfg.Log = l.log
+	cfg.SessionObserver = l.sessionObserver
 	if req.Custom == nil && cfg.AutoTune && cfg.AutoTuned {
 		l.log(ctx, "AUTO-TUNE",
 			"status", "pre-applied",

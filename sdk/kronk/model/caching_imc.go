@@ -68,8 +68,10 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 // an empty state. The session's pool index (id) is preserved; seqID is
 // reset to imcSeqIDUnbound because a reset session is no longer bound
 // to any execution slot's KV sequence. The caller must hold m.cacheMu
-// (write lock).
-func imcResetSession(s *imcSession) {
+// (write lock). It returns the observation identity, if any, so the caller
+// can complete the displaced session after releasing the cache lock.
+func imcResetSession(s *imcSession) string {
+	observSessionID := s.observSessionID
 	s.seqID = imcSeqIDUnbound
 	s.cachedMsgsHash = ""
 	s.cachedTokens = nil
@@ -92,7 +94,9 @@ func imcResetSession(s *imcSession) {
 	s.useMRoPE = false
 	s.mediaKVCounts = nil
 	s.promptPlan = promptPlan{}
+	s.observSessionID = ""
 	s.cachedRenderInputHash = ""
+	return observSessionID
 }
 
 // imcReleaseReservation clears a session's reserved flag.
@@ -117,9 +121,26 @@ func (m *Model) imcInvalidateReservedSession(session *imcSession) {
 	}
 
 	m.cacheMu.Lock()
-	imcResetSession(session)
+	observSessionID := imcResetSession(session)
 	session.reserved = true
 	m.cacheMu.Unlock()
+	m.completeObservedSession(context.Background(), observSessionID)
+}
+
+func (m *Model) completeObservedIMCSessions(ctx context.Context) {
+	m.cacheMu.Lock()
+	ids := make([]string, 0, len(m.imcSessions))
+	for _, imc := range m.imcSessions {
+		if imc != nil && imc.observSessionID != "" {
+			ids = append(ids, imc.observSessionID)
+			imc.observSessionID = ""
+		}
+	}
+	m.cacheMu.Unlock()
+
+	for _, id := range ids {
+		m.completeObservedSession(ctx, id)
+	}
 }
 
 // imcCommitSession updates a session's metadata after a successful cache

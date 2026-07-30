@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -70,16 +71,22 @@ type cacheResult struct {
 // This is useful when the model context is reset.
 func (m *Model) clearCaches() {
 	m.cacheMu.Lock()
+	ids := make([]string, 0, len(m.imcSessions))
 
 	// Reset all IMC sessions in place (preserving id; seqID is dynamic
 	// and is set when a session binds to a slot in startSlot).
 	for _, s := range m.imcSessions {
 		if s != nil {
-			imcResetSession(s)
+			if id := imcResetSession(s); id != "" {
+				ids = append(ids, id)
+			}
 		}
 	}
 
 	m.cacheMu.Unlock()
+	for _, id := range ids {
+		m.completeObservedSession(context.Background(), id)
+	}
 }
 
 // =============================================================================

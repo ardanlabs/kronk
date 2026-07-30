@@ -131,8 +131,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// sessionWasCommitted records whether we called imcCommitSession in
 	// the cache-build / cache-extend branches below. When true, the
 	// session's metadata is up to date but its reserved flag is still set;
-	// the snapshot block must finalize publication (imcPublishSession on
-	// snapshot success, or imcResetSession on snapshot failure) so a
+	// the snapshot block must preserve the reservation on success until
+	// finishSlot, or reset the session on snapshot failure, so a
 	// concurrent token-v2 planner scanner never sees the new metadata against
 	// stale/empty kvState bytes.
 	var sessionWasCommitted bool
@@ -731,8 +731,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			} else if sessionWasCommitted {
 				switch {
 				case snapshotOK:
-					e.model.imcPublishSession(job.imcSession)
-					job.imcReservationHeld = false
+					// Keep the session reserved until finishSlot records the
+					// request and publishes the session as Idle.
 				default:
 					e.model.imcInvalidateReservedSession(job.imcSession)
 				}
@@ -835,6 +835,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		e.finishSlot(s, err)
 		return false
 	}
+	e.model.observeRequestStarted(s)
 
 	// Store full prompt tokens for draft model prefill if speculative decoding
 	// is enabled. The draft model needs all tokens (cached + new suffix) to
@@ -1008,6 +1009,7 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		e.finishSlot(s, err)
 		return false
 	}
+	e.model.observeRequestStarted(s)
 
 	s.useMRoPE = true
 	if e.model.draft != nil && e.model.draft.mtp() {
@@ -1108,6 +1110,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 		e.finishSlot(s, err)
 		return false
 	}
+	e.model.observeRequestStarted(s)
 
 	// Process first chunk. Media prefill is handled chunk-by-chunk in processBatch.
 	//

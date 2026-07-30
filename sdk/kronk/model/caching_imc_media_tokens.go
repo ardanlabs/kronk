@@ -69,6 +69,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	selected := match
 	matchKind := "rebuild"
 	matchReason := "no-exact-media-plan"
+	var completedSessionID string
 	if match != nil {
 		extension, _ := stable.textTail(match.promptPlan)
 		actualTail, _ := actual.textTail(match.promptPlan)
@@ -106,7 +107,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 			result.err = fmt.Errorf("imc: server busy processing other requests, try again shortly")
 			return result
 		}
-		imcResetSession(selected)
+		completedSessionID = imcResetSession(selected)
 		selected.reserved = true
 		result.imcMediaBuild = true
 		result.imcClearSeq = true
@@ -128,6 +129,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = result.imcReadOnlyReservation
 	m.cacheMu.Unlock()
+	m.completeObservedSession(ctx, completedSessionID)
 
 	m.log(ctx, "imc-media-cache", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
 		"media_count", stable.mediaCount, "logical_units", len(stable.units), "text_tokens", stable.textTokens,

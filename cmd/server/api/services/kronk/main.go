@@ -420,38 +420,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	// -------------------------------------------------------------------------
-	// Pool
-	//
-	// One call to pool.New constructs the shared resource manager and
-	// every enabled backend pool (kronk + bucky). The resman is
-	// shared so VRAM/RAM budgeting is unified across backends.
-
-	p, err := pool.New(pool.Config{
-		Log:             log.Info,
-		KronkModels:     models,
-		BuckyModels:     buckyModels,
-		ModelConfigFile: modelConfigFile,
-		BudgetPercent:   cfg.Pool.BudgetPercent,
-		ModelsInPool:    cfg.Pool.ModelsInPool,
-		TTL:             cfg.Pool.TTL,
-		InsecureLogging: cfg.InsecureLogging,
-	})
-	if err != nil {
-		return fmt.Errorf("initializing pool: %w", err)
-	}
-
-	defer func() {
-		log.Info(ctx, "shutdown", "status", "shutting down pool")
-
-		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
-		defer cancel()
-
-		if err := p.Shutdown(ctx); err != nil {
-			log.Error(ctx, "pool", "ERROR", err)
-		}
-	}()
-
-	// -------------------------------------------------------------------------
 	// Context Session Observability
 
 	var sessions *sessionobs.Tracker
@@ -475,6 +443,39 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	} else {
 		log.Info(ctx, "startup", "status", "context session observability disabled")
 	}
+
+	// -------------------------------------------------------------------------
+	// Pool
+	//
+	// One call to pool.New constructs the shared resource manager and
+	// every enabled backend pool (kronk + bucky). The resman is
+	// shared so VRAM/RAM budgeting is unified across backends.
+
+	p, err := pool.New(pool.Config{
+		Log:             log.Info,
+		KronkModels:     models,
+		BuckyModels:     buckyModels,
+		ModelConfigFile: modelConfigFile,
+		BudgetPercent:   cfg.Pool.BudgetPercent,
+		ModelsInPool:    cfg.Pool.ModelsInPool,
+		TTL:             cfg.Pool.TTL,
+		InsecureLogging: cfg.InsecureLogging,
+		SessionObserver: sessions,
+	})
+	if err != nil {
+		return fmt.Errorf("initializing pool: %w", err)
+	}
+
+	defer func() {
+		log.Info(ctx, "shutdown", "status", "shutting down pool")
+
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
+		defer cancel()
+
+		if err := p.Shutdown(ctx); err != nil {
+			log.Error(ctx, "pool", "ERROR", err)
+		}
+	}()
 
 	// -------------------------------------------------------------------------
 	// Start the MCP server

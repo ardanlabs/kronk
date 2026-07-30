@@ -9,6 +9,8 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
+var errContextFull = errors.New("unable to process request: the context window is full. Please reduce the input size or increase the context window")
+
 // slotCancelError returns an appropriate error for a cancelled slot.
 // Uses context error if available, otherwise returns a shutdown error.
 func (e *batchEngine) slotCancelError(s *slot) error {
@@ -78,7 +80,10 @@ func decodeError(ret int32, err error) error {
 	var msg string
 	switch ret {
 	case 1:
-		msg = "unable to process request: the context window is full. Please reduce the input size or increase the context window"
+		if err != nil {
+			return fmt.Errorf("%w: %v", errContextFull, err)
+		}
+		return errContextFull
 	case 2:
 		msg = "request was cancelled"
 	case -1:

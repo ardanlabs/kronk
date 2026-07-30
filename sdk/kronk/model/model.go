@@ -20,6 +20,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/session"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
@@ -89,6 +90,7 @@ type imcSession struct {
 	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts     []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
 	promptPlan        promptPlan    // Immutable token-v2 logical plan for the cached prefix.
+	observSessionID   string        // Session observability identity retained while this IMC entry remains reusable.
 
 	// cachedRenderInputHash guards token-v2 pure-hit snapshot reuse against
 	// changes to template inputs that are not represented by message tokens.
@@ -231,6 +233,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l := cfg.Log
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
+	}
+	if cfg.SessionObserver == nil {
+		cfg.SessionObserver = session.Nop()
 	}
 
 	if len(cfg.ModelFiles) == 0 {
@@ -1105,6 +1110,7 @@ func (m *Model) Unload(ctx context.Context) error {
 	}
 
 	m.log(ctx, "unload", "status", "streams-drained")
+	m.completeObservedIMCSessions(ctx)
 
 	// Free draft model resources if loaded. Each strategy frees its own
 	// resources in the correct order (classic frees its model; MTP shares

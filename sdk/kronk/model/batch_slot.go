@@ -17,12 +17,14 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// Request Identity
 
-	id            string              // Unique request ID for logging and responses
-	ctx           context.Context     // Request context for cancellation and tracing
-	ch            chan<- ChatResponse // Channel for streaming responses back to caller
-	queueWaitSpan trace.Span          // Span covering time spent waiting in the queue
-	queuedAt      time.Time           // Time when the job was submitted to the queue
-	requestStart  time.Time           // Time when the request entered the SDK (for end-to-end TTFT)
+	id              string              // Unique request ID for logging and responses
+	ctx             context.Context     // Request context for cancellation and tracing
+	ch              chan<- ChatResponse // Channel for streaming responses back to caller
+	queueWaitSpan   trace.Span          // Span covering time spent waiting in the queue
+	queuedAt        time.Time           // Time when the job was submitted to the queue
+	requestStart    time.Time           // Time when the request entered the SDK (for end-to-end TTFT)
+	observSessionID string
+	observStarted   bool
 
 	// -------------------------------------------------------------------------
 	// Request Content

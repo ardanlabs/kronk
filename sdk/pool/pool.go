@@ -27,6 +27,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/applog"
 	buckypool "github.com/ardanlabs/kronk/sdk/bucky/pool"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/session"
 	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
@@ -53,6 +54,7 @@ type Config struct {
 	ModelsInPool    int
 	TTL             time.Duration
 	InsecureLogging bool
+	SessionObserver session.Observer
 }
 
 // Pool is the application-facing pool. It owns the shared resource
@@ -111,6 +113,7 @@ func New(cfg Config) (*Pool, error) {
 			ModelsInPool:    cfg.ModelsInPool,
 			TTL:             cfg.TTL,
 			InsecureLogging: cfg.InsecureLogging,
+			SessionObserver: cfg.SessionObserver,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("new: kronk pool: %w", err)
