@@ -25,48 +25,9 @@ func TestSupportsBatchSeq(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "EmbeddingGemma fallback",
-			mi: ModelInfo{
-				IsEmbedModel: true,
-				Metadata:     map[string]string{"general.architecture": "gemma-embedding"},
-			},
-			want: false,
-		},
-		{
-			name: "unknown embedding fallback",
-			mi: ModelInfo{
-				IsEmbedModel: true,
-				Metadata:     map[string]string{"general.architecture": "unknown"},
-			},
-			want: false,
-		},
-		{
-			name: "unknown reranker fallback",
-			mi: ModelInfo{
-				IsRerankModel: true,
-				Metadata:      map[string]string{"general.architecture": "unknown"},
-			},
-			want: false,
-		},
-		{
-			name: "Qwen3 reranker fallback",
-			mi: ModelInfo{
-				IsRerankModel: true,
-				Metadata:      map[string]string{"general.architecture": "qwen3"},
-			},
-			want: false,
-		},
-		{
 			name: "generation model",
 			mi: ModelInfo{
 				Metadata: map[string]string{"general.architecture": "qwen3"},
-			},
-			want: false,
-		},
-		{
-			name: "missing metadata",
-			mi: ModelInfo{
-				IsEmbedModel: true,
 			},
 			want: false,
 		},

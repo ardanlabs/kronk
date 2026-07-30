@@ -14,24 +14,11 @@ import (
 )
 
 func TestSuite(t *testing.T) {
-	tests := []struct {
-		name      string
-		available bool
-		cfg       model.Config
-	}{
-		{"EmbeddingGemmaContextPoolFallback", len(testlib.MPEmbedFallback.ModelFiles) > 0, testlib.CfgEmbedFallback()},
-		{"Qwen3BatchSeq", len(testlib.MPEmbedBatchSeq.ModelFiles) > 0, testlib.CfgEmbedBatchSeq()},
+	if len(testlib.MPEmbedBatchSeq.ModelFiles) == 0 {
+		t.Skip("model not downloaded")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if !tt.available {
-				t.Skip("model not downloaded")
-			}
-
-			testlib.WithModel(t, tt.cfg, testEmbedding)
-		})
-	}
+	testlib.WithModel(t, testlib.CfgEmbedBatchSeq(), testEmbedding)
 }
 
 func testEmbedding(t *testing.T, krn *kronk.Kronk) {

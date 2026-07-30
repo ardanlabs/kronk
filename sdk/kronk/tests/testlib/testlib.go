@@ -34,9 +34,7 @@ var (
 	MPSimpleVision   models.Path
 	MPMoEVision      models.Path
 	MPAudio          models.Path
-	MPEmbedFallback  models.Path
 	MPEmbedBatchSeq  models.Path
-	MPRerankFallback models.Path
 	MPRerankBatchSeq models.Path
 	MPMTP            models.Path
 	MPDraft          models.Path
@@ -66,9 +64,7 @@ func Setup() {
 	resolveModel(mdls, "Qwen3-8B-Q8_0", &MPThinkToolChat)
 	resolveModel(mdls, "Qwen3.5-0.8B-Q8_0", &MPSimpleVision)
 	resolveModel(mdls, "gemma-4-26B-A4B-it-UD-Q4_K_M", &MPMoEVision)
-	resolveModel(mdls, "embeddinggemma-300m-qat-Q8_0", &MPEmbedFallback)
 	resolveModel(mdls, "Qwen3-Embedding-0.6B-Q8_0", &MPEmbedBatchSeq)
-	resolveModel(mdls, "qwen3-reranker-0.6b-q8_0", &MPRerankFallback)
 	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerankBatchSeq)
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "Qwen2.5-Omni-3B-Q8_0", &MPAudio)
@@ -296,19 +292,6 @@ func CfgMoEVisionIMC() model.Config {
 	}
 }
 
-// CfgEmbedFallback returns the EmbeddingGemma context-pool configuration.
-func CfgEmbedFallback() model.Config {
-	return model.Config{
-		ModelFiles:       MPEmbedFallback.ModelFiles,
-		PtrContextWindow: new(2048),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(2),
-	}
-}
-
 // CfgEmbedBatchSeq returns the Qwen3 sequence-batch configuration.
 func CfgEmbedBatchSeq() model.Config {
 	return model.Config{
@@ -319,19 +302,6 @@ func CfgEmbedBatchSeq() model.Config {
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
 		PtrNSeqMax:       new(4),
-	}
-}
-
-// CfgRerankFallback returns the Qwen3 context-pool configuration.
-func CfgRerankFallback() model.Config {
-	return model.Config{
-		ModelFiles:       MPRerankFallback.ModelFiles,
-		PtrContextWindow: new(2048),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(2),
 	}
 }
 

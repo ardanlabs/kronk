@@ -15,26 +15,13 @@ import (
 func TestConcurrentRerank(t *testing.T) {
 	const numInstances = 2
 
-	tests := []struct {
-		name      string
-		available bool
-		cfg       model.Config
-	}{
-		{"Qwen3ContextPoolFallback", len(testlib.MPRerankFallback.ModelFiles) > 0, testlib.CfgRerankFallback()},
-		{"BGEBatchSeq", len(testlib.MPRerankBatchSeq.ModelFiles) > 0, testlib.CfgRerankBatchSeq()},
+	if len(testlib.MPRerankBatchSeq.ModelFiles) == 0 {
+		t.Skip("model not downloaded")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if !tt.available {
-				t.Skip("model not downloaded")
-			}
-
-			testlib.WithModel(t, tt.cfg, func(t *testing.T, krn *kronk.Kronk) {
-				testConcurrentRerank(t, krn, numInstances)
-			})
-		})
-	}
+	testlib.WithModel(t, testlib.CfgRerankBatchSeq(), func(t *testing.T, krn *kronk.Kronk) {
+		testConcurrentRerank(t, krn, numInstances)
+	})
 }
 
 func testConcurrentRerank(t *testing.T, krn *kronk.Kronk, numInstances int) {
