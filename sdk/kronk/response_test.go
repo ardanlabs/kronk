@@ -8,6 +8,33 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func TestResponseValidatesMessagesBeforeAdmission(t *testing.T) {
+	tests := []struct {
+		name string
+		d    model.D
+		want error
+	}{
+		{name: "missing", d: model.D{}, want: model.ErrMessagesMissing},
+		{name: "invalid", d: model.D{"messages": "invalid"}, want: model.ErrMessagesInvalid},
+		{name: "empty input", d: model.D{"input": []any{}}, want: model.ErrMessagesMissing},
+		{name: "nil input", d: model.D{"input": nil}, want: model.ErrMessagesInvalid},
+		{name: "scalar input", d: model.D{"input": 42}, want: model.ErrMessagesInvalid},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var krn Kronk
+
+			if _, err := krn.Response(t.Context(), tt.d); !errors.Is(err, tt.want) {
+				t.Errorf("Response: got %v, want %v", err, tt.want)
+			}
+			if _, err := krn.ResponseStreaming(t.Context(), tt.d); !errors.Is(err, tt.want) {
+				t.Errorf("ResponseStreaming: got %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestConvertInputToMessagesRoleShapedImage(t *testing.T) {
 	const imageURL = "data:image/jpeg;base64,aW1hZ2U="
 

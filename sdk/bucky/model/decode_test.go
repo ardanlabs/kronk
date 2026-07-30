@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/bucky/pkg/audio"
+	"github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 )
 
@@ -66,27 +67,22 @@ func TestDecode_WebMOpus_ViaFFmpeg(t *testing.T) {
 }
 
 func TestDecode_NonNative_FFmpegMissing(t *testing.T) {
-	requireFFmpeg(t)
-
-	// Build the fixture while ffmpeg is on PATH, then hide it.
-	in := synthesizeContainer(t, "webm", "libopus")
-
-	// model.Decode caches ffmpeg via sync.Once. The cache may have
-	// already been warmed by an earlier test in this binary, in which
-	// case clearing PATH won't matter — the ErrNotInstalled path is
-	// covered by sdk/bucky/ffmpeg's own TestNew_NotInstalled. Here we
-	// only assert the failure shape when the cache happens to be cold.
-	t.Setenv("PATH", "")
-
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-
-	_, err := model.Decode(ctx, bytes.NewReader(in))
-	if err == nil {
-		t.Skip("ffmpeg already cached from a prior test; cannot exercise missing-binary path here")
+	const helperEnv = "KRONK_TEST_FFMPEG_MISSING"
+	if os.Getenv(helperEnv) == "1" {
+		_, err := model.Decode(t.Context(), strings.NewReader("non-native audio"))
+		if !errors.Is(err, audio.ErrUnsupportedFormat) {
+			t.Fatalf("Decode: got %v, want wraps audio.ErrUnsupportedFormat", err)
+		}
+		if !errors.Is(err, ffmpeg.ErrNotInstalled) {
+			t.Fatalf("Decode: got %v, want wraps ffmpeg.ErrNotInstalled", err)
+		}
+		return
 	}
-	if !errors.Is(err, audio.ErrUnsupportedFormat) {
-		t.Fatalf("Decode: got %v, want wraps audio.ErrUnsupportedFormat", err)
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDecode_NonNative_FFmpegMissing$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1", "PATH=")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("missing-ffmpeg subprocess: %v\n%s", err, output)
 	}
 }
 

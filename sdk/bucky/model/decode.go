@@ -67,12 +67,12 @@ func Decode(ctx context.Context, r io.Reader) ([]float32, error) {
 
 	bin, err := loadFFmpeg()
 	if err != nil {
-		return nil, fmt.Errorf("%w: unknown magic %x: ffmpeg not installed", audio.ErrUnsupportedFormat, head)
+		return nil, fmt.Errorf("%w: unknown magic %x: %w", audio.ErrUnsupportedFormat, head, err)
 	}
 
 	raw, err := bin.ToPCM16Bytes(ctx, combined)
 	if err != nil {
-		return nil, fmt.Errorf("%w: ffmpeg transcode failed: %v", audio.ErrUnsupportedFormat, err)
+		return nil, fmt.Errorf("%w: ffmpeg transcode failed: %w", audio.ErrUnsupportedFormat, err)
 	}
 
 	return pcm16ToFloat32(raw), nil

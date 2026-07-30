@@ -43,6 +43,9 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 	if tripleAll && !buckylibs.IsSupported(arch, opSys, processor) {
 		return errs.Errorf(errs.InvalidArgument, "unsupported combination arch=%q os=%q processor=%q", arch, opSys, processor)
 	}
+	if a.buckyLibs.ReadOnly() {
+		return errs.FromSDK(buckylibs.ErrReadOnly)
+	}
 
 	w := web.GetWriter(ctx)
 
@@ -130,7 +133,7 @@ func (a *app) listBuckyLibsCombinations(ctx context.Context, r *http.Request) we
 func (a *app) listBuckyLibsInstalls(ctx context.Context, r *http.Request) web.Encoder {
 	tags, err := a.buckyLibs.List()
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return toAppBundleList(tags)
@@ -147,7 +150,7 @@ func (a *app) removeBuckyLibsInstall(ctx context.Context, r *http.Request) web.E
 	}
 
 	if err := a.buckyLibs.Remove(arch, opSys, processor); err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return BundleActionResponse{Status: "removed", Arch: arch, OS: opSys, Processor: processor}

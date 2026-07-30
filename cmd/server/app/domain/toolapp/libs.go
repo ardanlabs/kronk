@@ -15,7 +15,7 @@ import (
 func (a *app) listLibs(ctx context.Context, r *http.Request) web.Encoder {
 	versionTag, err := a.libs.VersionInformation()
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return toAppVersionTag("retrieve", versionTag, a.libs.AllowUpgrade)
@@ -42,6 +42,9 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	}
 	if tripleAll && !libs.IsSupported(arch, opSys, processor) {
 		return errs.Errorf(errs.InvalidArgument, "unsupported combination arch=%q os=%q processor=%q", arch, opSys, processor)
+	}
+	if a.libs.ReadOnly() {
+		return errs.FromSDK(libs.ErrReadOnly)
 	}
 
 	w := web.GetWriter(ctx)
@@ -162,7 +165,7 @@ func (a *app) listLibsCombinations(ctx context.Context, r *http.Request) web.Enc
 func (a *app) listLibsInstalls(ctx context.Context, r *http.Request) web.Encoder {
 	tags, err := a.libs.List()
 	if err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return toAppBundleList(tags)
@@ -179,7 +182,7 @@ func (a *app) removeLibsInstall(ctx context.Context, r *http.Request) web.Encode
 	}
 
 	if err := a.libs.Remove(arch, opSys, processor); err != nil {
-		return errs.New(errs.Internal, err)
+		return errs.FromSDK(err)
 	}
 
 	return BundleActionResponse{Status: "removed", Arch: arch, OS: opSys, Processor: processor}

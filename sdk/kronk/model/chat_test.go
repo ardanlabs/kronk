@@ -108,3 +108,36 @@ func TestValidateDocumentRejectsFileInput(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMessages(t *testing.T) {
+	tests := []struct {
+		name string
+		d    D
+		want error
+	}{
+		{
+			name: "missing messages",
+			d:    D{},
+			want: ErrMessagesMissing,
+		},
+		{
+			name: "messages wrong type",
+			d:    D{"messages": "invalid"},
+			want: ErrMessagesInvalid,
+		},
+		{
+			name: "messages empty",
+			d:    D{"messages": []D{}},
+			want: ErrMessagesMissing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateMessages(tt.d)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("ValidateMessages: got %v, want %v", err, tt.want)
+			}
+		})
+	}
+}

@@ -2,11 +2,16 @@ package kronk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
+
+// ErrAdmissionTimeout indicates that a request could not obtain an admission
+// permit within the configured admission timeout.
+var ErrAdmissionTimeout = errors.New("admission timeout")
 
 func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
 	started := time.Now()
@@ -47,12 +52,16 @@ func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
 
 	// Bound only the admission wait. Once admitted, model processing continues
 	// under the caller's original context.
-	admissionCtx, cancel := context.WithTimeout(ctx, krn.cfg.AdmissionTimeout())
+	admissionCtx, cancel := context.WithTimeoutCause(ctx, krn.cfg.AdmissionTimeout(), ErrAdmissionTimeout)
 	defer cancel()
 
 	select {
 	case <-admissionCtx.Done():
 		krn.activeStreams.Add(-1)
+		admissionErr := admissionCtx.Err()
+		if cause := context.Cause(admissionCtx); errors.Is(cause, ErrAdmissionTimeout) {
+			admissionErr = cause
+		}
 		if krn.cfg.Log != nil {
 			status := "cancel"
 			if admissionCtx.Err() == context.DeadlineExceeded {
@@ -65,10 +74,10 @@ func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
 				"elapsed", time.Since(started),
 				"capacity", cap(krn.admissionCh),
 				"admitted", len(krn.admissionCh),
-				"err", admissionCtx.Err(),
+				"err", admissionErr,
 			)
 		}
-		return nil, admissionCtx.Err()
+		return nil, admissionErr
 
 	case krn.admissionCh <- struct{}{}:
 	}
