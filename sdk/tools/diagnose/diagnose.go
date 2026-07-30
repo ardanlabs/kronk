@@ -275,6 +275,7 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 		if !r.Engine.Loaded {
 			r.Hints = append(r.Hints, engineLoadHint(r.Engine.Error)...)
 		}
+		r.Hints = append(r.Hints, backendSelectionHints(r.Engine, backends)...)
 	}
 
 	if len(backends) > 0 && !o.skipBench {
@@ -674,7 +675,7 @@ func parseLlamaBuild(out string) string {
 
 // deviceLine matches a device row from "llama-bench --list-devices", e.g.
 // "  MTL0: Apple M3 Max (110100 MiB, 110100 MiB free)".
-var deviceLine = regexp.MustCompile(`^\s*(\S+):\s+(.+?)\s+\((\d+)\s*MiB,\s*(\d+)\s*MiB free\)`)
+var deviceLine = regexp.MustCompile(`^\s*(\S+):\s+(.+?)\s+\((\d+)\s*MiB,\s*(\d+)\s*MiB free\)\s*$`)
 
 // parseDevices extracts the device list from "llama-bench --list-devices"
 // output. VRAM values are reported in MiB.

@@ -1,0 +1,309 @@
+package libs
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/hybridgroup/yzma/pkg/download"
+)
+
+const runtimeProbeTimeout = 10 * time.Second
+
+// RuntimeSelection describes an installed-runtime selection decision.
+type RuntimeSelection struct {
+	PreferredProcessor string
+	SelectedProcessor  string
+	Reason             string
+}
+
+type runtimeProbeState uint8
+
+const (
+	runtimeProbeUnknown runtimeProbeState = iota
+	runtimeProbeNone
+	runtimeProbeDevices
+)
+
+type runtimeCandidate struct {
+	processor download.Processor
+	path      string
+	version   string
+}
+
+type runtimeProbe struct {
+	candidate runtimeCandidate
+	state     runtimeProbeState
+	devices   []string
+	output    string
+	err       error
+}
+
+// SelectInstalledRuntime selects an installed accelerator bundle before any
+// native libraries are loaded into the process. The receiver remains selected
+// when its probe detects a device or is inconclusive. An alternative is chosen
+// only when the receiver explicitly reports no devices and a same-version
+// installed bundle positively reports at least one device.
+//
+// Selection never downloads libraries and never mutates the receiver.
+func (lib *Libs) SelectInstalledRuntime(ctx context.Context, log Logger) (*Libs, RuntimeSelection, error) {
+	return lib.selectInstalledRuntime(ctx, log, probeRuntime)
+}
+
+func (lib *Libs) selectInstalledRuntime(ctx context.Context, log Logger, probeFn func(context.Context, runtimeCandidate) runtimeProbe) (*Libs, RuntimeSelection, error) {
+	selection := RuntimeSelection{
+		PreferredProcessor: lib.Processor(),
+		SelectedProcessor:  lib.Processor(),
+		Reason:             "preferred runtime retained",
+	}
+
+	if !isAcceleratorProcessor(lib.Processor()) || lib.readOnly {
+		return lib, selection, nil
+	}
+
+	installed, err := lib.InstalledVersion()
+	if err != nil {
+		selection.Reason = "preferred runtime is not installed"
+		return lib, selection, nil
+	}
+
+	preferred := runtimeCandidate{
+		processor: lib.processor,
+		path:      lib.path,
+		version:   installed.Version,
+	}
+	preferredProbe := probeFn(ctx, preferred)
+	logRuntimeProbe(ctx, log, preferredProbe)
+
+	switch preferredProbe.state {
+	case runtimeProbeDevices:
+		selection.Reason = "preferred runtime detected an accelerator"
+		return lib, selection, nil
+	case runtimeProbeUnknown:
+		selection.Reason = "preferred runtime probe was inconclusive"
+		return lib, selection, nil
+	}
+
+	candidates, err := lib.runtimeCandidates(installed.Version)
+	if err != nil {
+		return nil, RuntimeSelection{}, fmt.Errorf("select-installed-runtime: list candidates: %w", err)
+	}
+
+	probes := make([]runtimeProbe, 0, len(candidates))
+	for _, candidate := range candidates {
+		probe := probeFn(ctx, candidate)
+		logRuntimeProbe(ctx, log, probe)
+		probes = append(probes, probe)
+	}
+
+	selected, ok := chooseRuntime(probes)
+	if !ok {
+		selection.Reason = "preferred runtime detected no accelerator and no usable installed alternative was found"
+		return lib, selection, nil
+	}
+
+	selectedLib := *lib
+	selectedLib.path = selected.path
+	selectedLib.processor = selected.processor
+	selectedLib.readOnly = false
+
+	selection.SelectedProcessor = selected.processor.String()
+	selection.Reason = fmt.Sprintf("preferred %s runtime detected no accelerator; selected installed %s runtime", lib.Processor(), selected.processor.String())
+
+	return &selectedLib, selection, nil
+}
+
+func (lib *Libs) runtimeCandidates(version string) ([]runtimeCandidate, error) {
+	tags, err := lib.List()
+	if err != nil {
+		return nil, err
+	}
+
+	var candidates []runtimeCandidate
+	for _, tag := range tags {
+		if tag.Arch != lib.Arch() || tag.OS != lib.OS() || tag.Version != version || tag.Processor == lib.Processor() {
+			continue
+		}
+		if !isAcceleratorProcessor(tag.Processor) {
+			continue
+		}
+
+		processor, err := download.ParseProcessor(tag.Processor)
+		if err != nil {
+			continue
+		}
+
+		candidates = append(candidates, runtimeCandidate{
+			processor: processor,
+			path:      installPathFor(lib.root, lib.arch, lib.os, processor),
+			version:   tag.Version,
+		})
+	}
+
+	slices.SortFunc(candidates, func(a, b runtimeCandidate) int {
+		return runtimeProcessorRank(a.processor.String()) - runtimeProcessorRank(b.processor.String())
+	})
+
+	return candidates, nil
+}
+
+func probeRuntime(ctx context.Context, candidate runtimeCandidate) runtimeProbe {
+	probe := runtimeProbe{candidate: candidate}
+
+	pctx, cancel := context.WithTimeout(ctx, runtimeProbeTimeout)
+	defer cancel()
+
+	name := "llama-bench"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+
+	cmd := exec.CommandContext(pctx, filepath.Join(candidate.path, name), "--list-devices")
+	cmd.Env = runtimeProbeEnv(candidate.path)
+
+	out, err := cmd.CombinedOutput()
+	probe.output = string(out)
+	if err != nil {
+		probe.err = err
+		return probe
+	}
+
+	probe.state, probe.devices = parseRuntimeDevices(probe.output)
+	return probe
+}
+
+var runtimeDeviceLine = regexp.MustCompile(`^\s*(\S+):\s+.+\s+\(\d+\s*MiB,\s*\d+\s*MiB free\)\s*$`)
+
+func parseRuntimeDevices(output string) (runtimeProbeState, []string) {
+	const header = "Available devices:"
+
+	body, ok := runtimeDeviceBody(output, header)
+	if !ok {
+		return runtimeProbeUnknown, nil
+	}
+
+	var devices []string
+	var lines int
+	for line := range strings.SplitSeq(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lines++
+		if line == "(none)" && lines == 1 && strings.TrimSpace(body) == "(none)" {
+			return runtimeProbeNone, nil
+		}
+
+		match := runtimeDeviceLine.FindStringSubmatch(line)
+		if match == nil {
+			return runtimeProbeUnknown, nil
+		}
+		devices = append(devices, match[1])
+	}
+
+	if len(devices) == 0 {
+		return runtimeProbeUnknown, nil
+	}
+	return runtimeProbeDevices, devices
+}
+
+func runtimeDeviceBody(output string, header string) (string, bool) {
+	lines := strings.Split(output, "\n")
+	headerLine := -1
+	for i, line := range lines {
+		if strings.TrimSuffix(line, "\r") == header {
+			headerLine = i
+		}
+	}
+	if headerLine < 0 {
+		return "", false
+	}
+	return strings.Join(lines[headerLine+1:], "\n"), true
+}
+
+func chooseRuntime(probes []runtimeProbe) (runtimeCandidate, bool) {
+	for _, probe := range probes {
+		if probe.state == runtimeProbeDevices {
+			return probe.candidate, true
+		}
+	}
+	return runtimeCandidate{}, false
+}
+
+func runtimeProbeEnv(path string) []string {
+	env := prependRuntimePath(os.Environ(), "PATH", path)
+
+	switch runtime.GOOS {
+	case "darwin":
+		return prependRuntimePath(env, "DYLD_LIBRARY_PATH", path)
+	case "linux":
+		return prependRuntimePath(env, "LD_LIBRARY_PATH", path)
+	default:
+		return env
+	}
+}
+
+func prependRuntimePath(env []string, key string, path string) []string {
+	prefix := key + "="
+	for i, entry := range env {
+		if value, ok := strings.CutPrefix(entry, prefix); ok {
+			env[i] = prefix + path + string(os.PathListSeparator) + value
+			return env
+		}
+	}
+	return append(env, prefix+path)
+}
+
+func logRuntimeProbe(ctx context.Context, log Logger, probe runtimeProbe) {
+	if log == nil {
+		return
+	}
+
+	state := "unknown"
+	switch probe.state {
+	case runtimeProbeNone:
+		state = "none"
+	case runtimeProbeDevices:
+		state = "devices"
+	}
+
+	args := []any{"processor", probe.candidate.processor, "state", state}
+	if len(probe.devices) > 0 {
+		args = append(args, "devices", strings.Join(probe.devices, ","))
+	}
+	if probe.err != nil {
+		args = append(args, "error", probe.err)
+	}
+	log(ctx, "probe installed runtime", args...)
+}
+
+func isAcceleratorProcessor(processor string) bool {
+	switch processor {
+	case "cuda", "metal", "rocm", "vulkan":
+		return true
+	default:
+		return false
+	}
+}
+
+func runtimeProcessorRank(processor string) int {
+	switch processor {
+	case "cuda":
+		return 0
+	case "rocm":
+		return 1
+	case "metal":
+		return 2
+	case "vulkan":
+		return 3
+	default:
+		return 4
+	}
+}

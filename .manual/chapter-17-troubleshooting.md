@@ -88,6 +88,11 @@ KRONK_PROCESSOR=vulkan kronk libs --local
 KRONK_PROCESSOR=cpu kronk libs --local
 ```
 
+`kronk diagnose` probes every installed bundle independently. When the selected
+backend reports no GPU but a same-version installed alternative detects one, the
+report recommends the corresponding `KRONK_PROCESSOR` override. Restart Kronk
+after applying it.
+
 Not every combination is published. Check the live matrix with
 `kronk libs --list-combinations`. See
 [Chapter 2: Libraries](https://www.kronkai.com/manual#24-libraries) for installation

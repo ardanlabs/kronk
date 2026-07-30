@@ -254,6 +254,13 @@ Use `kronk libs --help` for cross-platform bundle installation and removal.
 Changing the active library path requires a server restart; libraries are not
 hot-reloaded.
 
+When the server selects a processor automatically, it verifies that processor's
+installed bundle before loading native libraries. If the bundle explicitly
+reports no accelerator and another installed bundle for the same llama.cpp
+version reports a device, the server uses that alternative. This check never
+downloads an additional bundle. `KRONK_PROCESSOR`, `KRONK_LIB_PATH`, and the
+corresponding server flags remain strict overrides and disable fallback.
+
 Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A
 working `nvidia-smi` confirms the driver but not necessarily the CUDA runtime.
 If the CUDA backend does not load, inspect `libggml-cuda.so` with `ldd` and
