@@ -11,7 +11,6 @@ type SortKey =
   | 'peak_context'
   | 'context_window'
   | 'utilization'
-  | 'total_processed_tokens'
   | 'last_active_at';
 
 type SortDirection = 'asc' | 'desc';
@@ -41,7 +40,6 @@ function sortValue(session: SessionSummary, key: SortKey): string | number {
     case 'last_active_at':
       return new Date(session.last_active_at).getTime();
     case 'current_context':
-    case 'total_processed_tokens':
       return session[key] ?? 0;
     default:
       return session[key];
@@ -154,7 +152,6 @@ export default function Sessions() {
                     <SortHeading label="Peak Context" column="peak_context" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
                     <SortHeading label="Window" column="context_window" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
                     <SortHeading label="Utilization" column="utilization" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
-                    <SortHeading label="Processed" column="total_processed_tokens" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
                     <SortHeading label="Last Active" column="last_active_at" sortKey={sortKey} direction={direction} onSort={handleSort} />
                   </tr>
                 </thead>
@@ -172,7 +169,6 @@ export default function Sessions() {
                         {formatPercent(utilization(session))}
                         {session.context_full && <span className="session-context-full">Full</span>}
                       </td>
-                      <td style={{ textAlign: 'right' }}>{formatNumber(session.total_processed_tokens ?? 0)}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{formatDate(session.last_active_at)}</td>
                     </tr>
                   ))}

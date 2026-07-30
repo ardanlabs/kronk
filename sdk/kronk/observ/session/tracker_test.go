@@ -67,8 +67,8 @@ func TestTrackerLifecycle(t *testing.T) {
 	if summary.RequestCount != 2 || summary.PeakContext != 210 {
 		t.Errorf("summary accounting: got requests=%d peak=%d", summary.RequestCount, summary.PeakContext)
 	}
-	if summary.TotalCachedTokens != 100 || summary.TotalProcessedTokens != 180 {
-		t.Errorf("token accounting: got cached=%d processed=%d", summary.TotalCachedTokens, summary.TotalProcessedTokens)
+	if summary.TotalCachedTokens != 100 {
+		t.Errorf("cached token accounting: got %d, want 100", summary.TotalCachedTokens)
 	}
 
 	if err := tracker.SessionCompleted(ctx, key); err != nil {

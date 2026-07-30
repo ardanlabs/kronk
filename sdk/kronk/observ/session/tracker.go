@@ -122,7 +122,6 @@ func (t *Tracker) RequestCompleted(ctx context.Context, event RequestCompletion)
 	tracked.summary.PeakContext = max(tracked.summary.PeakContext, promptTokens+outputTokens)
 	tracked.summary.CachedTokens = cachedTokens
 	tracked.summary.TotalCachedTokens += int64(cachedTokens)
-	tracked.summary.TotalProcessedTokens += int64(promptTokens - cachedTokens)
 	tracked.summary.ContextFull = tracked.summary.ContextFull || event.ContextFull
 	if event.Reusable {
 		tracked.summary.State = StateIdle

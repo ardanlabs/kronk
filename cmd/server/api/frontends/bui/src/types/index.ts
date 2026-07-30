@@ -106,7 +106,6 @@ export interface SessionSummary {
   peak_context: number;
   cached_tokens?: number;
   total_cached_tokens?: number;
-  total_processed_tokens?: number;
   context_full?: boolean;
   incomplete?: boolean;
 }

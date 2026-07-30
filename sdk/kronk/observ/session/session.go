@@ -83,8 +83,7 @@ type Summary struct {
 	PeakContext    int `json:"peak_context"`
 	CachedTokens   int `json:"cached_tokens,omitempty"`
 
-	TotalCachedTokens    int64 `json:"total_cached_tokens,omitempty"`
-	TotalProcessedTokens int64 `json:"total_processed_tokens,omitempty"`
+	TotalCachedTokens int64 `json:"total_cached_tokens,omitempty"`
 
 	ContextFull bool `json:"context_full,omitempty"`
 	Incomplete  bool `json:"incomplete,omitempty"`
