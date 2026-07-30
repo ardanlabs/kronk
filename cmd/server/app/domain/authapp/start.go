@@ -8,6 +8,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -19,6 +20,7 @@ type Config struct {
 	Tracer           trace.Tracer
 	Enabled          bool
 	AdminAuthEnabled bool
+	Credentials      credentials.TransportCredentials
 }
 
 // Start constructs the registers the auth app to the grpc server.
@@ -27,9 +29,12 @@ func Start(ctx context.Context, cfg Config) *App {
 
 	api := newApp(cfg)
 
-	gs := grpc.NewServer(
-		grpc.UnaryInterceptor(api.authInterceptor),
-	)
+	options := []grpc.ServerOption{grpc.UnaryInterceptor(api.authInterceptor)}
+	if cfg.Credentials != nil {
+		options = append(options, grpc.Creds(cfg.Credentials))
+	}
+
+	gs := grpc.NewServer(options...)
 
 	api.gs = gs
 

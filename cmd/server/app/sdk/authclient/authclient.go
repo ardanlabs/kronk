@@ -3,9 +3,12 @@ package authclient
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
@@ -13,6 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
@@ -24,6 +28,7 @@ type Client struct {
 	grpcConn *grpc.ClientConn
 	grpc     authapp.AuthClient
 	dialer   func(context.Context, string) (net.Conn, error)
+	creds    credentials.TransportCredentials
 }
 
 // New constructs an Auth that can be used to talk with the auth service.
@@ -37,8 +42,12 @@ func New(log *logger.Logger, url string, options ...func(cln *Client)) (*Client,
 		option(&cln)
 	}
 
-	var dialOpts []grpc.DialOption
-	dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	creds := cln.creds
+	if creds == nil {
+		creds = insecure.NewCredentials()
+	}
+
+	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(creds)}
 
 	if cln.dialer != nil {
 		dialOpts = append(dialOpts, grpc.WithContextDialer(cln.dialer))
@@ -55,10 +64,41 @@ func New(log *logger.Logger, url string, options ...func(cln *Client)) (*Client,
 	return &cln, nil
 }
 
+// TLSCredentials constructs TLS transport credentials for an external auth
+// service. An empty CA file uses the host's system certificate pool.
+func TLSCredentials(caFile string, serverName string) (credentials.TransportCredentials, error) {
+	tlsConfig := tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: serverName,
+	}
+
+	if caFile != "" {
+		roots := x509.NewCertPool()
+		pem, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading auth CA file: %w", err)
+		}
+		if !roots.AppendCertsFromPEM(pem) {
+			return nil, errors.New("reading auth CA file: no certificates found")
+		}
+
+		tlsConfig.RootCAs = roots
+	}
+
+	return credentials.NewTLS(&tlsConfig), nil
+}
+
 // WithDialer sets a custom dialer for in-memory connections (e.g., bufconn).
 func WithDialer(dialer func(context.Context, string) (net.Conn, error)) func(cln *Client) {
 	return func(cln *Client) {
 		cln.dialer = dialer
+	}
+}
+
+// WithTransportCredentials configures credentials for the auth connection.
+func WithTransportCredentials(creds credentials.TransportCredentials) func(cln *Client) {
+	return func(cln *Client) {
+		cln.creds = creds
 	}
 }
 

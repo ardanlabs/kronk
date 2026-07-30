@@ -11,6 +11,8 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // statusRecorder wraps http.ResponseWriter to capture the status code that
@@ -164,11 +166,31 @@ func authenticate(cfg Config, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := cfg.Authenticate(r.Context(), r.Header.Get("Authorization")); err != nil {
 			cfg.Log.Error(r.Context(), "mcp authentication", "err", err)
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			statusCode := authenticationStatus(err)
+			if statusCode == http.StatusUnauthorized {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+			}
+			http.Error(w, http.StatusText(statusCode), statusCode)
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func authenticationStatus(err error) int {
+	switch status.Code(err) {
+	case codes.Unauthenticated:
+		return http.StatusUnauthorized
+	case codes.PermissionDenied:
+		return http.StatusForbidden
+	case codes.ResourceExhausted:
+		return http.StatusTooManyRequests
+	case codes.Unavailable:
+		return http.StatusServiceUnavailable
+	case codes.DeadlineExceeded:
+		return http.StatusGatewayTimeout
+	default:
+		return http.StatusInternalServerError
+	}
 }

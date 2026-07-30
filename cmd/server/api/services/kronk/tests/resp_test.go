@@ -230,14 +230,14 @@ func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 
 // =============================================================================
 
-func respEndpoint401(tokens map[string]string) []apitest.Table {
+func respEndpoint403(tokens map[string]string) []apitest.Table {
 	table := []apitest.Table{
 		{
 			Name:       "bad-token",
 			URL:        "/v1/responses",
 			Token:      tokens["embeddings"],
 			Method:     http.MethodPost,
-			StatusCode: http.StatusUnauthorized,
+			StatusCode: http.StatusForbidden,
 			Input: model.D{
 				"model": "Qwen3-8B-Q8_0",
 				"input": model.DocumentArray(
@@ -246,8 +246,8 @@ func respEndpoint401(tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &errs.Error{},
 			ExpResp: &errs.Error{
-				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = authentication failed",
+				Code:    errs.PermissionDenied,
+				Message: "rpc error: code = PermissionDenied desc = permission denied",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,

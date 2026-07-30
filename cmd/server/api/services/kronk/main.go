@@ -112,7 +112,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Auth struct {
 			Host         string // Leave empty to run the local auth service.
 			AdminEnabled bool   `conf:"default:false"`
-			Local        struct {
+			TLS          struct {
+				Enabled    bool `conf:"default:false"`
+				CAFile     string
+				ServerName string
+			}
+			Local struct {
 				Issuer  string `conf:"default:kronk project"`
 				Enabled bool   `conf:"default:false"`
 			}
@@ -273,6 +278,19 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	authHost := cfg.Auth.Host
 	if len(authClientOpts) > 0 {
 		authHost = "passthrough:///bufnet"
+	}
+	if cfg.Auth.Host != "" {
+		if cfg.Auth.TLS.Enabled {
+			creds, err := authclient.TLSCredentials(cfg.Auth.TLS.CAFile, cfg.Auth.TLS.ServerName)
+			if err != nil {
+				return fmt.Errorf("failed to initialize authentication TLS: %w", err)
+			}
+			authClientOpts = append(authClientOpts, authclient.WithTransportCredentials(creds))
+		} else {
+			log.Warn(ctx, "startup", "status", "external authentication uses plaintext transport", "host", cfg.Auth.Host)
+		}
+	} else if cfg.Auth.TLS.Enabled {
+		return errors.New("configuration: auth TLS requires an external auth host")
 	}
 
 	authClient, err := authclient.New(log, authHost, authClientOpts...)

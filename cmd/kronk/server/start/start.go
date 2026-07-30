@@ -113,6 +113,16 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	if v, _ := cmd.Flags().GetString("auth-host"); v != "" {
 		envVars = append(envVars, "KRONK_AUTH_HOST="+v)
 	}
+	if cmd.Flags().Changed("auth-tls-enabled") {
+		v, _ := cmd.Flags().GetBool("auth-tls-enabled")
+		envVars = append(envVars, "KRONK_AUTH_TLS_ENABLED="+strconv.FormatBool(v))
+	}
+	if v, _ := cmd.Flags().GetString("auth-tls-ca-file"); v != "" {
+		envVars = append(envVars, "KRONK_AUTH_TLS_CA_FILE="+v)
+	}
+	if v, _ := cmd.Flags().GetString("auth-tls-server-name"); v != "" {
+		envVars = append(envVars, "KRONK_AUTH_TLS_SERVER_NAME="+v)
+	}
 	if v, _ := cmd.Flags().GetString("auth-issuer"); v != "" {
 		envVars = append(envVars, "KRONK_AUTH_LOCAL_ISSUER="+v)
 	}

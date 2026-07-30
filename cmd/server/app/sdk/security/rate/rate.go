@@ -14,6 +14,8 @@ import (
 // ErrRateLimitExceeded is returned when the rate limit has been exceeded.
 var ErrRateLimitExceeded = errors.New("rate limit exceeded")
 
+const conflictRetries = 32
+
 // Config holds the configuration for the rate limiter.
 type Config struct {
 	DBPath string
@@ -55,41 +57,11 @@ func (l *Limiter) Check(subject string, endpoint string, limit auth.RateLimit) e
 		return nil
 	}
 
-	key := l.buildKey(subject, endpoint, limit.Window)
+	windowStart, windowEnd := windowBounds(limit.Window, time.Now().UTC())
+	key := fmt.Appendf(nil, "rate:%s:%s:%d", subject, endpoint, windowStart.Unix())
+	expiresAt := uint64(windowEnd.Unix())
 
-	var count int
-	err := l.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
-		if errors.Is(err, badger.ErrKeyNotFound) {
-			count = 0
-			return nil
-		}
-
-		if err != nil {
-			return err
-		}
-
-		return item.Value(func(val []byte) error {
-			count = int(binary.BigEndian.Uint64(val))
-			return nil
-		})
-	})
-
-	if err != nil {
-		return fmt.Errorf("check: unable to read rate limit: %w", err)
-	}
-
-	if count >= limit.Limit {
-		return ErrRateLimitExceeded
-	}
-
-	return l.record(key, limit.Window)
-}
-
-func (l *Limiter) record(key []byte, window auth.RateWindow) error {
-	ttl := l.calculateTTL(window)
-
-	f := func(txn *badger.Txn) error {
+	update := func(txn *badger.Txn) error {
 		var count uint64
 
 		item, err := txn.Get(key)
@@ -110,62 +82,50 @@ func (l *Limiter) record(key []byte, window auth.RateWindow) error {
 			}
 		}
 
+		if limit.Limit <= 0 || count >= uint64(limit.Limit) {
+			return ErrRateLimitExceeded
+		}
+
 		count++
 
 		val := make([]byte, 8)
 		binary.BigEndian.PutUint64(val, count)
 
-		entry := badger.NewEntry(key, val).WithTTL(ttl)
+		entry := badger.NewEntry(key, val)
+		entry.ExpiresAt = expiresAt
 		return txn.SetEntry(entry)
 	}
 
-	if err := l.db.Update(f); err != nil {
-		return fmt.Errorf("record: unable to update rate limit: %w", err)
+	for range conflictRetries {
+		err := l.db.Update(update)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, ErrRateLimitExceeded):
+			return ErrRateLimitExceeded
+		case !errors.Is(err, badger.ErrConflict):
+			return fmt.Errorf("check: unable to update rate limit: %w", err)
+		}
 	}
 
-	return nil
+	return fmt.Errorf("check: unable to update rate limit after %d conflicts: %w", conflictRetries, badger.ErrConflict)
 }
 
-func (l *Limiter) buildKey(subject, endpoint string, window auth.RateWindow) []byte {
-	windowStart := l.windowStart(window)
-	return fmt.Appendf(nil, "rate:%s:%s:%d", subject, endpoint, windowStart.Unix())
-}
-
-func (l *Limiter) windowStart(window auth.RateWindow) time.Time {
-	now := time.Now().UTC()
-
+func windowBounds(window auth.RateWindow, now time.Time) (time.Time, time.Time) {
 	switch window {
 	case auth.RateDay:
-		return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		return start, start.AddDate(0, 0, 1)
 
 	case auth.RateMonth:
-		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+		return start, start.AddDate(0, 1, 0)
 
 	case auth.RateYear:
-		return time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+		start := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+		return start, start.AddDate(1, 0, 0)
 
 	default:
-		return now
+		return now, now.Add(24 * time.Hour)
 	}
-}
-
-func (l *Limiter) calculateTTL(window auth.RateWindow) time.Duration {
-	now := time.Now().UTC()
-	var end time.Time
-
-	switch window {
-	case auth.RateDay:
-		end = time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
-
-	case auth.RateMonth:
-		end = time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
-
-	case auth.RateYear:
-		end = time.Date(now.Year()+1, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	default:
-		return 24 * time.Hour
-	}
-
-	return end.Sub(now)
 }

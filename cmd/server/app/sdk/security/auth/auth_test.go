@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -22,6 +23,21 @@ func Test_Auth(t *testing.T) {
 
 	t.Run("authenticate", authenticate(ath))
 	t.Run("authorize", authorize(ath))
+}
+
+func TestAuthenticateInvalidToken(t *testing.T) {
+	ath, err := auth.New(auth.Config{
+		KeyLookup: &keyStore{},
+		Issuer:    "service project",
+	})
+	if err != nil {
+		t.Fatalf("construct auth api: %v", err)
+	}
+
+	_, err = ath.Authenticate(context.Background(), "not a bearer token")
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("Authenticate: got %v, want ErrInvalidToken", err)
+	}
 }
 
 func authenticate(ath *auth.Auth) func(t *testing.T) {

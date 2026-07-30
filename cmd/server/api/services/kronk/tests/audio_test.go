@@ -105,7 +105,7 @@ func audioTranscriptions200(t *testing.T, tokens map[string]string) []apitest.Ta
 	return table
 }
 
-func audioTranscriptions401(t *testing.T, tokens map[string]string) []apitest.Table {
+func audioTranscriptions403(t *testing.T, tokens map[string]string) []apitest.Table {
 	body, contentType := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "json")
 
 	table := []apitest.Table{
@@ -114,15 +114,15 @@ func audioTranscriptions401(t *testing.T, tokens map[string]string) []apitest.Ta
 			URL:        "/v1/audio/transcriptions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
-			StatusCode: http.StatusUnauthorized,
+			StatusCode: http.StatusForbidden,
 			Headers: map[string]string{
 				"Content-Type": contentType,
 			},
 			RawBody: body,
 			GotResp: &errs.Error{},
 			ExpResp: &errs.Error{
-				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = authentication failed",
+				Code:    errs.PermissionDenied,
+				Message: "rpc error: code = PermissionDenied desc = permission denied",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
