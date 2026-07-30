@@ -10,7 +10,7 @@ require (
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.25
 	github.com/google/uuid v1.6.0
-	github.com/hybridgroup/yzma v1.20.0
+	github.com/hybridgroup/yzma v1.21.0
 )
 
 require (

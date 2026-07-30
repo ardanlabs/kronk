@@ -3,6 +3,9 @@ package model
 import (
 	"context"
 	"fmt"
+	"math"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -760,16 +763,22 @@ func (m *Model) adjustParams(p Params) Params {
 func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 
+	var order int
+	if len(m.suppressTokens) > 0 {
+		order++
+		addSuppressTokenSampler(sampler, m.vocab, m.suppressTokens)
+		m.log(ctx, "sampler-chain", "order", order, "sampler", "suppress-token-bias", "tokens", len(m.suppressTokens))
+	}
+
 	// NOTE: Grammar is NOT added to the sampler chain. The grammar sampler's
 	// accept() function crashes in llama.cpp when llama_sampler_chain_accept
 	// iterates through all samplers. Grammar is handled separately in the
 	// batch engine via GrammarSampler.SampleWithGrammar().
 
 	// The sampler order below matches llama.cpp's common_sampler_init default
-	// pipeline: Penalties → DRY → top-k → top-p → min-p → XTC → Temperature → dist.
-	// This ordering is critical for tool calling stability.
-
-	var order int
+	// pipeline: model suppress-token bias → Penalties → DRY → top-k → top-p →
+	// min-p → XTC → Temperature → dist. This ordering is critical for tool
+	// calling stability.
 
 	if p.RepeatPenalty != 1.0 || p.FrequencyPenalty != 0 || p.PresencePenalty != 0 {
 		order++
@@ -816,6 +825,42 @@ func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
 	m.log(ctx, "sampler-chain", "order", order, "sampler", "dist")
 
 	return sampler
+}
+
+func copySuppressTokens(vocab llama.Vocab) []llama.Token {
+	return slices.Clone(llama.VocabGetSuppressTokens(vocab))
+}
+
+func suppressTokenLogitBiases(tokens []llama.Token) []llama.LogitBias {
+	biases := make([]llama.LogitBias, len(tokens))
+	for i, token := range tokens {
+		biases[i] = llama.LogitBias{Token: token, Bias: float32(math.Inf(-1))}
+	}
+
+	return biases
+}
+
+func addSuppressTokenSampler(chain llama.Sampler, vocab llama.Vocab, tokens []llama.Token) {
+	if len(tokens) == 0 {
+		return
+	}
+
+	biases := suppressTokenLogitBiases(tokens)
+	biasSampler := llama.SamplerInitLogitBias(llama.VocabNTokens(vocab), int32(len(biases)), &biases[0])
+	runtime.KeepAlive(biases)
+	llama.SamplerChainAdd(chain, biasSampler)
+}
+
+func maskSuppressTokenLogits(logits []float32, tokens []llama.Token) {
+	for _, token := range tokens {
+		if token >= 0 && int(token) < len(logits) {
+			logits[token] = float32(math.Inf(-1))
+		}
+	}
+}
+
+func isSuppressedToken(tokens []llama.Token, token llama.Token) bool {
+	return slices.Contains(tokens, token)
 }
 
 func parseFloat32(fieldName string, val any) (float32, error) {
