@@ -1015,12 +1015,18 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 		bpe = vram.BytesPerElementF16
 	}
 
+	kronkConfig := rmc.ToKronkConfig()
+	swaFull := true
+	if kronkConfig.PtrSWAFull != nil {
+		swaFull = *kronkConfig.PtrSWAFull
+	}
+
 	return vram.Config{
 		ContextWindow:     contextWindow,
 		BytesPerElement:   bpe,
 		Slots:             slots,
-		ExpertLayersOnGPU: rmc.ToKronkConfig().ExpertLayersOnGPU(),
-		SWAFull:           rmc.ToKronkConfig().SWAFull(),
+		ExpertLayersOnGPU: kronkConfig.ExpertLayersOnGPU(),
+		SWAFull:           swaFull,
 	}
 }
 

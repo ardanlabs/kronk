@@ -36,6 +36,31 @@ func TestBuckyModelDetailsNotFound(t *testing.T) {
 	assertNotFound(t, resp)
 }
 
+func TestVRAMConfigFromRMCSWAFull(t *testing.T) {
+	enabled := true
+	disabled := false
+
+	tests := []struct {
+		name string
+		ptr  *bool
+		want bool
+	}{
+		{name: "unset defaults enabled", want: true},
+		{name: "explicitly enabled", ptr: &enabled, want: true},
+		{name: "explicitly disabled", ptr: &disabled, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rmc := llamamodels.ModelConfig{PtrSWAFull: tt.ptr}
+			got := vramConfigFromRMC(rmc)
+			if got.SWAFull != tt.want {
+				t.Errorf("SWAFull: got %t, want %t", got.SWAFull, tt.want)
+			}
+		})
+	}
+}
+
 func assertNotFound(t *testing.T, resp any) {
 	t.Helper()
 
