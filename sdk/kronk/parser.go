@@ -8,6 +8,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gemma"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/glm"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gpt"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/kimi"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/mistral"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/qwen"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/standard"
@@ -31,10 +32,10 @@ var defaultParsersOnce sync.Once
 //     claims any fingerprint, ensuring every model resolves to a
 //     parser even when the more specific parsers all decline.
 //
-// DeepSeek is registered before Qwen because DSML is a protocol-specific
-// XML-like format and should take precedence over lineage metadata inherited
-// by a converted model. The remaining parsers inspect architecture + template
-// + name internally and do not overlap.
+// Kimi and DeepSeek are registered before lineage parsers because their
+// protocol-specific formats should take precedence over lineage metadata
+// inherited by converted models. The remaining parsers inspect architecture +
+// template + name internally and do not overlap.
 //
 // This function is idempotent — calling it multiple times has no effect.
 // It is called automatically by NewWithContext, so most callers do not
@@ -45,6 +46,7 @@ var defaultParsersOnce sync.Once
 func registerDefaultParsers() {
 	defaultParsersOnce.Do(func() {
 		model.RegisterParser(gpt.New) // template-only — must be first
+		model.RegisterParser(kimi.New)
 		model.RegisterParser(deepseek.New)
 		model.RegisterParser(qwen.New)
 		model.RegisterParser(gemma.New)
