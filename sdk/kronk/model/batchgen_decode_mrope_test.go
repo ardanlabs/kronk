@@ -7,6 +7,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
+// TestFillMRoPETextPositions verifies generation-batch M-RoPE positions.
 func TestFillMRoPETextPositions(t *testing.T) {
 	positions := make([]llama.Pos, 12)
 	fillMRoPETextPositions(positions, 3, 7)

@@ -121,12 +121,15 @@ func TestFlashAttentionPresence(t *testing.T) {
 
 func TestAdjustConfigUsesOneBatchDefault(t *testing.T) {
 	tests := []struct {
-		name string
-		cfg  Config
+		name       string
+		cfg        Config
+		wantNBatch int
 	}{
-		{"text", NewConfig(WithContextWindow(8192), WithNSeqMax(4))},
-		{"projection", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithProjFile("mmproj.gguf"))},
-		{"MoE CPU experts", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithMoE(&MoEConfig{Mode: MoEModeExpertsCPU}))},
+		{"text", NewConfig(WithContextWindow(8192), WithNSeqMax(4)), defNUBatch * 4},
+		{"projection", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithProjFile("mmproj.gguf")), defNUBatch * 4},
+		{"MoE CPU experts", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithMoE(&MoEConfig{Mode: MoEModeExpertsCPU})), defNUBatch * 4},
+		{"embedding", NewConfig(WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), defNUBatch},
+		{"rerank", NewConfig(WithModelFiles([]string{"bge-reranker-v2-m3-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), defNUBatch},
 	}
 
 	for _, tt := range tests {
@@ -135,8 +138,52 @@ func TestAdjustConfigUsesOneBatchDefault(t *testing.T) {
 			if got := cfg.NUBatch(); got != defNUBatch {
 				t.Errorf("NUBatch: got %d, want %d", got, defNUBatch)
 			}
-			if got, want := cfg.NBatch(), defNUBatch*cfg.NSeqMax(); got != want {
-				t.Errorf("NBatch: got %d, want %d", got, want)
+			if got := cfg.NBatch(); got != tt.wantNBatch {
+				t.Errorf("NBatch: got %d, want %d", got, tt.wantNBatch)
+			}
+		})
+	}
+}
+
+func TestAdjustConfigPreservesExplicitBatchSizes(t *testing.T) {
+	cfg := NewConfig(
+		WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}),
+		WithContextWindow(8192),
+		WithNSeqMax(4),
+		WithNBatch(4096),
+		WithNUBatch(2048),
+	)
+
+	got := adjustConfig(cfg, 0)
+
+	if got.NBatch() != 4096 {
+		t.Errorf("NBatch: got %d, want %d", got.NBatch(), 4096)
+	}
+	if got.NUBatch() != 2048 {
+		t.Errorf("NUBatch: got %d, want %d", got.NUBatch(), 2048)
+	}
+}
+
+func TestBatchSeqTokenLimit(t *testing.T) {
+	tests := []struct {
+		name    string
+		nBatch  int
+		nUBatch int
+		want    int
+	}{
+		{"physical limit smaller", 8192, 2048, 2048},
+		{"logical limit smaller", 1024, 2048, 1024},
+		{"equal limits", 2048, 2048, 2048},
+		{"logical limit unavailable", 0, 2048, 2048},
+		{"physical limit unavailable", 2048, 0, 2048},
+		{"both unavailable", 0, 0, 0},
+		{"negative limits", -1, -1, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := batchSeqTokenLimit(tt.nBatch, tt.nUBatch); got != tt.want {
+				t.Errorf("batchSeqTokenLimit: got %d, want %d", got, tt.want)
 			}
 		})
 	}

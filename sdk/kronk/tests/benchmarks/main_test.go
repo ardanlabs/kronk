@@ -80,6 +80,9 @@ var (
 	benchDenseModelPath  models.Path
 	benchMoEModelPath    models.Path
 	benchHybridModelPath models.Path
+	benchEmbedBatchSeq   models.Path
+	benchRerankFallback  models.Path
+	benchRerankBatchSeq  models.Path
 	benchLog             kronk.Logger
 	benchLogFile         *os.File
 )
@@ -126,6 +129,18 @@ func TestMain(m *testing.M) {
 	// Hybrid target — only needed for BenchmarkHybrid_* benchmarks.
 	if dp, err := mdls.FullPath("Qwen3.6-35B-A3B-UD-Q4_K_M"); err == nil {
 		benchHybridModelPath = dp
+	}
+
+	// Embedding/reranking targets are resolved independently so each benchmark
+	// skips only when its model is unavailable.
+	if dp, err := mdls.FullPath("Qwen3-Embedding-0.6B-Q8_0"); err == nil {
+		benchEmbedBatchSeq = dp
+	}
+	if dp, err := mdls.FullPath("qwen3-reranker-0.6b-q8_0"); err == nil {
+		benchRerankFallback = dp
+	}
+	if dp, err := mdls.FullPath("bge-reranker-v2-m3-Q8_0"); err == nil {
+		benchRerankBatchSeq = dp
 	}
 
 	if err := kronk.Init(); err != nil {

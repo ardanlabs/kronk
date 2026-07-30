@@ -2,10 +2,13 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -17,12 +20,31 @@ import (
 //   - truncate_direction (string): "right" (default) or "left"
 //   - dimensions (int): reduce output to first N dimensions (for Matryoshka models)
 //
-// When NSeqMax > 1, multiple concurrent requests can be processed in parallel,
-// each using one context from the internal pool.
-func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
+// Supported models process inputs together as a multi-sequence batch. Other
+// models use the context-pool fallback.
+func (m *Model) Embeddings(ctx context.Context, d D) (response EmbedReponse, err error) {
 	if !m.modelInfo.IsEmbedModel {
 		return EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")
 	}
+
+	started := time.Now()
+	runtimeName := "context_pool"
+	if m.batchSeq != nil {
+		runtimeName = "batchseq"
+	}
+	totalPromptTokens := 0
+	metrics.AddInferenceActiveRequests(m.modelInfo.ID, "embedding", runtimeName, 1)
+	defer func() {
+		metrics.AddInferenceActiveRequests(m.modelInfo.ID, "embedding", runtimeName, -1)
+		status := "ok"
+		if err != nil {
+			status = "error"
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				status = "cancel"
+			}
+		}
+		metrics.ObserveInferenceRequest(m.modelInfo.ID, "embedding", runtimeName, status, time.Since(started), totalPromptTokens)
+	}()
 
 	var inputs []string
 
@@ -64,16 +86,21 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 
 	// -------------------------------------------------------------------------
 
-	// Acquire a single context from the pool. This allows NSeqMax concurrent
-	// requests to run in parallel, which is more important for server workloads
-	// than parallelizing within a single request.
-	pc, err := m.pool.acquire(ctx)
-	if err != nil {
-		return EmbedReponse{}, err
-	}
-	defer m.pool.release(pc)
+	var embedData []EmbedData
 
-	embedData, totalPromptTokens, err := m.processEmbeddings(ctx, pc, inputs, truncate, direction, nativeDim, int(requestedDim))
+	if m.batchSeq != nil {
+		embedData, totalPromptTokens, err = m.processEmbeddingsBatchSeq(ctx, inputs, truncate, direction, nativeDim, int(requestedDim))
+	} else {
+		// The fallback runtime processes concurrent requests on independent
+		// single-sequence contexts.
+		pc, acquireErr := m.pool.acquire(ctx)
+		if acquireErr != nil {
+			return EmbedReponse{}, acquireErr
+		}
+		defer m.pool.release(pc)
+
+		embedData, totalPromptTokens, err = m.processEmbeddings(ctx, pc, inputs, truncate, direction, nativeDim, int(requestedDim))
+	}
 	if err != nil {
 		return EmbedReponse{}, err
 	}
@@ -92,6 +119,56 @@ func (m *Model) Embeddings(ctx context.Context, d D) (EmbedReponse, error) {
 	}
 
 	return er, nil
+}
+
+// processEmbeddingsBatchSeq processes inputs as multi-sequence batches on one
+// llama context.
+func (m *Model) processEmbeddingsBatchSeq(ctx context.Context, inputs []string, truncate bool, direction string, nativeDim int32, requestedDim int) ([]EmbedData, int, error) {
+	maxTokens := min(m.batchSeq.maxTokens, m.cfg.ContextWindow())
+	items := make([]batchSeqItem, len(inputs))
+	totalTokens := 0
+
+	for i, input := range inputs {
+		if err := ctx.Err(); err != nil {
+			return nil, 0, err
+		}
+
+		tokens := llama.Tokenize(m.vocab, input, m.addBOSToken, true)
+		if len(tokens) > maxTokens {
+			if !truncate {
+				return nil, 0, fmt.Errorf("embeddings: input[%d] has %d tokens but max is %d (set truncate=true to auto-truncate)", i, len(tokens), maxTokens)
+			}
+
+			originalLen := len(tokens)
+			switch direction {
+			case "left":
+				tokens = tokens[len(tokens)-maxTokens:]
+			default:
+				tokens = tokens[:maxTokens]
+			}
+
+			m.log(ctx, "embeddings", "status", "truncated input", "index", i, "original_tokens", originalLen, "max_tokens", maxTokens, "direction", direction, "truncated_tokens", len(tokens))
+		}
+
+		items[i] = batchSeqItem{index: i, tokens: tokens}
+		totalTokens += len(tokens)
+	}
+
+	outputs, err := m.batchSeq.run(ctx, items, int(nativeDim))
+	if err != nil {
+		return nil, 0, fmt.Errorf("embeddings: batchseq inference: %w", err)
+	}
+
+	embedData := make([]EmbedData, len(outputs))
+	for i, output := range outputs {
+		embedData[i] = EmbedData{
+			Object:    "embedding",
+			Index:     i,
+			Embedding: embeddingVector(output, requestedDim),
+		}
+	}
+
+	return embedData, totalTokens, nil
 }
 
 // processEmbeddings processes all inputs on a single context.
@@ -151,20 +228,10 @@ func (m *Model) processEmbeddings(ctx context.Context, pc poolContext, inputs []
 			return nil, 0, fmt.Errorf("embeddings: unable to get embeddings for input[%d]: %w", i, err)
 		}
 
-		// Copy the vector since llama memory is invalidated by MemoryClear.
-		vec := make([]float32, len(rawVec))
-		copy(vec, rawVec)
-
-		if requestedDim > 0 {
-			vec = vec[:requestedDim]
-		}
-
-		vec = normalizeVector(vec)
-
 		embedData[i] = EmbedData{
 			Object:    "embedding",
 			Index:     i,
-			Embedding: vec,
+			Embedding: embeddingVector(rawVec, requestedDim),
 		}
 
 		// Clear KV cache before next input.
@@ -172,6 +239,17 @@ func (m *Model) processEmbeddings(ctx context.Context, pc poolContext, inputs []
 	}
 
 	return embedData, totalTokens, nil
+}
+
+// embeddingVector copies, optionally reduces, and normalizes a native
+// embedding output.
+func embeddingVector(rawVec []float32, requestedDim int) []float32 {
+	vec := slices.Clone(rawVec)
+	if requestedDim > 0 {
+		vec = vec[:requestedDim]
+	}
+
+	return normalizeVector(vec)
 }
 
 // normalizeVector applies L2 normalization to the embedding vector.

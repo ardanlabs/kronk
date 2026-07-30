@@ -1,4 +1,4 @@
-schema: 1
+schema: 3
 providers:
   - unsloth
   - ggml-org
@@ -22,19 +22,6 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T04:36:57.716061Z
-  ggml-org/embeddinggemma-300m-qat-Q8_0:
-    provider: ggml-org
-    family: embeddinggemma-300m-qat-q8_0-GGUF
-    revision: main
-    files:
-      - embeddinggemma-300m-qat-Q8_0.gguf
-    file_sizes:
-      - 328577056
-    model_type: Dense
-    capabilities:
-      endpoint: embeddings
-      embedding: true
-    resolved_at: 2026-04-28T00:03:50Z
   ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0:
     provider: ggml-org
     family: Qwen3-Omni-30B-A3B-Instruct-GGUF
@@ -52,21 +39,6 @@ models:
       images: true
       audio: true
       video: true
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
-  ggml-org/qwen3-reranker-0.6b-q8_0:
-    provider: ggml-org
-    family: Qwen3-Reranker-0.6B-Q8_0-GGUF
-    revision: main
-    files:
-      - qwen3-reranker-0.6b-q8_0.gguf
-    file_sizes:
-      - 639153184
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
       streaming: true
       reasoning: true
       tooling: true
@@ -149,10 +121,8 @@ models:
       - 639150592
     model_type: Dense
     capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
+      endpoint: embeddings
+      embedding: true
     resolved_at: 2026-04-28T00:03:50Z
   unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
     provider: unsloth

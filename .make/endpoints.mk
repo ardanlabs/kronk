@@ -133,7 +133,7 @@ curl-kronk-embeddings:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "ggml-org/embeddinggemma-300m-qat-Q8_0", \
+	 	"model": "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf", \
   		"input": "Why is the sky blue?" \
     }'
 

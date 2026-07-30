@@ -9,7 +9,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// slotCancelError returns an appropriate error for a cancelled slot.
+// slotCancelError returns an appropriate error for a cancelled generation slot.
 // Uses context error if available, otherwise returns a shutdown error.
 func (e *batchEngine) slotCancelError(s *slot) error {
 	if err := s.job.ctx.Err(); err != nil {

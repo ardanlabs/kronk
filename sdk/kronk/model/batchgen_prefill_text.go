@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// addPrefillChunk adds the next chunk of prefill tokens to the batch.
+// addPrefillChunk adds the next chunk of generation prefill tokens to the batch.
 // The chunkLimit parameter caps how many tokens this slot may add in one call,
 // enabling round-robin fair sharing of the tray across slots.
 // Returns false only on shutdown or context cancellation; true otherwise.

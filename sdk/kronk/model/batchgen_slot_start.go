@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// startSlot initializes a slot with a new request.
+// startSlot initializes a generation slot with a new request.
 func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
@@ -849,7 +849,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	// MTP draft: skip the separate draft-prefill path. MTP populates the
 	// draft KV by mirroring the TARGET's prefill chunks (each target
 	// decode emits a pre-norm hidden buffer that we replay into the
-	// draft with batch.embd populated — see batch_mtp.go). The mirror
+	// draft with batch.embd populated — see batchgen_mtp.go). The mirror
 	// step also advances draft.draftNPast in lock-step with the target,
 	// so the draftPrefillNeeded / draftPromptTokens scaffolding used by
 	// the separate-GGUF path would only cause a redundant (and broken,

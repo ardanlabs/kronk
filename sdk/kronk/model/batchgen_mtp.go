@@ -8,7 +8,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// batchTokensAt aliases the token-id range [start..start+count) of a
+// batchTokensAt aliases a generation batch's token-id range [start..start+count) of a
 // llama.Batch as a Go slice. The returned slice shares memory with the
 // underlying C-owned buffer — do not retain past the next batch
 // mutation. Returns nil when bounds are out of range or the batch has
@@ -47,7 +47,7 @@ func batchTokensAt(b llama.Batch, start, count int) []llama.Token {
 //     each draft step to the MTP head's continuation prediction.
 //
 // All MTP paths live in this file. Non-MTP speculative decoding stays
-// in batch_speculative.go and continues to use llama.DraftGenerate.
+// in batchgen_speculative.go and continues to use llama.DraftGenerate.
 
 // mirrorTargetBatchToMTPDraft replays the just-decoded target batch
 // range for slot s into the draft context, with batch.embd populated

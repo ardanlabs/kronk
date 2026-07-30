@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// addPrefillMediaChunk processes the next chunk of a media request.
+// addPrefillMediaChunk processes the next chunk of a generation media request.
 // For text chunks, tokens are added to the shared batch.
 // For image chunks, embeddings are encoded and decoded separately.
 // Returns false if cancelled; true otherwise (even if still prefilling).

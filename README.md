@@ -128,6 +128,13 @@ Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about
 
 The Kronk SDK allows you to write applications that can directly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio). The Bucky SDK provides the same surface for speech-to-text via whisper.cpp — see the [Bucky chapter](.manual/chapter-18-bucky.md).
 
+Generation uses Kronk's generation batch engine. Supported embedding and
+reranking architectures use a separate sequence-batch engine that combines
+complete inputs from concurrent requests on one model context; unverified
+architectures use a context-pool fallback. See
+[Chapter 4](.manual/chapter-04-batch-processing.md) for the runtime and
+`nseq-max` behavior.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./images/project/sdk-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="./images/project/sdk-light.png">

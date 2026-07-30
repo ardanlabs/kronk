@@ -198,7 +198,9 @@ func rejectsInfeasibleRequest(t *testing.T, modelA string, sizeA int64) {
 // returns its bytes to the budget so a re-acquire under the same tight
 // snapshot succeeds.
 func releaseRestoresBudget(t *testing.T, modelA string, sizeA int64) {
-	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA + 64*MiB}
+	// Account for the resman's 5% headroom so its effective budget can hold
+	// the probed footprint plus a small allowance for plan-time variance.
+	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA*100/95 + 64*MiB}
 	mgr := newSyntheticPool(t, snap)
 	defer mgr.Shutdown(context.Background())
 

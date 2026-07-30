@@ -8,9 +8,9 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// contextPool manages a pool of llama contexts for parallel embedding/rerank
-// operations. All contexts share the same underlying model weights, so only
-// the KV cache memory is multiplied per context.
+// contextPool manages a pool of single-sequence llama contexts for parallel
+// embedding/rerank operations. The contexts share the model weights but own
+// independent context memory and compute buffers.
 type contextPool struct {
 	model     llama.Model
 	ctxParams llama.ContextParams
@@ -28,6 +28,7 @@ func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.Cont
 	if n < 1 {
 		n = 1
 	}
+	ctxParams = contextPoolFallbackParams(ctxParams)
 
 	p := &contextPool{
 		model:     model,
@@ -69,6 +70,21 @@ func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.Cont
 	log(ctx, "context-pool", "status", "initialized", "size", n)
 
 	return p, nil
+}
+
+// contextPoolFallbackParams converts aggregate multi-sequence parameters into
+// the single-sequence parameters used by each context in the fallback pool.
+// Each independent context receives one sequence's share of NCtx and does not
+// use unified KV memory.
+func contextPoolFallbackParams(params llama.ContextParams) llama.ContextParams {
+	if params.NSeqMax > 1 && params.NCtx > 0 {
+		params.NCtx /= params.NSeqMax
+	}
+
+	params.NSeqMax = 1
+	params.KVUnified = 0
+
+	return params
 }
 
 // poolContext represents an acquired context from the pool.

@@ -23,7 +23,7 @@ import (
 
 // modelSource is the model to download. It may be a HuggingFace URL,
 // a canonical "provider/modelID", or a bare model id.
-var modelSource = "ggml-org/embeddinggemma-300m-qat-Q8_0"
+var modelSource = "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
 
 // var modelSource = "embeddinggemma-300m-qat-Q8_0"
 

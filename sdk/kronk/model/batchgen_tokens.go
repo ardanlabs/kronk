@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// processSlotToken samples and processes a token for a slot.
+// processSlotToken samples and processes a generated token for a slot.
 func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
 	// Sample the next token. If grammar is active, use grammar-aware sampling
 	// but only when the parser is in the completion phase. During the
