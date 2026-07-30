@@ -7,14 +7,6 @@ import (
 	"time"
 )
 
-const (
-	// DefaultMaxCompleted is the default number of completed summaries retained.
-	DefaultMaxCompleted = 10_000
-
-	defaultPageSize = 50
-	maxPageSize     = 100
-)
-
 var (
 	// ErrClosed is returned when an operation is attempted after shutdown.
 	ErrClosed = errors.New("session tracker is closed")
@@ -29,10 +21,6 @@ var (
 	// ErrRequestMismatch is returned when a completion does not match the
 	// request currently executing for a session.
 	ErrRequestMismatch = errors.New("request does not match active session request")
-
-	// ErrAlreadyCompleted is returned when a completed session key already
-	// exists. Completed summaries are insert-only.
-	ErrAlreadyCompleted = errors.New("session is already completed")
 )
 
 // State identifies the lifecycle group containing a session summary.
@@ -45,7 +33,7 @@ const (
 	// StateIdle identifies a reusable IMC session with no executing request.
 	StateIdle State = "idle"
 
-	// StateCompleted identifies an immutable persisted session summary.
+	// StateCompleted identifies a session that has finished.
 	StateCompleted State = "completed"
 )
 
@@ -112,72 +100,11 @@ func (s Summary) Utilization() float64 {
 	return float64(s.PeakContext) / float64(s.ContextWindow)
 }
 
-// Query controls filtering and offset pagination for List.
-type Query struct {
-	Limit          int
-	Offset         int
-	ModelID        string
-	MinUtilization float64
-}
-
-// Page contains one page of session summaries.
-type Page struct {
-	Sessions   []Summary `json:"sessions"`
-	NextOffset int       `json:"next_offset,omitempty"`
-	HasMore    bool      `json:"has_more"`
-}
-
-// Counts reports the number of summaries in each lifecycle group.
-type Counts struct {
-	Active    int `json:"active"`
-	Idle      int `json:"idle"`
-	Completed int `json:"completed"`
-}
-
-// TokenPercentiles reports context-token distribution values.
-type TokenPercentiles struct {
-	P50 int `json:"p50"`
-	P90 int `json:"p90"`
-	P95 int `json:"p95"`
-	P99 int `json:"p99"`
-	Max int `json:"max"`
-}
-
-// UtilizationPercentiles reports context-window utilization distribution values.
-type UtilizationPercentiles struct {
-	P50 float64 `json:"p50"`
-	P90 float64 `json:"p90"`
-	P95 float64 `json:"p95"`
-	P99 float64 `json:"p99"`
-	Max float64 `json:"max"`
-}
-
-// Overview aggregates Active, Idle, and Completed sessions.
-type Overview struct {
-	Active      int                    `json:"active"`
-	Idle        int                    `json:"idle"`
-	Completed   int                    `json:"completed"`
-	Total       int                    `json:"total"`
-	Context     TokenPercentiles       `json:"context_tokens"`
-	Utilization UtilizationPercentiles `json:"utilization"`
-}
-
 // Observer is the lifecycle contract used by inference and IMC code.
 type Observer interface {
 	RequestStarted(RequestStart) error
 	RequestCompleted(context.Context, RequestCompletion) error
 	SessionCompleted(context.Context, Key) error
-}
-
-func normalizeLimit(limit int) int {
-	switch {
-	case limit <= 0:
-		return defaultPageSize
-	case limit > maxPageSize:
-		return maxPageSize
-	default:
-		return limit
-	}
 }
 
 func eventTime(value time.Time) time.Time {

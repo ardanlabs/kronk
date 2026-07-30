@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
-import type {
-  SessionPageResponse,
-  SessionState,
-  SessionSummary,
-  SessionSummaryResponse,
-} from '../types';
+import type { SessionSummary, SessionsResponse } from '../types';
 
-const PAGE_SIZE = 10;
+type SortKey =
+  | 'model_id'
+  | 'session_id'
+  | 'state'
+  | 'request_count'
+  | 'current_context'
+  | 'peak_context'
+  | 'context_window'
+  | 'utilization'
+  | 'total_processed_tokens'
+  | 'last_active_at';
+
+type SortDirection = 'asc' | 'desc';
 
 function formatNumber(value: number): string {
   return value.toLocaleString();
@@ -17,171 +24,76 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function formatDate(value?: string): string {
-  if (!value) return '—';
+function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
 }
 
-function sessionUtilization(session: SessionSummary): string {
-  if (session.context_window <= 0) return '—';
-  return formatPercent(session.peak_context / session.context_window);
+function utilization(session: SessionSummary): number {
+  if (session.context_window <= 0) return 0;
+  return session.peak_context / session.context_window;
 }
 
-interface SessionTableProps {
-  title: string;
-  state: SessionState;
-  page: SessionPageResponse | null;
-  offset: number;
-  total: number;
-  onOffsetChange: (offset: number) => void;
+function sortValue(session: SessionSummary, key: SortKey): string | number {
+  switch (key) {
+    case 'utilization':
+      return utilization(session);
+    case 'last_active_at':
+      return new Date(session.last_active_at).getTime();
+    case 'current_context':
+    case 'total_processed_tokens':
+      return session[key] ?? 0;
+    default:
+      return session[key];
+  }
 }
 
-function SessionTable({ title, state, page, offset, total, onOffsetChange }: SessionTableProps) {
-  const sessions = page?.sessions ?? [];
-  const first = sessions.length === 0 ? 0 : offset + 1;
-  const last = sessions.length === 0 ? 0 : Math.min(offset + sessions.length, total);
+function compare(a: string | number, b: string | number): number {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b));
+}
 
+interface SortHeadingProps {
+  label: string;
+  column: SortKey;
+  sortKey: SortKey;
+  direction: SortDirection;
+  numeric?: boolean;
+  onSort: (column: SortKey) => void;
+}
+
+function SortHeading({ label, column, sortKey, direction, numeric, onSort }: SortHeadingProps) {
+  const active = sortKey === column;
   return (
-    <div className="card session-table-card">
-      <div className="session-table-heading">
-        <h4>{title} ({formatNumber(total)})</h4>
-        <span>{first}–{last} of {formatNumber(total)}</span>
-      </div>
-      {sessions.length > 0 ? (
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>Session</th>
-                <th style={{ textAlign: 'right' }}>Requests</th>
-                {state !== 'completed' && <th style={{ textAlign: 'right' }}>Current Context</th>}
-                <th style={{ textAlign: 'right' }}>Peak Context</th>
-                <th style={{ textAlign: 'right' }}>Window</th>
-                <th style={{ textAlign: 'right' }}>Utilization</th>
-                <th style={{ textAlign: 'right' }}>Processed</th>
-                <th>Last Active</th>
-                {state === 'completed' && <th>Completed</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map((session) => (
-                <tr key={`${session.model_id}:${session.session_id}`}>
-                  <td>{session.model_id}</td>
-                  <td className="session-id-cell" title={session.session_id}>{session.session_id}</td>
-                  <td style={{ textAlign: 'right' }}>{formatNumber(session.request_count)}</td>
-                  {state !== 'completed' && (
-                    <td style={{ textAlign: 'right' }}>{formatNumber(session.current_context ?? 0)}</td>
-                  )}
-                  <td style={{ textAlign: 'right' }}>{formatNumber(session.peak_context)}</td>
-                  <td style={{ textAlign: 'right' }}>{formatNumber(session.context_window)}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    {sessionUtilization(session)}
-                    {session.context_full && <span className="session-context-full">Full</span>}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>{formatNumber(session.total_processed_tokens ?? 0)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatDate(session.last_active_at)}</td>
-                  {state === 'completed' && <td style={{ whiteSpace: 'nowrap' }}>{formatDate(session.ended_at)}</td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="session-empty">No {title.toLowerCase()} sessions</div>
-      )}
-      <div className="session-pagination">
-        <button
-          className="btn btn-secondary btn-sm"
-          disabled={offset === 0}
-          onClick={() => onOffsetChange(Math.max(0, offset - PAGE_SIZE))}
-        >
-          Previous
-        </button>
-        <button
-          className="btn btn-secondary btn-sm"
-          disabled={!page?.has_more}
-          onClick={() => onOffsetChange(page?.next_offset ?? offset + PAGE_SIZE)}
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function Summary({ summary }: { summary: SessionSummaryResponse }) {
-  const percentileKeys = ['p50', 'p90', 'p95', 'p99', 'max'] as const;
-
-  return (
-    <div className="session-summary">
-      <div className="session-summary-counts">
-        <span><strong>{formatNumber(summary.active)}</strong> Active</span>
-        <span><strong>{formatNumber(summary.idle)}</strong> Idle</span>
-        <span><strong>{formatNumber(summary.completed)}</strong> Completed</span>
-        <span><strong>{formatNumber(summary.total)}</strong> Total</span>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th></th>
-            {percentileKeys.map((key) => <th key={key}>{key.toUpperCase()}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Context tokens</td>
-            {percentileKeys.map((key) => <td key={key}>{formatNumber(summary.context_tokens[key])}</td>)}
-          </tr>
-          <tr>
-            <td>Utilization</td>
-            {percentileKeys.map((key) => <td key={key}>{formatPercent(summary.utilization[key])}</td>)}
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <th
+      className="sortable-th"
+      style={numeric ? { textAlign: 'right' } : undefined}
+      onClick={() => onSort(column)}
+      aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      {label}{active ? (direction === 'asc' ? ' ↑' : ' ↓') : ''}
+    </th>
   );
 }
 
 export default function Sessions() {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [summary, setSummary] = useState<SessionSummaryResponse | null>(null);
-  const [pages, setPages] = useState<Record<SessionState, SessionPageResponse | null>>({
-    active: null,
-    idle: null,
-    completed: null,
-  });
-  const [offsets, setOffsets] = useState<Record<SessionState, number>>({
-    active: 0,
-    idle: 0,
-    completed: 0,
-  });
+  const [data, setData] = useState<SessionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('peak_context');
+  const [direction, setDirection] = useState<SortDirection>('desc');
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const status = await api.getSessionStatus();
-      setEnabled(status.enabled);
-      if (!status.enabled) return;
-
-      const [nextSummary, active, idle, completed] = await Promise.all([
-        api.getSessionSummary(),
-        api.listSessions('active', { limit: PAGE_SIZE, offset: offsets.active }),
-        api.listSessions('idle', { limit: PAGE_SIZE, offset: offsets.idle }),
-        api.listSessions('completed', { limit: PAGE_SIZE, offset: offsets.completed }),
-      ]);
-      setSummary(nextSummary);
-      setPages({ active, idle, completed });
+      setData(await api.listSessions());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load sessions');
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [offsets]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -189,54 +101,88 @@ export default function Sessions() {
     return () => window.clearInterval(id);
   }, [load]);
 
-  const setOffset = (state: SessionState, offset: number) => {
-    setOffsets((current) => ({ ...current, [state]: offset }));
+  const sessions = useMemo(() => {
+    const sorted = [...(data?.sessions ?? [])];
+    sorted.sort((a, b) => {
+      const result = compare(sortValue(a, sortKey), sortValue(b, sortKey));
+      return direction === 'asc' ? result : -result;
+    });
+    return sorted;
+  }, [data, direction, sortKey]);
+
+  const handleSort = (column: SortKey) => {
+    if (column === sortKey) {
+      setDirection((current) => current === 'asc' ? 'desc' : 'asc');
+      return;
+    }
+    setSortKey(column);
+    setDirection(column === 'model_id' || column === 'session_id' || column === 'state' ? 'asc' : 'desc');
   };
 
   return (
     <section className="sessions-section">
-      <div className="sessions-header">
+      <div className="page-header-with-action sessions-header">
         <div>
-          <h3>Sessions</h3>
-          <p>System-wide model context usage across current and completed sessions.</p>
+          <h2>Sessions</h2>
+          <p className="page-description">Latest system-wide context usage held in memory for this server process.</p>
         </div>
-        {enabled && summary && <Summary summary={summary} />}
+        <button className="btn btn-primary" onClick={() => load()} disabled={loading}>Refresh</button>
       </div>
 
       {loading && <div className="card loading">Loading sessions</div>}
       {error && <div className="alert alert-error">{error}</div>}
-      {!loading && !error && enabled === false && (
+      {!loading && !error && data && !data.enabled && (
         <div className="card session-empty">
           Session observability is disabled. Enable it in the server configuration to collect context usage.
         </div>
       )}
-      {!loading && !error && enabled && summary && (
-        <>
-          <SessionTable
-            title="Active"
-            state="active"
-            page={pages.active}
-            offset={offsets.active}
-            total={summary.active}
-            onOffsetChange={(offset) => setOffset('active', offset)}
-          />
-          <SessionTable
-            title="Idle"
-            state="idle"
-            page={pages.idle}
-            offset={offsets.idle}
-            total={summary.idle}
-            onOffsetChange={(offset) => setOffset('idle', offset)}
-          />
-          <SessionTable
-            title="Completed"
-            state="completed"
-            page={pages.completed}
-            offset={offsets.completed}
-            total={summary.completed}
-            onOffsetChange={(offset) => setOffset('completed', offset)}
-          />
-        </>
+      {!loading && !error && data?.enabled && (
+        <div className="card session-table-card">
+          <div className="session-table-heading">
+            <h3>All Sessions ({formatNumber(sessions.length)})</h3>
+          </div>
+          {sessions.length > 0 ? (
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <SortHeading label="Model" column="model_id" sortKey={sortKey} direction={direction} onSort={handleSort} />
+                    <SortHeading label="Session" column="session_id" sortKey={sortKey} direction={direction} onSort={handleSort} />
+                    <SortHeading label="State" column="state" sortKey={sortKey} direction={direction} onSort={handleSort} />
+                    <SortHeading label="Requests" column="request_count" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
+                    <SortHeading label="Current Context" column="current_context" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
+                    <SortHeading label="Peak Context" column="peak_context" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
+                    <SortHeading label="Window" column="context_window" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
+                    <SortHeading label="Utilization" column="utilization" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
+                    <SortHeading label="Processed" column="total_processed_tokens" sortKey={sortKey} direction={direction} numeric onSort={handleSort} />
+                    <SortHeading label="Last Active" column="last_active_at" sortKey={sortKey} direction={direction} onSort={handleSort} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map((session) => (
+                    <tr key={`${session.model_id}:${session.session_id}`}>
+                      <td>{session.model_id}</td>
+                      <td className="session-id-cell" title={session.session_id}>{session.session_id}</td>
+                      <td><span className={`session-state session-state-${session.state}`}>{session.state}</span></td>
+                      <td style={{ textAlign: 'right' }}>{formatNumber(session.request_count)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatNumber(session.current_context ?? 0)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatNumber(session.peak_context)}</td>
+                      <td style={{ textAlign: 'right' }}>{formatNumber(session.context_window)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {formatPercent(utilization(session))}
+                        {session.context_full && <span className="session-context-full">Full</span>}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>{formatNumber(session.total_processed_tokens ?? 0)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{formatDate(session.last_active_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="session-empty">No sessions have been observed by this server process.</div>
+          )}
+        </div>
       )}
     </section>
   );

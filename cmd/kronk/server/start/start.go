@@ -150,9 +150,6 @@ func buildEnvVars(cmd *cobra.Command) []string {
 		v, _ := cmd.Flags().GetBool("sessions-enabled")
 		envVars = append(envVars, "KRONK_SESSIONS_ENABLED="+strconv.FormatBool(v))
 	}
-	if v, _ := cmd.Flags().GetInt("sessions-max-completed"); v != 0 {
-		envVars = append(envVars, "KRONK_SESSIONS_MAX_COMPLETED="+strconv.Itoa(v))
-	}
 
 	// Pool settings
 	if v, _ := cmd.Flags().GetString("model-config-file"); v != "" {

@@ -27,7 +27,5 @@ func Routes(app *web.App, cfg Config) {
 		auth = mid.Authenticate(cfg.AuthClient, true, "")
 	}
 
-	app.HandlerFunc(http.MethodGet, version, "/kronk/sessions/status", api.status, auth)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/sessions/summary", api.summary, auth)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/sessions/{state}", api.list, auth)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/sessions", api.list, auth)
 }

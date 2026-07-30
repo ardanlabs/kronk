@@ -48,7 +48,6 @@ func init() {
 	Cmd.Flags().String("tempo-service-name", "", "Tempo service name")
 	Cmd.Flags().Float64("tempo-probability", -1, "Tempo sampling probability (0.0-1.0)")
 	Cmd.Flags().Bool("sessions-enabled", false, "Enable context session observability")
-	Cmd.Flags().Int("sessions-max-completed", 0, "Maximum completed context session summaries to retain (default: 10000)")
 
 	// Catalog settings
 	Cmd.Flags().String("model-config-file", "", "Special config file for model specific config")

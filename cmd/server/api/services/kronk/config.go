@@ -17,14 +17,6 @@ func validateTimeoutConfig(inferenceTimeout, writeTimeout time.Duration) error {
 	return nil
 }
 
-func validateSessionsConfig(enabled bool, maxCompleted int) error {
-	if enabled && maxCompleted < 1 {
-		return errors.New("configuration: sessions max completed must be greater than zero")
-	}
-
-	return nil
-}
-
 func validateAdminConfig(adminAuth, webAdmin bool, passwordSHA256, authHost string) error {
 	if passwordSHA256 != "" {
 		decoded, err := hex.DecodeString(passwordSHA256)

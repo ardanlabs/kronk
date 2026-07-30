@@ -135,8 +135,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			// this even lower.
 		}
 		Sessions struct {
-			Enabled      bool `conf:"default:true"`
-			MaxCompleted int  `conf:"default:10000"`
+			Enabled bool `conf:"default:true"`
 		}
 		Pool struct {
 			ModelConfigFile string
@@ -185,10 +184,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	if err := validateTimeoutConfig(cfg.Web.InferenceTimeout, cfg.Web.WriteTimeout); err != nil {
 		return err
 	}
-	if err := validateSessionsConfig(cfg.Sessions.Enabled, cfg.Sessions.MaxCompleted); err != nil {
-		return err
-	}
-
 	// -------------------------------------------------------------------------
 	// App Starting
 
@@ -424,16 +419,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	var sessions *sessionobs.Tracker
 	if cfg.Sessions.Enabled {
-		sessionPath := filepath.Join(defaults.BaseDir(cfg.BasePath), "observ", "sessions")
-		sessions, err = sessionobs.New(sessionobs.Config{
-			StorePath:    sessionPath,
-			MaxCompleted: cfg.Sessions.MaxCompleted,
-		})
-		if err != nil {
-			return fmt.Errorf("initializing context session observability: %w", err)
-		}
-
-		log.Info(ctx, "startup", "status", "context session observability enabled", "path", sessionPath, "max-completed", cfg.Sessions.MaxCompleted)
+		sessions = sessionobs.New()
+		log.Info(ctx, "startup", "status", "context session observability enabled")
 		defer func() {
 			log.Info(ctx, "shutdown", "status", "shutting down context session observability")
 			if err := sessions.Shutdown(context.Background()); err != nil {

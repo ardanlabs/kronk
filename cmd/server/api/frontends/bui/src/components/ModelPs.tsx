@@ -4,7 +4,6 @@ import type { ModelDetailsResponse, PoolBudgetResponse } from '../types';
 import { formatBytes } from '../lib/format';
 import { labelWithTip, ParamTooltip } from './ParamTooltips';
 import UsageBar from './UsageBar';
-import Sessions from './Sessions';
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '—';
@@ -323,8 +322,6 @@ export default function ModelPs() {
           </div>
         )}
       </div>
-
-      <Sessions />
     </div>
   );
 }

@@ -3,13 +3,12 @@ package session
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 )
 
 func TestTrackerLifecycle(t *testing.T) {
-	tracker := newTestTracker(t, 10)
+	tracker := New()
 	ctx := context.Background()
 	key := Key{ModelID: "model", SessionID: "session"}
 	start := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
@@ -23,19 +22,16 @@ func TestTrackerLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("start first request: %v", err)
 	}
-
 	if err := tracker.RequestCompleted(ctx, RequestCompletion{
 		Key:          key,
 		RequestID:    "request-1",
 		CompletedAt:  start.Add(time.Minute),
 		PromptTokens: 100,
-		CachedTokens: 0,
 		OutputTokens: 20,
 		Reusable:     true,
 	}); err != nil {
 		t.Fatalf("complete first request: %v", err)
 	}
-
 	if err := tracker.RequestStarted(RequestStart{
 		Key:           key,
 		RequestID:     "request-2",
@@ -45,7 +41,6 @@ func TestTrackerLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("start second request: %v", err)
 	}
-
 	if err := tracker.RequestCompleted(ctx, RequestCompletion{
 		Key:          key,
 		RequestID:    "request-2",
@@ -58,77 +53,70 @@ func TestTrackerLifecycle(t *testing.T) {
 		t.Fatalf("complete second request: %v", err)
 	}
 
-	page, err := tracker.List(ctx, StateIdle, Query{})
+	sessions, err := tracker.List()
 	if err != nil {
-		t.Fatalf("list idle: %v", err)
+		t.Fatalf("list: %v", err)
 	}
-	if len(page.Sessions) != 1 {
-		t.Fatalf("idle summaries: got %d, want 1", len(page.Sessions))
+	if len(sessions) != 1 {
+		t.Fatalf("sessions: got %d, want 1", len(sessions))
 	}
-
-	summary := page.Sessions[0]
-	if summary.RequestCount != 2 {
-		t.Errorf("request count: got %d, want 2", summary.RequestCount)
+	summary := sessions[0]
+	if summary.State != StateIdle {
+		t.Errorf("state: got %q, want %q", summary.State, StateIdle)
 	}
-	if summary.PeakContext != 210 {
-		t.Errorf("peak context: got %d, want 210", summary.PeakContext)
+	if summary.RequestCount != 2 || summary.PeakContext != 210 {
+		t.Errorf("summary accounting: got requests=%d peak=%d", summary.RequestCount, summary.PeakContext)
 	}
-	if summary.TotalCachedTokens != 100 {
-		t.Errorf("cached tokens: got %d, want 100", summary.TotalCachedTokens)
-	}
-	if summary.TotalProcessedTokens != 180 {
-		t.Errorf("processed tokens: got %d, want 180", summary.TotalProcessedTokens)
+	if summary.TotalCachedTokens != 100 || summary.TotalProcessedTokens != 180 {
+		t.Errorf("token accounting: got cached=%d processed=%d", summary.TotalCachedTokens, summary.TotalProcessedTokens)
 	}
 
 	if err := tracker.SessionCompleted(ctx, key); err != nil {
-		t.Fatalf("finalize session: %v", err)
+		t.Fatalf("complete session: %v", err)
 	}
-
-	completed, err := tracker.List(ctx, StateCompleted, Query{})
+	sessions, err = tracker.List()
 	if err != nil {
 		t.Fatalf("list completed: %v", err)
 	}
-	if len(completed.Sessions) != 1 {
-		t.Fatalf("completed summaries: got %d, want 1", len(completed.Sessions))
-	}
-	if completed.Sessions[0].SessionID != key.SessionID {
-		t.Errorf("session ID: got %q, want %q", completed.Sessions[0].SessionID, key.SessionID)
+	if sessions[0].State != StateCompleted || sessions[0].EndedAt == nil {
+		t.Fatalf("completed summary: %+v", sessions[0])
 	}
 }
 
-func TestTrackerNonReusableRequestCompletesImmediately(t *testing.T) {
-	tracker := newTestTracker(t, 10)
-	ctx := context.Background()
-	key := Key{ModelID: "model", SessionID: "request-session"}
-
-	if err := tracker.RequestStarted(RequestStart{
-		Key:           key,
-		RequestID:     "request",
-		ContextWindow: 4_096,
-		PromptTokens:  500,
-	}); err != nil {
-		t.Fatalf("start request: %v", err)
-	}
-	if err := tracker.RequestCompleted(ctx, RequestCompletion{
-		Key:          key,
-		RequestID:    "request",
-		PromptTokens: 500,
-		OutputTokens: 100,
-		Reusable:     false,
-	}); err != nil {
-		t.Fatalf("complete request: %v", err)
+func TestTrackerListSortsByPeakContext(t *testing.T) {
+	tracker := New()
+	for _, test := range []struct {
+		id     string
+		prompt int
+	}{
+		{id: "small", prompt: 100},
+		{id: "large", prompt: 500},
+		{id: "medium", prompt: 250},
+	} {
+		if err := tracker.RequestStarted(RequestStart{
+			Key:          Key{ModelID: "model", SessionID: test.id},
+			RequestID:    "request",
+			PromptTokens: test.prompt,
+		}); err != nil {
+			t.Fatalf("start %s: %v", test.id, err)
+		}
 	}
 
-	counts := tracker.Counts()
-	if counts.Active != 0 || counts.Idle != 0 || counts.Completed != 1 {
-		t.Fatalf("counts: got %+v, want only one completed", counts)
+	sessions, err := tracker.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	want := []string{"large", "medium", "small"}
+	for i, id := range want {
+		if sessions[i].SessionID != id {
+			t.Errorf("session %d: got %q, want %q", i, sessions[i].SessionID, id)
+		}
 	}
 }
 
 func TestTrackerRejectsConcurrentRequest(t *testing.T) {
-	tracker := newTestTracker(t, 10)
+	tracker := New()
 	key := Key{ModelID: "model", SessionID: "session"}
-
 	if err := tracker.RequestStarted(RequestStart{Key: key, RequestID: "one"}); err != nil {
 		t.Fatalf("start request: %v", err)
 	}
@@ -137,158 +125,44 @@ func TestTrackerRejectsConcurrentRequest(t *testing.T) {
 	}
 }
 
-func TestTrackerRetriesCanceledCompletionWithoutDoubleAccounting(t *testing.T) {
-	tracker := newTestTracker(t, 10)
+func TestTrackerCanceledCompletionDoesNotChangeSession(t *testing.T) {
+	tracker := New()
 	key := Key{ModelID: "model", SessionID: "session"}
-	event := RequestCompletion{
-		Key:          key,
-		RequestID:    "request",
-		PromptTokens: 100,
-		CachedTokens: 40,
-		OutputTokens: 20,
-		Reusable:     false,
-	}
-
 	if err := tracker.RequestStarted(RequestStart{Key: key, RequestID: "request"}); err != nil {
 		t.Fatalf("start request: %v", err)
 	}
 
-	canceled, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := tracker.RequestCompleted(canceled, event); !errors.Is(err, context.Canceled) {
-		t.Fatalf("canceled completion: got %v, want context.Canceled", err)
-	}
-	if err := tracker.RequestCompleted(context.Background(), event); err != nil {
-		t.Fatalf("retry completion: %v", err)
+	err := tracker.RequestCompleted(ctx, RequestCompletion{Key: key, RequestID: "request"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("completion error: got %v, want context.Canceled", err)
 	}
 
-	page, err := tracker.List(context.Background(), StateCompleted, Query{})
+	sessions, err := tracker.List()
 	if err != nil {
-		t.Fatalf("list completed: %v", err)
+		t.Fatalf("list: %v", err)
 	}
-	if len(page.Sessions) != 1 {
-		t.Fatalf("completed summaries: got %d, want 1", len(page.Sessions))
-	}
-	if got := page.Sessions[0].TotalCachedTokens; got != 40 {
-		t.Errorf("cached tokens: got %d, want 40", got)
-	}
-	if got := page.Sessions[0].TotalProcessedTokens; got != 60 {
-		t.Errorf("processed tokens: got %d, want 60", got)
+	if sessions[0].State != StateActive {
+		t.Errorf("state: got %q, want %q", sessions[0].State, StateActive)
 	}
 }
 
-func TestTrackerCurrentSummary(t *testing.T) {
-	tracker := newTestTracker(t, 10)
-	ctx := context.Background()
-
-	for i, prompt := range []int{100, 200, 300, 400} {
-		key := Key{ModelID: "model", SessionID: fmt.Sprintf("session-%d", i)}
-		if err := tracker.RequestStarted(RequestStart{
-			Key:           key,
-			RequestID:     "request",
-			ContextWindow: 1_000,
-			PromptTokens:  prompt,
-		}); err != nil {
-			t.Fatalf("start request %d: %v", i, err)
-		}
-		switch i {
-		case 0:
-			if err := tracker.RequestCompleted(ctx, RequestCompletion{
-				Key:          key,
-				RequestID:    "request",
-				PromptTokens: prompt,
-				Reusable:     true,
-			}); err != nil {
-				t.Fatalf("complete request %d: %v", i, err)
-			}
-		case 1:
-			if err := tracker.RequestCompleted(ctx, RequestCompletion{
-				Key:          key,
-				RequestID:    "request",
-				PromptTokens: prompt,
-				Reusable:     false,
-			}); err != nil {
-				t.Fatalf("complete request %d: %v", i, err)
-			}
-		}
+func TestTrackerShutdownDiscardsSessions(t *testing.T) {
+	tracker := New()
+	if err := tracker.RequestStarted(RequestStart{
+		Key:       Key{ModelID: "model", SessionID: "session"},
+		RequestID: "request",
+	}); err != nil {
+		t.Fatalf("start request: %v", err)
 	}
-
-	summary, err := tracker.Summary(ctx)
-	if err != nil {
-		t.Fatalf("summary: %v", err)
-	}
-	if summary.Active != 2 || summary.Idle != 1 || summary.Completed != 1 || summary.Total != 4 {
-		t.Fatalf("session counts: got active=%d idle=%d completed=%d total=%d", summary.Active, summary.Idle, summary.Completed, summary.Total)
-	}
-	if summary.Context.P50 != 200 || summary.Context.P90 != 400 || summary.Context.P99 != 400 || summary.Context.Max != 400 {
-		t.Fatalf("context percentiles: got %+v", summary.Context)
-	}
-	if summary.Utilization.P50 != 0.2 || summary.Utilization.P90 != 0.4 || summary.Utilization.Max != 0.4 {
-		t.Fatalf("utilization percentiles: got %+v", summary.Utilization)
-	}
-}
-
-func TestTrackerShutdownPersistsLiveSessions(t *testing.T) {
-	path := t.TempDir()
-	tracker, err := New(Config{StorePath: path, MaxCompleted: 10})
-	if err != nil {
-		t.Fatalf("new tracker: %v", err)
-	}
-
-	for i, reusable := range []bool{false, true} {
-		key := Key{ModelID: "model", SessionID: fmt.Sprintf("session-%d", i)}
-		if err := tracker.RequestStarted(RequestStart{Key: key, RequestID: "request"}); err != nil {
-			t.Fatalf("start request %d: %v", i, err)
-		}
-		if reusable {
-			if err := tracker.RequestCompleted(context.Background(), RequestCompletion{
-				Key:       key,
-				RequestID: "request",
-				Reusable:  true,
-			}); err != nil {
-				t.Fatalf("idle request %d: %v", i, err)
-			}
-		}
-	}
-
 	if err := tracker.Shutdown(context.Background()); err != nil {
 		t.Fatalf("shutdown: %v", err)
 	}
-
-	reopened, err := New(Config{StorePath: path, MaxCompleted: 10})
-	if err != nil {
-		t.Fatalf("reopen tracker: %v", err)
+	if _, err := tracker.List(); !errors.Is(err, ErrClosed) {
+		t.Fatalf("list after shutdown: got %v, want ErrClosed", err)
 	}
-	t.Cleanup(func() {
-		if err := reopened.Shutdown(context.Background()); err != nil {
-			t.Errorf("close reopened tracker: %v", err)
-		}
-	})
-
-	page, err := reopened.List(context.Background(), StateCompleted, Query{})
-	if err != nil {
-		t.Fatalf("list completed: %v", err)
+	if len(tracker.sessions) != 0 {
+		t.Fatalf("sessions after shutdown: got %d, want 0", len(tracker.sessions))
 	}
-	if len(page.Sessions) != 2 {
-		t.Fatalf("completed summaries: got %d, want 2", len(page.Sessions))
-	}
-}
-
-func newTestTracker(t *testing.T, maxCompleted int) *Tracker {
-	t.Helper()
-
-	tracker, err := New(Config{
-		StorePath:    t.TempDir(),
-		MaxCompleted: maxCompleted,
-	})
-	if err != nil {
-		t.Fatalf("new tracker: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := tracker.Shutdown(context.Background()); err != nil {
-			t.Errorf("shutdown tracker: %v", err)
-		}
-	})
-
-	return tracker
 }

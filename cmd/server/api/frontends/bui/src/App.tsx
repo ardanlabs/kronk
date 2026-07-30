@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import Layout from './components/Layout';
 import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
+import Sessions from './components/Sessions';
 import Diagnose from './components/Diagnose';
 import ModelPull from './components/ModelPull';
 import KMSPull from './components/KMSPull';
@@ -71,6 +72,7 @@ export type Page =
   | 'diagnose'
   | 'model-list'
   | 'model-ps'
+  | 'sessions'
   | 'model-pull'
   | 'kms-pull'
   | 'catalog-list'
@@ -120,6 +122,7 @@ export const routeMap: Record<Page, string> = {
   'diagnose': '/system/info',
   'model-list': '/models',
   'model-ps': '/system/running',
+  'sessions': '/system/sessions',
   'model-pull': '/models/pull',
   'kms-pull': '/models/kms-pull',
   'catalog-list': '/catalog',
@@ -264,6 +267,7 @@ function App() {
                 <Route path="/testing/configurator" element={<TestingConfiguration />} />
                 <Route path="/system/info" element={<Diagnose />} />
                 <Route path="/system/running" element={<ModelPs />} />
+                <Route path="/system/sessions" element={<Sessions />} />
                 <Route path="/models" element={<ModelList />} />
                 <Route path="/models/pull" element={<ModelPull />} />
                 <Route path="/models/kms-pull" element={<KMSPull />} />

@@ -91,35 +91,6 @@ export interface PoolBudgetResponse {
 
 export type SessionState = 'active' | 'idle' | 'completed';
 
-export interface SessionStatusResponse {
-  enabled: boolean;
-}
-
-export interface SessionTokenPercentiles {
-  p50: number;
-  p90: number;
-  p95: number;
-  p99: number;
-  max: number;
-}
-
-export interface SessionUtilizationPercentiles {
-  p50: number;
-  p90: number;
-  p95: number;
-  p99: number;
-  max: number;
-}
-
-export interface SessionSummaryResponse {
-  active: number;
-  idle: number;
-  completed: number;
-  total: number;
-  context_tokens: SessionTokenPercentiles;
-  utilization: SessionUtilizationPercentiles;
-}
-
 export interface SessionSummary {
   model_id: string;
   session_id: string;
@@ -140,17 +111,9 @@ export interface SessionSummary {
   incomplete?: boolean;
 }
 
-export interface SessionPageResponse {
+export interface SessionsResponse {
+  enabled: boolean;
   sessions: SessionSummary[];
-  next_offset?: number;
-  has_more: boolean;
-}
-
-export interface SessionListQuery {
-  limit?: number;
-  offset?: number;
-  model_id?: string;
-  min_utilization?: number;
 }
 
 export type ModelLoadMode = 'mmap' | 'none' | 'mlock' | 'direct-io';
