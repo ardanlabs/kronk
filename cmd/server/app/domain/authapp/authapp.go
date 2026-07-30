@@ -3,12 +3,14 @@ package authapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/rate"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -65,18 +67,18 @@ func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*Auth
 
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("no metadata")
+		return nil, status.Error(codes.Unauthenticated, "authentication failed")
 	}
 
 	bearerToken := md.Get("authorization")
 	if len(bearerToken) == 0 {
-		return nil, fmt.Errorf("unauthorized: no authorization header")
+		return nil, status.Error(codes.Unauthenticated, "authentication failed")
 	}
 
 	claims, err := a.security.Authenticate(ctx, bearerToken[0], req.GetAdmin(), req.GetEndpoint())
 	if err != nil {
 		a.log.Error(ctx, "authenticate", "err", err)
-		return nil, status.Error(codes.Unauthenticated, "authentication failed")
+		return nil, authenticationError(err)
 	}
 
 	arb := AuthenticateResponse_builder{
@@ -161,6 +163,21 @@ func (a *App) RemoveKey(ctx context.Context, req *RemoveKeyRequest) (*RemoveKeyR
 	}
 
 	return &RemoveKeyResponse{}, nil
+}
+
+// =============================================================================
+
+func authenticationError(err error) error {
+	switch {
+	case errors.Is(err, security.ErrUnauthenticated):
+		return status.Error(codes.Unauthenticated, "authentication failed")
+	case errors.Is(err, auth.ErrForbidden):
+		return status.Error(codes.PermissionDenied, "permission denied")
+	case errors.Is(err, rate.ErrRateLimitExceeded):
+		return status.Error(codes.ResourceExhausted, "rate limit exceeded")
+	default:
+		return status.Error(codes.Internal, "authentication service failure")
+	}
 }
 
 // =============================================================================

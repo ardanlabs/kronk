@@ -65,6 +65,11 @@ func run(ctx context.Context, log *logger.Logger) error {
 		}
 		Auth struct {
 			Host string
+			TLS  struct {
+				Enabled    bool `conf:"default:false"`
+				CAFile     string
+				ServerName string
+			}
 		}
 	}{
 		Version: conf.Version{
@@ -123,7 +128,18 @@ func run(ctx context.Context, log *logger.Logger) error {
 			return errors.New("configuration: MCP authentication requires an auth host")
 		}
 
-		authClient, err := authclient.New(log, cfg.Auth.Host)
+		var authClientOpts []func(*authclient.Client)
+		if cfg.Auth.TLS.Enabled {
+			creds, err := authclient.TLSCredentials(cfg.Auth.TLS.CAFile, cfg.Auth.TLS.ServerName)
+			if err != nil {
+				return fmt.Errorf("failed to initialize authentication TLS: %w", err)
+			}
+			authClientOpts = append(authClientOpts, authclient.WithTransportCredentials(creds))
+		} else {
+			log.Warn(ctx, "startup", "status", "external authentication uses plaintext transport", "host", cfg.Auth.Host)
+		}
+
+		authClient, err := authclient.New(log, cfg.Auth.Host, authClientOpts...)
 		if err != nil {
 			return fmt.Errorf("failed to initialize authentication client: %w", err)
 		}

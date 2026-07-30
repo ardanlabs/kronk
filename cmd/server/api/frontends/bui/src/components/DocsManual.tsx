@@ -2362,7 +2362,7 @@ curl http://localhost:11435/v1/chat/completions \\
     "model": "Qwen/Qwen3-8B-Q8_0",
     "messages": [{"role": "user", "content": "Hello"}]
   }'`}</code></pre>
-          <p>Kronk verifies the signature, issuer, expiration, required admin status or endpoint grant, and quota before processing a protected request. Authentication, missing-grant, and exhausted-quota failures currently all cross the auth boundary as <code>401 Unauthorized</code>; clients should not expect distinct 403 or 429 responses from this path.</p>
+          <p>Kronk verifies the signature, issuer, expiration, required admin status or endpoint grant, and quota before processing a protected request. Authentication, missing-grant, and exhausted-quota failures return <code>401 Unauthorized</code>, <code>403 Forbidden</code>, and <code>429 Too Many Requests</code>, respectively. Authentication service failures return <code>500 Internal Server Error</code>, while unavailable external auth services return <code>503 Service Unavailable</code>.</p>
           <h2 id="126-key-rotation-and-revocation">12.6 Key Rotation and Revocation</h2>
           <p>Security commands use the running server by default:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security key list
@@ -2411,15 +2411,32 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
                 <td><code>KRONK_AUTH_HOST</code></td>
                 <td>Connect to an external auth service instead.</td>
               </tr>
+              <tr>
+                <td><code>--auth-tls-enabled</code></td>
+                <td><code>KRONK_AUTH_TLS_ENABLED</code></td>
+                <td>Use TLS for an external auth connection.</td>
+              </tr>
+              <tr>
+                <td><code>--auth-tls-ca-file</code></td>
+                <td><code>KRONK_AUTH_TLS_CA_FILE</code></td>
+                <td>Trust the certificates in this PEM CA file instead of the system roots.</td>
+              </tr>
+              <tr>
+                <td><code>--auth-tls-server-name</code></td>
+                <td><code>KRONK_AUTH_TLS_SERVER_NAME</code></td>
+                <td>Override the TLS certificate server name.</td>
+              </tr>
             </tbody>
           </table>
-          <p>Setting <code>KRONK_AUTH_HOST</code> skips embedded auth startup. The standalone <code>auth</code> service uses <code>AUTH_AUTH_HOST</code> (default <code>localhost:6000</code>), <code>AUTH_AUTH_ISSUER</code> (default <code>kronk project</code>), and <code>AUTH_AUTH_ENABLED</code>. The server and auth service must agree on issuer and protection policy.</p>
+          <p>Setting <code>KRONK_AUTH_HOST</code> skips embedded auth startup. The standalone <code>auth</code> service uses <code>AUTH_AUTH_HOST</code> (default <code>localhost:6000</code>), <code>AUTH_AUTH_ISSUER</code> (default <code>kronk project</code>), and <code>AUTH_AUTH_ENABLED</code>. Set <code>AUTH_AUTH_TLS_ENABLED=true</code>, <code>AUTH_AUTH_TLS_CERT_FILE</code>, and <code>AUTH_AUTH_TLS_KEY_FILE</code> to serve TLS. The Kronk client and auth service must agree on issuer, protection policy, and transport security. External plaintext connections remain supported for compatibility but produce a startup warning.</p>
+          <p>The standalone MCP service uses <code>MCP_AUTH_TLS_ENABLED</code>, <code>MCP_AUTH_TLS_CA_FILE</code>, and <code>MCP_AUTH_TLS_SERVER_NAME</code> for its connection to the auth service.</p>
           <p>CLI web mode reads <code>KRONK_WEB_API_HOST</code>, which defaults to <code>localhost:11435</code>.</p>
           <h2 id="128-production-hardening">12.8 Production Hardening</h2>
           <p>Kronk listens on <code>0.0.0.0:11435</code> and serves plain HTTP by default. For any traffic outside a trusted host:</p>
           <ul>
             <li>enable full or admin authentication as appropriate;</li>
             <li>terminate TLS at a trusted reverse proxy and do not expose the API port directly to the public internet;</li>
+            <li>enable auth TLS whenever the auth service is reached across an untrusted network, or use an authenticated encrypted service mesh;</li>
             <li>restrict network access with host or cloud firewall rules;</li>
             <li>restrict <code>KRONK_WEB_CORS_ALLOWED_ORIGINS</code> instead of retaining <code>*</code>;</li>
             <li>issue separate, short-lived, least-privilege tokens for each application;</li>

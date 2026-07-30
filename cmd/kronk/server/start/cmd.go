@@ -34,6 +34,9 @@ func init() {
 	Cmd.Flags().Bool("admin-auth-enabled", false, "Require admin authentication for management APIs")
 	Cmd.Flags().Bool("web-admin-enabled", false, "Serve the browser admin UI at /admin/")
 	Cmd.Flags().String("auth-host", "", "External auth service host")
+	Cmd.Flags().Bool("auth-tls-enabled", false, "Use TLS for the external auth service")
+	Cmd.Flags().String("auth-tls-ca-file", "", "CA certificate file for the external auth service")
+	Cmd.Flags().String("auth-tls-server-name", "", "TLS server name for the external auth service")
 	Cmd.Flags().String("auth-issuer", "", "Local auth issuer name")
 	Cmd.Flags().String("web-admin-password-sha-256", "", "SHA-256 digest for browser admin login")
 

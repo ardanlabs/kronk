@@ -16,8 +16,10 @@ import (
 // Specific error variables for auth failures.
 var (
 	ErrForbidden       = errors.New("attempted action is not allowed")
+	ErrInvalidToken    = errors.New("invalid token")
 	ErrKIDMissing      = errors.New("kid missing from token header")
 	ErrKIDMalformed    = errors.New("kid in token header is malformed")
+	ErrKIDUnknown      = errors.New("kid not found")
 	ErrUserDisabled    = errors.New("user is disabled")
 	ErrInvalidAuthOPA  = errors.New("OPA policy evaluation failed for authentication")
 	ErrInvalidAuthzOPA = errors.New("OPA policy evaluation failed for authorization")
@@ -113,7 +115,7 @@ func (a *Auth) GenerateToken(claims Claims) (string, error) {
 // Authenticate processes the token to validate the sender's token is valid.
 func (a *Auth) Authenticate(ctx context.Context, bearerToken string) (Claims, error) {
 	if !strings.HasPrefix(bearerToken, "Bearer ") {
-		return Claims{}, errors.New("expected authorization header format: Bearer <token>")
+		return Claims{}, fmt.Errorf("%w: expected authorization header format: Bearer <token>", ErrInvalidToken)
 	}
 
 	jwtUnverified := bearerToken[7:]
@@ -121,21 +123,25 @@ func (a *Auth) Authenticate(ctx context.Context, bearerToken string) (Claims, er
 	var claims Claims
 	token, _, err := a.parser.ParseUnverified(jwtUnverified, &claims)
 	if err != nil {
-		return Claims{}, fmt.Errorf("error parsing token: %w", err)
+		return Claims{}, fmt.Errorf("%w: error parsing token: %w", ErrInvalidToken, err)
 	}
 
 	kidRaw, exists := token.Header["kid"]
 	if !exists {
-		return Claims{}, ErrKIDMissing
+		return Claims{}, fmt.Errorf("%w: %w", ErrInvalidToken, ErrKIDMissing)
 	}
 
 	kid, ok := kidRaw.(string)
 	if !ok {
-		return Claims{}, ErrKIDMalformed
+		return Claims{}, fmt.Errorf("%w: %w", ErrInvalidToken, ErrKIDMalformed)
 	}
 
 	pem, err := a.keyLookup.PublicKey(kid)
 	if err != nil {
+		if errors.Is(err, ErrKIDUnknown) {
+			return Claims{}, fmt.Errorf("%w: fetching public key for kid %q: %w", ErrInvalidToken, kid, err)
+		}
+
 		return Claims{}, fmt.Errorf("fetching public key for kid %q: %w", kid, err)
 	}
 
@@ -199,7 +205,7 @@ func (a *Auth) opaAuthentication(ctx context.Context, input any) error {
 	valid, _ := resultMap["valid"].(bool)
 	if !valid {
 		errMsg, _ := resultMap["error"].(string)
-		return fmt.Errorf("%w: %s", ErrInvalidAuthOPA, errMsg)
+		return fmt.Errorf("%w: %w: %s", ErrInvalidToken, ErrInvalidAuthOPA, errMsg)
 	}
 
 	return nil

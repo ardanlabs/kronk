@@ -909,14 +909,14 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 
 // =============================================================================
 
-func chatEndpoint401(tokens map[string]string) []apitest.Table {
+func chatEndpoint403(tokens map[string]string) []apitest.Table {
 	table := []apitest.Table{
 		{
 			Name:       "bad-token",
 			URL:        "/v1/chat/completions",
 			Token:      tokens["embeddings"],
 			Method:     http.MethodPost,
-			StatusCode: http.StatusUnauthorized,
+			StatusCode: http.StatusForbidden,
 			Input: model.D{
 				"model": "Qwen3-8B-Q8_0",
 				"messages": model.DocumentArray(
@@ -925,8 +925,8 @@ func chatEndpoint401(tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &errs.Error{},
 			ExpResp: &errs.Error{
-				Code:    errs.Unauthenticated,
-				Message: "rpc error: code = Unauthenticated desc = authentication failed",
+				Code:    errs.PermissionDenied,
+				Message: "rpc error: code = PermissionDenied desc = permission denied",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,

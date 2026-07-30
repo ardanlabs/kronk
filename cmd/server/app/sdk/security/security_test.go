@@ -2,6 +2,7 @@ package security_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -61,6 +62,35 @@ func TestAuthenticateWithoutEndpointRestriction(t *testing.T) {
 
 	if _, err := sec.Authenticate(context.Background(), "Bearer "+token, false, ""); err != nil {
 		t.Fatalf("failed to authenticate without endpoint restriction: %v", err)
+	}
+}
+
+func TestAuthenticateClassifiesInternalFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sec, err := security.New(security.Config{
+		OverrideBaseKeysFolder: tmpDir,
+		Issuer:                 "test-issuer",
+	})
+	if err != nil {
+		t.Fatalf("failed to create security: %v", err)
+	}
+	defer sec.Close()
+
+	token, err := sec.GenerateToken(true, nil, time.Hour)
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = sec.Authenticate(ctx, "Bearer "+token, true, "")
+	if err == nil {
+		t.Fatal("Authenticate: got nil, want error")
+	}
+	if errors.Is(err, security.ErrUnauthenticated) {
+		t.Fatalf("Authenticate: got %v classified as unauthenticated, want internal failure", err)
 	}
 }
 
@@ -154,6 +184,72 @@ func TestDeletePrivateKey_Master(t *testing.T) {
 	masterFile := filepath.Join(tmpDir, "keys", "master.pem")
 	if _, err := os.Stat(masterFile); err != nil {
 		t.Fatalf("master key should still exist: %v", err)
+	}
+}
+
+func TestDeletePrivateKey_InvalidID(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sec, err := security.New(security.Config{
+		OverrideBaseKeysFolder: tmpDir,
+		Issuer:                 "test-issuer",
+	})
+	if err != nil {
+		t.Fatalf("failed to create security: %v", err)
+	}
+	defer sec.Close()
+
+	invalidIDs := []string{
+		"MASTER",
+		"../keys/master",
+		"../../outside",
+		"key/name",
+		`key\name`,
+		"",
+		".",
+		"..",
+		"./key",
+		"key/../other",
+	}
+
+	for _, keyID := range invalidIDs {
+		t.Run(keyID, func(t *testing.T) {
+			if err := sec.DeletePrivateKey(keyID); err == nil {
+				t.Fatalf("DeletePrivateKey(%q): got nil, want error", keyID)
+			}
+		})
+	}
+
+	masterFile := filepath.Join(tmpDir, "keys", "master.pem")
+	if _, err := os.Stat(masterFile); err != nil {
+		t.Fatalf("master key should still exist: %v", err)
+	}
+}
+
+func TestDeletePrivateKey_LegacyID(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sec, err := security.New(security.Config{
+		OverrideBaseKeysFolder: tmpDir,
+		Issuer:                 "test-issuer",
+	})
+	if err != nil {
+		t.Fatalf("failed to create security: %v", err)
+	}
+	defer sec.Close()
+
+	keysPath := filepath.Join(tmpDir, "keys")
+	generatedFile := filepath.Join(keysPath, findNonMasterKey(t, keysPath)+".pem")
+	legacyFile := filepath.Join(keysPath, "legacy-key_2024.pem")
+	if err := os.Rename(generatedFile, legacyFile); err != nil {
+		t.Fatalf("rename generated key: %v", err)
+	}
+
+	if err := sec.DeletePrivateKey("legacy-key_2024"); err != nil {
+		t.Fatalf("DeletePrivateKey: got %v, want nil", err)
+	}
+	if _, err := os.Stat(legacyFile); !os.IsNotExist(err) {
+		t.Errorf("legacy key file should be deleted")
 	}
 }
 

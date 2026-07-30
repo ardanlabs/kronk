@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
@@ -21,6 +22,9 @@ var (
 	localFolder = "keys"
 	masterFile  = "master"
 )
+
+// ErrUnauthenticated is returned when bearer token authentication fails.
+var ErrUnauthenticated = errors.New("authentication failed")
 
 // Config represents the config needed to construct the security API.
 type Config struct {
@@ -92,7 +96,11 @@ func (sec *Security) BaseKeysFolder() string {
 func (sec *Security) Authenticate(ctx context.Context, bearerToken string, admin bool, endpoint string) (auth.Claims, error) {
 	claims, err := sec.auth.Authenticate(ctx, bearerToken)
 	if err != nil {
-		return auth.Claims{}, fmt.Errorf("invalid token: %w", err)
+		if errors.Is(err, auth.ErrInvalidToken) {
+			return auth.Claims{}, fmt.Errorf("%w: invalid token: %w", ErrUnauthenticated, err)
+		}
+
+		return auth.Claims{}, fmt.Errorf("token authentication failed: %w", err)
 	}
 
 	err = sec.auth.Authorize(ctx, claims, admin, endpoint)
@@ -199,13 +207,24 @@ func (sec *Security) AddPrivateKey() error {
 // DeletePrivateKey removes a key from the system. Once this happens no tokens
 // created with this key will authenticate.
 func (sec *Security) DeletePrivateKey(keyID string) error {
-	if keyID == masterFile {
+	if strings.EqualFold(keyID, masterFile) {
 		return errors.New("delete-private-key: master key cannot be deleted")
+	}
+	if keyID == "" || keyID == "." || keyID == ".." || strings.ContainsAny(keyID, `/\`) || filepath.Clean(keyID) != keyID {
+		return fmt.Errorf("delete-private-key: invalid key ID %q", keyID)
 	}
 
 	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
 	keysPath := filepath.Join(basePath, localFolder)
-	keyFile := filepath.Join(keysPath, fmt.Sprintf("%s.pem", keyID))
+	absKeysPath, err := filepath.Abs(keysPath)
+	if err != nil {
+		return fmt.Errorf("delete-private-key: unable to resolve keys path: %w", err)
+	}
+
+	keyFile := filepath.Join(absKeysPath, fmt.Sprintf("%s.pem", keyID))
+	if filepath.Dir(keyFile) != absKeysPath {
+		return fmt.Errorf("delete-private-key: invalid key ID %q", keyID)
+	}
 
 	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
 		return fmt.Errorf("delete-private-key: key %q does not exist", keyID)
@@ -215,7 +234,7 @@ func (sec *Security) DeletePrivateKey(keyID string) error {
 		return fmt.Errorf("delete-private-key: unable to remove: %w", err)
 	}
 
-	if _, err := sec.ks.LoadByFileSystem(os.DirFS(keysPath)); err != nil {
+	if _, err := sec.ks.LoadByFileSystem(os.DirFS(absKeysPath)); err != nil {
 		return fmt.Errorf("delete-private-key: unable to load by file system: %w", err)
 	}
 

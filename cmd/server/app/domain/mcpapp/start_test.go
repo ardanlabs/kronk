@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestAuthenticate(t *testing.T) {
@@ -39,11 +41,46 @@ func TestAuthenticate(t *testing.T) {
 			wantCalled: true,
 		},
 		{
-			name: "unauthorized",
+			name: "unauthenticated",
+			authenticate: func(_ context.Context, _ string) error {
+				return status.Error(codes.Unauthenticated, "authentication failed")
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "permission denied",
+			authenticate: func(_ context.Context, _ string) error {
+				return status.Error(codes.PermissionDenied, "permission denied")
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name: "rate limited",
+			authenticate: func(_ context.Context, _ string) error {
+				return status.Error(codes.ResourceExhausted, "rate limited")
+			},
+			wantStatus: http.StatusTooManyRequests,
+		},
+		{
+			name: "unavailable",
+			authenticate: func(_ context.Context, _ string) error {
+				return status.Error(codes.Unavailable, "unavailable")
+			},
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name: "deadline",
+			authenticate: func(_ context.Context, _ string) error {
+				return status.Error(codes.DeadlineExceeded, "deadline")
+			},
+			wantStatus: http.StatusGatewayTimeout,
+		},
+		{
+			name: "internal",
 			authenticate: func(_ context.Context, _ string) error {
 				return errors.New("authentication failed")
 			},
-			wantStatus: http.StatusUnauthorized,
+			wantStatus: http.StatusInternalServerError,
 		},
 	}
 
@@ -67,6 +104,9 @@ func TestAuthenticate(t *testing.T) {
 			}
 			if called != tt.wantCalled {
 				t.Errorf("called: got %t, want %t", called, tt.wantCalled)
+			}
+			if got := rec.Header().Get("WWW-Authenticate"); (tt.wantStatus == http.StatusUnauthorized) != (got == "Bearer") {
+				t.Errorf("WWW-Authenticate: got %q for status %d", got, tt.wantStatus)
 			}
 		})
 	}

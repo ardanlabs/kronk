@@ -18,6 +18,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"google.golang.org/grpc/credentials"
 )
 
 var tag = "develop"
@@ -62,6 +63,11 @@ func run(ctx context.Context, log *logger.Logger) error {
 			Host    string `conf:"default:0.0.0.0:6000"`
 			Issuer  string `conf:"default:kronk project"`
 			Enabled bool   `conf:"default:false"`
+			TLS     struct {
+				Enabled  bool `conf:"default:false"`
+				CertFile string
+				KeyFile  string
+			}
 		}
 		Tempo struct {
 			Host        string  `conf:"default:tempo:4317"`
@@ -162,12 +168,23 @@ func run(ctx context.Context, log *logger.Logger) error {
 		return fmt.Errorf("failed to listen on host %s : %w", cfg.Auth.Host, err)
 	}
 
+	var authCredentials credentials.TransportCredentials
+	if cfg.Auth.TLS.Enabled {
+		authCredentials, err = credentials.NewServerTLSFromFile(cfg.Auth.TLS.CertFile, cfg.Auth.TLS.KeyFile)
+		if err != nil {
+			return fmt.Errorf("failed to initialize authentication TLS: %w", err)
+		}
+	} else {
+		log.Warn(ctx, "startup", "status", "authentication service uses plaintext transport", "host", cfg.Auth.Host)
+	}
+
 	authApp := authapp.Start(ctx, authapp.Config{
-		Log:      log,
-		Security: sec,
-		Listener: lis,
-		Tracer:   tracer,
-		Enabled:  cfg.Auth.Enabled,
+		Log:         log,
+		Security:    sec,
+		Listener:    lis,
+		Tracer:      tracer,
+		Enabled:     cfg.Auth.Enabled,
+		Credentials: authCredentials,
 	})
 
 	defer authApp.Shutdown(ctx)

@@ -87,15 +87,15 @@ func Test_API(t *testing.T) {
 	test.Run(t, audioTranscriptions200(t, tokens), "audio-transcriptions-200")
 
 	// -------------------------------------------------------------------------
-	// Auth tests (don't require model loading, use invalid tokens)
+	// Auth tests (don't require model loading, use tokens without the required grant)
 
-	test.Run(t, chatEndpoint401(tokens), "chatEndpoint-401")
-	test.Run(t, respEndpoint401(tokens), "respEndpoint-401")
-	test.Run(t, msgsEndpoint401(tokens), "msgsEndpoint-401")
-	test.Run(t, embed401(tokens), "embedding-401")
-	test.Run(t, rerank401(tokens), "rerank-401")
-	test.Run(t, tokenize401(tokens), "tokenize-401")
-	test.Run(t, audioTranscriptions401(t, tokens), "audio-transcriptions-401")
+	test.Run(t, chatEndpoint403(tokens), "chatEndpoint-403")
+	test.Run(t, respEndpoint403(tokens), "respEndpoint-403")
+	test.Run(t, msgsEndpoint403(tokens), "msgsEndpoint-403")
+	test.Run(t, embed403(tokens), "embedding-403")
+	test.Run(t, rerank403(tokens), "rerank-403")
+	test.Run(t, tokenize403(tokens), "tokenize-403")
+	test.Run(t, audioTranscriptions403(t, tokens), "audio-transcriptions-403")
 }
 
 // =============================================================================

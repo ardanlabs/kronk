@@ -2,6 +2,8 @@ package rate_test
 
 import (
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
@@ -23,6 +25,57 @@ func Test_Rate(t *testing.T) {
 	t.Run("day", day(limiter))
 	t.Run("month", month(limiter))
 	t.Run("year", year(limiter))
+}
+
+func Test_RateConcurrentAdmission(t *testing.T) {
+	limiter, err := rate.New(rate.Config{
+		DBPath: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("should be able to construct rate limiter: %s", err)
+	}
+	defer limiter.Close()
+
+	const (
+		calls = 100
+		max   = 10
+	)
+
+	limit := auth.RateLimit{Limit: max, Window: auth.RateDay}
+	var successes atomic.Int64
+	var exceeded atomic.Int64
+	errCh := make(chan error, calls)
+	start := make(chan struct{})
+
+	var wg sync.WaitGroup
+	for range calls {
+		wg.Go(func() {
+			<-start
+			err := limiter.Check("concurrent-user", "endpoint", limit)
+			switch {
+			case err == nil:
+				successes.Add(1)
+			case errors.Is(err, rate.ErrRateLimitExceeded):
+				exceeded.Add(1)
+			default:
+				errCh <- err
+			}
+		})
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("Check: got internal error %v, want ErrRateLimitExceeded", err)
+	}
+	if got := successes.Load(); got != max {
+		t.Errorf("successful calls: got %d, want %d", got, max)
+	}
+	if got := exceeded.Load(); got != calls-max {
+		t.Errorf("rate-limited calls: got %d, want %d", got, calls-max)
+	}
 }
 
 func unlimited(limiter *rate.Limiter) func(t *testing.T) {

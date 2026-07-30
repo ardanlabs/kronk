@@ -147,9 +147,10 @@ curl http://localhost:11435/v1/chat/completions \
 
 Kronk verifies the signature, issuer, expiration, required admin status or
 endpoint grant, and quota before processing a protected request. Authentication,
-missing-grant, and exhausted-quota failures currently all cross the auth
-boundary as `401 Unauthorized`; clients should not expect distinct 403 or 429
-responses from this path.
+missing-grant, and exhausted-quota failures return `401 Unauthorized`,
+`403 Forbidden`, and `429 Too Many Requests`, respectively. Authentication
+service failures return `500 Internal Server Error`, while unavailable external
+auth services return `503 Service Unavailable`.
 
 ## 12.6 Key Rotation and Revocation
 
@@ -197,11 +198,21 @@ listener. Relevant server settings are:
 | `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | Protect administration only. |
 | `--auth-issuer` | `KRONK_AUTH_LOCAL_ISSUER` | Set the expected JWT issuer. |
 | `--auth-host` | `KRONK_AUTH_HOST` | Connect to an external auth service instead. |
+| `--auth-tls-enabled` | `KRONK_AUTH_TLS_ENABLED` | Use TLS for an external auth connection. |
+| `--auth-tls-ca-file` | `KRONK_AUTH_TLS_CA_FILE` | Trust the certificates in this PEM CA file instead of the system roots. |
+| `--auth-tls-server-name` | `KRONK_AUTH_TLS_SERVER_NAME` | Override the TLS certificate server name. |
 
 Setting `KRONK_AUTH_HOST` skips embedded auth startup. The standalone `auth`
 service uses `AUTH_AUTH_HOST` (default `localhost:6000`), `AUTH_AUTH_ISSUER`
-(default `kronk project`), and `AUTH_AUTH_ENABLED`. The server and auth service
-must agree on issuer and protection policy.
+(default `kronk project`), and `AUTH_AUTH_ENABLED`. Set
+`AUTH_AUTH_TLS_ENABLED=true`, `AUTH_AUTH_TLS_CERT_FILE`, and
+`AUTH_AUTH_TLS_KEY_FILE` to serve TLS. The Kronk client and auth service must
+agree on issuer, protection policy, and transport security. External plaintext
+connections remain supported for compatibility but produce a startup warning.
+
+The standalone MCP service uses `MCP_AUTH_TLS_ENABLED`,
+`MCP_AUTH_TLS_CA_FILE`, and `MCP_AUTH_TLS_SERVER_NAME` for its connection to the
+auth service.
 
 CLI web mode reads `KRONK_WEB_API_HOST`, which defaults to
 `localhost:11435`.
@@ -214,6 +225,8 @@ traffic outside a trusted host:
 - enable full or admin authentication as appropriate;
 - terminate TLS at a trusted reverse proxy and do not expose the API port
   directly to the public internet;
+- enable auth TLS whenever the auth service is reached across an untrusted
+  network, or use an authenticated encrypted service mesh;
 - restrict network access with host or cloud firewall rules;
 - restrict `KRONK_WEB_CORS_ALLOWED_ORIGINS` instead of retaining `*`;
 - issue separate, short-lived, least-privilege tokens for each application;

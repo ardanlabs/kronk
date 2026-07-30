@@ -36,3 +36,33 @@ func TestBuildEnvVarsInferenceTimeout(t *testing.T) {
 		t.Errorf("buildEnvVars: got %v, want entry %q", envVars, want)
 	}
 }
+
+func TestBuildEnvVarsAuthTLS(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().Bool("auth-tls-enabled", false, "")
+	cmd.Flags().String("auth-tls-ca-file", "", "")
+	cmd.Flags().String("auth-tls-server-name", "", "")
+
+	values := map[string]string{
+		"auth-tls-enabled":     "true",
+		"auth-tls-ca-file":     "/certs/ca.pem",
+		"auth-tls-server-name": "auth.internal",
+	}
+	for name, value := range values {
+		if err := cmd.Flags().Set(name, value); err != nil {
+			t.Fatalf("Set %s: %v", name, err)
+		}
+	}
+
+	envVars := buildEnvVars(cmd)
+	wants := []string{
+		"KRONK_AUTH_TLS_ENABLED=true",
+		"KRONK_AUTH_TLS_CA_FILE=/certs/ca.pem",
+		"KRONK_AUTH_TLS_SERVER_NAME=auth.internal",
+	}
+	for _, want := range wants {
+		if !slices.Contains(envVars, want) {
+			t.Errorf("buildEnvVars: got %v, want entry %q", envVars, want)
+		}
+	}
+}
