@@ -11,6 +11,11 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+const (
+	embeddingModelID   = "Qwen3-Embedding-0.6B-Q8_0"
+	embeddingDimension = 1024
+)
+
 func chatEmbed200(tokens map[string]string) []apitest.Table {
 	table := []apitest.Table{
 		{
@@ -20,7 +25,7 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "embeddinggemma-300m-qat-Q8_0",
+				"model":       embeddingModelID,
 				"input":       "Embed this sentence",
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -29,7 +34,7 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &model.EmbedReponse{},
 			ExpResp: &model.EmbedReponse{
-				Model:  "embeddinggemma-300m-qat-Q8_0",
+				Model:  embeddingModelID,
 				Object: "list",
 				Data: []model.EmbedData{
 					{
@@ -37,14 +42,10 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 						Index:  0,
 					},
 				},
-				Usage: model.EmbedUsage{
-					PromptTokens: 5,
-					TotalTokens:  5,
-				},
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.EmbedReponse{}, "Data", "Created"),
+					cmpopts.IgnoreFields(model.EmbedReponse{}, "Data", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.EmbedData{}, "Embedding"),
 				)
 
@@ -61,8 +62,12 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 					return fmt.Sprintf("expected length of 1, got %d", len(expResp.Data))
 				}
 
-				if len(expResp.Data[0].Embedding) != 768 {
-					return "expecting a vector of 768 dimensions"
+				if len(expResp.Data[0].Embedding) != embeddingDimension {
+					return fmt.Sprintf("expecting a vector of %d dimensions", embeddingDimension)
+				}
+
+				if expResp.Usage.PromptTokens == 0 {
+					return "expected prompt tokens to be non-zero"
 				}
 
 				return ""
@@ -75,7 +80,7 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "embeddinggemma-300m-qat-Q8_0",
+				"model":       embeddingModelID,
 				"input":       []string{"Embed this sentence", "and this sentence"},
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -84,7 +89,7 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &model.EmbedReponse{},
 			ExpResp: &model.EmbedReponse{
-				Model:  "embeddinggemma-300m-qat-Q8_0",
+				Model:  embeddingModelID,
 				Object: "list",
 				Data: []model.EmbedData{
 					{
@@ -92,14 +97,10 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 						Index:  0,
 					},
 				},
-				Usage: model.EmbedUsage{
-					PromptTokens: 10,
-					TotalTokens:  10,
-				},
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.EmbedReponse{}, "Data", "Created"),
+					cmpopts.IgnoreFields(model.EmbedReponse{}, "Data", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.EmbedData{}, "Embedding"),
 				)
 
@@ -116,12 +117,16 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 					return fmt.Sprintf("expected length of 2, got %d", len(expResp.Data))
 				}
 
-				if len(expResp.Data[0].Embedding) != 768 {
-					return "expecting a vector of 768 dimensions"
+				if len(expResp.Data[0].Embedding) != embeddingDimension {
+					return fmt.Sprintf("expecting a vector of %d dimensions", embeddingDimension)
 				}
 
-				if len(expResp.Data[1].Embedding) != 768 {
-					return "expecting a vector of 768 dimensions"
+				if len(expResp.Data[1].Embedding) != embeddingDimension {
+					return fmt.Sprintf("expecting a vector of %d dimensions", embeddingDimension)
+				}
+
+				if expResp.Usage.PromptTokens == 0 {
+					return "expected prompt tokens to be non-zero"
 				}
 
 				return ""
@@ -141,7 +146,7 @@ func embed401(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusUnauthorized,
 			Input: model.D{
-				"model":       "embeddinggemma-300m-qat-Q8_0",
+				"model":       embeddingModelID,
 				"input":       "Embed this sentence",
 				"max_tokens":  2048,
 				"temperature": 0.7,
