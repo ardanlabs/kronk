@@ -69,6 +69,7 @@ You can use this environment variable: `export KRONK_LIB_VERSION=b9163`
 | b9750+    | v1.18.0 | 1.28.3 |
 | b9979+    | v1.19.0 | 1.28.7 |
 | b10105+   | v1.20.0 | 1.29.1 |
+| b10182+   | v1.21.0 | 1.29.8 |
 
 ## Owner Information
 
@@ -127,6 +128,13 @@ Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about
 ### SDK
 
 The Kronk SDK allows you to write applications that can directly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio). The Bucky SDK provides the same surface for speech-to-text via whisper.cpp — see the [Bucky chapter](.manual/chapter-18-bucky.md).
+
+Generation uses Kronk's generation batch engine. Supported embedding and
+reranking architectures use a separate sequence-batch engine that combines
+complete inputs from concurrent requests on one model context; unverified
+architectures use a context-pool fallback. See
+[Chapter 4](.manual/chapter-04-batch-processing.md) for the runtime and
+`nseq-max` behavior.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./images/project/sdk-dark.png">

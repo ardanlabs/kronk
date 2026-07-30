@@ -14,6 +14,15 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
+const (
+	retiredEmbeddingGemma = "ggml-org/embeddinggemma-300m-qat-Q8_0"
+	retiredQwen3Reranker  = "ggml-org/qwen3-reranker-0.6b-q8_0"
+)
+
+func isRetiredCatalogDefault(canonical string) bool {
+	return canonical == retiredEmbeddingGemma || canonical == retiredQwen3Reranker
+}
+
 // ResolveSource maps a model source to a Resolution containing the
 // canonical id, provider, family, revision, full download URL(s),
 // companion projection URL, and any locally-known on-disk paths. The
@@ -241,6 +250,12 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		if _, ok := cat.Models[canonical]; ok {
 			continue
 		}
+		// Schema migrations retire superseded defaults without deleting the
+		// downloaded GGUF. Do not automatically restore those absent entries;
+		// an entry explicitly added by the user is preserved by the check above.
+		if isRetiredCatalogDefault(canonical) {
+			continue
+		}
 
 		local, ok := r.lookupLocal(mf.OwnedBy, mf.ID)
 		if !ok {
@@ -262,6 +277,19 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 	// take effect on upgrade. Otherwise we only touch entries that are
 	// missing ModelType / Capabilities — the steady-state path.
 	schemaUpgrade := cat.Schema < SchemaVersion
+	schemaUpgradeComplete := true
+	if schemaUpgrade {
+		for _, canonical := range []string{
+			retiredEmbeddingGemma,
+			retiredQwen3Reranker,
+		} {
+			if _, exists := cat.Models[canonical]; exists {
+				delete(cat.Models, canonical)
+				log(ctx, "reconcile-catalog: retired", "id", canonical)
+				changed++
+			}
+		}
+	}
 
 	for canonical, entry := range cat.Models {
 		var touched bool
@@ -280,7 +308,11 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		// Enrichment (model_type, capabilities). On a schema upgrade every
 		// entry is re-enriched; otherwise only entries missing the fields.
 		if schemaUpgrade || entry.ModelType == "" || entry.Capabilities.Endpoint == "" {
-			if updated, ok := m.enrichEntry(ctx, entry, log); ok {
+			updated, changed, enriched := m.enrichEntry(ctx, entry, log)
+			if schemaUpgrade && !enriched {
+				schemaUpgradeComplete = false
+			}
+			if changed {
 				entry = updated
 				touched = true
 			}
@@ -292,7 +324,7 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		}
 	}
 
-	if schemaUpgrade {
+	if schemaUpgrade && schemaUpgradeComplete {
 		log(ctx, "reconcile-catalog: schema upgrade", "from", cat.Schema, "to", SchemaVersion)
 		cat.Schema = SchemaVersion
 		changed++
@@ -311,33 +343,34 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 
 // enrichEntry populates a catalog entry's ModelType and Capabilities by
 // reading the GGUF head bytes through GGUFHead's cache → local-file → HF
-// Range lookup. Returns the (possibly modified) entry and a boolean that
-// is true when the entry actually changed. Failures are logged and treated
-// as a no-op so an offline reconcile leaves entries untouched.
-func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log applog.Logger) (CatalogEntry, bool) {
+// Range lookup. The returned booleans report whether the entry changed and
+// whether enrichment completed. Failures are logged and treated as a no-op so
+// an offline reconcile leaves entries untouched and eligible for a later
+// schema-upgrade retry.
+func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log applog.Logger) (CatalogEntry, bool, bool) {
 	data, err := m.GGUFHead(ctx, entry)
 	if err != nil {
 		log(ctx, "enrich-entry: gguf-head", "provider", entry.Provider, "family", entry.Family, "ERROR", err)
-		return entry, false
+		return entry, false, false
 	}
 
 	metadata, err := gguf.ParseMetadata(data)
 	if err != nil {
 		log(ctx, "enrich-entry: parse-gguf", "provider", entry.Provider, "family", entry.Family, "ERROR", err)
-		return entry, false
+		return entry, false, false
 	}
 
 	modelType := ArchitectureClass(metadata)
 	capabilities := CapabilitiesFor(metadata, entry.MMProj != "")
 
 	if entry.ModelType == modelType && entry.Capabilities == capabilities {
-		return entry, false
+		return entry, false, true
 	}
 
 	entry.ModelType = modelType
 	entry.Capabilities = capabilities
 
-	return entry, true
+	return entry, true, true
 }
 
 // RemoveCatalogEntry deletes the catalog entry, its GGUF cache, and any

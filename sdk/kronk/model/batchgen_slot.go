@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// chatJob represents a validated chat request ready for batch processing.
+// chatJob represents a validated chat request ready for generation batch processing.
 // Created by submitToBatchEngine after request validation and cache lookup.
 type chatJob struct {
 
@@ -193,7 +193,7 @@ type slot struct {
 	// succeeds) can find the just-decoded rows and replay them into the
 	// draft KV with batch.embd populated.
 	//
-	// Set in three places in batch_engine.go:
+	// Set in three places in batchgen_engine.go:
 	//   - addPrefillChunk    (prefill chunks)
 	//   - normal gen-token add
 	//   - spec verify add    (1 sampled + nDraft drafted)

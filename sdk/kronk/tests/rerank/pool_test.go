@@ -12,28 +12,23 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
-func Test_PooledRerank(t *testing.T) {
+func TestConcurrentRerank(t *testing.T) {
 	const numInstances = 2
 
+	if len(testlib.MPRerankBatchSeq.ModelFiles) == 0 {
+		t.Skip("model not downloaded")
+	}
+
+	testlib.WithModel(t, testlib.CfgRerankBatchSeq(), func(t *testing.T, krn *kronk.Kronk) {
+		testConcurrentRerank(t, krn, numInstances)
+	})
+}
+
+func testConcurrentRerank(t *testing.T, krn *kronk.Kronk, numInstances int) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
-	krn, err := kronk.New(model.WithConfig(model.Config{
-		ModelFiles:        testlib.MPRerank.ModelFiles,
-		PtrContextWindow:  new(2048),
-		PtrNBatch:         new(2048),
-		PtrNUBatch:        new(512),
-		CacheTypeK:        model.GGMLTypeQ8_0,
-		CacheTypeV:        model.GGMLTypeQ8_0,
-		PtrFlashAttention: new(model.FlashAttentionEnabled),
-		PtrNSeqMax:        new(numInstances),
-	}))
-	if err != nil {
-		t.Fatalf("Failed to create rerank model with NSeqMax=%d: %v", numInstances, err)
-	}
-	defer krn.Unload(ctx)
-
-	t.Logf("Testing pooled rerank with NSeqMax=%d", numInstances)
+	t.Logf("Testing concurrent rerank with NSeqMax=%d", krn.ModelConfig().NSeqMax())
 
 	query := "What is the capital of France?"
 	documents := []string{

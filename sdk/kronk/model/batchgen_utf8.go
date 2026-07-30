@@ -2,7 +2,7 @@ package model
 
 import "unicode/utf8"
 
-// extractCompleteUTF8 separates a byte slice into complete UTF-8 codepoints
+// extractCompleteUTF8 separates generated token bytes into complete UTF-8 codepoints
 // and any trailing bytes that form an incomplete (but valid prefix of a)
 // multi-byte sequence. This handles multi-byte characters (like emoji) that
 // get split across multiple BPE tokens.

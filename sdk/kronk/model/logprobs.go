@@ -37,7 +37,7 @@ func (h *minHeap) Pop() any {
 // extractLogprobs retrieves logits from the context and converts them to log probabilities.
 // It returns the log probability for the sampled token and the top-k alternatives.
 // The iBatch parameter is the batch index to extract logits from (-1 for the last position).
-func extractLogprobs(lctx llama.Context, vocab llama.Vocab, sampledToken llama.Token, iBatch int32, topK int, buf []byte) (*ContentLogprob, error) {
+func extractLogprobs(lctx llama.Context, vocab llama.Vocab, suppressTokens []llama.Token, sampledToken llama.Token, iBatch int32, topK int, buf []byte) (*ContentLogprob, error) {
 	nVocab := int(llama.VocabNTokens(vocab))
 
 	// Get logits for the specified batch position.
@@ -45,6 +45,7 @@ func extractLogprobs(lctx llama.Context, vocab llama.Vocab, sampledToken llama.T
 	if err != nil {
 		return nil, err
 	}
+	maskSuppressTokenLogits(logits, suppressTokens)
 
 	// Convert logits to log probabilities using log-softmax.
 	logprobs := logSoftmax(logits)
@@ -125,7 +126,8 @@ type filterState struct {
 // Performance: finds top-K logits via min-heap in O(n log K), sorts the small
 // K-element set, computes temperature-scaled softmax restricted to survivors.
 // For K=20 and n=152k this is ~100x faster than a full sort.
-func applySamplerFilters(logits, probs []float32, temperature, topP, minP float32, topK int32, indices []int, fs *filterState) []int {
+func applySamplerFilters(logits, probs []float32, suppressTokens []llama.Token, temperature, topP, minP float32, topK int32, indices []int, fs *filterState) []int {
+	maskSuppressTokenLogits(logits, suppressTokens)
 	n := len(logits)
 
 	// Determine the candidate set size for top-K selection.

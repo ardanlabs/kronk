@@ -14,16 +14,14 @@ import (
 )
 
 func TestSuite(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgEmbed(), func(t *testing.T, krn *kronk.Kronk) {
-		t.Run("Embedding", func(t *testing.T) { testEmbedding(t, krn) })
-	})
+	if len(testlib.MPEmbedBatchSeq.ModelFiles) == 0 {
+		t.Skip("model not downloaded")
+	}
+
+	testlib.WithModel(t, testlib.CfgEmbedBatchSeq(), testEmbedding)
 }
 
 func testEmbedding(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()

@@ -1,6 +1,6 @@
 package model
 
-// hasActiveSlots returns true if any slot is currently processing.
+// hasActiveSlots returns true if any generation slot is currently processing.
 func (e *batchEngine) hasActiveSlots() bool {
 	for _, s := range e.slots {
 		if s.active {

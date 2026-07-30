@@ -295,15 +295,22 @@ The main invariants are:
 - Native decode failure is attributed to affected jobs and followed by deterministic
   cleanup; it must not silently publish partly advanced session state.
 
-#### 19.5.5 Text versus embedding and reranking contexts
+#### 19.5.5 Generation versus embedding and reranking engines
 
 Text generation benefits from shared batched execution and sequence-partitioned KV.
-Embeddings and reranking use a different context strategy: they acquire a context for
-the operation and perform their own decode/clear cycle. Reranking evaluates query and
-documents without allowing one document's KV state to contaminate the next. Embedding
-pooling and normalization are model/output concerns, not chat-slot concerns. Do not
-force these paths through text batching merely to share code; share only primitives
-whose lifecycle contracts match.
+Embeddings and reranking never use generation slots. Proven architectures use the
+separate sequence-batch engine, which schedules complete embedding inputs or
+query-document pairs across sequence IDs on one context. Unsupported architectures
+acquire an independent context from the fallback pool and perform their own
+decode/clear cycle. Reranking must not allow one document's state to contaminate the
+next. Embedding pooling and normalization are model/output concerns, not chat-slot
+concerns. Do not merge the sequence-batch and generation engines merely to share code;
+their lifecycle contracts differ.
+
+Compatibility is an explicit allowlist based on `general.architecture`. Add an
+architecture only after a native yzma proof, model-backed concurrent tests, and a
+benchmark. Some llama.cpp failures assert instead of returning an error, so probing an
+unknown architecture at runtime is not a safe fallback strategy.
 
 ### 19.6 Core Inference Invariants
 
@@ -389,6 +396,12 @@ instead of creating unrelated roots. Logs and metrics should help distinguish qu
 capacity, cancellation, and inference failures without exposing user content unless an
 explicit insecure-logging mode authorizes it.
 
+Embedding/reranking metrics distinguish the operation and selected runtime. Sequence-
+batch queue wait and batch width are engine-level measurements; request duration,
+active requests, status, and prompt-token usage are operation-level measurements.
+Resource reservations remain owned by the shared pool/resource manager and must not be
+duplicated inside either inference engine.
+
 #### 19.6.6 Speculative decoding and MTP
 
 Speculative support has three ownership shapes:
@@ -397,9 +410,9 @@ Speculative support has three ownership shapes:
    tokens; the target verifies them. Loading, memory planning, sequence cleanup, and
    rollback must account for both models.
 2. **Embedded MTP.** A target GGUF exposes an embedded multi-token-prediction head.
-   Model detection and MTP construction are owned by `draft_mtp.go`/`batch_mtp.go`,
+   Model detection and MTP construction are owned by `draft_mtp.go`/`batchgen_mtp.go`,
    while generic proposal verification and reconciliation remain in
-   `batch_speculative.go`.
+   `batchgen_speculative.go`.
 3. **Separate-file Gemma4/shared-target-KV MTP.** The MTP component is supplied as a
    separate file but shares target KV semantics rather than behaving like an ordinary
    independent draft model. Capabilities, not “has a draft path,” must decide whether

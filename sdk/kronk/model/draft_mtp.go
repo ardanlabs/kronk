@@ -136,7 +136,10 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// Greedy sampler for the draft (temperature=0 for speed). The
 	// HEAP-CORRUPTION WORKAROUND mirrors loadDraftModel; see the
 	// detailed comment on toSampler in params.go.
+	targetVocab := llama.ModelGetVocab(targetModel)
+	suppressTokens := copySuppressTokens(targetVocab)
 	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	addSuppressTokenSampler(sampler, targetVocab, suppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
 
 	// MTP-specific batches: every position carries both a token id and a
@@ -179,12 +182,13 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// Wrapping the *draftCore pointer in *mtpDrafter below does not move
 	// dm, so the pins stay valid.
 	dm := &draftCore{
-		model:   targetModel,
-		vocab:   llama.ModelGetVocab(targetModel),
-		nEmbd:   nEmbd,
-		lctx:    lctx,
-		mem:     mem,
-		sampler: sampler,
+		model:          targetModel,
+		vocab:          targetVocab,
+		suppressTokens: suppressTokens,
+		nEmbd:          nEmbd,
+		lctx:           lctx,
+		mem:            mem,
+		sampler:        sampler,
 		// batch and prefillBatch stay zero for MTP — MTP code paths use
 		// draftBatchMTP / mirrorBatchMTP directly. Unload's
 		// BatchFree(zero) is a safe no-op (llama_batch_free NULL-checks
@@ -362,7 +366,10 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 
 	// Greedy sampler (temperature=0) — matches the embedded-MTP hot path;
 	// verifySpeculativeTokens forces greedy verification for MTP.
+	assistantVocab := llama.ModelGetVocab(asstModel)
+	suppressTokens := copySuppressTokens(assistantVocab)
 	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	addSuppressTokenSampler(sampler, assistantVocab, suppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
 
 	// Construct *draftCore BEFORE pinning so the runtime.Pinner fields stay
@@ -374,6 +381,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 	dm := &draftCore{
 		model:          asstModel,
 		vocab:          llama.ModelGetVocab(targetModel),
+		suppressTokens: suppressTokens,
 		nEmbd:          nEmbd,
 		lctx:           lctx,
 		mem:            mem,

@@ -186,7 +186,7 @@ With `"stream": true`, Kronk emits Anthropic-style named events including
 
 ```json
 {
-  "model": "ggml-org/embeddinggemma-300m-qat-Q8_0",
+  "model": "Qwen/Qwen3-Embedding-0.6B-Q8_0",
   "input": ["First document", "Second document"]
 }
 ```

@@ -15,6 +15,8 @@ import (
 
 var service string
 
+const maxLogLineSize = 4 * 1024 * 1024
+
 func init() {
 	flag.StringVar(&service, "service", "", "filter which service to see")
 
@@ -28,6 +30,7 @@ func main() {
 	service := strings.ToLower(service)
 
 	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(nil, maxLogLineSize)
 	for scanner.Scan() {
 		s := scanner.Text()
 

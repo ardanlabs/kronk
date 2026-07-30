@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -24,6 +25,240 @@ type fakeHF struct {
 	missing map[string]bool
 	// hits records every Search/Meta call made for verification.
 	calls []string
+}
+
+func TestCapabilitiesForSpecializedQwenModels(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]string
+		want     CatalogCapabilities
+	}{
+		{
+			name: "Qwen3 embedding basename",
+			metadata: map[string]string{
+				"general.architecture": "qwen3",
+				"general.basename":     "qwen3-embedding",
+			},
+			want: CatalogCapabilities{Endpoint: "embeddings", Embedding: true},
+		},
+		{
+			name: "BERT reranker architecture",
+			metadata: map[string]string{
+				"general.architecture": "bert",
+			},
+			want: CatalogCapabilities{Endpoint: "rerank", Rerank: true},
+		},
+		{
+			name: "Qwen3 chat remains generation",
+			metadata: map[string]string{
+				"general.architecture":    "qwen3",
+				"general.name":            "Qwen3 8B",
+				"tokenizer.chat_template": "template",
+			},
+			want: CatalogCapabilities{
+				Endpoint:  "chat_completion",
+				Streaming: true,
+				Reasoning: true,
+				Tooling:   true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CapabilitiesFor(tt.metadata, false)
+			if got != tt.want {
+				t.Errorf("CapabilitiesFor: got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEmbeddedCatalogCapabilities(t *testing.T) {
+	filePath, err := defaults.CatalogFile("", t.TempDir())
+	if err != nil {
+		t.Fatalf("CatalogFile: unexpected error: %v", err)
+	}
+
+	catalog, err := NewResolver(nil, filePath).Load()
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if catalog.Schema != SchemaVersion {
+		t.Errorf("schema: got %d, want %d", catalog.Schema, SchemaVersion)
+	}
+
+	for id, entry := range catalog.Models {
+		provider, _, ok := strings.Cut(id, "/")
+		if !ok || provider != entry.Provider {
+			t.Errorf("model %q provider: got %q, want %q", id, entry.Provider, provider)
+		}
+		if len(entry.Files) == 0 || len(entry.FileSizes) != len(entry.Files) {
+			t.Errorf("model %q files: got %d files and %d sizes", id, len(entry.Files), len(entry.FileSizes))
+		}
+
+		switch entry.Capabilities.Endpoint {
+		case "chat_completion":
+			if entry.Capabilities.Embedding || entry.Capabilities.Rerank || !entry.Capabilities.Streaming {
+				t.Errorf("model %q has inconsistent chat capabilities: %+v", id, entry.Capabilities)
+			}
+		case "embeddings":
+			if !entry.Capabilities.Embedding || entry.Capabilities.Rerank || entry.Capabilities.Streaming {
+				t.Errorf("model %q has inconsistent embedding capabilities: %+v", id, entry.Capabilities)
+			}
+		case "rerank":
+			if entry.Capabilities.Embedding || !entry.Capabilities.Rerank || entry.Capabilities.Streaming {
+				t.Errorf("model %q has inconsistent rerank capabilities: %+v", id, entry.Capabilities)
+			}
+		default:
+			t.Errorf("model %q has unknown endpoint %q", id, entry.Capabilities.Endpoint)
+		}
+	}
+
+	if _, exists := catalog.Models["ggml-org/embeddinggemma-300m-qat-Q8_0"]; exists {
+		t.Error("legacy EmbeddingGemma model remains in the embedded catalog")
+	}
+	wantEndpoints := map[string]string{
+		"Qwen/Qwen3-Embedding-0.6B-Q8_0":   "embeddings",
+		"gpustack/bge-reranker-v2-m3-Q8_0": "rerank",
+	}
+	for id, wantEndpoint := range wantEndpoints {
+		entry, exists := catalog.Models[id]
+		if !exists {
+			t.Errorf("required model %q is missing", id)
+			continue
+		}
+		if entry.Capabilities.Endpoint != wantEndpoint {
+			t.Errorf("model %q endpoint: got %q, want %q", id, entry.Capabilities.Endpoint, wantEndpoint)
+		}
+	}
+	if _, exists := catalog.Models["ggml-org/qwen3-reranker-0.6b-q8_0"]; exists {
+		t.Error("unproven Qwen3 reranker remains in the embedded catalog")
+	}
+}
+
+func TestReconcileCatalogRetriesFailedSchemaUpgrade(t *testing.T) {
+	m := newTestModels(t)
+	catalogDir := filepath.Join(m.basePath, "catalog")
+	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: unexpected error: %v", err)
+	}
+
+	filePath := filepath.Join(catalogDir, "catalog.yaml")
+	stale := Catalog{
+		Schema: SchemaVersion - 1,
+		Models: map[string]CatalogEntry{
+			"ggml-org/embeddinggemma-300m-qat-Q8_0": {
+				Provider: "ggml-org",
+				Family:   "embeddinggemma-300m-qat-q8_0-GGUF",
+				Files:    []string{"embeddinggemma-300m-qat-Q8_0.gguf"},
+			},
+			"ggml-org/qwen3-reranker-0.6b-q8_0": {
+				Provider: "ggml-org",
+				Family:   "Qwen3-Reranker-0.6B-Q8_0-GGUF",
+				Files:    []string{"qwen3-reranker-0.6b-q8_0.gguf"},
+			},
+			"Qwen/Qwen3-Embedding-0.6B-Q8_0": {
+				Provider:   "Qwen",
+				Family:     "Qwen3-Embedding-0.6B-GGUF",
+				Revision:   "main",
+				Files:      []string{"Qwen3-Embedding-0.6B-Q8_0.gguf"},
+				MTPChecked: true,
+				ModelType:  "Dense",
+				Capabilities: CatalogCapabilities{
+					Endpoint:  "chat_completion",
+					Streaming: true,
+				},
+			},
+		},
+	}
+	data, err := yaml.Marshal(stale)
+	if err != nil {
+		t.Fatalf("Marshal: unexpected error: %v", err)
+	}
+	mustWriteFile(t, filePath, string(data))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := m.ReconcileCatalog(ctx, testLog); err != nil {
+		t.Fatalf("ReconcileCatalog: unexpected error: %v", err)
+	}
+
+	got, err := NewResolver(m, filePath).Load()
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if got.Schema != stale.Schema {
+		t.Errorf("schema: got %d, want retryable schema %d", got.Schema, stale.Schema)
+	}
+	entry := got.Models["Qwen/Qwen3-Embedding-0.6B-Q8_0"]
+	if entry.Capabilities.Endpoint != "chat_completion" {
+		t.Errorf("endpoint: got %q, want unchanged stale endpoint", entry.Capabilities.Endpoint)
+	}
+	for _, id := range []string{
+		"ggml-org/embeddinggemma-300m-qat-Q8_0",
+		"ggml-org/qwen3-reranker-0.6b-q8_0",
+	} {
+		if _, exists := got.Models[id]; exists {
+			t.Errorf("retired model %q remains after migration", id)
+		}
+	}
+}
+
+func TestReconcileCatalogDoesNotRediscoverRetiredDefaults(t *testing.T) {
+	m := newTestModels(t)
+
+	index := map[string]Path{}
+	for _, model := range []struct {
+		id       string
+		provider string
+		family   string
+		file     string
+	}{
+		{
+			id:       "embeddinggemma-300m-qat-Q8_0",
+			provider: "ggml-org",
+			family:   "embeddinggemma-300m-qat-q8_0-GGUF",
+			file:     "embeddinggemma-300m-qat-Q8_0.gguf",
+		},
+		{
+			id:       "qwen3-reranker-0.6b-q8_0",
+			provider: "ggml-org",
+			family:   "Qwen3-Reranker-0.6B-Q8_0-GGUF",
+			file:     "qwen3-reranker-0.6b-q8_0.gguf",
+		},
+	} {
+		modelFile := filepath.Join(m.modelsPath, model.provider, model.family, model.file)
+		if err := os.MkdirAll(filepath.Dir(modelFile), 0o755); err != nil {
+			t.Fatalf("MkdirAll: unexpected error: %v", err)
+		}
+		mustWriteFile(t, modelFile, "downloaded model remains on disk")
+		index[model.id] = Path{ModelFiles: []string{modelFile}, Downloaded: true}
+	}
+
+	data, err := yaml.Marshal(index)
+	if err != nil {
+		t.Fatalf("Marshal index: unexpected error: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(m.modelsPath, indexFile), string(data))
+
+	if err := m.ReconcileCatalog(context.Background(), testLog); err != nil {
+		t.Fatalf("ReconcileCatalog: unexpected error: %v", err)
+	}
+
+	filePath, err := defaults.CatalogFile("", m.basePath)
+	if err != nil {
+		t.Fatalf("CatalogFile: unexpected error: %v", err)
+	}
+	got, err := NewResolver(m, filePath).Load()
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	for _, id := range []string{retiredEmbeddingGemma, retiredQwen3Reranker} {
+		if _, exists := got.Models[id]; exists {
+			t.Errorf("retired model %q was rediscovered", id)
+		}
+	}
 }
 
 func (f *fakeHF) ModelMeta(_ context.Context, owner, repo, _ string) (hf.ModelMeta, error) {

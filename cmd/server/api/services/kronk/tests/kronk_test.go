@@ -72,7 +72,7 @@ func Test_API(t *testing.T) {
 	test.Run(t, respAudioQwen25Omni(t, tokens), "resp-audio-qwen25omni")
 
 	// -------------------------------------------------------------------------
-	// Model: embeddinggemma-300m-qat-Q8_0
+	// Model: Qwen3-Embedding-0.6B-Q8_0
 
 	test.Run(t, chatEmbed200(tokens), "embedding-200")
 

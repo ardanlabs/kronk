@@ -28,16 +28,16 @@ var (
 
 // Model paths resolved during Setup.
 var (
-	MPThinkToolChat models.Path
-	MPGPTChat       models.Path
-	MPHybridVision  models.Path
-	MPSimpleVision  models.Path
-	MPMoEVision     models.Path
-	MPAudio         models.Path
-	MPEmbed         models.Path
-	MPRerank        models.Path
-	MPMTP           models.Path
-	MPDraft         models.Path
+	MPThinkToolChat  models.Path
+	MPGPTChat        models.Path
+	MPHybridVision   models.Path
+	MPSimpleVision   models.Path
+	MPMoEVision      models.Path
+	MPAudio          models.Path
+	MPEmbedBatchSeq  models.Path
+	MPRerankBatchSeq models.Path
+	MPMTP            models.Path
+	MPDraft          models.Path
 )
 
 // Setup initializes the test environment. Call from each package's TestMain.
@@ -64,8 +64,8 @@ func Setup() {
 	resolveModel(mdls, "Qwen3-8B-Q8_0", &MPThinkToolChat)
 	resolveModel(mdls, "Qwen3.5-0.8B-Q8_0", &MPSimpleVision)
 	resolveModel(mdls, "gemma-4-26B-A4B-it-UD-Q4_K_M", &MPMoEVision)
-	resolveModel(mdls, "embeddinggemma-300m-qat-Q8_0", &MPEmbed)
-	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerank)
+	resolveModel(mdls, "Qwen3-Embedding-0.6B-Q8_0", &MPEmbedBatchSeq)
+	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerankBatchSeq)
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "Qwen2.5-Omni-3B-Q8_0", &MPAudio)
 	resolveModel(mdls, "Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
@@ -292,25 +292,29 @@ func CfgMoEVisionIMC() model.Config {
 	}
 }
 
-func CfgEmbed() model.Config {
+// CfgEmbedBatchSeq returns the Qwen3 sequence-batch configuration.
+func CfgEmbedBatchSeq() model.Config {
 	return model.Config{
-		ModelFiles:       MPEmbed.ModelFiles,
-		PtrContextWindow: new(2048),
+		ModelFiles:       MPEmbedBatchSeq.ModelFiles,
+		PtrContextWindow: new(8192),
 		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
+		PtrNUBatch:       new(2048),
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(4),
 	}
 }
 
-func CfgRerank() model.Config {
+// CfgRerankBatchSeq returns the BGE sequence-batch configuration.
+func CfgRerankBatchSeq() model.Config {
 	return model.Config{
-		ModelFiles:       MPRerank.ModelFiles,
+		ModelFiles:       MPRerankBatchSeq.ModelFiles,
 		PtrContextWindow: new(2048),
 		PtrNBatch:        new(2048),
 		PtrNUBatch:       new(512),
 		CacheTypeK:       model.GGMLTypeF16,
 		CacheTypeV:       model.GGMLTypeF16,
+		PtrNSeqMax:       new(4),
 	}
 }
 

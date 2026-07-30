@@ -382,8 +382,11 @@ total capacity based on `context-window × nseq-max`. Idle slots do not own
 permanent fixed partitions, but increasing `nseq-max` still increases the
 capacity Kronk must budget and can substantially increase memory use.
 
-Embedding and reranking models use `nseq-max` to size a pool of independent
-contexts rather than text-generation slots. See
+For supported embedding and reranking architectures, `nseq-max` is the maximum
+number of complete inputs or query-document pairs in one sequence batch on a
+shared context. Architectures that have not been proven safe for that runtime
+use `nseq-max` to size a pool of independent single-sequence contexts instead.
+See
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for request scheduling and the
 differences between model types.
 
@@ -585,7 +588,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `context-window` | Positive token count | Per-sequence context capacity |
 | `cache-type-k`, `cache-type-v` | `f16`, `q8_0`, `q4_0`, and supported GGML types | KV-cache precision |
 | `flash-attention` | `enabled`, `disabled`, `auto` | Attention implementation mode |
-| `nseq-max` | Positive integer | Parallel sequences or context-pool size |
+| `nseq-max` | Positive integer | Generation slots, sequence-batch width, or fallback context-pool size |
 | `admission-timeout` | Go duration, default `3m` | Maximum SDK admission-permit wait; separate from the server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`) |
 | `queue-depth` | Non-negative integer, default `2` | Generation admission and handoff capacity multiplier |
 | `nubatch`, `nbatch` | Positive token counts | Physical and logical batch sizes |

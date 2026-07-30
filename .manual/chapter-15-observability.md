@@ -85,6 +85,8 @@ the authoritative list.
 | Model loading | `model_load_seconds`, `model_load_proj_seconds` |
 | Inference latency | `model_prompt_creation_seconds`, `model_prefill_seconds`, `model_prefill_ttft_seconds`, `model_request_ttft_seconds` |
 | Requests | `chat_requests_total`, `chat_errors_total`, `chat_request_duration_seconds`, `chat_queue_wait_seconds` |
+| Embedding/reranking | `inference_requests_total`, `inference_request_duration_seconds`, `inference_active_requests` |
+| Sequence batching | `batchseq_queue_wait_seconds`, `batchseq_items`, `batchseq_batches_total` |
 | Tokens | `usage_tokens_total`, `usage_tokens_per_second` |
 | Model memory | `vram_total_bytes`, `vram_slot_memory_bytes` |
 | Pool | `pool_acquire_total`, `pool_evictions_total`, `pool_items_in_pool`, `pool_max_items_in_pool`, `pool_active_streams`, `pool_inflight_loads` |
@@ -129,6 +131,21 @@ Token throughput by model and kind:
 ```promql
 sum by (model_id, kind) (rate(usage_tokens_total[5m]))
 ```
+
+Average sequence-batch width by model and operation:
+
+```promql
+rate(batchseq_items_sum[5m])
+  / rate(batchseq_items_count[5m])
+```
+
+Embedding and reranking request metrics include `operation` (`embedding` or
+`rerank`) and `runtime` (`batchseq` or `context_pool`) labels. Resource-manager
+reservation metrics already account for both runtime types because they are
+published for every loaded model, independently of its inference engine.
+The `inference_*` request metrics start after SDK admission, so they exclude
+admission wait and attempts that fail or are cancelled before a permit is
+acquired.
 
 ### 15.3 Bundled Observability Stack
 

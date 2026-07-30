@@ -419,7 +419,7 @@ func initKronk(t *testing.T) model.Logger {
 // lifecycle tests (acquire, eviction, shutdown). These tests load real
 // models but never run inference, so small is better.
 var cacheTestModels = []string{
-	"embeddinggemma-300m-qat-Q8_0",
+	"Qwen3-Embedding-0.6B-Q8_0",
 	"bge-reranker-v2-m3-Q8_0",
 }
 

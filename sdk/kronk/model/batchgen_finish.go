@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// finishSlot completes a slot and sends the final response.
+// finishSlot completes a generation slot and sends the final response.
 func (e *batchEngine) finishSlot(s *slot, err error) {
 	if !s.active {
 		return

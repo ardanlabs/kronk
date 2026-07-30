@@ -10,7 +10,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// batchEngine manages parallel inference slots.
+// batchEngine manages parallel generation inference slots.
 type batchEngine struct {
 	model      *Model
 	nSlots     int
@@ -266,7 +266,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		// to the shared batch for verification in a single forward pass.
 		// Only for text slots that completed draft prefill (draftNPast > 0).
 		// MTP path is additionally skipped when mtpDisabledForRequest
-		// (IMC cache-hit, see batch_slot_start.go).
+		// (IMC cache-hit, see batchgen_slot_start.go).
 		mtpUsable := e.model.draft != nil && e.model.draft.mtp() && !s.mtpDisabledForRequest
 		canSpec := e.model.draft != nil && !s.draftPrefillNeeded && s.draftNPast > 0 &&
 			(!e.model.draft.mtp() || mtpUsable)

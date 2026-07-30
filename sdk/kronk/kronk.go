@@ -73,14 +73,15 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 	adjustedCfg := mdl.Config()
 
 	// -------------------------------------------------------------------------
-	// Embed/rerank models use an internal context pool for parallelism.
-	// Text/vision/audio models use the batch engine with queue depth.
+	// Embed/rerank models cap concurrent admissions at NSeqMax. Their model
+	// runtime selects either sequence batching or the context-pool fallback.
+	// Text/vision/audio models use the generation batch engine with queue depth.
 
 	var semCapacity int
 
 	switch {
 	case mi.IsEmbedModel || mi.IsRerankModel:
-		semCapacity = max(adjustedCfg.NSeqMax(), 1)
+		semCapacity = embedOrRerankAdmissionCapacity(adjustedCfg)
 
 	default:
 		semCapacity = generationAdmissionCapacity(adjustedCfg)
@@ -97,6 +98,11 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 
 	return &krn, nil
 }
+
+func embedOrRerankAdmissionCapacity(cfg model.Config) int {
+	return max(cfg.NSeqMax(), 1)
+}
+
 func generationAdmissionCapacity(cfg model.Config) int {
 	return max(cfg.NSeqMax(), 1) * cfg.QueueDepth()
 }

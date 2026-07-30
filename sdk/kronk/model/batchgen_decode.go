@@ -9,7 +9,7 @@ import (
 )
 
 // =============================================================================
-// MTMD BATCH DECODE HELPERS
+// MTMD GENERATION BATCH DECODE HELPERS
 // =============================================================================
 
 // decodeTextMRoPE decodes text tokens for M-RoPE models.
