@@ -8,13 +8,14 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/pull"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/remove"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/resolve"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/sessions"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model/show"
 	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
 	Use:   "model",
-	Short: "Manage local models (index, list, pull, remove, show, ps)",
+	Short: "Manage local models (index, list, pull, remove, show, ps, sessions)",
 	Long: `Manage local models - index, list, pull, remove, show, and check running models.
 
 This command manages GGUF model files stored locally on your system. It provides
@@ -31,6 +32,7 @@ COMMANDS
   resolve  Resolve a model id to a provider, repo, files and download URLs
   show     Display detailed information about a model
   ps       Show models currently loaded in server memory
+  sessions Show current IMC cache entries
 
 MODES
 
@@ -63,4 +65,5 @@ func init() {
 	Cmd.AddCommand(resolve.Cmd)
 	Cmd.AddCommand(show.Cmd)
 	Cmd.AddCommand(ps.Cmd)
+	Cmd.AddCommand(sessions.Cmd)
 }

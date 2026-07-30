@@ -8,18 +8,16 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// autoTune seeds unset settings from a hardware-aware analysis of the model and
+// AutoTuneConfig seeds unset settings from a hardware-aware analysis of the model and
 // returns the resulting Config. It uses the same shared models.AutoTune logic as
 // the model pool so the SDK and pool seed defaults identically; the only
-// SDK-specific part is the override mechanism: the analysis result is the base
-// and the caller's functional options are re-applied on top. The analyzed
-// context, concurrency, and cache types are then restored because they already
-// include explicit sizing constraints and must match the configuration that was
-// sized. On any failure the original cfg is returned unchanged so auto-tune
-// never blocks a load.
-func autoTune(ctx context.Context, cfg model.Config, opts []model.Option) model.Config {
+// SDK-specific part is preserving all settings outside AutoTune's ownership.
+// On any failure the original cfg is returned unchanged so auto-tune never
+// blocks a load.
+func AutoTuneConfig(ctx context.Context, cfg model.Config) model.Config {
 	if len(cfg.ModelFiles) == 0 {
 		logAutoTune(ctx, cfg.Log, "status", "skipped", "reason", "no model files configured")
 		return cfg
@@ -32,13 +30,21 @@ func autoTune(ctx context.Context, cfg model.Config, opts []model.Option) model.
 	}
 
 	constraints := models.ModelConfig{
+		Devices:          cfg.Devices,
 		PtrContextWindow: cfg.PtrContextWindow,
+		PtrNBatch:        cfg.PtrNBatch,
+		PtrNUBatch:       cfg.PtrNUBatch,
 		PtrNSeqMax:       cfg.PtrNSeqMax,
 		CacheTypeK:       cfg.CacheTypeK,
 		CacheTypeV:       cfg.CacheTypeV,
 		FlashAttention:   cfg.PtrFlashAttention,
 		PtrSplitMode:     cfg.PtrSplitMode,
 		PtrNGpuLayers:    cfg.PtrNGpuLayers,
+		PtrOffloadKQV:    cfg.PtrOffloadKQV,
+		PtrSWAFull:       cfg.PtrSWAFull,
+	}
+	if constraints.PtrSWAFull == nil {
+		constraints.PtrSWAFull = new(llama.ContextDefaultParams().SwaFull != 0)
 	}
 	base, err := models.AutoTuneWithConfig(info, devices.List(), constraints)
 	if err != nil {
@@ -46,14 +52,10 @@ func autoTune(ctx context.Context, cfg model.Config, opts []model.Option) model.
 		return cfg
 	}
 
-	// Analysis recommendation is the base; the user's non-AutoTune options
-	// override it. Restore the analyzed fields after replay because WithConfig
-	// and explicit auto values can otherwise erase the recommendation.
+	// Preserve every setting outside AutoTune's ownership, then copy the exact
+	// values used by the analysis into the runtime config.
 	recommended := base.ToKronkConfig()
-	tuned := recommended
-	for _, opt := range opts {
-		opt(&tuned)
-	}
+	tuned := cfg
 	restoreAutoTunedFields(&tuned, recommended)
 	tuned.AutoTune = true
 	tuned.AutoTuned = true

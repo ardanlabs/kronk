@@ -10,6 +10,68 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+// IMCSessionState describes the current state of an allocated IMC cache entry.
+type IMCSessionState string
+
+const (
+	// IMCSessionStateActive means a request currently holds the entry's
+	// reservation.
+	IMCSessionStateActive IMCSessionState = "active"
+
+	// IMCSessionStateIdle means the entry contains a reusable cache snapshot.
+	IMCSessionStateIdle IMCSessionState = "idle"
+
+	// IMCSessionStateEmpty means the entry does not contain a cache snapshot.
+	IMCSessionStateEmpty IMCSessionState = "empty"
+)
+
+// IMCSessionDetail is a scalar snapshot of one allocated IMC cache entry.
+type IMCSessionDetail struct {
+	ID            int
+	State         IMCSessionState
+	Context       int
+	Allocated     int
+	Messages      int
+	ContextWindow int
+	LastUsed      time.Time
+	HasMedia      bool
+}
+
+// IMCSessions returns the current state of the model's allocated IMC cache
+// entries. It does not retain history or expose the cached content.
+func (m *Model) IMCSessions() []IMCSessionDetail {
+	m.cacheMu.RLock()
+	defer m.cacheMu.RUnlock()
+
+	details := make([]IMCSessionDetail, 0, len(m.imcSessions))
+	for _, session := range m.imcSessions {
+		if session == nil {
+			continue
+		}
+
+		state := IMCSessionStateEmpty
+		switch {
+		case session.reserved:
+			state = IMCSessionStateActive
+		case session.totalTokensCached > 0:
+			state = IMCSessionStateIdle
+		}
+
+		details = append(details, IMCSessionDetail{
+			ID:            session.id,
+			State:         state,
+			Context:       session.totalTokensCached,
+			Allocated:     session.allocatedContext,
+			Messages:      session.cachedMsgCount,
+			ContextWindow: m.cfg.ContextWindow(),
+			LastUsed:      session.lastUsed,
+			HasMedia:      session.hasMedia,
+		})
+	}
+
+	return details
+}
+
 // decodeTokensIntoCache decodes tokens into a cache sequence starting at startPos.
 // Unlike addTokensToCache, this does NOT clear the sequence first — the caller
 // is responsible for clearing if needed (e.g., rebuild from scratch).
@@ -74,6 +136,8 @@ func imcResetSession(s *imcSession) {
 	s.cachedMsgsHash = ""
 	s.cachedTokens = nil
 	s.totalTokensCached = 0
+	// allocatedContext is intentionally preserved because Reset retains the
+	// SessionStore backing allocation represented by this high-water mark.
 	s.nextLogicalPos = 0
 	s.cachedMsgCount = 0
 	// Reset clears the valid contents (Len becomes 0) but retains the
@@ -198,6 +262,7 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	session.cachedRenderInputHash = renderInputHash
 	session.lastUsed = time.Now()
 	session.cachedTokens = nil
+	session.allocatedContext = max(session.allocatedContext, totalCached)
 	if session.draftKVState != nil {
 		session.draftKVState.Reset()
 	}
@@ -218,6 +283,7 @@ func (m *Model) imcPublishSession(session *imcSession) {
 	}
 
 	m.cacheMu.Lock()
+	session.allocatedContext = max(session.allocatedContext, session.totalTokensCached)
 	session.reserved = false
 	m.cacheMu.Unlock()
 }

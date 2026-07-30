@@ -254,10 +254,10 @@ some-provider/some-swa-model:
   swa-full: false
 ```
 
-When unset, llama.cpp currently uses a full-size SWA cache. Explicitly setting
-`false` uses the compact sliding-window cache, which can save memory but limits
-context caching and shifting. Setting `true` preserves the full cache at a
-higher memory cost. This key has no effect on models without SWA metadata.
+When unset, Kronk leaves the choice to llama.cpp. Explicitly setting `false`
+uses the compact sliding-window cache, which can save memory but limits context
+caching and shifting. Setting `true` requests the full cache at a higher memory
+cost. This key has no effect on models without SWA metadata.
 
 ### 3.4 GPU and Memory Placement
 

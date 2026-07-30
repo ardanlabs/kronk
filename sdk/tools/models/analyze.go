@@ -65,6 +65,15 @@ type AttentionFacts struct {
 	SlidingWindow       int64   `json:"sliding_window,omitempty"`
 	SlidingWindowLayers int64   `json:"sliding_window_layers,omitempty"`
 	FullAttentionLayers int64   `json:"full_attention_layers,omitempty"`
+	SharedKVLayers      int64   `json:"shared_kv_layers,omitempty"`
+	SWAPattern          []bool  `json:"-"`
+	HeadCountKVByLayer  []int64 `json:"-"`
+	FullHeadCountKV     int64   `json:"full_head_count_kv,omitempty"`
+	SWAHeadCountKV      int64   `json:"swa_head_count_kv,omitempty"`
+	FullKeyLength       int64   `json:"full_key_length,omitempty"`
+	FullValueLength     int64   `json:"full_value_length,omitempty"`
+	SWAKeyLength        int64   `json:"swa_key_length,omitempty"`
+	SWAValueLength      int64   `json:"swa_value_length,omitempty"`
 	LogitSoftcapping    float64 `json:"logit_softcapping,omitempty"`
 }
 
@@ -144,6 +153,7 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 // AutoTune-owned values as fixed constraints.
 func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfig) (Analysis, error) {
 	md := info.Metadata
+	devs = analysisDevices(devs, cfg.Devices)
 
 	arch := gguf.DetectArchitecture(md)
 	if arch == "" {
@@ -214,6 +224,7 @@ func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfi
 
 	// Use 85% of free GPU as the budget.
 	gpuBudget := int64(float64(sf.GPUFreeBytes) * 0.85)
+	ramBudget := int64(float64(sf.SystemRAMBytes) * 0.85)
 
 	modelSize := int64(info.Size)
 	computeBuf := vram.EstimateComputeBuffer(vram.Input{
@@ -243,7 +254,9 @@ func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfi
 		trainingCtx:    trainingCtx,
 		class:          class,
 		gpuBudget:      gpuBudget,
+		ramBudget:      ramBudget,
 		hasGPU:         sf.SupportsGPUOffload,
+		unifiedMemory:  sf.GPUType == "gpu_metal",
 		gpuCount:       devs.GPUCount,
 		attn:           attn,
 		contextWindow:  cfg.PtrContextWindow,
@@ -253,6 +266,9 @@ func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfi
 		flashAttention: cfg.FlashAttention,
 		splitMode:      cfg.PtrSplitMode,
 		nGpuLayers:     cfg.PtrNGpuLayers,
+		nUBatch:        effectiveNUBatch(cfg.PtrNUBatch, cfg.PtrNBatch),
+		kvCacheOnCPU:   cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		swaFull:        cfg.PtrSWAFull == nil || *cfg.PtrSWAFull,
 	}
 
 	balanced := buildProfile("balanced", profileInput, 0, 0)
@@ -321,7 +337,9 @@ type profileInput struct {
 	trainingCtx    int64
 	class          string
 	gpuBudget      int64
+	ramBudget      int64
 	hasGPU         bool
+	unifiedMemory  bool
 	gpuCount       int
 	attn           AttentionFacts
 	contextWindow  *int
@@ -331,11 +349,16 @@ type profileInput struct {
 	flashAttention *model.FlashAttentionType
 	splitMode      *model.SplitMode
 	nGpuLayers     *int
+	nUBatch        int64
+	kvCacheOnCPU   bool
+	swaFull        bool
 }
 
 type cacheRecommendation struct {
 	typeK           string
 	typeV           string
+	ggmlTypeK       int32
+	ggmlTypeV       int32
 	bytesPerElement int64
 }
 
@@ -413,19 +436,13 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 		buckets = []int64{int64(*p.contextWindow)}
 	}
 
-	computeBuf := vram.EstimateComputeBuffer(vram.Input{
-		ModelSizeBytes:  p.modelSize,
-		EmbeddingLength: p.embLen,
-		Slots:           rec.NSeqMax,
-	})
-
 	cacheTypes := cacheRecommendations(p.cacheTypeK, p.cacheTypeV)
 	fallback := cacheTypes[len(cacheTypes)-1]
 	bestCtx := min(ctxCap, vram.ContextWindow4K)
 	if p.contextWindow != nil {
 		bestCtx = int64(*p.contextWindow)
 	}
-	bytesPerElem := fallback.bytesPerElement
+	selectedCache := fallback
 	rec.CacheTypeK = fallback.typeK
 	rec.CacheTypeV = fallback.typeV
 
@@ -436,14 +453,13 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 		}
 
 		for _, cacheType := range cacheTypes {
-			kvPerSlot := bucket * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * cacheType.bytesPerElement
-			totalVRAM := p.modelSize + (rec.NSeqMax * kvPerSlot) + computeBuf
-			if p.gpuBudget > 0 && totalVRAM > p.gpuBudget {
+			result := calculateProfile(p, bucket, rec.NSeqMax, cacheType)
+			if !profileFits(p, result) {
 				continue
 			}
 
 			bestCtx = bucket
-			bytesPerElem = cacheType.bytesPerElement
+			selectedCache = cacheType
 			rec.CacheTypeK = cacheType.typeK
 			rec.CacheTypeV = cacheType.typeV
 			found = true
@@ -459,15 +475,12 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 
 	// For max_concurrency, see how many slots we can actually fit unless the
 	// user fixed NSeqMax. AutoTune never changes an explicit concurrency.
-	if overrideConcurrency > 0 && p.nSeqMax == nil && p.gpuBudget > 0 {
-		kvPerSlot := bestCtx * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * bytesPerElem
-		if kvPerSlot > 0 {
-			available := p.gpuBudget - p.modelSize - computeBuf
-			if available > 0 {
-				maxSlots := min(max(available/kvPerSlot, 1), 8)
-				rec.NSeqMax = maxSlots
-			} else {
-				rec.NSeqMax = 1
+	if overrideConcurrency > 0 && p.nSeqMax == nil {
+		rec.NSeqMax = 1
+		for slots := int64(8); slots > 1; slots-- {
+			if profileFits(p, calculateProfile(p, bestCtx, slots, selectedCache)) {
+				rec.NSeqMax = slots
+				break
 			}
 		}
 	}
@@ -481,15 +494,127 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 		rec.NGPULayers = -1
 	}
 
-	// Estimate VRAM for the chosen configuration.
-	kvPerSlot := bestCtx * p.blockCount * p.headCountKV * (p.keyLength + p.valueLength) * bytesPerElem
-	rec.EstimatedVRAMBytes = p.modelSize + (rec.NSeqMax * kvPerSlot) + computeBuf
-	rec.Fits = p.gpuBudget <= 0 || rec.EstimatedVRAMBytes <= p.gpuBudget
+	// Estimate VRAM for the chosen configuration using the same hybrid-SWA,
+	// KV-placement, and layer-placement calculator as admission planning.
+	result := calculateProfile(p, bestCtx, rec.NSeqMax, selectedCache)
+	rec.EstimatedVRAMBytes = result.TotalVRAM
+	rec.Fits = profileFits(p, result)
 
 	// Build a human-readable reason.
 	rec.Reason = buildReason(name, rec, p)
 
 	return rec
+}
+
+func profileFits(p profileInput, result vram.Result) bool {
+	if p.unifiedMemory {
+		return p.gpuBudget <= 0 || result.UnifiedFootprint() <= p.gpuBudget
+	}
+	if p.gpuBudget > 0 && result.TotalVRAM > p.gpuBudget {
+		return false
+	}
+
+	ram := result.TotalSystemRAMEst
+	if !p.hasGPU {
+		ram += result.TotalVRAM
+	}
+	return p.ramBudget <= 0 || ram <= p.ramBudget
+}
+
+func analysisDevices(devs devices.Devices, selected []string) devices.Devices {
+	if len(selected) == 0 {
+		return devs
+	}
+
+	wanted := make(map[string]struct{}, len(selected))
+	for _, name := range selected {
+		wanted[name] = struct{}{}
+	}
+
+	filtered := devices.Devices{
+		SystemRAMBytes: devs.SystemRAMBytes,
+		MaxDevices:     devs.MaxDevices,
+	}
+	for _, device := range devs.Devices {
+		if _, ok := wanted[device.Name]; !ok {
+			continue
+		}
+		filtered.Devices = append(filtered.Devices, device)
+		if strings.HasPrefix(device.Type, "gpu_") {
+			filtered.GPUCount++
+			filtered.GPUTotalBytes += device.TotalBytes
+			filtered.SupportsGPUOffload = true
+		}
+	}
+	return filtered
+}
+
+func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRecommendation) vram.Result {
+	headCountKV := p.attn.FullHeadCountKV
+	if headCountKV <= 0 {
+		headCountKV = p.headCountKV
+	}
+	keyLength := p.attn.FullKeyLength
+	if keyLength <= 0 {
+		keyLength = p.keyLength
+	}
+	valueLength := p.attn.FullValueLength
+	if valueLength <= 0 {
+		valueLength = p.valueLength
+	}
+
+	gpuLayers := int64(0)
+	if p.nGpuLayers != nil {
+		gpuLayers = int64(*p.nGpuLayers)
+	} else if !p.hasGPU {
+		gpuLayers = -1
+	}
+
+	return vram.Calculate(vram.Input{
+		ModelSizeBytes:      p.modelSize,
+		ContextWindow:       contextWindow,
+		BlockCount:          p.blockCount,
+		HeadCountKV:         headCountKV,
+		KeyLength:           keyLength,
+		ValueLength:         valueLength,
+		SWAHeadCountKV:      p.attn.SWAHeadCountKV,
+		SWAKeyLength:        p.attn.SWAKeyLength,
+		SWAValueLength:      p.attn.SWAValueLength,
+		HeadCountKVByLayer:  p.attn.HeadCountKVByLayer,
+		BytesPerElement:     cache.bytesPerElement,
+		TypeK:               cache.ggmlTypeK,
+		TypeV:               cache.ggmlTypeV,
+		Slots:               slots,
+		SlidingWindow:       p.attn.SlidingWindow,
+		SlidingWindowLayers: p.attn.SlidingWindowLayers,
+		SharedKVLayers:      p.attn.SharedKVLayers,
+		SWAPattern:          p.attn.SWAPattern,
+		NUBatch:             p.nUBatch,
+		KVUnified:           slots > 1,
+		EmbeddingLength:     p.embLen,
+		GPULayers:           gpuLayers,
+		KVCacheOnCPU:        p.kvCacheOnCPU,
+		SWAFull:             p.swaFull,
+		VTransposed:         profileVTransposed(p),
+	})
+}
+
+func profileVTransposed(p profileInput) bool {
+	if p.flashAttention != nil {
+		return *p.flashAttention == model.FlashAttentionDisabled
+	}
+	return !p.hasGPU
+}
+
+func effectiveNUBatch(nUBatch, nBatch *int) int64 {
+	value := int64(2048)
+	if nUBatch != nil && *nUBatch > 0 {
+		value = int64(*nUBatch)
+	}
+	if nBatch != nil && *nBatch > 0 && value > int64(*nBatch) {
+		value = int64(*nBatch)
+	}
+	return value
 }
 
 // cacheRecommendations returns cache candidates in quality order while
@@ -509,6 +634,8 @@ func cacheRecommendations(typeK, typeV model.GGMLType) []cacheRecommendation {
 		return cacheRecommendation{
 			typeK:           k.String(),
 			typeV:           v.String(),
+			ggmlTypeK:       int32(k),
+			ggmlTypeV:       int32(v),
 			bytesPerElement: gguf.MaxBytesPerElement(int32(k), int32(v)),
 		}
 	}
@@ -584,6 +711,15 @@ func attentionFactsFromGGUF(a gguf.AttentionFacts) AttentionFacts {
 		SlidingWindow:       a.SlidingWindow,
 		SlidingWindowLayers: a.SlidingWindowLayers,
 		FullAttentionLayers: a.FullAttentionLayers,
+		SharedKVLayers:      a.SharedKVLayers,
+		SWAPattern:          a.SWAPattern,
+		HeadCountKVByLayer:  a.HeadCountKV,
+		FullHeadCountKV:     a.FullHeadCountKV,
+		SWAHeadCountKV:      a.SWAHeadCountKV,
+		FullKeyLength:       a.FullKeyLength,
+		FullValueLength:     a.FullValueLength,
+		SWAKeyLength:        a.SWAKeyLength,
+		SWAValueLength:      a.SWAValueLength,
 		LogitSoftcapping:    a.LogitSoftcapping,
 	}
 }

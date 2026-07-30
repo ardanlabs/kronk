@@ -68,6 +68,10 @@ type Pool struct {
 // talk about model status entries.
 type ModelDetail = kronkpool.ModelDetail
 
+// IMCSessionDetail re-exports the current state of one allocated IMC cache
+// entry.
+type IMCSessionDetail = kronkpool.IMCSessionDetail
+
 const (
 	ModelStatusLoaded  = kronkpool.ModelStatusLoaded
 	ModelStatusLoading = kronkpool.ModelStatusLoading

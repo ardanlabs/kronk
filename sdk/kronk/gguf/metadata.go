@@ -55,52 +55,60 @@ func ParseInt64WithFallback(metadata map[string]string, key string, suffix strin
 // elements is returned. This handles hybrid architectures like LFM2 and
 // MoE Gemma where head_count_kv varies per layer.
 func ParseInt64OrArrayAvg(metadata map[string]string, key string) (int64, error) {
+	values, err := ParseInt64OrArray(metadata, key)
+	if err != nil {
+		return 0, err
+	}
+
+	var sum int64
+	for _, value := range values {
+		sum += value
+	}
+
+	return sum / int64(len(values)), nil
+}
+
+// ParseInt64OrArray parses a metadata value that may be either a single
+// integer or an array of integers. Scalar values are returned as a one-element
+// slice. Both space-separated and comma-separated array renderings are
+// accepted.
+func ParseInt64OrArray(metadata map[string]string, key string) ([]int64, error) {
 	val, ok := metadata[key]
 	if !ok {
-		return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
+		return nil, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)
 	}
 
-	// Try scalar first.
 	if n, err := strconv.ParseInt(val, 10, 64); err == nil {
-		return n, nil
+		return []int64{n}, nil
 	}
 
-	// Try array format: "[v1 v2 v3 ...]" or "[v1, v2, v3, ...]".
 	trimmed := strings.TrimSpace(val)
 	if !strings.HasPrefix(trimmed, "[") || !strings.HasSuffix(trimmed, "]") {
-		return 0, fmt.Errorf("parse-metadata-int64: unable to parse %q for key %q", val, key)
+		return nil, fmt.Errorf("parse-metadata-int64: unable to parse %q for key %q", val, key)
 	}
 
 	inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
 	if inner == "" {
-		return 0, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
+		return nil, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
 	}
 
-	splitFn := func(r rune) bool {
+	fields := strings.FieldsFunc(inner, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\t' || r == '\n'
-	}
-	fields := strings.FieldsFunc(inner, splitFn)
-
-	var sum int64
-	var count int64
-	for _, f := range fields {
-		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
-		}
-		n, err := strconv.ParseInt(f, 10, 64)
+	})
+	values := make([]int64, 0, len(fields))
+	for _, field := range fields {
+		n, err := strconv.ParseInt(field, 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("parse-metadata-int64: unable to parse array element %q for key %q: %w", f, key, err)
+			return nil, fmt.Errorf("parse-metadata-int64: unable to parse array element %q for key %q: %w", field, key, err)
 		}
-		sum += n
-		count++
+		values = append(values, n)
 	}
 
-	if count == 0 {
-		return 0, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
+	if len(values) == 0 {
+		return nil, fmt.Errorf("parse-metadata-int64: empty array for key %q", key)
 	}
 
-	return sum / count, nil
+	return values, nil
 }
 
 // ResolveKVLengths returns key_length and value_length for VRAM

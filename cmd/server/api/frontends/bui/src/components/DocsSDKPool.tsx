@@ -77,6 +77,17 @@ export default function DocsSDKPool() {
               <p className="doc-description">Config represents settings for the kronk (llama) pool. Models is the pre-built catalog the pool consults for path / size resolution. Required. Resman is the shared resource manager. Building it outside the pool lets every backend (kronk, bucky, …) charge the same byte budget. Required. ModelConfigFile is the optional per-model override file. Empty means no overrides. ModelsInPool is the safety-net cap on the number of distinct entries the pool keeps, independent of the byte budget. Defaults to 10 when zero. TTL is the time an existing model can live in the pool without being used. Defaults to 5 minutes when zero. InsecureLogging, when true, logs potentially sensitive data such as message content and detailed model configuration.</p>
             </div>
 
+            <div className="doc-section" id="type-imcsessiondetail">
+              <h4>IMCSessionDetail</h4>
+              <pre className="code-block">
+                <code>{`type IMCSessionDetail struct {
+	ModelID string
+	model.IMCSessionDetail
+}`}</code>
+              </pre>
+              <p className="doc-description">IMCSessionDetail provides the current state of one allocated IMC cache entry belonging to a loaded model.</p>
+            </div>
+
             <div className="doc-section" id="type-llama">
               <h4>Llama</h4>
               <pre className="code-block">
@@ -185,6 +196,14 @@ export default function DocsSDKPool() {
               <p className="doc-description">GetExisting returns a pooled model if it exists, without creating one.</p>
             </div>
 
+            <div className="doc-section" id="method-pool-imcsessions">
+              <h4>Pool.IMCSessions</h4>
+              <pre className="code-block">
+                <code>func (p *Pool) IMCSessions() []IMCSessionDetail</code>
+              </pre>
+              <p className="doc-description">IMCSessions returns the current IMC cache entries for loaded models. It does not load models or retain session history.</p>
+            </div>
+
             <div className="doc-section" id="method-pool-invalidate">
               <h4>Pool.Invalidate</h4>
               <pre className="code-block">
@@ -289,6 +308,7 @@ export default function DocsSDKPool() {
               <a href="#types" className="doc-index-header">Types</a>
               <ul>
                 <li><a href="#type-config">Config</a></li>
+                <li><a href="#type-imcsessiondetail">IMCSessionDetail</a></li>
                 <li><a href="#type-llama">Llama</a></li>
                 <li><a href="#type-modeldetail">ModelDetail</a></li>
                 <li><a href="#type-pool">Pool</a></li>
@@ -305,6 +325,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-pool-aquirecustom">Pool.AquireCustom</a></li>
                 <li><a href="#method-pool-aquiremodel">Pool.AquireModel</a></li>
                 <li><a href="#method-pool-getexisting">Pool.GetExisting</a></li>
+                <li><a href="#method-pool-imcsessions">Pool.IMCSessions</a></li>
                 <li><a href="#method-pool-invalidate">Pool.Invalidate</a></li>
                 <li><a href="#method-pool-invalidatesync">Pool.InvalidateSync</a></li>
                 <li><a href="#method-pool-modelconfig">Pool.ModelConfig</a></li>

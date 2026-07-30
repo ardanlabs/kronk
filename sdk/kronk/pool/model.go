@@ -1,6 +1,10 @@
 package pool
 
-import "time"
+import (
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
+)
 
 // Model status values surfaced to BUI/observability.
 const (
@@ -31,4 +35,11 @@ type ModelDetail struct {
 	ExpiresAt     time.Time
 	ActiveStreams int
 	Status        string
+}
+
+// IMCSessionDetail provides the current state of one allocated IMC cache
+// entry belonging to a loaded model.
+type IMCSessionDetail struct {
+	ModelID string
+	model.IMCSessionDetail
 }

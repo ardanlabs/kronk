@@ -85,6 +85,7 @@ type imcSession struct {
 	pendingH          []float32     // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
 	lastUsed          time.Time     // Last access time (for eviction)
 	reserved          bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
+	allocatedContext  int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
 	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts     []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.

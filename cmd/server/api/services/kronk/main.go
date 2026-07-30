@@ -28,6 +28,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
@@ -443,6 +444,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 	}()
 
+	unregisterIMCMetrics, err := registerIMCSessionMetrics(p)
+	if err != nil {
+		return fmt.Errorf("registering IMC session metrics: %w", err)
+	}
+	defer unregisterIMCMetrics()
+
 	// -------------------------------------------------------------------------
 	// Start the MCP server
 
@@ -555,6 +562,29 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	return nil
+}
+
+func registerIMCSessionMetrics(p *pool.Pool) (func(), error) {
+	return metrics.RegisterIMCSessionsProvider(func() []metrics.IMCSession {
+		sessions := p.Kronk.IMCSessions()
+		details := make([]metrics.IMCSession, len(sessions))
+
+		for i, session := range sessions {
+			details[i] = metrics.IMCSession{
+				ModelID:   session.ModelID,
+				Entry:     session.ID,
+				State:     string(session.State),
+				Messages:  session.Messages,
+				Context:   session.Context,
+				Allocated: session.Allocated,
+				Window:    session.ContextWindow,
+				HasMedia:  session.HasMedia,
+				LastUsed:  session.LastUsed,
+			}
+		}
+
+		return details
+	})
 }
 
 var logo = `

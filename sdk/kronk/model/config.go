@@ -301,7 +301,7 @@ type AdapterConfig struct {
 //
 // SWAFull controls whether models with sliding window attention (SWA) use a
 // full-size KV cache for SWA layers instead of the memory-efficient small
-// cache. When nil (default), llama.cpp's default is used (currently true).
+// cache. When nil (default), llama.cpp's default is used.
 // When explicitly set to false, SWA layers only cache the last n_swa tokens,
 // saving significant VRAM but limiting context caching and shifting. When
 // true, SWA layers use the full context window for their KV cache, preserving
@@ -442,9 +442,10 @@ func (cfg Config) FlashAttention() FlashAttentionType {
 	return DerefFlashAttention(cfg.PtrFlashAttention)
 }
 
-// SWAFull reports whether sliding-window attention layers use the full
-// context window. An unset value follows llama.cpp's default of true.
-func (cfg Config) SWAFull() bool { return boolOr(cfg.PtrSWAFull, true) }
+// SWAFull reports whether a full-size sliding-window attention cache was
+// explicitly requested. Callers that need the effective value must check
+// PtrSWAFull first because nil leaves the choice to llama.cpp.
+func (cfg Config) SWAFull() bool { return boolOr(cfg.PtrSWAFull, false) }
 
 // sessionStoreKind returns the configured SessionStore backend, or
 // defaultSessionStoreKind ("ram") if unset. Lowercase because Go does
@@ -956,12 +957,13 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 	// When enabled, SWA layers use the full context window for their KV
 	// cache instead of the compact n_swa-sized cache, preserving accuracy
 	// at the cost of higher memory usage.
-	// Resolve the nil default explicitly so runtime allocation and the VRAM
-	// planner use the same setting even if llama.cpp changes its default.
-	if cfg.SWAFull() {
-		ctxParams.SwaFull = 1
-	} else {
-		ctxParams.SwaFull = 0
+	// When nil, preserve the value returned by llama.cpp's context defaults.
+	if cfg.PtrSWAFull != nil {
+		if *cfg.PtrSWAFull {
+			ctxParams.SwaFull = 1
+		} else {
+			ctxParams.SwaFull = 0
+		}
 	}
 
 	// YaRN RoPE scaling for extended context windows.

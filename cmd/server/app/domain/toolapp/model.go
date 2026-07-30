@@ -457,6 +457,49 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 	return details
 }
 
+// IMCSessionDetail provides the current state of one allocated IMC cache
+// entry.
+type IMCSessionDetail struct {
+	ModelID       string    `json:"model_id"`
+	ID            int       `json:"id"`
+	State         string    `json:"state"`
+	Context       int       `json:"context"`
+	Allocated     int       `json:"allocated"`
+	Messages      int       `json:"messages"`
+	ContextWindow int       `json:"context_window"`
+	LastUsed      time.Time `json:"last_used"`
+	HasMedia      bool      `json:"has_media"`
+}
+
+// IMCSessionsResponse is the current set of allocated IMC cache entries.
+type IMCSessionsResponse []IMCSessionDetail
+
+// Encode implements the encoder interface.
+func (app IMCSessionsResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toIMCSessions(sessions []pool.IMCSessionDetail) IMCSessionsResponse {
+	details := make(IMCSessionsResponse, len(sessions))
+
+	for i, session := range sessions {
+		details[i] = IMCSessionDetail{
+			ModelID:       session.ModelID,
+			ID:            session.ID,
+			State:         string(session.State),
+			Context:       session.Context,
+			Allocated:     session.Allocated,
+			Messages:      session.Messages,
+			ContextWindow: session.ContextWindow,
+			LastUsed:      session.LastUsed,
+			HasMedia:      session.HasMedia,
+		}
+	}
+
+	return details
+}
+
 // fromBuckyDetails converts bucky pool ModelDetail entries into the
 // shared API response shape. Whisper has no separate KV/Slots concept,
 // so KVCache stays zero and Slots is reported as 1 for parity with

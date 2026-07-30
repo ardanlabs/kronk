@@ -177,6 +177,18 @@ export const PARAM_TOOLTIPS = {
   runningModelActiveStreams: 'Number of in-flight chat/embed/rerank streams currently using this model. The pool refuses to evict a model with active streams.',
   runningModelStatus: 'Lifecycle stage in the pool. "loaded" means the GGUF is open in llama.cpp and the model can serve requests. "loading" means the resource manager has reserved memory for the load but the GGUF is still being SHA-verified and read from disk; the model is not servable yet but the budget already accounts for it.',
 
+  // IMC session tooltips
+  imcModelID: 'Cache key for the loaded model that owns this bounded set of Incremental Message Cache entries.',
+  imcSessionID: 'Stable index of this entry in the model\'s bounded IMC cache pool. It is not an inference slot or a historical request ID.',
+  imcState: 'Current cache-entry state. Active means a request holds the entry; Idle means it contains a reusable snapshot; Empty means it has no cached snapshot.',
+  imcContext: 'Number of physical KV-cache cells retained by this entry. This can differ from the logical decode position for media sessions.',
+  imcAllocated: 'Largest physical context ever retained by this entry. It does not decrease when the entry is reset because the RAM session store keeps its backing allocation for reuse.',
+  imcMessages: 'Number of complete messages represented by the retained cache snapshot.',
+  imcContextWindow: 'Maximum configured context window for the model that owns this entry.',
+  imcUtilization: 'Retained context divided by the model\'s configured context window.',
+  imcLastUsed: 'Current eviction/LRU timestamp for this cache entry.',
+  imcMedia: 'Whether the retained cache snapshot includes image or audio content.',
+
   // Library bundles
   bundleArch: 'Target CPU architecture for this library bundle download (amd64 or arm64). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
   bundleOS: 'Target operating system for this library bundle download (linux, bookworm, trixie, darwin, windows). Each bundle lives in its own folder under the libraries root and does not replace the active install.',

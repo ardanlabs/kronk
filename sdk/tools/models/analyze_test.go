@@ -633,6 +633,96 @@ func TestAutoTuneWithConfigPreservesExplicitSizing(t *testing.T) {
 	}
 }
 
+func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
+	info := ModelInfo{
+		ID:   "Qwen3-8B-Q8_0",
+		Size: 8_000_000_000,
+		Metadata: map[string]string{
+			"general.architecture":          "qwen3",
+			"qwen3.block_count":             "24",
+			"qwen3.context_length":          "32768",
+			"qwen3.embedding_length":        "2048",
+			"qwen3.attention.head_count":    "16",
+			"qwen3.attention.head_count_kv": "8",
+			"qwen3.attention.key_length":    "128",
+			"qwen3.attention.value_length":  "128",
+		},
+	}
+	devs := devices.Devices{
+		GPUCount:           2,
+		SupportsGPUOffload: true,
+		Devices: []devices.DeviceInfo{
+			{Name: "CUDA0", Type: "gpu_cuda", FreeBytes: 24_000_000_000},
+			{Name: "CUDA1", Type: "gpu_cuda", FreeBytes: 24_000_000_000},
+		},
+	}
+
+	cfg, err := AutoTuneWithConfig(info, devs, ModelConfig{Devices: []string{"CUDA0"}})
+	if err != nil {
+		t.Fatalf("AutoTuneWithConfig failed: %v", err)
+	}
+	if cfg.PtrSplitMode != nil {
+		t.Fatalf("PtrSplitMode: got %s, want nil for load-time device resolution", cfg.PtrSplitMode.String())
+	}
+}
+
+func TestAnalyzeUsesSelectedDevices(t *testing.T) {
+	info := ModelInfo{
+		ID:   "Qwen3-8B-Q8_0",
+		Size: 8_000_000_000,
+		Metadata: map[string]string{
+			"general.architecture":          "qwen3",
+			"qwen3.block_count":             "24",
+			"qwen3.context_length":          "32768",
+			"qwen3.embedding_length":        "2048",
+			"qwen3.attention.head_count":    "16",
+			"qwen3.attention.head_count_kv": "8",
+			"qwen3.attention.key_length":    "128",
+			"qwen3.attention.value_length":  "128",
+		},
+	}
+	devs := devices.Devices{
+		GPUCount:           2,
+		SupportsGPUOffload: true,
+		Devices: []devices.DeviceInfo{
+			{Name: "CUDA0", Type: "gpu_cuda", FreeBytes: 8_000_000_000, TotalBytes: 8_000_000_000},
+			{Name: "CUDA1", Type: "gpu_cuda", FreeBytes: 48_000_000_000, TotalBytes: 48_000_000_000},
+		},
+	}
+
+	analysis, err := analyzeModelWithConfig(info, devs, ModelConfig{Devices: []string{"CUDA0"}})
+	if err != nil {
+		t.Fatalf("analyzeModelWithConfig failed: %v", err)
+	}
+	if analysis.System.GPUName != "CUDA0" || analysis.System.GPUFreeBytes != 8_000_000_000 {
+		t.Fatalf("selected GPU: got %s/%d, want CUDA0/8000000000", analysis.System.GPUName, analysis.System.GPUFreeBytes)
+	}
+}
+
+func TestProfileVTransposed(t *testing.T) {
+	auto := model.FlashAttentionAuto
+	disabled := model.FlashAttentionDisabled
+
+	tests := []struct {
+		name string
+		p    profileInput
+		want bool
+	}{
+		{name: "GPU default recommends auto", p: profileInput{hasGPU: true}, want: false},
+		{name: "explicit auto", p: profileInput{hasGPU: true, flashAttention: &auto}, want: false},
+		{name: "explicit disabled", p: profileInput{hasGPU: true, flashAttention: &disabled}, want: true},
+		{name: "CPU default disables flash attention", p: profileInput{}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := profileVTransposed(tt.p); got != tt.want {
+				t.Fatalf("profileVTransposed: got %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeAnalysisConfig(t *testing.T) {
 	zero := 0
 	negative := -1

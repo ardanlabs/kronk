@@ -21,6 +21,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 // Llama is the loader.Loader[*kronk.Kronk] implementation for the
@@ -99,9 +100,15 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 	vramCfg := vram.Config{
 		ContextWindow:     ctxWin,
 		BytesPerElement:   bpe,
+		TypeK:             int32(cfg.CacheTypeK),
+		TypeV:             int32(cfg.CacheTypeV),
 		Slots:             nseq,
+		NUBatch:           effectiveNUBatch(cfg),
 		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
-		SWAFull:           cfg.SWAFull(),
+		GPULayers:         int64(cfg.NGpuLayers()),
+		KVCacheOnCPU:      cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		SWAFull:           effectiveSWAFull(cfg),
+		VTransposed:       cfg.FlashAttention() == model.FlashAttentionDisabled,
 	}
 
 	result, source, err := predictResult(l.models, req.ModelID, vramCfg)
@@ -164,6 +171,9 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		"slots", nseq,
 		"bytes-per-element", bpe,
 		"experts-on-gpu", vramCfg.ExpertLayersOnGPU,
+		"gpu-layers", vramCfg.GPULayers,
+		"kv-cache-on-cpu", vramCfg.KVCacheOnCPU,
+		"swa-full", vramCfg.SWAFull,
 		"vram", humanBytes(planReq.VRAMBytes),
 		"ram", humanBytes(planReq.RAMBytes),
 		"devices", planReq.Devices,
@@ -269,9 +279,15 @@ func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
 	vramCfg := vram.Config{
 		ContextWindow:     ctxWin,
 		BytesPerElement:   bytesPerElement(cfg.CacheTypeK, cfg.CacheTypeV),
+		TypeK:             int32(cfg.CacheTypeK),
+		TypeV:             int32(cfg.CacheTypeV),
 		Slots:             nseq,
+		NUBatch:           effectiveNUBatch(cfg),
 		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
-		SWAFull:           cfg.SWAFull(),
+		GPULayers:         int64(cfg.NGpuLayers()),
+		KVCacheOnCPU:      cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		SWAFull:           effectiveSWAFull(cfg),
+		VTransposed:       cfg.FlashAttention() == model.FlashAttentionDisabled,
 	}
 
 	out := loader.Display{
@@ -293,6 +309,27 @@ func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
 	return out
 }
 
+// effectiveSWAFull mirrors modelCtxParams without mutating the user config:
+// explicit values win, while nil uses the default exported by the loaded
+// llama.cpp library.
+func effectiveSWAFull(cfg model.Config) bool {
+	if cfg.PtrSWAFull != nil {
+		return *cfg.PtrSWAFull
+	}
+	return llama.ContextDefaultParams().SwaFull != 0
+}
+
+func effectiveNUBatch(cfg model.Config) int64 {
+	nUBatch := cfg.NUBatch()
+	if nUBatch <= 0 {
+		nUBatch = 2048
+	}
+	if nBatch := cfg.NBatch(); nBatch > 0 && nUBatch > nBatch {
+		nUBatch = nBatch
+	}
+	return int64(nUBatch)
+}
+
 // =============================================================================
 
 // resolveConfig produces a model.Config for the request. When the
@@ -308,7 +345,7 @@ func (l *Llama) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 		return cfg, nil
 	}
 
-	cfg, err := l.models.KronkResolvedConfig(req.ModelID, l.modelConfig)
+	cfg, err := l.models.KronkResolvedConfig(req.ModelID, l.modelConfig, effectiveSWAFull(model.Config{}))
 	if err != nil {
 		return model.Config{}, fmt.Errorf("resolve-config: unable to retrieve model config: %w", err)
 	}
