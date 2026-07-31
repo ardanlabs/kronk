@@ -305,42 +305,14 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading libraries")
 
-	arch, err := defaults.Arch(cfg.Arch)
-	if err != nil {
-		return err
-	}
-
-	opSys, err := defaults.OS(cfg.OS)
-	if err != nil {
-		return err
-	}
-
-	processor, err := defaults.Processor(cfg.Processor)
-	if err != nil {
-		return err
-	}
-
 	libs, err := libs.New(
+		libs.WithDetectOverrides(ctx, log.Info, cfg.LibPath, cfg.Arch, cfg.OS, cfg.Processor),
 		libs.WithBasePath(cfg.BasePath),
-		libs.WithLibPath(cfg.LibPath),
-		libs.WithArch(arch),
-		libs.WithOS(opSys),
-		libs.WithProcessor(processor),
 		libs.WithAllowUpgrade(cfg.AllowUpgrade),
 		libs.WithVersion(defaults.LibVersion(cfg.LibVersion)),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create libs api: %w", err)
-	}
-
-	// Host compatibility selection only inspects installed drivers. Explicit
-	// processor and library-path choices remain strict user overrides.
-	hostRuntimeDemoted := false
-	if cfg.Processor == "" && cfg.LibPath == "" {
-		selected, decision := libs.SelectHostRuntime(ctx, log.Info)
-		libs = selected
-		hostRuntimeDemoted = decision.SelectedProcessor != decision.PreferredProcessor
-		log.Info(ctx, "startup", "status", "selected host runtime", "preferred", decision.PreferredProcessor, "selected", decision.SelectedProcessor, "reason", decision.Reason)
 	}
 
 	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
@@ -354,7 +326,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	// Capability fallback applies only to automatic processor selection. An
 	// explicit processor or library path remains a strict user choice.
-	if cfg.Processor == "" && cfg.LibPath == "" && !hostRuntimeDemoted {
+	if cfg.Processor == "" && cfg.LibPath == "" {
 		selected, decision, err := libs.SelectInstalledRuntime(ctx, log.Info)
 		if err != nil {
 			log.Info(ctx, "startup", "WARNING", "unable to select installed llama.cpp runtime", "ERROR", err)
@@ -444,6 +416,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "initializing kronk")
 
+	// The server may use a base path that differs from the process default.
+	// Initialize from the manager's resolved path so that base-path and
+	// library-path configuration remain authoritative.
 	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
 		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}

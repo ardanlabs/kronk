@@ -4,11 +4,149 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
 	"github.com/hybridgroup/yzma/pkg/download"
 )
+
+func TestWithDetectRespectsExplicitOptions(t *testing.T) {
+	scrubKronkEnv(t)
+
+	arch, err := download.ParseArch("arm64")
+	if err != nil {
+		t.Fatalf("parse arch: %v", err)
+	}
+	opSys, err := download.ParseOS("darwin")
+	if err != nil {
+		t.Fatalf("parse os: %v", err)
+	}
+	processor, err := download.ParseProcessor("cpu")
+	if err != nil {
+		t.Fatalf("parse processor: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		opts []Option
+	}{
+		{
+			name: "detect before explicit options",
+			opts: []Option{
+				WithDetect(context.Background(), noopLog),
+				WithArch(arch),
+				WithOS(opSys),
+				WithProcessor(processor),
+			},
+		},
+		{
+			name: "detect after explicit options",
+			opts: []Option{
+				WithArch(arch),
+				WithOS(opSys),
+				WithProcessor(processor),
+				WithDetectOverrides(context.Background(), noopLog, "", "amd64", "linux", "cuda"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := append([]Option{WithBasePath(t.TempDir())}, tt.opts...)
+			lib, err := New(opts...)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			if got, want := lib.Arch(), "arm64"; got != want {
+				t.Errorf("arch: got %q, want %q", got, want)
+			}
+			if got, want := lib.OS(), "darwin"; got != want {
+				t.Errorf("os: got %q, want %q", got, want)
+			}
+			if got, want := lib.Processor(), "cpu"; got != want {
+				t.Errorf("processor: got %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestWithDetectOverrides(t *testing.T) {
+	scrubKronkEnv(t)
+
+	lib, err := New(
+		WithBasePath(t.TempDir()),
+		WithDetectOverrides(context.Background(), noopLog, "", "amd64", "linux", "cpu"),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if got, want := lib.Arch(), "amd64"; got != want {
+		t.Errorf("arch: got %q, want %q", got, want)
+	}
+	if got, want := lib.OS(), "linux"; got != want {
+		t.Errorf("os: got %q, want %q", got, want)
+	}
+	if got, want := lib.Processor(), "cpu"; got != want {
+		t.Errorf("processor: got %q, want %q", got, want)
+	}
+}
+
+func TestNewAutomaticallySelectsCompatibleHostRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses Unix shell scripts")
+	}
+
+	scrubKronkEnv(t)
+
+	bin := t.TempDir()
+	nvidiaSMI := `#!/bin/sh
+if [ "$#" -eq 0 ]; then
+  echo "CUDA Version: 13.0"
+  exit 0
+fi
+echo "0, GPU-pascal, 6.1"
+`
+	vulkanInfo := `#!/bin/sh
+echo "deviceType = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU"
+`
+	for name, content := range map[string]string{
+		"nvidia-smi": nvidiaSMI,
+		"vulkaninfo": vulkanInfo,
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(content), 0o755); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	t.Setenv("PATH", bin)
+
+	basePath := t.TempDir()
+	root := filepath.Join(basePath, localFolder)
+	arch, err := download.ParseArch("amd64")
+	if err != nil {
+		t.Fatalf("parse arch: %v", err)
+	}
+	opSys, err := download.ParseOS("linux")
+	if err != nil {
+		t.Fatalf("parse os: %v", err)
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	if err := writeVersionFile(root, "b100", arch, opSys, download.CUDA); err != nil {
+		t.Fatalf("write version: %v", err)
+	}
+
+	lib, err := New(WithBasePath(basePath))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if got, want := lib.Processor(), "vulkan"; got != want {
+		t.Errorf("processor: got %q, want %q", got, want)
+	}
+}
 
 func TestParseRuntimeDevices(t *testing.T) {
 	tests := []struct {
@@ -178,6 +316,21 @@ func TestParseCUDA13Host(t *testing.T) {
 			wantCapabilities: []string{"8.6"},
 		},
 		{
+			name:             "invalid visibility token terminates the list",
+			output:           "0, GPU-ampere, 8.6\n1, GPU-pascal, 6.1\n",
+			visible:          "0,-1,1",
+			filter:           true,
+			wantState:        hostCUDASupported,
+			wantCapabilities: []string{"8.6"},
+		},
+		{
+			name:      "out of range visibility token exposes no devices",
+			output:    "0, GPU-ampere, 8.6\n1, GPU-pascal, 6.1\n",
+			visible:   "99,1",
+			filter:    true,
+			wantState: hostCUDAUnavailable,
+		},
+		{
 			name:      "empty visibility mask makes cuda unavailable",
 			output:    "0, GPU-ampere, 8.6\n",
 			filter:    true,
@@ -221,16 +374,21 @@ func TestHasROCmGPU(t *testing.T) {
 	}{
 		{
 			name:   "gpu with kernel dispatch",
-			output: "Agent 1\n  Device Type: GPU\n  Kernel Dispatch: FULL\n",
+			output: "Agent 1\n  Device Type: GPU\n  Feature: KERNEL_DISPATCH\n",
+			want:   true,
+		},
+		{
+			name:   "gpu with combined dispatch features",
+			output: "Agent 1\n  Device Type: GPU\n  Features: KERNEL_DISPATCH & AGENT_DISPATCH\n",
 			want:   true,
 		},
 		{
 			name:   "cpu agent only",
-			output: "Agent 1\n  Device Type: CPU\n  Kernel Dispatch: FULL\n",
+			output: "Agent 1\n  Device Type: CPU\n  Feature: KERNEL_DISPATCH\n",
 		},
 		{
 			name:   "gpu without kernel dispatch",
-			output: "Agent 1\n  Device Type: GPU\n  Kernel Dispatch: NONE\n",
+			output: "Agent 1\n  Device Type: GPU\n  Feature: AGENT_DISPATCH\n",
 		},
 	}
 

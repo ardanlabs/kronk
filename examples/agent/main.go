@@ -22,7 +22,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -409,7 +408,9 @@ func installSystem() (models.Path, error) {
 	defer cancel()
 
 	// Install llama.cpp libraries.
-	libs, err := libs.New(libs.WithVersion(defaults.LibVersion("")))
+	libs, err := libs.New(
+		libs.WithDetect(ctx, kronk.FmtLogger),
+	)
 	if err != nil {
 		return models.Path{}, err
 	}

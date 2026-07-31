@@ -30,6 +30,75 @@ type RuntimeSelection struct {
 	Reason             string
 }
 
+type detectOptions struct {
+	ctx       context.Context
+	log       Logger
+	libPath   string
+	arch      string
+	opSys     string
+	processor string
+}
+
+// WithDetect supplies the context and logger used by automatic host runtime
+// detection.
+func WithDetect(ctx context.Context, log Logger) Option {
+	return WithDetectOverrides(ctx, log, "", "", "", "")
+}
+
+// WithDetectOverrides supplies the context and logger used by automatic host
+// runtime detection plus optional library path, architecture, operating
+// system, and processor overrides.
+// WithLibPath, WithArch, WithOS, and WithProcessor always take precedence,
+// regardless of option order.
+func WithDetectOverrides(ctx context.Context, log Logger, libPath string, arch string, opSys string, processor string) Option {
+	return func(o *Options) {
+		o.detect = &detectOptions{
+			ctx:       ctx,
+			log:       log,
+			libPath:   libPath,
+			arch:      arch,
+			opSys:     opSys,
+			processor: processor,
+		}
+	}
+}
+
+func applyDetectOverrides(options *Options) error {
+	if options.detect == nil {
+		return nil
+	}
+
+	if options.LibPath == "" && options.detect.libPath != "" {
+		options.LibPath = options.detect.libPath
+	}
+
+	if options.Arch.String() == "" && options.detect.arch != "" {
+		arch, err := download.ParseArch(options.detect.arch)
+		if err != nil {
+			return fmt.Errorf("detect: parse architecture: %w", err)
+		}
+		options.Arch = arch
+	}
+
+	if options.OS.String() == "" && options.detect.opSys != "" {
+		opSys, err := download.ParseOS(options.detect.opSys)
+		if err != nil {
+			return fmt.Errorf("detect: parse operating system: %w", err)
+		}
+		options.OS = opSys
+	}
+
+	if options.Processor.String() == "" && options.detect.processor != "" {
+		processor, err := download.ParseProcessor(options.detect.processor)
+		if err != nil {
+			return fmt.Errorf("detect: parse processor: %w", err)
+		}
+		options.Processor = processor
+	}
+
+	return nil
+}
+
 type runtimeProbeState uint8
 
 const (
@@ -66,11 +135,10 @@ type hostCUDAProbe struct {
 	capabilities []string
 }
 
-// SelectHostRuntime checks whether the host can use the preferred library
-// bundle and selects a locally supported processor when it cannot. It probes
-// only installed driver support and never downloads libraries.
-func (lib *Libs) SelectHostRuntime(ctx context.Context, log Logger) (*Libs, RuntimeSelection) {
-	return lib.selectHostRuntime(ctx, log, probeCUDA13Host, lib.detectHostFallback)
+type hostCUDADevice struct {
+	index      string
+	uuid       string
+	capability string
 }
 
 func (lib *Libs) selectHostRuntime(
@@ -157,7 +225,7 @@ func parseCUDA13Host(output string, visible string, filter bool) hostCUDAProbe {
 		return hostCUDAProbe{}
 	}
 
-	probe := hostCUDAProbe{state: hostCUDASupported}
+	var devices []hostCUDADevice
 	invalid := false
 	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
@@ -173,12 +241,21 @@ func parseCUDA13Host(output string, visible string, filter bool) hostCUDAProbe {
 		for i := range fields {
 			fields[i] = strings.TrimSpace(fields[i])
 		}
-		if filter && !cudaDeviceVisible(fields[0], fields[1], visible) {
-			continue
-		}
+		devices = append(devices, hostCUDADevice{
+			index:      fields[0],
+			uuid:       fields[1],
+			capability: fields[2],
+		})
+	}
 
-		probe.capabilities = append(probe.capabilities, fields[2])
-		capability, err := strconv.ParseFloat(fields[2], 64)
+	if filter {
+		devices = visibleCUDADevices(devices, visible)
+	}
+
+	probe := hostCUDAProbe{state: hostCUDASupported}
+	for _, device := range devices {
+		probe.capabilities = append(probe.capabilities, device.capability)
+		capability, err := strconv.ParseFloat(device.capability, 64)
 		if err != nil {
 			invalid = true
 			continue
@@ -205,19 +282,31 @@ func parseCUDA13Host(output string, visible string, filter bool) hostCUDAProbe {
 	return probe
 }
 
-func cudaDeviceVisible(index string, uuid string, visible string) bool {
+func visibleCUDADevices(devices []hostCUDADevice, visible string) []hostCUDADevice {
 	if visible == "all" {
-		return true
+		return devices
 	}
 
+	var selected []hostCUDADevice
 	for token := range strings.SplitSeq(visible, ",") {
 		token = strings.TrimSpace(token)
-		if token == index || token != "" && strings.HasPrefix(uuid, token) {
-			return true
+		if token == "" {
+			break
 		}
+
+		var matches []hostCUDADevice
+		for _, device := range devices {
+			if token == device.index || strings.HasPrefix(device.uuid, token) {
+				matches = append(matches, device)
+			}
+		}
+		if len(matches) != 1 {
+			break
+		}
+		selected = append(selected, matches[0])
 	}
 
-	return false
+	return selected
 }
 
 func (lib *Libs) detectHostFallback(ctx context.Context) download.Processor {
@@ -255,7 +344,9 @@ func hasROCmGPU(output string) bool {
 		for line := range strings.SplitSeq(block, "\n") {
 			line = strings.Join(strings.Fields(line), " ")
 			gpu = gpu || line == "Device Type: GPU"
-			dispatch = dispatch || line == "Kernel Dispatch: FULL"
+			dispatch = dispatch ||
+				(strings.HasPrefix(line, "Feature:") || strings.HasPrefix(line, "Features:")) &&
+					strings.Contains(line, "KERNEL_DISPATCH")
 		}
 		if gpu && dispatch {
 			return true
@@ -294,6 +385,11 @@ func (lib *Libs) selectInstalledRuntime(ctx context.Context, log Logger, probeFn
 		PreferredProcessor: lib.Processor(),
 		SelectedProcessor:  lib.Processor(),
 		Reason:             "preferred runtime retained",
+	}
+
+	if lib.hostDemoted {
+		selection.Reason = "host compatibility fallback retained"
+		return lib, selection, nil
 	}
 
 	if !isAcceleratorProcessor(lib.Processor()) || lib.readOnly {
