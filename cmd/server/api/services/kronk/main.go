@@ -333,6 +333,16 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("unable to create libs api: %w", err)
 	}
 
+	// Host compatibility selection only inspects installed drivers. Explicit
+	// processor and library-path choices remain strict user overrides.
+	hostRuntimeDemoted := false
+	if cfg.Processor == "" && cfg.LibPath == "" {
+		selected, decision := libs.SelectHostRuntime(ctx, log.Info)
+		libs = selected
+		hostRuntimeDemoted = decision.SelectedProcessor != decision.PreferredProcessor
+		log.Info(ctx, "startup", "status", "selected host runtime", "preferred", decision.PreferredProcessor, "selected", decision.SelectedProcessor, "reason", decision.Reason)
+	}
+
 	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
 
 	downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -344,7 +354,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	// Capability fallback applies only to automatic processor selection. An
 	// explicit processor or library path remains a strict user choice.
-	if cfg.Processor == "" && cfg.LibPath == "" {
+	if cfg.Processor == "" && cfg.LibPath == "" && !hostRuntimeDemoted {
 		selected, decision, err := libs.SelectInstalledRuntime(ctx, log.Info)
 		if err != nil {
 			log.Info(ctx, "startup", "WARNING", "unable to select installed llama.cpp runtime", "ERROR", err)

@@ -9,13 +9,19 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
-const runtimeProbeTimeout = 10 * time.Second
+const (
+	runtimeProbeTimeout = 10 * time.Second
+	hostProbeTimeout    = 2 * time.Second
+
+	minimumCUDA13ComputeCapability = 7.5
+)
 
 // RuntimeSelection describes an installed-runtime selection decision.
 type RuntimeSelection struct {
@@ -44,6 +50,232 @@ type runtimeProbe struct {
 	devices   []string
 	output    string
 	err       error
+}
+
+type hostCUDAState uint8
+
+const (
+	hostCUDAUnknown hostCUDAState = iota
+	hostCUDASupported
+	hostCUDAUnsupported
+	hostCUDAUnavailable
+)
+
+type hostCUDAProbe struct {
+	state        hostCUDAState
+	capabilities []string
+}
+
+// SelectHostRuntime checks whether the host can use the preferred library
+// bundle and selects a locally supported processor when it cannot. It probes
+// only installed driver support and never downloads libraries.
+func (lib *Libs) SelectHostRuntime(ctx context.Context, log Logger) (*Libs, RuntimeSelection) {
+	return lib.selectHostRuntime(ctx, log, probeCUDA13Host, lib.detectHostFallback)
+}
+
+func (lib *Libs) selectHostRuntime(
+	ctx context.Context,
+	log Logger,
+	cudaProbeFn func(context.Context) hostCUDAProbe,
+	fallbackFn func(context.Context) download.Processor,
+) (*Libs, RuntimeSelection) {
+	selection := RuntimeSelection{
+		PreferredProcessor: lib.Processor(),
+		SelectedProcessor:  lib.Processor(),
+		Reason:             "preferred host runtime retained",
+	}
+
+	if lib.Processor() != "cuda" || lib.readOnly {
+		return lib, selection
+	}
+
+	probe := cudaProbeFn(ctx)
+	if probe.state != hostCUDAUnsupported && probe.state != hostCUDAUnavailable {
+		if probe.state == hostCUDASupported {
+			selection.Reason = "NVIDIA hardware supports the CUDA 13 libraries"
+		} else {
+			selection.Reason = "NVIDIA hardware detected; CUDA 13 compatibility could not be verified"
+		}
+		return lib, selection
+	}
+
+	processor := fallbackFn(ctx)
+	selected := *lib
+	selected.processor = processor
+	selected.path = installPathFor(lib.root, lib.arch, lib.os, processor)
+	selected.readOnly = false
+
+	selection.SelectedProcessor = processor.String()
+	status := "unsupported"
+	if probe.state == hostCUDAUnavailable {
+		status = "unavailable"
+		selection.Reason = fmt.Sprintf("NVIDIA hardware detected but no CUDA devices are visible; selected %s", processor)
+	} else {
+		selection.Reason = fmt.Sprintf(
+			"NVIDIA hardware compute capability %s is unsupported by the CUDA 13 libraries (requires 7.5 or newer); selected %s",
+			strings.Join(probe.capabilities, ","),
+			processor,
+		)
+	}
+
+	if log != nil {
+		log(
+			ctx,
+			"host accelerator support",
+			"hardware", "nvidia",
+			"processor", "cuda",
+			"status", status,
+			"computeCapabilities", strings.Join(probe.capabilities, ","),
+			"minimumComputeCapability", minimumCUDA13ComputeCapability,
+			"selected", processor,
+		)
+	}
+
+	return &selected, selection
+}
+
+func probeCUDA13Host(ctx context.Context) hostCUDAProbe {
+	pctx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(
+		pctx,
+		"nvidia-smi",
+		"--query-gpu=index,uuid,compute_cap",
+		"--format=csv,noheader,nounits",
+	).Output()
+	if err != nil {
+		return hostCUDAProbe{}
+	}
+
+	visible, filter := os.LookupEnv("CUDA_VISIBLE_DEVICES")
+	return parseCUDA13Host(string(out), visible, filter)
+}
+
+func parseCUDA13Host(output string, visible string, filter bool) hostCUDAProbe {
+	if filter && strings.Contains(visible, "MIG-") {
+		return hostCUDAProbe{}
+	}
+
+	probe := hostCUDAProbe{state: hostCUDASupported}
+	invalid := false
+	for line := range strings.SplitSeq(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Split(line, ",")
+		if len(fields) != 3 {
+			invalid = true
+			continue
+		}
+		for i := range fields {
+			fields[i] = strings.TrimSpace(fields[i])
+		}
+		if filter && !cudaDeviceVisible(fields[0], fields[1], visible) {
+			continue
+		}
+
+		probe.capabilities = append(probe.capabilities, fields[2])
+		capability, err := strconv.ParseFloat(fields[2], 64)
+		if err != nil {
+			invalid = true
+			continue
+		}
+
+		if capability < minimumCUDA13ComputeCapability {
+			probe.state = hostCUDAUnsupported
+		}
+	}
+
+	if probe.state == hostCUDAUnsupported {
+		return probe
+	}
+	if invalid {
+		probe.state = hostCUDAUnknown
+	} else if len(probe.capabilities) == 0 {
+		if filter {
+			probe.state = hostCUDAUnavailable
+		} else {
+			probe.state = hostCUDAUnknown
+		}
+	}
+
+	return probe
+}
+
+func cudaDeviceVisible(index string, uuid string, visible string) bool {
+	if visible == "all" {
+		return true
+	}
+
+	for token := range strings.SplitSeq(visible, ",") {
+		token = strings.TrimSpace(token)
+		if token == index || token != "" && strings.HasPrefix(uuid, token) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (lib *Libs) detectHostFallback(ctx context.Context) download.Processor {
+	if IsSupported(lib.Arch(), lib.OS(), "rocm") && hasROCmHostSupport(ctx) {
+		return download.ROCm
+	}
+
+	if IsSupported(lib.Arch(), lib.OS(), "vulkan") && hasVulkanHostSupport(ctx) {
+		return download.Vulkan
+	}
+
+	return download.CPU
+}
+
+func hasROCmHostSupport(ctx context.Context) bool {
+	pctx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(pctx, "rocminfo").CombinedOutput()
+	return err == nil && hasROCmGPU(string(out))
+}
+
+func hasVulkanHostSupport(ctx context.Context) bool {
+	pctx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(pctx, "vulkaninfo", "--summary").CombinedOutput()
+	return err == nil && hasVulkanGPU(string(out))
+}
+
+func hasROCmGPU(output string) bool {
+	for block := range strings.SplitSeq(output, "Agent ") {
+		gpu := false
+		dispatch := false
+		for line := range strings.SplitSeq(block, "\n") {
+			line = strings.Join(strings.Fields(line), " ")
+			gpu = gpu || line == "Device Type: GPU"
+			dispatch = dispatch || line == "Kernel Dispatch: FULL"
+		}
+		if gpu && dispatch {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasVulkanGPU(output string) bool {
+	for line := range strings.SplitSeq(output, "\n") {
+		line = strings.Join(strings.Fields(line), " ")
+		if strings.HasSuffix(line, "PHYSICAL_DEVICE_TYPE_DISCRETE_GPU") ||
+			strings.HasSuffix(line, "PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU") ||
+			strings.HasSuffix(line, "PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // SelectInstalledRuntime selects an installed accelerator bundle before any
