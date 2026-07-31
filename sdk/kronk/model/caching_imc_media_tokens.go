@@ -130,7 +130,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc-media-cache", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
-		"media_count", stable.mediaCount, "logical_units", len(stable.units), "text_tokens", stable.textTokens,
+		"imc_cache_entry", selected.id, "media_count", stable.mediaCount, "logical_units", len(stable.units), "text_tokens", stable.textTokens,
 		"match_kind", matchKind, "match_reason", matchReason, "reusable_logical_position", result.cacheIdx, "anchor_physical_kv", result.imcExpectedTokens,
 		"anchor_logical_position", result.imcExpectedPosition, "replay_text_tokens", len(result.imcTailTokens), "extension_text", len(result.imcNewCacheTokens),
 		"extension_media", 0, "position_mode", "linear-or-mrope", "request_age", fmtDur(time.Since(requestStart)))

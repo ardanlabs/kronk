@@ -91,7 +91,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 				}
 				return "none"
 			}(),
-			"imc_slot", imcSessionID,
+			"imc_cache_entry", imcSessionID,
 			"imc_active", imcActive,
 			"imc_cache_hit", imcSnapshotReused,
 			"imc_match_kind", imcMatchKind,
@@ -422,7 +422,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 		"err", err,
 	)
 	e.model.log(job.ctx, "batch-engine", "status", "job-failed", "id", job.id,
-		"imc_slot", job.imcSessionID, "imc_active", job.imcCacheHit,
+		"imc_cache_entry", job.imcSessionID, "imc_active", job.imcCacheHit,
 		"imc_cache_hit", job.imcSnapshotReused,
 		"err", err, "active_streams", remaining)
 

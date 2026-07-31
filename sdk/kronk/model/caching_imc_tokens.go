@@ -117,7 +117,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
-		"imc_slot", selected.id, "match_kind", matchKind, "match_reason", matchReason, "reusable_tokens", reusable,
+		"imc_cache_entry", selected.id, "match_kind", matchKind, "match_reason", matchReason, "reusable_tokens", reusable,
 		"extension_tokens", len(extension), "tail_tokens", len(tail), "actual_tokens", len(actual),
 		"stable_tokens", targetLen, "logical_units", targetLen, "text_tokens", targetLen, "kv_positions", targetLen,
 		"request_age", fmtDur(time.Since(requestStart)))
