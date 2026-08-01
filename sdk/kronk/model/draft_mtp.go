@@ -96,6 +96,8 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	params.TypeV = targetCtxParams.TypeV
 	params.Offload_kqv = targetCtxParams.Offload_kqv
 	params.OpOffload = targetCtxParams.OpOffload
+	params.KVUnified = targetCtxParams.KVUnified
+	params.SwaFull = targetCtxParams.SwaFull
 
 	nEmbd := int(llama.ModelNEmbd(targetModel))
 	if nEmbd <= 0 {
@@ -166,8 +168,8 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// but they're kept allocated for type-uniformity with the
 	// separate-GGUF draft (BatchFree on a zero struct is harmless).
 	//
-	// Note: draftBuf, draftProbs, targetProbs, and adjusted are
-	// intentionally left nil/empty for MTP. verifySpeculativeTokens
+	// Note: draftBuf and targetProbs are intentionally left nil/empty
+	// for MTP. verifySpeculativeTokens
 	// forces greedy verification on the MTP path (the MTP head does
 	// not produce per-token distributions), so the probabilistic
 	// sampling branches that read those buffers are unreachable. The
@@ -348,9 +350,8 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 	}
 
 	// Shared memory: this returns the TARGET's llama_memory. Do NOT clear
-	// it — that would wipe the target's KV. We keep the handle only for
-	// the safe ops (MemorySeqRm on the assistant's own cells is a no-op
-	// for the shared layers).
+	// or trim it through the assistant — that would mutate the target's KV.
+	// The handle is retained only for draftCore's uniform ownership shape.
 	mem, err := llama.GetMemory(lctx)
 	if err != nil {
 		llama.Free(lctx)

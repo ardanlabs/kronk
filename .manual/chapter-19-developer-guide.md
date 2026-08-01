@@ -430,13 +430,15 @@ or MTP mirror state. Mutating one slot during the read phase can invalidate indi
 native output needed by another slot.
 
 Ordinary transformer KV can often remove a rejected suffix. Hybrid recurrent/state-
-space models cannot assume partial KV deletion restores prior state. Take the required
-pre-speculation per-sequence snapshot, and on rejection restore it and re-decode exactly
-the accepted prefix. Preserve captured target hidden-state rows needed to synchronize
-MTP. For own-KV MTP, rollback removes speculative draft state before mirroring accepted
-target state. For shared-target-KV Gemma4, do not apply independent-draft rollback to
-the shared target cache. If synchronization fails, safely disable MTP for that request
-and continue target-only rather than retaining ambiguous draft state.
+space models cannot assume partial KV deletion restores prior state. Request bounded
+recurrent rollback through `NRsSeq` and use it only when the context reports enough
+effective rollback depth for the speculative round. Otherwise take a full pre-speculation
+per-sequence snapshot, and on rejection restore it and re-decode exactly the accepted
+prefix. Preserve captured target hidden-state rows needed to synchronize MTP. For own-KV
+MTP, rollback removes speculative draft state before mirroring accepted target state. For
+shared-target-KV Gemma4, do not apply independent-draft rollback to the shared target cache.
+If rollback, restore, or synchronization fails, fail the affected slot or safely disable
+MTP rather than retaining ambiguous state.
 
 Unit-level owners are the batch/speculative files and tests in `sdk/kronk/model/`.
 Model-backed MTP suites live in `sdk/kronk/tests/mtp` and

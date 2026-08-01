@@ -153,16 +153,27 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Trim generated tokens from draft KV, keeping the cached prompt prefix
 	// for incremental reuse on the next request.
 	if e.model.draft != nil {
-		trimPos := llama.Pos(len(s.draftCachedTokens))
-		switch {
-		case trimPos > 0:
-			llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, trimPos, -1)
-			e.model.log(ctx, "speculative", "status", "draft-kv-trimmed",
-				"slot", slotID, "seq", seqID, "trim_pos", trimPos)
-		default:
-			llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
-			e.model.log(ctx, "speculative", "status", "draft-kv-cleared",
-				"slot", slotID, "seq", seqID)
+		_, sharedMTP := e.model.draft.(*sharedMTPDrafter)
+		if !sharedMTP {
+			trimPos := llama.Pos(len(s.draftCachedTokens))
+			switch {
+			case trimPos > 0:
+				removed, rmErr := llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, trimPos, -1)
+				switch {
+				case rmErr != nil || !removed:
+					llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
+					s.draftCachedTokens = s.draftCachedTokens[:0]
+					e.model.log(ctx, "speculative", "status", "draft-kv-trim-fallback-clear",
+						"slot", slotID, "seq", seqID, "trim_pos", trimPos, "err", rmErr)
+				default:
+					e.model.log(ctx, "speculative", "status", "draft-kv-trimmed",
+						"slot", slotID, "seq", seqID, "trim_pos", trimPos)
+				}
+			default:
+				llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
+				e.model.log(ctx, "speculative", "status", "draft-kv-cleared",
+					"slot", slotID, "seq", seqID)
+			}
 		}
 	}
 
