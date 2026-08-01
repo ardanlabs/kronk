@@ -704,7 +704,7 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 			InputTokensDetails: InputTokensDetails{
 				CachedTokens: 0,
 			},
-			OutputTokens: chatResp.Usage.CompletionTokens,
+			OutputTokens: chatResp.Usage.OutputTokens,
 			OutputTokenDetail: OutputTokensDetails{
 				ReasoningTokens: chatResp.Usage.ReasoningTokens,
 			},

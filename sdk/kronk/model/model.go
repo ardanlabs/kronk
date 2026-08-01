@@ -1275,7 +1275,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		usage):
 	}
 
-	contextTokens := usage.PromptTokens + usage.CompletionTokens
+	contextTokens := usage.TotalTokens
 	contextWindow := m.cfg.ContextWindow()
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
