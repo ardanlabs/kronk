@@ -71,6 +71,7 @@ type Options struct {
 	Processor    string
 	Version      string
 	AllowUpgrade bool
+	detect       *detectOptions
 }
 
 // Option is a function that configures Options.
@@ -92,11 +93,13 @@ func WithBasePath(basePath string) Option {
 //  2. A non-empty directory without a version.json — treated as a
 //     user-managed read-only build. Mutating operations return
 //     ErrReadOnly.
-//  3. An empty or non-existent directory — treated as the libraries
-//     root. Installs land in a subfolder of the form
-//     <root>/<os>/<arch>/<processor>/.
+//  3. An empty or non-existent directory — used directly as a writable
+//     custom install location.
 //
-// An empty string falls back to the Kronk default libraries root.
+// Any non-empty path is authoritative and bypasses automatic host runtime
+// compatibility selection. An empty string falls back to the Kronk default
+// libraries root, where installs land in
+// <root>/<os>/<arch>/<processor>/.
 func WithLibPath(libPath string) Option {
 	return func(o *Options) {
 		o.LibPath = libPath
@@ -117,7 +120,10 @@ func WithOS(opSys string) Option {
 	}
 }
 
-// WithProcessor sets the processor / hardware type.
+// WithProcessor sets the processor / hardware type. A supported Bucky
+// processor is authoritative. ROCm is a shared hardware preference rather
+// than a Bucky artifact: under the default library root it resolves to Vulkan
+// on supported Linux hosts with a usable Vulkan GPU, and otherwise to CPU.
 func WithProcessor(processor string) Option {
 	return func(o *Options) {
 		o.Processor = processor
@@ -169,8 +175,11 @@ type Libs struct {
 
 // New constructs a Libs with system defaults and applies any provided
 // options. It resolves the install location and reads any existing
-// version.json to back-fill the (arch, os, processor) triple for
-// fields the caller did not explicitly set.
+// version.json to back-fill the (arch, os, processor) triple for fields the
+// caller did not explicitly set. Under the default root, New validates
+// metadata, environment, and detected hardware preferences against Bucky's
+// published artifacts and the current host. A non-empty library path and an
+// explicitly selected supported Bucky processor remain authoritative.
 func New(opts ...Option) (*Libs, error) {
 	var options Options
 	for _, opt := range opts {
@@ -198,31 +207,37 @@ func New(opts ...Option) (*Libs, error) {
 		return nil, err
 	}
 
-	// rocm has no upstream whisper.cpp bundle (see combinations.go),
-	// so a host that auto-detects (or is forced into) rocm would
-	// otherwise resolve to a non-existent install directory and bucky
-	// would degrade to "no library found". Fall back to vulkan when it
-	// is supported on this triple — it works on every ROCm-capable AMD
-	// GPU via the RADV ICD shipped by mesa-vulkan-drivers, so the
-	// substitution is transparent and keeps GPU-accelerated
-	// transcription working on both the `:rocm` and `:all` container
-	// images and native ROCm installs. The IsSupported(rocm) guard
-	// auto-disables this shim if upstream ever publishes a rocm
-	// whisper bundle.
-	processorOpt := options.Processor
-	if processorOpt == "rocm" {
-		if !IsSupported(arch, opSys, "rocm") {
-			if IsSupported(arch, opSys, "vulkan") {
-				processorOpt = "vulkan"
-			} else {
-				processorOpt = "cpu"
-			}
-		}
-	}
-
-	processor, err := resolveProcessor(processorOpt, tag.Processor)
+	processor, err := resolveProcessor(options.Processor, tag.Processor)
 	if err != nil {
 		return nil, err
+	}
+
+	// A caller-supplied path and a supported explicit processor are strict.
+	// Everything else is a preference that must be safe for this host.
+	if options.LibPath == "" && !(options.Processor != "" && options.Processor != "rocm" && IsSupported(arch, opSys, processor)) {
+		ctx := context.Background()
+		var log Logger
+		probes := defaultRuntimeProbes()
+		if options.detect != nil {
+			if options.detect.ctx != nil {
+				ctx = options.detect.ctx
+			}
+			log = options.detect.log
+			if options.detect.probes != nil {
+				probes = *options.detect.probes
+			}
+		}
+
+		preferred := processor
+		var reason string
+		var supported bool
+		processor, reason, supported = selectRuntime(ctx, arch, opSys, preferred, probes)
+		if !supported {
+			return nil, fmt.Errorf("libs: no supported automatic runtime for arch=%s os=%s", arch, opSys)
+		}
+		if log != nil {
+			log(ctx, "select bucky runtime", "preferred", preferred, "selected", processor, "reason", reason)
+		}
 	}
 
 	// If the caller did not point at a specific install directory, the

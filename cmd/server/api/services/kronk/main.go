@@ -366,6 +366,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		buckylibs.WithBasePath(cfg.BasePath),
 		buckylibs.WithLibPath(os.Getenv("KRONK_BUCKY_LIB_PATH")),
 		buckylibs.WithAllowUpgrade(cfg.AllowUpgrade),
+		buckylibs.WithDetect(ctx, log.Info),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create bucky libs api: %w", err)

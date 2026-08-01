@@ -143,7 +143,7 @@ func New(t *testing.T, testName string) *Test {
 	// when the whisper library and a whisper model (e.g. ggml-tiny.bin)
 	// have been installed under ~/.kronk.
 
-	buckyLibs, err := buckylibs.New()
+	buckyLibs, err := buckylibs.New(buckylibs.WithDetect(ctx, log.Info))
 	if err != nil {
 		t.Fatal(err)
 	}
