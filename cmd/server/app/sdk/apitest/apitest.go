@@ -55,12 +55,12 @@ func (at *Test) Run(t *testing.T, table []Table, testName string, options ...Opt
 		f(to)
 	}
 
-	if to.skip {
-		t.Skipf("%v: %v", testName, to.skipMsg)
-	}
-
 	for _, tt := range table {
 		f := func(t *testing.T) {
+			if to.skip {
+				t.Skipf("%v: %v", testName, to.skipMsg)
+			}
+
 			if tt.SkipInGH && os.Getenv("GITHUB_ACTIONS") == "true" {
 				t.Skip("Skipping test in GitHub Actions")
 			}
@@ -137,12 +137,12 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 		f(to)
 	}
 
-	if to.skip {
-		t.Skipf("%v: %v", testName, to.skipMsg)
-	}
-
 	for _, tt := range table {
 		f := func(t *testing.T) {
+			if to.skip {
+				t.Skipf("%v: %v", testName, to.skipMsg)
+			}
+
 			if tt.SkipInGH && os.Getenv("GITHUB_ACTIONS") == "true" {
 				t.Skip("Skipping test in GitHub Actions")
 			}

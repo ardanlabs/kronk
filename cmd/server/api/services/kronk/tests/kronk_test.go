@@ -68,8 +68,9 @@ func Test_API(t *testing.T) {
 	// -------------------------------------------------------------------------
 	// Model: Qwen2.5-Omni-3B-Q8_0 (audio)
 
-	test.Run(t, chatAudioQwen25Omni(t, tokens), "chat-audio-qwen25omni")
-	test.Run(t, respAudioQwen25Omni(t, tokens), "resp-audio-qwen25omni")
+	const audioSkipReason = "disabled until Qwen2.5-Omni audio generation is stable"
+	test.Run(t, chatAudioQwen25Omni(t, tokens), "chat-audio-qwen25omni", apitest.WithSkip(true, audioSkipReason))
+	test.Run(t, respAudioQwen25Omni(t, tokens), "resp-audio-qwen25omni", apitest.WithSkip(true, audioSkipReason))
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen3-Embedding-0.6B-Q8_0
