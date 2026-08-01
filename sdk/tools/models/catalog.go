@@ -373,9 +373,10 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 	return Resolution{}, fmt.Errorf("resolve: model %q not found in any of %v", id, providers)
 }
 
-// resolvePinned resolves an exact model id from an exact HuggingFace repo.
-// Unlike the public provider/repo:tag form, this path never scans catalog
-// entries by quant tag, so two files ending in the same tag cannot collide.
+// resolvePinned resolves an exact upstream model id from an exact HuggingFace
+// repo. Unlike the public provider/repo:tag form, this path never scans
+// catalog entries by quant tag, so two files ending in the same tag cannot
+// collide. The canonical id still follows the repo's on-disk rename rules.
 func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID string, refresh bool) (Resolution, error) {
 	rm, err := r.Load()
 	if err != nil {
@@ -383,7 +384,7 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 	}
 
 	online := hasNetwork()
-	canonical := canonicalID(provider, modelID)
+	canonical := canonicalID(provider, catalogModelID(repo, modelID+".gguf"))
 	if entry, ok := rm.Models[canonical]; ok &&
 		strings.EqualFold(entry.Provider, provider) &&
 		strings.EqualFold(entry.Family, repo) &&
