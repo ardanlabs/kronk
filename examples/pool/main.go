@@ -43,10 +43,6 @@ func run() error {
 		return fmt.Errorf("unable to install system: %w", err)
 	}
 
-	if err := kronk.Init(); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
 	// -------------------------------------------------------------------------
 
 	const cacheTTL = 15 * time.Second
@@ -108,6 +104,10 @@ func installSystem() (*models.Models, error) {
 
 	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
 		return nil, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
 	// -------------------------------------------------------------------------

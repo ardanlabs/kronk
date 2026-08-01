@@ -39,8 +39,8 @@ type initOptions struct {
 // InitOption represents options for configuring Init.
 type InitOption func(*initOptions)
 
-// WithInitLibPath sets a custom library path for whisper.cpp.
-func WithInitLibPath(libPath string) InitOption {
+// WithLibPath sets a custom library path for whisper.cpp.
+func WithLibPath(libPath string) InitOption {
 	return func(o *initOptions) {
 		o.libPath = libPath
 	}

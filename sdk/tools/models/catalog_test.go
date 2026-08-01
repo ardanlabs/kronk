@@ -1246,15 +1246,60 @@ func TestResolver_PinnedFileIgnoresSameTagCacheEntries(t *testing.T) {
 	}
 }
 
+func TestResolver_PinnedFileDedicatedMTPRepo(t *testing.T) {
+	hfc := &fakeHF{
+		metas: map[string][]string{
+			"unsloth/Qwen3.6-35B-A3B-MTP-GGUF": {
+				"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf",
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	rfile := filepath.Join(dir, "catalog.yaml")
+	mustWriteFile(t, rfile, "providers: [unsloth]\nmodels: {}\n")
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+	res, err := r.resolvePinned(context.Background(), "unsloth", "Qwen3.6-35B-A3B-MTP-GGUF", "Qwen3.6-35B-A3B-UD-Q8_K_XL", true)
+	if err != nil {
+		t.Fatalf("resolvePinned: %v", err)
+	}
+
+	if res.CanonicalID != "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL" {
+		t.Errorf("CanonicalID = %q, want the renamed MTP model id", res.CanonicalID)
+	}
+	wantURL := "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf"
+	if !reflect.DeepEqual(res.DownloadURLs, []string{wantURL}) {
+		t.Errorf("DownloadURLs = %v, want [%s]", res.DownloadURLs, wantURL)
+	}
+	if !reflect.DeepEqual(hfc.calls, []string{"meta:unsloth/Qwen3.6-35B-A3B-MTP-GGUF"}) {
+		t.Errorf("HF calls = %v, want one exact repo metadata lookup", hfc.calls)
+	}
+
+	persisted, err := r.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	entry, ok := persisted.Models[res.CanonicalID]
+	if !ok {
+		t.Fatalf("persisted catalog missing %q", res.CanonicalID)
+	}
+	if entry.Family != "Qwen3.6-35B-A3B-MTP-GGUF" {
+		t.Errorf("persisted Family = %q, want Qwen3.6-35B-A3B-MTP-GGUF", entry.Family)
+	}
+	if !reflect.DeepEqual(entry.Files, []string{"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf"}) {
+		t.Errorf("persisted Files = %v, want the upstream GGUF filename", entry.Files)
+	}
+}
+
 func TestResolver_TagForm_PinsExplicitRepo(t *testing.T) {
 	// Regression: when two repos under the same provider publish the
 	// same quant basename (e.g. ".../Qwen3.6-35B-A3B-GGUF" and the
 	// sibling ".../Qwen3.6-35B-A3B-MTP-GGUF" both ship
 	// "Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf"), an "owner/repo/file" input
-	// from the BUI Pull screen must land in the repo the user named.
-	// The fix routes those inputs through the "provider/repo:tag" form
-	// in ResolveSource so we hit ModelMeta on the explicit repo and
-	// never reach SearchModels (which could pick the wrong sibling).
+	// from the BUI Pull screen must land in the repo the user named. The
+	// tag form hits ModelMeta on the explicit repo and never reaches
+	// SearchModels (which could pick the wrong sibling).
 	hfc := &fakeHF{
 		metas: map[string][]string{
 			"unsloth/Qwen3.6-35B-A3B-GGUF": {

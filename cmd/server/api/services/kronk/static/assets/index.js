@@ -1044,10 +1044,6 @@ type Agent struct {
 
 // NewAgent creates a new instance of Agent.
 func NewAgent(getUserMessage func() (string, bool), mp models.Path) (*Agent, error) {
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
-
 	krn, err := newKronk(mp)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create kronk instance: %w", err)
@@ -1378,8 +1374,13 @@ func installSystem() (models.Path, error) {
 	if err != nil {
 		return models.Path{}, err
 	}
+
 	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
 	// Download model.
@@ -1517,6 +1518,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -1534,10 +1539,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -1767,6 +1768,10 @@ func installSystem() (buckymodels.Path, error) {
 		return buckymodels.Path{}, fmt.Errorf("download whisper.cpp libs: %w", err)
 	}
 
+	if err := bucky.Init(bucky.WithLibPath(lib.LibsPath())); err != nil {
+		return buckymodels.Path{}, fmt.Errorf("bucky init: %w", err)
+	}
+
 	mdls, err := buckymodels.New()
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("models new: %w", err)
@@ -1784,10 +1789,6 @@ func installSystem() (buckymodels.Path, error) {
 
 func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {
 	fmt.Println("Initializing bucky / whisper.cpp")
-
-	if err := bucky.Init(); err != nil {
-		return nil, fmt.Errorf("bucky init: %w", err)
-	}
 
 	if len(mp.ModelFiles) == 0 {
 		return nil, fmt.Errorf("no model files on disk")
@@ -2035,6 +2036,9 @@ func installSystem() (buckymodels.Path, error) {
 	if _, err := lib.Download(ctx, bucky.FmtLogger); err != nil {
 		return buckymodels.Path{}, fmt.Errorf("download whisper.cpp libs: %w", err)
 	}
+	if err := bucky.Init(bucky.WithLibPath(lib.LibsPath())); err != nil {
+		return buckymodels.Path{}, fmt.Errorf("bucky init: %w", err)
+	}
 
 	mdls, err := buckymodels.New()
 	if err != nil {
@@ -2053,10 +2057,6 @@ func installSystem() (buckymodels.Path, error) {
 
 func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {
 	fmt.Println("Initializing bucky / whisper.cpp")
-
-	if err := bucky.Init(); err != nil {
-		return nil, fmt.Errorf("bucky init: %w", err)
-	}
 
 	if len(mp.ModelFiles) == 0 {
 		return nil, fmt.Errorf("no model files on disk")
@@ -2328,6 +2328,9 @@ func installSystem() (buckymodels.Path, error) {
 	if _, err := lib.Download(ctx, bucky.FmtLogger); err != nil {
 		return buckymodels.Path{}, fmt.Errorf("download whisper.cpp libs: %w", err)
 	}
+	if err := bucky.Init(bucky.WithLibPath(lib.LibsPath())); err != nil {
+		return buckymodels.Path{}, fmt.Errorf("bucky init: %w", err)
+	}
 
 	mdls, err := buckymodels.New()
 	if err != nil {
@@ -2346,10 +2349,6 @@ func installSystem() (buckymodels.Path, error) {
 
 func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {
 	fmt.Println("Initializing bucky / whisper.cpp")
-
-	if err := bucky.Init(); err != nil {
-		return nil, fmt.Errorf("bucky init: %w", err)
-	}
 
 	if len(mp.ModelFiles) == 0 {
 		return nil, fmt.Errorf("no model files on disk")
@@ -2451,6 +2450,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -2468,10 +2471,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -2819,6 +2818,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -2836,10 +2839,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("Loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -3095,6 +3094,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -3112,10 +3115,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -3286,6 +3285,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -3303,10 +3306,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -3987,10 +3986,6 @@ func run() error {
 		return fmt.Errorf("unable to install system: %w", err)
 	}
 
-	if err := kronk.Init(); err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
 	// -------------------------------------------------------------------------
 
 	const cacheTTL = 15 * time.Second
@@ -4052,6 +4047,10 @@ func installSystem() (*models.Models, error) {
 
 	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
 		return nil, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return nil, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
@@ -4285,6 +4284,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	// -------------------------------------------------------------------------
 
 	mdls, err := models.New()
@@ -4302,10 +4305,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -4563,6 +4562,10 @@ func installSystem() (models.Path, models.Path, error) {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, models.Path{}, fmt.Errorf("unable to create models api: %w", err)
@@ -4582,10 +4585,6 @@ func installSystem() (models.Path, models.Path, error) {
 }
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
-
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 		model.WithAutoTune(true),
@@ -4840,6 +4839,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -4857,10 +4860,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -5024,6 +5023,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -5041,10 +5044,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -5389,6 +5388,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -5406,10 +5409,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
@@ -6836,7 +6835,7 @@ make kronk-server-stop`})}),(0,W.jsxs)(`p`,{children:[`Native llama and Whisper 
   -> one-model public handle admission semaphore
   -> model engine/state execution
   -> SDK result or stream
-  -> protocol response`})}),(0,W.jsx)(`p`,{children:`Every arrow is an ownership boundary. Middleware owns transport concerns. Domains own HTTP compatibility. Pools own model residency and resource tickets. Handles own per-model admission and shutdown coordination. Engines own native contexts, sequences, and inference state. Preserve error identities long enough for the domain layer to map capacity, cancellation, validation, and internal failures correctly.`}),(0,W.jsx)(`h4`,{id:`1952-typed-pool-acquisition-loading-and-eviction`,children:`19.5.2 Typed pool acquisition, loading, and eviction`}),(0,W.jsx)(`p`,{children:`An acquisition first checks/coalesces a typed cache entry. A cold load is planned by the backend loader, then reserved against the shared memory manager before expensive native loading. The loaded handle becomes visible only after initialization succeeds. Failed planning or loading must release its reservation and must not publish a partial cache entry. Concurrent acquisition of the same key should share load work rather than multiply memory commitments.`}),(0,W.jsxs)(`p`,{children:[`Item count and available RAM/VRAM are independent admission constraints. Normal admission-driven eviction selects only idle handles; the pool observes each handle's active-operation counter rather than owning a separate request lease. Explicit invalidation and shutdown may remove an active entry and rely on the handle's `,(0,W.jsx)(`code`,{children:`Unload`}),` method to drain active work according to its context.`]}),(0,W.jsx)(`p`,{children:`Asynchronous invalidation does not imply that its eviction callback has finished. Synchronous invalidation waits for callback and reservation-ticket completion, but it does not prove native unload succeeded: the callback can report an unload error and still release the reservation. Preserve the engine-level distinction between a model that cannot fit the configured budget and temporary pressure where no idle candidate can be evicted; typed/public APIs may translate those errors differently.`}),(0,W.jsx)(`h4`,{id:`1953-semaphore-lifetime-and-cancellation`,children:`19.5.3 Semaphore lifetime and cancellation`}),(0,W.jsxs)(`p`,{children:[`The `,(0,W.jsx)(`code`,{children:`Kronk`}),` handle's semaphore is admission control around one model. A permit belongs to the operation, not merely to function setup. For a non-streaming call, hold it until the operation returns. For streaming, hold it until the stream is terminal or closed, including cancellation/error cleanup. Releasing at stream construction over-admits; forgetting to release on an early error deadlocks future work. The pool's active-use lease similarly spans the entire externally visible operation so eviction cannot unload native resources while output is still being consumed.`]}),(0,W.jsx)(`p`,{children:`Context cancellation must propagate inward to queue waits and inference. The layer that creates a goroutine, stream, native object, or lease owns its shutdown. Do not close caller-owned channels or unload a caller-owned handle. Unload prevents new work, waits for owned active work according to its context, then tears down engine/native resources. Pool shutdown owns handles created by that pool.`}),(0,W.jsx)(`h4`,{id:`1954-batch-slots-and-sequence-isolation`,children:`19.5.4 Batch slots and sequence isolation`}),(0,W.jsx)(`p`,{children:`Text generation uses a batch engine. A slot is an execution reservation and mutable per-request state; its sequence ID partitions KV/cache operations in the shared native context. Scheduling several slots into one decode is safe only if every token, logit index, sampler, parser, cancellation flag, speculative buffer, media position, and KV operation remains associated with the correct slot/sequence.`}),(0,W.jsx)(`p`,{children:`The main invariants are:`}),(0,W.jsxs)(`ul`,{children:[(0,W.jsx)(`li`,{children:`A slot has one active job and one sequence identity at a time.`}),(0,W.jsx)(`li`,{children:`Batch construction must preserve token-to-sequence and output-index mappings.`}),(0,W.jsx)(`li`,{children:`Completion/cancellation removes or resets only the finishing sequence's state.`}),(0,W.jsx)(`li`,{children:`Slot reuse starts from an intentionally clean state; no parser, sampler, media, speculative, or error state may leak to the next job.`}),(0,W.jsx)(`li`,{children:`A blocked or cancelled caller must not strand a slot or semaphore permit.`}),(0,W.jsx)(`li`,{children:`Native decode failure is attributed to affected jobs and followed by deterministic cleanup; it must not silently publish partly advanced session state.`})]}),(0,W.jsx)(`h4`,{id:`1955-generation-versus-embedding-and-reranking-engines`,children:`19.5.5 Generation versus embedding and reranking engines`}),(0,W.jsx)(`p`,{children:`Text generation benefits from shared batched execution and sequence-partitioned KV. Embeddings and reranking never use generation slots. Proven architectures use the separate sequence-batch engine, which schedules complete embedding inputs or query-document pairs across sequence IDs on one context. Unsupported architectures acquire an independent context from the fallback pool and perform their own decode/clear cycle. Reranking must not allow one document's state to contaminate the next. Embedding pooling and normalization are model/output concerns, not chat-slot concerns. Do not merge the sequence-batch and generation engines merely to share code; their lifecycle contracts differ.`}),(0,W.jsxs)(`p`,{children:[`Compatibility is an explicit allowlist based on `,(0,W.jsx)(`code`,{children:`general.architecture`}),`. Add an architecture only after a native yzma proof, model-backed concurrent tests, and a benchmark. Some llama.cpp failures assert instead of returning an error, so probing an unknown architecture at runtime is not a safe fallback strategy.`]}),(0,W.jsx)(`h3`,{id:`196-core-inference-invariants`,children:`19.6 Core Inference Invariants`}),(0,W.jsx)(`h4`,{id:`1961-imc-sessions-slots-and-external-storage`,children:`19.6.1 IMC sessions, slots, and external storage`}),(0,W.jsx)(`p`,{children:`Incremental Message Cache (IMC) sessions are cache identities, not execution slots. A stable cache/session identifier allows a conversation prefix to survive movement between batch slots. A slot is short-lived compute capacity; binding a session to a slot would reduce concurrency and make slot reuse unsafe.`}),(0,W.jsxs)(`p`,{children:[`The `,(0,W.jsx)(`code`,{children:`SessionStore`}),` contract externalizes each session's native KV snapshot. RAM and disk implementations differ in storage and I/O, but the model layer owns when a snapshot is read, prepared, committed, reset, and closed. Session metadata—cached tokens, render-sensitive identity/version, and snapshot—must describe the same prefix. Do not update one independently and call the session valid.`]}),(0,W.jsxs)(`p`,{children:[`The session's reservation and `,(0,W.jsx)(`code`,{children:`pending`}),` state serialize mutation and hide the session from competing selection until metadata and snapshot bytes agree. Restore only a committed snapshot whose token/prompt identity still matches. Ordinary text build/extension prepares and commits through the session's existing store; if snapshot publication fails, invalidate that session so later work rebuilds it rather than claiming the old or partial state is valid.`]}),(0,W.jsxs)(`p`,{children:[`Media-anchor advancement has a stronger replacement contract: it writes a separately staged store and swaps the store plus matching plan/count metadata only after success, so failure leaves the previous media snapshot published. Do not generalize that staged replacement guarantee to every IMC path. A `,(0,W.jsx)(`code`,{children:`SessionStore`}),` implementation must honor the interface's read/prepare/commit/reset lifetime rules and clean up temporary resources; callers must not assume bytes remain stable across the next mutation.`]}),(0,W.jsx)(`h4`,{id:`1962-prompt-plans-text-and-media`,children:`19.6.2 Prompt plans: text and media`}),(0,W.jsx)(`p`,{children:`Prompt planning converts normalized messages and parameters into the exact work the engine will execute. The plan, cache identity, token accounting, and decode positions must agree. Text-only plans can compare rendered/tokenized prefixes directly and may take optimized exact-hit paths. Media plans carry more than text tokens: ordered media parts, placeholder/embedding expansion, positions, and render-affecting metadata are part of identity and execution.`}),(0,W.jsx)(`p`,{children:`Do not treat a media prompt as text with an attachment ignored by caching. A text prefix match is insufficient if image/audio/video content, ordering, sizing, or model projection changes. Media prefill must align embeddings and positions with the same sequence that receives surrounding text. When prompt construction or media decode fails, the prior valid IMC snapshot remains authoritative.`}),(0,W.jsx)(`h4`,{id:`1963-parser-registry-ownership`,children:`19.6.3 Parser registry ownership`}),(0,W.jsxs)(`p`,{children:[`Parser implementations live under `,(0,W.jsx)(`code`,{children:`sdk/kronk/parsers/`}),`, grouped by model family. The registry interface and registration entry point live in `,(0,W.jsx)(`code`,{children:`sdk/kronk/model/`}),`. A parser plug-in supplies factories/state machines for its advertised family and must tolerate stream chunk boundaries: tags, JSON, reasoning delimiters, and tool arguments may span chunks. It must keep request state per parser instance and produce equivalent logical results for streaming and non-streaming input.`]}),(0,W.jsx)(`p`,{children:`To add or change a parser, edit the family package, update registration/selection only where necessary, and test fragmented as well as complete input. Keep generic JSON repair separate from family recognition. Unknown families need an intentional fallback or error; registration order must not create accidental model-family selection.`}),(0,W.jsx)(`h4`,{id:`1964-responses-normalization`,children:`19.6.4 Responses normalization`}),(0,W.jsxs)(`p`,{children:[`The Responses API adapts to the chat/inference pipeline in `,(0,W.jsx)(`code`,{children:`sdk/kronk/response.go`}),`. Normalization has a compatibility-sensitive mutation contract:`]}),(0,W.jsxs)(`ul`,{children:[(0,W.jsxs)(`li`,{children:[`Preserve existing `,(0,W.jsx)(`code`,{children:`messages`}),`; they win when already supplied.`]}),(0,W.jsxs)(`li`,{children:[`Convert Responses `,(0,W.jsx)(`code`,{children:`input`}),` into messages `,(0,W.jsx)(`strong`,{children:`only when messages are absent`}),`.`]}),(0,W.jsx)(`li`,{children:`Normalize Responses item/content/tool forms needed by chat processing.`}),(0,W.jsxs)(`li`,{children:[`Mutate the supplied `,(0,W.jsx)(`code`,{children:`model.D`}),` document map. Callers that require isolation must clone before invoking the Responses path.`]})]}),(0,W.jsx)(`p`,{children:`Do not “clean up” this code by always rebuilding messages or silently switching to a copy. Either change breaks callers that combine compatibility fields or inspect the document after normalization. Add tests for existing messages, input-only requests, and observable in-place mutation.`}),(0,W.jsx)(`h4`,{id:`1965-tracing-and-logging`,children:`19.6.5 Tracing and logging`}),(0,W.jsx)(`p`,{children:`Tracing should identify major waits and ownership boundaries: request handling, model acquisition/load, queue wait, prompt/prefill, generation, and unload when relevant. Keep spans concise. Avoid a span per token, duplicated nested timing, giant model-config attribute sets, prompt/media payloads, and unbounded IDs. Propagate the request context instead of creating unrelated roots. Logs and metrics should help distinguish queue, capacity, cancellation, and inference failures without exposing user content unless an explicit insecure-logging mode authorizes it.`}),(0,W.jsx)(`p`,{children:`Embedding/reranking metrics distinguish the operation and selected runtime. Sequence- batch queue wait and batch width are engine-level measurements; request duration, active requests, status, and prompt-token usage are operation-level measurements. Resource reservations remain owned by the shared pool/resource manager and must not be duplicated inside either inference engine.`}),(0,W.jsx)(`h4`,{id:`1966-speculative-decoding-and-mtp`,children:`19.6.6 Speculative decoding and MTP`}),(0,W.jsx)(`p`,{children:`Speculative support has three ownership shapes:`}),(0,W.jsxs)(`ol`,{children:[(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`Separate GGUF draft model.`}),` The draft has its own model/context/KV and proposes tokens; the target verifies them. Loading, memory planning, sequence cleanup, and rollback must account for both models.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`Embedded MTP.`}),` A target GGUF exposes an embedded multi-token-prediction head. Model detection and MTP construction are owned by `,(0,W.jsx)(`code`,{children:`draft_mtp.go`}),`/`,(0,W.jsx)(`code`,{children:`batchgen_mtp.go`}),`, while generic proposal verification and reconciliation remain in `,(0,W.jsx)(`code`,{children:`batchgen_speculative.go`}),`.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`Separate-file Gemma4/shared-target-KV MTP.`}),` The MTP component is supplied as a separate file but shares target KV semantics rather than behaving like an ordinary independent draft model. Capabilities, not “has a draft path,” must decide whether draft KV can be trimmed or externalized.`]})]}),(0,W.jsx)(`p`,{children:`Across all three, target output is authoritative. Proposal generation cannot expose a token until target verification accepts it or chooses the replacement/bonus token. Position counters, sampled-token history, target KV, draft/MTP state, and streamed output must describe one accepted prefix after every round.`}),(0,W.jsx)(`p`,{children:`Verification in a multi-slot batch is explicitly read-before-mutate. First read all target logits/hidden-state rows and decide each slot's accepted prefix while the shared batch outputs are intact. Only then mutate KV, counters, slot buffers, stream output, or MTP mirror state. Mutating one slot during the read phase can invalidate indices or native output needed by another slot.`}),(0,W.jsx)(`p`,{children:`Ordinary transformer KV can often remove a rejected suffix. Hybrid recurrent/state- space models cannot assume partial KV deletion restores prior state. Take the required pre-speculation per-sequence snapshot, and on rejection restore it and re-decode exactly the accepted prefix. Preserve captured target hidden-state rows needed to synchronize MTP. For own-KV MTP, rollback removes speculative draft state before mirroring accepted target state. For shared-target-KV Gemma4, do not apply independent-draft rollback to the shared target cache. If synchronization fails, safely disable MTP for that request and continue target-only rather than retaining ambiguous draft state.`}),(0,W.jsxs)(`p`,{children:[`Unit-level owners are the batch/speculative files and tests in `,(0,W.jsx)(`code`,{children:`sdk/kronk/model/`}),`. Model-backed MTP suites live in `,(0,W.jsx)(`code`,{children:`sdk/kronk/tests/mtp`}),` and `,(0,W.jsx)(`code`,{children:`sdk/kronk/tests/gemma4mtp`}),`; they are CI/human suites, not commands agents should launch from the forbidden integration-test tree.`]}),(0,W.jsx)(`h3`,{id:`197-server-bui-and-generated-documentation`,children:`19.7 Server, BUI, and Generated Documentation`}),(0,W.jsx)(`h4`,{id:`1971-routes-middleware-and-domains`,children:`19.7.1 Routes, middleware, and domains`}),(0,W.jsxs)(`p`,{children:[`Route declarations belong with their domain package, normally in `,(0,W.jsx)(`code`,{children:`route.go`}),`. Keep authentication/authorization, tracing, request IDs, panic recovery, and common response behavior in foundation middleware. Domain handlers decode and validate protocol input, select the appropriate application capability, call SDK/facade methods, and encode the protocol result. They should not manipulate native model state or implement pool eviction.`]}),(0,W.jsx)(`p`,{children:`When adding an endpoint, follow a neighboring domain end to end: registration, middleware order, request model, error mapping, streaming behavior, and service wiring. Test malformed input and cancellation as well as success. A server build catches route composition errors that a leaf-package test may miss.`}),(0,W.jsx)(`h4`,{id:`1972-bui-ownership-and-embedding`,children:`19.7.2 BUI ownership and embedding`}),(0,W.jsxs)(`p`,{children:[`The BUI lives at `,(0,W.jsx)(`code`,{children:`cmd/server/api/frontends/bui/`}),`. Follow its own package scripts and the applicable component `,(0,W.jsx)(`code`,{children:`AGENTS.md`}),`; component structure and UI conventions change more quickly than this chapter. The production bundle is embedded by `,(0,W.jsx)(`code`,{children:`cmd/server/api/services/kronk/main.go`}),`. Editing TypeScript does not alter the server binary until the frontend is rebuilt and embedded output is rebuilt into Go.`]}),(0,W.jsx)(`p`,{children:`For frontend changes:`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{className:`language-shell`,children:`cd cmd/server/api/frontends/bui
+  -> protocol response`})}),(0,W.jsx)(`p`,{children:`Every arrow is an ownership boundary. Middleware owns transport concerns. Domains own HTTP compatibility. Pools own model residency and resource tickets. Handles own per-model admission and shutdown coordination. Engines own native contexts, sequences, and inference state. Preserve error identities long enough for the domain layer to map capacity, cancellation, validation, and internal failures correctly.`}),(0,W.jsx)(`h4`,{id:`1952-typed-pool-acquisition-loading-and-eviction`,children:`19.5.2 Typed pool acquisition, loading, and eviction`}),(0,W.jsx)(`p`,{children:`An acquisition first checks/coalesces a typed cache entry. A cold load is planned by the backend loader, then reserved against the shared memory manager before expensive native loading. The loaded handle becomes visible only after initialization succeeds. Failed planning or loading must release its reservation and must not publish a partial cache entry. Concurrent acquisition of the same key should share load work rather than multiply memory commitments.`}),(0,W.jsxs)(`p`,{children:[`Item count and available RAM/VRAM are independent admission constraints. Normal admission-driven eviction selects only idle handles; the pool observes each handle's active-operation counter rather than owning a separate request lease. Explicit invalidation and shutdown may remove an active entry and rely on the handle's `,(0,W.jsx)(`code`,{children:`Unload`}),` method to drain active work according to its context.`]}),(0,W.jsx)(`p`,{children:`Asynchronous invalidation does not imply that its eviction callback has finished. Synchronous invalidation waits for callback and reservation-ticket completion, but it does not prove native unload succeeded: the callback can report an unload error and still release the reservation. Preserve the engine-level distinction between a model that cannot fit the configured budget and temporary pressure where no idle candidate can be evicted; typed/public APIs may translate those errors differently.`}),(0,W.jsx)(`h4`,{id:`1953-semaphore-lifetime-and-cancellation`,children:`19.5.3 Semaphore lifetime and cancellation`}),(0,W.jsxs)(`p`,{children:[`The `,(0,W.jsx)(`code`,{children:`Kronk`}),` handle's semaphore is admission control around one model. A permit belongs to the operation, not merely to function setup. For a non-streaming call, hold it until the operation returns. For streaming, hold it until the stream is terminal or closed, including cancellation/error cleanup. Releasing at stream construction over-admits; forgetting to release on an early error deadlocks future work. The pool's active-use lease similarly spans the entire externally visible operation so eviction cannot unload native resources while output is still being consumed.`]}),(0,W.jsx)(`p`,{children:`Context cancellation must propagate inward to queue waits and inference. The layer that creates a goroutine, stream, native object, or lease owns its shutdown. Do not close caller-owned channels or unload a caller-owned handle. Unload prevents new work, waits for owned active work according to its context, then tears down engine/native resources. Pool shutdown owns handles created by that pool.`}),(0,W.jsx)(`h4`,{id:`1954-batch-slots-and-sequence-isolation`,children:`19.5.4 Batch slots and sequence isolation`}),(0,W.jsx)(`p`,{children:`Text generation uses a batch engine. A slot is an execution reservation and mutable per-request state; its sequence ID partitions KV/cache operations in the shared native context. Scheduling several slots into one decode is safe only if every token, logit index, sampler, parser, cancellation flag, speculative buffer, media position, and KV operation remains associated with the correct slot/sequence.`}),(0,W.jsx)(`p`,{children:`The main invariants are:`}),(0,W.jsxs)(`ul`,{children:[(0,W.jsx)(`li`,{children:`A slot has one active job and one sequence identity at a time.`}),(0,W.jsx)(`li`,{children:`Batch construction must preserve token-to-sequence and output-index mappings.`}),(0,W.jsx)(`li`,{children:`Completion/cancellation removes or resets only the finishing sequence's state.`}),(0,W.jsx)(`li`,{children:`Slot reuse starts from an intentionally clean state; no parser, sampler, media, speculative, or error state may leak to the next job.`}),(0,W.jsx)(`li`,{children:`A blocked or cancelled caller must not strand a slot or semaphore permit.`}),(0,W.jsx)(`li`,{children:`Native decode failure is attributed to affected jobs and followed by deterministic cleanup; it must not silently publish partly advanced session state.`})]}),(0,W.jsx)(`h4`,{id:`1955-generation-versus-embedding-and-reranking-engines`,children:`19.5.5 Generation versus embedding and reranking engines`}),(0,W.jsx)(`p`,{children:`Text generation benefits from shared batched execution and sequence-partitioned KV. Embeddings and reranking never use generation slots. Proven architectures use the separate sequence-batch engine, which schedules complete embedding inputs or query-document pairs across sequence IDs on one context. Unsupported architectures acquire an independent context from the fallback pool and perform their own decode/clear cycle. Reranking must not allow one document's state to contaminate the next. Embedding pooling and normalization are model/output concerns, not chat-slot concerns. Do not merge the sequence-batch and generation engines merely to share code; their lifecycle contracts differ.`}),(0,W.jsxs)(`p`,{children:[`Compatibility is an explicit allowlist based on `,(0,W.jsx)(`code`,{children:`general.architecture`}),`. Add an architecture only after a native yzma proof, model-backed concurrent tests, and a benchmark. Some llama.cpp failures assert instead of returning an error, so probing an unknown architecture at runtime is not a safe fallback strategy.`]}),(0,W.jsx)(`h3`,{id:`196-core-inference-invariants`,children:`19.6 Core Inference Invariants`}),(0,W.jsx)(`h4`,{id:`1961-imc-sessions-slots-and-external-storage`,children:`19.6.1 IMC sessions, slots, and external storage`}),(0,W.jsx)(`p`,{children:`Incremental Message Cache (IMC) sessions are cache identities, not execution slots. A stable cache/session identifier allows a conversation prefix to survive movement between batch slots. A slot is short-lived compute capacity; binding a session to a slot would reduce concurrency and make slot reuse unsafe.`}),(0,W.jsxs)(`p`,{children:[`The `,(0,W.jsx)(`code`,{children:`SessionStore`}),` contract externalizes each session's native KV snapshot. RAM and disk implementations differ in storage and I/O, but the model layer owns when a snapshot is read, prepared, committed, reset, and closed. Session metadata—cached tokens, render-sensitive identity/version, and snapshot—must describe the same prefix. Do not update one independently and call the session valid.`]}),(0,W.jsxs)(`p`,{children:[`The session's reservation and `,(0,W.jsx)(`code`,{children:`pending`}),` state serialize mutation and hide the session from competing selection until metadata and snapshot bytes agree. Restore only a committed snapshot whose token/prompt identity still matches. Ordinary text build/extension prepares and commits through the session's existing store; if snapshot publication fails, invalidate that session so later work rebuilds it rather than claiming the old or partial state is valid.`]}),(0,W.jsxs)(`p`,{children:[`Media-anchor advancement has a stronger replacement contract: it writes a separately staged store and swaps the store plus matching plan/count metadata only after success, so failure leaves the previous media snapshot published. Do not generalize that staged replacement guarantee to every IMC path. A `,(0,W.jsx)(`code`,{children:`SessionStore`}),` implementation must honor the interface's read/prepare/commit/reset lifetime rules and clean up temporary resources; callers must not assume bytes remain stable across the next mutation.`]}),(0,W.jsx)(`h4`,{id:`1962-prompt-plans-text-and-media`,children:`19.6.2 Prompt plans: text and media`}),(0,W.jsx)(`p`,{children:`Prompt planning converts normalized messages and parameters into the exact work the engine will execute. The plan, cache identity, token accounting, and decode positions must agree. Text-only plans can compare rendered/tokenized prefixes directly and may take optimized exact-hit paths. Media plans carry more than text tokens: ordered media parts, placeholder/embedding expansion, positions, and render-affecting metadata are part of identity and execution.`}),(0,W.jsx)(`p`,{children:`Do not treat a media prompt as text with an attachment ignored by caching. A text prefix match is insufficient if image/audio/video content, ordering, sizing, or model projection changes. Media prefill must align embeddings and positions with the same sequence that receives surrounding text. When prompt construction or media decode fails, the prior valid IMC snapshot remains authoritative.`}),(0,W.jsx)(`h4`,{id:`1963-parser-registry-ownership`,children:`19.6.3 Parser registry ownership`}),(0,W.jsxs)(`p`,{children:[`Parser implementations live under `,(0,W.jsx)(`code`,{children:`sdk/kronk/parsers/`}),`, grouped by model family. The registry interface and registration entry point live in `,(0,W.jsx)(`code`,{children:`sdk/kronk/model/`}),`. A parser plug-in supplies factories/state machines for its advertised family and must tolerate stream chunk boundaries: tags, JSON, reasoning delimiters, and tool arguments may span chunks. It must keep request state per parser instance and produce equivalent logical results for streaming and non-streaming input.`]}),(0,W.jsx)(`p`,{children:`To add or change a parser, edit the family package, update registration/selection only where necessary, and test fragmented as well as complete input. Keep generic JSON repair separate from family recognition. Unknown families need an intentional fallback or error; registration order must not create accidental model-family selection.`}),(0,W.jsx)(`h4`,{id:`1964-responses-normalization`,children:`19.6.4 Responses normalization`}),(0,W.jsxs)(`p`,{children:[`The Responses API adapts to the chat/inference pipeline in `,(0,W.jsx)(`code`,{children:`sdk/kronk/response.go`}),`. Normalization has a compatibility-sensitive mutation contract:`]}),(0,W.jsxs)(`ul`,{children:[(0,W.jsxs)(`li`,{children:[`Preserve existing `,(0,W.jsx)(`code`,{children:`messages`}),`; they win when already supplied.`]}),(0,W.jsxs)(`li`,{children:[`Convert Responses `,(0,W.jsx)(`code`,{children:`input`}),` into messages `,(0,W.jsx)(`strong`,{children:`only when messages are absent`}),`.`]}),(0,W.jsx)(`li`,{children:`Normalize Responses item/content/tool forms needed by chat processing.`}),(0,W.jsxs)(`li`,{children:[`Mutate the supplied `,(0,W.jsx)(`code`,{children:`model.D`}),` document map. Callers that require isolation must clone before invoking the Responses path.`]})]}),(0,W.jsx)(`p`,{children:`Do not “clean up” this code by always rebuilding messages or silently switching to a copy. Either change breaks callers that combine compatibility fields or inspect the document after normalization. Add tests for existing messages, input-only requests, and observable in-place mutation.`}),(0,W.jsx)(`h4`,{id:`1965-tracing-and-logging`,children:`19.6.5 Tracing and logging`}),(0,W.jsx)(`p`,{children:`Tracing should identify major waits and ownership boundaries: request handling, model acquisition/load, queue wait, prompt/prefill, generation, and unload when relevant. Keep spans concise. Avoid a span per token, duplicated nested timing, giant model-config attribute sets, prompt/media payloads, and unbounded IDs. Propagate the request context instead of creating unrelated roots. Logs and metrics should help distinguish queue, capacity, cancellation, and inference failures without exposing user content unless an explicit insecure-logging mode authorizes it.`}),(0,W.jsx)(`p`,{children:`Embedding/reranking metrics distinguish the operation and selected runtime. Sequence- batch queue wait and batch width are engine-level measurements; request duration, active requests, status, and prompt-token usage are operation-level measurements. Resource reservations remain owned by the shared pool/resource manager and must not be duplicated inside either inference engine.`}),(0,W.jsx)(`h4`,{id:`1966-speculative-decoding-and-mtp`,children:`19.6.6 Speculative decoding and MTP`}),(0,W.jsx)(`p`,{children:`Speculative support has three ownership shapes:`}),(0,W.jsxs)(`ol`,{children:[(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`Separate GGUF draft model.`}),` The draft has its own model/context/KV and proposes tokens; the target verifies them. Loading, memory planning, sequence cleanup, and rollback must account for both models.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`Embedded MTP.`}),` A target GGUF exposes an embedded multi-token-prediction head. Model detection and MTP construction are owned by `,(0,W.jsx)(`code`,{children:`draft_mtp.go`}),`/`,(0,W.jsx)(`code`,{children:`batchgen_mtp.go`}),`, while generic proposal verification and reconciliation remain in `,(0,W.jsx)(`code`,{children:`batchgen_speculative.go`}),`.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`Separate-file Gemma4/shared-target-KV MTP.`}),` The MTP component is supplied as a separate file but shares target KV semantics rather than behaving like an ordinary independent draft model. Capabilities, not “has a draft path,” must decide whether draft KV can be trimmed or externalized.`]})]}),(0,W.jsx)(`p`,{children:`Across all three, target output is authoritative. Proposal generation cannot expose a token until target verification accepts it or chooses the replacement/bonus token. Position counters, sampled-token history, target KV, draft/MTP state, and streamed output must describe one accepted prefix after every round.`}),(0,W.jsx)(`p`,{children:`Verification in a multi-slot batch is explicitly read-before-mutate. First read all target logits/hidden-state rows and decide each slot's accepted prefix while the shared batch outputs are intact. Only then mutate KV, counters, slot buffers, stream output, or MTP mirror state. Mutating one slot during the read phase can invalidate indices or native output needed by another slot.`}),(0,W.jsxs)(`p`,{children:[`Ordinary transformer KV can often remove a rejected suffix. Hybrid recurrent/state- space models cannot assume partial KV deletion restores prior state. Request bounded recurrent rollback through `,(0,W.jsx)(`code`,{children:`NRsSeq`}),` and use it only when the context reports enough effective rollback depth for the speculative round. Otherwise take a full pre-speculation per-sequence snapshot, and on rejection restore it and re-decode exactly the accepted prefix. Preserve captured target hidden-state rows needed to synchronize MTP. For own-KV MTP, rollback removes speculative draft state before mirroring accepted target state. For shared-target-KV Gemma4, do not apply independent-draft rollback to the shared target cache. If rollback, restore, or synchronization fails, fail the affected slot or safely disable MTP rather than retaining ambiguous state.`]}),(0,W.jsxs)(`p`,{children:[`Unit-level owners are the batch/speculative files and tests in `,(0,W.jsx)(`code`,{children:`sdk/kronk/model/`}),`. Model-backed MTP suites live in `,(0,W.jsx)(`code`,{children:`sdk/kronk/tests/mtp`}),` and `,(0,W.jsx)(`code`,{children:`sdk/kronk/tests/gemma4mtp`}),`; they are CI/human suites, not commands agents should launch from the forbidden integration-test tree.`]}),(0,W.jsx)(`h3`,{id:`197-server-bui-and-generated-documentation`,children:`19.7 Server, BUI, and Generated Documentation`}),(0,W.jsx)(`h4`,{id:`1971-routes-middleware-and-domains`,children:`19.7.1 Routes, middleware, and domains`}),(0,W.jsxs)(`p`,{children:[`Route declarations belong with their domain package, normally in `,(0,W.jsx)(`code`,{children:`route.go`}),`. Keep authentication/authorization, tracing, request IDs, panic recovery, and common response behavior in foundation middleware. Domain handlers decode and validate protocol input, select the appropriate application capability, call SDK/facade methods, and encode the protocol result. They should not manipulate native model state or implement pool eviction.`]}),(0,W.jsx)(`p`,{children:`When adding an endpoint, follow a neighboring domain end to end: registration, middleware order, request model, error mapping, streaming behavior, and service wiring. Test malformed input and cancellation as well as success. A server build catches route composition errors that a leaf-package test may miss.`}),(0,W.jsx)(`h4`,{id:`1972-bui-ownership-and-embedding`,children:`19.7.2 BUI ownership and embedding`}),(0,W.jsxs)(`p`,{children:[`The BUI lives at `,(0,W.jsx)(`code`,{children:`cmd/server/api/frontends/bui/`}),`. Follow its own package scripts and the applicable component `,(0,W.jsx)(`code`,{children:`AGENTS.md`}),`; component structure and UI conventions change more quickly than this chapter. The production bundle is embedded by `,(0,W.jsx)(`code`,{children:`cmd/server/api/services/kronk/main.go`}),`. Editing TypeScript does not alter the server binary until the frontend is rebuilt and embedded output is rebuilt into Go.`]}),(0,W.jsx)(`p`,{children:`For frontend changes:`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{className:`language-shell`,children:`cd cmd/server/api/frontends/bui
 npm run build`})}),(0,W.jsx)(`p`,{children:`Then build the server (or the narrow service package) and verify that the expected static bundle is present in the embedding location. Avoid hand-editing minified/static output.`}),(0,W.jsx)(`h4`,{id:`1973-documentation-generation`,children:`19.7.3 Documentation generation`}),(0,W.jsxs)(`p`,{children:[(0,W.jsx)(`code`,{children:`cmd/server/api/tooling/docs/main.go`}),` orchestrates three conceptual pipelines:`]}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{className:`language-text`,children:`public SDK Go documentation -> SDK BUI documentation
 examples source             -> example BUI documentation
 .manual chapter Markdown    -> DocsManual.tsx`})}),(0,W.jsxs)(`p`,{children:[`Author manual content in `,(0,W.jsx)(`code`,{children:`.manual/`}),`, public API descriptions in Go doc comments, and examples in `,(0,W.jsx)(`code`,{children:`examples/`}),`. `,(0,W.jsx)(`code`,{children:`DocsManual.tsx`}),` and generated SDK/example documentation are outputs and must not be hand-edited. Run:`]}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{className:`language-shell`,children:`make kronk-docs`})}),(0,W.jsxs)(`p`,{children:[`Review generated diffs for malformed Markdown conversion and then run `,(0,W.jsx)(`code`,{children:`npm run build`}),` in the BUI. Finally build the server to check that generated components compile into the embedded bundle. Generation may update more than one documented package; do not discard legitimate generated changes. If the requested scope intentionally excludes generated artifacts, report that regeneration remains pending.`]}),(0,W.jsx)(`h3`,{id:`198-bucky-implementation-map`,children:`19.8 Bucky Implementation Map`}),(0,W.jsx)(`p`,{children:`This is an implementation map only. Chapter 18 owns installation, configuration, streaming usage, and API examples.`}),(0,W.jsx)(`h4`,{id:`1981-owners`,children:`19.8.1 Owners`}),(0,W.jsxs)(`ul`,{children:[(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`<code>sdk/bucky/</code>`}),` owns initialization and the public `,(0,W.jsx)(`code`,{children:`Bucky`}),` handle. A handle owns one Whisper model and admission/shutdown coordination.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`<code>sdk/bucky/model/</code>`}),` owns the Whisper context, its pool of model states, audio decode/transcription primitives, language operations, and stream implementation. Model weights/context are shared by the handle while state isolates concurrent work.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`<code>sdk/bucky/pool/</code>`}),` adapts Bucky model planning, loading, status, unloading, and reservations to the generic typed pool.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`<code>sdk/pool/</code> and <code>sdk/pool/engine/</code>`}),` let Bucky and Kronk share one resource budget while retaining backend-specific loaders and handles.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`<code>sdk/tools/bucky/</code>`}),` owns Whisper shared-library and model catalog/download work.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`<code>cmd/kronk/bucky/</code>`}),` exposes those tools. Web/server mode is default; `,(0,W.jsx)(`code`,{children:`--local`}),` requests direct local operation.`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`strong`,{children:`<code>cmd/server/app/domain/audioapp/</code>`}),` owns the OpenAI-compatible transcription route. Administrative library/model routes are in `,(0,W.jsx)(`code`,{children:`toolapp`}),`. Service startup wires the Bucky backend and shared pool.`]})]}),(0,W.jsx)(`h4`,{id:`1982-lifecycle-invariants`,children:`19.8.2 Lifecycle invariants`}),(0,W.jsxs)(`p`,{children:[(0,W.jsx)(`code`,{children:`Init`}),` registers/resolves/loads the backend. Technically, a failed `,(0,W.jsx)(`code`,{children:`Init`}),` can be called again and retry. The current server calls it only during startup, however. Installing missing libraries through CLI or BUI does `,(0,W.jsx)(`strong`,{children:`not`}),` promise automatic server re-init; restart the server so startup calls `,(0,W.jsx)(`code`,{children:`Init`}),` again.`]}),(0,W.jsxs)(`p`,{children:[`A transcription acquires handle capacity and a model state, performs decode/inference, then releases both on every completion path. A streaming session is longer-lived: opening it reserves a state and capacity until its worker exits. `,(0,W.jsx)(`code`,{children:`Close`}),` requests the normal final flush and waits for that exit; a terminal worker error also exits and releases automatically. Callers should still defer the idempotent `,(0,W.jsx)(`code`,{children:`Close`}),`, including when feed/event handling fails. Unload must not destroy the Whisper context while transcriptions or streams remain active.`]}),(0,W.jsxs)(`p`,{children:[`The audio HTTP handler delegates file decoding and transcription to `,(0,W.jsx)(`code`,{children:`Bucky.TranscribeFile`}),`. It explicitly enforces the 25 MB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.`]}),(0,W.jsxs)(`p`,{children:[`Focused tests that exist include unit tests under `,(0,W.jsx)(`code`,{children:`sdk/bucky/model/`}),` and `,(0,W.jsx)(`code`,{children:`sdk/bucky/ffmpeg/`}),`, transcription/pool/stream suites under `,(0,W.jsx)(`code`,{children:`sdk/bucky/tests/transcribe/`}),`, and the server audio API tests under `,(0,W.jsx)(`code`,{children:`cmd/server/api/services/kronk/tests/`}),`. Choose the narrowest test whose native library and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.`]}),(0,W.jsx)(`h3`,{id:`199-verification-for-llm-agents`,children:`19.9 Verification for LLM Agents`}),(0,W.jsx)(`h4`,{id:`1991-required-go-post-edit-sequence`,children:`19.9.1 Required Go post-edit sequence`}),(0,W.jsx)(`p`,{children:`After changing Go, obey the root instructions and scope work to the changed package. For each changed Go file/package:`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{className:`language-shell`,children:`go fix ./path/to/changed/package

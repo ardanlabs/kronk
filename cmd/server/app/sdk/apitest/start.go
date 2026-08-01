@@ -175,7 +175,7 @@ func New(t *testing.T, testName string) *Test {
 		t.Fatal(err)
 	}
 
-	if err := bucky.Init(bucky.WithInitLibPath(buckyLibs.LibsPath())); err != nil {
+	if err := bucky.Init(bucky.WithLibPath(buckyLibs.LibsPath())); err != nil {
 		log.Info(ctx, "startup", "WARNING", "bucky init failed, audio transcription tests will fail", "ERROR", err)
 	}
 

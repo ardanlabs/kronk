@@ -241,6 +241,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			continue
 		}
 
+		if int(s.nPast) >= e.model.cfg.ContextWindow() {
+			e.finishSlot(s, fmt.Errorf("generation reached context window of %d tokens", e.model.cfg.ContextWindow()))
+			continue
+		}
+
 		// M-RoPE slots require 4D positions (dim0=linear, dims1-3=0 for text).
 		// The shared batch only writes 1D positions via batch.Add, so decode
 		// the generation token through the dedicated M-RoPE path and sample
@@ -297,21 +302,18 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 					s.mtpHasBatch = true
 				}
 
-				// Hybrid target models need a state snapshot BEFORE the
-				// spec decode so verifySpeculativeTokens can roll back
-				// a partial rejection. MemorySeqRm can trim the
-				// transformer KV but cannot rewind the per-sequence
-				// recurrent state; without snapshot/restore the next
-				// llama_decode fails with -1 on the leftover advanced
-				// recurrent state. No-op for dense / pure-attention
-				// targets (those rollback fine via MemorySeqRm).
-				if e.model.modelInfo.Type == ModelTypeHybrid {
+				// Hybrid targets use llama.cpp's bounded recurrent rollback
+				// when the context accepted enough NRsSeq snapshots for this
+				// round. Otherwise preserve the full per-sequence state as a
+				// correctness fallback before the speculative decode.
+				s.specSnapshot = s.specSnapshot[:0]
+				if needsTargetSpecSnapshot(e.model.modelInfo.Type, e.model.ctxParams.NRsSeq, len(draftTokens)) {
 					if err := e.captureTargetSpecSnapshot(s); err != nil {
 						e.model.log(s.job.ctx, "speculative", "status", "snapshot-error",
 							"slot", s.id, "err", err)
-						// Clear specSnapshot length so verify falls back
-						// to MemorySeqRm (which will likely fail on a
-						// partial reject, but full-accept rounds still work).
+						// A full-accept round needs no rollback. A partial
+						// rejection will try the checked MemorySeqRm path
+						// and fail the slot if native rollback is unavailable.
 						s.specSnapshot = s.specSnapshot[:0]
 					}
 				}
@@ -574,4 +576,13 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 		e.finalizeSpeculativeTokens(s, buf)
 	}
+}
+
+func needsTargetSpecSnapshot(modelType ModelType, rollbackDepth uint32, draftCount int) bool {
+	return modelType == ModelTypeHybrid && int(rollbackDepth) < draftCount
+}
+
+func (e *batchEngine) maxDraftForSlot(s *slot, configured int) int {
+	remaining := e.model.cfg.ContextWindow() - int(s.nPast) - 1
+	return min(configured, max(remaining, 0))
 }

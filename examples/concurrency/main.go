@@ -80,6 +80,10 @@ func installSystem() (models.Path, error) {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
 	}
 
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	}
+
 	mdls, err := models.New()
 	if err != nil {
 		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
@@ -97,10 +101,6 @@ func installSystem() (models.Path, error) {
 
 func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("Loading model...")
-
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),

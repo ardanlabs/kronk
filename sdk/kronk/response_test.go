@@ -35,6 +35,30 @@ func TestResponseValidatesMessagesBeforeAdmission(t *testing.T) {
 	}
 }
 
+func TestToChatResponseToResponsesUsageIncludesReasoning(t *testing.T) {
+	chatResp := model.ChatResponse{
+		Usage: &model.Usage{
+			PromptTokens:     100,
+			ReasoningTokens:  20,
+			CompletionTokens: 5,
+			OutputTokens:     25,
+			TotalTokens:      125,
+		},
+	}
+
+	resp := toChatResponseToResponses(chatResp, model.D{})
+
+	if got, want := resp.Usage.OutputTokens, 25; got != want {
+		t.Errorf("OutputTokens: got %d, want %d", got, want)
+	}
+	if got, want := resp.Usage.OutputTokenDetail.ReasoningTokens, 20; got != want {
+		t.Errorf("ReasoningTokens: got %d, want %d", got, want)
+	}
+	if got, want := resp.Usage.TotalTokens, 125; got != want {
+		t.Errorf("TotalTokens: got %d, want %d", got, want)
+	}
+}
+
 func TestConvertInputToMessagesRoleShapedImage(t *testing.T) {
 	const imageURL = "data:image/jpeg;base64,aW1hZ2U="
 

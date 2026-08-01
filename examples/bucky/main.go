@@ -84,6 +84,10 @@ func installSystem() (buckymodels.Path, error) {
 		return buckymodels.Path{}, fmt.Errorf("download whisper.cpp libs: %w", err)
 	}
 
+	if err := bucky.Init(bucky.WithLibPath(lib.LibsPath())); err != nil {
+		return buckymodels.Path{}, fmt.Errorf("bucky init: %w", err)
+	}
+
 	mdls, err := buckymodels.New()
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("models new: %w", err)
@@ -101,10 +105,6 @@ func installSystem() (buckymodels.Path, error) {
 
 func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {
 	fmt.Println("Initializing bucky / whisper.cpp")
-
-	if err := bucky.Init(); err != nil {
-		return nil, fmt.Errorf("bucky init: %w", err)
-	}
 
 	if len(mp.ModelFiles) == 0 {
 		return nil, fmt.Errorf("no model files on disk")

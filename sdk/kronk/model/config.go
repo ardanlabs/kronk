@@ -898,6 +898,7 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		// per slot per ubatch (last prompt token during prefill, sampled
 		// token during decode).
 		perSlot := 1
+		rollbackDepth := 0
 
 		// Speculative decoding queues 1 + nDraft logits-flagged rows
 		// per slot in the verification batch (sampled token + drafted
@@ -911,21 +912,27 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		switch {
 		case cfg.DraftModel != nil && cfg.DraftModel.IsSeparate():
 			perSlot = 1 + cfg.DraftModel.NDraft
+			rollbackDepth = cfg.DraftModel.NDraft
 		case cfg.MTPDrafterFile != "" && MTPAvailable():
 			// Separate-file MTP assistant drafter (Gemma4). The companion
 			// file is present on disk; selectAndLoadDraft loads it as a
 			// shared-KV MTP head that queues 1 + nDraft logits-flagged rows
 			// per slot in the verification batch, same as the embedded MTP.
 			perSlot = 1 + mtpNDraft(cfg)
+			rollbackDepth = mtpNDraft(cfg)
 		case mtpNextNLayers(mdl) > 0 && MTPAvailable():
 			// MTP draft count: an MTP nDraft override (DraftModel with no
 			// model files) raises/lowers the ceiling; otherwise default.
 			// adjustConfig has already defaulted NDraft to defMTPNDraft for
 			// an MTP override, so cfg.DraftModel.NDraft is authoritative here.
 			perSlot = 1 + mtpNDraft(cfg)
+			rollbackDepth = mtpNDraft(cfg)
 		}
 
 		ctxParams.NOutputsMax = uint32(nSeqMax * perSlot)
+		if mi.Type == ModelTypeHybrid {
+			ctxParams.NRsSeq = uint32(rollbackDepth)
+		}
 	}
 
 	// Enable unified KV cache so all sequences share one pool of

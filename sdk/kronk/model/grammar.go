@@ -385,8 +385,8 @@ func NewGrammarSampler(vocab llama.Vocab, grammar string) *grammarSampler {
 // 4. Copies modified logits back to context
 // 5. Uses normal SamplerSample which reads from context
 //
-// The caller must still call Accept() on both the grammar sampler and the
-// main sampler after selecting the token.
+// SamplerSample accepts the token on the main sampler. The caller must still
+// call Accept on the separate grammar sampler after selecting the token.
 func (gs *grammarSampler) SampleWithGrammar(ctx llama.Context, chainSampler llama.Sampler, idx int32) llama.Token {
 	if gs == nil || gs.sampler == 0 {
 		return llama.SamplerSample(chainSampler, ctx, idx)

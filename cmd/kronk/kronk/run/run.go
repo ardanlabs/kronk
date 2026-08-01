@@ -503,7 +503,7 @@ loop:
 
 	// -------------------------------------------------------------------------
 
-	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
+	contextTokens := lr.Usage.TotalTokens
 	contextWindow := krn.ModelConfig().ContextWindow()
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)

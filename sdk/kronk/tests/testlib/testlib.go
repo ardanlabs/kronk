@@ -69,7 +69,7 @@ func Setup() {
 	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "Qwen2.5-Omni-3B-Q8_0", &MPAudio)
 	resolveModel(mdls, "Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
-	resolveModel(mdls, "mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL", &MPMTP)
+	resolveModel(mdls, "mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", &MPMTP)
 	resolveModel(mdls, "Qwen3-0.6B-Q8_0", &MPDraft)
 
 	printInfo(mdls)
@@ -392,8 +392,7 @@ func CfgMTPChat() model.Config {
 //     that keeps each slot's pre-norm rows contiguous in e.batch so
 //     mirrorTargetBatchToMTPDraft mirrors the right rows.
 //
-// Hybrid target requires f16 KV and disabled flash-attention (see
-// config.go), inherited from the single-slot config.
+// The cache settings match the single-slot MTP configuration.
 func CfgMTPChatMultiSlot() model.Config {
 	return model.Config{
 		ModelFiles:       MPMTP.ModelFiles,

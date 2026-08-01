@@ -150,10 +150,10 @@ type slot struct {
 	// Speculative Decoding
 
 	draftNPast          llama.Pos     // Draft model's KV cache position
+	draftStartPast      llama.Pos     // Draft KV position before the current classic draft round
 	draftPrefillNeeded  bool          // True when draft model needs prefill after target prefill
 	draftPromptTokens   []llama.Token // Full prompt tokens for draft model prefill
 	specDraftTokens     []llama.Token // Draft tokens for current speculative step
-	specDraftProbs      [][]float32   // Draft probability distributions per drafted token
 	specBasePast        llama.Pos     // Target nPast before speculative tokens were added
 	specBaseBatch       int32         // Batch index where speculative tokens start
 	specDraftedTotal    int           // Total draft tokens generated across all speculative steps
@@ -279,6 +279,9 @@ type slot struct {
 	specPendingAccepted        int
 	specPendingBonusToken      llama.Token
 	specPendingOriginalSampled llama.Token
+	specPendingSamplerAccepted bool
+	specPendingLogprobReady    bool
+	specPendingLogprob         *ContentLogprob
 
 	// Sparse candidate-based speculative decoding fields.
 	draftSampler         llama.Sampler            // Per-slot sampler for draft model (non-greedy)
@@ -324,10 +327,10 @@ func (s *slot) reset() {
 	s.logprobsData = nil
 	s.currentLogprob = nil
 	s.draftNPast = 0
+	s.draftStartPast = 0
 	s.draftPrefillNeeded = false
 	s.draftPromptTokens = nil
 	s.specDraftTokens = nil
-	s.specDraftProbs = nil
 	s.specBasePast = 0
 	s.specBaseBatch = 0
 	s.specDraftedTotal = 0
@@ -339,6 +342,10 @@ func (s *slot) reset() {
 	s.specPendingAccepted = 0
 	s.specPendingBonusToken = 0
 	s.specPendingOriginalSampled = 0
+	s.specPendingSamplerAccepted = false
+	s.specPendingLogprobReady = false
+	s.specPendingLogprob = nil
+	s.specSnapshot = s.specSnapshot[:0]
 	s.draftTokensBuf = s.draftTokensBuf[:0]
 	// Note: draftCachedTokens persists across requests for incremental draft KV reuse.
 

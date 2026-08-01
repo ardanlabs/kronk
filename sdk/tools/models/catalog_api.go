@@ -101,7 +101,7 @@ func (m *Models) resolveSource(ctx context.Context, source string, refreshPinned
 		// another cached file in the same repo with the same quant tag
 		// cannot be returned instead. This is especially important for
 		// repos that contain an mtp-* drafter alongside the main model.
-		modelID := catalogModelID(repo, file)
+		modelID := extractModelID(file)
 		res, rerr := NewResolver(m, rfile).resolvePinned(ctx, owner, repo, modelID, refreshPinned)
 		if rerr != nil {
 			return Resolution{}, fmt.Errorf("resolve-source: %w", rerr)

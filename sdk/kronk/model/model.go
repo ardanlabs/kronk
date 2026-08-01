@@ -165,9 +165,7 @@ type draftCore struct {
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).
-	draftProbs  [][]float32 // nDraft reusable buffers for draft probability distributions
 	targetProbs []float32   // Reusable buffer for target probability distribution
-	adjusted    []float32   // Reusable buffer for sampleAdjusted computation
 	sortIndices []int       // Reusable buffer for applySamplerFilters top-K indices
 	filterBuf   filterState // Reusable buffers for applySamplerFilters heap/rawProbs
 
@@ -675,6 +673,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 
 	m.lctx = lctx
 	m.mem = mem
+	m.ctxParams.NRsSeq = llama.NRsSeq(lctx)
 
 	// Initialize the IMC session pool. Sized at nSlots *
 	// max(imcMinSessionsPerSlot, QueueDepth) so the cache identity count is
@@ -931,10 +930,6 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 
 	// Pre-allocate reusable buffers for speculative sampling.
 	nVocab := int(llama.VocabNTokens(dVocab))
-	draftProbs := make([][]float32, dCfg.NDraft)
-	for i := range draftProbs {
-		draftProbs[i] = make([]float32, nVocab)
-	}
 
 	return &classicDrafter{c: &draftCore{
 		model:          dModel,
@@ -947,9 +942,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 		prefillBatch:   prefillBatch,
 		nDraft:         dCfg.NDraft,
 		draftBuf:       make([]llama.Token, 0, dCfg.NDraft),
-		draftProbs:     draftProbs,
 		targetProbs:    make([]float32, nVocab),
-		adjusted:       make([]float32, nVocab),
 	}}, nil
 }
 
@@ -1282,7 +1275,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		usage):
 	}
 
-	contextTokens := usage.PromptTokens + usage.CompletionTokens
+	contextTokens := usage.TotalTokens
 	contextWindow := m.cfg.ContextWindow()
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
