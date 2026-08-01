@@ -28,7 +28,7 @@ vuln-check:
 diff:
 	go fix -diff ./...
 
-test-only: install-libraries install-test-models
+test-only: install-libraries-gh install-test-models
 	@echo ========== RUN TESTS ==========
 	# Unset KRONK_* path overrides so a developer's shell environment
 	# (e.g. KRONK_BASE_PATH=/data/kronk) cannot leak into the suite —
