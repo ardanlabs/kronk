@@ -494,7 +494,10 @@ func benchBackend(backends []Backend, processor string) Backend {
 // and the libraries root. In inspect-only mode (install false) a missing
 // install is not an error: the backend list is simply empty.
 func resolveBackends(ctx context.Context, log applog.Logger, install bool) ([]Backend, string, error) {
-	lib, err := libs.New(libs.WithVersion(defaults.LibVersion("")))
+	lib, err := libs.New(
+		libs.WithDetect(ctx, log),
+		libs.WithVersion(defaults.LibVersion("")),
+	)
 	if err != nil {
 		return nil, "", err
 	}

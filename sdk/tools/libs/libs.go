@@ -26,7 +26,7 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b10198"
+	defaultVersion = "b10211"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -55,6 +55,8 @@ type Options struct {
 	Processor    download.Processor
 	AllowUpgrade bool
 	Version      string
+
+	detect *detectOptions
 }
 
 // Option is a function that configures Options.
@@ -141,21 +143,27 @@ type Libs struct {
 	processor    download.Processor
 	version      string
 	readOnly     bool
+	hostDemoted  bool
 	AllowUpgrade bool
 	testMode     bool
 	testLatest   string
 }
 
-// New constructs a Libs with system defaults and applies any provided
-// options. It resolves the install location, reads any existing version.json
-// to back-fill the (arch, os, processor) triple for fields the caller did not
-// explicitly set, and migrates a legacy root-level install (libraries
-// directly under <libsRoot>) into <libsRoot>/<os>/<arch>/<processor>/ if one
-// is found.
+// New constructs a Libs with system defaults and applies any provided options.
+// It verifies that the automatically selected host runtime is compatible while
+// preserving explicit options. New resolves the install location, reads any
+// existing version.json to back-fill the (arch, os, processor) triple for
+// fields the caller did not explicitly set, and migrates a legacy root-level
+// install (libraries directly under <libsRoot>) into
+// <libsRoot>/<os>/<arch>/<processor>/ if one is found.
 func New(opts ...Option) (*Libs, error) {
 	var options Options
 	for _, opt := range opts {
 		opt(&options)
+	}
+
+	if err := applyDetectOverrides(&options); err != nil {
+		return nil, err
 	}
 
 	root, path, readOnly, err := resolvePaths(options.BasePath, options.LibPath)
@@ -212,6 +220,30 @@ func New(opts ...Option) (*Libs, error) {
 		version:      options.Version,
 		readOnly:     readOnly,
 		AllowUpgrade: options.AllowUpgrade,
+	}
+
+	detect := options.detect
+	if detect == nil {
+		detect = &detectOptions{ctx: context.Background()}
+	}
+	if detect.ctx == nil {
+		detect.ctx = context.Background()
+	}
+
+	if options.LibPath == "" && options.Processor.String() == "" && os.Getenv("KRONK_PROCESSOR") == "" {
+		selected, decision := lib.selectHostRuntime(detect.ctx, nil, probeCUDA13Host, lib.detectHostFallback)
+		selected.hostDemoted = decision.SelectedProcessor != decision.PreferredProcessor
+		lib = *selected
+
+		if detect.log != nil {
+			detect.log(
+				detect.ctx,
+				"select-host-runtime",
+				"preferred", decision.PreferredProcessor,
+				"selected", decision.SelectedProcessor,
+				"reason", decision.Reason,
+			)
+		}
 	}
 
 	return &lib, nil

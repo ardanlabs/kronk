@@ -371,7 +371,11 @@ func eviction(t *testing.T) {
 // =============================================================================
 
 func initKronk(t *testing.T) model.Logger {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	libs, err := libs.New(
+		libs.WithDetect(ctx, kronk.FmtLogger),
 		libs.WithVersion(defaults.LibVersion("")),
 	)
 	if err != nil {
@@ -379,9 +383,6 @@ func initKronk(t *testing.T) model.Logger {
 	}
 
 	t.Logf("installing/updating libraries, current version: libPath[%s], arch[%s] os[%s] processor[%s]", libs.LibsPath(), libs.Arch(), libs.OS(), libs.Processor())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
 
 	tag, err := libs.Download(ctx, kronk.FmtLogger)
 	if err != nil {

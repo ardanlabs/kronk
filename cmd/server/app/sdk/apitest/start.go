@@ -113,6 +113,7 @@ func New(t *testing.T, testName string) *Test {
 	defer cancel()
 
 	libs, err := libs.New(
+		libs.WithDetect(ctx, log.Info),
 		libs.WithVersion(defaults.LibVersion("")),
 	)
 	if err != nil {

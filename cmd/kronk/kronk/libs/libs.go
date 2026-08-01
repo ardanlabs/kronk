@@ -67,6 +67,7 @@ func runLocal(basePath string, upgrade bool, version string) error {
 	}
 
 	libs, err := libs.New(
+		libs.WithDetect(ctx, kronk.FmtLogger),
 		libs.WithBasePath(basePath),
 		libs.WithVersion(v),
 		libs.WithAllowUpgrade(upgrade),

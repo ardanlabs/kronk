@@ -190,7 +190,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			if !sessionVersionOK {
 				metrics.AddIMCPureHitStaleSession(e.model.modelInfo.ID)
 				e.model.log(job.ctx, "start-slot", "status", "imc-pure-hit-stale",
-					"slot", s.id, "imc_slot", job.imcSessionID,
+					"slot", s.id, "imc_cache_entry", job.imcSessionID,
 					"expected_msgs", job.imcExpectedCachedMsgs,
 					"expected_tokens", job.imcExpectedTokens)
 
@@ -558,7 +558,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-skip-read-only", "snapshot_action", "skip-read-only",
 				"slot", s.id, "seq", s.seqID, "next_logical_position", cacheIdx,
 				"physical_kv_cells", snapshotPhysicalKVCells,
-				"imc_slot", job.imcSessionID)
+				"imc_cache_entry", job.imcSessionID)
 
 			// Fall through to suffix decode; session.kvState,
 			// draftKVState, and pendingH all remain valid because the
@@ -784,7 +784,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 	e.model.log(job.ctx, "batch-engine", "status", "slot-started", "slot", s.id, "seq", s.seqID, "id", job.id,
 		"total_prompt", s.nPrompt, "imc_active", job.imcCacheHit, "imc_cache_hit", job.imcSnapshotReused,
-		"imc_slot", job.imcSessionID, "kv_logical_positions", kvUsed)
+		"imc_cache_entry", job.imcSessionID, "kv_logical_positions", kvUsed)
 }
 
 // startSlotText initializes a text-only slot. Returns true on success.

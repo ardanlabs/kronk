@@ -9,19 +9,94 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
-const runtimeProbeTimeout = 10 * time.Second
+const (
+	runtimeProbeTimeout = 10 * time.Second
+	hostProbeTimeout    = 2 * time.Second
+
+	minimumCUDA13ComputeCapability = 7.5
+)
 
 // RuntimeSelection describes an installed-runtime selection decision.
 type RuntimeSelection struct {
 	PreferredProcessor string
 	SelectedProcessor  string
 	Reason             string
+}
+
+type detectOptions struct {
+	ctx       context.Context
+	log       Logger
+	libPath   string
+	arch      string
+	opSys     string
+	processor string
+}
+
+// WithDetect supplies the context and logger used by automatic host runtime
+// detection.
+func WithDetect(ctx context.Context, log Logger) Option {
+	return WithDetectOverrides(ctx, log, "", "", "", "")
+}
+
+// WithDetectOverrides supplies the context and logger used by automatic host
+// runtime detection plus optional library path, architecture, operating
+// system, and processor overrides.
+// WithLibPath, WithArch, WithOS, and WithProcessor always take precedence,
+// regardless of option order.
+func WithDetectOverrides(ctx context.Context, log Logger, libPath string, arch string, opSys string, processor string) Option {
+	return func(o *Options) {
+		o.detect = &detectOptions{
+			ctx:       ctx,
+			log:       log,
+			libPath:   libPath,
+			arch:      arch,
+			opSys:     opSys,
+			processor: processor,
+		}
+	}
+}
+
+func applyDetectOverrides(options *Options) error {
+	if options.detect == nil {
+		return nil
+	}
+
+	if options.LibPath == "" && options.detect.libPath != "" {
+		options.LibPath = options.detect.libPath
+	}
+
+	if options.Arch.String() == "" && options.detect.arch != "" {
+		arch, err := download.ParseArch(options.detect.arch)
+		if err != nil {
+			return fmt.Errorf("detect: parse architecture: %w", err)
+		}
+		options.Arch = arch
+	}
+
+	if options.OS.String() == "" && options.detect.opSys != "" {
+		opSys, err := download.ParseOS(options.detect.opSys)
+		if err != nil {
+			return fmt.Errorf("detect: parse operating system: %w", err)
+		}
+		options.OS = opSys
+	}
+
+	if options.Processor.String() == "" && options.detect.processor != "" {
+		processor, err := download.ParseProcessor(options.detect.processor)
+		if err != nil {
+			return fmt.Errorf("detect: parse processor: %w", err)
+		}
+		options.Processor = processor
+	}
+
+	return nil
 }
 
 type runtimeProbeState uint8
@@ -46,6 +121,254 @@ type runtimeProbe struct {
 	err       error
 }
 
+type hostCUDAState uint8
+
+const (
+	hostCUDAUnknown hostCUDAState = iota
+	hostCUDASupported
+	hostCUDAUnsupported
+	hostCUDAUnavailable
+)
+
+type hostCUDAProbe struct {
+	state        hostCUDAState
+	capabilities []string
+}
+
+type hostCUDADevice struct {
+	index      string
+	uuid       string
+	capability string
+}
+
+func (lib *Libs) selectHostRuntime(
+	ctx context.Context,
+	log Logger,
+	cudaProbeFn func(context.Context) hostCUDAProbe,
+	fallbackFn func(context.Context) download.Processor,
+) (*Libs, RuntimeSelection) {
+	selection := RuntimeSelection{
+		PreferredProcessor: lib.Processor(),
+		SelectedProcessor:  lib.Processor(),
+		Reason:             "preferred host runtime retained",
+	}
+
+	if lib.Processor() != "cuda" || lib.readOnly {
+		return lib, selection
+	}
+
+	probe := cudaProbeFn(ctx)
+	if probe.state != hostCUDAUnsupported && probe.state != hostCUDAUnavailable {
+		if probe.state == hostCUDASupported {
+			selection.Reason = "NVIDIA hardware supports the CUDA 13 libraries"
+		} else {
+			selection.Reason = "NVIDIA hardware detected; CUDA 13 compatibility could not be verified"
+		}
+		return lib, selection
+	}
+
+	processor := fallbackFn(ctx)
+	selected := *lib
+	selected.processor = processor
+	selected.path = installPathFor(lib.root, lib.arch, lib.os, processor)
+	selected.readOnly = false
+
+	selection.SelectedProcessor = processor.String()
+	status := "unsupported"
+	if probe.state == hostCUDAUnavailable {
+		status = "unavailable"
+		selection.Reason = fmt.Sprintf("NVIDIA hardware detected but no CUDA devices are visible; selected %s", processor)
+	} else {
+		selection.Reason = fmt.Sprintf(
+			"NVIDIA hardware compute capability %s is unsupported by the CUDA 13 libraries (requires 7.5 or newer); selected %s",
+			strings.Join(probe.capabilities, ","),
+			processor,
+		)
+	}
+
+	if log != nil {
+		log(
+			ctx,
+			"host accelerator support",
+			"hardware", "nvidia",
+			"processor", "cuda",
+			"status", status,
+			"computeCapabilities", strings.Join(probe.capabilities, ","),
+			"minimumComputeCapability", minimumCUDA13ComputeCapability,
+			"selected", processor,
+		)
+	}
+
+	return &selected, selection
+}
+
+func probeCUDA13Host(ctx context.Context) hostCUDAProbe {
+	pctx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(
+		pctx,
+		"nvidia-smi",
+		"--query-gpu=index,uuid,compute_cap",
+		"--format=csv,noheader,nounits",
+	).Output()
+	if err != nil {
+		return hostCUDAProbe{}
+	}
+
+	visible, filter := os.LookupEnv("CUDA_VISIBLE_DEVICES")
+	return parseCUDA13Host(string(out), visible, filter)
+}
+
+func parseCUDA13Host(output string, visible string, filter bool) hostCUDAProbe {
+	if filter && strings.Contains(visible, "MIG-") {
+		return hostCUDAProbe{}
+	}
+
+	var devices []hostCUDADevice
+	invalid := false
+	for line := range strings.SplitSeq(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Split(line, ",")
+		if len(fields) != 3 {
+			invalid = true
+			continue
+		}
+		for i := range fields {
+			fields[i] = strings.TrimSpace(fields[i])
+		}
+		devices = append(devices, hostCUDADevice{
+			index:      fields[0],
+			uuid:       fields[1],
+			capability: fields[2],
+		})
+	}
+
+	if filter {
+		devices = visibleCUDADevices(devices, visible)
+	}
+
+	probe := hostCUDAProbe{state: hostCUDASupported}
+	for _, device := range devices {
+		probe.capabilities = append(probe.capabilities, device.capability)
+		capability, err := strconv.ParseFloat(device.capability, 64)
+		if err != nil {
+			invalid = true
+			continue
+		}
+
+		if capability < minimumCUDA13ComputeCapability {
+			probe.state = hostCUDAUnsupported
+		}
+	}
+
+	if probe.state == hostCUDAUnsupported {
+		return probe
+	}
+	if invalid {
+		probe.state = hostCUDAUnknown
+	} else if len(probe.capabilities) == 0 {
+		if filter {
+			probe.state = hostCUDAUnavailable
+		} else {
+			probe.state = hostCUDAUnknown
+		}
+	}
+
+	return probe
+}
+
+func visibleCUDADevices(devices []hostCUDADevice, visible string) []hostCUDADevice {
+	if visible == "all" {
+		return devices
+	}
+
+	var selected []hostCUDADevice
+	for token := range strings.SplitSeq(visible, ",") {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			break
+		}
+
+		var matches []hostCUDADevice
+		for _, device := range devices {
+			if token == device.index || strings.HasPrefix(device.uuid, token) {
+				matches = append(matches, device)
+			}
+		}
+		if len(matches) != 1 {
+			break
+		}
+		selected = append(selected, matches[0])
+	}
+
+	return selected
+}
+
+func (lib *Libs) detectHostFallback(ctx context.Context) download.Processor {
+	if IsSupported(lib.Arch(), lib.OS(), "rocm") && hasROCmHostSupport(ctx) {
+		return download.ROCm
+	}
+
+	if IsSupported(lib.Arch(), lib.OS(), "vulkan") && hasVulkanHostSupport(ctx) {
+		return download.Vulkan
+	}
+
+	return download.CPU
+}
+
+func hasROCmHostSupport(ctx context.Context) bool {
+	pctx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(pctx, "rocminfo").CombinedOutput()
+	return err == nil && hasROCmGPU(string(out))
+}
+
+func hasVulkanHostSupport(ctx context.Context) bool {
+	pctx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(pctx, "vulkaninfo", "--summary").CombinedOutput()
+	return err == nil && hasVulkanGPU(string(out))
+}
+
+func hasROCmGPU(output string) bool {
+	for block := range strings.SplitSeq(output, "Agent ") {
+		gpu := false
+		dispatch := false
+		for line := range strings.SplitSeq(block, "\n") {
+			line = strings.Join(strings.Fields(line), " ")
+			gpu = gpu || line == "Device Type: GPU"
+			dispatch = dispatch ||
+				(strings.HasPrefix(line, "Feature:") || strings.HasPrefix(line, "Features:")) &&
+					strings.Contains(line, "KERNEL_DISPATCH")
+		}
+		if gpu && dispatch {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasVulkanGPU(output string) bool {
+	for line := range strings.SplitSeq(output, "\n") {
+		line = strings.Join(strings.Fields(line), " ")
+		if strings.HasSuffix(line, "PHYSICAL_DEVICE_TYPE_DISCRETE_GPU") ||
+			strings.HasSuffix(line, "PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU") ||
+			strings.HasSuffix(line, "PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU") {
+			return true
+		}
+	}
+
+	return false
+}
+
 // SelectInstalledRuntime selects an installed accelerator bundle before any
 // native libraries are loaded into the process. The receiver remains selected
 // when its probe detects a device or is inconclusive. An alternative is chosen
@@ -62,6 +385,11 @@ func (lib *Libs) selectInstalledRuntime(ctx context.Context, log Logger, probeFn
 		PreferredProcessor: lib.Processor(),
 		SelectedProcessor:  lib.Processor(),
 		Reason:             "preferred runtime retained",
+	}
+
+	if lib.hostDemoted {
+		selection.Reason = "host compatibility fallback retained"
+		return lib, selection, nil
 	}
 
 	if !isAcceleratorProcessor(lib.Processor()) || lib.readOnly {

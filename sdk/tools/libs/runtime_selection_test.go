@@ -4,11 +4,149 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
 	"github.com/hybridgroup/yzma/pkg/download"
 )
+
+func TestWithDetectRespectsExplicitOptions(t *testing.T) {
+	scrubKronkEnv(t)
+
+	arch, err := download.ParseArch("arm64")
+	if err != nil {
+		t.Fatalf("parse arch: %v", err)
+	}
+	opSys, err := download.ParseOS("darwin")
+	if err != nil {
+		t.Fatalf("parse os: %v", err)
+	}
+	processor, err := download.ParseProcessor("cpu")
+	if err != nil {
+		t.Fatalf("parse processor: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		opts []Option
+	}{
+		{
+			name: "detect before explicit options",
+			opts: []Option{
+				WithDetect(context.Background(), noopLog),
+				WithArch(arch),
+				WithOS(opSys),
+				WithProcessor(processor),
+			},
+		},
+		{
+			name: "detect after explicit options",
+			opts: []Option{
+				WithArch(arch),
+				WithOS(opSys),
+				WithProcessor(processor),
+				WithDetectOverrides(context.Background(), noopLog, "", "amd64", "linux", "cuda"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := append([]Option{WithBasePath(t.TempDir())}, tt.opts...)
+			lib, err := New(opts...)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			if got, want := lib.Arch(), "arm64"; got != want {
+				t.Errorf("arch: got %q, want %q", got, want)
+			}
+			if got, want := lib.OS(), "darwin"; got != want {
+				t.Errorf("os: got %q, want %q", got, want)
+			}
+			if got, want := lib.Processor(), "cpu"; got != want {
+				t.Errorf("processor: got %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestWithDetectOverrides(t *testing.T) {
+	scrubKronkEnv(t)
+
+	lib, err := New(
+		WithBasePath(t.TempDir()),
+		WithDetectOverrides(context.Background(), noopLog, "", "amd64", "linux", "cpu"),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if got, want := lib.Arch(), "amd64"; got != want {
+		t.Errorf("arch: got %q, want %q", got, want)
+	}
+	if got, want := lib.OS(), "linux"; got != want {
+		t.Errorf("os: got %q, want %q", got, want)
+	}
+	if got, want := lib.Processor(), "cpu"; got != want {
+		t.Errorf("processor: got %q, want %q", got, want)
+	}
+}
+
+func TestNewAutomaticallySelectsCompatibleHostRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses Unix shell scripts")
+	}
+
+	scrubKronkEnv(t)
+
+	bin := t.TempDir()
+	nvidiaSMI := `#!/bin/sh
+if [ "$#" -eq 0 ]; then
+  echo "CUDA Version: 13.0"
+  exit 0
+fi
+echo "0, GPU-pascal, 6.1"
+`
+	vulkanInfo := `#!/bin/sh
+echo "deviceType = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU"
+`
+	for name, content := range map[string]string{
+		"nvidia-smi": nvidiaSMI,
+		"vulkaninfo": vulkanInfo,
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(content), 0o755); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	t.Setenv("PATH", bin)
+
+	basePath := t.TempDir()
+	root := filepath.Join(basePath, localFolder)
+	arch, err := download.ParseArch("amd64")
+	if err != nil {
+		t.Fatalf("parse arch: %v", err)
+	}
+	opSys, err := download.ParseOS("linux")
+	if err != nil {
+		t.Fatalf("parse os: %v", err)
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	if err := writeVersionFile(root, "b100", arch, opSys, download.CUDA); err != nil {
+		t.Fatalf("write version: %v", err)
+	}
+
+	lib, err := New(WithBasePath(basePath))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if got, want := lib.Processor(), "vulkan"; got != want {
+		t.Errorf("processor: got %q, want %q", got, want)
+	}
+}
 
 func TestParseRuntimeDevices(t *testing.T) {
 	tests := []struct {
@@ -133,6 +271,215 @@ func TestChooseRuntime(t *testing.T) {
 				t.Errorf("candidate: got %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseCUDA13Host(t *testing.T) {
+	tests := []struct {
+		name             string
+		output           string
+		visible          string
+		filter           bool
+		wantState        hostCUDAState
+		wantCapabilities []string
+	}{
+		{
+			name:             "pascal is unsupported",
+			output:           "0, GPU-pascal, 6.1\n",
+			wantState:        hostCUDAUnsupported,
+			wantCapabilities: []string{"6.1"},
+		},
+		{
+			name:             "volta is unsupported",
+			output:           "0, GPU-volta, 7.0\n",
+			wantState:        hostCUDAUnsupported,
+			wantCapabilities: []string{"7.0"},
+		},
+		{
+			name:             "turing is supported",
+			output:           "0, GPU-turing, 7.5\n",
+			wantState:        hostCUDASupported,
+			wantCapabilities: []string{"7.5"},
+		},
+		{
+			name:             "mixed generations are unsupported",
+			output:           "0, GPU-ampere, 8.6\n1, GPU-pascal, 6.1\n",
+			wantState:        hostCUDAUnsupported,
+			wantCapabilities: []string{"8.6", "6.1"},
+		},
+		{
+			name:             "hidden pascal does not disable cuda",
+			output:           "0, GPU-ampere, 8.6\n1, GPU-pascal, 6.1\n",
+			visible:          "0",
+			filter:           true,
+			wantState:        hostCUDASupported,
+			wantCapabilities: []string{"8.6"},
+		},
+		{
+			name:             "invalid visibility token terminates the list",
+			output:           "0, GPU-ampere, 8.6\n1, GPU-pascal, 6.1\n",
+			visible:          "0,-1,1",
+			filter:           true,
+			wantState:        hostCUDASupported,
+			wantCapabilities: []string{"8.6"},
+		},
+		{
+			name:      "out of range visibility token exposes no devices",
+			output:    "0, GPU-ampere, 8.6\n1, GPU-pascal, 6.1\n",
+			visible:   "99,1",
+			filter:    true,
+			wantState: hostCUDAUnavailable,
+		},
+		{
+			name:      "empty visibility mask makes cuda unavailable",
+			output:    "0, GPU-ampere, 8.6\n",
+			filter:    true,
+			wantState: hostCUDAUnavailable,
+		},
+		{
+			name:             "unsupported capability wins over malformed row",
+			output:           "0, GPU-pascal, 6.1\nmalformed\n",
+			wantState:        hostCUDAUnsupported,
+			wantCapabilities: []string{"6.1"},
+		},
+		{
+			name:      "empty output is unknown",
+			wantState: hostCUDAUnknown,
+		},
+		{
+			name:      "unexpected output is unknown",
+			output:    "N/A\n",
+			wantState: hostCUDAUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseCUDA13Host(tt.output, tt.visible, tt.filter)
+			if got.state != tt.wantState {
+				t.Errorf("state: got %v, want %v", got.state, tt.wantState)
+			}
+			if !slices.Equal(got.capabilities, tt.wantCapabilities) {
+				t.Errorf("capabilities: got %v, want %v", got.capabilities, tt.wantCapabilities)
+			}
+		})
+	}
+}
+
+func TestHasROCmGPU(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{
+			name:   "gpu with kernel dispatch",
+			output: "Agent 1\n  Device Type: GPU\n  Feature: KERNEL_DISPATCH\n",
+			want:   true,
+		},
+		{
+			name:   "gpu with combined dispatch features",
+			output: "Agent 1\n  Device Type: GPU\n  Features: KERNEL_DISPATCH & AGENT_DISPATCH\n",
+			want:   true,
+		},
+		{
+			name:   "cpu agent only",
+			output: "Agent 1\n  Device Type: CPU\n  Feature: KERNEL_DISPATCH\n",
+		},
+		{
+			name:   "gpu without kernel dispatch",
+			output: "Agent 1\n  Device Type: GPU\n  Feature: AGENT_DISPATCH\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasROCmGPU(tt.output); got != tt.want {
+				t.Errorf("ROCm GPU: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasVulkanGPU(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{
+			name:   "discrete GPU",
+			output: "deviceType = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU\n",
+			want:   true,
+		},
+		{
+			name:   "integrated GPU",
+			output: "deviceType = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU\n",
+			want:   true,
+		},
+		{
+			name:   "software CPU device",
+			output: "deviceType = PHYSICAL_DEVICE_TYPE_CPU\n",
+		},
+		{
+			name:   "instance without devices",
+			output: "Vulkan Instance Version: 1.3.280\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasVulkanGPU(tt.output); got != tt.want {
+				t.Errorf("Vulkan GPU: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectHostRuntime(t *testing.T) {
+	arch, err := download.ParseArch("amd64")
+	if err != nil {
+		t.Fatalf("parse arch: %v", err)
+	}
+	opSys, err := download.ParseOS("linux")
+	if err != nil {
+		t.Fatalf("parse os: %v", err)
+	}
+
+	root := filepath.Join(t.TempDir(), localFolder)
+	primary := &Libs{
+		root:      root,
+		path:      installPathFor(root, arch, opSys, download.CUDA),
+		arch:      arch,
+		os:        opSys,
+		processor: download.CUDA,
+	}
+
+	probeFn := func(context.Context) hostCUDAProbe {
+		return hostCUDAProbe{
+			state:        hostCUDAUnsupported,
+			capabilities: []string{"6.1"},
+		}
+	}
+	fallbackFn := func(context.Context) download.Processor {
+		return download.Vulkan
+	}
+
+	selected, decision := primary.selectHostRuntime(context.Background(), noopLog, probeFn, fallbackFn)
+	if got, want := selected.Processor(), "vulkan"; got != want {
+		t.Errorf("processor: got %q, want %q", got, want)
+	}
+	if got, want := selected.LibsPath(), installPathFor(root, arch, opSys, download.Vulkan); got != want {
+		t.Errorf("path: got %q, want %q", got, want)
+	}
+	if got, want := decision.PreferredProcessor, "cuda"; got != want {
+		t.Errorf("preferred processor: got %q, want %q", got, want)
+	}
+	if got, want := decision.SelectedProcessor, "vulkan"; got != want {
+		t.Errorf("selected processor: got %q, want %q", got, want)
+	}
+	if got, want := primary.Processor(), "cuda"; got != want {
+		t.Errorf("primary processor mutated: got %q, want %q", got, want)
 	}
 }
 

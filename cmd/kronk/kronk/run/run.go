@@ -76,6 +76,7 @@ func installSystem(cfg Config) (models.Path, error) {
 	defer cancel()
 
 	lbs, err := libs.New(
+		libs.WithDetect(ctx, kronk.FmtLogger),
 		libs.WithBasePath(cfg.BasePath),
 		libs.WithVersion(defaults.LibVersion("")),
 	)

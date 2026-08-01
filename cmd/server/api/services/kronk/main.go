@@ -305,27 +305,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "downloading libraries")
 
-	arch, err := defaults.Arch(cfg.Arch)
-	if err != nil {
-		return err
-	}
-
-	opSys, err := defaults.OS(cfg.OS)
-	if err != nil {
-		return err
-	}
-
-	processor, err := defaults.Processor(cfg.Processor)
-	if err != nil {
-		return err
-	}
-
 	libs, err := libs.New(
+		libs.WithDetectOverrides(ctx, log.Info, cfg.LibPath, cfg.Arch, cfg.OS, cfg.Processor),
 		libs.WithBasePath(cfg.BasePath),
-		libs.WithLibPath(cfg.LibPath),
-		libs.WithArch(arch),
-		libs.WithOS(opSys),
-		libs.WithProcessor(processor),
 		libs.WithAllowUpgrade(cfg.AllowUpgrade),
 		libs.WithVersion(defaults.LibVersion(cfg.LibVersion)),
 	)
@@ -434,6 +416,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "initializing kronk")
 
+	// The server may use a base path that differs from the process default.
+	// Initialize from the manager's resolved path so that base-path and
+	// library-path configuration remain authoritative.
 	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
 		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}
