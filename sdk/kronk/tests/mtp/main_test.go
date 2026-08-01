@@ -1,3 +1,9 @@
+// This TestMain resolves MPMTP through the catalog and exits 0 when it is
+// absent. The kronkdiff differential harness resolves its GGUF by explicit
+// path instead and must not be short-circuited by that skip, so it supplies
+// its own setup and this file is excluded from that build.
+//go:build !kronkdiff
+
 package mtp_test
 
 import (
