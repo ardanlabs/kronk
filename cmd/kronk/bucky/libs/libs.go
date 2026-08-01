@@ -27,6 +27,7 @@ func runDefaultLocal(upgrade bool, version string) error {
 		libs.WithLibPath(""),
 		libs.WithVersion(version),
 		libs.WithAllowUpgrade(upgrade),
+		libs.WithDetect(ctx, bucky.FmtLogger),
 	)
 	if err != nil {
 		return fmt.Errorf("bucky libs: new: %w", err)

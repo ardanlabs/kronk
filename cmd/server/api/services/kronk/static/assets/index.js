@@ -1758,7 +1758,7 @@ func installSystem() (buckymodels.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	lib, err := buckylibs.New()
+	lib, err := buckylibs.New(buckylibs.WithDetect(ctx, bucky.FmtLogger))
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
 	}
@@ -2027,7 +2027,7 @@ func installSystem() (buckymodels.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	lib, err := buckylibs.New()
+	lib, err := buckylibs.New(buckylibs.WithDetect(ctx, bucky.FmtLogger))
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
 	}
@@ -2280,7 +2280,7 @@ func consume(stream *model.Stream, saidStop chan struct{}) {
 // case-insensitively and ignoring surrounding punctuation (so "Stop.",
 // "STOP!" and "stop" all match).
 func containsWord(text, word string) bool {
-	for _, f := range strings.Fields(strings.ToLower(text)) {
+	for f := range strings.FieldsSeq(strings.ToLower(text)) {
 		if strings.Trim(f, ".,!?;:\\"'\`-") == word {
 			return true
 		}
@@ -2320,7 +2320,7 @@ func installSystem() (buckymodels.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	lib, err := buckylibs.New()
+	lib, err := buckylibs.New(buckylibs.WithDetect(ctx, bucky.FmtLogger))
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
 	}

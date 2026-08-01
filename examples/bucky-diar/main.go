@@ -122,7 +122,7 @@ func installSystem() (buckymodels.Path, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	lib, err := buckylibs.New()
+	lib, err := buckylibs.New(buckylibs.WithDetect(ctx, bucky.FmtLogger))
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
 	}
