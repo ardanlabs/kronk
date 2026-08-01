@@ -246,7 +246,12 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	mParams, ka, err := buildModelParams(ctx, &cfg, l)
+	loadMTP, err := modelFilesLoadMTP(cfg.ModelFiles)
+	if err != nil {
+		return nil, fmt.Errorf("detect-mtp-metadata: %w", err)
+	}
+
+	mParams, ka, err := buildModelParams(ctx, &cfg, loadMTP, l)
 	if err != nil {
 		return nil, err
 	}
@@ -423,9 +428,12 @@ type modelParamsKeepalive struct {
 // cfg.TensorBuftOverrides when MoE compilation produces an implicit override
 // list, and writes the resolved cfg.PtrSplitMode back when none was set so
 // ModelConfig() reports the effective device-aware split mode.
-func buildModelParams(ctx context.Context, cfg *Config, l applog.Logger) (llama.ModelParams, modelParamsKeepalive, error) {
+func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.Logger) (llama.ModelParams, modelParamsKeepalive, error) {
 	mParams := llama.ModelDefaultParams()
 	var ka modelParamsKeepalive
+	if loadMTP {
+		mParams.LoadMTP = 1
+	}
 
 	if len(cfg.Devices) > 0 {
 		resolved, err := resolveBackendDevices(cfg.Devices)
@@ -647,9 +655,9 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l
 // Pointer-backed arrays use their configured values so diagnostics remain
 // readable without exposing process addresses.
 func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNames []string, tensorSplit []float32, tensorBuftOverrides []string, l applog.Logger) {
-	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLoadMode[%s]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
-		params.CheckTensors, deviceNames, params.KvOverrides != 0, loadModeName(params.LoadMode), params.MainGpu,
-		params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitMode(params.SplitMode).String(),
+	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLoadMode[%s]\nLoadMTP[%d]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
+		params.CheckTensors, deviceNames, params.KvOverrides != 0, loadModeName(params.LoadMode), params.LoadMTP,
+		params.MainGpu, params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitMode(params.SplitMode).String(),
 		tensorBuftOverrides, tensorSplit, params.UseExtraBufts, params.VocabOnly))
 }
 
@@ -856,6 +864,14 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 		draftTensorSplitBuf = make([]float32, len(dCfg.TensorSplit))
 		copy(draftTensorSplitBuf, dCfg.TensorSplit)
 		mParams.TensorSplit = &draftTensorSplitBuf[0]
+	}
+
+	loadMTP, err := modelFilesLoadMTP(dCfg.ModelFiles)
+	if err != nil {
+		return nil, fmt.Errorf("draft-detect-mtp-metadata: %w", err)
+	}
+	if loadMTP {
+		mParams.LoadMTP = 1
 	}
 	logModelParamsTrace(ctx, mParams, dCfg.Devices, dCfg.TensorSplit, nil, log)
 
