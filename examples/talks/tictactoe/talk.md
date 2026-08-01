@@ -32,15 +32,11 @@ In this talk, Bill will show why self-hosted inference belongs in your Go applic
 
 ### Tic-Tac-Toe
 
-Use the writing-go skill to perform this work.
+Use the `writing-go` skill. Implement a two-player terminal game in `tictactoe/main.go` using only the Go standard library. Keep it short and direct; add no unrequested features.
 
-Write a 2-player terminal tic-tac-toe game in a single file
-`tictactoe/main.go` using only the Go standard library. Keep the code
-short and direct — do not add features I haven't asked for.
+Render this board, clearing the screen first with `\033[2J\033[H` and printing a blank line before and after it:
 
-**Board layout** (green lines, white numbers, red bold X, green bold O):
-
-```
+```text
 Score: X: 0 | O: 0 | Draws: 0
 
  1 | 2 | 3
@@ -52,37 +48,27 @@ Score: X: 0 | O: 0 | Draws: 0
 Player X's turn. Enter a number (1-9):
 ```
 
-Empty cells show their number (1–9). Taken cells show `X` or `O`.
+Use ANSI colors, resetting after each colored segment:
 
-**Rules**
+- Grid lines: green
+- Empty-cell numbers: white
+- `X`: bold red
+- `O`: bold green
 
-- Player X goes first, then alternate.
-- A move is valid if the chosen cell still shows a number.
-- After each move, check for a winner (3 in a row: horizontal,
-  vertical, or diagonal) or a draw (board full).
-- On invalid input (non-numeric, out of range, or taken), print an
-  error and re-prompt the same player.
-- When a game ends, print the result, update the score, and ask
-  `Play again? (y/n)`. Scores persist across games in the session.
-- Clear the screen before every board render (ANSI `\033[2J\033[H`).
-- Print a blank line before and after each board render.
-- Use ANSI escape codes for color. Reset after each colored segment.
+Requirements:
 
-**Required functions** — you MUST call these from the game loop, not
-re-inline the logic:
+- Empty cells display their positions (`1`–`9`).
+- X moves first; players then alternate.
+- Reject non-numeric, out-of-range, and occupied-cell input with an error, then re-prompt the same player.
+- After each valid move, detect horizontal, vertical, or diagonal wins and full-board draws.
+- At game end, print the result, update the session score, and ask `Play again? (y/n)`.
+- Call these functions from the game loop; do not inline their logic:
 
 ```go
-// playerX prompts player X and returns the chosen 1-9 cell.
 func playerX(b *Board) int
-
-// playerO prompts player O and returns the chosen 1-9 cell.
 func playerO(b *Board) int
 ```
 
-**Finish**
+Format the file with `gofmt -s -w`, run `go build` to verify it compiles, and remove any generated binary. Do not run the game.
 
-- Run `go build` to confirm it compiles, then delete the binary.
-- Run `gofmt -s -w` on the file.
-- Do not run the game.
-
-Start coding now. No questions, no plan — just write the code.
+Start coding immediately without questions or a plan.
