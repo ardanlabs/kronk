@@ -582,7 +582,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 	if accepted == nDraft {
 		targetLogits, err := llama.GetLogitsIth(e.model.lctx, baseBatch+int32(nDraft), nVocab)
 		switch {
-		case err != nil:
+		case mtpGreedy || err != nil:
 			switch {
 			case s.grammarSampler != nil && s.reasonFlag == 0:
 				bonusToken = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, baseBatch+int32(nDraft))

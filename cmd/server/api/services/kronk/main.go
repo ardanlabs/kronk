@@ -424,7 +424,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}
 
-	if err := bucky.Init(bucky.WithInitLibPath(buckyLibs.LibsPath())); err != nil {
+	if err := bucky.Init(bucky.WithLibPath(buckyLibs.LibsPath())); err != nil {
 		log.Info(ctx, "startup", "WARNING", "bucky init failed, running in degraded mode (use BUI to download whisper libraries)", "ERROR", err)
 	}
 

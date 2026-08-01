@@ -80,10 +80,6 @@ type Agent struct {
 
 // NewAgent creates a new instance of Agent.
 func NewAgent(getUserMessage func() (string, bool), mp models.Path) (*Agent, error) {
-	if err := kronk.Init(); err != nil {
-		return nil, fmt.Errorf("unable to init kronk: %w", err)
-	}
-
 	krn, err := newKronk(mp)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create kronk instance: %w", err)
@@ -414,8 +410,13 @@ func installSystem() (models.Path, error) {
 	if err != nil {
 		return models.Path{}, err
 	}
+
 	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
 		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	}
+
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
 	}
 
 	// Download model.

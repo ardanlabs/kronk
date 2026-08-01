@@ -37,7 +37,7 @@ func runDefaultLocal(upgrade bool, version string) error {
 		return fmt.Errorf("bucky libs: unable to install whisper.cpp: %w", err)
 	}
 
-	if err := bucky.Init(bucky.WithInitLibPath(lib.LibsPath())); err != nil {
+	if err := bucky.Init(bucky.WithLibPath(lib.LibsPath())); err != nil {
 		return fmt.Errorf("bucky libs: installation invalid: %w", err)
 	}
 
