@@ -21,6 +21,47 @@ import (
 // chooseNDraft EMA will scale down further if acceptance is poor.
 const defMTPNDraft = 2
 
+// modelFilesLoadMTP reports whether the first GGUF shard declares one or
+// more MTP prediction layers. GGUF metadata lives in the first shard, so no
+// other file is read. This check must run before llama loads the model:
+// llama.cpp skips gated MTP tensors unless ModelParams.LoadMTP is enabled.
+func modelFilesLoadMTP(modelFiles []string) (bool, error) {
+	if len(modelFiles) == 0 {
+		return false, fmt.Errorf("no model files provided")
+	}
+
+	data, err := gguf.ReadHeaderBytes(modelFiles[0])
+	if err != nil {
+		return false, err
+	}
+
+	metadata, err := gguf.ParseMetadata(data)
+	if err != nil {
+		return false, err
+	}
+
+	return metadataHasMTP(metadata), nil
+}
+
+// metadataHasMTP reports whether metadata contains a positive numeric
+// nextn_predict_layers value. The architecture prefix is intentionally not
+// constrained because llama.cpp uses the same metadata suffix across model
+// families.
+func metadataHasMTP(metadata map[string]string) bool {
+	for key, value := range metadata {
+		if !strings.Contains(key, "nextn_predict_layers") {
+			continue
+		}
+
+		n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err == nil && n > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
 // mtpNDraft returns the starting (ceiling) number of draft tokens for the
 // auto-detected MTP drafter. An MTP nDraft override — a DraftModel block
 // with no model files — sets the ceiling explicitly; otherwise the
@@ -283,7 +324,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 	// target (NOT a DraftModelConfig — there is no user knob). buildModelParams
 	// mutates the cfg copy; pass a copy so the live config is untouched.
 	cfgCopy := cfg
-	mParams, ka, err := buildModelParams(ctx, &cfgCopy, log)
+	mParams, ka, err := buildModelParams(ctx, &cfgCopy, false, log)
 	if err != nil {
 		return nil, fmt.Errorf("mtp-shared-build-model-params: %w", err)
 	}
