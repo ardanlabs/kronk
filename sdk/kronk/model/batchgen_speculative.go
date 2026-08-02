@@ -462,7 +462,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			if draftToken == targetTok {
 				accepted++
 				s.specAcceptedTotal++
-				s.nPast = basePast + llama.Pos(1+i)
+				s.nPast = specAcceptedNPast(basePast, accepted)
 				e.handleSpeculativeToken(s, draftToken, baseBatch+int32(i), buf, targetSamplerAccepted, false, nil)
 
 				if !s.active {
@@ -517,7 +517,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			if ratio >= 1.0 || rand.Float64() < ratio {
 				accepted++
 				s.specAcceptedTotal++
-				s.nPast = basePast + llama.Pos(1+i)
+				s.nPast = specAcceptedNPast(basePast, accepted)
 				e.handleSpeculativeToken(s, draftToken, baseBatch+int32(i), buf, false, false, nil)
 				if !s.active {
 					e.model.log(ctx, "speculative", "status", "verify-done-eog",
@@ -752,7 +752,7 @@ func (e *batchEngine) finalizeSpeculativeTokens(s *slot, buf []byte) {
 	}
 
 	// Set nPast after s.sampled + accepted drafts.
-	s.nPast = basePast + llama.Pos(1+accepted)
+	s.nPast = specAcceptedNPast(basePast, accepted)
 
 	// Throttle per-round verify-done logging. The final slot-finished
 	// line carries the per-request rollup, so steady-state INFO output
@@ -783,6 +783,10 @@ func (e *batchEngine) finalizeSpeculativeTokens(s *slot, buf []byte) {
 	}
 
 	s.iBatch = -1
+}
+
+func specAcceptedNPast(basePast llama.Pos, accepted int) llama.Pos {
+	return basePast + llama.Pos(1+accepted)
 }
 
 // captureTargetSpecSnapshot saves the target context's per-sequence

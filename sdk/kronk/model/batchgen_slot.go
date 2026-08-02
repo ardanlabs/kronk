@@ -187,6 +187,13 @@ type slot struct {
 	// first prefill chunk — slot 0 of that mirror batch is then zeroed).
 	pendingH []float32
 
+	// mtpDraftH is transient hidden-state scratch for the Qwen own-KV
+	// autoregressive draft loop. It must remain separate from pendingH:
+	// pendingH is the authoritative target-derived predecessor consumed by
+	// the post-verification mirror, while mtpDraftH is overwritten by each
+	// speculative draft decode. Lazy-grow, never-shrink.
+	mtpDraftH []float32
+
 	// targetBatchStart / targetBatchCount / targetBatchBasePos record
 	// the slot's contiguous range inside the shared target batch and the
 	// sequence position of its first token, captured during batch
@@ -360,6 +367,7 @@ func (s *slot) reset() {
 	// last position is no longer the natural predecessor of the new
 	// request's first token.
 	s.pendingH = s.pendingH[:0]
+	s.mtpDraftH = s.mtpDraftH[:0]
 	s.verifyH = s.verifyH[:0]
 	s.targetBatchStart = 0
 	s.targetBatchCount = 0

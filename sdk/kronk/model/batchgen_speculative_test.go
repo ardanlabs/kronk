@@ -11,6 +11,8 @@ func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 	s := slot{
 		startTime:    time.Now(),
 		specSnapshot: []byte{1},
+		pendingH:     []float32{1},
+		mtpDraftH:    []float32{2},
 	}
 
 	s.reset()
@@ -20,6 +22,12 @@ func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 	}
 	if len(s.specSnapshot) != 0 {
 		t.Errorf("len(specSnapshot) = %d, want 0", len(s.specSnapshot))
+	}
+	if len(s.pendingH) != 0 {
+		t.Errorf("len(pendingH) = %d, want 0", len(s.pendingH))
+	}
+	if len(s.mtpDraftH) != 0 {
+		t.Errorf("len(mtpDraftH) = %d, want 0", len(s.mtpDraftH))
 	}
 }
 
@@ -101,6 +109,65 @@ func TestPromptFitsContextWindow(t *testing.T) {
 			got := promptFitsContextWindow(tt.promptTokens, tt.contextWindow)
 			if got != tt.want {
 				t.Errorf("promptFitsContextWindow() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidMTPDraftState(t *testing.T) {
+	tests := []struct {
+		name          string
+		actualBytes   uint64
+		expectedBytes uint64
+		pendingH      []float32
+		nEmbd         int
+		want          bool
+	}{
+		{"complete state", 100, 100, []float32{1, 2}, 2, true},
+		{"empty state", 0, 0, []float32{}, 0, false},
+		{"partial bytes", 99, 100, []float32{1, 2}, 2, false},
+		{"missing hidden state", 100, 100, nil, 2, false},
+		{"wrong hidden width", 100, 100, []float32{1}, 2, false},
+		{"invalid embedding width", 100, 100, nil, 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validMTPDraftState(tt.actualBytes, tt.expectedBytes, tt.pendingH, tt.nEmbd)
+			if got != tt.want {
+				t.Errorf("validMTPDraftState() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrepareMTPDraftHiddenDoesNotAliasPendingH(t *testing.T) {
+	s := slot{pendingH: []float32{1, 2, 3}}
+
+	draftH := prepareMTPDraftHidden(&s, len(s.pendingH))
+	draftH[0] = 9
+
+	if s.pendingH[0] != 1 {
+		t.Errorf("pendingH[0] = %v, want 1", s.pendingH[0])
+	}
+}
+
+func TestSpecAcceptedNPast(t *testing.T) {
+	tests := []struct {
+		name     string
+		basePast llama.Pos
+		accepted int
+		want     llama.Pos
+	}{
+		{"no accepted drafts", 100, 0, 101},
+		{"first draft accepted", 100, 1, 102},
+		{"both drafts accepted", 100, 2, 103},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := specAcceptedNPast(tt.basePast, tt.accepted); got != tt.want {
+				t.Errorf("specAcceptedNPast(%d, %d) = %d, want %d", tt.basePast, tt.accepted, got, tt.want)
 			}
 		})
 	}
