@@ -373,6 +373,7 @@ func (s *slot) reset() {
 	s.specDraftDistsSparse = nil
 	// Note: draftDistBuf, targetDistBuf, adjustedDistBuf are reused across requests
 	s.grammarSampler = nil
+	s.startTime = time.Time{}
 	s.prefillStart = time.Time{}
 	s.prefillSpan = nil
 	s.tokenGenSpan = nil

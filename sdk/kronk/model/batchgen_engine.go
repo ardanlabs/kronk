@@ -27,6 +27,14 @@ type batchEngine struct {
 	// Checked before reading requestQ in fillSlots.
 	pendingJobs []*chatJob
 
+	// batchReleased quarantines slots released after the current shared batch
+	// starts assembling. Their staged rows remain in batch until decode, so the
+	// slot's stable seqID must not be reassigned in the same iteration. After
+	// decode, those sequences are cleared again to remove any staged rows that
+	// were written after finishSlot's initial clear.
+	batchReleased   []bool
+	batchAssembling bool
+
 	// Pre-allocated M-RoPE batch and position buffer for vision model text
 	// chunks. Avoids per-call BatchInit/BatchFree and posData allocation in
 	// decodeTextMRoPE.
@@ -58,13 +66,14 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	}
 
 	e := batchEngine{
-		model:      m,
-		nSlots:     nSlots,
-		slots:      slots,
-		batch:      batch,
-		requestQ:   make(chan *chatJob, nSlots*m.cfg.QueueDepth()),
-		wakeCh:     make(chan struct{}, 1),
-		shutdownCh: make(chan struct{}),
+		model:         m,
+		nSlots:        nSlots,
+		slots:         slots,
+		batch:         batch,
+		requestQ:      make(chan *chatJob, nSlots*m.cfg.QueueDepth()),
+		wakeCh:        make(chan struct{}, 1),
+		shutdownCh:    make(chan struct{}),
+		batchReleased: make([]bool, nSlots),
 	}
 
 	// Pre-allocate M-RoPE batch for vision model text chunk decoding.
@@ -199,6 +208,9 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Clear the batch.
 	e.batch.Clear()
+	for i := range e.batchReleased {
+		e.batchReleased[i] = false
+	}
 
 	// MTP: every iteration starts with no slot having claimed a target
 	// batch range. The add sites (prefill / gen / spec) re-claim it as
@@ -210,6 +222,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			s.targetBatchCount = 0
 		}
 	}
+
+	// A slot released after this point is quarantined until the next iteration
+	// so two requests can never contribute rows for the same stable seqID to
+	// one llama.Decode.
+	e.batchAssembling = true
 
 	// Prefill draft model for slots that just completed target prefill.
 	// Use the slot's per-request job context so log entries carry the
@@ -416,11 +433,14 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 	}
 
-	// Fill empty slots from queue.
+	// Fill slots only after existing generation and prefill work has claimed
+	// batch capacity. fillSlots skips slots quarantined by a release during
+	// assembly, preventing their stable seqID from being reused before decode.
 	e.fillSlots(buf)
 
 	// Nothing to process.
 	if e.batch.NTokens == 0 {
+		e.batchAssembling = false
 		return
 	}
 
@@ -452,6 +472,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			}
 		}
 
+		e.batchAssembling = false
 		return
 	}
 
@@ -461,7 +482,13 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
 	}
+	for i, released := range e.batchReleased {
+		if released {
+			llama.MemorySeqRm(e.model.mem, e.slots[i].seqID, -1, -1)
+		}
+	}
 	e.model.decodeMu.Unlock()
+	e.batchAssembling = false
 
 	if err != nil || ret != 0 {
 		e.logDecodeError(ctx, ret, err)

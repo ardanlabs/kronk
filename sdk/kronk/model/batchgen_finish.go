@@ -19,6 +19,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if !s.active {
 		return
 	}
+	if e.batchAssembling {
+		e.batchReleased[s.id] = true
+	}
 
 	ctx := s.job.ctx
 	jobID := s.job.id

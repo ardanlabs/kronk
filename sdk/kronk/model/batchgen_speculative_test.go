@@ -2,9 +2,26 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
+	s := slot{
+		startTime:    time.Now(),
+		specSnapshot: []byte{1},
+	}
+
+	s.reset()
+
+	if !s.startTime.IsZero() {
+		t.Errorf("startTime = %v, want zero time", s.startTime)
+	}
+	if len(s.specSnapshot) != 0 {
+		t.Errorf("len(specSnapshot) = %d, want 0", len(s.specSnapshot))
+	}
+}
 
 func TestNeedsTargetSpecSnapshot(t *testing.T) {
 	tests := []struct {
