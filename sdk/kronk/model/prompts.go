@@ -135,18 +135,6 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		d["add_generation_prompt"] = true
 	}
 
-	// Ensure preserve_thinking is set (default false if not specified).
-	// Reasoning is ephemeral: keeping it on historical assistant turns costs
-	// prompt tokens without improving generation, and templates render it
-	// inconsistently across turns, shifting the tokenized prefix and forcing
-	// IMC rebuilds. The engine instead drops reasoning from assistant history
-	// before this render (see Model.normalizeHistoryReasoning). Templates that
-	// read this flag (e.g. Qwen3.6) honor it; the rest ignore it, so setting it
-	// unconditionally is safe.
-	if _, ok := d["preserve_thinking"]; !ok {
-		d["preserve_thinking"] = false
-	}
-
 	// Provide bos_token and eos_token from the model vocabulary. Templates
 	// like gemma-4 require these to produce a valid prompt. When the tokenizer
 	// already prepends BOS (addBOSToken=true), we set bos_token to empty to

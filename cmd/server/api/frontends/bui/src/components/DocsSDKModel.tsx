@@ -685,26 +685,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParserFactory is the constructor signature each parser package's New function satisfies. The bool return reports whether this parser claims the given Fingerprint; on false, the registry continues to the next factory.</p>
             </div>
 
-            <div className="doc-section" id="type-reasoningnormalizer">
-              <h4>ReasoningNormalizer</h4>
-              <pre className="code-block">
-                <code>{`type ReasoningNormalizer interface {
-	// StripReasoningContent removes closed reasoning spans embedded directly
-	// in an assistant message's content (e.g. <think>…</think> for Qwen,
-	// <|channel>thought…<channel|> for Gemma). Text outside the spans is
-	// preserved. Invoked on history before the Jinja render.
-	StripReasoningContent(content string) string
-
-	// StripEmptyReasoning removes empty reasoning spans from a rendered prompt.
-	//
-	// Deprecated: the engine no longer rewrites completed template output because
-	// role-unaware transformations can alter user content and model scaffolding.
-	StripEmptyReasoning(rendered string) string
-}`}</code>
-              </pre>
-              <p className="doc-description">ReasoningNormalizer is an optional compatibility interface for parsers that normalize model-specific reasoning markup. Reasoning is ephemeral: replaying it on prior assistant turns adds prompt tokens that do not improve generation, and the markup is rendered inconsistently across turns (a turn that emitted reasoning as the "current" turn re-renders without it once it becomes history), shifting the tokenized prefix and forcing full cache rebuilds. When IMC is on and preserve_thinking is off, the engine drops the reasoning / reasoning_content fields from assistant history (family-agnostic) and then invokes the normalizer for the lineage-specific markup the field-drop cannot reach. Both methods must be deterministic and idempotent: applying them twice yields the same result as applying them once. The engine only normalizes structured assistant history before rendering; completed Jinja output is authoritative and is never rewritten.</p>
-            </div>
-
             <div className="doc-section" id="type-rerankresponse">
               <h4>RerankResponse</h4>
               <pre className="code-block">
@@ -1917,7 +1897,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-paramsadjuster">ParamsAdjuster</a></li>
                 <li><a href="#type-parser">Parser</a></li>
                 <li><a href="#type-parserfactory">ParserFactory</a></li>
-                <li><a href="#type-reasoningnormalizer">ReasoningNormalizer</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
                 <li><a href="#type-rerankusage">RerankUsage</a></li>

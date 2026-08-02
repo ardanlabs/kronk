@@ -228,6 +228,14 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// one llama.Decode.
 	e.batchAssembling = true
 
+	// Admit and initialize new requests before existing slots stage any rows.
+	// startSlot may clear, restore, decode, and snapshot per-sequence state for
+	// IMC. Performing those target-context mutations after another slot has
+	// already staged rows leaves the shared batch describing context state that
+	// no longer matches the point at which it was assembled, which is especially
+	// unsafe for hybrid/recurrent models.
+	e.fillSlots(buf)
+
 	// Prefill draft model for slots that just completed target prefill.
 	// Use the slot's per-request job context so log entries carry the
 	// current request UUID instead of the long-running batch loop's UUID,
@@ -260,6 +268,14 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 		if int(s.nPast) >= e.model.cfg.ContextWindow() {
 			e.finishSlot(s, fmt.Errorf("generation reached context window of %d tokens", e.model.cfg.ContextWindow()))
+			continue
+		}
+
+		// A newly admitted request may have filled the logical batch during
+		// startSlot. Defer existing generation rows to the next iteration rather
+		// than overflowing the batch; the new request's prefill is decoded first.
+		if int(e.batch.NTokens) >= e.model.cfg.NBatch() {
+			s.iBatch = -1
 			continue
 		}
 
@@ -432,11 +448,6 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			continue
 		}
 	}
-
-	// Fill slots only after existing generation and prefill work has claimed
-	// batch capacity. fillSlots skips slots quarantined by a release during
-	// assembly, preventing their stable seqID from being reused before decode.
-	e.fillSlots(buf)
 
 	// Nothing to process.
 	if e.batch.NTokens == 0 {

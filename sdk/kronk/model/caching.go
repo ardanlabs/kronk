@@ -189,6 +189,7 @@ func textFromPart(part any) string {
 type imcRenderFingerprintInput struct {
 	TemplateHash        string `json:"template_hash"`
 	AddGenerationPrompt bool   `json:"add_generation_prompt"`
+	PreserveThinkingSet bool   `json:"preserve_thinking_set"`
 	PreserveThinking    bool   `json:"preserve_thinking"`
 	Messages            []D    `json:"messages"`
 	ToolsPresent        bool   `json:"tools_present"`
@@ -207,10 +208,12 @@ type imcRenderFingerprintInput struct {
 func (m *Model) imcRenderFingerprint(d D, msgs []D) (string, bool) {
 	templateSum := sha256.Sum256([]byte(m.template.Script))
 
+	preserve, preserveSet := d["preserve_thinking"].(bool)
 	in := imcRenderFingerprintInput{
 		TemplateHash:        hex.EncodeToString(templateSum[:]),
 		AddGenerationPrompt: false,
-		PreserveThinking:    preserveThinking(d),
+		PreserveThinkingSet: preserveSet,
+		PreserveThinking:    preserve,
 		Messages:            msgs,
 	}
 

@@ -222,9 +222,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			nRead := llama.StateSeqSetData(e.model.lctx, kvState, s.seqID)
 			e.model.decodeMu.Unlock()
 
-			if nRead == 0 {
+			expectedBytes := uint64(len(kvState))
+			if nRead != expectedBytes {
+				e.model.decodeMu.Lock()
+				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				e.model.decodeMu.Unlock()
 				e.model.imcInvalidateReservedSession(job.imcSession)
-				e.finishSlot(s, fmt.Errorf("start-slot: imc restore failed for seq %d", s.seqID))
+				e.finishSlot(s, fmt.Errorf("start-slot: imc restore for seq %d read %d bytes, expected %d", s.seqID, nRead, expectedBytes))
 				return
 			}
 			job.imcSnapshotReused = true
@@ -618,14 +622,21 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				bufAction = "grow"
 			}
 
-			// Commit (or zero) the buffer length under cacheMu so concurrent
-			// readers (LRU snapshot scans, future requests matching this
-			// session) see a consistent length.
+			snapshotOK := kvSize > 0 && nExtracted == kvSize
+
+			// Commit only a complete state transfer. A partial serialized state
+			// cannot safely represent the cached logical position, especially for
+			// hybrid models where it includes both attention KV and recurrent
+			// state. Reset it instead so no future request can restore it.
 			e.model.cacheMu.Lock()
-			snapshotStore.Commit(int(nExtracted))
+			if snapshotOK {
+				snapshotStore.Commit(int(nExtracted))
+			} else {
+				snapshotStore.Reset()
+			}
 			storedSnapshotBytes := snapshotStore.Len()
 			e.model.cacheMu.Unlock()
-			snapshotOK := nExtracted > 0 && storedSnapshotBytes == int(nExtracted)
+			snapshotOK = snapshotOK && storedSnapshotBytes == int(kvSize)
 
 			if snapshotOK {
 				e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-done",

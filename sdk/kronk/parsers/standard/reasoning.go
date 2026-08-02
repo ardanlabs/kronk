@@ -61,15 +61,14 @@ func StripExceptTrailing(s string, re *regexp.Regexp) string {
 	return b.String()
 }
 
-// StripReasoningContent implements model.ReasoningNormalizer for the standard
-// lineage. It removes <think>...</think> spans embedded in assistant content.
+// StripReasoningContent removes <think>...</think> spans embedded in assistant
+// content.
 func (Parser) StripReasoningContent(content string) string {
 	return StripThinkContent(content)
 }
 
-// StripEmptyReasoning implements model.ReasoningNormalizer for the standard
-// lineage. It removes empty <think>...</think> spans from the rendered prompt,
-// leaving the trailing generation marker intact.
+// StripEmptyReasoning removes empty <think>...</think> spans from a rendered
+// prompt, leaving the trailing generation marker intact.
 func (Parser) StripEmptyReasoning(rendered string) string {
 	return StripEmptyThink(rendered)
 }

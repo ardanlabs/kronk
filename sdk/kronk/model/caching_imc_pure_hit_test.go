@@ -149,6 +149,13 @@ func TestIMCRenderFingerprintChangesWithInputs(t *testing.T) {
 			},
 		},
 		{
+			name: "preserve_thinking omitted",
+			mut: func() (*Model, D, []D) {
+				d := D{"tools": baseTools}
+				return m, d, baseMsgs
+			},
+		},
+		{
 			name: "tools changed",
 			mut: func() (*Model, D, []D) {
 				d := D{"tools": []D{{"type": "function", "function": D{"name": "different"}}}, "preserve_thinking": true}

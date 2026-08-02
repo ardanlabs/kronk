@@ -69,6 +69,76 @@ func TestProcessIMCTokenPlanRejectsNonPrefixRender(t *testing.T) {
 	}
 }
 
+func TestProcessIMCTokenPlanRebuildsWhenTemplateMovesLastAssistantReasoning(t *testing.T) {
+	const script = `{%- for message in messages -%}
+{{- message.role + ':' -}}
+{%- if message.role == "assistant" and loop.last -%}
+{{- message.reasoning_content + ':' -}}
+{%- endif -%}
+{{- message.content + ';' -}}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+{{- 'assistant:' -}}
+{%- endif -%}`
+
+	m := Model{
+		cfg: Config{PtrCacheMinTokens: new(1)},
+		log: applog.DiscardLogger,
+		template: Template{
+			FileName: "last-assistant-reasoning",
+			Script:   script,
+		},
+	}
+
+	render := func(t *testing.T, messages []D, addGenerationPrompt bool) []llama.Token {
+		t.Helper()
+
+		prompt, err := m.applyJinjaTemplate(context.Background(), D{
+			"messages":              messages,
+			"add_generation_prompt": addGenerationPrompt,
+			"bos_token":             "",
+			"eos_token":             "",
+		})
+		if err != nil {
+			t.Fatalf("applyJinjaTemplate: %v", err)
+		}
+
+		tokens := make([]llama.Token, len(prompt))
+		for i, b := range []byte(prompt) {
+			tokens[i] = llama.Token(b)
+		}
+		return tokens
+	}
+
+	firstMessages := []D{
+		{"role": "user", "content": "hello"},
+		{"role": "assistant", "content": "answer", "reasoning_content": "thought"},
+	}
+	firstStable := render(t, firstMessages, false)
+	m.imcSessions = []*imcSession{
+		{id: 0, cachedTokens: firstStable, totalTokensCached: len(firstStable), kvState: populatedTestSessionStore()},
+		{id: 1, kvState: ramSessionStore()},
+	}
+
+	secondMessages := append(slices.Clone(firstMessages), D{"role": "user", "content": "next"})
+	secondStable := render(t, secondMessages, false)
+	secondActual := render(t, secondMessages, true)
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": secondMessages}, secondActual, secondStable, time.Now())
+
+	if result.imcMatchKind != "rebuild" {
+		t.Errorf("imcMatchKind = %q, want rebuild", result.imcMatchKind)
+	}
+	if result.imcSessionID != 1 {
+		t.Errorf("imcSessionID = %d, want empty session 1", result.imcSessionID)
+	}
+	if result.cacheIdx != 0 {
+		t.Errorf("cacheIdx = %d, want 0", result.cacheIdx)
+	}
+	if m.imcSessions[0].reserved {
+		t.Error("divergent cached session was reserved")
+	}
+}
+
 func TestProcessIMCTokenPlanReservesExactMatch(t *testing.T) {
 	session := &imcSession{
 		id:                0,
