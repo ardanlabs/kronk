@@ -1,7 +1,6 @@
 package standard
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -41,14 +40,9 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			return model.Result{}, false
 
 		case "</tool_call>", "<tool_call|>":
-			toolContent := strings.Trim(sm.toolCallBuf.String(), "\n")
-			if toolContent != "" {
-				toolContent = fmt.Sprintf("%s\n", toolContent)
-			}
-			sm.toolCallBuf.Reset()
-			sm.inToolCall = false
+			result := sm.flushToolCall()
 			sm.toolCallDone = true
-			return model.Result{Channel: model.ChannelTool, Content: toolContent}, false
+			return result, false
 
 		default:
 			sm.toolCallBuf.WriteString(content)
@@ -87,4 +81,24 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	default:
 		return model.Result{Channel: sm.status, Content: content}, false
 	}
+}
+
+// Flush drains tool-call content held while waiting for a closing marker.
+func (sm *stateMachine) Flush() model.Result {
+	if !sm.inToolCall {
+		return model.Result{}
+	}
+
+	return sm.flushToolCall()
+}
+
+func (sm *stateMachine) flushToolCall() model.Result {
+	content := strings.Trim(sm.toolCallBuf.String(), "\n")
+	sm.toolCallBuf.Reset()
+	sm.inToolCall = false
+	if content == "" {
+		return model.Result{}
+	}
+
+	return model.Result{Channel: model.ChannelTool, Content: content + "\n"}
 }

@@ -862,6 +862,16 @@ export default function DocsSDKModel() {
               <p className="doc-description">StateMachine is the per-request, per-slot streaming state machine. One instance is created per slot via Parser.NewStateMachine and reused across requests on that slot via Reset. Behavior is undefined if Classify is called after a previous call returned eog=true. Callers must invoke Reset before reusing the state machine.</p>
             </div>
 
+            <div className="doc-section" id="type-statemachineflusher">
+              <h4>StateMachineFlusher</h4>
+              <pre className="code-block">
+                <code>{`type StateMachineFlusher interface {
+	Flush() Result
+}`}</code>
+              </pre>
+              <p className="doc-description">StateMachineFlusher is implemented by state machines that may retain model output not yet returned by Classify. Flush drains that output at successful end-of-generation. It must not return content previously returned by Classify, and subsequent calls must return a zero Result.</p>
+            </div>
+
             <div className="doc-section" id="type-streamingresponselogger">
               <h4>StreamingResponseLogger</h4>
               <pre className="code-block">
@@ -1871,6 +1881,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-sessionstore">SessionStore</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-statemachine">StateMachine</a></li>
+                <li><a href="#type-statemachineflusher">StateMachineFlusher</a></li>
                 <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>

@@ -79,6 +79,19 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	return sm.classifyTag(content)
 }
 
+// Flush drains an unresolved Kimi control-tag prefix as literal output.
+func (sm *stateMachine) Flush() model.Result {
+	if !sm.inTag {
+		return model.Result{}
+	}
+
+	result := model.Result{Channel: sm.status, Content: sm.pending.String()}
+	sm.pending.Reset()
+	sm.inTag = false
+
+	return result
+}
+
 func (sm *stateMachine) classifyTag(candidate string) (model.Result, bool) {
 	tagEnd := strings.Index(candidate, sepToken) + len(sepToken)
 	tag := candidate[:tagEnd]

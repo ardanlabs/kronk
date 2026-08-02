@@ -269,6 +269,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		return
 	}
 
+	if flusher, ok := s.stateMachine.(StateMachineFlusher); ok {
+		e.flushStateMachine(s, flusher.Flush())
+	}
+
 	// Flush any remaining buffered UTF-8 bytes into the final accumulators.
 	// Only emit complete codepoints; drop any trailing incomplete sequence
 	// to avoid injecting replacement characters into the final response.
@@ -386,6 +390,34 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.finishReason, s.job.params.Stream, usage)
+}
+
+// flushStateMachine preserves model output held by parser lookahead when
+// generation ends before the parser sees a closing delimiter.
+func (e *batchEngine) flushStateMachine(s *slot, result Result) {
+	if result.Content == "" {
+		return
+	}
+
+	outputTokens := s.reasonTokens + s.completionTokens
+
+	switch result.Channel {
+	case ChannelReasoning:
+		s.finalReasoning.WriteString(result.Content)
+		if err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, 1, outputTokens, nil); err != nil {
+			e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
+		}
+
+	case ChannelAnswer:
+		s.finalContent.WriteString(result.Content)
+		if err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, 0, outputTokens, nil); err != nil {
+			e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
+		}
+
+	case ChannelTool:
+		s.toolFlag++
+		s.finalTooling.WriteString(result.Content)
+	}
 }
 
 // failJob fails a job that was dequeued but never assigned to a slot. It sends

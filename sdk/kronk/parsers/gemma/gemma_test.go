@@ -125,6 +125,22 @@ func TestParser_ToolCall(t *testing.T) {
 	}
 }
 
+func TestParser_FlushIncompleteToolCall(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	c.Classify("<tool_call>")
+	c.Classify(`call:get_weather{location:<|"|>NYC<|"|>}`)
+
+	flusher := c.(model.StateMachineFlusher)
+	got := flusher.Flush()
+	want := `call:get_weather{location:<|"|>NYC<|"|>}` + "\n"
+	if got.Channel != model.ChannelTool || got.Content != want {
+		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelTool, want)
+	}
+	if got := flusher.Flush(); got != (model.Result{}) {
+		t.Errorf("second Flush: got %+v, want zero result", got)
+	}
+}
+
 func TestParser_ForeignMarkersAreContent(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	for _, m := range []string{"[TOOL_CALLS]", "<function=x>", "<think>"} {

@@ -101,6 +101,22 @@ func TestParser_SingleToolCall(t *testing.T) {
 	}
 }
 
+func TestParser_FlushIncompleteToolCall(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	c.Classify("<tool_call>")
+	c.Classify(`{"name":"get_weather","arguments":{"loc":"NYC"}}`)
+
+	flusher := c.(model.StateMachineFlusher)
+	got := flusher.Flush()
+	want := `{"name":"get_weather","arguments":{"loc":"NYC"}}` + "\n"
+	if got.Channel != model.ChannelTool || got.Content != want {
+		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelTool, want)
+	}
+	if got := flusher.Flush(); got != (model.Result{}) {
+		t.Errorf("second Flush: got %+v, want zero result", got)
+	}
+}
+
 // TestParser_MultipleToolCalls verifies that a second opener after the
 // first close is accepted (no EOG) and accumulates a fresh buffer.
 func TestParser_MultipleToolCalls(t *testing.T) {

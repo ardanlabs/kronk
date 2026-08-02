@@ -79,6 +79,16 @@ type StateMachine interface {
 	Reset()
 }
 
+// StateMachineFlusher is implemented by state machines that may retain model
+// output not yet returned by Classify.
+//
+// Flush drains that output at successful end-of-generation. It must not return
+// content previously returned by Classify, and subsequent calls must return a
+// zero Result.
+type StateMachineFlusher interface {
+	Flush() Result
+}
+
 // Parser is the plugin interface implemented by each model lineage.
 // Implementations live in sdk/kronk/parsers/<name>/ and are registered
 // at startup via RegisterParser.

@@ -55,6 +55,19 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	return sm.classifyContent(content)
 }
 
+// Flush drains an unresolved DSML opener prefix as literal output.
+func (sm *stateMachine) Flush() model.Result {
+	if !sm.inPending {
+		return model.Result{}
+	}
+
+	result := model.Result{Channel: sm.status, Content: sm.pendingOpener.String()}
+	sm.pendingOpener.Reset()
+	sm.inPending = false
+
+	return result
+}
+
 func (sm *stateMachine) classifyContent(content string) (model.Result, bool) {
 	switch content {
 	case "<think>":

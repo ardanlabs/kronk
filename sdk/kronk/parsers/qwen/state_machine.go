@@ -149,3 +149,16 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		return model.Result{Channel: sm.status, Content: content}, false
 	}
 }
+
+// Flush drains an unresolved direct-function tag prefix as literal output.
+func (sm *stateMachine) Flush() model.Result {
+	if !sm.inPendingTag {
+		return model.Result{}
+	}
+
+	result := model.Result{Channel: sm.status, Content: sm.pendingTagBuf.String()}
+	sm.pendingTagBuf.Reset()
+	sm.inPendingTag = false
+
+	return result
+}

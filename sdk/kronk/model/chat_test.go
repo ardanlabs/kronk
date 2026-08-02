@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -172,6 +173,89 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFlushStateMachine(t *testing.T) {
+	tests := []struct {
+		name          string
+		result        Result
+		wantContent   string
+		wantReasoning string
+		wantTooling   string
+		wantToolFlag  int
+		wantDelta     bool
+	}{
+		{name: "answer", result: Result{Channel: ChannelAnswer, Content: "answer"}, wantContent: "answer", wantDelta: true},
+		{name: "reasoning", result: Result{Channel: ChannelReasoning, Content: "thought"}, wantReasoning: "thought", wantDelta: true},
+		{name: "tool", result: Result{Channel: ChannelTool, Content: `{"name":"lookup","arguments":{}}`}, wantTooling: `{"name":"lookup","arguments":{}}`, wantToolFlag: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ch := make(chan ChatResponse, 1)
+			stateMachine := &flushStateMachine{result: tt.result}
+			s := slot{
+				stateMachine:     stateMachine,
+				job:              &chatJob{ctx: context.Background(), ch: ch, id: "id", object: ObjectChatText},
+				reasonTokens:     2,
+				completionTokens: 3,
+				finishReason:     FinishReasonLength,
+			}
+			e := batchEngine{model: &Model{}}
+
+			e.flushStateMachine(&s, stateMachine.Flush())
+
+			if got := s.finalContent.String(); got != tt.wantContent {
+				t.Errorf("finalContent: got %q, want %q", got, tt.wantContent)
+			}
+			if got := s.finalReasoning.String(); got != tt.wantReasoning {
+				t.Errorf("finalReasoning: got %q, want %q", got, tt.wantReasoning)
+			}
+			if got := s.finalTooling.String(); got != tt.wantTooling {
+				t.Errorf("finalTooling: got %q, want %q", got, tt.wantTooling)
+			}
+			if s.toolFlag != tt.wantToolFlag {
+				t.Errorf("toolFlag: got %d, want %d", s.toolFlag, tt.wantToolFlag)
+			}
+			if s.finishReason != FinishReasonLength {
+				t.Errorf("finishReason: got %q, want %q", s.finishReason, FinishReasonLength)
+			}
+			if s.reasonTokens != 2 || s.completionTokens != 3 {
+				t.Errorf("token counts: got reasoning=%d completion=%d, want reasoning=2 completion=3", s.reasonTokens, s.completionTokens)
+			}
+
+			if tt.wantDelta {
+				resp := <-ch
+				if resp.Choices[0].Delta == nil {
+					t.Fatal("delta: got nil, want flushed content")
+				}
+				if got := resp.Choices[0].Delta.Content; got != tt.wantContent {
+					t.Errorf("delta content: got %q, want %q", got, tt.wantContent)
+				}
+				if got := resp.Choices[0].Delta.Reasoning; got != tt.wantReasoning {
+					t.Errorf("delta reasoning: got %q, want %q", got, tt.wantReasoning)
+				}
+			} else if len(ch) != 0 {
+				t.Errorf("tool flush sent %d raw deltas, want 0", len(ch))
+			}
+		})
+	}
+}
+
+type flushStateMachine struct {
+	result Result
+}
+
+func (sm *flushStateMachine) Classify(string) (Result, bool) {
+	return Result{}, false
+}
+
+func (sm *flushStateMachine) Reset() {}
+
+func (sm *flushStateMachine) Flush() Result {
+	result := sm.result
+	sm.result = Result{}
+	return result
 }
 
 func TestParseParamsTemperature(t *testing.T) {

@@ -190,6 +190,21 @@ func TestParser_PendingTagFalseAlarm(t *testing.T) {
 	}
 }
 
+func TestParser_FlushPendingTag(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	c.Classify("<think>")
+	c.Classify("<f")
+
+	flusher := c.(model.StateMachineFlusher)
+	got := flusher.Flush()
+	if got.Channel != model.ChannelReasoning || got.Content != "<f" {
+		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelReasoning, "<f")
+	}
+	if got := flusher.Flush(); got != (model.Result{}) {
+		t.Errorf("second Flush: got %+v, want zero result", got)
+	}
+}
+
 // =============================================================================
 // Parser — foreign markers pass through
 // =============================================================================
