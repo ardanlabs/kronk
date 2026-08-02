@@ -372,10 +372,8 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 
 	// KVUnified and SwaFull define the shared cache topology. They MUST match
 	// the target: the assistant borrows the target's KV tensors (CtxOther), so
-	// a stream-layout mismatch (e.g. assistant n_stream=NSeqMax vs target
-	// n_stream=1 under unified mode) makes llama_kv_cache::get_k compute a 4-D
-	// view that overruns the shared tensor and trips ggml_view_4d's bounds
-	// assert. This only bites at NSeqMax>1, where the target enables KVUnified.
+	// a stream-layout mismatch makes llama_kv_cache::get_k compute a 4-D view
+	// that overruns the shared tensor and trips ggml_view_4d's bounds assert.
 	params.KVUnified = targetCtxParams.KVUnified
 	params.SwaFull = targetCtxParams.SwaFull
 

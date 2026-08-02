@@ -590,7 +590,7 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 		SharedKVLayers:      p.attn.SharedKVLayers,
 		SWAPattern:          p.attn.SWAPattern,
 		NUBatch:             p.nUBatch,
-		KVUnified:           slots > 1,
+		KVUnified:           false,
 		EmbeddingLength:     p.embLen,
 		GPULayers:           gpuLayers,
 		KVCacheOnCPU:        p.kvCacheOnCPU,

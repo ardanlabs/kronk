@@ -138,18 +138,17 @@ func imcResetSession(s *imcSession) {
 	s.cachedTokens = nil
 	s.totalTokensCached = 0
 	// allocatedContext is intentionally preserved because Reset retains the
-	// SessionStore backing allocation represented by this high-water mark.
+	// zeroed SessionStore backing allocation represented by this high-water mark.
 	s.nextLogicalPos = 0
 	s.cachedMsgCount = 0
-	// Reset clears the valid contents (Len becomes 0) but retains the
-	// backing byte array. The next snapshot for whatever conversation
-	// is bound to this session will overwrite the bytes in place,
-	// avoiding the per-turn ~GB allocation that previously dominated
-	// the IMC benchmark's B/op number.
+	// Reset zeroes the retained backing byte array before setting Len to 0.
+	// The next conversation can reuse the allocation without observing bytes
+	// from the session that previously owned this cache entry.
 	s.kvState.Reset()
 	if s.draftKVState != nil {
 		s.draftKVState.Reset()
 	}
+	clear(s.pendingH[:cap(s.pendingH)])
 	s.pendingH = s.pendingH[:0]
 	s.lastUsed = time.Time{}
 	s.reserved = false
@@ -238,6 +237,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 		if session.draftKVState != nil {
 			session.draftKVState.Reset()
 		}
+		clear(session.pendingH[:cap(session.pendingH)])
 		session.pendingH = session.pendingH[:0]
 	case len(cachedTokens) > 0:
 		session.cachedTokens = cachedTokens
@@ -270,6 +270,7 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	if session.draftKVState != nil {
 		session.draftKVState.Reset()
 	}
+	clear(session.pendingH[:cap(session.pendingH)])
 	session.pendingH = session.pendingH[:0]
 	m.cacheMu.Unlock()
 

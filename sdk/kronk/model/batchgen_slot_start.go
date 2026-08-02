@@ -422,7 +422,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					"old_cached_tokens", cacheIdx)
 
 				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				_, targetClearErr := llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				if targetClearErr == nil {
+					var maxPos llama.Pos
+					maxPos, targetClearErr = llama.MemorySeqPosMax(e.model.mem, s.seqID)
+					if targetClearErr == nil && maxPos >= 0 {
+						targetClearErr = fmt.Errorf("sequence still contains position %d after clear", maxPos)
+					}
+				}
 				// MTP: the prior imc-restore (or a previous decode in
 				// this slot) populated the draft seq KV at positions
 				// [0..N). The forthcoming decodeTokensIntoCacheMTP
@@ -430,12 +437,29 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				// clearing the draft seq first, the mirror decode
 				// collides with the surviving positions and fails
 				// with "the input could not be processed".
+				var draftClearErr error
+				clear(s.pendingH[:cap(s.pendingH)])
+				s.pendingH = s.pendingH[:0]
 				if e.model.draft != nil && e.model.draft.mtp() {
-					llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
+					_, draftClearErr = llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
+					if draftClearErr == nil {
+						var maxPos llama.Pos
+						maxPos, draftClearErr = llama.MemorySeqPosMax(e.model.draft.core().mem, s.seqID)
+						if draftClearErr == nil && maxPos >= 0 {
+							draftClearErr = fmt.Errorf("sequence still contains position %d after clear", maxPos)
+						}
+					}
 					s.draftNPast = 0
-					s.pendingH = s.pendingH[:0]
 				}
 				e.model.decodeMu.Unlock()
+				if targetClearErr != nil {
+					e.finishSlot(s, fmt.Errorf("start-slot: clear reused target sequence: %w", targetClearErr))
+					return
+				}
+				if draftClearErr != nil {
+					e.finishSlot(s, fmt.Errorf("start-slot: clear reused draft sequence: %w", draftClearErr))
+					return
+				}
 
 				cacheIdx = 0
 

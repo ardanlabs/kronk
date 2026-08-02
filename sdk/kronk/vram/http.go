@@ -179,7 +179,7 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		SharedKVLayers:      att.SharedKVLayers,
 		SWAPattern:          att.SWAPattern,
 		NUBatch:             cfg.NUBatch,
-		KVUnified:           cfg.Slots > 1,
+		KVUnified:           false,
 		EmbeddingLength:     embeddingLength,
 		MoE:                 moePtr,
 		Weights:             weights,

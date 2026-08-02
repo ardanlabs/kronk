@@ -828,9 +828,9 @@ export default function DocsSDKModel() {
 	// operation. n is clamped to [0, Cap()].
 	Commit(n int)
 
-	// Reset clears the valid contents (Len becomes 0). Implementations
-	// may retain or release backing storage as appropriate; the RAM
-	// impl retains the backing array for reuse on the next Prepare.
+	// Reset zeroes all retained snapshot storage and clears the valid contents
+	// (Len becomes 0). Implementations may retain the zeroed allocation for
+	// reuse, but bytes from the prior session must not survive Reset.
 	Reset()
 
 	// Close releases any backing storage held by the store (file

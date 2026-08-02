@@ -259,13 +259,13 @@ func TestCacheResultFields(t *testing.T) {
 // Externalized KV State Tests
 // =============================================================================
 
-// TestIMCResetSessionClearsKVState verifies that imcResetSession clears the
-// externalized KV state contents. The backing array is intentionally retained
-// (lazy-grow / never-shrink) so the next snapshot for the rebound conversation
-// can fill it without allocating; only the valid length is cleared.
+// TestIMCResetSessionClearsKVState verifies that imcResetSession zeroes the
+// externalized target, draft, and hidden state. Backing allocations are
+// retained so the next conversation can reuse them without allocation.
 func TestIMCResetSessionClearsKVState(t *testing.T) {
 	s := &imcSession{
 		kvState:             ramSessionStore(),
+		draftKVState:        ramSessionStore(),
 		id:                  0,
 		seqID:               0,
 		cachedMsgsHash:      "abc123",
@@ -278,9 +278,22 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		useMRoPE:            true,
 		mediaKVCounts:       []int{10, 20},
 		samplerPromptTokens: []llama.Token{4, 5, 6},
+		pendingH:            make([]float32, 4, 8),
 	}
-	buf := s.kvState.Prepare(4)
-	copy(buf, []byte{0xDE, 0xAD, 0xBE, 0xEF})
+	buf := s.kvState.Prepare(16)
+	draftBuf := s.draftKVState.Prepare(16)
+	for i := range buf {
+		buf[i] = 0xA5
+		draftBuf[i] = 0x5A
+	}
+	s.kvState.Commit(8)
+	s.draftKVState.Commit(8)
+	retainedKV := buf[:cap(buf)]
+	retainedDraftKV := draftBuf[:cap(draftBuf)]
+	retainedH := s.pendingH[:cap(s.pendingH)]
+	for i := range retainedH {
+		retainedH[i] = float32(i + 1)
+	}
 
 	imcResetSession(s)
 
@@ -289,6 +302,21 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 	}
 	if s.kvState.Cap() == 0 {
 		t.Errorf("kvState.Cap() = 0, want backing array retained for reuse")
+	}
+	for i, b := range retainedKV {
+		if b != 0 {
+			t.Fatalf("kvState retained byte[%d] = 0x%02x, want 0", i, b)
+		}
+	}
+	for i, b := range retainedDraftKV {
+		if b != 0 {
+			t.Fatalf("draftKVState retained byte[%d] = 0x%02x, want 0", i, b)
+		}
+	}
+	for i, v := range retainedH {
+		if v != 0 {
+			t.Fatalf("pendingH retained value[%d] = %f, want 0", i, v)
+		}
 	}
 	if s.samplerPromptTokens != nil {
 		t.Errorf("samplerPromptTokens = %v, want nil", s.samplerPromptTokens)

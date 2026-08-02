@@ -299,6 +299,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// per-token in processSlotToken, so no re-tokenization needed.
 	if s.toolFlag > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
+		s.finalTooling.Reset()
+		s.finalTooling.WriteString(content)
 		if len(content) > 0 {
 
 			// Log the raw model output before parsing so tool call issues
@@ -471,22 +473,9 @@ func (e *batchEngine) flushStateMachine(s *slot, result Result) {
 
 	outputTokens := s.reasonTokens + s.completionTokens
 
-	switch result.Channel {
-	case ChannelReasoning:
-		s.finalReasoning.WriteString(result.Content)
-		if err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, ChannelReasoning, s.reasonTokens, outputTokens, nil); err != nil {
-			e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
-		}
-
-	case ChannelAnswer:
-		s.finalContent.WriteString(result.Content)
-		if err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, ChannelAnswer, s.reasonTokens, outputTokens, nil); err != nil {
-			e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
-		}
-
-	case ChannelTool:
-		s.toolFlag++
-		s.finalTooling.WriteString(result.Content)
+	updateSlotChannel(s, result.Channel)
+	if err := e.retainAndStreamResult(s, result, outputTokens, nil); err != nil {
+		e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
 	}
 }
 

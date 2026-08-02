@@ -106,12 +106,12 @@ func (s *Store) Commit(n int) {
 	s.buf = s.buf[:n]
 }
 
-// Reset clears the valid contents (Len becomes 0) but retains the
-// backing array for reuse on the next Prepare. Called when a session
-// is rebound to a different conversation: the old conversation's bytes
-// become irrelevant but the buffer itself stays attached to the session
-// to avoid a fresh allocation on the next snapshot.
+// Reset zeroes the entire backing array and clears the valid contents
+// (Len becomes 0), while retaining capacity for the next Prepare. Called
+// when a session is rebound to a different conversation so no bytes from
+// the prior conversation survive reuse.
 func (s *Store) Reset() {
+	clear(s.buf[:cap(s.buf)])
 	s.buf = s.buf[:0]
 }
 

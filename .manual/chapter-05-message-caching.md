@@ -286,9 +286,9 @@ are deliberately separate:
 For example, `nseq-max: 2` with the default `queue-depth: 2` provides two
 concurrent decode slots and six warm IMC session identities. A queue depth
 greater than 3 expands the session pool so it remains at least as large as the
-generation admission capacity. Raising `nseq-max` also increases the unified
-KV cache capacity and its memory cost, so do not raise it solely to retain
-more conversation branches without considering the effects described in
+generation admission capacity. Raising `nseq-max` also adds another full
+`context-window` KV stream and its memory cost, so do not raise it solely to
+retain more conversation branches without considering the effects described in
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing).
 
 Admission waiting is controlled separately by the per-model

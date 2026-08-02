@@ -859,14 +859,13 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 	// IMC externalizes KV state to RAM after cache build, so it does not
 	// need extra sequences beyond the configured NSeqMax.
 	nSeqMax := max(cfg.NSeqMax(), 1)
-	totalSeqs := nSeqMax
+	ctxParams = contextTopologyParams(ctxParams, cfg.ContextWindow(), nSeqMax)
 
 	if cfg.ContextWindow() > 0 {
 		ctxParams.NBatch = uint32(cfg.NBatch())
 		ctxParams.NUbatch = uint32(cfg.NUBatch())
 		ctxParams.NThreads = int32(cfg.NThreads())
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch())
-		ctxParams.NCtx = uint32(cfg.ContextWindow() * nSeqMax)
 	}
 
 	if cfg.CacheTypeK != GGMLTypeAuto {
@@ -878,8 +877,6 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 	}
 
 	ctxParams.FlashAttentionType = cfg.FlashAttention().toYZMAType()
-
-	ctxParams.NSeqMax = uint32(totalSeqs)
 
 	// NOutputsMax caps how many logits-flagged rows llama.cpp reserves
 	// per ubatch. The default (0) reserves n_batch rows, which is
@@ -931,16 +928,6 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		if mi.Type == ModelTypeHybrid {
 			ctxParams.NRsSeq = uint32(rollbackDepth)
 		}
-	}
-
-	// Enable unified KV cache so all sequences share one pool of
-	// ContextWindow * NSeqMax tokens. Each slot is gated to ContextWindow
-	// tokens by the batch engine (startSlotText / startSlotTextMRoPE /
-	// startSlotMedia). With unified mode the pool is flexible: idle slots
-	// don't reserve capacity, and KV pressure eviction can reclaim stale
-	// slots when the shared pool gets tight.
-	if nSeqMax > 1 {
-		ctxParams.KVUnified = 1
 	}
 
 	// Offload KQV cache to CPU.
@@ -1000,6 +987,17 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 	}
 
 	return ctxParams
+}
+
+func contextTopologyParams(params llama.ContextParams, contextWindow, nSeqMax int) llama.ContextParams {
+	if contextWindow > 0 {
+		params.NCtx = uint32(contextWindow * nSeqMax)
+	}
+
+	params.NSeqMax = uint32(nSeqMax)
+	params.KVUnified = 0
+
+	return params
 }
 
 func searchModelMeta(model llama.Model, find string) (string, bool) {

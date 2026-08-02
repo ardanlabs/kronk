@@ -218,6 +218,20 @@ func TestAdjustConfigPreservesExplicitBatchSizes(t *testing.T) {
 	}
 }
 
+func TestContextTopologyParamsProvidesFullContextPerSequence(t *testing.T) {
+	got := contextTopologyParams(llama.ContextParams{}, 32_768, 4)
+
+	if got.NCtx != 131_072 {
+		t.Errorf("NCtx: got %d, want %d", got.NCtx, 131_072)
+	}
+	if got.NSeqMax != 4 {
+		t.Errorf("NSeqMax: got %d, want %d", got.NSeqMax, 4)
+	}
+	if got.KVUnified != 0 {
+		t.Errorf("KVUnified: got %d, want %d", got.KVUnified, 0)
+	}
+}
+
 func TestBatchSeqTokenLimit(t *testing.T) {
 	tests := []struct {
 		name    string

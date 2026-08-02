@@ -526,17 +526,23 @@ func TestStreamingResponseLoggerStringReportsTotalBytes(t *testing.T) {
 
 func TestFlushStateMachine(t *testing.T) {
 	tests := []struct {
-		name          string
-		result        Result
-		wantContent   string
-		wantReasoning string
-		wantTooling   string
-		wantToolFlag  int
-		wantDelta     bool
+		name              string
+		result            Result
+		wantContent       string
+		wantReasoning     string
+		wantTooling       string
+		wantToolFlag      int
+		wantReasonFlag    int
+		wantAnswerFlag    int
+		initialReasonFlag int
+		wantDelta         bool
 	}{
-		{name: "answer", result: Result{Channel: ChannelAnswer, Content: "answer"}, wantContent: "answer", wantDelta: true},
-		{name: "reasoning", result: Result{Channel: ChannelReasoning, Content: "thought"}, wantReasoning: "thought", wantDelta: true},
+		{name: "answer", result: Result{Channel: ChannelAnswer, Content: "answer"}, wantContent: "answer", wantAnswerFlag: 1, wantDelta: true},
+		{name: "answer transition CRLF", result: Result{Channel: ChannelAnswer, Content: "\n\n"}, wantAnswerFlag: 1},
+		{name: "reasoning", result: Result{Channel: ChannelReasoning, Content: "thought"}, wantReasoning: "thought", wantReasonFlag: 1, wantDelta: true},
+		{name: "reasoning transition CRLF", result: Result{Channel: ChannelReasoning, Content: "\n"}, wantReasonFlag: 1},
 		{name: "tool", result: Result{Channel: ChannelTool, Content: `{"name":"lookup","arguments":{}}`}, wantTooling: `{"name":"lookup","arguments":{}}`, wantToolFlag: 1},
+		{name: "tool clears reasoning", result: Result{Channel: ChannelTool, Content: `{"name":"lookup","arguments":{}}`}, initialReasonFlag: 3, wantTooling: `{"name":"lookup","arguments":{}}`, wantToolFlag: 1},
 	}
 
 	for _, tt := range tests {
@@ -546,6 +552,7 @@ func TestFlushStateMachine(t *testing.T) {
 			s := slot{
 				stateMachine:     stateMachine,
 				job:              &chatJob{ctx: context.Background(), ch: ch, id: "id", object: ObjectChatText},
+				reasonFlag:       tt.initialReasonFlag,
 				reasonTokens:     2,
 				completionTokens: 3,
 				finishReason:     FinishReasonLength,
@@ -565,6 +572,12 @@ func TestFlushStateMachine(t *testing.T) {
 			}
 			if s.toolFlag != tt.wantToolFlag {
 				t.Errorf("toolFlag: got %d, want %d", s.toolFlag, tt.wantToolFlag)
+			}
+			if s.reasonFlag != tt.wantReasonFlag {
+				t.Errorf("reasonFlag: got %d, want %d", s.reasonFlag, tt.wantReasonFlag)
+			}
+			if s.completionFlag != tt.wantAnswerFlag {
+				t.Errorf("completionFlag: got %d, want %d", s.completionFlag, tt.wantAnswerFlag)
 			}
 			if s.finishReason != FinishReasonLength {
 				t.Errorf("finishReason: got %q, want %q", s.finishReason, FinishReasonLength)
@@ -586,6 +599,64 @@ func TestFlushStateMachine(t *testing.T) {
 				}
 			} else if len(ch) != 0 {
 				t.Errorf("tool flush sent %d raw deltas, want 0", len(ch))
+			}
+		})
+	}
+}
+
+func TestRetainAndStreamResultUsesCleanedContentConsistently(t *testing.T) {
+	tests := []struct {
+		name           string
+		result         Result
+		reasonFlag     int
+		completionFlag int
+		wantContent    string
+		wantReasoning  string
+		wantDelta      bool
+		wantLogprobs   int
+	}{
+		{name: "answer transition CRLF", result: Result{Channel: ChannelAnswer, Content: "\n\n"}, completionFlag: 1},
+		{name: "reasoning transition CRLF", result: Result{Channel: ChannelReasoning, Content: "\n"}, reasonFlag: 1},
+		{name: "answer content", result: Result{Channel: ChannelAnswer, Content: "answer"}, completionFlag: 2, wantContent: "answer", wantDelta: true, wantLogprobs: 1},
+		{name: "reasoning content", result: Result{Channel: ChannelReasoning, Content: "thought"}, reasonFlag: 2, wantReasoning: "thought", wantDelta: true, wantLogprobs: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ch := make(chan ChatResponse, 1)
+			logprob := ContentLogprob{}
+			s := slot{
+				job:            &chatJob{ctx: context.Background(), ch: ch, id: "id", object: ObjectChatText},
+				reasonFlag:     tt.reasonFlag,
+				completionFlag: tt.completionFlag,
+				currentLogprob: &logprob,
+				logprobsData:   []ContentLogprob{logprob},
+			}
+			e := batchEngine{model: &Model{}}
+
+			if err := e.retainAndStreamResult(&s, tt.result, 1, &logprob); err != nil {
+				t.Fatalf("retainAndStreamResult: %v", err)
+			}
+
+			if got := s.finalContent.String(); got != tt.wantContent {
+				t.Errorf("finalContent: got %q, want %q", got, tt.wantContent)
+			}
+			if got := s.finalReasoning.String(); got != tt.wantReasoning {
+				t.Errorf("finalReasoning: got %q, want %q", got, tt.wantReasoning)
+			}
+			if got := len(s.logprobsData); got != tt.wantLogprobs {
+				t.Errorf("logprobsData: got %d entries, want %d", got, tt.wantLogprobs)
+			}
+			if tt.wantDelta {
+				resp := <-ch
+				if got := resp.Choices[0].Delta.Content; got != tt.wantContent {
+					t.Errorf("delta content: got %q, want %q", got, tt.wantContent)
+				}
+				if got := resp.Choices[0].Delta.Reasoning; got != tt.wantReasoning {
+					t.Errorf("delta reasoning: got %q, want %q", got, tt.wantReasoning)
+				}
+			} else if len(ch) != 0 {
+				t.Errorf("deltas: got %d, want 0", len(ch))
 			}
 		})
 	}

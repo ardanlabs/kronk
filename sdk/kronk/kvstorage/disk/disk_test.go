@@ -211,10 +211,18 @@ func TestPrepareNegativeSize(t *testing.T) {
 func TestReset(t *testing.T) {
 	s := newTestStore(t)
 
-	buf := s.Prepare(8)
-	copy(buf, []byte{1, 2, 3, 4, 5, 6, 7, 8})
+	buf := s.Prepare(16)
+	for i := range buf {
+		buf[i] = 0xA5
+	}
 	s.Commit(8)
-	_ = s.Bytes() // populate the read cache
+	s.scratch = s.scratch[:8]
+	s.read = make([]byte, 8, 16)
+	read := s.read[:cap(s.read)]
+	for i := range read {
+		read[i] = 0x5A
+	}
+	scratch := s.scratch[:cap(s.scratch)]
 
 	s.Reset()
 
@@ -224,6 +232,16 @@ func TestReset(t *testing.T) {
 	if got := s.Bytes(); got != nil {
 		t.Errorf("Bytes() after Reset = %v, want nil", got)
 	}
+	for i, b := range scratch {
+		if b != 0 {
+			t.Fatalf("scratch byte[%d] after Reset = 0x%02x, want 0", i, b)
+		}
+	}
+	for i, b := range read {
+		if b != 0 {
+			t.Fatalf("read byte[%d] after Reset = 0x%02x, want 0", i, b)
+		}
+	}
 
 	// Store remains usable after Reset.
 	buf = s.Prepare(2)
@@ -231,6 +249,32 @@ func TestReset(t *testing.T) {
 	s.Commit(2)
 	if got := s.Bytes(); !bytes.Equal(got, []byte{0xAB, 0xCD}) {
 		t.Errorf("Bytes() after Reset+Prepare+Commit = %x, want [AB CD]", got)
+	}
+}
+
+func TestResetFailsClosedWhenTruncateFails(t *testing.T) {
+	s := newTestStore(t)
+	buf := s.Prepare(4)
+	copy(buf, []byte{1, 2, 3, 4})
+	s.Commit(4)
+
+	name := s.file.Name()
+	if err := s.file.Close(); err != nil {
+		t.Fatalf("close writable file: %v", err)
+	}
+	readOnly, err := os.Open(name)
+	if err != nil {
+		t.Fatalf("open snapshot read-only: %v", err)
+	}
+	s.file = readOnly
+
+	s.Reset()
+
+	if got := s.Len(); got != 0 {
+		t.Errorf("Len() after failed truncate = %d, want 0", got)
+	}
+	if got := s.Bytes(); got != nil {
+		t.Errorf("Bytes() after failed truncate = %x, want nil", got)
 	}
 }
 

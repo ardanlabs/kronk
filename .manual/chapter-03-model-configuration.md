@@ -377,10 +377,10 @@ unsloth/Qwen3-0.6B-Q8_0:
 ```
 
 For text generation, this creates up to four batch-engine slots. Their
-sequence state is isolated, while the text engine uses a unified KV pool with
-total capacity based on `context-window × nseq-max`. Idle slots do not own
-permanent fixed partitions, but increasing `nseq-max` still increases the
-capacity Kronk must budget and can substantially increase memory use.
+sequence state and KV capacity are isolated. Kronk allocates an aggregate
+context of `context-window × nseq-max`, which llama.cpp divides into one fixed
+`context-window` stream per slot. Increasing `nseq-max` therefore increases
+the capacity Kronk must budget and can substantially increase memory use.
 
 For supported embedding and reranking architectures, `nseq-max` is the maximum
 number of complete inputs or query-document pairs in one sequence batch on a

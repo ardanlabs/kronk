@@ -673,6 +673,12 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 		return fmt.Errorf("init-from-model: unable to init context: %w", err)
 	}
 
+	wantCtxSeq := uint32(m.cfg.ContextWindow())
+	if gotCtxSeq := llama.NCtxSeq(lctx); gotCtxSeq != wantCtxSeq {
+		llama.Free(lctx)
+		return fmt.Errorf("init-from-model: context per sequence got %d, want %d", gotCtxSeq, wantCtxSeq)
+	}
+
 	mem, err := llama.GetMemory(lctx)
 	if err != nil {
 		llama.Free(lctx)

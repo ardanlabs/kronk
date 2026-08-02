@@ -63,6 +63,30 @@ func TestStore_PrepareReusesBackingArray(t *testing.T) {
 	}
 }
 
+func TestStore_ResetZeroesRetainedCapacity(t *testing.T) {
+	var k Store
+	buf := k.Prepare(16)
+	for i := range buf {
+		buf[i] = 0xA5
+	}
+	retained := buf[:cap(buf)]
+	k.Commit(8)
+
+	k.Reset()
+
+	if k.Len() != 0 {
+		t.Fatalf("Len() after Reset = %d, want 0", k.Len())
+	}
+	if k.Cap() != len(retained) {
+		t.Fatalf("Cap() after Reset = %d, want %d", k.Cap(), len(retained))
+	}
+	for i, b := range retained {
+		if b != 0 {
+			t.Fatalf("retained byte[%d] = 0x%02x, want 0", i, b)
+		}
+	}
+}
+
 // TestStore_PrepareGrowsWhenExceeding verifies that Prepare allocates
 // a fresh backing array when the requested size exceeds current capacity,
 // and the new capacity is at least the requested size.

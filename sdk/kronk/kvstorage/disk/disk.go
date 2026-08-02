@@ -188,15 +188,15 @@ func (s *Store) Commit(n int) {
 	s.length = n
 }
 
-// Reset truncates the on-disk file to zero bytes and clears the read
-// cache. The scratch buffer is retained for reuse on the next
-// Prepare. Called when a session is rebound to a different
-// conversation.
+// Reset truncates the on-disk file to zero bytes and zeroes all retained
+// scratch and read-buffer capacity. The scratch allocation is retained for
+// reuse on the next Prepare, but no bytes from the prior conversation survive.
 func (s *Store) Reset() {
+	clear(s.scratch[:cap(s.scratch)])
+	clear(s.read[:cap(s.read)])
 	s.read = nil
-	if err := s.file.Truncate(0); err == nil {
-		s.length = 0
-	}
+	s.length = 0
+	_ = s.file.Truncate(0)
 }
 
 // Close releases the file descriptor and removes the per-session

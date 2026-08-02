@@ -178,23 +178,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 
 	previousChannel := slotChannel(s)
 
-	// Update flags based on the classified channel.
-	switch result.Channel {
-	case ChannelReasoning:
-		s.reasonFlag++
-		s.completionFlag = 0
-		s.toolFlag = 0
-
-	case ChannelAnswer:
-		s.completionFlag++
-		s.reasonFlag = 0
-		s.toolFlag = 0
-
-	case ChannelTool:
-		s.toolFlag++
-		s.reasonFlag = 0
-		s.completionFlag = 0
-	}
+	updateSlotChannel(s, result.Channel)
 
 	if result.Channel != ChannelNone && previousChannel != result.Channel {
 		args := []any{
@@ -253,29 +237,9 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 
 	outputTokens := s.reasonTokens + s.completionTokens
 
-	// Store content for final response.
-	switch {
-	case s.reasonFlag > 0:
-		s.finalReasoning.WriteString(result.Content)
-
-	case s.toolFlag > 0:
-		s.finalTooling.WriteString(result.Content)
-
-	default:
-		s.finalContent.WriteString(result.Content)
-	}
-
-	// Stream response if not tooling.
-	if s.toolFlag == 0 {
-		// Skip unnecessary CRLF at mode transitions.
-		if !e.model.isUnnecessaryCRLF(s.reasonFlag, s.completionFlag, result.Content) {
-			// Per OpenAI spec, usage is only sent in the final response, not deltas.
-			err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, result.Channel, s.reasonTokens, outputTokens, s.currentLogprob)
-			if err != nil {
-				e.finishSlot(s, err)
-				return
-			}
-		}
+	if err := e.retainAndStreamResult(s, result, outputTokens, s.currentLogprob); err != nil {
+		e.finishSlot(s, err)
+		return
 	}
 
 	if outputTokens >= s.job.params.MaxTokens {
@@ -286,6 +250,52 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 	}
 
 	s.iBatch = -1
+}
+
+// retainAndStreamResult applies response cleanup once, before both the final
+// accumulators and streaming deltas consume the content.
+func (e *batchEngine) retainAndStreamResult(s *slot, result Result, outputTokens int, logprob *ContentLogprob) error {
+	if result.Channel != ChannelTool && e.model.isUnnecessaryCRLF(s.reasonFlag, s.completionFlag, result.Content) {
+		if logprob != nil && len(s.logprobsData) > 0 {
+			s.logprobsData = s.logprobsData[:len(s.logprobsData)-1]
+			s.currentLogprob = nil
+		}
+		return nil
+	}
+
+	switch result.Channel {
+	case ChannelReasoning:
+		s.finalReasoning.WriteString(result.Content)
+
+	case ChannelTool:
+		s.finalTooling.WriteString(result.Content)
+		return nil
+
+	default:
+		s.finalContent.WriteString(result.Content)
+	}
+
+	// Per OpenAI spec, usage is only sent in the final response, not deltas.
+	return e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, result.Channel, s.reasonTokens, outputTokens, logprob)
+}
+
+func updateSlotChannel(s *slot, channel Channel) {
+	switch channel {
+	case ChannelReasoning:
+		s.reasonFlag++
+		s.completionFlag = 0
+		s.toolFlag = 0
+
+	case ChannelAnswer:
+		s.completionFlag++
+		s.reasonFlag = 0
+		s.toolFlag = 0
+
+	case ChannelTool:
+		s.toolFlag++
+		s.reasonFlag = 0
+		s.completionFlag = 0
+	}
 }
 
 // handleSpeculativeToken processes an accepted draft or bonus token and marks
