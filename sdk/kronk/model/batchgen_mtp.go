@@ -404,8 +404,9 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 			batch.Add(tokens[j], pos, seqIDs, false)
 		}
 
-		if _, err := llama.Decode(e.model.lctx, batch); err != nil {
-			return fmt.Errorf("imc-mtp: target decode at pos %d: %w", startPos+i, err)
+		ret, err := llama.Decode(e.model.lctx, batch)
+		if err != nil || ret != 0 {
+			return fmt.Errorf("imc-mtp: target decode at pos %d: %w", startPos+i, decodeError(ret, err))
 		}
 		llama.Synchronize(e.model.lctx)
 
