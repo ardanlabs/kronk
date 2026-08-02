@@ -34,20 +34,31 @@ func TestMaxDraftForSlot(t *testing.T) {
 	e := batchEngine{model: &Model{cfg: Config{PtrContextWindow: new(10)}}}
 
 	tests := []struct {
-		name       string
-		nPast      llama.Pos
-		configured int
-		want       int
+		name             string
+		nPast            llama.Pos
+		configured       int
+		maxTokens        int
+		reasonTokens     int
+		completionTokens int
+		want             int
 	}{
-		{"full draft fits", 5, 3, 3},
-		{"draft capped at window", 8, 3, 1},
-		{"only target token fits", 9, 3, 0},
-		{"window exhausted", 10, 3, 0},
+		{name: "full draft fits", nPast: 5, configured: 3, maxTokens: 100, want: 3},
+		{name: "draft capped at two-cell context reserve", nPast: 7, configured: 3, maxTokens: 100, want: 1},
+		{name: "context reserve exhausted", nPast: 8, configured: 3, maxTokens: 100, want: 0},
+		{name: "window exhausted", nPast: 10, configured: 3, maxTokens: 100, want: 0},
+		{name: "draft capped at remaining budget", nPast: 1, configured: 3, maxTokens: 5, completionTokens: 3, want: 1},
+		{name: "reasoning and completion share budget", nPast: 1, configured: 3, maxTokens: 5, reasonTokens: 2, completionTokens: 2, want: 0},
+		{name: "last output token reserved for target", nPast: 1, configured: 3, maxTokens: 5, completionTokens: 4, want: 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := slot{nPast: tt.nPast}
+			s := slot{
+				nPast:            tt.nPast,
+				reasonTokens:     tt.reasonTokens,
+				completionTokens: tt.completionTokens,
+				job:              &chatJob{params: Params{MaxTokens: tt.maxTokens}},
+			}
 			got := e.maxDraftForSlot(&s, tt.configured)
 			if got != tt.want {
 				t.Errorf("maxDraftForSlot() = %d, want %d", got, tt.want)

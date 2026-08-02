@@ -135,6 +135,18 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 	if _, exists := catalog.Models["ggml-org/qwen3-reranker-0.6b-q8_0"]; exists {
 		t.Error("unproven Qwen3 reranker remains in the embedded catalog")
 	}
+
+	const gemma4Q4 = "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"
+	entry, exists := catalog.Models[gemma4Q4]
+	if !exists {
+		t.Fatalf("required model %q is missing", gemma4Q4)
+	}
+	if entry.MTP != "mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" ||
+		entry.MTPOrig != "mtp-gemma-4-26B-A4B-it.gguf" ||
+		entry.MTPSize != 461766816 ||
+		!entry.MTPChecked {
+		t.Errorf("model %q has incomplete MTP companion metadata: %+v", gemma4Q4, entry)
+	}
 }
 
 func TestReconcileCatalogRetriesFailedSchemaUpgrade(t *testing.T) {

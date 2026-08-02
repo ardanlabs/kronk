@@ -583,6 +583,12 @@ func needsTargetSpecSnapshot(modelType ModelType, rollbackDepth uint32, draftCou
 }
 
 func (e *batchEngine) maxDraftForSlot(s *slot, configured int) int {
-	remaining := e.model.cfg.ContextWindow() - int(s.nPast) - 1
-	return min(configured, max(remaining, 0))
+	maxDraft := min(configured, e.model.cfg.ContextWindow()-int(s.nPast)-2)
+
+	remainingTokens := s.job.params.MaxTokens - (s.reasonTokens + s.completionTokens)
+	if remainingTokens > 0 {
+		maxDraft = min(maxDraft, remainingTokens-1)
+	}
+
+	return max(maxDraft, 0)
 }
