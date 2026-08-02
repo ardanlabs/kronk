@@ -55,7 +55,7 @@ func init() {
 	Cmd.Flags().String("model-config-file", "", "Special config file for model specific config")
 
 	// Cache settings
-	Cmd.Flags().Int("budget-percent", 0, "Percentage (1..100) of system/VRAM memory the resource manager may consume (default: 80)")
+	Cmd.Flags().Int("budget-percent", 0, "Percentage (1..100) of system/VRAM memory the resource manager may consume (default: 95)")
 	Cmd.Flags().Int("models-in-pool", 0, "Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 10)")
 	Cmd.Flags().String("pool-ttl", "", "Cache TTL duration (e.g., 5m, 1h)")
 

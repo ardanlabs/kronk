@@ -65,9 +65,9 @@ func Test_New_Defaults(t *testing.T) {
 		t.Fatalf("Devices: want 1, got %d", len(u.Devices))
 	}
 
-	// 80% of 16 GiB minus 256 MiB headroom.
+	// 95% of 16 GiB minus 256 MiB headroom.
 	total := float64(16 * GiB)
-	wantBudget := int64(total*0.8) - int64(resman.DefaultHeadroomBytes)
+	wantBudget := int64(total*0.95) - int64(resman.DefaultHeadroomBytes)
 	if u.Devices[0].BudgetBytes != wantBudget {
 		t.Errorf("BudgetBytes: want %d, got %d", wantBudget, u.Devices[0].BudgetBytes)
 	}

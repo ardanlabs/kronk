@@ -1595,7 +1595,7 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--budget-percent</code></td>
                 <td><code>KRONK_POOL_BUDGET_PERCENT</code></td>
-                <td><code>80</code></td>
+                <td><code>95</code></td>
                 <td>Memory-budget input for loaded models</td>
               </tr>
               <tr>
@@ -1653,7 +1653,7 @@ kronk libs --local`}</code></pre>
             <li><code>models-in-pool</code> places a count limit on each backend pool.</li>
             <li><code>pool-ttl</code> unloads entries that remain unused past the configured duration.</li>
           </ul>
-          <p>At the default <code>budget-percent: 80</code>, each discrete GPU receives an 80% budget minus 256 MiB of headroom. Host RAM receives a 75% budget because Kronk reserves an additional five percentage points for the operating system, allocators, and memory not represented in model estimates. Apple Silicon unified memory is accounted as one host-memory pool rather than independent RAM and Metal VRAM.</p>
+          <p>At the default <code>budget-percent: 95</code>, each discrete GPU receives a 95% budget minus 256 MiB of headroom. Host RAM receives a 90% budget because Kronk reserves an additional five percentage points for the operating system, allocators, and memory not represented in model estimates. Apple Silicon unified memory is accounted as one host-memory pool rather than independent RAM and Metal VRAM.</p>
           <p>Admission uses predicted model, KV-cache, and runtime memory. These predictions are planning estimates, not a guarantee that every backend allocation will succeed. Context size, cache types, sequence count, CPU offload, and model architecture all affect the estimate.</p>
           <p>On multi-GPU systems, Kronk accounts for llama.cpp's model distribution across the selected devices. Automatic splits use available GPUs, while explicit <code>devices</code> and <code>tensor-split</code> configuration control the proportions. Each assigned share must fit within that GPU's individual budget; unused capacity on another card cannot satisfy an over-budget share.</p>
           <p>When a new load exceeds the count or memory budget, Kronk evicts an idle model. For memory pressure it prefers an idle entry that frees enough memory without unloading a needlessly large model, then falls back to the coldest idle entry. Models with active streams are not evicted. If no idle entry can make room, the request returns a server-busy error and the client should retry later.</p>

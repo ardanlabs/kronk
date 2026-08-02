@@ -4,7 +4,7 @@ import "errors"
 
 // Default values applied when a Config field is left at its zero value.
 const (
-	DefaultBudgetPercent = 80
+	DefaultBudgetPercent = 95
 	DefaultHeadroomBytes = 256 << 20 // 256 MiB per GPU safety margin.
 )
 
@@ -56,7 +56,7 @@ type Snapshot struct {
 // Config configures the resource manager.
 //
 // BudgetPercent is the fraction (1..100) of each device's total memory the
-// manager will hand out. Defaults to DefaultBudgetPercent (80) when zero.
+// manager will hand out. Defaults to DefaultBudgetPercent (95) when zero.
 //
 // HeadroomBytes is an additional per-GPU safety margin subtracted from the
 // budget after applying BudgetPercent. Defaults to DefaultHeadroomBytes

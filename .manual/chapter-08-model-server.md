@@ -108,7 +108,7 @@ Common settings can be supplied as flags or environment variables:
 | `--write-timeout` | `KRONK_WEB_WRITE_TIMEOUT` | `61m` | HTTP response write timeout; `0` disables it, otherwise it must exceed the inference timeout |
 | `--base-path` | `KRONK_BASE_PATH` | `~/.kronk` | Root for Kronk data |
 | `--model-config-file` | `KRONK_POOL_MODEL_CONFIG_FILE` | `<base>/models/model_config.yaml` | Per-model overrides |
-| `--budget-percent` | `KRONK_POOL_BUDGET_PERCENT` | `80` | Memory-budget input for loaded models |
+| `--budget-percent` | `KRONK_POOL_BUDGET_PERCENT` | `95` | Memory-budget input for loaded models |
 | `--models-in-pool` | `KRONK_POOL_MODELS_IN_POOL` | `10` | Maximum loaded entries in each model pool |
 | `--pool-ttl` | `KRONK_POOL_TTL` | `20m` | Idle model retention time |
 | `--web-admin-enabled` | `KRONK_WEB_ADMIN_ENABLED` | `true` | Serve the BUI under `/admin/` |
@@ -143,8 +143,8 @@ request. Three settings govern retention:
 - `models-in-pool` places a count limit on each backend pool.
 - `pool-ttl` unloads entries that remain unused past the configured duration.
 
-At the default `budget-percent: 80`, each discrete GPU receives an 80% budget
-minus 256 MiB of headroom. Host RAM receives a 75% budget because Kronk reserves
+At the default `budget-percent: 95`, each discrete GPU receives a 95% budget
+minus 256 MiB of headroom. Host RAM receives a 90% budget because Kronk reserves
 an additional five percentage points for the operating system, allocators, and
 memory not represented in model estimates. Apple Silicon unified memory is
 accounted as one host-memory pool rather than independent RAM and Metal VRAM.

@@ -149,7 +149,7 @@ export default function DocsCLIServer() {
                 </tr>
                 <tr>
                   <td><code>--budget-percent &lt;int&gt;</code></td>
-                  <td>Percentage (1..100) of detected GPU VRAM and system RAM that the resource manager may commit to loaded models (default 80)</td>
+                  <td>Percentage (1..100) of detected GPU VRAM and system RAM that the resource manager may commit to loaded models (default 95)</td>
                 </tr>
                 <tr>
                   <td><code>--models-in-pool &lt;int&gt;</code></td>

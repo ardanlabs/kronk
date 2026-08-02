@@ -141,7 +141,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		}
 		Pool struct {
 			ModelConfigFile string
-			BudgetPercent   int           `conf:"default:80"`
+			BudgetPercent   int           `conf:"default:95"`
 			ModelsInPool    int           `conf:"default:10"`
 			TTL             time.Duration `conf:"default:20m"`
 		}
