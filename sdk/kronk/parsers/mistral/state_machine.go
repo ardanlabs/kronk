@@ -23,6 +23,7 @@ type stateMachine struct {
 	toolCallDeltas []model.ResponseToolCallDelta
 	startedCalls   []model.ResponseToolCallDelta
 	scanOffset     int
+	awaitingArgEnd bool
 }
 
 // Reset returns the stateMachine to its initial state for reuse on a new
@@ -34,6 +35,7 @@ func (sm *stateMachine) Reset() {
 	sm.toolCallDeltas = nil
 	sm.startedCalls = nil
 	sm.scanOffset = 0
+	sm.awaitingArgEnd = false
 }
 
 // Classify classifies a single decoded token's content.
@@ -72,6 +74,15 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 func (sm *stateMachine) updateToolCallDeltas() {
 	content := sm.toolCallBuf.String()
 	for {
+		if sm.awaitingArgEnd {
+			argsEnd := findJSONObjectEnd(content[sm.scanOffset:])
+			if argsEnd == -1 {
+				return
+			}
+			sm.scanOffset += argsEnd
+			sm.awaitingArgEnd = false
+		}
+
 		callOffset := strings.Index(content[sm.scanOffset:], "[TOOL_CALLS]")
 		if callOffset == -1 {
 			return
@@ -95,6 +106,7 @@ func (sm *stateMachine) updateToolCallDeltas() {
 			sm.startedCalls = append(sm.startedCalls, delta)
 		}
 		sm.scanOffset = nameStart + argsOffset + len("[ARGS]")
+		sm.awaitingArgEnd = true
 	}
 }
 
@@ -108,6 +120,7 @@ func (sm *stateMachine) Flush() model.Result {
 	sm.toolCallBuf.Reset()
 	sm.inToolCall = false
 	sm.scanOffset = 0
+	sm.awaitingArgEnd = false
 	return model.Result{Channel: model.ChannelTool, Content: content}
 }
 

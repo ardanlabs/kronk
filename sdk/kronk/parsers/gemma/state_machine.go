@@ -147,7 +147,12 @@ func gemmaToolCallNames(content string) []string {
 		if name := strings.TrimSpace(content[:end]); name != "" {
 			names = append(names, name)
 		}
-		content = content[end+1:]
+		content = content[end:]
+		braceEnd := findGemmaBraceEnd(content)
+		if braceEnd == -1 {
+			break
+		}
+		content = content[braceEnd+1:]
 	}
 	return names
 }

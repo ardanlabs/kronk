@@ -482,6 +482,30 @@ func TestReconcileStartedToolCallsWithCardinalityMismatch(t *testing.T) {
 	}
 }
 
+func TestReconcileStartedToolCallsAfterUnannouncedMalformedCall(t *testing.T) {
+	toolCalls := []ResponseToolCall{
+		{ID: "bad-final", Type: "function", Status: 2, Function: ResponseToolCallFunction{}},
+		{ID: "good-final", Type: "function", Function: ResponseToolCallFunction{Name: "working", Arguments: ToolCallArguments{"value": "ok"}}},
+	}
+	started := []ResponseToolCallDelta{
+		{ID: "good-start", Index: 0, Type: "function", Function: ResponseToolCallDeltaFunction{Name: "working"}},
+	}
+
+	terminal := reconcileStartedToolCalls(toolCalls, started)
+	if got, want := toolCalls[0].Index, 1; got != want {
+		t.Errorf("unannounced malformed index: got %d, want %d", got, want)
+	}
+	if got, want := terminal[0].ID, "bad-final"; got != want {
+		t.Errorf("unannounced malformed terminal ID: got %q, want %q", got, want)
+	}
+	if got, want := toolCalls[1].ID, "good-start"; got != want {
+		t.Errorf("announced valid ID: got %q, want %q", got, want)
+	}
+	if got := terminal[1].Function.Name; got != "" {
+		t.Errorf("announced valid terminal name: got %q, want empty", got)
+	}
+}
+
 func TestStreamingResponseLoggerStringReportsTotalBytes(t *testing.T) {
 	l := StreamingResponseLogger{
 		finishReason: FinishReasonStop,

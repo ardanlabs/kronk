@@ -85,6 +85,39 @@ func TestStateMachineSplitToolsBlock(t *testing.T) {
 	}
 }
 
+func TestStateMachineMultipleToolBlocks(t *testing.T) {
+	first := toolsOpen + callOpen + ` tool="first" index="1"` + sepToken + callClose + toolsClose
+	second := toolsOpen + callOpen + ` tool="second" index="1"` + sepToken + callClose + toolsClose
+
+	for _, tt := range []struct {
+		name   string
+		tokens []string
+	}{
+		{"one-token", []string{first + second}},
+		{"separate-tokens", []string{first, second}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := Parser{}.NewStateMachine()
+			streamer := sm.(model.ToolCallDeltaStreamer)
+			var content strings.Builder
+			for _, token := range tt.tokens {
+				result, _ := sm.Classify(token)
+				content.WriteString(result.Content)
+			}
+
+			calls := Parser{}.ToolCall(t.Context(), nil, content.String())
+			if len(calls) != 2 || calls[0].Function.Name != "first" || calls[1].Function.Name != "second" {
+				t.Fatalf("ToolCall: got %+v, want complete calls [first second]", calls)
+			}
+			deltas := streamer.ToolCallDeltas()
+			if len(deltas) != 2 || deltas[0].Index != 0 || deltas[1].Index != 1 ||
+				deltas[0].ID == "" || deltas[1].ID == "" || deltas[0].ID == deltas[1].ID {
+				t.Errorf("ToolCallDeltas: got %+v, want distinct calls at indexes 0 and 1", deltas)
+			}
+		})
+	}
+}
+
 func TestStateMachineToolActivityAndCompleteRelease(t *testing.T) {
 	sm := Parser{}.NewStateMachine()
 	streamer := sm.(model.ToolCallDeltaStreamer)

@@ -156,6 +156,24 @@ func TestParser_MultipleToolCallsAndReset(t *testing.T) {
 	}
 }
 
+func TestParser_ToolMarkerInsideArgumentsIsNotActivity(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	streamer := c.(model.ToolCallDeltaStreamer)
+
+	for _, token := range []string{
+		"[TOOL_CALLS]",
+		`first[ARGS]{"text":"[TOOL_CALLS]fake[ARGS]{}"}`,
+		`[TOOL_CALLS]second[ARGS]{}`,
+	} {
+		c.Classify(token)
+	}
+
+	deltas := streamer.ToolCallDeltas()
+	if len(deltas) != 2 || deltas[0].Function.Name != "first" || deltas[1].Function.Name != "second" {
+		t.Fatalf("ToolCallDeltas: got %+v, want first and second only", deltas)
+	}
+}
+
 func TestParser_ForeignMarkersAreContent(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	for _, m := range []string{"<tool_call>", "<|channel>", "call:foo", "<function=x>"} {

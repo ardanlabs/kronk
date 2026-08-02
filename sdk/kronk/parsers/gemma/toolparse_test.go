@@ -80,3 +80,15 @@ func TestStateMachineToolCallDeltas(t *testing.T) {
 		t.Error("Reset did not clear tool-call delta state")
 	}
 }
+
+func TestStateMachineCallMarkerInsideArgumentsIsNotActivity(t *testing.T) {
+	var sm stateMachine
+	sm.Reset()
+	sm.Classify("<tool_call>")
+	sm.Classify(`call:first{"text":"call:fake{}"}call:second{}`)
+
+	deltas := sm.ToolCallDeltas()
+	if len(deltas) != 2 || deltas[0].Function.Name != "first" || deltas[1].Function.Name != "second" {
+		t.Fatalf("ToolCallDeltas: got %+v, want first and second only", deltas)
+	}
+}

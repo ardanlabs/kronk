@@ -408,6 +408,12 @@ func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseT
 	}
 
 	terminal := make([]ResponseToolCallDelta, len(toolCalls))
+	matchedStarts := make([]bool, len(started))
+	nextUnannouncedIndex := 0
+	for _, start := range started {
+		nextUnannouncedIndex = max(nextUnannouncedIndex, start.Index+1)
+	}
+
 	for i := range toolCalls {
 		arguments := ""
 		if toolCalls[i].Function.Arguments != nil {
@@ -427,16 +433,30 @@ func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseT
 				Arguments: arguments,
 			},
 		}
-		if i < len(started) {
-			if toolCalls[i].Status == 0 && toolCalls[i].Function.Name == started[i].Function.Name {
-				toolCalls[i].ID = started[i].ID
-				toolCalls[i].Index = started[i].Index
+
+		startAt := -1
+		for j := range started {
+			if !matchedStarts[j] && toolCalls[i].Function.Name == started[j].Function.Name {
+				startAt = j
+				break
 			}
-			terminal[i].ID = ""
-			terminal[i].Index = started[i].Index
-			terminal[i].Type = ""
-			terminal[i].Function.Name = ""
 		}
+		if startAt == -1 {
+			toolCalls[i].Index = nextUnannouncedIndex
+			terminal[i].Index = nextUnannouncedIndex
+			nextUnannouncedIndex++
+			continue
+		}
+
+		matchedStarts[startAt] = true
+		if toolCalls[i].Status == 0 {
+			toolCalls[i].ID = started[startAt].ID
+			toolCalls[i].Index = started[startAt].Index
+		}
+		terminal[i].ID = ""
+		terminal[i].Index = started[startAt].Index
+		terminal[i].Type = ""
+		terminal[i].Function.Name = ""
 	}
 
 	return terminal

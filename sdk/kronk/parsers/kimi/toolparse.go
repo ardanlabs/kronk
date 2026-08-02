@@ -16,11 +16,24 @@ import (
 const parseErrorStatus = 2
 
 func parseTools(content string) []model.ResponseToolCall {
-	body, err := toolsBody(content)
-	if err != nil {
-		return []model.ResponseToolCall{failedToolCall("", nil, content, err)}
+	var calls []model.ResponseToolCall
+	offset := 0
+	for {
+		body, next, err := nextToolsBody(content, offset)
+		if err != nil {
+			if len(calls) == 0 || strings.Contains(content[offset:], toolsOpen) {
+				calls = append(calls, failedToolCall("", nil, content[offset:], err))
+			}
+			break
+		}
+		calls = append(calls, parseToolsBody(body)...)
+		offset = next
 	}
 
+	return calls
+}
+
+func parseToolsBody(body string) []model.ResponseToolCall {
 	var calls []model.ResponseToolCall
 	for offset := skipSpace(body, 0); offset < len(body); offset = skipSpace(body, offset) {
 		if !strings.HasPrefix(body[offset:], callOpen) {
@@ -76,26 +89,28 @@ func parseTools(content string) []model.ResponseToolCall {
 	}
 
 	if len(calls) == 0 {
-		return []model.ResponseToolCall{failedToolCall("", nil, content,
+		return []model.ResponseToolCall{failedToolCall("", nil, body,
 			errors.New("parse kimi tools: no call elements"))}
 	}
 
 	return calls
 }
 
-func toolsBody(content string) (string, error) {
-	openAt := strings.Index(content, toolsOpen)
+func nextToolsBody(content string, offset int) (string, int, error) {
+	openAt := strings.Index(content[offset:], toolsOpen)
 	if openAt == -1 {
-		return "", errors.New("parse kimi tools: missing tools opening marker")
+		return "", offset, errors.New("parse kimi tools: missing tools opening marker")
 	}
+	openAt += offset
 
 	bodyStart := openAt + len(toolsOpen)
 	closeAt := strings.Index(content[bodyStart:], toolsClose)
 	if closeAt == -1 {
-		return "", errors.New("parse kimi tools: missing tools closing marker")
+		return "", offset, errors.New("parse kimi tools: missing tools closing marker")
 	}
+	closeAt += bodyStart
 
-	return content[bodyStart : bodyStart+closeAt], nil
+	return content[bodyStart:closeAt], closeAt + len(toolsClose), nil
 }
 
 func parseArguments(body string) (model.ToolCallArguments, error) {

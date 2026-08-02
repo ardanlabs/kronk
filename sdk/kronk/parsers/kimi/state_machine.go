@@ -152,14 +152,18 @@ func (sm *stateMachine) classifyTag(candidate string) (model.Result, bool) {
 
 func (sm *stateMachine) completeTools() model.Result {
 	content := sm.tools.String()
-	closeAt := strings.Index(content, toolsClose)
+	closeAt := strings.LastIndex(content, toolsClose)
 	if closeAt == -1 {
 		return model.Result{}
 	}
-	content = content[:closeAt+len(toolsClose)]
+	end := closeAt + len(toolsClose)
+	complete := content[:end]
+	remainder := content[end:]
 	sm.tools.Reset()
-	sm.inTools = false
-	return model.Result{Channel: model.ChannelTool, Content: content}
+	sm.tools.WriteString(remainder)
+	sm.inTools = remainder != ""
+	sm.detectedCalls = strings.Count(remainder, callOpen)
+	return model.Result{Channel: model.ChannelTool, Content: complete}
 }
 
 func (sm *stateMachine) updateToolCallDeltas() {

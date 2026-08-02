@@ -143,15 +143,30 @@ func (sm *stateMachine) bufferToolContent(content string) model.Result {
 
 func (sm *stateMachine) completeBufferedTool() model.Result {
 	content := sm.toolCallBuf.String()
-	closeAt := strings.Index(content, toolCallsClose)
+	closeAt := strings.LastIndex(content, toolCallsClose)
 	if closeAt == -1 {
 		return model.Result{}
 	}
 
-	content = content[:closeAt+len(toolCallsClose)]
+	end := closeAt + len(toolCallsClose)
+	complete := content[:end]
+	remainder := content[end:]
 	sm.toolCallBuf.Reset()
-	sm.inToolCall = false
-	return model.Result{Channel: model.ChannelTool, Content: content}
+	sm.toolCallBuf.WriteString(remainder)
+	sm.inToolCall = remainder != ""
+	sm.detectedCalls = countInvokeOpeners(remainder)
+	return model.Result{Channel: model.ChannelTool, Content: complete}
+}
+
+func countInvokeOpeners(content string) int {
+	count := 0
+	for offset := 0; ; count++ {
+		invokeAt := strings.Index(content[offset:], invokeOpen)
+		if invokeAt == -1 {
+			return count
+		}
+		offset += invokeAt + len(invokeOpen)
+	}
 }
 
 func (sm *stateMachine) updateToolCallDeltas() {
