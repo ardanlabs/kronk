@@ -127,6 +127,9 @@ func TestProcessIMCTokenPlanPreservesCompletePrompt(t *testing.T) {
 			if result.imcMatchKind != tt.wantMatch {
 				t.Errorf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
 			}
+			if !slices.Equal(result.imcSamplerPromptTokens, tt.actual) {
+				t.Errorf("imcSamplerPromptTokens = %v, want complete prompt %v", result.imcSamplerPromptTokens, tt.actual)
+			}
 
 			got := slices.Clone(tt.actual[:result.cacheIdx])
 			got = append(got, result.imcNewCacheTokens...)

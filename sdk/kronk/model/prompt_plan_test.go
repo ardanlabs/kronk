@@ -28,6 +28,7 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 	text := func(token llama.Token) promptUnit { return promptUnit{token: token} }
 	media := func(digest [sha256.Size]byte) promptUnit { return promptUnit{media: digest, isMedia: true} }
 	base := mediaPlan(text(1), media(imageA), text(2))
+	baseSamplerTokens := []llama.Token{100, 1, 2, 101}
 
 	tests := []struct {
 		name      string
@@ -56,16 +57,17 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 				store.Commit(len(buf))
 			}
 			session := &imcSession{
-				id:                0,
-				seqID:             imcSeqIDUnbound,
-				totalTokensCached: 3,
-				nextLogicalPos:    3,
-				cachedMsgCount:    1,
-				cachedMsgsHash:    "hash",
-				hasMedia:          true,
-				promptPlan:        base,
-				mediaKVCounts:     []int{1},
-				kvState:           store,
+				id:                  0,
+				seqID:               imcSeqIDUnbound,
+				totalTokensCached:   3,
+				nextLogicalPos:      3,
+				cachedMsgCount:      1,
+				cachedMsgsHash:      "hash",
+				hasMedia:            true,
+				promptPlan:          base,
+				samplerPromptTokens: baseSamplerTokens,
+				mediaKVCounts:       []int{1},
+				kvState:             store,
 			}
 			m := &Model{
 				imcSessions: []*imcSession{session},
@@ -75,6 +77,16 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 			result := m.processIMCMediaPlans(context.Background(), d, d, tt.actual, tt.stable, []llama.Token{9}, time.Now())
 			if result.imcMatchKind != tt.wantMatch {
 				t.Fatalf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
+			}
+			var wantSamplerTokens []llama.Token
+			switch tt.wantMatch {
+			case "exact":
+				wantSamplerTokens = []llama.Token{100, 1, 2, 101, 9}
+			case "anchor":
+				wantSamplerTokens = []llama.Token{100, 1, 2, 101, 3, 9}
+			}
+			if got := result.imcSamplerPromptTokens; !reflect.DeepEqual(got, wantSamplerTokens) {
+				t.Fatalf("imcSamplerPromptTokens = %v, want authoritative mtmd text prompt %v", got, wantSamplerTokens)
 			}
 			if (tt.wantMatch == "exact" || tt.wantMatch == "anchor") && !session.reserved {
 				t.Fatal("media match did not reserve the session")
@@ -93,16 +105,17 @@ func TestProcessIMCMediaAnchorPlanningIsImmutableAndUsesLogicalPosition(t *testi
 	actual := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2}, promptUnit{token: 3}, promptUnit{token: 4})
 	store := populatedTestSessionStore()
 	session := &imcSession{
-		id:                0,
-		totalTokensCached: 12,
-		nextLogicalPos:    5,
-		cachedMsgCount:    2,
-		cachedMsgsHash:    "hash",
-		hasMedia:          true,
-		useMRoPE:          true,
-		promptPlan:        base,
-		mediaKVCounts:     []int{8},
-		kvState:           store,
+		id:                  0,
+		totalTokensCached:   12,
+		nextLogicalPos:      5,
+		cachedMsgCount:      2,
+		cachedMsgsHash:      "hash",
+		hasMedia:            true,
+		useMRoPE:            true,
+		promptPlan:          base,
+		samplerPromptTokens: []llama.Token{100, 1, 2, 101},
+		mediaKVCounts:       []int{8},
+		kvState:             store,
 	}
 	originalBytes := append([]byte(nil), store.Bytes()...)
 	originalPlan := append([]promptUnit(nil), session.promptPlan.units...)
@@ -120,6 +133,12 @@ func TestProcessIMCMediaAnchorPlanningIsImmutableAndUsesLogicalPosition(t *testi
 	}
 	if want := []llama.Token{3}; !reflect.DeepEqual(result.imcNewCacheTokens, want) {
 		t.Fatalf("advance tokens = %v, want %v", result.imcNewCacheTokens, want)
+	}
+	if want := []llama.Token{100, 1, 2, 101, 3, 4}; !reflect.DeepEqual(result.imcSamplerPromptTokens, want) {
+		t.Fatalf("sampler prompt = %v, want authoritative mtmd prefix plus extension and tail %v", result.imcSamplerPromptTokens, want)
+	}
+	if want := []llama.Token{100, 1, 2, 101, 3}; !reflect.DeepEqual(result.imcMediaSamplerTokens, want) {
+		t.Fatalf("cached sampler prompt = %v, want %v", result.imcMediaSamplerTokens, want)
 	}
 	if !reflect.DeepEqual(session.promptPlan.units, originalPlan) || !reflect.DeepEqual(store.Bytes(), originalBytes) || session.lastUsed != originalLastUsed {
 		t.Fatal("anchor planning mutated stored session metadata or snapshot")
@@ -149,8 +168,8 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 
-	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, "render")
-	if gotOld != oldStore || session.kvState != staged || session.totalTokensCached != 13 || session.nextLogicalPos != 6 || !session.promptPlan.equal(advanced) {
+	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, "render")
+	if gotOld != oldStore || session.kvState != staged || session.totalTokensCached != 13 || session.nextLogicalPos != 6 || !session.promptPlan.equal(advanced) || !reflect.DeepEqual(session.samplerPromptTokens, []llama.Token{1, 2, 3}) {
 		t.Fatal("media advance did not atomically publish the staged state")
 	}
 	m.imcPublishSession(session)
@@ -179,7 +198,7 @@ func TestIMCCommitMediaAdvanceRejectsMissingStage(t *testing.T) {
 	}
 	m := &Model{}
 
-	if old := m.imcCommitMediaAdvance(session, nil, "new", 13, 3, 6, promptPlan{}, "render"); old != nil {
+	if old := m.imcCommitMediaAdvance(session, nil, "new", 13, 3, 6, promptPlan{}, nil, "render"); old != nil {
 		t.Fatalf("old store = %T, want nil for rejected commit", old)
 	}
 	if session.kvState != oldStore || session.cachedMsgsHash != "old" || session.totalTokensCached != 12 || session.nextLogicalPos != 5 {

@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -324,7 +325,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			imcDecodeStart := time.Now()
 
-			nextLogicalPos, physicalKVCells, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx)
+			nextLogicalPos, physicalKVCells, mediaKVCounts, samplerCacheTokens, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx)
 			if err != nil {
 				e.model.decodeMu.Lock()
 				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
@@ -340,8 +341,12 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash)
 			e.model.cacheMu.Lock()
 			job.imcSession.promptPlan = job.imcPromptPlan
+			job.imcSession.samplerPromptTokens = slices.Clone(samplerCacheTokens)
 			job.imcSession.nextLogicalPos = nextLogicalPos
 			e.model.cacheMu.Unlock()
+			job.imcMediaSamplerTokens = samplerCacheTokens
+			job.samplerPromptTokens = slices.Clone(samplerCacheTokens)
+			job.samplerPromptTokens = append(job.samplerPromptTokens, job.tailTokens...)
 			sessionWasCommitted = true
 
 			if s.mtmdCtx != 0 && job.imcSession != nil {
@@ -721,7 +726,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 				oldStore := e.model.imcCommitMediaAdvance(job.imcSession, snapshotStore,
 					job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount,
-					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcExpectedRenderHash)
+					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcMediaSamplerTokens, job.imcExpectedRenderHash)
 				if oldStore != nil {
 					if err := oldStore.Close(); err != nil {
 						e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-old-store-close-failed", "err", err)
@@ -841,6 +846,15 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		e.finishSlot(s, err)
 		return false
 	}
+
+	// Prime penalties and DRY with the complete logical prompt, including any
+	// prefix restored from IMC. The suffix alone is not sufficient because the
+	// sampler has no state corresponding to restored KV cells.
+	samplerTokens := tokens
+	if job.imcTokenPlan {
+		samplerTokens = job.samplerPromptTokens
+	}
+	primeSampler(s.sampler, samplerTokens)
 
 	// Store full prompt tokens for draft model prefill if speculative decoding
 	// is enabled. The draft model needs all tokens (cached + new suffix) to
@@ -1015,6 +1029,8 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		return false
 	}
 
+	primeSampler(s.sampler, job.samplerPromptTokens)
+
 	s.useMRoPE = true
 	if e.model.draft != nil && e.model.draft.mtp() {
 		// M-RoPE media snapshots currently externalize target KV only. Until
@@ -1115,6 +1131,15 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 		return false
 	}
 
+	// mtmd text chunks contain vocabulary tokens; image and audio chunks
+	// represent embeddings and must never be accepted into the sampler.
+	for i := range numChunks {
+		chunk := mtmd.InputChunksGet(s.inputChunks, i)
+		if mtmd.InputChunkGetType(chunk) == mtmd.InputChunkTypeText {
+			primeSampler(s.sampler, mtmd.InputChunkGetTokensText(chunk))
+		}
+	}
+
 	// Process first chunk. Media prefill is handled chunk-by-chunk in processBatch.
 	//
 	// addPrefillMediaChunk has two failure modes:
@@ -1131,4 +1156,16 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	}
 
 	return true
+}
+
+func primeSampler(sampler llama.Sampler, tokens []llama.Token) {
+	primeSamplerWith(sampler, tokens, llama.SamplerAccept)
+}
+
+func primeSamplerWith(sampler llama.Sampler, tokens []llama.Token, accept func(llama.Sampler, llama.Token)) {
+	for _, token := range tokens {
+		if token != llama.TokenNull {
+			accept(sampler, token)
+		}
+	}
 }

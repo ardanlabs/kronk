@@ -25,7 +25,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	target := slices.Clone(actual[:targetLen])
 	tail := slices.Clone(actual[targetLen:])
 	result.imcTokenPlan = true
-	result.imcActualTokens = slices.Clone(actual)
+	result.imcSamplerPromptTokens = slices.Clone(actual)
 	result.imcTailTokens = tail
 
 	if targetLen < m.cfg.CacheMinTokens() || len(m.imcSessions) == 0 {

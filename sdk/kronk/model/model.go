@@ -73,23 +73,24 @@ const imcSeqIDUnbound llama.SeqId = -1
 // is dynamic: it holds the bound slot's KV sequence id while a
 // request is in flight, and imcSeqIDUnbound otherwise.
 type imcSession struct {
-	id                int           // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
-	seqID             llama.SeqId   // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
-	cachedMsgsHash    string        // Hash of all cached messages
-	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
-	totalTokensCached int           // Physical KV cells in the cached prefix.
-	nextLogicalPos    int           // Next logical decode position; equals totalTokensCached except for M-RoPE media.
-	cachedMsgCount    int           // Number of messages cached
-	kvState           SessionStore  // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
-	draftKVState      SessionStore  // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
-	pendingH          []float32     // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
-	lastUsed          time.Time     // Last access time (for eviction)
-	reserved          bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
-	allocatedContext  int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
-	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
-	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
-	mediaKVCounts     []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
-	promptPlan        promptPlan    // Immutable token-v2 logical plan for the cached prefix.
+	id                  int           // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
+	seqID               llama.SeqId   // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
+	cachedMsgsHash      string        // Hash of all cached messages
+	cachedTokens        []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
+	totalTokensCached   int           // Physical KV cells in the cached prefix.
+	nextLogicalPos      int           // Next logical decode position; equals totalTokensCached except for M-RoPE media.
+	cachedMsgCount      int           // Number of messages cached
+	kvState             SessionStore  // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
+	draftKVState        SessionStore  // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
+	pendingH            []float32     // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
+	lastUsed            time.Time     // Last access time (for eviction)
+	reserved            bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
+	allocatedContext    int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
+	hasMedia            bool          // True if the cached content includes media tokens (image/audio)
+	useMRoPE            bool          // True if the cached media used M-RoPE 4D positional encoding
+	mediaKVCounts       []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
+	promptPlan          promptPlan    // Immutable token-v2 logical plan for the cached prefix.
+	samplerPromptTokens []llama.Token // Authoritative mtmd text tokens in a cached media prefix; embedding cells are omitted.
 
 	// cachedRenderInputHash guards token-v2 pure-hit snapshot reuse against
 	// changes to template inputs that are not represented by message tokens.

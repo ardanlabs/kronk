@@ -93,6 +93,10 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 			if !result.imcMediaAnchorAdvance {
 				result.imcTailTokens = slices.Clone(actualTail)
 			}
+			result.imcMediaSamplerTokens = slices.Clone(match.samplerPromptTokens)
+			result.imcMediaSamplerTokens = append(result.imcMediaSamplerTokens, extension...)
+			result.imcSamplerPromptTokens = slices.Clone(result.imcMediaSamplerTokens)
+			result.imcSamplerPromptTokens = append(result.imcSamplerPromptTokens, result.imcTailTokens...)
 			match.reserved = true
 		}
 	}
@@ -141,7 +145,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 func validMediaAnchorSession(session *imcSession) bool {
 	if session == nil || !session.hasMedia || session.totalTokensCached <= 0 ||
 		session.promptPlan.mediaCount == 0 || session.kvState == nil || session.kvState.Len() == 0 ||
-		len(session.mediaKVCounts) != session.promptPlan.mediaCount {
+		len(session.mediaKVCounts) != session.promptPlan.mediaCount || len(session.samplerPromptTokens) == 0 {
 		return false
 	}
 

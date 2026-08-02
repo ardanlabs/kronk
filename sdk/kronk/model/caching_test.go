@@ -265,18 +265,19 @@ func TestCacheResultFields(t *testing.T) {
 // can fill it without allocating; only the valid length is cleared.
 func TestIMCResetSessionClearsKVState(t *testing.T) {
 	s := &imcSession{
-		kvState:           ramSessionStore(),
-		id:                0,
-		seqID:             0,
-		cachedMsgsHash:    "abc123",
-		cachedTokens:      []llama.Token{1, 2, 3},
-		totalTokensCached: 100,
-		cachedMsgCount:    2,
-		lastUsed:          time.Now(),
-		reserved:          true,
-		hasMedia:          true,
-		useMRoPE:          true,
-		mediaKVCounts:     []int{10, 20},
+		kvState:             ramSessionStore(),
+		id:                  0,
+		seqID:               0,
+		cachedMsgsHash:      "abc123",
+		cachedTokens:        []llama.Token{1, 2, 3},
+		totalTokensCached:   100,
+		cachedMsgCount:      2,
+		lastUsed:            time.Now(),
+		reserved:            true,
+		hasMedia:            true,
+		useMRoPE:            true,
+		mediaKVCounts:       []int{10, 20},
+		samplerPromptTokens: []llama.Token{4, 5, 6},
 	}
 	buf := s.kvState.Prepare(4)
 	copy(buf, []byte{0xDE, 0xAD, 0xBE, 0xEF})
@@ -288,6 +289,9 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 	}
 	if s.kvState.Cap() == 0 {
 		t.Errorf("kvState.Cap() = 0, want backing array retained for reuse")
+	}
+	if s.samplerPromptTokens != nil {
+		t.Errorf("samplerPromptTokens = %v, want nil", s.samplerPromptTokens)
 	}
 	if s.cachedMsgsHash != "" {
 		t.Errorf("cachedMsgsHash = %q, want empty", s.cachedMsgsHash)
