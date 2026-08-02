@@ -33,8 +33,9 @@ const (
 	// Default is 0.0 (disabled) to match Ollama and maximize tool calling stability.
 	DefDryMultiplier = 0.0
 
-	// DefDryPenaltyLast limits how many recent tokens DRY considers.
-	DefDryPenaltyLast = 0.0
+	// DefDryPenaltyLast limits how many recent tokens DRY considers. A value
+	// of -1 uses the full context.
+	DefDryPenaltyLast = -1
 
 	// DefEnableThinking determines if the model should think or not. It is used for
 	// most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,
@@ -178,8 +179,8 @@ type Params struct {
 	// Default is 1.05.
 	DryMultiplier float32 `json:"dry_multiplier"`
 
-	// DryPenaltyLast limits how many recent tokens DRY considers. Default of 0
-	// means full context.
+	// DryPenaltyLast limits how many recent tokens DRY considers. A value of 0
+	// disables DRY and -1 uses the full context.
 	DryPenaltyLast int32 `json:"dry_penalty_last_n"`
 
 	// FrequencyPenalty penalizes tokens proportionally to how often they have
@@ -668,7 +669,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 		}
 	}
 
-	p = m.adjustParams(p)
+	p = m.adjustParams(p, d)
 	if zeroTemperatureRequested {
 		p.Temperature = 0
 	}
@@ -690,69 +691,98 @@ func (m *Model) parseParams(d D) (Params, error) {
 	return p, nil
 }
 
-func (m *Model) adjustParams(p Params) Params {
+func (m *Model) adjustParams(p Params, request D) Params {
+	requested := func(key string) bool {
+		_, exists := request[key]
+		return exists
+	}
+
 	if p.DryAllowedLen <= 0 {
 		p.DryAllowedLen = DefDryAllowedLen
+		if m.paramsResolved {
+			p.DryAllowedLen = m.cfg.DefaultParams.DryAllowedLen
+		}
 	}
-
 	if p.DryBase <= 0 {
 		p.DryBase = DefDryBase
+		if m.paramsResolved {
+			p.DryBase = m.cfg.DefaultParams.DryBase
+		}
 	}
-
 	if p.DryMultiplier <= 0 {
 		p.DryMultiplier = DefDryMultiplier
+		if m.paramsResolved {
+			p.DryMultiplier = m.cfg.DefaultParams.DryMultiplier
+		}
 	}
-
-	if p.DryPenaltyLast < 0 {
+	if !requested("dry_penalty_last_n") && !m.paramsResolved && p.DryPenaltyLast == 0 {
 		p.DryPenaltyLast = DefDryPenaltyLast
 	}
-
 	if p.MaxTokens <= 0 {
-		p.MaxTokens = m.cfg.ContextWindow()
+		p.MaxTokens = m.cfg.DefaultParams.MaxTokens
+		if !m.paramsResolved {
+			p.MaxTokens = m.cfg.ContextWindow()
+		}
 	}
-
 	if p.MinP <= 0 {
 		p.MinP = DefMinP
+		if m.paramsResolved {
+			p.MinP = m.cfg.DefaultParams.MinP
+		}
 	}
-
 	if p.ReasoningEffort == "" {
 		p.ReasoningEffort = DefReasoningEffort
+		if m.paramsResolved {
+			p.ReasoningEffort = m.cfg.DefaultParams.ReasoningEffort
+		}
 	}
-
-	if p.RepeatLastN <= 0 {
+	if !requested("repeat_last_n") && !m.paramsResolved && p.RepeatLastN == 0 {
 		p.RepeatLastN = DefRepeatLastN
 	}
-
 	if p.RepeatPenalty <= 0 {
 		p.RepeatPenalty = DefRepeatPenalty
+		if m.paramsResolved {
+			p.RepeatPenalty = m.cfg.DefaultParams.RepeatPenalty
+		}
 	}
-
 	if p.Temperature <= 0 {
 		p.Temperature = DefTemp
+		if m.paramsResolved {
+			p.Temperature = m.cfg.DefaultParams.Temperature
+		}
 	}
-
 	if p.Thinking == "" {
 		p.Thinking = DefEnableThinking
+		if m.paramsResolved {
+			p.Thinking = m.cfg.DefaultParams.Thinking
+		}
 	}
-
-	if p.TopK <= 0 {
+	if !requested("top_k") && !m.paramsResolved && p.TopK == 0 {
 		p.TopK = DefTopK
 	}
-
 	if p.TopP <= 0 {
 		p.TopP = DefTopP
+		if m.paramsResolved {
+			p.TopP = m.cfg.DefaultParams.TopP
+		}
 	}
-
 	if p.XtcMinKeep <= 0 {
 		p.XtcMinKeep = DefXtcMinKeep
+		if m.paramsResolved {
+			p.XtcMinKeep = m.cfg.DefaultParams.XtcMinKeep
+		}
 	}
-
 	if p.XtcProbability <= 0 {
 		p.XtcProbability = DefXtcProbability
+		if m.paramsResolved {
+			p.XtcProbability = m.cfg.DefaultParams.XtcProbability
+		}
 	}
-
 	if p.XtcThreshold <= 0 {
 		p.XtcThreshold = DefXtcThreshold
+		if m.paramsResolved {
+			p.XtcThreshold = m.cfg.DefaultParams.XtcThreshold
+		}
 	}
 
 	// Give the selected parser a chance to coerce params into values its
@@ -763,6 +793,84 @@ func (m *Model) adjustParams(p Params) Params {
 	}
 
 	return p
+}
+
+func resolveSamplingDefaults(p Params, metadata map[string]string, contextWindow int) Params {
+	if p.DryAllowedLen <= 0 {
+		p.DryAllowedLen = DefDryAllowedLen
+	}
+	if p.DryBase <= 0 {
+		p.DryBase = DefDryBase
+	}
+	if p.DryPenaltyLast == 0 {
+		p.DryPenaltyLast = DefDryPenaltyLast
+	}
+	if p.MaxTokens <= 0 {
+		p.MaxTokens = contextWindow
+	}
+	if p.MinP == 0 {
+		p.MinP = samplingMetadataFloat32(metadata, "general.sampling.min_p", DefMinP)
+	}
+	if p.ReasoningEffort == "" {
+		p.ReasoningEffort = DefReasoningEffort
+	}
+	if p.RepeatLastN == 0 {
+		p.RepeatLastN = samplingMetadataInt32(metadata, "general.sampling.penalty_last_n", DefRepeatLastN)
+	}
+	if p.RepeatPenalty == 0 {
+		p.RepeatPenalty = samplingMetadataFloat32(metadata, "general.sampling.penalty_repeat", DefRepeatPenalty)
+	}
+	if p.Temperature == 0 {
+		p.Temperature = samplingMetadataFloat32(metadata, "general.sampling.temp", DefTemp)
+	}
+	if p.Thinking == "" {
+		p.Thinking = DefEnableThinking
+	}
+	if p.TopK == 0 {
+		p.TopK = samplingMetadataInt32(metadata, "general.sampling.top_k", DefTopK)
+	}
+	if p.TopP == 0 {
+		p.TopP = samplingMetadataFloat32(metadata, "general.sampling.top_p", DefTopP)
+	}
+	if p.XtcMinKeep == 0 {
+		p.XtcMinKeep = DefXtcMinKeep
+	}
+	if p.XtcProbability == 0 {
+		p.XtcProbability = samplingMetadataFloat32(metadata, "general.sampling.xtc.probability", DefXtcProbability)
+	}
+	if p.XtcThreshold == 0 {
+		p.XtcThreshold = samplingMetadataFloat32(metadata, "general.sampling.xtc.threshold", DefXtcThreshold)
+	}
+
+	return p
+}
+
+func samplingMetadataFloat32(metadata map[string]string, key string, fallback float32) float32 {
+	value, exists := metadata[key]
+	if !exists {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseFloat(value, 32)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return fallback
+	}
+
+	return float32(parsed)
+}
+
+func samplingMetadataInt32(metadata map[string]string, key string, fallback int32) int32 {
+	value, exists := metadata[key]
+	if !exists {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return fallback
+	}
+
+	return int32(parsed)
 }
 
 func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
@@ -793,7 +901,7 @@ func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
 
 	if p.DryMultiplier > 0 {
 		order++
-		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow()), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, nil))
+		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow()), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, []string{"\n", ":", "\"", "*"}))
 		m.log(ctx, "sampler-chain", "order", order, "sampler", "dry", "multiplier", fmt.Sprintf("%.2f", p.DryMultiplier), "base", fmt.Sprintf("%.2f", p.DryBase), "allowed_len", p.DryAllowedLen, "penalty_last_n", p.DryPenaltyLast)
 	}
 

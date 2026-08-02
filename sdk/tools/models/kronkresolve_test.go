@@ -218,6 +218,63 @@ func TestModelConfigFlashAttentionPresence(t *testing.T) {
 	}
 }
 
+func TestModelConfigLeavesSamplingDefaultsUnset(t *testing.T) {
+	unset := ModelConfig{}.ToKronkConfig()
+	if got := unset.DefaultParams.TopK; got != 0 {
+		t.Errorf("unset TopK: got %d, want 0 for GGUF resolution", got)
+	}
+	if got := unset.DefaultParams.Temperature; got != 0 {
+		t.Errorf("unset Temperature: got %v, want 0 for GGUF resolution", got)
+	}
+
+	explicit := ModelConfig{
+		Sampling: SamplingConfig{
+			TopK:        20,
+			Temperature: 0.6,
+		},
+	}.ToKronkConfig()
+	if got, want := explicit.DefaultParams.TopK, int32(20); got != want {
+		t.Errorf("explicit TopK: got %d, want %d", got, want)
+	}
+	if got, want := explicit.DefaultParams.Temperature, float32(0.6); got != want {
+		t.Errorf("explicit Temperature: got %v, want %v", got, want)
+	}
+}
+
+func TestSamplingConfigWithMetadataDefaults(t *testing.T) {
+	metadata := map[string]string{
+		"general.sampling.temp":  "1.0",
+		"general.sampling.top_k": "20",
+		"general.sampling.top_p": "0.95",
+	}
+
+	got := (SamplingConfig{Temperature: 0.6}).WithMetadataDefaults(metadata)
+
+	if want := float32(0.6); got.Temperature != want {
+		t.Errorf("Temperature: got %v, want configured value %v", got.Temperature, want)
+	}
+	if want := int32(20); got.TopK != want {
+		t.Errorf("TopK: got %d, want GGUF value %d", got.TopK, want)
+	}
+	if want := float32(0.95); got.TopP != want {
+		t.Errorf("TopP: got %v, want GGUF value %v", got.TopP, want)
+	}
+	if want := int32(-1); got.DryPenaltyLast != want {
+		t.Errorf("DryPenaltyLast: got %d, want Kronk fallback %d", got.DryPenaltyLast, want)
+	}
+
+	malformed := (SamplingConfig{}).WithMetadataDefaults(map[string]string{
+		"general.sampling.temp":  "1e100",
+		"general.sampling.top_p": "NaN",
+	})
+	if want := float32(model.DefTemp); malformed.Temperature != want {
+		t.Errorf("malformed Temperature: got %v, want Kronk fallback %v", malformed.Temperature, want)
+	}
+	if want := float32(model.DefTopP); malformed.TopP != want {
+		t.Errorf("malformed TopP: got %v, want Kronk fallback %v", malformed.TopP, want)
+	}
+}
+
 func TestRestoreAutoTunedSizing(t *testing.T) {
 	contextWindow := 131072
 	nSeqMax := 2

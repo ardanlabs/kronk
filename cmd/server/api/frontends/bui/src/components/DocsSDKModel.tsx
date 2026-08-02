@@ -545,8 +545,8 @@ export default function DocsSDKModel() {
 	// Default is 1.05.
 	DryMultiplier float32 \`json:"dry_multiplier"\`
 
-	// DryPenaltyLast limits how many recent tokens DRY considers. Default of 0
-	// means full context.
+	// DryPenaltyLast limits how many recent tokens DRY considers. A value of 0
+	// disables DRY and -1 uses the full context.
 	DryPenaltyLast int32 \`json:"dry_penalty_last_n"\`
 
 	// FrequencyPenalty penalizes tokens proportionally to how often they have
@@ -1616,8 +1616,9 @@ export default function DocsSDKModel() {
 	// Default is 0.0 (disabled) to match Ollama and maximize tool calling stability.
 	DefDryMultiplier = 0.0
 
-	// DefDryPenaltyLast limits how many recent tokens DRY considers.
-	DefDryPenaltyLast = 0.0
+	// DefDryPenaltyLast limits how many recent tokens DRY considers. A value
+	// of -1 uses the full context.
+	DefDryPenaltyLast = -1
 
 	// DefEnableThinking determines if the model should think or not. It is used for
 	// most non-GPT models. It accepts 1, t, T, TRUE, true, True, 0, f, F, FALSE,

@@ -13,8 +13,9 @@ import (
 
 // KronkResolvedConfig builds a model.Config for kronk.New() using the new
 // resolution flow: analysis defaults (layer 1) overridden by user-supplied
-// model_config.yaml entries (layer 3), then sampling defaults via
-// SamplingConfig.WithDefaults(), grammar resolution, and on-disk file paths.
+// model_config.yaml entries (layer 3), then grammar resolution and on-disk
+// file paths. Sampling defaults remain unset until the model is loaded so GGUF
+// recommendations can take precedence over Kronk defaults.
 //
 // The catalog YAML middle layer used by the legacy resolution path is not
 // applied here.

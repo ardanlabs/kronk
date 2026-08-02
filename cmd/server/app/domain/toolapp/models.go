@@ -60,15 +60,19 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 
 	extendedConfig := r.URL.Query().Get("extended-config") == "true"
 
-	// Build resolved configs so the BUI sees the same sampling values
-	// the engine will use (analysis defaults + model_config overrides + SDK defaults).
+	// Build resolved configs so the BUI sees the same sampling values the engine
+	// will use (analysis defaults + model_config overrides + GGUF + SDK defaults).
 	var resolvedConfigs map[string]models.ModelConfig
 	if extendedConfig {
 		resolvedConfigs = make(map[string]models.ModelConfig, len(modelFiles))
 		for _, mf := range modelFiles {
 			a.log.Info(ctx, "resolved-model-config", "id", mf.ID)
 			rmc := a.resolvedModelConfig(mf.ID)
-			rmc.Sampling = rmc.Sampling.WithDefaults()
+			if mi, err := a.models.ModelInformation(mf.ID); err == nil {
+				rmc.Sampling = rmc.Sampling.WithMetadataDefaults(mi.Metadata)
+			} else {
+				rmc.Sampling = rmc.Sampling.WithDefaults()
+			}
 			resolvedConfigs[mf.ID] = rmc
 		}
 	}
@@ -475,7 +479,7 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	rmc := a.resolvedModelConfig(modelID)
-	rmc.Sampling = rmc.Sampling.WithDefaults()
+	rmc.Sampling = rmc.Sampling.WithMetadataDefaults(mi.Metadata)
 
 	var vramResp *VRAMResponse
 	if v, err := a.models.CalculateVRAM(modelID, vramConfigFromRMC(rmc)); err == nil {

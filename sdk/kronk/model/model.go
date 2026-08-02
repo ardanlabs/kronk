@@ -203,18 +203,19 @@ type Model struct {
 	// to a single request and cannot bleed across requests.
 	// Zero when projFile == "" (text-only models) or for embed/rerank
 	// models.
-	mtmdMetaCtx   mtmd.Context
-	modelInfo     ModelInfo
-	activeStreams atomic.Int32
-	unloaded      atomic.Bool
-	decodeMu      sync.Mutex
-	cacheMu       sync.RWMutex
-	imcSessions   []*imcSession   // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
-	addBOSToken   bool            // Whether to add BOS token (from model metadata)
-	pool          *contextPool    // Context pool for parallel embed/rerank
-	batchSeq      *batchSeqEngine // Sequence-batch engine for supported embed/rerank models.
-	parser        Parser          // Selected via selectParser at load time; nil for embed/rerank.
-	draft         drafter         // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
+	mtmdMetaCtx    mtmd.Context
+	modelInfo      ModelInfo
+	paramsResolved bool
+	activeStreams  atomic.Int32
+	unloaded       atomic.Bool
+	decodeMu       sync.Mutex
+	cacheMu        sync.RWMutex
+	imcSessions    []*imcSession   // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	addBOSToken    bool            // Whether to add BOS token (from model metadata)
+	pool           *contextPool    // Context pool for parallel embed/rerank
+	batchSeq       *batchSeqEngine // Sequence-batch engine for supported embed/rerank models.
+	parser         Parser          // Selected via selectParser at load time; nil for embed/rerank.
+	draft          drafter         // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns
@@ -267,6 +268,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	cfg = adjustConfig(cfg, mdl)
 	modelInfo := toModelInfo(cfg, mdl)
+	cfg.DefaultParams = resolveSamplingDefaults(cfg.DefaultParams, modelInfo.Metadata, cfg.ContextWindow())
 
 	metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
 
@@ -333,6 +335,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		template:       template,
 		projFile:       cfg.ProjFile,
 		modelInfo:      modelInfo,
+		paramsResolved: true,
 		addBOSToken:    addBOSToken,
 	}
 

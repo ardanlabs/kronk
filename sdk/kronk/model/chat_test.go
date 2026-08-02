@@ -291,3 +291,163 @@ func TestParseParamsTemperature(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveSamplingDefaults(t *testing.T) {
+	metadata := map[string]string{
+		"general.sampling.temp":           "1.0",
+		"general.sampling.top_k":          "20",
+		"general.sampling.top_p":          "0.95",
+		"general.sampling.min_p":          "0.05",
+		"general.sampling.penalty_last_n": "-1",
+		"general.sampling.penalty_repeat": "1.1",
+	}
+
+	params := resolveSamplingDefaults(Params{Temperature: 0.6}, metadata, 4096)
+
+	if got, want := params.Temperature, float32(0.6); got != want {
+		t.Errorf("Temperature: got %v, want configured value %v", got, want)
+	}
+	if got, want := params.TopK, int32(20); got != want {
+		t.Errorf("TopK: got %d, want GGUF value %d", got, want)
+	}
+	if got, want := params.TopP, float32(0.95); got != want {
+		t.Errorf("TopP: got %v, want GGUF value %v", got, want)
+	}
+	if got, want := params.MinP, float32(0.05); got != want {
+		t.Errorf("MinP: got %v, want GGUF value %v", got, want)
+	}
+	if got, want := params.RepeatLastN, int32(-1); got != want {
+		t.Errorf("RepeatLastN: got %d, want GGUF value %d", got, want)
+	}
+	if got, want := params.RepeatPenalty, float32(1.1); got != want {
+		t.Errorf("RepeatPenalty: got %v, want GGUF value %v", got, want)
+	}
+}
+
+func TestResolveSamplingDefaultsFallback(t *testing.T) {
+	metadata := map[string]string{
+		"general.sampling.temp":  "NaN",
+		"general.sampling.top_k": "invalid",
+		"general.sampling.top_p": "+Inf",
+	}
+
+	params := resolveSamplingDefaults(Params{}, metadata, 4096)
+
+	if got, want := params.Temperature, float32(DefTemp); got != want {
+		t.Errorf("Temperature: got %v, want Kronk fallback %v", got, want)
+	}
+	if got, want := params.TopK, DefTopK; got != want {
+		t.Errorf("TopK: got %d, want Kronk fallback %d", got, want)
+	}
+	if got, want := params.TopP, float32(DefTopP); got != want {
+		t.Errorf("TopP: got %v, want Kronk fallback %v", got, want)
+	}
+}
+
+func TestParseParamsPreservesResolvedZeroDefaults(t *testing.T) {
+	contextWindow := 4096
+	defaults := resolveSamplingDefaults(Params{}, map[string]string{
+		"general.sampling.temp":            "0",
+		"general.sampling.top_p":           "0",
+		"general.sampling.penalty_repeat":  "0",
+		"general.sampling.xtc.probability": "0",
+		"general.sampling.xtc.threshold":   "0",
+	}, contextWindow)
+	m := Model{
+		cfg: Config{
+			PtrContextWindow: &contextWindow,
+			DefaultParams:    defaults,
+		},
+		paramsResolved: true,
+		log:            noopLog,
+	}
+
+	params, err := m.parseParams(D{
+		"temperature":     0,
+		"top_p":           0,
+		"repeat_penalty":  0,
+		"xtc_probability": 0,
+		"xtc_threshold":   0,
+	})
+	if err != nil {
+		t.Fatalf("parseParams: %v", err)
+	}
+
+	if params.Temperature != 0 {
+		t.Errorf("Temperature: got %v, want resolved 0", params.Temperature)
+	}
+	if params.TopP != 0 {
+		t.Errorf("TopP: got %v, want resolved 0", params.TopP)
+	}
+	if params.RepeatPenalty != 0 {
+		t.Errorf("RepeatPenalty: got %v, want resolved 0", params.RepeatPenalty)
+	}
+	if params.XtcProbability != 0 {
+		t.Errorf("XtcProbability: got %v, want resolved 0", params.XtcProbability)
+	}
+	if params.XtcThreshold != 0 {
+		t.Errorf("XtcThreshold: got %v, want resolved 0", params.XtcThreshold)
+	}
+}
+
+func TestParseParamsSamplingSentinels(t *testing.T) {
+	contextWindow := 4096
+	defaults := resolveSamplingDefaults(Params{}, nil, contextWindow)
+	m := Model{
+		cfg: Config{
+			PtrContextWindow: &contextWindow,
+			DefaultParams:    defaults,
+		},
+		paramsResolved: true,
+		log:            noopLog,
+	}
+
+	tests := []struct {
+		name string
+		doc  D
+		want func(Params) bool
+	}{
+		{
+			name: "DRY enabled uses full context default",
+			doc:  D{"dry_multiplier": 1.0},
+			want: func(p Params) bool { return p.DryPenaltyLast == -1 },
+		},
+		{
+			name: "DRY zero disables its window",
+			doc:  D{"dry_multiplier": 1.0, "dry_penalty_last_n": 0},
+			want: func(p Params) bool { return p.DryPenaltyLast == 0 },
+		},
+		{
+			name: "repeat zero disables its window",
+			doc:  D{"repeat_penalty": 1.15, "repeat_last_n": 0},
+			want: func(p Params) bool { return p.RepeatLastN == 0 },
+		},
+		{
+			name: "repeat negative one uses full context",
+			doc:  D{"repeat_penalty": 1.15, "repeat_last_n": -1},
+			want: func(p Params) bool { return p.RepeatLastN == -1 },
+		},
+		{
+			name: "top-k zero disables filtering",
+			doc:  D{"top_k": 0},
+			want: func(p Params) bool { return p.TopK == 0 },
+		},
+		{
+			name: "negative top-k disables filtering",
+			doc:  D{"top_k": -1},
+			want: func(p Params) bool { return p.TopK == -1 },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params, err := m.parseParams(tt.doc)
+			if err != nil {
+				t.Fatalf("parseParams: %v", err)
+			}
+			if !tt.want(params) {
+				t.Errorf("Params: got\n%s", params.String())
+			}
+		})
+	}
+}
