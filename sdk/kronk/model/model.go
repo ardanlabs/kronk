@@ -297,12 +297,10 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	modelInfo.Template = template
 
-	// Check if model metadata specifies to add BOS token.
-	// Default to true for backward compatibility with models that don't specify.
-	addBOSToken := true
-	if v, ok := modelInfo.Metadata["tokenizer.ggml.add_bos_token"]; ok && v == "false" {
-		addBOSToken = false
-	}
+	// Use the loaded vocabulary's effective BOS policy. llama.cpp resolves
+	// metadata defaults and model-family overrides while loading the vocab.
+	vocab := llama.ModelGetVocab(mdl)
+	addBOSToken := llama.VocabGetAddBOS(vocab)
 
 	// -------------------------------------------------------------------------
 
@@ -325,7 +323,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	vocab := llama.ModelGetVocab(mdl)
 	m := Model{
 		cfg:            cfg,
 		log:            l,
