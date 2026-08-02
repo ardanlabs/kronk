@@ -84,6 +84,28 @@ func TestMaxDraftForSlot(t *testing.T) {
 	}
 }
 
+func TestPromptFitsContextWindow(t *testing.T) {
+	tests := []struct {
+		name          string
+		promptTokens  int
+		contextWindow int
+		want          bool
+	}{
+		{"one token remains", 8191, 8192, true},
+		{"prompt fills window", 8192, 8192, false},
+		{"prompt exceeds window", 8193, 8192, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := promptFitsContextWindow(tt.promptTokens, tt.contextWindow)
+			if got != tt.want {
+				t.Errorf("promptFitsContextWindow() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestClassicDraftKeepPosition(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -841,7 +841,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		"batch_current", e.batch.NTokens)
 
 	// Check context window.
-	if s.nPrompt > e.model.cfg.ContextWindow() {
+	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
 		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
@@ -1023,7 +1023,7 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		"next_logical_position", cacheIdx,
 		"total_prompt", totalPrompt)
 
-	if s.nPrompt > e.model.cfg.ContextWindow() {
+	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
 		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
@@ -1125,7 +1125,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 		"use_noncausal", s.useNonCausal)
 
 	// Check context window.
-	if s.nPrompt > e.model.cfg.ContextWindow() {
+	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
 		err := fmt.Errorf("start-slot-media: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
@@ -1156,6 +1156,10 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	}
 
 	return true
+}
+
+func promptFitsContextWindow(promptTokens, contextWindow int) bool {
+	return promptTokens < contextWindow
 }
 
 func primeSampler(sampler llama.Sampler, tokens []llama.Token) {
