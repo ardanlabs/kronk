@@ -182,9 +182,9 @@ type AdapterConfig struct {
 //
 // PtrFlashAttention controls Flash Attention mode. Flash Attention reduces
 // memory usage and speeds up attention computation, especially for large
-// context windows. When nil, FlashAttentionEnabled is used (default on). Set to
-// FlashAttentionDisabled to disable, or FlashAttentionAuto to let llama.cpp
-// decide.
+// context windows. When nil, FlashAttentionAuto is used so llama.cpp can decide
+// whether the active backend supports it. Set to FlashAttentionEnabled to force
+// it on, or FlashAttentionDisabled to force it off.
 //
 // IncrementalCache enables Incremental Message Caching (IMC) for agentic
 // workflows. It caches all messages except the last one (which triggers
@@ -437,7 +437,7 @@ func (cfg Config) IncrementalCache() bool  { return boolOr(cfg.PtrIncrementalCac
 func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLogging, false) }
 
 // FlashAttention returns the configured flash attention mode. An unset value
-// preserves the existing default of enabled.
+// defaults to auto so llama.cpp can select the supported mode.
 func (cfg Config) FlashAttention() FlashAttentionType {
 	return DerefFlashAttention(cfg.PtrFlashAttention)
 }
@@ -531,6 +531,13 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 	if cfg.AdmissionTimeout() < 0 {
 		return fmt.Errorf("validate-config: admission timeout must be >= 0, got %s", cfg.AdmissionTimeout())
+	}
+
+	switch cfg.CacheTypeV {
+	case GGMLTypeQ4_0, GGMLTypeQ4_1, GGMLTypeQ5_0, GGMLTypeQ5_1, GGMLTypeQ8_0:
+		if cfg.FlashAttention() == FlashAttentionDisabled {
+			return fmt.Errorf("validate-config: quantized V cache type %s requires Flash Attention to be enabled or auto", cfg.CacheTypeV)
+		}
 	}
 
 	seenAdapters := make(map[string]struct{}, len(cfg.Adapters))
@@ -870,16 +877,7 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		ctxParams.TypeV = cfg.CacheTypeV.ToYZMAType()
 	}
 
-	switch cfg.FlashAttention() {
-	case FlashAttentionDisabled:
-		ctxParams.FlashAttentionType = llama.FlashAttentionTypeDisabled
-
-	case FlashAttentionAuto:
-		ctxParams.FlashAttentionType = llama.FlashAttentionTypeAuto
-
-	default:
-		ctxParams.FlashAttentionType = llama.FlashAttentionTypeEnabled
-	}
+	ctxParams.FlashAttentionType = cfg.FlashAttention().toYZMAType()
 
 	ctxParams.NSeqMax = uint32(totalSeqs)
 
@@ -1187,7 +1185,7 @@ func ParseGGMLType(s string) (GGMLType, error) {
 type FlashAttentionType int32
 
 const (
-	FlashAttentionEnabled  FlashAttentionType = 0 // Default: enable Flash Attention
+	FlashAttentionEnabled  FlashAttentionType = 0 // Enable Flash Attention
 	FlashAttentionDisabled FlashAttentionType = 1 // Disable Flash Attention
 	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
 )
@@ -1202,6 +1200,19 @@ func (t FlashAttentionType) String() string {
 		return "auto"
 	default:
 		return fmt.Sprintf("unknown(%d)", t)
+	}
+}
+
+func (t FlashAttentionType) toYZMAType() llama.FlashAttentionType {
+	switch t {
+	case FlashAttentionDisabled:
+		return llama.FlashAttentionTypeDisabled
+
+	case FlashAttentionAuto:
+		return llama.FlashAttentionTypeAuto
+
+	default:
+		return llama.FlashAttentionTypeEnabled
 	}
 }
 
@@ -1258,10 +1269,10 @@ func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 // DerefFlashAttention returns the value of a FlashAttentionType pointer,
-// defaulting to FlashAttentionEnabled when nil.
+// defaulting to FlashAttentionAuto when nil.
 func DerefFlashAttention(p *FlashAttentionType) FlashAttentionType {
 	if p == nil {
-		return FlashAttentionEnabled
+		return FlashAttentionAuto
 	}
 	return *p
 }

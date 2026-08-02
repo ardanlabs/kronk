@@ -207,7 +207,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
           setNBatch(mc.nbatch || nUBatch * nSeqMax);
           setNUBatch(nUBatch);
           setNSeqMax(nSeqMax);
-          setFlashAttention(mc['flash-attention'] || 'enabled');
+          setFlashAttention(mc['flash-attention'] || 'auto');
           setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
           setLoadMode(mc['load-mode'] || 'mmap');
           setCacheMode(mc['incremental-cache'] ? 'imc' : 'none');
@@ -325,7 +325,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       if (!catalogConfig || nSeqMax !== (catalogConfig['nseq-max'] || 1)) {
         config['nseq_max'] = nSeqMax;
       }
-      if (!catalogConfig || flashAttention !== (catalogConfig['flash-attention'] || 'enabled')) {
+      if (!catalogConfig || flashAttention !== (catalogConfig['flash-attention'] || 'auto')) {
         config['flash_attention'] = flashAttention;
       }
       if (!catalogConfig || cacheType !== (catalogConfig['cache-type-k'] || '')) {
