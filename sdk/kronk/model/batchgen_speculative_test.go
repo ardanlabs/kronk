@@ -2,9 +2,34 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
+	s := slot{
+		startTime:    time.Now(),
+		specSnapshot: []byte{1},
+		pendingH:     []float32{1},
+		mtpDraftH:    []float32{2},
+	}
+
+	s.reset()
+
+	if !s.startTime.IsZero() {
+		t.Errorf("startTime = %v, want zero time", s.startTime)
+	}
+	if len(s.specSnapshot) != 0 {
+		t.Errorf("len(specSnapshot) = %d, want 0", len(s.specSnapshot))
+	}
+	if len(s.pendingH) != 0 {
+		t.Errorf("len(pendingH) = %d, want 0", len(s.pendingH))
+	}
+	if len(s.mtpDraftH) != 0 {
+		t.Errorf("len(mtpDraftH) = %d, want 0", len(s.mtpDraftH))
+	}
+}
 
 func TestNeedsTargetSpecSnapshot(t *testing.T) {
 	tests := []struct {
@@ -34,23 +59,115 @@ func TestMaxDraftForSlot(t *testing.T) {
 	e := batchEngine{model: &Model{cfg: Config{PtrContextWindow: new(10)}}}
 
 	tests := []struct {
-		name       string
-		nPast      llama.Pos
-		configured int
-		want       int
+		name             string
+		nPast            llama.Pos
+		configured       int
+		maxTokens        int
+		reasonTokens     int
+		completionTokens int
+		want             int
 	}{
-		{"full draft fits", 5, 3, 3},
-		{"draft capped at window", 8, 3, 1},
-		{"only target token fits", 9, 3, 0},
-		{"window exhausted", 10, 3, 0},
+		{name: "full draft fits", nPast: 5, configured: 3, maxTokens: 100, want: 3},
+		{name: "draft capped at two-cell context reserve", nPast: 7, configured: 3, maxTokens: 100, want: 1},
+		{name: "context reserve exhausted", nPast: 8, configured: 3, maxTokens: 100, want: 0},
+		{name: "window exhausted", nPast: 10, configured: 3, maxTokens: 100, want: 0},
+		{name: "draft capped at remaining budget", nPast: 1, configured: 3, maxTokens: 5, completionTokens: 3, want: 1},
+		{name: "reasoning and completion share budget", nPast: 1, configured: 3, maxTokens: 5, reasonTokens: 2, completionTokens: 2, want: 0},
+		{name: "last output token reserved for target", nPast: 1, configured: 3, maxTokens: 5, completionTokens: 4, want: 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := slot{nPast: tt.nPast}
+			s := slot{
+				nPast:            tt.nPast,
+				reasonTokens:     tt.reasonTokens,
+				completionTokens: tt.completionTokens,
+				job:              &chatJob{params: Params{MaxTokens: tt.maxTokens}},
+			}
 			got := e.maxDraftForSlot(&s, tt.configured)
 			if got != tt.want {
 				t.Errorf("maxDraftForSlot() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPromptFitsContextWindow(t *testing.T) {
+	tests := []struct {
+		name          string
+		promptTokens  int
+		contextWindow int
+		want          bool
+	}{
+		{"one token remains", 8191, 8192, true},
+		{"prompt fills window", 8192, 8192, false},
+		{"prompt exceeds window", 8193, 8192, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := promptFitsContextWindow(tt.promptTokens, tt.contextWindow)
+			if got != tt.want {
+				t.Errorf("promptFitsContextWindow() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidMTPDraftState(t *testing.T) {
+	tests := []struct {
+		name          string
+		actualBytes   uint64
+		expectedBytes uint64
+		pendingH      []float32
+		nEmbd         int
+		want          bool
+	}{
+		{"complete state", 100, 100, []float32{1, 2}, 2, true},
+		{"empty state", 0, 0, []float32{}, 0, false},
+		{"partial bytes", 99, 100, []float32{1, 2}, 2, false},
+		{"missing hidden state", 100, 100, nil, 2, false},
+		{"wrong hidden width", 100, 100, []float32{1}, 2, false},
+		{"invalid embedding width", 100, 100, nil, 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validMTPDraftState(tt.actualBytes, tt.expectedBytes, tt.pendingH, tt.nEmbd)
+			if got != tt.want {
+				t.Errorf("validMTPDraftState() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrepareMTPDraftHiddenDoesNotAliasPendingH(t *testing.T) {
+	s := slot{pendingH: []float32{1, 2, 3}}
+
+	draftH := prepareMTPDraftHidden(&s, len(s.pendingH))
+	draftH[0] = 9
+
+	if s.pendingH[0] != 1 {
+		t.Errorf("pendingH[0] = %v, want 1", s.pendingH[0])
+	}
+}
+
+func TestSpecAcceptedNPast(t *testing.T) {
+	tests := []struct {
+		name     string
+		basePast llama.Pos
+		accepted int
+		want     llama.Pos
+	}{
+		{"no accepted drafts", 100, 0, 101},
+		{"first draft accepted", 100, 1, 102},
+		{"both drafts accepted", 100, 2, 103},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := specAcceptedNPast(tt.basePast, tt.accepted); got != tt.want {
+				t.Errorf("specAcceptedNPast(%d, %d) = %d, want %d", tt.basePast, tt.accepted, got, tt.want)
 			}
 		})
 	}

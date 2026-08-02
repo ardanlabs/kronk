@@ -84,6 +84,7 @@ type ModelInfo struct {
 	Size          uint64
 	VRAMTotal     int64
 	SlotMemory    int64
+	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
 	Type          ModelType
 	IsGPTModel    bool
 	IsEmbedModel  bool
@@ -114,7 +115,7 @@ func (mi ModelInfo) String() string {
 
 	sizeGB := float64(mi.Size) / (1000 * 1000 * 1000)
 
-	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nTemplate[%s]\nType[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.Template.FileName, mi.Type, flagStr)
+	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nNSWA[%d]\nTemplate[%s]\nType[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.NSWA, mi.Template.FileName, mi.Type, flagStr)
 }
 
 func toModelInfo(cfg Config, model llama.Model) ModelInfo {
@@ -161,6 +162,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		HasProjection: cfg.ProjFile != "",
 		Desc:          desc,
 		Size:          size,
+		NSWA:          llama.ModelNSWA(model),
 		Type:          modelType,
 		IsGPTModel:    isGPTModel,
 		IsEmbedModel:  isEmbedModel,

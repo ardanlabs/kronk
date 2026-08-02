@@ -73,23 +73,24 @@ const imcSeqIDUnbound llama.SeqId = -1
 // is dynamic: it holds the bound slot's KV sequence id while a
 // request is in flight, and imcSeqIDUnbound otherwise.
 type imcSession struct {
-	id                int           // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
-	seqID             llama.SeqId   // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
-	cachedMsgsHash    string        // Hash of all cached messages
-	cachedTokens      []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
-	totalTokensCached int           // Physical KV cells in the cached prefix.
-	nextLogicalPos    int           // Next logical decode position; equals totalTokensCached except for M-RoPE media.
-	cachedMsgCount    int           // Number of messages cached
-	kvState           SessionStore  // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
-	draftKVState      SessionStore  // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
-	pendingH          []float32     // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
-	lastUsed          time.Time     // Last access time (for eviction)
-	reserved          bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
-	allocatedContext  int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
-	hasMedia          bool          // True if the cached content includes media tokens (image/audio)
-	useMRoPE          bool          // True if the cached media used M-RoPE 4D positional encoding
-	mediaKVCounts     []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
-	promptPlan        promptPlan    // Immutable token-v2 logical plan for the cached prefix.
+	id                  int           // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
+	seqID               llama.SeqId   // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
+	cachedMsgsHash      string        // Hash of all cached messages
+	cachedTokens        []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
+	totalTokensCached   int           // Physical KV cells in the cached prefix.
+	nextLogicalPos      int           // Next logical decode position; equals totalTokensCached except for M-RoPE media.
+	cachedMsgCount      int           // Number of messages cached
+	kvState             SessionStore  // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
+	draftKVState        SessionStore  // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
+	pendingH            []float32     // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
+	lastUsed            time.Time     // Last access time (for eviction)
+	reserved            bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
+	allocatedContext    int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
+	hasMedia            bool          // True if the cached content includes media tokens (image/audio)
+	useMRoPE            bool          // True if the cached media used M-RoPE 4D positional encoding
+	mediaKVCounts       []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
+	promptPlan          promptPlan    // Immutable token-v2 logical plan for the cached prefix.
+	samplerPromptTokens []llama.Token // Authoritative mtmd text tokens in a cached media prefix; embedding cells are omitted.
 
 	// cachedRenderInputHash guards token-v2 pure-hit snapshot reuse against
 	// changes to template inputs that are not represented by message tokens.
@@ -203,18 +204,19 @@ type Model struct {
 	// to a single request and cannot bleed across requests.
 	// Zero when projFile == "" (text-only models) or for embed/rerank
 	// models.
-	mtmdMetaCtx   mtmd.Context
-	modelInfo     ModelInfo
-	activeStreams atomic.Int32
-	unloaded      atomic.Bool
-	decodeMu      sync.Mutex
-	cacheMu       sync.RWMutex
-	imcSessions   []*imcSession   // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
-	addBOSToken   bool            // Whether to add BOS token (from model metadata)
-	pool          *contextPool    // Context pool for parallel embed/rerank
-	batchSeq      *batchSeqEngine // Sequence-batch engine for supported embed/rerank models.
-	parser        Parser          // Selected via selectParser at load time; nil for embed/rerank.
-	draft         drafter         // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
+	mtmdMetaCtx    mtmd.Context
+	modelInfo      ModelInfo
+	paramsResolved bool
+	activeStreams  atomic.Int32
+	unloaded       atomic.Bool
+	decodeMu       sync.Mutex
+	cacheMu        sync.RWMutex
+	imcSessions    []*imcSession   // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	addBOSToken    bool            // Whether to add BOS token (from model metadata)
+	pool           *contextPool    // Context pool for parallel embed/rerank
+	batchSeq       *batchSeqEngine // Sequence-batch engine for supported embed/rerank models.
+	parser         Parser          // Selected via selectParser at load time; nil for embed/rerank.
+	draft          drafter         // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns
@@ -267,6 +269,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	cfg = adjustConfig(cfg, mdl)
 	modelInfo := toModelInfo(cfg, mdl)
+	cfg.DefaultParams = resolveSamplingDefaults(cfg.DefaultParams, modelInfo.Metadata, cfg.ContextWindow())
 
 	metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
 
@@ -284,6 +287,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l(ctx, "calculate-vram",
 		"vram-total", humanBytes(modelInfo.VRAMTotal),
 		"slot-memory", humanBytes(modelInfo.SlotMemory),
+		"n-swa", modelInfo.NSWA,
 		"diag", vramDiag,
 	)
 
@@ -297,12 +301,10 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	modelInfo.Template = template
 
-	// Check if model metadata specifies to add BOS token.
-	// Default to true for backward compatibility with models that don't specify.
-	addBOSToken := true
-	if v, ok := modelInfo.Metadata["tokenizer.ggml.add_bos_token"]; ok && v == "false" {
-		addBOSToken = false
-	}
+	// Use the loaded vocabulary's effective BOS policy. llama.cpp resolves
+	// metadata defaults and model-family overrides while loading the vocab.
+	vocab := llama.ModelGetVocab(mdl)
+	addBOSToken := llama.VocabGetAddBOS(vocab)
 
 	// -------------------------------------------------------------------------
 
@@ -325,7 +327,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	vocab := llama.ModelGetVocab(mdl)
 	m := Model{
 		cfg:            cfg,
 		log:            l,
@@ -336,6 +337,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		template:       template,
 		projFile:       cfg.ProjFile,
 		modelInfo:      modelInfo,
+		paramsResolved: true,
 		addBOSToken:    addBOSToken,
 	}
 
@@ -1235,9 +1237,18 @@ func (m *Model) isUnnecessaryCRLF(reasonFlag int, completionFlag int, content st
 	return false
 }
 
-func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, reasonFlag int, outputTokens int, logprob *ContentLogprob) error {
+func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, channel Channel, reasoningTokens int, outputTokens int, logprob *ContentLogprob) error {
 	if outputTokens%500 == 0 {
-		m.log(ctx, "chat-completion", "status", "delta", "id", id, "tokens", outputTokens, "object", object, "reasoning", reasonFlag, "content", len(content))
+		m.log(ctx, "chat-completion",
+			"status", "delta",
+			"id", id,
+			"object", object,
+			"channel", channelName(channel),
+			"output_tokens", outputTokens,
+			"reasoning_tokens", reasoningTokens,
+			"completion_tokens", outputTokens-reasoningTokens,
+			"chunk_bytes", len(content),
+		)
 	}
 
 	select {
@@ -1249,25 +1260,60 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 
 		return ctx.Err()
 
-	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, reasonFlag > 0, logprob):
+	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, channel == ChannelReasoning, logprob):
 	}
 
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, streaming bool, usage Usage) {
-	args := []any{"status", "final", "id", id, "tokens", usage.OutputTokens, "object", object, "tooling", len(respToolCalls) > 0, "reasoning", finalReasoning.Len(), "content", finalContent.Len()}
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, usage Usage) {
+	effectiveFinishReason := finishReason
+	if effectiveFinishReason == "" {
+		effectiveFinishReason = FinishReasonStop
+		if len(respToolCalls) > 0 {
+			effectiveFinishReason = FinishReasonTool
+		}
+	}
+
+	emptyAnswer := finalContent.Len() == 0 && len(respToolCalls) == 0
+	args := []any{
+		"status", "final",
+		"id", id,
+		"object", object,
+		"finish_reason", effectiveFinishReason,
+		"stop_source", stopSource,
+		"final_channel", channelName(finalChannel),
+		"empty_answer", emptyAnswer,
+		"output_tokens", usage.OutputTokens,
+		"reasoning_tokens", usage.ReasoningTokens,
+		"completion_tokens", usage.CompletionTokens,
+		"reasoning_bytes", finalReasoning.Len(),
+		"content_bytes", finalContent.Len(),
+		"tool_calls", len(respToolCalls),
+		"buffered_tool_bytes", bufferedToolBytes,
+	}
 	// When a draft model is configured, always emit draft metrics so the
 	// log schema stays stable for scrapers/dashboards even when
 	// speculation was disabled mid-request (collapsed acceptance EMA).
 	// Models without a draft model omit the fields entirely.
 	if m.draft != nil {
-		args = append(args, "draft_tokens", usage.DraftTokens, "draft_accepted_tokens", usage.DraftAcceptedTokens, "acceptance_rate", fmt.Sprintf("%.2f", usage.DraftAcceptanceRate), "draft_coverage", fmt.Sprintf("%.2f", usage.DraftCoverage))
+		args = append(args, "draft_tokens", usage.DraftTokens, "draft_accepted_tokens", usage.DraftAcceptedTokens, "draft_acceptance_rate", fmt.Sprintf("%.2f", usage.DraftAcceptanceRate), "draft_coverage", fmt.Sprintf("%.2f", usage.DraftCoverage))
 		if usage.DraftDisableReason != "" {
 			args = append(args, "draft_disable_reason", usage.DraftDisableReason)
 		}
 	}
 	m.log(ctx, "chat-completion", args...)
+	if emptyAnswer && usage.ReasoningTokens > 0 {
+		m.log(ctx, "chat-completion",
+			"status", "warning",
+			"condition", "reasoning-only-response",
+			"id", id,
+			"stop_source", stopSource,
+			"final_channel", channelName(finalChannel),
+			"reasoning_tokens", usage.ReasoningTokens,
+			"reasoning_bytes", finalReasoning.Len(),
+		)
+	}
 
 	// For streaming responses, logprobs were already sent per-delta chunk.
 	// Only include accumulated logprobs for non-streaming requests.
@@ -1338,24 +1384,33 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		BytesPerElement:   int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
 		Slots:             int64(max(cfg.NSeqMax(), 1)),
 		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
-		SWAFull:           cfg.SWAFull(),
+		SWAFull:           effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 	}
+	swaFull := vramCfg.SWAFull
 
 	result, err := vram.FromFiles(cfg.ModelFiles, vramCfg)
 	if err != nil {
 		return int64(mi.Size), 0, err.Error()
 	}
 
-	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] swa_window[%d] swa_layers[%d]",
+	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] n_swa[%d] swa_full[%t] swa_window_metadata[%d] swa_layers[%d]",
 		mi.Metadata["general.architecture"],
 		result.Input.BlockCount, result.Input.HeadCountKV,
 		result.Input.KeyLength, result.Input.ValueLength,
 		result.Input.BytesPerElement, result.Input.ContextWindow,
-		result.Input.Slots, result.Input.SlidingWindow,
+		result.Input.Slots, mi.NSWA, swaFull, result.Input.SlidingWindow,
 		result.Input.SlidingWindowLayers,
 	)
 
 	return result.TotalVRAM, result.SlotMemory, diag
+}
+
+func effectiveSWAFull(configured *bool, llamaDefault bool) bool {
+	if configured != nil {
+		return *configured
+	}
+
+	return llamaDefault
 }
 
 // resolveBackendDevice maps a user-facing device name to the ggml backend

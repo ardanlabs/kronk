@@ -2,8 +2,10 @@ package models
 
 import (
 	"fmt"
+	"math"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
@@ -124,6 +126,78 @@ func (s SamplingConfig) WithDefaults() SamplingConfig {
 	return s
 }
 
+// WithMetadataDefaults returns a new SamplingConfig with unset values resolved
+// from GGUF sampling recommendations before applying Kronk defaults.
+func (s SamplingConfig) WithMetadataDefaults(metadata map[string]string) SamplingConfig {
+	if s.Temperature == 0 {
+		s.Temperature = samplingMetadataFloat32(metadata, "general.sampling.temp", model.DefTemp)
+	}
+	if s.TopK == 0 {
+		s.TopK = samplingMetadataInt32(metadata, "general.sampling.top_k", model.DefTopK)
+	}
+	if s.TopP == 0 {
+		s.TopP = samplingMetadataFloat32(metadata, "general.sampling.top_p", model.DefTopP)
+	}
+	if s.MinP == 0 {
+		s.MinP = samplingMetadataFloat32(metadata, "general.sampling.min_p", model.DefMinP)
+	}
+	if s.RepeatPenalty == 0 {
+		s.RepeatPenalty = samplingMetadataFloat32(metadata, "general.sampling.penalty_repeat", model.DefRepeatPenalty)
+	}
+	if s.RepeatLastN == 0 {
+		s.RepeatLastN = samplingMetadataInt32(metadata, "general.sampling.penalty_last_n", model.DefRepeatLastN)
+	}
+	if s.DryBase == 0 {
+		s.DryBase = model.DefDryBase
+	}
+	if s.DryAllowedLen == 0 {
+		s.DryAllowedLen = model.DefDryAllowedLen
+	}
+	if s.DryPenaltyLast == 0 {
+		s.DryPenaltyLast = model.DefDryPenaltyLast
+	}
+	if s.XtcProbability == 0 {
+		s.XtcProbability = samplingMetadataFloat32(metadata, "general.sampling.xtc.probability", model.DefXtcProbability)
+	}
+	if s.XtcThreshold == 0 {
+		s.XtcThreshold = samplingMetadataFloat32(metadata, "general.sampling.xtc.threshold", model.DefXtcThreshold)
+	}
+	if s.XtcMinKeep == 0 {
+		s.XtcMinKeep = model.DefXtcMinKeep
+	}
+	if s.EnableThinking == "" {
+		s.EnableThinking = model.DefEnableThinking
+	}
+	if s.ReasoningEffort == "" {
+		s.ReasoningEffort = model.DefReasoningEffort
+	}
+
+	return s
+}
+
+func samplingMetadataFloat32(metadata map[string]string, key string, fallback float32) float32 {
+	value, err := gguf.ParseFloat64(metadata, key)
+	if err != nil {
+		return fallback
+	}
+
+	parsed := float32(value)
+	if math.IsNaN(float64(parsed)) || math.IsInf(float64(parsed), 0) {
+		return fallback
+	}
+
+	return parsed
+}
+
+func samplingMetadataInt32(metadata map[string]string, key string, fallback int32) int32 {
+	value, err := gguf.ParseInt64(metadata, key)
+	if err != nil || value < -1 || value > int64(^uint32(0)>>1) {
+		return fallback
+	}
+
+	return int32(value)
+}
+
 // mergeSampling merges the override sampling config on top of the base,
 // keeping base values for any zero-valued fields in the override.
 func mergeSampling(base SamplingConfig, override SamplingConfig) SamplingConfig {
@@ -189,8 +263,6 @@ func mergeSampling(base SamplingConfig, override SamplingConfig) SamplingConfig 
 }
 
 func (s SamplingConfig) toParams() model.Params {
-	s = s.WithDefaults()
-
 	return model.Params{
 		Temperature:      s.Temperature,
 		TopK:             s.TopK,

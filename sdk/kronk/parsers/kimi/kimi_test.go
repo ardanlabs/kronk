@@ -95,6 +95,21 @@ func TestStateMachinePendingFalseAlarmAndReset(t *testing.T) {
 	assertResult(t, sm, "answer", model.ChannelAnswer, "answer", false)
 }
 
+func TestStateMachineFlushPendingTag(t *testing.T) {
+	sm := Parser{}.NewStateMachine()
+	assertResult(t, sm, thinkOpen, model.ChannelNone, "", false)
+	assertResult(t, sm, "<|op", model.ChannelNone, "", false)
+
+	flusher := sm.(model.StateMachineFlusher)
+	got := flusher.Flush()
+	if got.Channel != model.ChannelReasoning || got.Content != "<|op" {
+		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelReasoning, "<|op")
+	}
+	if got := flusher.Flush(); got != (model.Result{}) {
+		t.Errorf("second Flush: got %+v, want zero result", got)
+	}
+}
+
 func TestReasoningNormalization(t *testing.T) {
 	p := Parser{}
 	input := "before" + thinkOpen + "private" + thinkClose + "after"

@@ -282,7 +282,7 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 	batch := draft.draftBatchMTP
 	seqIDs := s.seqIDs
 	curToken := s.sampled
-	curEmbd := s.pendingH
+	curEmbd := prepareMTPDraftHidden(s, nEmbd)
 	pos := s.draftNPast
 
 	for range nDraft {
@@ -322,12 +322,7 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 
 		// Copy out because the C buffer is overwritten on the next
 		// decode.
-		if cap(s.pendingH) < nEmbd {
-			s.pendingH = make([]float32, nEmbd)
-		} else {
-			s.pendingH = s.pendingH[:nEmbd]
-		}
-		copy(s.pendingH, nextEmbd)
+		copy(s.mtpDraftH, nextEmbd)
 
 		// EOG check — stop drafting past end of generation.
 		if llama.VocabIsEOG(e.model.vocab, nextTok) {
@@ -337,12 +332,22 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 
 		s.draftTokensBuf = append(s.draftTokensBuf, nextTok)
 		curToken = nextTok
-		curEmbd = s.pendingH
+		curEmbd = s.mtpDraftH
 	}
 
 	s.draftNPast = pos
 	s.specDraftedTotal += len(s.draftTokensBuf)
 	return s.draftTokensBuf
+}
+
+func prepareMTPDraftHidden(s *slot, nEmbd int) []float32 {
+	if cap(s.mtpDraftH) < nEmbd {
+		s.mtpDraftH = make([]float32, nEmbd)
+	} else {
+		s.mtpDraftH = s.mtpDraftH[:nEmbd]
+	}
+	copy(s.mtpDraftH, s.pendingH)
+	return s.mtpDraftH
 }
 
 // mirrorBatchCapacity returns the per-call capacity of the MTP mirror
@@ -404,8 +409,9 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 			batch.Add(tokens[j], pos, seqIDs, false)
 		}
 
-		if _, err := llama.Decode(e.model.lctx, batch); err != nil {
-			return fmt.Errorf("imc-mtp: target decode at pos %d: %w", startPos+i, err)
+		ret, err := llama.Decode(e.model.lctx, batch)
+		if err != nil || ret != 0 {
+			return fmt.Errorf("imc-mtp: target decode at pos %d: %w", startPos+i, decodeError(ret, err))
 		}
 		llama.Synchronize(e.model.lctx)
 

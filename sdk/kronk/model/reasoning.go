@@ -40,9 +40,9 @@ func (m *Model) stripReasoning(d D) bool {
 // normalizeHistoryReasoning removes reasoning from assistant messages so the
 // rendered prompt is byte-stable across turns. It drops the reasoning and
 // reasoning_content fields (family-agnostic) and, when the selected parser
-// implements ReasoningNormalizer, strips lineage-specific reasoning spans
-// embedded directly in assistant content. Messages are cloned copy-on-write so
-// the caller's maps are never mutated.
+// implements reasoningContentNormalizer, strips lineage-specific reasoning
+// spans embedded directly in assistant content. Messages are cloned
+// copy-on-write so the caller's maps are never mutated.
 func (m *Model) normalizeHistoryReasoning(d D) D {
 	if !m.stripReasoning(d) {
 		return d
@@ -53,7 +53,7 @@ func (m *Model) normalizeHistoryReasoning(d D) D {
 		return d
 	}
 
-	norm, _ := m.parser.(ReasoningNormalizer)
+	norm, _ := m.parser.(reasoningContentNormalizer)
 
 	var copied bool
 	for i, msg := range messages {

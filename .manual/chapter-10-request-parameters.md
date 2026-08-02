@@ -19,8 +19,11 @@ endpoint-specific request formats and streaming behavior.
 
 ## 10.1 Scope and Defaults
 
-The defaults below are Kronk's baseline values. A model configuration can
-provide different sampling defaults, and a request can override them. See
+The defaults below are Kronk's baseline values. When present, a model's GGUF
+sampling recommendations take precedence over those baselines. A model
+configuration can provide different sampling defaults, and a request can
+override them. The precedence order is request, model configuration, GGUF
+recommendation, then Kronk baseline. See
 [Chapter 3 §3.7](https://www.kronkai.com/manual#37-advanced-features)
 for per-model `sampling-parameters`.
 
@@ -46,8 +49,9 @@ These parameters control how Kronk selects the next token:
 Request values `top_p: 0` and `top_p: 1` are treated as unset so clients that
 send those common defaults do not override model-specific tuning. A model
 configuration can still set `top_p: 1` explicitly. When `temperature` or
-`top_k` is omitted, Kronk uses the configured or baseline default. Set
-`temperature: 0` explicitly to request greedy generation.
+`top_k` is omitted, Kronk uses the configured value, GGUF recommendation, or
+baseline default in that order. Set `temperature: 0` explicitly to request
+greedy generation. Set `top_k: 0` to disable top-k filtering.
 
 ## 10.3 Repetition Control
 
@@ -56,13 +60,13 @@ Kronk supports both token penalties and DRY n-gram penalties:
 | JSON key             | Type    | Baseline | Behavior |
 | -------------------- | ------- | -------- | -------- |
 | `repeat_penalty`     | number  | `1.0`    | Multiplies penalties for tokens seen in the recent window; `1.0` disables it. |
-| `repeat_last_n`      | integer | `64`     | Number of recent tokens considered by repetition penalties. |
+| `repeat_last_n`      | integer | `64`     | Number of recent tokens considered by repetition penalties; `0` disables them and `-1` uses the full context. |
 | `frequency_penalty`  | number  | `0.0`    | Penalizes tokens in proportion to how often they appeared. |
 | `presence_penalty`   | number  | `0.0`    | Applies a flat penalty to tokens that appeared at least once. |
 | `dry_multiplier`     | number  | `0.0`    | Enables DRY and controls its strength; `0` disables it. |
 | `dry_base`           | number  | `1.75`   | Exponential penalty growth for longer repeated sequences. |
 | `dry_allowed_length` | integer | `2`      | Minimum repeated sequence length before DRY applies. |
-| `dry_penalty_last_n` | integer | `0`      | Recent-token window for DRY; `0` uses the full context. |
+| `dry_penalty_last_n` | integer | `-1`     | Recent-token window for DRY; `0` disables it and `-1` uses the full context. |
 
 The repetition and DRY samplers are disabled by default because penalties can
 also suppress structural tokens needed by tool-call and JSON formats. Enable

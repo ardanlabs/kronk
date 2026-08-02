@@ -41,7 +41,7 @@ import (
 // least one must be supplied; either may be nil to disable that
 // backend (the corresponding p.Kronk / p.Bucky will be nil).
 //
-// BudgetPercent feeds the shared resman.Manager (defaults to 80 when
+// BudgetPercent feeds the shared resman.Manager (defaults to 95 when
 // zero). ModelsInPool and TTL apply to both backend pools (defaults
 // to 10 and 5 minutes respectively).
 type Config struct {

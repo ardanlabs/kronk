@@ -61,6 +61,32 @@ func TestVRAMConfigFromRMCSWAFull(t *testing.T) {
 	}
 }
 
+func TestResolveSWAFull(t *testing.T) {
+	enabled := true
+	disabled := false
+
+	tests := []struct {
+		name       string
+		requested  *bool
+		configured *bool
+		want       bool
+	}{
+		{name: "unset uses llama default", want: true},
+		{name: "configured enabled", configured: &enabled, want: true},
+		{name: "configured disabled", configured: &disabled, want: false},
+		{name: "request enabled overrides configured disabled", requested: &enabled, configured: &disabled, want: true},
+		{name: "request disabled overrides configured enabled", requested: &disabled, configured: &enabled, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveSWAFull(tt.requested, tt.configured); got != tt.want {
+				t.Errorf("resolveSWAFull: got %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func assertNotFound(t *testing.T, resp any) {
 	t.Helper()
 

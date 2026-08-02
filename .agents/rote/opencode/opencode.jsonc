@@ -75,7 +75,7 @@
             }
         }
     },
-    "model": "kronk/unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "model": "kronk/unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
     "formatter": true,
     "lsp": true,
     "compaction": {
@@ -106,7 +106,7 @@
     ],
     "agent": {
         "title": {
-            "disable": true
+            "disable": false
         }
     },
     "experimental": {

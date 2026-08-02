@@ -1016,18 +1016,32 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 	}
 
 	kronkConfig := rmc.ToKronkConfig()
-	swaFull := true
-	if kronkConfig.PtrSWAFull != nil {
-		swaFull = *kronkConfig.PtrSWAFull
-	}
 
 	return vram.Config{
 		ContextWindow:     contextWindow,
 		BytesPerElement:   bpe,
 		Slots:             slots,
 		ExpertLayersOnGPU: kronkConfig.ExpertLayersOnGPU(),
-		SWAFull:           swaFull,
+		SWAFull:           resolveSWAFull(nil, kronkConfig.PtrSWAFull),
 	}
+}
+
+const llamaDefaultSWAFull = true
+
+// resolveSWAFull applies the same precedence used by the runtime: a request
+// override wins, followed by the per-model setting. Unset values use the
+// llama.cpp default shipped with this Kronk version. Keeping this fallback in
+// Go allows the catalog and calculator to work while the native library is in
+// degraded mode.
+func resolveSWAFull(requested *bool, configured *bool) bool {
+	if requested != nil {
+		return *requested
+	}
+	if configured != nil {
+		return *configured
+	}
+
+	return llamaDefaultSWAFull
 }
 
 // =============================================================================
@@ -1184,7 +1198,8 @@ func (r CatalogListResponse) Encode() ([]byte, string, error) {
 // here so the catalog detail screen does not need a second round trip.
 type CatalogDetailResponse struct {
 	models.CatalogDetail
-	Vram *VRAMResponse `json:"vram,omitempty"`
+	Vram           *VRAMResponse `json:"vram,omitempty"`
+	SWAFullDefault bool          `json:"swa_full_default"`
 }
 
 // Encode implements web.Encoder for the detail payload.

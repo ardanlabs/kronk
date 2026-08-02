@@ -45,11 +45,11 @@ func (l *StreamingResponseLogger) String() string {
 	fmt.Fprintf(&b, "Role: assistant\n")
 
 	if l.content != "" {
-		fmt.Fprintf(&b, "Content (400 bytes): %.400s\n", l.content)
+		fmt.Fprintf(&b, "Content (%d bytes total, first 400 characters shown): %.400s\n", len(l.content), l.content)
 	}
 
 	if l.reasoning != "" {
-		fmt.Fprintf(&b, "Reasoning (400 bytes): %.400s\n", l.reasoning)
+		fmt.Fprintf(&b, "Reasoning (%d bytes total, first 400 characters shown): %.400s\n", len(l.reasoning), l.reasoning)
 	}
 
 	if len(l.toolCalls) > 0 {

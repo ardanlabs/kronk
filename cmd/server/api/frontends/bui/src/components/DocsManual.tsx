@@ -1595,7 +1595,7 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--budget-percent</code></td>
                 <td><code>KRONK_POOL_BUDGET_PERCENT</code></td>
-                <td><code>80</code></td>
+                <td><code>95</code></td>
                 <td>Memory-budget input for loaded models</td>
               </tr>
               <tr>
@@ -1653,7 +1653,7 @@ kronk libs --local`}</code></pre>
             <li><code>models-in-pool</code> places a count limit on each backend pool.</li>
             <li><code>pool-ttl</code> unloads entries that remain unused past the configured duration.</li>
           </ul>
-          <p>At the default <code>budget-percent: 80</code>, each discrete GPU receives an 80% budget minus 256 MiB of headroom. Host RAM receives a 75% budget because Kronk reserves an additional five percentage points for the operating system, allocators, and memory not represented in model estimates. Apple Silicon unified memory is accounted as one host-memory pool rather than independent RAM and Metal VRAM.</p>
+          <p>At the default <code>budget-percent: 95</code>, each discrete GPU receives a 95% budget minus 256 MiB of headroom. Host RAM receives a 90% budget because Kronk reserves an additional five percentage points for the operating system, allocators, and memory not represented in model estimates. Apple Silicon unified memory is accounted as one host-memory pool rather than independent RAM and Metal VRAM.</p>
           <p>Admission uses predicted model, KV-cache, and runtime memory. These predictions are planning estimates, not a guarantee that every backend allocation will succeed. Context size, cache types, sequence count, CPU offload, and model architecture all affect the estimate.</p>
           <p>On multi-GPU systems, Kronk accounts for llama.cpp's model distribution across the selected devices. Automatic splits use available GPUs, while explicit <code>devices</code> and <code>tensor-split</code> configuration control the proportions. Each assigned share must fit within that GPU's individual budget; unused capacity on another card cannot satisfy an over-budget share.</p>
           <p>When a new load exceeds the count or memory budget, Kronk evicts an idle model. For memory pressure it prefers an idle entry that frees enough memory without unloading a needlessly large model, then falls back to the coldest idle entry. Models with active streams are not evicted. If no idle entry can make room, the request returns a server-busy error and the client should retry later.</p>
@@ -1901,7 +1901,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h2 id="chapter-10-request-parameters">Chapter 10: Request Parameters</h2>
           <p>This chapter covers generation parameters used by Chat Completions and the Go SDK. Other API formats expose compatible subsets or translate their own field names into these parameters. See <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> for endpoint-specific request formats and streaming behavior.</p>
           <h2 id="101-scope-and-defaults">10.1 Scope and Defaults</h2>
-          <p>The defaults below are Kronk's baseline values. A model configuration can provide different sampling defaults, and a request can override them. See <a href="https://www.kronkai.com/manual#37-advanced-features">Chapter 3 §3.7</a> for per-model <code>sampling-parameters</code>.</p>
+          <p>The defaults below are Kronk's baseline values. When present, a model's GGUF sampling recommendations take precedence over those baselines. A model configuration can provide different sampling defaults, and a request can override them. The precedence order is request, model configuration, GGUF recommendation, then Kronk baseline. See <a href="https://www.kronkai.com/manual#37-advanced-features">Chapter 3 §3.7</a> for per-model <code>sampling-parameters</code>.</p>
           <p>JSON requests use <code>number</code>, <code>integer</code>, <code>boolean</code>, and <code>string</code> values. The Go SDK accepts the corresponding Go values in <code>model.D</code>.</p>
           <p>Avoid changing several samplers at once. Start with the model's defaults, change one parameter, and evaluate the result against representative prompts. Parameters that improve creative prose can reduce the reliability of JSON and tool calls.</p>
           <h2 id="102-core-sampling">10.2 Core Sampling</h2>
@@ -1942,7 +1942,7 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Request values <code>top_p: 0</code> and <code>top_p: 1</code> are treated as unset so clients that send those common defaults do not override model-specific tuning. A model configuration can still set <code>top_p: 1</code> explicitly. When <code>temperature</code> or <code>top_k</code> is omitted, Kronk uses the configured or baseline default. Set <code>temperature: 0</code> explicitly to request greedy generation.</p>
+          <p>Request values <code>top_p: 0</code> and <code>top_p: 1</code> are treated as unset so clients that send those common defaults do not override model-specific tuning. A model configuration can still set <code>top_p: 1</code> explicitly. When <code>temperature</code> or <code>top_k</code> is omitted, Kronk uses the configured value, GGUF recommendation, or baseline default in that order. Set <code>temperature: 0</code> explicitly to request greedy generation. Set <code>top_k: 0</code> to disable top-k filtering.</p>
           <h2 id="103-repetition-control">10.3 Repetition Control</h2>
           <p>Kronk supports both token penalties and DRY n-gram penalties:</p>
           <table className="flags-table">
@@ -1965,7 +1965,7 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td><code>repeat_last_n</code></td>
                 <td>integer</td>
                 <td><code>64</code></td>
-                <td>Number of recent tokens considered by repetition penalties.</td>
+                <td>Number of recent tokens considered by repetition penalties; <code>0</code> disables them and <code>-1</code> uses the full context.</td>
               </tr>
               <tr>
                 <td><code>frequency_penalty</code></td>
@@ -2000,8 +2000,8 @@ data: {"type":"response.completed",...}`}</code></pre>
               <tr>
                 <td><code>dry_penalty_last_n</code></td>
                 <td>integer</td>
-                <td><code>0</code></td>
-                <td>Recent-token window for DRY; <code>0</code> uses the full context.</td>
+                <td><code>-1</code></td>
+                <td>Recent-token window for DRY; <code>0</code> disables it and <code>-1</code> uses the full context.</td>
               </tr>
             </tbody>
           </table>

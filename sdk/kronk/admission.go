@@ -43,7 +43,7 @@ func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
 				"stage", 1,
 				"stage_name", "admit-request",
 				"status", "error",
-				"elapsed", time.Since(started),
+				"elapsed", time.Since(started).String(),
 				"err", err,
 			)
 		}
@@ -71,7 +71,7 @@ func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
 				"stage", 1,
 				"stage_name", "admit-request",
 				"status", status,
-				"elapsed", time.Since(started),
+				"elapsed", time.Since(started).String(),
 				"capacity", cap(krn.admissionCh),
 				"admitted", len(krn.admissionCh),
 				"err", admissionErr,
@@ -87,7 +87,7 @@ func (krn *Kronk) acquireAdmission(ctx context.Context) (*model.Model, error) {
 			"stage", 1,
 			"stage_name", "admit-request",
 			"status", "complete",
-			"elapsed", time.Since(started),
+			"elapsed", time.Since(started).String(),
 			"capacity", cap(krn.admissionCh),
 			"admitted", len(krn.admissionCh),
 		)

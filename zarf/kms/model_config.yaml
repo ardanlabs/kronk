@@ -16,7 +16,7 @@
 #   cache-type-v: q8_0                   # Explicit KV value type; omit for AutoTune (f16, then q8_0)
 #   context-window: 8192                 # Per-sequence token capacity; explicit value is fixed
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
-#   flash-attention: enabled             # Flash Attention: enabled, disabled, auto
+#   flash-attention: auto                # Flash Attention: enabled, disabled, auto (default: auto)
 #   incremental-cache: true              # Incremental message caching (IMC) for agentic workflows (default: true)
 #   insecure-logging: false              # Log potentially sensitive data like message content (debug only)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
@@ -190,7 +190,7 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   sampling-parameters:
     temperature: 0.6
     top_k: 20
-    top_p: 0.95
+    top_p: 1
 
 unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
@@ -198,7 +198,7 @@ unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   sampling-parameters:
     temperature: 0.6
     top_k: 20
-    top_p: 0.95
+    top_p: 1
 
 unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   context-window: 131072
@@ -206,7 +206,7 @@ unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   sampling-parameters:
     temperature: 1.0
     top_k: 64
-    top_p: 0.95
+    top_p: 1
 
 # < 16GB VRAM
 mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
@@ -214,7 +214,7 @@ mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
   sampling-parameters:
     temperature: 0.6
     top_k: 20
-    top_p: 0.95
+    top_p: 1
 
 # < 8GB VRAM
 unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
@@ -222,4 +222,4 @@ unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
   sampling-parameters:
     temperature: 1.0
     top_k: 64
-    top_p: 0.95
+    top_p: 1

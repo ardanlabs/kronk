@@ -27,16 +27,16 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// Request Content
 
-	d             D             // Original request document (messages, parameters)
-	object        string        // Request type: ObjectChatText or ObjectChatMedia
-	prompt        string        // Templated prompt string ready for tokenization
-	media         [][]byte      // Raw media bytes (images/audio) for vision/audio models
-	params        Params        // Sampling and generation parameters
-	actualTokens  []llama.Token // Complete generation-ready token sequence for token-v2 IMC.
-	tailTokens    []llama.Token // Non-empty inference tail after the stable cached target.
-	imcTokenPlan  bool          // True when actualTokens/tailTokens are authoritative.
-	imcMatchKind  string        // exact, append, or rebuild; used for diagnostics.
-	imcPromptPlan promptPlan    // Logical stable prefix committed with the session.
+	d                   D             // Original request document (messages, parameters)
+	object              string        // Request type: ObjectChatText or ObjectChatMedia
+	prompt              string        // Templated prompt string ready for tokenization
+	media               [][]byte      // Raw media bytes (images/audio) for vision/audio models
+	params              Params        // Sampling and generation parameters
+	samplerPromptTokens []llama.Token // Complete logical text-token prompt used to prime the request sampler.
+	tailTokens          []llama.Token // Non-empty inference tail after the stable cached target.
+	imcTokenPlan        bool          // True when samplerPromptTokens/tailTokens are authoritative.
+	imcMatchKind        string        // exact, append, or rebuild; used for diagnostics.
+	imcPromptPlan       promptPlan    // Logical stable prefix committed with the session.
 
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
@@ -69,9 +69,10 @@ type chatJob struct {
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 
 	// IMC media cache build — deferred media decode using mtmd pipeline.
-	imcMediaBuild    bool  // True if cache build requires the mtmd pipeline (images/audio)
-	imcMediaCacheD   D     // Document with cacheable messages + tools for media cache build
-	imcMediaKVCounts []int // Media KV position counts to preserve during text-only media extend
+	imcMediaBuild         bool          // True if cache build requires the mtmd pipeline (images/audio)
+	imcMediaCacheD        D             // Document with cacheable messages + tools for media cache build
+	imcMediaKVCounts      []int         // Media KV position counts to preserve during text-only media extend
+	imcMediaSamplerTokens []llama.Token // Authoritative mtmd text tokens in the stable media cache prefix.
 }
 
 func (j *chatJob) hasIMCReservation() bool {
@@ -139,6 +140,7 @@ type slot struct {
 	finalTooling   strings.Builder // Accumulated tool call JSON
 	respToolCalls  []ResponseToolCall
 	finishReason   string
+	stopSource     string
 	utf8Buf        []byte // Buffered bytes from partial multi-byte UTF-8 codepoints
 
 	// -------------------------------------------------------------------------
@@ -184,6 +186,13 @@ type slot struct {
 	// decode has produced a hidden row yet for this slot (e.g., very
 	// first prefill chunk — slot 0 of that mirror batch is then zeroed).
 	pendingH []float32
+
+	// mtpDraftH is transient hidden-state scratch for the Qwen own-KV
+	// autoregressive draft loop. It must remain separate from pendingH:
+	// pendingH is the authoritative target-derived predecessor consumed by
+	// the post-verification mirror, while mtpDraftH is overwritten by each
+	// speculative draft decode. Lazy-grow, never-shrink.
+	mtpDraftH []float32
 
 	// targetBatchStart / targetBatchCount / targetBatchBasePos record
 	// the slot's contiguous range inside the shared target batch and the
@@ -318,6 +327,7 @@ func (s *slot) reset() {
 	s.finalTooling.Reset()
 	s.respToolCalls = nil
 	s.finishReason = ""
+	s.stopSource = ""
 	s.utf8Buf = s.utf8Buf[:0]
 	s.span = nil
 	s.iBatch = -1
@@ -357,6 +367,7 @@ func (s *slot) reset() {
 	// last position is no longer the natural predecessor of the new
 	// request's first token.
 	s.pendingH = s.pendingH[:0]
+	s.mtpDraftH = s.mtpDraftH[:0]
 	s.verifyH = s.verifyH[:0]
 	s.targetBatchStart = 0
 	s.targetBatchCount = 0
@@ -372,6 +383,7 @@ func (s *slot) reset() {
 	s.specDraftDistsSparse = nil
 	// Note: draftDistBuf, targetDistBuf, adjustedDistBuf are reused across requests
 	s.grammarSampler = nil
+	s.startTime = time.Time{}
 	s.prefillStart = time.Time{}
 	s.prefillSpan = nil
 	s.tokenGenSpan = nil

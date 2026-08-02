@@ -19,11 +19,12 @@ type cacheResult struct {
 	// Token-v2 plans render the complete request twice and split the actual
 	// token sequence at the stable-render boundary. The tail is consumed
 	// directly by startSlot; it is never rendered or tokenized independently.
-	imcTokenPlan    bool
-	imcActualTokens []llama.Token
-	imcTailTokens   []llama.Token
-	imcMatchKind    string
-	imcPromptPlan   promptPlan
+	imcTokenPlan           bool
+	imcSamplerPromptTokens []llama.Token
+	imcMediaSamplerTokens  []llama.Token
+	imcTailTokens          []llama.Token
+	imcMatchKind           string
+	imcPromptPlan          promptPlan
 
 	// IMC session-routing field. Sessions externalize their KV state
 	// via SessionStore between requests, so the matched session may run

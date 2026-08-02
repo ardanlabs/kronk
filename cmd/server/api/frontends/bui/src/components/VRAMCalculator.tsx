@@ -144,7 +144,6 @@ export default function VRAMCalculator() {
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
           expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
-          swa_full: controlsProps.swaFull,
         },
       );
       setResult(response);
@@ -209,7 +208,6 @@ export default function VRAMCalculator() {
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
           expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
-          swa_full: controlsProps.swaFull,
         },
       );
       setResult(response);

@@ -92,6 +92,40 @@ func TestSWAFull(t *testing.T) {
 	}
 }
 
+func TestEffectiveSWAFull(t *testing.T) {
+	enabled := true
+	disabled := false
+
+	tests := []struct {
+		name         string
+		configured   *bool
+		llamaDefault bool
+		want         bool
+	}{
+		{"unset uses enabled llama default", nil, true, true},
+		{"unset uses disabled llama default", nil, false, false},
+		{"explicit enabled overrides default", &enabled, false, true},
+		{"explicit disabled overrides default", &disabled, true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveSWAFull(tt.configured, tt.llamaDefault); got != tt.want {
+				t.Errorf("effectiveSWAFull: got %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestModelInfoStringIncludesNSWA(t *testing.T) {
+	const nSWA = 4096
+
+	got := (ModelInfo{NSWA: nSWA}).String()
+	if !strings.Contains(got, "NSWA[4096]") {
+		t.Errorf("ModelInfo.String: got %q, want NSWA[%d]", got, nSWA)
+	}
+}
+
 func TestFlashAttentionPresence(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -99,12 +133,12 @@ func TestFlashAttentionPresence(t *testing.T) {
 		wantSet   bool
 		wantValue FlashAttentionType
 	}{
-		{"unset", NewConfig(), false, FlashAttentionEnabled},
+		{"unset", NewConfig(), false, FlashAttentionAuto},
 		{"explicit enabled", NewConfig(WithFlashAttention(FlashAttentionEnabled)), true, FlashAttentionEnabled},
 		{"explicit disabled", NewConfig(WithFlashAttention(FlashAttentionDisabled)), true, FlashAttentionDisabled},
 		{"explicit auto", NewConfig(WithFlashAttention(FlashAttentionAuto)), true, FlashAttentionAuto},
 		{"with config preserves explicit", NewConfig(WithConfig(NewConfig(WithFlashAttention(FlashAttentionEnabled)))), true, FlashAttentionEnabled},
-		{"with config preserves unset", NewConfig(WithConfig(Config{})), false, FlashAttentionEnabled},
+		{"with config preserves unset", NewConfig(WithConfig(Config{})), false, FlashAttentionAuto},
 	}
 
 	for _, tt := range tests {
@@ -114,6 +148,26 @@ func TestFlashAttentionPresence(t *testing.T) {
 			}
 			if got := tt.cfg.FlashAttention(); got != tt.wantValue {
 				t.Errorf("FlashAttention: got %s, want %s", got, tt.wantValue)
+			}
+		})
+	}
+}
+
+func TestFlashAttentionToYZMAType(t *testing.T) {
+	tests := []struct {
+		name  string
+		value FlashAttentionType
+		want  llama.FlashAttentionType
+	}{
+		{"enabled", FlashAttentionEnabled, llama.FlashAttentionTypeEnabled},
+		{"disabled", FlashAttentionDisabled, llama.FlashAttentionTypeDisabled},
+		{"auto", FlashAttentionAuto, llama.FlashAttentionTypeAuto},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.value.toYZMAType(); got != tt.want {
+				t.Errorf("toYZMAType: got %d, want %d", got, tt.want)
 			}
 		})
 	}
@@ -433,6 +487,26 @@ func TestValidateConfig(t *testing.T) {
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithAdmissionTimeout(-time.Second),
 		), true},
+		{"quantized V cache with Flash Attention disabled is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithCacheTypeV(GGMLTypeQ8_0),
+			WithFlashAttention(FlashAttentionDisabled),
+		), true},
+		{"quantized V cache with Flash Attention auto is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithCacheTypeV(GGMLTypeQ8_0),
+			WithFlashAttention(FlashAttentionAuto),
+		), false},
+		{"quantized V cache with Flash Attention enabled is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithCacheTypeV(GGMLTypeQ8_0),
+			WithFlashAttention(FlashAttentionEnabled),
+		), false},
+		{"F16 V cache with Flash Attention disabled is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithCacheTypeV(GGMLTypeF16),
+			WithFlashAttention(FlashAttentionDisabled),
+		), false},
 	}
 	{
 		for _, tt := range tests {

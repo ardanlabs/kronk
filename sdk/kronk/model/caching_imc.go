@@ -115,8 +115,9 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 			batch.Add(tokens[j], pos, seqIDs, false)
 		}
 
-		if _, err := llama.Decode(m.lctx, batch); err != nil {
-			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", i, err)
+		ret, err := llama.Decode(m.lctx, batch)
+		if err != nil || ret != 0 {
+			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", startPos+i, decodeError(ret, err))
 		}
 		llama.Synchronize(m.lctx)
 	}
@@ -156,6 +157,7 @@ func imcResetSession(s *imcSession) {
 	s.useMRoPE = false
 	s.mediaKVCounts = nil
 	s.promptPlan = promptPlan{}
+	s.samplerPromptTokens = nil
 	s.cachedRenderInputHash = ""
 }
 
@@ -220,6 +222,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 	session.hasMedia = hasMedia
 	session.mediaKVCounts = mediaKVCounts
 	session.cachedRenderInputHash = renderInputHash
+	session.samplerPromptTokens = nil
 	if !hasMedia {
 		session.useMRoPE = false
 		session.nextLogicalPos = 0
@@ -246,7 +249,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 // its matching media-prefix metadata. The caller owns the returned old store
 // and closes it after the swap. reserved remains set until the caller publishes
 // or releases the reservation.
-func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, renderInputHash string) SessionStore {
+func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, renderInputHash string) SessionStore {
 	if session == nil || staged == nil {
 		return nil
 	}
@@ -259,6 +262,7 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	session.nextLogicalPos = nextLogicalPos
 	session.cachedMsgCount = cachedMsgCount
 	session.promptPlan = plan
+	session.samplerPromptTokens = samplerPromptTokens
 	session.cachedRenderInputHash = renderInputHash
 	session.lastUsed = time.Now()
 	session.cachedTokens = nil

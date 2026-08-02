@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -67,7 +68,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		"status", "complete",
 		"id", job.id,
 		"slot", s.id,
-		"queue_wait", queueWait,
+		"queue_wait", queueWait.String(),
 	)
 
 	// Start span for this chat request. Store the span context so child
@@ -267,7 +268,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					e.model.decodeMu.Unlock()
 
 					switch {
-					case nDraftRead > 0:
+					case validMTPDraftState(nDraftRead, uint64(len(draftBytes)), savedPendingH, draft.nEmbd):
 						// Mirror the slot's draft state to what the
 						// snapshot covers so subsequent mirror /
 						// generateDraftTokensMTP calls find a
@@ -288,7 +289,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 							"pending_h", len(s.pendingH) == draft.nEmbd,
 							"elapsed", fmtDur(time.Since(draftRestoreStart)))
 					default:
-						// Restore failed — drop draft seq + pendingH so
+						// Restore failed or did not include the paired
+						// target hidden state — drop draft seq + pendingH so
 						// startSlotText falls back to the mtp-disabled
 						// path. We don't fail the whole request because
 						// the target restored fine; only MTP is lost.
@@ -298,7 +300,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 						s.draftNPast = 0
 						s.pendingH = s.pendingH[:0]
 						e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-failed",
-							"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
+							"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+							"restored_bytes", fmtBytes(nDraftRead),
+							"expected_bytes", fmtBytes(uint64(len(draftBytes))),
+							"pending_h", len(savedPendingH) == draft.nEmbd)
 					}
 
 				default:
@@ -324,7 +329,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			imcDecodeStart := time.Now()
 
-			nextLogicalPos, physicalKVCells, mediaKVCounts, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx)
+			nextLogicalPos, physicalKVCells, mediaKVCounts, samplerCacheTokens, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx)
 			if err != nil {
 				e.model.decodeMu.Lock()
 				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
@@ -340,8 +345,12 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash)
 			e.model.cacheMu.Lock()
 			job.imcSession.promptPlan = job.imcPromptPlan
+			job.imcSession.samplerPromptTokens = slices.Clone(samplerCacheTokens)
 			job.imcSession.nextLogicalPos = nextLogicalPos
 			e.model.cacheMu.Unlock()
+			job.imcMediaSamplerTokens = samplerCacheTokens
+			job.samplerPromptTokens = slices.Clone(samplerCacheTokens)
+			job.samplerPromptTokens = append(job.samplerPromptTokens, job.tailTokens...)
 			sessionWasCommitted = true
 
 			if s.mtmdCtx != 0 && job.imcSession != nil {
@@ -667,12 +676,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					draftBufAction = "grow"
 				}
 
+				draftSnapshotOK := validMTPDraftState(nDraftExtracted, draftKVSize, s.pendingH, draft.nEmbd)
+
 				e.model.cacheMu.Lock()
-				job.imcSession.draftKVState.Commit(int(nDraftExtracted))
 				// pendingH snapshot: copy the slot's pendingH into the
 				// session so a later cache hit can restore it. Lazy-grow
 				// the session's pendingH backing slice.
-				if len(s.pendingH) == draft.nEmbd {
+				if draftSnapshotOK {
+					job.imcSession.draftKVState.Commit(int(nDraftExtracted))
 					if cap(job.imcSession.pendingH) < draft.nEmbd {
 						job.imcSession.pendingH = make([]float32, draft.nEmbd)
 					} else {
@@ -680,12 +691,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					}
 					copy(job.imcSession.pendingH, s.pendingH)
 				} else {
+					job.imcSession.draftKVState.Reset()
 					job.imcSession.pendingH = job.imcSession.pendingH[:0]
 				}
 				e.model.cacheMu.Unlock()
 
 				switch {
-				case nDraftExtracted > 0:
+				case draftSnapshotOK:
 					e.model.log(job.ctx, "start-slot", "status", "imc-draft-snapshot-done",
 						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 						"snapshot_bytes", fmtBytes(nDraftExtracted),
@@ -697,10 +709,12 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				default:
 					e.model.log(job.ctx, "start-slot", "status", "imc-draft-snapshot-failed",
 						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
+						"extracted_bytes", fmtBytes(nDraftExtracted),
 						"kv_alloc", fmtBytes(draftKVSize),
 						"buf_action", draftBufAction,
 						"buf_cap_before", fmtBytes(uint64(draftCapBefore)),
-						"buf_cap_after", fmtBytes(uint64(draftCapAfter)))
+						"buf_cap_after", fmtBytes(uint64(draftCapAfter)),
+						"pending_h", len(s.pendingH) == draft.nEmbd)
 				}
 			}
 
@@ -721,7 +735,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 				oldStore := e.model.imcCommitMediaAdvance(job.imcSession, snapshotStore,
 					job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount,
-					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcExpectedRenderHash)
+					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcMediaSamplerTokens, job.imcExpectedRenderHash)
 				if oldStore != nil {
 					if err := oldStore.Close(); err != nil {
 						e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-old-store-close-failed", "err", err)
@@ -836,11 +850,20 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		"batch_current", e.batch.NTokens)
 
 	// Check context window.
-	if s.nPrompt > e.model.cfg.ContextWindow() {
+	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
 		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
 	}
+
+	// Prime penalties and DRY with the complete logical prompt, including any
+	// prefix restored from IMC. The suffix alone is not sufficient because the
+	// sampler has no state corresponding to restored KV cells.
+	samplerTokens := tokens
+	if job.imcTokenPlan {
+		samplerTokens = job.samplerPromptTokens
+	}
+	primeSampler(s.sampler, samplerTokens)
 
 	// Store full prompt tokens for draft model prefill if speculative decoding
 	// is enabled. The draft model needs all tokens (cached + new suffix) to
@@ -1009,11 +1032,13 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		"next_logical_position", cacheIdx,
 		"total_prompt", totalPrompt)
 
-	if s.nPrompt > e.model.cfg.ContextWindow() {
+	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
 		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
 	}
+
+	primeSampler(s.sampler, job.samplerPromptTokens)
 
 	s.useMRoPE = true
 	if e.model.draft != nil && e.model.draft.mtp() {
@@ -1109,10 +1134,19 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 		"use_noncausal", s.useNonCausal)
 
 	// Check context window.
-	if s.nPrompt > e.model.cfg.ContextWindow() {
+	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
 		err := fmt.Errorf("start-slot-media: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
 		e.finishSlot(s, err)
 		return false
+	}
+
+	// mtmd text chunks contain vocabulary tokens; image and audio chunks
+	// represent embeddings and must never be accepted into the sampler.
+	for i := range numChunks {
+		chunk := mtmd.InputChunksGet(s.inputChunks, i)
+		if mtmd.InputChunkGetType(chunk) == mtmd.InputChunkTypeText {
+			primeSampler(s.sampler, mtmd.InputChunkGetTokensText(chunk))
+		}
 	}
 
 	// Process first chunk. Media prefill is handled chunk-by-chunk in processBatch.
@@ -1131,4 +1165,24 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	}
 
 	return true
+}
+
+func promptFitsContextWindow(promptTokens, contextWindow int) bool {
+	return promptTokens < contextWindow
+}
+
+func validMTPDraftState(actualBytes, expectedBytes uint64, pendingH []float32, nEmbd int) bool {
+	return expectedBytes > 0 && actualBytes == expectedBytes && nEmbd > 0 && len(pendingH) == nEmbd
+}
+
+func primeSampler(sampler llama.Sampler, tokens []llama.Token) {
+	primeSamplerWith(sampler, tokens, llama.SamplerAccept)
+}
+
+func primeSamplerWith(sampler llama.Sampler, tokens []llama.Token, accept func(llama.Sampler, llama.Token)) {
+	for _, token := range tokens {
+		if token != llama.TokenNull {
+			accept(sampler, token)
+		}
+	}
 }

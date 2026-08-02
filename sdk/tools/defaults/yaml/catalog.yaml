@@ -135,6 +135,10 @@ models:
     mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 1193058912
+    mtp: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
+    mtp_size: 461766816
+    mtp_checked: true
     model_type: MoE
     capabilities:
       endpoint: chat_completion

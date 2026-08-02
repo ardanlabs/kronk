@@ -129,7 +129,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if err != nil {
 			prepSpan.End()
 			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -139,7 +139,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if err != nil {
 			prepSpan.End()
 			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -166,7 +166,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if err != nil {
 			prepSpan.End()
 			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -184,7 +184,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			"stage_name", "prepare-model-work",
 			"status", "complete",
 			"id", id,
-			"elapsed", time.Since(requestStart),
+			"elapsed", time.Since(requestStart).String(),
 			"imc_session", cache.imcSessionID,
 			"imc_match_kind", cache.imcMatchKind,
 		)
@@ -356,22 +356,22 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	)
 
 	job := chatJob{
-		id:            id,
-		ctx:           ctx,
-		queueWaitSpan: queueSpan,
-		queuedAt:      time.Now(),
-		requestStart:  requestStart,
-		d:             d,
-		object:        object,
-		prompt:        prompt,
-		media:         media,
-		params:        params,
-		ch:            ch,
-		actualTokens:  cache.imcActualTokens,
-		tailTokens:    cache.imcTailTokens,
-		imcTokenPlan:  cache.imcTokenPlan,
-		imcMatchKind:  cache.imcMatchKind,
-		imcPromptPlan: cache.imcPromptPlan,
+		id:                  id,
+		ctx:                 ctx,
+		queueWaitSpan:       queueSpan,
+		queuedAt:            time.Now(),
+		requestStart:        requestStart,
+		d:                   d,
+		object:              object,
+		prompt:              prompt,
+		media:               media,
+		params:              params,
+		ch:                  ch,
+		samplerPromptTokens: cache.imcSamplerPromptTokens,
+		tailTokens:          cache.imcTailTokens,
+		imcTokenPlan:        cache.imcTokenPlan,
+		imcMatchKind:        cache.imcMatchKind,
+		imcPromptPlan:       cache.imcPromptPlan,
 
 		imcSession:      cache.imcSession,
 		imcSessionMedia: cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
@@ -390,15 +390,16 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
 
-		imcNewCacheTokens:    cache.imcNewCacheTokens,
-		imcNewTotalCached:    cache.imcNewTotalCached,
-		imcNewCachedMsgCount: cache.imcNewCachedMsgCount,
-		imcNewMsgsHash:       cache.imcNewMsgsHash,
-		imcClearSeq:          cache.imcClearSeq,
-		imcNewCachedTokens:   cache.imcNewCachedTokens,
-		imcMediaBuild:        cache.imcMediaBuild,
-		imcMediaCacheD:       cache.imcMediaCacheD,
-		imcMediaKVCounts:     cache.imcMediaKVCounts,
+		imcNewCacheTokens:     cache.imcNewCacheTokens,
+		imcNewTotalCached:     cache.imcNewTotalCached,
+		imcNewCachedMsgCount:  cache.imcNewCachedMsgCount,
+		imcNewMsgsHash:        cache.imcNewMsgsHash,
+		imcClearSeq:           cache.imcClearSeq,
+		imcNewCachedTokens:    cache.imcNewCachedTokens,
+		imcMediaBuild:         cache.imcMediaBuild,
+		imcMediaCacheD:        cache.imcMediaCacheD,
+		imcMediaKVCounts:      cache.imcMediaKVCounts,
+		imcMediaSamplerTokens: cache.imcMediaSamplerTokens,
 	}
 
 	if err := m.batch.submit(&job); err != nil {
@@ -416,7 +417,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 			"stage_name", "schedule-job",
 			"status", lifecycleStatus(err),
 			"id", id,
-			"elapsed", time.Since(job.queuedAt),
+			"elapsed", time.Since(job.queuedAt).String(),
 			"err", err,
 		)
 

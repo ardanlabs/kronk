@@ -314,6 +314,7 @@ export interface CatalogModelResponse extends CatalogSummary {
   };
   gated_model?: boolean;
   vram?: VRAM;
+  swa_full_default?: boolean;
   model_config?: ModelConfig;
   base_config?: ModelConfig;
   catalog_file?: string;

@@ -49,7 +49,7 @@ assign:
 		assigned := false
 
 		for _, s := range e.slots {
-			if s.active {
+			if s.active || e.batchReleased[s.id] {
 				continue
 			}
 			e.startSlot(s, job, buf)

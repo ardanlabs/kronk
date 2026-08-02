@@ -21,7 +21,8 @@ type stateMachine struct {
 	// Tool-call accumulation across tokens.
 	toolCallBuf  strings.Builder
 	inToolCall   bool
-	toolCallDone bool // After </tool_call> or </function>; only another opener avoids EOG.
+	wrappedTool  bool
+	toolCallDone bool // After a complete call; whitespace and another opener avoid EOG.
 
 	// Lookahead buffer for split <function=… tokens.
 	pendingTagBuf strings.Builder
@@ -34,6 +35,7 @@ func (sm *stateMachine) Reset() {
 	sm.status = model.ChannelAnswer
 	sm.toolCallBuf.Reset()
 	sm.inToolCall = false
+	sm.wrappedTool = false
 	sm.toolCallDone = false
 	sm.pendingTagBuf.Reset()
 	sm.inPendingTag = false
@@ -52,16 +54,18 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		if strings.HasPrefix(accumulated, "<function=") {
 			sm.inPendingTag = false
 			sm.pendingTagBuf.Reset()
-			sm.status = model.ChannelTool
-			sm.inToolCall = true
-			sm.toolCallBuf.Reset()
-			sm.toolCallBuf.WriteString(accumulated)
-			return model.Result{Channel: model.ChannelTool, Content: accumulated}, false
+			sm.startToolCall(false, accumulated)
+			return model.Result{Channel: model.ChannelTool}, false
 		}
 
 		if !strings.HasPrefix("<function=", accumulated) {
+			wasAfterToolCall := sm.toolCallDone
 			sm.inPendingTag = false
+			sm.toolCallDone = false
 			sm.pendingTagBuf.Reset()
+			if wasAfterToolCall {
+				return model.Result{}, true
+			}
 			return model.Result{Channel: sm.status, Content: accumulated}, false
 		}
 
@@ -74,39 +78,59 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		switch content {
 		case "<tool_call>", "<|tool_call>":
 			// Repeated opener inside an open block — skip.
-			return model.Result{Channel: model.ChannelTool}, false
+			return model.Result{}, false
 
 		case "</tool_call>", "<tool_call|>":
-			sm.toolCallBuf.Reset()
-			sm.inToolCall = false
-			sm.toolCallDone = true
-			return model.Result{Channel: model.ChannelTool, Content: "\n"}, false
+			return sm.completeToolCall(), false
 
 		default:
-			sm.toolCallBuf.WriteString(content)
-
-			// Implicit close for direct <function=…></function> format.
-			accumulated := sm.toolCallBuf.String()
-			if strings.HasSuffix(strings.TrimSpace(accumulated), "</function>") {
-				sm.toolCallBuf.Reset()
-				sm.inToolCall = false
-				sm.toolCallDone = true
-				return model.Result{Channel: model.ChannelTool, Content: content + "\n"}, false
+			if sm.wrappedTool {
+				for _, marker := range []string{"</tool_call>", "<tool_call|>"} {
+					trimmed := strings.TrimRight(content, " \t\r\n")
+					if before, ok := strings.CutSuffix(trimmed, marker); ok {
+						sm.toolCallBuf.WriteString(before)
+						return sm.completeToolCall(), false
+					}
+				}
 			}
 
-			return model.Result{Channel: model.ChannelTool, Content: content}, false
+			sm.toolCallBuf.WriteString(content)
+
+			// Unwrapped direct calls close at </function>. Wrapped calls close
+			// only at </tool_call>, after the complete inner XML is buffered.
+			accumulated := sm.toolCallBuf.String()
+			if !sm.wrappedTool && strings.HasSuffix(strings.TrimSpace(accumulated), "</function>") {
+				return sm.completeToolCall(), false
+			}
+
+			return model.Result{}, false
 		}
 	}
 
-	// After a tool call closes, only another opener avoids EOG.
+	// After a tool call closes, allow whitespace and another opener so
+	// consecutive calls are collected into one response.
 	if sm.toolCallDone {
+		content = strings.TrimLeft(content, " \t\r\n")
 		switch content {
 		case "<tool_call>", "<|tool_call>":
-			sm.toolCallDone = false
-			sm.inToolCall = true
-			sm.toolCallBuf.Reset()
-			return model.Result{}, false
+			sm.startToolCall(true, "")
+			return model.Result{Channel: model.ChannelTool}, false
 		default:
+			if content == "" {
+				return model.Result{}, false
+			}
+			if strings.HasPrefix(content, "<function=") {
+				sm.startToolCall(false, content)
+				return model.Result{Channel: model.ChannelTool}, false
+			}
+			if content == "<" || strings.HasPrefix(content, "<f") || strings.HasPrefix(content, "<function") {
+				if strings.HasPrefix("<function=", content) {
+					sm.inPendingTag = true
+					sm.pendingTagBuf.Reset()
+					sm.pendingTagBuf.WriteString(content)
+					return model.Result{}, false
+				}
+			}
 			sm.toolCallDone = false
 			return model.Result{}, true
 		}
@@ -123,20 +147,15 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		return model.Result{}, false
 
 	case "<tool_call>", "<|tool_call>":
-		sm.status = model.ChannelTool
-		sm.inToolCall = true
-		sm.toolCallBuf.Reset()
+		sm.startToolCall(true, "")
 		return model.Result{Channel: model.ChannelTool}, false
 
 	default:
 		// Direct <function= opener (single token or split-tag prefix).
 		if content == "<" || strings.HasPrefix(content, "<f") || strings.HasPrefix(content, "<function") {
 			if strings.HasPrefix(content, "<function=") {
-				sm.status = model.ChannelTool
-				sm.inToolCall = true
-				sm.toolCallBuf.Reset()
-				sm.toolCallBuf.WriteString(content)
-				return model.Result{Channel: model.ChannelTool, Content: content}, false
+				sm.startToolCall(false, content)
+				return model.Result{Channel: model.ChannelTool}, false
 			}
 			if strings.HasPrefix("<function=", content) {
 				sm.inPendingTag = true
@@ -148,4 +167,46 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 		return model.Result{Channel: sm.status, Content: content}, false
 	}
+}
+
+func (sm *stateMachine) startToolCall(wrapped bool, content string) {
+	sm.status = model.ChannelTool
+	sm.inToolCall = true
+	sm.wrappedTool = wrapped
+	sm.toolCallDone = false
+	sm.toolCallBuf.Reset()
+	sm.toolCallBuf.WriteString(content)
+}
+
+func (sm *stateMachine) completeToolCall() model.Result {
+	content := strings.Trim(sm.toolCallBuf.String(), "\n")
+	if content != "" {
+		content += "\n"
+	}
+
+	sm.toolCallBuf.Reset()
+	sm.inToolCall = false
+	sm.wrappedTool = false
+	sm.toolCallDone = true
+
+	return model.Result{Channel: model.ChannelTool, Content: content}
+}
+
+// Flush drains a buffered tool call or unresolved direct-function prefix when
+// generation ends before the state machine sees its closing delimiter.
+func (sm *stateMachine) Flush() model.Result {
+	if sm.inToolCall {
+		return sm.completeToolCall()
+	}
+
+	if !sm.inPendingTag {
+		return model.Result{}
+	}
+
+	result := model.Result{Channel: sm.status, Content: sm.pendingTagBuf.String()}
+	sm.pendingTagBuf.Reset()
+	sm.inPendingTag = false
+	sm.toolCallDone = false
+
+	return result
 }

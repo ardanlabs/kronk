@@ -53,6 +53,32 @@ const (
 	ChannelTool
 )
 
+func channelName(channel Channel) string {
+	switch channel {
+	case ChannelReasoning:
+		return "reasoning"
+	case ChannelAnswer:
+		return "answer"
+	case ChannelTool:
+		return "tool"
+	default:
+		return "none"
+	}
+}
+
+func slotChannel(s *slot) Channel {
+	switch {
+	case s.reasonFlag > 0:
+		return ChannelReasoning
+	case s.toolFlag > 0:
+		return ChannelTool
+	case s.completionFlag > 0:
+		return ChannelAnswer
+	default:
+		return ChannelNone
+	}
+}
+
 // Result is the per-token outcome returned by StateMachine.Classify.
 //
 // Content may be empty when the token is a structural marker that has been
@@ -77,6 +103,16 @@ type StateMachine interface {
 
 	// Reset returns the state machine to its initial state for reuse.
 	Reset()
+}
+
+// StateMachineFlusher is implemented by state machines that may retain model
+// output not yet returned by Classify.
+//
+// Flush drains that output at successful end-of-generation. It must not return
+// content previously returned by Classify, and subsequent calls must return a
+// zero Result.
+type StateMachineFlusher interface {
+	Flush() Result
 }
 
 // Parser is the plugin interface implemented by each model lineage.
@@ -107,9 +143,8 @@ type ParamsAdjuster interface {
 	AdjustParams(p Params) Params
 }
 
-// ReasoningNormalizer is an optional interface a Parser may implement to
-// remove model-specific reasoning markup that destabilizes the incremental
-// message cache (IMC).
+// ReasoningNormalizer is an optional compatibility interface for parsers that
+// normalize model-specific reasoning markup.
 //
 // Reasoning is ephemeral: replaying it on prior assistant turns adds prompt
 // tokens that do not improve generation, and the markup is rendered
@@ -120,8 +155,10 @@ type ParamsAdjuster interface {
 // assistant history (family-agnostic) and then invokes the normalizer for the
 // lineage-specific markup the field-drop cannot reach.
 //
-// Both methods must be deterministic and idempotent: applying them twice
-// yields the same result as applying them once.
+// Both methods must be deterministic and idempotent: applying them twice yields
+// the same result as applying them once. The engine only normalizes structured
+// assistant history before rendering; completed Jinja output is authoritative
+// and is never rewritten.
 type ReasoningNormalizer interface {
 	// StripReasoningContent removes closed reasoning spans embedded directly
 	// in an assistant message's content (e.g. <think>…</think> for Qwen,
@@ -129,12 +166,15 @@ type ReasoningNormalizer interface {
 	// preserved. Invoked on history before the Jinja render.
 	StripReasoningContent(content string) string
 
-	// StripEmptyReasoning removes empty reasoning spans from a fully rendered
-	// prompt (e.g. "<think>\n\n</think>"), leaving a trailing span — the
-	// generation-prompt marker that primes the model to answer — intact.
-	// Used as a post-render pass so position-dependent template emission of
-	// empty reasoning blocks does not shift the tokenized prefix across turns.
+	// StripEmptyReasoning removes empty reasoning spans from a rendered prompt.
+	//
+	// Deprecated: the engine no longer rewrites completed template output because
+	// role-unaware transformations can alter user content and model scaffolding.
 	StripEmptyReasoning(rendered string) string
+}
+
+type reasoningContentNormalizer interface {
+	StripReasoningContent(content string) string
 }
 
 // Fingerprint carries the model metadata that parser selection logic

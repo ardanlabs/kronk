@@ -50,7 +50,7 @@ func run() error {
 	cfg := pool.Config{
 		Log:           kronk.FmtLogger,
 		KronkModels:   mdls,
-		BudgetPercent: 80,
+		BudgetPercent: 95,
 		TTL:           cacheTTL,
 	}
 

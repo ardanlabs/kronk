@@ -107,6 +107,21 @@ func TestStateMachinePendingFalseAlarm(t *testing.T) {
 	assertResult(t, sm, "not-dsml", model.ChannelAnswer, "<not-dsml", false)
 }
 
+func TestStateMachineFlushPendingOpener(t *testing.T) {
+	sm := Parser{}.NewStateMachine()
+	assertResult(t, sm, "<think>", model.ChannelNone, "", false)
+	assertResult(t, sm, "<", model.ChannelNone, "", false)
+
+	flusher := sm.(model.StateMachineFlusher)
+	got := flusher.Flush()
+	if got.Channel != model.ChannelReasoning || got.Content != "<" {
+		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelReasoning, "<")
+	}
+	if got := flusher.Flush(); got != (model.Result{}) {
+		t.Errorf("second Flush: got %+v, want zero result", got)
+	}
+}
+
 func TestStateMachineReset(t *testing.T) {
 	sm := Parser{}.NewStateMachine()
 	sm.Classify("<")

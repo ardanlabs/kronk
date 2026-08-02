@@ -31,7 +31,7 @@ func (normalizingParser) StripReasoningContent(content string) string {
 }
 
 func (normalizingParser) StripEmptyReasoning(rendered string) string {
-	return strings.ReplaceAll(rendered, "<r></r>", "")
+	panic("completed template output must not be rewritten")
 }
 
 func newReasoningTestModel(imc bool, parser Parser) *Model {
@@ -139,5 +139,60 @@ func TestNormalizeHistoryReasoning(t *testing.T) {
 				t.Error("original assistant message was mutated (reasoning_content removed)")
 			}
 		})
+	}
+}
+
+func TestApplyJinjaTemplatePreservesRenderedReasoningMarkup(t *testing.T) {
+	const script = `{%- for message in messages %}
+{%- if message.role == "user" %}
+{{- '<|im_start|>user\n' + message.content + '<|im_end|>\n' }}
+{%- elif message.role == "assistant" %}
+{{- '<|im_start|>assistant\n<think>\n\n</think>\n\n' + message.content + '<|im_end|>\n' }}
+{%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+{{- '<|im_start|>assistant\n<think>\n' }}
+{%- endif %}`
+
+	m := newReasoningTestModel(true, normalizingParser{})
+	m.template = Template{FileName: "reasoning-test", Script: script}
+
+	messages := []D{
+		{"role": "user", "content": "explain <think>\n</think> markers"},
+		{"role": "assistant", "content": "answer"},
+	}
+	stableInput := D{
+		"messages":              messages,
+		"add_generation_prompt": false,
+		"bos_token":             "",
+		"eos_token":             "<|im_end|>",
+	}
+	actualInput := D{
+		"messages":              messages,
+		"add_generation_prompt": true,
+		"bos_token":             "",
+		"eos_token":             "<|im_end|>",
+	}
+
+	stable, err := m.applyJinjaTemplate(context.Background(), stableInput)
+	if err != nil {
+		t.Fatalf("applyJinjaTemplate stable render: %v", err)
+	}
+	actual, err := m.applyJinjaTemplate(context.Background(), actualInput)
+	if err != nil {
+		t.Fatalf("applyJinjaTemplate actual render: %v", err)
+	}
+
+	wantStable := "<|im_start|>user\nexplain <think>\n</think> markers<|im_end|>\n" +
+		"<|im_start|>assistant\n<think>\n\n</think>\n\nanswer<|im_end|>\n"
+	wantActual := wantStable + "<|im_start|>assistant\n<think>\n"
+	if stable != wantStable {
+		t.Errorf("stable render: got %q, want %q", stable, wantStable)
+	}
+	if actual != wantActual {
+		t.Errorf("actual render: got %q, want %q", actual, wantActual)
+	}
+	if !strings.HasPrefix(actual, stable) {
+		t.Errorf("stable render is not an actual-render prefix: stable %q, actual %q", stable, actual)
 	}
 }
