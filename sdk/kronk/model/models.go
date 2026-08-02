@@ -33,9 +33,10 @@ const (
 
 // FinishReasons represent the different reasons a response can be finished.
 const (
-	FinishReasonStop  = "stop"
-	FinishReasonTool  = "tool_calls"
-	FinishReasonError = "error"
+	FinishReasonStop   = "stop"
+	FinishReasonLength = "length"
+	FinishReasonTool   = "tool_calls"
+	FinishReasonError  = "error"
 )
 
 // =============================================================================
@@ -907,7 +908,7 @@ func forReasoning(content string, reasoning bool) string {
 	return ""
 }
 
-func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, u Usage) ChatResponse {
+func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
 	var logprobs *Logprobs
 	if len(logprobsData) > 0 {
 		logprobs = &Logprobs{Content: logprobsData}
@@ -923,9 +924,13 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 	// Set Delta when there are tool calls (for streaming clients).
 	// For non-streaming, Chat() clears Delta before returning.
 	var delta *ResponseMessage
-	finishReason := FinishReasonStop
+	if finishReason == "" {
+		finishReason = FinishReasonStop
+		if len(respToolCalls) > 0 {
+			finishReason = FinishReasonTool
+		}
+	}
 	if len(respToolCalls) > 0 {
-		finishReason = FinishReasonTool
 		delta = msg
 	}
 

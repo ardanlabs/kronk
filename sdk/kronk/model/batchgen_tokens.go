@@ -156,6 +156,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 		outputTokens := s.reasonTokens + s.completionTokens
 
 		if outputTokens >= s.job.params.MaxTokens {
+			s.finishReason = FinishReasonLength
 			e.finishSlot(s, nil)
 			return
 		}
@@ -208,16 +209,18 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 	// Non-streamable tokens (ChannelNone) have been counted above but have
 	// no content to stream or further process.
 	if result.Channel == ChannelNone {
+		outputTokens := s.reasonTokens + s.completionTokens
+		if outputTokens >= s.job.params.MaxTokens {
+			s.finishReason = FinishReasonLength
+			e.finishSlot(s, nil)
+			return
+		}
+
 		s.iBatch = -1
 		return
 	}
 
 	outputTokens := s.reasonTokens + s.completionTokens
-
-	if outputTokens >= s.job.params.MaxTokens {
-		e.finishSlot(s, nil)
-		return
-	}
 
 	// Store content for final response.
 	switch {
@@ -234,17 +237,20 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 	// Stream response if not tooling.
 	if s.toolFlag == 0 {
 		// Skip unnecessary CRLF at mode transitions.
-		if e.model.isUnnecessaryCRLF(s.reasonFlag, s.completionFlag, result.Content) {
-			s.iBatch = -1
-			return
+		if !e.model.isUnnecessaryCRLF(s.reasonFlag, s.completionFlag, result.Content) {
+			// Per OpenAI spec, usage is only sent in the final response, not deltas.
+			err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, s.reasonFlag, outputTokens, s.currentLogprob)
+			if err != nil {
+				e.finishSlot(s, err)
+				return
+			}
 		}
+	}
 
-		// Per OpenAI spec, usage is only sent in the final response, not deltas.
-		err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, s.reasonFlag, outputTokens, s.currentLogprob)
-		if err != nil {
-			e.finishSlot(s, err)
-			return
-		}
+	if outputTokens >= s.job.params.MaxTokens {
+		s.finishReason = FinishReasonLength
+		e.finishSlot(s, nil)
+		return
 	}
 
 	s.iBatch = -1

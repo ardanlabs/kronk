@@ -138,6 +138,7 @@ type slot struct {
 	finalReasoning strings.Builder // Accumulated reasoning text
 	finalTooling   strings.Builder // Accumulated tool call JSON
 	respToolCalls  []ResponseToolCall
+	finishReason   string
 	utf8Buf        []byte // Buffered bytes from partial multi-byte UTF-8 codepoints
 
 	// -------------------------------------------------------------------------
@@ -316,6 +317,7 @@ func (s *slot) reset() {
 	s.finalReasoning.Reset()
 	s.finalTooling.Reset()
 	s.respToolCalls = nil
+	s.finishReason = ""
 	s.utf8Buf = s.utf8Buf[:0]
 	s.span = nil
 	s.iBatch = -1

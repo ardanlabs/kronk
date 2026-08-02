@@ -363,7 +363,7 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 		output = append(output, ResponseOutputItem{
 			Type:   "message",
 			ID:     ss.msgID,
-			Status: "completed",
+			Status: finalResp.Status,
 			Role:   model.RoleAssistant,
 			Content: []ResponseContentItem{
 				{Type: "output_text", Text: ss.fullText, Annotations: []string{}},
@@ -371,7 +371,7 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 		})
 	}
 	for i, fcItem := range ss.fcItems {
-		fcItem.Status = "completed"
+		fcItem.Status = finalResp.Status
 		a := ss.fcArgsAccum[i]
 		fcItem.Arguments = &a
 		output = append(output, fcItem)
@@ -379,7 +379,7 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 	finalResp.Output = output
 
 	events = append(events, ResponseStreamEvent{
-		Type:           "response.completed",
+		Type:           "response." + finalResp.Status,
 		SequenceNumber: ss.seq,
 		Response:       &finalResp,
 	})
@@ -646,7 +646,13 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 
 	status := "completed"
 	var respError *ResponseError
-	if finishReason == model.FinishReasonError {
+	var incompleteDetail *IncompleteDetail
+	switch finishReason {
+	case model.FinishReasonLength:
+		status = "incomplete"
+		incompleteDetail = &IncompleteDetail{Reason: "max_output_tokens"}
+
+	case model.FinishReasonError:
 		status = "failed"
 		respError = &ResponseError{
 			Code:    "error",
@@ -677,7 +683,7 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 		Status:           status,
 		CompletedAt:      completedAt,
 		Error:            respError,
-		IncompleteDetail: nil,
+		IncompleteDetail: incompleteDetail,
 		Instructions:     inputParams.Instructions,
 		MaxOutputTokens:  inputParams.MaxOutputTokens,
 		Model:            chatResp.Model,
@@ -732,7 +738,7 @@ func buildOutputItems(outputText string, toolCalls []model.ResponseToolCall, sta
 				CallID:    tc.ID,
 				Name:      tc.Function.Name,
 				Arguments: &argsStr,
-				Status:    "completed",
+				Status:    status,
 			})
 		}
 
@@ -743,7 +749,7 @@ func buildOutputItems(outputText string, toolCalls []model.ResponseToolCall, sta
 		outputItems = append(outputItems, ResponseOutputItem{
 			Type:   "message",
 			ID:     "msg_" + uuid.New().String(),
-			Status: "completed",
+			Status: status,
 			Role:   model.RoleAssistant,
 			Content: []ResponseContentItem{
 				{

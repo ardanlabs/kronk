@@ -45,9 +45,9 @@ These parameters control how Kronk selects the next token:
 
 Request values `top_p: 0` and `top_p: 1` are treated as unset so clients that
 send those common defaults do not override model-specific tuning. A model
-configuration can still set `top_p: 1` explicitly. Nonpositive values for
-`temperature` and `top_k` also resolve to configured or baseline defaults;
-`temperature: 0` is therefore not a deterministic-mode switch in Kronk.
+configuration can still set `top_p: 1` explicitly. When `temperature` or
+`top_k` is omitted, Kronk uses the configured or baseline default. Set
+`temperature: 0` explicitly to request greedy generation.
 
 ## 10.3 Repetition Control
 

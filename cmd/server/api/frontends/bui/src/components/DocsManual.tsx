@@ -1942,7 +1942,7 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Request values <code>top_p: 0</code> and <code>top_p: 1</code> are treated as unset so clients that send those common defaults do not override model-specific tuning. A model configuration can still set <code>top_p: 1</code> explicitly. Nonpositive values for <code>temperature</code> and <code>top_k</code> also resolve to configured or baseline defaults; <code>temperature: 0</code> is therefore not a deterministic-mode switch in Kronk.</p>
+          <p>Request values <code>top_p: 0</code> and <code>top_p: 1</code> are treated as unset so clients that send those common defaults do not override model-specific tuning. A model configuration can still set <code>top_p: 1</code> explicitly. When <code>temperature</code> or <code>top_k</code> is omitted, Kronk uses the configured or baseline default. Set <code>temperature: 0</code> explicitly to request greedy generation.</p>
           <h2 id="103-repetition-control">10.3 Repetition Control</h2>
           <p>Kronk supports both token penalties and DRY n-gram penalties:</p>
           <table className="flags-table">
