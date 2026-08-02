@@ -1,6 +1,8 @@
 package qwen
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -87,14 +89,67 @@ func TestParser_ReasoningThenAnswer(t *testing.T) {
 func TestParser_JSONToolCall(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	runSteps(t, "json-tool-call", c, []step{
-		{token: "<tool_call>", channel: model.ChannelNone},
-		{token: `{"name":"a","arguments":{}}`, channel: model.ChannelNone},
+		{token: "<tool_call>", channel: model.ChannelTool},
+		{token: `{"name":"a","arguments":{}}`, channel: model.ChannelTool,
+			content: `{"name":"a","arguments":{}}`},
 		{token: "</tool_call>", channel: model.ChannelTool,
-			content: `{"name":"a","arguments":{}}` + "\n"},
+			content: "\n"},
 	})
 	_, eog := c.Classify("done")
 	if !eog {
 		t.Errorf("expected EOG after tool call closed")
+	}
+}
+
+func TestParser_TruncatedJSONToolCall(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+
+	var tooling strings.Builder
+	for _, token := range []string{"<tool_call>", `{"name":"get_weather","arguments":{"location":"Paris"}}`} {
+		result, eog := c.Classify(token)
+		if eog {
+			t.Fatalf("Classify(%q): got EOG before tool call completed", token)
+		}
+		if result.Channel == model.ChannelTool {
+			tooling.WriteString(result.Content)
+		}
+	}
+
+	calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
+	if len(calls) != 1 {
+		t.Fatalf("ToolCall: got %d calls, want 1", len(calls))
+	}
+	if got, want := calls[0].Function.Name, "get_weather"; got != want {
+		t.Errorf("Function.Name: got %q, want %q", got, want)
+	}
+}
+
+func TestParser_RepeatedToolCalls(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+
+	for i := range 9 {
+		if i > 0 {
+			c.Reset()
+		}
+
+		var tooling strings.Builder
+		for _, token := range []string{"<tool_call>", `{"name":"get_weather","arguments":{}}`, "</tool_call>"} {
+			result, eog := c.Classify(token)
+			if eog {
+				t.Fatalf("call %d Classify(%q): got EOG before tool call completed", i, token)
+			}
+			if result.Channel == model.ChannelTool {
+				tooling.WriteString(result.Content)
+			}
+		}
+
+		calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
+		if len(calls) != 1 {
+			t.Fatalf("call %d: got %d parsed calls, want 1", i, len(calls))
+		}
+		if got, want := calls[0].Function.Name, "get_weather"; got != want {
+			t.Errorf("call %d Function.Name: got %q, want %q", i, got, want)
+		}
 	}
 }
 
@@ -105,10 +160,10 @@ func TestParser_JSONToolCall(t *testing.T) {
 func TestParser_DirectFunctionTagSingleToken(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	runSteps(t, "direct-function-single", c, []step{
-		{token: "<function=foo>", channel: model.ChannelNone},
-		{token: "<parameter=k>v</parameter>", channel: model.ChannelNone},
+		{token: "<function=foo>", channel: model.ChannelTool, content: "<function=foo>"},
+		{token: "<parameter=k>v</parameter>", channel: model.ChannelTool, content: "<parameter=k>v</parameter>"},
 		{token: "</function>", channel: model.ChannelTool,
-			content: "<function=foo><parameter=k>v</parameter></function>\n"},
+			content: "</function>\n"},
 	})
 }
 

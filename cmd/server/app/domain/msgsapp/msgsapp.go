@@ -244,6 +244,8 @@ func toAnthropicStopReason(finishReason string) string {
 	switch finishReason {
 	case model.FinishReasonTool:
 		return "tool_use"
+	case model.FinishReasonLength:
+		return "max_tokens"
 	case model.FinishReasonStop:
 		return "end_turn"
 	case "":

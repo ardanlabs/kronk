@@ -1,7 +1,6 @@
 package qwen
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -57,7 +56,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			sm.inToolCall = true
 			sm.toolCallBuf.Reset()
 			sm.toolCallBuf.WriteString(accumulated)
-			return model.Result{}, false
+			return model.Result{Channel: model.ChannelTool, Content: accumulated}, false
 		}
 
 		if !strings.HasPrefix("<function=", accumulated) {
@@ -75,17 +74,13 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		switch content {
 		case "<tool_call>", "<|tool_call>":
 			// Repeated opener inside an open block — skip.
-			return model.Result{}, false
+			return model.Result{Channel: model.ChannelTool}, false
 
 		case "</tool_call>", "<tool_call|>":
-			toolContent := strings.Trim(sm.toolCallBuf.String(), "\n")
-			if toolContent != "" {
-				toolContent = fmt.Sprintf("%s\n", toolContent)
-			}
 			sm.toolCallBuf.Reset()
 			sm.inToolCall = false
 			sm.toolCallDone = true
-			return model.Result{Channel: model.ChannelTool, Content: toolContent}, false
+			return model.Result{Channel: model.ChannelTool, Content: "\n"}, false
 
 		default:
 			sm.toolCallBuf.WriteString(content)
@@ -93,17 +88,13 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			// Implicit close for direct <function=…></function> format.
 			accumulated := sm.toolCallBuf.String()
 			if strings.HasSuffix(strings.TrimSpace(accumulated), "</function>") {
-				toolContent := strings.Trim(accumulated, "\n")
-				if toolContent != "" {
-					toolContent = fmt.Sprintf("%s\n", toolContent)
-				}
 				sm.toolCallBuf.Reset()
 				sm.inToolCall = false
 				sm.toolCallDone = true
-				return model.Result{Channel: model.ChannelTool, Content: toolContent}, false
+				return model.Result{Channel: model.ChannelTool, Content: content + "\n"}, false
 			}
 
-			return model.Result{}, false
+			return model.Result{Channel: model.ChannelTool, Content: content}, false
 		}
 	}
 
@@ -135,7 +126,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		sm.status = model.ChannelTool
 		sm.inToolCall = true
 		sm.toolCallBuf.Reset()
-		return model.Result{}, false
+		return model.Result{Channel: model.ChannelTool}, false
 
 	default:
 		// Direct <function= opener (single token or split-tag prefix).
@@ -145,7 +136,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 				sm.inToolCall = true
 				sm.toolCallBuf.Reset()
 				sm.toolCallBuf.WriteString(content)
-				return model.Result{}, false
+				return model.Result{Channel: model.ChannelTool, Content: content}, false
 			}
 			if strings.HasPrefix("<function=", content) {
 				sm.inPendingTag = true

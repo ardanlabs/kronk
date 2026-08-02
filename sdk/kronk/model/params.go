@@ -399,6 +399,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 	m.log(context.Background(), "parse-params", "request", d.String())
 
 	p := m.cfg.DefaultParams
+	var zeroTemperatureRequested bool
 
 	if val, exists := d["adaptive_p_decay"]; exists {
 		adaptivePDecay, err := parseFloat32("adaptive_p_decay", val)
@@ -581,6 +582,7 @@ func (m *Model) parseParams(d D) (Params, error) {
 			return Params{}, err
 		}
 		p.Temperature = temp
+		zeroTemperatureRequested = temp == 0
 	}
 
 	if val, exists := d["top_k"]; exists {
@@ -667,6 +669,9 @@ func (m *Model) parseParams(d D) (Params, error) {
 	}
 
 	p = m.adjustParams(p)
+	if zeroTemperatureRequested {
+		p.Temperature = 0
+	}
 
 	// Mirror the resolved enable_thinking into d as a normalized bool. The
 	// Jinja chat template reads d["enable_thinking"] directly to decide

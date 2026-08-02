@@ -385,7 +385,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
-		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.job.params.Stream, usage)
+		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.finishReason, s.job.params.Stream, usage)
 }
 
 // failJob fails a job that was dequeued but never assigned to a slot. It sends

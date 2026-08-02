@@ -59,6 +59,55 @@ func TestToChatResponseToResponsesUsageIncludesReasoning(t *testing.T) {
 	}
 }
 
+func TestToChatResponseToResponsesTokenLimit(t *testing.T) {
+	finishReason := model.FinishReasonLength
+	chatResp := model.ChatResponse{
+		Choices: []model.Choice{{
+			Message:         &model.ResponseMessage{Content: "partial"},
+			FinishReasonPtr: &finishReason,
+		}},
+		Usage: &model.Usage{},
+	}
+
+	resp := toChatResponseToResponses(chatResp, model.D{})
+	if got, want := resp.Status, "incomplete"; got != want {
+		t.Errorf("Status: got %q, want %q", got, want)
+	}
+	if resp.CompletedAt != nil {
+		t.Errorf("CompletedAt: got %d, want nil", *resp.CompletedAt)
+	}
+	if resp.IncompleteDetail == nil {
+		t.Fatal("IncompleteDetail: got nil, want max_output_tokens")
+	}
+	if got, want := resp.IncompleteDetail.Reason, "max_output_tokens"; got != want {
+		t.Errorf("IncompleteDetail.Reason: got %q, want %q", got, want)
+	}
+}
+
+func TestStreamStateCompleteTokenLimit(t *testing.T) {
+	finishReason := model.FinishReasonLength
+	chatResp := model.ChatResponse{
+		Choices: []model.Choice{{FinishReasonPtr: &finishReason}},
+		Usage:   &model.Usage{},
+	}
+	ss := streamState{}
+
+	events := ss.complete(chatResp)
+	if len(events) == 0 {
+		t.Fatal("complete: got no events")
+	}
+	last := events[len(events)-1]
+	if got, want := last.Type, "response.incomplete"; got != want {
+		t.Errorf("event type: got %q, want %q", got, want)
+	}
+	if last.Response == nil {
+		t.Fatal("event response: got nil")
+	}
+	if got, want := last.Response.Status, "incomplete"; got != want {
+		t.Errorf("response status: got %q, want %q", got, want)
+	}
+}
+
 func TestConvertInputToMessagesRoleShapedImage(t *testing.T) {
 	const imageURL = "data:image/jpeg;base64,aW1hZ2U="
 

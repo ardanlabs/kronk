@@ -1574,9 +1574,10 @@ export default function DocsSDKModel() {
               <h4>FinishReasonStop</h4>
               <pre className="code-block">
                 <code>{`const (
-	FinishReasonStop  = "stop"
-	FinishReasonTool  = "tool_calls"
-	FinishReasonError = "error"
+	FinishReasonStop   = "stop"
+	FinishReasonLength = "length"
+	FinishReasonTool   = "tool_calls"
+	FinishReasonError  = "error"
 )`}</code>
               </pre>
               <p className="doc-description">FinishReasons represent the different reasons a response can be finished.</p>
