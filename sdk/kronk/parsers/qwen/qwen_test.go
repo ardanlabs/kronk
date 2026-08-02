@@ -2,6 +2,7 @@ package qwen
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -97,6 +98,105 @@ func TestParser_JSONToolCall(t *testing.T) {
 	_, eog := c.Classify("done")
 	if !eog {
 		t.Errorf("expected EOG after tool call closed")
+	}
+}
+
+func TestParser_JSONToolCallActivityDelta(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	streamer := c.(model.ToolCallDeltaStreamer)
+
+	var deltas []model.ResponseToolCallDelta
+	for _, token := range []string{
+		"<tool_call>",
+		`{"name":"get_`,
+		`weather","arguments":`,
+		`{"location":"London"}}`,
+		"</tool_call>",
+	} {
+		if _, eog := c.Classify(token); eog {
+			t.Fatalf("Classify(%q): got EOG before tool call completed", token)
+		}
+		deltas = append(deltas, streamer.ToolCallDeltas()...)
+	}
+
+	if len(deltas) != 1 {
+		t.Fatalf("ToolCallDeltas: got %d deltas, want 1", len(deltas))
+	}
+	if deltas[0].ID == "" {
+		t.Error("delta ID: got empty, want generated call ID")
+	}
+	if got, want := deltas[0].Index, 0; got != want {
+		t.Errorf("delta Index: got %d, want %d", got, want)
+	}
+	if got, want := deltas[0].Type, "function"; got != want {
+		t.Errorf("delta Type: got %q, want %q", got, want)
+	}
+	if got, want := deltas[0].Function.Name, "get_weather"; got != want {
+		t.Errorf("delta Function.Name: got %q, want %q", got, want)
+	}
+	if got := deltas[0].Function.Arguments; got != "" {
+		t.Errorf("delta Function.Arguments: got %q, want empty", got)
+	}
+
+	started := streamer.StartedToolCalls()
+	if len(started) != 1 {
+		t.Fatalf("StartedToolCalls: got %d calls, want 1", len(started))
+	}
+	if got, want := started[0].ID, deltas[0].ID; got != want {
+		t.Errorf("started call ID: got %q, want %q", got, want)
+	}
+}
+
+func TestParser_WrappedDirectToolCallActivityDelta(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	streamer := c.(model.ToolCallDeltaStreamer)
+
+	var deltas []model.ResponseToolCallDelta
+	for _, token := range []string{
+		"<tool_call>",
+		"\n", "<function", "=", "write", ">", "\n",
+		"<parameter=filePath>\n/tmp/main.go\n</parameter>\n",
+		"<parameter=content>\npackage main\n</parameter>\n",
+		"</function>\n</tool_call>",
+	} {
+		if _, eog := c.Classify(token); eog {
+			t.Fatalf("Classify(%q): got EOG before tool call completed", token)
+		}
+		deltas = append(deltas, streamer.ToolCallDeltas()...)
+	}
+
+	if len(deltas) != 1 {
+		t.Fatalf("ToolCallDeltas: got %d deltas, want 1", len(deltas))
+	}
+	if got, want := deltas[0].Function.Name, "write"; got != want {
+		t.Errorf("delta Function.Name: got %q, want %q", got, want)
+	}
+	if got := deltas[0].Function.Arguments; got != "" {
+		t.Errorf("delta Function.Arguments: got %q, want empty", got)
+	}
+}
+
+func TestParser_ToolCallActivityDeltaIndexes(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	streamer := c.(model.ToolCallDeltaStreamer)
+
+	var indexes []int
+	for _, token := range []string{
+		"<function=first>", "</function>",
+		"\n", "<function=second>", "</function>",
+	} {
+		if _, eog := c.Classify(token); eog {
+			t.Fatalf("Classify(%q): got EOG before tool calls completed", token)
+		}
+		for _, delta := range streamer.ToolCallDeltas() {
+			if delta.ID != "" {
+				indexes = append(indexes, delta.Index)
+			}
+		}
+	}
+
+	if got, want := indexes, []int{0, 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("activity delta indexes: got %v, want %v", got, want)
 	}
 }
 

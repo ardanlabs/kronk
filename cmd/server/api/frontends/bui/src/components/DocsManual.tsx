@@ -1803,6 +1803,7 @@ docker rm kronk
           <pre className="code-block"><code className="language-text">{`data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 
 data: [DONE]`}</code></pre>
+          <p>For compatible Qwen models, streaming responses emit an OpenAI-compatible tool-call activity delta as soon as the function name is known. The completed tool call, including all arguments, remains in the terminal response so clients that consume only the final chunk continue to work unchanged.</p>
           <h3 id="tool-calls">Tool calls</h3>
           <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability.</p>
           <p>When a tool is selected, the assistant message contains <code>tool_calls</code> and uses an empty string for <code>content</code>:</p>

@@ -224,6 +224,18 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 		s.specCoveredTotal++
 	}
 
+	if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok {
+		deltas := streamer.ToolCallDeltas()
+		if s.job.params.Stream {
+			for _, delta := range deltas {
+				if err := e.model.sendToolCallDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, delta); err != nil {
+					e.finishSlot(s, err)
+					return
+				}
+			}
+		}
+	}
+
 	// Non-streamable tokens (ChannelNone) have been counted above but have
 	// no content to stream or further process.
 	if result.Channel == ChannelNone {

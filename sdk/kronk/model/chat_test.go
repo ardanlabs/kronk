@@ -262,11 +262,223 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", tt.toolCalls, nil, tt.finishReason, Usage{})
+			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", tt.toolCalls, nil, nil, tt.finishReason, Usage{})
 			if got := resp.Choices[0].FinishReason(); got != tt.want {
 				t.Errorf("FinishReason: got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestChatResponseToolCallDeltaJSON(t *testing.T) {
+	resp := chatResponseToolCallDelta("id", ObjectChatText, "model", 0, ResponseToolCallDelta{
+		ID:    "call_1",
+		Index: 0,
+		Type:  "function",
+		Function: ResponseToolCallDeltaFunction{
+			Name: "get_weather",
+		},
+	})
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	choices := wire["choices"].([]any)
+	delta := choices[0].(map[string]any)["delta"].(map[string]any)
+	toolCalls := delta["tool_calls"].([]any)
+	toolCall := toolCalls[0].(map[string]any)
+	function := toolCall["function"].(map[string]any)
+
+	if got, want := toolCall["id"], "call_1"; got != want {
+		t.Errorf("tool call ID: got %v, want %v", got, want)
+	}
+	if got, want := function["name"], "get_weather"; got != want {
+		t.Errorf("function name: got %v, want %v", got, want)
+	}
+	if got, want := function["arguments"], ""; got != want {
+		t.Errorf("function arguments: got %v, want %v", got, want)
+	}
+}
+
+func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
+	toolCalls := []ResponseToolCall{{
+		ID:    "call_1",
+		Index: 0,
+		Type:  "function",
+		Function: ResponseToolCallFunction{
+			Name:      "get_weather",
+			Arguments: ToolCallArguments{"location": "London"},
+		},
+	}}
+	started := []ResponseToolCallDelta{{
+		ID:    "call_1",
+		Index: 0,
+		Type:  "function",
+		Function: ResponseToolCallDeltaFunction{
+			Name: "get_weather",
+		},
+	}}
+	terminal := reconcileStartedToolCalls(toolCalls, started)
+
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", toolCalls, terminal, nil, "", Usage{})
+	if resp.Choices[0].Delta == nil {
+		t.Fatal("Delta: got nil, want completed tool calls for streaming compatibility")
+	}
+	if got := resp.Choices[0].Delta.ToolCalls; len(got) != 1 {
+		t.Fatalf("Delta.ToolCalls: got %d calls, want 1", len(got))
+	}
+	if got, want := resp.Choices[0].Delta.ToolCalls[0].Function.Arguments["location"], "London"; got != want {
+		t.Errorf("location: got %v, want %v", got, want)
+	}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	choices := wire["choices"].([]any)
+	delta := choices[0].(map[string]any)["delta"].(map[string]any)
+	terminalCalls := delta["tool_calls"].([]any)
+	terminalCall := terminalCalls[0].(map[string]any)
+	if _, exists := terminalCall["id"]; exists {
+		t.Errorf("terminal delta: got repeated id in %v", terminalCall)
+	}
+	function := terminalCall["function"].(map[string]any)
+	if _, exists := function["name"]; exists {
+		t.Errorf("terminal delta: got repeated function name in %v", function)
+	}
+	if got, want := function["arguments"], `{"location":"London"}`; got != want {
+		t.Errorf("terminal arguments: got %v, want %v", got, want)
+	}
+}
+
+func TestChatResponseTextDeltaOmitsToolCalls(t *testing.T) {
+	resp := chatResponseDelta("id", ObjectChatText, "model", 0, "hello", false, nil)
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(data), `"tool_calls"`) {
+		t.Errorf("JSON: got %s, want tool_calls omitted", data)
+	}
+}
+
+func TestReconcileStartedToolCalls(t *testing.T) {
+	toolCalls := []ResponseToolCall{
+		{
+			ID:   "final-id",
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      "get_weather",
+				Arguments: ToolCallArguments{"location": "London"},
+			},
+		},
+	}
+	started := []ResponseToolCallDelta{
+		{
+			ID:    "stream-id",
+			Index: 1,
+			Type:  "function",
+			Function: ResponseToolCallDeltaFunction{
+				Name: "get_weather",
+			},
+		},
+	}
+
+	terminal := reconcileStartedToolCalls(toolCalls, started)
+	if len(terminal) != 1 {
+		t.Fatalf("terminal deltas: got %d, want 1", len(terminal))
+	}
+	if got, want := toolCalls[0].ID, "stream-id"; got != want {
+		t.Errorf("ID: got %q, want %q", got, want)
+	}
+	if got, want := toolCalls[0].Index, 1; got != want {
+		t.Errorf("Index: got %d, want %d", got, want)
+	}
+
+	toolCalls[0].ID = "final-id"
+	terminal = reconcileStartedToolCalls(toolCalls, nil)
+	if terminal != nil {
+		t.Errorf("terminal deltas without started calls: got %v, want nil", terminal)
+	}
+	if got, want := toolCalls[0].ID, "final-id"; got != want {
+		t.Errorf("ID without started calls: got %q, want %q", got, want)
+	}
+}
+
+func TestReconcileStartedToolCallsIndependently(t *testing.T) {
+	toolCalls := []ResponseToolCall{
+		{
+			ID:     "bad-final-id",
+			Type:   "function",
+			Status: 2,
+			Function: ResponseToolCallFunction{
+				Name: "broken",
+			},
+		},
+		{
+			ID:   "good-final-id",
+			Type: "function",
+			Function: ResponseToolCallFunction{
+				Name:      "working",
+				Arguments: ToolCallArguments{"value": "ok"},
+			},
+		},
+	}
+	started := []ResponseToolCallDelta{
+		{ID: "bad-start-id", Index: 0, Type: "function", Function: ResponseToolCallDeltaFunction{Name: "broken"}},
+		{ID: "good-start-id", Index: 1, Type: "function", Function: ResponseToolCallDeltaFunction{Name: "working"}},
+	}
+
+	terminal := reconcileStartedToolCalls(toolCalls, started)
+	if len(terminal) != 2 {
+		t.Fatalf("terminal deltas: got %d, want 2", len(terminal))
+	}
+	if got, want := toolCalls[0].ID, "bad-final-id"; got != want {
+		t.Errorf("malformed call ID: got %q, want %q", got, want)
+	}
+	if got := terminal[0].Function.Name; got != "" {
+		t.Errorf("malformed terminal name: got %q, want empty", got)
+	}
+	if got, want := toolCalls[1].ID, "good-start-id"; got != want {
+		t.Errorf("valid call ID: got %q, want %q", got, want)
+	}
+	if got := terminal[1].Function.Name; got != "" {
+		t.Errorf("valid terminal name: got %q, want empty", got)
+	}
+}
+
+func TestReconcileStartedToolCallsWithCardinalityMismatch(t *testing.T) {
+	toolCalls := []ResponseToolCall{
+		{ID: "first-final", Type: "function", Function: ResponseToolCallFunction{Name: "first", Arguments: ToolCallArguments{}}},
+		{ID: "second-final", Type: "function", Function: ResponseToolCallFunction{Name: "second", Arguments: ToolCallArguments{}}},
+	}
+	started := []ResponseToolCallDelta{
+		{ID: "first-start", Index: 0, Type: "function", Function: ResponseToolCallDeltaFunction{Name: "first"}},
+	}
+
+	terminal := reconcileStartedToolCalls(toolCalls, started)
+	if len(terminal) != 2 {
+		t.Fatalf("terminal deltas: got %d, want 2", len(terminal))
+	}
+	if got, want := toolCalls[0].ID, "first-start"; got != want {
+		t.Errorf("announced call ID: got %q, want %q", got, want)
+	}
+	if got := terminal[0].Function.Name; got != "" {
+		t.Errorf("announced terminal name: got %q, want empty", got)
+	}
+	if got, want := terminal[1].Function.Name, "second"; got != want {
+		t.Errorf("unannounced terminal name: got %q, want %q", got, want)
 	}
 }
 

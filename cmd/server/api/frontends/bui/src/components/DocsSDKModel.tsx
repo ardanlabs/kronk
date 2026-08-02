@@ -746,10 +746,11 @@ export default function DocsSDKModel() {
               <h4>ResponseMessage</h4>
               <pre className="code-block">
                 <code>{`type ResponseMessage struct {
-	Role      string             \`json:"role,omitempty"\`
-	Content   string             \`json:"content"\`
-	Reasoning string             \`json:"reasoning_content,omitempty"\`
-	ToolCalls []ResponseToolCall \`json:"tool_calls,omitempty"\`
+	Role           string                  \`json:"role,omitempty"\`
+	Content        string                  \`json:"content"\`
+	Reasoning      string                  \`json:"reasoning_content,omitempty"\`
+	ToolCalls      []ResponseToolCall      \`json:"tool_calls,omitempty"\`
+	ToolCallDeltas []ResponseToolCallDelta \`json:"-"\`
 }`}</code>
               </pre>
               <p className="doc-description">ResponseMessage represents a single message in a response.</p>
@@ -768,6 +769,30 @@ export default function DocsSDKModel() {
 	Error    string                   \`json:"error,omitempty"\`
 }`}</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="type-responsetoolcalldelta">
+              <h4>ResponseToolCallDelta</h4>
+              <pre className="code-block">
+                <code>{`type ResponseToolCallDelta struct {
+	ID       string                        \`json:"id,omitempty"\`
+	Index    int                           \`json:"index"\`
+	Type     string                        \`json:"type,omitempty"\`
+	Function ResponseToolCallDeltaFunction \`json:"function"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseToolCallDelta represents an incremental OpenAI tool-call delta.</p>
+            </div>
+
+            <div className="doc-section" id="type-responsetoolcalldeltafunction">
+              <h4>ResponseToolCallDeltaFunction</h4>
+              <pre className="code-block">
+                <code>{`type ResponseToolCallDeltaFunction struct {
+	Name      string \`json:"name,omitempty"\`
+	Arguments string \`json:"arguments"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseToolCallDeltaFunction represents an incremental function-call delta.</p>
             </div>
 
             <div className="doc-section" id="type-responsetoolcallfunction">
@@ -912,6 +937,20 @@ export default function DocsSDKModel() {
                 <code>{`type ToolCallArguments map[string]any`}</code>
               </pre>
               <p className="doc-description">ToolCallArguments represents tool call arguments that marshal to a JSON string per OpenAI API spec, but can unmarshal from either a string or object.</p>
+            </div>
+
+            <div className="doc-section" id="type-toolcalldeltastreamer">
+              <h4>ToolCallDeltaStreamer</h4>
+              <pre className="code-block">
+                <code>{`type ToolCallDeltaStreamer interface {
+	ToolCallDeltas() []ResponseToolCallDelta
+
+	// StartedToolCalls returns the tool-call identities emitted during the
+	// current request. Callers must not modify the returned slice.
+	StartedToolCalls() []ResponseToolCallDelta
+}`}</code>
+              </pre>
+              <p className="doc-description">ToolCallDeltaStreamer is implemented by state machines that can translate model-native tool-call starts into OpenAI-compatible activity deltas. ToolCallDeltas drains deltas produced by the most recent Classify call.</p>
             </div>
 
             <div className="doc-section" id="type-toplogprob">
@@ -1417,6 +1456,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">String returns a string representation of all resolved Params values in the format key[value]\nkey[value]\n ... Grammar contents are intentionally redacted; only whether a grammar is active is reported.</p>
             </div>
 
+            <div className="doc-section" id="method-responsemessage-marshaljson">
+              <h4>ResponseMessage.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (m ResponseMessage) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON emits incremental and completed tool calls through the same OpenAI-compatible tool_calls wire field.</p>
+            </div>
+
             <div className="doc-section" id="method-ropescalingtype-marshaljson">
               <h4>RopeScalingType.MarshalJSON</h4>
               <pre className="code-block">
@@ -1876,6 +1923,8 @@ export default function DocsSDKModel() {
                 <li><a href="#type-rerankusage">RerankUsage</a></li>
                 <li><a href="#type-responsemessage">ResponseMessage</a></li>
                 <li><a href="#type-responsetoolcall">ResponseToolCall</a></li>
+                <li><a href="#type-responsetoolcalldelta">ResponseToolCallDelta</a></li>
+                <li><a href="#type-responsetoolcalldeltafunction">ResponseToolCallDeltaFunction</a></li>
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
                 <li><a href="#type-result">Result</a></li>
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
@@ -1887,6 +1936,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
+                <li><a href="#type-toolcalldeltastreamer">ToolCallDeltaStreamer</a></li>
                 <li><a href="#type-toplogprob">TopLogprob</a></li>
                 <li><a href="#type-usage">Usage</a></li>
               </ul>
@@ -1957,6 +2007,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
                 <li><a href="#method-modeltype-string">ModelType.String</a></li>
                 <li><a href="#method-params-string">Params.String</a></li>
+                <li><a href="#method-responsemessage-marshaljson">ResponseMessage.MarshalJSON</a></li>
                 <li><a href="#method-ropescalingtype-marshaljson">RopeScalingType.MarshalJSON</a></li>
                 <li><a href="#method-ropescalingtype-marshalyaml">RopeScalingType.MarshalYAML</a></li>
                 <li><a href="#method-ropescalingtype-string">RopeScalingType.String</a></li>

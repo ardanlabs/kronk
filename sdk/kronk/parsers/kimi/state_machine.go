@@ -13,22 +13,33 @@ type stateMachine struct {
 	status model.Channel
 
 	pending strings.Builder
+	tools   strings.Builder
 	inTag   bool
 	inTools bool
+
+	toolCallDeltas []model.ResponseToolCallDelta
+	startedCalls   []model.ResponseToolCallDelta
+	detectedCalls  int
 }
 
 // Reset returns the stateMachine to its initial state for reuse.
 func (sm *stateMachine) Reset() {
 	sm.status = model.ChannelAnswer
 	sm.pending.Reset()
+	sm.tools.Reset()
 	sm.inTag = false
 	sm.inTools = false
+	sm.toolCallDeltas = nil
+	sm.startedCalls = nil
+	sm.detectedCalls = 0
 }
 
 // Classify classifies one decoded token's content.
 func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	if sm.inTools {
-		return model.Result{Channel: model.ChannelTool, Content: content}, false
+		sm.tools.WriteString(content)
+		sm.updateToolCallDeltas()
+		return sm.completeTools(), false
 	}
 
 	if sm.inTag {
@@ -79,8 +90,14 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	return sm.classifyTag(content)
 }
 
-// Flush drains an unresolved Kimi control-tag prefix as literal output.
+// Flush drains an unresolved Kimi control-tag prefix or incomplete tools block.
 func (sm *stateMachine) Flush() model.Result {
+	if sm.inTools {
+		content := sm.tools.String()
+		sm.tools.Reset()
+		sm.inTools = false
+		return model.Result{Channel: model.ChannelTool, Content: content}
+	}
 	if !sm.inTag {
 		return model.Result{}
 	}
@@ -88,8 +105,20 @@ func (sm *stateMachine) Flush() model.Result {
 	result := model.Result{Channel: sm.status, Content: sm.pending.String()}
 	sm.pending.Reset()
 	sm.inTag = false
-
 	return result
+}
+
+// ToolCallDeltas drains tool-call activity deltas discovered since the last
+// call.
+func (sm *stateMachine) ToolCallDeltas() []model.ResponseToolCallDelta {
+	deltas := sm.toolCallDeltas
+	sm.toolCallDeltas = nil
+	return deltas
+}
+
+// StartedToolCalls returns all tool-call identities discovered in this request.
+func (sm *stateMachine) StartedToolCalls() []model.ResponseToolCallDelta {
+	return sm.startedCalls
 }
 
 func (sm *stateMachine) classifyTag(candidate string) (model.Result, bool) {
@@ -105,7 +134,11 @@ func (sm *stateMachine) classifyTag(candidate string) (model.Result, bool) {
 	case toolsOpen:
 		sm.status = model.ChannelTool
 		sm.inTools = true
-		return model.Result{Channel: model.ChannelTool, Content: candidate}, false
+		sm.tools.Reset()
+		sm.tools.WriteString(candidate)
+		sm.detectedCalls = 0
+		sm.updateToolCallDeltas()
+		return sm.completeTools(), false
 	default:
 		// Message wrappers are structural. Unknown Kimi tags are also omitted
 		// rather than leaking protocol markup into user-visible content.
@@ -115,6 +148,58 @@ func (sm *stateMachine) classifyTag(candidate string) (model.Result, bool) {
 		return model.Result{}, false
 	}
 	return sm.Classify(remainder)
+}
+
+func (sm *stateMachine) completeTools() model.Result {
+	content := sm.tools.String()
+	closeAt := strings.Index(content, toolsClose)
+	if closeAt == -1 {
+		return model.Result{}
+	}
+	content = content[:closeAt+len(toolsClose)]
+	sm.tools.Reset()
+	sm.inTools = false
+	return model.Result{Channel: model.ChannelTool, Content: content}
+}
+
+func (sm *stateMachine) updateToolCallDeltas() {
+	content := sm.tools.String()
+	offset := 0
+	seen := 0
+	for {
+		callAt := strings.Index(content[offset:], callOpen)
+		if callAt == -1 {
+			return
+		}
+		callAt += offset
+		openerEnd := strings.Index(content[callAt:], sepToken)
+		if openerEnd == -1 {
+			return
+		}
+		openerEnd += callAt + len(sepToken)
+		if seen >= sm.detectedCalls {
+			name, err := attribute(content[callAt:openerEnd], "tool")
+			if err == nil {
+				sm.addToolCallDelta(name)
+			}
+		}
+		seen++
+		offset = openerEnd
+	}
+}
+
+func (sm *stateMachine) addToolCallDelta(name string) {
+	delta := model.ResponseToolCallDelta{
+		ID:    newToolCallID(),
+		Index: len(sm.startedCalls),
+		Type:  "function",
+		Function: model.ResponseToolCallDeltaFunction{
+			Name: name,
+		},
+	}
+	sm.toolCallDeltas = append(sm.toolCallDeltas, delta)
+	sm.startedCalls = append(sm.startedCalls, delta)
+	sm.detectedCalls++
 }
 
 func firstControlTag(content string) int {

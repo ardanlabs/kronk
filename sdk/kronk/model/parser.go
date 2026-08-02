@@ -115,6 +115,17 @@ type StateMachineFlusher interface {
 	Flush() Result
 }
 
+// ToolCallDeltaStreamer is implemented by state machines that can translate
+// model-native tool-call starts into OpenAI-compatible activity deltas.
+// ToolCallDeltas drains deltas produced by the most recent Classify call.
+type ToolCallDeltaStreamer interface {
+	ToolCallDeltas() []ResponseToolCallDelta
+
+	// StartedToolCalls returns the tool-call identities emitted during the
+	// current request. Callers must not modify the returned slice.
+	StartedToolCalls() []ResponseToolCallDelta
+}
+
 // Parser is the plugin interface implemented by each model lineage.
 // Implementations live in sdk/kronk/parsers/<name>/ and are registered
 // at startup via RegisterParser.

@@ -394,8 +394,52 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		returnPrompt = s.job.prompt
 	}
 
+	var terminalToolCallDeltas []ResponseToolCallDelta
+	if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok && s.job.params.Stream {
+		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, streamer.StartedToolCalls())
+	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
-		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, usage)
+		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, usage)
+}
+
+func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {
+	if len(toolCalls) == 0 || len(started) == 0 {
+		return nil
+	}
+
+	terminal := make([]ResponseToolCallDelta, len(toolCalls))
+	for i := range toolCalls {
+		arguments := ""
+		if toolCalls[i].Function.Arguments != nil {
+			data, err := json.Marshal(map[string]any(toolCalls[i].Function.Arguments))
+			if err != nil {
+				return nil
+			}
+			arguments = string(data)
+		}
+
+		terminal[i] = ResponseToolCallDelta{
+			ID:    toolCalls[i].ID,
+			Index: toolCalls[i].Index,
+			Type:  toolCalls[i].Type,
+			Function: ResponseToolCallDeltaFunction{
+				Name:      toolCalls[i].Function.Name,
+				Arguments: arguments,
+			},
+		}
+		if i < len(started) {
+			if toolCalls[i].Status == 0 && toolCalls[i].Function.Name == started[i].Function.Name {
+				toolCalls[i].ID = started[i].ID
+				toolCalls[i].Index = started[i].Index
+			}
+			terminal[i].ID = ""
+			terminal[i].Index = started[i].Index
+			terminal[i].Type = ""
+			terminal[i].Function.Name = ""
+		}
+	}
+
+	return terminal
 }
 
 // flushStateMachine preserves model output held by parser lookahead when

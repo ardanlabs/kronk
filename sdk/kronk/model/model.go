@@ -1266,7 +1266,23 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, usage Usage) {
+func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, delta ResponseToolCallDelta) error {
+	select {
+	case <-ctx.Done():
+		select {
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, "", ctx.Err(), Usage{}):
+		default:
+		}
+
+		return ctx.Err()
+
+	case ch <- chatResponseToolCallDelta(id, object, m.modelInfo.ID, choiceIndex, delta):
+	}
+
+	return nil
+}
+
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, usage Usage) {
 	effectiveFinishReason := finishReason
 	if effectiveFinishReason == "" {
 		effectiveFinishReason = FinishReasonStop
@@ -1333,6 +1349,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
+		terminalToolCallDeltas,
 		finalLogprobs,
 		finishReason,
 		usage):

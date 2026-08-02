@@ -782,12 +782,53 @@ type ResponseToolCall struct {
 	Error    string                   `json:"error,omitempty"`
 }
 
+// ResponseToolCallDeltaFunction represents an incremental function-call delta.
+type ResponseToolCallDeltaFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments"`
+}
+
+// ResponseToolCallDelta represents an incremental OpenAI tool-call delta.
+type ResponseToolCallDelta struct {
+	ID       string                        `json:"id,omitempty"`
+	Index    int                           `json:"index"`
+	Type     string                        `json:"type,omitempty"`
+	Function ResponseToolCallDeltaFunction `json:"function"`
+}
+
 // ResponseMessage represents a single message in a response.
 type ResponseMessage struct {
-	Role      string             `json:"role,omitempty"`
-	Content   string             `json:"content"`
-	Reasoning string             `json:"reasoning_content,omitempty"`
-	ToolCalls []ResponseToolCall `json:"tool_calls,omitempty"`
+	Role           string                  `json:"role,omitempty"`
+	Content        string                  `json:"content"`
+	Reasoning      string                  `json:"reasoning_content,omitempty"`
+	ToolCalls      []ResponseToolCall      `json:"tool_calls,omitempty"`
+	ToolCallDeltas []ResponseToolCallDelta `json:"-"`
+}
+
+// MarshalJSON emits incremental and completed tool calls through the same
+// OpenAI-compatible tool_calls wire field.
+func (m ResponseMessage) MarshalJSON() ([]byte, error) {
+	type responseMessage struct {
+		Role      string `json:"role,omitempty"`
+		Content   string `json:"content"`
+		Reasoning string `json:"reasoning_content,omitempty"`
+		ToolCalls any    `json:"tool_calls,omitempty"`
+	}
+
+	var toolCalls any
+	switch {
+	case len(m.ToolCallDeltas) > 0:
+		toolCalls = m.ToolCallDeltas
+	case len(m.ToolCalls) > 0:
+		toolCalls = m.ToolCalls
+	}
+
+	return json.Marshal(responseMessage{
+		Role:      m.Role,
+		Content:   m.Content,
+		Reasoning: m.Reasoning,
+		ToolCalls: toolCalls,
+	})
 }
 
 // Choice represents a single choice in a response.
@@ -894,6 +935,25 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 	}
 }
 
+func chatResponseToolCallDelta(id string, object string, model string, index int, delta ResponseToolCallDelta) ChatResponse {
+	return ChatResponse{
+		ID:                id,
+		Object:            object,
+		Created:           time.Now().Unix(),
+		Model:             model,
+		SystemFingerprint: "fp_kronk",
+		Choices: []Choice{
+			{
+				Index: index,
+				Delta: &ResponseMessage{
+					Role:           RoleAssistant,
+					ToolCallDeltas: []ResponseToolCallDelta{delta},
+				},
+			},
+		},
+	}
+}
+
 func forContent(content string, reasoning bool) string {
 	if !reasoning {
 		return content
@@ -910,7 +970,7 @@ func forReasoning(content string, reasoning bool) string {
 	return ""
 }
 
-func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
+func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
 	var logprobs *Logprobs
 	if len(logprobsData) > 0 {
 		logprobs = &Logprobs{Content: logprobsData}
@@ -933,7 +993,13 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 		}
 	}
 	if len(respToolCalls) > 0 {
-		delta = msg
+		delta = &ResponseMessage{
+			Role:           msg.Role,
+			Content:        msg.Content,
+			Reasoning:      msg.Reasoning,
+			ToolCalls:      msg.ToolCalls,
+			ToolCallDeltas: terminalToolCallDeltas,
+		}
 	}
 
 	return ChatResponse{

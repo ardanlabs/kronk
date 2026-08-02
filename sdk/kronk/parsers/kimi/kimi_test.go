@@ -50,8 +50,8 @@ func TestStateMachineReasoningResponseAndTools(t *testing.T) {
 	assertResult(t, sm, responseOpen, model.ChannelNone, "", false)
 	assertResult(t, sm, "answer", model.ChannelAnswer, "answer", false)
 	assertResult(t, sm, responseClose, model.ChannelNone, "", false)
-	assertResult(t, sm, toolsOpen, model.ChannelTool, toolsOpen, false)
-	assertResult(t, sm, callOpen, model.ChannelTool, callOpen, false)
+	assertResult(t, sm, toolsOpen, model.ChannelNone, "", false)
+	assertResult(t, sm, callOpen, model.ChannelNone, "", false)
 }
 
 func TestStateMachineEveryThinkOpenerSplit(t *testing.T) {
@@ -83,6 +83,53 @@ func TestStateMachineSplitToolsBlock(t *testing.T) {
 	if got := tool.String(); !strings.HasPrefix(got, toolsOpen) || !strings.HasSuffix(got, toolsClose) {
 		t.Errorf("tool content = %q, want complete Kimi tools block", got)
 	}
+}
+
+func TestStateMachineToolActivityAndCompleteRelease(t *testing.T) {
+	sm := Parser{}.NewStateMachine()
+	streamer := sm.(model.ToolCallDeltaStreamer)
+	first := callOpen + ` tool="weather" index="1"` + sepToken + callClose
+	second := callOpen + ` tool="clock" index="2"` + sepToken + callClose
+	block := toolsOpen + first + second + toolsClose
+
+	for _, token := range []string{toolsOpen, "<|op", `en|>call tool="wea`, `ther" index="1"<|sep|>` + callClose, second} {
+		assertResult(t, sm, token, model.ChannelNone, "", false)
+	}
+	deltas := streamer.ToolCallDeltas()
+	if len(deltas) != 2 {
+		t.Fatalf("ToolCallDeltas: got %d, want 2", len(deltas))
+	}
+	for i, wantName := range []string{"weather", "clock"} {
+		if deltas[i].ID == "" || deltas[i].Index != i || deltas[i].Type != "function" ||
+			deltas[i].Function.Name != wantName || deltas[i].Function.Arguments != "" {
+			t.Errorf("delta %d: got %+v, want name %q at index %d", i, deltas[i], wantName, i)
+		}
+	}
+	if got := streamer.ToolCallDeltas(); len(got) != 0 {
+		t.Errorf("drained ToolCallDeltas: got %d, want 0", len(got))
+	}
+	assertResult(t, sm, toolsClose+"ignored", model.ChannelTool, block, false)
+	started := streamer.StartedToolCalls()
+	if len(started) != 2 || started[0].ID != deltas[0].ID || started[1].ID != deltas[1].ID {
+		t.Errorf("StartedToolCalls: got %+v, want delta identities", started)
+	}
+}
+
+func TestStateMachineFlushAndResetToolBlock(t *testing.T) {
+	sm := Parser{}.NewStateMachine()
+	partial := toolsOpen + callOpen + ` tool="ping" index="1"` + sepToken
+	assertResult(t, sm, partial, model.ChannelNone, "", false)
+	got := sm.(model.StateMachineFlusher).Flush()
+	if got.Channel != model.ChannelTool || got.Content != partial {
+		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelTool, partial)
+	}
+
+	sm.Reset()
+	streamer := sm.(model.ToolCallDeltaStreamer)
+	if len(streamer.ToolCallDeltas()) != 0 || len(streamer.StartedToolCalls()) != 0 {
+		t.Error("Reset did not clear tool-call delta state")
+	}
+	assertResult(t, sm, "answer", model.ChannelAnswer, "answer", false)
 }
 
 func TestStateMachinePendingFalseAlarmAndReset(t *testing.T) {

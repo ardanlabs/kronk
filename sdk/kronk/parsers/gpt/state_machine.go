@@ -1,7 +1,6 @@
 package gpt
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -24,6 +23,10 @@ type stateMachine struct {
 
 	// Function name extracted from "commentary to=functions.NAME" channel.
 	toolFuncName string
+
+	toolCallBuf    strings.Builder
+	toolCallDeltas []model.ResponseToolCallDelta
+	startedCalls   []model.ResponseToolCallDelta
 }
 
 // Reset returns the stateMachine to its initial state for reuse on a new
@@ -35,6 +38,9 @@ func (sm *stateMachine) Reset() {
 	sm.awaitingConstrain = false
 	sm.channelBuf.Reset()
 	sm.toolFuncName = ""
+	sm.toolCallBuf.Reset()
+	sm.toolCallDeltas = nil
+	sm.startedCalls = nil
 }
 
 // Classify classifies a single decoded token's content. Direct port of stepGPT from
@@ -45,13 +51,13 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		if content == "<|return|>" || content == "<|call|>" {
 			sm.collecting = false
 			sm.status = model.ChannelNone
-			return model.Result{}, true // End of generation
+			return model.Result{}, true // End of generation; Flush releases a buffered tool call.
 		}
 
 		if content == "<|end|>" {
 			sm.collecting = false
 			sm.status = model.ChannelNone
-			return model.Result{}, false
+			return sm.releaseToolCall(), false
 		}
 
 		// Handle non-deterministic models that emit <|start|> or <|channel|>
@@ -72,6 +78,11 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			return model.Result{}, false
 		}
 
+		if sm.status == model.ChannelTool {
+			sm.toolCallBuf.WriteString(content)
+			return model.Result{}, false
+		}
+
 		return model.Result{Channel: sm.status, Content: content}, false
 	}
 
@@ -81,13 +92,9 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			sm.awaitingConstrain = false
 			sm.collecting = true
 
-			// Emit the function name prefix for tool calls so parseGPTToolCall
-			// can parse it. Format: ".FUNC_NAME <|message|>" which
-			// parseGPTToolCall expects.
 			if sm.status == model.ChannelTool && sm.toolFuncName != "" {
-				prefix := fmt.Sprintf(".%s <|message|>", sm.toolFuncName)
+				sm.toolCallBuf.WriteString("." + sm.toolFuncName + " <|message|>")
 				sm.toolFuncName = ""
-				return model.Result{Channel: sm.status, Content: prefix}, false
 			}
 		}
 		return model.Result{}, false
@@ -115,6 +122,9 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 				if _, after, ok := strings.Cut(channelName, " to="); ok {
 					funcName := strings.TrimSpace(after)
 					sm.toolFuncName = strings.TrimPrefix(funcName, "functions.")
+					if sm.toolFuncName != "" {
+						sm.startToolCall(sm.toolFuncName)
+					}
 				}
 			}
 
@@ -123,6 +133,10 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 				sm.awaitingConstrain = true
 			case false:
 				sm.collecting = true
+				if sm.status == model.ChannelTool && sm.toolFuncName != "" {
+					sm.toolCallBuf.WriteString("." + sm.toolFuncName + " <|message|>")
+					sm.toolFuncName = ""
+				}
 			}
 
 			return model.Result{}, false
@@ -159,4 +173,44 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	default:
 		return model.Result{}, false
 	}
+}
+
+func (sm *stateMachine) startToolCall(name string) {
+	delta := model.ResponseToolCallDelta{
+		ID:    newToolCallID(),
+		Index: len(sm.startedCalls),
+		Type:  "function",
+		Function: model.ResponseToolCallDeltaFunction{
+			Name: name,
+		},
+	}
+	sm.toolCallDeltas = append(sm.toolCallDeltas, delta)
+	sm.startedCalls = append(sm.startedCalls, delta)
+}
+
+func (sm *stateMachine) releaseToolCall() model.Result {
+	if sm.toolCallBuf.Len() == 0 {
+		return model.Result{}
+	}
+
+	content := sm.toolCallBuf.String()
+	sm.toolCallBuf.Reset()
+	return model.Result{Channel: model.ChannelTool, Content: content}
+}
+
+// Flush releases an incomplete buffered native tool call.
+func (sm *stateMachine) Flush() model.Result {
+	return sm.releaseToolCall()
+}
+
+// ToolCallDeltas drains tool-call identity deltas produced by Classify.
+func (sm *stateMachine) ToolCallDeltas() []model.ResponseToolCallDelta {
+	deltas := sm.toolCallDeltas
+	sm.toolCallDeltas = nil
+	return deltas
+}
+
+// StartedToolCalls returns identities emitted during the current request.
+func (sm *stateMachine) StartedToolCalls() []model.ResponseToolCallDelta {
+	return sm.startedCalls
 }

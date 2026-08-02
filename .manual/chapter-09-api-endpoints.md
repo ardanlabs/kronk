@@ -90,6 +90,11 @@ data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 data: [DONE]
 ```
 
+For compatible Qwen models, streaming responses emit an OpenAI-compatible
+tool-call activity delta as soon as the function name is known. The completed
+tool call, including all arguments, remains in the terminal response so clients
+that consume only the final chunk continue to work unchanged.
+
 ### Tool calls
 
 Add OpenAI-style function definitions in `tools` and use
