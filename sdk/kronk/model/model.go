@@ -1237,9 +1237,18 @@ func (m *Model) isUnnecessaryCRLF(reasonFlag int, completionFlag int, content st
 	return false
 }
 
-func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, reasonFlag int, outputTokens int, logprob *ContentLogprob) error {
+func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, channel Channel, reasoningTokens int, outputTokens int, logprob *ContentLogprob) error {
 	if outputTokens%500 == 0 {
-		m.log(ctx, "chat-completion", "status", "delta", "id", id, "tokens", outputTokens, "object", object, "reasoning", reasonFlag, "content", len(content))
+		m.log(ctx, "chat-completion",
+			"status", "delta",
+			"id", id,
+			"object", object,
+			"channel", channelName(channel),
+			"output_tokens", outputTokens,
+			"reasoning_tokens", reasoningTokens,
+			"completion_tokens", outputTokens-reasoningTokens,
+			"chunk_bytes", len(content),
+		)
 	}
 
 	select {
@@ -1251,25 +1260,60 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 
 		return ctx.Err()
 
-	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, reasonFlag > 0, logprob):
+	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, channel == ChannelReasoning, logprob):
 	}
 
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, streaming bool, usage Usage) {
-	args := []any{"status", "final", "id", id, "tokens", usage.OutputTokens, "object", object, "tooling", len(respToolCalls) > 0, "reasoning", finalReasoning.Len(), "content", finalContent.Len()}
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, usage Usage) {
+	effectiveFinishReason := finishReason
+	if effectiveFinishReason == "" {
+		effectiveFinishReason = FinishReasonStop
+		if len(respToolCalls) > 0 {
+			effectiveFinishReason = FinishReasonTool
+		}
+	}
+
+	emptyAnswer := finalContent.Len() == 0 && len(respToolCalls) == 0
+	args := []any{
+		"status", "final",
+		"id", id,
+		"object", object,
+		"finish_reason", effectiveFinishReason,
+		"stop_source", stopSource,
+		"final_channel", channelName(finalChannel),
+		"empty_answer", emptyAnswer,
+		"output_tokens", usage.OutputTokens,
+		"reasoning_tokens", usage.ReasoningTokens,
+		"completion_tokens", usage.CompletionTokens,
+		"reasoning_bytes", finalReasoning.Len(),
+		"content_bytes", finalContent.Len(),
+		"tool_calls", len(respToolCalls),
+		"buffered_tool_bytes", bufferedToolBytes,
+	}
 	// When a draft model is configured, always emit draft metrics so the
 	// log schema stays stable for scrapers/dashboards even when
 	// speculation was disabled mid-request (collapsed acceptance EMA).
 	// Models without a draft model omit the fields entirely.
 	if m.draft != nil {
-		args = append(args, "draft_tokens", usage.DraftTokens, "draft_accepted_tokens", usage.DraftAcceptedTokens, "acceptance_rate", fmt.Sprintf("%.2f", usage.DraftAcceptanceRate), "draft_coverage", fmt.Sprintf("%.2f", usage.DraftCoverage))
+		args = append(args, "draft_tokens", usage.DraftTokens, "draft_accepted_tokens", usage.DraftAcceptedTokens, "draft_acceptance_rate", fmt.Sprintf("%.2f", usage.DraftAcceptanceRate), "draft_coverage", fmt.Sprintf("%.2f", usage.DraftCoverage))
 		if usage.DraftDisableReason != "" {
 			args = append(args, "draft_disable_reason", usage.DraftDisableReason)
 		}
 	}
 	m.log(ctx, "chat-completion", args...)
+	if emptyAnswer && usage.ReasoningTokens > 0 {
+		m.log(ctx, "chat-completion",
+			"status", "warning",
+			"condition", "reasoning-only-response",
+			"id", id,
+			"stop_source", stopSource,
+			"final_channel", channelName(finalChannel),
+			"reasoning_tokens", usage.ReasoningTokens,
+			"reasoning_bytes", finalReasoning.Len(),
+		)
+	}
 
 	// For streaming responses, logprobs were already sent per-delta chunk.
 	// Only include accumulated logprobs for non-streaming requests.

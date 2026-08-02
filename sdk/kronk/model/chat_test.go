@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -172,6 +173,24 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 				t.Errorf("FinishReason: got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestStreamingResponseLoggerStringReportsTotalBytes(t *testing.T) {
+	l := StreamingResponseLogger{
+		finishReason: FinishReasonStop,
+		content:      "answer",
+		reasoning:    strings.Repeat("r", 500),
+	}
+
+	got := l.String()
+	for _, want := range []string{
+		"Content (6 bytes total, first 400 characters shown): answer",
+		"Reasoning (500 bytes total, first 400 characters shown): " + strings.Repeat("r", 400),
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("String: got %q, want substring %q", got, want)
+		}
 	}
 }
 

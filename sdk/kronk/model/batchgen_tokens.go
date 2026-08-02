@@ -74,6 +74,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 
 	// Check for end of generation.
 	if llama.VocabIsEOG(e.model.vocab, token) {
+		s.stopSource = "vocab-eog"
 		e.finishSlot(s, nil)
 		return
 	}
@@ -157,6 +158,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 
 		if outputTokens >= s.job.params.MaxTokens {
 			s.finishReason = FinishReasonLength
+			s.stopSource = "max-tokens"
 			e.finishSlot(s, nil)
 			return
 		}
@@ -169,9 +171,12 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 	result, eog := s.stateMachine.Classify(content)
 
 	if eog {
+		s.stopSource = "parser-eog"
 		e.finishSlot(s, nil)
 		return
 	}
+
+	previousChannel := slotChannel(s)
 
 	// Update flags based on the classified channel.
 	switch result.Channel {
@@ -189,6 +194,19 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 		s.toolFlag++
 		s.reasonFlag = 0
 		s.completionFlag = 0
+	}
+
+	if result.Channel != ChannelNone && previousChannel != result.Channel {
+		args := []any{
+			"status", "channel-transition",
+			"id", s.job.id,
+			"from", channelName(previousChannel),
+			"to", channelName(result.Channel),
+		}
+		if result.Channel == ChannelTool {
+			args = append(args, "tool_buffering", "started")
+		}
+		e.model.log(s.job.ctx, "chat-completion", args...)
 	}
 
 	// Count every token the model generates. handleSampledToken processes EOG
@@ -212,6 +230,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 		outputTokens := s.reasonTokens + s.completionTokens
 		if outputTokens >= s.job.params.MaxTokens {
 			s.finishReason = FinishReasonLength
+			s.stopSource = "max-tokens"
 			e.finishSlot(s, nil)
 			return
 		}
@@ -239,7 +258,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 		// Skip unnecessary CRLF at mode transitions.
 		if !e.model.isUnnecessaryCRLF(s.reasonFlag, s.completionFlag, result.Content) {
 			// Per OpenAI spec, usage is only sent in the final response, not deltas.
-			err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, s.reasonFlag, outputTokens, s.currentLogprob)
+			err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, result.Channel, s.reasonTokens, outputTokens, s.currentLogprob)
 			if err != nil {
 				e.finishSlot(s, err)
 				return
@@ -249,6 +268,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 
 	if outputTokens >= s.job.params.MaxTokens {
 		s.finishReason = FinishReasonLength
+		s.stopSource = "max-tokens"
 		e.finishSlot(s, nil)
 		return
 	}

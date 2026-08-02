@@ -129,7 +129,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if err != nil {
 			prepSpan.End()
 			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -139,7 +139,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if err != nil {
 			prepSpan.End()
 			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -166,7 +166,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 		if err != nil {
 			prepSpan.End()
 			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart), "err", err)
+				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
 			m.recordChatFailure(ctx, requestStart, err)
 			m.sendChatError(ctx, ch, id, err)
 			return
@@ -184,7 +184,7 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			"stage_name", "prepare-model-work",
 			"status", "complete",
 			"id", id,
-			"elapsed", time.Since(requestStart),
+			"elapsed", time.Since(requestStart).String(),
 			"imc_session", cache.imcSessionID,
 			"imc_match_kind", cache.imcMatchKind,
 		)
@@ -417,7 +417,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 			"stage_name", "schedule-job",
 			"status", lifecycleStatus(err),
 			"id", id,
-			"elapsed", time.Since(job.queuedAt),
+			"elapsed", time.Since(job.queuedAt).String(),
 			"err", err,
 		)
 

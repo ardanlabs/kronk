@@ -68,7 +68,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		"status", "complete",
 		"id", job.id,
 		"slot", s.id,
-		"queue_wait", queueWait,
+		"queue_wait", queueWait.String(),
 	)
 
 	// Start span for this chat request. Store the span context so child

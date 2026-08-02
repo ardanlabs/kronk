@@ -53,6 +53,32 @@ const (
 	ChannelTool
 )
 
+func channelName(channel Channel) string {
+	switch channel {
+	case ChannelReasoning:
+		return "reasoning"
+	case ChannelAnswer:
+		return "answer"
+	case ChannelTool:
+		return "tool"
+	default:
+		return "none"
+	}
+}
+
+func slotChannel(s *slot) Channel {
+	switch {
+	case s.reasonFlag > 0:
+		return ChannelReasoning
+	case s.toolFlag > 0:
+		return ChannelTool
+	case s.completionFlag > 0:
+		return ChannelAnswer
+	default:
+		return ChannelNone
+	}
+}
+
 // Result is the per-token outcome returned by StateMachine.Classify.
 //
 // Content may be empty when the token is a structural marker that has been
