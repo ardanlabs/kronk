@@ -92,6 +92,40 @@ func TestSWAFull(t *testing.T) {
 	}
 }
 
+func TestEffectiveSWAFull(t *testing.T) {
+	enabled := true
+	disabled := false
+
+	tests := []struct {
+		name         string
+		configured   *bool
+		llamaDefault bool
+		want         bool
+	}{
+		{"unset uses enabled llama default", nil, true, true},
+		{"unset uses disabled llama default", nil, false, false},
+		{"explicit enabled overrides default", &enabled, false, true},
+		{"explicit disabled overrides default", &disabled, true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveSWAFull(tt.configured, tt.llamaDefault); got != tt.want {
+				t.Errorf("effectiveSWAFull: got %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestModelInfoStringIncludesNSWA(t *testing.T) {
+	const nSWA = 4096
+
+	got := (ModelInfo{NSWA: nSWA}).String()
+	if !strings.Contains(got, "NSWA[4096]") {
+		t.Errorf("ModelInfo.String: got %q, want NSWA[%d]", got, nSWA)
+	}
+}
+
 func TestFlashAttentionPresence(t *testing.T) {
 	tests := []struct {
 		name      string

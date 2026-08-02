@@ -492,6 +492,7 @@ export default function DocsSDKModel() {
 	Size          uint64
 	VRAMTotal     int64
 	SlotMemory    int64
+	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
 	Type          ModelType
 	IsGPTModel    bool
 	IsEmbedModel  bool

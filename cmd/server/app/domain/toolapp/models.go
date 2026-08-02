@@ -322,10 +322,11 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	slots := max(req.Slots, 1)
-	swaFull := true
-	if req.SWAFull != nil {
-		swaFull = *req.SWAFull
+	var configuredSWAFull *bool
+	if req.ModelID != "" {
+		configuredSWAFull = a.pool.Kronk.ModelConfig()[req.ModelID].PtrSWAFull
 	}
+	swaFull := resolveSWAFull(req.SWAFull, configuredSWAFull)
 
 	cfg := vram.Config{
 		ContextWindow:     req.ContextWindow,

@@ -400,7 +400,7 @@ export default function CatalogList() {
         context_window: 8192,
         bytes_per_element: 1,
         slots: 2,
-        swa_full: true,
+        swa_full: modelInfo?.swa_full_default,
       });
       if (signal?.cancelled) return;
       setRemoteVram(prev => ({ ...prev, [id]: resp }));
@@ -412,7 +412,7 @@ export default function CatalogList() {
         setRemoteVramLoading(curr => curr === id ? null : curr);
       }
     }
-  }, []);
+  }, [modelInfo?.swa_full_default]);
 
   // Auto-fetch when VRAM tab is opened for a non-downloaded model
   useEffect(() => {

@@ -62,6 +62,8 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 			Files:          models.NewFiles(entry),
 		},
 	}
+	configuredSWAFull := a.pool.Kronk.ModelConfig()[id].PtrSWAFull
+	detail.SWAFullDefault = resolveSWAFull(nil, configuredSWAFull)
 
 	// Pull GGUF metadata best-effort; the screen still renders even if
 	// the head can't be sourced (offline + nothing cached + nothing
@@ -99,7 +101,7 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		ContextWindow:   vram.ContextWindow128K,
 		BytesPerElement: vram.BytesPerElementF16,
 		Slots:           vram.Slots1,
-		SWAFull:         true,
+		SWAFull:         detail.SWAFullDefault,
 	}
 
 	if v, vErr := vram.FromBytes(data, totalSize, cfg); vErr != nil {

@@ -287,6 +287,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l(ctx, "calculate-vram",
 		"vram-total", humanBytes(modelInfo.VRAMTotal),
 		"slot-memory", humanBytes(modelInfo.SlotMemory),
+		"n-swa", modelInfo.NSWA,
 		"diag", vramDiag,
 	)
 
@@ -1339,24 +1340,33 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		BytesPerElement:   int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
 		Slots:             int64(max(cfg.NSeqMax(), 1)),
 		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
-		SWAFull:           cfg.SWAFull(),
+		SWAFull:           effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 	}
+	swaFull := vramCfg.SWAFull
 
 	result, err := vram.FromFiles(cfg.ModelFiles, vramCfg)
 	if err != nil {
 		return int64(mi.Size), 0, err.Error()
 	}
 
-	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] swa_window[%d] swa_layers[%d]",
+	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] n_swa[%d] swa_full[%t] swa_window_metadata[%d] swa_layers[%d]",
 		mi.Metadata["general.architecture"],
 		result.Input.BlockCount, result.Input.HeadCountKV,
 		result.Input.KeyLength, result.Input.ValueLength,
 		result.Input.BytesPerElement, result.Input.ContextWindow,
-		result.Input.Slots, result.Input.SlidingWindow,
+		result.Input.Slots, mi.NSWA, swaFull, result.Input.SlidingWindow,
 		result.Input.SlidingWindowLayers,
 	)
 
 	return result.TotalVRAM, result.SlotMemory, diag
+}
+
+func effectiveSWAFull(configured *bool, llamaDefault bool) bool {
+	if configured != nil {
+		return *configured
+	}
+
+	return llamaDefault
 }
 
 // resolveBackendDevice maps a user-facing device name to the ggml backend
