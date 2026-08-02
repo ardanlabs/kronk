@@ -9,15 +9,17 @@ import (
 )
 
 const (
-	colorReset  = "\033[0m"
-	colorRed    = "\033[1;31m"
-	colorGreen  = "\033[1;32m"
-	colorWhite  = "\033[37m"
-	colorGrid   = "\033[32m"
-	clearScreen = "\033[2J\033[H"
+	colorReset     = "\033[0m"
+	colorGreen     = "\033[32m"
+	colorWhite     = "\033[37m"
+	colorBoldRed   = "\033[1;31m"
+	colorBoldGreen = "\033[1;32m"
+	clearScreen    = "\033[2J\033[H"
 )
 
-type Board [9]rune
+type Board struct {
+	cells [9]string
+}
 
 type Score struct {
 	X     int
@@ -25,93 +27,38 @@ type Score struct {
 	Draws int
 }
 
-var scanner = bufio.NewScanner(os.Stdin)
+var (
+	currentScore Score
+	reader       = bufio.NewReader(os.Stdin)
+)
 
-func main() {
-	score := &Score{}
-	for {
-		board := Board{'1', '2', '3', '4', '5', '6', '7', '8', '9'}
-		winner, isDraw := playGame(&board, score)
-
-		fmt.Printf("\n%s\n", winner)
-		if isDraw {
-			fmt.Println("It's a draw!")
-		}
-
-		fmt.Print("\nPlay again? (y/n): ")
-		if !scanner.Scan() {
-			break
-		}
-		if strings.ToLower(strings.TrimSpace(scanner.Text())) != "y" {
-			break
-		}
-	}
-}
-
-func playGame(b *Board, s *Score) (string, bool) {
-	for {
-		printBoard(b, s)
-
-		var turn string
-		var playerFunc func(*Board) int
-		xCount, oCount := 0, 0
-		for _, r := range b {
-			if r == 'X' {
-				xCount++
-			} else if r == 'O' {
-				oCount++
-			}
-		}
-
-		if xCount == oCount {
-			turn = "X"
-			playerFunc = playerX
-		} else {
-			turn = "O"
-			playerFunc = playerO
-		}
-
-		move := playerFunc(b)
-		b[move-1] = rune(turn[0])
-
-		if winner, isDraw := checkWinner(b); winner != "" || isDraw {
-			if winner != "" {
-				if turn == "X" {
-					s.X++
-				} else {
-					s.O++
-				}
-				return "Player " + turn + " wins!", false
-			}
-			s.Draws++
-			return "", true
-		}
-	}
-}
-
-func printBoard(b *Board, s *Score) {
+func renderBoard(b *Board, turn string) {
 	fmt.Print(clearScreen)
-	fmt.Printf("\nScore: X: %d | O: %d | Draws: %d\n\n", s.X, s.O, s.Draws)
+	fmt.Printf("\nScore: X: %d | O: %d | Draws: %d\n\n", currentScore.X, currentScore.O, currentScore.Draws)
 
-	for i := 0; i < 9; i++ {
-		char := b[i]
-		color := colorWhite
-		if char == 'X' {
-			color = colorRed
-		} else if char == 'O' {
-			color = colorGreen
+	formatCell := func(val string) string {
+		switch val {
+		case "X":
+			return colorBoldRed + "X" + colorReset
+		case "O":
+			return colorBoldGreen + "O" + colorReset
+		default:
+			return colorWhite + val + colorReset
 		}
+	}
 
-		fmt.Printf(" %s%c%s", color, char, colorReset)
-		if i%3 == 2 {
-			fmt.Println()
-		} else {
-			fmt.Printf("%s | %s", colorGrid, colorReset)
-		}
+	sep := colorGreen + "|" + colorReset
+	line := colorGreen + "-----------" + colorReset
 
-		if i == 2 || i == 5 {
-			fmt.Printf("%s-----------\n%s", colorGrid, colorReset)
-		}
+	fmt.Printf(" %s %s %s %s %s\n", formatCell(b.cells[0]), sep, formatCell(b.cells[1]), sep, formatCell(b.cells[2]))
+	fmt.Println(line)
+	fmt.Printf(" %s %s %s %s %s\n", formatCell(b.cells[3]), sep, formatCell(b.cells[4]), sep, formatCell(b.cells[5]))
+	fmt.Println(line)
+	fmt.Printf(" %s %s %s %s %s\n", formatCell(b.cells[6]), sep, formatCell(b.cells[7]), sep, formatCell(b.cells[8]))
+	fmt.Println()
+
+	if turn != "" {
+		fmt.Printf("Player %s's turn. Enter a number (1-9): ", turn)
 	}
 }
 
@@ -123,51 +70,109 @@ func playerO(b *Board) int {
 	return getMove(b, "O")
 }
 
-func getMove(b *Board, player string) int {
+func getMove(b *Board, symbol string) int {
 	for {
-		fmt.Printf("Player %s's turn. Enter a number (1-9): ", player)
-		if !scanner.Scan() {
-			return -1
-		}
-		input := strings.TrimSpace(scanner.Text())
-		num, err := strconv.Atoi(input)
-
+		input, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Println("Invalid input. Please enter a number (1-9).")
 			continue
 		}
-		if num < 1 || num > 9 {
-			fmt.Println("Out of range. Please enter a number (1-9).")
+		input = strings.TrimSpace(input)
+
+		idx, err := strconv.Atoi(input)
+		if err != nil || idx < 1 || idx > 9 {
+			fmt.Println("Invalid input. Please enter a number (1-9):")
+			renderBoard(b, symbol)
 			continue
 		}
-		if b[num-1] == 'X' || b[num-1] == 'O' {
-			fmt.Println("Cell is already occupied.")
+
+		cellIdx := idx - 1
+		if b.cells[cellIdx] == "X" || b.cells[cellIdx] == "O" {
+			fmt.Println("Cell already occupied. Please enter a different number:")
+			renderBoard(b, symbol)
 			continue
 		}
-		return num
+
+		return cellIdx
 	}
 }
 
-func checkWinner(b *Board) (string, bool) {
-	wins := [][]int{
-		{0, 1, 2}, {3, 4, 5}, {6, 7, 8},
-		{0, 3, 6}, {1, 4, 7}, {2, 5, 8},
-		{0, 4, 8}, {2, 4, 6},
+func checkWin(b *Board) string {
+	wins := [8][3]int{
+		{0, 1, 2}, {3, 4, 5}, {6, 7, 8}, // rows
+		{0, 3, 6}, {1, 4, 7}, {2, 5, 8}, // cols
+		{0, 4, 8}, {2, 4, 6}, // diags
 	}
 
 	for _, w := range wins {
-		if b[w[0]] == b[w[1]] && b[w[1]] == b[w[2]] {
-			if b[w[0]] == 'X' || b[w[0]] == 'O' {
-				return string(b[w[0]]), false
+		if (b.cells[w[0]] == "X" || b.cells[w[0]] == "O") &&
+			b.cells[w[0]] == b.cells[w[1]] && b.cells[w[0]] == b.cells[w[2]] {
+			return b.cells[w[0]]
+		}
+	}
+
+	full := true
+	for _, c := range b.cells {
+		if c != "X" && c != "O" {
+			full = false
+			break
+		}
+	}
+	if full {
+		return "Draw"
+	}
+
+	return ""
+}
+
+func main() {
+	for {
+		board := Board{}
+		for i := 0; i < 9; i++ {
+			board.cells[i] = strconv.Itoa(i + 1)
+		}
+
+		turn := 0 // 0 for X, 1 for O
+		for {
+			var currentSymbol string
+			if turn == 0 {
+				currentSymbol = "X"
+			} else {
+				currentSymbol = "O"
 			}
+
+			renderBoard(&board, currentSymbol)
+
+			var move int
+			if turn == 0 {
+				move = playerX(&board)
+				board.cells[move] = "X"
+			} else {
+				move = playerO(&board)
+				board.cells[move] = "O"
+			}
+
+			result := checkWin(&board)
+			if result != "" {
+				renderBoard(&board, "")
+				if result == "X" {
+					fmt.Printf("%sX wins!%s\n", colorBoldRed, colorReset)
+					currentScore.X++
+				} else if result == "O" {
+					fmt.Printf("%sO wins!%s\n", colorBoldGreen, colorReset)
+					currentScore.O++
+				} else {
+					fmt.Println("Draw!")
+					currentScore.Draws++
+				}
+				break
+			}
+			turn = 1 - turn
+		}
+
+		fmt.Print("Play again? (y/n): ")
+		choice, _ := reader.ReadString('\n')
+		if strings.TrimSpace(strings.ToLower(choice)) != "y" {
+			break
 		}
 	}
-
-	for _, r := range b {
-		if r >= '1' && r <= '9' {
-			return "", false
-		}
-	}
-
-	return "", true
 }

@@ -72,3 +72,30 @@ kronk-server-logs:
 
 kronk-server-stop:
 	go run cmd/kronk/main.go server stop
+
+llama-qwen36:
+	$(HOME)/.kronk/libraries/darwin/arm64/metal/llama-server \
+		-m $(HOME)/.kronk/models/unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf \
+		--alias unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT \
+		--host 127.0.0.1 \
+		--port 11435 \
+		--no-cache-prompt \
+		--ctx-size 131072 \
+		--parallel 2 \
+		--batch-size 4096 \
+		--ubatch-size 4096 \
+		--flash-attn auto \
+		--swa-full \
+		--cache-type-k f16 \
+		--cache-type-v f16 \
+		--temperature 0.6 \
+		--top-k 20 \
+		--top-p 1 \
+		--min-p 0 \
+		--repeat-last-n 64 \
+		--repeat-penalty 1 \
+		--dry-multiplier 0 \
+		--jinja \
+		--reasoning auto \
+		--reasoning-format deepseek \
+		--metrics

@@ -106,7 +106,7 @@
     ],
     "agent": {
         "title": {
-            "disable": true
+            "disable": false
         }
     },
     "experimental": {

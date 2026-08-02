@@ -90,10 +90,9 @@ func TestParser_JSONToolCall(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	runSteps(t, "json-tool-call", c, []step{
 		{token: "<tool_call>", channel: model.ChannelTool},
-		{token: `{"name":"a","arguments":{}}`, channel: model.ChannelTool,
-			content: `{"name":"a","arguments":{}}`},
+		{token: `{"name":"a","arguments":{}}`, channel: model.ChannelNone},
 		{token: "</tool_call>", channel: model.ChannelTool,
-			content: "\n"},
+			content: `{"name":"a","arguments":{}}` + "\n"},
 	})
 	_, eog := c.Classify("done")
 	if !eog {
@@ -114,6 +113,8 @@ func TestParser_TruncatedJSONToolCall(t *testing.T) {
 			tooling.WriteString(result.Content)
 		}
 	}
+	flusher := c.(model.StateMachineFlusher)
+	tooling.WriteString(flusher.Flush().Content)
 
 	calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
 	if len(calls) != 1 {
@@ -124,30 +125,30 @@ func TestParser_TruncatedJSONToolCall(t *testing.T) {
 	}
 }
 
-func TestParser_RepeatedToolCalls(t *testing.T) {
+func TestParser_BackToBackJSONToolCalls(t *testing.T) {
 	c := Parser{}.NewStateMachine()
+	var tooling strings.Builder
 
-	for i := range 9 {
-		if i > 0 {
-			c.Reset()
+	for _, token := range []string{
+		"<tool_call>", `{"name":"first","arguments":{}}`, "</tool_call>",
+		"\n",
+		"<tool_call>", `{"name":"second","arguments":{}}`, "</tool_call>",
+	} {
+		result, eog := c.Classify(token)
+		if eog {
+			t.Fatalf("Classify(%q): got EOG before all tool calls completed", token)
 		}
+		if result.Channel == model.ChannelTool {
+			tooling.WriteString(result.Content)
+		}
+	}
 
-		var tooling strings.Builder
-		for _, token := range []string{"<tool_call>", `{"name":"get_weather","arguments":{}}`, "</tool_call>"} {
-			result, eog := c.Classify(token)
-			if eog {
-				t.Fatalf("call %d Classify(%q): got EOG before tool call completed", i, token)
-			}
-			if result.Channel == model.ChannelTool {
-				tooling.WriteString(result.Content)
-			}
-		}
-
-		calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
-		if len(calls) != 1 {
-			t.Fatalf("call %d: got %d parsed calls, want 1", i, len(calls))
-		}
-		if got, want := calls[0].Function.Name, "get_weather"; got != want {
+	calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
+	if len(calls) != 2 {
+		t.Fatalf("ToolCall: got %d calls, want 2", len(calls))
+	}
+	for i, want := range []string{"first", "second"} {
+		if got := calls[i].Function.Name; got != want {
 			t.Errorf("call %d Function.Name: got %q, want %q", i, got, want)
 		}
 	}
@@ -160,21 +161,97 @@ func TestParser_RepeatedToolCalls(t *testing.T) {
 func TestParser_DirectFunctionTagSingleToken(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	runSteps(t, "direct-function-single", c, []step{
-		{token: "<function=foo>", channel: model.ChannelTool, content: "<function=foo>"},
-		{token: "<parameter=k>v</parameter>", channel: model.ChannelTool, content: "<parameter=k>v</parameter>"},
+		{token: "<function=foo>", channel: model.ChannelTool},
+		{token: "<parameter=k>v</parameter>", channel: model.ChannelNone},
 		{token: "</function>", channel: model.ChannelTool,
-			content: "</function>\n"},
+			content: "<function=foo><parameter=k>v</parameter></function>\n"},
 	})
 }
 
 func TestParser_DirectFunctionTagSplit(t *testing.T) {
 	c := Parser{}.NewStateMachine()
+	var tooling strings.Builder
 	for _, tok := range []string{"<", "function", "=", "do_thing>\n", "<parameter=k>\nv\n</parameter>\n</function>"} {
-		c.Classify(tok)
+		result, eog := c.Classify(tok)
+		if eog {
+			t.Fatalf("Classify(%q): got EOG before tool call completed", tok)
+		}
+		if result.Channel == model.ChannelTool {
+			tooling.WriteString(result.Content)
+		}
 	}
+
+	calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
+	if len(calls) != 1 {
+		t.Fatalf("ToolCall: got %d calls, want 1", len(calls))
+	}
+	if got, want := calls[0].Function.Name, "do_thing"; got != want {
+		t.Errorf("Function.Name: got %q, want %q", got, want)
+	}
+	if got, want := calls[0].Function.Arguments["k"], "v"; got != want {
+		t.Errorf("argument k: got %q, want %q", got, want)
+	}
+
 	_, eog := c.Classify("trailing")
 	if !eog {
 		t.Errorf("expected EOG after </function>")
+	}
+}
+
+func TestParser_WrappedDirectToolCall(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	var tooling strings.Builder
+
+	for _, tok := range []string{
+		"<tool_call>", "\n", "<", "function", "=b", "ash>", "\n",
+		"<parameter=command>\ngo build\n</parameter>", "\n",
+		"</function>\n</tool_call>",
+	} {
+		result, eog := c.Classify(tok)
+		if eog {
+			t.Fatalf("Classify(%q): got EOG before outer tool wrapper closed", tok)
+		}
+		if result.Channel == model.ChannelTool {
+			tooling.WriteString(result.Content)
+		}
+	}
+
+	calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
+	if len(calls) != 1 {
+		t.Fatalf("ToolCall: got %d calls, want 1", len(calls))
+	}
+	if got, want := calls[0].Function.Name, "bash"; got != want {
+		t.Errorf("Function.Name: got %q, want %q", got, want)
+	}
+	if got, want := calls[0].Function.Arguments["command"], "go build"; got != want {
+		t.Errorf("argument command: got %q, want %q", got, want)
+	}
+}
+
+func TestParser_BackToBackDirectToolCalls(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	var tooling strings.Builder
+
+	for _, tok := range []string{
+		"<function=first>", "</function>", "\n<", "function", "=second>", "</function>",
+	} {
+		result, eog := c.Classify(tok)
+		if eog {
+			t.Fatalf("Classify(%q): got EOG before all tool calls completed", tok)
+		}
+		if result.Channel == model.ChannelTool {
+			tooling.WriteString(result.Content)
+		}
+	}
+
+	calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
+	if len(calls) != 2 {
+		t.Fatalf("ToolCall: got %d calls, want 2", len(calls))
+	}
+	for i, want := range []string{"first", "second"} {
+		if got := calls[i].Function.Name; got != want {
+			t.Errorf("call %d Function.Name: got %q, want %q", i, got, want)
+		}
 	}
 }
 

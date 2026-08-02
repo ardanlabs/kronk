@@ -74,6 +74,100 @@ func TestDeserializeToolCallArguments(t *testing.T) {
 	}
 }
 
+func TestDeserializeToolCallArgumentsPreservesToolHistory(t *testing.T) {
+	const request = `{
+		"messages": [
+			{
+				"role": "assistant",
+				"content": "Checking both locations.",
+				"tool_calls": [
+					{
+						"id": "call_1",
+						"type": "function",
+						"function": {
+							"name": "get_weather",
+							"arguments": "{\"location\":\"Austin\",\"days\":2}"
+						}
+					},
+					{
+						"id": "call_2",
+						"type": "function",
+						"function": {
+							"name": "get_weather",
+							"arguments": "{\"location\":\"Seattle\",\"days\":3}"
+						}
+					}
+				]
+			},
+			{
+				"role": "tool",
+				"tool_call_id": "call_1",
+				"name": "get_weather",
+				"content": "sunny"
+			}
+		]
+	}`
+
+	var wire map[string]any
+	if err := json.Unmarshal([]byte(request), &wire); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+
+	d := MapToModelD(wire)
+	got := deserializeToolCallArguments(d)
+
+	messages, ok := got["messages"].([]D)
+	if !ok {
+		t.Fatalf("messages type: got %T, want []D", got["messages"])
+	}
+
+	toolCalls, ok := messages[0]["tool_calls"].([]D)
+	if !ok {
+		t.Fatalf("tool_calls type: got %T, want []D", messages[0]["tool_calls"])
+	}
+
+	for i, want := range []struct {
+		id       string
+		name     string
+		location string
+		days     float64
+	}{
+		{id: "call_1", name: "get_weather", location: "Austin", days: 2},
+		{id: "call_2", name: "get_weather", location: "Seattle", days: 3},
+	} {
+		if toolCalls[i]["id"] != want.id {
+			t.Errorf("tool_calls[%d].id: got %q, want %q", i, toolCalls[i]["id"], want.id)
+		}
+		if toolCalls[i]["type"] != "function" {
+			t.Errorf("tool_calls[%d].type: got %q, want %q", i, toolCalls[i]["type"], "function")
+		}
+
+		function := toolCalls[i]["function"].(D)
+		if function["name"] != want.name {
+			t.Errorf("tool_calls[%d].function.name: got %q, want %q", i, function["name"], want.name)
+		}
+
+		arguments, ok := function["arguments"].(map[string]any)
+		if !ok {
+			t.Fatalf("tool_calls[%d].function.arguments type: got %T, want map[string]any", i, function["arguments"])
+		}
+		if arguments["location"] != want.location {
+			t.Errorf("tool_calls[%d].function.arguments.location: got %q, want %q", i, arguments["location"], want.location)
+		}
+		if arguments["days"] != want.days {
+			t.Errorf("tool_calls[%d].function.arguments.days: got %v, want %v", i, arguments["days"], want.days)
+		}
+	}
+
+	toolResult := messages[1]
+	if toolResult["role"] != "tool" ||
+		toolResult["tool_call_id"] != "call_1" ||
+		toolResult["name"] != "get_weather" ||
+		toolResult["content"] != "sunny" {
+		t.Errorf("tool result changed: got %#v", toolResult)
+	}
+}
+
 func TestValidateDocumentRejectsFileInput(t *testing.T) {
 	tests := []struct {
 		name     string
