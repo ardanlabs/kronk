@@ -140,10 +140,9 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 	// prompt tokens without improving generation, and templates render it
 	// inconsistently across turns, shifting the tokenized prefix and forcing
 	// IMC rebuilds. The engine instead drops reasoning from assistant history
-	// before this render (see Model.normalizeHistoryReasoning) and removes any
-	// empty reasoning spans the template still emits via the post-render pass
-	// below. Templates that read this flag (e.g. Qwen3.6) honor it; the rest
-	// ignore it, so setting it unconditionally is safe.
+	// before this render (see Model.normalizeHistoryReasoning). Templates that
+	// read this flag (e.g. Qwen3.6) honor it; the rest ignore it, so setting it
+	// unconditionally is safe.
 	if _, ok := d["preserve_thinking"]; !ok {
 		d["preserve_thinking"] = false
 	}
@@ -166,18 +165,6 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 	s, err := m.compiledTmpl.tmpl.Render(d)
 	if err != nil {
 		return "", fmt.Errorf("apply-jinja-template: failed to execute template: %w", err)
-	}
-
-	// Post-render reasoning normalization. Some templates emit empty reasoning
-	// spans (e.g. "<think>\n\n</think>") on assistant turns position-dependently,
-	// which the history field-drop cannot reach. Remove them so the tokenized
-	// prefix is byte-stable across turns, leaving the trailing generation marker
-	// intact. Parsers without reasoning markup (embed/rerank have a nil parser)
-	// do not implement ReasoningNormalizer and are skipped.
-	if m.stripReasoning(d) {
-		if norm, ok := m.parser.(ReasoningNormalizer); ok {
-			s = norm.StripEmptyReasoning(s)
-		}
 	}
 
 	return s, nil

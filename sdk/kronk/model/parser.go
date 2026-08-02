@@ -117,9 +117,8 @@ type ParamsAdjuster interface {
 	AdjustParams(p Params) Params
 }
 
-// ReasoningNormalizer is an optional interface a Parser may implement to
-// remove model-specific reasoning markup that destabilizes the incremental
-// message cache (IMC).
+// ReasoningNormalizer is an optional compatibility interface for parsers that
+// normalize model-specific reasoning markup.
 //
 // Reasoning is ephemeral: replaying it on prior assistant turns adds prompt
 // tokens that do not improve generation, and the markup is rendered
@@ -130,8 +129,10 @@ type ParamsAdjuster interface {
 // assistant history (family-agnostic) and then invokes the normalizer for the
 // lineage-specific markup the field-drop cannot reach.
 //
-// Both methods must be deterministic and idempotent: applying them twice
-// yields the same result as applying them once.
+// Both methods must be deterministic and idempotent: applying them twice yields
+// the same result as applying them once. The engine only normalizes structured
+// assistant history before rendering; completed Jinja output is authoritative
+// and is never rewritten.
 type ReasoningNormalizer interface {
 	// StripReasoningContent removes closed reasoning spans embedded directly
 	// in an assistant message's content (e.g. <think>…</think> for Qwen,
@@ -139,12 +140,15 @@ type ReasoningNormalizer interface {
 	// preserved. Invoked on history before the Jinja render.
 	StripReasoningContent(content string) string
 
-	// StripEmptyReasoning removes empty reasoning spans from a fully rendered
-	// prompt (e.g. "<think>\n\n</think>"), leaving a trailing span — the
-	// generation-prompt marker that primes the model to answer — intact.
-	// Used as a post-render pass so position-dependent template emission of
-	// empty reasoning blocks does not shift the tokenized prefix across turns.
+	// StripEmptyReasoning removes empty reasoning spans from a rendered prompt.
+	//
+	// Deprecated: the engine no longer rewrites completed template output because
+	// role-unaware transformations can alter user content and model scaffolding.
 	StripEmptyReasoning(rendered string) string
+}
+
+type reasoningContentNormalizer interface {
+	StripReasoningContent(content string) string
 }
 
 // Fingerprint carries the model metadata that parser selection logic
