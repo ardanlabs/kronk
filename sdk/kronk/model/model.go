@@ -95,6 +95,32 @@ type imcSession struct {
 	// cachedRenderInputHash guards token-v2 pure-hit snapshot reuse against
 	// changes to template inputs that are not represented by message tokens.
 	cachedRenderInputHash string
+
+	rollingEndsAtUser bool         // True when the rolling snapshot ends at a real user-turn boundary.
+	turnCheckpoint    *imcSnapshot // Previous complete user-turn snapshot retained across template-induced divergence.
+}
+
+// imcSnapshot owns one complete, externally restorable IMC state. Rolling
+// state remains directly on imcSession for the hot path; turnCheckpoint uses
+// this shape so the planner can atomically swap a checkpoint into the rolling
+// fields and then reuse the existing restore/extend machinery unchanged.
+type imcSnapshot struct {
+	cachedMsgsHash        string
+	cachedTokens          []llama.Token
+	totalTokensCached     int
+	nextLogicalPos        int
+	cachedMsgCount        int
+	kvState               SessionStore
+	draftKVState          SessionStore
+	pendingH              []float32
+	allocatedContext      int
+	hasMedia              bool
+	useMRoPE              bool
+	mediaKVCounts         []int
+	promptPlan            promptPlan
+	samplerPromptTokens   []llama.Token
+	cachedRenderInputHash string
+	endsAtUser            bool
 }
 
 func (s *imcSession) logicalPosition() int {
@@ -673,6 +699,12 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 		return fmt.Errorf("init-from-model: unable to init context: %w", err)
 	}
 
+	wantCtxSeq := uint32(m.cfg.ContextWindow())
+	if gotCtxSeq := llama.NCtxSeq(lctx); gotCtxSeq != wantCtxSeq {
+		llama.Free(lctx)
+		return fmt.Errorf("init-from-model: context per sequence got %d, want %d", gotCtxSeq, wantCtxSeq)
+	}
+
 	mem, err := llama.GetMemory(lctx)
 	if err != nil {
 		llama.Free(lctx)
@@ -818,6 +850,18 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 				cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] draft store: %w", i, err))
 			}
 		}
+		if sess.turnCheckpoint != nil {
+			if sess.turnCheckpoint.kvState != nil {
+				if err := sess.turnCheckpoint.kvState.Close(); err != nil {
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] checkpoint store: %w", i, err))
+				}
+			}
+			if sess.turnCheckpoint.draftKVState != nil {
+				if err := sess.turnCheckpoint.draftKVState.Close(); err != nil {
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] checkpoint draft store: %w", i, err))
+				}
+			}
+		}
 	}
 	m.imcSessions = nil
 	m.parser = nil
@@ -911,6 +955,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 	dCtxParams.NBatch = targetCtxParams.NBatch
 	dCtxParams.NUbatch = targetCtxParams.NUbatch
 	dCtxParams.NSeqMax = 1
+	dCtxParams.KVUnified = targetCtxParams.KVUnified
 	dCtxParams.FlashAttentionType = targetCtxParams.FlashAttentionType
 	dCtxParams.NThreads = targetCtxParams.NThreads
 	dCtxParams.NThreadsBatch = targetCtxParams.NThreadsBatch
@@ -1194,6 +1239,18 @@ func (m *Model) Unload(ctx context.Context) error {
 				m.log(ctx, "unload", "status", "draft-session-store-close-failed", "session", i, "err", err.Error())
 			}
 		}
+		if sess.turnCheckpoint != nil {
+			if sess.turnCheckpoint.kvState != nil {
+				if err := sess.turnCheckpoint.kvState.Close(); err != nil {
+					m.log(ctx, "unload", "status", "checkpoint-session-store-close-failed", "session", i, "err", err.Error())
+				}
+			}
+			if sess.turnCheckpoint.draftKVState != nil {
+				if err := sess.turnCheckpoint.draftKVState.Close(); err != nil {
+					m.log(ctx, "unload", "status", "checkpoint-draft-session-store-close-failed", "session", i, "err", err.Error())
+				}
+			}
+		}
 	}
 
 	// Free the long-lived metadata mtmd context before the model. mtmd
@@ -1266,7 +1323,23 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, usage Usage) {
+func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, delta ResponseToolCallDelta) error {
+	select {
+	case <-ctx.Done():
+		select {
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, "", ctx.Err(), Usage{}):
+		default:
+		}
+
+		return ctx.Err()
+
+	case ch <- chatResponseToolCallDelta(id, object, m.modelInfo.ID, choiceIndex, delta):
+	}
+
+	return nil
+}
+
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, usage Usage) {
 	effectiveFinishReason := finishReason
 	if effectiveFinishReason == "" {
 		effectiveFinishReason = FinishReasonStop
@@ -1333,6 +1406,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
+		terminalToolCallDeltas,
 		finalLogprobs,
 		finishReason,
 		usage):

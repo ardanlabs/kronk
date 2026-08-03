@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -38,13 +39,16 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 
 	m.cacheMu.Lock()
 	var best *imcSession
+	var bestIsCheckpoint bool
+	var bestLen int
 	var empty *imcSession
 	var lru *imcSession
 	for _, session := range m.imcSessions {
 		if session.reserved {
 			continue
 		}
-		if session.totalTokensCached == 0 {
+		checkpointOccupied := session.turnCheckpoint != nil && session.turnCheckpoint.totalTokensCached > 0
+		if session.totalTokensCached == 0 && !checkpointOccupied {
 			if empty == nil {
 				empty = session
 			}
@@ -53,11 +57,23 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 		if lru == nil || session.lastUsed.Before(lru.lastUsed) {
 			lru = session
 		}
-		if session.hasMedia || len(session.cachedTokens) == 0 || len(session.kvState.Bytes()) == 0 || !tokensHavePrefix(target, session.cachedTokens) {
-			continue
+		if !session.hasMedia && len(session.cachedTokens) > 0 && session.kvState != nil && len(session.kvState.Bytes()) > 0 && tokensHavePrefix(target, session.cachedTokens) {
+			if len(session.cachedTokens) > bestLen || (len(session.cachedTokens) == bestLen && bestIsCheckpoint) {
+				best = session
+				bestIsCheckpoint = false
+				bestLen = len(session.cachedTokens)
+			}
 		}
-		if best == nil || len(session.cachedTokens) > len(best.cachedTokens) {
-			best = session
+
+		checkpoint := session.turnCheckpoint
+		if checkpoint != nil && !checkpoint.hasMedia && len(checkpoint.cachedTokens) > 0 && checkpoint.kvState != nil && len(checkpoint.kvState.Bytes()) > 0 && tokensHavePrefix(target, checkpoint.cachedTokens) {
+			// Rolling wins ties so the common path does not churn snapshot
+			// ownership when both complete states describe the same prefix.
+			if len(checkpoint.cachedTokens) > bestLen {
+				best = session
+				bestIsCheckpoint = true
+				bestLen = len(checkpoint.cachedTokens)
+			}
 		}
 	}
 
@@ -68,6 +84,9 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	clearSeq := true
 	selected := best
 	if best != nil {
+		if bestIsCheckpoint {
+			best.swapTurnCheckpoint()
+		}
 		reusable = len(best.cachedTokens)
 		extension = slices.Clone(target[reusable:])
 		clearSeq = false
@@ -79,6 +98,9 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 			matchKind = "append"
 			matchReason = "complete-prefix-append"
 			best.reserved = true
+		}
+		if bestIsCheckpoint {
+			matchReason = "turn-checkpoint-prefix"
 		}
 		best.lastUsed = time.Now()
 	} else {
@@ -109,11 +131,13 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	result.imcNewTotalCached = targetLen
 	result.imcNewCachedMsgCount = messageCount(d)
 	result.imcNewMsgsHash = documentMessagesHash(d)
+	result.imcNewEndsAtUser = messagesEndAtRealUser(dMessages(d))
 	result.imcClearSeq = clearSeq
 	result.imcNewCachedTokens = target
 	result.imcMatchKind = matchKind
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = matchKind == "exact"
+	result.imcPromoteCheckpoint = !clearSeq && len(extension) > 0 && selected.rollingEndsAtUser && !selected.hasMedia
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
@@ -140,4 +164,23 @@ func documentMessagesHash(d D) string {
 func dMessages(d D) []D {
 	messages, _ := d["messages"].([]D)
 	return messages
+}
+
+func messagesEndAtRealUser(messages []D) bool {
+	if len(messages) == 0 {
+		return false
+	}
+
+	last := messages[len(messages)-1]
+	role, _ := last["role"].(string)
+	if role != "user" {
+		return false
+	}
+	if _, isToolResponse := last["tool_call_id"]; isToolResponse {
+		return false
+	}
+
+	content, _ := last["content"].(string)
+	content = strings.TrimSpace(content)
+	return !(strings.HasPrefix(content, "<tool_response>") && strings.HasSuffix(content, "</tool_response>"))
 }

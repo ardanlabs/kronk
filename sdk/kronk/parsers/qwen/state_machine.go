@@ -1,6 +1,7 @@
 package qwen
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -27,6 +28,12 @@ type stateMachine struct {
 	// Lookahead buffer for split <function=… tokens.
 	pendingTagBuf strings.Builder
 	inPendingTag  bool
+
+	// OpenAI-compatible activity deltas for tool-call starts.
+	toolCallDeltas []model.ResponseToolCallDelta
+	startedCalls   []model.ResponseToolCallDelta
+	deltaCallID    string
+	deltaCallIndex int
 }
 
 // Reset returns the stateMachine to its initial state for reuse on a new
@@ -39,6 +46,10 @@ func (sm *stateMachine) Reset() {
 	sm.toolCallDone = false
 	sm.pendingTagBuf.Reset()
 	sm.inPendingTag = false
+	sm.toolCallDeltas = nil
+	sm.startedCalls = nil
+	sm.deltaCallID = ""
+	sm.deltaCallIndex = 0
 }
 
 // Classify classifies a single decoded token's content.
@@ -89,12 +100,14 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 					trimmed := strings.TrimRight(content, " \t\r\n")
 					if before, ok := strings.CutSuffix(trimmed, marker); ok {
 						sm.toolCallBuf.WriteString(before)
+						sm.updateToolCallDeltas()
 						return sm.completeToolCall(), false
 					}
 				}
 			}
 
 			sm.toolCallBuf.WriteString(content)
+			sm.updateToolCallDeltas()
 
 			// Unwrapped direct calls close at </function>. Wrapped calls close
 			// only at </tool_call>, after the complete inner XML is buffered.
@@ -176,6 +189,8 @@ func (sm *stateMachine) startToolCall(wrapped bool, content string) {
 	sm.toolCallDone = false
 	sm.toolCallBuf.Reset()
 	sm.toolCallBuf.WriteString(content)
+	sm.deltaCallID = ""
+	sm.updateToolCallDeltas()
 }
 
 func (sm *stateMachine) completeToolCall() model.Result {
@@ -188,8 +203,147 @@ func (sm *stateMachine) completeToolCall() model.Result {
 	sm.inToolCall = false
 	sm.wrappedTool = false
 	sm.toolCallDone = true
+	if sm.deltaCallID != "" {
+		sm.deltaCallIndex++
+	}
 
 	return model.Result{Channel: model.ChannelTool, Content: content}
+}
+
+// ToolCallDeltas drains OpenAI-compatible tool-call deltas produced by the
+// most recent Classify call.
+func (sm *stateMachine) ToolCallDeltas() []model.ResponseToolCallDelta {
+	deltas := sm.toolCallDeltas
+	sm.toolCallDeltas = nil
+	return deltas
+}
+
+// StartedToolCalls returns the tool-call identities emitted during the current
+// request.
+func (sm *stateMachine) StartedToolCalls() []model.ResponseToolCallDelta {
+	return sm.startedCalls
+}
+
+func (sm *stateMachine) updateToolCallDeltas() {
+	if sm.deltaCallID != "" {
+		return
+	}
+
+	name, ok := toolCallName(sm.toolCallBuf.String())
+	if !ok {
+		return
+	}
+
+	sm.deltaCallID = newToolCallID()
+	delta := model.ResponseToolCallDelta{
+		ID:    sm.deltaCallID,
+		Index: sm.deltaCallIndex,
+		Type:  "function",
+		Function: model.ResponseToolCallDeltaFunction{
+			Name: name,
+		},
+	}
+	sm.toolCallDeltas = append(sm.toolCallDeltas, delta)
+	sm.startedCalls = append(sm.startedCalls, delta)
+}
+
+func toolCallName(content string) (string, bool) {
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, "<function=") {
+		nameEnd := strings.IndexByte(content, '>')
+		if nameEnd == -1 {
+			return "", false
+		}
+
+		name := strings.TrimSpace(content[len("<function="):nameEnd])
+		return name, name != ""
+	}
+	if content == "" || content[0] != '{' {
+		return "", false
+	}
+
+	nameStart, ok := jsonFieldValueStart(content, "name")
+	if !ok || nameStart >= len(content) || content[nameStart] != '"' {
+		return "", false
+	}
+
+	nameEnd, ok := jsonStringEnd(content, nameStart)
+	if !ok {
+		return "", false
+	}
+
+	var name string
+	if err := json.Unmarshal([]byte(content[nameStart:nameEnd]), &name); err != nil {
+		return "", false
+	}
+	name = strings.TrimPrefix(name, ".")
+
+	return name, name != ""
+}
+
+func jsonFieldValueStart(content string, field string) (int, bool) {
+	depth := 0
+	for i := 0; i < len(content); {
+		switch content[i] {
+		case '{':
+			depth++
+			i++
+		case '}':
+			depth--
+			i++
+		case '"':
+			end, ok := jsonStringEnd(content, i)
+			if !ok {
+				return 0, false
+			}
+			if depth != 1 {
+				i = end
+				continue
+			}
+
+			var key string
+			if err := json.Unmarshal([]byte(content[i:end]), &key); err != nil {
+				return 0, false
+			}
+			i = end
+			for i < len(content) && strings.ContainsRune(" \t\r\n", rune(content[i])) {
+				i++
+			}
+			if i >= len(content) || content[i] != ':' {
+				continue
+			}
+			i++
+			for i < len(content) && strings.ContainsRune(" \t\r\n", rune(content[i])) {
+				i++
+			}
+			if key == field {
+				return i, true
+			}
+		default:
+			i++
+		}
+	}
+
+	return 0, false
+}
+
+func jsonStringEnd(content string, start int) (int, bool) {
+	escape := false
+	for i := start + 1; i < len(content); i++ {
+		if escape {
+			escape = false
+			continue
+		}
+		if content[i] == '\\' {
+			escape = true
+			continue
+		}
+		if content[i] == '"' {
+			return i + 1, true
+		}
+	}
+
+	return 0, false
 }
 
 // Flush drains a buffered tool call or unresolved direct-function prefix when

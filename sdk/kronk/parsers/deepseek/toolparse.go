@@ -13,11 +13,24 @@ import (
 const parseErrorStatus = 2
 
 func parseDSML(content string) []model.ResponseToolCall {
-	body, err := toolCallsBody(content)
-	if err != nil {
-		return []model.ResponseToolCall{failedToolCall("", nil, content, err)}
+	var calls []model.ResponseToolCall
+	offset := 0
+	for {
+		body, next, err := nextToolCallsBody(content, offset)
+		if err != nil {
+			if len(calls) == 0 || strings.Contains(content[offset:], toolCallsOpen) {
+				calls = append(calls, failedToolCall("", nil, content[offset:], err))
+			}
+			break
+		}
+		calls = append(calls, parseDSMLBody(body)...)
+		offset = next
 	}
 
+	return calls
+}
+
+func parseDSMLBody(body string) []model.ResponseToolCall {
 	var calls []model.ResponseToolCall
 	for offset := 0; offset < len(body); {
 		invokeAt := strings.Index(body[offset:], invokeOpen)
@@ -67,26 +80,28 @@ func parseDSML(content string) []model.ResponseToolCall {
 	}
 
 	if len(calls) == 0 {
-		return []model.ResponseToolCall{failedToolCall("", nil, content,
+		return []model.ResponseToolCall{failedToolCall("", nil, body,
 			errors.New("parse dsml: no invoke elements"))}
 	}
 
 	return calls
 }
 
-func toolCallsBody(content string) (string, error) {
-	openAt := strings.Index(content, toolCallsOpen)
+func nextToolCallsBody(content string, offset int) (string, int, error) {
+	openAt := strings.Index(content[offset:], toolCallsOpen)
 	if openAt == -1 {
-		return "", errors.New("parse dsml: missing tool_calls opening marker")
+		return "", offset, errors.New("parse dsml: missing tool_calls opening marker")
 	}
+	openAt += offset
 
 	bodyStart := openAt + len(toolCallsOpen)
 	closeAt := strings.Index(content[bodyStart:], toolCallsClose)
 	if closeAt == -1 {
-		return "", errors.New("parse dsml: missing tool_calls closing marker")
+		return "", offset, errors.New("parse dsml: missing tool_calls closing marker")
 	}
+	closeAt += bodyStart
 
-	return content[bodyStart : bodyStart+closeAt], nil
+	return content[bodyStart:closeAt], closeAt + len(toolCallsClose), nil
 }
 
 func parseParameters(body string) (model.ToolCallArguments, error) {

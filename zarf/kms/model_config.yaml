@@ -165,21 +165,19 @@
 #   nseq-max: 2
 #   incremental-cache: true
 #
-# UNIFIED KV CACHE (nseq-max > 1)
-# --------------------------------
-# When nseq-max > 1, Kronk enables a unified KV cache where all slots share
-# one flexible pool sized for context-window * nseq-max tokens. Any single slot
-# is limited to context-window tokens. Idle slots do not reserve fixed
-# partitions, and KV pressure eviction can clear stale slots when the shared
-# pool gets tight.
+# KV CACHE PER SLOT (nseq-max > 1)
+# ---------------------------------
+# Kronk allocates context-window * nseq-max total tokens and uses split KV
+# streams. Every slot receives one fixed context-window partition; the context
+# window is not divided by nseq-max, and an idle slot's partition is not
+# borrowed by another slot.
 #
 # Example:
 #   context-window: 131072, nseq-max: 3
-#   → Total KV cache sized for 393k tokens (shared by all 3 slots)
-#   → Any single slot can use up to the full 131k tokens
+#   → Total KV cache sized for 393k tokens
+#   → Each of the 3 slots receives a fixed 131k-token stream
 #
-# Increasing nseq-max therefore increases planned KV memory even though the
-# unified pool can use that capacity flexibly across active conversations.
+# Increasing nseq-max therefore increases planned KV memory linearly.
 
 # ==============================================================================
 # CODING MODELS

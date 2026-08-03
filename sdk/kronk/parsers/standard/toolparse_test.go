@@ -89,3 +89,32 @@ func TestFindJSONObjectEnd(t *testing.T) {
 		})
 	}
 }
+
+func TestStateMachineToolCallDeltas(t *testing.T) {
+	var sm stateMachine
+	sm.Reset()
+	for _, token := range []string{"<tool_call>", `{"arguments":{},"name":".get_`, `weather"}`, "</tool_call>", "<tool_call>", `{"name":"forecast","arguments":{}}`} {
+		sm.Classify(token)
+	}
+
+	deltas := sm.ToolCallDeltas()
+	if len(deltas) != 2 {
+		t.Fatalf("ToolCallDeltas: got %d, want 2", len(deltas))
+	}
+	if deltas[0].Function.Name != "get_weather" || deltas[1].Function.Name != "forecast" {
+		t.Errorf("names: got [%q %q], want [get_weather forecast]", deltas[0].Function.Name, deltas[1].Function.Name)
+	}
+	if deltas[0].ID == "" || deltas[0].ID == deltas[1].ID || deltas[0].Index != 0 || deltas[1].Index != 1 || deltas[0].Type != "function" || deltas[0].Function.Arguments != "" {
+		t.Errorf("identity-only deltas: got %+v", deltas)
+	}
+	if got := sm.ToolCallDeltas(); len(got) != 0 {
+		t.Errorf("drained deltas: got %d, want 0", len(got))
+	}
+	if got := sm.StartedToolCalls(); len(got) != 2 {
+		t.Errorf("StartedToolCalls: got %d, want 2", len(got))
+	}
+	sm.Reset()
+	if len(sm.StartedToolCalls()) != 0 || len(sm.ToolCallDeltas()) != 0 {
+		t.Error("Reset did not clear tool-call delta state")
+	}
+}

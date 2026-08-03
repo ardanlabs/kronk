@@ -17,9 +17,12 @@ type stateMachine struct {
 	status model.Channel
 
 	// Tool-call accumulation across tokens.
-	toolCallBuf  strings.Builder
-	inToolCall   bool
-	toolCallDone bool
+	toolCallBuf    strings.Builder
+	inToolCall     bool
+	toolCallDone   bool
+	toolCallDeltas []model.ResponseToolCallDelta
+	startedCalls   []model.ResponseToolCallDelta
+	detectedCalls  int
 
 	// Swallow the channel name token (e.g. "thought") that follows <|channel>.
 	awaitingChannel bool
@@ -33,6 +36,9 @@ func (sm *stateMachine) Reset() {
 	sm.inToolCall = false
 	sm.toolCallDone = false
 	sm.awaitingChannel = false
+	sm.toolCallDeltas = nil
+	sm.startedCalls = nil
+	sm.detectedCalls = 0
 }
 
 // Classify classifies a single decoded token's content.
@@ -53,6 +59,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 		default:
 			sm.toolCallBuf.WriteString(content)
+			sm.updateToolCallDeltas()
 			return model.Result{}, false
 		}
 	}
@@ -64,6 +71,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			sm.toolCallDone = false
 			sm.inToolCall = true
 			sm.toolCallBuf.Reset()
+			sm.detectedCalls = 0
 			return model.Result{}, false
 		default:
 			sm.toolCallDone = false
@@ -92,6 +100,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		sm.status = model.ChannelTool
 		sm.inToolCall = true
 		sm.toolCallBuf.Reset()
+		sm.detectedCalls = 0
 		return model.Result{}, false
 
 	case "<tool_call|>", "<|tool_response>", "<tool_response|>":
@@ -101,6 +110,51 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	default:
 		return model.Result{Channel: sm.status, Content: content}, false
 	}
+}
+
+// ToolCallDeltas drains OpenAI-compatible tool-call activity deltas.
+func (sm *stateMachine) ToolCallDeltas() []model.ResponseToolCallDelta {
+	deltas := sm.toolCallDeltas
+	sm.toolCallDeltas = nil
+	return deltas
+}
+
+// StartedToolCalls returns all tool-call identities emitted for this request.
+func (sm *stateMachine) StartedToolCalls() []model.ResponseToolCallDelta { return sm.startedCalls }
+
+func (sm *stateMachine) updateToolCallDeltas() {
+	names := gemmaToolCallNames(sm.toolCallBuf.String())
+	for _, name := range names[sm.detectedCalls:] {
+		delta := model.ResponseToolCallDelta{ID: newToolCallID(), Index: len(sm.startedCalls), Type: "function", Function: model.ResponseToolCallDeltaFunction{Name: name}}
+		sm.toolCallDeltas = append(sm.toolCallDeltas, delta)
+		sm.startedCalls = append(sm.startedCalls, delta)
+	}
+	sm.detectedCalls = len(names)
+}
+
+func gemmaToolCallNames(content string) []string {
+	var names []string
+	for {
+		start := strings.Index(content, "call:")
+		if start == -1 {
+			break
+		}
+		content = content[start+len("call:"):]
+		end := strings.IndexByte(content, '{')
+		if end == -1 {
+			break
+		}
+		if name := strings.TrimSpace(content[:end]); name != "" {
+			names = append(names, name)
+		}
+		content = content[end:]
+		braceEnd := findGemmaBraceEnd(content)
+		if braceEnd == -1 {
+			break
+		}
+		content = content[braceEnd+1:]
+	}
+	return names
 }
 
 // Flush drains tool-call content held while waiting for a closing marker.

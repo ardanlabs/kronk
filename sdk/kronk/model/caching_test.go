@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -259,13 +260,13 @@ func TestCacheResultFields(t *testing.T) {
 // Externalized KV State Tests
 // =============================================================================
 
-// TestIMCResetSessionClearsKVState verifies that imcResetSession clears the
-// externalized KV state contents. The backing array is intentionally retained
-// (lazy-grow / never-shrink) so the next snapshot for the rebound conversation
-// can fill it without allocating; only the valid length is cleared.
+// TestIMCResetSessionClearsKVState verifies that imcResetSession zeroes the
+// externalized target, draft, and hidden state. Backing allocations are
+// retained so the next conversation can reuse them without allocation.
 func TestIMCResetSessionClearsKVState(t *testing.T) {
 	s := &imcSession{
 		kvState:             ramSessionStore(),
+		draftKVState:        ramSessionStore(),
 		id:                  0,
 		seqID:               0,
 		cachedMsgsHash:      "abc123",
@@ -278,9 +279,22 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		useMRoPE:            true,
 		mediaKVCounts:       []int{10, 20},
 		samplerPromptTokens: []llama.Token{4, 5, 6},
+		pendingH:            make([]float32, 4, 8),
 	}
-	buf := s.kvState.Prepare(4)
-	copy(buf, []byte{0xDE, 0xAD, 0xBE, 0xEF})
+	buf := s.kvState.Prepare(16)
+	draftBuf := s.draftKVState.Prepare(16)
+	for i := range buf {
+		buf[i] = 0xA5
+		draftBuf[i] = 0x5A
+	}
+	s.kvState.Commit(8)
+	s.draftKVState.Commit(8)
+	retainedKV := buf[:cap(buf)]
+	retainedDraftKV := draftBuf[:cap(draftBuf)]
+	retainedH := s.pendingH[:cap(s.pendingH)]
+	for i := range retainedH {
+		retainedH[i] = float32(i + 1)
+	}
 
 	imcResetSession(s)
 
@@ -289,6 +303,21 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 	}
 	if s.kvState.Cap() == 0 {
 		t.Errorf("kvState.Cap() = 0, want backing array retained for reuse")
+	}
+	for i, b := range retainedKV {
+		if b != 0 {
+			t.Fatalf("kvState retained byte[%d] = 0x%02x, want 0", i, b)
+		}
+	}
+	for i, b := range retainedDraftKV {
+		if b != 0 {
+			t.Fatalf("draftKVState retained byte[%d] = 0x%02x, want 0", i, b)
+		}
+	}
+	for i, v := range retainedH {
+		if v != 0 {
+			t.Fatalf("pendingH retained value[%d] = %f, want 0", i, v)
+		}
 	}
 	if s.samplerPromptTokens != nil {
 		t.Errorf("samplerPromptTokens = %v, want nil", s.samplerPromptTokens)
@@ -326,6 +355,70 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 	// detached from any slot's KV sequence.
 	if s.seqID != imcSeqIDUnbound {
 		t.Errorf("seqID = %d, want imcSeqIDUnbound (%d) after reset", s.seqID, imcSeqIDUnbound)
+	}
+}
+
+func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
+	targetStore := populatedTestSessionStore()
+	draftStore := populatedTestSessionStore()
+	oldCheckpointStore := populatedTestSessionStore()
+	session := &imcSession{
+		id:                    3,
+		cachedMsgsHash:        "user-boundary",
+		cachedTokens:          []llama.Token{1, 2, 3},
+		totalTokensCached:     3,
+		cachedMsgCount:        1,
+		kvState:               targetStore,
+		draftKVState:          draftStore,
+		pendingH:              []float32{4, 5},
+		allocatedContext:      3,
+		cachedRenderInputHash: "render-user",
+		rollingEndsAtUser:     true,
+		reserved:              true,
+		turnCheckpoint: &imcSnapshot{
+			cachedTokens:      []llama.Token{9},
+			totalTokensCached: 1,
+			kvState:           oldCheckpointStore,
+		},
+	}
+	m := Model{log: applog.DiscardLogger}
+
+	if err := m.imcPromoteTurnCheckpoint(context.Background(), session); err != nil {
+		t.Fatalf("imcPromoteTurnCheckpoint: %v", err)
+	}
+
+	checkpoint := session.turnCheckpoint
+	if checkpoint == nil {
+		t.Fatal("turnCheckpoint = nil, want promoted rolling state")
+	}
+	if checkpoint.kvState != targetStore || checkpoint.draftKVState != draftStore {
+		t.Fatal("promoted checkpoint did not take ownership of rolling stores")
+	}
+	if checkpoint.cachedMsgsHash != "user-boundary" || checkpoint.cachedMsgCount != 1 || checkpoint.totalTokensCached != 3 || !checkpoint.endsAtUser {
+		t.Errorf("promoted checkpoint metadata = %+v, want complete user boundary", checkpoint)
+	}
+	if len(checkpoint.pendingH) != 2 || checkpoint.pendingH[0] != 4 || checkpoint.pendingH[1] != 5 {
+		t.Errorf("promoted pendingH = %v, want [4 5]", checkpoint.pendingH)
+	}
+	if session.kvState == nil || session.kvState == targetStore || session.kvState.Len() != 0 {
+		t.Fatal("rolling target store was not replaced with a fresh empty store")
+	}
+	if session.draftKVState == nil || session.draftKVState == draftStore || session.draftKVState.Len() != 0 {
+		t.Fatal("rolling draft store was not replaced with a fresh empty store")
+	}
+	if session.totalTokensCached != 0 || session.cachedTokens != nil || session.rollingEndsAtUser {
+		t.Fatal("rolling metadata was not cleared before the new snapshot commit")
+	}
+
+	// A failed new rolling snapshot must not discard the known-good boundary.
+	m.imcInvalidateReservedSession(session)
+	if session.turnCheckpoint != checkpoint || checkpoint.kvState.Len() == 0 {
+		t.Fatal("rolling invalidation discarded the retained turn checkpoint")
+	}
+
+	imcResetSession(session)
+	if session.turnCheckpoint != nil {
+		t.Fatal("full session reset retained a turn checkpoint")
 	}
 }
 
@@ -438,7 +531,7 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	m.imcSessions[0] = session
 
 	m.imcCommitSession(session, "newhash", 1000, 5,
-		[]llama.Token{1, 2, 3}, false, nil, "")
+		[]llama.Token{1, 2, 3}, false, nil, "", false)
 
 	// kvState should be preserved — only startSlot snapshots update it.
 	if session.kvState.Len() != 3 {
@@ -477,7 +570,7 @@ func TestIMCCommitMediaInvalidatesOwnDraftState(t *testing.T) {
 	copy(buf, []byte{1, 2, 3})
 	session.draftKVState.Commit(len(buf))
 
-	m.imcCommitSession(session, "hash", 100, 2, nil, true, []int{50}, "")
+	m.imcCommitSession(session, "hash", 100, 2, nil, true, []int{50}, "", false)
 
 	if session.draftKVState.Len() != 0 {
 		t.Errorf("draftKVState.Len() = %d, want 0", session.draftKVState.Len())
@@ -514,7 +607,7 @@ func TestIMCCommitSessionNilSafe(t *testing.T) {
 		log: func(ctx context.Context, msg string, args ...any) {},
 	}
 	// Should not panic.
-	m.imcCommitSession(nil, "hash", 100, 2, nil, false, nil, "")
+	m.imcCommitSession(nil, "hash", 100, 2, nil, false, nil, "", false)
 }
 
 // TestIMCFillSlotsAnySlot verifies that all IMC jobs (text and media) are
@@ -765,12 +858,16 @@ func TestIMCSessionCapacity(t *testing.T) {
 
 func TestIMCSessions(t *testing.T) {
 	lastUsed := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+	checkpoint := imcSnapshot{
+		totalTokensCached: 1024,
+		allocatedContext:  1536,
+	}
 	m := &Model{
 		cfg: Config{PtrContextWindow: new(8192)},
 		imcSessions: []*imcSession{
 			{id: 0, kvState: ramSessionStore()},
 			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
-			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore()},
+			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore(), turnCheckpoint: &checkpoint},
 		},
 	}
 
@@ -788,7 +885,7 @@ func TestIMCSessions(t *testing.T) {
 	if got[2].State != IMCSessionStateIdle {
 		t.Errorf("session 2 state = %q, want %q", got[2].State, IMCSessionStateIdle)
 	}
-	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].Messages != 4 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
+	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].TotalAllocated != 5632 || got[2].Messages != 4 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
 		t.Errorf("session 2 detail = %+v, want populated scalar snapshot", got[2])
 	}
 
@@ -797,9 +894,16 @@ func TestIMCSessions(t *testing.T) {
 		t.Fatal("mutating snapshot changed the IMC cache entry")
 	}
 
-	m.imcCommitSession(m.imcSessions[0], "hash", 3000, 2, nil, false, nil, "")
+	m.imcSessions[2].totalTokensCached = 0
+	m.imcSessions[2].allocatedContext = 0
+	got = m.IMCSessions()
+	if got[2].Context != 1024 || got[2].Allocated != 1536 || got[2].CheckpointContext != 0 || got[2].CheckpointAllocated != 0 || got[2].TotalAllocated != 1536 {
+		t.Errorf("session 2 transition detail = %+v, want checkpoint represented once as the current snapshot", got[2])
+	}
+
+	m.imcCommitSession(m.imcSessions[0], "hash", 3000, 2, nil, false, nil, "", false)
 	m.imcPublishSession(m.imcSessions[0])
-	m.imcCommitSession(m.imcSessions[0], "hash", 1000, 2, nil, false, nil, "")
+	m.imcCommitSession(m.imcSessions[0], "hash", 1000, 2, nil, false, nil, "", false)
 	m.imcPublishSession(m.imcSessions[0])
 	if m.imcSessions[0].allocatedContext != 3000 {
 		t.Errorf("allocatedContext = %d, want high-water context 3000", m.imcSessions[0].allocatedContext)
@@ -867,7 +971,7 @@ func TestIMCCommitDoesNotPublishUntilSnapshot(t *testing.T) {
 	m := &Model{imcSessions: make([]*imcSession, 1)}
 	m.imcSessions[0] = &imcSession{kvState: ramSessionStore(), seqID: imcSeqIDUnbound, id: 0, reserved: true}
 
-	m.imcCommitSession(m.imcSessions[0], "hash", 500, 2, []llama.Token{1, 2}, false, nil, "")
+	m.imcCommitSession(m.imcSessions[0], "hash", 500, 2, []llama.Token{1, 2}, false, nil, "", false)
 	if !m.imcSessions[0].reserved {
 		t.Fatal("committed session must remain reserved before publish")
 	}

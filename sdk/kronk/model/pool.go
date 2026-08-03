@@ -75,7 +75,7 @@ func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.Cont
 // contextPoolFallbackParams converts aggregate multi-sequence parameters into
 // the single-sequence parameters used by each context in the fallback pool.
 // Each independent context receives one sequence's share of NCtx and does not
-// use unified KV memory.
+// use multi-sequence KV memory.
 func contextPoolFallbackParams(params llama.ContextParams) llama.ContextParams {
 	if params.NSeqMax > 1 && params.NCtx > 0 {
 		params.NCtx /= params.NSeqMax

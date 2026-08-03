@@ -115,6 +115,17 @@ type StateMachineFlusher interface {
 	Flush() Result
 }
 
+// ToolCallDeltaStreamer is implemented by state machines that can translate
+// model-native tool-call starts into OpenAI-compatible activity deltas.
+// ToolCallDeltas drains deltas produced by the most recent Classify call.
+type ToolCallDeltaStreamer interface {
+	ToolCallDeltas() []ResponseToolCallDelta
+
+	// StartedToolCalls returns the tool-call identities emitted during the
+	// current request. Callers must not modify the returned slice.
+	StartedToolCalls() []ResponseToolCallDelta
+}
+
 // Parser is the plugin interface implemented by each model lineage.
 // Implementations live in sdk/kronk/parsers/<name>/ and are registered
 // at startup via RegisterParser.
@@ -141,40 +152,6 @@ type Parser interface {
 // values a strict template (e.g. Mistral Medium 3.5) will validate.
 type ParamsAdjuster interface {
 	AdjustParams(p Params) Params
-}
-
-// ReasoningNormalizer is an optional compatibility interface for parsers that
-// normalize model-specific reasoning markup.
-//
-// Reasoning is ephemeral: replaying it on prior assistant turns adds prompt
-// tokens that do not improve generation, and the markup is rendered
-// inconsistently across turns (a turn that emitted reasoning as the "current"
-// turn re-renders without it once it becomes history), shifting the tokenized
-// prefix and forcing full cache rebuilds. When IMC is on and preserve_thinking
-// is off, the engine drops the reasoning / reasoning_content fields from
-// assistant history (family-agnostic) and then invokes the normalizer for the
-// lineage-specific markup the field-drop cannot reach.
-//
-// Both methods must be deterministic and idempotent: applying them twice yields
-// the same result as applying them once. The engine only normalizes structured
-// assistant history before rendering; completed Jinja output is authoritative
-// and is never rewritten.
-type ReasoningNormalizer interface {
-	// StripReasoningContent removes closed reasoning spans embedded directly
-	// in an assistant message's content (e.g. <think>…</think> for Qwen,
-	// <|channel>thought…<channel|> for Gemma). Text outside the spans is
-	// preserved. Invoked on history before the Jinja render.
-	StripReasoningContent(content string) string
-
-	// StripEmptyReasoning removes empty reasoning spans from a rendered prompt.
-	//
-	// Deprecated: the engine no longer rewrites completed template output because
-	// role-unaware transformations can alter user content and model scaffolding.
-	StripEmptyReasoning(rendered string) string
-}
-
-type reasoningContentNormalizer interface {
-	StripReasoningContent(content string) string
 }
 
 // Fingerprint carries the model metadata that parser selection logic

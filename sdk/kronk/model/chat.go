@@ -237,7 +237,7 @@ func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatRes
 func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, error) {
 	d = d.Clone()
 
-	params, err := m.validateDocument(d)
+	params, err := m.validateDocument(ctx, d)
 	if err != nil {
 		return Params{}, nil, err
 	}
@@ -251,14 +251,14 @@ func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, e
 // and media (vision/audio) paths. Returns the modified document and object type.
 func (m *Model) prepareContext(ctx context.Context, d D) (D, string, error) {
 	if m.projFile == "" {
-		return m.normalizeHistoryReasoning(m.prepareTextContext(d)), ObjectChatText, nil
+		return m.prepareTextContext(d), ObjectChatText, nil
 	}
 
 	// If the model supports media but this request has no media content,
 	// treat it as text so caching (IMC) can operate.
 	mediaType, _, _, _ := detectMediaContent(d)
 	if mediaType == MediaTypeNone {
-		return m.normalizeHistoryReasoning(m.prepareTextContext(d)), ObjectChatText, nil
+		return m.prepareTextContext(d), ObjectChatText, nil
 	}
 
 	d, err := m.prepareMediaContext(ctx, d)
@@ -266,7 +266,7 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, string, error) {
 		return nil, ObjectChatUnknown, err
 	}
 
-	return m.normalizeHistoryReasoning(d), ObjectChatMedia, nil
+	return d, ObjectChatMedia, nil
 }
 
 // prepareCacheAndPrompt handles cache processing and prompt creation. Returns
@@ -389,11 +389,13 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcNewLogicalPosition:  cache.imcNewLogicalPosition,
 		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
+		imcPromoteCheckpoint:   cache.imcPromoteCheckpoint,
 
 		imcNewCacheTokens:     cache.imcNewCacheTokens,
 		imcNewTotalCached:     cache.imcNewTotalCached,
 		imcNewCachedMsgCount:  cache.imcNewCachedMsgCount,
 		imcNewMsgsHash:        cache.imcNewMsgsHash,
+		imcNewEndsAtUser:      cache.imcNewEndsAtUser,
 		imcClearSeq:           cache.imcClearSeq,
 		imcNewCachedTokens:    cache.imcNewCachedTokens,
 		imcMediaBuild:         cache.imcMediaBuild,
@@ -615,12 +617,12 @@ func deserializeToolCallArguments(d D) D {
 	return d
 }
 
-func (m *Model) validateDocument(d D) (Params, error) {
+func (m *Model) validateDocument(ctx context.Context, d D) (Params, error) {
 	if err := ValidateMessages(d); err != nil {
 		return Params{}, err
 	}
 
-	p, err := m.parseParams(d)
+	p, err := m.parseParams(ctx, d)
 	if err != nil {
 		return Params{}, err
 	}

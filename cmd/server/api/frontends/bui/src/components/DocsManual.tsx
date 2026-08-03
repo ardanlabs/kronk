@@ -611,7 +611,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <p><code>nseq-max</code> controls model concurrency:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
   nseq-max: 4`}</code></pre>
-          <p>For text generation, this creates up to four batch-engine slots. Their sequence state is isolated, while the text engine uses a unified KV pool with total capacity based on <code>context-window × nseq-max</code>. Idle slots do not own permanent fixed partitions, but increasing <code>nseq-max</code> still increases the capacity Kronk must budget and can substantially increase memory use.</p>
+          <p>For text generation, this creates up to four batch-engine slots. Their sequence state and KV capacity are isolated. Kronk allocates an aggregate context of <code>context-window × nseq-max</code>, which llama.cpp divides into one fixed <code>context-window</code> stream per slot. Increasing <code>nseq-max</code> therefore increases the capacity Kronk must budget and can substantially increase memory use.</p>
           <p>For supported embedding and reranking architectures, <code>nseq-max</code> is the maximum number of complete inputs or query-document pairs in one sequence batch on a shared context. Architectures that have not been proven safe for that runtime use <code>nseq-max</code> to size a pool of independent single-sequence contexts instead. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
           <p>Two settings control prompt batching:</p>
           <table className="flags-table">
@@ -905,9 +905,9 @@ some-provider/large-model:
                         ┌──────────────────────────────────┐
                         │ Shared model context and weights │
                         └──────────────────────────────────┘`}</code></pre>
-          <p>Sequence IDs isolate attention state, so one request cannot attend to another request's tokens. They are not fixed physical KV-cache partitions. With more than one sequence, Kronk enables a unified KV pool whose total capacity is based on:</p>
+          <p>Sequence IDs isolate attention state, so one request cannot attend to another request's tokens. Kronk also gives each sequence a fixed physical KV-cache partition. The aggregate context allocation is:</p>
           <pre className="code-block"><code className="language-text">{`context-window × nseq-max`}</code></pre>
-          <p>Each slot is limited to one <code>context-window</code>, while unused capacity remains available to active sequences. Idle slots do not permanently own a slice of the pool. Even so, increasing <code>nseq-max</code> increases the total capacity Kronk must allocate and budget.</p>
+          <p>llama.cpp divides that allocation into <code>nseq-max</code> streams, so every slot gets the full configured <code>context-window</code>; it is never divided by the slot count. An idle slot's partition is not borrowed by another slot. Increasing <code>nseq-max</code> therefore increases the total capacity Kronk must allocate and budget.</p>
           <p>When a request finishes, its slot becomes available for another waiting job. Scheduling uses the first available slot; jobs do not reserve a particular slot between requests.</p>
           <h3 id="42-the-four-stage-request-lifecycle">4.2 The Four-Stage Request Lifecycle</h3>
           <p>Every generation request passes through the same four lifecycle stages:</p>
@@ -1006,7 +1006,7 @@ make benchmark-rerank-batchseq`}</code></pre>
           <p>Do not treat weight size plus a hand-calculated KV value as total VRAM. Use the BUI's <strong>Apps → VRAM Calculator</strong> and retain operating headroom. See <a href="https://www.kronkai.com/manual#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for the components that affect an estimate.</p>
           <h3 id="410-interaction-with-message-caching">4.10 Interaction with Message Caching</h3>
           <p>Incremental Message Caching (IMC) keeps reusable conversation state in a logical session, not in a permanently assigned execution slot. Cached state is externalized to a session store between requests. A later request can restore that state into any free slot, extend it, and continue generation.</p>
-          <p>While a request is active, its restored or newly built state consumes cells in the unified KV pool. Kronk normally snapshots a built or extended stable prefix during slot startup, before generating the request's suffix. Exact read-only hits can skip a redundant snapshot. Completion clears the slot's active sequence. This allows the number of cached conversation identities to differ from the number of concurrent execution slots.</p>
+          <p>While a request is active, its restored or newly built state consumes cells in that slot's KV stream. Kronk normally snapshots a built or extended stable prefix during slot startup, before generating the request's suffix. Exact read-only hits can skip a redundant snapshot. Completion clears the slot's active sequence. This allows the number of cached conversation identities to differ from the number of concurrent execution slots.</p>
           <p>The IMC pool contains:</p>
           <pre className="code-block"><code className="language-text">{`session capacity = max(nseq-max, 1) × max(3, queue-depth)`}</code></pre>
           <p>The minimum of three sessions per execution slot preserves reusable conversation state beyond the number of requests that can execute at once. When <code>queue-depth</code> is greater than 3, the pool expands with admission capacity. Therefore, for generation through the Kronk SDK:</p>
@@ -1060,13 +1060,14 @@ Actual plan: [A B C D][G]`}</code></pre>
           <p>This plan captures media content, count, order, and placement relative to text. It is called canonical because it is the authoritative logical description of what the engine must execute, not merely a normalized version of the client's messages.</p>
           <p>A media item is one logical plan unit, but the multimodal pipeline may expand it into many physical KV cells. Models using M-RoPE can also distinguish the next logical decode position from the physical KV-cell count. IMC therefore keeps the logical plan, logical position, and physical snapshot accounting consistent without pretending that media is an ordinary text token.</p>
           <h4 id="step-3-find-the-longest-complete-safe-prefix">Step 3: Find the longest complete safe prefix</h4>
-          <p>Kronk searches available sessions for the longest complete saved plan that is a prefix of the new stable plan:</p>
+          <p>Kronk searches available sessions for the longest complete saved plan that is a prefix of the new stable plan. A text session can retain two complete plans: its latest rolling snapshot and a user-turn checkpoint captured before the rolling snapshot first extends into assistant/tool activity:</p>
           <pre className="code-block"><code className="language-text">{`New stable plan: [A B C D E F]
 
 Session 1: [A B]          -> safe prefix
 Session 2: [A B C D]      -> safe prefix and better
 Session 3: [A B X]        -> not safe
-Session 4: [A B C D E F]  -> exact and best`}</code></pre>
+Session 4: [A B C D E F]  -> exact and best
+Checkpoint: [A B C]       -> also safe if its rolling snapshot diverges`}</code></pre>
           <p>Choosing the longest compatible session minimizes new prefill work. A prefix is safe only when:</p>
           <ul>
             <li>It ends at a complete, committed session boundary.</li>
@@ -1076,6 +1077,7 @@ Session 4: [A B C D E F]  -> exact and best`}</code></pre>
             <li>For media, the saved media plan is unchanged and anything added after the anchor is text-only.</li>
           </ul>
           <p>"Longest complete prefix" does not mean the longest coincidental token overlap. For example, <code>[A B C D]</code> is not reused for <code>[A B X D]</code>, even though <code>[A B]</code> matches. Kronk does not trim an existing session at an arbitrary internal point. This conservative rule avoids assuming that an internal KV cut remains valid across template boundaries, media embeddings, M-RoPE positions, hybrid recurrent state, or draft/MTP state.</p>
+          <p>The retained user-turn checkpoint is not an arbitrary cut. It is a complete snapshot previously committed at a real user-message boundary, including the target state and any compatible draft/MTP state. This matters for templates that render reasoning only after the latest user message: appending a new user message can intentionally remove reasoning from older assistant messages, so the rolling snapshot no longer prefixes the new rendering even though the earlier user boundary still does.</p>
           <h4 id="step-4-select-exact-append-anchor-or-rebuild">Step 4: Select exact, append, anchor, or rebuild</h4>
           <p>The selected action follows from the stable plan and the best safe session.</p>
           <p><strong>Exact</strong> means the cached stable plan and new stable plan are identical:</p>
@@ -1088,6 +1090,7 @@ Actual:        [A B C D][G]`}</code></pre>
 New stable:    [A B C D E F]
 Actual:        [A B C D E F][G]`}</code></pre>
           <p>Kronk restores <code>[A B C D]</code>, prefills <code>[E F]</code>, snapshots the new reusable state <code>[A B C D E F]</code>, and then processes <code>[G]</code> without adding it to that stable snapshot.</p>
+          <p>If the rolling snapshot diverges because a template retroactively changes historical rendering, append can instead begin from the retained user-turn checkpoint. Kronk restores that complete checkpoint and prefills everything after it; it never rewinds a later model state or deletes an arbitrary KV range.</p>
           <p><strong>Anchor</strong> is the media-safe form of append:</p>
           <pre className="code-block"><code className="language-text">{`Cached plan: [A B][image-1][C D]
 New plan:    [A B][image-1][C D E F]`}</code></pre>
@@ -1097,7 +1100,7 @@ New plan:    [A B][image-1][C D E F]`}</code></pre>
 [A B][image-1][image-2][C D]    -> rebuild: appended media
 [A B][C D][image-1]             -> rebuild: reordered media
 [A B][C D]                      -> rebuild: removed media`}</code></pre>
-          <p><strong>Rebuild</strong> means no complete saved session prefixes the stable plan. Kronk selects an empty session or the least recently used available session, resets it, processes the stable plan from the beginning, snapshots the resulting state, and then processes the generation tail. Rebuild is not a request failure; it means only that the request receives no saved-prefill benefit.</p>
+          <p><strong>Rebuild</strong> means neither a rolling snapshot nor a retained user-turn checkpoint prefixes the stable plan. Kronk selects an empty session or the least recently used available session, resets it, processes the stable plan from the beginning, snapshots the resulting state, and then processes the generation tail. Rebuild is not a request failure; it means only that the request receives no saved-prefill benefit.</p>
           <h4 id="step-5-reserve-the-selected-session">Step 5: Reserve the selected session</h4>
           <p>Planning and execution do not happen at the same instant. A request may wait for an execution slot after selecting a session, so Kronk immediately marks the session reserved while holding the cache lock:</p>
           <pre className="code-block"><code className="language-text">{`select session -> reserve -> restore/extend/snapshot/generate -> release`}</code></pre>
@@ -1120,13 +1123,13 @@ New plan:    [A B][image-1][C D E F]`}</code></pre>
           <blockquote>the safest minimum work needed to reach it?" IMC supplies the reusable model</blockquote>
           <blockquote>state that makes the answer efficient.</blockquote>
           <h2 id="52-how-kronk-reuses-a-text-prefix">5.2 How Kronk Reuses a Text Prefix</h2>
-          <p>Kronk compares the complete stable token sequence with sequences retained by existing sessions. The result is one of three match types:</p>
+          <p>Kronk compares the complete stable token sequence with the rolling and retained user-turn checkpoint sequences in existing sessions. The result is one of three match types:</p>
           <ul>
             <li><strong>Exact</strong> — The new stable sequence is identical to a cached sequence. Kronk restores that session and processes only the generation-ready tail.</li>
             <li><strong>Append</strong> — A cached sequence is a complete prefix of the new stable sequence. Kronk restores it, processes the appended stable tokens, and then processes the generation-ready tail.</li>
             <li><strong>Rebuild</strong> — No complete cached sequence prefixes the new stable sequence. Kronk uses an empty session or replaces the least recently used available session and processes the stable prefix from the beginning.</li>
           </ul>
-          <p>Only complete-prefix reuse is allowed. If an earlier message is edited, removed, reordered, or rendered differently, Kronk rebuilds the prefix. It does not trim an existing session at an internal point and attempt to salvage the tokens before the divergence.</p>
+          <p>Only complete-prefix reuse is allowed. If an earlier message is edited, removed, reordered, or rendered differently, Kronk can reuse a retained user-turn checkpoint only when that entire checkpoint still prefixes the new rendering. Otherwise it rebuilds the prefix. It does not trim an existing snapshot at an internal point and attempt to salvage tokens before the divergence.</p>
           <p>For example:</p>
           <pre className="code-block"><code className="language-text">{`Cached stable tokens: [A B C D]
 
@@ -1142,10 +1145,11 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
             <li>A session can be restored into any available execution slot; it is not tied permanently to one slot.</li>
             <li>Session storage is allocated lazily as conversations begin using it.</li>
           </ul>
-          <p>For example, <code>nseq-max: 2</code> with the default <code>queue-depth: 2</code> provides two concurrent decode slots and six warm IMC session identities. A queue depth greater than 3 expands the session pool so it remains at least as large as the generation admission capacity. Raising <code>nseq-max</code> also increases the unified KV cache capacity and its memory cost, so do not raise it solely to retain more conversation branches without considering the effects described in <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a>.</p>
+          <p>For example, <code>nseq-max: 2</code> with the default <code>queue-depth: 2</code> provides two concurrent decode slots and six warm IMC session identities. A queue depth greater than 3 expands the session pool so it remains at least as large as the generation admission capacity. Raising <code>nseq-max</code> also adds another full <code>context-window</code> KV stream and its memory cost, so do not raise it solely to retain more conversation branches without considering the effects described in <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a>.</p>
           <p>Admission waiting is controlled separately by the per-model <code>admission-timeout</code> setting (default <code>3m</code>). It only bounds the wait for an SDK admission permit. The server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>) instead bounds admitted preparation, slot waiting, and inference; neither setting changes IMC session retention.</p>
           <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is held. If all session identities are reserved, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
+          <p>For text sessions, Kronk also retains one complete user-turn checkpoint when a rolling snapshot first extends beyond that user boundary. The checkpoint owns an independent target snapshot plus draft/MTP state when configured. It remains unchanged through the assistant/tool loop and is replaced at the next completed user boundary. This can require approximately one additional snapshot-sized host or disk allocation for each active logical session.</p>
           <p>An exact match may skip rewriting the snapshot when the stable state has not changed. This avoids an unnecessary serialization of the state that was just restored. Exact media-plan reuse can receive the same optimization. These are implementation optimizations; they do not change which content is considered part of the cache.</p>
           <p>Snapshots externalize inactive session state from the model's active KV cache. They therefore do not permanently occupy an execution slot or pin their state in accelerator KV memory between requests. They do consume host or disk storage, as described in <a href="#55-configuration-and-storage">Configuration and Storage</a>.</p>
           <h2 id="54-media-requests">5.4 Media Requests</h2>
@@ -1497,7 +1501,7 @@ Qwen/Qwen3-8B-Q8_0:
           </table>
           <p>When these settings are omitted, Kronk leaves the llama.cpp or GGUF defaults in place. An omitted or YAML <code>null</code> value does not ask Kronk to calculate a value from the context ratio. Override the advanced YaRN factors only when the model provider supplies values or controlled evaluation shows they are needed.</p>
           <h2 id="75-memory-and-concurrency">7.5 Memory and Concurrency</h2>
-          <p>KV-cache capacity grows approximately linearly with the context window. The actual size depends on the model architecture, layer count, KV heads, head dimensions, cache data types, backend, and alignment. With multiple generation slots, the unified KV pool has capacity based on <code>context-window × nseq-max</code>.</p>
+          <p>KV-cache capacity grows approximately linearly with the context window. The actual size depends on the model architecture, layer count, KV heads, head dimensions, cache data types, backend, and alignment. With multiple generation slots, each slot receives one fixed <code>context-window</code> KV stream, for aggregate capacity based on <code>context-window × nseq-max</code>.</p>
           <p>If a long-context model does not fit, consider:</p>
           <ul>
             <li>reducing <code>nseq-max</code>;</li>
@@ -1803,6 +1807,7 @@ docker rm kronk
           <pre className="code-block"><code className="language-text">{`data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 
 data: [DONE]`}</code></pre>
+          <p>For compatible Qwen models, streaming responses emit an OpenAI-compatible tool-call activity delta as soon as the function name is known. The completed tool call, including all arguments, remains in the terminal response so clients that consume only the final chunk continue to work unchanged.</p>
           <h3 id="tool-calls">Tool calls</h3>
           <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability.</p>
           <p>When a tool is selected, the assistant message contains <code>tool_calls</code> and uses an empty string for <code>content</code>:</p>

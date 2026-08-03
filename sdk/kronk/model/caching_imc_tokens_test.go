@@ -69,6 +69,149 @@ func TestProcessIMCTokenPlanRejectsNonPrefixRender(t *testing.T) {
 	}
 }
 
+func TestProcessIMCTokenPlanUsesTurnCheckpointWhenTemplateMovesLastAssistantReasoning(t *testing.T) {
+	const script = `{%- for message in messages -%}
+{{- message.role + ':' -}}
+{%- if message.role == "assistant" and loop.last -%}
+{{- message.reasoning_content + ':' -}}
+{%- endif -%}
+{{- message.content + ';' -}}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+{{- 'assistant:' -}}
+{%- endif -%}`
+
+	m := Model{
+		cfg: Config{PtrCacheMinTokens: new(1)},
+		log: applog.DiscardLogger,
+		template: Template{
+			FileName: "last-assistant-reasoning",
+			Script:   script,
+		},
+	}
+
+	render := func(t *testing.T, messages []D, addGenerationPrompt bool) []llama.Token {
+		t.Helper()
+
+		prompt, err := m.applyJinjaTemplate(context.Background(), D{
+			"messages":              messages,
+			"add_generation_prompt": addGenerationPrompt,
+			"bos_token":             "",
+			"eos_token":             "",
+		})
+		if err != nil {
+			t.Fatalf("applyJinjaTemplate: %v", err)
+		}
+
+		tokens := make([]llama.Token, len(prompt))
+		for i, b := range []byte(prompt) {
+			tokens[i] = llama.Token(b)
+		}
+		return tokens
+	}
+
+	firstMessages := []D{
+		{"role": "user", "content": "hello"},
+		{"role": "assistant", "content": "answer", "reasoning_content": "thought"},
+	}
+	checkpointTokens := render(t, firstMessages[:1], false)
+	firstStable := render(t, firstMessages, false)
+	m.imcSessions = []*imcSession{
+		{
+			id:                0,
+			cachedTokens:      firstStable,
+			totalTokensCached: len(firstStable),
+			cachedMsgCount:    len(firstMessages),
+			kvState:           populatedTestSessionStore(),
+			turnCheckpoint: &imcSnapshot{
+				cachedTokens:      checkpointTokens,
+				totalTokensCached: len(checkpointTokens),
+				cachedMsgCount:    1,
+				kvState:           populatedTestSessionStore(),
+				endsAtUser:        true,
+			},
+		},
+		{id: 1, kvState: ramSessionStore()},
+	}
+
+	secondMessages := append(slices.Clone(firstMessages), D{"role": "user", "content": "next"})
+	secondStable := render(t, secondMessages, false)
+	secondActual := render(t, secondMessages, true)
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": secondMessages}, secondActual, secondStable, time.Now())
+
+	if result.imcMatchKind != "append" {
+		t.Errorf("imcMatchKind = %q, want append", result.imcMatchKind)
+	}
+	if result.imcSessionID != 0 {
+		t.Errorf("imcSessionID = %d, want checkpoint session 0", result.imcSessionID)
+	}
+	if result.cacheIdx != llama.Pos(len(checkpointTokens)) {
+		t.Errorf("cacheIdx = %d, want checkpoint length %d", result.cacheIdx, len(checkpointTokens))
+	}
+	if !result.imcPromoteCheckpoint {
+		t.Error("imcPromoteCheckpoint = false, want selected user boundary retained during extension")
+	}
+	if !m.imcSessions[0].reserved {
+		t.Error("checkpoint session was not reserved")
+	}
+	if !slices.Equal(m.imcSessions[0].cachedTokens, checkpointTokens) {
+		t.Errorf("rolling tokens after selection = %v, want checkpoint %v", m.imcSessions[0].cachedTokens, checkpointTokens)
+	}
+	if m.imcSessions[0].turnCheckpoint == nil || !slices.Equal(m.imcSessions[0].turnCheckpoint.cachedTokens, firstStable) {
+		t.Error("prior rolling snapshot was not retained after checkpoint selection swap")
+	}
+}
+
+func TestProcessIMCTokenPlanPrefersLongerRollingSnapshotOverCheckpoint(t *testing.T) {
+	session := &imcSession{
+		id:                0,
+		cachedTokens:      []llama.Token{1, 2, 3},
+		totalTokensCached: 3,
+		kvState:           populatedTestSessionStore(),
+		turnCheckpoint: &imcSnapshot{
+			cachedTokens:      []llama.Token{1, 2},
+			totalTokensCached: 2,
+			kvState:           populatedTestSessionStore(),
+			endsAtUser:        true,
+		},
+	}
+	m := Model{
+		cfg:         Config{PtrCacheMinTokens: new(1)},
+		log:         applog.DiscardLogger,
+		imcSessions: []*imcSession{session},
+	}
+
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3, 4, 5}, []llama.Token{1, 2, 3, 4}, time.Now())
+
+	if result.cacheIdx != 3 {
+		t.Errorf("cacheIdx = %d, want longer rolling prefix 3", result.cacheIdx)
+	}
+	if !slices.Equal(session.cachedTokens, []llama.Token{1, 2, 3}) {
+		t.Error("planner swapped in shorter checkpoint instead of retaining rolling state")
+	}
+}
+
+func TestMessagesEndAtRealUser(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages []D
+		want     bool
+	}{
+		{name: "real user", messages: []D{{"role": "user", "content": "next"}}, want: true},
+		{name: "tool role", messages: []D{{"role": "tool", "content": "result"}}},
+		{name: "user tool id", messages: []D{{"role": "user", "tool_call_id": "call-1", "content": "result"}}},
+		{name: "wrapped tool response", messages: []D{{"role": "user", "content": "<tool_response>result</tool_response>"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := messagesEndAtRealUser(tt.messages); got != tt.want {
+				t.Errorf("messagesEndAtRealUser() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProcessIMCTokenPlanReservesExactMatch(t *testing.T) {
 	session := &imcSession{
 		id:                0,

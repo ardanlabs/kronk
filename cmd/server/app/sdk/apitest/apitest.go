@@ -177,6 +177,7 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 					return
 				}
 
+				var events []json.RawMessage
 				var lastData string
 				scanner := bufio.NewScanner(w.Body)
 				for scanner.Scan() {
@@ -184,6 +185,7 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 					if after, ok := strings.CutPrefix(line, "data: "); ok {
 						data := after
 						if data != "[DONE]" {
+							events = append(events, json.RawMessage(data))
 							lastData = data
 						}
 					}
@@ -198,6 +200,9 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 				}
 
 				lastDiff = tt.CmpFunc(tt.GotResp, tt.ExpResp)
+				if lastDiff == "" && tt.StreamCmpFunc != nil {
+					lastDiff = tt.StreamCmpFunc(events)
+				}
 				if lastDiff == "" {
 					if attempt > 0 {
 						t.Logf("Passed on retry attempt %d", attempt+1)

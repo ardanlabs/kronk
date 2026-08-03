@@ -113,11 +113,11 @@ func TestParser_AnalysisThenFinal(t *testing.T) {
 }
 
 // TestParser_CommentaryToolCall covers the "commentary to=functions.NAME"
-// channel, the <|constrain|>json swallowing, and the synthetic
-// ".NAME <|message|>" prefix the stateMachine injects so parseGPTToolCall can
-// recover the function name.
+// channel, early identity delta, and buffered native payload.
 func TestParser_CommentaryToolCall(t *testing.T) {
 	c := Parser{}.NewStateMachine()
+	streamer := c.(model.ToolCallDeltaStreamer)
+	flusher := c.(model.StateMachineFlusher)
 
 	runSteps(t, "tool-call", c, []step{
 		{token: "<|start|>", channel: model.ChannelNone},
@@ -127,12 +127,46 @@ func TestParser_CommentaryToolCall(t *testing.T) {
 		{token: " to=functions.get_weather", channel: model.ChannelNone},
 		{token: "<|constrain|>", channel: model.ChannelNone},
 		{token: "json", channel: model.ChannelNone}, // swallowed
-		{token: "<|message|>", channel: model.ChannelTool,
-			content: ".get_weather <|message|>"},
-		{token: `{"location":"NYC"}`, channel: model.ChannelTool,
-			content: `{"location":"NYC"}`},
+		{token: "<|message|>", channel: model.ChannelNone},
+		{token: `{"location":"NYC"}`, channel: model.ChannelNone},
 		{token: "<|call|>", channel: model.ChannelNone, eog: true},
 	})
+
+	deltas := streamer.ToolCallDeltas()
+	if len(deltas) != 1 || deltas[0].Index != 0 || deltas[0].Function.Name != "get_weather" || deltas[0].ID == "" {
+		t.Fatalf("ToolCallDeltas: got %+v, want one get_weather identity", deltas)
+	}
+	if deltas[0].Function.Arguments != "" {
+		t.Errorf("delta arguments: got %q, want empty", deltas[0].Function.Arguments)
+	}
+	if got := streamer.ToolCallDeltas(); got != nil {
+		t.Errorf("drained ToolCallDeltas: got %+v, want nil", got)
+	}
+	if got := flusher.Flush(); got.Channel != model.ChannelTool || got.Content != `.get_weather <|message|>{"location":"NYC"}` {
+		t.Errorf("Flush after parser EOG: got %+v, want buffered tool call", got)
+	}
+}
+
+func TestParser_ToolCallFlushMultipleAndReset(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	streamer := c.(model.ToolCallDeltaStreamer)
+	flusher := c.(model.StateMachineFlusher)
+
+	for _, token := range []string{"<|channel|>", "commentary to=functions.", "first", "<|message|>", `{}`, "<|end|>", "<|channel|>", "commentary to=functions.second", "<|message|>", `{"x":1}`} {
+		c.Classify(token)
+	}
+	deltas := streamer.ToolCallDeltas()
+	if len(deltas) != 2 || deltas[0].Index != 0 || deltas[1].Index != 1 || deltas[0].ID == deltas[1].ID {
+		t.Fatalf("ToolCallDeltas: got %+v, want two distinct indexed calls", deltas)
+	}
+	got := flusher.Flush()
+	if got.Channel != model.ChannelTool || got.Content != `.second <|message|>{"x":1}` {
+		t.Errorf("Flush: got %+v", got)
+	}
+	c.Reset()
+	if len(streamer.StartedToolCalls()) != 0 || flusher.Flush() != (model.Result{}) {
+		t.Errorf("Reset did not clear tool state")
+	}
 }
 
 // TestParser_RecoversFromMissingEnd covers the resilience path where the

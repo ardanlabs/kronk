@@ -83,15 +83,15 @@ type SessionStore interface {
 	// operation. n is clamped to [0, Cap()].
 	Commit(n int)
 
-	// Reset clears the valid contents (Len becomes 0). Implementations
-	// may retain or release backing storage as appropriate; the RAM
-	// impl retains the backing array for reuse on the next Prepare.
+	// Reset zeroes all retained snapshot storage and clears the valid contents
+	// (Len becomes 0). Implementations may retain the zeroed allocation for
+	// reuse, but bytes from the prior session must not survive Reset.
 	Reset()
 
 	// Close releases any backing storage held by the store (file
-	// descriptors, on-disk files, network handles). Called once at
-	// Model.Unload time, never on the per-request hot path. The RAM
-	// impl is a no-op; the disk impl removes its per-session file.
+	// descriptors, on-disk files, network handles). Called when a retained
+	// turn checkpoint is replaced and at Model.Unload time. The RAM impl is
+	// a no-op; the disk impl removes its per-session file.
 	// After Close the store must not be used again.
 	Close() error
 }

@@ -149,6 +149,13 @@ func TestIMCRenderFingerprintChangesWithInputs(t *testing.T) {
 			},
 		},
 		{
+			name: "preserve_thinking omitted",
+			mut: func() (*Model, D, []D) {
+				d := D{"tools": baseTools}
+				return m, d, baseMsgs
+			},
+		},
+		{
 			name: "tools changed",
 			mut: func() (*Model, D, []D) {
 				d := D{"tools": []D{{"type": "function", "function": D{"name": "different"}}}, "preserve_thinking": true}
@@ -268,7 +275,7 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 	}
 	m.imcSessions[0] = session
 
-	m.imcCommitSession(session, "h1", 500, 3, nil, false, nil, "render-hash-1")
+	m.imcCommitSession(session, "h1", 500, 3, nil, false, nil, "render-hash-1", false)
 
 	if session.cachedRenderInputHash != "render-hash-1" {
 		t.Errorf("after commit: cachedRenderInputHash = %q, want %q",
@@ -288,7 +295,7 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 	}
 
 	// A subsequent commit (e.g. extend) refreshes the fingerprint.
-	m.imcCommitSession(session, "h2", 700, 4, nil, false, nil, "render-hash-2")
+	m.imcCommitSession(session, "h2", 700, 4, nil, false, nil, "render-hash-2", false)
 	if session.cachedRenderInputHash != "render-hash-2" {
 		t.Errorf("after re-commit: cachedRenderInputHash = %q, want %q",
 			session.cachedRenderInputHash, "render-hash-2")
@@ -318,7 +325,7 @@ func TestIMCCommitEmptyRenderHashDisqualifiesSkip(t *testing.T) {
 	}
 	m.imcSessions[0] = session
 
-	m.imcCommitSession(session, "h", 100, 2, nil, false, nil, "")
+	m.imcCommitSession(session, "h", 100, 2, nil, false, nil, "", false)
 
 	if session.cachedRenderInputHash != "" {
 		t.Errorf("cachedRenderInputHash = %q, want empty (pre-rollout sentinel)",

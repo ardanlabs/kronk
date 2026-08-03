@@ -113,7 +113,9 @@ without pretending that media is an ordinary text token.
 #### Step 3: Find the longest complete safe prefix
 
 Kronk searches available sessions for the longest complete saved plan that is
-a prefix of the new stable plan:
+a prefix of the new stable plan. A text session can retain two complete plans:
+its latest rolling snapshot and a user-turn checkpoint captured before the
+rolling snapshot first extends into assistant/tool activity:
 
 ```text
 New stable plan: [A B C D E F]
@@ -122,6 +124,7 @@ Session 1: [A B]          -> safe prefix
 Session 2: [A B C D]      -> safe prefix and better
 Session 3: [A B X]        -> not safe
 Session 4: [A B C D E F]  -> exact and best
+Checkpoint: [A B C]       -> also safe if its rolling snapshot diverges
 ```
 
 Choosing the longest compatible session minimizes new prefill work. A prefix is
@@ -140,6 +143,14 @@ matches. Kronk does not trim an existing session at an arbitrary internal point.
 This conservative rule avoids assuming that an internal KV cut remains valid
 across template boundaries, media embeddings, M-RoPE positions, hybrid
 recurrent state, or draft/MTP state.
+
+The retained user-turn checkpoint is not an arbitrary cut. It is a complete
+snapshot previously committed at a real user-message boundary, including the
+target state and any compatible draft/MTP state. This matters for templates
+that render reasoning only after the latest user message: appending a new user
+message can intentionally remove reasoning from older assistant messages, so
+the rolling snapshot no longer prefixes the new rendering even though the
+earlier user boundary still does.
 
 #### Step 4: Select exact, append, anchor, or rebuild
 
@@ -168,6 +179,11 @@ Kronk restores `[A B C D]`, prefills `[E F]`, snapshots the new reusable state
 `[A B C D E F]`, and then processes `[G]` without adding it to that stable
 snapshot.
 
+If the rolling snapshot diverges because a template retroactively changes
+historical rendering, append can instead begin from the retained user-turn
+checkpoint. Kronk restores that complete checkpoint and prefills everything
+after it; it never rewinds a later model state or deletes an arbitrary KV range.
+
 **Anchor** is the media-safe form of append:
 
 ```text
@@ -190,11 +206,12 @@ Changing, appending, removing, or reordering media is not an anchor extension:
 [A B][C D]                      -> rebuild: removed media
 ```
 
-**Rebuild** means no complete saved session prefixes the stable plan. Kronk
-selects an empty session or the least recently used available session, resets
-it, processes the stable plan from the beginning, snapshots the resulting
-state, and then processes the generation tail. Rebuild is not a request
-failure; it means only that the request receives no saved-prefill benefit.
+**Rebuild** means neither a rolling snapshot nor a retained user-turn
+checkpoint prefixes the stable plan. Kronk selects an empty session or the
+least recently used available session, resets it, processes the stable plan
+from the beginning, snapshots the resulting state, and then processes the
+generation tail. Rebuild is not a request failure; it means only that the
+request receives no saved-prefill benefit.
 
 #### Step 5: Reserve the selected session
 
@@ -239,8 +256,9 @@ reduced message document. Put another way:
 
 ## 5.2 How Kronk Reuses a Text Prefix
 
-Kronk compares the complete stable token sequence with sequences retained by
-existing sessions. The result is one of three match types:
+Kronk compares the complete stable token sequence with the rolling and retained
+user-turn checkpoint sequences in existing sessions. The result is one of
+three match types:
 
 - **Exact** — The new stable sequence is identical to a cached sequence. Kronk
   restores that session and processes only the generation-ready tail.
@@ -252,9 +270,11 @@ existing sessions. The result is one of three match types:
   session and processes the stable prefix from the beginning.
 
 Only complete-prefix reuse is allowed. If an earlier message is edited,
-removed, reordered, or rendered differently, Kronk rebuilds the prefix. It does
-not trim an existing session at an internal point and attempt to salvage the
-tokens before the divergence.
+removed, reordered, or rendered differently, Kronk can reuse a retained
+user-turn checkpoint only when that entire checkpoint still prefixes the new
+rendering. Otherwise it rebuilds the prefix. It does not trim an existing
+snapshot at an internal point and attempt to salvage tokens before the
+divergence.
 
 For example:
 
@@ -286,9 +306,9 @@ are deliberately separate:
 For example, `nseq-max: 2` with the default `queue-depth: 2` provides two
 concurrent decode slots and six warm IMC session identities. A queue depth
 greater than 3 expands the session pool so it remains at least as large as the
-generation admission capacity. Raising `nseq-max` also increases the unified
-KV cache capacity and its memory cost, so do not raise it solely to retain
-more conversation branches without considering the effects described in
+generation admission capacity. Raising `nseq-max` also adds another full
+`context-window` KV stream and its memory cost, so do not raise it solely to
+retain more conversation branches without considering the effects described in
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing).
 
 Admission waiting is controlled separately by the per-model
@@ -307,6 +327,13 @@ During a request, Kronk restores the selected snapshot into a free slot. For a
 new or appended stable prefix, it creates the updated snapshot after processing
 the stable tokens. The generation-ready tail is then processed without making
 it part of that reusable stable prefix.
+
+For text sessions, Kronk also retains one complete user-turn checkpoint when a
+rolling snapshot first extends beyond that user boundary. The checkpoint owns
+an independent target snapshot plus draft/MTP state when configured. It remains
+unchanged through the assistant/tool loop and is replaced at the next completed
+user boundary. This can require approximately one additional snapshot-sized
+host or disk allocation for each active logical session.
 
 An exact match may skip rewriting the snapshot when the stable state has not
 changed. This avoids an unnecessary serialization of the state that was just

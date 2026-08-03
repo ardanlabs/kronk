@@ -74,18 +74,18 @@ streaming response, and sequence ID.
 ```
 
 Sequence IDs isolate attention state, so one request cannot attend to another
-request's tokens. They are not fixed physical KV-cache partitions. With more
-than one sequence, Kronk enables a unified KV pool whose total capacity is
-based on:
+request's tokens. Kronk also gives each sequence a fixed physical KV-cache
+partition. The aggregate context allocation is:
 
 ```text
 context-window × nseq-max
 ```
 
-Each slot is limited to one `context-window`, while unused capacity remains
-available to active sequences. Idle slots do not permanently own a slice of
-the pool. Even so, increasing `nseq-max` increases the total capacity Kronk
-must allocate and budget.
+llama.cpp divides that allocation into `nseq-max` streams, so every slot gets
+the full configured `context-window`; it is never divided by the slot count.
+An idle slot's partition is not borrowed by another slot. Increasing
+`nseq-max` therefore increases the total capacity Kronk must allocate and
+budget.
 
 When a request finishes, its slot becomes available for another waiting job.
 Scheduling uses the first available slot; jobs do not reserve a particular
@@ -383,11 +383,11 @@ externalized to a session store between requests. A later request can restore
 that state into any free slot, extend it, and continue generation.
 
 While a request is active, its restored or newly built state consumes cells in
-the unified KV pool. Kronk normally snapshots a built or extended stable prefix
-during slot startup, before generating the request's suffix. Exact read-only
-hits can skip a redundant snapshot. Completion clears the slot's active
-sequence. This allows the number of cached conversation identities to differ
-from the number of concurrent execution slots.
+that slot's KV stream. Kronk normally snapshots a built or extended stable
+prefix during slot startup, before generating the request's suffix. Exact
+read-only hits can skip a redundant snapshot. Completion clears the slot's
+active sequence. This allows the number of cached conversation identities to
+differ from the number of concurrent execution slots.
 
 The IMC pool contains:
 

@@ -120,7 +120,8 @@ provider supplies values or controlled evaluation shows they are needed.
 KV-cache capacity grows approximately linearly with the context window. The
 actual size depends on the model architecture, layer count, KV heads, head
 dimensions, cache data types, backend, and alignment. With multiple generation
-slots, the unified KV pool has capacity based on `context-window × nseq-max`.
+slots, each slot receives one fixed `context-window` KV stream, for aggregate
+capacity based on `context-window × nseq-max`.
 
 If a long-context model does not fit, consider:
 

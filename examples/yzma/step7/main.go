@@ -249,11 +249,11 @@ func embed(mdl llama.Model, tokenized [][]llama.Token, nEmbd int32) ([][]float32
 
 	ctxParams := llama.ContextDefaultParams()
 	ctxParams.Embeddings = 1
-	ctxParams.NCtx = batchSize
+	ctxParams.NCtx = uint32(batchSize * len(tokenized))
 	ctxParams.NBatch = batchSize
 	ctxParams.NUbatch = batchSize
 	ctxParams.NSeqMax = uint32(len(tokenized))
-	ctxParams.KVUnified = 1
+	ctxParams.KVUnified = 0
 
 	lctx, err := llama.InitFromModel(mdl, ctxParams)
 	if err != nil {

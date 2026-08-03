@@ -299,6 +299,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// per-token in processSlotToken, so no re-tokenization needed.
 	if s.toolFlag > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
+		s.finalTooling.Reset()
+		s.finalTooling.WriteString(content)
 		if len(content) > 0 {
 
 			// Log the raw model output before parsing so tool call issues
@@ -394,8 +396,72 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		returnPrompt = s.job.prompt
 	}
 
+	var terminalToolCallDeltas []ResponseToolCallDelta
+	if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok && s.job.params.Stream {
+		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, streamer.StartedToolCalls())
+	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
-		&s.finalContent, &s.finalReasoning, s.respToolCalls, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, usage)
+		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, usage)
+}
+
+func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {
+	if len(toolCalls) == 0 || len(started) == 0 {
+		return nil
+	}
+
+	terminal := make([]ResponseToolCallDelta, len(toolCalls))
+	matchedStarts := make([]bool, len(started))
+	nextUnannouncedIndex := 0
+	for _, start := range started {
+		nextUnannouncedIndex = max(nextUnannouncedIndex, start.Index+1)
+	}
+
+	for i := range toolCalls {
+		arguments := ""
+		if toolCalls[i].Function.Arguments != nil {
+			data, err := json.Marshal(map[string]any(toolCalls[i].Function.Arguments))
+			if err != nil {
+				return nil
+			}
+			arguments = string(data)
+		}
+
+		terminal[i] = ResponseToolCallDelta{
+			ID:    toolCalls[i].ID,
+			Index: toolCalls[i].Index,
+			Type:  toolCalls[i].Type,
+			Function: ResponseToolCallDeltaFunction{
+				Name:      toolCalls[i].Function.Name,
+				Arguments: arguments,
+			},
+		}
+
+		startAt := -1
+		for j := range started {
+			if !matchedStarts[j] && toolCalls[i].Function.Name == started[j].Function.Name {
+				startAt = j
+				break
+			}
+		}
+		if startAt == -1 {
+			toolCalls[i].Index = nextUnannouncedIndex
+			terminal[i].Index = nextUnannouncedIndex
+			nextUnannouncedIndex++
+			continue
+		}
+
+		matchedStarts[startAt] = true
+		if toolCalls[i].Status == 0 {
+			toolCalls[i].ID = started[startAt].ID
+			toolCalls[i].Index = started[startAt].Index
+		}
+		terminal[i].ID = ""
+		terminal[i].Index = started[startAt].Index
+		terminal[i].Type = ""
+		terminal[i].Function.Name = ""
+	}
+
+	return terminal
 }
 
 // flushStateMachine preserves model output held by parser lookahead when
@@ -407,22 +473,9 @@ func (e *batchEngine) flushStateMachine(s *slot, result Result) {
 
 	outputTokens := s.reasonTokens + s.completionTokens
 
-	switch result.Channel {
-	case ChannelReasoning:
-		s.finalReasoning.WriteString(result.Content)
-		if err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, ChannelReasoning, s.reasonTokens, outputTokens, nil); err != nil {
-			e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
-		}
-
-	case ChannelAnswer:
-		s.finalContent.WriteString(result.Content)
-		if err := e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, ChannelAnswer, s.reasonTokens, outputTokens, nil); err != nil {
-			e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
-		}
-
-	case ChannelTool:
-		s.toolFlag++
-		s.finalTooling.WriteString(result.Content)
+	updateSlotChannel(s, result.Channel)
+	if err := e.retainAndStreamResult(s, result, outputTokens, nil); err != nil {
+		e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
 	}
 }
 

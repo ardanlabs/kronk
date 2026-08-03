@@ -222,9 +222,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			nRead := llama.StateSeqSetData(e.model.lctx, kvState, s.seqID)
 			e.model.decodeMu.Unlock()
 
-			if nRead == 0 {
+			expectedBytes := uint64(len(kvState))
+			if nRead != expectedBytes {
+				e.model.decodeMu.Lock()
+				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				e.model.decodeMu.Unlock()
 				e.model.imcInvalidateReservedSession(job.imcSession)
-				e.finishSlot(s, fmt.Errorf("start-slot: imc restore failed for seq %d", s.seqID))
+				e.finishSlot(s, fmt.Errorf("start-slot: imc restore for seq %d read %d bytes, expected %d", s.seqID, nRead, expectedBytes))
 				return
 			}
 			job.imcSnapshotReused = true
@@ -342,7 +346,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 			cacheIdx = llama.Pos(nextLogicalPos)
 
-			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash)
+			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
 			e.model.cacheMu.Lock()
 			job.imcSession.promptPlan = job.imcPromptPlan
 			job.imcSession.samplerPromptTokens = slices.Clone(samplerCacheTokens)
@@ -418,7 +422,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					"old_cached_tokens", cacheIdx)
 
 				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				_, targetClearErr := llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+				if targetClearErr == nil {
+					var maxPos llama.Pos
+					maxPos, targetClearErr = llama.MemorySeqPosMax(e.model.mem, s.seqID)
+					if targetClearErr == nil && maxPos >= 0 {
+						targetClearErr = fmt.Errorf("sequence still contains position %d after clear", maxPos)
+					}
+				}
 				// MTP: the prior imc-restore (or a previous decode in
 				// this slot) populated the draft seq KV at positions
 				// [0..N). The forthcoming decodeTokensIntoCacheMTP
@@ -426,12 +437,29 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				// clearing the draft seq first, the mirror decode
 				// collides with the surviving positions and fails
 				// with "the input could not be processed".
+				var draftClearErr error
+				clear(s.pendingH[:cap(s.pendingH)])
+				s.pendingH = s.pendingH[:0]
 				if e.model.draft != nil && e.model.draft.mtp() {
-					llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
+					_, draftClearErr = llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
+					if draftClearErr == nil {
+						var maxPos llama.Pos
+						maxPos, draftClearErr = llama.MemorySeqPosMax(e.model.draft.core().mem, s.seqID)
+						if draftClearErr == nil && maxPos >= 0 {
+							draftClearErr = fmt.Errorf("sequence still contains position %d after clear", maxPos)
+						}
+					}
 					s.draftNPast = 0
-					s.pendingH = s.pendingH[:0]
 				}
 				e.model.decodeMu.Unlock()
+				if targetClearErr != nil {
+					e.finishSlot(s, fmt.Errorf("start-slot: clear reused target sequence: %w", targetClearErr))
+					return
+				}
+				if draftClearErr != nil {
+					e.finishSlot(s, fmt.Errorf("start-slot: clear reused draft sequence: %w", draftClearErr))
+					return
+				}
 
 				cacheIdx = 0
 
@@ -469,8 +497,6 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				}
 				e.model.decodeMu.Unlock()
 
-				e.model.imcInvalidateReservedSession(job.imcSession)
-
 				e.finishSlot(s, fmt.Errorf("start-slot: imc decode: %w", decodeErr))
 				return
 			}
@@ -479,8 +505,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 
+			if job.imcPromoteCheckpoint {
+				if err := e.model.imcPromoteTurnCheckpoint(job.ctx, job.imcSession); err != nil {
+					e.finishSlot(s, fmt.Errorf("start-slot: preserve IMC turn checkpoint: %w", err))
+					return
+				}
+			}
+
 			hasMedia := len(job.imcMediaKVCounts) > 0
-			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcExpectedRenderHash)
+			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
 			e.model.cacheMu.Lock()
 			job.imcSession.promptPlan = job.imcPromptPlan
 			e.model.cacheMu.Unlock()
@@ -618,14 +651,21 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				bufAction = "grow"
 			}
 
-			// Commit (or zero) the buffer length under cacheMu so concurrent
-			// readers (LRU snapshot scans, future requests matching this
-			// session) see a consistent length.
+			snapshotOK := kvSize > 0 && nExtracted == kvSize
+
+			// Commit only a complete state transfer. A partial serialized state
+			// cannot safely represent the cached logical position, especially for
+			// hybrid models where it includes both attention KV and recurrent
+			// state. Reset it instead so no future request can restore it.
 			e.model.cacheMu.Lock()
-			snapshotStore.Commit(int(nExtracted))
+			if snapshotOK {
+				snapshotStore.Commit(int(nExtracted))
+			} else {
+				snapshotStore.Reset()
+			}
 			storedSnapshotBytes := snapshotStore.Len()
 			e.model.cacheMu.Unlock()
-			snapshotOK := nExtracted > 0 && storedSnapshotBytes == int(nExtracted)
+			snapshotOK = snapshotOK && storedSnapshotBytes == int(kvSize)
 
 			if snapshotOK {
 				e.model.log(job.ctx, "start-slot", "status", "imc-snapshot-done",
@@ -735,7 +775,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 				oldStore := e.model.imcCommitMediaAdvance(job.imcSession, snapshotStore,
 					job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount,
-					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcMediaSamplerTokens, job.imcExpectedRenderHash)
+					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcMediaSamplerTokens, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
 				if oldStore != nil {
 					if err := oldStore.Close(); err != nil {
 						e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-old-store-close-failed", "err", err)

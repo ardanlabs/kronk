@@ -39,7 +39,7 @@ func (e *batchEngine) logDecodeError(ctx context.Context, ret int32, err error) 
 	}
 
 	// Collect total KV usage across all sequences (including idle IMC slots)
-	// to provide accurate diagnostics when the unified KV cache is full.
+	// to provide accurate diagnostics when a KV stream is full.
 	var totalKV int
 	imcInfo := make([]string, 0, len(e.model.imcSessions))
 

@@ -432,6 +432,9 @@ func (d D) Messages() string {
 		switch role {
 		case "assistant":
 			fmt.Fprintf(&b, "Message[%d] Content: %s\n", i, formatLogContent(m["content"]))
+			if reasoning, exists := m["reasoning_content"]; exists {
+				fmt.Fprintf(&b, "Message[%d] ReasoningContent: %s\n", i, formatLogContent(reasoning))
+			}
 			toolCalls, _ := m["tool_calls"].([]D)
 			fmt.Fprintf(&b, "Message[%d] ToolCalls len=%d\n", i, len(toolCalls))
 			for j, tc := range toolCalls {
@@ -452,33 +455,25 @@ func (d D) Messages() string {
 }
 
 // formatLogContent renders a message["content"] value for diagnostic logging
-// without ever dumping raw media bytes. Binary content ([]byte, or []byte
-// nested inside a normalized []any) is summarized as "BYTES (N bytes)" so a
-// 100 KB image cannot balloon a single log line into hundreds of kilobytes
-// of base64 or decimal byte sequences and break downstream log consumers
-// (their default bufio.Scanner buffers are 64 KiB).
+// without ever dumping raw media bytes. Text is intentionally not truncated
+// because this output is only used when insecure logging is enabled. Binary
+// content ([]byte, or []byte nested inside a normalized []any) is summarized
+// as "BYTES (N bytes)".
 func formatLogContent(content any) string {
 	switch v := content.(type) {
 	case nil:
 		return "<nil>"
 	case string:
-		if len(v) > 400 {
-			return v[:400]
-		}
 		return v
 	case []byte:
 		return fmt.Sprintf("BYTES (%d bytes)", len(v))
 	case []D:
 		text := contentPartsText(v)
-		if len(text) > 400 {
-			text = text[:400]
-		}
-		return fmt.Sprintf("(%d parts, 400 bytes text): %s", len(v), text)
+		return fmt.Sprintf("(%d parts, full text): %s", len(v), text)
 	case []any:
 		// Normalized multipart content (string and []byte parts). Never
-		// %v-format the slice directly — fmt's precision does not apply
-		// to composite types, so a single image []byte would dump the
-		// entire decoded byte sequence.
+		// %v-format the slice directly, so a single image []byte cannot
+		// dump the entire decoded byte sequence.
 		var text strings.Builder
 		var byteBytes int
 		var byteParts int
@@ -494,18 +489,10 @@ func formatLogContent(content any) string {
 				byteBytes += len(pv)
 			}
 		}
-		out := text.String()
-		if len(out) > 400 {
-			out = out[:400]
-		}
-		return fmt.Sprintf("(%d parts, %d media bytes in %d media parts, 400 bytes text): %s",
-			len(v), byteBytes, byteParts, out)
+		return fmt.Sprintf("(%d parts, %d media bytes in %d media parts, full text): %s",
+			len(v), byteBytes, byteParts, text.String())
 	default:
-		s := fmt.Sprintf("%v", v)
-		if len(s) > 400 {
-			s = s[:400]
-		}
-		return s
+		return fmt.Sprintf("%v", v)
 	}
 }
 
@@ -782,12 +769,53 @@ type ResponseToolCall struct {
 	Error    string                   `json:"error,omitempty"`
 }
 
+// ResponseToolCallDeltaFunction represents an incremental function-call delta.
+type ResponseToolCallDeltaFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments"`
+}
+
+// ResponseToolCallDelta represents an incremental OpenAI tool-call delta.
+type ResponseToolCallDelta struct {
+	ID       string                        `json:"id,omitempty"`
+	Index    int                           `json:"index"`
+	Type     string                        `json:"type,omitempty"`
+	Function ResponseToolCallDeltaFunction `json:"function"`
+}
+
 // ResponseMessage represents a single message in a response.
 type ResponseMessage struct {
-	Role      string             `json:"role,omitempty"`
-	Content   string             `json:"content"`
-	Reasoning string             `json:"reasoning_content,omitempty"`
-	ToolCalls []ResponseToolCall `json:"tool_calls,omitempty"`
+	Role           string                  `json:"role,omitempty"`
+	Content        string                  `json:"content"`
+	Reasoning      string                  `json:"reasoning_content,omitempty"`
+	ToolCalls      []ResponseToolCall      `json:"tool_calls,omitempty"`
+	ToolCallDeltas []ResponseToolCallDelta `json:"-"`
+}
+
+// MarshalJSON emits incremental and completed tool calls through the same
+// OpenAI-compatible tool_calls wire field.
+func (m ResponseMessage) MarshalJSON() ([]byte, error) {
+	type responseMessage struct {
+		Role      string `json:"role,omitempty"`
+		Content   string `json:"content"`
+		Reasoning string `json:"reasoning_content,omitempty"`
+		ToolCalls any    `json:"tool_calls,omitempty"`
+	}
+
+	var toolCalls any
+	switch {
+	case len(m.ToolCallDeltas) > 0:
+		toolCalls = m.ToolCallDeltas
+	case len(m.ToolCalls) > 0:
+		toolCalls = m.ToolCalls
+	}
+
+	return json.Marshal(responseMessage{
+		Role:      m.Role,
+		Content:   m.Content,
+		Reasoning: m.Reasoning,
+		ToolCalls: toolCalls,
+	})
 }
 
 // Choice represents a single choice in a response.
@@ -894,6 +922,25 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 	}
 }
 
+func chatResponseToolCallDelta(id string, object string, model string, index int, delta ResponseToolCallDelta) ChatResponse {
+	return ChatResponse{
+		ID:                id,
+		Object:            object,
+		Created:           time.Now().Unix(),
+		Model:             model,
+		SystemFingerprint: "fp_kronk",
+		Choices: []Choice{
+			{
+				Index: index,
+				Delta: &ResponseMessage{
+					Role:           RoleAssistant,
+					ToolCallDeltas: []ResponseToolCallDelta{delta},
+				},
+			},
+		},
+	}
+}
+
 func forContent(content string, reasoning bool) string {
 	if !reasoning {
 		return content
@@ -910,7 +957,7 @@ func forReasoning(content string, reasoning bool) string {
 	return ""
 }
 
-func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
+func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
 	var logprobs *Logprobs
 	if len(logprobsData) > 0 {
 		logprobs = &Logprobs{Content: logprobsData}
@@ -933,7 +980,13 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 		}
 	}
 	if len(respToolCalls) > 0 {
-		delta = msg
+		delta = &ResponseMessage{
+			Role:           msg.Role,
+			Content:        msg.Content,
+			Reasoning:      msg.Reasoning,
+			ToolCalls:      msg.ToolCalls,
+			ToolCallDeltas: terminalToolCallDeltas,
+		}
 	}
 
 	return ChatResponse{

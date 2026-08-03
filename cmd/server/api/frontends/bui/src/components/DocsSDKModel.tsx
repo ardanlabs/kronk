@@ -393,14 +393,17 @@ export default function DocsSDKModel() {
               <h4>IMCSessionDetail</h4>
               <pre className="code-block">
                 <code>{`type IMCSessionDetail struct {
-	ID            int
-	State         IMCSessionState
-	Context       int
-	Allocated     int
-	Messages      int
-	ContextWindow int
-	LastUsed      time.Time
-	HasMedia      bool
+	ID                  int
+	State               IMCSessionState
+	Context             int
+	Allocated           int
+	CheckpointContext   int
+	CheckpointAllocated int
+	TotalAllocated      int
+	Messages            int
+	ContextWindow       int
+	LastUsed            time.Time
+	HasMedia            bool
 }`}</code>
               </pre>
               <p className="doc-description">IMCSessionDetail is a scalar snapshot of one allocated IMC cache entry.</p>
@@ -685,26 +688,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParserFactory is the constructor signature each parser package's New function satisfies. The bool return reports whether this parser claims the given Fingerprint; on false, the registry continues to the next factory.</p>
             </div>
 
-            <div className="doc-section" id="type-reasoningnormalizer">
-              <h4>ReasoningNormalizer</h4>
-              <pre className="code-block">
-                <code>{`type ReasoningNormalizer interface {
-	// StripReasoningContent removes closed reasoning spans embedded directly
-	// in an assistant message's content (e.g. <think>…</think> for Qwen,
-	// <|channel>thought…<channel|> for Gemma). Text outside the spans is
-	// preserved. Invoked on history before the Jinja render.
-	StripReasoningContent(content string) string
-
-	// StripEmptyReasoning removes empty reasoning spans from a rendered prompt.
-	//
-	// Deprecated: the engine no longer rewrites completed template output because
-	// role-unaware transformations can alter user content and model scaffolding.
-	StripEmptyReasoning(rendered string) string
-}`}</code>
-              </pre>
-              <p className="doc-description">ReasoningNormalizer is an optional compatibility interface for parsers that normalize model-specific reasoning markup. Reasoning is ephemeral: replaying it on prior assistant turns adds prompt tokens that do not improve generation, and the markup is rendered inconsistently across turns (a turn that emitted reasoning as the "current" turn re-renders without it once it becomes history), shifting the tokenized prefix and forcing full cache rebuilds. When IMC is on and preserve_thinking is off, the engine drops the reasoning / reasoning_content fields from assistant history (family-agnostic) and then invokes the normalizer for the lineage-specific markup the field-drop cannot reach. Both methods must be deterministic and idempotent: applying them twice yields the same result as applying them once. The engine only normalizes structured assistant history before rendering; completed Jinja output is authoritative and is never rewritten.</p>
-            </div>
-
             <div className="doc-section" id="type-rerankresponse">
               <h4>RerankResponse</h4>
               <pre className="code-block">
@@ -746,10 +729,11 @@ export default function DocsSDKModel() {
               <h4>ResponseMessage</h4>
               <pre className="code-block">
                 <code>{`type ResponseMessage struct {
-	Role      string             \`json:"role,omitempty"\`
-	Content   string             \`json:"content"\`
-	Reasoning string             \`json:"reasoning_content,omitempty"\`
-	ToolCalls []ResponseToolCall \`json:"tool_calls,omitempty"\`
+	Role           string                  \`json:"role,omitempty"\`
+	Content        string                  \`json:"content"\`
+	Reasoning      string                  \`json:"reasoning_content,omitempty"\`
+	ToolCalls      []ResponseToolCall      \`json:"tool_calls,omitempty"\`
+	ToolCallDeltas []ResponseToolCallDelta \`json:"-"\`
 }`}</code>
               </pre>
               <p className="doc-description">ResponseMessage represents a single message in a response.</p>
@@ -768,6 +752,30 @@ export default function DocsSDKModel() {
 	Error    string                   \`json:"error,omitempty"\`
 }`}</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="type-responsetoolcalldelta">
+              <h4>ResponseToolCallDelta</h4>
+              <pre className="code-block">
+                <code>{`type ResponseToolCallDelta struct {
+	ID       string                        \`json:"id,omitempty"\`
+	Index    int                           \`json:"index"\`
+	Type     string                        \`json:"type,omitempty"\`
+	Function ResponseToolCallDeltaFunction \`json:"function"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseToolCallDelta represents an incremental OpenAI tool-call delta.</p>
+            </div>
+
+            <div className="doc-section" id="type-responsetoolcalldeltafunction">
+              <h4>ResponseToolCallDeltaFunction</h4>
+              <pre className="code-block">
+                <code>{`type ResponseToolCallDeltaFunction struct {
+	Name      string \`json:"name,omitempty"\`
+	Arguments string \`json:"arguments"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseToolCallDeltaFunction represents an incremental function-call delta.</p>
             </div>
 
             <div className="doc-section" id="type-responsetoolcallfunction">
@@ -823,15 +831,15 @@ export default function DocsSDKModel() {
 	// operation. n is clamped to [0, Cap()].
 	Commit(n int)
 
-	// Reset clears the valid contents (Len becomes 0). Implementations
-	// may retain or release backing storage as appropriate; the RAM
-	// impl retains the backing array for reuse on the next Prepare.
+	// Reset zeroes all retained snapshot storage and clears the valid contents
+	// (Len becomes 0). Implementations may retain the zeroed allocation for
+	// reuse, but bytes from the prior session must not survive Reset.
 	Reset()
 
 	// Close releases any backing storage held by the store (file
-	// descriptors, on-disk files, network handles). Called once at
-	// Model.Unload time, never on the per-request hot path. The RAM
-	// impl is a no-op; the disk impl removes its per-session file.
+	// descriptors, on-disk files, network handles). Called when a retained
+	// turn checkpoint is replaced and at Model.Unload time. The RAM impl is
+	// a no-op; the disk impl removes its per-session file.
 	// After Close the store must not be used again.
 	Close() error
 }`}</code>
@@ -912,6 +920,20 @@ export default function DocsSDKModel() {
                 <code>{`type ToolCallArguments map[string]any`}</code>
               </pre>
               <p className="doc-description">ToolCallArguments represents tool call arguments that marshal to a JSON string per OpenAI API spec, but can unmarshal from either a string or object.</p>
+            </div>
+
+            <div className="doc-section" id="type-toolcalldeltastreamer">
+              <h4>ToolCallDeltaStreamer</h4>
+              <pre className="code-block">
+                <code>{`type ToolCallDeltaStreamer interface {
+	ToolCallDeltas() []ResponseToolCallDelta
+
+	// StartedToolCalls returns the tool-call identities emitted during the
+	// current request. Callers must not modify the returned slice.
+	StartedToolCalls() []ResponseToolCallDelta
+}`}</code>
+              </pre>
+              <p className="doc-description">ToolCallDeltaStreamer is implemented by state machines that can translate model-native tool-call starts into OpenAI-compatible activity deltas. ToolCallDeltas drains deltas produced by the most recent Classify call.</p>
             </div>
 
             <div className="doc-section" id="type-toplogprob">
@@ -1417,6 +1439,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">String returns a string representation of all resolved Params values in the format key[value]\nkey[value]\n ... Grammar contents are intentionally redacted; only whether a grammar is active is reported.</p>
             </div>
 
+            <div className="doc-section" id="method-responsemessage-marshaljson">
+              <h4>ResponseMessage.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (m ResponseMessage) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON emits incremental and completed tool calls through the same OpenAI-compatible tool_calls wire field.</p>
+            </div>
+
             <div className="doc-section" id="method-ropescalingtype-marshaljson">
               <h4>RopeScalingType.MarshalJSON</h4>
               <pre className="code-block">
@@ -1870,12 +1900,13 @@ export default function DocsSDKModel() {
                 <li><a href="#type-paramsadjuster">ParamsAdjuster</a></li>
                 <li><a href="#type-parser">Parser</a></li>
                 <li><a href="#type-parserfactory">ParserFactory</a></li>
-                <li><a href="#type-reasoningnormalizer">ReasoningNormalizer</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
                 <li><a href="#type-rerankusage">RerankUsage</a></li>
                 <li><a href="#type-responsemessage">ResponseMessage</a></li>
                 <li><a href="#type-responsetoolcall">ResponseToolCall</a></li>
+                <li><a href="#type-responsetoolcalldelta">ResponseToolCallDelta</a></li>
+                <li><a href="#type-responsetoolcalldeltafunction">ResponseToolCallDeltaFunction</a></li>
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
                 <li><a href="#type-result">Result</a></li>
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
@@ -1887,6 +1918,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
+                <li><a href="#type-toolcalldeltastreamer">ToolCallDeltaStreamer</a></li>
                 <li><a href="#type-toplogprob">TopLogprob</a></li>
                 <li><a href="#type-usage">Usage</a></li>
               </ul>
@@ -1957,6 +1989,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
                 <li><a href="#method-modeltype-string">ModelType.String</a></li>
                 <li><a href="#method-params-string">Params.String</a></li>
+                <li><a href="#method-responsemessage-marshaljson">ResponseMessage.MarshalJSON</a></li>
                 <li><a href="#method-ropescalingtype-marshaljson">RopeScalingType.MarshalJSON</a></li>
                 <li><a href="#method-ropescalingtype-marshalyaml">RopeScalingType.MarshalYAML</a></li>
                 <li><a href="#method-ropescalingtype-string">RopeScalingType.String</a></li>
