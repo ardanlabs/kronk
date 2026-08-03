@@ -145,6 +145,13 @@ type Parser interface {
 	ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
 }
 
+// ToolCallSchemaParser is optionally implemented by parsers whose native tool
+// call format does not encode argument types. The request's tool declarations
+// are supplied so the parser can convert raw values according to their schema.
+type ToolCallSchemaParser interface {
+	ToolCallWithSchema(ctx context.Context, log applog.Logger, buf string, tools []D) []ResponseToolCall
+}
+
 // ParamsAdjuster is an optional interface a Parser may implement to coerce
 // request Params into values its model lineage's chat template will accept.
 // It is invoked at the end of Model.adjustParams, after global defaults have

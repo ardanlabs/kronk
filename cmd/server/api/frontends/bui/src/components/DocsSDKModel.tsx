@@ -937,6 +937,16 @@ export default function DocsSDKModel() {
               <p className="doc-description">ToolCallDeltaStreamer is implemented by state machines that can translate model-native tool-call starts into OpenAI-compatible activity deltas. ToolCallDeltas drains deltas produced by the most recent Classify call.</p>
             </div>
 
+            <div className="doc-section" id="type-toolcallschemaparser">
+              <h4>ToolCallSchemaParser</h4>
+              <pre className="code-block">
+                <code>{`type ToolCallSchemaParser interface {
+	ToolCallWithSchema(ctx context.Context, log applog.Logger, buf string, tools []D) []ResponseToolCall
+}`}</code>
+              </pre>
+              <p className="doc-description">ToolCallSchemaParser is optionally implemented by parsers whose native tool call format does not encode argument types. The request's tool declarations are supplied so the parser can convert raw values according to their schema.</p>
+            </div>
+
             <div className="doc-section" id="type-toplogprob">
               <h4>TopLogprob</h4>
               <pre className="code-block">
@@ -1927,6 +1937,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
                 <li><a href="#type-toolcalldeltastreamer">ToolCallDeltaStreamer</a></li>
+                <li><a href="#type-toolcallschemaparser">ToolCallSchemaParser</a></li>
                 <li><a href="#type-toplogprob">TopLogprob</a></li>
                 <li><a href="#type-usage">Usage</a></li>
               </ul>

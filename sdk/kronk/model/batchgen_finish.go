@@ -310,7 +310,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					"bytes", len(content), "content", content)
 			}
 
-			s.respToolCalls = e.model.parser.ToolCall(ctx, e.model.log, content)
+			if parser, ok := e.model.parser.(ToolCallSchemaParser); ok {
+				tools, _ := s.job.d["tools"].([]D)
+				s.respToolCalls = parser.ToolCallWithSchema(ctx, e.model.log, content, tools)
+			} else {
+				s.respToolCalls = e.model.parser.ToolCall(ctx, e.model.log, content)
+			}
 
 			// Validate parsed tool call arguments produce valid JSON.
 			for i, tc := range s.respToolCalls {

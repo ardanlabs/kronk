@@ -3,6 +3,7 @@ package qwen
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -71,27 +72,7 @@ func parseQwenXML(content string) []model.ResponseToolCall {
 			paramValue := remaining[valueStart:paramClose]
 			paramValue = strings.TrimPrefix(paramValue, "\n")
 			paramValue = strings.TrimSuffix(paramValue, "\n")
-
-			switch {
-			case len(paramValue) == 0:
-				args[paramName] = paramValue
-
-			case paramValue[0] == '{', paramValue[0] == '[', paramValue[0] == '"':
-				args[paramName] = paramValue
-
-				var parsed any
-				if err := json.Unmarshal([]byte(paramValue), &parsed); err == nil {
-					args[paramName] = parsed
-				}
-
-			default:
-				var parsed any
-				if err := json.Unmarshal([]byte(paramValue), &parsed); err == nil {
-					args[paramName] = parsed
-				} else {
-					args[paramName] = paramValue
-				}
-			}
+			args[paramName] = paramValue
 
 			remaining = remaining[paramClose+12:]
 		}
@@ -109,6 +90,144 @@ func parseQwenXML(content string) []model.ResponseToolCall {
 	}
 
 	return toolCalls
+}
+
+// normalizeXMLArguments converts direct-XML parameter text according to the
+// matching function's declared schema. Values without an unambiguous schema
+// type remain strings.
+func normalizeXMLArguments(toolCalls []model.ResponseToolCall, tools []model.D) {
+	for i := range toolCalls {
+		properties := toolProperties(tools, toolCalls[i].Function.Name)
+		if properties == nil {
+			continue
+		}
+
+		for name, value := range toolCalls[i].Function.Arguments {
+			raw, ok := value.(string)
+			if !ok {
+				continue
+			}
+
+			property, ok := properties[name].(model.D)
+			if !ok {
+				continue
+			}
+
+			schemaType, ok := declaredSchemaType(property["type"])
+			if !ok || schemaType == "string" {
+				continue
+			}
+
+			parsed, ok := decodeJSONValue(raw)
+			if !ok {
+				continue
+			}
+
+			switch schemaType {
+			case "object":
+				if _, ok := parsed.(map[string]any); ok {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "array":
+				if _, ok := parsed.([]any); ok {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "number":
+				if _, ok := parsed.(json.Number); ok {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "integer":
+				if number, ok := parsed.(json.Number); ok && isJSONInteger(number) {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "boolean":
+				if _, ok := parsed.(bool); ok {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "null":
+				if parsed == nil {
+					toolCalls[i].Function.Arguments[name] = nil
+				}
+			}
+		}
+	}
+}
+
+func toolProperties(tools []model.D, name string) model.D {
+	var properties model.D
+
+	for _, tool := range tools {
+		if tool["type"] != "function" {
+			continue
+		}
+
+		function, ok := tool["function"].(model.D)
+		if !ok || function["name"] != name {
+			continue
+		}
+
+		if properties != nil {
+			return nil
+		}
+
+		parameters, ok := function["parameters"].(model.D)
+		if !ok {
+			return nil
+		}
+
+		properties, ok = parameters["properties"].(model.D)
+		if !ok {
+			return nil
+		}
+	}
+
+	return properties
+}
+
+func declaredSchemaType(value any) (string, bool) {
+	switch value := value.(type) {
+	case string:
+		return value, true
+
+	case []any:
+		if len(value) == 1 {
+			schemaType, ok := value[0].(string)
+			return schemaType, ok
+		}
+
+	case []string:
+		if len(value) == 1 {
+			return value[0], true
+		}
+	}
+
+	return "", false
+}
+
+func decodeJSONValue(raw string) (any, bool) {
+	if !json.Valid([]byte(raw)) {
+		return nil, false
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, false
+	}
+
+	return value, true
+}
+
+func isJSONInteger(number json.Number) bool {
+	value, ok := new(big.Rat).SetString(number.String())
+	return ok && value.IsInt()
 }
 
 // parseJSON parses tool calls in the OpenAI JSON envelope format used inside
