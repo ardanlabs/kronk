@@ -104,6 +104,8 @@ func FromSDK(err error) *Error {
 		code = InvalidArgument
 	case errors.Is(err, model.ErrMessagesInvalid):
 		code = InvalidArgument
+	case errors.Is(err, model.ErrInvalidRequest):
+		code = InvalidArgument
 	case errors.Is(err, llamamodels.ErrModelNotFound):
 		code = NotFound
 	case errors.Is(err, buckymodels.ErrModelNotFound):

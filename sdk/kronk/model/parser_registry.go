@@ -9,12 +9,15 @@ package model
 // registration:
 //
 // model.RegisterParser(gpt.New) // template-only — must be first
+// model.RegisterParser(lfm.New)
 // model.RegisterParser(deepseek.New)
+// model.RegisterParser(llama.New)
 // model.RegisterParser(qwen.New)
+// model.RegisterParser(toolcall.New)
 // model.RegisterParser(gemma.New)
 // model.RegisterParser(glm.New)
 // model.RegisterParser(mistral.New)
-// model.RegisterParser(standard.New) // catch-all — must be last
+// model.RegisterParser(fallback.New) // catch-all — must be last
 //
 // There is no init()-time auto-registration. Every binary that needs
 // parser support enumerates the parsers it wants. This keeps the
@@ -36,7 +39,7 @@ var registeredParsers []ParserFactory
 
 // RegisterParser appends a parser factory to the registry. Call once
 // per parser at server bootstrap, before any models are loaded. Order
-// matters: the catch-all parser (standard) must be registered last so
+// matters: the catch-all parser (fallback) must be registered last so
 // the more specific parsers get first chance to claim.
 func RegisterParser(f ParserFactory) {
 	registeredParsers = append(registeredParsers, f)
@@ -46,7 +49,7 @@ func RegisterParser(f ParserFactory) {
 // returns the first Parser that claims the fingerprint.
 //
 // Returns nil if no factory claims — bootstrap should always register a
-// catch-all (typically parsers/standard.New, registered last) so this
+// catch-all (typically the fallback parser, registered last) so this
 // never happens in production.
 func selectParser(fp Fingerprint) Parser {
 	for _, f := range registeredParsers {

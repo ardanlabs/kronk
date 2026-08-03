@@ -1,4 +1,4 @@
-package standard
+package toolcall
 
 import (
 	"encoding/json"
@@ -7,8 +7,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-// stateMachine is a per-slot streaming state machine for the standard
-// catch-all parser.
+// stateMachine is a per-slot streaming state machine for marked JSON tool
+// calls.
 //
 // Recognized markers:
 //   - <think>…</think>             reasoning wrap
@@ -68,6 +68,9 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			sm.detectedCalls = 0
 			return model.Result{}, false
 		default:
+			if strings.TrimSpace(content) == "" {
+				return model.Result{}, false
+			}
 			sm.toolCallDone = false
 			return model.Result{}, true
 		}
@@ -228,7 +231,7 @@ func (sm *stateMachine) flushToolCall() model.Result {
 	sm.toolCallBuf.Reset()
 	sm.inToolCall = false
 	if content == "" {
-		return model.Result{}
+		return model.Result{Channel: model.ChannelTool, Content: " "}
 	}
 
 	return model.Result{Channel: model.ChannelTool, Content: content + "\n"}

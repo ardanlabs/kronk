@@ -105,6 +105,13 @@ type StateMachine interface {
 	Reset()
 }
 
+// ToolAwareStateMachine is optionally implemented by state machines that
+// need the request's declared tools to distinguish an unmarked tool call from
+// ordinary answer content.
+type ToolAwareStateMachine interface {
+	SetTools(tools []D)
+}
+
 // StateMachineFlusher is implemented by state machines that may retain model
 // output not yet returned by Classify.
 //
@@ -130,7 +137,7 @@ type ToolCallDeltaStreamer interface {
 // Implementations live in sdk/kronk/parsers/<name>/ and are registered
 // at startup via RegisterParser.
 type Parser interface {
-	// Name returns the parser identifier (e.g. "standard", "gpt-oss").
+	// Name returns the parser identifier (e.g. "fallback", "gpt-oss").
 	// Used for logging and as the override key in model configs.
 	Name() string
 

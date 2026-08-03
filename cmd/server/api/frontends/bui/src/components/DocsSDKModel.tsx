@@ -142,7 +142,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func RegisterParser(f ParserFactory)</code>
               </pre>
-              <p className="doc-description">RegisterParser appends a parser factory to the registry. Call once per parser at server bootstrap, before any models are loaded. Order matters: the catch-all parser (standard) must be registered last so the more specific parsers get first chance to claim.</p>
+              <p className="doc-description">RegisterParser appends a parser factory to the registry. Call once per parser at server bootstrap, before any models are loaded. Order matters: the catch-all parser (fallback) must be registered last so the more specific parsers get first chance to claim.</p>
             </div>
 
             <div className="doc-section" id="func-removeverifiedsentinel">
@@ -159,6 +159,14 @@ export default function DocsSDKModel() {
                 <code>func SetEmbeddingsPreNorm(ctx llama.Context, value, masked bool)</code>
               </pre>
               <p className="doc-description">SetEmbeddingsPreNorm enables (or disables) pre-norm hidden-state extraction on the given context. - value == true: the next llama_decode will produce a pre-norm embedding buffer accessible via GetEmbeddingsPreNorm / GetEmbeddingsPreNormIth. - masked == false: rows are stored densely, indexed by raw batch position. Used on the target context (caller wants every row). - masked == true: rows are stored only for batch positions whose logits flag is non-zero, indexed via the output_ids table. Used on the MTP draft context (caller only needs the output rows). Mirrors llama_set_embeddings_pre_norm in src/llama-ext.h.</p>
+            </div>
+
+            <div className="doc-section" id="func-validatechatrequest">
+              <h4>ValidateChatRequest</h4>
+              <pre className="code-block">
+                <code>func ValidateChatRequest(d D) error</code>
+              </pre>
+              <p className="doc-description">ValidateChatRequest validates the fields in a chat request document.</p>
             </div>
 
             <div className="doc-section" id="func-validatemessages">
@@ -663,7 +671,7 @@ export default function DocsSDKModel() {
               <h4>Parser</h4>
               <pre className="code-block">
                 <code>{`type Parser interface {
-	// Name returns the parser identifier (e.g. "standard", "gpt-oss").
+	// Name returns the parser identifier (e.g. "fallback", "gpt-oss").
 	// Used for logging and as the override key in model configs.
 	Name() string
 
@@ -913,6 +921,16 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">TokenizeResponse represents the output for a tokenize call.</p>
+            </div>
+
+            <div className="doc-section" id="type-toolawarestatemachine">
+              <h4>ToolAwareStateMachine</h4>
+              <pre className="code-block">
+                <code>{`type ToolAwareStateMachine interface {
+	SetTools(tools []D)
+}`}</code>
+              </pre>
+              <p className="doc-description">ToolAwareStateMachine is optionally implemented by state machines that need the request's declared tools to distinguish an unmarked tool call from ordinary answer content.</p>
             </div>
 
             <div className="doc-section" id="type-toolcallarguments">
@@ -1843,6 +1861,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">ErrFileInputsUnsupported indicates file content parts are not supported.</p>
             </div>
 
+            <div className="doc-section" id="var-errinvalidrequest">
+              <h4>ErrInvalidRequest</h4>
+              <pre className="code-block">
+                <code>{`var ErrInvalidRequest = errors.New("validate-document: invalid request")`}</code>
+              </pre>
+              <p className="doc-description">ErrInvalidRequest indicates that a chat request contains an invalid or unsupported field value.</p>
+            </div>
+
             <div className="doc-section" id="var-errmessagesinvalid">
               <h4>ErrMessagesInvalid</h4>
               <pre className="code-block">
@@ -1881,6 +1907,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-removeverifiedsentinel">RemoveVerifiedSentinel</a></li>
                 <li><a href="#func-setembeddingsprenorm">SetEmbeddingsPreNorm</a></li>
+                <li><a href="#func-validatechatrequest">ValidateChatRequest</a></li>
                 <li><a href="#func-validatemessages">ValidateMessages</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
               </ul>
@@ -1935,6 +1962,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
+                <li><a href="#type-toolawarestatemachine">ToolAwareStateMachine</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>
                 <li><a href="#type-toolcalldeltastreamer">ToolCallDeltaStreamer</a></li>
                 <li><a href="#type-toolcallschemaparser">ToolCallSchemaParser</a></li>
@@ -2046,6 +2074,7 @@ export default function DocsSDKModel() {
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
                 <li><a href="#var-errfileinputsunsupported">ErrFileInputsUnsupported</a></li>
+                <li><a href="#var-errinvalidrequest">ErrInvalidRequest</a></li>
                 <li><a href="#var-errmessagesinvalid">ErrMessagesInvalid</a></li>
                 <li><a href="#var-errmessagesmissing">ErrMessagesMissing</a></li>
               </ul>

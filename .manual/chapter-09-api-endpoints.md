@@ -100,7 +100,8 @@ that consume only the final chunk continue to work unchanged.
 Add OpenAI-style function definitions in `tools` and use
 `"tool_choice": "auto"` to let the model select one. Tool calling requires a
 compatible model, chat template, and output parser; adding `tools` cannot give
-an incompatible model tool-calling ability.
+an incompatible model tool-calling ability. Set `tool_choice` to the name of a
+declared function tool to select that tool. Other values are rejected.
 
 When a tool is selected, the assistant message contains `tool_calls` and uses
 an empty string for `content`:
@@ -141,7 +142,8 @@ across all model templates, so verify them with the model you deploy.
 
 It also accepts an array of input messages for conversations. A non-streaming
 response places generated messages or function calls in `output`. Tools use
-Responses-style tool definitions; `tool_choice` is a string such as `"auto"`.
+Responses-style tool definitions. As with Chat Completions, `tool_choice` may
+be `"auto"` or the name of a declared function tool.
 
 With `"stream": true`, each SSE record has a named event and matching JSON
 payload. A text response commonly includes:

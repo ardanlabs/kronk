@@ -19,6 +19,7 @@ func TestResponseValidatesMessagesBeforeAdmission(t *testing.T) {
 		{name: "empty input", d: model.D{"input": []any{}}, want: model.ErrMessagesMissing},
 		{name: "nil input", d: model.D{"input": nil}, want: model.ErrMessagesInvalid},
 		{name: "scalar input", d: model.D{"input": 42}, want: model.ErrMessagesInvalid},
+		{name: "unsupported tool choice", d: model.D{"input": "hello", "tool_choice": "none"}, want: model.ErrInvalidRequest},
 	}
 
 	for _, tt := range tests {

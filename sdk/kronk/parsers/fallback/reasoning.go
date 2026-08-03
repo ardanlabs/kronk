@@ -1,4 +1,4 @@
-package standard
+package fallback
 
 import (
 	"regexp"
@@ -6,7 +6,7 @@ import (
 )
 
 // The <think>...</think> convention is the most common reasoning wrap and is
-// shared by several lineages (standard, qwen, glm). The regexes and helpers
+// shared by several lineages (fallback, qwen, glm). The regexes and helpers
 // below own that convention so the family parsers can reuse them rather than
 // each carrying a private copy.
 

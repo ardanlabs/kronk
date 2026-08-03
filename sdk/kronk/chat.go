@@ -20,7 +20,7 @@ var ErrResponseCommitted = errors.New("response already committed")
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, error) {
-	if err := model.ValidateMessages(d); err != nil {
+	if err := model.ValidateChatRequest(d); err != nil {
 		return model.ChatResponse{}, fmt.Errorf("chat: %w", err)
 	}
 
@@ -36,7 +36,7 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
-	if err := model.ValidateMessages(d); err != nil {
+	if err := model.ValidateChatRequest(d); err != nil {
 		return nil, fmt.Errorf("chat-streaming: %w", err)
 	}
 

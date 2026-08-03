@@ -98,7 +98,7 @@ func TestSelectParser_FirstClaimerWins(t *testing.T) {
 	// Both "qwen" and the catch-all would claim a Qwen model, but qwen is
 	// registered first.
 	RegisterParser(claimingFactory("qwen", "qwen"))
-	RegisterParser(catchAllFactory("standard"))
+	RegisterParser(catchAllFactory("fallback"))
 
 	got := selectParser(Fingerprint{ModelName: "Qwen3-Coder-30B"})
 	if got == nil {
@@ -116,14 +116,14 @@ func TestSelectParser_FallsThroughToCatchAll(t *testing.T) {
 
 	RegisterParser(claimingFactory("qwen", "qwen"))
 	RegisterParser(claimingFactory("mistral", "mistral"))
-	RegisterParser(catchAllFactory("standard"))
+	RegisterParser(catchAllFactory("fallback"))
 
 	got := selectParser(Fingerprint{ModelName: "Llama-3-8B-Instruct"})
 	if got == nil {
-		t.Fatal("selectParser returned nil, want standard")
+		t.Fatal("selectParser returned nil, want fallback")
 	}
-	if got.Name() != "standard" {
-		t.Errorf("selected = %q, want standard", got.Name())
+	if got.Name() != "fallback" {
+		t.Errorf("selected = %q, want fallback", got.Name())
 	}
 }
 

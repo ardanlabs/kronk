@@ -763,7 +763,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	m.parser = selectParser(fp)
 
 	if m.parser == nil {
-		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("select-parser: no parser registered for %q (call kronk.registerDefaultParsers or model.RegisterParser(standard.New) at bootstrap)", m.modelInfo.ID))
+		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("select-parser: no parser registered for %q (register a catch-all parser at bootstrap)", m.modelInfo.ID))
 	}
 
 	m.log(ctx, "select-parser",

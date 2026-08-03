@@ -1822,7 +1822,7 @@ docker rm kronk
 data: [DONE]`}</code></pre>
           <p>For compatible Qwen models, streaming responses emit an OpenAI-compatible tool-call activity delta as soon as the function name is known. The completed tool call, including all arguments, remains in the terminal response so clients that consume only the final chunk continue to work unchanged.</p>
           <h3 id="tool-calls">Tool calls</h3>
-          <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability.</p>
+          <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability. Set <code>tool_choice</code> to the name of a declared function tool to select that tool. Other values are rejected.</p>
           <p>When a tool is selected, the assistant message contains <code>tool_calls</code> and uses an empty string for <code>content</code>:</p>
           <pre className="code-block"><code className="language-json">{`{
   "role": "assistant",
@@ -1845,7 +1845,7 @@ data: [DONE]`}</code></pre>
   "model": "Qwen/Qwen3-8B-Q8_0",
   "input": "Explain quantum computing in simple terms."
 }`}</code></pre>
-          <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions; <code>tool_choice</code> is a string such as <code>"auto"</code>.</p>
+          <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. As with Chat Completions, <code>tool_choice</code> may be <code>"auto"</code> or the name of a declared function tool.</p>
           <p>With <code>"stream": true</code>, each SSE record has a named event and matching JSON payload. A text response commonly includes:</p>
           <pre className="code-block"><code className="language-text">{`event: response.created
 data: {"type":"response.created",...}
@@ -1960,7 +1960,7 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Request values <code>top_p: 0</code> and <code>top_p: 1</code> are treated as unset so clients that send those common defaults do not override model-specific tuning. A model configuration can still set <code>top_p: 1</code> explicitly. When <code>temperature</code> or <code>top_k</code> is omitted, Kronk uses the configured value, GGUF recommendation, or baseline default in that order. Set <code>temperature: 0</code> explicitly to request greedy generation. Set <code>top_k: 0</code> to disable top-k filtering.</p>
+          <p>Explicit request values override model-specific sampling defaults, including <code>top_p: 1</code>, which disables nucleus filtering. When <code>temperature</code>, <code>top_k</code>, or <code>top_p</code> is omitted, Kronk uses the configured value, GGUF recommendation, or baseline default in that order. Set <code>temperature: 0</code> explicitly to request greedy generation. Set <code>top_k: 0</code> to disable top-k filtering.</p>
           <h2 id="103-repetition-control">10.3 Repetition Control</h2>
           <p>Kronk supports both token penalties and DRY n-gram penalties:</p>
           <table className="flags-table">

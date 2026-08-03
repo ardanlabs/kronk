@@ -15,6 +15,14 @@ func TestChatValidatesMessagesBeforeAdmission(t *testing.T) {
 	}{
 		{name: "missing", d: model.D{}, want: model.ErrMessagesMissing},
 		{name: "invalid", d: model.D{"messages": "invalid"}, want: model.ErrMessagesInvalid},
+		{
+			name: "unsupported tool choice",
+			d: model.D{
+				"messages":    []model.D{{"role": "user", "content": "hello"}},
+				"tool_choice": "required",
+			},
+			want: model.ErrInvalidRequest,
+		},
 	}
 
 	for _, tt := range tests {
