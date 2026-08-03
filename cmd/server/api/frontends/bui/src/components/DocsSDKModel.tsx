@@ -137,6 +137,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParseSplitMode parses a string into a SplitMode. Supported values: "none", "layer", "row", "expert-parallel", "tensor-parallel".</p>
             </div>
 
+            <div className="doc-section" id="func-recurrentstatecopies">
+              <h4>RecurrentStateCopies</h4>
+              <pre className="code-block">
+                <code>func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64</code>
+              </pre>
+              <p className="doc-description">RecurrentStateCopies returns the number of current and rollback recurrent state planes allocated for the configured speculative-decoding mode. embeddedMTP selects the auto-detected MTP path; false selects an explicit separate drafter or companion MTP file.</p>
+            </div>
+
             <div className="doc-section" id="func-registerparser">
               <h4>RegisterParser</h4>
               <pre className="code-block">
@@ -1904,6 +1912,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
                 <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsesplitmode">ParseSplitMode</a></li>
+                <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-removeverifiedsentinel">RemoveVerifiedSentinel</a></li>
                 <li><a href="#func-setembeddingsprenorm">SetEmbeddingsPreNorm</a></li>

@@ -65,8 +65,11 @@ type AttentionFacts struct {
 	SlidingWindow       int64   `json:"sliding_window,omitempty"`
 	SlidingWindowLayers int64   `json:"sliding_window_layers,omitempty"`
 	FullAttentionLayers int64   `json:"full_attention_layers,omitempty"`
+	RecurrentLayers     int64   `json:"recurrent_layers,omitempty"`
+	NextNPredictLayers  int64   `json:"nextn_predict_layers,omitempty"`
 	SharedKVLayers      int64   `json:"shared_kv_layers,omitempty"`
 	SWAPattern          []bool  `json:"-"`
+	RecurrentPattern    []bool  `json:"-"`
 	HeadCountKVByLayer  []int64 `json:"-"`
 	FullHeadCountKV     int64   `json:"full_head_count_kv,omitempty"`
 	SWAHeadCountKV      int64   `json:"swa_head_count_kv,omitempty"`
@@ -74,6 +77,7 @@ type AttentionFacts struct {
 	FullValueLength     int64   `json:"full_value_length,omitempty"`
 	SWAKeyLength        int64   `json:"swa_key_length,omitempty"`
 	SWAValueLength      int64   `json:"swa_value_length,omitempty"`
+	RecurrentStateBytes int64   `json:"recurrent_state_bytes,omitempty"`
 	LogitSoftcapping    float64 `json:"logit_softcapping,omitempty"`
 }
 
@@ -571,31 +575,35 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 	}
 
 	return vram.Calculate(vram.Input{
-		ModelSizeBytes:      p.modelSize,
-		ContextWindow:       contextWindow,
-		BlockCount:          p.blockCount,
-		HeadCountKV:         headCountKV,
-		KeyLength:           keyLength,
-		ValueLength:         valueLength,
-		SWAHeadCountKV:      p.attn.SWAHeadCountKV,
-		SWAKeyLength:        p.attn.SWAKeyLength,
-		SWAValueLength:      p.attn.SWAValueLength,
-		HeadCountKVByLayer:  p.attn.HeadCountKVByLayer,
-		BytesPerElement:     cache.bytesPerElement,
-		TypeK:               cache.ggmlTypeK,
-		TypeV:               cache.ggmlTypeV,
-		Slots:               slots,
-		SlidingWindow:       p.attn.SlidingWindow,
-		SlidingWindowLayers: p.attn.SlidingWindowLayers,
-		SharedKVLayers:      p.attn.SharedKVLayers,
-		SWAPattern:          p.attn.SWAPattern,
-		NUBatch:             p.nUBatch,
-		KVUnified:           false,
-		EmbeddingLength:     p.embLen,
-		GPULayers:           gpuLayers,
-		KVCacheOnCPU:        p.kvCacheOnCPU,
-		SWAFull:             p.swaFull,
-		VTransposed:         profileVTransposed(p),
+		ModelSizeBytes:       p.modelSize,
+		ContextWindow:        contextWindow,
+		BlockCount:           p.blockCount,
+		HeadCountKV:          headCountKV,
+		KeyLength:            keyLength,
+		ValueLength:          valueLength,
+		SWAHeadCountKV:       p.attn.SWAHeadCountKV,
+		SWAKeyLength:         p.attn.SWAKeyLength,
+		SWAValueLength:       p.attn.SWAValueLength,
+		HeadCountKVByLayer:   p.attn.HeadCountKVByLayer,
+		BytesPerElement:      cache.bytesPerElement,
+		TypeK:                cache.ggmlTypeK,
+		TypeV:                cache.ggmlTypeV,
+		Slots:                slots,
+		SlidingWindow:        p.attn.SlidingWindow,
+		SlidingWindowLayers:  p.attn.SlidingWindowLayers,
+		SharedKVLayers:       p.attn.SharedKVLayers,
+		SWAPattern:           p.attn.SWAPattern,
+		RecurrentPattern:     p.attn.RecurrentPattern,
+		NextNPredictLayers:   p.attn.NextNPredictLayers,
+		RecurrentStateBytes:  p.attn.RecurrentStateBytes,
+		RecurrentStateCopies: 1,
+		NUBatch:              p.nUBatch,
+		KVUnified:            false,
+		EmbeddingLength:      p.embLen,
+		GPULayers:            gpuLayers,
+		KVCacheOnCPU:         p.kvCacheOnCPU,
+		SWAFull:              p.swaFull,
+		VTransposed:          profileVTransposed(p),
 	})
 }
 
@@ -711,8 +719,11 @@ func attentionFactsFromGGUF(a gguf.AttentionFacts) AttentionFacts {
 		SlidingWindow:       a.SlidingWindow,
 		SlidingWindowLayers: a.SlidingWindowLayers,
 		FullAttentionLayers: a.FullAttentionLayers,
+		RecurrentLayers:     a.RecurrentLayers,
+		NextNPredictLayers:  a.NextNPredictLayers,
 		SharedKVLayers:      a.SharedKVLayers,
 		SWAPattern:          a.SWAPattern,
+		RecurrentPattern:    a.RecurrentPattern,
 		HeadCountKVByLayer:  a.HeadCountKV,
 		FullHeadCountKV:     a.FullHeadCountKV,
 		SWAHeadCountKV:      a.SWAHeadCountKV,
@@ -720,6 +731,7 @@ func attentionFactsFromGGUF(a gguf.AttentionFacts) AttentionFacts {
 		FullValueLength:     a.FullValueLength,
 		SWAKeyLength:        a.SWAKeyLength,
 		SWAValueLength:      a.SWAValueLength,
+		RecurrentStateBytes: a.RecurrentStateBytes,
 		LogitSoftcapping:    a.LogitSoftcapping,
 	}
 }

@@ -13,27 +13,31 @@ package gguf
 // for full ContextWindow KV — a several-gigabyte over-estimate at long
 // contexts and the cause of unloadable AGENT-style configs.
 type KVCacheInput struct {
-	ContextWindow       int64 // n_ctx - context window size in tokens.
-	BlockCount          int64 // n_layers - number of transformer layers.
-	HeadCountKV         int64 // Number of KV attention heads (averaged for hybrid archs).
-	KeyLength           int64 // K dimension per head (typically 128).
-	ValueLength         int64 // V dimension per head (typically 128).
-	SWAHeadCountKV      int64 // Number of KV heads in SWA layers (0 = HeadCountKV).
-	SWAKeyLength        int64 // K dimension in SWA layers (0 = KeyLength).
-	SWAValueLength      int64 // V dimension in SWA layers (0 = ValueLength).
-	BytesPerElement     int64 // Per-element width of the KV cache type (q8_0=1, f16=2, ...).
-	TypeK               int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	TypeV               int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	HeadCountKVByLayer  []int64
-	Slots               int64 // n_seq_max - number of concurrent sequences.
-	SlidingWindow       int64 // Sliding-window size in tokens (0 = no SWA layers).
-	SlidingWindowLayers int64 // Layer count that uses SWA (0 = treat all BlockCount as full attention).
-	SharedKVLayers      int64 // Trailing layers that reuse another layer's KV tensors.
-	SWAPattern          []bool
-	NUBatch             int64 // Effective physical batch size used by the SWA allocator.
-	KVUnified           bool  // Whether all sequence slots share one KV pool.
-	SWAFull             bool  // Whether SWA layers allocate the full context.
-	VTransposed         bool  // Whether V uses the model-wide transposed layout.
+	ContextWindow        int64 // n_ctx - context window size in tokens.
+	BlockCount           int64 // n_layers - number of transformer layers.
+	HeadCountKV          int64 // Number of KV attention heads (averaged for hybrid archs).
+	KeyLength            int64 // K dimension per head (typically 128).
+	ValueLength          int64 // V dimension per head (typically 128).
+	SWAHeadCountKV       int64 // Number of KV heads in SWA layers (0 = HeadCountKV).
+	SWAKeyLength         int64 // K dimension in SWA layers (0 = KeyLength).
+	SWAValueLength       int64 // V dimension in SWA layers (0 = ValueLength).
+	BytesPerElement      int64 // Per-element width of the KV cache type (q8_0=1, f16=2, ...).
+	TypeK                int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV                int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	HeadCountKVByLayer   []int64
+	Slots                int64 // n_seq_max - number of concurrent sequences.
+	SlidingWindow        int64 // Sliding-window size in tokens (0 = no SWA layers).
+	SlidingWindowLayers  int64 // Layer count that uses SWA (0 = treat all BlockCount as full attention).
+	SharedKVLayers       int64 // Trailing layers that reuse another layer's KV tensors.
+	SWAPattern           []bool
+	RecurrentPattern     []bool // Per-layer recurrent classification; recurrent layers do not allocate K/V.
+	NextNPredictLayers   int64  // Appended MTP layers excluded from the target context memory.
+	RecurrentStateBytes  int64  // F32 recurrent state bytes per recurrent layer, sequence, and state copy.
+	RecurrentStateCopies int64  // Current state plus rollback snapshots retained per sequence.
+	NUBatch              int64  // Effective physical batch size used by the SWA allocator.
+	KVUnified            bool   // Whether all sequence slots share one KV pool.
+	SWAFull              bool   // Whether SWA layers allocate the full context.
+	VTransposed          bool   // Whether V uses the model-wide transposed layout.
 }
 
 // KVCache holds the KV-cache sizing breakdown produced by CalculateKVCache.
@@ -87,11 +91,23 @@ func CalculateKVCache(input KVCacheInput) KVCache {
 		}
 		swaCells = pad(min(baseCells, input.SlidingWindow*sequences+max(input.NUBatch, 0)), 256) * streams
 	}
-	maxValueWidth := maxKVValueWidth(input, pattern, blockCount, swaHeadCountKV, swaValueLength)
+	maxValueWidth := maxKVValueWidth(input, pattern, allocatedLayers, swaHeadCountKV, swaValueLength)
+	trunkLayers := max(blockCount-max(input.NextNPredictLayers, 0), 0)
+	recurrentCopies := max(input.RecurrentStateCopies, 1)
+	recurrentStreams := max(input.Slots, 1)
 
 	layerMemory := make([]int64, allocatedLayers)
 	var slotMemory int64
 	for layer := range allocatedLayers {
+		if layer >= trunkLayers {
+			continue
+		}
+		if input.RecurrentStateBytes > 0 && isRecurrentLayer(input.RecurrentPattern, layer, blockCount) {
+			layerMemory[layer] = input.RecurrentStateBytes * recurrentCopies * recurrentStreams
+			slotMemory += layerMemory[layer]
+			continue
+		}
+
 		headCountKV := layerHeadCount(input.HeadCountKVByLayer, layer, input.HeadCountKV)
 		keyLength := input.KeyLength
 		valueLength := input.ValueLength
@@ -129,6 +145,10 @@ func CalculateKVCache(input KVCacheInput) KVCache {
 func maxKVValueWidth(input KVCacheInput, pattern []bool, blockCount, swaHeadCountKV, swaValueLength int64) int64 {
 	var maxWidth int64
 	for layer := range blockCount {
+		if layer >= max(input.BlockCount-max(input.NextNPredictLayers, 0), 0) ||
+			input.RecurrentStateBytes > 0 && isRecurrentLayer(input.RecurrentPattern, layer, input.BlockCount) {
+			continue
+		}
 		headCountKV := layerHeadCount(input.HeadCountKVByLayer, layer, input.HeadCountKV)
 		valueLength := input.ValueLength
 		if pattern[layer] && input.SlidingWindow > 0 {
@@ -138,6 +158,10 @@ func maxKVValueWidth(input KVCacheInput, pattern []bool, blockCount, swaHeadCoun
 		maxWidth = max(maxWidth, headCountKV*valueLength)
 	}
 	return maxWidth
+}
+
+func isRecurrentLayer(pattern []bool, layer, blockCount int64) bool {
+	return int64(len(pattern)) == blockCount && pattern[layer]
 }
 
 func layerHeadCount(values []int64, layer int64, fallback int64) int64 {

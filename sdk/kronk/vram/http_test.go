@@ -114,6 +114,42 @@ func TestCalculatePartialOffloadPlacesKVByLayer(t *testing.T) {
 	}
 }
 
+func TestBuildFromMetadataQwen35Hybrid(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture":              "qwen35moe",
+		"qwen35moe.block_count":             "5",
+		"qwen35moe.embedding_length":        "8",
+		"qwen35moe.attention.head_count":    "1",
+		"qwen35moe.attention.head_count_kv": "1",
+		"qwen35moe.attention.key_length":    "8",
+		"qwen35moe.attention.value_length":  "8",
+		"qwen35moe.nextn_predict_layers":    "1",
+		"qwen35moe.ssm.conv_kernel":         "2",
+		"qwen35moe.ssm.inner_size":          "8",
+		"qwen35moe.ssm.state_size":          "4",
+		"qwen35moe.ssm.group_count":         "1",
+	}
+
+	got, err := buildFromMetadata(metadata, nil, 1000, Config{
+		ContextWindow:          256,
+		BytesPerElement:        2,
+		Slots:                  1,
+		EmbeddedMTPStateCopies: 3,
+	})
+	if err != nil {
+		t.Fatalf("buildFromMetadata: %v", err)
+	}
+
+	const recurrentStateBytes int64 = 4 * ((8 + 2*1*4) + 4*8)
+	want := int64(256*(8+8)*2) + 3*recurrentStateBytes*3
+	if got.SlotMemory != want {
+		t.Fatalf("SlotMemory: got %d, want %d", got.SlotMemory, want)
+	}
+	if got.Input.RecurrentStateCopies != 3 {
+		t.Fatalf("RecurrentStateCopies: got %d, want 3", got.Input.RecurrentStateCopies)
+	}
+}
+
 func TestIsFolderURL(t *testing.T) {
 	tests := []struct {
 		name string

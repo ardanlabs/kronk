@@ -74,6 +74,32 @@ func mtpNDraft(cfg Config) int {
 	return defMTPNDraft
 }
 
+// RecurrentStateCopies returns the number of current and rollback recurrent
+// state planes allocated for the configured speculative-decoding mode.
+// embeddedMTP selects the auto-detected MTP path; false selects an explicit
+// separate drafter or companion MTP file.
+func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
+	if embeddedMTP {
+		if MTPAvailable() {
+			return int64(1 + mtpNDraft(cfg))
+		}
+		return 1
+	}
+
+	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
+		nDraft := cfg.PtrDraftModel.NDraft
+		if nDraft <= 0 {
+			nDraft = defNDraft
+		}
+		return int64(1 + nDraft)
+	}
+	if cfg.MTPDrafterFile != "" && MTPAvailable() {
+		return int64(1 + mtpNDraft(cfg))
+	}
+
+	return 1
+}
+
 // mtpNextNLayers returns the number of NextN (MTP) prediction layers
 // declared in the target GGUF's metadata. A return value of 0 means the
 // model does not contain an MTP head and the MTP drafter must not be

@@ -300,3 +300,58 @@ func TestCalculateKVCachePadsContext(t *testing.T) {
 		t.Fatalf("SlotMemory: got %d, want padded %d", out.SlotMemory, 768*2)
 	}
 }
+
+func TestCalculateKVCacheQwen35Hybrid(t *testing.T) {
+	recurrentPattern := make([]bool, 41)
+	for layer := range int64(40) {
+		recurrentPattern[layer] = (layer+1)%4 != 0
+	}
+
+	in := KVCacheInput{
+		ContextWindow:        131072,
+		BlockCount:           41,
+		HeadCountKV:          2,
+		KeyLength:            256,
+		ValueLength:          256,
+		BytesPerElement:      2,
+		Slots:                1,
+		RecurrentPattern:     recurrentPattern,
+		NextNPredictLayers:   1,
+		RecurrentStateBytes:  1024,
+		RecurrentStateCopies: 3,
+	}
+
+	out := CalculateKVCache(in)
+	wantAttention := int64(10 * 2 * (256 + 256) * 2 * 131072)
+	wantRecurrent := int64(30 * 1024 * 3)
+	if out.SlotMemory != wantAttention+wantRecurrent {
+		t.Fatalf("SlotMemory: got %d, want %d", out.SlotMemory, wantAttention+wantRecurrent)
+	}
+	if out.LayerMemory[40] != 0 {
+		t.Fatalf("MTP layer memory: got %d, want 0", out.LayerMemory[40])
+	}
+}
+
+func TestCalculateKVCacheRecurrentMetadataFallback(t *testing.T) {
+	in := KVCacheInput{
+		ContextWindow:       256,
+		BlockCount:          5,
+		HeadCountKV:         1,
+		KeyLength:           8,
+		ValueLength:         8,
+		BytesPerElement:     2,
+		Slots:               1,
+		RecurrentPattern:    []bool{true, true, true, false, false},
+		NextNPredictLayers:  1,
+		RecurrentStateBytes: 0,
+	}
+
+	out := CalculateKVCache(in)
+	// Missing recurrent dimensions must preserve conservative full-KV
+	// accounting for all four trunk layers. The appended MTP layer is still
+	// known not to belong to the target context and remains excluded.
+	want := int64(4 * 256 * (8 + 8) * 2)
+	if out.SlotMemory != want {
+		t.Fatalf("SlotMemory: got %d, want conservative fallback %d", out.SlotMemory, want)
+	}
+}

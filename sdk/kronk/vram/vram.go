@@ -49,49 +49,55 @@ const (
 // Config contains the user-provided parameters for VRAM calculation
 // that cannot be extracted from the model file.
 type Config struct {
-	ContextWindow     int64 // n_ctx - context window size (e.g., 8192, 131072)
-	BytesPerElement   int64 // Depends on cache type: q8_0=1, f16=2
-	TypeK             int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	TypeV             int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	Slots             int64 // n_seq_max - number of concurrent sequences
-	NUBatch           int64 // Effective physical batch size.
-	GPULayers         int64 // Number of layers on GPU (0 = all, -1 = none).
-	ExpertLayersOnGPU int64 // 0 = all experts on CPU.
-	KVCacheOnCPU      bool  // Move KV cache off the GPU (offload-kqv: false).
-	SWAFull           bool  // Size SWA layers against the full context window.
-	VTransposed       bool  // Size V using the model-wide transposed layout.
+	ContextWindow          int64 // n_ctx - context window size (e.g., 8192, 131072)
+	BytesPerElement        int64 // Depends on cache type: q8_0=1, f16=2
+	TypeK                  int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV                  int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	Slots                  int64 // n_seq_max - number of concurrent sequences
+	NUBatch                int64 // Effective physical batch size.
+	GPULayers              int64 // Number of layers on GPU (0 = all, -1 = none).
+	ExpertLayersOnGPU      int64 // 0 = all experts on CPU.
+	KVCacheOnCPU           bool  // Move KV cache off the GPU (offload-kqv: false).
+	SWAFull                bool  // Size SWA layers against the full context window.
+	VTransposed            bool  // Size V using the model-wide transposed layout.
+	RecurrentStateCopies   int64 // State copies for separate-model or companion-MTP speculation.
+	EmbeddedMTPStateCopies int64 // State copies when the GGUF contains an embedded MTP layer.
 }
 
 // Input contains all parameters needed to calculate VRAM requirements.
 type Input struct {
-	ModelSizeBytes      int64                 // Size of model weights in bytes
-	ContextWindow       int64                 // n_ctx - context window size (e.g., 8192, 131072)
-	BlockCount          int64                 // n_layers - number of transformer layers
-	HeadCountKV         int64                 // Number of KV attention heads
-	KeyLength           int64                 // K dimension per head (typically 128)
-	ValueLength         int64                 // V dimension per head (typically 128)
-	SWAHeadCountKV      int64                 // Number of KV heads in SWA layers (0 = HeadCountKV)
-	SWAKeyLength        int64                 // K dimension in SWA layers (0 = KeyLength)
-	SWAValueLength      int64                 // V dimension in SWA layers (0 = ValueLength)
-	HeadCountKVByLayer  []int64               // Exact per-layer KV head counts when available.
-	BytesPerElement     int64                 // Depends on cache type: q8_0=1, f16=2
-	TypeK               int32                 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	TypeV               int32                 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	Slots               int64                 // n_seq_max - number of concurrent sequences
-	SlidingWindow       int64                 // Sliding-window size in tokens (0 = no SWA layers).
-	SlidingWindowLayers int64                 // Layer count using SWA (0 = treat all BlockCount as full attention).
-	SharedKVLayers      int64                 // Trailing layers that reuse another layer's KV tensors.
-	SWAPattern          []bool                // Per-layer SWA classification when available.
-	NUBatch             int64                 // Effective physical batch size.
-	KVUnified           bool                  // Whether all sequence slots share one KV pool.
-	EmbeddingLength     int64                 // needed for compute buffer estimate
-	MoE                 *gguf.MoEInfo         //
-	Weights             *gguf.WeightBreakdown //
-	GPULayers           int64                 // Number of layers on GPU (0 = all, -1 = none)
-	ExpertLayersOnGPU   int64                 // 0 = all experts on CPU
-	KVCacheOnCPU        bool                  // Move KV cache off the GPU (offload-kqv: false)
-	SWAFull             bool                  // Size SWA layers against the full context window.
-	VTransposed         bool                  // Size V using the model-wide transposed layout.
+	ModelSizeBytes       int64                 // Size of model weights in bytes
+	ContextWindow        int64                 // n_ctx - context window size (e.g., 8192, 131072)
+	BlockCount           int64                 // n_layers - number of transformer layers
+	HeadCountKV          int64                 // Number of KV attention heads
+	KeyLength            int64                 // K dimension per head (typically 128)
+	ValueLength          int64                 // V dimension per head (typically 128)
+	SWAHeadCountKV       int64                 // Number of KV heads in SWA layers (0 = HeadCountKV)
+	SWAKeyLength         int64                 // K dimension in SWA layers (0 = KeyLength)
+	SWAValueLength       int64                 // V dimension in SWA layers (0 = ValueLength)
+	HeadCountKVByLayer   []int64               // Exact per-layer KV head counts when available.
+	BytesPerElement      int64                 // Depends on cache type: q8_0=1, f16=2
+	TypeK                int32                 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV                int32                 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	Slots                int64                 // n_seq_max - number of concurrent sequences
+	SlidingWindow        int64                 // Sliding-window size in tokens (0 = no SWA layers).
+	SlidingWindowLayers  int64                 // Layer count using SWA (0 = treat all BlockCount as full attention).
+	SharedKVLayers       int64                 // Trailing layers that reuse another layer's KV tensors.
+	SWAPattern           []bool                // Per-layer SWA classification when available.
+	RecurrentPattern     []bool                // Per-layer recurrent classification when available.
+	NextNPredictLayers   int64                 // Appended MTP layers excluded from target context memory.
+	RecurrentStateBytes  int64                 // State bytes per recurrent layer, sequence, and copy.
+	RecurrentStateCopies int64                 // Current state plus speculative rollback copies.
+	NUBatch              int64                 // Effective physical batch size.
+	KVUnified            bool                  // Whether all sequence slots share one KV pool.
+	EmbeddingLength      int64                 // needed for compute buffer estimate
+	MoE                  *gguf.MoEInfo         //
+	Weights              *gguf.WeightBreakdown //
+	GPULayers            int64                 // Number of layers on GPU (0 = all, -1 = none)
+	ExpertLayersOnGPU    int64                 // 0 = all experts on CPU
+	KVCacheOnCPU         bool                  // Move KV cache off the GPU (offload-kqv: false)
+	SWAFull              bool                  // Size SWA layers against the full context window.
+	VTransposed          bool                  // Size V using the model-wide transposed layout.
 }
 
 // PerDeviceVRAM is the per-GPU breakdown of model weights, KV cache, and
@@ -142,27 +148,31 @@ type Result struct {
 // share a single implementation.
 func Calculate(input Input) Result {
 	kv := gguf.CalculateKVCache(gguf.KVCacheInput{
-		ContextWindow:       input.ContextWindow,
-		BlockCount:          input.BlockCount,
-		HeadCountKV:         input.HeadCountKV,
-		KeyLength:           input.KeyLength,
-		ValueLength:         input.ValueLength,
-		SWAHeadCountKV:      input.SWAHeadCountKV,
-		SWAKeyLength:        input.SWAKeyLength,
-		SWAValueLength:      input.SWAValueLength,
-		HeadCountKVByLayer:  input.HeadCountKVByLayer,
-		BytesPerElement:     input.BytesPerElement,
-		TypeK:               input.TypeK,
-		TypeV:               input.TypeV,
-		Slots:               input.Slots,
-		SlidingWindow:       input.SlidingWindow,
-		SlidingWindowLayers: input.SlidingWindowLayers,
-		SharedKVLayers:      input.SharedKVLayers,
-		SWAPattern:          input.SWAPattern,
-		NUBatch:             input.NUBatch,
-		KVUnified:           input.KVUnified,
-		SWAFull:             input.SWAFull,
-		VTransposed:         input.VTransposed,
+		ContextWindow:        input.ContextWindow,
+		BlockCount:           input.BlockCount,
+		HeadCountKV:          input.HeadCountKV,
+		KeyLength:            input.KeyLength,
+		ValueLength:          input.ValueLength,
+		SWAHeadCountKV:       input.SWAHeadCountKV,
+		SWAKeyLength:         input.SWAKeyLength,
+		SWAValueLength:       input.SWAValueLength,
+		HeadCountKVByLayer:   input.HeadCountKVByLayer,
+		BytesPerElement:      input.BytesPerElement,
+		TypeK:                input.TypeK,
+		TypeV:                input.TypeV,
+		Slots:                input.Slots,
+		SlidingWindow:        input.SlidingWindow,
+		SlidingWindowLayers:  input.SlidingWindowLayers,
+		SharedKVLayers:       input.SharedKVLayers,
+		SWAPattern:           input.SWAPattern,
+		RecurrentPattern:     input.RecurrentPattern,
+		NextNPredictLayers:   input.NextNPredictLayers,
+		RecurrentStateBytes:  input.RecurrentStateBytes,
+		RecurrentStateCopies: input.RecurrentStateCopies,
+		NUBatch:              input.NUBatch,
+		KVUnified:            input.KVUnified,
+		SWAFull:              input.SWAFull,
+		VTransposed:          input.VTransposed,
 	})
 	kvPerTokenPerLayer := kv.KVPerTokenPerLayer
 	kvPerSlot := kv.KVPerSlot
