@@ -1,10 +1,14 @@
-package standard
+package toolcall
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
 var noopLog applog.Logger = func(context.Context, string, ...any) {}
@@ -58,6 +62,113 @@ func TestParseJSON_StripDotPrefix(t *testing.T) {
 	}
 	if calls[0].Function.Name != "Kronk_web_search" {
 		t.Errorf("name = %q, want Kronk_web_search", calls[0].Function.Name)
+	}
+}
+
+// TestParseJSON_ArgumentTypes verifies that the standard JSON envelope keeps
+// explicit JSON types without consulting a tool schema. Quoted JSON-looking
+// values remain strings, while native values retain their JSON types.
+func TestParseJSON_ArgumentTypes(t *testing.T) {
+	calls := parseJSON(context.Background(), noopLog, `{
+		"name":"write",
+		"arguments":{
+			"import":"\"github.com/ardanlabs/x\"",
+			"object_text":"{\"name\":\"x\",\"port\":8080}",
+			"array_text":"[1,2,3]",
+			"bool_text":"true",
+			"number_text":"42",
+			"null_text":"null",
+			"object":{"name":"x","port":8080},
+			"array":[1,2,3],
+			"bool":true,
+			"number":1.50,
+			"large_integer":9007199254740993,
+			"null":null
+		}
+	}`)
+
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+
+	want := model.ToolCallArguments{
+		"import":        `"github.com/ardanlabs/x"`,
+		"object_text":   `{"name":"x","port":8080}`,
+		"array_text":    `[1,2,3]`,
+		"bool_text":     "true",
+		"number_text":   "42",
+		"null_text":     "null",
+		"object":        map[string]any{"name": "x", "port": json.Number("8080")},
+		"array":         []any{json.Number("1"), json.Number("2"), json.Number("3")},
+		"bool":          true,
+		"number":        json.Number("1.50"),
+		"large_integer": json.Number("9007199254740993"),
+		"null":          nil,
+	}
+	if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+		t.Errorf("arguments: got %#v, want %#v", got, want)
+	}
+
+	wire, err := json.Marshal(calls[0].Function)
+	if err != nil {
+		t.Fatalf("marshal function: %v", err)
+	}
+	var function struct {
+		Arguments string `json:"arguments"`
+	}
+	if err := json.Unmarshal(wire, &function); err != nil {
+		t.Fatalf("unmarshal wire function: %v", err)
+	}
+	for _, value := range []string{`"large_integer":9007199254740993`, `"number":1.50`} {
+		if !strings.Contains(function.Arguments, value) {
+			t.Errorf("wire arguments %q do not contain %q", function.Arguments, value)
+		}
+	}
+}
+
+// TestParseJSON_RepairsUnescapedQuotes verifies that repairing malformed model
+// output does not remove quotes embedded in a string argument.
+func TestParseJSON_RepairsUnescapedQuotes(t *testing.T) {
+	calls := parseJSON(context.Background(), noopLog,
+		`{"name":"write","arguments":{"content":"import "fmt"\n"}}`)
+
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	if calls[0].Status != 0 {
+		t.Fatalf("status = %d, error = %q", calls[0].Status, calls[0].Error)
+	}
+	if got, want := calls[0].Function.Arguments["content"], "import \"fmt\"\\n"; got != want {
+		t.Errorf("content: got %#v, want %#v", got, want)
+	}
+}
+
+// TestParseJSON_RejectsTrailingArgumentsJSON verifies that an OpenAI-style
+// string containing more than one JSON value is not partially accepted.
+func TestParseJSON_RejectsTrailingArgumentsJSON(t *testing.T) {
+	calls := parseJSON(context.Background(), noopLog,
+		`{"name":"write","arguments":"{\"content\":\"ok\"} trailing"}`)
+
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	if calls[0].Status != 2 || calls[0].Error == "" {
+		t.Fatalf("status = %d, error = %q, want failed call", calls[0].Status, calls[0].Error)
+	}
+}
+
+func TestParseJSON_ReportsMalformedMarkedPayload(t *testing.T) {
+	for _, content := range []string{
+		" ",
+		"not JSON",
+		`{"arguments":{}}`,
+		`{"name":"write"}`,
+		`{"name":"write","arguments":null}`,
+	} {
+		calls := parseJSON(t.Context(), noopLog, content)
+		if len(calls) != 1 || calls[0].Status != 2 || calls[0].Error == "" {
+			t.Errorf("parseJSON(%q): got %+v, want one failed call", content, calls)
+		}
 	}
 }
 

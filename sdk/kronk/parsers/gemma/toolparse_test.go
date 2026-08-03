@@ -2,10 +2,12 @@ package gemma
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
 var noopLog applog.Logger = func(context.Context, string, ...any) {}
@@ -43,8 +45,8 @@ func TestParseGemmaBareValue(t *testing.T) {
 		{"true", true},
 		{"false", false},
 		{"null", nil},
-		{"42", float64(42)},
-		{"3.14", float64(3.14)},
+		{"42", json.Number("42")},
+		{"3.14", json.Number("3.14")},
 		{"hello", "hello"},
 	}
 	for _, tc := range tests {
@@ -55,6 +57,110 @@ func TestParseGemmaBareValue(t *testing.T) {
 					tc.in, got, got, tc.want, tc.want)
 			}
 		})
+	}
+}
+
+func TestToolCallWithSchema(t *testing.T) {
+	tools := []model.D{{
+		"type": "function",
+		"function": model.D{
+			"name": "convert",
+			"parameters": model.D{
+				"type": "object",
+				"properties": model.D{
+					"content": model.D{"type": "string"},
+					"text":    model.D{"type": "string"},
+					"enabled": model.D{"type": "boolean"},
+					"count":   model.D{"type": "integer"},
+				},
+			},
+		},
+	}}
+
+	calls := Parser{}.ToolCallWithSchema(context.Background(), noopLog,
+		`call:convert{content:<|"|>{"enabled":true}<|"|>,text:true,enabled:true,count:9007199254740993}`,
+		tools)
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+
+	want := model.ToolCallArguments{
+		"content": `{"enabled":true}`,
+		"text":    "true",
+		"enabled": true,
+		"count":   json.Number("9007199254740993"),
+	}
+	if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+		t.Errorf("arguments: got %#v, want %#v", got, want)
+	}
+}
+
+func TestParseGemmaArgs_QuotedJSONRemainsString(t *testing.T) {
+	args := parseGemmaArgs(`content:<|"|>{"enabled":true}<|"|>`)
+	if got := args["content"]; got != `{"enabled":true}` {
+		t.Errorf("content: got %q (%T), want quoted JSON string", got, got)
+	}
+}
+
+func TestToolCallWithSchema_QuotedValuesRemainStrings(t *testing.T) {
+	tools := []model.D{{
+		"type": "function",
+		"function": model.D{
+			"name": "convert",
+			"parameters": model.D{
+				"properties": model.D{
+					"gemmaBoolean": model.D{"type": "boolean"},
+					"jsonBoolean":  model.D{"type": "boolean"},
+					"object":       model.D{"type": "object"},
+					"array":        model.D{"type": "array"},
+				},
+			},
+		},
+	}}
+
+	calls := Parser{}.ToolCallWithSchema(context.Background(), noopLog,
+		`call:convert{gemmaBoolean:<|"|>true<|"|>,jsonBoolean:"true",object:<|"|>{"x":1}<|"|>,array:<|"|>[1,2]<|"|>}`,
+		tools)
+	want := model.ToolCallArguments{
+		"gemmaBoolean": "true",
+		"jsonBoolean":  "true",
+		"object":       `{"x":1}`,
+		"array":        `[1,2]`,
+	}
+	if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+		t.Errorf("arguments: got %#v, want %#v", got, want)
+	}
+}
+
+func TestToolCallWithSchema_NativeCompositesRemainTyped(t *testing.T) {
+	tools := []model.D{{
+		"type": "function",
+		"function": model.D{
+			"name": "convert",
+			"parameters": model.D{
+				"properties": model.D{
+					"object": model.D{"type": "string"},
+					"array":  model.D{"type": "string"},
+				},
+			},
+		},
+	}}
+
+	calls := Parser{}.ToolCallWithSchema(context.Background(), noopLog,
+		`call:convert{"object":{"x":1},"array":[1,2]}`, tools)
+	want := model.ToolCallArguments{
+		"object": map[string]any{"x": json.Number("1")},
+		"array":  []any{json.Number("1"), json.Number("2")},
+	}
+	if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+		t.Errorf("arguments: got %#v, want %#v", got, want)
+	}
+}
+
+func TestParseGemmaBareValue_TrailingDataRemainsString(t *testing.T) {
+	const value = "42 trailing"
+	if got := parseGemmaBareValue(value); got != value {
+		t.Errorf("value: got %q (%T), want %q", got, got, value)
 	}
 }
 

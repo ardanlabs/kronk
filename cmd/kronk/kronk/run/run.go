@@ -24,18 +24,19 @@ type Config struct {
 	BasePath  string
 
 	// Model configuration.
-	JinjaFile      string
-	ContextWindow  int
-	FlashAttention string
-	NGpuLayers     int
-	Devices        string
-	MainGPU        int
-	TensorSplit    string
-	SplitMode      string
-	CacheTypeK     string
-	CacheTypeV     string
-	NBatch         int
-	NUBatch        int
+	JinjaFile          string
+	ContextWindow      int
+	FlashAttention     string
+	NGpuLayers         int
+	Devices            string
+	MainGPU            int
+	TensorSplit        string
+	SplitMode          string
+	CacheTypeK         string
+	CacheTypeV         string
+	NBatch             int
+	NUBatch            int
+	IMCSessionCapacity int
 
 	// Sampling parameters.
 	MaxTokens        int
@@ -128,6 +129,10 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 		cfg.PtrNUBatch = new(runCfg.NUBatch)
 	}
 
+	if runCfg.IMCSessionCapacity != 0 {
+		cfg.PtrIMCSessionCapacity = new(runCfg.IMCSessionCapacity)
+	}
+
 	if runCfg.NGpuLayers != 0 {
 		v := runCfg.NGpuLayers
 		cfg.PtrNGpuLayers = &v
@@ -209,6 +214,7 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
 	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
 	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
+	fmt.Println("- imcSessions    :", krn.ModelConfig().IMCSessionCapacity())
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
 	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
 	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")

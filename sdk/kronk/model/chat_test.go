@@ -238,6 +238,63 @@ func TestValidateMessages(t *testing.T) {
 	}
 }
 
+func TestValidateChatRequestToolChoice(t *testing.T) {
+	tests := []struct {
+		name       string
+		toolChoice any
+		tools      []D
+		include    bool
+		wantErr    bool
+	}{
+		{name: "omitted"},
+		{name: "auto", toolChoice: "auto", include: true},
+		{
+			name:       "declared function",
+			toolChoice: "get_weather",
+			tools: []D{
+				{"type": "function", "function": D{"name": "get_weather"}},
+			},
+			include: true,
+		},
+		{
+			name:       "different declared function",
+			toolChoice: "get_weather",
+			tools: []D{
+				{"type": "function", "function": D{"name": "search"}},
+			},
+			include: true,
+			wantErr: true,
+		},
+		{name: "none unsupported", toolChoice: "none", include: true, wantErr: true},
+		{name: "required unsupported", toolChoice: "required", include: true, wantErr: true},
+		{name: "unknown string", toolChoice: "sometimes", include: true, wantErr: true},
+		{name: "object unsupported", toolChoice: D{"type": "function"}, include: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{"messages": []D{{"role": "user", "content": "hello"}}}
+			if tt.tools != nil {
+				d["tools"] = tt.tools
+			}
+			if tt.include {
+				d["tool_choice"] = tt.toolChoice
+			}
+
+			err := ValidateChatRequest(d)
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidRequest) {
+					t.Fatalf("ValidateChatRequest: got %v, want ErrInvalidRequest", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateChatRequest: got %v, want nil", err)
+			}
+		})
+	}
+}
+
 func TestChatResponseFinalFinishReason(t *testing.T) {
 	toolCalls := []ResponseToolCall{{
 		ID:   "call_1",
@@ -707,6 +764,41 @@ func TestParseParamsTemperature(t *testing.T) {
 			}
 			if got := params.Temperature; got != tt.want {
 				t.Errorf("Temperature: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseParamsTopP(t *testing.T) {
+	tests := []struct {
+		name    string
+		topP    any
+		include bool
+		want    float32
+	}{
+		{name: "omitted uses model default", want: 0.95},
+		{name: "explicit zero overrides model default", topP: 0.0, include: true, want: 0.0},
+		{name: "explicit one overrides model default", topP: 1.0, include: true, want: 1.0},
+		{name: "explicit non-default overrides model default", topP: 0.8, include: true, want: 0.8},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg: Config{DefaultParams: Params{TopP: 0.95}},
+				log: noopLog,
+			}
+			d := D{}
+			if tt.include {
+				d["top_p"] = tt.topP
+			}
+
+			params, err := m.parseParams(context.Background(), d)
+			if err != nil {
+				t.Fatalf("parseParams: %v", err)
+			}
+			if got := params.TopP; got != tt.want {
+				t.Errorf("TopP: got %v, want %v", got, tt.want)
 			}
 		})
 	}

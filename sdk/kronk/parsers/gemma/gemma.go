@@ -57,6 +57,15 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 	return parseGemma(ctx, log, buf)
 }
 
+// ToolCallWithSchema parses Gemma tool calls and reconciles the native value
+// types with the matching function's declared parameter schema.
+func (Parser) ToolCallWithSchema(ctx context.Context, log applog.Logger, buf string, tools []model.D) []model.ResponseToolCall {
+	toolCalls := parseGemma(ctx, log, buf)
+	normalizeGemmaArguments(toolCalls, tools)
+
+	return toolCalls
+}
+
 // containsGemmaMarkers reports whether a chat template carries distinctive
 // Gemma tokens. Any one is sufficient because no other supported lineage
 // uses these exact tokens.

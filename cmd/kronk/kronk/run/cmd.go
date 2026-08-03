@@ -40,6 +40,7 @@ Model Configuration:
   --cache-type-v        KV cache type for values (f16, q8_0, etc.)
   --nbatch              Logical batch size for processing
   --nubatch             Physical micro-batch size
+  --imc-session-capacity Number of reusable IMC session identities
 
 Sampling Parameters:
   --max-tokens          Maximum tokens for response
@@ -89,6 +90,7 @@ func init() {
 	Cmd.Flags().String("cache-type-v", "", "KV cache type for values (f16, q8_0, q4_0, etc.)")
 	Cmd.Flags().Int("nbatch", 0, "Logical batch size for processing")
 	Cmd.Flags().Int("nubatch", 0, "Physical micro-batch size for prompt ingestion")
+	Cmd.Flags().Int("imc-session-capacity", 0, "Number of reusable IMC session identities (0 = derived default)")
 
 	// Sampling parameter flags.
 	Cmd.Flags().Int("max-tokens", 0, "Maximum tokens for response")
@@ -126,6 +128,7 @@ func run(cmd *cobra.Command, args []string) error {
 	cacheTypeV, _ := cmd.Flags().GetString("cache-type-v")
 	nbatch, _ := cmd.Flags().GetInt("nbatch")
 	nubatch, _ := cmd.Flags().GetInt("nubatch")
+	imcSessionCapacity, _ := cmd.Flags().GetInt("imc-session-capacity")
 
 	// Sampling parameter flags.
 	maxTokens, _ := cmd.Flags().GetInt("max-tokens")
@@ -144,18 +147,19 @@ func run(cmd *cobra.Command, args []string) error {
 		BasePath:  client.GetBasePath(cmd),
 
 		// Model configuration.
-		JinjaFile:      jinjaFile,
-		ContextWindow:  contextWindow,
-		FlashAttention: flashAttention,
-		NGpuLayers:     ngpuLayers,
-		Devices:        devices,
-		MainGPU:        mainGPU,
-		TensorSplit:    tensorSplit,
-		SplitMode:      splitMode,
-		CacheTypeK:     cacheTypeK,
-		CacheTypeV:     cacheTypeV,
-		NBatch:         nbatch,
-		NUBatch:        nubatch,
+		JinjaFile:          jinjaFile,
+		ContextWindow:      contextWindow,
+		FlashAttention:     flashAttention,
+		NGpuLayers:         ngpuLayers,
+		Devices:            devices,
+		MainGPU:            mainGPU,
+		TensorSplit:        tensorSplit,
+		SplitMode:          splitMode,
+		CacheTypeK:         cacheTypeK,
+		CacheTypeV:         cacheTypeV,
+		NBatch:             nbatch,
+		NUBatch:            nubatch,
+		IMCSessionCapacity: imcSessionCapacity,
 
 		// Sampling parameters.
 		MaxTokens:        maxTokens,

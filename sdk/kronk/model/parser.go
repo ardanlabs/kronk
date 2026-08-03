@@ -105,6 +105,13 @@ type StateMachine interface {
 	Reset()
 }
 
+// ToolAwareStateMachine is optionally implemented by state machines that
+// need the request's declared tools to distinguish an unmarked tool call from
+// ordinary answer content.
+type ToolAwareStateMachine interface {
+	SetTools(tools []D)
+}
+
 // StateMachineFlusher is implemented by state machines that may retain model
 // output not yet returned by Classify.
 //
@@ -130,7 +137,7 @@ type ToolCallDeltaStreamer interface {
 // Implementations live in sdk/kronk/parsers/<name>/ and are registered
 // at startup via RegisterParser.
 type Parser interface {
-	// Name returns the parser identifier (e.g. "standard", "gpt-oss").
+	// Name returns the parser identifier (e.g. "fallback", "gpt-oss").
 	// Used for logging and as the override key in model configs.
 	Name() string
 
@@ -143,6 +150,13 @@ type Parser interface {
 	// per-token path. The logger is used for repair/parse failures; tests
 	// may pass a no-op logger.
 	ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
+}
+
+// ToolCallSchemaParser is optionally implemented by parsers whose native tool
+// call format does not encode argument types. The request's tool declarations
+// are supplied so the parser can convert raw values according to their schema.
+type ToolCallSchemaParser interface {
+	ToolCallWithSchema(ctx context.Context, log applog.Logger, buf string, tools []D) []ResponseToolCall
 }
 
 // ParamsAdjuster is an optional interface a Parser may implement to coerce

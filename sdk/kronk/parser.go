@@ -5,13 +5,16 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/deepseek"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/fallback"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gemma"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/glm"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gpt"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/kimi"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/lfm"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/llama"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/mistral"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/qwen"
-	"github.com/ardanlabs/kronk/sdk/kronk/parsers/standard"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/toolcall"
 )
 
 // defaultParsersOnce guards default-parser registration so multiple
@@ -28,14 +31,13 @@ var defaultParsersOnce sync.Once
 //     up by gpt rather than the lineage whose architecture prefix it
 //     shares.
 //
-//  2. standard is registered last because it is the catch-all that
+//  2. fallback is registered last because it is the catch-all that
 //     claims any fingerprint, ensuring every model resolves to a
 //     parser even when the more specific parsers all decline.
 //
-// Kimi and DeepSeek are registered before lineage parsers because their
-// protocol-specific formats should take precedence over lineage metadata
-// inherited by converted models. The remaining parsers inspect architecture +
-// template + name internally and do not overlap.
+// Explicit tool protocols are registered before broader lineage parsers so a
+// fine-tune's chat template takes precedence over inherited architecture
+// metadata. For example, RNJ has Gemma architecture but emits marked JSON.
 //
 // This function is idempotent — calling it multiple times has no effect.
 // It is called automatically by NewWithContext, so most callers do not
@@ -46,12 +48,15 @@ var defaultParsersOnce sync.Once
 func registerDefaultParsers() {
 	defaultParsersOnce.Do(func() {
 		model.RegisterParser(gpt.New) // template-only — must be first
+		model.RegisterParser(lfm.New)
 		model.RegisterParser(kimi.New)
 		model.RegisterParser(deepseek.New)
+		model.RegisterParser(llama.New)
 		model.RegisterParser(qwen.New)
+		model.RegisterParser(toolcall.New)
 		model.RegisterParser(gemma.New)
 		model.RegisterParser(glm.New)
 		model.RegisterParser(mistral.New)
-		model.RegisterParser(standard.New) // catch-all — must be last
+		model.RegisterParser(fallback.New) // catch-all — must be last
 	})
 }

@@ -1,4 +1,4 @@
-package standard
+package toolcall
 
 import (
 	"strings"
@@ -39,19 +39,28 @@ func runSteps(t *testing.T, name string, c model.StateMachine, steps []step) {
 // Parser selection
 // =============================================================================
 
-// TestNew_AlwaysClaims verifies the standard parser is the catch-all and
-// claims any fingerprint.
-func TestNew_AlwaysClaims(t *testing.T) {
-	tests := []model.Fingerprint{
-		{},
-		{ModelName: "anything-1B"},
-		{ChatTemplate: "any template"},
+// TestNew verifies the parser claims only templates that explicitly declare
+// the marked JSON tool-call protocol.
+func TestNew(t *testing.T) {
+	tests := []struct {
+		name string
+		fp   model.Fingerprint
+		want bool
+	}{
+		{"marked JSON", model.Fingerprint{ChatTemplate: `return <tool_call>{"name":"x","arguments":{}}</tool_call>`}, true},
+		{"RNJ template", model.Fingerprint{Architecture: "gemma3", ChatTemplate: `For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags: {"name": <function-name>, "arguments": <args-json-object>}`}, true},
+		{"markers without JSON envelope", model.Fingerprint{ChatTemplate: `<tool_call>native syntax</tool_call>`}, false},
+		{"architecture only", model.Fingerprint{Architecture: "gemma3"}, false},
+		{"empty", model.Fingerprint{}, false},
 	}
 
-	for _, fp := range tests {
-		if _, ok := New(fp); !ok {
-			t.Errorf("standard parser must claim every fingerprint, refused %+v", fp)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, got := New(tt.fp)
+			if got != tt.want {
+				t.Errorf("New: got %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -95,9 +104,12 @@ func TestParser_SingleToolCall(t *testing.T) {
 			content: `{"name":"get_weather","arguments":{"loc":"NYC"}}` + "\n"},
 	})
 
-	_, eog := c.Classify("\n")
+	if _, eog := c.Classify("\n"); eog {
+		t.Errorf("unexpected EOG while waiting through whitespace after tool call")
+	}
+	_, eog := c.Classify("done")
 	if !eog {
-		t.Errorf("expected EOG after tool call closed")
+		t.Errorf("expected EOG on non-tool content after tool call closed")
 	}
 }
 
@@ -117,6 +129,15 @@ func TestParser_FlushIncompleteToolCall(t *testing.T) {
 	}
 }
 
+func TestParser_EmptyMarkedCallReachesToolParser(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	c.Classify("<tool_call>")
+	got, _ := c.Classify("</tool_call>")
+	if got.Channel != model.ChannelTool || got.Content == "" {
+		t.Errorf("empty marked call: got %+v, want non-empty tool result", got)
+	}
+}
+
 // TestParser_MultipleToolCalls verifies that a second opener after the
 // first close is accepted (no EOG) and accumulates a fresh buffer.
 func TestParser_MultipleToolCalls(t *testing.T) {
@@ -127,6 +148,7 @@ func TestParser_MultipleToolCalls(t *testing.T) {
 		{token: `{"name":"a","arguments":{}}`, channel: model.ChannelNone},
 		{token: "</tool_call>", channel: model.ChannelTool,
 			content: `{"name":"a","arguments":{}}` + "\n"},
+		{token: "\n", channel: model.ChannelNone},
 		{token: "<|tool_call>", channel: model.ChannelNone},
 		{token: `{"name":"b","arguments":{}}`, channel: model.ChannelNone},
 		{token: "</tool_call>", channel: model.ChannelTool,
@@ -141,7 +163,7 @@ func TestParser_MultipleToolCalls(t *testing.T) {
 
 // TestParser_UnknownMarkersAreContent verifies that markers belonging to
 // other parsers (e.g. Mistral [TOOL_CALLS], Gemma <|channel>) are treated
-// as plain content by the standard stateMachine — the more-specific parsers
+// as plain content by the toolcall stateMachine — the more-specific parsers
 // own those markers.
 func TestParser_UnknownMarkersAreContent(t *testing.T) {
 	c := Parser{}.NewStateMachine()
@@ -150,10 +172,10 @@ func TestParser_UnknownMarkersAreContent(t *testing.T) {
 		c.Reset()
 		got, eog := c.Classify(marker)
 		if eog {
-			t.Errorf("standard should not EOG on foreign marker %q", marker)
+			t.Errorf("toolcall should not EOG on foreign marker %q", marker)
 		}
 		if got.Channel != model.ChannelAnswer || got.Content != marker {
-			t.Errorf("standard should pass-through %q as answer content, got %+v",
+			t.Errorf("toolcall should pass-through %q as answer content, got %+v",
 				marker, got)
 		}
 	}

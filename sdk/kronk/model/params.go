@@ -400,7 +400,6 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	m.log(ctx, "parse-params", "request", d.String())
 
 	p := m.cfg.DefaultParams
-	var zeroTemperatureRequested bool
 
 	if val, exists := d["adaptive_p_decay"]; exists {
 		adaptivePDecay, err := parseFloat32("adaptive_p_decay", val)
@@ -583,7 +582,6 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 			return Params{}, err
 		}
 		p.Temperature = temp
-		zeroTemperatureRequested = temp == 0
 	}
 
 	if val, exists := d["top_k"]; exists {
@@ -622,17 +620,7 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 		if err != nil {
 			return Params{}, err
 		}
-		// Treat top_p == 0 and top_p == 1 from the request as "unset".
-		// top_p == 0 is invalid in llama.cpp and top_p == 1 keeps every
-		// token (a no-op nucleus filter). Many clients hard-code
-		// top_p = 1 as a default, which would otherwise defeat any
-		// per-model tuning in the YAML config. Skipping the assignment
-		// here preserves the model config's configured top_p (already
-		// in p.TopP via m.cfg.DefaultParams) — the model config remains
-		// free to set top_p = 1.0 explicitly to disable nucleus sampling.
-		if topP != 0 && topP != 1 {
-			p.TopP = topP
-		}
+		p.TopP = topP
 	}
 
 	if val, exists := d["xtc_min_keep"]; exists {
@@ -670,9 +658,6 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	}
 
 	p = m.adjustParams(p, d)
-	if zeroTemperatureRequested {
-		p.Temperature = 0
-	}
 
 	// Mirror the resolved enable_thinking into d as a normalized bool. The
 	// Jinja chat template reads d["enable_thinking"] directly to decide
@@ -745,7 +730,7 @@ func (m *Model) adjustParams(p Params, request D) Params {
 			p.RepeatPenalty = m.cfg.DefaultParams.RepeatPenalty
 		}
 	}
-	if p.Temperature <= 0 {
+	if p.Temperature < 0 || (p.Temperature == 0 && !requested("temperature")) {
 		p.Temperature = DefTemp
 		if m.paramsResolved {
 			p.Temperature = m.cfg.DefaultParams.Temperature
@@ -760,7 +745,7 @@ func (m *Model) adjustParams(p Params, request D) Params {
 	if !requested("top_k") && !m.paramsResolved && p.TopK == 0 {
 		p.TopK = DefTopK
 	}
-	if p.TopP <= 0 {
+	if p.TopP < 0 || (p.TopP == 0 && !requested("top_p")) {
 		p.TopP = DefTopP
 		if m.paramsResolved {
 			p.TopP = m.cfg.DefaultParams.TopP

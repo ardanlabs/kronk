@@ -297,6 +297,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	// Process tool calls if any. Token counts are already tracked
 	// per-token in processSlotToken, so no re-tokenization needed.
+	var toolCallErr error
 	if s.toolFlag > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		s.finalTooling.Reset()
@@ -310,7 +311,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					"bytes", len(content), "content", content)
 			}
 
-			s.respToolCalls = e.model.parser.ToolCall(ctx, e.model.log, content)
+			if parser, ok := e.model.parser.(ToolCallSchemaParser); ok {
+				tools, _ := s.job.d["tools"].([]D)
+				s.respToolCalls = parser.ToolCallWithSchema(ctx, e.model.log, content, tools)
+			} else {
+				s.respToolCalls = e.model.parser.ToolCall(ctx, e.model.log, content)
+			}
 
 			// Validate parsed tool call arguments produce valid JSON.
 			for i, tc := range s.respToolCalls {
@@ -318,6 +324,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					e.model.log(ctx, "tool-call", "status", "parse-error",
 						"index", i, "func", tc.Function.Name,
 						"error", tc.Error, "raw", tc.Raw)
+					if toolCallErr == nil {
+						toolCallErr = fmt.Errorf("model emitted an invalid tool call at index %d: %s", i, tc.Error)
+					}
 					continue
 				}
 
@@ -366,6 +375,15 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if outputTokens > 0 && e.model.draft != nil {
 		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
 	}
+	if toolCallErr != nil && s.finishReason == FinishReasonLength {
+		valid := s.respToolCalls[:0]
+		for _, toolCall := range s.respToolCalls {
+			if toolCall.Status == 0 {
+				valid = append(valid, toolCall)
+			}
+		}
+		s.respToolCalls = valid
+	}
 
 	// Add span attributes and end span.
 	s.span.SetAttributes(
@@ -379,6 +397,18 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		attribute.Int("draft_accepted_tokens", s.specAcceptedTotal),
 		attribute.Int("draft_covered_tokens", s.specCoveredTotal),
 	)
+	if toolCallErr != nil && s.finishReason != FinishReasonLength {
+		err = toolCallErr
+		s.span.RecordError(err)
+		s.span.SetAttributes(attribute.String("request_status", "error"))
+		metrics.AddChatRequest(e.model.modelInfo.ID, "error")
+		metrics.AddChatError(e.model.modelInfo.ID, "tool-call-parse")
+		if !s.job.requestStart.IsZero() {
+			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+		}
+		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
+		return
+	}
 
 	// Add metrics.
 	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)

@@ -68,8 +68,8 @@ func metadataHasMTP(metadata map[string]string) bool {
 // conservative defMTPNDraft is used. The adaptive throttle (chooseNDraft)
 // scales this ceiling down to 0 per slot as acceptance drops.
 func mtpNDraft(cfg Config) int {
-	if cfg.DraftModel != nil && !cfg.DraftModel.IsSeparate() && cfg.DraftModel.NDraft > 0 {
-		return cfg.DraftModel.NDraft
+	if cfg.PtrDraftModel != nil && !cfg.PtrDraftModel.IsSeparate() && cfg.PtrDraftModel.NDraft > 0 {
+		return cfg.PtrDraftModel.NDraft
 	}
 	return defMTPNDraft
 }
@@ -443,7 +443,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 // or returns (nil, nil) when no drafter applies. Three sources, checked in
 // priority order:
 //
-//  1. Explicit separate-draft GGUF (cfg.DraftModel) — user override,
+//  1. Explicit separate-draft GGUF (cfg.PtrDraftModel) — user override,
 //     vocab-matched classic draft.
 //  2. Separate-file MTP assistant (cfg.MTPDrafterFile, Gemma4
 //     gemma4-assistant): a per-model speculative head that ships alongside
@@ -458,14 +458,14 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
 func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams) (drafter, error) {
-	if cfg.DraftModel != nil && cfg.DraftModel.IsSeparate() {
+	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
 		d, err := loadDraftModel(ctx, log, cfg, targetModel, targetCtxParams)
 		if err != nil {
 			return nil, err
 		}
 		log(ctx, "draft-model", "status", "loaded",
 			"source", "explicit-separate",
-			"nDraft", d.c.nDraft, "devices", cfg.DraftModel.Devices,
+			"nDraft", d.c.nDraft, "devices", cfg.PtrDraftModel.Devices,
 			"nCtx", llama.NCtx(d.c.lctx))
 		return d, nil
 	}
@@ -532,7 +532,7 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 
 	nDraft := mtpNDraft(cfg)
 	source := "auto-detected"
-	if cfg.DraftModel != nil && !cfg.DraftModel.IsSeparate() {
+	if cfg.PtrDraftModel != nil && !cfg.PtrDraftModel.IsSeparate() {
 		source = "auto-detected-configured"
 	}
 

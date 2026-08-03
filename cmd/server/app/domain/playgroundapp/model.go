@@ -168,14 +168,14 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	//     head without supplying a separate draft GGUF.
 	switch {
 	case sc.DraftModelID != nil && *sc.DraftModelID == "":
-		cfg.DraftModel = nil
+		cfg.PtrDraftModel = nil
 	case sc.DraftModelID != nil || sc.DraftNDraft != nil:
-		if cfg.DraftModel == nil {
-			cfg.DraftModel = &model.DraftModelConfig{}
+		if cfg.PtrDraftModel == nil {
+			cfg.PtrDraftModel = &model.DraftModelConfig{}
 		}
 	}
-	if sc.DraftNDraft != nil && cfg.DraftModel != nil {
-		cfg.DraftModel.NDraft = *sc.DraftNDraft
+	if sc.DraftNDraft != nil && cfg.PtrDraftModel != nil {
+		cfg.PtrDraftModel.NDraft = *sc.DraftNDraft
 	}
 	return cfg
 }

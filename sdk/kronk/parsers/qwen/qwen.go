@@ -72,6 +72,21 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 	return parseJSON(ctx, log, buf)
 }
 
+// ToolCallWithSchema parses Qwen tool calls and uses the declared tool schema
+// to recover argument types from the otherwise untyped direct-XML format.
+// Qwen's JSON envelope already carries argument types and is left unchanged.
+func (Parser) ToolCallWithSchema(ctx context.Context, log applog.Logger, buf string, tools []model.D) []model.ResponseToolCall {
+	trimmed := strings.TrimLeft(buf, " \t\n\r")
+	if !strings.HasPrefix(trimmed, "<function=") {
+		return parseJSON(ctx, log, buf)
+	}
+
+	toolCalls := parseQwenXML(buf)
+	normalizeXMLArguments(toolCalls, tools)
+
+	return toolCalls
+}
+
 // containsQwenMarkers reports whether a chat template carries distinctive
 // Qwen tool-call tokens. The <function= and <parameter= openers are
 // specific to Qwen's direct-XML tool-call format and unlikely to appear

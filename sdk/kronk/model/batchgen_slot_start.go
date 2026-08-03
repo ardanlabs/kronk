@@ -19,6 +19,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
+	if stateMachine, ok := s.stateMachine.(ToolAwareStateMachine); ok {
+		tools, _ := job.d["tools"].([]D)
+		stateMachine.SetTools(tools)
+	}
 
 	// If the rendered prompt ends with a reasoning opener followed by any
 	// trailing whitespace, the template has already opened a reasoning block.
@@ -40,7 +44,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		strings.HasSuffix(trimmedPrompt, "<|open|>think<|sep|>")) && job.params.Grammar == "" {
 		// Drive the state machine into reasoning mode by feeding the same
 		// marker the model would have emitted. Parsers that recognize
-		// <think> (standard, qwen, mistral, glm) flip to ChannelReasoning;
+		// <think> (fallback, qwen, mistral, glm) flip to ChannelReasoning;
 		// Kimi recognizes its <|open|>think<|sep|> marker. Parsers that don't
 		// (gemma, gpt) treat the marker as content — but
 		// those parsers do not produce a "<think>\n" suffix in the
@@ -129,8 +133,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// finishSlot, so we always restore from RAM.
 	//
 	// Read cache state from the MATCHED session (job.imcSession). The IMC
-	// session pool is sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth),
-	// so there is no
+	// session pool is at least as large as generation admission capacity, so
+	// there is no
 	// fixed slot-to-session correspondence: the session is bound to this
 	// slot's KV sequence here and unbound in finishSlot.
 	var cacheIdx llama.Pos

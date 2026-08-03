@@ -84,11 +84,11 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 			return model.Config{}, fmt.Errorf("kronk-resolved-config: unable to get draft model[%s] path: %w", cfg.DraftModel.ModelID, err)
 		}
 
-		if out.DraftModel == nil {
-			out.DraftModel = &model.DraftModelConfig{}
+		if out.PtrDraftModel == nil {
+			out.PtrDraftModel = &model.DraftModelConfig{}
 		}
 
-		out.DraftModel.ModelFiles = draftPath.ModelFiles
+		out.PtrDraftModel.ModelFiles = draftPath.ModelFiles
 	}
 
 	return out, nil
@@ -322,6 +322,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	}
 	if src.PtrNSeqMax != nil {
 		dst.PtrNSeqMax = src.PtrNSeqMax
+	}
+	if src.PtrIMCSessionCapacity != nil {
+		dst.PtrIMCSessionCapacity = src.PtrIMCSessionCapacity
 	}
 	if src.PtrQueueDepth != nil {
 		dst.PtrQueueDepth = src.PtrQueueDepth

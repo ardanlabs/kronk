@@ -35,6 +35,7 @@ func TestFromSDK(t *testing.T) {
 		{name: "file inputs unsupported", err: model.ErrFileInputsUnsupported, code: InvalidArgument},
 		{name: "messages missing", err: model.ErrMessagesMissing, code: InvalidArgument},
 		{name: "messages invalid", err: model.ErrMessagesInvalid, code: InvalidArgument},
+		{name: "invalid request", err: model.ErrInvalidRequest, code: InvalidArgument},
 		{name: "llama model not found", err: llamamodels.ErrModelNotFound, code: NotFound},
 		{name: "bucky model not found", err: buckymodels.ErrModelNotFound, code: NotFound},
 		{name: "server busy", err: kronkpool.ErrServerBusy, code: Unavailable},
@@ -82,6 +83,7 @@ func TestFromSDKHTTPResponse(t *testing.T) {
 		{name: "server busy", err: kronkpool.ErrServerBusy, statusCode: 503, code: "unavailable"},
 		{name: "admission timeout", err: kronk.ErrAdmissionTimeout, statusCode: 429, code: "resource_exhausted"},
 		{name: "invalid messages", err: model.ErrMessagesInvalid, statusCode: 400, code: "invalid_argument"},
+		{name: "invalid request", err: model.ErrInvalidRequest, statusCode: 400, code: "invalid_argument"},
 	}
 
 	for _, tt := range tests {

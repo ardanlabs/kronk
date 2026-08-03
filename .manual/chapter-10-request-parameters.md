@@ -46,10 +46,9 @@ These parameters control how Kronk selects the next token:
 | `top_p`       | number    | `0.9`    | Keeps the smallest candidate set whose cumulative probability reaches P. |
 | `min_p`       | number    | `0.0`    | Removes candidates below `min_p × probability_of_most_likely_token`; `0` disables it. |
 
-Request values `top_p: 0` and `top_p: 1` are treated as unset so clients that
-send those common defaults do not override model-specific tuning. A model
-configuration can still set `top_p: 1` explicitly. When `temperature` or
-`top_k` is omitted, Kronk uses the configured value, GGUF recommendation, or
+Explicit request values override model-specific sampling defaults, including
+`top_p: 1`, which disables nucleus filtering. When `temperature`, `top_k`, or
+`top_p` is omitted, Kronk uses the configured value, GGUF recommendation, or
 baseline default in that order. Set `temperature: 0` explicitly to request
 greedy generation. Set `top_k: 0` to disable top-k filtering.
 

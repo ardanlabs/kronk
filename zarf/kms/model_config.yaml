@@ -17,6 +17,7 @@
 #   context-window: 8192                 # Per-sequence token capacity; explicit value is fixed
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
 #   flash-attention: auto                # Flash Attention: enabled, disabled, auto (default: auto)
+#   imc-session-capacity: 8              # Reusable IMC identities (default: nseq-max * max(3, queue-depth))
 #   incremental-cache: true              # Incremental message caching (IMC) for agentic workflows (default: true)
 #   insecure-logging: false              # Log potentially sensitive data like message content (debug only)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode

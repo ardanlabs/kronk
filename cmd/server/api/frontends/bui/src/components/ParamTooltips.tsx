@@ -117,6 +117,7 @@ export const PARAM_TOOLTIPS = {
   cacheTypeK: 'Precision format for the key portion of the KV cache. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit (most savings).',
   cacheTypeV: 'Precision format for the value portion of the KV cache. Same options as Cache Type K. Some models benefit from asymmetric K/V quantization.',
   cacheMinTokens: 'Minimum token count required before cache reuse kicks in. Higher values avoid caching very short prompts; lower values maximize reuse but can consume more memory for small requests.',
+  imcSessionCapacity: 'Number of reusable IMC conversation identities retained by the model. Larger values reduce cache rebuilds across interleaved conversations but can retain more snapshot data in RAM or on disk.',
   offloadKQV: 'Offloads key/query/value attention operations to GPU. Can improve performance on GPU-backed inference but increases VRAM usage.',
   opOffload: 'Allows selected host-side tensor operations to be offloaded to GPU during prompt processing. Can improve throughput for large or CPU-heavy workloads.',
   projOnCpu: 'Forces the multimodal projector (mmproj) onto the CPU regardless of GPU availability. Use this for audio models hit by llama.cpp Metal kernel regressions; the main LLM still runs on GPU.',

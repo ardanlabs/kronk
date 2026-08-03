@@ -14,10 +14,11 @@ import (
 
 func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	cfg := Config{
-		AutoTune:            true,
-		DefaultParams:       Params{Grammar: "secret grammar"},
-		PtrAdmissionTimeout: new(5 * time.Minute),
-		PtrQueueDepth:       new(7),
+		AutoTune:              true,
+		DefaultParams:         Params{Grammar: "secret grammar"},
+		PtrAdmissionTimeout:   new(5 * time.Minute),
+		PtrIMCSessionCapacity: new(9),
+		PtrQueueDepth:         new(7),
 	}
 
 	got := cfg.String()
@@ -26,6 +27,7 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 		"AdmissionTimeout[5m0s]",
 		"DefaultParams[",
 		"grammar[true]",
+		"IMCSessionCapacity[9]",
 		"QueueDepth[7]",
 	} {
 		if !strings.Contains(got, want) {
@@ -69,6 +71,29 @@ func TestAdjustQueueDepthDefault(t *testing.T) {
 	}
 	if !strings.Contains(cfg.String(), "QueueDepth[2]") {
 		t.Errorf("adjusted Config.String() missing effective queue-depth default in %q", cfg.String())
+	}
+}
+
+func TestAdjustIMCSessionCapacity(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want int
+	}{
+		{"derived default", NewConfig(WithNSeqMax(2), WithQueueDepth(2)), 6},
+		{"queue expansion", NewConfig(WithNSeqMax(2), WithQueueDepth(4)), 8},
+		{"explicit capacity preserved", NewConfig(WithNSeqMax(2), WithQueueDepth(2), WithIMCSessionCapacity(8)), 8},
+		{"embedding has no session pool", NewConfig(WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}), WithNSeqMax(2), WithQueueDepth(2)), 0},
+		{"rerank has no session pool", NewConfig(WithModelFiles([]string{"bge-reranker-v2-m3-Q8_0.gguf"}), WithNSeqMax(2), WithQueueDepth(2)), 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := adjustIMCSessionCapacity(tt.cfg)
+			if got := cfg.IMCSessionCapacity(); got != tt.want {
+				t.Errorf("IMCSessionCapacity: got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -497,6 +522,28 @@ func TestValidateConfig(t *testing.T) {
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithQueueDepth(-1),
 		), true},
+		{"negative IMC session capacity is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithIMCSessionCapacity(-1),
+		), true},
+		{"IMC session capacity below admission is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithNSeqMax(2),
+			WithQueueDepth(2),
+			WithIMCSessionCapacity(3),
+		), true},
+		{"IMC session capacity equal to admission is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithNSeqMax(2),
+			WithQueueDepth(2),
+			WithIMCSessionCapacity(4),
+		), false},
+		{"embedding ignores generation admission floor", NewConfig(
+			WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}),
+			WithNSeqMax(4),
+			WithQueueDepth(2),
+			WithIMCSessionCapacity(4),
+		), false},
 		{"negative admission timeout is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithAdmissionTimeout(-time.Second),

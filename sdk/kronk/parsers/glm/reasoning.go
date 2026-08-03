@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/parsers/standard"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/fallback"
 )
 
 // GLM's chat template manufactures thinking markers by message position rather
@@ -23,7 +23,7 @@ import (
 // trailing </think> when thinking is disabled) is preserved.
 //
 // GLM shares the <think> convention, so content-level stripping delegates to
-// the standard package; the bare </think> marker is GLM-specific.
+// the fallback package; the bare </think> marker is GLM-specific.
 
 // bareClose matches the bare </think> marker GLM emits directly after the
 // <|assistant|> tag on prior turns. Group 1 (the assistant tag and any
@@ -33,14 +33,14 @@ var bareClose = regexp.MustCompile(`(?s)(<\|assistant\|>\s*)</think>`)
 // StripReasoningContent removes <think>...</think> spans embedded in an
 // assistant message's content. Text outside the spans is preserved.
 func (Parser) StripReasoningContent(content string) string {
-	return standard.StripThinkContent(content)
+	return fallback.StripThinkContent(content)
 }
 
 // StripEmptyReasoning removes the empty <think></think> spans (current-block
 // turns) and the bare </think> markers (prior turns) GLM emits, leaving the
 // trailing generation marker intact.
 func (Parser) StripEmptyReasoning(rendered string) string {
-	rendered = standard.StripEmptyThink(rendered)
+	rendered = fallback.StripEmptyThink(rendered)
 	return stripBareClose(rendered)
 }
 

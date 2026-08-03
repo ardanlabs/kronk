@@ -142,7 +142,8 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 	if err != nil {
 		return ResponseResponse{}, fmt.Errorf("response: %w", err)
 	}
-	if err := model.ValidateMessages(d); err != nil {
+
+	if err := model.ValidateChatRequest(d); err != nil {
 		return ResponseResponse{}, fmt.Errorf("response: %w", err)
 	}
 
@@ -167,7 +168,8 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 	if err != nil {
 		return nil, fmt.Errorf("responses-streaming: %w", err)
 	}
-	if err := model.ValidateMessages(d); err != nil {
+
+	if err := model.ValidateChatRequest(d); err != nil {
 		return nil, fmt.Errorf("responses-streaming: %w", err)
 	}
 

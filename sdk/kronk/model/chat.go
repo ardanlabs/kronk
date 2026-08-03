@@ -26,12 +26,16 @@ var ErrMessagesMissing = errors.New("validate-document: no messages found in req
 // ErrMessagesInvalid indicates that a chat request's messages field has an invalid type.
 var ErrMessagesInvalid = errors.New("validate-document: messages is not a slice of documents")
 
+// ErrInvalidRequest indicates that a chat request contains an invalid or
+// unsupported field value.
+var ErrInvalidRequest = errors.New("validate-document: invalid request")
+
 // Chat performs a chat request and returns the final response.
 // All requests (including vision/audio) use batch processing and can run
 // concurrently based on the NSeqMax config value, which controls parallel
 // sequence processing.
 func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
-	if err := ValidateMessages(d); err != nil {
+	if err := ValidateChatRequest(d); err != nil {
 		return ChatResponse{}, err
 	}
 
@@ -618,7 +622,7 @@ func deserializeToolCallArguments(d D) D {
 }
 
 func (m *Model) validateDocument(ctx context.Context, d D) (Params, error) {
-	if err := ValidateMessages(d); err != nil {
+	if err := ValidateChatRequest(d); err != nil {
 		return Params{}, err
 	}
 
@@ -628,6 +632,47 @@ func (m *Model) validateDocument(ctx context.Context, d D) (Params, error) {
 	}
 
 	return p, nil
+}
+
+// ValidateChatRequest validates the fields in a chat request document.
+func ValidateChatRequest(d D) error {
+	if err := ValidateMessages(d); err != nil {
+		return err
+	}
+	if err := validateToolChoice(d); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateToolChoice(d D) error {
+	toolChoice, exists := d["tool_choice"]
+	if !exists {
+		return nil
+	}
+
+	choice, ok := toolChoice.(string)
+	if !ok {
+		return fmt.Errorf("%w: tool_choice must be a string", ErrInvalidRequest)
+	}
+	if choice == "auto" {
+		return nil
+	}
+
+	tools, _ := d["tools"].([]D)
+	for _, tool := range tools {
+		if tool["type"] != "function" {
+			continue
+		}
+
+		function, _ := tool["function"].(D)
+		if function["name"] == choice {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("%w: tool_choice %q does not match a declared function tool", ErrInvalidRequest, choice)
 }
 
 // ValidateMessages validates the messages field of a chat document.

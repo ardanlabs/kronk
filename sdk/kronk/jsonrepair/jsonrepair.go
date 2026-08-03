@@ -107,7 +107,7 @@ func normalize(s string) (string, bool) {
 // control character (TAB 0x09, LF 0x0A, CR 0x0D) with the corresponding
 // two-character JSON escape sequence (\t, \n, \r). Models sometimes emit
 // e.g. \<TAB> (backslash + literal tab byte) when they mean the two-char
-// sequence \t, producing invalid JSON that neither the standard parser nor
+// sequence \t, producing invalid JSON that neither the JSON parser nor
 // repairQuotes can recover from.
 func normalizeBackslashControlChars(s string) string {
 	// Quick scan: bail if no backslash + control char pattern exists.
