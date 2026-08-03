@@ -1,6 +1,7 @@
 package chatapi_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -900,8 +901,10 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 					hasCreated().
 					hasValidChoice().
 					hasUsage(true).
-					hasToolCalls("get_weather").
 					result(t)
+			},
+			StreamCmpFunc: func(events []json.RawMessage) string {
+				return validateToolCallStream(events, "get_weather", "location")
 			},
 		},
 	}

@@ -396,8 +396,8 @@ func AddParams(params Params, d D) {
 	}
 }
 
-func (m *Model) parseParams(d D) (Params, error) {
-	m.log(context.Background(), "parse-params", "request", d.String())
+func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
+	m.log(ctx, "parse-params", "request", d.String())
 
 	p := m.cfg.DefaultParams
 	var zeroTemperatureRequested bool

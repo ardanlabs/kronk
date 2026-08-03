@@ -191,7 +191,7 @@ func TestValidateDocumentRejectsFileInput(t *testing.T) {
 			}
 
 			var m Model
-			_, err := m.validateDocument(d)
+			_, err := m.validateDocument(context.Background(), d)
 			if err == nil {
 				t.Fatal("validateDocument: expected error")
 			}
@@ -701,7 +701,7 @@ func TestParseParamsTemperature(t *testing.T) {
 				d["temperature"] = tt.temperature
 			}
 
-			params, err := m.parseParams(d)
+			params, err := m.parseParams(context.Background(), d)
 			if err != nil {
 				t.Fatalf("parseParams: %v", err)
 			}
@@ -782,7 +782,7 @@ func TestParseParamsPreservesResolvedZeroDefaults(t *testing.T) {
 		log:            noopLog,
 	}
 
-	params, err := m.parseParams(D{
+	params, err := m.parseParams(context.Background(), D{
 		"temperature":     0,
 		"top_p":           0,
 		"repeat_penalty":  0,
@@ -861,7 +861,7 @@ func TestParseParamsSamplingSentinels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			params, err := m.parseParams(tt.doc)
+			params, err := m.parseParams(context.Background(), tt.doc)
 			if err != nil {
 				t.Fatalf("parseParams: %v", err)
 			}

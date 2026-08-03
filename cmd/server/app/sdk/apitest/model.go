@@ -1,5 +1,7 @@
 package apitest
 
+import "encoding/json"
+
 // Table represent fields needed for running an api test.
 //
 // Input is JSON-marshalled into the request body. RawBody, when set,
@@ -8,16 +10,17 @@ package apitest
 // multipart/form-data. Pair RawBody with a Content-Type header in
 // Headers so the server sees the right MIME type.
 type Table struct {
-	Name       string
-	SkipInGH   bool
-	URL        string
-	Token      string
-	Headers    map[string]string
-	Method     string
-	StatusCode int
-	Input      any
-	RawBody    []byte
-	GotResp    any
-	ExpResp    any
-	CmpFunc    func(got any, exp any) string
+	Name          string
+	SkipInGH      bool
+	URL           string
+	Token         string
+	Headers       map[string]string
+	Method        string
+	StatusCode    int
+	Input         any
+	RawBody       []byte
+	GotResp       any
+	ExpResp       any
+	CmpFunc       func(got any, exp any) string
+	StreamCmpFunc func(events []json.RawMessage) string
 }

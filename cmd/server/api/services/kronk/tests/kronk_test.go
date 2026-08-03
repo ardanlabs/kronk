@@ -508,6 +508,108 @@ func (v responseValidator) hasToolCalls(funcName string) responseValidator {
 	return v
 }
 
+func validateToolCallStream(events []json.RawMessage, funcName string, argName string) string {
+	type functionDelta struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}
+	type toolCallDelta struct {
+		ID       string        `json:"id"`
+		Index    int           `json:"index"`
+		Type     string        `json:"type"`
+		Function functionDelta `json:"function"`
+	}
+	type streamEvent struct {
+		ID      string `json:"id"`
+		Choices []struct {
+			Delta struct {
+				ToolCalls []toolCallDelta `json:"tool_calls"`
+			} `json:"delta"`
+			FinishReason *string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+
+	if len(events) == 0 {
+		return "expected at least one streaming event"
+	}
+
+	var completionID string
+	var toolCallID string
+	var arguments strings.Builder
+	var finalFinishReason string
+	seenToolCall := false
+	seenFunctionName := false
+
+	for i, data := range events {
+		var event streamEvent
+		if err := json.Unmarshal(data, &event); err != nil {
+			return fmt.Sprintf("stream event %d: unmarshal: %v", i, err)
+		}
+		if event.ID == "" {
+			return fmt.Sprintf("stream event %d: expected completion id", i)
+		}
+		if completionID == "" {
+			completionID = event.ID
+		} else if event.ID != completionID {
+			return fmt.Sprintf("stream event %d: completion id changed from %q to %q", i, completionID, event.ID)
+		}
+		if len(event.Choices) == 0 {
+			return fmt.Sprintf("stream event %d: expected at least one choice", i)
+		}
+
+		choice := event.Choices[0]
+		if choice.FinishReason != nil {
+			finalFinishReason = *choice.FinishReason
+		}
+		for _, toolCall := range choice.Delta.ToolCalls {
+			if toolCall.Index != 0 {
+				return fmt.Sprintf("stream event %d: tool call index: got %d, want 0", i, toolCall.Index)
+			}
+			seenToolCall = true
+			if toolCall.ID != "" {
+				if toolCallID == "" {
+					toolCallID = toolCall.ID
+				} else if toolCall.ID != toolCallID {
+					return fmt.Sprintf("stream event %d: tool call id changed from %q to %q", i, toolCallID, toolCall.ID)
+				}
+			}
+			if toolCall.Type != "" && toolCall.Type != "function" {
+				return fmt.Sprintf("stream event %d: tool call type: got %q, want %q", i, toolCall.Type, "function")
+			}
+			if toolCall.Function.Name != "" {
+				if !strings.EqualFold(toolCall.Function.Name, funcName) {
+					return fmt.Sprintf("stream event %d: function name: got %q, want %q", i, toolCall.Function.Name, funcName)
+				}
+				seenFunctionName = true
+			}
+			arguments.WriteString(toolCall.Function.Arguments)
+		}
+	}
+
+	if !seenToolCall {
+		return "expected streamed tool call deltas"
+	}
+	if toolCallID == "" {
+		return "expected streamed tool call id"
+	}
+	if !seenFunctionName {
+		return fmt.Sprintf("expected streamed function name %q", funcName)
+	}
+	if finalFinishReason != "tool_calls" {
+		return fmt.Sprintf("final finish reason: got %q, want %q", finalFinishReason, "tool_calls")
+	}
+
+	var args map[string]any
+	if err := json.Unmarshal([]byte(arguments.String()), &args); err != nil {
+		return fmt.Sprintf("streamed tool call arguments: expected valid JSON, got %q: %v", arguments.String(), err)
+	}
+	if _, exists := args[argName]; !exists {
+		return fmt.Sprintf("streamed tool call arguments: expected argument %q, got %v", argName, args)
+	}
+
+	return ""
+}
+
 func (v responseValidator) result(t *testing.T) string {
 	for _, w := range v.warnings {
 		t.Log(w)
