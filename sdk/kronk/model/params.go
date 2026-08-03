@@ -523,6 +523,14 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 		p.MaxTokens = maxTokens
 	}
 
+	if val, exists := d["max_completion_tokens"]; exists {
+		maxTokens, err := parseInt("max_completion_tokens", val)
+		if err != nil {
+			return Params{}, err
+		}
+		p.MaxTokens = maxTokens
+	}
+
 	if val, exists := d["min_p"]; exists {
 		minP, err := parseFloat32("min_p", val)
 		if err != nil {

@@ -203,10 +203,6 @@ func toOpenAI(req MessagesRequest) model.D {
 		d["top_p"] = *req.TopP
 	}
 	switch {
-	case len(req.StopSequences) > 0:
-		d["stop"] = req.StopSequences
-	}
-	switch {
 	case len(req.Tools) > 0:
 		d["tools"] = convertTools(req.Tools)
 	}

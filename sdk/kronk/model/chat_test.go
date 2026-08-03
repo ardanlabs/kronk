@@ -333,6 +333,24 @@ func TestValidateChatRequestToolChoice(t *testing.T) {
 	}
 }
 
+func TestValidateChatRequestRejectsStop(t *testing.T) {
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"stop":     []string{"END"},
+	}
+
+	err := ValidateChatRequest(d)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ValidateChatRequest: got %v, want ErrInvalidRequest", err)
+	}
+	if got, want := err.Error(), "stop is not supported"; !strings.Contains(got, want) {
+		t.Errorf("error: got %q, want to contain %q", got, want)
+	}
+	if got := d.String(); strings.Contains(got, "stop") {
+		t.Errorf("D.String: got %q, want stop omitted", got)
+	}
+}
+
 func TestChatResponseFinalFinishReason(t *testing.T) {
 	toolCalls := []ResponseToolCall{{
 		ID:   "call_1",
@@ -814,6 +832,40 @@ func TestParseParamsTemperature(t *testing.T) {
 			}
 			if got := params.Temperature; got != tt.want {
 				t.Errorf("Temperature: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseParamsMaxCompletionTokens(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  D
+		want int
+	}{
+		{name: "omitted uses model default", doc: D{}, want: 256},
+		{name: "legacy max tokens remains supported", doc: D{"max_tokens": 64}, want: 64},
+		{name: "max completion tokens is supported", doc: D{"max_completion_tokens": 32}, want: 32},
+		{
+			name: "max completion tokens takes precedence",
+			doc:  D{"max_tokens": 64, "max_completion_tokens": 32},
+			want: 32,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg: Config{DefaultParams: Params{MaxTokens: 256}},
+				log: noopLog,
+			}
+
+			params, err := m.parseParams(context.Background(), tt.doc)
+			if err != nil {
+				t.Fatalf("parseParams: %v", err)
+			}
+			if got := params.MaxTokens; got != tt.want {
+				t.Errorf("MaxTokens: got %d, want %d", got, tt.want)
 			}
 		})
 	}

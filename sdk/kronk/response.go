@@ -805,8 +805,15 @@ func extractInputParams(d model.D) inputParams {
 		params.Truncation = v
 	}
 
-	if v, ok := d["max_tokens"].(int); ok {
-		params.MaxOutputTokens = &v
+	maxTokens := d["max_output_tokens"]
+	if maxTokens == nil {
+		maxTokens = d["max_tokens"]
+	}
+	switch v := maxTokens.(type) {
+	case int:
+		params.MaxOutputTokens = new(v)
+	case float64:
+		params.MaxOutputTokens = new(int(v))
 	}
 
 	if v, ok := d["parallel_tool_calls"].(bool); ok {
@@ -846,6 +853,10 @@ func extractTools(d model.D) []any {
 func convertInputToMessages(d model.D) (model.D, error) {
 	if containsUnsupportedFileInput(d["input"]) || containsUnsupportedFileInput(d["messages"]) {
 		return nil, fmt.Errorf("convert-input-to-messages: %w", model.ErrFileInputsUnsupported)
+	}
+
+	if maxTokens, exists := d["max_output_tokens"]; exists {
+		d["max_tokens"] = maxTokens
 	}
 
 	if _, hasMessages := d["messages"]; !hasMessages {
