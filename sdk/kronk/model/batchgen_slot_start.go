@@ -893,10 +893,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		"nbatch", e.model.cfg.NBatch(),
 		"batch_current", e.batch.NTokens)
 
-	// Check context window.
-	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
-		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
-		e.finishSlot(s, err)
+	if !e.applyContextTokenBudget(s, "start-slot") {
 		return false
 	}
 
@@ -1076,9 +1073,7 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		"next_logical_position", cacheIdx,
 		"total_prompt", totalPrompt)
 
-	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
-		err := fmt.Errorf("start-slot: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
-		e.finishSlot(s, err)
+	if !e.applyContextTokenBudget(s, "start-slot") {
 		return false
 	}
 
@@ -1177,10 +1172,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 		"use_mrope", s.useMRoPE,
 		"use_noncausal", s.useNonCausal)
 
-	// Check context window.
-	if !promptFitsContextWindow(s.nPrompt, e.model.cfg.ContextWindow()) {
-		err := fmt.Errorf("start-slot-media: input tokens [%d] exceed context window [%d]", s.nPrompt, e.model.cfg.ContextWindow())
-		e.finishSlot(s, err)
+	if !e.applyContextTokenBudget(s, "start-slot-media") {
 		return false
 	}
 
@@ -1211,8 +1203,35 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	return true
 }
 
-func promptFitsContextWindow(promptTokens, contextWindow int) bool {
-	return promptTokens < contextWindow
+func (e *batchEngine) applyContextTokenBudget(s *slot, operation string) bool {
+	contextWindow := e.model.cfg.ContextWindow()
+	effectiveMaxTokens, ok := contextOutputBudget(s.nPrompt, s.job.params.MaxTokens, contextWindow)
+	if !ok {
+		err := fmt.Errorf("%s: input tokens [%d] exceed context window [%d]", operation, s.nPrompt, contextWindow)
+		e.finishSlot(s, err)
+		return false
+	}
+
+	requestedMaxTokens := s.job.params.MaxTokens
+	s.job.params.MaxTokens = effectiveMaxTokens
+	if effectiveMaxTokens < requestedMaxTokens {
+		e.model.log(s.job.ctx, operation,
+			"status", "max-tokens-clamped",
+			"prompt_tokens", s.nPrompt,
+			"context_window", contextWindow,
+			"requested_max_tokens", requestedMaxTokens,
+			"effective_max_tokens", effectiveMaxTokens)
+	}
+
+	return true
+}
+
+func contextOutputBudget(promptTokens, requestedMaxTokens, contextWindow int) (int, bool) {
+	if promptTokens >= contextWindow {
+		return 0, false
+	}
+
+	return min(requestedMaxTokens, contextWindow-promptTokens), true
 }
 
 func validMTPDraftState(actualBytes, expectedBytes uint64, pendingH []float32, nEmbd int) bool {

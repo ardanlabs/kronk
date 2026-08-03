@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -92,25 +93,61 @@ func TestMaxDraftForSlot(t *testing.T) {
 	}
 }
 
-func TestPromptFitsContextWindow(t *testing.T) {
+func TestContextOutputBudget(t *testing.T) {
 	tests := []struct {
-		name          string
-		promptTokens  int
-		contextWindow int
-		want          bool
+		name               string
+		promptTokens       int
+		requestedMaxTokens int
+		contextWindow      int
+		wantMaxTokens      int
+		wantOK             bool
 	}{
-		{"one token remains", 8191, 8192, true},
-		{"prompt fills window", 8192, 8192, false},
-		{"prompt exceeds window", 8193, 8192, false},
+		{"requested budget fits", 4096, 2048, 8192, 2048, true},
+		{"requested budget clamped", 7000, 2048, 8192, 1192, true},
+		{"one token remains", 8191, 2048, 8192, 1, true},
+		{"prompt fills window", 8192, 2048, 8192, 0, false},
+		{"prompt exceeds window", 8193, 2048, 8192, 0, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := promptFitsContextWindow(tt.promptTokens, tt.contextWindow)
-			if got != tt.want {
-				t.Errorf("promptFitsContextWindow() = %t, want %t", got, tt.want)
+			gotMaxTokens, gotOK := contextOutputBudget(tt.promptTokens, tt.requestedMaxTokens, tt.contextWindow)
+			if gotMaxTokens != tt.wantMaxTokens || gotOK != tt.wantOK {
+				t.Errorf("contextOutputBudget() = (%d, %t), want (%d, %t)", gotMaxTokens, gotOK, tt.wantMaxTokens, tt.wantOK)
 			}
 		})
+	}
+}
+
+func TestApplyContextTokenBudgetClampsRequest(t *testing.T) {
+	contextWindow := 8192
+	logged := false
+	e := batchEngine{
+		model: &Model{
+			cfg: Config{PtrContextWindow: &contextWindow},
+			log: func(_ context.Context, msg string, args ...any) {
+				if msg == "start-slot" {
+					logged = true
+				}
+			},
+		},
+	}
+	s := slot{
+		nPrompt: 7000,
+		job: &chatJob{
+			ctx:    context.Background(),
+			params: Params{MaxTokens: 2048},
+		},
+	}
+
+	if !e.applyContextTokenBudget(&s, "start-slot") {
+		t.Fatal("applyContextTokenBudget() = false, want true")
+	}
+	if s.job.params.MaxTokens != 1192 {
+		t.Errorf("MaxTokens = %d, want 1192", s.job.params.MaxTokens)
+	}
+	if !logged {
+		t.Error("clamp log not emitted")
 	}
 }
 
