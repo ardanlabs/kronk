@@ -64,6 +64,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	if ok {
 		stream = streamReq
 	}
+	includeUsage := streamIncludeUsage(d)
 
 	// -------------------------------------------------------------------------
 
@@ -138,7 +139,12 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 				}
 			}
 
-			d, err := json.Marshal(resp)
+			wireResp := resp
+			if !includeUsage {
+				wireResp.Usage = nil
+			}
+
+			d, err := json.Marshal(wireResp)
 			if err != nil {
 				return resp, fmt.Errorf("chat-streaming-http: %w: marshal: %w", ErrResponseCommitted, err)
 			}
@@ -160,6 +166,28 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 			f.Flush()
 		}
 	}
+}
+
+func streamIncludeUsage(d model.D) bool {
+	streamOpts, exists := d["stream_options"]
+	if !exists {
+		return true
+	}
+
+	var optsMap model.D
+	switch opts := streamOpts.(type) {
+	case model.D:
+		optsMap = opts
+	case map[string]any:
+		optsMap = model.D(opts)
+	}
+
+	includeUsage, exists := optsMap["include_usage"].(bool)
+	if !exists {
+		return true
+	}
+
+	return includeUsage
 }
 
 // func debugChatRequest(d model.D) string {

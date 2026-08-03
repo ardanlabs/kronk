@@ -413,6 +413,7 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	m.log(ctx, "parse-params", "request", d.String())
 
 	p := m.cfg.DefaultParams
+	p.IncludeUsage = DefIncludeUsage
 	p.Seed = nil
 
 	if val, exists := d["adaptive_p_decay"]; exists {
@@ -587,14 +588,20 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	}
 
 	if streamOpts, exists := d["stream_options"]; exists {
-		if optsMap, ok := streamOpts.(map[string]any); ok {
-			if val, exists := optsMap["include_usage"]; exists {
-				includeUsage, err := parseBool("stream_options.include_usage", val)
-				if err != nil {
-					return Params{}, err
-				}
-				p.IncludeUsage = includeUsage
+		var optsMap D
+		switch opts := streamOpts.(type) {
+		case D:
+			optsMap = opts
+		case map[string]any:
+			optsMap = D(opts)
+		}
+
+		if val, exists := optsMap["include_usage"]; exists {
+			includeUsage, err := parseBool("stream_options.include_usage", val)
+			if err != nil {
+				return Params{}, err
 			}
+			p.IncludeUsage = includeUsage
 		}
 	}
 

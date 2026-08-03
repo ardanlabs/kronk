@@ -854,6 +854,39 @@ func TestParseParamsTopP(t *testing.T) {
 	}
 }
 
+func TestParseParamsIncludeUsage(t *testing.T) {
+	tests := []struct {
+		name       string
+		streamOpts any
+		include    bool
+		want       bool
+	}{
+		{name: "omitted defaults true", want: true},
+		{name: "D true", streamOpts: D{"include_usage": true}, include: true, want: true},
+		{name: "D false", streamOpts: D{"include_usage": false}, include: true, want: false},
+		{name: "map true", streamOpts: map[string]any{"include_usage": true}, include: true, want: true},
+		{name: "map false", streamOpts: map[string]any{"include_usage": false}, include: true, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{log: noopLog}
+			d := D{}
+			if tt.include {
+				d["stream_options"] = tt.streamOpts
+			}
+
+			params, err := m.parseParams(context.Background(), d)
+			if err != nil {
+				t.Fatalf("parseParams: %v", err)
+			}
+			if got := params.IncludeUsage; got != tt.want {
+				t.Errorf("IncludeUsage: got %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseParamsMinP(t *testing.T) {
 	tests := []struct {
 		name    string
