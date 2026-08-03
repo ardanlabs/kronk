@@ -67,3 +67,51 @@ func TestParseAttentionFactsGemma4(t *testing.T) {
 		t.Fatalf("full dimensions: got %d/%d, want 512/512", got.FullKeyLength, got.FullValueLength)
 	}
 }
+
+func TestParseAttentionFactsQwen35MoE(t *testing.T) {
+	metadata := map[string]string{
+		"qwen35moe.embedding_length":        "2048",
+		"qwen35moe.attention.head_count":    "16",
+		"qwen35moe.attention.head_count_kv": "2",
+		"qwen35moe.attention.key_length":    "256",
+		"qwen35moe.attention.value_length":  "256",
+		"qwen35moe.nextn_predict_layers":    "1",
+		"qwen35moe.ssm.conv_kernel":         "4",
+		"qwen35moe.ssm.inner_size":          "8",
+		"qwen35moe.ssm.state_size":          "4",
+		"qwen35moe.ssm.group_count":         "2",
+	}
+
+	got := ParseAttentionFacts(metadata, "qwen35moe", 41)
+	if got.RecurrentLayers != 30 || got.FullAttentionLayers != 10 || got.NextNPredictLayers != 1 {
+		t.Fatalf("layers: got recurrent=%d full=%d nextn=%d, want 30/10/1",
+			got.RecurrentLayers, got.FullAttentionLayers, got.NextNPredictLayers)
+	}
+	if len(got.RecurrentPattern) != 41 || !got.RecurrentPattern[0] || got.RecurrentPattern[3] || got.RecurrentPattern[40] {
+		t.Fatalf("recurrent pattern does not match Qwen3.5 interval-4 layout")
+	}
+
+	const wantStateBytes int64 = 4 * (3*(8+2*2*4) + 4*8)
+	if got.RecurrentStateBytes != wantStateBytes {
+		t.Fatalf("RecurrentStateBytes: got %d, want %d", got.RecurrentStateBytes, wantStateBytes)
+	}
+}
+
+func TestParseAttentionFactsQwen35ExplicitRecurrentPattern(t *testing.T) {
+	metadata := map[string]string{
+		"qwen35.embedding_length":           "8",
+		"qwen35.attention.head_count":       "1",
+		"qwen35.attention.head_count_kv":    "1",
+		"qwen35.attention.recurrent_layers": "[true false true false true]",
+		"qwen35.full_attention_interval":    "2",
+		"qwen35.nextn_predict_layers":       "1",
+	}
+
+	got := ParseAttentionFacts(metadata, "qwen35", 5)
+	if got.RecurrentLayers != 2 || got.FullAttentionLayers != 2 {
+		t.Fatalf("layers: got recurrent=%d full=%d, want 2/2", got.RecurrentLayers, got.FullAttentionLayers)
+	}
+	if got.RecurrentPattern[4] {
+		t.Fatal("MTP layer marked recurrent")
+	}
+}

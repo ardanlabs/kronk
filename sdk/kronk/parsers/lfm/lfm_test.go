@@ -161,13 +161,6 @@ func TestFlushAndReset(t *testing.T) {
 	}
 }
 
-func TestReasoningCleanup(t *testing.T) {
-	parser := Parser{}
-	if got := parser.StripReasoningContent("before<think>secret</think>after"); got != "beforeafter" {
-		t.Errorf("StripReasoningContent: got %q", got)
-	}
-}
-
 func TestDeltaDetectionIsStructural(t *testing.T) {
 	tests := []struct {
 		name  string

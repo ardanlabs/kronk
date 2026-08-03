@@ -443,7 +443,6 @@ func (d D) Messages() string {
 
 		case "tool":
 			fmt.Fprintf(&b, "Message[%d] tool_call_id: %v\n", i, m["tool_call_id"])
-			fmt.Fprintf(&b, "Message[%d] tool_call_name: %v\n", i, m["tool_call_name"])
 			fmt.Fprintf(&b, "Message[%d] Content: %s\n", i, formatLogContent(m["content"]))
 
 		default:
@@ -480,9 +479,6 @@ func formatLogContent(content any) string {
 		for _, p := range v {
 			switch pv := p.(type) {
 			case string:
-				if text.Len() > 0 {
-					text.WriteByte(' ')
-				}
 				text.WriteString(pv)
 			case []byte:
 				byteParts++
@@ -503,9 +499,6 @@ func contentPartsText(parts []D) string {
 	for _, part := range parts {
 		if t, _ := part["type"].(string); t == "text" {
 			if text, _ := part["text"].(string); text != "" {
-				if b.Len() > 0 {
-					b.WriteString(" ")
-				}
 				b.WriteString(text)
 			}
 		}
@@ -981,9 +974,6 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 	}
 	if len(respToolCalls) > 0 {
 		delta = &ResponseMessage{
-			Role:           msg.Role,
-			Content:        msg.Content,
-			Reasoning:      msg.Reasoning,
 			ToolCalls:      msg.ToolCalls,
 			ToolCallDeltas: terminalToolCallDeltas,
 		}

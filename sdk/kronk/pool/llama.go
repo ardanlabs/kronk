@@ -98,17 +98,19 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 	}
 
 	vramCfg := vram.Config{
-		ContextWindow:     ctxWin,
-		BytesPerElement:   bpe,
-		TypeK:             int32(cfg.CacheTypeK),
-		TypeV:             int32(cfg.CacheTypeV),
-		Slots:             nseq,
-		NUBatch:           effectiveNUBatch(cfg),
-		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
-		GPULayers:         int64(cfg.NGpuLayers()),
-		KVCacheOnCPU:      cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
-		SWAFull:           effectiveSWAFull(cfg),
-		VTransposed:       cfg.FlashAttention() == model.FlashAttentionDisabled,
+		ContextWindow:          ctxWin,
+		BytesPerElement:        bpe,
+		TypeK:                  int32(cfg.CacheTypeK),
+		TypeV:                  int32(cfg.CacheTypeV),
+		Slots:                  nseq,
+		NUBatch:                effectiveNUBatch(cfg),
+		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
+		GPULayers:              int64(cfg.NGpuLayers()),
+		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		SWAFull:                effectiveSWAFull(cfg),
+		VTransposed:            cfg.FlashAttention() == model.FlashAttentionDisabled,
+		RecurrentStateCopies:   model.RecurrentStateCopies(cfg, false),
+		EmbeddedMTPStateCopies: model.RecurrentStateCopies(cfg, true),
 	}
 
 	result, source, err := predictResult(l.models, req.ModelID, vramCfg)
@@ -277,17 +279,19 @@ func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
 	}
 
 	vramCfg := vram.Config{
-		ContextWindow:     ctxWin,
-		BytesPerElement:   bytesPerElement(cfg.CacheTypeK, cfg.CacheTypeV),
-		TypeK:             int32(cfg.CacheTypeK),
-		TypeV:             int32(cfg.CacheTypeV),
-		Slots:             nseq,
-		NUBatch:           effectiveNUBatch(cfg),
-		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
-		GPULayers:         int64(cfg.NGpuLayers()),
-		KVCacheOnCPU:      cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
-		SWAFull:           effectiveSWAFull(cfg),
-		VTransposed:       cfg.FlashAttention() == model.FlashAttentionDisabled,
+		ContextWindow:          ctxWin,
+		BytesPerElement:        bytesPerElement(cfg.CacheTypeK, cfg.CacheTypeV),
+		TypeK:                  int32(cfg.CacheTypeK),
+		TypeV:                  int32(cfg.CacheTypeV),
+		Slots:                  nseq,
+		NUBatch:                effectiveNUBatch(cfg),
+		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
+		GPULayers:              int64(cfg.NGpuLayers()),
+		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		SWAFull:                effectiveSWAFull(cfg),
+		VTransposed:            cfg.FlashAttention() == model.FlashAttentionDisabled,
+		RecurrentStateCopies:   model.RecurrentStateCopies(cfg, false),
+		EmbeddedMTPStateCopies: model.RecurrentStateCopies(cfg, true),
 	}
 
 	out := loader.Display{

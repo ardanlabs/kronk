@@ -9,6 +9,44 @@ import (
 	"testing"
 )
 
+func TestFormatLogContentPreservesTextPartBoundaries(t *testing.T) {
+	tests := []struct {
+		name    string
+		content any
+		want    string
+	}{
+		{
+			name: "typed parts without separator",
+			content: []D{
+				{"type": "text", "text": "(no output)"},
+				{"type": "text", "text": "Command exited with code 0."},
+			},
+			want: "(2 parts, full text): (no output)Command exited with code 0.",
+		},
+		{
+			name: "typed parts with explicit newline",
+			content: []D{
+				{"type": "text", "text": "(no output)\n"},
+				{"type": "text", "text": "Command exited with code 0."},
+			},
+			want: "(2 parts, full text): (no output)\nCommand exited with code 0.",
+		},
+		{
+			name:    "normalized parts",
+			content: []any{"before", []byte{1, 2}, "after"},
+			want:    "(3 parts, 2 media bytes in 1 media parts, full text): beforeafter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatLogContent(tt.content); got != tt.want {
+				t.Errorf("formatLogContent() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDeserializeToolCallArguments(t *testing.T) {
 	want := map[string]any{"location": "New York City, NY"}
 
@@ -383,15 +421,27 @@ func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
 	}}
 	terminal := reconcileStartedToolCalls(toolCalls, started)
 
-	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", toolCalls, terminal, nil, "", Usage{})
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "answer", "thought", toolCalls, terminal, nil, "", Usage{})
 	if resp.Choices[0].Delta == nil {
 		t.Fatal("Delta: got nil, want completed tool calls for streaming compatibility")
+	}
+	if got := resp.Choices[0].Delta.Content; got != "" {
+		t.Errorf("Delta.Content: got %q, want empty terminal delta", got)
+	}
+	if got := resp.Choices[0].Delta.Reasoning; got != "" {
+		t.Errorf("Delta.Reasoning: got %q, want empty terminal delta", got)
 	}
 	if got := resp.Choices[0].Delta.ToolCalls; len(got) != 1 {
 		t.Fatalf("Delta.ToolCalls: got %d calls, want 1", len(got))
 	}
 	if got, want := resp.Choices[0].Delta.ToolCalls[0].Function.Arguments["location"], "London"; got != want {
 		t.Errorf("location: got %v, want %v", got, want)
+	}
+	if got, want := resp.Choices[0].Message.Content, "answer"; got != want {
+		t.Errorf("Message.Content: got %q, want %q", got, want)
+	}
+	if got, want := resp.Choices[0].Message.Reasoning, "thought"; got != want {
+		t.Errorf("Message.Reasoning: got %q, want %q", got, want)
 	}
 
 	data, err := json.Marshal(resp)

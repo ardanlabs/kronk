@@ -1453,11 +1453,13 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	}
 
 	vramCfg := vram.Config{
-		ContextWindow:     int64(cfg.ContextWindow()),
-		BytesPerElement:   int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
-		Slots:             int64(max(cfg.NSeqMax(), 1)),
-		ExpertLayersOnGPU: cfg.ExpertLayersOnGPU(),
-		SWAFull:           effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
+		ContextWindow:          int64(cfg.ContextWindow()),
+		BytesPerElement:        int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
+		Slots:                  int64(max(cfg.NSeqMax(), 1)),
+		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
+		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
+		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),
+		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),
 	}
 	swaFull := vramCfg.SWAFull
 
@@ -1466,16 +1468,27 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		return int64(mi.Size), 0, err.Error()
 	}
 
-	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] n_swa[%d] swa_full[%t] swa_window_metadata[%d] swa_layers[%d]",
+	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] n_swa[%d] swa_full[%t] swa_window_metadata[%d] swa_layers[%d] recurrent_layers[%d] recurrent_state_copies[%d] nextn_layers[%d]",
 		mi.Metadata["general.architecture"],
 		result.Input.BlockCount, result.Input.HeadCountKV,
 		result.Input.KeyLength, result.Input.ValueLength,
 		result.Input.BytesPerElement, result.Input.ContextWindow,
 		result.Input.Slots, mi.NSWA, swaFull, result.Input.SlidingWindow,
-		result.Input.SlidingWindowLayers,
+		result.Input.SlidingWindowLayers, countTrue(result.Input.RecurrentPattern),
+		result.Input.RecurrentStateCopies, result.Input.NextNPredictLayers,
 	)
 
 	return result.TotalVRAM, result.SlotMemory, diag
+}
+
+func countTrue(values []bool) int {
+	var count int
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
 }
 
 func effectiveSWAFull(configured *bool, llamaDefault bool) bool {

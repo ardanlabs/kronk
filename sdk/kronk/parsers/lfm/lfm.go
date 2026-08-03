@@ -7,7 +7,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/kronk/parsers/fallback"
 )
 
 const (
@@ -55,14 +54,4 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 		}
 	}
 	return calls
-}
-
-// StripReasoningContent removes standard <think> reasoning spans.
-func (Parser) StripReasoningContent(content string) string {
-	return fallback.StripThinkContent(content)
-}
-
-// StripEmptyReasoning removes empty standard <think> spans except a trailing generation marker.
-func (Parser) StripEmptyReasoning(rendered string) string {
-	return fallback.StripEmptyThink(rendered)
 }
