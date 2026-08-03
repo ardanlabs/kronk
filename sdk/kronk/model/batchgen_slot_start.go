@@ -129,8 +129,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// finishSlot, so we always restore from RAM.
 	//
 	// Read cache state from the MATCHED session (job.imcSession). The IMC
-	// session pool is sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth),
-	// so there is no
+	// session pool is at least as large as generation admission capacity, so
+	// there is no
 	// fixed slot-to-session correspondence: the session is bound to this
 	// slot's KV sequence here and unbound in finishSlot.
 	var cacheIdx llama.Pos

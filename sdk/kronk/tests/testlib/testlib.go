@@ -421,7 +421,7 @@ func CfgClassicDraftChat() model.Config {
 		CacheTypeK:       model.GGMLTypeQ8_0,
 		CacheTypeV:       model.GGMLTypeQ8_0,
 		PtrNSeqMax:       new(1),
-		DraftModel: &model.DraftModelConfig{
+		PtrDraftModel: &model.DraftModelConfig{
 			ModelFiles: MPDraft.ModelFiles,
 			NDraft:     4,
 		},

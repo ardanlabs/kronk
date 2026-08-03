@@ -323,40 +323,41 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 		Template:      rmc.Template,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
-			ContextWindow:       rmc.PtrContextWindow,
-			NBatch:              rmc.PtrNBatch,
-			NUBatch:             rmc.PtrNUBatch,
-			NThreads:            rmc.PtrNThreads,
-			NThreadsBatch:       rmc.PtrNThreadsBatch,
-			CacheTypeK:          rmc.CacheTypeK,
-			CacheTypeV:          rmc.CacheTypeV,
-			LoadMode:            model.DerefLoadMode(rmc.PtrLoadMode),
-			NUMA:                rmc.NUMA,
-			FlashAttention:      model.DerefFlashAttention(rmc.FlashAttention),
-			NSeqMax:             rmc.PtrNSeqMax,
-			PtrOffloadKQV:       rmc.PtrOffloadKQV,
-			PtrOpOffload:        rmc.PtrOpOffload,
-			PtrProjOnCPU:        rmc.PtrProjOnCPU,
-			PtrNGpuLayers:       rmc.PtrNGpuLayers,
-			PtrSplitMode:        rmc.PtrSplitMode,
-			TensorSplit:         rmc.TensorSplit,
-			TensorBuftOverrides: rmc.TensorBuftOverrides,
-			PtrMainGPU:          rmc.PtrMainGPU,
-			Devices:             rmc.Devices,
-			MoE:                 toAppMoEConfig(rmc.MoE),
-			PtrSWAFull:          rmc.PtrSWAFull,
-			IncrementalCache:    rmc.PtrIncrementalCache,
-			CacheMinTokens:      rmc.PtrCacheMinTokens,
-			SessionStoreDir:     rmc.SessionStoreDir,
-			SessionStoreKind:    rmc.SessionStoreKind,
-			RopeScaling:         rmc.RopeScaling,
-			PtrRopeFreqBase:     rmc.PtrRopeFreqBase,
-			PtrRopeFreqScale:    rmc.PtrRopeFreqScale,
-			PtrYarnExtFactor:    rmc.PtrYarnExtFactor,
-			PtrYarnAttnFactor:   rmc.PtrYarnAttnFactor,
-			PtrYarnBetaFast:     rmc.PtrYarnBetaFast,
-			PtrYarnBetaSlow:     rmc.PtrYarnBetaSlow,
-			PtrYarnOrigCtx:      rmc.PtrYarnOrigCtx,
+			PtrContextWindow:      rmc.PtrContextWindow,
+			PtrNBatch:             rmc.PtrNBatch,
+			PtrNUBatch:            rmc.PtrNUBatch,
+			PtrNThreads:           rmc.PtrNThreads,
+			PtrNThreadsBatch:      rmc.PtrNThreadsBatch,
+			CacheTypeK:            rmc.CacheTypeK,
+			CacheTypeV:            rmc.CacheTypeV,
+			LoadMode:              model.DerefLoadMode(rmc.PtrLoadMode),
+			NUMA:                  rmc.NUMA,
+			FlashAttention:        model.DerefFlashAttention(rmc.FlashAttention),
+			PtrNSeqMax:            rmc.PtrNSeqMax,
+			PtrIMCSessionCapacity: rmc.PtrIMCSessionCapacity,
+			PtrOffloadKQV:         rmc.PtrOffloadKQV,
+			PtrOpOffload:          rmc.PtrOpOffload,
+			PtrProjOnCPU:          rmc.PtrProjOnCPU,
+			PtrNGpuLayers:         rmc.PtrNGpuLayers,
+			PtrSplitMode:          rmc.PtrSplitMode,
+			TensorSplit:           rmc.TensorSplit,
+			TensorBuftOverrides:   rmc.TensorBuftOverrides,
+			PtrMainGPU:            rmc.PtrMainGPU,
+			Devices:               rmc.Devices,
+			MoE:                   toAppMoEConfig(rmc.MoE),
+			PtrSWAFull:            rmc.PtrSWAFull,
+			PtrIncrementalCache:   rmc.PtrIncrementalCache,
+			PtrCacheMinTokens:     rmc.PtrCacheMinTokens,
+			SessionStoreDir:       rmc.SessionStoreDir,
+			SessionStoreKind:      rmc.SessionStoreKind,
+			RopeScaling:           rmc.RopeScaling,
+			PtrRopeFreqBase:       rmc.PtrRopeFreqBase,
+			PtrRopeFreqScale:      rmc.PtrRopeFreqScale,
+			PtrYarnExtFactor:      rmc.PtrYarnExtFactor,
+			PtrYarnAttnFactor:     rmc.PtrYarnAttnFactor,
+			PtrYarnBetaFast:       rmc.PtrYarnBetaFast,
+			PtrYarnBetaSlow:       rmc.PtrYarnBetaSlow,
+			PtrYarnOrigCtx:        rmc.PtrYarnOrigCtx,
 			Sampling: SamplingConfig{
 				Temperature:      rmc.Sampling.Temperature,
 				TopK:             rmc.Sampling.TopK,
@@ -751,41 +752,42 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 
 // ModelConfig represents the model configuration the model will use by default.
 type ModelConfig struct {
-	ContextWindow       *int                     `json:"context-window"`
-	NBatch              *int                     `json:"nbatch"`
-	NUBatch             *int                     `json:"nubatch"`
-	NThreads            *int                     `json:"nthreads"`
-	NThreadsBatch       *int                     `json:"nthreads-batch"`
-	CacheTypeK          model.GGMLType           `json:"cache-type-k"`
-	CacheTypeV          model.GGMLType           `json:"cache-type-v"`
-	LoadMode            model.LoadMode           `json:"load-mode"`
-	NUMA                string                   `json:"numa,omitempty"`
-	FlashAttention      model.FlashAttentionType `json:"flash-attention"`
-	NSeqMax             *int                     `json:"nseq-max"`
-	PtrOffloadKQV       *bool                    `json:"offload-kqv"`
-	PtrOpOffload        *bool                    `json:"op-offload"`
-	PtrProjOnCPU        *bool                    `json:"proj-on-cpu"`
-	PtrNGpuLayers       *int                     `json:"ngpu-layers"`
-	PtrSplitMode        *model.SplitMode         `json:"split-mode"`
-	TensorSplit         []float32                `json:"tensor-split"`
-	TensorBuftOverrides []string                 `json:"tensor-buft-overrides"`
-	PtrMainGPU          *int                     `json:"main-gpu"`
-	Devices             []string                 `json:"devices"`
-	MoE                 *MoEConfig               `json:"moe,omitempty"`
-	PtrSWAFull          *bool                    `json:"swa-full"`
-	IncrementalCache    *bool                    `json:"incremental-cache"`
-	CacheMinTokens      *int                     `json:"cache-min-tokens"`
-	SessionStoreDir     string                   `json:"session-store-dir,omitempty"`
-	SessionStoreKind    string                   `json:"session-store-kind,omitempty"`
-	Sampling            SamplingConfig           `json:"sampling-parameters"`
-	RopeScaling         model.RopeScalingType    `json:"rope-scaling-type"`
-	PtrRopeFreqBase     *float32                 `json:"rope-freq-base"`
-	PtrRopeFreqScale    *float32                 `json:"rope-freq-scale"`
-	PtrYarnExtFactor    *float32                 `json:"yarn-ext-factor"`
-	PtrYarnAttnFactor   *float32                 `json:"yarn-attn-factor"`
-	PtrYarnBetaFast     *float32                 `json:"yarn-beta-fast"`
-	PtrYarnBetaSlow     *float32                 `json:"yarn-beta-slow"`
-	PtrYarnOrigCtx      *int                     `json:"yarn-orig-ctx"`
+	PtrContextWindow      *int                     `json:"context-window"`
+	PtrNBatch             *int                     `json:"nbatch"`
+	PtrNUBatch            *int                     `json:"nubatch"`
+	PtrNThreads           *int                     `json:"nthreads"`
+	PtrNThreadsBatch      *int                     `json:"nthreads-batch"`
+	CacheTypeK            model.GGMLType           `json:"cache-type-k"`
+	CacheTypeV            model.GGMLType           `json:"cache-type-v"`
+	LoadMode              model.LoadMode           `json:"load-mode"`
+	NUMA                  string                   `json:"numa,omitempty"`
+	FlashAttention        model.FlashAttentionType `json:"flash-attention"`
+	PtrNSeqMax            *int                     `json:"nseq-max"`
+	PtrIMCSessionCapacity *int                     `json:"imc-session-capacity"`
+	PtrOffloadKQV         *bool                    `json:"offload-kqv"`
+	PtrOpOffload          *bool                    `json:"op-offload"`
+	PtrProjOnCPU          *bool                    `json:"proj-on-cpu"`
+	PtrNGpuLayers         *int                     `json:"ngpu-layers"`
+	PtrSplitMode          *model.SplitMode         `json:"split-mode"`
+	TensorSplit           []float32                `json:"tensor-split"`
+	TensorBuftOverrides   []string                 `json:"tensor-buft-overrides"`
+	PtrMainGPU            *int                     `json:"main-gpu"`
+	Devices               []string                 `json:"devices"`
+	MoE                   *MoEConfig               `json:"moe,omitempty"`
+	PtrSWAFull            *bool                    `json:"swa-full"`
+	PtrIncrementalCache   *bool                    `json:"incremental-cache"`
+	PtrCacheMinTokens     *int                     `json:"cache-min-tokens"`
+	SessionStoreDir       string                   `json:"session-store-dir,omitempty"`
+	SessionStoreKind      string                   `json:"session-store-kind,omitempty"`
+	Sampling              SamplingConfig           `json:"sampling-parameters"`
+	RopeScaling           model.RopeScalingType    `json:"rope-scaling-type"`
+	PtrRopeFreqBase       *float32                 `json:"rope-freq-base"`
+	PtrRopeFreqScale      *float32                 `json:"rope-freq-scale"`
+	PtrYarnExtFactor      *float32                 `json:"yarn-ext-factor"`
+	PtrYarnAttnFactor     *float32                 `json:"yarn-attn-factor"`
+	PtrYarnBetaFast       *float32                 `json:"yarn-beta-fast"`
+	PtrYarnBetaSlow       *float32                 `json:"yarn-beta-slow"`
+	PtrYarnOrigCtx        *int                     `json:"yarn-orig-ctx"`
 }
 
 // =============================================================================

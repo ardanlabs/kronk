@@ -382,7 +382,8 @@ kronk server stop`}</code></pre>
   context-window: 32768
   nseq-max: 2
   admission-timeout: 3m
-  queue-depth: 2`}</code></pre>
+  queue-depth: 2
+  imc-session-capacity: 8`}</code></pre>
           <p>Do not add a <code>models:</code> wrapper. Top-level setting names use kebab-case, such as <code>context-window</code> and <code>nseq-max</code>. Keys nested under <code>sampling-parameters</code> use the API's snake_case names, such as <code>top_p</code>.</p>
           <p>The server reads this file during startup. Restart the server after changing it. To test a different file without replacing the default, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model-config.yaml`}</code></pre>
@@ -765,6 +766,11 @@ some-provider/large-model:
                 <td>Generation admission and handoff capacity multiplier</td>
               </tr>
               <tr>
+                <td><code>imc-session-capacity</code></td>
+                <td>Positive integer; derived when omitted</td>
+                <td>Reusable IMC conversation identities retained in RAM or on disk</td>
+              </tr>
+              <tr>
                 <td><code>nubatch</code>, <code>nbatch</code></td>
                 <td>Positive token counts</td>
                 <td>Physical and logical batch sizes</td>
@@ -1008,8 +1014,8 @@ make benchmark-rerank-batchseq`}</code></pre>
           <p>Incremental Message Caching (IMC) keeps reusable conversation state in a logical session, not in a permanently assigned execution slot. Cached state is externalized to a session store between requests. A later request can restore that state into any free slot, extend it, and continue generation.</p>
           <p>While a request is active, its restored or newly built state consumes cells in that slot's KV stream. Kronk normally snapshots a built or extended stable prefix during slot startup, before generating the request's suffix. Exact read-only hits can skip a redundant snapshot. Completion clears the slot's active sequence. This allows the number of cached conversation identities to differ from the number of concurrent execution slots.</p>
           <p>The IMC pool contains:</p>
-          <pre className="code-block"><code className="language-text">{`session capacity = max(nseq-max, 1) × max(3, queue-depth)`}</code></pre>
-          <p>The minimum of three sessions per execution slot preserves reusable conversation state beyond the number of requests that can execute at once. When <code>queue-depth</code> is greater than 3, the pool expands with admission capacity. Therefore, for generation through the Kronk SDK:</p>
+          <pre className="code-block"><code className="language-text">{`default session capacity = max(nseq-max, 1) × max(3, queue-depth)`}</code></pre>
+          <p>The minimum of three sessions per execution slot preserves reusable conversation state beyond the number of requests that can execute at once. When <code>queue-depth</code> is greater than 3, the pool expands with admission capacity. Set <code>imc-session-capacity</code> to a larger explicit value when the measured warm conversation working set warrants it. An explicit value may reduce the default but cannot be smaller than generation admission capacity. Therefore, for generation through the Kronk SDK:</p>
           <pre className="code-block"><code className="language-text">{`session capacity ≥ admission capacity`}</code></pre>
           <p>This invariant prevents Kronk from admitting more concurrent generation requests than the IMC planner has session identities available to reserve. It avoids moving an admitted request into preparation when every session is already owned by another admitted request.</p>
           <p>A session is <strong>reserved</strong> while one request has exclusive ownership of its IMC state and other planners must skip it. Reservation does not necessarily mean that token generation is active. Cache append or rebuild paths can publish a stable snapshot and release the reservation before generation finishes, while exact, read-only, and some media paths can retain it longer.</p>
@@ -1140,12 +1146,13 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <h2 id="53-sessions-slots-and-snapshots">5.3 Sessions, Slots, and Snapshots</h2>
           <p>An IMC <strong>session</strong> is a reusable conversation identity and its saved model state. An execution <strong>slot</strong> is a lane that can actively run a request. These are deliberately separate:</p>
           <ul>
-            <li>Kronk retains <code>max(nseq-max, 1) × max(3, queue-depth)</code> IMC sessions.</li>
+            <li>By default, Kronk retains <code>max(nseq-max, 1) × max(3, queue-depth)</code> IMC sessions; <code>imc-session-capacity</code> can override that count.</li>
             <li>Only <code>nseq-max</code> requests can decode concurrently.</li>
             <li>A session can be restored into any available execution slot; it is not tied permanently to one slot.</li>
             <li>Session storage is allocated lazily as conversations begin using it.</li>
           </ul>
           <p>For example, <code>nseq-max: 2</code> with the default <code>queue-depth: 2</code> provides two concurrent decode slots and six warm IMC session identities. A queue depth greater than 3 expands the session pool so it remains at least as large as the generation admission capacity. Raising <code>nseq-max</code> also adds another full <code>context-window</code> KV stream and its memory cost, so do not raise it solely to retain more conversation branches without considering the effects described in <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a>.</p>
+          <p>An explicit <code>imc-session-capacity</code> must be at least <code>nseq-max × queue-depth</code>. This preserves one reservable session identity for every admitted generation request. Values above that floor retain more completed conversation branches and may reduce LRU rebuilds, at the cost of additional peak session-store memory or disk usage.</p>
           <p>Admission waiting is controlled separately by the per-model <code>admission-timeout</code> setting (default <code>3m</code>). It only bounds the wait for an SDK admission permit. The server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>) instead bounds admitted preparation, slot waiting, and inference; neither setting changes IMC session retention.</p>
           <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is held. If all session identities are reserved, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
@@ -1167,6 +1174,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
   incremental-cache: true
   cache-min-tokens: 100
+  imc-session-capacity: 8
   session-store-kind: ram`}</code></pre>
           <p>The relevant settings are:</p>
           <table className="flags-table">
@@ -1187,6 +1195,11 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
                 <td><code>cache-min-tokens</code></td>
                 <td><code>100</code></td>
                 <td>Minimum stable-render length required to create or reuse a session.</td>
+              </tr>
+              <tr>
+                <td><code>imc-session-capacity</code></td>
+                <td>Derived</td>
+                <td>Reusable identities; must be at least admission capacity.</td>
               </tr>
               <tr>
                 <td><code>session-store-kind</code></td>

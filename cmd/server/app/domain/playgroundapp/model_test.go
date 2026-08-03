@@ -48,7 +48,7 @@ func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 		},
 		{
 			name:    "empty draft_model_id clears existing draft",
-			base:    model.Config{DraftModel: &model.DraftModelConfig{ModelFiles: []string{"d.gguf"}}},
+			base:    model.Config{PtrDraftModel: &model.DraftModelConfig{ModelFiles: []string{"d.gguf"}}},
 			sc:      SessionConfig{DraftModelID: new("")},
 			wantNil: true,
 		},
@@ -60,7 +60,7 @@ func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 		},
 		{
 			name:   "draft_ndraft tunes an existing MTP override",
-			base:   model.Config{DraftModel: &model.DraftModelConfig{NDraft: 4}},
+			base:   model.Config{PtrDraftModel: &model.DraftModelConfig{NDraft: 4}},
 			sc:     SessionConfig{DraftNDraft: new(9)},
 			wantND: 9,
 		},
@@ -77,20 +77,20 @@ func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 			got := tt.sc.ApplyTo(tt.base)
 
 			if tt.wantNil {
-				if got.DraftModel != nil {
-					t.Fatalf("DraftModel = %+v, want nil", got.DraftModel)
+				if got.PtrDraftModel != nil {
+					t.Fatalf("PtrDraftModel = %+v, want nil", got.PtrDraftModel)
 				}
 				return
 			}
 
-			if got.DraftModel == nil {
-				t.Fatalf("DraftModel = nil, want non-nil")
+			if got.PtrDraftModel == nil {
+				t.Fatalf("PtrDraftModel = nil, want non-nil")
 			}
-			if got.DraftModel.NDraft != tt.wantND {
-				t.Errorf("NDraft = %d, want %d", got.DraftModel.NDraft, tt.wantND)
+			if got.PtrDraftModel.NDraft != tt.wantND {
+				t.Errorf("NDraft = %d, want %d", got.PtrDraftModel.NDraft, tt.wantND)
 			}
-			if len(tt.wantFiles) != len(got.DraftModel.ModelFiles) {
-				t.Errorf("ModelFiles = %v, want %v", got.DraftModel.ModelFiles, tt.wantFiles)
+			if len(tt.wantFiles) != len(got.PtrDraftModel.ModelFiles) {
+				t.Errorf("ModelFiles = %v, want %v", got.PtrDraftModel.ModelFiles, tt.wantFiles)
 			}
 		})
 	}

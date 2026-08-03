@@ -77,7 +77,7 @@ type catalogEntry struct {
 // user's model_config.yaml entry).
 type modelDetail struct {
 	ModelConfig struct {
-		ContextWindow *int `json:"context-window"`
+		PtrContextWindow *int `json:"context-window"`
 	} `json:"model_config"`
 }
 
@@ -202,11 +202,11 @@ func fetchContextWindow(ctx context.Context, cln *client.Client, id string) (int
 		return 0, false
 	}
 
-	if detail.ModelConfig.ContextWindow == nil || *detail.ModelConfig.ContextWindow <= 0 {
+	if detail.ModelConfig.PtrContextWindow == nil || *detail.ModelConfig.PtrContextWindow <= 0 {
 		return 0, false
 	}
 
-	return *detail.ModelConfig.ContextWindow, true
+	return *detail.ModelConfig.PtrContextWindow, true
 }
 
 // selectChatModels keeps the validated, chat-capable models from the

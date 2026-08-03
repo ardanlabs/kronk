@@ -39,8 +39,8 @@ type compiledTemplate struct {
 	err  error
 }
 
-// imcMinSessionsPerSlot is the minimum per-slot size of the IMC session
-// pool. With NSeqMax execution slots the pool holds NSeqMax *
+// imcMinSessionsPerSlot is the minimum per-slot size of the default IMC
+// session pool. With NSeqMax execution slots the default holds NSeqMax *
 // max(imcMinSessionsPerSlot, QueueDepth) cache identities, which decouples
 // how many distinct conversation prefixes the server can keep warm from
 // how many requests can decode in parallel. 3x matches the realistic
@@ -64,10 +64,9 @@ func imcSessionCapacity(nSlots, queueDepth int) int {
 const imcSeqIDUnbound llama.SeqId = -1
 
 // imcSession holds the state for a single IMC (Incremental Message Cache)
-// session. Sessions are session-pool entries, sized at NSeqMax *
-// max(imcMinSessionsPerSlot, QueueDepth) so the cache identity count is at
-// least as large as generation admission capacity and the execution slot
-// count. Each session externalizes its cached KV state via SessionStore
+// session. Sessions are session-pool entries, sized by IMCSessionCapacity,
+// which is validated to be at least as large as generation admission capacity.
+// Each session externalizes its cached KV state via SessionStore
 // between requests; the scheduler binds a session to
 // whichever execution slot is free at startSlot time. The seqID field
 // is dynamic: it holds the bound slot's KV sequence id while a
@@ -522,13 +521,13 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 
 	// Compile MoEConfig into TensorBuftOverrides if applicable.
 	// Explicit TensorBuftOverrides take highest precedence.
-	if cfg.MoE != nil && len(cfg.TensorBuftOverrides) == 0 {
-		switch cfg.MoE.Mode {
+	if cfg.PtrMoE != nil && len(cfg.TensorBuftOverrides) == 0 {
+		switch cfg.PtrMoE.Mode {
 		case MoEModeExpertsCPU:
 			cfg.TensorBuftOverrides = []string{"moe-experts"}
 		case MoEModeKeepTopN:
-			if cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
-				topN := *cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers
+			if cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
+				topN := *cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers
 				// To keep top N on GPU, we offload all layers EXCEPT the top N.
 				// We need block_count from model metadata, which isn't available yet.
 				// Use the "moe-experts" shortcut for now; per-layer targeting requires
@@ -631,13 +630,13 @@ func loadModelWithEnvGuard(ctx context.Context, l applog.Logger, cfg Config, mPa
 // settings. Skipped for unconfigured/auto modes since there is nothing
 // meaningful to report.
 func logMoEConfig(ctx context.Context, cfg Config, l applog.Logger) {
-	if cfg.MoE == nil || cfg.MoE.Mode == "" || cfg.MoE.Mode == MoEModeAuto {
+	if cfg.PtrMoE == nil || cfg.PtrMoE.Mode == "" || cfg.PtrMoE.Mode == MoEModeAuto {
 		return
 	}
 
 	topN := 0
-	if cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
-		topN = *cfg.MoE.PtrKeepExpertsOnGPUForTopNLayers
+	if cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
+		topN = *cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers
 	}
 
 	overrides := cfg.TensorBuftOverrides
@@ -646,7 +645,7 @@ func logMoEConfig(ctx context.Context, cfg Config, l applog.Logger) {
 	}
 
 	l(ctx, "MOE-CONFIG",
-		"mode", string(cfg.MoE.Mode),
+		"mode", string(cfg.PtrMoE.Mode),
 		"experts_on_gpu_layers", topN,
 		"overrides_applied", fmt.Sprintf("%v", overrides),
 	)
@@ -717,18 +716,18 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	m.mem = mem
 	m.ctxParams.NRsSeq = llama.NRsSeq(lctx)
 
-	// Initialize the IMC session pool. Sized at nSlots *
-	// max(imcMinSessionsPerSlot, QueueDepth) so the cache identity count is
-	// at least as large as generation admission capacity and retains at least
-	// three sessions per execution slot: multi-agent workloads keep N distinct
-	// prefixes warm without LRU thrashing, while actual decode
-	// concurrency stays capped at nSlots in the batch engine. Sessions
+	// Initialize the IMC session pool. The default retains at least three
+	// sessions per execution slot, while an explicit IMCSessionCapacity lets
+	// operators tune the warm conversation working set independently. Config
+	// validation keeps the identity count at least as large as generation
+	// admission capacity. Actual decode concurrency stays capped at nSlots.
+	// Sessions
 	// externalize their KV state via SessionStore so any session can
 	// run on any free slot. The SessionStore backing buffer is
 	// allocated lazily on first use, so unused sessions cost only the
 	// imcSession struct itself.
 	if m.cfg.IncrementalCache() {
-		nSessions := imcSessionCapacity(nSlots, m.cfg.QueueDepth())
+		nSessions := m.cfg.IMCSessionCapacity()
 		m.imcSessions = make([]*imcSession, nSessions)
 		for i := range nSessions {
 			store, err := newSessionStore(m.cfg)
@@ -781,7 +780,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	m.batch.start(ctx)
 
 	// Initialize draft model for speculative decoding. selectAndLoadDraft
-	// picks between an explicit separate-GGUF draft (cfg.DraftModel) and
+	// picks between an explicit separate-GGUF draft (cfg.PtrDraftModel) and
 	// an auto-detected MTP head living inside the target GGUF
 	// (nextn_predict_layers > 0, qwen35 architecture). Returns (nil, nil)
 	// when no draft applies.
@@ -873,7 +872,7 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 // a separate model, context, and greedy sampler. The draft model uses the
 // same context window as the target to support long prompts.
 func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetModel llama.Model, targetCtxParams llama.ContextParams) (*classicDrafter, error) {
-	dCfg := cfg.DraftModel
+	dCfg := cfg.PtrDraftModel
 
 	// Load draft model.
 	mParams := llama.ModelDefaultParams()

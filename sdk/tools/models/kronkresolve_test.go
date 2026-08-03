@@ -170,6 +170,7 @@ func TestModelConfigLoadMode(t *testing.T) {
 func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	data := []byte(`test-model:
   admission-timeout: 3m
+  imc-session-capacity: 8
   queue-depth: 2
 `)
 
@@ -186,12 +187,17 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	if got := kronkCfg.QueueDepth(); got != 2 {
 		t.Errorf("QueueDepth() = %d, want 2", got)
 	}
+	if got := kronkCfg.IMCSessionCapacity(); got != 8 {
+		t.Errorf("IMCSessionCapacity() = %d, want 8", got)
+	}
 
 	overrideTimeout := Duration(45 * time.Second)
 	overrideDepth := 4
+	overrideSessions := 10
 	MergeModelConfig(&cfg, ModelConfig{
-		PtrAdmissionTimeout: &overrideTimeout,
-		PtrQueueDepth:       &overrideDepth,
+		PtrAdmissionTimeout:   &overrideTimeout,
+		PtrIMCSessionCapacity: &overrideSessions,
+		PtrQueueDepth:         &overrideDepth,
 	})
 	kronkCfg = cfg.ToKronkConfig()
 	if got := kronkCfg.AdmissionTimeout(); got != 45*time.Second {
@@ -199,6 +205,9 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	}
 	if got := kronkCfg.QueueDepth(); got != 4 {
 		t.Errorf("merged QueueDepth() = %d, want 4", got)
+	}
+	if got := kronkCfg.IMCSessionCapacity(); got != 10 {
+		t.Errorf("merged IMCSessionCapacity() = %d, want 10", got)
 	}
 }
 

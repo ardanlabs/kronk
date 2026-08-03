@@ -456,6 +456,7 @@ export default function ModelList() {
                         { key: 'draft-model.tensor-split', label: labelWithTip('draft-model.tensor-split', 'draftTensorSplit'), value: mc['draft-model']?.['tensor-split']?.join(', ') || '—' },
                         { key: 'flash-attention', label: labelWithTip('flash-attention', 'flashAttention'), value: mc['flash-attention'] || 'default' },
 
+                        { key: 'imc-session-capacity', label: labelWithTip('imc-session-capacity', 'imcSessionCapacity'), value: fmtVal(mc['imc-session-capacity']) },
                         { key: 'incremental-cache', label: labelWithTip('incremental-cache', 'incrementalCache'), value: boolBadge(mc['incremental-cache']) },
                         { key: 'load-mode', label: labelWithTip('load-mode', 'loadMode'), value: mc['load-mode'] || 'mmap' },
                         { key: 'main-gpu', label: labelWithTip('main-gpu', 'mainGpu'), value: fmtVal(mc['main-gpu']) },

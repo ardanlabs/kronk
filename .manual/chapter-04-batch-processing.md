@@ -392,12 +392,15 @@ differ from the number of concurrent execution slots.
 The IMC pool contains:
 
 ```text
-session capacity = max(nseq-max, 1) × max(3, queue-depth)
+default session capacity = max(nseq-max, 1) × max(3, queue-depth)
 ```
 
 The minimum of three sessions per execution slot preserves reusable
 conversation state beyond the number of requests that can execute at once.
 When `queue-depth` is greater than 3, the pool expands with admission capacity.
+Set `imc-session-capacity` to a larger explicit value when the measured warm
+conversation working set warrants it. An explicit value may reduce the default
+but cannot be smaller than generation admission capacity.
 Therefore, for generation through the Kronk SDK:
 
 ```text

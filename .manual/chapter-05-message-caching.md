@@ -297,7 +297,8 @@ An IMC **session** is a reusable conversation identity and its saved model
 state. An execution **slot** is a lane that can actively run a request. These
 are deliberately separate:
 
-- Kronk retains `max(nseq-max, 1) × max(3, queue-depth)` IMC sessions.
+- By default, Kronk retains `max(nseq-max, 1) × max(3, queue-depth)` IMC
+  sessions; `imc-session-capacity` can override that count.
 - Only `nseq-max` requests can decode concurrently.
 - A session can be restored into any available execution slot; it is not tied
   permanently to one slot.
@@ -310,6 +311,12 @@ generation admission capacity. Raising `nseq-max` also adds another full
 `context-window` KV stream and its memory cost, so do not raise it solely to
 retain more conversation branches without considering the effects described in
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing).
+
+An explicit `imc-session-capacity` must be at least
+`nseq-max × queue-depth`. This preserves one reservable session identity for
+every admitted generation request. Values above that floor retain more
+completed conversation branches and may reduce LRU rebuilds, at the cost of
+additional peak session-store memory or disk usage.
 
 Admission waiting is controlled separately by the per-model
 `admission-timeout` setting (default `3m`). It only bounds the wait for an SDK
@@ -380,6 +387,7 @@ IMC settings belong under the model ID in
 Qwen/Qwen3-8B-Q8_0:
   incremental-cache: true
   cache-min-tokens: 100
+  imc-session-capacity: 8
   session-store-kind: ram
 ```
 
@@ -389,6 +397,7 @@ The relevant settings are:
 | -------------------- | ------- | ------------------------------------------------------------------- |
 | `incremental-cache`  | `true`  | Enables IMC for the model.                                          |
 | `cache-min-tokens`   | `100`   | Minimum stable-render length required to create or reuse a session. |
+| `imc-session-capacity` | Derived | Reusable identities; must be at least admission capacity.          |
 | `session-store-kind` | `ram`   | Stores inactive session snapshots in `ram` or on `disk`.            |
 | `session-store-dir`  | None    | Existing writable directory required by the `disk` store.           |
 

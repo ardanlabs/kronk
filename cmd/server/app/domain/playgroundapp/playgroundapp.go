@@ -78,10 +78,10 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		if err != nil {
 			return errs.FromSDK(fmt.Errorf("resolving draft model: %w", err))
 		}
-		if cfg.DraftModel == nil {
-			cfg.DraftModel = &model.DraftModelConfig{}
+		if cfg.PtrDraftModel == nil {
+			cfg.PtrDraftModel = &model.DraftModelConfig{}
 		}
-		cfg.DraftModel.ModelFiles = draftPath.ModelFiles
+		cfg.PtrDraftModel.ModelFiles = draftPath.ModelFiles
 
 		// Speculative decoding requires single-slot mode.
 		cfg.PtrNSeqMax = new(1)
@@ -148,7 +148,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 
 	// Report the active drafter. A separate-GGUF draft carries model files;
 	// an MTP nDraft override carries only the draft-token count.
-	if dm := krn.ModelConfig().DraftModel; dm != nil {
+	if dm := krn.ModelConfig().PtrDraftModel; dm != nil {
 		if dm.IsSeparate() {
 			effectiveConfig["draft_model"] = dm.ModelFiles[0]
 		}
