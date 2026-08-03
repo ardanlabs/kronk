@@ -3,7 +3,8 @@ package gemma
 import (
 	"context"
 	"encoding/json"
-	"strconv"
+	"errors"
+	"math/big"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -56,7 +57,7 @@ func parseGemma(ctx context.Context, log applog.Logger, content string) []model.
 			jsonCandidate = "{" + jsonCandidate + "}"
 		}
 
-		if err := jsonrepair.Unmarshal(jsonCandidate, &args); err != nil {
+		if err := unmarshalGemmaJSON(jsonCandidate, &args); err != nil {
 			if log != nil {
 				log(ctx, "jsonrepair", "status", "unmarshal-failed",
 					"format", "gemma", "error", err, "json", jsonCandidate)
@@ -263,17 +264,6 @@ func parseGemmaArgs(raw string) map[string]any {
 
 			value := remaining[:endQuote]
 
-			trimVal := strings.TrimSpace(value)
-			if len(trimVal) > 0 && (trimVal[0] == '[' || trimVal[0] == '{') {
-				jsonVal := strings.ReplaceAll(trimVal, "<|\"|>", "\"")
-				var parsed any
-				if err := json.Unmarshal([]byte(jsonVal), &parsed); err == nil {
-					args[key] = parsed
-					remaining = remaining[endQuote+len("<|\"|>"):]
-					continue
-				}
-			}
-
 			args[key] = value
 			remaining = remaining[endQuote+len("<|\"|>"):]
 			continue
@@ -304,7 +294,7 @@ func parseGemmaArgs(raw string) map[string]any {
 			jsonVal := strings.ReplaceAll(raw, "<|\"|>", "\"")
 
 			var parsed any
-			if err := json.Unmarshal([]byte(jsonVal), &parsed); err == nil {
+			if err := decodeGemmaJSONValue(jsonVal, &parsed); err == nil {
 				args[key] = parsed
 			} else {
 				args[key] = raw
@@ -333,10 +323,9 @@ func parseGemmaArgs(raw string) map[string]any {
 	return args
 }
 
-// parseGemmaBareValue converts a bare (unquoted) value string to the
-// appropriate Go type. Booleans and null are converted to their native
-// types; numeric strings are converted to float64 (matching json.Unmarshal
-// behavior). Everything else is returned as a string.
+// parseGemmaBareValue converts a bare (unquoted) value string to its native
+// JSON type. Numbers use json.Number so their original value and precision are
+// retained. Everything else is returned as a string.
 func parseGemmaBareValue(s string) any {
 	switch s {
 	case "true":
@@ -347,11 +336,157 @@ func parseGemmaBareValue(s string) any {
 		return nil
 	}
 
-	if n, err := strconv.ParseFloat(s, 64); err == nil {
-		return n
+	var value any
+	if err := decodeGemmaJSONValue(s, &value); err == nil {
+		if number, ok := value.(json.Number); ok {
+			return number
+		}
 	}
 
 	return s
+}
+
+func unmarshalGemmaJSON(raw string, value any) error {
+	repaired, err := jsonrepair.Repair(raw)
+	if err != nil {
+		return err
+	}
+
+	return decodeGemmaJSONValue(repaired, value)
+}
+
+func decodeGemmaJSONValue(raw string, value any) error {
+	if !json.Valid([]byte(raw)) {
+		return errors.New("invalid JSON value")
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+
+	return decoder.Decode(value)
+}
+
+func normalizeGemmaArguments(toolCalls []model.ResponseToolCall, tools []model.D) {
+	for i := range toolCalls {
+		properties := gemmaToolProperties(tools, toolCalls[i].Function.Name)
+		if properties == nil {
+			continue
+		}
+
+		for name, value := range toolCalls[i].Function.Arguments {
+			property, ok := properties[name].(model.D)
+			if !ok {
+				continue
+			}
+
+			schemaType, ok := gemmaSchemaType(property["type"])
+			if !ok {
+				continue
+			}
+
+			if schemaType == "string" {
+				switch value.(type) {
+				case bool, json.Number, nil:
+					if encoded, err := json.Marshal(value); err == nil {
+						toolCalls[i].Function.Arguments[name] = string(encoded)
+					}
+				}
+				continue
+			}
+
+			if _, ok := value.(string); ok {
+				continue
+			}
+
+			switch schemaType {
+			case "object":
+				if _, ok := value.(map[string]any); ok {
+					toolCalls[i].Function.Arguments[name] = value
+				}
+
+			case "array":
+				if _, ok := value.([]any); ok {
+					toolCalls[i].Function.Arguments[name] = value
+				}
+
+			case "number":
+				if _, ok := value.(json.Number); ok {
+					toolCalls[i].Function.Arguments[name] = value
+				}
+
+			case "integer":
+				if number, ok := value.(json.Number); ok && gemmaJSONInteger(number) {
+					toolCalls[i].Function.Arguments[name] = value
+				}
+
+			case "boolean":
+				if _, ok := value.(bool); ok {
+					toolCalls[i].Function.Arguments[name] = value
+				}
+
+			case "null":
+				if value == nil {
+					toolCalls[i].Function.Arguments[name] = nil
+				}
+			}
+		}
+	}
+}
+
+func gemmaToolProperties(tools []model.D, name string) model.D {
+	var properties model.D
+
+	for _, tool := range tools {
+		if tool["type"] != "function" {
+			continue
+		}
+
+		function, ok := tool["function"].(model.D)
+		if !ok || function["name"] != name {
+			continue
+		}
+
+		if properties != nil {
+			return nil
+		}
+
+		parameters, ok := function["parameters"].(model.D)
+		if !ok {
+			return nil
+		}
+
+		properties, ok = parameters["properties"].(model.D)
+		if !ok {
+			return nil
+		}
+	}
+
+	return properties
+}
+
+func gemmaSchemaType(value any) (string, bool) {
+	switch value := value.(type) {
+	case string:
+		return value, true
+
+	case []any:
+		if len(value) == 1 {
+			schemaType, ok := value[0].(string)
+			return schemaType, ok
+		}
+
+	case []string:
+		if len(value) == 1 {
+			return value[0], true
+		}
+	}
+
+	return "", false
+}
+
+func gemmaJSONInteger(number json.Number) bool {
+	value, ok := new(big.Rat).SetString(number.String())
+	return ok && value.IsInt()
 }
 
 func newToolCallID() string {
