@@ -389,11 +389,13 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcNewLogicalPosition:  cache.imcNewLogicalPosition,
 		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
+		imcPromoteCheckpoint:   cache.imcPromoteCheckpoint,
 
 		imcNewCacheTokens:     cache.imcNewCacheTokens,
 		imcNewTotalCached:     cache.imcNewTotalCached,
 		imcNewCachedMsgCount:  cache.imcNewCachedMsgCount,
 		imcNewMsgsHash:        cache.imcNewMsgsHash,
+		imcNewEndsAtUser:      cache.imcNewEndsAtUser,
 		imcClearSeq:           cache.imcClearSeq,
 		imcNewCachedTokens:    cache.imcNewCachedTokens,
 		imcMediaBuild:         cache.imcMediaBuild,

@@ -49,23 +49,36 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 			continue
 		}
 
+		context := session.totalTokensCached
+		messages := session.cachedMsgCount
+		hasMedia := session.hasMedia
+		checkpointAllocated := 0
+		if checkpoint := session.turnCheckpoint; checkpoint != nil {
+			checkpointAllocated = checkpoint.allocatedContext
+			if context == 0 && checkpoint.totalTokensCached > 0 {
+				context = checkpoint.totalTokensCached
+				messages = checkpoint.cachedMsgCount
+				hasMedia = checkpoint.hasMedia
+			}
+		}
+
 		state := IMCSessionStateEmpty
 		switch {
 		case session.reserved:
 			state = IMCSessionStateActive
-		case session.totalTokensCached > 0:
+		case context > 0:
 			state = IMCSessionStateIdle
 		}
 
 		details = append(details, IMCSessionDetail{
 			ID:            session.id,
 			State:         state,
-			Context:       session.totalTokensCached,
-			Allocated:     session.allocatedContext,
-			Messages:      session.cachedMsgCount,
+			Context:       context,
+			Allocated:     session.allocatedContext + checkpointAllocated,
+			Messages:      messages,
 			ContextWindow: m.cfg.ContextWindow(),
 			LastUsed:      session.lastUsed,
-			HasMedia:      session.hasMedia,
+			HasMedia:      hasMedia,
 		})
 	}
 
@@ -127,13 +140,77 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	return nil
 }
 
-// imcResetSession clears all metadata on an IMC session, returning it to
-// an empty state. The session's pool index (id) is preserved; seqID is
-// reset to imcSeqIDUnbound because a reset session is no longer bound
-// to any execution slot's KV sequence. The caller must hold m.cacheMu
-// (write lock).
-func imcResetSession(s *imcSession) {
-	s.seqID = imcSeqIDUnbound
+func (s *imcSession) takeRollingSnapshot() imcSnapshot {
+	snapshot := imcSnapshot{
+		cachedMsgsHash:        s.cachedMsgsHash,
+		cachedTokens:          s.cachedTokens,
+		totalTokensCached:     s.totalTokensCached,
+		nextLogicalPos:        s.nextLogicalPos,
+		cachedMsgCount:        s.cachedMsgCount,
+		kvState:               s.kvState,
+		draftKVState:          s.draftKVState,
+		pendingH:              s.pendingH,
+		allocatedContext:      s.allocatedContext,
+		hasMedia:              s.hasMedia,
+		useMRoPE:              s.useMRoPE,
+		mediaKVCounts:         s.mediaKVCounts,
+		promptPlan:            s.promptPlan,
+		samplerPromptTokens:   s.samplerPromptTokens,
+		cachedRenderInputHash: s.cachedRenderInputHash,
+		endsAtUser:            s.rollingEndsAtUser,
+	}
+
+	s.installRollingSnapshot(imcSnapshot{})
+
+	return snapshot
+}
+
+func (s *imcSession) installRollingSnapshot(snapshot imcSnapshot) {
+	s.cachedMsgsHash = snapshot.cachedMsgsHash
+	s.cachedTokens = snapshot.cachedTokens
+	s.totalTokensCached = snapshot.totalTokensCached
+	s.nextLogicalPos = snapshot.nextLogicalPos
+	s.cachedMsgCount = snapshot.cachedMsgCount
+	s.kvState = snapshot.kvState
+	s.draftKVState = snapshot.draftKVState
+	s.pendingH = snapshot.pendingH
+	s.allocatedContext = snapshot.allocatedContext
+	s.hasMedia = snapshot.hasMedia
+	s.useMRoPE = snapshot.useMRoPE
+	s.mediaKVCounts = snapshot.mediaKVCounts
+	s.promptPlan = snapshot.promptPlan
+	s.samplerPromptTokens = snapshot.samplerPromptTokens
+	s.cachedRenderInputHash = snapshot.cachedRenderInputHash
+	s.rollingEndsAtUser = snapshot.endsAtUser
+}
+
+func (s *imcSession) swapTurnCheckpoint() {
+	if s == nil || s.turnCheckpoint == nil {
+		return
+	}
+
+	rolling := s.takeRollingSnapshot()
+	s.installRollingSnapshot(*s.turnCheckpoint)
+	s.turnCheckpoint = &rolling
+}
+
+func closeIMCSnapshot(snapshot *imcSnapshot) {
+	if snapshot == nil {
+		return
+	}
+	if snapshot.kvState != nil {
+		_ = snapshot.kvState.Close()
+	}
+	if snapshot.draftKVState != nil {
+		_ = snapshot.draftKVState.Close()
+	}
+}
+
+func imcResetRollingSession(s *imcSession) {
+	if s == nil {
+		return
+	}
+
 	s.cachedMsgsHash = ""
 	s.cachedTokens = nil
 	s.totalTokensCached = 0
@@ -141,23 +218,35 @@ func imcResetSession(s *imcSession) {
 	// zeroed SessionStore backing allocation represented by this high-water mark.
 	s.nextLogicalPos = 0
 	s.cachedMsgCount = 0
-	// Reset zeroes the retained backing byte array before setting Len to 0.
-	// The next conversation can reuse the allocation without observing bytes
-	// from the session that previously owned this cache entry.
-	s.kvState.Reset()
+	if s.kvState != nil {
+		s.kvState.Reset()
+	}
 	if s.draftKVState != nil {
 		s.draftKVState.Reset()
 	}
 	clear(s.pendingH[:cap(s.pendingH)])
 	s.pendingH = s.pendingH[:0]
-	s.lastUsed = time.Time{}
-	s.reserved = false
 	s.hasMedia = false
 	s.useMRoPE = false
 	s.mediaKVCounts = nil
 	s.promptPlan = promptPlan{}
 	s.samplerPromptTokens = nil
 	s.cachedRenderInputHash = ""
+	s.rollingEndsAtUser = false
+}
+
+// imcResetSession clears all metadata on an IMC session, returning it to
+// an empty state. The session's pool index (id) is preserved; seqID is
+// reset to imcSeqIDUnbound because a reset session is no longer bound
+// to any execution slot's KV sequence. The caller must hold m.cacheMu
+// (write lock).
+func imcResetSession(s *imcSession) {
+	s.seqID = imcSeqIDUnbound
+	imcResetRollingSession(s)
+	closeIMCSnapshot(s.turnCheckpoint)
+	s.turnCheckpoint = nil
+	s.lastUsed = time.Time{}
+	s.reserved = false
 }
 
 // imcReleaseReservation clears a session's reserved flag.
@@ -173,18 +262,69 @@ func (m *Model) imcReleaseReservation(sessionID int) {
 	m.cacheMu.Unlock()
 }
 
-// imcInvalidateReservedSession removes a corrupt snapshot while preserving
-// this request's reservation. finishSlot unbinds the session and performs the
-// single release, so no subsequent request can bind it during error cleanup.
+// imcInvalidateReservedSession removes corrupt rolling state while preserving
+// both this request's reservation and any independent turn checkpoint.
 func (m *Model) imcInvalidateReservedSession(session *imcSession) {
 	if session == nil {
 		return
 	}
 
 	m.cacheMu.Lock()
-	imcResetSession(session)
+	imcResetRollingSession(session)
+	session.seqID = imcSeqIDUnbound
 	session.reserved = true
 	m.cacheMu.Unlock()
+}
+
+// imcPromoteTurnCheckpoint moves the selected rolling user-boundary snapshot
+// into the retained checkpoint and installs fresh rolling stores. The slot has
+// already restored and extended the model state, so moving host-side ownership
+// avoids a snapshot-sized byte copy. If the new rolling snapshot later fails,
+// invalidation clears only rolling state and leaves this checkpoint reusable.
+func (m *Model) imcPromoteTurnCheckpoint(ctx context.Context, session *imcSession) error {
+	if session == nil {
+		return nil
+	}
+
+	targetStore, err := newSessionStore(m.cfg)
+	if err != nil {
+		return fmt.Errorf("create rolling session store: %w", err)
+	}
+
+	var draftStore SessionStore
+	if session.draftKVState != nil {
+		draftStore, err = newSessionStore(m.cfg)
+		if err != nil {
+			_ = targetStore.Close()
+			return fmt.Errorf("create rolling draft session store: %w", err)
+		}
+	}
+
+	m.cacheMu.Lock()
+	if !session.rollingEndsAtUser || session.hasMedia || session.totalTokensCached == 0 || session.kvState == nil || session.kvState.Len() == 0 {
+		m.cacheMu.Unlock()
+		_ = targetStore.Close()
+		if draftStore != nil {
+			_ = draftStore.Close()
+		}
+		return nil
+	}
+
+	oldCheckpoint := session.turnCheckpoint
+	checkpoint := session.takeRollingSnapshot()
+	session.installRollingSnapshot(imcSnapshot{
+		kvState:      targetStore,
+		draftKVState: draftStore,
+	})
+	session.turnCheckpoint = &checkpoint
+	m.cacheMu.Unlock()
+
+	closeIMCSnapshot(oldCheckpoint)
+	m.log(ctx, "imc", "status", "turn-checkpoint-promoted", "imc_cache_entry", session.id,
+		"messages", checkpoint.cachedMsgCount, "tokens", checkpoint.totalTokensCached,
+		"snapshot_bytes", fmtBytes(uint64(checkpoint.kvState.Len())))
+
+	return nil
 }
 
 // imcCommitSession updates a session's metadata after a successful cache
@@ -208,7 +348,7 @@ func (m *Model) imcInvalidateReservedSession(session *imcSession) {
 // renderInputHash is the imcRenderFingerprint of the inputs that produced
 // the just-cached prefix; pass "" when no fingerprint was computed (the
 // session simply will not qualify for the pure-hit snapshot-skip path).
-func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int, renderInputHash string) {
+func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int, renderInputHash string, endsAtUser bool) {
 	if session == nil {
 		return
 	}
@@ -221,6 +361,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 	session.hasMedia = hasMedia
 	session.mediaKVCounts = mediaKVCounts
 	session.cachedRenderInputHash = renderInputHash
+	session.rollingEndsAtUser = endsAtUser
 	session.samplerPromptTokens = nil
 	if !hasMedia {
 		session.useMRoPE = false
@@ -249,7 +390,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 // its matching media-prefix metadata. The caller owns the returned old store
 // and closes it after the swap. reserved remains set until the caller publishes
 // or releases the reservation.
-func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, renderInputHash string) SessionStore {
+func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, renderInputHash string, endsAtUser bool) SessionStore {
 	if session == nil || staged == nil {
 		return nil
 	}
@@ -264,6 +405,7 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	session.promptPlan = plan
 	session.samplerPromptTokens = samplerPromptTokens
 	session.cachedRenderInputHash = renderInputHash
+	session.rollingEndsAtUser = endsAtUser
 	session.lastUsed = time.Now()
 	session.cachedTokens = nil
 	session.allocatedContext = max(session.allocatedContext, totalCached)

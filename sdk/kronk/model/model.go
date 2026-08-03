@@ -95,6 +95,32 @@ type imcSession struct {
 	// cachedRenderInputHash guards token-v2 pure-hit snapshot reuse against
 	// changes to template inputs that are not represented by message tokens.
 	cachedRenderInputHash string
+
+	rollingEndsAtUser bool         // True when the rolling snapshot ends at a real user-turn boundary.
+	turnCheckpoint    *imcSnapshot // Previous complete user-turn snapshot retained across template-induced divergence.
+}
+
+// imcSnapshot owns one complete, externally restorable IMC state. Rolling
+// state remains directly on imcSession for the hot path; turnCheckpoint uses
+// this shape so the planner can atomically swap a checkpoint into the rolling
+// fields and then reuse the existing restore/extend machinery unchanged.
+type imcSnapshot struct {
+	cachedMsgsHash        string
+	cachedTokens          []llama.Token
+	totalTokensCached     int
+	nextLogicalPos        int
+	cachedMsgCount        int
+	kvState               SessionStore
+	draftKVState          SessionStore
+	pendingH              []float32
+	allocatedContext      int
+	hasMedia              bool
+	useMRoPE              bool
+	mediaKVCounts         []int
+	promptPlan            promptPlan
+	samplerPromptTokens   []llama.Token
+	cachedRenderInputHash string
+	endsAtUser            bool
 }
 
 func (s *imcSession) logicalPosition() int {
@@ -824,6 +850,18 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 				cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] draft store: %w", i, err))
 			}
 		}
+		if sess.turnCheckpoint != nil {
+			if sess.turnCheckpoint.kvState != nil {
+				if err := sess.turnCheckpoint.kvState.Close(); err != nil {
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] checkpoint store: %w", i, err))
+				}
+			}
+			if sess.turnCheckpoint.draftKVState != nil {
+				if err := sess.turnCheckpoint.draftKVState.Close(); err != nil {
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] checkpoint draft store: %w", i, err))
+				}
+			}
+		}
 	}
 	m.imcSessions = nil
 	m.parser = nil
@@ -917,6 +955,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 	dCtxParams.NBatch = targetCtxParams.NBatch
 	dCtxParams.NUbatch = targetCtxParams.NUbatch
 	dCtxParams.NSeqMax = 1
+	dCtxParams.KVUnified = targetCtxParams.KVUnified
 	dCtxParams.FlashAttentionType = targetCtxParams.FlashAttentionType
 	dCtxParams.NThreads = targetCtxParams.NThreads
 	dCtxParams.NThreadsBatch = targetCtxParams.NThreadsBatch
@@ -1198,6 +1237,18 @@ func (m *Model) Unload(ctx context.Context) error {
 		if sess.draftKVState != nil {
 			if err := sess.draftKVState.Close(); err != nil {
 				m.log(ctx, "unload", "status", "draft-session-store-close-failed", "session", i, "err", err.Error())
+			}
+		}
+		if sess.turnCheckpoint != nil {
+			if sess.turnCheckpoint.kvState != nil {
+				if err := sess.turnCheckpoint.kvState.Close(); err != nil {
+					m.log(ctx, "unload", "status", "checkpoint-session-store-close-failed", "session", i, "err", err.Error())
+				}
+			}
+			if sess.turnCheckpoint.draftKVState != nil {
+				if err := sess.turnCheckpoint.draftKVState.Close(); err != nil {
+					m.log(ctx, "unload", "status", "checkpoint-draft-session-store-close-failed", "session", i, "err", err.Error())
+				}
 			}
 		}
 	}

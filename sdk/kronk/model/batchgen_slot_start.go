@@ -346,7 +346,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 			cacheIdx = llama.Pos(nextLogicalPos)
 
-			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash)
+			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
 			e.model.cacheMu.Lock()
 			job.imcSession.promptPlan = job.imcPromptPlan
 			job.imcSession.samplerPromptTokens = slices.Clone(samplerCacheTokens)
@@ -497,8 +497,6 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				}
 				e.model.decodeMu.Unlock()
 
-				e.model.imcInvalidateReservedSession(job.imcSession)
-
 				e.finishSlot(s, fmt.Errorf("start-slot: imc decode: %w", decodeErr))
 				return
 			}
@@ -507,8 +505,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
 
+			if job.imcPromoteCheckpoint {
+				if err := e.model.imcPromoteTurnCheckpoint(job.ctx, job.imcSession); err != nil {
+					e.finishSlot(s, fmt.Errorf("start-slot: preserve IMC turn checkpoint: %w", err))
+					return
+				}
+			}
+
 			hasMedia := len(job.imcMediaKVCounts) > 0
-			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcExpectedRenderHash)
+			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
 			e.model.cacheMu.Lock()
 			job.imcSession.promptPlan = job.imcPromptPlan
 			e.model.cacheMu.Unlock()
@@ -770,7 +775,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 				oldStore := e.model.imcCommitMediaAdvance(job.imcSession, snapshotStore,
 					job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount,
-					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcMediaSamplerTokens, job.imcExpectedRenderHash)
+					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcMediaSamplerTokens, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
 				if oldStore != nil {
 					if err := oldStore.Close(); err != nil {
 						e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-old-store-close-failed", "err", err)

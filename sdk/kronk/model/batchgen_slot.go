@@ -59,12 +59,14 @@ type chatJob struct {
 	imcNewLogicalPosition  int  // Next logical position after a media-anchor advance.
 	imcReservationHeld     bool // True until this request publishes or releases its reservation.
 	imcPureHitSkipSnapshot bool // True when startSlot may skip the post-restore snapshot.
+	imcPromoteCheckpoint   bool // True when rolling state must be retained as a user-turn checkpoint before commit.
 
 	// IMC dedicated slot fields.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
 	imcNewTotalCached    int           // Total cached KV positions after extension
 	imcNewCachedMsgCount int           // New cachedMsgCount after extension
 	imcNewMsgsHash       string        // New cachedMsgsHash after extension
+	imcNewEndsAtUser     bool          // True when the new rolling snapshot ends at a real user message.
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 

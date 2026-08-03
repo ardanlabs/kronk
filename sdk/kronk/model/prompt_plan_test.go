@@ -168,7 +168,7 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 
-	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, "render")
+	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, "render", false)
 	if gotOld != oldStore || session.kvState != staged || session.totalTokensCached != 13 || session.nextLogicalPos != 6 || !session.promptPlan.equal(advanced) || !reflect.DeepEqual(session.samplerPromptTokens, []llama.Token{1, 2, 3}) {
 		t.Fatal("media advance did not atomically publish the staged state")
 	}
@@ -198,7 +198,7 @@ func TestIMCCommitMediaAdvanceRejectsMissingStage(t *testing.T) {
 	}
 	m := &Model{}
 
-	if old := m.imcCommitMediaAdvance(session, nil, "new", 13, 3, 6, promptPlan{}, nil, "render"); old != nil {
+	if old := m.imcCommitMediaAdvance(session, nil, "new", 13, 3, 6, promptPlan{}, nil, "render", false); old != nil {
 		t.Fatalf("old store = %T, want nil for rejected commit", old)
 	}
 	if session.kvState != oldStore || session.cachedMsgsHash != "old" || session.totalTokensCached != 12 || session.nextLogicalPos != 5 {

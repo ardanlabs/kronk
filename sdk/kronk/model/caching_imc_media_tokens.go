@@ -36,6 +36,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	result.imcPromptPlan = stable
 	result.imcNewCachedMsgCount = messageCount(d)
 	result.imcNewMsgsHash = documentMessagesHash(d)
+	result.imcNewEndsAtUser = messagesEndAtRealUser(dMessages(d))
 	result.imcMediaCacheD = stableD
 
 	m.cacheMu.Lock()
@@ -44,7 +45,8 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		if session.reserved {
 			continue
 		}
-		if session.totalTokensCached == 0 {
+		checkpointOccupied := session.turnCheckpoint != nil && session.turnCheckpoint.totalTokensCached > 0
+		if session.totalTokensCached == 0 && !checkpointOccupied {
 			if empty == nil {
 				empty = session
 			}

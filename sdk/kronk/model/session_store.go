@@ -89,9 +89,9 @@ type SessionStore interface {
 	Reset()
 
 	// Close releases any backing storage held by the store (file
-	// descriptors, on-disk files, network handles). Called once at
-	// Model.Unload time, never on the per-request hot path. The RAM
-	// impl is a no-op; the disk impl removes its per-session file.
+	// descriptors, on-disk files, network handles). Called when a retained
+	// turn checkpoint is replaced and at Model.Unload time. The RAM impl is
+	// a no-op; the disk impl removes its per-session file.
 	// After Close the store must not be used again.
 	Close() error
 }
