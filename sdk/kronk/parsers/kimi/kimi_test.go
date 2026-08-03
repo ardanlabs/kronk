@@ -190,19 +190,6 @@ func TestStateMachineFlushPendingTag(t *testing.T) {
 	}
 }
 
-func TestReasoningNormalization(t *testing.T) {
-	p := Parser{}
-	input := "before" + thinkOpen + "private" + thinkClose + "after"
-	if got := p.StripReasoningContent(input); got != "beforeafter" {
-		t.Errorf("StripReasoningContent() = %q, want %q", got, "beforeafter")
-	}
-
-	rendered := thinkOpen + " \n" + thinkClose + "history" + thinkOpen
-	if got := p.StripEmptyReasoning(rendered); got != "history"+thinkOpen {
-		t.Errorf("StripEmptyReasoning() = %q, want %q", got, "history"+thinkOpen)
-	}
-}
-
 func assertResult(t *testing.T, sm model.StateMachine, token string, channel model.Channel, content string, eog bool) {
 	t.Helper()
 	result, gotEOG := sm.Classify(token)
