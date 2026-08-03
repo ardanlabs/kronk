@@ -854,6 +854,75 @@ func TestParseParamsTopP(t *testing.T) {
 	}
 }
 
+func TestParseParamsMinP(t *testing.T) {
+	tests := []struct {
+		name    string
+		minP    any
+		include bool
+		want    float32
+	}{
+		{name: "omitted uses model default", want: 0.05},
+		{name: "explicit zero disables min-p", minP: 0.0, include: true, want: 0.0},
+		{name: "explicit nonzero overrides model default", minP: 0.1, include: true, want: 0.1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg: Config{DefaultParams: Params{MinP: 0.05}},
+				log: noopLog,
+			}
+			d := D{}
+			if tt.include {
+				d["min_p"] = tt.minP
+			}
+
+			params, err := m.parseParams(context.Background(), d)
+			if err != nil {
+				t.Fatalf("parseParams: %v", err)
+			}
+			if got := params.MinP; got != tt.want {
+				t.Errorf("MinP: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseParamsRepeatPenalty(t *testing.T) {
+	tests := []struct {
+		name          string
+		repeatPenalty any
+		include       bool
+		want          float32
+	}{
+		{name: "omitted uses explicit model default", want: 1.1},
+		{name: "explicit zero disables penalty", repeatPenalty: 0.0, include: true, want: 1.0},
+		{name: "explicit negative disables penalty", repeatPenalty: -1.0, include: true, want: 1.0},
+		{name: "explicit positive overrides model default", repeatPenalty: 1.2, include: true, want: 1.2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg: Config{DefaultParams: Params{RepeatPenalty: 1.1}},
+				log: noopLog,
+			}
+			d := D{}
+			if tt.include {
+				d["repeat_penalty"] = tt.repeatPenalty
+			}
+
+			params, err := m.parseParams(context.Background(), d)
+			if err != nil {
+				t.Fatalf("parseParams: %v", err)
+			}
+			if got := params.RepeatPenalty; got != tt.want {
+				t.Errorf("RepeatPenalty: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveSamplingDefaults(t *testing.T) {
 	metadata := map[string]string{
 		"general.sampling.temp":           "1.0",
@@ -881,8 +950,8 @@ func TestResolveSamplingDefaults(t *testing.T) {
 	if got, want := params.RepeatLastN, int32(-1); got != want {
 		t.Errorf("RepeatLastN: got %d, want GGUF value %d", got, want)
 	}
-	if got, want := params.RepeatPenalty, float32(1.1); got != want {
-		t.Errorf("RepeatPenalty: got %v, want GGUF value %v", got, want)
+	if got, want := params.RepeatPenalty, float32(DefRepeatPenalty); got != want {
+		t.Errorf("RepeatPenalty: got %v, want disabled default %v", got, want)
 	}
 }
 
@@ -941,8 +1010,8 @@ func TestParseParamsPreservesResolvedZeroDefaults(t *testing.T) {
 	if params.TopP != 0 {
 		t.Errorf("TopP: got %v, want resolved 0", params.TopP)
 	}
-	if params.RepeatPenalty != 0 {
-		t.Errorf("RepeatPenalty: got %v, want resolved 0", params.RepeatPenalty)
+	if params.RepeatPenalty != DefRepeatPenalty {
+		t.Errorf("RepeatPenalty: got %v, want disabled default %v", params.RepeatPenalty, DefRepeatPenalty)
 	}
 	if params.XtcProbability != 0 {
 		t.Errorf("XtcProbability: got %v, want resolved 0", params.XtcProbability)

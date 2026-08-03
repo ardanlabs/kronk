@@ -19,6 +19,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
+	if job.params.Seed != nil {
+		s.specAccEMA = 1.0
+		s.mtpProbeTick = 0
+	}
 	if stateMachine, ok := s.stateMachine.(ToolAwareStateMachine); ok {
 		tools, _ := job.d["tools"].([]D)
 		stateMachine.SetTools(tools)
@@ -98,8 +102,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		"seq", s.seqID,
 	)
 
-	// Create sampler for this request.
-	s.sampler = e.model.toSampler(job.ctx, job.params)
+	// Create sampler and speculative RNG state for this request.
+	seeds, specRNG, err := resolveSamplingSeeds(job.params.Seed)
+	if err != nil {
+		e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
+		return
+	}
+	s.samplingSeeds = seeds
+	s.specRNG = specRNG
+	s.sampler = e.model.toSampler(job.ctx, job.params, seeds)
 
 	// Create grammar sampler if grammar is specified (kept separate from chain).
 	if job.params.Grammar != "" {

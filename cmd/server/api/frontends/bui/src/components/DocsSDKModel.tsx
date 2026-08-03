@@ -621,6 +621,10 @@ export default function DocsSDKModel() {
 	// response. When set to true, the prompt will be included. Default is false.
 	ReturnPrompt bool \`json:"return_prompt"\`
 
+	// Seed initializes request sampling randomness. Nil selects a random seed;
+	// any non-nil value, including 0, requests repeatable sampling.
+	Seed *uint32 \`json:"seed,omitempty"\`
+
 	// Stream determines whether to stream the response.
 	Stream bool \`json:"stream"\`
 

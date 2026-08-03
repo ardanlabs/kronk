@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -168,6 +169,8 @@ type slot struct {
 	specAccEMA          float64       // Exponential moving average of acceptance rate (persists across requests)
 	specRounds          int           // Verify rounds completed this request (used to throttle per-round logging)
 	mtpProbeTick        int           // Counts decode rounds spent fully throttled (EMA < floor); drives the periodic recovery probe in chooseNDraft. Persists across requests.
+	samplingSeeds       samplingSeeds // Derived native and Go RNG seeds for this request
+	specRNG             *rand.Rand    // Request-local RNG for speculative acceptance and manual sampling
 
 	// Per-slot owned buffers for speculative decoding. Avoids shared buffer
 	// corruption when multiple slots generate draft tokens in the same
@@ -352,6 +355,8 @@ func (s *slot) reset() {
 	s.specCoveredTotal = 0
 	s.processingSpecToken = false
 	s.specRounds = 0
+	s.samplingSeeds = samplingSeeds{}
+	s.specRNG = nil
 	s.specPendingFinalize = false
 	s.specPendingAccepted = 0
 	s.specPendingBonusToken = 0

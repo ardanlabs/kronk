@@ -37,7 +37,7 @@ func lookupProb(entries []candidateEntry, tok llama.Token) float32 {
 //  3. Sample: with probability proportional to the adjusted draft entries,
 //     pick from those. Otherwise, sample from the full target distribution
 //     (which correctly favors tokens the draft model missed).
-func sampleAdjustedSparseFromFull(targetProbs []float32, draftEntries, scratch []candidateEntry) llama.Token {
+func sampleAdjustedSparseFromFull(rng *rand.Rand, targetProbs []float32, draftEntries, scratch []candidateEntry) llama.Token {
 	scratch = scratch[:0]
 	var adjustedSum float64
 	var draftTargetSum float64
@@ -61,11 +61,11 @@ func sampleAdjustedSparseFromFull(targetProbs []float32, draftEntries, scratch [
 	totalMass := adjustedSum + residualMass
 
 	if !(totalMass > 0) {
-		return sampleFromProbs(targetProbs)
+		return sampleFromProbs(rng, targetProbs)
 	}
 
 	// Sample: pick adjusted draft candidate or fall back to full target.
-	r := rand.Float64() * totalMass
+	r := rng.Float64() * totalMass
 
 	if r < adjustedSum && len(scratch) > 0 {
 		// Sample from adjusted draft entries.
@@ -105,5 +105,5 @@ func sampleAdjustedSparseFromFull(targetProbs []float32, draftEntries, scratch [
 	}
 
 	// Fallback: degenerate case, sample from full target distribution.
-	return sampleFromProbs(targetProbs)
+	return sampleFromProbs(rng, targetProbs)
 }

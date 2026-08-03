@@ -45,12 +45,21 @@ These parameters control how Kronk selects the next token:
 | `top_k`       | integer   | `40`     | Keeps only the K most probable candidates. |
 | `top_p`       | number    | `0.9`    | Keeps the smallest candidate set whose cumulative probability reaches P. |
 | `min_p`       | number    | `0.0`    | Removes candidates below `min_p × probability_of_most_likely_token`; `0` disables it. |
+| `seed`        | integer   | random    | Initializes sampling randomness; values from `0` through `4294967295` request repeatable sampling. |
 
 Explicit request values override model-specific sampling defaults, including
 `top_p: 1`, which disables nucleus filtering. When `temperature`, `top_k`, or
 `top_p` is omitted, Kronk uses the configured value, GGUF recommendation, or
 baseline default in that order. Set `temperature: 0` explicitly to request
 greedy generation. Set `top_k: 0` to disable top-k filtering.
+
+When `seed` is omitted, Kronk chooses random sampler state for the request. An
+explicit seed, including `seed: 0`, makes target sampling, classic draft
+sampling, and speculative acceptance and replacement decisions repeatable.
+Repeatability requires the same Kronk and native-library builds, model files,
+request, sampling settings, backend and devices, speculative mode, and
+equivalent batching conditions. It is not guaranteed across software versions,
+backends, quantizations, sampler changes, or different batching schedules.
 
 ## 10.3 Repetition Control
 

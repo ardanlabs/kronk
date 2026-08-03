@@ -203,14 +203,14 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	}
 
 	// Select sampler. Greedy uses the shared draft sampler (argmax).
-	// Non-greedy creates or reuses the per-slot draft sampler and resets it
-	// so rejected token history from the previous speculative round doesn't
-	// accumulate and skew proposals.
+	// Non-greedy creates or reuses the per-slot draft sampler. Preserve the
+	// existing per-round reset for random requests, but let a seeded request's
+	// RNG stream advance across rounds instead of replaying its first draws.
 	sampler := draft.sampler
 	if !greedy {
 		if s.draftSampler == 0 {
-			s.draftSampler = buildDraftSampler(draft.vocab, draft.suppressTokens, s.job.params)
-		} else {
+			s.draftSampler = buildDraftSampler(draft.vocab, draft.suppressTokens, s.job.params, s.samplingSeeds.draftDist)
+		} else if s.job.params.Seed == nil {
 			llama.SamplerReset(s.draftSampler)
 		}
 		sampler = s.draftSampler
@@ -514,7 +514,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 
 			// Accept with probability min(1, p_target / q_draft).
 			ratio := float64(pTarget) / float64(qDraft)
-			if ratio >= 1.0 || rand.Float64() < ratio {
+			if ratio >= 1.0 || s.specRNG.Float64() < ratio {
 				accepted++
 				s.specAcceptedTotal++
 				s.nPast = specAcceptedNPast(basePast, accepted)
@@ -532,7 +532,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 			if cap(s.adjustedDistBuf) < len(draftDistsSparse[i]) {
 				s.adjustedDistBuf = make([]candidateEntry, 0, len(draftDistsSparse[i]))
 			}
-			bonusToken = sampleAdjustedSparseFromFull(draftRef.targetProbs, draftDistsSparse[i], s.adjustedDistBuf)
+			bonusToken = sampleAdjustedSparseFromFull(s.specRNG, draftRef.targetProbs, draftDistsSparse[i], s.adjustedDistBuf)
 			break
 		}
 
@@ -559,7 +559,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 		// Without a sparse draft distribution we cannot calculate the
 		// adjusted rejection distribution. Sample from the target and stop
 		// speculating to preserve the target distribution guarantee.
-		bonusToken = sampleFromProbs(draft.targetProbs)
+		bonusToken = sampleFromProbs(s.specRNG, draft.targetProbs)
 		break
 	}
 
@@ -583,7 +583,7 @@ func (e *batchEngine) verifySpeculativeTokens(s *slot, buf []byte) {
 		default:
 			draft := e.model.draft.core()
 			draft.sortIndices = applySamplerFilters(targetLogits, draft.targetProbs, e.model.suppressTokens, temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK, draft.sortIndices, &draft.filterBuf)
-			bonusToken = sampleFromProbs(draft.targetProbs)
+			bonusToken = sampleFromProbs(s.specRNG, draft.targetProbs)
 		}
 	}
 
@@ -899,12 +899,12 @@ func argmax(logits []float32) llama.Token {
 
 // sampleFromProbs samples a token from a probability distribution using
 // inverse transform sampling.
-func sampleFromProbs(probs []float32) llama.Token {
+func sampleFromProbs(rng *rand.Rand, probs []float32) llama.Token {
 	if len(probs) == 0 {
 		return 0
 	}
 
-	r := rand.Float32()
+	r := rng.Float32()
 	var cumulative float32
 
 	last := 0

@@ -1012,7 +1012,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 // matches the request's sampling parameters. This ensures the draft model's
 // proposal distribution q(x) is consistent with the request's temperature,
 // top-k, and other settings.
-func buildDraftSampler(vocab llama.Vocab, suppressTokens []llama.Token, params Params) llama.Sampler {
+func buildDraftSampler(vocab llama.Vocab, suppressTokens []llama.Token, params Params, seed uint32) llama.Sampler {
 	// HEAP-CORRUPTION WORKAROUND: do NOT call SamplerChainDefaultParams
 	// (yzma FFI return-type mismatch overruns Go heap by 7 bytes). See
 	// detailed comment in toSampler in params.go.
@@ -1025,7 +1025,7 @@ func buildDraftSampler(vocab llama.Vocab, suppressTokens []llama.Token, params P
 	llama.SamplerChainAdd(chain, llama.SamplerInitTopP(params.TopP, 0))
 	llama.SamplerChainAdd(chain, llama.SamplerInitMinP(params.MinP, 0))
 	llama.SamplerChainAdd(chain, llama.SamplerInitTempExt(params.Temperature, 0, 1.0))
-	llama.SamplerChainAdd(chain, llama.SamplerInitDist(llama.DefaultSeed))
+	llama.SamplerChainAdd(chain, llama.SamplerInitDist(seed))
 
 	return chain
 }
