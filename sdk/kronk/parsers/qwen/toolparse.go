@@ -68,7 +68,9 @@ func parseQwenXML(content string) []model.ResponseToolCall {
 			}
 			paramClose := valueStart + paramCloseRel
 
-			paramValue := strings.TrimSpace(remaining[valueStart:paramClose])
+			paramValue := remaining[valueStart:paramClose]
+			paramValue = strings.TrimPrefix(paramValue, "\n")
+			paramValue = strings.TrimSuffix(paramValue, "\n")
 
 			switch {
 			case len(paramValue) == 0:

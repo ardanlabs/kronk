@@ -47,6 +47,30 @@ func TestParseQwenXML_PreservesEscapeSequences(t *testing.T) {
 	}
 }
 
+func TestParseQwenXML_PreservesBoundaryWhitespace(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "leading indentation", value: "\n\t\tvalue\n", want: "\t\tvalue"},
+		{name: "trailing newline", value: "\nvalue\n\n", want: "value\n"},
+		{name: "leading indentation and trailing newline", value: "\n\t\tvalue\n\n", want: "\t\tvalue\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := parseQwenXML("<function=write><parameter=content>" + tt.value + "</parameter></function>")
+			if len(calls) != 1 {
+				t.Fatalf("got %d calls, want 1", len(calls))
+			}
+			if got := calls[0].Function.Arguments["content"]; got != tt.want {
+				t.Errorf("content: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseQwenXML_NumericValueAsFloat(t *testing.T) {
 	calls := parseQwenXML(
 		"<function=add>\n<parameter=n>\n42\n</parameter>\n</function>")
