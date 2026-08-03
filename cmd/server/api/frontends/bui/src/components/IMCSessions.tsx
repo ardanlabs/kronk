@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import type { IMCSessionsResponse } from '../types';
 import { labelWithTip } from './ParamTooltips';
 
-type SortField = 'model_id' | 'id' | 'state' | 'context' | 'allocated' | 'messages' | 'context_window' | 'utilization' | 'last_used' | 'has_media';
+type SortField = 'model_id' | 'id' | 'state' | 'context' | 'allocated' | 'checkpoint_context' | 'checkpoint_allocated' | 'total_allocated' | 'messages' | 'context_window' | 'utilization' | 'last_used' | 'has_media';
 
 const STATE_ORDER = { active: 0, idle: 1, empty: 2 } as const;
 const ALL_MODELS = '';
@@ -100,6 +100,15 @@ export default function IMCSessions() {
         break;
       case 'allocated':
         comparison = a.allocated - b.allocated;
+        break;
+      case 'checkpoint_context':
+        comparison = a.checkpoint_context - b.checkpoint_context;
+        break;
+      case 'checkpoint_allocated':
+        comparison = a.checkpoint_allocated - b.checkpoint_allocated;
+        break;
+      case 'total_allocated':
+        comparison = a.total_allocated - b.total_allocated;
         break;
       case 'messages':
         comparison = a.messages - b.messages;
@@ -200,6 +209,15 @@ export default function IMCSessions() {
                   <th onClick={() => handleSort('allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Allocated', 'imcAllocated')}{sortIndicator('allocated')}
                   </th>
+                  <th onClick={() => handleSort('checkpoint_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Checkpoint', 'imcCheckpointContext')}{sortIndicator('checkpoint_context')}
+                  </th>
+                  <th onClick={() => handleSort('checkpoint_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Checkpoint Allocated', 'imcCheckpointAllocated')}{sortIndicator('checkpoint_allocated')}
+                  </th>
+                  <th onClick={() => handleSort('total_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Total Allocated', 'imcTotalAllocated')}{sortIndicator('total_allocated')}
+                  </th>
                   <th onClick={() => handleSort('context_window')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Window', 'imcContextWindow')}{sortIndicator('context_window')}
                   </th>
@@ -223,6 +241,9 @@ export default function IMCSessions() {
                     <td style={{ textAlign: 'right' }}>{session.messages.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.context.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.allocated.toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>{session.checkpoint_context.toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>{session.checkpoint_allocated.toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>{session.total_allocated.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.context_window.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{utilization(session.context, session.context_window)}</td>
                     <td><span className={`badge badge-${session.has_media ? 'yes' : 'no'}`}>{session.has_media ? 'yes' : 'no'}</span></td>

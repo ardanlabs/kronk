@@ -393,14 +393,17 @@ export default function DocsSDKModel() {
               <h4>IMCSessionDetail</h4>
               <pre className="code-block">
                 <code>{`type IMCSessionDetail struct {
-	ID            int
-	State         IMCSessionState
-	Context       int
-	Allocated     int
-	Messages      int
-	ContextWindow int
-	LastUsed      time.Time
-	HasMedia      bool
+	ID                  int
+	State               IMCSessionState
+	Context             int
+	Allocated           int
+	CheckpointContext   int
+	CheckpointAllocated int
+	TotalAllocated      int
+	Messages            int
+	ContextWindow       int
+	LastUsed            time.Time
+	HasMedia            bool
 }`}</code>
               </pre>
               <p className="doc-description">IMCSessionDetail is a scalar snapshot of one allocated IMC cache entry.</p>

@@ -858,12 +858,16 @@ func TestIMCSessionCapacity(t *testing.T) {
 
 func TestIMCSessions(t *testing.T) {
 	lastUsed := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+	checkpoint := imcSnapshot{
+		totalTokensCached: 1024,
+		allocatedContext:  1536,
+	}
 	m := &Model{
 		cfg: Config{PtrContextWindow: new(8192)},
 		imcSessions: []*imcSession{
 			{id: 0, kvState: ramSessionStore()},
 			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
-			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore()},
+			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore(), turnCheckpoint: &checkpoint},
 		},
 	}
 
@@ -881,13 +885,20 @@ func TestIMCSessions(t *testing.T) {
 	if got[2].State != IMCSessionStateIdle {
 		t.Errorf("session 2 state = %q, want %q", got[2].State, IMCSessionStateIdle)
 	}
-	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].Messages != 4 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
+	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].TotalAllocated != 5632 || got[2].Messages != 4 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
 		t.Errorf("session 2 detail = %+v, want populated scalar snapshot", got[2])
 	}
 
 	got[2].Context = 1
 	if m.imcSessions[2].logicalPosition() != 2100 {
 		t.Fatal("mutating snapshot changed the IMC cache entry")
+	}
+
+	m.imcSessions[2].totalTokensCached = 0
+	m.imcSessions[2].allocatedContext = 0
+	got = m.IMCSessions()
+	if got[2].Context != 1024 || got[2].Allocated != 1536 || got[2].CheckpointContext != 0 || got[2].CheckpointAllocated != 0 || got[2].TotalAllocated != 1536 {
+		t.Errorf("session 2 transition detail = %+v, want checkpoint represented once as the current snapshot", got[2])
 	}
 
 	m.imcCommitSession(m.imcSessions[0], "hash", 3000, 2, nil, false, nil, "", false)

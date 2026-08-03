@@ -460,15 +460,18 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 // IMCSessionDetail provides the current state of one allocated IMC cache
 // entry.
 type IMCSessionDetail struct {
-	ModelID       string    `json:"model_id"`
-	ID            int       `json:"id"`
-	State         string    `json:"state"`
-	Context       int       `json:"context"`
-	Allocated     int       `json:"allocated"`
-	Messages      int       `json:"messages"`
-	ContextWindow int       `json:"context_window"`
-	LastUsed      time.Time `json:"last_used"`
-	HasMedia      bool      `json:"has_media"`
+	ModelID             string    `json:"model_id"`
+	ID                  int       `json:"id"`
+	State               string    `json:"state"`
+	Context             int       `json:"context"`
+	Allocated           int       `json:"allocated"`
+	CheckpointContext   int       `json:"checkpoint_context"`
+	CheckpointAllocated int       `json:"checkpoint_allocated"`
+	TotalAllocated      int       `json:"total_allocated"`
+	Messages            int       `json:"messages"`
+	ContextWindow       int       `json:"context_window"`
+	LastUsed            time.Time `json:"last_used"`
+	HasMedia            bool      `json:"has_media"`
 }
 
 // IMCSessionsResponse is the current set of allocated IMC cache entries.
@@ -485,15 +488,18 @@ func toIMCSessions(sessions []pool.IMCSessionDetail) IMCSessionsResponse {
 
 	for i, session := range sessions {
 		details[i] = IMCSessionDetail{
-			ModelID:       session.ModelID,
-			ID:            session.ID,
-			State:         string(session.State),
-			Context:       session.Context,
-			Allocated:     session.Allocated,
-			Messages:      session.Messages,
-			ContextWindow: session.ContextWindow,
-			LastUsed:      session.LastUsed,
-			HasMedia:      session.HasMedia,
+			ModelID:             session.ModelID,
+			ID:                  session.ID,
+			State:               string(session.State),
+			Context:             session.Context,
+			Allocated:           session.Allocated,
+			CheckpointContext:   session.CheckpointContext,
+			CheckpointAllocated: session.CheckpointAllocated,
+			TotalAllocated:      session.TotalAllocated,
+			Messages:            session.Messages,
+			ContextWindow:       session.ContextWindow,
+			LastUsed:            session.LastUsed,
+			HasMedia:            session.HasMedia,
 		}
 	}
 

@@ -27,14 +27,17 @@ const (
 
 // IMCSessionDetail is a scalar snapshot of one allocated IMC cache entry.
 type IMCSessionDetail struct {
-	ID            int
-	State         IMCSessionState
-	Context       int
-	Allocated     int
-	Messages      int
-	ContextWindow int
-	LastUsed      time.Time
-	HasMedia      bool
+	ID                  int
+	State               IMCSessionState
+	Context             int
+	Allocated           int
+	CheckpointContext   int
+	CheckpointAllocated int
+	TotalAllocated      int
+	Messages            int
+	ContextWindow       int
+	LastUsed            time.Time
+	HasMedia            bool
 }
 
 // IMCSessions returns the current state of the model's allocated IMC cache
@@ -50,15 +53,23 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 		}
 
 		context := session.totalTokensCached
+		allocated := session.allocatedContext
 		messages := session.cachedMsgCount
 		hasMedia := session.hasMedia
+		checkpointContext := 0
 		checkpointAllocated := 0
+		totalAllocated := session.allocatedContext
 		if checkpoint := session.turnCheckpoint; checkpoint != nil {
+			checkpointContext = checkpoint.totalTokensCached
 			checkpointAllocated = checkpoint.allocatedContext
+			totalAllocated += checkpoint.allocatedContext
 			if context == 0 && checkpoint.totalTokensCached > 0 {
 				context = checkpoint.totalTokensCached
+				allocated = checkpoint.allocatedContext
 				messages = checkpoint.cachedMsgCount
 				hasMedia = checkpoint.hasMedia
+				checkpointContext = 0
+				checkpointAllocated = 0
 			}
 		}
 
@@ -71,14 +82,17 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 		}
 
 		details = append(details, IMCSessionDetail{
-			ID:            session.id,
-			State:         state,
-			Context:       context,
-			Allocated:     session.allocatedContext + checkpointAllocated,
-			Messages:      messages,
-			ContextWindow: m.cfg.ContextWindow(),
-			LastUsed:      session.lastUsed,
-			HasMedia:      hasMedia,
+			ID:                  session.id,
+			State:               state,
+			Context:             context,
+			Allocated:           allocated,
+			CheckpointContext:   checkpointContext,
+			CheckpointAllocated: checkpointAllocated,
+			TotalAllocated:      totalAllocated,
+			Messages:            messages,
+			ContextWindow:       m.cfg.ContextWindow(),
+			LastUsed:            session.lastUsed,
+			HasMedia:            hasMedia,
 		})
 	}
 
