@@ -7,8 +7,11 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Acquire returns the cached handle for req.Key, loading it if
@@ -22,6 +25,8 @@ import (
 func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error) {
 	var zero H
 	start := time.Now()
+	ctx, span := otel.AddSpan(ctx, "pool-acquire")
+	defer span.End()
 
 	if entry, exists := c.cache.GetEntry(req.Key); exists {
 		c.log(ctx, "acquire",
@@ -33,6 +38,7 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 		)
 		metrics.AddPoolAcquire("hit")
 		metrics.ObservePoolAcquireDuration("hit", time.Since(start))
+		span.SetAttributes(attribute.String("result", "hit"))
 		return entry.Value, nil
 	}
 
@@ -101,21 +107,29 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 		metrics.ObservePoolSingleflightWait(time.Since(sfStart))
 	}
 
+	var acquireResult string
 	switch {
 	case err == nil && shared:
+		acquireResult = "dedup"
 		metrics.AddPoolAcquire("dedup")
 	case err == nil:
+		acquireResult = "miss"
 		metrics.AddPoolAcquire("miss")
 	case errors.Is(err, ErrServerBusy):
+		acquireResult = "busy"
 		metrics.AddPoolAcquire("busy")
 	default:
+		acquireResult = "error"
 		metrics.AddPoolAcquire("error")
 	}
+	span.SetAttributes(attribute.String("result", acquireResult))
 	metrics.ObservePoolAcquireDuration("miss", time.Since(start))
 
 	c.PublishMetrics()
 
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return zero, err
 	}
 
