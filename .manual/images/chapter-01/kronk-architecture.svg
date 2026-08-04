@@ -64,11 +64,11 @@
   <!-- Shared application access -->
   <rect x="70" y="270" width="1780" height="125" rx="22" fill="#0f172a"/>
   <text class="eyebrow" x="960" y="299" text-anchor="middle" fill="#5eead4">APPLICATION ACCESS</text>
-  <rect x="100" y="313" width="1720" height="68" rx="12" fill="#1e293b" stroke="#60a5fa" stroke-width="2"/>
-  <text class="heading white" x="535" y="343" text-anchor="middle">DIRECT SDK ACCESS</text>
-  <text class="body light" x="960" y="342" text-anchor="middle">OR</text>
-  <text class="heading white" x="1385" y="343" text-anchor="middle">SHARED MODEL POOL</text>
-  <text class="small light" x="960" y="372" text-anchor="middle">Embedded applications may choose either path; the model server uses the shared pool.</text>
+  <rect x="100" y="310" width="1720" height="74" rx="12" fill="#1e293b" stroke="#60a5fa" stroke-width="2"/>
+  <text class="heading white" x="535" y="340" text-anchor="middle">DIRECT SDK ACCESS</text>
+  <text class="body light" x="960" y="339" text-anchor="middle">OR</text>
+  <text class="heading white" x="1385" y="340" text-anchor="middle">SHARED MODEL POOL</text>
+  <text class="small light" x="960" y="370" text-anchor="middle">Embedded applications may choose either path; the model server uses the shared pool.</text>
 
   <!-- Public SDKs -->
   <g filter="url(#shadow)">
@@ -90,16 +90,16 @@
   <text class="small" x="485" y="652" text-anchor="middle">Go bindings for llama.cpp</text>
   <rect x="105" y="662" width="360" height="30" rx="9" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
   <rect x="505" y="662" width="360" height="30" rx="9" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
-  <text class="mono" x="285" y="684" text-anchor="middle">FFI</text>
-  <text class="mono" x="685" y="684" text-anchor="middle">PUREGO</text>
+  <text class="mono" x="285" y="677" text-anchor="middle" dominant-baseline="middle">FFI</text>
+  <text class="mono" x="685" y="677" text-anchor="middle" dominant-baseline="middle">PUREGO</text>
 
   <text class="eyebrow" x="1435" y="589" text-anchor="middle" fill="#6d28d9">GO → NATIVE BINDINGS</text>
   <text class="heading" x="1435" y="623" text-anchor="middle">BUCKY</text>
   <text class="small" x="1435" y="652" text-anchor="middle">Go bindings for whisper.cpp</text>
   <rect x="1055" y="662" width="360" height="30" rx="9" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
   <rect x="1455" y="662" width="360" height="30" rx="9" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
-  <text class="mono" x="1235" y="684" text-anchor="middle">FFI</text>
-  <text class="mono" x="1635" y="684" text-anchor="middle">PUREGO</text>
+  <text class="mono" x="1235" y="677" text-anchor="middle" dominant-baseline="middle">FFI</text>
+  <text class="mono" x="1635" y="677" text-anchor="middle" dominant-baseline="middle">PUREGO</text>
 
   <!-- Native inference engines -->
   <rect x="70" y="740" width="830" height="75" rx="18" fill="#fff7ed" stroke="#fb923c" stroke-width="3"/>
