@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Stage 4 speculative decoding</title>
+  <title id="title">Speculative Decoding</title>
   <desc id="desc">A drafter proposes multiple candidate tokens. The target verifies them in one forward pass, accepts a prefix, chooses a replacement at divergence or a bonus after full acceptance, synchronizes model state to the accepted prefix, emits accepted candidates plus the target token, and retains that target token for the next decode.</desc>
 
   <defs>

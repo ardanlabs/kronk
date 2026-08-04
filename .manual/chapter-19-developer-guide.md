@@ -195,7 +195,13 @@ make install-tooling
 
 `make setup` configures the repository's hook workflow. Tool installation is separate;
 inspect the Make targets before running them on a platform where package-manager
-changes are undesirable. Common service commands include:
+changes are undesirable. The pre-commit hook regenerates the manual and BUI and, when
+`gomod2nix` is installed, refreshes `zarf/nix/gomod2nix.toml`. It stages only the
+generated BUI source/bundle paths and the Nix dependency file; it does not run
+`git add -A` or stage unrelated working-tree changes. Review the resulting staged diff
+before committing, especially when committing only part of the worktree.
+
+Common service commands include:
 
 ```shell
 make kronk-server
@@ -208,6 +214,42 @@ Native llama and Whisper libraries and test models are large external prerequisi
 Use the CLI and Make targets appropriate to the focused test rather than downloading
 every supported artifact. The Bucky CLI uses `--local` for direct filesystem work;
 web/server operation is the default and there is no `--web` flag.
+
+#### 19.4.1 Native-library compatibility and SDK initialization
+
+The versions in `go.mod`, `sdk/tools/libs` defaults, and the README compatibility
+matrix describe one tested Kronk/Yzma/llama.cpp set. The Kronk 1.30.0 line uses Yzma
+v1.22.0 with llama.cpp b10212 or newer. A dependency update is incomplete unless the
+binding, pinned native build, root and examples modules, generated Nix module data,
+and focused model tests remain aligned. Do not update Yzma or select a newer
+llama.cpp build independently merely because it is available upstream.
+
+Runnable language-model examples should resolve and initialize the same runtime they
+install:
+
+```go
+lib, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger))
+if err != nil {
+    return err
+}
+
+if _, err := lib.Download(ctx, kronk.FmtLogger); err != nil {
+    return err
+}
+
+if err := kronk.Init(kronk.WithLibPath(lib.LibsPath())); err != nil {
+    return err
+}
+```
+
+Call `kronk.Init` after runtime detection and installation but before constructing a
+Kronk model. Passing the manager's resolved `LibsPath` is required: calling bare
+`kronk.Init()` can repeat default selection and load a different bundle from the one
+the example just verified. Initialization is process-wide and should occur once.
+
+Bucky examples follow the same sequence with `sdk/tools/bucky/libs`, `bucky.Init`,
+and `bucky.WithLibPath(lib.LibsPath())`. Keep library installation separate from model
+download in both example families so failures identify the correct dependency.
 
 The exact development toolchain is pinned by `.go-version`, while `go.mod` declares
 the minimum language version. Patch versions may differ, but major and minor must
@@ -327,12 +369,22 @@ snapshot is read, prepared, committed, reset, and closed. Session metadata—cac
 tokens, render-sensitive identity/version, and snapshot—must describe the same prefix.
 Do not update one independently and call the session valid.
 
-The session's reservation and `pending` state serialize mutation and hide the session
-from competing selection until metadata and snapshot bytes agree. Restore only a
-committed snapshot whose token/prompt identity still matches. Ordinary text
-build/extension prepares and commits through the session's existing store; if snapshot
-publication fails, invalidate that session so later work rebuilds it rather than
-claiming the old or partial state is valid.
+The session's `reserved` state serializes mutation and hides the session from competing
+selection until metadata and snapshot bytes agree. The reservation begins in prompt
+planning and survives the queue wait and restore; exact read-only hits keep it through
+generation, while a successfully published text build/extension can release it after
+the stable snapshot is committed. Restore only a committed snapshot whose complete
+token or media plan and expected version still match. Ordinary text build/extension
+prepares and commits through the session's existing store; if snapshot publication
+fails, invalidate that rolling state so later work rebuilds it rather than claiming the
+old or partial state is valid.
+
+Text planning compares complete token sequences and chooses the longest compatible
+rolling state or retained user-turn checkpoint. It never trims a snapshot at an
+internal token match. Before extending rolling state that ends at a real user message,
+move that complete state—including target KV and compatible own-KV MTP state—into the
+independent checkpoint and install fresh rolling stores. Rolling invalidation must not
+discard that checkpoint; full reset or LRU replacement must close both states.
 
 Media-anchor advancement has a stronger replacement contract: it writes a separately
 staged store and swaps the store plus matching plan/count metadata only after success,
@@ -340,6 +392,23 @@ so failure leaves the previous media snapshot published. Do not generalize that 
 replacement guarantee to every IMC path. A `SessionStore` implementation must honor
 the interface's read/prepare/commit/reset lifetime rules and clean up temporary
 resources; callers must not assume bytes remain stable across the next mutation.
+
+Restored KV and sampler history are separate correctness concerns. Prime sampler
+penalties and DRY with the complete logical prompt after restore. An own-KV MTP session
+may publish draft KV only with the matching target snapshot and final hidden row; a
+media commit clears that draft state. Shared-target-KV MTP derives its resume point from
+the restored target and must not allocate or restore an independent draft store. A
+draft-only restore failure permits target-only fallback. Target-side rejection has two
+distinct outcomes: a stale expected-version mismatch is a retryable busy error and
+leaves the published session intact, while empty target bytes or a partial native target
+restore are request-fatal and invalidate the affected rolling state.
+
+Snapshot publication failures also differ by path. Ordinary text build/append and
+initial media build write through the rolling store; incomplete target serialization
+invalidates that rolling cache state, but target generation for the current request can
+continue. Media-anchor advancement instead uses a replacement store and requires a
+complete staged snapshot before swapping metadata; decode or snapshot failure fails the
+request while preserving the old published anchor.
 
 #### 19.6.2 Prompt plans: text and media
 
@@ -353,8 +422,10 @@ part of identity and execution.
 Do not treat a media prompt as text with an attachment ignored by caching. A text
 prefix match is insufficient if image/audio/video content, ordering, sizing, or model
 projection changes. Media prefill must align embeddings and positions with the same
-sequence that receives surrounding text. When prompt construction or media decode
-fails, the prior valid IMC snapshot remains authoritative.
+sequence that receives surrounding text. A media-anchor advance stages replacement
+state separately, so decode or snapshot failure leaves that anchor's prior published
+snapshot authoritative. Do not claim the same preservation for an LRU rebuild: prompt
+planning intentionally resets the selected session before rebuilding it.
 
 #### 19.6.3 Parser registry ownership
 

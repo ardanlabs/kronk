@@ -122,7 +122,7 @@ export default function DocsAPIMessages() {
                 </tbody>
               </table>
               <h5>Response</h5>
-              <p>Returns a message object, or streams Server-Sent Events if stream=true. Response includes anthropic-request-id header.</p>
+              <p>Returns a message object, or streams Server-Sent Events if stream=true. Response includes anthropic-request-id header. Custom <code>stop_sequences</code> are not supported and are rejected. Reaching <code>max_tokens</code> returns <code>stop_reason: max_tokens</code>.</p>
               <h5>Example</h5>
               <p className="example-label"><strong>Basic message:</strong></p>
               <pre className="code-block">

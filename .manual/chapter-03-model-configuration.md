@@ -427,6 +427,22 @@ to inspect the GGUF metadata and estimate a specific configuration. Treat the
 result as planning guidance and retain headroom for the backend and other
 processes.
 
+The estimator follows the model's per-layer attention topology when the GGUF
+provides it. Full-attention and sliding-window layers can have different KV
+head counts and dimensions; compact SWA includes its physical-batch headroom,
+while `swa-full: true` allocates SWA against the full context. Shared KV layers
+are not charged twice.
+
+Hybrid recurrent models such as Qwen 3.5 do not allocate ordinary K/V tensors
+for recurrent layers. Kronk instead estimates their float32 recurrent state per
+sequence and, when the active speculative configuration is known, the current
+state plus required rollback copies. Appended embedded-MTP/NextN layers are
+excluded from the target context's attention-state allocation because they are
+not target trunk layers. Their weights remain part of model size, and embedded
+MTP can increase recurrent rollback-state memory. These distinctions are why a
+generic transformer KV formula can substantially over- or under-estimate a
+hybrid model.
+
 If a configuration does not fit, consider these changes one at a time:
 
 1. Reduce `context-window`.

@@ -58,7 +58,11 @@ The sidebar groups related operations by subsystem.
   chat history, and sampling controls.
 - **VRAM Calculator** estimates model memory requirements from a HuggingFace
   model without downloading the entire model. A calculator is also available
-  in local model and catalog details.
+  in local model and catalog details. Set the intended context, sequence slots,
+  KV precision and placement, layer/expert offload, devices, and tensor split
+  before comparing the result with available memory. The estimate reads
+  per-layer GGUF metadata, including full/SWA topology, recurrent layers, and
+  embedded MTP/NextN layers when present.
 - **Translator** records or uploads audio for transcription through Bucky.
   You can select a whisper model, language, and response format and inspect
   timestamped segments. See
@@ -76,7 +80,10 @@ The sidebar groups related operations by subsystem.
   configuration, sampling defaults, chat templates, and estimated VRAM.
   Models can be pulled from HuggingFace, copied from another Kronk Model
   Server (KMS), or removed. Persistent configuration is read from
-  `~/.kronk/models/model_config.yaml`; the model details are read-only.
+  `~/.kronk/models/model_config.yaml`; the model details are read-only. A pull
+  source that includes `owner/repo/file.gguf` pins that exact Hugging Face
+  repository and file; a repository-only source opens its GGUF file list for
+  selection.
 - **Catalog** browses the personal catalog at
   `~/.kronk/catalog/catalog.yaml`. You can refresh its on-disk state, inspect
   entries, pull their files, and remove entries. See Chapter 8 for how the
@@ -119,6 +126,14 @@ Testing provides several model evaluation workflows:
 The Basic, Sampling, and Configuration tools create server-side playground
 sessions. Their configuration applies to that test session; it does not edit
 the persistent model configuration file.
+
+The VRAM calculator's SWA control follows runtime precedence. An explicit
+calculator value wins; for an installed model, its `swa-full` model setting is
+next; otherwise the calculator uses the llama.cpp default shipped with the
+Kronk release. Leaving the control unset therefore does not mean compact SWA.
+The result separates model weights, KV or recurrent state, compute buffers, and
+CPU/GPU placement. It is an estimate rather than a reservation guarantee, so
+retain operating headroom and use the same settings that will load the model.
 
 #### Docs
 

@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">From Chat API to Generation Slot</title>
+  <desc id="desc">A Chat or ChatStreaming request crosses two bounded shared channels before execution. The admission channel limits all accepted requests and has a three-minute admission timeout by default. After admission, Kronk prepares the job and sends it through the scheduler channel, where it waits in FIFO order for the first free generation slot. The admission permit remains held through completion, so no additional slot-wait timeout is required.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <marker id="returnArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .title { font: 700 44px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
+      .subtitle { font: 400 23px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .heading { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .eyebrow { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
+      .body { font: 500 20px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .note { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .mono { font: 600 19px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #334155; }
+      .queueLabel { font: 700 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; text-anchor: middle; }
+      .white { fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect width="1920" height="12" fill="#0f766e"/>
+  <text class="title" x="70" y="72">FROM CHAT API TO GENERATION SLOT</text>
+  <text class="subtitle" x="70" y="114">One request crosses two bounded channels, waits for a slot, and returns a response.</text>
+
+  <!-- Main request flow. -->
+  <path d="M 310 410 H 348" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 760 410 H 798" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1040 410 H 1078" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1500 410 H 1538" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- API card. -->
+  <g filter="url(#shadow)"><rect x="50" y="180" width="260" height="470" rx="24" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/></g>
+  <rect x="50" y="180" width="260" height="86" rx="24" fill="#dbeafe"/>
+  <path d="M 50 232 Q 50 266 84 266 H 276 Q 310 266 310 232" fill="#dbeafe"/>
+  <text class="eyebrow" x="80" y="213" fill="#1d4ed8">START</text>
+  <text class="heading" x="80" y="248">CHAT API</text>
+
+  <rect x="80" y="304" width="200" height="112" rx="15" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="mono" x="104" y="338">Chat</text>
+  <text class="body" x="104" y="371">or</text>
+  <text class="mono" x="104" y="402">ChatStreaming</text>
+
+  <text class="body" x="80" y="466">Decode request</text>
+  <text class="body" x="80" y="504">Select model</text>
+  <text class="body" x="80" y="542">Carry caller context</text>
+
+  <rect x="80" y="578" width="200" height="46" rx="14" fill="#0f172a"/>
+  <text class="note white" x="104" y="608">One request enters</text>
+
+  <!-- Admission channel. -->
+  <g filter="url(#shadow)"><rect x="360" y="180" width="400" height="470" rx="24" fill="#ffffff" stroke="#2dd4bf" stroke-width="4"/></g>
+  <rect x="360" y="180" width="400" height="86" rx="24" fill="#ccfbf1"/>
+  <path d="M 360 232 Q 360 266 394 266 H 726 Q 760 266 760 232" fill="#ccfbf1"/>
+  <text class="eyebrow" x="392" y="213" fill="#0f766e">CHANNEL 1</text>
+  <text class="heading" x="392" y="248">ADMISSION</text>
+
+  <text class="body" x="392" y="309">Controls how many requests enter</text>
+  <text class="mono" x="392" y="344">nseq-max × queue-depth</text>
+
+  <!-- Visual bounded channel. -->
+  <rect x="392" y="376" width="336" height="82" rx="18" fill="#ecfeff" stroke="#5eead4" stroke-width="3"/>
+  <rect x="405" y="396" width="70" height="42" rx="10" fill="#5eead4"/>
+  <rect x="485" y="396" width="70" height="42" rx="10" fill="#5eead4"/>
+  <rect x="565" y="396" width="70" height="42" rx="10" fill="#5eead4"/>
+  <rect x="645" y="396" width="70" height="42" rx="10" fill="#5eead4"/>
+  <text class="queueLabel" x="520" y="423">R3</text>
+  <text class="queueLabel" x="600" y="423">R2</text>
+  <text class="queueLabel" x="680" y="423">R1</text>
+
+  <rect x="392" y="486" width="336" height="76" rx="15" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
+  <text class="heading" x="416" y="518" style="font-size:21px;fill:#c2410c">FULL? WAIT BEFORE ENTRY</text>
+  <text class="note" x="416" y="546">admission-timeout · 3m default</text>
+
+  <text class="note" x="392" y="596">Permit stays held until the response ends.</text>
+  <text class="note" x="392" y="624">queue-depth defaults to 2.</text>
+
+  <!-- Preparation bridge. -->
+  <g filter="url(#shadow)"><rect x="810" y="250" width="230" height="330" rx="24" fill="#ffffff" stroke="#c4b5fd" stroke-width="3"/></g>
+  <circle cx="925" cy="302" r="28" fill="#7c3aed"/>
+  <path d="M 913 302 L 922 311 L 939 292" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text class="eyebrow" x="842" y="354" fill="#6d28d9">ADMITTED</text>
+  <text class="heading" x="842" y="391">PREPARE JOB</text>
+  <text class="body" x="842" y="438">Validate</text>
+  <text class="body" x="842" y="476">Plan prompt</text>
+  <text class="body" x="842" y="514">Attach reply path</text>
+  <text class="note" x="842" y="552">Keep caller context</text>
+
+  <!-- Scheduler channel. -->
+  <g filter="url(#shadow)"><rect x="1090" y="180" width="410" height="470" rx="24" fill="#ffffff" stroke="#a78bfa" stroke-width="4"/></g>
+  <rect x="1090" y="180" width="410" height="86" rx="24" fill="#ede9fe"/>
+  <path d="M 1090 232 Q 1090 266 1124 266 H 1466 Q 1500 266 1500 232" fill="#ede9fe"/>
+  <text class="eyebrow" x="1122" y="213" fill="#6d28d9">CHANNEL 2</text>
+  <text class="heading" x="1122" y="248">SCHEDULER</text>
+
+  <text class="body" x="1122" y="309">Moves prepared jobs toward a slot</text>
+  <text class="mono" x="1122" y="344">nseq-max × queue-depth</text>
+
+  <!-- Visual bounded channel. -->
+  <rect x="1122" y="376" width="346" height="82" rx="18" fill="#f5f3ff" stroke="#a78bfa" stroke-width="3"/>
+  <rect x="1131" y="396" width="76" height="42" rx="10" fill="#c4b5fd"/>
+  <rect x="1215" y="396" width="76" height="42" rx="10" fill="#c4b5fd"/>
+  <rect x="1299" y="396" width="76" height="42" rx="10" fill="#c4b5fd"/>
+  <rect x="1383" y="396" width="76" height="42" rx="10" fill="#c4b5fd"/>
+  <text class="queueLabel" x="1253" y="423">J3</text>
+  <text class="queueLabel" x="1337" y="423">J2</text>
+  <text class="queueLabel" x="1421" y="423">J1</text>
+
+  <rect x="1122" y="486" width="346" height="76" rx="15" fill="#faf5ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="heading" x="1146" y="518" style="font-size:21px">FIFO WAITING LIST</text>
+  <text class="note" x="1146" y="546">First free slot takes the next job</text>
+
+  <rect x="1122" y="576" width="346" height="56" rx="14" fill="#0f172a"/>
+  <text class="note white" x="1146" y="611">No new queue timeout after admission</text>
+
+  <!-- Generation slots. -->
+  <g filter="url(#shadow)"><rect x="1550" y="180" width="320" height="470" rx="24" fill="#ffffff" stroke="#4ade80" stroke-width="4"/></g>
+  <rect x="1550" y="180" width="320" height="86" rx="24" fill="#dcfce7"/>
+  <path d="M 1550 232 Q 1550 266 1584 266 H 1836 Q 1870 266 1870 232" fill="#dcfce7"/>
+  <text class="eyebrow" x="1582" y="213" fill="#15803d">DESTINATION</text>
+  <text class="heading" x="1582" y="248">GENERATION SLOTS</text>
+
+  <text class="body" x="1582" y="309">nseq-max = 2 slots</text>
+
+  <rect x="1582" y="358" width="256" height="82" rx="14" fill="#fef3c7" stroke="#fbbf24" stroke-width="2"/>
+  <text class="mono" x="1606" y="407">SLOT 0 · BUSY</text>
+
+  <rect x="1582" y="466" width="256" height="104" rx="14" fill="#dcfce7" stroke="#22c55e" stroke-width="3"/>
+  <text class="mono" x="1606" y="506">SLOT 1 · FREE</text>
+  <text class="body" x="1606" y="542">Run J1 next</text>
+
+  <text class="note" x="1582" y="616">Free the slot when done.</text>
+
+  <!-- Response lane. -->
+  <path d="M 1710 650 V 720 H 180 V 662" stroke="#0f766e" stroke-width="5" fill="none" marker-end="url(#returnArrow)"/>
+  <rect x="498" y="690" width="940" height="60" rx="30" fill="#ecfdf5" stroke="#2dd4bf" stroke-width="3"/>
+  <text class="heading" x="968" y="728" text-anchor="middle" style="font-size:21px;fill:#0f766e">RESPONSE PATH · Chat returns one result · ChatStreaming returns events</text>
+
+  <!-- Large takeaway cards. -->
+  <rect x="50" y="790" width="1820" height="220" rx="26" fill="#0f172a"/>
+  <text class="eyebrow" x="84" y="830" fill="#5eead4">WHY THERE IS NO SECOND QUEUE TIMEOUT</text>
+
+  <rect x="84" y="856" width="540" height="120" rx="17" fill="#1e293b" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="heading white" x="114" y="894">Admission already bounds the work</text>
+  <text class="note white" x="114" y="922">The permit covers preparation, slot waiting,</text>
+  <text class="note white" x="114" y="950">execution, and response delivery.</text>
+
+  <rect x="690" y="856" width="540" height="120" rx="17" fill="#1e293b" stroke="#a78bfa" stroke-width="2"/>
+  <text class="heading white" x="720" y="894">Example configuration</text>
+  <text class="note white" x="720" y="922">2 slots × queue depth 2 = 4 admitted requests</text>
+  <text class="note" x="720" y="950" style="fill:#ddd6fe">At most 2 run; the other 2 wait for a slot.</text>
+
+  <rect x="1296" y="856" width="540" height="120" rx="17" fill="#1e293b" stroke="#fb923c" stroke-width="2"/>
+  <text class="heading white" x="1326" y="894">Caller cancellation is separate</text>
+  <text class="note white" x="1326" y="922">The original context may end the request</text>
+  <text class="note" x="1326" y="950" style="fill:#fed7aa">anywhere; that is not a slot-wait timer.</text>
+
+  <text class="note" x="70" y="1052">When the response ends, Kronk releases the generation slot and the admission permit.</text>
+</svg>

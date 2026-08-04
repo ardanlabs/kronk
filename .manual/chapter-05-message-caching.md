@@ -53,7 +53,7 @@ The complete generation lifecycle is introduced in
 The focused view below zooms into IMC's Stage 2 responsibility: deciding the
 safest minimum work and reserving the session that owns reusable state.
 
-![Stage 2 IMC prompt planning from dual rendering through session reservation](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/stage2-imc-prompt-planning.svg)
+![IMC session selection using complete saved prompt plans](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-session-selection.svg)
 
 The planning process has five steps.
 
@@ -72,11 +72,12 @@ Its suffix is normally template material that begins the next assistant turn,
 such as an assistant header or control tokens; it is not the answer generated
 by the model.
 
-The stable rendering must be an exact prefix of the generation-ready rendering,
-and the generation-ready rendering must contribute a nonempty tail. Kronk
+After tokenization or media-plan construction, the stable plan must be a strict
+prefix of the generation-ready plan, and the generation-ready plan must
+contribute a nonempty tail. For media, that tail must also be text-only. Kronk
 renders both complete prompts instead of independently rendering a suffix
-because a chat template can make separators, control tokens, and role formatting
-depend on the surrounding messages. If the two renderings are not
+because a chat template can make separators, control tokens, and role
+formatting depend on the surrounding messages. If the resulting plans are not
 prefix-compatible, Kronk safely processes the complete generation-ready prompt
 without IMC reuse.
 
@@ -206,6 +207,10 @@ Changing, appending, removing, or reordering media is not an anchor extension:
 [A B][C D]                      -> rebuild: removed media
 ```
 
+These outcomes describe comparison with the shown anchor. Because Kronk
+searches the full available session pool, it can still reuse another session
+whose complete media plan is compatible with the request.
+
 **Rebuild** means neither a rolling snapshot nor a retained user-turn
 checkpoint prefixes the stable plan. Kronk selects an empty session or the
 least recently used available session, resets it, processes the stable plan
@@ -220,7 +225,13 @@ for an execution slot after selecting a session, so Kronk immediately marks the
 session reserved while holding the cache lock:
 
 ```text
-select session -> reserve -> restore/extend/snapshot/generate -> release
+select session -> reserve -> queue -> restore/build stable state
+
+ordinary text append/rebuild or initial media build:
+    publish complete stable snapshot -> release -> generate
+
+exact read-only hit or media-anchor advance:
+    keep reservation -> generate -> release at completion
 ```
 
 Other planners skip reserved sessions. Reservations apply to exact matches,
@@ -302,7 +313,8 @@ are deliberately separate:
 - Only `nseq-max` requests can decode concurrently.
 - A session can be restored into any available execution slot; it is not tied
   permanently to one slot.
-- Session storage is allocated lazily as conversations begin using it.
+- Snapshot bytes and RAM buffers are allocated lazily as conversations begin
+  using them. The disk backend creates empty per-session files at model load.
 
 For example, `nseq-max: 2` with the default `queue-depth: 2` provides two
 concurrent decode slots and six warm IMC session identities. A queue depth
@@ -334,6 +346,13 @@ During a request, Kronk restores the selected snapshot into a free slot. For a
 new or appended stable prefix, it creates the updated snapshot after processing
 the stable tokens. The generation-ready tail is then processed without making
 it part of that reusable stable prefix.
+
+The snapshot restores model state, not a long-lived sampler instance. Kronk
+re-primes repetition penalties and DRY from the authoritative complete logical
+prompt, including the restored portion, so sampling history agrees with the KV
+prefix even though only uncached model work is decoded again. For cached media,
+Kronk retains the text-token history needed for that sampler priming separately
+from the media embedding cells represented by the native snapshot.
 
 For text sessions, Kronk also retains one complete user-turn checkpoint when a
 rolling snapshot first extends beyond that user boundary. The checkpoint owns
@@ -367,13 +386,14 @@ Kronk can reuse a media session in two cases:
   the text extension without encoding the media again.
 
 Kronk rebuilds the stable plan when media is changed, reordered, removed, or
-newly appended. This conservative rule lets the model-specific multimodal
-pipeline remain authoritative for media embeddings, token placement, and
-position handling.
+newly appended and no other available session already contains a compatible
+plan. This conservative rule lets the model-specific multimodal pipeline remain
+authoritative for media embeddings, token placement, and position handling.
 
 For example, a user can submit an image and then ask several text-only
 follow-up questions. The saved media plan acts as an anchor for those turns.
-Replacing the image or adding another one requires a rebuild.
+Replacing the image or adding another one cannot extend that anchor; it requires
+a rebuild unless a different session already holds the new plan.
 
 See [Chapter 11](https://www.kronkai.com/manual#chapter-11-multimodal-models) for supported media inputs and
 model requirements.
@@ -396,14 +416,29 @@ The relevant settings are:
 | Setting              | Default | Description                                                         |
 | -------------------- | ------- | ------------------------------------------------------------------- |
 | `incremental-cache`  | `true`  | Enables IMC for the model.                                          |
-| `cache-min-tokens`   | `100`   | Minimum stable-render length required to create or reuse a session. |
+| `cache-min-tokens`   | `100`   | Minimum stable text-token-plan length required for text IMC reuse.  |
 | `imc-session-capacity` | Derived | Reusable identities; must be at least admission capacity.          |
 | `session-store-kind` | `ram`   | Stores inactive session snapshots in `ram` or on `disk`.            |
 | `session-store-dir`  | None    | Existing writable directory required by the `disk` store.           |
 
-The `cache-min-tokens` setting applies to the stable-render token length. A
-request below the threshold still works, but Kronk processes its complete
-generation-ready prompt without creating or reusing an IMC session.
+For direct interactive use without the model server, `kronk run` accepts the
+same capacity as a load-time override:
+
+```shell
+kronk run Qwen3-8B-Q8_0 --imc-session-capacity=8
+```
+
+The flag's default value `0` means derive the capacity from `nseq-max` and
+`queue-depth`; it does not disable IMC or create a zero-length pool. A nonzero
+value is applied to the model loaded by that `kronk run` process, and startup
+output reports the effective session count. The same admission-capacity floor
+applies as in YAML configuration.
+
+The `cache-min-tokens` setting applies to the stable text-token-plan length. A
+text request below the threshold still works, but Kronk processes its complete
+generation-ready prompt without creating or reusing an IMC session. The current
+media planner does not apply this threshold; media safety is instead determined
+by whether it can construct compatible logical stable and actual plans.
 
 Set `incremental-cache: false` if a workload is entirely short-lived or if you
 need to compare behavior without prompt caching.
@@ -429,9 +464,12 @@ Qwen/Qwen3-8B-Q8_0:
 ```
 
 The directory must already exist and be writable by the Kronk process. Kronk
-creates a temporary file for each used session and removes it during a normal
-model unload. Files can remain after a process crash, so use a dedicated
-directory and arrange cleanup appropriate for your deployment.
+creates an empty target-snapshot file for every configured session when the
+model loads and removes it during a normal unload. Own-KV MTP creates a matching
+draft file per session, and retained turn checkpoints can create additional
+files later. Snapshot contents and scratch/read buffers are still populated
+lazily. Files can remain after a process crash, so use a dedicated directory
+and arrange cleanup appropriate for your deployment.
 
 Disk storage changes where inactive snapshots are retained, but it does not
 eliminate snapshot-sized RAM usage. Snapshot and restore operations require
@@ -456,6 +494,9 @@ Common causes include:
 - Loading a different model or an incompatible model configuration
 - Producing a stable rendering that is not a prefix of the generation-ready
   rendering
+- For media, failing to construct an append-safe logical plan, including a
+  marker/media-count mismatch, an automatically appended EOS, or a non-text
+  generation tail
 
 An unload or server restart clears in-memory sessions. The disk store is an
 inactive snapshot backend, not a persistent conversation database; do not rely
@@ -472,6 +513,11 @@ IMC has several practical costs:
 - MTP can require additional draft-side state. If Kronk restores the target
   prefix without compatible draft state, it can still use the target cache but
   disables speculative decoding for that request.
+- A corrupt, empty, or partial target snapshot is never treated as a shorter
+  reusable prefix. Kronk invalidates the affected rolling state and fails that
+  restore so a later request can rebuild safely. An independently retained
+  text user-turn checkpoint remains available; a failed staged media-anchor
+  advance leaves its previously published media snapshot authoritative.
 
 Evaluate IMC using a representative conversation workload rather than a single
 prompt benchmark. The benefit grows with reusable prefix length and follow-up

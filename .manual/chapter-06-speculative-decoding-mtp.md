@@ -36,7 +36,7 @@ replacement token; when all candidates are accepted it chooses a target bonus
 token. That final target token becomes input to the next decode and is not yet
 committed to KV state when selected.
 
-![Stage 4 speculative decoding proposal, target verification, acceptance, and state synchronization](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/stage4-speculative-decoding.svg)
+![Speculative decoding proposal, target verification, acceptance, and state synchronization](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/speculative-decoding.svg)
 
 Classic speculative sampling uses the target and draft distributions to decide
 acceptance and replacement. Kronk's MTP path uses exact token-match verification
@@ -68,6 +68,14 @@ available, the model runs normally without speculation.
 
 A `draft-model` block containing only `ndraft` is different: it changes the MTP
 draft ceiling and does not select a classic draft or disable MTP.
+
+Embedded detection happens before llama.cpp loads the target. Kronk reads the
+first GGUF shard, where model metadata is stored, and enables MTP tensor loading
+when any positive `nextn_predict_layers` metadata value is present. The lookup
+uses the metadata suffix rather than a hard-coded architecture name, so a
+supported future architecture can advertise the same contract. This early
+step is required because llama.cpp otherwise omits gated MTP tensors during
+model load; adding an `ndraft` setting after load cannot recover them.
 
 MTP also requires support from the loaded llama.cpp library. When a model
 advertises MTP but the required API is unavailable, Kronk reports that MTP was
@@ -237,18 +245,28 @@ Startup events under `draft-model`, `draft-model-mtp`, and
   strict speculative-sampling distribution equivalence.
 - **MTP can fall back per request.** A synchronization or compatible-state
   problem disables MTP for the affected request while target-only generation
-  continues. It does not make an incorrect draft token authoritative.
+  continues. It does not make an incorrect draft token authoritative. A target
+  rollback or restore failure is different: Kronk fails the affected request
+  rather than continuing from ambiguous recurrent state.
 - **IMC may restore target state without draft state.** Target-prefix reuse
-  remains valid, but own-KV MTP runs target-only for that request when its draft
-  snapshot is absent or cannot be restored. See
+  remains valid. Shared-target-KV MTP resumes from the restored target state.
+  Own-KV MTP resumes only when Kronk can restore the matching draft snapshot
+  and saved final hidden row; if either is absent or invalid, that request runs
+  target-only rather than drafting from inconsistent state. Text user-turn
+  checkpoints retain this paired state when it is valid. See
   [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
 - **Media support is conservative.** Media projection and media prefill run on
-  the target. Unsupported own-KV media combinations and all M-RoPE media
-  requests run without MTP, although target IMC can remain active. See
+  the target, and target IMC can cache and restore that media state. Kronk does
+  not carry an own-KV draft snapshot across a media cache commit because it
+  cannot prove that the draft covers the projected media cells. Unsupported
+  own-KV media combinations and all M-RoPE media requests therefore run without
+  MTP while target IMC remains active. See
   [Chapter 11](https://www.kronkai.com/manual#chapter-11-multimodal-models).
 - **Drafting consumes resources.** A classic draft loads another model and KV
   cache. MTP heads and companion assistants also require compute and memory.
-  Automatic detection does not guarantee a performance improvement.
+  Hybrid recurrent targets retain current state plus rollback copies sized by
+  the MTP draft ceiling. Automatic detection does not guarantee a performance
+  improvement.
 
 Implementation details for drafting, verification, state synchronization, and
 hybrid-model rollback belong in

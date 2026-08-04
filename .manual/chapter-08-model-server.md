@@ -107,6 +107,10 @@ Common settings can be supplied as flags or environment variables:
 | `--inference-timeout` | `KRONK_WEB_INFERENCE_TIMEOUT` | `60m` | Total timeout for inference admission, preparation, slot waiting, and generation |
 | `--write-timeout` | `KRONK_WEB_WRITE_TIMEOUT` | `61m` | HTTP response write timeout; `0` disables it, otherwise it must exceed the inference timeout |
 | `--base-path` | `KRONK_BASE_PATH` | `~/.kronk` | Root for Kronk data |
+| `--lib-path` | `KRONK_LIB_PATH` | Detected bundle under `<base>/libraries` | Exact llama.cpp library directory or libraries root |
+| `--processor` | `KRONK_PROCESSOR` | Detected host backend | Processor bundle such as `metal`, `cuda`, `rocm`, `vulkan`, or `cpu` |
+| `--arch` | `KRONK_ARCH` | Host architecture | Library-bundle architecture override |
+| `--os` | `KRONK_OS` | Host operating system | Library-bundle operating-system override |
 | `--model-config-file` | `KRONK_POOL_MODEL_CONFIG_FILE` | `<base>/models/model_config.yaml` | Per-model overrides |
 | `--budget-percent` | `KRONK_POOL_BUDGET_PERCENT` | `95` | Memory-budget input for loaded models |
 | `--models-in-pool` | `KRONK_POOL_MODELS_IN_POOL` | `10` | Maximum loaded entries in each model pool |
@@ -133,6 +137,36 @@ kronk server start --help
 Keep tokens and passwords in protected environment or secret-manager settings,
 not shared shell scripts. `--insecure-logging` can expose prompts and model
 configuration and should be limited to controlled debugging.
+
+### Runtime selection and overrides
+
+With no processor or library-path override, server startup detects a preferred
+llama.cpp backend and verifies it before native libraries are loaded. CUDA 13
+requires compute capability 7.5 or newer on every visible NVIDIA GPU. Older or
+hidden CUDA devices cause host detection to prefer an available ROCm or Vulkan
+runtime and then CPU. If compatibility cannot be determined conclusively,
+Kronk retains the preferred backend.
+
+Kronk also probes the installed preferred accelerator bundle. It changes to a
+different installed bundle only when the preferred bundle positively reports
+no accelerator and a same-version alternative positively reports a device.
+This probe never installs another bundle. The startup log records the preferred
+and selected processors and the reason for the decision.
+
+`--processor` and `--lib-path`, or their environment equivalents, are strict
+operator choices and disable automatic fallback. A custom non-empty library
+directory without `version.json` is treated as a read-only user-managed build;
+the server loads it but does not upgrade or replace it. `--base-path` moves the
+managed library root along with other Kronk data, while `--lib-path` selects the
+llama.cpp location specifically. Restart the server after changing any native
+library selection setting.
+
+Bucky performs separate whisper.cpp runtime selection. Its managed bundles
+live below `<base>/bucky-libraries`, and `KRONK_BUCKY_LIB_PATH` authoritatively
+selects a different bundle or user-managed build. It does not use
+`--lib-path`/`KRONK_LIB_PATH`. See
+[Chapter 18 §18.2](https://www.kronkai.com/manual#182-install-whisper-libraries)
+for Bucky's CUDA, Vulkan, and CPU fallback rules.
 
 ## 8.4 Model Pool and Resource Budgets
 
@@ -234,6 +268,24 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0
 Catalog entries identify the provider, source family, revision, files, sizes,
 and detected capabilities. Chat templates come from downloaded GGUF metadata
 and are not stored as catalog configuration.
+
+Source specificity controls catalog resolution:
+
+- A bare model ID can search the configured provider priority list.
+- `provider/repo:quantization` pins the repository and selects the matching
+  quantization there.
+- `owner/repo/file.gguf`, or an equivalent Hugging Face `blob` or `resolve`
+  URL, pins both the repository and upstream filename.
+- A repository root or tree URL returns its GGUF files for explicit selection
+  rather than choosing one automatically.
+
+Exact file pins never fall back to a different repository or to another
+catalog entry with the same quantization suffix. This matters when target and
+MTP drafter files have similar names: companion discovery remains inside the
+pinned repository, preventing a cached target, drafter, or unrelated model
+from being substituted. The resulting canonical ID can still reflect Kronk's
+normal on-disk rename rules, such as the `mtp-` prefix for a dedicated MTP
+repository.
 
 Use `--local` for the same operations when the server is stopped. The BUI also
 provides catalog and model views when enabled; see

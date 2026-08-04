@@ -86,6 +86,10 @@ export default function DocsCLIRun() {
                   <td><code>--nubatch &lt;int&gt;</code></td>
                   <td>Physical micro-batch size for prompt ingestion</td>
                 </tr>
+                <tr>
+                  <td><code>--imc-session-capacity &lt;int&gt;</code></td>
+                  <td>Reusable IMC session identities; <code>0</code> derives the default from admission settings</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -206,7 +210,10 @@ kronk run Qwen3-8B-Q8_0 --temperature=0.5 --top-p=0.95
 kronk run Qwen3-8B-Q8_0 --enable-thinking=true --reasoning-effort=high
 
 # Run with higher token limit
-kronk run Qwen3-8B-Q8_0 --max-tokens=4096`}</code>
+kronk run Qwen3-8B-Q8_0 --max-tokens=4096
+
+# Retain eight reusable IMC conversation identities
+kronk run Qwen3-8B-Q8_0 --imc-session-capacity=8`}</code>
             </pre>
           </div>
         </div>

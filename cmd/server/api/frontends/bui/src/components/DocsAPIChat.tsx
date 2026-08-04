@@ -85,6 +85,12 @@ export default function DocsAPIChat() {
                     <td>Array of tool definitions for function calling. See Tool Definitions section below.</td>
                   </tr>
                   <tr>
+                    <td><code>tool_choice</code></td>
+                    <td><code>string</code></td>
+                    <td>No</td>
+                    <td>Use auto or the exact name of a declared function tool</td>
+                  </tr>
+                  <tr>
                     <td><code>temperature</code></td>
                     <td><code>float32</code></td>
                     <td>No</td>
@@ -112,7 +118,13 @@ export default function DocsAPIChat() {
                     <td><code>max_tokens</code></td>
                     <td><code>int</code></td>
                     <td>No</td>
-                    <td>Maximum output tokens to generate</td>
+                    <td>Legacy maximum output-token field</td>
+                  </tr>
+                  <tr>
+                    <td><code>max_completion_tokens</code></td>
+                    <td><code>int</code></td>
+                    <td>No</td>
+                    <td>Maximum output tokens; takes precedence over max_tokens</td>
                   </tr>
                   <tr>
                     <td><code>repeat_penalty</code></td>
@@ -187,10 +199,10 @@ export default function DocsAPIChat() {
                     <td>Include the prompt in the final response</td>
                   </tr>
                   <tr>
-                    <td><code>include_usage</code></td>
-                    <td><code>bool</code></td>
+                    <td><code>stream_options</code></td>
+                    <td><code>object</code></td>
                     <td>No</td>
-                    <td>Include token usage information in streaming responses</td>
+                    <td>Set include_usage to false to omit usage from streaming chunks (default: true)</td>
                   </tr>
                   <tr>
                     <td><code>logprobs</code></td>
@@ -213,7 +225,7 @@ export default function DocsAPIChat() {
                 </tbody>
               </table>
               <h5>Response</h5>
-              <p>Returns a chat completion object, or streams Server-Sent Events if stream=true.</p>
+              <p>Returns a chat completion object, or streams Server-Sent Events if stream=true. Reaching the output limit sets <code>finish_reason</code> to <code>length</code>. Custom <code>stop</code> strings are not supported and are rejected.</p>
               <h5>Example</h5>
               <p className="example-label"><strong>Simple text message:</strong></p>
               <pre className="code-block">

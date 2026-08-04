@@ -98,12 +98,37 @@ missing, install a compatible bundle and **restart the server**. The running
 server does not automatically retry Bucky initialization.
 
 Libraries are installed below `~/.kronk/bucky-libraries/` by default. Kronk
-normally selects the bundle for the current platform. To select a specific
-installed bundle, set its directory before starting the server:
+normally treats the detected processor as a preference and verifies that the
+corresponding whisper.cpp bundle can run on the host. CPU and Metal are retained
+when published for the platform. CUDA is retained only when `nvidia-smi`
+reports a compatible driver and every GPU visible through
+`CUDA_VISIBLE_DEVICES` meets the bundle's compute-capability requirement:
+
+| Platform | Minimum reported CUDA version | Minimum compute capability |
+| -------- | ----------------------------- | -------------------------- |
+| Linux `amd64` | 12.9 | 8.6 |
+| Linux `arm64` | 12.9 | 8.7 |
+| Windows `amd64` | 12.4 | 5.0 |
+
+If the preferred CUDA or Vulkan runtime is unavailable or incompatible, Linux
+uses Vulkan when `vulkaninfo --summary` reports a usable GPU and otherwise
+uses CPU. Other supported platforms fall back to CPU. Bucky has no separate
+ROCm artifact, so a shared `KRONK_PROCESSOR=rocm` preference resolves to Vulkan
+on a usable Linux Vulkan host and otherwise to CPU. Startup logs report the
+preferred runtime, selected runtime, and reason.
+
+To select a specific installed bundle or user-managed build authoritatively,
+set its directory before starting the server:
 
 ```sh
 export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda
 ```
+
+A non-empty `KRONK_BUCKY_LIB_PATH` bypasses automatic compatibility selection.
+If the directory contains `version.json`, Kronk adopts its recorded platform
+metadata unless explicitly overridden. A non-empty existing directory without
+that file is treated as a read-only user-managed build: Kronk loads from it but
+does not install, upgrade, or replace its contents.
 
 The library tools also recognize these platform overrides:
 
@@ -111,9 +136,13 @@ The library tools also recognize these platform overrides:
 | ----------------- | --------------------------------------- |
 | `KRONK_ARCH`      | `amd64`, `arm64`                        |
 | `KRONK_OS`        | `linux`, `darwin`, `windows`            |
-| `KRONK_PROCESSOR` | `cpu`, `metal`, `cuda`, `vulkan`        |
+| `KRONK_PROCESSOR` | `cpu`, `metal`, `cuda`, `vulkan`; `rocm` maps to Vulkan or CPU |
 
-Only combinations listed by `--list-combinations` can be installed.
+Only combinations listed by `--list-combinations` can be installed. Platform
+variables remain preferences during automatic Bucky selection; use
+`KRONK_BUCKY_LIB_PATH` when the selected directory must be exact. Library
+selection is process-wide, so restart the CLI process or server after changing
+it.
 
 ### 18.3 Manage Models
 
@@ -182,6 +211,13 @@ If the server starts without usable Whisper libraries, it logs that Bucky is
 running in degraded mode. Library and model management remain available, but
 transcription cannot work until the libraries are installed and the server is
 restarted.
+
+Server startup constructs the Bucky library manager from `KRONK_BASE_PATH` and
+`KRONK_BUCKY_LIB_PATH`, downloads or verifies the selected bundle, and passes
+the manager's resolved directory to the whisper runtime. This keeps a moved
+base path and an explicit Bucky library path consistent across installation and
+inference. The llama.cpp `--lib-path`/`KRONK_LIB_PATH` setting does not select
+whisper.cpp libraries; use `KRONK_BUCKY_LIB_PATH` for Bucky.
 
 ### 18.5 Browser UI
 
