@@ -1227,6 +1227,10 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
 
 		default:
+			for _, tool := range resp.Choices[0].Delta.ToolCallDeltas {
+				fmt.Printf("\\n\\u001b[92mTool Call Started: %s\\n\\u001b[0m", tool.Function.Name)
+			}
+
 			delta := resp.Choices[0].Delta
 
 			switch {
@@ -2697,11 +2701,12 @@ loop:
 				"tool_calls": toolCallDocs,
 			})
 
+			// I MADE THE TOOL CALL AND GOT BACK A ANSWER
+
 			for _, tool := range resp.Choices[0].Delta.ToolCalls {
 				messages = append(messages, model.D{
 					"role":         "tool",
 					"tool_call_id": tool.ID,
-					"name":         tool.Function.Name,
 					"content":      \`{"temperature": "72°F", "condition": "sunny"}\`,
 				})
 			}
@@ -2709,6 +2714,10 @@ loop:
 			break loop
 
 		default:
+			for _, tool := range resp.Choices[0].Delta.ToolCallDeltas {
+				fmt.Printf("\\n\\u001b[92mTool Call Started: %s\\n\\u001b[0m", tool.Function.Name)
+			}
+
 			if resp.Choices[0].Delta.Reasoning != "" {
 				fmt.Printf("\\u001b[91m%s\\u001b[0m", resp.Choices[0].Delta.Reasoning)
 				reasoning = true

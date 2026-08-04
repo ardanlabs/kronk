@@ -253,6 +253,10 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
 
 		default:
+			for _, tool := range resp.Choices[0].Delta.ToolCallDeltas {
+				fmt.Printf("\n\u001b[92mTool Call Started: %s\n\u001b[0m", tool.Function.Name)
+			}
+
 			delta := resp.Choices[0].Delta
 
 			switch {

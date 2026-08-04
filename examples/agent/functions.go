@@ -1,3 +1,4 @@
+// BILL CAN'T TYPE
 package main
 
 import (
@@ -413,6 +414,8 @@ func (gce *GoCodeEditor) Call(ctx context.Context, toolCall model.ResponseToolCa
 	switch v := toolCall.Function.Arguments["line_number"].(type) {
 	case float64:
 		lineNumber = int(v)
+	case json.Number:
+		lineNumber, _ = strconv.Atoi(v.String())
 	case string:
 		lineNumber, _ = strconv.Atoi(v)
 	}
