@@ -38,9 +38,10 @@ func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			GotResp: &kronk.ResponseResponse{},
 			ExpResp: &kronk.ResponseResponse{
-				Object: "response",
-				Status: "completed",
-				Model:  "Qwen3-8B-Q8_0",
+				Object:          "response",
+				Status:          "completed",
+				MaxOutputTokens: new(2048),
+				Model:           "Qwen3-8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -98,9 +99,10 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &kronk.ResponseResponse{},
 			ExpResp: &kronk.ResponseResponse{
-				Object: "response",
-				Status: "completed",
-				Model:  "Qwen3.5-0.8B-Q8_0",
+				Object:          "response",
+				Status:          "completed",
+				MaxOutputTokens: new(2048),
+				Model:           "Qwen3.5-0.8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -149,9 +151,10 @@ func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 			},
 			GotResp: &kronk.ResponseResponse{},
 			ExpResp: &kronk.ResponseResponse{
-				Object: "response",
-				Status: "completed",
-				Model:  "Qwen2.5-Omni-3B-Q8_0",
+				Object:          "response",
+				Status:          "completed",
+				MaxOutputTokens: new(2048),
+				Model:           "Qwen2.5-Omni-3B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -197,9 +200,10 @@ func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &kronk.ResponseStreamEvent{},
 			ExpResp: &kronk.ResponseResponse{
-				Object: "response",
-				Status: "completed",
-				Model:  "Qwen3-8B-Q8_0",
+				Object:          "response",
+				Status:          "completed",
+				MaxOutputTokens: new(2048),
+				Model:           "Qwen3-8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				event := got.(*kronk.ResponseStreamEvent)
