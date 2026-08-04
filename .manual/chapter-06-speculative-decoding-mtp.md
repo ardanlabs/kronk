@@ -36,7 +36,7 @@ replacement token; when all candidates are accepted it chooses a target bonus
 token. That final target token becomes input to the next decode and is not yet
 committed to KV state when selected.
 
-![Stage 4 speculative decoding proposal, target verification, acceptance, and state synchronization](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/stage4-speculative-decoding.svg)
+![Speculative decoding proposal, target verification, acceptance, and state synchronization](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/speculative-decoding.svg)
 
 Classic speculative sampling uses the target and draft distributions to decide
 acceptance and replacement. Kronk's MTP path uses exact token-match verification

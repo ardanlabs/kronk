@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">From Chat Request to Model Prompt</title>
+  <desc id="desc">Messages and optional tools enter a model-specific Jinja chat template. The template renders the exact role markers, tool syntax, message boundaries, content, and assistant generation cue expected by the selected model. A compatible template reproduces the protocol used during training; a mismatched template can degrade or break responses.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 44px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
+      .subtitle { font: 400 23px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .heading { font: 700 26px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .eyebrow { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
+      .body { font: 500 20px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .note { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .mono { font: 600 18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #e2e8f0; }
+      .white { fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect width="1920" height="12" fill="#0f766e"/>
+  <text class="title" x="70" y="72">FROM CHAT REQUEST TO MODEL PROMPT</text>
+  <text class="subtitle" x="70" y="114">Portable messages and tools become the exact conversation protocol expected by the selected model.</text>
+
+  <!-- Transformation arrows. -->
+  <path d="M 510 414 H 588" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1282 414 H 1360" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- Structured request. -->
+  <g filter="url(#shadow)"><rect x="70" y="170" width="440" height="500" rx="26" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/></g>
+  <rect x="70" y="170" width="440" height="86" rx="26" fill="#dbeafe"/>
+  <path d="M 70 222 Q 70 256 104 256 H 476 Q 510 256 510 222" fill="#dbeafe"/>
+  <text class="eyebrow" x="104" y="204" fill="#1d4ed8">INPUT</text>
+  <text class="heading" x="104" y="240">MESSAGES + TOOLS</text>
+
+  <rect x="94" y="286" width="392" height="350" rx="17" fill="#0f172a"/>
+  <text class="mono" x="120" y="324" style="font-size:16px">{</text>
+  <text class="mono" x="138" y="346" style="font-size:16px;fill:#93c5fd">"messages": [</text>
+  <text class="mono" x="156" y="368" style="font-size:16px">{"role": "system",</text>
+  <text class="mono" x="174" y="390" style="font-size:16px;fill:#86efac">"content": "You are helpful."},</text>
+  <text class="mono" x="156" y="412" style="font-size:16px">{"role": "user",</text>
+  <text class="mono" x="174" y="434" style="font-size:16px;fill:#86efac">"content": "Weather in SF?"}</text>
+  <text class="mono" x="138" y="456" style="font-size:16px">],</text>
+  <text class="mono" x="138" y="478" style="font-size:16px;fill:#c4b5fd">"tools": [</text>
+  <text class="mono" x="156" y="500" style="font-size:16px">{"type": "function",</text>
+  <text class="mono" x="174" y="522" style="font-size:16px">"function": {</text>
+  <text class="mono" x="192" y="544" style="font-size:16px;fill:#86efac">"name": "get_weather"</text>
+  <text class="mono" x="174" y="566" style="font-size:16px">}}</text>
+  <text class="mono" x="138" y="588" style="font-size:16px">]</text>
+  <text class="mono" x="120" y="610" style="font-size:16px">}</text>
+
+  <!-- Jinja transformation. -->
+  <g filter="url(#shadow)"><rect x="600" y="170" width="682" height="500" rx="26" fill="#ffffff" stroke="#a78bfa" stroke-width="3"/></g>
+  <rect x="600" y="170" width="682" height="86" rx="26" fill="#ede9fe"/>
+  <path d="M 600 222 Q 600 256 634 256 H 1248 Q 1282 256 1282 222" fill="#ede9fe"/>
+  <text class="eyebrow" x="634" y="204" fill="#6d28d9">TRANSFORM</text>
+  <text class="heading" x="634" y="240">MODEL-SPECIFIC JINJA TEMPLATE</text>
+
+  <rect x="634" y="292" width="614" height="290" rx="17" fill="#0f172a"/>
+  <text class="mono" x="664" y="320" style="fill:#c4b5fd">{% for message in messages %}</text>
+  <text class="mono" x="694" y="346">&lt;|{{ message.role }}|&gt;</text>
+  <text class="mono" x="694" y="372">{{ message.content }}</text>
+  <text class="mono" x="664" y="398" style="fill:#c4b5fd">{% endfor %}</text>
+  <text class="mono" x="664" y="430" style="fill:#5eead4">{% if tools %}</text>
+  <text class="mono" x="694" y="456">&lt;|tools|&gt; {{ tools }}</text>
+  <text class="mono" x="664" y="482" style="fill:#5eead4">{% endif %}</text>
+  <text class="mono" x="664" y="514" style="fill:#fbbf24">{% if add_generation_prompt %}</text>
+  <text class="mono" x="694" y="540">&lt;|assistant|&gt;</text>
+  <text class="mono" x="664" y="566" style="fill:#fbbf24">{% endif %}</text>
+
+  <rect x="634" y="606" width="614" height="42" rx="14" fill="#f5f3ff"/>
+  <text class="note" x="660" y="634">The selected model defines the real markers, order, and syntax.</text>
+
+  <!-- Rendered output. -->
+  <g filter="url(#shadow)"><rect x="1372" y="170" width="478" height="500" rx="26" fill="#ffffff" stroke="#2dd4bf" stroke-width="3"/></g>
+  <rect x="1372" y="170" width="478" height="86" rx="26" fill="#ccfbf1"/>
+  <path d="M 1372 222 Q 1372 256 1406 256 H 1816 Q 1850 256 1850 222" fill="#ccfbf1"/>
+  <text class="eyebrow" x="1406" y="204" fill="#0f766e">OUTPUT</text>
+  <text class="heading" x="1406" y="240">RENDERED MODEL PROMPT</text>
+
+  <rect x="1406" y="292" width="410" height="290" rx="17" fill="#0f172a"/>
+  <text class="mono" x="1434" y="332" style="fill:#5eead4">&lt;|system|&gt;</text>
+  <text class="mono" x="1434" y="368">You are helpful.</text>
+  <text class="mono" x="1434" y="408" style="fill:#c4b5fd">&lt;|tools|&gt;</text>
+  <text class="mono" x="1434" y="444">get_weather(city)</text>
+  <text class="mono" x="1434" y="484" style="fill:#5eead4">&lt;|user|&gt;</text>
+  <text class="mono" x="1434" y="520">Weather in SF?</text>
+  <text class="mono" x="1434" y="560" style="fill:#fbbf24">&lt;|assistant|&gt;</text>
+
+  <rect x="1406" y="606" width="410" height="42" rx="14" fill="#ecfdf5"/>
+  <text class="note" x="1432" y="634">Exact text protocol consumed by the model.</text>
+
+  <!-- Why this matters. -->
+  <rect x="70" y="730" width="1780" height="270" rx="26" fill="#0f172a"/>
+  <text class="eyebrow" x="106" y="770" fill="#5eead4">WHY THE TEMPLATE IS CRITICAL</text>
+  <text class="heading white" x="106" y="810">The template is part of model compatibility—not cosmetic presentation.</text>
+
+  <rect x="106" y="842" width="798" height="122" rx="18" fill="#052e2b" stroke="#2dd4bf" stroke-width="3"/>
+  <circle cx="148" cy="880" r="21" fill="#16a34a"/>
+  <path d="M 138 880 L 146 888 L 160 871" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text class="eyebrow" x="184" y="874" fill="#86efac">CORRECT TEMPLATE</text>
+  <text class="body white" x="184" y="910">Expected role markers · valid tool syntax · correct answer cue</text>
+  <text class="note" x="184" y="942" style="fill:#99f6e4">The model sees the conversation protocol used during training.</text>
+
+  <rect x="1016" y="842" width="798" height="122" rx="18" fill="#450a0a" stroke="#fb7185" stroke-width="3"/>
+  <circle cx="1058" cy="880" r="21" fill="#e11d48"/>
+  <path d="M 1050 872 L 1066 888 M 1066 872 L 1050 888" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+  <text class="eyebrow" x="1094" y="874" fill="#fda4af">MISMATCHED TEMPLATE</text>
+  <text class="body white" x="1094" y="910">Wrong role markers · malformed tools · missing answer cue</text>
+  <text class="note" x="1094" y="942" style="fill:#fecdd3">Output may degrade or fail even when the model still generates text.</text>
+
+  <text class="note" x="70" y="1046">The API request is portable. The rendered prompt is the selected model's non-portable conversation protocol.</text>
+</svg>

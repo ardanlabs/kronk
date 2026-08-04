@@ -105,7 +105,7 @@ Every generation request passes through the same four lifecycle stages:
    slot's sequence, restore or prefill model state, generate output, then clear
    the sequence and release ownership.
 
-![The four stages of a Kronk generation request](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/request-lifecycle-stages.svg)
+![The four stages of a Kronk generation request](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/request-lifecycle.svg)
 
 An IMC session and an execution slot are deliberately separate. A session is a
 reusable conversation and model-state identity selected during Stage 2. A slot
@@ -168,7 +168,7 @@ portable request into exact model work. A model-specific chat template renders
 messages, roles, tools, media markers, reasoning controls, and the assistant
 generation cue into the protocol the selected model learned during training.
 
-![A chat template translates request context into the selected model's prompt protocol](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/stage2-chat-template-protocol.svg)
+![A chat template translates request context into the selected model's prompt protocol](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/chat-template-protocol.svg)
 
 The rendered prompt—not the original message objects—is tokenized and executed.
 For an IMC-eligible request, Kronk independently renders the complete prompt
@@ -244,7 +244,7 @@ batch through multiple visits; no individual visit or backend physical chunk
 exceeds `nubatch`. Generated and speculative tokens are added before ordinary
 prefill and reduce the `nbatch` space available to prompt chunks.
 
-![How nbatch and nubatch cooperate during Stage 4 text prefill](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/stage4-prefill-batching.svg)
+![How nbatch and nubatch cooperate during Stage 4 text prefill](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/prefill-batching.svg)
 
 By default, Kronk sets `nbatch` to `nubatch × nseq-max`. For prefill-only work,
 that gives every active slot room to contribute one full `nubatch` chunk during
@@ -263,7 +263,7 @@ logits, processes and streams the resulting text, and retains the selected token
 for the next iteration. A newly selected token is therefore not committed to KV
 state until the following decode.
 
-![Stage 4 ordinary token generation from batched decode through sampling and streaming](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/stage4-token-generation-loop.svg)
+![Stage 4 ordinary token generation from batched decode through sampling and streaming](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/token-generation-loop.svg)
 
 Vocabulary EOG, parser-signaled completion, and `max_tokens` end generation
 normally. Cancellation, context or decode failure, streaming failure, and

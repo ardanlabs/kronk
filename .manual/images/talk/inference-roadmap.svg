@@ -1,147 +1,211 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Kronk inference from request to tokens</title>
-  <desc id="desc">An eight-part inference roadmap that begins with Kronk architecture, follows a request through the four-stage lifecycle and generation inference map, then details Stage 2 chat templating and IMC prompt planning before explaining Stage 4 prefill batching, ordinary token generation, and speculative decoding.</desc>
+  <title id="title">Kronk inference from architecture to token generation</title>
+  <desc id="desc">A seven-step talk roadmap covering Kronk architecture, the generation and inference lifecycle, request movement through admission and scheduling, chat template rendering, IMC session selection, prefill batching, and the token generation loop.</desc>
 
   <defs>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+    <filter id="shadow" x="-12%" y="-8%" width="124%" height="124%">
       <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
     </filter>
-    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
-      <path d="M 0 0 L 12 6 L 0 12 z" fill="#0f766e"/>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
     </marker>
     <style>
       .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
       .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .eyebrow { font: 700 14px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.1px; }
       .heading { font: 700 22px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
-      .group { font: 700 20px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1px; }
-      .eyebrow { font: 700 14px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
-      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
-      .small { font: 500 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
-      .mono { font: 600 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #475569; }
-      .white { fill: #ffffff; }
-      .muted { fill: #64748b; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .number { font: 700 24px Inter, ui-sans-serif, system-ui, sans-serif; fill: #ffffff; }
+      .phase { font: 700 16px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1px; }
+      .footer { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #e2e8f0; }
     </style>
   </defs>
 
   <rect width="1920" height="1080" fill="#f8fafc"/>
   <rect width="1920" height="12" fill="#0f766e"/>
-  <text class="title" x="72" y="70">KRONK INFERENCE: FROM REQUEST TO TOKENS</text>
-  <text class="subtitle" x="72" y="108">Architecture, resource ownership, request preparation, model execution, and throughput optimization.</text>
 
-  <!-- Overview connectors -->
-  <path d="M 630 290 H 672" stroke="#0f766e" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
-  <path d="M 1240 290 H 1282" stroke="#0f766e" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+  <text class="title" x="60" y="70">KRONK INFERENCE: FROM ARCHITECTURE TO TOKENS</text>
+  <text class="subtitle" x="60" y="108">A seven-step guide from system boundaries to the generation loop.</text>
 
-  <!-- Slide 1 -->
-  <g filter="url(#shadow)"><rect x="70" y="150" width="560" height="280" rx="24" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/></g>
-  <circle cx="112" cy="192" r="24" fill="#2563eb"/><text x="105" y="201" style="font:700 22px Inter, sans-serif" class="white">1</text>
-  <text class="eyebrow" x="152" y="184" fill="#1d4ed8">SYSTEM CONTEXT</text>
-  <text class="heading" x="152" y="216">SYSTEM ARCHITECTURE</text>
-  <rect x="100" y="248" width="500" height="74" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
-  <text class="body" x="128" y="280">Apps → APIs / SDK → native engines → models</text>
-  <text class="small" x="128" y="307">System boundaries and execution layers.</text>
-  <rect x="100" y="346" width="500" height="50" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="mono" x="124" y="377">chapter-01/kronk-architecture.svg</text>
+  <!-- Step connectors -->
+  <g fill="none" stroke="#64748b" stroke-width="3" marker-end="url(#arrow)">
+    <path d="M 287 525 H 307"/>
+    <path d="M 542 525 H 562"/>
+    <path d="M 797 525 H 817"/>
+    <path d="M 1052 525 H 1072"/>
+    <path d="M 1307 525 H 1327"/>
+    <path d="M 1562 525 H 1582"/>
+  </g>
 
-  <!-- Slide 2 -->
-  <g filter="url(#shadow)"><rect x="680" y="150" width="560" height="280" rx="24" fill="#ffffff" stroke="#5eead4" stroke-width="3"/></g>
-  <circle cx="722" cy="192" r="24" fill="#0f766e"/><text x="715" y="201" style="font:700 22px Inter, sans-serif" class="white">2</text>
-  <text class="eyebrow" x="762" y="184" fill="#0f766e">REQUEST OWNERSHIP</text>
-  <text class="heading" x="762" y="216">FOUR-STAGE REQUEST LIFECYCLE</text>
-  <rect x="710" y="248" width="500" height="74" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
-  <text class="body" x="738" y="280">Admit → prepare → schedule → execute</text>
-  <text class="small" x="738" y="307">Timeouts, ownership, sessions, and slots.</text>
-  <rect x="710" y="346" width="500" height="50" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="mono" x="734" y="377">chapter-04/request-lifecycle-stages.svg</text>
+  <!-- Step 1: architecture -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="160" width="225" height="710" rx="22" fill="#ffffff" stroke="#60a5fa" stroke-width="3"/>
+  </g>
+  <circle cx="172.5" cy="215" r="29" fill="#2563eb"/>
+  <text class="number" x="172.5" y="224" text-anchor="middle">1</text>
+  <text class="eyebrow" x="172.5" y="274" text-anchor="middle" fill="#1d4ed8">SYSTEM MAP</text>
+  <text class="heading" x="172.5" y="326" text-anchor="middle">
+    <tspan x="172.5">KRONK</tspan>
+    <tspan x="172.5" dy="30">ARCHITECTURE</tspan>
+  </text>
+  <rect x="88" y="413" width="169" height="176" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <rect x="119" y="446" width="107" height="25" rx="7" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <rect x="104" y="488" width="137" height="25" rx="7" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <rect x="119" y="530" width="107" height="25" rx="7" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <path d="M 172 471 V 488 M 172 513 V 530" stroke="#2563eb" stroke-width="3"/>
+  <text class="body" x="172.5" y="652" text-anchor="middle">
+    <tspan x="172.5">Locate APIs, SDKs,</tspan>
+    <tspan x="172.5" dy="28">model pools, engines,</tspan>
+    <tspan x="172.5" dy="28">and hardware.</tspan>
+  </text>
 
-  <!-- Slide 3 -->
-  <g filter="url(#shadow)"><rect x="1290" y="150" width="560" height="280" rx="24" fill="#ffffff" stroke="#c4b5fd" stroke-width="3"/></g>
-  <circle cx="1332" cy="192" r="24" fill="#7c3aed"/><text x="1325" y="201" style="font:700 22px Inter, sans-serif" class="white">3</text>
-  <text class="eyebrow" x="1372" y="184" fill="#6d28d9">EXECUTION MAP</text>
-  <text class="heading" x="1372" y="216">GENERATION INFERENCE LIFECYCLE</text>
-  <rect x="1320" y="248" width="500" height="74" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
-  <text class="body" x="1348" y="280">Host planning → scheduling → slot execution</text>
-  <text class="small" x="1348" y="307">The map connecting planning to model compute.</text>
-  <rect x="1320" y="346" width="500" height="50" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="mono" x="1344" y="377">chapter-04/generation-inference-lifecycle.svg</text>
+  <!-- Step 2: generation lifecycle -->
+  <g filter="url(#shadow)">
+    <rect x="315" y="160" width="225" height="710" rx="22" fill="#ffffff" stroke="#a78bfa" stroke-width="3"/>
+  </g>
+  <circle cx="427.5" cy="215" r="29" fill="#7c3aed"/>
+  <text class="number" x="427.5" y="224" text-anchor="middle">2</text>
+  <text class="eyebrow" x="427.5" y="274" text-anchor="middle" fill="#6d28d9">EXECUTION MAP</text>
+  <text class="heading" x="427.5" y="326" text-anchor="middle">
+    <tspan x="427.5">GENERATION &amp;</tspan>
+    <tspan x="427.5" dy="30">INFERENCE</tspan>
+    <tspan x="427.5" dy="30">LIFECYCLE</tspan>
+  </text>
+  <rect x="343" y="413" width="169" height="176" rx="18" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <rect x="367" y="443" width="121" height="35" rx="9" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="427.5" y="467" text-anchor="middle" style="font:700 16px Inter, sans-serif; fill:#6d28d9">CPU</text>
+  <path d="M 427.5 478 V 500" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="367" y="509" width="121" height="50" rx="9" fill="#ddd6fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="427.5" y="530" text-anchor="middle" style="font:700 15px Inter, sans-serif; fill:#6d28d9">GPU COMPUTE</text>
+  <text x="427.5" y="549" text-anchor="middle" style="font:600 13px Inter, sans-serif; fill:#6d28d9">+ MEMORY</text>
+  <text class="body" x="427.5" y="652" text-anchor="middle">
+    <tspan x="427.5">See where work runs:</tspan>
+    <tspan x="427.5" dy="28">CPU, GPU compute,</tspan>
+    <tspan x="427.5" dy="28">and GPU memory.</tspan>
+  </text>
 
-  <!-- Group panels -->
-  <rect x="70" y="530" width="785" height="400" rx="24" fill="#f8fbff" stroke="#60a5fa" stroke-width="3"/>
-  <text class="group" x="100" y="568" fill="#1d4ed8">REQUEST PREPARATION · LIFECYCLE STAGE 2</text>
-  <rect x="885" y="530" width="965" height="400" rx="24" fill="#faf8ff" stroke="#a78bfa" stroke-width="3"/>
-  <text class="group" x="915" y="568" fill="#6d28d9">MODEL EXECUTION · LIFECYCLE STAGE 4</text>
+  <!-- Step 3: request lifecycle -->
+  <g filter="url(#shadow)">
+    <rect x="570" y="160" width="225" height="710" rx="22" fill="#ffffff" stroke="#2dd4bf" stroke-width="3"/>
+  </g>
+  <circle cx="682.5" cy="215" r="29" fill="#0f766e"/>
+  <text class="number" x="682.5" y="224" text-anchor="middle">3</text>
+  <text class="eyebrow" x="682.5" y="274" text-anchor="middle" fill="#0f766e">REQUEST FLOW</text>
+  <text class="heading" x="682.5" y="326" text-anchor="middle">
+    <tspan x="682.5">REQUEST</tspan>
+    <tspan x="682.5" dy="30">LIFECYCLE</tspan>
+  </text>
+  <rect x="598" y="413" width="169" height="176" rx="18" fill="#ecfdf5" stroke="#5eead4" stroke-width="2"/>
+  <rect x="620" y="445" width="31" height="31" rx="6" fill="#99f6e4" stroke="#0f766e" stroke-width="2"/>
+  <rect x="667" y="445" width="31" height="31" rx="6" fill="#99f6e4" stroke="#0f766e" stroke-width="2"/>
+  <rect x="714" y="445" width="31" height="31" rx="6" fill="#ccfbf1" stroke="#0f766e" stroke-width="2"/>
+  <path d="M 635 476 V 512 H 682" stroke="#0f766e" stroke-width="3" fill="none"/>
+  <path d="M 682 476 V 512" stroke="#0f766e" stroke-width="3"/>
+  <path d="M 729 476 V 512 H 682" stroke="#0f766e" stroke-width="3" fill="none"/>
+  <rect x="643" y="512" width="79" height="45" rx="9" fill="#5eead4" stroke="#0f766e" stroke-width="2"/>
+  <text x="682.5" y="541" text-anchor="middle" style="font:700 15px Inter, sans-serif; fill:#115e59">SLOTS</text>
+  <text class="body" x="682.5" y="652" text-anchor="middle">
+    <tspan x="682.5">Follow admission,</tspan>
+    <tspan x="682.5" dy="28">queues, jobs, and</tspan>
+    <tspan x="682.5" dy="28">execution slots.</tspan>
+  </text>
 
-  <!-- Bottom-row connectors -->
-  <path d="M 445 735 H 477" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow)"/>
-  <path d="M 855 735 H 912" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow)"/>
-  <path d="M 1192 735 H 1224" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow)"/>
-  <path d="M 1517 735 H 1549" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow)"/>
+  <!-- Step 4: template protocol -->
+  <g filter="url(#shadow)">
+    <rect x="825" y="160" width="225" height="710" rx="22" fill="#ffffff" stroke="#60a5fa" stroke-width="3"/>
+  </g>
+  <circle cx="937.5" cy="215" r="29" fill="#2563eb"/>
+  <text class="number" x="937.5" y="224" text-anchor="middle">4</text>
+  <text class="eyebrow" x="937.5" y="274" text-anchor="middle" fill="#1d4ed8">PROMPT FORMAT</text>
+  <text class="heading" x="937.5" y="326" text-anchor="middle">
+    <tspan x="937.5">CHAT TEMPLATE</tspan>
+    <tspan x="937.5" dy="30">PROTOCOL</tspan>
+  </text>
+  <rect x="853" y="413" width="169" height="176" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <rect x="872" y="452" width="58" height="64" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <path d="M 887 471 H 915 M 887 485 H 915 M 887 499 H 907" stroke="#2563eb" stroke-width="3"/>
+  <path d="M 938 484 H 962" stroke="#2563eb" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="969" y="452" width="34" height="64" rx="9" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="986" y="491" text-anchor="middle" style="font:700 20px ui-monospace, monospace; fill:#1d4ed8">T</text>
+  <text class="body" x="937.5" y="652" text-anchor="middle">
+    <tspan x="937.5">Turn messages and</tspan>
+    <tspan x="937.5" dy="28">tools into the exact</tspan>
+    <tspan x="937.5" dy="28">model prompt.</tspan>
+  </text>
 
-  <!-- Slide 4 -->
-  <g filter="url(#shadow)"><rect x="95" y="595" width="350" height="300" rx="20" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/></g>
-  <circle cx="130" cy="630" r="22" fill="#2563eb"/><text x="123" y="638" style="font:700 20px Inter, sans-serif" class="white">4</text>
-  <text class="eyebrow" x="168" y="625" fill="#1d4ed8">TEMPLATE RENDERING</text>
-  <text class="heading" x="125" y="680">CHAT TEMPLATE PROTOCOL</text>
-  <rect x="125" y="708" width="290" height="78" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
-  <text class="body" x="148" y="740">Portable messages → exact</text>
-  <text class="body" x="148" y="768">model-specific prompt syntax</text>
-  <rect x="125" y="814" width="290" height="50" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="mono" x="148" y="837">stage2-chat-template-</text>
-  <text class="mono" x="148" y="855">protocol.svg</text>
+  <!-- Step 5: IMC selection -->
+  <g filter="url(#shadow)">
+    <rect x="1080" y="160" width="225" height="710" rx="22" fill="#ffffff" stroke="#2dd4bf" stroke-width="3"/>
+  </g>
+  <circle cx="1192.5" cy="215" r="29" fill="#0f766e"/>
+  <text class="number" x="1192.5" y="224" text-anchor="middle">5</text>
+  <text class="eyebrow" x="1192.5" y="274" text-anchor="middle" fill="#0f766e">REUSE PLANNING</text>
+  <text class="heading" x="1192.5" y="326" text-anchor="middle">
+    <tspan x="1192.5">IMC SESSION</tspan>
+    <tspan x="1192.5" dy="30">SELECTION</tspan>
+  </text>
+  <rect x="1108" y="413" width="169" height="176" rx="18" fill="#ecfdf5" stroke="#5eead4" stroke-width="2"/>
+  <rect x="1129" y="451" width="127" height="26" rx="6" fill="#ccfbf1" stroke="#0f766e" stroke-width="2"/>
+  <rect x="1129" y="489" width="93" height="26" rx="6" fill="#99f6e4" stroke="#0f766e" stroke-width="2"/>
+  <rect x="1129" y="527" width="112" height="26" rx="6" fill="#ccfbf1" stroke="#0f766e" stroke-width="2"/>
+  <path d="M 1231 497 L 1239 505 L 1256 486" stroke="#047857" stroke-width="4" fill="none"/>
+  <text class="body" x="1192.5" y="652" text-anchor="middle">
+    <tspan x="1192.5">Choose the longest</tspan>
+    <tspan x="1192.5" dy="28">safe reusable</tspan>
+    <tspan x="1192.5" dy="28">prompt prefix.</tspan>
+  </text>
 
-  <!-- Slide 5 -->
-  <g filter="url(#shadow)"><rect x="480" y="595" width="350" height="300" rx="20" fill="#ffffff" stroke="#5eead4" stroke-width="2"/></g>
-  <circle cx="515" cy="630" r="22" fill="#0f766e"/><text x="508" y="638" style="font:700 20px Inter, sans-serif" class="white">5</text>
-  <text class="eyebrow" x="553" y="625" fill="#0f766e">CACHE PLANNING</text>
-  <text class="heading" x="510" y="680">IMC PROMPT PLANNING</text>
-  <rect x="510" y="708" width="290" height="78" rx="14" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
-  <text class="body" x="533" y="740">Reuse safe state and</text>
-  <text class="body" x="533" y="768">reserve a session</text>
-  <rect x="510" y="814" width="290" height="50" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="mono" x="533" y="837">stage2-imc-prompt-</text>
-  <text class="mono" x="533" y="855">planning.svg</text>
+  <!-- Step 6: prefill -->
+  <g filter="url(#shadow)">
+    <rect x="1335" y="160" width="225" height="710" rx="22" fill="#ffffff" stroke="#a78bfa" stroke-width="3"/>
+  </g>
+  <circle cx="1447.5" cy="215" r="29" fill="#7c3aed"/>
+  <text class="number" x="1447.5" y="224" text-anchor="middle">6</text>
+  <text class="eyebrow" x="1447.5" y="274" text-anchor="middle" fill="#6d28d9">PROMPT COMPUTE</text>
+  <text class="heading" x="1447.5" y="326" text-anchor="middle">
+    <tspan x="1447.5">PREFILL &amp;</tspan>
+    <tspan x="1447.5" dy="30">BATCHING</tspan>
+  </text>
+  <rect x="1363" y="413" width="169" height="176" rx="18" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <g fill="#ddd6fe" stroke="#7c3aed" stroke-width="2">
+    <rect x="1384" y="455" width="28" height="28" rx="5"/>
+    <rect x="1420" y="455" width="28" height="28" rx="5"/>
+    <rect x="1456" y="455" width="28" height="28" rx="5"/>
+    <rect x="1384" y="491" width="28" height="28" rx="5"/>
+    <rect x="1420" y="491" width="28" height="28" rx="5"/>
+  </g>
+  <path d="M 1487 487 H 1509 V 543 H 1384 V 527" stroke="#7c3aed" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text class="body" x="1447.5" y="652" text-anchor="middle">
+    <tspan x="1447.5">Restore KV tensors,</tspan>
+    <tspan x="1447.5" dy="28">then compute the</tspan>
+    <tspan x="1447.5" dy="28">missing prompt state.</tspan>
+  </text>
 
-  <!-- Slide 6 -->
-  <g filter="url(#shadow)"><rect x="915" y="595" width="277" height="300" rx="20" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/></g>
-  <circle cx="950" cy="630" r="22" fill="#7c3aed"/><text x="943" y="638" style="font:700 20px Inter, sans-serif" class="white">6</text>
-  <text class="eyebrow" x="988" y="625" fill="#6d28d9">PREFILL</text>
-  <text class="heading" x="945" y="674">PREFILL BATCHING</text>
-  <rect x="945" y="708" width="217" height="78" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
-  <text class="body" x="968" y="740">nbatch + nubatch</text>
-  <text class="small" x="968" y="768">tray + chunks</text>
-  <rect x="945" y="814" width="217" height="50" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="mono" x="966" y="837">stage4-prefill-</text>
-  <text class="mono" x="966" y="855">batching.svg</text>
+  <!-- Step 7: generation loop -->
+  <g filter="url(#shadow)">
+    <rect x="1590" y="160" width="225" height="710" rx="22" fill="#ffffff" stroke="#60a5fa" stroke-width="3"/>
+  </g>
+  <circle cx="1702.5" cy="215" r="29" fill="#2563eb"/>
+  <text class="number" x="1702.5" y="224" text-anchor="middle">7</text>
+  <text class="eyebrow" x="1702.5" y="274" text-anchor="middle" fill="#1d4ed8">GENERATE</text>
+  <text class="heading" x="1702.5" y="326" text-anchor="middle">
+    <tspan x="1702.5">TOKEN</tspan>
+    <tspan x="1702.5" dy="30">GENERATION</tspan>
+    <tspan x="1702.5" dy="30">LOOP</tspan>
+  </text>
+  <rect x="1618" y="413" width="169" height="176" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <path d="M 1651 510 A 55 55 0 0 1 1747 470" stroke="#2563eb" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1754 492 A 55 55 0 0 1 1658 544" stroke="#2563eb" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <rect x="1682" y="480" width="41" height="41" rx="8" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="1702.5" y="507" text-anchor="middle" style="font:700 18px ui-monospace, monospace; fill:#1d4ed8">T</text>
+  <text class="body" x="1702.5" y="652" text-anchor="middle">
+    <tspan x="1702.5">Decode, sample,</tspan>
+    <tspan x="1702.5" dy="28">parse, stream,</tspan>
+    <tspan x="1702.5" dy="28">and repeat.</tspan>
+  </text>
 
-  <!-- Slide 7 -->
-  <g filter="url(#shadow)"><rect x="1225" y="595" width="292" height="300" rx="20" fill="#ffffff" stroke="#60a5fa" stroke-width="2"/></g>
-  <circle cx="1260" cy="630" r="22" fill="#2563eb"/><text x="1253" y="638" style="font:700 20px Inter, sans-serif" class="white">7</text>
-  <text class="eyebrow" x="1298" y="625" fill="#1d4ed8">ORDINARY GENERATION</text>
-  <text class="heading" x="1255" y="664">TOKEN GENERATION</text>
-  <text class="heading" x="1255" y="688">LOOP</text>
-  <rect x="1255" y="708" width="232" height="78" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
-  <text class="body" x="1278" y="740">Decode → sample</text>
-  <text class="body" x="1278" y="768">→ emit → repeat</text>
-  <rect x="1255" y="814" width="232" height="50" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="mono" x="1278" y="837">stage4-token-</text>
-  <text class="mono" x="1278" y="855">generation-loop.svg</text>
-
-  <!-- Slide 8 -->
-  <g filter="url(#shadow)"><rect x="1550" y="595" width="275" height="300" rx="20" fill="#ffffff" stroke="#fbbf24" stroke-width="2"/></g>
-  <circle cx="1585" cy="630" r="22" fill="#d97706"/><text x="1578" y="638" style="font:700 20px Inter, sans-serif" class="white">8</text>
-  <text class="eyebrow" x="1623" y="625" fill="#b45309">OPTIMIZATION</text>
-  <text class="heading" x="1580" y="664">SPECULATIVE</text>
-  <text class="heading" x="1580" y="688">DECODING</text>
-  <rect x="1580" y="708" width="215" height="78" rx="14" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
-  <text class="body" x="1603" y="740">Draft several;</text>
-  <text class="body" x="1603" y="768">target verifies</text>
-  <rect x="1580" y="814" width="215" height="50" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="mono" x="1601" y="837">stage4-speculative-</text>
-  <text class="mono" x="1601" y="855">decoding.svg</text>
-
-  <!-- Inference story -->
-  <rect x="70" y="968" width="1780" height="70" rx="20" fill="#0f172a"/>
-  <text class="eyebrow" x="104" y="997" fill="#5eead4">INFERENCE STORY</text>
-  <text class="body white" x="104" y="1024">Architecture → resource ownership → execution map → request preparation → model mechanics → throughput optimization</text>
-  <text class="small" x="1470" y="1013" style="fill:#94a3b8">From request boundary to tokens</text>
+  <!-- Story summary -->
+  <rect x="60" y="925" width="1755" height="94" rx="20" fill="#0f172a"/>
+  <text class="phase" x="92" y="960" fill="#5eead4">THE END-TO-END JOURNEY</text>
+  <text class="footer" x="92" y="994">Architecture → execution map → request flow → prompt format → reusable prefix → prompt compute → token generation</text>
 </svg>

@@ -55,20 +55,21 @@
   <!-- Stage 1 -->
   <circle cx="108" cy="218" r="21" fill="#2563eb"/>
   <text x="102" y="226" style="font:700 20px Inter, sans-serif" class="white">1</text>
-  <text class="eyebrow" x="142" y="211" fill="#1d4ed8">MODEL COMPUTE</text>
-  <text class="heading" x="142" y="240">Batched decode</text>
-  <text class="body" x="100" y="286">First output:</text>
-  <text class="small" x="100" y="312">final prefill row already supplies logits</text>
-  <line x1="100" y1="334" x2="380" y2="334" stroke="#bfdbfe" stroke-width="2"/>
-  <text class="body" x="100" y="370">Later iterations:</text>
-  <text class="small" x="100" y="396">decode the previously selected token</text>
-  <text class="small" x="100" y="424">and commit it to this sequence's KV state</text>
+  <text class="eyebrow" x="240" y="211" fill="#1d4ed8" text-anchor="middle">MODEL COMPUTE</text>
+  <text class="heading" x="240" y="240" text-anchor="middle">Batched decode</text>
+  <text class="body" x="105" y="282">First output:</text>
+  <text class="small" x="105" y="309">final prefill row already supplies logits</text>
+  <line x1="105" y1="330" x2="375" y2="330" stroke="#bfdbfe" stroke-width="2"/>
+  <text class="body" x="105" y="365">Later iterations:</text>
+  <text class="small" x="105" y="392">decode the previously selected token</text>
+  <text class="small" x="105" y="416">compute and append its KV tensors</text>
+  <text class="small" x="105" y="440">to this slot's KV cache</text>
 
   <!-- Stage 2 -->
   <circle cx="498" cy="258" r="21" fill="#0f766e"/>
   <text x="492" y="266" style="font:700 20px Inter, sans-serif" class="white">2</text>
-  <text class="eyebrow" x="532" y="251" fill="#0f766e">MODEL OUTPUT</text>
-  <text class="heading" x="492" y="294">Vocabulary logits</text>
+  <text class="eyebrow" x="595" y="251" fill="#0f766e" text-anchor="middle">MODEL OUTPUT</text>
+  <text class="heading" x="595" y="294" text-anchor="middle">Vocabulary logits</text>
   <circle cx="510" cy="334" r="6" fill="#2dd4bf"/>
   <circle cx="535" cy="334" r="6" fill="#2dd4bf"/>
   <circle cx="560" cy="334" r="6" fill="#2dd4bf"/>
@@ -76,47 +77,47 @@
   <circle cx="610" cy="334" r="6" fill="#2dd4bf"/>
   <circle cx="635" cy="334" r="6" fill="#2dd4bf"/>
   <circle cx="660" cy="334" r="6" fill="#2dd4bf"/>
-  <text class="small" x="492" y="377">raw score for every token</text>
-  <text class="tiny" x="492" y="400">read from this slot's logits row</text>
+  <text class="small" x="492" y="374">raw score for every token</text>
+  <text class="tiny" x="492" y="398">read from this slot's logits row</text>
 
   <!-- Stage 3 -->
   <circle cx="818" cy="218" r="21" fill="#7c3aed"/>
   <text x="812" y="226" style="font:700 20px Inter, sans-serif" class="white">3</text>
-  <text class="eyebrow" x="852" y="211" fill="#6d28d9">TOKEN SELECTION</text>
-  <text class="heading" x="852" y="240">Constrain and sample</text>
+  <text class="eyebrow" x="955" y="211" fill="#6d28d9" text-anchor="middle">TOKEN SELECTION</text>
+  <text class="heading" x="955" y="240" text-anchor="middle">Constrain and sample</text>
   <text class="body" x="812" y="286">Optional grammar / JSON schema</text>
   <text class="body" x="812" y="322">Sampling chain:</text>
-  <text class="small" x="832" y="350">top-k · top-p · min-p · temperature</text>
-  <text class="small" x="832" y="378">penalties · XTC / adaptive-p when set</text>
+  <text class="small" x="832" y="346">top-k · top-p · min-p · temperature</text>
+  <text class="small" x="832" y="372">penalties · XTC / adaptive-p when set</text>
   <rect x="812" y="402" width="286" height="36" rx="10" fill="#ede9fe" stroke="#c4b5fd" stroke-width="2"/>
-  <text class="mono" x="846" y="426">sample(logits) → token ID</text>
+  <text class="mono" x="955" y="426" text-anchor="middle">sample(logits) → token ID</text>
 
   <!-- Stage 4 -->
   <circle cx="1218" cy="258" r="21" fill="#059669"/>
   <text x="1212" y="266" style="font:700 20px Inter, sans-serif" class="white">4</text>
-  <text class="eyebrow" x="1252" y="251" fill="#047857">NEXT TOKEN</text>
-  <text class="heading" x="1212" y="294">Accept selection</text>
+  <text class="eyebrow" x="1325" y="251" fill="#047857" text-anchor="middle">NEXT TOKEN</text>
+  <text class="heading" x="1325" y="294" text-anchor="middle">Accept selection</text>
   <rect x="1212" y="320" width="226" height="48" rx="12" fill="#dcfce7" stroke="#86efac" stroke-width="2"/>
   <text class="mono" x="1254" y="350">selected token ID</text>
-  <text class="tiny" x="1212" y="398">retained as input if the loop continues</text>
+  <text class="tiny" x="1212" y="394">retained as input if the loop continues</text>
 
   <!-- Stage 5 -->
   <circle cx="1158" cy="514" r="21" fill="#d97706"/>
   <text x="1152" y="522" style="font:700 20px Inter, sans-serif" class="white">5</text>
-  <text class="eyebrow" x="1192" y="507" fill="#b45309">OUTPUT PIPELINE</text>
-  <text class="heading" x="1192" y="536">Token → text → parser</text>
-  <text class="body" x="1152" y="578">Convert token to a text piece</text>
-  <text class="body" x="1152" y="612">Buffer incomplete UTF-8 code points</text>
-  <text class="body" x="1152" y="646">Classify answer · reasoning · tool output</text>
-  <text class="body" x="1152" y="680">Count generated token and check limit</text>
+  <text class="eyebrow" x="1295" y="507" fill="#b45309" text-anchor="middle">OUTPUT PIPELINE</text>
+  <text class="heading" x="1295" y="536" text-anchor="middle">Token → text → parser</text>
+  <text class="small" x="1155" y="578">Convert token to a text piece</text>
+  <text class="small" x="1155" y="612">Buffer incomplete UTF-8 code points</text>
+  <text class="small" x="1155" y="646">Classify answer · reasoning · tool output</text>
+  <text class="small" x="1155" y="680">Count generated token and check limit</text>
 
   <!-- Stage 6 -->
   <circle cx="1158" cy="804" r="21" fill="#2563eb"/>
   <text x="1152" y="812" style="font:700 20px Inter, sans-serif" class="white">6</text>
-  <text class="eyebrow" x="1192" y="797" fill="#1d4ed8">RESPONSE OUTPUT</text>
-  <text class="heading" x="1192" y="826">Accumulate and stream</text>
-  <text class="body" x="1152" y="866">Store final response content</text>
-  <text class="body" x="1152" y="896">Emit streamable content delta</text>
+  <text class="eyebrow" x="1295" y="797" fill="#1d4ed8" text-anchor="middle">RESPONSE OUTPUT</text>
+  <text class="heading" x="1295" y="826" text-anchor="middle">Accumulate and stream</text>
+  <text class="body" x="1155" y="866">Store final response content</text>
+  <text class="body" x="1155" y="896">Emit streamable content delta</text>
 
   <!-- Normal stop panel -->
   <g filter="url(#shadow)">
@@ -128,15 +129,15 @@
   <path d="M 1541 184 L 1549 192 L 1564 175" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
   <text class="heading" x="1586" y="192" style="fill:#166534">Normal completion</text>
   <text class="eyebrow" x="1540" y="258" fill="#15803d">VOCABULARY EOG</text>
-  <text class="small" x="1540" y="283">selected token is an end-of-generation token</text>
+  <text class="small" x="1540" y="283">selected token is a vocabulary EOG</text>
   <line x1="1540" y1="305" x2="1820" y2="305" stroke="#bbf7d0" stroke-width="2"/>
   <text class="eyebrow" x="1540" y="340" fill="#15803d">PARSER-SIGNALED EOG</text>
-  <text class="small" x="1540" y="365">template parser reports logical completion</text>
+  <text class="small" x="1540" y="365">template parser reports completion</text>
   <line x1="1540" y1="387" x2="1820" y2="387" stroke="#bbf7d0" stroke-width="2"/>
   <text class="eyebrow" x="1540" y="422" fill="#15803d">MAX_TOKENS REACHED</text>
-  <text class="small" x="1540" y="447">configured generation limit is reached</text>
-  <rect x="1540" y="470" width="280" height="30" rx="9" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
-  <text class="tiny" x="1570" y="491">send final response · release slot</text>
+  <text class="small" x="1540" y="447">configured generation limit reached</text>
+  <rect x="1540" y="466" width="280" height="30" rx="9" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  <text class="tiny" x="1680" y="487" text-anchor="middle">send final response · release slot</text>
 
   <!-- Error panel -->
   <g filter="url(#shadow)">
@@ -151,12 +152,12 @@
   <text class="small" x="1540" y="691">request context ends before completion</text>
   <line x1="1540" y1="714" x2="1820" y2="714" stroke="#fecaca" stroke-width="2"/>
   <text class="eyebrow" x="1540" y="749" fill="#dc2626">CONTEXT / DECODE FAILURE</text>
-  <text class="small" x="1540" y="774">context full, decode error, or invalid input</text>
+  <text class="small" x="1540" y="774">context full, decode failure, or invalid input</text>
   <line x1="1540" y1="797" x2="1820" y2="797" stroke="#fecaca" stroke-width="2"/>
   <text class="eyebrow" x="1540" y="832" fill="#dc2626">STREAM / SHUTDOWN FAILURE</text>
-  <text class="small" x="1540" y="857">output transport fails or engine shuts down</text>
-  <rect x="1540" y="880" width="280" height="24" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="2"/>
-  <text class="tiny" x="1590" y="898">finish with an error response</text>
+  <text class="small" x="1540" y="857">stream fails or engine shuts down</text>
+  <rect x="1540" y="876" width="280" height="24" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="2"/>
+  <text class="tiny" x="1680" y="894" text-anchor="middle">finish with an error response</text>
 
   <!-- Side exit guides -->
   <path d="M 1470 318 H 1490 V 280 H 1508" stroke="#16a34a" stroke-width="3" fill="none" stroke-dasharray="8 7"/>
@@ -177,9 +178,9 @@
   <text class="body" x="188" y="882">If generation continues, it becomes the input token for step 1.</text>
 
   <!-- Continue-loop return path -->
-  <path d="M 1120 846 H 970 V 982 H 45 V 470 H 240 V 458" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow-slate)"/>
+  <path d="M 1120 846 H 970 V 976 H 45 V 470 H 240 V 458" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow-slate)"/>
   <rect x="420" y="950" width="440" height="52" rx="14" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/>
-  <text class="eyebrow" x="452" y="981" fill="#334155">CONTINUE · RETAIN TOKEN FOR THE NEXT BATCH</text>
+  <text class="eyebrow" x="640" y="981" fill="#334155" text-anchor="middle">CONTINUE · RETAIN TOKEN FOR NEXT BATCH</text>
 
   <text class="small muted" x="72" y="1044">Ordinary non-speculative generation shown. Speculative decoding can verify and accept multiple candidate tokens in one forward pass.</text>
   <text class="small muted" x="72" y="1067">Slots share batched model compute, but each slot keeps isolated sampler, parser, sequence, and response state.</text>

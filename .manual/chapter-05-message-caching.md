@@ -53,7 +53,7 @@ The complete generation lifecycle is introduced in
 The focused view below zooms into IMC's Stage 2 responsibility: deciding the
 safest minimum work and reserving the session that owns reusable state.
 
-![Stage 2 IMC prompt planning from dual rendering through session reservation](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/stage2-imc-prompt-planning.svg)
+![IMC session selection using complete saved prompt plans](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-session-selection.svg)
 
 The planning process has five steps.
 
