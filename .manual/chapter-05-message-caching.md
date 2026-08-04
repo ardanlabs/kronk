@@ -401,6 +401,19 @@ The relevant settings are:
 | `session-store-kind` | `ram`   | Stores inactive session snapshots in `ram` or on `disk`.            |
 | `session-store-dir`  | None    | Existing writable directory required by the `disk` store.           |
 
+For direct interactive use without the model server, `kronk run` accepts the
+same capacity as a load-time override:
+
+```shell
+kronk run Qwen3-8B-Q8_0 --imc-session-capacity=8
+```
+
+The flag's default value `0` means derive the capacity from `nseq-max` and
+`queue-depth`; it does not disable IMC or create a zero-length pool. A nonzero
+value is applied to the model loaded by that `kronk run` process, and startup
+output reports the effective session count. The same admission-capacity floor
+applies as in YAML configuration.
+
 The `cache-min-tokens` setting applies to the stable-render token length. A
 request below the threshold still works, but Kronk processes its complete
 generation-ready prompt without creating or reusing an IMC session.

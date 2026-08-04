@@ -82,6 +82,13 @@ A non-streaming response contains one or more `choices`, an assistant
 `reasoning_content`. Set the top-level `enable_thinking` boolean to request or
 suppress thinking when the model and its chat template support that option.
 
+Use `max_completion_tokens` to set the output-token limit. The legacy
+`max_tokens` name remains supported; if both are supplied,
+`max_completion_tokens` takes precedence. Kronk does not support custom stop
+strings, so requests containing `stop` are rejected rather than silently
+ignored. A response that reaches its output-token limit has
+`finish_reason: "length"`.
+
 Set `"stream": true` to receive chat completion chunks as SSE records:
 
 ```text
@@ -90,10 +97,21 @@ data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 data: [DONE]
 ```
 
-For compatible Qwen models, streaming responses emit an OpenAI-compatible
-tool-call activity delta as soon as the function name is known. The completed
-tool call, including all arguments, remains in the terminal response so clients
-that consume only the final chunk continue to work unchanged.
+By default, the terminal streaming chunk includes `usage`. To omit usage from
+all streaming chunks, set `"stream_options": {"include_usage": false}`. This
+option affects only the streaming wire response; it does not change generation
+or server-side accounting.
+
+Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a
+function name is known. The terminal chunk reconciles every completed tool
+call, including its arguments, so clients that consume only the final chunk
+continue to work unchanged.
+
+`usage.output_tokens` is the sum of reasoning and completion tokens, and
+`usage.total_tokens` is prompt plus output tokens. Generated control and
+tool-call syntax counts toward output usage even when a parser buffers it
+instead of exposing it as assistant text. `usage.reasoning_tokens` and
+`usage.completion_tokens` provide the output breakdown.
 
 ### Tool calls
 
@@ -126,8 +144,9 @@ an empty string for `content`:
 Execute the function in your application, then append the assistant message
 and a `role: "tool"` message containing the result and matching
 `tool_call_id`. Send the full conversation in the next request. Tool calls can
-also stream incrementally. Forced-function object forms are not portable
-across all model templates, so verify them with the model you deploy.
+also stream incrementally. Kronk accepts `"auto"` or the exact name of a
+declared function for `tool_choice`; values such as `"none"`, `"required"`,
+and forced-function object forms are rejected.
 
 ## 9.4 Responses API
 
@@ -145,6 +164,20 @@ response places generated messages or function calls in `output`. Tools use
 Responses-style tool definitions. As with Chat Completions, `tool_choice` may
 be `"auto"` or the name of a declared function tool.
 
+Use `max_output_tokens` to set the Responses output limit. `max_tokens` remains
+available as a compatibility alias, but `max_output_tokens` wins when both are
+present. When the limit is reached, the response has `status: "incomplete"`,
+`completed_at: null`, and:
+
+```json
+"incomplete_details": {"reason": "max_output_tokens"}
+```
+
+Output items have the same `incomplete` status. Usage reports all generated
+output tokens in `output_tokens`, including reasoning and tool-call syntax;
+`output_tokens_details.reasoning_tokens` supplies the reasoning subset, and
+`total_tokens` includes both input and output.
+
 With `"stream": true`, each SSE record has a named event and matching JSON
 payload. A text response commonly includes:
 
@@ -160,7 +193,10 @@ data: {"type":"response.completed",...}
 ```
 
 Function calls produce corresponding
-`response.function_call_arguments.delta` and `.done` events.
+`response.function_call_arguments.delta` and `.done` events. A token-limited
+stream ends with `response.incomplete` instead of `response.completed` and its
+embedded response carries the same incomplete details as a non-streaming
+response.
 
 ## 9.5 Anthropic Messages API
 
@@ -186,6 +222,11 @@ selected model's capabilities. Anthropic-style tool definitions use `name`,
 With `"stream": true`, Kronk emits Anthropic-style named events including
 `message_start`, `content_block_start`, `content_block_delta`,
 `content_block_stop`, `message_delta`, and `message_stop`.
+
+Custom `stop_sequences` are not supported and are rejected. A request that
+reaches `max_tokens` returns `stop_reason: "max_tokens"`; natural completion
+uses `end_turn`, and a completed tool call uses `tool_use`. Streaming and
+non-streaming responses use the same mapping.
 
 ## 9.6 Embeddings
 

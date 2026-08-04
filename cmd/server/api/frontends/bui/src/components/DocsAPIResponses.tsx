@@ -68,9 +68,9 @@ export default function DocsAPIResponses() {
                   </tr>
                   <tr>
                     <td><code>input</code></td>
-                    <td><code>array</code></td>
+                    <td><code>string|array</code></td>
                     <td>Yes</td>
-                    <td>Array of input messages (same format as chat messages)</td>
+                    <td>Input text or an array of input messages</td>
                   </tr>
                   <tr>
                     <td><code>stream</code></td>
@@ -94,7 +94,7 @@ export default function DocsAPIResponses() {
                     <td><code>tool_choice</code></td>
                     <td><code>string</code></td>
                     <td>No</td>
-                    <td>How the model should use tools: auto, none, or required</td>
+                    <td>Use auto or the exact name of a declared function tool</td>
                   </tr>
                   <tr>
                     <td><code>parallel_tool_calls</code></td>
@@ -139,10 +139,10 @@ export default function DocsAPIResponses() {
                     <td>Dynamic sampling threshold balancing coherence and diversity</td>
                   </tr>
                   <tr>
-                    <td><code>max_tokens</code></td>
+                    <td><code>max_output_tokens</code></td>
                     <td><code>int</code></td>
                     <td>No</td>
-                    <td>Maximum output tokens to generate</td>
+                    <td>Maximum output tokens; takes precedence over the max_tokens compatibility alias</td>
                   </tr>
                   <tr>
                     <td><code>repeat_penalty</code></td>
@@ -217,12 +217,6 @@ export default function DocsAPIResponses() {
                     <td>Include the prompt in the final response</td>
                   </tr>
                   <tr>
-                    <td><code>include_usage</code></td>
-                    <td><code>bool</code></td>
-                    <td>No</td>
-                    <td>Include token usage information in streaming responses</td>
-                  </tr>
-                  <tr>
                     <td><code>logprobs</code></td>
                     <td><code>bool</code></td>
                     <td>No</td>
@@ -243,7 +237,7 @@ export default function DocsAPIResponses() {
                 </tbody>
               </table>
               <h5>Response</h5>
-              <p>Returns a response object, or streams Server-Sent Events if stream=true.</p>
+              <p>Returns a response object, or streams Server-Sent Events if stream=true. A token-limited response has <code>status: incomplete</code> and <code>incomplete_details.reason: max_output_tokens</code>; a token-limited stream ends with <code>response.incomplete</code>.</p>
               <h5>Example</h5>
               <p className="example-label"><strong>Basic response:</strong></p>
               <pre className="code-block">

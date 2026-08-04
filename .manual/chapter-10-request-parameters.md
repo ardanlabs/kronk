@@ -27,6 +27,11 @@ recommendation, then Kronk baseline. See
 [Chapter 3 §3.7](https://www.kronkai.com/manual#37-advanced-features)
 for per-model `sampling-parameters`.
 
+GGUF recommendations are used when present for `temperature`, `top_k`,
+`top_p`, `min_p`, `repeat_last_n`, `xtc_probability`, and `xtc_threshold`.
+Malformed or absent metadata falls back to Kronk's baseline. Model
+configuration and explicit request values still win over valid metadata.
+
 JSON requests use `number`, `integer`, `boolean`, and `string` values. The Go
 SDK accepts the corresponding Go values in `model.D`.
 
@@ -56,6 +61,9 @@ greedy generation. Set `top_k: 0` to disable top-k filtering.
 When `seed` is omitted, Kronk chooses random sampler state for the request. An
 explicit seed, including `seed: 0`, makes target sampling, classic draft
 sampling, and speculative acceptance and replacement decisions repeatable.
+Kronk derives independent request-local streams for the target distribution,
+XTC, Adaptive-P, the classic draft distribution, and speculative decisions.
+Concurrent requests therefore do not advance one another's seeded streams.
 Repeatability requires the same Kronk and native-library builds, model files,
 request, sampling settings, backend and devices, speculative mode, and
 equivalent batching conditions. It is not guaranteed across software versions,
@@ -105,15 +113,18 @@ measure an improvement for a specific workload.
 
 | JSON key           | Type    | Baseline | Behavior |
 | ------------------ | ------- | -------- | -------- |
-| `max_tokens`       | integer | model-dependent | Maximum output tokens requested. |
+| `max_tokens`       | integer | model-dependent | Legacy/common maximum output-token field. |
+| `max_completion_tokens` | integer | model-dependent | Chat Completions output limit; takes precedence over `max_tokens`. |
+| `max_output_tokens` | integer | model-dependent | Responses API output limit; takes precedence over `max_tokens`. |
 | `enable_thinking`  | boolean | `true`   | Requests thinking from models and templates that support it. |
 | `reasoning_effort` | string  | `medium` | Requests `none`, `minimal`, `low`, `medium`, or `high` effort from supported reasoning templates. |
 | `return_prompt`    | boolean | `false`  | Includes the rendered prompt in the final Chat Completions response. |
 
-If neither the request nor model configuration supplies a positive
-`max_tokens`, Kronk uses the model's configured context window. The actual
-output can be shorter because the prompt and generated text share that window,
-the model can stop naturally, or another limit can end generation.
+If neither the request nor model configuration supplies a positive output
+limit, Kronk uses the model's configured context window. The actual output can
+be shorter because the prompt and generated text share that window, the model
+can stop naturally, or another limit can end generation. See Chapter 9 for the
+limit and termination fields returned by each API format.
 
 Reasoning controls are model- and template-dependent. Unsupported models may
 ignore them. A parser can also normalize `reasoning_effort` to values accepted

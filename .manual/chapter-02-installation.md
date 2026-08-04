@@ -223,8 +223,26 @@ The default location is:
 ```
 
 Examples include `darwin/arm64/metal` and `linux/amd64/cuda`. Multiple bundles
-can coexist. Kronk selects the folder matching the detected host unless
-`KRONK_ARCH`, `KRONK_OS`, `KRONK_PROCESSOR`, or `KRONK_LIB_PATH` overrides it.
+can coexist. During automatic selection, Kronk first resolves the preferred
+processor for the host. A CUDA 13 bundle requires every visible NVIDIA GPU to
+have compute capability 7.5 or newer. If the visible devices are older, or
+`CUDA_VISIBLE_DEVICES` leaves no CUDA device visible, Kronk selects a supported
+ROCm or Vulkan host runtime when one is available and otherwise selects CPU.
+An inconclusive NVIDIA probe retains CUDA rather than silently changing the
+backend.
+
+After installation, Kronk probes the preferred accelerator bundle before
+loading it. If that bundle positively reports no accelerator and another
+installed bundle for the same llama.cpp version positively reports a device,
+Kronk selects the working installed bundle. This second check does not download
+another bundle. Startup logs report the preferred processor, selected
+processor, and reason for either retaining or changing it.
+
+Explicit settings take precedence over both automatic checks. Setting
+`KRONK_ARCH`, `KRONK_OS`, `KRONK_PROCESSOR`, or `KRONK_LIB_PATH` selects that
+value strictly; Kronk does not substitute another runtime. Use an explicit
+processor when automatic detection is not appropriate, such as deliberately
+running CPU inference on a GPU host.
 
 Useful commands:
 
@@ -250,16 +268,22 @@ which may introduce upstream compatibility changes:
 kronk libs --local --upgrade
 ```
 
+Kronk, its Yzma Go binding, and llama.cpp form a tested compatibility set.
+Kronk 1.30.0 introduced Yzma v1.22.0 and requires llama.cpp b10212 or newer in
+that compatibility line. Do not infer compatibility from version ordering or
+upgrade only one member of the set. The current and historical matrix is kept
+in the repository [README](../README.md#llamacpp-versions), while the normal
+non-`--upgrade` command installs the build pinned for the Kronk release.
+
 Use `kronk libs --help` for cross-platform bundle installation and removal.
 Changing the active library path requires a server restart; libraries are not
 hot-reloaded.
 
-When the server selects a processor automatically, it verifies that processor's
-installed bundle before loading native libraries. If the bundle explicitly
-reports no accelerator and another installed bundle for the same llama.cpp
-version reports a device, the server uses that alternative. This check never
-downloads an additional bundle. `KRONK_PROCESSOR`, `KRONK_LIB_PATH`, and the
-corresponding server flags remain strict overrides and disable fallback.
+`KRONK_LIB_PATH` can name an existing versioned Kronk bundle or a user-managed
+library directory. A non-empty user-managed directory without `version.json`
+is treated as read-only: Kronk loads from it but does not install, upgrade, or
+replace its contents. Changing the selected processor or library path requires
+a process restart; native libraries are not hot-reloaded.
 
 Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A
 working `nvidia-smi` confirms the driver but not necessarily the CUDA runtime.
@@ -287,7 +311,9 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
 
 Model sources may be bare IDs, canonical `provider/model` IDs, Hugging Face
 URLs, or repository-and-quantization shorthands. Run
-`kronk model pull --help` for all accepted forms.
+`kronk model pull --help` for all accepted forms. To pin both the repository
+and file, use `owner/repo/file.gguf` or a Hugging Face `blob` or `resolve` URL.
+Kronk then resolves that exact file only within that repository.
 
 The default data layout is:
 

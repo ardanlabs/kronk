@@ -69,6 +69,14 @@ available, the model runs normally without speculation.
 A `draft-model` block containing only `ndraft` is different: it changes the MTP
 draft ceiling and does not select a classic draft or disable MTP.
 
+Embedded detection happens before llama.cpp loads the target. Kronk reads the
+first GGUF shard, where model metadata is stored, and enables MTP tensor loading
+when any positive `nextn_predict_layers` metadata value is present. The lookup
+uses the metadata suffix rather than a hard-coded architecture name, so a
+supported future architecture can advertise the same contract. This early
+step is required because llama.cpp otherwise omits gated MTP tensors during
+model load; adding an `ndraft` setting after load cannot recover them.
+
 MTP also requires support from the loaded llama.cpp library. When a model
 advertises MTP but the required API is unavailable, Kronk reports that MTP was
 disabled at model load and serves the model without speculation.
@@ -237,7 +245,9 @@ Startup events under `draft-model`, `draft-model-mtp`, and
   strict speculative-sampling distribution equivalence.
 - **MTP can fall back per request.** A synchronization or compatible-state
   problem disables MTP for the affected request while target-only generation
-  continues. It does not make an incorrect draft token authoritative.
+  continues. It does not make an incorrect draft token authoritative. A target
+  rollback or restore failure is different: Kronk fails the affected request
+  rather than continuing from ambiguous recurrent state.
 - **IMC may restore target state without draft state.** Target-prefix reuse
   remains valid, but own-KV MTP runs target-only for that request when its draft
   snapshot is absent or cannot be restored. See
@@ -248,7 +258,9 @@ Startup events under `draft-model`, `draft-model-mtp`, and
   [Chapter 11](https://www.kronkai.com/manual#chapter-11-multimodal-models).
 - **Drafting consumes resources.** A classic draft loads another model and KV
   cache. MTP heads and companion assistants also require compute and memory.
-  Automatic detection does not guarantee a performance improvement.
+  Hybrid recurrent targets retain current state plus rollback copies sized by
+  the MTP draft ceiling. Automatic detection does not guarantee a performance
+  improvement.
 
 Implementation details for drafting, verification, state synchronization, and
 hybrid-model rollback belong in

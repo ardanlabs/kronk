@@ -195,7 +195,13 @@ make install-tooling
 
 `make setup` configures the repository's hook workflow. Tool installation is separate;
 inspect the Make targets before running them on a platform where package-manager
-changes are undesirable. Common service commands include:
+changes are undesirable. The pre-commit hook regenerates the manual and BUI and, when
+`gomod2nix` is installed, refreshes `zarf/nix/gomod2nix.toml`. It stages only the
+generated BUI source/bundle paths and the Nix dependency file; it does not run
+`git add -A` or stage unrelated working-tree changes. Review the resulting staged diff
+before committing, especially when committing only part of the worktree.
+
+Common service commands include:
 
 ```shell
 make kronk-server
@@ -208,6 +214,42 @@ Native llama and Whisper libraries and test models are large external prerequisi
 Use the CLI and Make targets appropriate to the focused test rather than downloading
 every supported artifact. The Bucky CLI uses `--local` for direct filesystem work;
 web/server operation is the default and there is no `--web` flag.
+
+#### 19.4.1 Native-library compatibility and SDK initialization
+
+The versions in `go.mod`, `sdk/tools/libs` defaults, and the README compatibility
+matrix describe one tested Kronk/Yzma/llama.cpp set. The Kronk 1.30.0 line uses Yzma
+v1.22.0 with llama.cpp b10212 or newer. A dependency update is incomplete unless the
+binding, pinned native build, root and examples modules, generated Nix module data,
+and focused model tests remain aligned. Do not update Yzma or select a newer
+llama.cpp build independently merely because it is available upstream.
+
+Runnable language-model examples should resolve and initialize the same runtime they
+install:
+
+```go
+lib, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger))
+if err != nil {
+    return err
+}
+
+if _, err := lib.Download(ctx, kronk.FmtLogger); err != nil {
+    return err
+}
+
+if err := kronk.Init(kronk.WithLibPath(lib.LibsPath())); err != nil {
+    return err
+}
+```
+
+Call `kronk.Init` after runtime detection and installation but before constructing a
+Kronk model. Passing the manager's resolved `LibsPath` is required: calling bare
+`kronk.Init()` can repeat default selection and load a different bundle from the one
+the example just verified. Initialization is process-wide and should occur once.
+
+Bucky examples follow the same sequence with `sdk/tools/bucky/libs`, `bucky.Init`,
+and `bucky.WithLibPath(lib.LibsPath())`. Keep library installation separate from model
+download in both example families so failures identify the correct dependency.
 
 The exact development toolchain is pinned by `.go-version`, while `go.mod` declares
 the minimum language version. Patch versions may differ, but major and minor must

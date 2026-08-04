@@ -287,7 +287,9 @@ sudo chown -R 10001:10001 /srv/kronk`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
           <p>The default location is:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/libraries/<os>/<arch>/<processor>/`}</code></pre>
-          <p>Examples include <code>darwin/arm64/metal</code> and <code>linux/amd64/cuda</code>. Multiple bundles can coexist. Kronk selects the folder matching the detected host unless <code>KRONK_ARCH</code>, <code>KRONK_OS</code>, <code>KRONK_PROCESSOR</code>, or <code>KRONK_LIB_PATH</code> overrides it.</p>
+          <p>Examples include <code>darwin/arm64/metal</code> and <code>linux/amd64/cuda</code>. Multiple bundles can coexist. During automatic selection, Kronk first resolves the preferred processor for the host. A CUDA 13 bundle requires every visible NVIDIA GPU to have compute capability 7.5 or newer. If the visible devices are older, or <code>CUDA_VISIBLE_DEVICES</code> leaves no CUDA device visible, Kronk selects a supported ROCm or Vulkan host runtime when one is available and otherwise selects CPU. An inconclusive NVIDIA probe retains CUDA rather than silently changing the backend.</p>
+          <p>After installation, Kronk probes the preferred accelerator bundle before loading it. If that bundle positively reports no accelerator and another installed bundle for the same llama.cpp version positively reports a device, Kronk selects the working installed bundle. This second check does not download another bundle. Startup logs report the preferred processor, selected processor, and reason for either retaining or changing it.</p>
+          <p>Explicit settings take precedence over both automatic checks. Setting <code>KRONK_ARCH</code>, <code>KRONK_OS</code>, <code>KRONK_PROCESSOR</code>, or <code>KRONK_LIB_PATH</code> selects that value strictly; Kronk does not substitute another runtime. Use an explicit processor when automatic detection is not appropriate, such as deliberately running CPU inference on a GPU host.</p>
           <p>Useful commands:</p>
           <pre className="code-block"><code className="language-shell">{`# Show supported bundles.
 kronk libs --list-combinations
@@ -302,8 +304,9 @@ kronk libs --local --version=<llama.cpp-build>
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>The normal command installs the llama.cpp version selected for the installed Kronk release. <code>--upgrade</code> opts into the latest published llama.cpp build, which may introduce upstream compatibility changes:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
+          <p>Kronk, its Yzma Go binding, and llama.cpp form a tested compatibility set. Kronk 1.30.0 introduced Yzma v1.22.0 and requires llama.cpp b10212 or newer in that compatibility line. Do not infer compatibility from version ordering or upgrade only one member of the set. The current and historical matrix is kept in the repository <a href="../README.md#llamacpp-versions">README</a>, while the normal non-<code>--upgrade</code> command installs the build pinned for the Kronk release.</p>
           <p>Use <code>kronk libs --help</code> for cross-platform bundle installation and removal. Changing the active library path requires a server restart; libraries are not hot-reloaded.</p>
-          <p>When the server selects a processor automatically, it verifies that processor's installed bundle before loading native libraries. If the bundle explicitly reports no accelerator and another installed bundle for the same llama.cpp version reports a device, the server uses that alternative. This check never downloads an additional bundle. <code>KRONK_PROCESSOR</code>, <code>KRONK_LIB_PATH</code>, and the corresponding server flags remain strict overrides and disable fallback.</p>
+          <p><code>KRONK_LIB_PATH</code> can name an existing versioned Kronk bundle or a user-managed library directory. A non-empty user-managed directory without <code>version.json</code> is treated as read-only: Kronk loads from it but does not install, upgrade, or replace its contents. Changing the selected processor or library path requires a process restart; native libraries are not hot-reloaded.</p>
           <p>Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A working <code>nvidia-smi</code> confirms the driver but not necessarily the CUDA runtime. If the CUDA backend does not load, inspect <code>libggml-cuda.so</code> with <code>ldd</code> and install the runtime packages appropriate for the CUDA version used by the current bundle. The CUDA container image already includes its matching runtime.</p>
           <p>Speech-to-text uses a separate whisper.cpp bundle:</p>
           <pre className="code-block"><code className="language-shell">{`kronk bucky libs --local`}</code></pre>
@@ -312,7 +315,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>List the starter catalog and download a model directly on the host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local
 kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
-          <p>Model sources may be bare IDs, canonical <code>provider/model</code> IDs, Hugging Face URLs, or repository-and-quantization shorthands. Run <code>kronk model pull --help</code> for all accepted forms.</p>
+          <p>Model sources may be bare IDs, canonical <code>provider/model</code> IDs, Hugging Face URLs, or repository-and-quantization shorthands. Run <code>kronk model pull --help</code> for all accepted forms. To pin both the repository and file, use <code>owner/repo/file.gguf</code> or a Hugging Face <code>blob</code> or <code>resolve</code> URL. Kronk then resolves that exact file only within that repository.</p>
           <p>The default data layout is:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/
 ├── catalog/
@@ -649,6 +652,8 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
             <li>backend allocations and safety margins.</li>
           </ul>
           <p>Context length, <code>nseq-max</code>, cache precision, layer placement, SWA, and model architecture all affect the result. Use <strong>Apps → VRAM Calculator</strong> in the BUI to inspect the GGUF metadata and estimate a specific configuration. Treat the result as planning guidance and retain headroom for the backend and other processes.</p>
+          <p>The estimator follows the model's per-layer attention topology when the GGUF provides it. Full-attention and sliding-window layers can have different KV head counts and dimensions; compact SWA includes its physical-batch headroom, while <code>swa-full: true</code> allocates SWA against the full context. Shared KV layers are not charged twice.</p>
+          <p>Hybrid recurrent models such as Qwen 3.5 do not allocate ordinary K/V tensors for recurrent layers. Kronk instead estimates their float32 recurrent state per sequence and, when the active speculative configuration is known, the current state plus required rollback copies. Appended embedded-MTP/NextN layers are excluded from the target context's attention-state allocation because they are not target trunk layers. Their weights remain part of model size, and embedded MTP can increase recurrent rollback-state memory. These distinctions are why a generic transformer KV formula can substantially over- or under-estimate a hybrid model.</p>
           <p>If a configuration does not fit, consider these changes one at a time:</p>
           <ol>
             <li>Reduce <code>context-window</code>.</li>
@@ -1213,6 +1218,9 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
               </tr>
             </tbody>
           </table>
+          <p>For direct interactive use without the model server, <code>kronk run</code> accepts the same capacity as a load-time override:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk run Qwen3-8B-Q8_0 --imc-session-capacity=8`}</code></pre>
+          <p>The flag's default value <code>0</code> means derive the capacity from <code>nseq-max</code> and <code>queue-depth</code>; it does not disable IMC or create a zero-length pool. A nonzero value is applied to the model loaded by that <code>kronk run</code> process, and startup output reports the effective session count. The same admission-capacity floor applies as in YAML configuration.</p>
           <p>The <code>cache-min-tokens</code> setting applies to the stable-render token length. A request below the threshold still works, but Kronk processes its complete generation-ready prompt without creating or reusing an IMC session.</p>
           <p>Set <code>incremental-cache: false</code> if a workload is entirely short-lived or if you need to compare behavior without prompt caching.</p>
           <h3 id="ram-storage">RAM storage</h3>
@@ -1288,6 +1296,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           </table>
           <p>Kronk checks these sources in that order. A <code>draft-model</code> block containing a <code>model-id</code> explicitly selects the classic separate draft and takes precedence over either MTP form. Without one, Kronk uses a compatible companion MTP file when present, then checks the target for an embedded MTP head. If no source is available, the model runs normally without speculation.</p>
           <p>A <code>draft-model</code> block containing only <code>ndraft</code> is different: it changes the MTP draft ceiling and does not select a classic draft or disable MTP.</p>
+          <p>Embedded detection happens before llama.cpp loads the target. Kronk reads the first GGUF shard, where model metadata is stored, and enables MTP tensor loading when any positive <code>nextn_predict_layers</code> metadata value is present. The lookup uses the metadata suffix rather than a hard-coded architecture name, so a supported future architecture can advertise the same contract. This early step is required because llama.cpp otherwise omits gated MTP tensors during model load; adding an <code>ndraft</code> setting after load cannot recover them.</p>
           <p>MTP also requires support from the loaded llama.cpp library. When a model advertises MTP but the required API is unavailable, Kronk reports that MTP was disabled at model load and serves the model without speculation.</p>
           <h3 id="63-choosing-a-drafter">6.3 Choosing a Drafter</h3>
           <h4 id="631-classic-separate-draft">6.3.1 Classic separate draft</h4>
@@ -1409,10 +1418,10 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
             <li><strong>Classic separate drafts require one slot.</strong> Set <code>nseq-max: 1</code> on the target entry.</li>
             <li><strong>Tokenizer compatibility remains the user's responsibility.</strong> Kronk rejects unequal vocabulary sizes, but that check cannot establish identical token mappings or templates.</li>
             <li><strong>MTP at nonzero temperature is an approximation.</strong> MTP proposals are greedy, while target verification uses the request's sampler and accepts exact token matches. Sampling parameters still shape output, but this does not provide strict speculative-sampling distribution equivalence.</li>
-            <li><strong>MTP can fall back per request.</strong> A synchronization or compatible-state problem disables MTP for the affected request while target-only generation continues. It does not make an incorrect draft token authoritative.</li>
+            <li><strong>MTP can fall back per request.</strong> A synchronization or compatible-state problem disables MTP for the affected request while target-only generation continues. It does not make an incorrect draft token authoritative. A target rollback or restore failure is different: Kronk fails the affected request rather than continuing from ambiguous recurrent state.</li>
             <li><strong>IMC may restore target state without draft state.</strong> Target-prefix reuse remains valid, but own-KV MTP runs target-only for that request when its draft snapshot is absent or cannot be restored. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</li>
             <li><strong>Media support is conservative.</strong> Media projection and media prefill run on the target. Unsupported own-KV media combinations and all M-RoPE media requests run without MTP, although target IMC can remain active. See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a>.</li>
-            <li><strong>Drafting consumes resources.</strong> A classic draft loads another model and KV cache. MTP heads and companion assistants also require compute and memory. Automatic detection does not guarantee a performance improvement.</li>
+            <li><strong>Drafting consumes resources.</strong> A classic draft loads another model and KV cache. MTP heads and companion assistants also require compute and memory. Hybrid recurrent targets retain current state plus rollback copies sized by the MTP draft ceiling. Automatic detection does not guarantee a performance improvement.</li>
           </ul>
           <p>Implementation details for drafting, verification, state synchronization, and hybrid-model rollback belong in <a href="https://www.kronkai.com/manual#1966-speculative-decoding-and-mtp">Chapter 19</a>.</p>
           <h2 id="chapter-7-yarn-extended-context">Chapter 7: YaRN Extended Context</h2>
@@ -1605,6 +1614,30 @@ kronk libs --local`}</code></pre>
                 <td>Root for Kronk data</td>
               </tr>
               <tr>
+                <td><code>--lib-path</code></td>
+                <td><code>KRONK_LIB_PATH</code></td>
+                <td>Detected bundle under <code>&lt;base&gt;/libraries</code></td>
+                <td>Exact llama.cpp library directory or libraries root</td>
+              </tr>
+              <tr>
+                <td><code>--processor</code></td>
+                <td><code>KRONK_PROCESSOR</code></td>
+                <td>Detected host backend</td>
+                <td>Processor bundle such as <code>metal</code>, <code>cuda</code>, <code>rocm</code>, <code>vulkan</code>, or <code>cpu</code></td>
+              </tr>
+              <tr>
+                <td><code>--arch</code></td>
+                <td><code>KRONK_ARCH</code></td>
+                <td>Host architecture</td>
+                <td>Library-bundle architecture override</td>
+              </tr>
+              <tr>
+                <td><code>--os</code></td>
+                <td><code>KRONK_OS</code></td>
+                <td>Host operating system</td>
+                <td>Library-bundle operating-system override</td>
+              </tr>
+              <tr>
                 <td><code>--model-config-file</code></td>
                 <td><code>KRONK_POOL_MODEL_CONFIG_FILE</code></td>
                 <td><code>&lt;base&gt;/models/model_config.yaml</code></td>
@@ -1664,6 +1697,11 @@ kronk libs --local`}</code></pre>
           <p>Run the following for the complete current list, including HTTP timeouts, CORS, tracing, external authentication, processor selection, and library overrides:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --help`}</code></pre>
           <p>Keep tokens and passwords in protected environment or secret-manager settings, not shared shell scripts. <code>--insecure-logging</code> can expose prompts and model configuration and should be limited to controlled debugging.</p>
+          <h3 id="runtime-selection-and-overrides">Runtime selection and overrides</h3>
+          <p>With no processor or library-path override, server startup detects a preferred llama.cpp backend and verifies it before native libraries are loaded. CUDA 13 requires compute capability 7.5 or newer on every visible NVIDIA GPU. Older or hidden CUDA devices cause host detection to prefer an available ROCm or Vulkan runtime and then CPU. If compatibility cannot be determined conclusively, Kronk retains the preferred backend.</p>
+          <p>Kronk also probes the installed preferred accelerator bundle. It changes to a different installed bundle only when the preferred bundle positively reports no accelerator and a same-version alternative positively reports a device. This probe never installs another bundle. The startup log records the preferred and selected processors and the reason for the decision.</p>
+          <p><code>--processor</code> and <code>--lib-path</code>, or their environment equivalents, are strict operator choices and disable automatic fallback. A custom non-empty library directory without <code>version.json</code> is treated as a read-only user-managed build; the server loads it but does not upgrade or replace it. <code>--base-path</code> moves the managed library root along with other Kronk data, while <code>--lib-path</code> selects the llama.cpp location specifically. Restart the server after changing any native library selection setting.</p>
+          <p>Bucky performs separate whisper.cpp runtime selection. Its managed bundles live below <code>&lt;base&gt;/bucky-libraries</code>, and <code>KRONK_BUCKY_LIB_PATH</code> authoritatively selects a different bundle or user-managed build. It does not use <code>--lib-path</code>/<code>KRONK_LIB_PATH</code>. See <a href="https://www.kronkai.com/manual#182-install-whisper-libraries">Chapter 18 §18.2</a> for Bucky's CUDA, Vulkan, and CPU fallback rules.</p>
           <h2 id="84-model-pool-and-resource-budgets">8.4 Model Pool and Resource Budgets</h2>
           <p>Kronk keeps loaded models in memory to avoid paying model-load latency on every request. Three settings govern retention:</p>
           <ul>
@@ -1702,6 +1740,14 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0
 # Remove the catalog entry and its downloaded files.
 kronk catalog remove unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
           <p>Catalog entries identify the provider, source family, revision, files, sizes, and detected capabilities. Chat templates come from downloaded GGUF metadata and are not stored as catalog configuration.</p>
+          <p>Source specificity controls catalog resolution:</p>
+          <ul>
+            <li>A bare model ID can search the configured provider priority list.</li>
+            <li><code>provider/repo:quantization</code> pins the repository and selects the matching quantization there.</li>
+            <li><code>owner/repo/file.gguf</code>, or an equivalent Hugging Face <code>blob</code> or <code>resolve</code> URL, pins both the repository and upstream filename.</li>
+            <li>A repository root or tree URL returns its GGUF files for explicit selection rather than choosing one automatically.</li>
+          </ul>
+          <p>Exact file pins never fall back to a different repository or to another catalog entry with the same quantization suffix. This matters when target and MTP drafter files have similar names: companion discovery remains inside the pinned repository, preventing a cached target, drafter, or unrelated model from being substituted. The resulting canonical ID can still reflect Kronk's normal on-disk rename rules, such as the <code>mtp-</code> prefix for a dedicated MTP repository.</p>
           <p>Use <code>--local</code> for the same operations when the server is stopped. The BUI also provides catalog and model views when enabled; see <a href="https://www.kronkai.com/manual#chapter-13-browser-ui-bui">Chapter 13</a>.</p>
           <h2 id="87-container-operations">8.7 Container Operations</h2>
           <p>Chapter 2 covers image variants and initial container startup. For a persistent deployment, use a versioned image tag and retain <code>/kronk</code> in a volume. This headless example enables local authentication and exposes the API only through the host loopback interface:</p>
@@ -1817,11 +1863,14 @@ docker rm kronk
   ]
 }`}</code></pre>
           <p>A non-streaming response contains one or more <code>choices</code>, an assistant <code>message</code>, a <code>finish_reason</code>, and token <code>usage</code>. Thinking models can also return <code>reasoning_content</code>. Set the top-level <code>enable_thinking</code> boolean to request or suppress thinking when the model and its chat template support that option.</p>
+          <p>Use <code>max_completion_tokens</code> to set the output-token limit. The legacy <code>max_tokens</code> name remains supported; if both are supplied, <code>max_completion_tokens</code> takes precedence. Kronk does not support custom stop strings, so requests containing <code>stop</code> are rejected rather than silently ignored. A response that reaches its output-token limit has <code>finish_reason: "length"</code>.</p>
           <p>Set <code>"stream": true</code> to receive chat completion chunks as SSE records:</p>
           <pre className="code-block"><code className="language-text">{`data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 
 data: [DONE]`}</code></pre>
-          <p>For compatible Qwen models, streaming responses emit an OpenAI-compatible tool-call activity delta as soon as the function name is known. The completed tool call, including all arguments, remains in the terminal response so clients that consume only the final chunk continue to work unchanged.</p>
+          <p>By default, the terminal streaming chunk includes <code>usage</code>. To omit usage from all streaming chunks, set <code>"stream_options": &#123;"include_usage": false&#125;</code>. This option affects only the streaming wire response; it does not change generation or server-side accounting.</p>
+          <p>Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a function name is known. The terminal chunk reconciles every completed tool call, including its arguments, so clients that consume only the final chunk continue to work unchanged.</p>
+          <p><code>usage.output_tokens</code> is the sum of reasoning and completion tokens, and <code>usage.total_tokens</code> is prompt plus output tokens. Generated control and tool-call syntax counts toward output usage even when a parser buffers it instead of exposing it as assistant text. <code>usage.reasoning_tokens</code> and <code>usage.completion_tokens</code> provide the output breakdown.</p>
           <h3 id="tool-calls">Tool calls</h3>
           <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability. Set <code>tool_choice</code> to the name of a declared function tool to select that tool. Other values are rejected.</p>
           <p>When a tool is selected, the assistant message contains <code>tool_calls</code> and uses an empty string for <code>content</code>:</p>
@@ -1839,7 +1888,7 @@ data: [DONE]`}</code></pre>
     }
   ]
 }`}</code></pre>
-          <p>Execute the function in your application, then append the assistant message and a <code>role: "tool"</code> message containing the result and matching <code>tool_call_id</code>. Send the full conversation in the next request. Tool calls can also stream incrementally. Forced-function object forms are not portable across all model templates, so verify them with the model you deploy.</p>
+          <p>Execute the function in your application, then append the assistant message and a <code>role: "tool"</code> message containing the result and matching <code>tool_call_id</code>. Send the full conversation in the next request. Tool calls can also stream incrementally. Kronk accepts <code>"auto"</code> or the exact name of a declared function for <code>tool_choice</code>; values such as <code>"none"</code>, <code>"required"</code>, and forced-function object forms are rejected.</p>
           <h2 id="94-responses-api">9.4 Responses API</h2>
           <p><code>POST /v1/responses</code> accepts <code>input</code> as a string:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -1847,6 +1896,9 @@ data: [DONE]`}</code></pre>
   "input": "Explain quantum computing in simple terms."
 }`}</code></pre>
           <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. As with Chat Completions, <code>tool_choice</code> may be <code>"auto"</code> or the name of a declared function tool.</p>
+          <p>Use <code>max_output_tokens</code> to set the Responses output limit. <code>max_tokens</code> remains available as a compatibility alias, but <code>max_output_tokens</code> wins when both are present. When the limit is reached, the response has <code>status: "incomplete"</code>, <code>completed_at: null</code>, and:</p>
+          <pre className="code-block"><code className="language-json">{`"incomplete_details": {"reason": "max_output_tokens"}`}</code></pre>
+          <p>Output items have the same <code>incomplete</code> status. Usage reports all generated output tokens in <code>output_tokens</code>, including reasoning and tool-call syntax; <code>output_tokens_details.reasoning_tokens</code> supplies the reasoning subset, and <code>total_tokens</code> includes both input and output.</p>
           <p>With <code>"stream": true</code>, each SSE record has a named event and matching JSON payload. A text response commonly includes:</p>
           <pre className="code-block"><code className="language-text">{`event: response.created
 data: {"type":"response.created",...}
@@ -1856,7 +1908,7 @@ data: {"type":"response.output_text.delta","delta":"...",...}
 
 event: response.completed
 data: {"type":"response.completed",...}`}</code></pre>
-          <p>Function calls produce corresponding <code>response.function_call_arguments.delta</code> and <code>.done</code> events.</p>
+          <p>Function calls produce corresponding <code>response.function_call_arguments.delta</code> and <code>.done</code> events. A token-limited stream ends with <code>response.incomplete</code> instead of <code>response.completed</code> and its embedded response carries the same incomplete details as a non-streaming response.</p>
           <h2 id="95-anthropic-messages-api">9.5 Anthropic Messages API</h2>
           <p><code>POST /v1/messages</code> provides an Anthropic-style interface. <code>model</code> and a nonzero <code>max_tokens</code> are required:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -1869,6 +1921,7 @@ data: {"type":"response.completed",...}`}</code></pre>
 }`}</code></pre>
           <p><code>system</code> and message <code>content</code> may be strings or arrays of content blocks. The API supports text, image, <code>tool_use</code>, and <code>tool_result</code> blocks, subject to the selected model's capabilities. Anthropic-style tool definitions use <code>name</code>, <code>description</code>, and <code>input_schema</code>.</p>
           <p>With <code>"stream": true</code>, Kronk emits Anthropic-style named events including <code>message_start</code>, <code>content_block_start</code>, <code>content_block_delta</code>, <code>content_block_stop</code>, <code>message_delta</code>, and <code>message_stop</code>.</p>
+          <p>Custom <code>stop_sequences</code> are not supported and are rejected. A request that reaches <code>max_tokens</code> returns <code>stop_reason: "max_tokens"</code>; natural completion uses <code>end_turn</code>, and a completed tool call uses <code>tool_use</code>. Streaming and non-streaming responses use the same mapping.</p>
           <h2 id="96-embeddings">9.6 Embeddings</h2>
           <p><code>POST /v1/embeddings</code> accepts one string or an array of strings:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -1921,6 +1974,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p>This chapter covers generation parameters used by Chat Completions and the Go SDK. Other API formats expose compatible subsets or translate their own field names into these parameters. See <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> for endpoint-specific request formats and streaming behavior.</p>
           <h2 id="101-scope-and-defaults">10.1 Scope and Defaults</h2>
           <p>The defaults below are Kronk's baseline values. When present, a model's GGUF sampling recommendations take precedence over those baselines. A model configuration can provide different sampling defaults, and a request can override them. The precedence order is request, model configuration, GGUF recommendation, then Kronk baseline. See <a href="https://www.kronkai.com/manual#37-advanced-features">Chapter 3 §3.7</a> for per-model <code>sampling-parameters</code>.</p>
+          <p>GGUF recommendations are used when present for <code>temperature</code>, <code>top_k</code>, <code>top_p</code>, <code>min_p</code>, <code>repeat_last_n</code>, <code>xtc_probability</code>, and <code>xtc_threshold</code>. Malformed or absent metadata falls back to Kronk's baseline. Model configuration and explicit request values still win over valid metadata.</p>
           <p>JSON requests use <code>number</code>, <code>integer</code>, <code>boolean</code>, and <code>string</code> values. The Go SDK accepts the corresponding Go values in <code>model.D</code>.</p>
           <p>Avoid changing several samplers at once. Start with the model's defaults, change one parameter, and evaluate the result against representative prompts. Parameters that improve creative prose can reduce the reliability of JSON and tool calls.</p>
           <h2 id="102-core-sampling">10.2 Core Sampling</h2>
@@ -1968,7 +2022,7 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p>Explicit request values override model-specific sampling defaults, including <code>top_p: 1</code>, which disables nucleus filtering. When <code>temperature</code>, <code>top_k</code>, or <code>top_p</code> is omitted, Kronk uses the configured value, GGUF recommendation, or baseline default in that order. Set <code>temperature: 0</code> explicitly to request greedy generation. Set <code>top_k: 0</code> to disable top-k filtering.</p>
-          <p>When <code>seed</code> is omitted, Kronk chooses random sampler state for the request. An explicit seed, including <code>seed: 0</code>, makes target sampling, classic draft sampling, and speculative acceptance and replacement decisions repeatable. Repeatability requires the same Kronk and native-library builds, model files, request, sampling settings, backend and devices, speculative mode, and equivalent batching conditions. It is not guaranteed across software versions, backends, quantizations, sampler changes, or different batching schedules.</p>
+          <p>When <code>seed</code> is omitted, Kronk chooses random sampler state for the request. An explicit seed, including <code>seed: 0</code>, makes target sampling, classic draft sampling, and speculative acceptance and replacement decisions repeatable. Kronk derives independent request-local streams for the target distribution, XTC, Adaptive-P, the classic draft distribution, and speculative decisions. Concurrent requests therefore do not advance one another's seeded streams. Repeatability requires the same Kronk and native-library builds, model files, request, sampling settings, backend and devices, speculative mode, and equivalent batching conditions. It is not guaranteed across software versions, backends, quantizations, sampler changes, or different batching schedules.</p>
           <h2 id="103-repetition-control">10.3 Repetition Control</h2>
           <p>Kronk supports both token penalties and DRY n-gram penalties:</p>
           <table className="flags-table">
@@ -2105,7 +2159,19 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td><code>max_tokens</code></td>
                 <td>integer</td>
                 <td>model-dependent</td>
-                <td>Maximum output tokens requested.</td>
+                <td>Legacy/common maximum output-token field.</td>
+              </tr>
+              <tr>
+                <td><code>max_completion_tokens</code></td>
+                <td>integer</td>
+                <td>model-dependent</td>
+                <td>Chat Completions output limit; takes precedence over <code>max_tokens</code>.</td>
+              </tr>
+              <tr>
+                <td><code>max_output_tokens</code></td>
+                <td>integer</td>
+                <td>model-dependent</td>
+                <td>Responses API output limit; takes precedence over <code>max_tokens</code>.</td>
               </tr>
               <tr>
                 <td><code>enable_thinking</code></td>
@@ -2127,7 +2193,7 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>If neither the request nor model configuration supplies a positive <code>max_tokens</code>, Kronk uses the model's configured context window. The actual output can be shorter because the prompt and generated text share that window, the model can stop naturally, or another limit can end generation.</p>
+          <p>If neither the request nor model configuration supplies a positive output limit, Kronk uses the model's configured context window. The actual output can be shorter because the prompt and generated text share that window, the model can stop naturally, or another limit can end generation. See Chapter 9 for the limit and termination fields returned by each API format.</p>
           <p>Reasoning controls are model- and template-dependent. Unsupported models may ignore them. A parser can also normalize <code>reasoning_effort</code> to values accepted by its template; for example, a template that supports only <code>none</code> and <code>high</code> cannot honor every intermediate value.</p>
           <h2 id="106-structured-output">10.6 Structured Output</h2>
           <p>Kronk can convert JSON Schema to a GBNF grammar and constrain emitted tokens. For OpenAI-compatible clients, prefer <code>response_format</code>:</p>
@@ -2488,7 +2554,7 @@ kronk server start`}</code></pre>
           <h4 id="apps">Apps</h4>
           <ul>
             <li><strong>Chat</strong> provides multi-turn conversations, model selection, system prompts, chat history, and sampling controls.</li>
-            <li><strong>VRAM Calculator</strong> estimates model memory requirements from a HuggingFace model without downloading the entire model. A calculator is also available in local model and catalog details.</li>
+            <li><strong>VRAM Calculator</strong> estimates model memory requirements from a HuggingFace model without downloading the entire model. A calculator is also available in local model and catalog details. Set the intended context, sequence slots, KV precision and placement, layer/expert offload, devices, and tensor split before comparing the result with available memory. The estimate reads per-layer GGUF metadata, including full/SWA topology, recurrent layers, and embedded MTP/NextN layers when present.</li>
             <li><strong>Translator</strong> records or uploads audio for transcription through Bucky. You can select a whisper model, language, and response format and inspect timestamped segments. See <a href="https://www.kronkai.com/manual#185-browser-ui">Chapter 18 §18.5</a>.</li>
           </ul>
           <h4 id="system">System</h4>
@@ -2498,7 +2564,7 @@ kronk server start`}</code></pre>
           </ul>
           <h4 id="kronk">Kronk</h4>
           <ul>
-            <li><strong>Models</strong> lists local GGUF models and their metadata, effective configuration, sampling defaults, chat templates, and estimated VRAM. Models can be pulled from HuggingFace, copied from another Kronk Model Server (KMS), or removed. Persistent configuration is read from <code>~/.kronk/models/model_config.yaml</code>; the model details are read-only.</li>
+            <li><strong>Models</strong> lists local GGUF models and their metadata, effective configuration, sampling defaults, chat templates, and estimated VRAM. Models can be pulled from HuggingFace, copied from another Kronk Model Server (KMS), or removed. Persistent configuration is read from <code>~/.kronk/models/model_config.yaml</code>; the model details are read-only. A pull source that includes <code>owner/repo/file.gguf</code> pins that exact Hugging Face repository and file; a repository-only source opens its GGUF file list for selection.</li>
             <li><strong>Catalog</strong> browses the personal catalog at <code>~/.kronk/catalog/catalog.yaml</code>. You can refresh its on-disk state, inspect entries, pull their files, and remove entries. See Chapter 8 for how the catalog is populated and resolved.</li>
             <li><strong>Libs</strong> downloads and removes llama.cpp bundles for supported operating system, architecture, and processor combinations. Bundles are stored below <code>~/.kronk/libraries/</code>.</li>
           </ul>
@@ -2517,6 +2583,7 @@ kronk server start`}</code></pre>
             <li><strong>Configuration</strong> runs automated runtime-configuration sweeps.</li>
           </ul>
           <p>The Basic, Sampling, and Configuration tools create server-side playground sessions. Their configuration applies to that test session; it does not edit the persistent model configuration file.</p>
+          <p>The VRAM calculator's SWA control follows runtime precedence. An explicit calculator value wins; for an installed model, its <code>swa-full</code> model setting is next; otherwise the calculator uses the llama.cpp default shipped with the Kronk release. Leaving the control unset therefore does not mean compact SWA. The result separates model weights, KV or recurrent state, compute buffers, and CPU/GPU placement. It is an estimate rather than a reservation guarantee, so retain operating headroom and use the same settings that will load the model.</p>
           <h4 id="docs">Docs</h4>
           <p>The binary includes an offline documentation snapshot built with that Kronk release:</p>
           <ul>
@@ -3323,8 +3390,37 @@ kronk bucky libs --list-installs
 kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</code></pre>
           <p>The commands use the running model server by default. Add <code>--local</code> to manage the files directly without a server.</p>
           <p>The BUI's <strong>Whisper Libraries</strong> screen provides the same installation and removal operations. If Bucky failed to initialize because its libraries were missing, install a compatible bundle and <strong>restart the server</strong>. The running server does not automatically retry Bucky initialization.</p>
-          <p>Libraries are installed below <code>~/.kronk/bucky-libraries/</code> by default. Kronk normally selects the bundle for the current platform. To select a specific installed bundle, set its directory before starting the server:</p>
+          <p>Libraries are installed below <code>~/.kronk/bucky-libraries/</code> by default. Kronk normally treats the detected processor as a preference and verifies that the corresponding whisper.cpp bundle can run on the host. CPU and Metal are retained when published for the platform. CUDA is retained only when <code>nvidia-smi</code> reports a compatible driver and every GPU visible through <code>CUDA_VISIBLE_DEVICES</code> meets the bundle's compute-capability requirement:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Minimum reported CUDA version</th>
+                <th>Minimum compute capability</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Linux <code>amd64</code></td>
+                <td>12.9</td>
+                <td>8.6</td>
+              </tr>
+              <tr>
+                <td>Linux <code>arm64</code></td>
+                <td>12.9</td>
+                <td>8.7</td>
+              </tr>
+              <tr>
+                <td>Windows <code>amd64</code></td>
+                <td>12.4</td>
+                <td>5.0</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>If the preferred CUDA or Vulkan runtime is unavailable or incompatible, Linux uses Vulkan when <code>vulkaninfo --summary</code> reports a usable GPU and otherwise uses CPU. Other supported platforms fall back to CPU. Bucky has no separate ROCm artifact, so a shared <code>KRONK_PROCESSOR=rocm</code> preference resolves to Vulkan on a usable Linux Vulkan host and otherwise to CPU. Startup logs report the preferred runtime, selected runtime, and reason.</p>
+          <p>To select a specific installed bundle or user-managed build authoritatively, set its directory before starting the server:</p>
           <pre className="code-block"><code className="language-sh">{`export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda`}</code></pre>
+          <p>A non-empty <code>KRONK_BUCKY_LIB_PATH</code> bypasses automatic compatibility selection. If the directory contains <code>version.json</code>, Kronk adopts its recorded platform metadata unless explicitly overridden. A non-empty existing directory without that file is treated as a read-only user-managed build: Kronk loads from it but does not install, upgrade, or replace its contents.</p>
           <p>The library tools also recognize these platform overrides:</p>
           <table className="flags-table">
             <thead>
@@ -3344,11 +3440,11 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
               </tr>
               <tr>
                 <td><code>KRONK_PROCESSOR</code></td>
-                <td><code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>vulkan</code></td>
+                <td><code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>vulkan</code>; <code>rocm</code> maps to Vulkan or CPU</td>
               </tr>
             </tbody>
           </table>
-          <p>Only combinations listed by <code>--list-combinations</code> can be installed.</p>
+          <p>Only combinations listed by <code>--list-combinations</code> can be installed. Platform variables remain preferences during automatic Bucky selection; use <code>KRONK_BUCKY_LIB_PATH</code> when the selected directory must be exact. Library selection is process-wide, so restart the CLI process or server after changing it.</p>
           <h3 id="183-manage-models">18.3 Manage Models</h3>
           <p>List the bundled model catalog:</p>
           <pre className="code-block"><code className="language-sh">{`kronk bucky model catalog`}</code></pre>
@@ -3448,6 +3544,7 @@ kronk bucky model remove tiny`}</code></pre>
             </tbody>
           </table>
           <p>If the server starts without usable Whisper libraries, it logs that Bucky is running in degraded mode. Library and model management remain available, but transcription cannot work until the libraries are installed and the server is restarted.</p>
+          <p>Server startup constructs the Bucky library manager from <code>KRONK_BASE_PATH</code> and <code>KRONK_BUCKY_LIB_PATH</code>, downloads or verifies the selected bundle, and passes the manager's resolved directory to the whisper runtime. This keeps a moved base path and an explicit Bucky library path consistent across installation and inference. The llama.cpp <code>--lib-path</code>/<code>KRONK_LIB_PATH</code> setting does not select whisper.cpp libraries; use <code>KRONK_BUCKY_LIB_PATH</code> for Bucky.</p>
           <h3 id="185-browser-ui">18.5 Browser UI</h3>
           <p>The BUI provides three Bucky-related areas:</p>
           <ol>
@@ -3930,12 +4027,30 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
           <pre className="code-block"><code className="language-shell">{`make setup
 make install-gotooling
 make install-tooling`}</code></pre>
-          <p><code>make setup</code> configures the repository's hook workflow. Tool installation is separate; inspect the Make targets before running them on a platform where package-manager changes are undesirable. Common service commands include:</p>
+          <p><code>make setup</code> configures the repository's hook workflow. Tool installation is separate; inspect the Make targets before running them on a platform where package-manager changes are undesirable. The pre-commit hook regenerates the manual and BUI and, when <code>gomod2nix</code> is installed, refreshes <code>zarf/nix/gomod2nix.toml</code>. It stages only the generated BUI source/bundle paths and the Nix dependency file; it does not run <code>git add -A</code> or stage unrelated working-tree changes. Review the resulting staged diff before committing, especially when committing only part of the worktree.</p>
+          <p>Common service commands include:</p>
           <pre className="code-block"><code className="language-shell">{`make kronk-server
 make kronk-server-detach
 make kronk-server-logs
 make kronk-server-stop`}</code></pre>
           <p>Native llama and Whisper libraries and test models are large external prerequisites. Use the CLI and Make targets appropriate to the focused test rather than downloading every supported artifact. The Bucky CLI uses <code>--local</code> for direct filesystem work; web/server operation is the default and there is no <code>--web</code> flag.</p>
+          <h4 id="1941-native-library-compatibility-and-sdk-initialization">19.4.1 Native-library compatibility and SDK initialization</h4>
+          <p>The versions in <code>go.mod</code>, <code>sdk/tools/libs</code> defaults, and the README compatibility matrix describe one tested Kronk/Yzma/llama.cpp set. The Kronk 1.30.0 line uses Yzma v1.22.0 with llama.cpp b10212 or newer. A dependency update is incomplete unless the binding, pinned native build, root and examples modules, generated Nix module data, and focused model tests remain aligned. Do not update Yzma or select a newer llama.cpp build independently merely because it is available upstream.</p>
+          <p>Runnable language-model examples should resolve and initialize the same runtime they install:</p>
+          <pre className="code-block"><code className="language-go">{`lib, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger))
+if err != nil {
+    return err
+}
+
+if _, err := lib.Download(ctx, kronk.FmtLogger); err != nil {
+    return err
+}
+
+if err := kronk.Init(kronk.WithLibPath(lib.LibsPath())); err != nil {
+    return err
+}`}</code></pre>
+          <p>Call <code>kronk.Init</code> after runtime detection and installation but before constructing a Kronk model. Passing the manager's resolved <code>LibsPath</code> is required: calling bare <code>kronk.Init()</code> can repeat default selection and load a different bundle from the one the example just verified. Initialization is process-wide and should occur once.</p>
+          <p>Bucky examples follow the same sequence with <code>sdk/tools/bucky/libs</code>, <code>bucky.Init</code>, and <code>bucky.WithLibPath(lib.LibsPath())</code>. Keep library installation separate from model download in both example families so failures identify the correct dependency.</p>
           <p>The exact development toolchain is pinned by <code>.go-version</code>, while <code>go.mod</code> declares the minimum language version. Patch versions may differ, but major and minor must match. The workflow version script enforces this relationship; read both files rather than copying their current values into new documentation.</p>
           <h3 id="195-request-and-model-lifecycle">19.5 Request and Model Lifecycle</h3>
           <h4 id="1951-server-request-flow">19.5.1 Server request flow</h4>
@@ -4259,6 +4374,9 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             </div>
             <div className="doc-index-section">
               <a href="#83-essential-server-configuration" className={`doc-index-header ${activeSection === '83-essential-server-configuration' ? 'active' : ''}`}>8.3 Essential Server Configuration</a>
+              <ul>
+                <li><a href="#runtime-selection-and-overrides" className={activeSection === 'runtime-selection-and-overrides' ? 'active' : ''}>Runtime selection and overrides</a></li>
+              </ul>
             </div>
             <div className="doc-index-section">
               <a href="#84-model-pool-and-resource-budgets" className={`doc-index-header ${activeSection === '84-model-pool-and-resource-budgets' ? 'active' : ''}`}>8.4 Model Pool and Resource Budgets</a>
