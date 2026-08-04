@@ -7,6 +7,28 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+func TestStreamIncludeUsage(t *testing.T) {
+	tests := []struct {
+		name string
+		d    model.D
+		want bool
+	}{
+		{name: "omitted defaults true", d: model.D{}, want: true},
+		{name: "D true", d: model.D{"stream_options": model.D{"include_usage": true}}, want: true},
+		{name: "D false", d: model.D{"stream_options": model.D{"include_usage": false}}, want: false},
+		{name: "map true", d: model.D{"stream_options": map[string]any{"include_usage": true}}, want: true},
+		{name: "map false", d: model.D{"stream_options": map[string]any{"include_usage": false}}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := streamIncludeUsage(tt.d); got != tt.want {
+				t.Errorf("streamIncludeUsage: got %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChatValidatesMessagesBeforeAdmission(t *testing.T) {
 	tests := []struct {
 		name string

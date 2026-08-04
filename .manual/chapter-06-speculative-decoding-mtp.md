@@ -44,6 +44,12 @@ against the target sampler. Both paths keep the target authoritative and emit
 an accepted prefix of zero to `ndraft` candidates followed by a target-derived
 replacement or bonus token.
 
+When a request supplies `seed`, Kronk derives request-local random streams for
+the target sampler, classic draft sampler, and speculative acceptance and
+replacement decisions. This prevents concurrent requests from consuming one
+another's random stream. See [Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters)
+for the repeatability contract and its environment constraints.
+
 ### 6.2 Drafter Sources and Selection
 
 Kronk can load a drafter from three sources:

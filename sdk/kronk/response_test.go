@@ -150,6 +150,27 @@ func TestConvertInputToMessagesRoleShapedImage(t *testing.T) {
 	}
 }
 
+func TestConvertInputToMessagesMapsMaxOutputTokens(t *testing.T) {
+	d := model.D{
+		"input":             "hello",
+		"max_output_tokens": float64(32),
+		"max_tokens":        16,
+	}
+
+	got, err := convertInputToMessages(d)
+	if err != nil {
+		t.Fatalf("convertInputToMessages: %v", err)
+	}
+
+	if got["max_tokens"] != float64(32) {
+		t.Errorf("max_tokens: got %v, want 32", got["max_tokens"])
+	}
+	params := extractInputParams(got)
+	if params.MaxOutputTokens == nil || *params.MaxOutputTokens != 32 {
+		t.Errorf("MaxOutputTokens: got %v, want 32", params.MaxOutputTokens)
+	}
+}
+
 func TestConvertInputToMessagesRejectsFileInput(t *testing.T) {
 	tests := []struct {
 		name  string

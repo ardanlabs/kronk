@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"runtime"
@@ -234,6 +235,10 @@ type Params struct {
 	// response. When set to true, the prompt will be included. Default is false.
 	ReturnPrompt bool `json:"return_prompt"`
 
+	// Seed initializes request sampling randomness. Nil selects a random seed;
+	// any non-nil value, including 0, requests repeatable sampling.
+	Seed *uint32 `json:"seed,omitempty"`
+
 	// Stream determines whether to stream the response.
 	Stream bool `json:"stream"`
 
@@ -300,6 +305,11 @@ func (p Params) String() string {
 	fmt.Fprintf(&b, "repeat_last_n[%v]\n", p.RepeatLastN)
 	fmt.Fprintf(&b, "repeat_penalty[%v]\n", p.RepeatPenalty)
 	fmt.Fprintf(&b, "return_prompt[%v]\n", p.ReturnPrompt)
+	if p.Seed == nil {
+		fmt.Fprintln(&b, "seed[random]")
+	} else {
+		fmt.Fprintf(&b, "seed[%d]\n", *p.Seed)
+	}
 	fmt.Fprintf(&b, "stream[%v]\n", p.Stream)
 	fmt.Fprintf(&b, "temperature[%v]\n", p.Temperature)
 	fmt.Fprintf(&b, "enable_thinking[%v]\n", p.Thinking)
@@ -367,6 +377,9 @@ func AddParams(params Params, d D) {
 	if params.ReturnPrompt {
 		d["return_prompt"] = params.ReturnPrompt
 	}
+	if params.Seed != nil {
+		d["seed"] = *params.Seed
+	}
 	if params.Stream {
 		d["stream"] = params.Stream
 	}
@@ -400,6 +413,8 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	m.log(ctx, "parse-params", "request", d.String())
 
 	p := m.cfg.DefaultParams
+	p.IncludeUsage = DefIncludeUsage
+	p.Seed = nil
 
 	if val, exists := d["adaptive_p_decay"]; exists {
 		adaptivePDecay, err := parseFloat32("adaptive_p_decay", val)
@@ -508,6 +523,14 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 		p.MaxTokens = maxTokens
 	}
 
+	if val, exists := d["max_completion_tokens"]; exists {
+		maxTokens, err := parseInt("max_completion_tokens", val)
+		if err != nil {
+			return Params{}, err
+		}
+		p.MaxTokens = maxTokens
+	}
+
 	if val, exists := d["min_p"]; exists {
 		minP, err := parseFloat32("min_p", val)
 		if err != nil {
@@ -556,6 +579,14 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 		p.ReturnPrompt = returnPrompt
 	}
 
+	if val, exists := d["seed"]; exists {
+		seed, err := parseSeed(val)
+		if err != nil {
+			return Params{}, err
+		}
+		p.Seed = new(seed)
+	}
+
 	if val, exists := d["stream"]; exists {
 		stream, err := parseBool("stream", val)
 		if err != nil {
@@ -565,14 +596,20 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	}
 
 	if streamOpts, exists := d["stream_options"]; exists {
-		if optsMap, ok := streamOpts.(map[string]any); ok {
-			if val, exists := optsMap["include_usage"]; exists {
-				includeUsage, err := parseBool("stream_options.include_usage", val)
-				if err != nil {
-					return Params{}, err
-				}
-				p.IncludeUsage = includeUsage
+		var optsMap D
+		switch opts := streamOpts.(type) {
+		case D:
+			optsMap = opts
+		case map[string]any:
+			optsMap = D(opts)
+		}
+
+		if val, exists := optsMap["include_usage"]; exists {
+			includeUsage, err := parseBool("stream_options.include_usage", val)
+			if err != nil {
+				return Params{}, err
 			}
+			p.IncludeUsage = includeUsage
 		}
 	}
 
@@ -709,7 +746,7 @@ func (m *Model) adjustParams(p Params, request D) Params {
 			p.MaxTokens = m.cfg.ContextWindow()
 		}
 	}
-	if p.MinP <= 0 {
+	if p.MinP < 0 || (p.MinP == 0 && !requested("min_p")) {
 		p.MinP = DefMinP
 		if m.paramsResolved {
 			p.MinP = m.cfg.DefaultParams.MinP
@@ -726,9 +763,6 @@ func (m *Model) adjustParams(p Params, request D) Params {
 	}
 	if p.RepeatPenalty <= 0 {
 		p.RepeatPenalty = DefRepeatPenalty
-		if m.paramsResolved {
-			p.RepeatPenalty = m.cfg.DefaultParams.RepeatPenalty
-		}
 	}
 	if p.Temperature < 0 || (p.Temperature == 0 && !requested("temperature")) {
 		p.Temperature = DefTemp
@@ -803,7 +837,7 @@ func resolveSamplingDefaults(p Params, metadata map[string]string, contextWindow
 		p.RepeatLastN = samplingMetadataInt32(metadata, "general.sampling.penalty_last_n", DefRepeatLastN)
 	}
 	if p.RepeatPenalty == 0 {
-		p.RepeatPenalty = samplingMetadataFloat32(metadata, "general.sampling.penalty_repeat", DefRepeatPenalty)
+		p.RepeatPenalty = DefRepeatPenalty
 	}
 	if p.Temperature == 0 {
 		p.Temperature = samplingMetadataFloat32(metadata, "general.sampling.temp", DefTemp)
@@ -858,7 +892,7 @@ func samplingMetadataInt32(metadata map[string]string, key string, fallback int3
 	return int32(parsed)
 }
 
-func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
+func (m *Model) toSampler(ctx context.Context, p Params, seeds samplingSeeds) llama.Sampler {
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 
 	var order int
@@ -904,13 +938,13 @@ func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
 
 	if p.XtcProbability > 0 {
 		order++
-		llama.SamplerChainAdd(sampler, llama.SamplerInitXTC(p.XtcProbability, p.XtcThreshold, p.XtcMinKeep, llama.DefaultSeed))
+		llama.SamplerChainAdd(sampler, llama.SamplerInitXTC(p.XtcProbability, p.XtcThreshold, p.XtcMinKeep, seeds.targetXTC))
 		m.log(ctx, "sampler-chain", "order", order, "sampler", "xtc", "probability", fmt.Sprintf("%.2f", p.XtcProbability), "threshold", fmt.Sprintf("%.2f", p.XtcThreshold), "min_keep", p.XtcMinKeep)
 	}
 
 	if p.AdaptivePTarget > 0 {
 		order++
-		llama.SamplerChainAdd(sampler, llama.SamplerInitAdaptiveP(p.AdaptivePTarget, p.AdaptivePDecay, llama.DefaultSeed))
+		llama.SamplerChainAdd(sampler, llama.SamplerInitAdaptiveP(p.AdaptivePTarget, p.AdaptivePDecay, seeds.targetAdaptiveP))
 		m.log(ctx, "sampler-chain", "order", order, "sampler", "adaptive-p", "target", fmt.Sprintf("%.2f", p.AdaptivePTarget), "decay", fmt.Sprintf("%.2f", p.AdaptivePDecay))
 	}
 
@@ -919,7 +953,7 @@ func (m *Model) toSampler(ctx context.Context, p Params) llama.Sampler {
 	m.log(ctx, "sampler-chain", "order", order, "sampler", "temperature", "temp", fmt.Sprintf("%.2f", p.Temperature))
 
 	order++
-	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(llama.DefaultSeed))
+	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(seeds.targetDist))
 	m.log(ctx, "sampler-chain", "order", order, "sampler", "dist")
 
 	return sampler
@@ -1025,6 +1059,71 @@ func parseInt(fieldName string, val any) (int, error) {
 	}
 
 	return result, nil
+}
+
+func parseSeed(val any) (uint32, error) {
+	invalid := func() (uint32, error) {
+		return 0, fmt.Errorf("parse-seed: field-name[seed] must be an integer between 0 and %d", uint64(math.MaxUint32))
+	}
+	fromUint64 := func(v uint64) (uint32, error) {
+		if v > math.MaxUint32 {
+			return invalid()
+		}
+		return uint32(v), nil
+	}
+	fromInt64 := func(v int64) (uint32, error) {
+		if v < 0 {
+			return invalid()
+		}
+		return fromUint64(uint64(v))
+	}
+	fromFloat64 := func(v float64) (uint32, error) {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > math.MaxUint32 || math.Trunc(v) != v {
+			return invalid()
+		}
+		return uint32(v), nil
+	}
+
+	switch v := val.(type) {
+	case string:
+		parsed, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			return invalid()
+		}
+		return uint32(parsed), nil
+	case json.Number:
+		parsed, err := strconv.ParseFloat(string(v), 64)
+		if err != nil {
+			return invalid()
+		}
+		return fromFloat64(parsed)
+	case float32:
+		return fromFloat64(float64(v))
+	case float64:
+		return fromFloat64(v)
+	case int:
+		return fromInt64(int64(v))
+	case int8:
+		return fromInt64(int64(v))
+	case int16:
+		return fromInt64(int64(v))
+	case int32:
+		return fromInt64(int64(v))
+	case int64:
+		return fromInt64(v)
+	case uint:
+		return fromUint64(uint64(v))
+	case uint8:
+		return uint32(v), nil
+	case uint16:
+		return uint32(v), nil
+	case uint32:
+		return v, nil
+	case uint64:
+		return fromUint64(v)
+	default:
+		return invalid()
+	}
 }
 
 func parseBool(fieldName string, val any) (bool, error) {

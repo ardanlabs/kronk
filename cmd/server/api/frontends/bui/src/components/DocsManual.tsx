@@ -1257,6 +1257,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <p>This is a specialized Stage 4 generation loop. The drafter proposes multiple candidates, but the target model verifies them and remains authoritative. At a divergence Kronk accepts only the verified prefix and chooses a target replacement token; when all candidates are accepted it chooses a target bonus token. That final target token becomes input to the next decode and is not yet committed to KV state when selected.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/stage4-speculative-decoding.svg" alt="Stage 4 speculative decoding proposal, target verification, acceptance, and state synchronization" /></p>
           <p>Classic speculative sampling uses the target and draft distributions to decide acceptance and replacement. Kronk's MTP path uses exact token-match verification against the target sampler. Both paths keep the target authoritative and emit an accepted prefix of zero to <code>ndraft</code> candidates followed by a target-derived replacement or bonus token.</p>
+          <p>When a request supplies <code>seed</code>, Kronk derives request-local random streams for the target sampler, classic draft sampler, and speculative acceptance and replacement decisions. This prevents concurrent requests from consuming one another's random stream. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for the repeatability contract and its environment constraints.</p>
           <h3 id="62-drafter-sources-and-selection">6.2 Drafter Sources and Selection</h3>
           <p>Kronk can load a drafter from three sources:</p>
           <table className="flags-table">
@@ -1958,9 +1959,16 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td><code>0.0</code></td>
                 <td>Removes candidates below <code>min_p × probability_of_most_likely_token</code>; <code>0</code> disables it.</td>
               </tr>
+              <tr>
+                <td><code>seed</code></td>
+                <td>integer</td>
+                <td>random</td>
+                <td>Initializes sampling randomness; values from <code>0</code> through <code>4294967295</code> request repeatable sampling.</td>
+              </tr>
             </tbody>
           </table>
           <p>Explicit request values override model-specific sampling defaults, including <code>top_p: 1</code>, which disables nucleus filtering. When <code>temperature</code>, <code>top_k</code>, or <code>top_p</code> is omitted, Kronk uses the configured value, GGUF recommendation, or baseline default in that order. Set <code>temperature: 0</code> explicitly to request greedy generation. Set <code>top_k: 0</code> to disable top-k filtering.</p>
+          <p>When <code>seed</code> is omitted, Kronk chooses random sampler state for the request. An explicit seed, including <code>seed: 0</code>, makes target sampling, classic draft sampling, and speculative acceptance and replacement decisions repeatable. Repeatability requires the same Kronk and native-library builds, model files, request, sampling settings, backend and devices, speculative mode, and equivalent batching conditions. It is not guaranteed across software versions, backends, quantizations, sampler changes, or different batching schedules.</p>
           <h2 id="103-repetition-control">10.3 Repetition Control</h2>
           <p>Kronk supports both token penalties and DRY n-gram penalties:</p>
           <table className="flags-table">

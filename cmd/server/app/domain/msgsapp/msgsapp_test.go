@@ -23,6 +23,30 @@ func TestMessagesRejectsMissingMessagesBeforeModelAcquisition(t *testing.T) {
 	}
 }
 
+func TestMessagesRejectsStopSequencesBeforeModelAcquisition(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"test","max_tokens":1,"messages":[{"role":"user","content":"hello"}],"stop_sequences":["END"]}`))
+
+	resp := (&app{}).messages(t.Context(), req)
+	appErr, ok := resp.(*errs.Error)
+	if !ok {
+		t.Fatalf("messages: got %T, want *errs.Error", resp)
+	}
+	if !appErr.Code.Equal(errs.InvalidArgument) {
+		t.Errorf("Code: got %s, want %s", appErr.Code, errs.InvalidArgument)
+	}
+	if got, want := appErr.Message, "stop_sequences is not supported"; got != want {
+		t.Errorf("Message: got %q, want %q", got, want)
+	}
+}
+
+func TestToOpenAIMaxTokens(t *testing.T) {
+	d := toOpenAI(MessagesRequest{MaxTokens: 32})
+
+	if got := d["max_tokens"]; got != 32 {
+		t.Errorf("max_tokens: got %v, want 32", got)
+	}
+}
+
 func TestToAnthropicStopReason(t *testing.T) {
 	tests := []struct {
 		name  string

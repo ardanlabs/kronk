@@ -638,6 +638,9 @@ func ValidateChatRequest(d D) error {
 	if err := ValidateMessages(d); err != nil {
 		return err
 	}
+	if _, exists := d["stop"]; exists {
+		return fmt.Errorf("%w: stop is not supported", ErrInvalidRequest)
+	}
 	if err := validateToolChoice(d); err != nil {
 		return err
 	}

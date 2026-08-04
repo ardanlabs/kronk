@@ -119,12 +119,6 @@ export default function DocsAPIMessages() {
                     <td>No</td>
                     <td>Top-k sampling parameter</td>
                   </tr>
-                  <tr>
-                    <td><code>stop_sequences</code></td>
-                    <td><code>array</code></td>
-                    <td>No</td>
-                    <td>Sequences where the API will stop generating</td>
-                  </tr>
                 </tbody>
               </table>
               <h5>Response</h5>

@@ -40,6 +40,9 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 	if req.MaxTokens == 0 {
 		return errs.Errorf(errs.InvalidArgument, "missing max_tokens field")
 	}
+	if len(req.StopSequences) > 0 {
+		return errs.Errorf(errs.InvalidArgument, "stop_sequences is not supported")
+	}
 	if len(req.Messages) == 0 {
 		return errs.FromSDK(model.ErrMessagesMissing)
 	}

@@ -10,4 +10,6 @@ if command -v gomod2nix &> /dev/null; then
 fi
 
 # Stage any generated changes
-git add -A
+git add cmd/server/api/services/kronk/static
+git add cmd/server/api/frontends/bui
+git add zarf/nix/gomod2nix.toml
