@@ -369,12 +369,22 @@ snapshot is read, prepared, committed, reset, and closed. Session metadata—cac
 tokens, render-sensitive identity/version, and snapshot—must describe the same prefix.
 Do not update one independently and call the session valid.
 
-The session's reservation and `pending` state serialize mutation and hide the session
-from competing selection until metadata and snapshot bytes agree. Restore only a
-committed snapshot whose token/prompt identity still matches. Ordinary text
-build/extension prepares and commits through the session's existing store; if snapshot
-publication fails, invalidate that session so later work rebuilds it rather than
-claiming the old or partial state is valid.
+The session's `reserved` state serializes mutation and hides the session from competing
+selection until metadata and snapshot bytes agree. The reservation begins in prompt
+planning and survives the queue wait and restore; exact read-only hits keep it through
+generation, while a successfully published text build/extension can release it after
+the stable snapshot is committed. Restore only a committed snapshot whose complete
+token or media plan and expected version still match. Ordinary text build/extension
+prepares and commits through the session's existing store; if snapshot publication
+fails, invalidate that rolling state so later work rebuilds it rather than claiming the
+old or partial state is valid.
+
+Text planning compares complete token sequences and chooses the longest compatible
+rolling state or retained user-turn checkpoint. It never trims a snapshot at an
+internal token match. Before extending rolling state that ends at a real user message,
+move that complete state—including target KV and compatible own-KV MTP state—into the
+independent checkpoint and install fresh rolling stores. Rolling invalidation must not
+discard that checkpoint; full reset or LRU replacement must close both states.
 
 Media-anchor advancement has a stronger replacement contract: it writes a separately
 staged store and swaps the store plus matching plan/count metadata only after success,
@@ -382,6 +392,23 @@ so failure leaves the previous media snapshot published. Do not generalize that 
 replacement guarantee to every IMC path. A `SessionStore` implementation must honor
 the interface's read/prepare/commit/reset lifetime rules and clean up temporary
 resources; callers must not assume bytes remain stable across the next mutation.
+
+Restored KV and sampler history are separate correctness concerns. Prime sampler
+penalties and DRY with the complete logical prompt after restore. An own-KV MTP session
+may publish draft KV only with the matching target snapshot and final hidden row; a
+media commit clears that draft state. Shared-target-KV MTP derives its resume point from
+the restored target and must not allocate or restore an independent draft store. A
+draft-only restore failure permits target-only fallback. Target-side rejection has two
+distinct outcomes: a stale expected-version mismatch is a retryable busy error and
+leaves the published session intact, while empty target bytes or a partial native target
+restore are request-fatal and invalidate the affected rolling state.
+
+Snapshot publication failures also differ by path. Ordinary text build/append and
+initial media build write through the rolling store; incomplete target serialization
+invalidates that rolling cache state, but target generation for the current request can
+continue. Media-anchor advancement instead uses a replacement store and requires a
+complete staged snapshot before swapping metadata; decode or snapshot failure fails the
+request while preserving the old published anchor.
 
 #### 19.6.2 Prompt plans: text and media
 
@@ -395,8 +422,10 @@ part of identity and execution.
 Do not treat a media prompt as text with an attachment ignored by caching. A text
 prefix match is insufficient if image/audio/video content, ordering, sizing, or model
 projection changes. Media prefill must align embeddings and positions with the same
-sequence that receives surrounding text. When prompt construction or media decode
-fails, the prior valid IMC snapshot remains authoritative.
+sequence that receives surrounding text. A media-anchor advance stages replacement
+state separately, so decode or snapshot failure leaves that anchor's prior published
+snapshot authoritative. Do not claim the same preservation for an LRU rebuild: prompt
+planning intentionally resets the selected session before rebuilding it.
 
 #### 19.6.3 Parser registry ownership
 

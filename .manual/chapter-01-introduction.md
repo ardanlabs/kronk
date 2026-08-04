@@ -105,6 +105,19 @@ shared `sdk/pool` facade. Your application can call `sdk/kronk` or `sdk/bucky`
 directly without starting the model server, or use the pool when it needs a
 coordinated multi-model lifecycle.
 
+For conversational generation, Incremental Message Caching (IMC) keeps a pool
+of reusable conversation-prefix snapshots separate from the active execution
+slots. An inactive session is externalized to RAM or disk rather than remaining
+attached to one slot or persistently occupying that slot's accelerator KV
+stream. A later request can reserve the longest compatible complete prefix,
+restore it into any free slot, and prefill only the stable work that was added.
+This applies to supported text and multimodal prompts; media identity, ordering,
+embedding expansion, and position accounting are part of safe reuse. See
+[Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for the
+request lifecycle and
+[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) for the
+full IMC semantics.
+
 ### 1.5 Where to Go Next
 
 - **Install Kronk and run your first model:**

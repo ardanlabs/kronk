@@ -249,12 +249,18 @@ Startup events under `draft-model`, `draft-model-mtp`, and
   rollback or restore failure is different: Kronk fails the affected request
   rather than continuing from ambiguous recurrent state.
 - **IMC may restore target state without draft state.** Target-prefix reuse
-  remains valid, but own-KV MTP runs target-only for that request when its draft
-  snapshot is absent or cannot be restored. See
+  remains valid. Shared-target-KV MTP resumes from the restored target state.
+  Own-KV MTP resumes only when Kronk can restore the matching draft snapshot
+  and saved final hidden row; if either is absent or invalid, that request runs
+  target-only rather than drafting from inconsistent state. Text user-turn
+  checkpoints retain this paired state when it is valid. See
   [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
 - **Media support is conservative.** Media projection and media prefill run on
-  the target. Unsupported own-KV media combinations and all M-RoPE media
-  requests run without MTP, although target IMC can remain active. See
+  the target, and target IMC can cache and restore that media state. Kronk does
+  not carry an own-KV draft snapshot across a media cache commit because it
+  cannot prove that the draft covers the projected media cells. Unsupported
+  own-KV media combinations and all M-RoPE media requests therefore run without
+  MTP while target IMC remains active. See
   [Chapter 11](https://www.kronkai.com/manual#chapter-11-multimodal-models).
 - **Drafting consumes resources.** A classic draft loads another model and KV
   cache. MTP heads and companion assistants also require compute and memory.

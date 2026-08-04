@@ -171,9 +171,14 @@ generation cue into the protocol the selected model learned during training.
 ![A chat template translates request context into the selected model's prompt protocol](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/stage2-chat-template-protocol.svg)
 
 The rendered prompt—not the original message objects—is tokenized and executed.
-For an IMC-eligible request, Kronk also builds a canonical prompt plan, finds
-the longest complete safe reusable prefix, and reserves the selected session
-before batch submission.
+For an IMC-eligible request, Kronk independently renders the complete prompt
+with and without the generation cue. After tokenization or media-plan
+construction, the no-cue plan is reusable only when it is a strict prefix of
+the generation-ready plan and leaves a nonempty inference tail; a media tail
+must also be text-only. Kronk then finds the longest complete safe reusable
+prefix—including a retained text user-turn checkpoint when compatible—and
+reserves the selected session before batch submission. It never treats a
+coincidental partial token overlap inside a saved snapshot as reusable state.
 [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) zooms
 further into this planning step.
 
@@ -209,6 +214,13 @@ When the scheduler assigns a slot, Kronk binds any reserved IMC session to that
 slot's fixed llama sequence ID. A compatible saved prefix is restored from the
 session store; otherwise the sequence starts from an empty state. The session
 identity is not permanently attached to the slot.
+
+Restoring target KV does not restore a live sampler object. Kronk primes
+penalties and DRY from the complete logical prompt, including the restored
+prefix, before generation. When own-KV MTP state is available, its paired draft
+snapshot and final hidden row are restored with the target; shared-target-KV
+MTP resumes from the restored target state. Missing or invalid draft-side state
+falls back to target-only generation without discarding a valid target prefix.
 
 #### 4.7.2 Prefill Uncached Work
 
