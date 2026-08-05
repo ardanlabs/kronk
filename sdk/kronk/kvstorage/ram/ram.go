@@ -1,5 +1,5 @@
 // Package ram provides the in-process RAM implementation of the
-// model.SessionStore contract used by IMC (Incremental Message Cache)
+// kvstorage.Store contract used by IMC (Incremental Message Cache)
 // to externalize per-session KV cache bytes between requests.
 //
 // This is the default session store. It keeps each session's bytes in a
@@ -11,9 +11,14 @@
 // model context window, so each session's buffer reaches steady-state
 // after a small number of Prepare calls and never reallocates again.
 //
-// Future kvstorage subpackages (e.g. kvstorage/disk) provide alternative
-// backends behind the same model.SessionStore contract.
+// Other kvstorage subpackages (e.g. kvstorage/disk) provide alternative
+// backends behind the same contract.
 package ram
+
+import "github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+
+// Kind identifies the RAM backend in external configuration.
+const Kind = "ram"
 
 // Store is the in-process RAM session store. It is NOT safe for
 // concurrent use; the IMC scheduler serializes access via the
@@ -23,6 +28,15 @@ package ram
 // The zero value is a usable, empty Store.
 type Store struct {
 	buf []byte
+}
+
+var _ kvstorage.Store = (*Store)(nil)
+
+// NewFactory constructs a factory for independent RAM stores.
+func NewFactory() kvstorage.Factory {
+	return func() (kvstorage.Store, error) {
+		return New(), nil
+	}
 }
 
 // New returns a new, empty Store ready for use.

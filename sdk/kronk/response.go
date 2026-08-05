@@ -34,7 +34,7 @@ type ResponseResponse struct {
 	Store            bool                 `json:"store"`
 	Temperature      float64              `json:"temperature"`
 	Text             ResponseTextFormat   `json:"text"`
-	ToolChoice       string               `json:"tool_choice"`
+	ToolChoice       any                  `json:"tool_choice"`
 	Tools            []any                `json:"tools"`
 	TopP             float64              `json:"top_p"`
 	Truncation       string               `json:"truncation"`
@@ -771,7 +771,7 @@ func buildOutputItems(outputText string, toolCalls []model.ResponseToolCall, sta
 type inputParams struct {
 	Temperature       float64
 	TopP              float64
-	ToolChoice        string
+	ToolChoice        any
 	Truncation        string
 	MaxOutputTokens   *int
 	ParallelToolCalls bool
@@ -797,8 +797,8 @@ func extractInputParams(d model.D) inputParams {
 		params.TopP = v
 	}
 
-	if v, ok := d["tool_choice"].(string); ok {
-		params.ToolChoice = v
+	if value, ok := d["tool_choice"]; ok {
+		params.ToolChoice = responsesToolChoice(value)
 	}
 
 	if v, ok := d["truncation"].(string); ok {
@@ -829,6 +829,22 @@ func extractInputParams(d model.D) inputParams {
 	}
 
 	return params
+}
+
+func responsesToolChoice(value any) any {
+	choice, ok := value.(model.D)
+	if !ok || choice["type"] != "function" {
+		return value
+	}
+	function, ok := choice["function"].(model.D)
+	if !ok {
+		return value
+	}
+	name, _ := function["name"].(string)
+	if name == "" {
+		return value
+	}
+	return model.D{"type": "function", "name": name}
 }
 
 func extractTools(d model.D) []any {
@@ -877,6 +893,9 @@ func convertInputToMessages(d model.D) (model.D, error) {
 	normalizeResponsesItems(d)
 	normalizeResponsesContent(d)
 	normalizeTools(d)
+	if err := normalizeResponsesToolChoice(d); err != nil {
+		return nil, fmt.Errorf("convert-input-to-messages: %w", err)
+	}
 	injectInstructions(d)
 
 	return d, nil
@@ -1111,6 +1130,47 @@ func normalizeTools(d model.D) {
 	if modified {
 		d["tools"] = tools
 	}
+}
+
+// normalizeResponsesToolChoice converts the Responses forced-function shape
+// to the Chat Completions shape used internally by model validation and prompt
+// rendering. String modes have the same representation on both APIs.
+func normalizeResponsesToolChoice(d model.D) error {
+	value, exists := d["tool_choice"]
+	if !exists {
+		return nil
+	}
+
+	if _, ok := value.(string); ok {
+		return nil
+	}
+
+	var choice model.D
+	switch value := value.(type) {
+	case model.D:
+		choice = value
+	case map[string]any:
+		choice = model.D(value)
+	default:
+		return fmt.Errorf("%w: tool_choice must be a string or function object", model.ErrInvalidRequest)
+	}
+
+	if choice["type"] != "function" {
+		return fmt.Errorf("%w: tool_choice type must be %q", model.ErrInvalidRequest, "function")
+	}
+	name, _ := choice["name"].(string)
+	if name == "" {
+		return fmt.Errorf("%w: tool_choice function name is required", model.ErrInvalidRequest)
+	}
+	if _, exists := choice["function"]; exists {
+		return fmt.Errorf("%w: Responses tool_choice must use a top-level function name", model.ErrInvalidRequest)
+	}
+
+	d["tool_choice"] = model.D{
+		"type":     "function",
+		"function": model.D{"name": name},
+	}
+	return nil
 }
 
 // injectInstructions converts the Responses API "instructions" field into a

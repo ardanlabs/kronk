@@ -286,27 +286,40 @@ func TestValidateChatRequestToolChoice(t *testing.T) {
 	}{
 		{name: "omitted"},
 		{name: "auto", toolChoice: "auto", include: true},
+		{name: "none", toolChoice: "none", include: true},
 		{
-			name:       "declared function",
-			toolChoice: "get_weather",
+			name:       "required",
+			toolChoice: "required",
 			tools: []D{
 				{"type": "function", "function": D{"name": "get_weather"}},
 			},
 			include: true,
 		},
 		{
-			name:       "different declared function",
-			toolChoice: "get_weather",
+			name:       "chat function",
+			toolChoice: D{"type": "function", "function": D{"name": "get_weather"}},
+			tools: []D{
+				{"type": "function", "function": D{"name": "get_weather"}},
+			},
+			include: true,
+		},
+		{
+			name:       "different function",
+			toolChoice: D{"type": "function", "function": D{"name": "get_weather"}},
 			tools: []D{
 				{"type": "function", "function": D{"name": "search"}},
 			},
 			include: true,
 			wantErr: true,
 		},
-		{name: "none unsupported", toolChoice: "none", include: true, wantErr: true},
-		{name: "required unsupported", toolChoice: "required", include: true, wantErr: true},
+		{name: "required without tools", toolChoice: "required", include: true, wantErr: true},
+		{name: "required with malformed tool", toolChoice: "required", tools: []D{{"type": "function"}}, include: true, wantErr: true},
+		{name: "bare function name", toolChoice: "get_weather", include: true, wantErr: true},
 		{name: "unknown string", toolChoice: "sometimes", include: true, wantErr: true},
-		{name: "object unsupported", toolChoice: D{"type": "function"}, include: true, wantErr: true},
+		{name: "responses function", toolChoice: D{"type": "function", "name": "get_weather"}, include: true, wantErr: true},
+		{name: "missing object name", toolChoice: D{"type": "function"}, include: true, wantErr: true},
+		{name: "malformed nested function", toolChoice: D{"type": "function", "function": "get_weather"}, include: true, wantErr: true},
+		{name: "unsupported object type", toolChoice: D{"type": "custom", "name": "get_weather"}, include: true, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -331,6 +344,52 @@ func TestValidateChatRequestToolChoice(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplyToolChoice(t *testing.T) {
+	tools := []D{
+		{"type": "function", "function": D{"name": "get_weather"}},
+		{"type": "function", "function": D{"name": "search"}},
+	}
+
+	t.Run("none removes tools", func(t *testing.T) {
+		d := D{"tool_choice": "none", "tools": tools}
+		applyToolChoice(d)
+		if _, exists := d["tools"]; exists {
+			t.Fatal("tools still present")
+		}
+	})
+
+	t.Run("required preserves tools", func(t *testing.T) {
+		d := D{"tool_choice": "required", "tools": tools}
+		applyToolChoice(d)
+		if got := len(d["tools"].([]D)); got != 2 {
+			t.Fatalf("tools: got %d, want 2", got)
+		}
+	})
+
+	t.Run("function selects one tool", func(t *testing.T) {
+		d := D{
+			"tool_choice": D{"type": "function", "function": D{"name": "search"}},
+			"tools":       tools,
+		}
+		applyToolChoice(d)
+
+		gotTools := d["tools"].([]D)
+		if got := len(gotTools); got != 1 {
+			t.Fatalf("tools: got %d, want 1", got)
+		}
+		function := gotTools[0]["function"].(D)
+		if got, want := function["name"], "search"; got != want {
+			t.Errorf("function name: got %v, want %v", got, want)
+		}
+
+		choice := d["tool_choice"].(D)
+		function = choice["function"].(D)
+		if got, want := function["name"], "search"; got != want {
+			t.Errorf("normalized tool_choice name: got %v, want %v", got, want)
+		}
+	})
 }
 
 func TestValidateChatRequestRejectsStop(t *testing.T) {
@@ -661,6 +720,7 @@ func TestFlushStateMachine(t *testing.T) {
 		wantAnswerFlag    int
 		initialReasonFlag int
 		wantDelta         bool
+		suppressTools     bool
 	}{
 		{name: "answer", result: Result{Channel: ChannelAnswer, Content: "answer"}, wantContent: "answer", wantAnswerFlag: 1, wantDelta: true},
 		{name: "answer transition CRLF", result: Result{Channel: ChannelAnswer, Content: "\n\n"}, wantAnswerFlag: 1},
@@ -668,6 +728,7 @@ func TestFlushStateMachine(t *testing.T) {
 		{name: "reasoning transition CRLF", result: Result{Channel: ChannelReasoning, Content: "\n"}, wantReasonFlag: 1},
 		{name: "tool", result: Result{Channel: ChannelTool, Content: `{"name":"lookup","arguments":{}}`}, wantTooling: `{"name":"lookup","arguments":{}}`, wantToolFlag: 1},
 		{name: "tool clears reasoning", result: Result{Channel: ChannelTool, Content: `{"name":"lookup","arguments":{}}`}, initialReasonFlag: 3, wantTooling: `{"name":"lookup","arguments":{}}`, wantToolFlag: 1},
+		{name: "tool suppressed", result: Result{Channel: ChannelTool, Content: `{"name":"lookup","arguments":{}}`}, suppressTools: true, wantContent: `{"name":"lookup","arguments":{}}`, wantAnswerFlag: 1, wantDelta: true},
 	}
 
 	for _, tt := range tests {
@@ -678,6 +739,7 @@ func TestFlushStateMachine(t *testing.T) {
 				stateMachine:     stateMachine,
 				job:              &chatJob{ctx: context.Background(), ch: ch, id: "id", object: ObjectChatText},
 				reasonFlag:       tt.initialReasonFlag,
+				suppressTools:    tt.suppressTools,
 				reasonTokens:     2,
 				completionTokens: 3,
 				finishReason:     FinishReasonLength,

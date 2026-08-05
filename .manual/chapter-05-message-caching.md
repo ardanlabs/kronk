@@ -477,6 +477,34 @@ memory buffers, and a session can retain buffers sized to its largest state.
 Disk also adds I/O latency. Measure both memory and request latency with your
 model and storage device before relying on it as a capacity solution.
 
+### Custom SDK storage
+
+Direct SDK users construct the selected storage factory with the backend's own
+configuration, then inject that factory into the model. For example, the disk
+directory is a disk constructor argument rather than part of `model.Config`:
+
+```go
+factory, err := disk.NewFactory("/var/lib/kronk/sessions")
+if err != nil {
+	return err
+}
+
+krn, err := kronk.New(
+	model.WithModelFiles(modelFiles),
+	model.WithIncrementalCache(true),
+	model.WithSessionStoreFactory(factory),
+)
+```
+
+Custom backends follow the same pattern by constructing a
+`model.SessionStoreFactory` that captures their own dependencies. Kronk calls
+the factory independently for every target, draft, and checkpoint store it
+needs. Each call must return a new store; Kronk owns that store and calls
+`Close` when it is no longer needed. The model server translates its
+`session-store-kind` and `session-store-dir` settings into the corresponding
+RAM or disk factory before constructing the model. Direct SDK use defaults to
+RAM when no factory is injected.
+
 Some MTP configurations maintain draft-model cached state and saved hidden
 state in addition to the target model snapshot. Account for this extra storage
 when sizing memory. See [Chapter 6](https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp) for

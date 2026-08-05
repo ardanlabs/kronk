@@ -8,9 +8,60 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/disk"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"go.yaml.in/yaml/v2"
 )
+
+func TestResolveSessionStoreFactory(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name     string
+		cfg      ModelConfig
+		wantKind string
+		wantErr  bool
+	}{
+		{"default RAM", ModelConfig{}, ram.Kind, false},
+		{"explicit RAM", ModelConfig{SessionStoreKind: ram.Kind}, ram.Kind, false},
+		{"disk", ModelConfig{SessionStoreKind: disk.Kind, SessionStoreDir: dir}, disk.Kind, false},
+		{"disk requires directory", ModelConfig{SessionStoreKind: disk.Kind}, "", true},
+		{"unknown", ModelConfig{SessionStoreKind: "unknown"}, "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			factory, err := resolveSessionStoreFactory(tt.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveSessionStoreFactory() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+
+			store, err := factory()
+			if err != nil {
+				t.Fatalf("factory() error = %v, want nil", err)
+			}
+			t.Cleanup(func() {
+				if err := store.Close(); err != nil {
+					t.Errorf("store.Close() error = %v, want nil", err)
+				}
+			})
+
+			switch tt.wantKind {
+			case ram.Kind:
+				if _, ok := store.(*ram.Store); !ok {
+					t.Errorf("factory() store = %T, want *ram.Store", store)
+				}
+			case disk.Kind:
+				if _, ok := store.(*disk.Store); !ok {
+					t.Errorf("factory() store = %T, want *disk.Store", store)
+				}
+			}
+		})
+	}
+}
 
 func TestResolveAdapters(t *testing.T) {
 	basePath := t.TempDir()

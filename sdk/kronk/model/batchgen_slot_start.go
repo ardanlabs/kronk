@@ -19,6 +19,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
+	s.suppressTools = job.d["tool_choice"] == "none"
 	if job.params.Seed != nil {
 		s.specAccEMA = 1.0
 		s.mtpProbeTick = 0

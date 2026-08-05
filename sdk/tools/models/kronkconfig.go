@@ -390,8 +390,6 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrRopeFreqBase:       mc.PtrRopeFreqBase,
 		PtrRopeFreqScale:      mc.PtrRopeFreqScale,
 		RopeScaling:           mc.RopeScaling,
-		SessionStoreDir:       mc.SessionStoreDir,
-		SessionStoreKind:      mc.SessionStoreKind,
 		PtrSplitMode:          mc.PtrSplitMode,
 		PtrSWAFull:            mc.PtrSWAFull,
 		TensorBuftOverrides:   mc.TensorBuftOverrides,

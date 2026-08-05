@@ -38,7 +38,7 @@ func TestChatValidatesMessagesBeforeAdmission(t *testing.T) {
 		{name: "missing", d: model.D{}, want: model.ErrMessagesMissing},
 		{name: "invalid", d: model.D{"messages": "invalid"}, want: model.ErrMessagesInvalid},
 		{
-			name: "unsupported tool choice",
+			name: "required without tools",
 			d: model.D{
 				"messages":    []model.D{{"role": "user", "content": "hello"}},
 				"tool_choice": "required",

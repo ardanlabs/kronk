@@ -118,8 +118,11 @@ instead of exposing it as assistant text. `usage.reasoning_tokens` and
 Add OpenAI-style function definitions in `tools` and use
 `"tool_choice": "auto"` to let the model select one. Tool calling requires a
 compatible model, chat template, and output parser; adding `tools` cannot give
-an incompatible model tool-calling ability. Set `tool_choice` to the name of a
-declared function tool to select that tool. Other values are rejected.
+an incompatible model tool-calling ability. Use `"none"` to withhold tools and
+prevent structured tool-call output, `"required"` to request a call from a
+compatible model template, or the OpenAI forced-function object to limit the
+request to one declared function. Required and forced selection remain subject
+to the model and template honoring the requested mode.
 
 When a tool is selected, the assistant message contains `tool_calls` and uses
 an empty string for `content`:
@@ -144,9 +147,8 @@ an empty string for `content`:
 Execute the function in your application, then append the assistant message
 and a `role: "tool"` message containing the result and matching
 `tool_call_id`. Send the full conversation in the next request. Tool calls can
-also stream incrementally. Kronk accepts `"auto"` or the exact name of a
-declared function for `tool_choice`; values such as `"none"`, `"required"`,
-and forced-function object forms are rejected.
+also stream incrementally. Chat Completions selects a specific function with
+`{"type":"function","function":{"name":"get_weather"}}`.
 
 ## 9.4 Responses API
 
@@ -161,8 +163,9 @@ and forced-function object forms are rejected.
 
 It also accepts an array of input messages for conversations. A non-streaming
 response places generated messages or function calls in `output`. Tools use
-Responses-style tool definitions. As with Chat Completions, `tool_choice` may
-be `"auto"` or the name of a declared function tool.
+Responses-style tool definitions. `tool_choice` accepts `"none"`, `"auto"`,
+or `"required"`. Select a specific function with the Responses form
+`{"type":"function","name":"get_weather"}`.
 
 Use `max_output_tokens` to set the Responses output limit. `max_tokens` remains
 available as a compatibility alias, but `max_output_tokens` wins when both are

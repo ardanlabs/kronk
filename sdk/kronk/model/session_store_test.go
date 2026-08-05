@@ -1,15 +1,14 @@
 package model
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/disk"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 )
 
-// TestNewSessionStore_DefaultIsRAM verifies that an empty
-// Config.SessionStoreKind dispatches to the RAM backend.
+// TestNewSessionStore_DefaultIsRAM verifies that an empty Config uses the RAM
+// factory.
 func TestNewSessionStore_DefaultIsRAM(t *testing.T) {
 	store, err := newSessionStore(Config{})
 	if err != nil {
@@ -20,10 +19,10 @@ func TestNewSessionStore_DefaultIsRAM(t *testing.T) {
 	}
 }
 
-// TestNewSessionStore_ExplicitRAM verifies that an explicit
-// SessionStoreKindRAM dispatches to the RAM backend.
-func TestNewSessionStore_ExplicitRAM(t *testing.T) {
-	store, err := newSessionStore(Config{SessionStoreKind: SessionStoreKindRAM})
+// TestNewSessionStore_InjectedRAM verifies that an injected RAM factory uses
+// the same construction path as a custom factory.
+func TestNewSessionStore_InjectedRAM(t *testing.T) {
+	store, err := newSessionStore(Config{SessionStoreFactory: ram.NewFactory()})
 	if err != nil {
 		t.Fatalf("newSessionStore returned err = %v, want nil", err)
 	}
@@ -32,50 +31,66 @@ func TestNewSessionStore_ExplicitRAM(t *testing.T) {
 	}
 }
 
-// TestNewSessionStore_UnknownKindErrors verifies that an unrecognized
-// SessionStoreKind value returns an error rather than silently
-// falling back to RAM.
-func TestNewSessionStore_UnknownKindErrors(t *testing.T) {
-	store, err := newSessionStore(Config{SessionStoreKind: "bogus"})
-	if err == nil {
-		t.Fatalf("newSessionStore(bogus) err = nil, want non-nil")
-	}
-	if store != nil {
-		t.Errorf("newSessionStore(bogus) store = %T, want nil", store)
-	}
-	if !strings.Contains(err.Error(), "bogus") {
-		t.Errorf("err = %v, want it to mention the offending kind", err)
-	}
-}
+// TestNewSessionStore_CustomFactory verifies that an SDK-provided factory is
+// invoked for each store Kronk needs.
+func TestNewSessionStore_CustomFactory(t *testing.T) {
+	var calls int
+	cfg := NewConfig(
+		WithSessionStoreFactory(func() (SessionStore, error) {
+			calls++
+			return ram.New(), nil
+		}),
+	)
 
-// TestNewSessionStore_Disk verifies that SessionStoreKindDisk
-// dispatches to the disk backend when SessionStoreDir is set.
-func TestNewSessionStore_Disk(t *testing.T) {
-	cfg := Config{
-		SessionStoreKind: SessionStoreKindDisk,
-		SessionStoreDir:  t.TempDir(),
-	}
-	store, err := newSessionStore(cfg)
+	store1, err := newSessionStore(cfg)
 	if err != nil {
-		t.Fatalf("newSessionStore(disk) err = %v, want nil", err)
+		t.Fatalf("newSessionStore(custom) err = %v, want nil", err)
 	}
-	defer func() {
-		_ = store.Close()
-	}()
-	if _, ok := store.(*disk.Store); !ok {
-		t.Errorf("newSessionStore(disk) returned %T, want *disk.Store", store)
+	store2, err := newSessionStore(cfg)
+	if err != nil {
+		t.Fatalf("newSessionStore(custom) second err = %v, want nil", err)
+	}
+	if store1 == store2 {
+		t.Errorf("newSessionStore(custom) returned the same store %p twice", store1)
+	}
+	if calls != 2 {
+		t.Errorf("factory calls = %d, want 2", calls)
 	}
 }
 
-// TestNewSessionStore_DiskRequiresDir verifies that selecting the
-// disk backend without SessionStoreDir surfaces an error from the
-// disk constructor.
-func TestNewSessionStore_DiskRequiresDir(t *testing.T) {
-	store, err := newSessionStore(Config{SessionStoreKind: SessionStoreKindDisk})
-	if err == nil {
-		t.Fatalf("newSessionStore(disk, no dir) err = nil, want non-nil")
+// TestNewSessionStore_CustomFactoryError verifies that construction failures
+// from an SDK-provided factory are returned to the model loader.
+func TestNewSessionStore_CustomFactoryError(t *testing.T) {
+	wantErr := errors.New("unavailable")
+	cfg := Config{
+		SessionStoreFactory: func() (SessionStore, error) {
+			return nil, wantErr
+		},
+	}
+
+	store, err := newSessionStore(cfg)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("newSessionStore(custom) err = %v, want %v", err, wantErr)
 	}
 	if store != nil {
-		t.Errorf("newSessionStore(disk, no dir) store = %T, want nil", store)
+		t.Errorf("newSessionStore(custom) store = %T, want nil", store)
+	}
+}
+
+// TestNewSessionStore_CustomFactoryNilStore verifies that an invalid custom
+// factory result fails during construction rather than panicking during use.
+func TestNewSessionStore_CustomFactoryNilStore(t *testing.T) {
+	cfg := Config{
+		SessionStoreFactory: func() (SessionStore, error) {
+			return nil, nil
+		},
+	}
+
+	store, err := newSessionStore(cfg)
+	if err == nil {
+		t.Fatal("newSessionStore(custom) err = nil, want non-nil")
+	}
+	if store != nil {
+		t.Errorf("newSessionStore(custom) store = %T, want nil", store)
 	}
 }

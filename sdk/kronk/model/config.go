@@ -293,16 +293,12 @@ type AdapterConfig struct {
 // Set to RopeScalingYaRN only when the model supports YaRN and configure the
 // frequency scale required by that model.
 //
-// SessionStoreDir is the directory where the disk session store
-// backend persists per-session KV cache files. Required when
-// SessionStoreKind is SessionStoreKindDisk; ignored otherwise. The
-// directory must exist and be writable; it is not created on demand.
-//
-// SessionStoreKind selects the backend used to externalize each IMC
-// session's KV cache bytes between requests. Valid values are listed
-// under the SessionStoreKind* constants in session_store.go. When the
-// empty string, defaults to SessionStoreKindRAM (in-process RAM
-// buffer). Only meaningful when IncrementalCache is enabled.
+// SessionStoreFactory constructs session stores for direct SDK use.
+// Kronk invokes it separately for every session and checkpoint store it needs,
+// and closes every successfully returned store. The factory must return a new,
+// independent store on each call. When nil, Kronk uses the built-in RAM
+// factory. Backend-specific constructor parameters belong to the backend
+// package and are captured by the injected factory.
 //
 // SWAFull controls whether models with sliding window attention (SWA) use a
 // full-size KV cache for SWA layers instead of the memory-efficient small
@@ -402,8 +398,7 @@ type Config struct {
 	PtrRopeFreqBase       *float32
 	PtrRopeFreqScale      *float32
 	RopeScaling           RopeScalingType
-	SessionStoreDir       string
-	SessionStoreKind      string
+	SessionStoreFactory   SessionStoreFactory
 	PtrSplitMode          *SplitMode
 	PtrSWAFull            *bool
 	TensorBuftOverrides   []string
@@ -454,18 +449,6 @@ func (cfg Config) FlashAttention() FlashAttentionType {
 // PtrSWAFull first because nil leaves the choice to llama.cpp.
 func (cfg Config) SWAFull() bool { return boolOr(cfg.PtrSWAFull, false) }
 
-// sessionStoreKind returns the configured SessionStore backend, or
-// defaultSessionStoreKind ("ram") if unset. Lowercase because Go does
-// not allow a method and field to share a name; callers outside the
-// package read Config.SessionStoreKind directly and apply their own
-// default if needed.
-func (cfg Config) sessionStoreKind() string {
-	if cfg.SessionStoreKind == "" {
-		return defaultSessionStoreKind
-	}
-	return cfg.SessionStoreKind
-}
-
 func (cfg Config) String() string {
 	formatBoolPtr := func(p *bool) string {
 		if p == nil {
@@ -513,7 +496,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
@@ -522,7 +505,7 @@ func (cfg Config) String() string {
 		cfg.NUMA,
 		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
-		cfg.SessionStoreDir, cfg.sessionStoreKind(),
+		cfg.SessionStoreFactory != nil,
 		formatSplitModePtr(cfg.PtrSplitMode),
 		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit,
 		formatFloat32Ptr(cfg.PtrYarnAttnFactor),
@@ -653,24 +636,6 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 	if cfg.OpOffloadMinBatch() < 0 {
 		return fmt.Errorf("validate-config: OpOffloadMinBatch must be >= 0, got %d", cfg.OpOffloadMinBatch())
-	}
-
-	switch cfg.SessionStoreKind {
-	case "", SessionStoreKindRAM:
-		// valid (empty defaults to RAM)
-	case SessionStoreKindDisk:
-		if cfg.SessionStoreDir == "" {
-			return fmt.Errorf("validate-config: SessionStoreDir is required when SessionStoreKind is %q", SessionStoreKindDisk)
-		}
-		fi, err := os.Stat(cfg.SessionStoreDir)
-		if err != nil {
-			return fmt.Errorf("validate-config: SessionStoreDir %q: %w", cfg.SessionStoreDir, err)
-		}
-		if !fi.IsDir() {
-			return fmt.Errorf("validate-config: SessionStoreDir %q is not a directory", cfg.SessionStoreDir)
-		}
-	default:
-		return fmt.Errorf("validate-config: unknown SessionStoreKind: %q (valid: %q, %q)", cfg.SessionStoreKind, SessionStoreKindRAM, SessionStoreKindDisk)
 	}
 
 	for _, modelFile := range cfg.ModelFiles {
@@ -1795,4 +1760,8 @@ func WithQueueDepth(v int) Option {
 	return func(c *Config) {
 		c.PtrQueueDepth = new(v)
 	}
+}
+
+func WithSessionStoreFactory(v SessionStoreFactory) Option {
+	return func(c *Config) { c.SessionStoreFactory = v }
 }

@@ -500,6 +500,9 @@ func (e *batchEngine) flushStateMachine(s *slot, result Result) {
 	if result.Content == "" {
 		return
 	}
+	if s.suppressTools && result.Channel == ChannelTool {
+		result.Channel = ChannelAnswer
+	}
 
 	outputTokens := s.reasonTokens + s.completionTokens
 

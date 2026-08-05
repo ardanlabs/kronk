@@ -1243,6 +1243,19 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
   session-store-dir: /var/lib/kronk/sessions`}</code></pre>
           <p>The directory must already exist and be writable by the Kronk process. Kronk creates an empty target-snapshot file for every configured session when the model loads and removes it during a normal unload. Own-KV MTP creates a matching draft file per session, and retained turn checkpoints can create additional files later. Snapshot contents and scratch/read buffers are still populated lazily. Files can remain after a process crash, so use a dedicated directory and arrange cleanup appropriate for your deployment.</p>
           <p>Disk storage changes where inactive snapshots are retained, but it does not eliminate snapshot-sized RAM usage. Snapshot and restore operations require memory buffers, and a session can retain buffers sized to its largest state. Disk also adds I/O latency. Measure both memory and request latency with your model and storage device before relying on it as a capacity solution.</p>
+          <h3 id="custom-sdk-storage">Custom SDK storage</h3>
+          <p>Direct SDK users construct the selected storage factory with the backend's own configuration, then inject that factory into the model. For example, the disk directory is a disk constructor argument rather than part of <code>model.Config</code>:</p>
+          <pre className="code-block"><code className="language-go">{`factory, err := disk.NewFactory("/var/lib/kronk/sessions")
+if err != nil {
+	return err
+}
+
+krn, err := kronk.New(
+	model.WithModelFiles(modelFiles),
+	model.WithIncrementalCache(true),
+	model.WithSessionStoreFactory(factory),
+)`}</code></pre>
+          <p>Custom backends follow the same pattern by constructing a <code>model.SessionStoreFactory</code> that captures their own dependencies. Kronk calls the factory independently for every target, draft, and checkpoint store it needs. Each call must return a new store; Kronk owns that store and calls <code>Close</code> when it is no longer needed. The model server translates its <code>session-store-kind</code> and <code>session-store-dir</code> settings into the corresponding RAM or disk factory before constructing the model. Direct SDK use defaults to RAM when no factory is injected.</p>
           <p>Some MTP configurations maintain draft-model cached state and saved hidden state in addition to the target model snapshot. Account for this extra storage when sizing memory. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for MTP configuration and behavior.</p>
           <h2 id="56-invalidation-and-limitations">5.6 Invalidation and Limitations</h2>
           <p>IMC favors safe reuse over partial recovery. A session is rebuilt when Kronk cannot prove that its complete saved prefix matches the new stable prompt. Common causes include:</p>
@@ -1884,7 +1897,7 @@ data: [DONE]`}</code></pre>
           <p>Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a function name is known. The terminal chunk reconciles every completed tool call, including its arguments, so clients that consume only the final chunk continue to work unchanged.</p>
           <p><code>usage.output_tokens</code> is the sum of reasoning and completion tokens, and <code>usage.total_tokens</code> is prompt plus output tokens. Generated control and tool-call syntax counts toward output usage even when a parser buffers it instead of exposing it as assistant text. <code>usage.reasoning_tokens</code> and <code>usage.completion_tokens</code> provide the output breakdown.</p>
           <h3 id="tool-calls">Tool calls</h3>
-          <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability. Set <code>tool_choice</code> to the name of a declared function tool to select that tool. Other values are rejected.</p>
+          <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability. Use <code>"none"</code> to withhold tools and prevent structured tool-call output, <code>"required"</code> to request a call from a compatible model template, or the OpenAI forced-function object to limit the request to one declared function. Required and forced selection remain subject to the model and template honoring the requested mode.</p>
           <p>When a tool is selected, the assistant message contains <code>tool_calls</code> and uses an empty string for <code>content</code>:</p>
           <pre className="code-block"><code className="language-json">{`{
   "role": "assistant",
@@ -1900,14 +1913,14 @@ data: [DONE]`}</code></pre>
     }
   ]
 }`}</code></pre>
-          <p>Execute the function in your application, then append the assistant message and a <code>role: "tool"</code> message containing the result and matching <code>tool_call_id</code>. Send the full conversation in the next request. Tool calls can also stream incrementally. Kronk accepts <code>"auto"</code> or the exact name of a declared function for <code>tool_choice</code>; values such as <code>"none"</code>, <code>"required"</code>, and forced-function object forms are rejected.</p>
+          <p>Execute the function in your application, then append the assistant message and a <code>role: "tool"</code> message containing the result and matching <code>tool_call_id</code>. Send the full conversation in the next request. Tool calls can also stream incrementally. Chat Completions selects a specific function with <code>&#123;"type":"function","function":&#123;"name":"get_weather"&#125;&#125;</code>.</p>
           <h2 id="94-responses-api">9.4 Responses API</h2>
           <p><code>POST /v1/responses</code> accepts <code>input</code> as a string:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "Qwen/Qwen3-8B-Q8_0",
   "input": "Explain quantum computing in simple terms."
 }`}</code></pre>
-          <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. As with Chat Completions, <code>tool_choice</code> may be <code>"auto"</code> or the name of a declared function tool.</p>
+          <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. <code>tool_choice</code> accepts <code>"none"</code>, <code>"auto"</code>, or <code>"required"</code>. Select a specific function with the Responses form <code>&#123;"type":"function","name":"get_weather"&#125;</code>.</p>
           <p>Use <code>max_output_tokens</code> to set the Responses output limit. <code>max_tokens</code> remains available as a compatibility alias, but <code>max_output_tokens</code> wins when both are present. When the limit is reached, the response has <code>status: "incomplete"</code>, <code>completed_at: null</code>, and:</p>
           <pre className="code-block"><code className="language-json">{`"incomplete_details": {"reason": "max_output_tokens"}`}</code></pre>
           <p>Output items have the same <code>incomplete</code> status. Usage reports all generated output tokens in <code>output_tokens</code>, including reasoning and tool-call syntax; <code>output_tokens_details.reasoning_tokens</code> supplies the reasoning subset, and <code>total_tokens</code> includes both input and output.</p>
@@ -4337,6 +4350,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <ul>
                 <li><a href="#ram-storage" className={activeSection === 'ram-storage' ? 'active' : ''}>RAM storage</a></li>
                 <li><a href="#disk-storage" className={activeSection === 'disk-storage' ? 'active' : ''}>Disk storage</a></li>
+                <li><a href="#custom-sdk-storage" className={activeSection === 'custom-sdk-storage' ? 'active' : ''}>Custom SDK storage</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

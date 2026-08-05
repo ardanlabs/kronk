@@ -1,5 +1,5 @@
 // Package disk provides a disk-backed implementation of the
-// model.SessionStore contract used by IMC (Incremental Message Cache)
+// kvstorage.Store contract used by IMC (Incremental Message Cache)
 // to externalize per-session KV cache bytes between requests.
 //
 // Each Store owns one regular file under the directory passed to New.
@@ -19,8 +19,8 @@
 // RAM for IMC.
 //
 // Crash safety: per-session files leak on process crash because the
-// Store's Close cleanup never runs. They live under
-// Config.SessionStoreDir and are named "kronk-sess-*.kv"; an external
+// Store's Close cleanup never runs. They live under the directory passed to
+// NewFactory and are named "kronk-sess-*.kv"; an external
 // cleanup (cron, systemd-tmpfiles, or a future startup-time sweep)
 // can reclaim them.
 package disk
@@ -30,7 +30,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 )
+
+// Kind identifies the disk backend in external configuration.
+const Kind = "disk"
 
 // filePattern is the os.CreateTemp pattern used for per-session
 // files. The "*" is replaced by a random suffix that makes the name
@@ -48,6 +53,29 @@ type Store struct {
 	read    []byte   // RAM buffer used by Bytes; lazily filled from the file
 }
 
+var _ kvstorage.Store = (*Store)(nil)
+
+// NewFactory constructs a factory for independent disk stores rooted in dir.
+// The directory must already exist and be a directory. Each factory call
+// creates a new per-session file under dir.
+func NewFactory(dir string) (kvstorage.Factory, error) {
+	if dir == "" {
+		return nil, errors.New("disk: directory is required")
+	}
+
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("disk: stat directory %q: %w", dir, err)
+	}
+	if !fi.IsDir() {
+		return nil, fmt.Errorf("disk: path %q is not a directory", dir)
+	}
+
+	return func() (kvstorage.Store, error) {
+		return New(dir)
+	}, nil
+}
+
 // New creates a new disk-backed session store. A fresh per-session
 // file is created under dir via os.CreateTemp, which gives each
 // session a name unique within dir. The directory must already exist
@@ -58,7 +86,7 @@ type Store struct {
 // reclaimed out-of-band.
 func New(dir string) (*Store, error) {
 	if dir == "" {
-		return nil, errors.New("disk: SessionStoreDir is required for the disk backend")
+		return nil, errors.New("disk: directory is required")
 	}
 
 	f, err := os.CreateTemp(dir, filePattern)

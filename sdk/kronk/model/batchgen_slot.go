@@ -138,6 +138,7 @@ type slot struct {
 	reasonFlag     int             // State: in reasoning section
 	completionFlag int             // State: in completion section
 	toolFlag       int             // State: in tool call section
+	suppressTools  bool            // Request explicitly set tool_choice to none
 	finalContent   strings.Builder // Accumulated completion text
 	finalReasoning strings.Builder // Accumulated reasoning text
 	finalTooling   strings.Builder // Accumulated tool call JSON
@@ -327,6 +328,7 @@ func (s *slot) reset() {
 	s.reasonFlag = 0
 	s.completionFlag = 0
 	s.toolFlag = 0
+	s.suppressTools = false
 	s.finalContent.Reset()
 	s.finalReasoning.Reset()
 	s.finalTooling.Reset()

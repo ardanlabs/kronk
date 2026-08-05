@@ -5,6 +5,22 @@ import (
 	"unsafe"
 )
 
+func TestNewFactory(t *testing.T) {
+	factory := NewFactory()
+
+	store1, err := factory()
+	if err != nil {
+		t.Fatalf("factory() error = %v, want nil", err)
+	}
+	store2, err := factory()
+	if err != nil {
+		t.Fatalf("factory() second error = %v, want nil", err)
+	}
+	if store1 == store2 {
+		t.Errorf("factory() returned the same store %p twice", store1)
+	}
+}
+
 // TestStore_ZeroValue verifies that a zero-value Store is usable
 // without initialization.
 func TestStore_ZeroValue(t *testing.T) {
