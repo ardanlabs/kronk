@@ -94,6 +94,27 @@ func TestAuthenticateInvalidToken(t *testing.T) {
 	}
 }
 
+func TestAuthenticateCanceledContext(t *testing.T) {
+	ath, err := auth.New(auth.Config{
+		KeyLookup: &keyStore{},
+		Issuer:    "service project",
+	})
+	if err != nil {
+		t.Fatalf("construct auth api: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = ath.Authenticate(ctx, "Bearer token")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Authenticate: got %v, want context.Canceled", err)
+	}
+	if errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("Authenticate: got %v classified as invalid token, want internal cancellation", err)
+	}
+}
+
 func authenticate(ath *auth.Auth) func(t *testing.T) {
 	f := func(t *testing.T) {
 		claims := auth.Claims{

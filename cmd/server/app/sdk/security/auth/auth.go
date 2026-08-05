@@ -114,6 +114,10 @@ func (a *Auth) GenerateToken(claims Claims) (string, error) {
 
 // Authenticate processes the token to validate the sender's token is valid.
 func (a *Auth) Authenticate(ctx context.Context, bearerToken string) (Claims, error) {
+	if err := ctx.Err(); err != nil {
+		return Claims{}, fmt.Errorf("authentication context: %w", err)
+	}
+
 	if !strings.HasPrefix(bearerToken, "Bearer ") {
 		return Claims{}, fmt.Errorf("%w: expected authorization header format: Bearer <token>", ErrInvalidToken)
 	}
