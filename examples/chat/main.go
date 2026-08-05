@@ -328,10 +328,6 @@ loop:
 			break loop
 
 		default:
-			for _, tool := range resp.Choices[0].Delta.ToolCallDeltas {
-				fmt.Printf("\n\u001b[92mTool Call Started: %s\n\u001b[0m", tool.Function.Name)
-			}
-
 			if resp.Choices[0].Delta.Reasoning != "" {
 				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choices[0].Delta.Reasoning)
 				reasoning = true

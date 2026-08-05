@@ -129,71 +129,49 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	fmt.Printf("\nChat with %s (use 'ctrl-c' to quit)\n", a.krn.ModelInfo().ID)
 
-	needUserInput := true
-
 	for {
-		// ---------------------------------------------------------------------
-		// If we need user input, prompt the user for their next question or
-		// request. Otherwise, we are continuing a tool call.
-
-		if needUserInput {
-			if ok := a.promptUser(&conversation); !ok {
-				return nil
-			}
+		nextConversation, ok := a.promptUser(conversation)
+		if !ok {
+			return nil
 		}
+		conversation = nextConversation
 
-		// ---------------------------------------------------------------------
-		// Make a streaming call to the model. This returns the assistant's
-		// text content and any tool calls requested by the model.
-
-		content, toolCalls, usage, err := a.streamModelTurn(ctx, conversation)
-		if err != nil {
-			return err
-		}
-
-		a.printUsage(usage)
-
-		// ---------------------------------------------------------------------
-		// If the model requested tool calls, execute them and continue the
-		// loop without asking the user for input.
-
-		if len(toolCalls) > 0 {
-			a.appendToolCalls(&conversation, toolCalls)
-
-			results := a.callTools(ctx, toolCalls)
-			if len(results) > 0 {
-				conversation = append(conversation, results...)
+		// Keep running model turns until the assistant responds without asking
+		// for another tool. Only then prompt the user again.
+		for {
+			content, toolCalls, usage, err := a.streamModelTurn(ctx, conversation)
+			if err != nil {
+				return err
 			}
 
-			needUserInput = false
-			continue
+			a.printUsage(usage)
+
+			if len(toolCalls) == 0 {
+				conversation = a.appendAssistant(conversation, content)
+				break
+			}
+
+			conversation = a.appendToolCalls(conversation, toolCalls)
+			conversation = append(conversation, a.callTools(ctx, toolCalls)...)
 		}
-
-		// ---------------------------------------------------------------------
-		// The model produced a text response. Add it to the conversation
-		// and go back to asking the user for input.
-
-		a.appendAssistant(&conversation, content)
-
-		needUserInput = true
 	}
 }
 
 // promptUser asks the user for input and appends it to the conversation.
-func (a *Agent) promptUser(conversation *[]model.D) bool {
+func (a *Agent) promptUser(conversation []model.D) ([]model.D, bool) {
 	fmt.Print("\u001b[94m\nYou\u001b[0m: ")
 
 	userInput, ok := a.getUserMessage()
 	if !ok {
-		return false
+		return conversation, false
 	}
 
-	*conversation = append(*conversation, model.D{
+	conversation = append(conversation, model.D{
 		"role":    "user",
 		"content": userInput,
 	})
 
-	return true
+	return conversation, true
 }
 
 // streamModelTurn sends the conversation to the model and streams back the
@@ -222,10 +200,10 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 	stopPrinter := a.startLatencyPrinter(ctx)
 	defer stopPrinter()
 
-	var chunks []string
+	var content strings.Builder
 	var lastResp model.ChatResponse
 	firstChunk := true
-	reasonThinking := false
+	reasoning := false
 
 	for resp := range ch {
 		lastResp = resp
@@ -246,40 +224,37 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
 		case model.FinishReasonStop:
-			text := strings.TrimLeft(strings.Join(chunks, " "), "\n")
-			return text, nil, lastResp.Usage, nil
+			return strings.TrimLeft(content.String(), "\n"), nil, lastResp.Usage, nil
 
 		case model.FinishReasonTool:
 			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
 
 		default:
-			for _, tool := range resp.Choices[0].Delta.ToolCallDeltas {
-				fmt.Printf("\n\u001b[92mTool Call Started: %s\n\u001b[0m", tool.Function.Name)
-			}
-
 			delta := resp.Choices[0].Delta
+			for _, tool := range delta.ToolCallDeltas {
+				fmt.Printf("\n\n\u001b[92mExecuting %s...\u001b[0m", tool.Function.Name)
+			}
 
 			switch {
 			case delta.Reasoning != "":
-				reasonThinking = true
+				reasoning = true
 
 				fmt.Printf("\u001b[91m%s\u001b[0m", delta.Reasoning)
 
 			case delta.Content != "":
-				if reasonThinking {
-					reasonThinking = false
+				if reasoning {
+					reasoning = false
 					fmt.Print("\n\n")
 				}
 
 				fmt.Print(delta.Content)
-				chunks = append(chunks, delta.Content)
+				content.WriteString(delta.Content)
 			}
 		}
 	}
 
 	// Stream ended without an explicit finish reason.
-	text := strings.TrimLeft(strings.Join(chunks, " "), "\n")
-	return text, nil, lastResp.Usage, nil
+	return strings.TrimLeft(content.String(), "\n"), nil, lastResp.Usage, nil
 }
 
 // startLatencyPrinter starts a goroutine that displays elapsed time while
@@ -326,7 +301,7 @@ func (a *Agent) startLatencyPrinter(ctx context.Context) (stop func()) {
 }
 
 // appendToolCalls adds the assistant's tool call request to the conversation.
-func (a *Agent) appendToolCalls(conversation *[]model.D, toolCalls []model.ResponseToolCall) {
+func (a *Agent) appendToolCalls(conversation []model.D, toolCalls []model.ResponseToolCall) []model.D {
 	fmt.Print("\n\n")
 
 	var toolCallDocs []model.D
@@ -342,20 +317,20 @@ func (a *Agent) appendToolCalls(conversation *[]model.D, toolCalls []model.Respo
 		})
 	}
 
-	*conversation = append(*conversation, model.D{
+	return append(conversation, model.D{
 		"role":       "assistant",
 		"tool_calls": toolCallDocs,
 	})
 }
 
 // appendAssistant adds the assistant's text response to the conversation.
-func (a *Agent) appendAssistant(conversation *[]model.D, content string) {
+func (a *Agent) appendAssistant(conversation []model.D, content string) []model.D {
 	if content == "" {
-		return
+		return conversation
 	}
 
 	fmt.Print("\n")
-	*conversation = append(*conversation, model.D{"role": "assistant", "content": content})
+	return append(conversation, model.D{"role": "assistant", "content": content})
 }
 
 // printUsage displays token usage information after each model call.
@@ -381,6 +356,8 @@ func (a *Agent) callTools(ctx context.Context, toolCalls []model.ResponseToolCal
 		tool, exists := a.tools[toolCall.Function.Name]
 		if !exists {
 			fmt.Printf("\u001b[91mUnknown tool: %s\u001b[0m\n", toolCall.Function.Name)
+			resps = append(resps, toolErrorResponse(toolCall.ID, toolCall.Function.Name,
+				fmt.Errorf("unknown tool %q", toolCall.Function.Name)))
 			continue
 		}
 

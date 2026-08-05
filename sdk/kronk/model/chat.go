@@ -39,7 +39,7 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		return ChatResponse{}, err
 	}
 
-	ch := m.ChatStreaming(ctx, d)
+	ch := m.chatStreaming(ctx, d, false)
 
 	var lastMsg ChatResponse
 	for msg := range ch {
@@ -77,6 +77,10 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // concurrently based on the NSeqMax config value, which controls parallel
 // sequence processing.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
+	return m.chatStreaming(ctx, d, true)
+}
+
+func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan ChatResponse {
 	returnCh := make(chan ChatResponse, streamChBuffer)
 	ch := m.wrapChannelForLogging(ctx, returnCh)
 	requestStart := time.Now()
@@ -138,6 +142,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
+
+		params.Stream = streaming
 
 		d, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
