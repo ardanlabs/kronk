@@ -172,6 +172,14 @@ export default function DocsSDKPool() {
               <p className="doc-description">Plan implements loader.Loader.Plan for the llama backend. It charges the predicted VRAM and system-RAM footprints to the resman independently so MoE models — whose routed experts can live on either side depending on the runtime placement — are accounted for accurately. Charging only the GPU side silently drops the CPU-resident expert weights, producing under-counts of the real resident footprint and exposing the pool to OOM on multi-load scenarios.</p>
             </div>
 
+            <div className="doc-section" id="method-llama-prepare">
+              <h4>Llama.Prepare</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) Prepare(_ context.Context, req loader.LoadRequest) (any, error)</code>
+              </pre>
+              <p className="doc-description">Prepare resolves the model configuration once for both planning and loading.</p>
+            </div>
+
             <div className="doc-section" id="method-pool-aquirecustom">
               <h4>Pool.AquireCustom</h4>
               <pre className="code-block">
@@ -322,6 +330,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-llama-modelconfig">Llama.ModelConfig</a></li>
                 <li><a href="#method-llama-models">Llama.Models</a></li>
                 <li><a href="#method-llama-plan">Llama.Plan</a></li>
+                <li><a href="#method-llama-prepare">Llama.Prepare</a></li>
                 <li><a href="#method-pool-aquirecustom">Pool.AquireCustom</a></li>
                 <li><a href="#method-pool-aquiremodel">Pool.AquireModel</a></li>
                 <li><a href="#method-pool-getexisting">Pool.GetExisting</a></li>

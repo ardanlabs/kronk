@@ -424,6 +424,111 @@ func TestBuildProfileContextAndCachePriority(t *testing.T) {
 
 }
 
+func TestBuildProfileZeroGPUBudgetUsesFallback(t *testing.T) {
+	p := profileInput{
+		modelSize:   1_000_000_000,
+		blockCount:  10,
+		headCountKV: 4,
+		keyLength:   128,
+		valueLength: 128,
+		trainingCtx: vram.ContextWindow128K,
+		class:       "dense",
+		hasGPU:      true,
+		gpuCount:    1,
+	}
+
+	rec := buildProfile("balanced", p, 0, 0)
+
+	if rec.ContextWindow != vram.ContextWindow4K {
+		t.Errorf("ContextWindow: got %d, want %d", rec.ContextWindow, vram.ContextWindow4K)
+	}
+	if rec.CacheTypeK != "q8_0" || rec.CacheTypeV != "q8_0" {
+		t.Errorf("cache types: got %s/%s, want q8_0/q8_0", rec.CacheTypeK, rec.CacheTypeV)
+	}
+	if rec.Fits {
+		t.Error("Fits: got true, want false")
+	}
+}
+
+func TestAutoTuneBudgetIsIndependentOfLiveFreeVRAM(t *testing.T) {
+	info := ModelInfo{
+		ID:   "Qwen3-1B-Q8_0",
+		Size: 1_000_000_000,
+		Metadata: map[string]string{
+			"general.architecture":          "qwen3",
+			"qwen3.block_count":             "10",
+			"qwen3.context_length":          "131072",
+			"qwen3.embedding_length":        "1024",
+			"qwen3.attention.head_count":    "8",
+			"qwen3.attention.head_count_kv": "4",
+			"qwen3.attention.key_length":    "128",
+			"qwen3.attention.value_length":  "128",
+		},
+	}
+	budget := AutoTuneBudget{
+		GPUBytes:       3_000_000_000,
+		SystemRAMBytes: 16_000_000_000,
+	}
+	device := devices.DeviceInfo{
+		Name:       "CUDA0",
+		Type:       "gpu_cuda",
+		TotalBytes: 8_000_000_000,
+	}
+	devs := devices.Devices{
+		Devices: []devices.DeviceInfo{
+			device,
+			{Name: "CUDA1", Type: "gpu_cuda", FreeBytes: 7_000_000_000, TotalBytes: 12_000_000_000},
+		},
+		GPUCount:           2,
+		SupportsGPUOffload: true,
+		SystemRAMBytes:     16_000_000_000,
+	}
+
+	cuda1Primary, err := autoTuneWithConfigAndBudget(info, devs, ModelConfig{}, &budget)
+	if err != nil {
+		t.Fatalf("CUDA1-primary AutoTune: %v", err)
+	}
+	devs.Devices[0].FreeBytes = 7_000_000_000
+	devs.Devices[1].FreeBytes = 0
+	cuda0Primary, err := autoTuneWithConfigAndBudget(info, devs, ModelConfig{}, &budget)
+	if err != nil {
+		t.Fatalf("CUDA0-primary AutoTune: %v", err)
+	}
+
+	if cuda1Primary.PtrContextWindow == nil || cuda0Primary.PtrContextWindow == nil {
+		t.Fatalf("PtrContextWindow: CUDA1-primary=%v CUDA0-primary=%v, want non-nil", cuda1Primary.PtrContextWindow, cuda0Primary.PtrContextWindow)
+	}
+	if *cuda1Primary.PtrContextWindow != *cuda0Primary.PtrContextWindow {
+		t.Errorf("ContextWindow: CUDA1-primary=%d CUDA0-primary=%d, want equal", *cuda1Primary.PtrContextWindow, *cuda0Primary.PtrContextWindow)
+	}
+	if cuda1Primary.CacheTypeK != cuda0Primary.CacheTypeK || cuda1Primary.CacheTypeV != cuda0Primary.CacheTypeV {
+		t.Errorf("cache types: CUDA1-primary=%s/%s CUDA0-primary=%s/%s, want equal", cuda1Primary.CacheTypeK, cuda1Primary.CacheTypeV, cuda0Primary.CacheTypeK, cuda0Primary.CacheTypeV)
+	}
+}
+
+func TestBuildProfileExplicitCPUUsesRAMBudget(t *testing.T) {
+	cpuOnly := -1
+	p := profileInput{
+		modelSize:   1_000_000_000,
+		blockCount:  10,
+		headCountKV: 4,
+		keyLength:   128,
+		valueLength: 128,
+		trainingCtx: vram.ContextWindow64K,
+		class:       "dense",
+		ramBudget:   4_000_000_000,
+		hasGPU:      true,
+		gpuCount:    1,
+		nGpuLayers:  &cpuOnly,
+	}
+
+	rec := buildProfile("balanced", p, 0, 0)
+
+	if !rec.Fits {
+		t.Error("Fits: got false, want true")
+	}
+}
+
 func TestBuildProfileExplicitConstraints(t *testing.T) {
 	context64K := int(vram.ContextWindow64K)
 	context256K := int(vram.ContextWindow256K)

@@ -49,6 +49,18 @@ type LoadRequest struct {
 	// for "custom" acquisitions. For catalog-driven acquisitions Custom
 	// is nil and the loader resolves config itself from ModelID.
 	Custom any
+
+	// Prepared carries optional backend-specific state resolved once for a
+	// cache miss and shared by Plan and Load. The pool populates it through
+	// Preparer before asking the loader to plan the reservation.
+	Prepared any
+}
+
+// Preparer is an optional loader extension for resolving backend-specific
+// state once per cache miss. The pool stores the result in LoadRequest.Prepared
+// and passes the same request to both Plan and Load.
+type Preparer interface {
+	Prepare(ctx context.Context, req LoadRequest) (any, error)
 }
 
 // Display is the per-handle observability data ModelStatus surfaces.

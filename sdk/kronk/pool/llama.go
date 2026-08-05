@@ -11,6 +11,7 @@ package pool
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -65,6 +66,11 @@ func (l *Llama) ModelConfig() map[string]models.ModelConfig {
 	return l.modelConfig
 }
 
+// Prepare resolves the model configuration once for both planning and loading.
+func (l *Llama) Prepare(_ context.Context, req loader.LoadRequest) (any, error) {
+	return l.resolveConfig(req)
+}
+
 // Plan implements loader.Loader.Plan for the llama backend.
 //
 // It charges the predicted VRAM and system-RAM footprints to the resman
@@ -75,7 +81,7 @@ func (l *Llama) ModelConfig() map[string]models.ModelConfig {
 // resident footprint and exposing the pool to OOM on multi-load
 // scenarios.
 func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRequest, error) {
-	cfg, err := l.resolveConfig(req)
+	cfg, err := l.configForRequest(req)
 	if err != nil {
 		return resman.PlanRequest{}, fmt.Errorf("plan: %w", err)
 	}
@@ -188,7 +194,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 
 // Load implements loader.Loader.Load for the llama backend.
 func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk, error) {
-	cfg, err := l.resolveConfig(req)
+	cfg, err := l.configForRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
@@ -347,12 +353,41 @@ func (l *Llama) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 		return cfg, nil
 	}
 
-	cfg, err := l.models.KronkResolvedConfig(req.ModelID, l.modelConfig, effectiveSWAFull(model.Config{}))
+	cfg, err := l.models.KronkResolvedConfigWithBudget(req.ModelID, l.modelConfig, l.autoTuneBudget(req.ModelID), effectiveSWAFull(model.Config{}))
 	if err != nil {
 		return model.Config{}, fmt.Errorf("resolve-config: unable to retrieve model config: %w", err)
 	}
 
 	return cfg, nil
+}
+
+func (l *Llama) configForRequest(req loader.LoadRequest) (model.Config, error) {
+	if req.Prepared == nil {
+		return l.resolveConfig(req)
+	}
+
+	cfg, ok := req.Prepared.(model.Config)
+	if !ok {
+		return model.Config{}, fmt.Errorf("prepared config is %T, want model.Config", req.Prepared)
+	}
+
+	return cfg, nil
+}
+
+func (l *Llama) autoTuneBudget(modelID string) models.AutoTuneBudget {
+	usage := l.resman.Usage()
+	budget := models.AutoTuneBudget{
+		SystemRAMBytes: usage.RAMBudget,
+	}
+	selected := gpuDevices(l.modelConfig[modelID].Devices)
+	for _, device := range usage.Devices {
+		if len(selected) > 0 && !slices.Contains(selected, device.Name) {
+			continue
+		}
+		budget.GPUBytes = max(budget.GPUBytes, device.BudgetBytes)
+	}
+
+	return budget
 }
 
 // predictResult returns the full VRAM calculator result for a given
