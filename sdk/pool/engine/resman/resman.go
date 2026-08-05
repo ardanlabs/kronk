@@ -11,7 +11,6 @@ package resman
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -103,18 +102,13 @@ func New(cfg Config) (*Manager, error) {
 //
 // On systems with unified memory (Apple Silicon Metal) the GPU and CPU
 // share one physical pool. To avoid double-counting the same bytes against
-// two budgets, FromDevices marks the snapshot UnifiedMemory and drops any
-// gpu_metal entries; the manager then tracks only system RAM. macOS ARM64
-// is also treated as unified memory even when llama.cpp has not yet
-// reported a Metal device (e.g. when the snapshot is taken before libs are
-// loaded).
+// two budgets, FromDevices preserves the device snapshot's UnifiedMemory
+// classification and drops any gpu_metal entries; the manager then tracks
+// only system RAM.
 func FromDevices(d devices.Devices) Snapshot {
 	out := Snapshot{
-		RAMBytes: int64(d.SystemRAMBytes),
-	}
-
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-		out.UnifiedMemory = true
+		RAMBytes:      int64(d.SystemRAMBytes),
+		UnifiedMemory: d.UnifiedMemory,
 	}
 
 	for _, di := range d.Devices {

@@ -12,6 +12,7 @@ import CodeBlock from './CodeBlock';
 import DownloadInfoTable from './DownloadInfoTable';
 import DownloadProgressBar from './DownloadProgressBar';
 import { VRAMFormulaModal, VRAMCalculatorPanel, getCatalogConfigDefaults, useVRAMState } from './vram';
+import { EXPERTS_ALL_ON_GPU } from './vram/constants';
 
 type DetailSection = 'model-card' | 'catalog' | 'template' | 'vram' | 'pull';
 
@@ -400,6 +401,7 @@ export default function CatalogList() {
         context_window: 8192,
         bytes_per_element: 1,
         slots: 2,
+        expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
         swa_full: modelInfo?.swa_full_default,
       });
       if (signal?.cancelled) return;

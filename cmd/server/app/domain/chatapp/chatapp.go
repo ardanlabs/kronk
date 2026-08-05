@@ -29,7 +29,9 @@ func newApp(cfg Config) *app {
 
 func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder {
 	var req model.D
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.UseNumber()
+	if err := dec.Decode(&req); err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
 

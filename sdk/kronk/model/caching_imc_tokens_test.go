@@ -213,6 +213,7 @@ func TestMessagesEndAtRealUser(t *testing.T) {
 }
 
 func TestProcessIMCTokenPlanReservesExactMatch(t *testing.T) {
+	d := D{"messages": []D{{"role": "user", "content": "x"}}}
 	session := &imcSession{
 		id:                0,
 		cachedTokens:      []llama.Token{1, 2},
@@ -225,8 +226,9 @@ func TestProcessIMCTokenPlanReservesExactMatch(t *testing.T) {
 		log:         applog.DiscardLogger,
 		imcSessions: []*imcSession{session},
 	}
+	session.cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
 
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), d, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, time.Now())
 
 	if result.imcMatchKind != "exact" {
 		t.Errorf("imcMatchKind = %q, want exact", result.imcMatchKind)
@@ -256,6 +258,7 @@ func TestProcessIMCTokenPlanPreservesCompletePrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			d := D{"messages": []D{{"role": "user", "content": "x"}}}
 			sessions := []*imcSession{
 				{id: 0, cachedTokens: slices.Clone(tt.cached), totalTokensCached: len(tt.cached), kvState: populatedTestSessionStore()},
 				{id: 1, kvState: ramSessionStore()},
@@ -265,8 +268,9 @@ func TestProcessIMCTokenPlanPreservesCompletePrompt(t *testing.T) {
 				log:         applog.DiscardLogger,
 				imcSessions: sessions,
 			}
+			sessions[0].cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
 
-			result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, tt.actual, tt.stable, time.Now())
+			result := m.processIMCTokenPlan(context.Background(), d, tt.actual, tt.stable, time.Now())
 			if result.imcMatchKind != tt.wantMatch {
 				t.Errorf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
 			}
@@ -281,6 +285,32 @@ func TestProcessIMCTokenPlanPreservesCompletePrompt(t *testing.T) {
 				t.Errorf("restored prefix + extension + tail = %v, want %v", got, tt.actual)
 			}
 		})
+	}
+}
+
+func TestProcessIMCTokenPlanRebuildsExactTokensWhenRenderFingerprintChanges(t *testing.T) {
+	priorD := D{
+		"messages":             []D{{"role": "user", "content": "x"}},
+		"chat_template_kwargs": D{"custom_mode": "a"},
+	}
+	currentD := priorD.Clone()
+	currentD["chat_template_kwargs"] = D{"custom_mode": "b"}
+
+	m := Model{
+		cfg: Config{PtrCacheMinTokens: new(1)},
+		log: applog.DiscardLogger,
+		imcSessions: []*imcSession{
+			{id: 0, cachedTokens: []llama.Token{1, 2}, totalTokensCached: 2, kvState: populatedTestSessionStore()},
+		},
+	}
+	m.imcSessions[0].cachedRenderInputHash, _ = m.imcRenderFingerprint(priorD, dMessages(priorD))
+
+	result := m.processIMCTokenPlan(context.Background(), currentD, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, time.Now())
+	if result.imcMatchKind != "rebuild" {
+		t.Errorf("imcMatchKind: got %q, want %q", result.imcMatchKind, "rebuild")
+	}
+	if result.err != nil {
+		t.Errorf("err: got %v, want nil", result.err)
 	}
 }
 

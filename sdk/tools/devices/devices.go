@@ -2,6 +2,7 @@
 package devices
 
 import (
+	"runtime"
 	"strings"
 	"sync/atomic"
 
@@ -38,6 +39,7 @@ type Devices struct {
 	SupportsGPUOffload bool         `json:"supports_gpu_offload"`
 	MaxDevices         uint64       `json:"max_devices"`
 	SystemRAMBytes     uint64       `json:"system_ram_bytes"`
+	UnifiedMemory      bool         `json:"unified_memory"`
 }
 
 // Option controls device enumeration behavior.
@@ -89,7 +91,9 @@ func List(opts ...Option) Devices {
 	// not succeeded. Preserve the system RAM information that does not depend
 	// on llama.cpp while reporting no backend devices in degraded mode.
 	if !Ready() {
-		var out Devices
+		out := Devices{
+			UnifiedMemory: runtime.GOOS == "darwin" && runtime.GOARCH == "arm64",
+		}
 		if cfg.includeMemory {
 			out.SystemRAMBytes = SystemRAMBytes()
 		}
@@ -98,7 +102,9 @@ func List(opts ...Option) Devices {
 
 	count := llama.GGMLBackendDeviceCount()
 
-	var out Devices
+	out := Devices{
+		UnifiedMemory: runtime.GOOS == "darwin" && runtime.GOARCH == "arm64",
+	}
 	out.Devices = make([]DeviceInfo, 0, count)
 
 	for i := range count {
@@ -132,6 +138,9 @@ func List(opts ...Option) Devices {
 		if strings.HasPrefix(devType, "gpu_") {
 			out.GPUCount++
 			out.GPUTotalBytes += di.TotalBytes
+		}
+		if devType == "gpu_metal" {
+			out.UnifiedMemory = true
 		}
 	}
 

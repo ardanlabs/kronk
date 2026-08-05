@@ -1012,6 +1012,13 @@ func parseFloat32(fieldName string, val any) (float32, error) {
 	case float64:
 		result = float32(v)
 
+	case json.Number:
+		temp64, err := v.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("parse-float32: field-name[%s] is not valid: %w", fieldName, err)
+		}
+		result = float32(temp64)
+
 	case int:
 		result = float32(v)
 
@@ -1044,6 +1051,13 @@ func parseInt(fieldName string, val any) (int, error) {
 
 	case float64:
 		result = int(v)
+
+	case json.Number:
+		temp64, err := v.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("parse-int: field-name[%s] is not valid: %w", fieldName, err)
+		}
+		result = int(temp64)
 
 	case int:
 		result = v

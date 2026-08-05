@@ -47,6 +47,169 @@ func TestFormatLogContentPreservesTextPartBoundaries(t *testing.T) {
 	}
 }
 
+func TestDCloneOwnsNestedJSONContainers(t *testing.T) {
+	type namedMap map[string]string
+	type namedSlice []string
+
+	nested := map[string]any{"mode": "original"}
+	labels := map[string]string{"role": "original"}
+	choices := []string{"original"}
+	namedLabels := namedMap{"role": "original"}
+	namedChoices := namedSlice{"original"}
+	d := D{
+		"chat_template_kwargs": D{
+			"custom":        []any{nested},
+			"labels":        labels,
+			"choices":       choices,
+			"named_labels":  namedLabels,
+			"named_choices": namedChoices,
+		},
+	}
+
+	clone := d.Clone()
+	nested["mode"] = "changed"
+	labels["role"] = "changed"
+	choices[0] = "changed"
+	namedLabels["role"] = "changed"
+	namedChoices[0] = "changed"
+	kwargs := clone["chat_template_kwargs"].(D)
+	items := kwargs["custom"].([]any)
+	got := items[0].(D)["mode"]
+	if got != "original" {
+		t.Errorf("nested mode: got %q, want %q", got, "original")
+	}
+	if got := kwargs["labels"].(map[string]string)["role"]; got != "original" {
+		t.Errorf("labels role: got %q, want %q", got, "original")
+	}
+	if got := kwargs["choices"].([]string)[0]; got != "original" {
+		t.Errorf("choices[0]: got %q, want %q", got, "original")
+	}
+	if got := kwargs["named_labels"].(namedMap)["role"]; got != "original" {
+		t.Errorf("named_labels role: got %q, want %q", got, "original")
+	}
+	if got := kwargs["named_choices"].(namedSlice)[0]; got != "original" {
+		t.Errorf("named_choices[0]: got %q, want %q", got, "original")
+	}
+}
+
+func TestNormalizeChatTemplateKwargs(t *testing.T) {
+	tests := []struct {
+		name         string
+		doc          D
+		wantThinking bool
+		wantCustom   any
+		wantErr      bool
+	}{
+		{
+			name: "nested values promoted",
+			doc: D{
+				"chat_template_kwargs": D{"enable_thinking": false, "custom_mode": "fast"},
+			},
+			wantThinking: false,
+			wantCustom:   "fast",
+		},
+		{
+			name: "top-level value wins",
+			doc: D{
+				"enable_thinking":      true,
+				"chat_template_kwargs": D{"enable_thinking": false},
+			},
+			wantThinking: true,
+		},
+		{
+			name:    "non-object rejected",
+			doc:     D{"chat_template_kwargs": false},
+			wantErr: true,
+		},
+		{
+			name:    "self-reference rejected",
+			doc:     D{"chat_template_kwargs": D{"chat_template_kwargs": D{}}},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := tt.doc.Clone()
+			err := normalizeChatTemplateKwargs(d)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("normalizeChatTemplateKwargs: got nil error, want error")
+				}
+				if !errors.Is(err, ErrInvalidRequest) {
+					t.Errorf("normalizeChatTemplateKwargs error: got %v, want ErrInvalidRequest", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("normalizeChatTemplateKwargs: %v", err)
+			}
+			if got := d["enable_thinking"]; got != tt.wantThinking {
+				t.Errorf("enable_thinking: got %v, want %t", got, tt.wantThinking)
+			}
+			kwargs := d["chat_template_kwargs"].(D)
+			if tt.wantCustom != nil && kwargs["custom_mode"] != tt.wantCustom {
+				t.Errorf("nested custom_mode: got %v, want %v", kwargs["custom_mode"], tt.wantCustom)
+			}
+		})
+	}
+}
+
+func TestChatTemplateKwargsAreTemplateOnly(t *testing.T) {
+	m := Model{log: noopLog}
+	m.template = Template{FileName: "kwargs-test", Script: `{{ custom_mode }}:{{ temperature }}`}
+	d := D{
+		"messages":              []D{{"role": "user", "content": "hello"}},
+		"add_generation_prompt": false,
+		"bos_token":             "",
+		"eos_token":             "",
+		"chat_template_kwargs": D{
+			"custom_mode": "fast",
+			"temperature": 0.1,
+		},
+	}
+
+	if err := normalizeChatTemplateKwargs(d); err != nil {
+		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
+	}
+	params, err := m.parseParams(context.Background(), d)
+	if err != nil {
+		t.Fatalf("parseParams: %v", err)
+	}
+	if params.Temperature == 0.1 {
+		t.Error("nested template temperature changed sampling temperature")
+	}
+
+	prompt, err := m.applyJinjaTemplate(context.Background(), d)
+	if err != nil {
+		t.Fatalf("applyJinjaTemplate: %v", err)
+	}
+	if prompt != "fast:0.1" {
+		t.Errorf("prompt: got %q, want %q", prompt, "fast:0.1")
+	}
+}
+
+func TestParseParamsUsesChatTemplateKwargs(t *testing.T) {
+	m := Model{log: noopLog}
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"chat_template_kwargs": D{
+			"enable_thinking": false,
+		},
+	}
+
+	params, normalized, err := m.validateOwnedDocument(context.Background(), d)
+	if err != nil {
+		t.Fatalf("validateOwnedDocument: %v", err)
+	}
+	if params.Thinking != ThinkingDisabled {
+		t.Errorf("Thinking: got %q, want %q", params.Thinking, ThinkingDisabled)
+	}
+	if got := normalized["enable_thinking"]; got != false {
+		t.Errorf("normalized enable_thinking: got %v, want false", got)
+	}
+}
+
 func TestDeserializeToolCallArguments(t *testing.T) {
 	want := map[string]any{"location": "New York City, NY"}
 
@@ -112,6 +275,164 @@ func TestDeserializeToolCallArguments(t *testing.T) {
 	}
 }
 
+func TestDeserializeToolCallArgumentsPreservesJSONNumbers(t *testing.T) {
+	const arguments = `{"small":120000,"million":1000000,"large":9007199254740993}`
+
+	doubleEncoded, err := json.Marshal(ToolCallArguments{
+		"small":   json.Number("120000"),
+		"million": json.Number("1000000"),
+		"large":   json.Number("9007199254740993"),
+	})
+	if err != nil {
+		t.Fatalf("marshal tool call arguments: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		arguments string
+	}{
+		{name: "json object text", arguments: arguments},
+		{name: "json string containing object text", arguments: string(doubleEncoded)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{
+				"messages": []D{
+					{
+						"role": "assistant",
+						"tool_calls": []D{
+							{
+								"function": D{
+									"name":      "run_job",
+									"arguments": tt.arguments,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			got := deserializeToolCallArguments(d)
+			messages := got["messages"].([]D)
+			toolCalls := messages[0]["tool_calls"].([]D)
+			function := toolCalls[0]["function"].(D)
+			gotArguments := function["arguments"].(map[string]any)
+
+			for name, want := range map[string]string{
+				"small":   "120000",
+				"million": "1000000",
+				"large":   "9007199254740993",
+			} {
+				number, ok := gotArguments[name].(json.Number)
+				if !ok {
+					t.Fatalf("arguments[%q] type: got %T, want json.Number", name, gotArguments[name])
+				}
+				if got := number.String(); got != want {
+					t.Errorf("arguments[%q]: got %q, want %q", name, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestToolCallArgumentsUnmarshalJSONPreservesNumbers(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "string encoded",
+			input: `"{\"million\":1000000,\"large\":9007199254740993}"`,
+		},
+		{
+			name:  "object",
+			input: `{"million":1000000,"large":9007199254740993}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var arguments ToolCallArguments
+			if err := json.Unmarshal([]byte(tt.input), &arguments); err != nil {
+				t.Fatalf("unmarshal tool call arguments: %v", err)
+			}
+
+			for name, want := range map[string]string{
+				"million": "1000000",
+				"large":   "9007199254740993",
+			} {
+				number, ok := arguments[name].(json.Number)
+				if !ok {
+					t.Fatalf("arguments[%q] type: got %T, want json.Number", name, arguments[name])
+				}
+				if got := number.String(); got != want {
+					t.Errorf("arguments[%q]: got %q, want %q", name, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestToolNumbersRenderWithoutPrecisionLoss(t *testing.T) {
+	m := Model{log: noopLog}
+	m.template = Template{
+		FileName: "number-preservation-test",
+		Script:   `{{ tools[0] | tojson }}|{{ messages[0].tool_calls[0].function.arguments.million | string }}|{{ messages[0].tool_calls[0].function.arguments.large | string }}`,
+	}
+
+	d := D{
+		"messages": []D{
+			{
+				"role": "assistant",
+				"tool_calls": []D{
+					{
+						"function": D{
+							"name":      "run_job",
+							"arguments": `{"million":1000000,"large":9007199254740993}`,
+						},
+					},
+				},
+			},
+		},
+		"tools": []D{
+			{
+				"type": "function",
+				"function": D{
+					"name": "run_job",
+					"parameters": D{
+						"type": "object",
+						"properties": D{
+							"timeout": D{"type": "integer", "default": json.Number("1000000")},
+							"ticket":  D{"type": "integer", "default": json.Number("9007199254740993")},
+						},
+					},
+				},
+			},
+		},
+		"add_generation_prompt": false,
+		"bos_token":             "",
+		"eos_token":             "",
+	}
+
+	d = deserializeToolCallArguments(d)
+	prompt, err := m.applyJinjaTemplate(context.Background(), d)
+	if err != nil {
+		t.Fatalf("applyJinjaTemplate: %v", err)
+	}
+
+	for _, want := range []string{"1000000", "9007199254740993"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt: got %q, want value %q", prompt, want)
+		}
+	}
+	for _, unwanted := range []string{"1e+06", "9.007199254740992e+15", "9007199254740992"} {
+		if strings.Contains(prompt, unwanted) {
+			t.Errorf("prompt: got %q, unwanted value %q", prompt, unwanted)
+		}
+	}
+}
+
 func TestDeserializeToolCallArgumentsPreservesToolHistory(t *testing.T) {
 	const request = `{
 		"messages": [
@@ -168,10 +489,10 @@ func TestDeserializeToolCallArgumentsPreservesToolHistory(t *testing.T) {
 		id       string
 		name     string
 		location string
-		days     float64
+		days     json.Number
 	}{
-		{id: "call_1", name: "get_weather", location: "Austin", days: 2},
-		{id: "call_2", name: "get_weather", location: "Seattle", days: 3},
+		{id: "call_1", name: "get_weather", location: "Austin", days: json.Number("2")},
+		{id: "call_2", name: "get_weather", location: "Seattle", days: json.Number("3")},
 	} {
 		if toolCalls[i]["id"] != want.id {
 			t.Errorf("tool_calls[%d].id: got %q, want %q", i, toolCalls[i]["id"], want.id)
@@ -908,6 +1229,7 @@ func TestParseParamsTemperature(t *testing.T) {
 		{name: "omitted uses model default", want: 0.6},
 		{name: "explicit zero is greedy", temperature: 0, include: true, want: 0},
 		{name: "explicit nonzero overrides model default", temperature: 0.2, include: true, want: 0.2},
+		{name: "json number overrides model default", temperature: json.Number("0.2"), include: true, want: 0.2},
 	}
 
 	for _, tt := range tests {
@@ -941,6 +1263,7 @@ func TestParseParamsMaxCompletionTokens(t *testing.T) {
 		{name: "omitted uses model default", doc: D{}, want: 256},
 		{name: "legacy max tokens remains supported", doc: D{"max_tokens": 64}, want: 64},
 		{name: "max completion tokens is supported", doc: D{"max_completion_tokens": 32}, want: 32},
+		{name: "json number max completion tokens is supported", doc: D{"max_completion_tokens": json.Number("32")}, want: 32},
 		{
 			name: "max completion tokens takes precedence",
 			doc:  D{"max_tokens": 64, "max_completion_tokens": 32},

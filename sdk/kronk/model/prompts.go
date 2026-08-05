@@ -126,6 +126,18 @@ func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (strin
 		return "", fmt.Errorf("apply-jinja-template: failed to parse template: %w", m.compiledTmpl.err)
 	}
 
+	// vLLM/SGLang carry model-specific template variables in this object.
+	// Unpack them into the render context without overriding explicit top-level
+	// Kronk fields. This mutates only the request-owned or renderer-local
+	// top-level map; nested request data remains shared and read-only.
+	if kwargs, ok := d["chat_template_kwargs"].(D); ok {
+		for key, value := range kwargs {
+			if _, exists := d[key]; !exists {
+				d[key] = value
+			}
+		}
+	}
+
 	// Ensure add_generation_prompt is set (default true if not specified).
 	// This tells the Jinja template to append the assistant role prefix at the
 	// end of the prompt, signaling the model to generate a response. When caching

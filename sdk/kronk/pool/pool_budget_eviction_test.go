@@ -3,12 +3,15 @@ package pool_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
 // MiB is a readable byte-size constant for sizing synthetic snapshots.
@@ -17,8 +20,37 @@ const MiB int64 = 1 << 20
 // newSyntheticPool builds a pool wired to a resman seeded with the
 // supplied synthetic snapshot at 100% budget. Test-specific Models
 // come from the global testModels initialized by initKronk.
-func newSyntheticPool(t *testing.T, snap resman.Snapshot) *pool.Pool {
+func newSyntheticPool(t *testing.T, snap resman.Snapshot, modelConfigFile string) *pool.Pool {
 	t.Helper()
+	startup := devices.Devices{
+		SystemRAMBytes: uint64(max(snap.RAMBytes, 0)),
+		UnifiedMemory:  snap.UnifiedMemory,
+	}
+	for i, device := range snap.Devices {
+		startup.Devices = append(startup.Devices, devices.DeviceInfo{
+			Index:      i,
+			Name:       device.Name,
+			Type:       device.Type,
+			FreeBytes:  uint64(max(device.TotalBytes, 0)),
+			TotalBytes: uint64(max(device.TotalBytes, 0)),
+		})
+		startup.GPUCount++
+		startup.GPUTotalBytes += uint64(max(device.TotalBytes, 0))
+		startup.SupportsGPUOffload = true
+	}
+	if snap.UnifiedMemory && len(startup.Devices) == 0 {
+		memory := uint64(max(snap.RAMBytes, 0))
+		startup.Devices = []devices.DeviceInfo{{
+			Name:       "Metal",
+			Type:       "gpu_metal",
+			FreeBytes:  memory,
+			TotalBytes: memory,
+		}}
+		startup.GPUCount = 1
+		startup.GPUTotalBytes = memory
+		startup.SupportsGPUOffload = true
+	}
+
 	rm, err := resman.New(resman.Config{
 		Snapshot:      snap,
 		BudgetPercent: 100,
@@ -27,11 +59,13 @@ func newSyntheticPool(t *testing.T, snap resman.Snapshot) *pool.Pool {
 		t.Fatalf("resman.New: %v", err)
 	}
 	mgr, err := pool.New(pool.Config{
-		Log:          log,
-		Models:       testModels,
-		Resman:       rm,
-		ModelsInPool: 10,
-		TTL:          5 * time.Minute,
+		Log:             log,
+		Models:          testModels,
+		Resman:          rm,
+		StartupDevices:  &startup,
+		ModelConfigFile: modelConfigFile,
+		ModelsInPool:    10,
+		TTL:             5 * time.Minute,
 	})
 	if err != nil {
 		t.Fatalf("pool.New: %v", err)
@@ -64,24 +98,49 @@ func Test_BudgetEviction(t *testing.T) {
 
 	modelA := findAvailableModel(t, "")
 	modelB := findAvailableModel(t, modelA)
+	modelConfigFile := fixedSizingConfig(t, modelA, modelB)
 
-	sizeA, sizeB := probeFootprints(t, modelA, modelB)
+	sizeA, sizeB := probeFootprints(t, modelConfigFile, modelA, modelB)
 
 	t.Logf("probed footprints: %s=%s, %s=%s",
 		modelA, pool.HumanBytes(sizeA),
 		modelB, pool.HumanBytes(sizeB))
 
 	t.Run("evicts-loaded-model-when-second-load-exceeds-budget", func(t *testing.T) {
-		evictsOnSecondLoad(t, modelA, modelB, sizeA, sizeB)
+		evictsOnSecondLoad(t, modelConfigFile, modelA, modelB, sizeA, sizeB)
 	})
 
 	t.Run("rejects-infeasible-request-without-eviction", func(t *testing.T) {
-		rejectsInfeasibleRequest(t, modelA, sizeA)
+		rejectsInfeasibleRequest(t, modelConfigFile, modelA)
 	})
 
 	t.Run("release-restores-budget", func(t *testing.T) {
-		releaseRestoresBudget(t, modelA, sizeA)
+		releaseRestoresBudget(t, modelConfigFile, modelA, sizeA)
 	})
+}
+
+// fixedSizingConfig prevents AutoTune from changing the memory-affecting
+// settings when the synthetic budget changes between the probe and the
+// admission scenarios. AutoTune's budget behavior has its own unit tests;
+// this test needs stable footprints to isolate resource-manager eviction.
+func fixedSizingConfig(t *testing.T, modelA, modelB string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "model_config.yaml")
+	data := fmt.Appendf(nil, `%q:
+  context-window: 4096
+  cache-type-k: f16
+  cache-type-v: f16
+%q:
+  context-window: 4096
+  cache-type-k: f16
+  cache-type-v: f16
+`, modelA, modelB)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write model config: %v", err)
+	}
+
+	return path
 }
 
 // probeFootprints loads each model under a permissive synthetic
@@ -89,11 +148,11 @@ func Test_BudgetEviction(t *testing.T) {
 // (RAMBytes+VRAMBytes) the resman charged for the reservation. The pool
 // is shut down before returning so the probe holds no models in memory
 // during the subtests that follow.
-func probeFootprints(t *testing.T, modelA, modelB string) (int64, int64) {
+func probeFootprints(t *testing.T, modelConfigFile, modelA, modelB string) (int64, int64) {
 	t.Helper()
 
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: probeRAMBudget}
-	mgr := newSyntheticPool(t, snap)
+	mgr := newSyntheticPool(t, snap, modelConfigFile)
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -128,7 +187,7 @@ func probeFootprints(t *testing.T, modelA, modelB string) (int64, int64) {
 // evictsOnSecondLoad sizes the budget so either model fits alone but
 // not both. Loading B after A must trigger reserveWithEviction's
 // budget-driven eviction loop, unload A, then admit B.
-func evictsOnSecondLoad(t *testing.T, modelA, modelB string, sizeA, sizeB int64) {
+func evictsOnSecondLoad(t *testing.T, modelConfigFile, modelA, modelB string, sizeA, sizeB int64) {
 	// Size the snapshot so the *effective* RAM budget (snapshot minus the
 	// resman's 5% headroom) is just large enough to hold the larger of
 	// the two models alone, with a 64 MiB slack for plan-time variance.
@@ -140,7 +199,7 @@ func evictsOnSecondLoad(t *testing.T, modelA, modelB string, sizeA, sizeB int64)
 		RAMBytes:      maxFootprint*100/95 + 64*MiB,
 	}
 	// ModelsInPool cap is well above 2; budget drives eviction.
-	mgr := newSyntheticPool(t, snap)
+	mgr := newSyntheticPool(t, snap, modelConfigFile)
 	defer mgr.Shutdown(context.Background())
 
 	ctx := context.Background()
@@ -173,9 +232,9 @@ func evictsOnSecondLoad(t *testing.T, modelA, modelB string, sizeA, sizeB int64)
 // model's predicted footprint. checkRequestFitsBudget must reject the
 // request up front; no eviction should run because there is no
 // reservation that could free enough budget.
-func rejectsInfeasibleRequest(t *testing.T, modelA string, sizeA int64) {
-	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA / 2}
-	mgr := newSyntheticPool(t, snap)
+func rejectsInfeasibleRequest(t *testing.T, modelConfigFile, modelA string) {
+	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: 1024}
+	mgr := newSyntheticPool(t, snap, modelConfigFile)
 	defer mgr.Shutdown(context.Background())
 
 	_, err := mgr.AquireModel(context.Background(), modelA)
@@ -197,11 +256,11 @@ func rejectsInfeasibleRequest(t *testing.T, modelA string, sizeA int64) {
 // releaseRestoresBudget verifies that invalidating a loaded model
 // returns its bytes to the budget so a re-acquire under the same tight
 // snapshot succeeds.
-func releaseRestoresBudget(t *testing.T, modelA string, sizeA int64) {
+func releaseRestoresBudget(t *testing.T, modelConfigFile, modelA string, sizeA int64) {
 	// Account for the resman's 5% headroom so its effective budget can hold
 	// the probed footprint plus a small allowance for plan-time variance.
 	snap := resman.Snapshot{UnifiedMemory: true, RAMBytes: sizeA*100/95 + 64*MiB}
-	mgr := newSyntheticPool(t, snap)
+	mgr := newSyntheticPool(t, snap, modelConfigFile)
 	defer mgr.Shutdown(context.Background())
 
 	ctx := context.Background()

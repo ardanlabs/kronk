@@ -91,6 +91,22 @@ type SystemFacts struct {
 	SupportsGPUOffload bool   `json:"supports_gpu_offload"`
 }
 
+// AutoTuneBudgetPercent is the percentage of available memory AutoTune uses
+// when selecting a runtime profile.
+const AutoTuneBudgetPercent = 85
+
+// AutoTuneBudget provides stable memory limits for an AutoTune analysis.
+// Pool callers use the resource manager's empty-pool budgets so resident
+// models do not change the recommendation for an incoming model.
+type AutoTuneBudget struct {
+	// Devices is the immutable hardware snapshot used for the analysis.
+	Devices devices.Devices
+	// GPUBytes is the largest single-device empty-pool budget.
+	GPUBytes int64
+	// SystemRAMBytes is the empty-pool system RAM budget.
+	SystemRAMBytes int64
+}
+
 // MemoryEstimate contains memory sizing information independent of any
 // particular runtime configuration.
 type MemoryEstimate struct {
@@ -156,6 +172,10 @@ func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
 // analyzeModelWithConfig performs the analysis while treating explicitly set
 // AutoTune-owned values as fixed constraints.
 func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfig) (Analysis, error) {
+	return analyzeModelWithConfigAndBudget(info, devs, cfg, nil)
+}
+
+func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg ModelConfig, budget *AutoTuneBudget) (Analysis, error) {
 	md := info.Metadata
 	devs = analysisDevices(devs, cfg.Devices)
 
@@ -227,8 +247,15 @@ func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfi
 	kvBytesQ8 := headCountKV * (keyLength + valueLength) * vram.BytesPerElementQ8_0
 
 	// Use 85% of free GPU as the budget.
-	gpuBudget := int64(float64(sf.GPUFreeBytes) * 0.85)
-	ramBudget := int64(float64(sf.SystemRAMBytes) * 0.85)
+	gpuBudget := int64(float64(sf.GPUFreeBytes) * AutoTuneBudgetPercent / 100)
+	ramBudget := int64(float64(sf.SystemRAMBytes) * AutoTuneBudgetPercent / 100)
+	if budget != nil {
+		gpuBudget = budget.GPUBytes
+		ramBudget = budget.SystemRAMBytes
+		if devs.UnifiedMemory {
+			gpuBudget = budget.SystemRAMBytes
+		}
+	}
 
 	modelSize := int64(info.Size)
 	computeBuf := vram.EstimateComputeBuffer(vram.Input{
@@ -260,7 +287,7 @@ func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfi
 		gpuBudget:      gpuBudget,
 		ramBudget:      ramBudget,
 		hasGPU:         sf.SupportsGPUOffload,
-		unifiedMemory:  sf.GPUType == "gpu_metal",
+		unifiedMemory:  devs.UnifiedMemory,
 		gpuCount:       devs.GPUCount,
 		attn:           attn,
 		contextWindow:  cfg.PtrContextWindow,
@@ -274,7 +301,6 @@ func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfi
 		kvCacheOnCPU:   cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
 		swaFull:        cfg.PtrSWAFull == nil || *cfg.PtrSWAFull,
 	}
-
 	balanced := buildProfile("balanced", profileInput, 0, 0)
 	maxCtx := buildProfile("max_context", profileInput, 1, 0)
 	maxConc := buildProfile("max_concurrency", profileInput, 0, 1)
@@ -512,14 +538,16 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 
 func profileFits(p profileInput, result vram.Result) bool {
 	if p.unifiedMemory {
-		return p.gpuBudget <= 0 || result.UnifiedFootprint() <= p.gpuBudget
+		return result.UnifiedFootprint() <= p.gpuBudget
 	}
-	if p.gpuBudget > 0 && result.TotalVRAM > p.gpuBudget {
+
+	usesGPU := p.hasGPU && (p.nGpuLayers == nil || *p.nGpuLayers != -1)
+	if usesGPU && result.TotalVRAM > p.gpuBudget {
 		return false
 	}
 
 	ram := result.TotalSystemRAMEst
-	if !p.hasGPU {
+	if !usesGPU {
 		ram += result.TotalVRAM
 	}
 	return p.ramBudget <= 0 || ram <= p.ramBudget
@@ -538,6 +566,7 @@ func analysisDevices(devs devices.Devices, selected []string) devices.Devices {
 	filtered := devices.Devices{
 		SystemRAMBytes: devs.SystemRAMBytes,
 		MaxDevices:     devs.MaxDevices,
+		UnifiedMemory:  devs.UnifiedMemory,
 	}
 	for _, device := range devs.Devices {
 		if _, ok := wanted[device.Name]; !ok {
@@ -748,7 +777,7 @@ func buildSystemFacts(devs devices.Devices) SystemFacts {
 			continue
 		}
 
-		if d.FreeBytes > sf.GPUFreeBytes {
+		if sf.GPUName == "" || d.FreeBytes > sf.GPUFreeBytes {
 			sf.GPUName = d.Name
 			sf.GPUType = d.Type
 			sf.GPUFreeBytes = d.FreeBytes

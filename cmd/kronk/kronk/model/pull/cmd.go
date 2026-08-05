@@ -3,6 +3,7 @@ package pull
 import (
 	"fmt"
 	"os"
+	"os/signal"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -68,6 +69,8 @@ func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 	projURL, _ := cmd.Flags().GetString("proj")
 	mtpURL, _ := cmd.Flags().GetString("mtp-draft")
+	ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt)
+	defer cancel()
 
 	basePath := client.GetBasePath(cmd)
 
@@ -78,9 +81,9 @@ func run(cmd *cobra.Command, args []string) error {
 
 	switch local {
 	case true:
-		err = runLocal(models, basePath, args[0], projURL, mtpURL)
+		err = runLocal(ctx, models, basePath, args[0], projURL, mtpURL)
 	default:
-		err = runWeb(args[0], projURL, mtpURL)
+		err = runWeb(ctx, args[0], projURL, mtpURL)
 	}
 
 	if err != nil {

@@ -38,6 +38,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	result.imcNewMsgsHash = documentMessagesHash(d)
 	result.imcNewEndsAtUser = messagesEndAtRealUser(dMessages(d))
 	result.imcMediaCacheD = stableD
+	renderFingerprint, fingerprintOK := m.imcRenderFingerprint(d, dMessages(d))
 
 	m.cacheMu.Lock()
 	var match, empty, lru *imcSession
@@ -56,6 +57,9 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 			lru = session
 		}
 		if !validMediaAnchorSession(session) || !stable.hasPrefix(session.promptPlan) {
+			continue
+		}
+		if stable.equal(session.promptPlan) && !exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK) {
 			continue
 		}
 		_, stableTextOnly := stable.textTail(session.promptPlan)
@@ -128,8 +132,8 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	result.imcExpectedTokens = selected.totalTokensCached
 	result.imcExpectedPosition = selected.logicalPosition()
 	result.imcExpectedPromptPlan = selected.promptPlan
-	if fingerprint, ok := m.imcRenderFingerprint(d, dMessages(d)); ok {
-		result.imcExpectedRenderHash = fingerprint
+	if fingerprintOK {
+		result.imcExpectedRenderHash = renderFingerprint
 	}
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = result.imcReadOnlyReservation

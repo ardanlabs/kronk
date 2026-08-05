@@ -8,9 +8,8 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
-                "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
-                    "name": "Qwen3.6 MTP 35B-A3B UD-Q8_K_XL",
-                    "attachment": true,
+                "unsloth/mtp-Qwen3.5-122B-A10B-UD-Q4_K_M/AGENT": {
+                    "name": "Qwen3.5 MTP 122B-A10B Q4_K_M",
                     "modalities": {
                         "input": [
                             "text",
@@ -25,8 +24,8 @@
                         "output": 65536
                     }
                 },
-                "unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
-                    "name": "Qwen3.6 35B-A3B UD-Q8_K_XL",
+                "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
+                    "name": "Qwen3.6 MTP 35B-A3B UD-Q8_K_XL",
                     "attachment": true,
                     "modalities": {
                         "input": [
@@ -75,7 +74,7 @@
             }
         }
     },
-    "model": "kronk/unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "model": "kronk/unsloth/mtp-Qwen3.5-122B-A10B-UD-Q4_K_M/AGENT",
     "formatter": true,
     "lsp": true,
     "compaction": {

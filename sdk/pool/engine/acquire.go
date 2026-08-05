@@ -56,6 +56,15 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 			return h, nil
 		}
 
+		if preparer, ok := c.loader.(loader.Preparer); ok {
+			prepared, err := preparer.Prepare(ctx, req)
+			if err != nil {
+				metrics.AddPoolLoadFailure("plan")
+				return zero, fmt.Errorf("acquire: prepare: %w", err)
+			}
+			req.Prepared = prepared
+		}
+
 		planReq, err := c.loader.Plan(ctx, req)
 		if err != nil {
 			metrics.AddPoolLoadFailure("plan")

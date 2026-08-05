@@ -692,8 +692,8 @@ type VRAMInput struct {
 	EmbeddingLength     int64            `json:"embedding_length,omitempty"`
 	MoE                 *MoEInfo         `json:"moe,omitempty"`
 	Weights             *WeightBreakdown `json:"weights,omitempty"`
-	GPULayers           int64            `json:"gpu_layers,omitempty"`
-	ExpertLayersOnGPU   int64            `json:"expert_layers_on_gpu,omitempty"`
+	GPULayers           int64            `json:"gpu_layers"`
+	ExpertLayersOnGPU   int64            `json:"expert_layers_on_gpu"`
 	KVCacheOnCPU        bool             `json:"kv_cache_on_cpu,omitempty"`
 	SWAFull             bool             `json:"swa_full"`
 }
@@ -874,7 +874,9 @@ type VRAMRequest struct {
 
 	AutoFit        bool    `json:"auto_fit,omitempty"`
 	GPUFreeBytes   []int64 `json:"gpu_free_bytes,omitempty"`
+	GPUCapacity    int64   `json:"gpu_capacity_bytes,omitempty"`
 	SystemRAMBytes int64   `json:"system_ram_bytes,omitempty"`
+	UnifiedMemory  bool    `json:"unified_memory,omitempty"`
 }
 
 // Decode implements the decoder interface.
@@ -926,14 +928,53 @@ type VRAMResponse struct {
 	ExpertCPUBytes       int64 `json:"expert_cpu_bytes,omitempty"`
 
 	// KV cache placement and total system RAM estimate.
-	KVVRAMBytes       int64 `json:"kv_vram_bytes"`
-	KVCPUBytes        int64 `json:"kv_cpu_bytes"`
-	TotalSystemRAMEst int64 `json:"total_system_ram_est"`
+	KVVRAMBytes       int64          `json:"kv_vram_bytes"`
+	KVCPUBytes        int64          `json:"kv_cpu_bytes"`
+	TotalSystemRAMEst int64          `json:"total_system_ram_est"`
+	UnifiedFootprint  int64          `json:"unified_footprint"`
+	AutoFitSucceeded  *bool          `json:"auto_fit_succeeded,omitempty"`
+	FitAssessment     *FitAssessment `json:"fit_assessment,omitempty"`
 
 	// Per-device split (only populated when DeviceCount/TensorSplit
 	// were supplied on the request).
 	PerDevice []PerDeviceVRAM `json:"per_device,omitempty"`
 	RepoFiles []HFRepoFile    `json:"repo_files,omitempty"`
+}
+
+// CapacityAssessment describes the server-calculated status of one memory pool.
+type CapacityAssessment struct {
+	RequiredBytes int64          `json:"required_bytes"`
+	CapacityBytes int64          `json:"capacity_bytes"`
+	HeadroomBytes int64          `json:"headroom_bytes"`
+	Status        vram.FitStatus `json:"status"`
+}
+
+// FitAssessment describes the server-calculated hardware fit verdict.
+type FitAssessment struct {
+	Fits      bool               `json:"fits"`
+	Status    vram.FitStatus     `json:"status"`
+	GPU       CapacityAssessment `json:"gpu"`
+	SystemRAM CapacityAssessment `json:"system_ram"`
+	Unified   CapacityAssessment `json:"unified"`
+}
+
+func toFitAssessment(assessment vram.FitAssessment) FitAssessment {
+	convert := func(capacity vram.CapacityAssessment) CapacityAssessment {
+		return CapacityAssessment{
+			RequiredBytes: capacity.RequiredBytes,
+			CapacityBytes: capacity.CapacityBytes,
+			HeadroomBytes: capacity.HeadroomBytes,
+			Status:        capacity.Status,
+		}
+	}
+
+	return FitAssessment{
+		Fits:      assessment.Fits,
+		Status:    assessment.Status,
+		GPU:       convert(assessment.GPU),
+		SystemRAM: convert(assessment.SystemRAM),
+		Unified:   convert(assessment.Unified),
+	}
 }
 
 // Encode implements the encoder interface.
@@ -979,6 +1020,7 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 		KVVRAMBytes:          v.KVVRAMBytes,
 		KVCPUBytes:           v.KVCPUBytes,
 		TotalSystemRAMEst:    v.TotalSystemRAMEst,
+		UnifiedFootprint:     v.UnifiedFootprint(),
 		RepoFiles:            repoFiles,
 	}
 
@@ -1026,6 +1068,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 		ContextWindow:     contextWindow,
 		BytesPerElement:   bpe,
 		Slots:             slots,
+		GPULayers:         int64(kronkConfig.NGpuLayers()),
 		ExpertLayersOnGPU: kronkConfig.ExpertLayersOnGPU(),
 		SWAFull:           resolveSWAFull(nil, kronkConfig.PtrSWAFull),
 	}

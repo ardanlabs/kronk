@@ -7,8 +7,6 @@ import CodeBlock from './CodeBlock';
 import { PARAM_TOOLTIPS, FieldLabel } from './ParamTooltips';
 import { formatBytes } from '../lib/format';
 import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, ChatStreamResponse, VRAM } from '../types';
-import { VRAM_FIT_TEXT } from './vram';
-import type { DevicesInfo, MoeFitContext } from './vram';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -38,8 +36,7 @@ export interface ChatPanelProps {
   transport: StreamTransport;
 
   modelVRAM?: VRAM | null;
-  devicesInfo?: DevicesInfo | null;
-  moeFit?: MoeFitContext;
+  isMoE?: boolean;
 
   disabled?: boolean;
   disabledPlaceholder?: string;
@@ -108,8 +105,7 @@ export default function ChatPanel({
   modelBaseline,
   transport,
   modelVRAM,
-  devicesInfo,
-  moeFit,
+  isMoE,
   disabled = false,
   disabledPlaceholder,
   headerLeft,
@@ -840,7 +836,7 @@ export default function ChatPanel({
         </>
       )}
 
-      {moeFit?.isMoe && modelVRAM && (
+      {isMoE && modelVRAM && (
         <details className="chat-moe-info">
           <summary style={{ fontWeight: 600, fontSize: '13px', cursor: 'pointer', padding: '6px 12px', background: 'var(--color-gray-50)', borderRadius: '6px', margin: '0 0 8px', listStyle: 'revert' }}>
             🧩 MoE Model
@@ -854,17 +850,23 @@ export default function ChatPanel({
             {modelVRAM.weights && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                 <span>Always-active weights (GPU):</span>
-                <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.weights.always_active_bytes)}</span>
-                {(modelVRAM.model_weights_gpu ?? 0) > 0 && (
+                <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.always_active_gpu_bytes ?? 0)}</span>
+                {(modelVRAM.always_active_cpu_bytes ?? 0) > 0 && (
                   <>
-                    <span>Expert weights (GPU):</span>
-                    <span style={{ fontWeight: 500 }}>{formatBytes((modelVRAM.model_weights_gpu ?? 0) - modelVRAM.weights.always_active_bytes)}</span>
+                    <span>Always-active weights (CPU):</span>
+                    <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.always_active_cpu_bytes ?? 0)}</span>
                   </>
                 )}
-                {(modelVRAM.model_weights_cpu ?? 0) > 0 && (
+                {(modelVRAM.expert_gpu_bytes ?? 0) > 0 && (
+                  <>
+                    <span>Expert weights (GPU):</span>
+                    <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.expert_gpu_bytes ?? 0)}</span>
+                  </>
+                )}
+                {(modelVRAM.expert_cpu_bytes ?? 0) > 0 && (
                   <>
                     <span>Expert weights (CPU):</span>
-                    <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.model_weights_cpu ?? 0)}</span>
+                    <span style={{ fontWeight: 500 }}>{formatBytes(modelVRAM.expert_cpu_bytes ?? 0)}</span>
                   </>
                 )}
                 <span>KV cache:</span>
@@ -882,16 +884,6 @@ export default function ChatPanel({
             {!modelVRAM.weights && modelVRAM.total_vram > 0 && (
               <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                 Total VRAM: {formatBytes(modelVRAM.total_vram)}
-              </div>
-            )}
-            {moeFit?.fit?.status && devicesInfo && (
-              <div className={`playground-vram-fit playground-vram-fit--${moeFit.fit.status}`}>
-                {VRAM_FIT_TEXT[moeFit.fit.status]}
-                <span className="playground-vram-fit-detail">
-                  {' '}({formatBytes(devicesInfo.gpuVramBytes)} available
-                  {moeFit.fit.status !== 'fits' && `, ${formatBytes(moeFit.fit.cpuExperts)} needed with CPU experts`}
-                  {moeFit.fit.status === 'fits' && `, ${formatBytes(moeFit.fit.allGPU)} needed`})
-                </span>
               </div>
             )}
             <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.4, marginTop: '4px' }}>

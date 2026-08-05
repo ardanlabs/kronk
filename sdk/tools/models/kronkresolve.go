@@ -22,6 +22,16 @@ import (
 // The catalog YAML middle layer used by the legacy resolution path is not
 // applied here.
 func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig, nativeSWAFull ...bool) (model.Config, error) {
+	return m.kronkResolvedConfig(modelID, mc, nil, nativeSWAFull...)
+}
+
+// KronkResolvedConfigWithBudget builds a model.Config using a stable AutoTune
+// budget. Pool callers use this so resident reservations do not affect sizing.
+func (m *Models) KronkResolvedConfigWithBudget(modelID string, mc map[string]ModelConfig, budget AutoTuneBudget, nativeSWAFull ...bool) (model.Config, error) {
+	return m.kronkResolvedConfig(modelID, mc, &budget, nativeSWAFull...)
+}
+
+func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, budget *AutoTuneBudget, nativeSWAFull ...bool) (model.Config, error) {
 
 	// Confirm the model is on disk before resolving anything else.
 	fp, err := m.FullPath(modelID)
@@ -37,7 +47,7 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 	if analysisOverride.PtrSWAFull == nil && len(nativeSWAFull) > 0 {
 		analysisOverride.PtrSWAFull = new(nativeSWAFull[0])
 	}
-	cfg := m.AnalysisDefaultsWithConfig(modelID, analysisOverride)
+	cfg := m.analysisDefaultsWithConfigAndBudget(modelID, analysisOverride, budget)
 	sizing := cfg
 
 	// Layer 3: user overrides from model_config.yaml.
@@ -220,7 +230,11 @@ func AutoTune(info ModelInfo, devs devices.Devices) (ModelConfig, error) {
 // AutoTuneWithConfig returns hardware-aware defaults while treating explicitly
 // configured AutoTune-owned values as fixed constraints.
 func AutoTuneWithConfig(info ModelInfo, devs devices.Devices, constraints ModelConfig) (ModelConfig, error) {
-	analysis, err := analyzeModelWithConfig(info, devs, constraints)
+	return autoTuneWithConfigAndBudget(info, devs, constraints, nil)
+}
+
+func autoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constraints ModelConfig, budget *AutoTuneBudget) (ModelConfig, error) {
+	analysis, err := analyzeModelWithConfigAndBudget(info, devs, constraints, budget)
 	if err != nil {
 		return ModelConfig{}, fmt.Errorf("auto-tune: %w", err)
 	}
@@ -281,12 +295,23 @@ func (m *Models) AnalysisDefaults(modelID string) ModelConfig {
 // AnalysisDefaultsWithConfig returns analysis-derived defaults while treating
 // explicitly configured context, concurrency, and cache types as constraints.
 func (m *Models) AnalysisDefaultsWithConfig(modelID string, constraints ModelConfig) ModelConfig {
+	return m.analysisDefaultsWithConfigAndBudget(modelID, constraints, nil)
+}
+
+func (m *Models) analysisDefaultsWithConfigAndBudget(modelID string, constraints ModelConfig, budget *AutoTuneBudget) ModelConfig {
 	info, err := m.ModelInformation(modelID)
 	if err != nil {
 		return ModelConfig{}
 	}
 
-	cfg, err := AutoTuneWithConfig(info, devices.List(), constraints)
+	var devs devices.Devices
+	if budget == nil {
+		devs = devices.List()
+	} else {
+		devs = budget.Devices
+	}
+
+	cfg, err := autoTuneWithConfigAndBudget(info, devs, constraints, budget)
 	if err != nil {
 		return ModelConfig{}
 	}

@@ -2,6 +2,7 @@ package gpt
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -61,11 +62,11 @@ func TestParseGPTToolCall_MultilineJSON(t *testing.T) {
 	if calls[0].Function.Name != "do" {
 		t.Errorf("name = %q, want do", calls[0].Function.Name)
 	}
-	if got := calls[0].Function.Arguments["a"]; got != float64(1) {
-		t.Errorf("a = %v, want 1", got)
+	if got := calls[0].Function.Arguments["a"]; got != json.Number("1") {
+		t.Errorf("a = %#v, want json.Number(%q)", got, "1")
 	}
-	if got := calls[0].Function.Arguments["b"]; got != float64(2) {
-		t.Errorf("b = %v, want 2", got)
+	if got := calls[0].Function.Arguments["b"]; got != json.Number("2") {
+		t.Errorf("b = %#v, want json.Number(%q)", got, "2")
 	}
 }
 

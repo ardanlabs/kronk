@@ -74,6 +74,7 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 				log:         func(context.Context, string, ...any) {},
 			}
 			d := D{"messages": []D{{"role": "user", "content": "test"}}}
+			session.cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
 			result := m.processIMCMediaPlans(context.Background(), d, d, tt.actual, tt.stable, []llama.Token{9}, time.Now())
 			if result.imcMatchKind != tt.wantMatch {
 				t.Fatalf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
@@ -167,8 +168,9 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	}
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
+	renderHash, _ := m.imcRenderFingerprint(d, dMessages(d))
 
-	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, "render", false)
+	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, renderHash, false)
 	if gotOld != oldStore || session.kvState != staged || session.totalTokensCached != 13 || session.nextLogicalPos != 6 || !session.promptPlan.equal(advanced) || !reflect.DeepEqual(session.samplerPromptTokens, []llama.Token{1, 2, 3}) {
 		t.Fatal("media advance did not atomically publish the staged state")
 	}
@@ -185,6 +187,38 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	appendResult := m.processIMCMediaPlans(context.Background(), d, d, nextActual, next, []llama.Token{9}, time.Now())
 	if appendResult.imcMatchKind != "anchor" || !reflect.DeepEqual(appendResult.imcNewCacheTokens, []llama.Token{4}) {
 		t.Fatalf("next append = kind %q tokens %v, want anchor [4]", appendResult.imcMatchKind, appendResult.imcNewCacheTokens)
+	}
+}
+
+func TestProcessIMCMediaPlansRebuildsExactPlanWhenRenderFingerprintChanges(t *testing.T) {
+	digest := sha256.Sum256([]byte("image"))
+	stable := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2})
+	actual := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2}, promptUnit{token: 9})
+	priorD := D{
+		"messages":             []D{{"role": "user", "content": "test"}},
+		"chat_template_kwargs": D{"custom_mode": "a"},
+	}
+	currentD := priorD.Clone()
+	currentD["chat_template_kwargs"] = D{"custom_mode": "b"}
+	session := &imcSession{
+		id:                  0,
+		totalTokensCached:   3,
+		nextLogicalPos:      3,
+		hasMedia:            true,
+		promptPlan:          stable,
+		samplerPromptTokens: []llama.Token{1, 2},
+		mediaKVCounts:       []int{1},
+		kvState:             populatedTestSessionStore(),
+	}
+	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
+	session.cachedRenderInputHash, _ = m.imcRenderFingerprint(priorD, dMessages(priorD))
+
+	result := m.processIMCMediaPlans(context.Background(), currentD, currentD, actual, stable, []llama.Token{9}, time.Now())
+	if result.imcMatchKind != "rebuild" {
+		t.Errorf("imcMatchKind: got %q, want %q", result.imcMatchKind, "rebuild")
+	}
+	if result.err != nil {
+		t.Errorf("err: got %v, want nil", result.err)
 	}
 }
 

@@ -3,10 +3,13 @@ package model
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -304,38 +307,93 @@ func detectEmbedRerank(modelID string) (isEmbed bool, isRerank bool) {
 // D represents a generic docment of fields and values.
 type D map[string]any
 
-// Clone creates a copy of the document. Top-level keys are copied into a new
-// map. Values that are D or []D are cloned recursively so that nested message
-// maps can be mutated independently across concurrent requests. Other value
-// types (strings, numbers, etc.) are shared.
+// Clone creates a copy of the document. Mutable JSON maps and slices are cloned
+// recursively so callers can reuse a request after submitting it. Byte slices
+// are shared as immutable media payloads; scalar values are shared by value.
 func (d D) Clone() D {
 	clone := make(D, len(d))
 	for k, v := range d {
-		switch val := v.(type) {
-		case D:
-			clone[k] = val.Clone()
-		case map[string]any:
-			clone[k] = D(val).Clone()
-		case []D:
-			s := make([]D, len(val))
-			for i, item := range val {
-				s[i] = item.Clone()
-			}
-			clone[k] = s
-		case []any:
-			// Normalized multipart content (string + []byte parts) lives in
-			// []any after toMediaMessage. Copy the outer slice so the clone
-			// can be modified independently. []byte parts are still shared
-			// (treated as immutable media payloads) — same contract as
-			// strings, which Go shares by value already.
-			s := make([]any, len(val))
-			copy(s, val)
-			clone[k] = s
-		default:
-			clone[k] = v
-		}
+		clone[k] = cloneDocumentValue(v)
 	}
 	return clone
+}
+
+func cloneDocumentValue(v any) any {
+	switch val := v.(type) {
+	case D:
+		return val.Clone()
+	case map[string]any:
+		return D(val).Clone()
+	case []D:
+		s := make([]D, len(val))
+		for i, item := range val {
+			s[i] = item.Clone()
+		}
+		return s
+	case []map[string]any:
+		s := make([]map[string]any, len(val))
+		for i, item := range val {
+			s[i] = D(item).Clone()
+		}
+		return s
+	case []any:
+		// Normalized multipart content and arbitrary template kwargs can carry
+		// mutable JSON containers inside []any. Clone those containers while
+		// continuing to share []byte media payloads as immutable values.
+		s := make([]any, len(val))
+		for i, item := range val {
+			s[i] = cloneDocumentValue(item)
+		}
+		return s
+	case []byte:
+		// Media payloads are shared as immutable values to avoid copying large
+		// buffers at the request boundary.
+		return val
+	default:
+		return cloneJSONContainer(v)
+	}
+}
+
+func cloneJSONContainer(v any) any {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return v
+	}
+
+	switch rv.Kind() {
+	case reflect.Map:
+		if rv.Type().Key().Kind() != reflect.String || rv.IsNil() {
+			return v
+		}
+
+		clone := reflect.MakeMapWithSize(rv.Type(), rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			clone.SetMapIndex(iter.Key(), clonedReflectValue(iter.Value(), rv.Type().Elem()))
+		}
+		return clone.Interface()
+
+	case reflect.Slice:
+		if rv.IsNil() {
+			return v
+		}
+
+		clone := reflect.MakeSlice(rv.Type(), rv.Len(), rv.Len())
+		for i := range rv.Len() {
+			clone.Index(i).Set(clonedReflectValue(rv.Index(i), rv.Type().Elem()))
+		}
+		return clone.Interface()
+	}
+
+	return v
+}
+
+func clonedReflectValue(value reflect.Value, target reflect.Type) reflect.Value {
+	clone := reflect.ValueOf(cloneDocumentValue(value.Interface()))
+	if clone.IsValid() && clone.Type().AssignableTo(target) {
+		return clone
+	}
+	return value
 }
 
 // ShallowClone creates a copy of the top-level map and the messages slice.
@@ -720,7 +778,7 @@ func (a *ToolCallArguments) UnmarshalJSON(data []byte) error {
 		}
 
 		var m map[string]any
-		if err := json.Unmarshal([]byte(s), &m); err != nil {
+		if err := decodeJSONWithNumber(s, &m); err != nil {
 			return err
 		}
 
@@ -730,11 +788,29 @@ func (a *ToolCallArguments) UnmarshalJSON(data []byte) error {
 
 	// Fall back to object (non-compliant but some clients send this).
 	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
+	if err := decodeJSONWithNumber(string(data), &m); err != nil {
 		return err
 	}
 
 	*a = m
+	return nil
+}
+
+func decodeJSONWithNumber(data string, value any) error {
+	dec := json.NewDecoder(strings.NewReader(data))
+	dec.UseNumber()
+
+	if err := dec.Decode(value); err != nil {
+		return err
+	}
+
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected data after JSON value")
+		}
+		return err
+	}
+
 	return nil
 }
 

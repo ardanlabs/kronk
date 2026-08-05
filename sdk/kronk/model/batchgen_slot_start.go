@@ -189,6 +189,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					session.cachedMsgCount == job.imcExpectedCachedMsgs &&
 					session.totalTokensCached == job.imcExpectedTokens &&
 					session.logicalPosition() == job.imcExpectedPosition &&
+					(!job.imcReadOnlyReservation ||
+						(job.imcExpectedRenderHash != "" && session.cachedRenderInputHash == job.imcExpectedRenderHash)) &&
 					(!session.hasMedia || session.promptPlan.equal(job.imcExpectedPromptPlan)) &&
 					session.reserved &&
 					len(kvState) > 0)
@@ -604,6 +606,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				session.cachedMsgCount == job.imcExpectedCachedMsgs &&
 				session.totalTokensCached == job.imcExpectedTokens &&
 				session.logicalPosition() == job.imcExpectedPosition &&
+				job.imcExpectedRenderHash != "" &&
+				session.cachedRenderInputHash == job.imcExpectedRenderHash &&
 				(!session.hasMedia || session.promptPlan.equal(job.imcExpectedPromptPlan)) &&
 				session.kvState.Len() > 0 &&
 				session.reserved

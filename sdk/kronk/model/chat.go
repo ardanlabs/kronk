@@ -2,9 +2,9 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -91,6 +91,11 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 	active := m.activeStreams.Add(1)
 	metrics.AddPoolActiveStreams(m.modelInfo.ID, 1)
 
+	// Establish ownership before asynchronous processing starts. Callers may
+	// reuse or modify their request after ChatStreaming returns; the queued job
+	// must retain a stable snapshot of all mutable JSON containers.
+	d = d.Clone()
+
 	go func() {
 		id := "chatcmpl-" + uuid.NewString()
 
@@ -133,7 +138,7 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 
 		prepCtx, prepSpan := otel.AddSpan(ctx, "prepare-request")
 
-		params, d, err := m.validateAndCloneDocument(prepCtx, d)
+		params, d, err := m.validateOwnedDocument(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
 			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
@@ -239,12 +244,13 @@ func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatRes
 	return ch
 }
 
-// validateAndCloneDocument clones the request document first to avoid mutating
-// the caller's map (parseParams writes back a normalized enable_thinking), then
-// validates the clone. Downstream functions use copy-on-write when they need to
+// validateOwnedDocument normalizes and validates the request snapshot owned by
+// the chat pipeline. Downstream functions use copy-on-write when they need to
 // modify individual message maps.
-func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, error) {
-	d = d.Clone()
+func (m *Model) validateOwnedDocument(ctx context.Context, d D) (Params, D, error) {
+	if err := normalizeChatTemplateKwargs(d); err != nil {
+		return Params{}, nil, err
+	}
 
 	params, err := m.validateDocument(ctx, d)
 	if err != nil {
@@ -254,6 +260,40 @@ func (m *Model) validateAndCloneDocument(ctx context.Context, d D) (Params, D, e
 	m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
 
 	return params, d, nil
+}
+
+// normalizeChatTemplateKwargs validates vLLM/SGLang-style template arguments
+// and promotes enable_thinking because Kronk uses it for both parameter
+// resolution and Jinja rendering. Other arguments are unpacked only when the
+// template renders so names that overlap sampler fields remain template-only.
+func normalizeChatTemplateKwargs(d D) error {
+	value, exists := d["chat_template_kwargs"]
+	if !exists {
+		return nil
+	}
+
+	var kwargs D
+	switch value := value.(type) {
+	case D:
+		kwargs = value
+	case map[string]any:
+		kwargs = D(value)
+	default:
+		return fmt.Errorf("%w: chat_template_kwargs must be an object", ErrInvalidRequest)
+	}
+
+	if _, exists := kwargs["chat_template_kwargs"]; exists {
+		return fmt.Errorf("%w: chat_template_kwargs cannot contain itself", ErrInvalidRequest)
+	}
+	if enableThinking, exists := kwargs["enable_thinking"]; exists {
+		if _, topLevel := d["enable_thinking"]; !topLevel {
+			d["enable_thinking"] = enableThinking
+		}
+	}
+
+	d["chat_template_kwargs"] = kwargs
+
+	return nil
 }
 
 // prepareContext prepares the document for inference, handling both text-only
@@ -294,10 +334,12 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 	cachingEnabled := m.cfg.IncrementalCache() && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != ""))
 
 	// IMC uses complete-conversation token planning. Render from two
-	// independent clones because the Jinja path injects request defaults.
+	// independent top-level maps because the Jinja path injects request
+	// defaults. Nested request data belongs to this request and remains
+	// read-only, so recursive clones are unnecessary.
 	if cachingEnabled {
-		actualD := d.Clone()
-		stableD := d.Clone()
+		actualD := maps.Clone(d)
+		stableD := maps.Clone(d)
 		stableD["add_generation_prompt"] = false
 
 		actualPrompt, actualMedia, err := m.createPrompt(ctx, actualD)
@@ -578,7 +620,7 @@ func deserializeToolCallArguments(d D) D {
 			}
 
 			var args any
-			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+			if err := decodeJSONWithNumber(argsStr, &args); err != nil {
 				continue
 			}
 
@@ -587,7 +629,7 @@ func deserializeToolCallArguments(d D) D {
 			// history can produce a string containing JSON object text. Decode
 			// that second layer before passing the arguments to Jinja.
 			if encoded, ok := args.(string); ok {
-				if err := json.Unmarshal([]byte(encoded), &args); err != nil {
+				if err := decodeJSONWithNumber(encoded, &args); err != nil {
 					continue
 				}
 			}
