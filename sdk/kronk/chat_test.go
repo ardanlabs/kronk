@@ -1,6 +1,7 @@
 package kronk
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -26,6 +27,49 @@ func TestStreamIncludeUsage(t *testing.T) {
 				t.Errorf("streamIncludeUsage: got %t, want %t", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMarshalChatStreamError(t *testing.T) {
+	resp := model.ChatResponseErr(
+		"id",
+		model.ObjectChatText,
+		"model",
+		0,
+		"",
+		errors.New("inference failed"),
+		model.Usage{},
+	)
+
+	data, err := marshalChatStreamError(resp)
+	if err != nil {
+		t.Fatalf("marshalChatStreamError: %v", err)
+	}
+
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if got, want := len(wire), 1; got != want {
+		t.Fatalf("top-level fields: got %d, want %d", got, want)
+	}
+
+	var apiErr struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+		Code    string `json:"code"`
+	}
+	if err := json.Unmarshal(wire["error"], &apiErr); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+	if got, want := apiErr.Message, "inference failed"; got != want {
+		t.Errorf("Message: got %q, want %q", got, want)
+	}
+	if got, want := apiErr.Type, "server_error"; got != want {
+		t.Errorf("Type: got %q, want %q", got, want)
+	}
+	if got, want := apiErr.Code, "server_error"; got != want {
+		t.Errorf("Code: got %q, want %q", got, want)
 	}
 }
 
