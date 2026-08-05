@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -10,6 +11,59 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 )
+
+func TestRateWindow(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    auth.RateWindow
+		wantErr bool
+	}{
+		{"day", "day", auth.RateDay, false},
+		{"month", "month", auth.RateMonth, false},
+		{"year", "year", auth.RateYear, false},
+		{"unlimited", "unlimited", auth.RateUnlimited, false},
+		{"unknown", "unknown", auth.RateWindow{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := auth.ParseRateWindow(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseRateWindow() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if !got.Equal(tt.want) {
+				t.Errorf("ParseRateWindow() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRateWindowJSON(t *testing.T) {
+	type config struct {
+		Window auth.RateWindow `json:"window"`
+	}
+
+	data, err := json.Marshal(config{Window: auth.RateMonth})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v, want nil", err)
+	}
+	if got, want := string(data), `{"window":"month"}`; got != want {
+		t.Errorf("json.Marshal() = %s, want %s", got, want)
+	}
+
+	var cfg config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v, want nil", err)
+	}
+	if !cfg.Window.Equal(auth.RateMonth) {
+		t.Errorf("json.Unmarshal() window = %q, want %q", cfg.Window, auth.RateMonth)
+	}
+
+	if err := json.Unmarshal([]byte(`{"window":"unknown"}`), &cfg); err == nil {
+		t.Fatal("json.Unmarshal() error = nil, want error")
+	}
+}
 
 func Test_Auth(t *testing.T) {
 	ath, err := auth.New(auth.Config{

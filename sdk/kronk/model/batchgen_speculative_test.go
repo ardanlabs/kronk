@@ -10,10 +10,11 @@ import (
 
 func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 	s := slot{
-		startTime:    time.Now(),
-		specSnapshot: []byte{1},
-		pendingH:     []float32{1},
-		mtpDraftH:    []float32{2},
+		startTime:          time.Now(),
+		specSnapshot:       []byte{1},
+		pendingH:           []float32{1},
+		mtpDraftH:          []float32{2},
+		reusedPromptTokens: 42,
 	}
 
 	s.reset()
@@ -29,6 +30,9 @@ func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 	}
 	if len(s.mtpDraftH) != 0 {
 		t.Errorf("len(mtpDraftH) = %d, want 0", len(s.mtpDraftH))
+	}
+	if s.reusedPromptTokens != 0 {
+		t.Errorf("reusedPromptTokens = %d, want 0", s.reusedPromptTokens)
 	}
 }
 

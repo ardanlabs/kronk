@@ -733,8 +733,8 @@ type SamplingConfig struct {
 
 // MoEConfig configures Mixture of Experts tensor placement.
 type MoEConfig struct {
-	Mode                             string `json:"mode,omitempty"`
-	PtrKeepExpertsOnGPUForTopNLayers *int   `json:"keep_experts_top_n,omitempty"`
+	Mode                             model.MoEMode `json:"mode,omitzero"`
+	PtrKeepExpertsOnGPUForTopNLayers *int          `json:"keep_experts_top_n,omitempty"`
 }
 
 func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
@@ -743,7 +743,7 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 	}
 
 	return &MoEConfig{
-		Mode:                             string(m.Mode),
+		Mode:                             m.Mode,
 		PtrKeepExpertsOnGPUForTopNLayers: m.PtrKeepExpertsOnGPUForTopNLayers,
 	}
 }

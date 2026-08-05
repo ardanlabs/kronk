@@ -97,9 +97,14 @@ func (a *App) CreateToken(ctx context.Context, req *CreateTokenRequest) (*Create
 
 	endpoints := make(map[string]auth.RateLimit)
 	for name, rl := range req.GetEndpoints() {
+		window, err := auth.ParseRateWindow(rl.GetWindow())
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid rate window for endpoint %q: %v", name, err)
+		}
+
 		endpoints[name] = auth.RateLimit{
 			Limit:  int(rl.GetLimit()),
-			Window: auth.RateWindow(rl.GetWindow()),
+			Window: window,
 		}
 	}
 

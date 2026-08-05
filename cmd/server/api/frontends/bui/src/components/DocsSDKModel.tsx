@@ -121,6 +121,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParseLoadMode parses a string into a LoadMode.</p>
             </div>
 
+            <div className="doc-section" id="func-parsemoemode">
+              <h4>ParseMoEMode</h4>
+              <pre className="code-block">
+                <code>func ParseMoEMode(value string) (MoEMode, error)</code>
+              </pre>
+              <p className="doc-description">ParseMoEMode parses value and returns the corresponding MoEMode when it exists.</p>
+            </div>
+
             <div className="doc-section" id="func-parseropescalingtype">
               <h4>ParseRopeScalingType</h4>
               <pre className="code-block">
@@ -486,7 +494,9 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-moemode">
               <h4>MoEMode</h4>
               <pre className="code-block">
-                <code>{`type MoEMode string`}</code>
+                <code>{`type MoEMode struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
               <p className="doc-description">MoEMode controls expert placement strategy for Mixture of Experts models.</p>
             </div>
@@ -705,6 +715,16 @@ export default function DocsSDKModel() {
                 <code>{`type ParserFactory func(Fingerprint) (Parser, bool)`}</code>
               </pre>
               <p className="doc-description">ParserFactory is the constructor signature each parser package's New function satisfies. The bool return reports whether this parser claims the given Fingerprint; on false, the registry continues to the next factory.</p>
+            </div>
+
+            <div className="doc-section" id="type-prompttokensdetails">
+              <h4>PromptTokensDetails</h4>
+              <pre className="code-block">
+                <code>{`type PromptTokensDetails struct {
+	CachedTokens int \`json:"cached_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">PromptTokensDetails provides a breakdown of prompt tokens.</p>
             </div>
 
             <div className="doc-section" id="type-rerankresponse">
@@ -967,18 +987,19 @@ export default function DocsSDKModel() {
               <h4>Usage</h4>
               <pre className="code-block">
                 <code>{`type Usage struct {
-	PromptTokens        int     \`json:"prompt_tokens"\`
-	ReasoningTokens     int     \`json:"reasoning_tokens"\`
-	CompletionTokens    int     \`json:"completion_tokens"\`
-	OutputTokens        int     \`json:"output_tokens"\`
-	TotalTokens         int     \`json:"total_tokens"\`
-	TokensPerSecond     float64 \`json:"tokens_per_second"\`
-	TimeToFirstTokenMS  float64 \`json:"time_to_first_token_ms"\`
-	DraftTokens         int     \`json:"draft_tokens,omitempty"\`
-	DraftAcceptedTokens int     \`json:"draft_accepted_tokens,omitempty"\`
-	DraftAcceptanceRate float64 \`json:"draft_acceptance_rate,omitempty"\`
-	DraftCoverage       float64 \`json:"draft_coverage,omitempty"\`
-	DraftDisableReason  string  \`json:"draft_disable_reason,omitempty"\`
+	PromptTokens        int                 \`json:"prompt_tokens"\`
+	PromptTokensDetails PromptTokensDetails \`json:"prompt_tokens_details"\`
+	ReasoningTokens     int                 \`json:"reasoning_tokens"\`
+	CompletionTokens    int                 \`json:"completion_tokens"\`
+	OutputTokens        int                 \`json:"output_tokens"\`
+	TotalTokens         int                 \`json:"total_tokens"\`
+	TokensPerSecond     float64             \`json:"tokens_per_second"\`
+	TimeToFirstTokenMS  float64             \`json:"time_to_first_token_ms"\`
+	DraftTokens         int                 \`json:"draft_tokens,omitempty"\`
+	DraftAcceptedTokens int                 \`json:"draft_accepted_tokens,omitempty"\`
+	DraftAcceptanceRate float64             \`json:"draft_acceptance_rate,omitempty"\`
+	DraftCoverage       float64             \`json:"draft_coverage,omitempty"\`
+	DraftDisableReason  string              \`json:"draft_disable_reason,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">Usage provides details usage information for the request. DraftAcceptanceRate is the ratio of accepted drafts to total drafts across the spec rounds that actually ran. It is "quality per round" and says nothing about how much of the request used speculation. DraftCoverage is the complementary "how much" metric: the fraction of emitted output positions produced through speculation. Together they distinguish "MTP ran the whole request at 94%" from "MTP ran for 4 rounds at 94% then was disabled and the rest was target-only" — the second case shows high DraftAcceptanceRate but low DraftCoverage. DraftDisableReason explains the latter case ("imc-hit", "mirror-error", or empty if MTP was never disabled).</p>
@@ -1367,6 +1388,46 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-moemode-equal">
+              <h4>MoEMode.Equal</h4>
+              <pre className="code-block">
+                <code>func (mm MoEMode) Equal(mm2 MoEMode) bool</code>
+              </pre>
+              <p className="doc-description">Equal provides support for the go-cmp package and testing.</p>
+            </div>
+
+            <div className="doc-section" id="method-moemode-iszero">
+              <h4>MoEMode.IsZero</h4>
+              <pre className="code-block">
+                <code>func (mm MoEMode) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the MoE mode is unset.</p>
+            </div>
+
+            <div className="doc-section" id="method-moemode-marshaltext">
+              <h4>MoEMode.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (mm MoEMode) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText provides support for logging and serialization.</p>
+            </div>
+
+            <div className="doc-section" id="method-moemode-string">
+              <h4>MoEMode.String</h4>
+              <pre className="code-block">
+                <code>func (mm MoEMode) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the name of the MoE mode.</p>
+            </div>
+
+            <div className="doc-section" id="method-moemode-unmarshaltext">
+              <h4>MoEMode.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (mm *MoEMode) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses serialized text into a known MoEMode.</p>
             </div>
 
             <div className="doc-section" id="method-model-chat">
@@ -1847,6 +1908,46 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">ErrMessagesMissing indicates that a chat request has no messages field.</p>
             </div>
+
+            <div className="doc-section" id="var-moemodeauto">
+              <h4>MoEModeAuto</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeAuto = newMoEMode("auto")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeAuto uses catalog defaults.</p>
+            </div>
+
+            <div className="doc-section" id="var-moemodecustom">
+              <h4>MoEModeCustom</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeCustom = newMoEMode("custom")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeCustom defers to TensorBuftOverrides for expert placement.</p>
+            </div>
+
+            <div className="doc-section" id="var-moemodeexpertscpu">
+              <h4>MoEModeExpertsCPU</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeExpertsCPU = newMoEMode("experts_cpu")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeExpertsCPU places all routed expert tensors on CPU. Recommended for VRAM-constrained setups.</p>
+            </div>
+
+            <div className="doc-section" id="var-moemodeexpertsgpu">
+              <h4>MoEModeExpertsGPU</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeExpertsGPU = newMoEMode("experts_gpu")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeExpertsGPU keeps all expert tensors on GPU. Requires sufficient VRAM for the full model.</p>
+            </div>
+
+            <div className="doc-section" id="var-moemodekeeptopn">
+              <h4>MoEModeKeepTopN</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeKeepTopN = newMoEMode("keep_top_n")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeKeepTopN keeps routed experts on GPU for the top N layers. All other expert layers go to CPU.</p>
+            </div>
           </div>
         </div>
 
@@ -1865,6 +1966,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-newmodel">NewModel</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
+                <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsesplitmode">ParseSplitMode</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
@@ -1909,6 +2011,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-paramsadjuster">ParamsAdjuster</a></li>
                 <li><a href="#type-parser">Parser</a></li>
                 <li><a href="#type-parserfactory">ParserFactory</a></li>
+                <li><a href="#type-prompttokensdetails">PromptTokensDetails</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
                 <li><a href="#type-rerankusage">RerankUsage</a></li>
@@ -1990,6 +2093,11 @@ export default function DocsSDKModel() {
                 <li><a href="#method-loadmode-unmarshaljson">LoadMode.UnmarshalJSON</a></li>
                 <li><a href="#method-loadmode-unmarshalyaml">LoadMode.UnmarshalYAML</a></li>
                 <li><a href="#method-moeconfig-keepexpertsongpufortopnlayers">MoEConfig.KeepExpertsOnGPUForTopNLayers</a></li>
+                <li><a href="#method-moemode-equal">MoEMode.Equal</a></li>
+                <li><a href="#method-moemode-iszero">MoEMode.IsZero</a></li>
+                <li><a href="#method-moemode-marshaltext">MoEMode.MarshalText</a></li>
+                <li><a href="#method-moemode-string">MoEMode.String</a></li>
+                <li><a href="#method-moemode-unmarshaltext">MoEMode.UnmarshalText</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
@@ -2041,6 +2149,11 @@ export default function DocsSDKModel() {
                 <li><a href="#var-errinvalidrequest">ErrInvalidRequest</a></li>
                 <li><a href="#var-errmessagesinvalid">ErrMessagesInvalid</a></li>
                 <li><a href="#var-errmessagesmissing">ErrMessagesMissing</a></li>
+                <li><a href="#var-moemodeauto">MoEModeAuto</a></li>
+                <li><a href="#var-moemodecustom">MoEModeCustom</a></li>
+                <li><a href="#var-moemodeexpertscpu">MoEModeExpertsCPU</a></li>
+                <li><a href="#var-moemodeexpertsgpu">MoEModeExpertsGPU</a></li>
+                <li><a href="#var-moemodekeeptopn">MoEModeKeepTopN</a></li>
               </ul>
             </div>
           </div>

@@ -833,18 +833,24 @@ func (c Choice) FinishReason() string {
 // DraftCoverage. DraftDisableReason explains the latter case
 // ("imc-hit", "mirror-error", or empty if MTP was never disabled).
 type Usage struct {
-	PromptTokens        int     `json:"prompt_tokens"`
-	ReasoningTokens     int     `json:"reasoning_tokens"`
-	CompletionTokens    int     `json:"completion_tokens"`
-	OutputTokens        int     `json:"output_tokens"`
-	TotalTokens         int     `json:"total_tokens"`
-	TokensPerSecond     float64 `json:"tokens_per_second"`
-	TimeToFirstTokenMS  float64 `json:"time_to_first_token_ms"`
-	DraftTokens         int     `json:"draft_tokens,omitempty"`
-	DraftAcceptedTokens int     `json:"draft_accepted_tokens,omitempty"`
-	DraftAcceptanceRate float64 `json:"draft_acceptance_rate,omitempty"`
-	DraftCoverage       float64 `json:"draft_coverage,omitempty"`
-	DraftDisableReason  string  `json:"draft_disable_reason,omitempty"`
+	PromptTokens        int                 `json:"prompt_tokens"`
+	PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details"`
+	ReasoningTokens     int                 `json:"reasoning_tokens"`
+	CompletionTokens    int                 `json:"completion_tokens"`
+	OutputTokens        int                 `json:"output_tokens"`
+	TotalTokens         int                 `json:"total_tokens"`
+	TokensPerSecond     float64             `json:"tokens_per_second"`
+	TimeToFirstTokenMS  float64             `json:"time_to_first_token_ms"`
+	DraftTokens         int                 `json:"draft_tokens,omitempty"`
+	DraftAcceptedTokens int                 `json:"draft_accepted_tokens,omitempty"`
+	DraftAcceptanceRate float64             `json:"draft_acceptance_rate,omitempty"`
+	DraftCoverage       float64             `json:"draft_coverage,omitempty"`
+	DraftDisableReason  string              `json:"draft_disable_reason,omitempty"`
+}
+
+// PromptTokensDetails provides a breakdown of prompt tokens.
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 // TopLogprob represents a single token with its log probability.

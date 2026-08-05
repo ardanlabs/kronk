@@ -442,6 +442,39 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 	}
 }
 
+func TestUsageCachedTokensJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		want int
+	}{
+		{name: "cache miss"},
+		{name: "cache hit", want: 42},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usage := Usage{
+				PromptTokensDetails: PromptTokensDetails{CachedTokens: tt.want},
+			}
+
+			data, err := json.Marshal(usage)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+
+			var wire struct {
+				PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details"`
+			}
+			if err := json.Unmarshal(data, &wire); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			if got := wire.PromptTokensDetails.CachedTokens; got != tt.want {
+				t.Errorf("CachedTokens: got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	resp := chatResponseToolCallDelta("id", ObjectChatText, "model", 0, ResponseToolCallDelta{
 		ID:    "call_1",

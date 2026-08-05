@@ -42,12 +42,13 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// Incremental Message Cache (IMC)
 
-	imcSession        *imcSession // Matched IMC session (the session-pool entry whose KV state will be restored into the assigned slot)
-	imcSessionMedia   bool        // True if session has media (snapshot at job creation; safe to read without lock)
-	imcSessionID      int         // Session-pool index (== imcSession.id); used by imcReleaseReservation lookup and log correlation. Not related to execution slot identity.
-	imcCacheHit       bool        // True when this request uses the IMC build/restore path.
-	imcSnapshotReused bool        // True after a prior externalized target snapshot is restored successfully.
-	imcExpectedHash   string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward)
+	imcSession         *imcSession // Matched IMC session (the session-pool entry whose KV state will be restored into the assigned slot)
+	imcSessionMedia    bool        // True if session has media (snapshot at job creation; safe to read without lock)
+	imcSessionID       int         // Session-pool index (== imcSession.id); used by imcReleaseReservation lookup and log correlation. Not related to execution slot identity.
+	imcCacheHit        bool        // True when this request uses the IMC build/restore path.
+	reusedPromptTokens int         // Logical prompt-prefix tokens reused by this request.
+	imcSnapshotReused  bool        // True after a prior externalized target snapshot is restored successfully.
+	imcExpectedHash    string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward)
 
 	// Pure-hit snapshot-skip state mirrored from cacheResult.
 	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot.
@@ -109,10 +110,11 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Position & Token Counts
 
-	nPast            llama.Pos // Current position in KV cache
-	nPrompt          int       // Total prompt tokens (cached + new)
-	reasonTokens     int       // Tokens in reasoning/thinking section
-	completionTokens int       // Tokens in completion section
+	nPast              llama.Pos // Current position in KV cache
+	nPrompt            int       // Total prompt tokens (cached + new)
+	reusedPromptTokens int       // Logical prompt-prefix tokens reused by this request
+	reasonTokens       int       // Tokens in reasoning/thinking section
+	completionTokens   int       // Tokens in completion section
 
 	// -------------------------------------------------------------------------
 	// Text Prefill (text-only requests)
@@ -323,6 +325,7 @@ func (s *slot) reset() {
 	s.job = nil
 	s.nPast = 0
 	s.nPrompt = 0
+	s.reusedPromptTokens = 0
 	s.reasonTokens = 0
 	s.completionTokens = 0
 	s.reasonFlag = 0

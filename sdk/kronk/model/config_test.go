@@ -10,7 +10,50 @@ import (
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"go.yaml.in/yaml/v2"
 )
+
+func TestMoEMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    MoEMode
+		wantErr bool
+	}{
+		{"auto", "auto", MoEModeAuto, false},
+		{"experts CPU", "experts_cpu", MoEModeExpertsCPU, false},
+		{"experts GPU", "experts_gpu", MoEModeExpertsGPU, false},
+		{"keep top N", "keep_top_n", MoEModeKeepTopN, false},
+		{"custom", "custom", MoEModeCustom, false},
+		{"unknown", "unknown", MoEMode{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseMoEMode(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseMoEMode() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if !got.Equal(tt.want) {
+				t.Errorf("ParseMoEMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMoEModeYAML(t *testing.T) {
+	var cfg MoEConfig
+	if err := yaml.Unmarshal([]byte("mode: experts_cpu\n"), &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal() error = %v, want nil", err)
+	}
+	if !cfg.Mode.Equal(MoEModeExpertsCPU) {
+		t.Errorf("yaml.Unmarshal() mode = %q, want %q", cfg.Mode, MoEModeExpertsCPU)
+	}
+
+	if err := yaml.Unmarshal([]byte("mode: unknown\n"), &cfg); err == nil {
+		t.Fatal("yaml.Unmarshal() error = nil, want error")
+	}
+}
 
 func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	cfg := Config{

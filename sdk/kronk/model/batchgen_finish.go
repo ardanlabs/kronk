@@ -223,7 +223,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 
 		usage := Usage{
-			PromptTokens:        s.nPrompt,
+			PromptTokens: s.nPrompt,
+			PromptTokensDetails: PromptTokensDetails{
+				CachedTokens: s.reusedPromptTokens,
+			},
 			ReasoningTokens:     s.reasonTokens,
 			CompletionTokens:    s.completionTokens,
 			OutputTokens:        outputTokens,
@@ -357,7 +360,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	usage := Usage{
-		PromptTokens:        s.nPrompt,
+		PromptTokens: s.nPrompt,
+		PromptTokensDetails: PromptTokensDetails{
+			CachedTokens: s.reusedPromptTokens,
+		},
 		ReasoningTokens:     s.reasonTokens,
 		CompletionTokens:    s.completionTokens,
 		OutputTokens:        outputTokens,

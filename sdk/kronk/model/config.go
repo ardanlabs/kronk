@@ -615,7 +615,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 	if cfg.PtrMoE != nil {
 		switch cfg.PtrMoE.Mode {
-		case MoEModeAuto, MoEModeExpertsCPU, MoEModeExpertsGPU, MoEModeKeepTopN, MoEModeCustom, "":
+		case MoEMode{}, MoEModeAuto, MoEModeExpertsCPU, MoEModeExpertsGPU, MoEModeKeepTopN, MoEModeCustom:
 			// valid
 		default:
 			return fmt.Errorf("validate-config: unknown MoE mode: %s (valid: auto, experts_cpu, experts_gpu, keep_top_n, custom)", cfg.PtrMoE.Mode)
@@ -629,7 +629,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 			return fmt.Errorf("validate-config: MoE KeepExpertsOnGPUForTopNLayers must be >= 0, got %d", *cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers)
 		}
 
-		if cfg.PtrMoE.Mode != "" && cfg.PtrMoE.Mode != MoEModeAuto && cfg.PtrMoE.Mode != MoEModeCustom && len(cfg.TensorBuftOverrides) > 0 {
+		if !cfg.PtrMoE.Mode.IsZero() && cfg.PtrMoE.Mode != MoEModeAuto && cfg.PtrMoE.Mode != MoEModeCustom && len(cfg.TensorBuftOverrides) > 0 {
 			return fmt.Errorf("validate-config: MoE mode %s and TensorBuftOverrides are mutually exclusive; use MoE mode 'custom' with TensorBuftOverrides", cfg.PtrMoE.Mode)
 		}
 	}
@@ -1613,28 +1613,90 @@ func ParseRopeScalingType(s string) (RopeScalingType, error) {
 
 // =============================================================================
 
+// Set of known MoE modes.
+var moeModes = make(map[string]MoEMode)
+
+// MoEModeAuto uses catalog defaults.
+var MoEModeAuto = newMoEMode("auto")
+
+// MoEModeExpertsCPU places all routed expert tensors on CPU.
+// Recommended for VRAM-constrained setups.
+var MoEModeExpertsCPU = newMoEMode("experts_cpu")
+
+// MoEModeExpertsGPU keeps all expert tensors on GPU.
+// Requires sufficient VRAM for the full model.
+var MoEModeExpertsGPU = newMoEMode("experts_gpu")
+
+// MoEModeKeepTopN keeps routed experts on GPU for the top N layers.
+// All other expert layers go to CPU.
+var MoEModeKeepTopN = newMoEMode("keep_top_n")
+
+// MoEModeCustom defers to TensorBuftOverrides for expert placement.
+var MoEModeCustom = newMoEMode("custom")
+
 // MoEMode controls expert placement strategy for Mixture of Experts models.
-type MoEMode string
+type MoEMode struct {
+	value string
+}
 
-const (
-	// MoEModeAuto uses catalog defaults.
-	MoEModeAuto MoEMode = "auto"
+func newMoEMode(value string) MoEMode {
+	mode := MoEMode{value: value}
+	moeModes[value] = mode
+	return mode
+}
 
-	// MoEModeExpertsCPU places all routed expert tensors on CPU.
-	// Recommended for VRAM-constrained setups.
-	MoEModeExpertsCPU MoEMode = "experts_cpu"
+// String returns the name of the MoE mode.
+func (mm MoEMode) String() string {
+	return mm.value
+}
 
-	// MoEModeExpertsGPU keeps all expert tensors on GPU.
-	// Requires sufficient VRAM for the full model.
-	MoEModeExpertsGPU MoEMode = "experts_gpu"
+// Equal provides support for the go-cmp package and testing.
+func (mm MoEMode) Equal(mm2 MoEMode) bool {
+	return mm.value == mm2.value
+}
 
-	// MoEModeKeepTopN keeps routed experts on GPU for the top N layers.
-	// All other expert layers go to CPU.
-	MoEModeKeepTopN MoEMode = "keep_top_n"
+// IsZero reports whether the MoE mode is unset.
+func (mm MoEMode) IsZero() bool {
+	return mm.value == ""
+}
 
-	// MoEModeCustom defers to TensorBuftOverrides for expert placement.
-	MoEModeCustom MoEMode = "custom"
-)
+// MarshalText provides support for logging and serialization.
+func (mm MoEMode) MarshalText() ([]byte, error) {
+	return []byte(mm.value), nil
+}
+
+// UnmarshalText parses serialized text into a known MoEMode.
+func (mm *MoEMode) UnmarshalText(data []byte) error {
+	mode, err := ParseMoEMode(string(data))
+	if err != nil {
+		return err
+	}
+
+	*mm = mode
+	return nil
+}
+
+// ParseMoEMode parses value and returns the corresponding MoEMode when it
+// exists.
+func ParseMoEMode(value string) (MoEMode, error) {
+	mode, exists := moeModes[value]
+	if !exists {
+		return MoEMode{}, fmt.Errorf("invalid MoE mode %q", value)
+	}
+
+	return mode, nil
+}
+
+// MustParseMoEMode parses value and returns the corresponding MoEMode. It
+// panics when value does not identify a known MoE mode.
+func MustParseMoEMode(value string) MoEMode {
+	mode, err := ParseMoEMode(value)
+	if err != nil {
+		panic(err)
+	}
+
+	return mode
+}
 
 // MoEConfig configures Mixture of Experts tensor placement.
 // When nil, no MoE-specific behavior is applied.
@@ -1681,7 +1743,7 @@ func (cfg Config) ExpertLayersOnGPU() int64 {
 	case MoEModeKeepTopN:
 		return int64(cfg.PtrMoE.KeepExpertsOnGPUForTopNLayers())
 	default:
-		// MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, "".
+		// MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, or zero value.
 		return ExpertsAllOnGPU
 	}
 }

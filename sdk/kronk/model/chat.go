@@ -382,11 +382,12 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcMatchKind:        cache.imcMatchKind,
 		imcPromptPlan:       cache.imcPromptPlan,
 
-		imcSession:      cache.imcSession,
-		imcSessionMedia: cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
-		imcSessionID:    cache.imcSessionID,
-		imcCacheHit:     imcCacheHit,
-		imcExpectedHash: cache.imcExpectedHash,
+		imcSession:         cache.imcSession,
+		imcSessionMedia:    cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
+		imcSessionID:       cache.imcSessionID,
+		imcCacheHit:        imcCacheHit,
+		reusedPromptTokens: int(cache.cacheIdx),
+		imcExpectedHash:    cache.imcExpectedHash,
 
 		imcExpectedCachedMsgs:  cache.imcExpectedCachedMsgs,
 		imcExpectedTokens:      cache.imcExpectedTokens,

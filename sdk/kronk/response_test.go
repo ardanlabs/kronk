@@ -39,11 +39,12 @@ func TestResponseValidatesMessagesBeforeAdmission(t *testing.T) {
 func TestToChatResponseToResponsesUsageIncludesReasoning(t *testing.T) {
 	chatResp := model.ChatResponse{
 		Usage: &model.Usage{
-			PromptTokens:     100,
-			ReasoningTokens:  20,
-			CompletionTokens: 5,
-			OutputTokens:     25,
-			TotalTokens:      125,
+			PromptTokens:        100,
+			PromptTokensDetails: model.PromptTokensDetails{CachedTokens: 80},
+			ReasoningTokens:     20,
+			CompletionTokens:    5,
+			OutputTokens:        25,
+			TotalTokens:         125,
 		},
 	}
 
@@ -51,6 +52,9 @@ func TestToChatResponseToResponsesUsageIncludesReasoning(t *testing.T) {
 
 	if got, want := resp.Usage.OutputTokens, 25; got != want {
 		t.Errorf("OutputTokens: got %d, want %d", got, want)
+	}
+	if got, want := resp.Usage.InputTokensDetails.CachedTokens, 80; got != want {
+		t.Errorf("CachedTokens: got %d, want %d", got, want)
 	}
 	if got, want := resp.Usage.OutputTokenDetail.ReasoningTokens, 20; got != want {
 		t.Errorf("ReasoningTokens: got %d, want %d", got, want)
@@ -139,7 +143,9 @@ func TestStreamStateCompleteTokenLimit(t *testing.T) {
 	finishReason := model.FinishReasonLength
 	chatResp := model.ChatResponse{
 		Choices: []model.Choice{{FinishReasonPtr: &finishReason}},
-		Usage:   &model.Usage{},
+		Usage: &model.Usage{
+			PromptTokensDetails: model.PromptTokensDetails{CachedTokens: 42},
+		},
 	}
 	ss := streamState{}
 
@@ -156,6 +162,9 @@ func TestStreamStateCompleteTokenLimit(t *testing.T) {
 	}
 	if got, want := last.Response.Status, "incomplete"; got != want {
 		t.Errorf("response status: got %q, want %q", got, want)
+	}
+	if got, want := last.Response.Usage.InputTokensDetails.CachedTokens, 42; got != want {
+		t.Errorf("CachedTokens: got %d, want %d", got, want)
 	}
 }
 
