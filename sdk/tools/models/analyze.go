@@ -91,10 +91,16 @@ type SystemFacts struct {
 	SupportsGPUOffload bool   `json:"supports_gpu_offload"`
 }
 
+// AutoTuneBudgetPercent is the percentage of available memory AutoTune uses
+// when selecting a runtime profile.
+const AutoTuneBudgetPercent = 85
+
 // AutoTuneBudget provides stable memory limits for an AutoTune analysis.
 // Pool callers use the resource manager's empty-pool budgets so resident
 // models do not change the recommendation for an incoming model.
 type AutoTuneBudget struct {
+	// Devices is the immutable hardware snapshot used for the analysis.
+	Devices devices.Devices
 	// GPUBytes is the largest single-device empty-pool budget.
 	GPUBytes int64
 	// SystemRAMBytes is the empty-pool system RAM budget.
@@ -241,12 +247,12 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	kvBytesQ8 := headCountKV * (keyLength + valueLength) * vram.BytesPerElementQ8_0
 
 	// Use 85% of free GPU as the budget.
-	gpuBudget := int64(float64(sf.GPUFreeBytes) * 0.85)
-	ramBudget := int64(float64(sf.SystemRAMBytes) * 0.85)
+	gpuBudget := int64(float64(sf.GPUFreeBytes) * AutoTuneBudgetPercent / 100)
+	ramBudget := int64(float64(sf.SystemRAMBytes) * AutoTuneBudgetPercent / 100)
 	if budget != nil {
 		gpuBudget = budget.GPUBytes
 		ramBudget = budget.SystemRAMBytes
-		if sf.GPUType == "gpu_metal" {
+		if devs.UnifiedMemory {
 			gpuBudget = budget.SystemRAMBytes
 		}
 	}
@@ -281,7 +287,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		gpuBudget:      gpuBudget,
 		ramBudget:      ramBudget,
 		hasGPU:         sf.SupportsGPUOffload,
-		unifiedMemory:  sf.GPUType == "gpu_metal",
+		unifiedMemory:  devs.UnifiedMemory,
 		gpuCount:       devs.GPUCount,
 		attn:           attn,
 		contextWindow:  cfg.PtrContextWindow,

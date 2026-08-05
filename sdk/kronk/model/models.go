@@ -3,7 +3,9 @@ package model
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"path"
 	"path/filepath"
@@ -776,7 +778,7 @@ func (a *ToolCallArguments) UnmarshalJSON(data []byte) error {
 		}
 
 		var m map[string]any
-		if err := json.Unmarshal([]byte(s), &m); err != nil {
+		if err := decodeJSONWithNumber(s, &m); err != nil {
 			return err
 		}
 
@@ -786,11 +788,29 @@ func (a *ToolCallArguments) UnmarshalJSON(data []byte) error {
 
 	// Fall back to object (non-compliant but some clients send this).
 	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
+	if err := decodeJSONWithNumber(string(data), &m); err != nil {
 		return err
 	}
 
 	*a = m
+	return nil
+}
+
+func decodeJSONWithNumber(data string, value any) error {
+	dec := json.NewDecoder(strings.NewReader(data))
+	dec.UseNumber()
+
+	if err := dec.Decode(value); err != nil {
+		return err
+	}
+
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected data after JSON value")
+		}
+		return err
+	}
+
 	return nil
 }
 

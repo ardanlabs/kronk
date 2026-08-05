@@ -26,6 +26,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -69,9 +70,12 @@ func HumanBytes(n int64) string {
 // InsecureLogging, when true, logs potentially sensitive data such as
 // message content and detailed model configuration.
 type Config struct {
-	Log             kronk.Logger
-	Models          *models.Models
-	Resman          *resman.Manager
+	Log    kronk.Logger
+	Models *models.Models
+	Resman *resman.Manager
+	// StartupDevices is the immutable hardware snapshot AutoTune uses for
+	// pooled catalog models. When nil, New captures devices.List once.
+	StartupDevices  *devices.Devices
 	ModelConfigFile string
 	ModelsInPool    int
 	TTL             time.Duration
@@ -134,7 +138,14 @@ func New(cfg Config) (*Pool, error) {
 		mc = map[string]models.ModelConfig{}
 	}
 
-	llama := newLlama(cfg.Log, cfg.Models, mc, cfg.Resman, cfg.InsecureLogging)
+	var startupDevices devices.Devices
+	if cfg.StartupDevices == nil {
+		startupDevices = devices.List()
+	} else {
+		startupDevices = cloneDevices(*cfg.StartupDevices)
+	}
+
+	llama := newLlama(cfg.Log, cfg.Models, mc, cfg.Resman, startupDevices, cfg.InsecureLogging)
 
 	c, err := engine.New(engine.Config{
 		Log:      cfg.Log,
@@ -156,6 +167,12 @@ func New(cfg Config) (*Pool, error) {
 	c.LogResmanInit(context.Background())
 
 	return &p, nil
+}
+
+func cloneDevices(src devices.Devices) devices.Devices {
+	dst := src
+	dst.Devices = slices.Clone(src.Devices)
+	return dst
 }
 
 // ResourceManager returns the pool's underlying resource manager.

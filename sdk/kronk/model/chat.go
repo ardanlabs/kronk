@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -621,7 +620,7 @@ func deserializeToolCallArguments(d D) D {
 			}
 
 			var args any
-			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+			if err := decodeJSONWithNumber(argsStr, &args); err != nil {
 				continue
 			}
 
@@ -630,7 +629,7 @@ func deserializeToolCallArguments(d D) D {
 			// history can produce a string containing JSON object text. Decode
 			// that second layer before passing the arguments to Jinja.
 			if encoded, ok := args.(string); ok {
-				if err := json.Unmarshal([]byte(encoded), &args); err != nil {
+				if err := decodeJSONWithNumber(encoded, &args); err != nil {
 					continue
 				}
 			}

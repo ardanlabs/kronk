@@ -65,9 +65,12 @@ export default function DocsSDKPool() {
               <h4>Config</h4>
               <pre className="code-block">
                 <code>{`type Config struct {
-	Log             kronk.Logger
-	Models          *models.Models
-	Resman          *resman.Manager
+	Log    kronk.Logger
+	Models *models.Models
+	Resman *resman.Manager
+	// StartupDevices is the immutable hardware snapshot AutoTune uses for
+	// pooled catalog models. When nil, New captures devices.List once.
+	StartupDevices  *devices.Devices
 	ModelConfigFile string
 	ModelsInPool    int
 	TTL             time.Duration

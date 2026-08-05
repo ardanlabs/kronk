@@ -94,8 +94,9 @@ func New(cfg Config) (*Pool, error) {
 		return nil, errors.New("new: at least one of kronk-models or bucky-models is required")
 	}
 
+	devs := devices.List()
 	rm, err := resman.New(resman.Config{
-		Snapshot:      resman.FromDevices(devices.List()),
+		Snapshot:      resman.FromDevices(devs),
 		BudgetPercent: cfg.BudgetPercent,
 	})
 	if err != nil {
@@ -111,6 +112,7 @@ func New(cfg Config) (*Pool, error) {
 			Log:             cfg.Log,
 			Models:          cfg.KronkModels,
 			Resman:          rm,
+			StartupDevices:  &devs,
 			ModelConfigFile: cfg.ModelConfigFile,
 			ModelsInPool:    cfg.ModelsInPool,
 			TTL:             cfg.TTL,

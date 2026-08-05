@@ -304,7 +304,14 @@ func (m *Models) analysisDefaultsWithConfigAndBudget(modelID string, constraints
 		return ModelConfig{}
 	}
 
-	cfg, err := autoTuneWithConfigAndBudget(info, devices.List(), constraints, budget)
+	var devs devices.Devices
+	if budget == nil {
+		devs = devices.List()
+	} else {
+		devs = budget.Devices
+	}
+
+	cfg, err := autoTuneWithConfigAndBudget(info, devs, constraints, budget)
 	if err != nil {
 		return ModelConfig{}
 	}

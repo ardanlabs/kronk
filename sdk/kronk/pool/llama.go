@@ -21,6 +21,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -33,13 +34,14 @@ type Llama struct {
 	models          *models.Models
 	modelConfig     map[string]models.ModelConfig
 	resman          *resman.Manager
+	startupDevices  devices.Devices
 	insecureLogging bool
 }
 
 // newLlama constructs a llama loader.
 //
 // modelConfig may be nil; an empty map will be used.
-func newLlama(log applog.Logger, mdls *models.Models, modelConfig map[string]models.ModelConfig, rm *resman.Manager, insecureLogging bool) *Llama {
+func newLlama(log applog.Logger, mdls *models.Models, modelConfig map[string]models.ModelConfig, rm *resman.Manager, startupDevices devices.Devices, insecureLogging bool) *Llama {
 	if modelConfig == nil {
 		modelConfig = map[string]models.ModelConfig{}
 	}
@@ -49,6 +51,7 @@ func newLlama(log applog.Logger, mdls *models.Models, modelConfig map[string]mod
 		models:          mdls,
 		modelConfig:     modelConfig,
 		resman:          rm,
+		startupDevices:  startupDevices,
 		insecureLogging: insecureLogging,
 	}
 
@@ -377,14 +380,28 @@ func (l *Llama) configForRequest(req loader.LoadRequest) (model.Config, error) {
 func (l *Llama) autoTuneBudget(modelID string) models.AutoTuneBudget {
 	usage := l.resman.Usage()
 	budget := models.AutoTuneBudget{
-		SystemRAMBytes: usage.RAMBudget,
+		Devices: l.startupDevices,
 	}
+	budget.SystemRAMBytes = min(
+		int64(float64(l.startupDevices.SystemRAMBytes)*models.AutoTuneBudgetPercent/100),
+		usage.RAMBudget,
+	)
+
 	selected := gpuDevices(l.modelConfig[modelID].Devices)
 	for _, device := range usage.Devices {
 		if len(selected) > 0 && !slices.Contains(selected, device.Name) {
 			continue
 		}
-		budget.GPUBytes = max(budget.GPUBytes, device.BudgetBytes)
+
+		startup := slices.IndexFunc(l.startupDevices.Devices, func(candidate devices.DeviceInfo) bool {
+			return candidate.Name == device.Name
+		})
+		if startup < 0 {
+			continue
+		}
+
+		startupBudget := int64(float64(l.startupDevices.Devices[startup].FreeBytes) * models.AutoTuneBudgetPercent / 100)
+		budget.GPUBytes = max(budget.GPUBytes, min(startupBudget, device.BudgetBytes))
 	}
 
 	return budget
