@@ -1,14 +1,30 @@
 package toolapp
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestVRAMResponsePreservesZeroExpertLayers(t *testing.T) {
+	resp := toVRAMResponse(vram.Result{
+		Input: vram.Input{ExpertLayersOnGPU: 0},
+	}, nil)
+
+	data, _, err := resp.Encode()
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"expert_layers_on_gpu":0`)) {
+		t.Errorf("Encode: got %s, want expert_layers_on_gpu zero value", data)
+	}
+}
 
 func TestModelDetailsNotFound(t *testing.T) {
 	models, err := llamamodels.NewWithPaths(t.TempDir())
@@ -56,6 +72,28 @@ func TestVRAMConfigFromRMCSWAFull(t *testing.T) {
 			got := vramConfigFromRMC(rmc)
 			if got.SWAFull != tt.want {
 				t.Errorf("SWAFull: got %t, want %t", got.SWAFull, tt.want)
+			}
+		})
+	}
+}
+
+func TestVRAMConfigFromRMCGPULayers(t *testing.T) {
+	tests := []struct {
+		name string
+		ptr  *int
+		want int64
+	}{
+		{name: "unset uses all GPU default", want: 0},
+		{name: "CPU only", ptr: new(-1), want: -1},
+		{name: "partial GPU", ptr: new(12), want: 12},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rmc := llamamodels.ModelConfig{PtrNGpuLayers: tt.ptr}
+			got := vramConfigFromRMC(rmc)
+			if got.GPULayers != tt.want {
+				t.Errorf("GPULayers: got %d, want %d", got.GPULayers, tt.want)
 			}
 		})
 	}

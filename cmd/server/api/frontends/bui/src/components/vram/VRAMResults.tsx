@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import KeyValueTable from '../KeyValueTable';
 import { formatBytes } from '../../lib/format';
 import { labelWithTip } from '../ParamTooltips';
-import type { VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM, DeviceInfo, AutoTuneRecommendation } from '../../types';
+import type { VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM, AutoTuneRecommendation, FitAssessment } from '../../types';
 
 export interface CatalogConfigDefaults {
   contextWindow: number;
@@ -30,15 +30,14 @@ interface VRAMResultsProps {
   gpuLayers?: number;
   expertLayersOnGPU?: number;
   kvCacheOnCPU?: boolean;
-  kvCpuBytes?: number;
   totalSystemRamEst?: number;
+  unifiedFootprint?: number;
   perDevice?: PerDeviceVRAM[];
   deviceCount?: number;
-  systemRAMBytes?: number;
-  gpuTotalBytes?: number;
-  gpuDevices?: DeviceInfo[];
   tensorSplit?: string;
   isHardwareOverridden?: boolean;
+  isUnifiedMemory?: boolean;
+  fitAssessment?: FitAssessment;
   modelUrl?: string;
   catalogConfigName?: string;
   catalogConfigDefaults?: CatalogConfigDefaults;
@@ -64,15 +63,14 @@ export default function VRAMResults({
   gpuLayers,
   expertLayersOnGPU,
   kvCacheOnCPU,
-  kvCpuBytes,
   totalSystemRamEst,
+  unifiedFootprint,
   perDevice,
   deviceCount,
-  systemRAMBytes,
-  gpuTotalBytes,
-  gpuDevices,
   tensorSplit,
   isHardwareOverridden,
+  isUnifiedMemory,
+  fitAssessment,
   modelUrl,
   catalogConfigName,
   catalogConfigDefaults,
@@ -83,12 +81,10 @@ export default function VRAMResults({
   const kvCacheLocation = kvOnCPU ? 'System RAM' : 'GPU';
   const isPartialGPU = gpuLayers != null && gpuLayers < input.block_count;
 
-  // On unified memory systems (e.g. Apple Silicon) the GPU may not report
-  // dedicated VRAM. Fall back to system RAM as the capacity indicator since
-  // GPU and system RAM share the same physical memory pool.
-  const effectiveGpuCapacity = (gpuTotalBytes != null && gpuTotalBytes > 0)
-    ? gpuTotalBytes
-    : (systemRAMBytes ?? 0);
+  const primaryTotal = isUnifiedMemory ? (unifiedFootprint ?? 0) : totalVram;
+  const primaryCapacity = isUnifiedMemory
+    ? (fitAssessment?.unified.capacity_bytes ?? 0)
+    : (fitAssessment?.gpu.capacity_bytes ?? 0);
 
   let breakdownRows: { label: ReactNode; value: string }[];
   if (isMoE) {
@@ -147,15 +143,15 @@ export default function VRAMResults({
     }
   }
 
-  const systemRamUsed = (totalSystemRamEst ?? (modelWeightsCPU ?? 0) + (kvCpuBytes ?? 0));
-  const showSystemRAM = systemRamUsed > 0;
+  const systemRamUsed = totalSystemRamEst ?? 0;
+  const showSystemRAM = !isUnifiedMemory && systemRamUsed > 0;
 
   return (
     <div className="vram-results">
       <div className="vram-hero" style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: '180px' }}>
           <div className="vram-hero-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {labelWithTip('Total Estimated VRAM', 'totalEstimatedVRAM')}
+            {labelWithTip(isUnifiedMemory ? 'Total Estimated Unified Memory' : 'Total Estimated VRAM', 'totalEstimatedVRAM')}
             {recomputing && <span className="vram-loading-spinner" aria-label="Recomputing" />}
           </div>
           <div
@@ -165,50 +161,35 @@ export default function VRAMResults({
               transition: 'opacity 120ms ease-out',
             }}
           >
-            {formatBytes(totalVram)}
-            {effectiveGpuCapacity > 0 && (
-              <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(effectiveGpuCapacity)}</span>
+            {formatBytes(primaryTotal)}
+            {primaryCapacity > 0 && (
+              <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(primaryCapacity)}</span>
             )}
           </div>
         </div>
-        {showSystemRAM && systemRAMBytes != null && systemRAMBytes > 0 && (
+        {showSystemRAM && (fitAssessment?.system_ram.capacity_bytes ?? 0) > 0 && (
           <div style={{ minWidth: '180px' }}>
             <div className="vram-hero-label">{labelWithTip('Total Estimated System RAM', 'totalEstimatedSystemRAM')}</div>
             <div className="vram-hero-value">
               {formatBytes(systemRamUsed)}
-              <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(systemRAMBytes)}</span>
+              <span style={{ fontSize: '0.55em', opacity: 0.5 }}> / {formatBytes(fitAssessment!.system_ram.capacity_bytes)}</span>
             </div>
           </div>
         )}
       </div>
 
       {(() => {
-        const hasGpuInfo = effectiveGpuCapacity > 0;
-        const hasRamInfo = systemRAMBytes != null && systemRAMBytes > 0;
-        if (!hasGpuInfo && !hasRamInfo) return null;
+        if (!fitAssessment || fitAssessment.status === 'unknown') return null;
 
-        const gpuExceeds = hasGpuInfo && totalVram > effectiveGpuCapacity;
-        const gpuTight = hasGpuInfo && !gpuExceeds && totalVram > effectiveGpuCapacity * 0.8;
-        const gpuOk = hasGpuInfo && !gpuExceeds && !gpuTight;
-
-        const ramExceeds = hasRamInfo && showSystemRAM && systemRamUsed > systemRAMBytes;
-        const ramTight = hasRamInfo && showSystemRAM && !ramExceeds && systemRamUsed > systemRAMBytes * 0.8;
-        const ramOk = !showSystemRAM || (hasRamInfo && !ramExceeds && !ramTight);
-
-        const hasConcerns = gpuTight || ramTight;
+        const hasConcerns = fitAssessment.status === 'tight';
+        const exceeds = fitAssessment.status === 'does_not_fit';
 
         const hwLabel = isHardwareOverridden ? 'the selected hardware configuration' : 'this Kronk model server';
         let icon: string;
         let summary: string;
-        if (gpuExceeds && ramExceeds) {
+        if (exceeds) {
           icon = '❌';
-          summary = `This model will NOT run on ${hwLabel} — exceeds both GPU VRAM and system RAM`;
-        } else if (gpuExceeds) {
-          icon = '❌';
-          summary = `This model will NOT run on ${hwLabel} — exceeds available GPU VRAM`;
-        } else if (ramExceeds) {
-          icon = '❌';
-          summary = `This model will NOT run on ${hwLabel} — exceeds available system RAM`;
+          summary = `This model does not fit the safe memory budget on ${hwLabel}`;
         } else if (hasConcerns) {
           icon = '⚠️';
           summary = `This model will run on ${hwLabel} but it's a tight fit`;
@@ -218,23 +199,28 @@ export default function VRAMResults({
         }
 
         const details: string[] = [];
-        if (hasGpuInfo) {
-          if (gpuExceeds) details.push(`GPU VRAM: ${formatBytes(totalVram)} needed, ${formatBytes(effectiveGpuCapacity)} available`);
-          else if (gpuTight) details.push(`GPU VRAM: limited headroom (${formatBytes(effectiveGpuCapacity - totalVram)} free)`);
-          else if (gpuOk) details.push(`GPU VRAM: ${formatBytes(effectiveGpuCapacity - totalVram)} free`);
-        }
-        if (hasRamInfo && showSystemRAM) {
-          if (ramExceeds) details.push(`System RAM: ${formatBytes(systemRamUsed)} needed, ${formatBytes(systemRAMBytes)} available`);
-          else if (ramTight) details.push(`System RAM: limited headroom (${formatBytes(systemRAMBytes - systemRamUsed)} free)`);
-          else if (ramOk) details.push(`System RAM: ${formatBytes(systemRAMBytes - systemRamUsed)} free`);
+        const addDetail = (label: string, assessment: FitAssessment['gpu']) => {
+          if (assessment.status === 'unknown') return;
+          if (assessment.status === 'does_not_fit') {
+            details.push(`${label}: ${formatBytes(assessment.required_bytes)} needed, ${formatBytes(assessment.capacity_bytes)} available`);
+          } else if (assessment.status === 'tight') {
+            details.push(`${label}: limited headroom (${formatBytes(assessment.headroom_bytes)} free)`);
+          } else {
+            details.push(`${label}: ${formatBytes(assessment.headroom_bytes)} free`);
+          }
+        };
+        if (isUnifiedMemory) addDetail('Unified memory', fitAssessment.unified);
+        else {
+          addDetail('GPU VRAM', fitAssessment.gpu);
+          if (showSystemRAM) addDetail('System RAM', fitAssessment.system_ram);
         }
 
-        const bgColor = gpuExceeds || ramExceeds
+        const bgColor = exceeds
           ? 'var(--color-error-bg, rgba(239, 83, 80, 0.1))'
           : hasConcerns
             ? 'var(--color-warning-bg, rgba(255, 167, 38, 0.1))'
             : 'var(--color-success-bg, rgba(102, 187, 106, 0.1))';
-        const borderColor = gpuExceeds || ramExceeds
+        const borderColor = exceeds
           ? 'var(--color-error, #ef5350)'
           : hasConcerns
             ? 'var(--color-warning, #ffa726)'
@@ -260,26 +246,17 @@ export default function VRAMResults({
         );
       })()}
 
-      {perDevice && perDevice.length >= 1 && (() => {
+      {!isUnifiedMemory && perDevice && perDevice.length >= 1 && (() => {
         return (
         <div style={{ marginTop: '16px' }}>
           <h4 className="vram-breakdown-title">Per-GPU VRAM Allocation (estimated)</h4>
           {perDevice.map((dev, i) => {
-            const reportedCapacity = gpuDevices?.[i]?.total_bytes ?? 0;
-            const perDeviceCapacity = reportedCapacity > 0
-              ? reportedCapacity
-              : (perDevice.length === 1 ? effectiveGpuCapacity : Math.floor(effectiveGpuCapacity / perDevice.length));
-            const barMax = Math.max(1, perDeviceCapacity > 0 ? perDeviceCapacity : dev.total_bytes);
-            const freeBytes = Math.max(0, barMax - dev.total_bytes);
-            const overcommit = dev.total_bytes > barMax && perDeviceCapacity > 0;
+            const barMax = Math.max(1, dev.total_bytes);
             return (
               <div key={i} style={{ marginBottom: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', marginBottom: '2px' }}>
                   <span>{dev.label}</span>
-                  <span>
-                    {formatBytes(dev.total_bytes)}
-                    {perDeviceCapacity > 0 && <span style={{ opacity: 0.6 }}> / {formatBytes(perDeviceCapacity)}</span>}
-                  </span>
+                  <span>{formatBytes(dev.total_bytes)}</span>
                 </div>
                 <div style={{ background: 'var(--color-gray-200)', borderRadius: '4px', height: '20px', overflow: 'hidden', display: 'flex' }}>
                   {dev.weights_bytes > 0 && (
@@ -291,15 +268,7 @@ export default function VRAMResults({
                   {dev.compute_bytes > 0 && (
                     <div style={{ width: `${(dev.compute_bytes / barMax) * 100}%`, background: '#8b5cf6', height: '100%' }} title={`Compute Buffer: ${formatBytes(dev.compute_bytes)}`} />
                   )}
-                  {freeBytes > 0 && !overcommit && (
-                    <div style={{ flex: 1, background: '#66bb6a', height: '100%' }} title={`Free: ${formatBytes(freeBytes)}`} />
-                  )}
                 </div>
-                {overcommit && (
-                  <div style={{ fontSize: '0.75em', color: '#ef5350', marginTop: '2px' }}>
-                    ⚠ Exceeds GPU capacity by {formatBytes(dev.total_bytes - perDeviceCapacity)}
-                  </div>
-                )}
               </div>
             );
           })}
@@ -307,7 +276,6 @@ export default function VRAMResults({
             <span style={{ color: 'var(--color-primary)' }}>■ Weights</span>
             <span style={{ color: 'var(--color-orange)' }}>■ KV Cache</span>
             <span style={{ color: '#8b5cf6' }}>■ Compute</span>
-            <span style={{ color: '#66bb6a' }}>■ Free</span>
           </div>
           <div className="alert alert-info" style={{ marginTop: '8px', fontSize: '0.85em' }}>
             <strong>Note:</strong> Per-GPU allocation is estimated based on tensor split proportions. Actual distribution may vary depending on llama.cpp split mode behavior.
@@ -332,7 +300,7 @@ export default function VRAMResults({
       <div className="vram-breakdown">
         <div>
           <h4 className="vram-breakdown-title">
-            {isMoE ? 'MoE VRAM Breakdown' : 'Breakdown'}
+            {isMoE ? (isUnifiedMemory ? 'MoE Placement and Memory Breakdown' : 'MoE VRAM Breakdown') : 'Breakdown'}
           </h4>
           <KeyValueTable rows={breakdownRows} />
         </div>

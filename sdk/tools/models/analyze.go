@@ -538,6 +538,7 @@ func analysisDevices(devs devices.Devices, selected []string) devices.Devices {
 	filtered := devices.Devices{
 		SystemRAMBytes: devs.SystemRAMBytes,
 		MaxDevices:     devs.MaxDevices,
+		UnifiedMemory:  devs.UnifiedMemory,
 	}
 	for _, device := range devs.Devices {
 		if _, ok := wanted[device.Name]; !ok {

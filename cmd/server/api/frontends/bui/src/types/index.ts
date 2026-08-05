@@ -220,8 +220,8 @@ export interface VRAMInput {
   embedding_length?: number;
   moe?: MoEInfo;
   weights?: WeightBreakdown;
-  gpu_layers?: number;
-  expert_layers_on_gpu?: number;
+  gpu_layers: number;
+  expert_layers_on_gpu: number;
   kv_cache_on_cpu?: boolean;
   swa_full: boolean;
 }
@@ -258,7 +258,26 @@ export interface VRAM {
   kv_vram_bytes?: number;
   kv_cpu_bytes?: number;
   total_system_ram_est?: number;
+  unified_footprint: number;
+  fit_assessment?: FitAssessment;
   per_device?: PerDeviceVRAM[];
+}
+
+export type FitStatus = 'unknown' | 'fits' | 'tight' | 'does_not_fit';
+
+export interface CapacityAssessment {
+  required_bytes: number;
+  capacity_bytes: number;
+  headroom_bytes: number;
+  status: FitStatus;
+}
+
+export interface FitAssessment {
+  fits: boolean;
+  status: FitStatus;
+  gpu: CapacityAssessment;
+  system_ram: CapacityAssessment;
+  unified: CapacityAssessment;
 }
 
 export interface PerDeviceVRAM {
@@ -645,28 +664,13 @@ export interface VRAMRequest {
   tensor_split?: number[];
   auto_fit?: boolean;
   gpu_free_bytes?: number[];
+  gpu_capacity_bytes?: number;
   system_ram_bytes?: number;
+  unified_memory?: boolean;
 }
 
-export interface VRAMCalculatorResponse {
-  input: VRAMInput;
-  kv_per_token_per_layer: number;
-  kv_per_slot: number;
-  slot_memory: number;
-  total_vram: number;
-  moe?: MoEInfo;
-  weights?: WeightBreakdown;
-  model_weights_gpu?: number;
-  model_weights_cpu?: number;
-  compute_buffer_est?: number;
-  always_active_gpu_bytes?: number;
-  always_active_cpu_bytes?: number;
-  expert_gpu_bytes?: number;
-  expert_cpu_bytes?: number;
-  kv_vram_bytes?: number;
-  kv_cpu_bytes?: number;
-  total_system_ram_est?: number;
-  per_device?: PerDeviceVRAM[];
+export interface VRAMCalculatorResponse extends VRAM {
+  auto_fit_succeeded?: boolean;
   repo_files?: HFRepoFile[];
 }
 
@@ -980,6 +984,7 @@ export interface DevicesResponse {
   supports_gpu_offload: boolean;
   max_devices: number;
   system_ram_bytes: number;
+  unified_memory: boolean;
 }
 
 // =============================================================================

@@ -252,6 +252,11 @@ interface VRAMControlsProps {
   detectedGpuTotalBytes?: number;
   detectedSystemRAMBytes?: number;
   detectedDeviceCount?: number;
+  canAutoFit?: boolean;
+  autoFitDisabled?: boolean;
+  autoFitting?: boolean;
+  autoFitError?: string | null;
+  onAutoFit?: () => void;
 }
 
 export default function VRAMControls({
@@ -274,6 +279,7 @@ export default function VRAMControls({
   systemMemoryOverrideGB, onSystemMemoryOverrideGBChange, systemMemoryOverrideInvalid,
   deviceCountOverride, onDeviceCountOverrideChange,
   detectedGpuTotalBytes, detectedSystemRAMBytes, detectedDeviceCount,
+  canAutoFit, autoFitDisabled, autoFitting, autoFitError, onAutoFit,
 }: VRAMControlsProps) {
   const [compactAdvancedOpen, setCompactAdvancedOpen] = useState(false);
   const [offloadStrategy, setOffloadStrategy] = useState<OffloadStrategy>('layer');
@@ -284,8 +290,15 @@ export default function VRAMControls({
     if (blockCount !== prevBlockCountRef.current) {
       prevBlockCountRef.current = blockCount;
       setOffloadStrategy('layer');
+      return;
     }
-  }, [blockCount]);
+    if (blockCount == null || blockCount <= 0 || !isMoE) return;
+    if ((gpuLayers ?? blockCount) >= blockCount && (expertLayersOnGPU ?? blockCount) < blockCount) {
+      setOffloadStrategy('expert');
+    } else if ((gpuLayers ?? blockCount) < blockCount && expertLayersOnGPU === gpuLayers) {
+      setOffloadStrategy('layer');
+    }
+  }, [blockCount, isMoE, gpuLayers, expertLayersOnGPU]);
 
   // When strategy changes, sync the hidden values so the calculation is correct.
   const handleStrategyChange = (s: OffloadStrategy) => {
@@ -392,6 +405,17 @@ export default function VRAMControls({
               )}
             </div>
           </div>
+        )}
+        {canAutoFit && (
+          <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button type="button" className="btn btn-secondary" onClick={onAutoFit} disabled={autoFitting || autoFitDisabled}>
+              {autoFitting ? 'Finding Fit…' : 'Auto Fit'}
+            </button>
+            <ParamTooltip tooltipKey="autoFit" />
+          </div>
+        )}
+        {autoFitError && (
+          <div className="status-line error" style={{ marginTop: '8px' }}>{autoFitError}</div>
         )}
         {compactAdvancedOpen && (
           <CompactAdvancedContent
@@ -624,6 +648,19 @@ export default function VRAMControls({
         </div>
       )}
 
+      {canAutoFit && (
+        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button type="button" className="btn btn-secondary" onClick={onAutoFit} disabled={autoFitting || autoFitDisabled}>
+            {autoFitting ? 'Finding Fit…' : 'Auto Fit'}
+          </button>
+          <ParamTooltip tooltipKey="autoFit" />
+        </div>
+      )}
+
+      {autoFitError && (
+        <div className="status-line error" style={{ gridColumn: '1 / -1' }}>{autoFitError}</div>
+      )}
+
       {modelSizeBytes != null && modelSizeBytes > 0 && (
         <CpuOffloadBar
           modelSizeBytes={modelSizeBytes}
@@ -753,7 +790,7 @@ function CpuOffloadBar({
   totalSystemRamEst: number;
   systemRAMBytes?: number;
 }) {
-  const systemRamUsed = totalSystemRamEst || (modelWeightsCPU + kvCpuBytes);
+  const systemRamUsed = totalSystemRamEst;
   const offloadPct = modelSizeBytes > 0 ? (modelWeightsCPU / modelSizeBytes) * 100 : 0;
   const pctLabel = `${Math.round(offloadPct)}% offloaded`;
   const barMax = Math.max(1, modelSizeBytes);

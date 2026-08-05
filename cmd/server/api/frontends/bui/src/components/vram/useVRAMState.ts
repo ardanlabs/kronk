@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import type { VRAMCalculatorResponse, DeviceInfo, PerDeviceVRAM, VRAMRequest } from '../../types';
+import type { VRAMCalculatorResponse, DeviceInfo, PerDeviceVRAM, VRAMRequest, FitAssessment } from '../../types';
 import { api } from '../../services/api';
 import { useDevicesInfo } from './devices';
 import { EXPERTS_ALL_ON_GPU } from './constants';
@@ -39,6 +39,12 @@ function isInvalidGBInput(value: string): boolean {
   return isNaN(n) || n <= 0;
 }
 
+function gpuLayersForControl(gpuLayers: number, blockCount: number): number {
+  if (gpuLayers === -1) return 0;
+  if (gpuLayers === 0) return blockCount;
+  return gpuLayers;
+}
+
 export interface VRAMControlsState {
   contextWindow: number;
   onContextWindowChange: (v: number) => void;
@@ -74,6 +80,11 @@ export interface VRAMControlsState {
   detectedGpuTotalBytes: number;
   detectedSystemRAMBytes: number | undefined;
   detectedDeviceCount: number | undefined;
+  canAutoFit: boolean;
+  autoFitDisabled: boolean;
+  autoFitting: boolean;
+  autoFitError: string | null;
+  onAutoFit: () => void;
 }
 
 /**
@@ -95,6 +106,7 @@ export interface VRAMResultView {
   kvVramBytes: number;
   kvCpuBytes: number;
   totalSystemRamEst: number;
+  unifiedFootprint: number;
 }
 
 export interface VRAMResultsState {
@@ -113,6 +125,8 @@ export interface VRAMResultsState {
   gpuDevices: DeviceInfo[];
   tensorSplit: string;
   isHardwareOverridden: boolean;
+  isUnifiedMemory: boolean;
+  fitAssessment: FitAssessment | undefined;
   /** True while a debounced recompute is in flight after a control change. */
   recomputing: boolean;
 }
@@ -133,6 +147,7 @@ function viewFromResponse(resp: VRAMCalculatorResponse): VRAMResultView {
     kvVramBytes: resp.kv_vram_bytes ?? 0,
     kvCpuBytes: resp.kv_cpu_bytes ?? 0,
     totalSystemRamEst: resp.total_system_ram_est ?? 0,
+    unifiedFootprint: resp.unified_footprint,
   };
 }
 
@@ -188,30 +203,15 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     enableHardwareOverrides && systemMemoryOverrideBytes != null
   );
 
-  const effectiveGpuTotalBytes = useMemo(() => {
-    if (gpuMemoryOverrideBytes != null) return gpuMemoryOverrideBytes;
-    if (enableHardwareOverrides && deviceCountOverride != null && detectedGpuCount && detectedGpuCount > 0) {
-      const perGpu = detectedGpuTotalBytes / detectedGpuCount;
-      return Math.round(perGpu * deviceCountOverride);
-    }
-    return detectedGpuTotalBytes;
-  }, [gpuMemoryOverrideBytes, enableHardwareOverrides, deviceCountOverride, detectedGpuCount, detectedGpuTotalBytes]);
+  const effectiveGpuTotalBytes = gpuMemoryOverrideBytes ?? detectedGpuTotalBytes;
 
   const effectiveSystemRAMBytes = systemMemoryOverrideBytes ?? detectedSystemRAMBytes;
 
   const effectiveGpuDevices: DeviceInfo[] = useMemo(() => {
-    if (!hasGpuOverrides) {
-      return detectedGpuDevices.slice(0, effectiveDeviceCount);
-    }
-    const perGpu = effectiveDeviceCount > 0 ? Math.floor(effectiveGpuTotalBytes / effectiveDeviceCount) : 0;
-    return Array.from({ length: effectiveDeviceCount }, (_, i) => ({
-      index: i,
-      name: `GPU ${i}`,
-      type: 'gpu_cuda' as const,
-      free_bytes: perGpu,
-      total_bytes: perGpu,
-    }));
-  }, [hasGpuOverrides, detectedGpuDevices, effectiveDeviceCount, effectiveGpuTotalBytes]);
+    if (gpuMemoryOverrideBytes != null) return [];
+    return detectedGpuDevices.slice(0, effectiveDeviceCount);
+  }, [gpuMemoryOverrideBytes, detectedGpuDevices, effectiveDeviceCount]);
+  const isUnifiedMemory = !hasGpuOverrides && devInfo?.unifiedMemory === true;
 
   // Track whether the user has manually changed the GPU count so we don't
   // overwrite their selection when device info updates.
@@ -236,13 +236,14 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   useEffect(() => {
     if (!serverResponse || serverResponse === prevResponseRef.current) return;
     prevResponseRef.current = serverResponse;
+    setAutoFitError(null);
     const input = serverResponse.input;
     if (input) {
       setContextWindow(input.context_window);
       setBytesPerElement(input.bytes_per_element);
       setSlots(input.slots);
-      setGpuLayers(input.block_count ?? 0);
-      setExpertLayersOnGPU(input.block_count ?? 0);
+      setGpuLayers(gpuLayersForControl(input.gpu_layers, input.block_count));
+      setExpertLayersOnGPU(input.expert_layers_on_gpu);
       setSwaFull(input.swa_full ?? true);
     }
   }, [serverResponse]);
@@ -263,6 +264,8 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   // dim the VRAM total / show a small spinner so the user knows the
   // displayed number lags the slider by a network round-trip.
   const [recomputing, setRecomputing] = useState(false);
+  const [autoFitting, setAutoFitting] = useState(false);
+  const [autoFitError, setAutoFitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (serverResponse) setLiveResponse(serverResponse);
@@ -281,18 +284,20 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     if (!modelUrl && !modelId && !modelUrls?.length) return;
     if (!liveResponse && !serverResponse) return;
 
-    // The seed effect above sets contextWindow/bpe/slots/gpuLayers from the
-    // serverResponse. Skip the first recompute so we don't immediately
-    // re-fetch the same values.
+    // A seed response with a hardware assessment is already complete. Older
+    // seed responses need one recompute so Go can provide that assessment.
     if (!initialSeededRef.current) {
       initialSeededRef.current = true;
-      return;
+      if (serverResponse?.fit_assessment) return;
     }
 
+    setAutoFitError(null);
     const id = ++latestRequestIdRef.current;
     setRecomputing(true);
 
     const handle = setTimeout(async () => {
+      const selectedGpuDevices = effectiveGpuDevices.slice(0, effectiveDeviceCount);
+      const hasPerGpuInfo = selectedGpuDevices.length === effectiveDeviceCount && selectedGpuDevices.length > 0;
       const req: VRAMRequest = {
         model_url: modelUrl,
         model_urls: modelUrls,
@@ -300,12 +305,16 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
         context_window: contextWindow,
         bytes_per_element: bytesPerElement,
         slots,
-        gpu_layers: gpuLayers,
+        gpu_layers: gpuLayers === 0 ? -1 : gpuLayers,
         expert_layers_on_gpu: expertLayersOnGPU,
         kv_cache_on_cpu: kvCacheOnCPU,
         swa_full: swaFull,
         device_count: effectiveDeviceCount,
         tensor_split: parsedTensorSplit.length > 0 ? parsedTensorSplit : undefined,
+        gpu_free_bytes: hasPerGpuInfo ? selectedGpuDevices.map(device => device.free_bytes) : undefined,
+        gpu_capacity_bytes: effectiveGpuTotalBytes,
+        system_ram_bytes: effectiveSystemRAMBytes,
+        unified_memory: isUnifiedMemory,
       };
       try {
         const resp = await api.calculateVRAM(req);
@@ -329,33 +338,26 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     modelUrl, modelUrls, modelId,
     contextWindow, bytesPerElement, slots,
     gpuLayers, expertLayersOnGPU, kvCacheOnCPU, swaFull,
-    effectiveDeviceCount, parsedTensorSplit,
+    effectiveDeviceCount, parsedTensorSplit, effectiveGpuDevices,
+    effectiveGpuTotalBytes, effectiveSystemRAMBytes, isUnifiedMemory,
   ]);
 
-  // ── Auto-fit (server-side single call) ──────────────────────────────────
-  const autoFitKeyRef = useRef('');
-  useEffect(() => {
-    if (!modelUrl && !modelId && !modelUrls?.length) return;
-    if (!liveResponse && !serverResponse) return;
-    if (effectiveGpuDevices.length === 0 && effectiveDeviceCount <= 0) return;
+  // ── Explicit auto-fit ───────────────────────────────────────────────────
+  const handleAutoFit = useCallback(async () => {
+    const source = liveResponse ?? serverResponse;
+    if (recomputing || !source || (!modelUrl && !modelId && !modelUrls?.length)) return;
+
+    const blockCount = source.input.block_count;
+    if (!blockCount || blockCount <= 0) return;
+
+    setAutoFitError(null);
 
     const fitDeviceCount = Math.max(1, effectiveDeviceCount);
     const selectedGpuDevices = effectiveGpuDevices.slice(0, fitDeviceCount);
-    const baseInput = (liveResponse ?? serverResponse)!.input;
-    const fitKey = `${baseInput.block_count}|${contextWindow}|${bytesPerElement}|${slots}|${kvCacheOnCPU}|${swaFull}|${fitDeviceCount}|${effectiveGpuTotalBytes}|${selectedGpuDevices.map(d => d.free_bytes).join(',')}|${effectiveSystemRAMBytes ?? 0}|${parsedTensorSplit.join(',')}`;
-    if (fitKey === autoFitKeyRef.current) return;
-    autoFitKeyRef.current = fitKey;
-
-    const blockCount = baseInput.block_count;
-    if (!blockCount || blockCount <= 0) return;
-
     const hasPerGpuInfo = selectedGpuDevices.length === fitDeviceCount && selectedGpuDevices.length > 0;
-    const combinedFreeBytes = hasPerGpuInfo
-      ? selectedGpuDevices.reduce((sum, d) => sum + d.free_bytes, 0)
-      : effectiveGpuTotalBytes;
-    if (combinedFreeBytes <= 0) return;
 
     const id = ++latestRequestIdRef.current;
+    setAutoFitting(true);
     const req: VRAMRequest = {
       model_url: modelUrl,
       model_urls: modelUrls,
@@ -368,25 +370,38 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       device_count: fitDeviceCount,
       tensor_split: parsedTensorSplit.length > 0 ? parsedTensorSplit : undefined,
       auto_fit: true,
-      gpu_free_bytes: hasPerGpuInfo ? selectedGpuDevices.map(d => d.free_bytes) : undefined,
+      gpu_free_bytes: hasPerGpuInfo ? selectedGpuDevices.map(device => device.free_bytes) : undefined,
+      gpu_capacity_bytes: effectiveGpuTotalBytes,
       system_ram_bytes: effectiveSystemRAMBytes,
+      unified_memory: isUnifiedMemory,
     };
 
-    api.calculateVRAM(req)
-      .then(resp => {
-        if (latestRequestIdRef.current !== id) return;
-        setLiveResponse(resp);
-        // Apply the server's chosen offload values as new control state so
-        // subsequent recomputes start from the auto-fit baseline.
-        setGpuLayers(resp.input.gpu_layers ?? 0);
-        setExpertLayersOnGPU(resp.input.expert_layers_on_gpu ?? 0);
-      })
-      .catch(() => { /* ignore */ });
+    try {
+      const resp = await api.calculateVRAM(req);
+      if (latestRequestIdRef.current !== id) return;
+
+      if (resp.auto_fit_succeeded !== true) {
+        setAutoFitError(isUnifiedMemory
+          ? 'No placement fits in the available unified memory. The current placement was preserved.'
+          : 'No placement fits in the selected GPU and system memory. The current placement was preserved.');
+        return;
+      }
+
+      setLiveResponse(resp);
+      setGpuLayers(gpuLayersForControl(resp.input.gpu_layers, blockCount));
+      setExpertLayersOnGPU(resp.input.expert_layers_on_gpu);
+    } catch (err) {
+      if (latestRequestIdRef.current === id) {
+        setAutoFitError(err instanceof Error ? err.message : 'Unable to find a fitting placement.');
+      }
+    } finally {
+      setAutoFitting(false);
+    }
   }, [
-    modelUrl, modelUrls, modelId,
-    liveResponse, serverResponse,
-    effectiveDeviceCount, effectiveGpuTotalBytes, effectiveGpuDevices, effectiveSystemRAMBytes,
-    contextWindow, bytesPerElement, slots, kvCacheOnCPU, swaFull, parsedTensorSplit,
+    liveResponse, serverResponse, modelUrl, modelUrls, modelId,
+    recomputing, isUnifiedMemory, effectiveSystemRAMBytes, effectiveDeviceCount,
+    effectiveGpuDevices, effectiveGpuTotalBytes, contextWindow,
+    bytesPerElement, slots, kvCacheOnCPU, swaFull, parsedTensorSplit,
   ]);
 
   // ── Derived view ────────────────────────────────────────────────────────
@@ -436,6 +451,11 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     detectedGpuTotalBytes,
     detectedSystemRAMBytes,
     detectedDeviceCount: detectedGpuCount,
+    canAutoFit: Boolean(activeResponse && (modelUrl || modelId || modelUrls?.length)),
+    autoFitDisabled: recomputing,
+    autoFitting,
+    autoFitError,
+    onAutoFit: () => { void handleAutoFit(); },
   };
 
   const resultsProps: VRAMResultsState | null = vramResult && vramInput ? {
@@ -454,6 +474,8 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     gpuDevices: effectiveGpuDevices,
     tensorSplit,
     isHardwareOverridden,
+    isUnifiedMemory,
+    fitAssessment: activeResponse?.fit_assessment,
     recomputing,
   } : null;
 

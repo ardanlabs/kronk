@@ -1,6 +1,9 @@
 package devices
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 func TestListNotReady(t *testing.T) {
 	wasReady := Ready()
@@ -15,6 +18,10 @@ func TestListNotReady(t *testing.T) {
 	}
 	if got.SystemRAMBytes != SystemRAMBytes() {
 		t.Errorf("SystemRAMBytes: got %d, want %d", got.SystemRAMBytes, SystemRAMBytes())
+	}
+	wantUnifiedMemory := runtime.GOOS == "darwin" && runtime.GOARCH == "arm64"
+	if got.UnifiedMemory != wantUnifiedMemory {
+		t.Errorf("UnifiedMemory: got %t, want %t", got.UnifiedMemory, wantUnifiedMemory)
 	}
 
 	got = List(WithIncludeMemory(false))

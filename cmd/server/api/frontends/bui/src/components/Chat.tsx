@@ -7,7 +7,7 @@ import ChatHistoryPanel from './ChatHistoryPanel';
 import ChatPanel, { type StreamTransport } from './ChatPanel';
 import { useChatHistory, type HistoryMessage } from '../contexts/ChatHistoryContext';
 import type { SamplingConfig, VRAM } from '../types';
-import { useDevicesInfo, useMoeFit } from './vram';
+import { isMoeModel } from './vram';
 
 const HISTORY_ENABLED_KEY = 'kronk_chat_history_enabled';
 
@@ -29,8 +29,7 @@ export default function Chat() {
   const [modelVRAM, setModelVRAM] = useState<VRAM | null>(null);
   const [modelTemplate, setModelTemplate] = useState<string | null>(null);
   const [modelMetadata, setModelMetadata] = useState<Record<string, string> | undefined>(undefined);
-  const devicesInfo = useDevicesInfo();
-  const moeFit = useMoeFit(modelVRAM, modelMetadata, devicesInfo);
+  const isMoE = isMoeModel(modelVRAM, modelMetadata);
   const [modelBaseline, setModelBaseline] = useState<SamplingParams | null>(null);
   const prevModelRef = useRef<string | null>(null);
   const [selectedModelDraftId, setSelectedModelDraftId] = useState<string | undefined>(undefined);
@@ -219,8 +218,7 @@ export default function Chat() {
         modelBaseline={modelBaseline}
         transport={transport}
         modelVRAM={modelVRAM}
-        devicesInfo={devicesInfo}
-        moeFit={moeFit}
+        isMoE={isMoE}
         disabled={!selectedModel}
         headerLeft={
           <>

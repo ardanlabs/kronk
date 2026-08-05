@@ -40,7 +40,7 @@ export default function VRAMCalculatorPanel({
             {...controlsProps}
             variant={variant}
             contextInfo={contextInfo}
-            modelSizeBytes={resultsProps?.input.model_size_bytes}
+            modelSizeBytes={resultsProps?.isUnifiedMemory ? undefined : resultsProps?.input.model_size_bytes}
             modelWeightsCPU={resultsProps?.vramResult.modelWeightsCPU}
             kvCpuBytes={resultsProps?.vramResult.kvCpuBytes}
             totalSystemRamEst={resultsProps?.vramResult.totalSystemRamEst}
@@ -68,15 +68,14 @@ export default function VRAMCalculatorPanel({
           gpuLayers={resultsProps.gpuLayers}
           expertLayersOnGPU={resultsProps.expertLayersOnGPU}
           kvCacheOnCPU={resultsProps.kvCacheOnCPU}
-          kvCpuBytes={resultsProps.vramResult.kvCpuBytes}
           totalSystemRamEst={resultsProps.vramResult.totalSystemRamEst}
+          unifiedFootprint={resultsProps.vramResult.unifiedFootprint}
           perDevice={resultsProps.perDevice}
           deviceCount={resultsProps.deviceCount}
-          systemRAMBytes={resultsProps.systemRAMBytes}
-          gpuTotalBytes={resultsProps.gpuTotalBytes}
-          gpuDevices={resultsProps.gpuDevices}
           tensorSplit={resultsProps.tensorSplit}
           isHardwareOverridden={resultsProps.isHardwareOverridden}
+          isUnifiedMemory={resultsProps.isUnifiedMemory}
+          fitAssessment={resultsProps.fitAssessment}
           modelUrl={modelUrl}
           catalogConfigName={catalogConfigName}
           catalogConfigDefaults={catalogConfigDefaults}

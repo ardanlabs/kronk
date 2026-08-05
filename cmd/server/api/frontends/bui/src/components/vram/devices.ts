@@ -10,6 +10,7 @@ export interface DevicesInfo {
   gpuVramBytes: number;
   ramBytes: number;
   gpuDevices: DeviceInfo[];
+  unifiedMemory: boolean;
 }
 
 export function getGpuDevices(devices: DeviceInfo[]): DeviceInfo[] {
@@ -26,7 +27,7 @@ export function formatGpuType(type: string): string {
 }
 
 export function parseDevicesInfo(
-  resp: Pick<DevicesResponse, 'devices' | 'gpu_count' | 'gpu_total_bytes' | 'system_ram_bytes'>,
+  resp: Pick<DevicesResponse, 'devices' | 'gpu_count' | 'gpu_total_bytes' | 'system_ram_bytes' | 'unified_memory'>,
 ): DevicesInfo {
   const gpuDevices = getGpuDevices(resp.devices);
   const gpuType = gpuDevices.length > 0 ? formatGpuType(gpuDevices[0].type) : '';
@@ -37,6 +38,7 @@ export function parseDevicesInfo(
     gpuVramBytes: resp.gpu_total_bytes,
     ramBytes: resp.system_ram_bytes,
     gpuDevices,
+    unifiedMemory: resp.unified_memory,
   };
 }
 

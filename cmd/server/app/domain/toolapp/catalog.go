@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	kronkmodel "github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -98,10 +99,11 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	cfg := vram.Config{
-		ContextWindow:   vram.ContextWindow128K,
-		BytesPerElement: vram.BytesPerElementF16,
-		Slots:           vram.Slots1,
-		SWAFull:         detail.SWAFullDefault,
+		ContextWindow:     vram.ContextWindow128K,
+		BytesPerElement:   vram.BytesPerElementF16,
+		Slots:             vram.Slots1,
+		ExpertLayersOnGPU: kronkmodel.ExpertsAllOnGPU,
+		SWAFull:           detail.SWAFullDefault,
 	}
 
 	if v, vErr := vram.FromBytes(data, totalSize, cfg); vErr != nil {

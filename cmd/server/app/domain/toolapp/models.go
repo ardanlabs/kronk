@@ -346,17 +346,21 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	// Auto-fit: re-run with the search loop using the supplied hardware
 	// constraints, then keep the resulting offload values for the
 	// response so the caller can apply them as new control values.
+	var autoFitSucceeded *bool
 	if req.AutoFit {
-		ngl, ext, fitted := vram.AutoFit(v.Input, vram.FitConstraints{
-			DeviceCount:    req.DeviceCount,
-			GPUFreeBytes:   req.GPUFreeBytes,
-			SystemRAMBytes: req.SystemRAMBytes,
-			TensorSplit:    req.TensorSplit,
-			KVCacheOnCPU:   req.KVCacheOnCPU,
+		ngl, ext, fitted, fit := vram.AutoFit(v.Input, vram.FitConstraints{
+			DeviceCount:       req.DeviceCount,
+			GPUFreeBytes:      req.GPUFreeBytes,
+			CombinedFreeBytes: req.GPUCapacity,
+			SystemRAMBytes:    req.SystemRAMBytes,
+			TensorSplit:       req.TensorSplit,
+			KVCacheOnCPU:      req.KVCacheOnCPU,
+			UnifiedMemory:     req.UnifiedMemory,
 		})
 		v = fitted
 		v.Input.GPULayers = ngl
 		v.Input.ExpertLayersOnGPU = ext
+		autoFitSucceeded = &fit
 	}
 
 	// Per-device split when the caller asked for one.
@@ -374,7 +378,21 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		repoFiles = fetchVRAMRepoFiles(ctx, req.ModelURL)
 	}
 
-	return toVRAMResponse(v, repoFiles)
+	resp := toVRAMResponse(v, repoFiles)
+	resp.AutoFitSucceeded = autoFitSucceeded
+	if req.GPUCapacity > 0 || len(req.GPUFreeBytes) > 0 || req.SystemRAMBytes > 0 {
+		assessment := toFitAssessment(vram.AssessFit(v, vram.FitConstraints{
+			DeviceCount:       req.DeviceCount,
+			GPUFreeBytes:      req.GPUFreeBytes,
+			CombinedFreeBytes: req.GPUCapacity,
+			SystemRAMBytes:    req.SystemRAMBytes,
+			TensorSplit:       req.TensorSplit,
+			UnifiedMemory:     req.UnifiedMemory,
+		}))
+		resp.FitAssessment = &assessment
+	}
+
+	return resp
 }
 
 func (a *app) autoTuneModel(ctx context.Context, r *http.Request) web.Encoder {
