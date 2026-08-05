@@ -514,7 +514,6 @@ export default function DocsSDKModel() {
 	SlotMemory    int64
 	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
 	Type          ModelType
-	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string

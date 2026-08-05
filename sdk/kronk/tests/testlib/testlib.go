@@ -181,44 +181,24 @@ func InitChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, mod
 	}
 
 	if tooling {
-		switch krn.ModelInfo().IsGPTModel {
-		case true:
-			d["tools"] = []model.D{
-				{
-					"type": "function",
-					"function": model.D{
-						"name":        "get_weather",
-						"description": "Get the current weather for a location",
-						"parameters": model.D{
-							"type": "object",
-							"properties": model.D{
-								"location": model.D{
-									"type":        "string",
-									"description": "The location to get the weather for, e.g. San Francisco, CA",
-								},
-							},
-							"required": []any{"location"},
-						},
-					},
-				},
-			}
-
-		default:
-			d["tools"] = []model.D{
-				{
-					"type": "function",
-					"function": model.D{
-						"name":        "get_weather",
-						"description": "Get the current weather for a location",
-						"arguments": model.D{
+		d["tools"] = []model.D{
+			{
+				"type": "function",
+				"function": model.D{
+					"name":        "get_weather",
+					"description": "Get the current weather for a location",
+					"parameters": model.D{
+						"type": "object",
+						"properties": model.D{
 							"location": model.D{
 								"type":        "string",
 								"description": "The location to get the weather for, e.g. San Francisco, CA",
 							},
 						},
+						"required": []any{"location"},
 					},
 				},
-			}
+			},
 		}
 	}
 

@@ -79,7 +79,6 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	fmt.Printf("Desc:        %s\n", mi.Desc)
 	fmt.Printf("Size:        %s\n", formatBytes(mi.Size))
 	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
-	fmt.Printf("IsGPT:       %t\n", mi.IsGPT)
 	fmt.Println()
 
 	if mi.ModelConfig != nil {
@@ -127,7 +126,6 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig)
 	fmt.Printf("Desc:        %s\n", mi.Desc)
 	fmt.Printf("Size:        %s\n", formatBytes(int64(mi.Size)))
 	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
-	fmt.Printf("IsGPT:       %t\n", mi.IsGPTModel)
 	fmt.Printf("IsEmbed:     %t\n", mi.IsEmbedModel)
 	fmt.Printf("IsRerank:    %t\n", mi.IsRerankModel)
 	fmt.Println()

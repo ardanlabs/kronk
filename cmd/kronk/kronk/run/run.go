@@ -210,7 +210,6 @@ func newKronk(mp models.Path, runCfg Config) (*kronk.Kronk, error) {
 	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
 	fmt.Println("- modelType      :", krn.ModelInfo().Type)
 	fmt.Println("- embeddings     :", krn.ModelInfo().IsEmbedModel)
-	fmt.Println("- isGPT          :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
 	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
 	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
@@ -440,9 +439,6 @@ loop:
 
 		case model.FinishReasonTool:
 			fmt.Println()
-			if krn.ModelInfo().IsGPTModel {
-				fmt.Println()
-			}
 
 			fmt.Printf("\u001b[92mModel Asking For Tool Calls:\n\u001b[0m")
 
@@ -492,9 +488,6 @@ loop:
 				reasoning = false
 
 				fmt.Println()
-				if krn.ModelInfo().IsGPTModel {
-					fmt.Println()
-				}
 			}
 
 			content.WriteString(resp.Choices[0].Delta.Content)

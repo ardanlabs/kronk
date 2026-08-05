@@ -292,7 +292,6 @@ type ModelInfoResponse struct {
 	Desc          string            `json:"desc"`
 	Size          int64             `json:"size"`
 	HasProjection bool              `json:"has_projection"`
-	IsGPT         bool              `json:"is_gpt"`
 	Template      string            `json:"template"`
 	Metadata      map[string]string `json:"metadata"`
 	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
@@ -319,7 +318,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 		Desc:          mi.Desc,
 		Size:          fi.Size,
 		HasProjection: mi.HasProjection,
-		IsGPT:         mi.IsGPTModel,
 		Template:      rmc.Template,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{

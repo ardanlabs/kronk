@@ -229,8 +229,6 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 	info = append(info, req.ModelID)
 	info = append(info, "contextWindow")
 	info = append(info, krn.ModelConfig().ContextWindow())
-	info = append(info, "isGPTModel")
-	info = append(info, krn.ModelInfo().IsGPTModel)
 	info = append(info, "isEmbedModel")
 	info = append(info, krn.ModelInfo().IsEmbedModel)
 	info = append(info, "isRerankModel")

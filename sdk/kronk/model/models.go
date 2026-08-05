@@ -86,7 +86,6 @@ type ModelInfo struct {
 	SlotMemory    int64
 	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
 	Type          ModelType
-	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string
@@ -97,9 +96,6 @@ func (mi ModelInfo) String() string {
 	var flags []string
 	if mi.HasProjection {
 		flags = append(flags, "projection")
-	}
-	if mi.IsGPTModel {
-		flags = append(flags, "gpt")
 	}
 	if mi.IsEmbedModel {
 		flags = append(flags, "embed")
@@ -148,11 +144,6 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
-	var isGPTModel bool
-	if strings.Contains(strings.ToLower(modelID), "gpt") {
-		isGPTModel = true
-	}
-
 	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
 
 	modelType := detectModelType(model, metadata)
@@ -164,7 +155,6 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		Size:          size,
 		NSWA:          llama.ModelNSWA(model),
 		Type:          modelType,
-		IsGPTModel:    isGPTModel,
 		IsEmbedModel:  isEmbedModel,
 		IsRerankModel: isRerankModel,
 		Metadata:      metadata,

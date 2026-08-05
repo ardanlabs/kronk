@@ -439,7 +439,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
 	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
 	fmt.Println("- modelType      :", krn.ModelInfo().Type)
-	fmt.Println("- isGPT          :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
 	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
 	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())

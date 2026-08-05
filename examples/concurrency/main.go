@@ -143,7 +143,6 @@ func printModelInfo(krn *kronk.Kronk) {
 	fmt.Println("- nBatch         :", cfg.NBatch())
 	fmt.Println("- nuBatch        :", cfg.NUBatch())
 	fmt.Println("- modelType      :", mi.Type)
-	fmt.Println("- isGPT          :", mi.IsGPTModel)
 	fmt.Println("- template       :", mi.Template.FileName)
 	fmt.Println("- grammar        :", cfg.DefaultParams.Grammar != "")
 	fmt.Println("- nSeqMax        :", cfg.NSeqMax())

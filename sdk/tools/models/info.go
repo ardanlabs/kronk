@@ -16,7 +16,6 @@ type ModelInfo struct {
 	HasMTP        bool
 	Desc          string
 	Size          uint64
-	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string
@@ -88,7 +87,6 @@ func ModelInfoFromMetadata(id string, metadata map[string]string, size uint64, h
 		HasMTP:        hasMTP,
 		Desc:          metadata["general.name"],
 		Size:          size,
-		IsGPTModel:    strings.Contains(lowerID, "gpt"),
 		IsEmbedModel:  strings.Contains(lowerID, "embed"),
 		IsRerankModel: strings.Contains(lowerID, "rerank"),
 		Metadata:      metadata,
