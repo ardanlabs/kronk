@@ -132,15 +132,35 @@ func NewSSE[T any](log Logger, options ...func(cln *Client)) *SSEClient[T] {
 
 // Do sends an HTTP request and streams SSE responses to the provided channel.
 func (cln *SSEClient[T]) Do(ctx context.Context, method string, endpoint string, body D, ch chan T) error {
-	resp, err := do(ctx, cln.Client, method, endpoint, body)
+	errCh, err := cln.DoWithErrors(ctx, method, endpoint, body, ch)
 	if err != nil {
 		return err
 	}
+
+	go func() {
+		if err := <-errCh; err != nil {
+			cln.log(ctx, "do:", "Stream", err)
+		}
+	}()
+
+	return nil
+}
+
+// DoWithErrors sends an HTTP request and streams SSE responses and terminal
+// stream errors to the provided channels.
+func (cln *SSEClient[T]) DoWithErrors(ctx context.Context, method string, endpoint string, body D, ch chan T) (<-chan error, error) {
+	resp, err := do(ctx, cln.Client, method, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	errCh := make(chan error, 1)
 
 	go func(ctx context.Context) {
 		defer func() {
 			resp.Body.Close()
 			close(ch)
+			close(errCh)
 		}()
 
 		scanner := bufio.NewScanner(resp.Body)
@@ -153,7 +173,7 @@ func (cln *SSEClient[T]) Do(ctx context.Context, method string, endpoint string,
 
 			var v T
 			if err := json.Unmarshal([]byte(line[6:]), &v); err != nil {
-				cln.log(ctx, "do:", "Unmarshal", err, "line", line[6:])
+				errCh <- fmt.Errorf("decoding SSE response: %w", err)
 				return
 			}
 
@@ -161,17 +181,22 @@ func (cln *SSEClient[T]) Do(ctx context.Context, method string, endpoint string,
 			case ch <- v:
 
 			case <-ctx.Done():
-				cln.log(ctx, "do:", "Context", ctx.Err().Error())
+				errCh <- ctx.Err()
 				return
 			}
 		}
 
-		if ctx.Err() != nil {
-			cln.log(ctx, "do:", "Context", ctx.Err().Error())
+		if err := ctx.Err(); err != nil {
+			errCh <- err
+			return
+		}
+
+		if err := scanner.Err(); err != nil {
+			errCh <- fmt.Errorf("reading SSE response: %w", err)
 		}
 	}(ctx)
 
-	return nil
+	return errCh, nil
 }
 
 // =============================================================================

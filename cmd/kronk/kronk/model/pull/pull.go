@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
@@ -16,7 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-func runWeb(source string, projURL string, mtpURL string) error {
+func runWeb(ctx context.Context, source string, projURL string, mtpURL string) error {
 	url, err := client.DefaultURL("/v1/kronk/models/pull")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
@@ -35,27 +34,36 @@ func runWeb(source string, projURL string, mtpURL string) error {
 		client.WithBearer(os.Getenv("KRONK_TOKEN")),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
 	ch := make(chan toolapp.PullResponse)
-	if err := cln.Do(ctx, http.MethodPost, url, body, ch); err != nil {
+	errCh, err := cln.DoWithErrors(ctx, http.MethodPost, url, body, ch)
+	if err != nil {
 		return fmt.Errorf("do: unable to download model: %w", err)
 	}
 
+	var lastStatus string
+	var downloaded bool
 	for ver := range ch {
 		fmt.Print(ver.Status)
+		lastStatus = ver.Status
+		downloaded = downloaded || ver.Downloaded || ver.Status == "downloaded"
+	}
+	fmt.Println()
+
+	if err := <-errCh; err != nil {
+		return fmt.Errorf("download stream: %w", err)
 	}
 
-	fmt.Println()
+	if !downloaded {
+		if lastStatus == "" {
+			lastStatus = "stream ended before completion"
+		}
+		return fmt.Errorf("download-model: %s", lastStatus)
+	}
 
 	return nil
 }
 
-func runLocal(mdls *models.Models, basePath string, source string, projURL string, mtpURL string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-
+func runLocal(ctx context.Context, mdls *models.Models, basePath string, source string, projURL string, mtpURL string) error {
 	// Default workflow — Download handles every input form (bare id,
 	// canonical id, full URL, owner/repo/file.gguf path) and locates
 	// both the projection and MTP drafter companions automatically. This
