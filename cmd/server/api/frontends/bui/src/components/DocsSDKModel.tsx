@@ -121,6 +121,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParseLoadMode parses a string into a LoadMode.</p>
             </div>
 
+            <div className="doc-section" id="func-parsemoemode">
+              <h4>ParseMoEMode</h4>
+              <pre className="code-block">
+                <code>func ParseMoEMode(value string) (MoEMode, error)</code>
+              </pre>
+              <p className="doc-description">ParseMoEMode parses value and returns the corresponding MoEMode when it exists.</p>
+            </div>
+
             <div className="doc-section" id="func-parseropescalingtype">
               <h4>ParseRopeScalingType</h4>
               <pre className="code-block">
@@ -289,8 +297,7 @@ export default function DocsSDKModel() {
 	PtrRopeFreqBase       *float32
 	PtrRopeFreqScale      *float32
 	RopeScaling           RopeScalingType
-	SessionStoreDir       string
-	SessionStoreKind      string
+	SessionStoreFactory   SessionStoreFactory
 	PtrSplitMode          *SplitMode
 	PtrSWAFull            *bool
 	TensorBuftOverrides   []string
@@ -302,7 +309,7 @@ export default function DocsSDKModel() {
 	PtrYarnOrigCtx        *int
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. Adapters contains local llama.cpp-compatible LoRA adapter GGUF files to load with the model. Adapter scales are fixed for the lifetime of the model. AutoTune, when true, asks kronk.New to run a hardware-aware analysis of the model (architecture, size, and available devices) and seed unset settings (context window, KV cache type, slots, flash attention, split mode, etc.) before loading. It is off by default for backwards compatibility, and any option the caller sets explicitly always wins over the analysis. It has no effect when using the low-level model package directly (only kronk.New applies it). AutoTuned records that an upstream owner such as the Kronk Model Server has already applied AutoTune. When AutoTune and AutoTuned are both true, kronk.New preserves the enabled state for diagnostics without repeating the hardware analysis. CacheMinTokens sets the minimum token count required before caching. Messages shorter than this threshold are not cached, as the overhead of cache management may outweigh the prefill savings. When set to 0, defaults to 100 tokens. AdmissionTimeout limits how long a request waits for an admission permit. The timeout applies only to admission, not request processing after a permit is acquired. When unset or set to 0, the default is 3 minutes. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used. ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. DefaultParams contains the default sampling parameters for requests. Devices is a list of device names to use for model execution. When multiple devices are specified, the model is distributed across them according to the SplitMode and TensorSplit configuration. Device names can be obtained from the output of llama-bench --list-devices (e.g., "CUDA0", "CUDA1", "Metal"). When empty, the default device selection is used. PtrFlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When nil, FlashAttentionAuto is used so llama.cpp can decide whether the active backend supports it. Set to FlashAttentionEnabled to force it on, or FlashAttentionDisabled to force it off. IncrementalCache enables Incremental Message Caching (IMC) for agentic workflows. It caches all messages except the last one (which triggers generation) and extends the cache incrementally on each turn. This is ideal for agents like Cline or OpenCode where conversations grow monotonically. The cache is rebuilt from scratch when the message prefix changes (new thread). InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Log is the logger to use for model operations. ModelFiles is the path to the model files. This is mandatory to provide. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, generation models default to NUBatch * NSeqMax. Embedding and reranking models default to NUBatch because non-causal pooled evaluation cannot necessarily split a logical batch into smaller physical batches. MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload. NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of generation slots. For supported embedding and reranking architectures, it sets the maximum sequence width of the sequence-batch engine. Other embedding and reranking architectures use it as the context-pool size. When set to 0, a default of 1 is used. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 2048. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. ProjFile is the path to the projection files. This is mandatory for media based models like vision and audio. MTPDrafterFile is the path to a separate-file MTP "assistant" drafter GGUF that ships alongside the main model (e.g. Gemma4's "mtp-gemma-4-26B-A4B-it-*.gguf"). It is NOT the main model and NOT a vocab-matched classic draft model: it is a per-model speculative head loaded as its own llama_model whose context shares the target's KV memory. Auto-wired from disk when the companion file is present; empty otherwise. Distinct from the embedded MTP head carried inside some target GGUFs (Qwen3.5/3.6), which has no separate file. ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When nil or false, the projector runs on whichever device llama.cpp picks by default (GPU when available). Set to true to keep the projector on the CPU — equivalent to llama-mtmd-cli's --no-mmproj-offload. The LLM itself is unaffected and still runs on whatever device WithNGpuLayers selects. QueueDepth sets the multiplier for semaphore capacity when using the batch engine (NSeqMax &gt; 1). This controls how many requests can queue while the current batch is processing. Default is 2, meaning NSeqMax * 2 requests can be in-flight. Only applies to text inference models. IMCSessionCapacity sets the number of reusable IMC session identities. When left unset or set to 0, generation models default to NSeqMax * max(3, QueueDepth). An explicit value must be at least NSeqMax * QueueDepth so every admitted generation request can reserve a session. RopeFreqBase overrides the RoPE base frequency. When nil, uses model default. Common values: 10000 (Llama), 1000000 (Qwen3). RopeFreqScale overrides the raw RoPE frequency multiplier. When nil, uses the value from model metadata. Kronk does not derive this value from ContextWindow; an N-times extension generally uses 1/N when the model's documentation requires explicit scaling. RopeScaling controls the RoPE scaling method for extended context support. Set to RopeScalingYaRN only when the model supports YaRN and configure the frequency scale required by that model. SessionStoreDir is the directory where the disk session store backend persists per-session KV cache files. Required when SessionStoreKind is SessionStoreKindDisk; ignored otherwise. The directory must exist and be writable; it is not created on demand. SessionStoreKind selects the backend used to externalize each IMC session's KV cache bytes between requests. Valid values are listed under the SessionStoreKind* constants in session_store.go. When the empty string, defaults to SessionStoreKindRAM (in-process RAM buffer). Only meaningful when IncrementalCache is enabled. SWAFull controls whether models with sliding window attention (SWA) use a full-size KV cache for SWA layers instead of the memory-efficient small cache. When nil (default), llama.cpp's default is used. When explicitly set to false, SWA layers only cache the last n_swa tokens, saving significant VRAM but limiting context caching and shifting. When true, SWA layers use the full context window for their KV cache, preserving accuracy at the cost of higher memory usage. SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism (recommended for multi-GPU MoE models like Qwen3-MoE, Mixtral, DeepSeek) When nil (not set), the default is device-count aware (see DefaultSplitMode): SplitModeRow only when more than one GPU is present, otherwise SplitModeLayer. Tensor parallelism on a single GPU is a no-op that performs worse and can crash MoE models with view tensors (e.g. gemma4). TensorBuftOverrides is a list of tensor buffer type override patterns that force matching tensors to execute on CPU instead of GPU. This is an expert-level configuration useful for MoE models where certain FFN expert tensors don't fit in VRAM. Supported values: - "all-ffn": offload all FFN expression tensors to CPU - "block:N": offload FFN tensors for block N to CPU (e.g., "block:12") - Any regex pattern matching tensor names (e.g., `blk\.12\.ffn_(up|down|gate)`) TensorSplit controls how model layers are proportionally distributed across multiple GPUs. Each element represents the fraction of the model assigned to the corresponding device. For example, [0.6, 0.4] splits 60%/40% across two GPUs. The length must match the number of devices. When empty, the split is determined automatically based on available VRAM. LoadMode controls how model weights are loaded. The default is LoadModeMMap. LoadModeNone disables mmap, which can improve tensor placement on multi-socket NUMA systems running MoE models with CPU experts. LoadModeMLock keeps mapped model pages resident in RAM, while LoadModeDirectIO bypasses the page cache where the platform and filesystem support it. NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters most when expert tensors are on CPU and the system has multiple NUMA nodes. Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror". "distribute" is recommended for multi-socket MoE setups; without it, cross-socket memory access can cause significant bandwidth collapse. YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil, uses the model or llama.cpp default. YarnBetaFast sets the YaRN low correction dimension. When nil, uses the model or llama.cpp default. YarnBetaSlow sets the YaRN high correction dimension. When nil, uses the model or llama.cpp default. YarnExtFactor sets the YaRN extrapolation mix factor. When nil, uses the model or llama.cpp default. Set to 0 to disable extrapolation. YarnOrigCtx sets the original training context size for YaRN scaling. When nil or 0, uses the model's native training context length from metadata.</p>
+              <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0. Adapters contains local llama.cpp-compatible LoRA adapter GGUF files to load with the model. Adapter scales are fixed for the lifetime of the model. AutoTune, when true, asks kronk.New to run a hardware-aware analysis of the model (architecture, size, and available devices) and seed unset settings (context window, KV cache type, slots, flash attention, split mode, etc.) before loading. It is off by default for backwards compatibility, and any option the caller sets explicitly always wins over the analysis. It has no effect when using the low-level model package directly (only kronk.New applies it). AutoTuned records that an upstream owner such as the Kronk Model Server has already applied AutoTune. When AutoTune and AutoTuned are both true, kronk.New preserves the enabled state for diagnostics without repeating the hardware analysis. CacheMinTokens sets the minimum token count required before caching. Messages shorter than this threshold are not cached, as the overhead of cache management may outweigh the prefill savings. When set to 0, defaults to 100 tokens. AdmissionTimeout limits how long a request waits for an admission permit. The timeout applies only to admission, not request processing after a permit is acquired. When unset or set to 0, the default is 3 minutes. CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used. CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used. ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096. DefaultParams contains the default sampling parameters for requests. Devices is a list of device names to use for model execution. When multiple devices are specified, the model is distributed across them according to the SplitMode and TensorSplit configuration. Device names can be obtained from the output of llama-bench --list-devices (e.g., "CUDA0", "CUDA1", "Metal"). When empty, the default device selection is used. PtrFlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When nil, FlashAttentionAuto is used so llama.cpp can decide whether the active backend supports it. Set to FlashAttentionEnabled to force it on, or FlashAttentionDisabled to force it off. IncrementalCache enables Incremental Message Caching (IMC) for agentic workflows. It caches all messages except the last one (which triggers generation) and extends the cache incrementally on each turn. This is ideal for agents like Cline or OpenCode where conversations grow monotonically. The cache is rebuilt from scratch when the message prefix changes (new thread). InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments. JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata. Log is the logger to use for model operations. ModelFiles is the path to the model files. This is mandatory to provide. NBatch is the logical batch size or the maximum number of tokens that can be in a single forward pass through the model at any given time. It defines the maximum capacity of the processing batch. If you are processing a very long prompt or multiple prompts simultaneously, the total number of tokens processed in one go will not exceed NBatch. Increasing n_batch can improve performance (throughput) if your hardware can handle it, as it better utilizes parallel computation. However, a very high n_batch can lead to out-of-memory errors on systems with limited VRAM. When set to 0, generation models default to NUBatch * NSeqMax. Embedding and reranking models default to NUBatch because non-causal pooled evaluation cannot necessarily split a logical batch into smaller physical batches. MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used. NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload. NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of generation slots. For supported embedding and reranking architectures, it sets the maximum sequence width of the sequence-batch engine. Other embedding and reranking architectures use it as the context-pool size. When set to 0, a default of 1 is used. NThreads is the number of threads to use for generation. When set to 0, the default llama.cpp value is used. NThreadsBatch is the number of threads to use for batch processing. When set to 0, the default llama.cpp value is used. NUBatch is the physical batch size or the maximum number of tokens processed together during the initial prompt processing phase (also called "prompt ingestion") to populate the KV cache. It specifically optimizes the initial loading of prompt tokens into the KV cache. If a prompt is longer than NUBatch, it will be broken down and processed in chunks of n_ubatch tokens sequentially. This parameter is crucial for tuning performance on specific hardware (especially GPUs) because different values might yield better prompt processing times depending on the memory architecture. When set to 0, the default value is 2048. OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference. OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU. ProjFile is the path to the projection files. This is mandatory for media based models like vision and audio. MTPDrafterFile is the path to a separate-file MTP "assistant" drafter GGUF that ships alongside the main model (e.g. Gemma4's "mtp-gemma-4-26B-A4B-it-*.gguf"). It is NOT the main model and NOT a vocab-matched classic draft model: it is a per-model speculative head loaded as its own llama_model whose context shares the target's KV memory. Auto-wired from disk when the companion file is present; empty otherwise. Distinct from the embedded MTP head carried inside some target GGUFs (Qwen3.5/3.6), which has no separate file. ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When nil or false, the projector runs on whichever device llama.cpp picks by default (GPU when available). Set to true to keep the projector on the CPU — equivalent to llama-mtmd-cli's --no-mmproj-offload. The LLM itself is unaffected and still runs on whatever device WithNGpuLayers selects. QueueDepth sets the multiplier for semaphore capacity when using the batch engine (NSeqMax &gt; 1). This controls how many requests can queue while the current batch is processing. Default is 2, meaning NSeqMax * 2 requests can be in-flight. Only applies to text inference models. IMCSessionCapacity sets the number of reusable IMC session identities. When left unset or set to 0, generation models default to NSeqMax * max(3, QueueDepth). An explicit value must be at least NSeqMax * QueueDepth so every admitted generation request can reserve a session. RopeFreqBase overrides the RoPE base frequency. When nil, uses model default. Common values: 10000 (Llama), 1000000 (Qwen3). RopeFreqScale overrides the raw RoPE frequency multiplier. When nil, uses the value from model metadata. Kronk does not derive this value from ContextWindow; an N-times extension generally uses 1/N when the model's documentation requires explicit scaling. RopeScaling controls the RoPE scaling method for extended context support. Set to RopeScalingYaRN only when the model supports YaRN and configure the frequency scale required by that model. SessionStoreFactory constructs session stores for direct SDK use. Kronk invokes it separately for every session and checkpoint store it needs, and closes every successfully returned store. The factory must return a new, independent store on each call. When nil, Kronk uses the built-in RAM factory. Backend-specific constructor parameters belong to the backend package and are captured by the injected factory. SWAFull controls whether models with sliding window attention (SWA) use a full-size KV cache for SWA layers instead of the memory-efficient small cache. When nil (default), llama.cpp's default is used. When explicitly set to false, SWA layers only cache the last n_swa tokens, saving significant VRAM but limiting context caching and shifting. When true, SWA layers use the full context window for their KV cache, preserving accuracy at the cost of higher memory usage. SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism (recommended for multi-GPU MoE models like Qwen3-MoE, Mixtral, DeepSeek) When nil (not set), the default is device-count aware (see DefaultSplitMode): SplitModeRow only when more than one GPU is present, otherwise SplitModeLayer. Tensor parallelism on a single GPU is a no-op that performs worse and can crash MoE models with view tensors (e.g. gemma4). TensorBuftOverrides is a list of tensor buffer type override patterns that force matching tensors to execute on CPU instead of GPU. This is an expert-level configuration useful for MoE models where certain FFN expert tensors don't fit in VRAM. Supported values: - "all-ffn": offload all FFN expression tensors to CPU - "block:N": offload FFN tensors for block N to CPU (e.g., "block:12") - Any regex pattern matching tensor names (e.g., `blk\.12\.ffn_(up|down|gate)`) TensorSplit controls how model layers are proportionally distributed across multiple GPUs. Each element represents the fraction of the model assigned to the corresponding device. For example, [0.6, 0.4] splits 60%/40% across two GPUs. The length must match the number of devices. When empty, the split is determined automatically based on available VRAM. LoadMode controls how model weights are loaded. The default is LoadModeMMap. LoadModeNone disables mmap, which can improve tensor placement on multi-socket NUMA systems running MoE models with CPU experts. LoadModeMLock keeps mapped model pages resident in RAM, while LoadModeDirectIO bypasses the page cache where the platform and filesystem support it. NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters most when expert tensors are on CPU and the system has multiple NUMA nodes. Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror". "distribute" is recommended for multi-socket MoE setups; without it, cross-socket memory access can cause significant bandwidth collapse. YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil, uses the model or llama.cpp default. YarnBetaFast sets the YaRN low correction dimension. When nil, uses the model or llama.cpp default. YarnBetaSlow sets the YaRN high correction dimension. When nil, uses the model or llama.cpp default. YarnExtFactor sets the YaRN extrapolation mix factor. When nil, uses the model or llama.cpp default. Set to 0 to disable extrapolation. YarnOrigCtx sets the original training context size for YaRN scaling. When nil or 0, uses the model's native training context length from metadata.</p>
             </div>
 
             <div className="doc-section" id="type-contentlogprob">
@@ -487,7 +494,9 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-moemode">
               <h4>MoEMode</h4>
               <pre className="code-block">
-                <code>{`type MoEMode string`}</code>
+                <code>{`type MoEMode struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
               <p className="doc-description">MoEMode controls expert placement strategy for Mixture of Experts models.</p>
             </div>
@@ -514,7 +523,6 @@ export default function DocsSDKModel() {
 	SlotMemory    int64
 	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
 	Type          ModelType
-	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string
@@ -709,6 +717,16 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParserFactory is the constructor signature each parser package's New function satisfies. The bool return reports whether this parser claims the given Fingerprint; on false, the registry continues to the next factory.</p>
             </div>
 
+            <div className="doc-section" id="type-prompttokensdetails">
+              <h4>PromptTokensDetails</h4>
+              <pre className="code-block">
+                <code>{`type PromptTokensDetails struct {
+	CachedTokens int \`json:"cached_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">PromptTokensDetails provides a breakdown of prompt tokens.</p>
+            </div>
+
             <div className="doc-section" id="type-rerankresponse">
               <h4>RerankResponse</h4>
               <pre className="code-block">
@@ -831,41 +849,17 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-sessionstore">
               <h4>SessionStore</h4>
               <pre className="code-block">
-                <code>{`type SessionStore interface {
-	// Len returns the number of valid bytes currently held by the store
-	// (i.e., the size of the most recently committed snapshot).
-	Len() int
-
-	// Cap returns the current backing capacity. Useful for diagnostics
-	// and to verify the never-shrink invariant of the RAM impl.
-	Cap() int
-
-	// Bytes returns the valid byte slice for read access. See the
-	// lifetime contract on the interface doc.
-	Bytes() []byte
-
-	// Prepare returns a slice of length size, ready to be filled. See
-	// the lifetime contract on the interface doc.
-	Prepare(size int) []byte
-
-	// Commit truncates the store to the actual length n after a fill
-	// operation. n is clamped to [0, Cap()].
-	Commit(n int)
-
-	// Reset zeroes all retained snapshot storage and clears the valid contents
-	// (Len becomes 0). Implementations may retain the zeroed allocation for
-	// reuse, but bytes from the prior session must not survive Reset.
-	Reset()
-
-	// Close releases any backing storage held by the store (file
-	// descriptors, on-disk files, network handles). Called when a retained
-	// turn checkpoint is replaced and at Model.Unload time. The RAM impl is
-	// a no-op; the disk impl removes its per-session file.
-	// After Close the store must not be used again.
-	Close() error
-}`}</code>
+                <code>{`type SessionStore = kvstorage.Store`}</code>
               </pre>
-              <p className="doc-description">SessionStore externalizes a single IMC session's KV cache bytes. One instance is owned by each imcSession. Implementations are NOT required to be safe for concurrent use; callers serialize access via the per-session reserved invariant (at most one in-flight request touches a given session's store at a time). The default implementation is the in-process RAM buffer in the kvstorage/ram subpackage. Future implementations (kvstorage/disk, kvstorage/nvme, kvstorage/network, …) may externalize state to a slower medium; each implementation is its own subpackage under sdk/kronk/kvstorage/, mirroring the parser-plugin layout under sdk/kronk/parsers/. The active backend is selected per-model via Config.SessionStoreKind. Lifetime contract for Bytes() and Prepare(): - Prepare(size) returns a writable []byte of length size into which the caller (typically cgo, via llama.StateSeqGetData) fills bytes. The returned slice is valid until the next Prepare/Commit/Reset call on this store. - Bytes() returns the most recently committed snapshot bytes for read access (typically passed to llama.StateSeqSetData). For RAM stores the returned slice aliases the internal buffer; callers must not retain it past the next Prepare/Commit/Reset call. Stores that need to page bytes in from a slower medium (disk, network) will need a different lifetime contract; that is deferred to a later phase along with the first non-RAM implementation.</p>
+              <p className="doc-description">SessionStore is the storage contract used for an externalized IMC session.</p>
+            </div>
+
+            <div className="doc-section" id="type-sessionstorefactory">
+              <h4>SessionStoreFactory</h4>
+              <pre className="code-block">
+                <code>{`type SessionStoreFactory = kvstorage.Factory`}</code>
+              </pre>
+              <p className="doc-description">SessionStoreFactory constructs an independent SessionStore.</p>
             </div>
 
             <div className="doc-section" id="type-splitmode">
@@ -993,18 +987,19 @@ export default function DocsSDKModel() {
               <h4>Usage</h4>
               <pre className="code-block">
                 <code>{`type Usage struct {
-	PromptTokens        int     \`json:"prompt_tokens"\`
-	ReasoningTokens     int     \`json:"reasoning_tokens"\`
-	CompletionTokens    int     \`json:"completion_tokens"\`
-	OutputTokens        int     \`json:"output_tokens"\`
-	TotalTokens         int     \`json:"total_tokens"\`
-	TokensPerSecond     float64 \`json:"tokens_per_second"\`
-	TimeToFirstTokenMS  float64 \`json:"time_to_first_token_ms"\`
-	DraftTokens         int     \`json:"draft_tokens,omitempty"\`
-	DraftAcceptedTokens int     \`json:"draft_accepted_tokens,omitempty"\`
-	DraftAcceptanceRate float64 \`json:"draft_acceptance_rate,omitempty"\`
-	DraftCoverage       float64 \`json:"draft_coverage,omitempty"\`
-	DraftDisableReason  string  \`json:"draft_disable_reason,omitempty"\`
+	PromptTokens        int                 \`json:"prompt_tokens"\`
+	PromptTokensDetails PromptTokensDetails \`json:"prompt_tokens_details"\`
+	ReasoningTokens     int                 \`json:"reasoning_tokens"\`
+	CompletionTokens    int                 \`json:"completion_tokens"\`
+	OutputTokens        int                 \`json:"output_tokens"\`
+	TotalTokens         int                 \`json:"total_tokens"\`
+	TokensPerSecond     float64             \`json:"tokens_per_second"\`
+	TimeToFirstTokenMS  float64             \`json:"time_to_first_token_ms"\`
+	DraftTokens         int                 \`json:"draft_tokens,omitempty"\`
+	DraftAcceptedTokens int                 \`json:"draft_accepted_tokens,omitempty"\`
+	DraftAcceptanceRate float64             \`json:"draft_acceptance_rate,omitempty"\`
+	DraftCoverage       float64             \`json:"draft_coverage,omitempty"\`
+	DraftDisableReason  string              \`json:"draft_disable_reason,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">Usage provides details usage information for the request. DraftAcceptanceRate is the ratio of accepted drafts to total drafts across the spec rounds that actually ran. It is "quality per round" and says nothing about how much of the request used speculation. DraftCoverage is the complementary "how much" metric: the fraction of emitted output positions produced through speculation. Together they distinguish "MTP ran the whole request at 94%" from "MTP ran for 4 rounds at 94% then was disabled and the rest was target-only" — the second case shows high DraftAcceptanceRate but low DraftCoverage. DraftDisableReason explains the latter case ("imc-hit", "mirror-error", or empty if MTP was never disabled).</p>
@@ -1393,6 +1388,46 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-moemode-equal">
+              <h4>MoEMode.Equal</h4>
+              <pre className="code-block">
+                <code>func (mm MoEMode) Equal(mm2 MoEMode) bool</code>
+              </pre>
+              <p className="doc-description">Equal provides support for the go-cmp package and testing.</p>
+            </div>
+
+            <div className="doc-section" id="method-moemode-iszero">
+              <h4>MoEMode.IsZero</h4>
+              <pre className="code-block">
+                <code>func (mm MoEMode) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the MoE mode is unset.</p>
+            </div>
+
+            <div className="doc-section" id="method-moemode-marshaltext">
+              <h4>MoEMode.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (mm MoEMode) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText provides support for logging and serialization.</p>
+            </div>
+
+            <div className="doc-section" id="method-moemode-string">
+              <h4>MoEMode.String</h4>
+              <pre className="code-block">
+                <code>func (mm MoEMode) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the name of the MoE mode.</p>
+            </div>
+
+            <div className="doc-section" id="method-moemode-unmarshaltext">
+              <h4>MoEMode.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (mm *MoEMode) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses serialized text into a known MoEMode.</p>
             </div>
 
             <div className="doc-section" id="method-model-chat">
@@ -1830,29 +1865,6 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
-            <div className="doc-section" id="const-sessionstorekindram">
-              <h4>SessionStoreKindRAM</h4>
-              <pre className="code-block">
-                <code>{`const (
-	// SessionStoreKindRAM keeps each session's externalized KV cache
-	// bytes in a single Go-allocated []byte per session, with
-	// lazy-grow / never-shrink semantics. Default backend; zero
-	// configuration. Implementation: kvstorage/ram.
-	SessionStoreKindRAM = "ram"
-
-	// SessionStoreKindDisk persists each session's externalized KV
-	// cache bytes to a per-session file under Config.SessionStoreDir.
-	// Trades RAM for disk I/O on snapshot/restore — useful when the
-	// RAM footprint of (NSeqMax × peak-conversation-KV) exceeds what
-	// the host can spare. Files are removed on Model.Unload; on a
-	// crash the per-session files are leaked and must be cleaned up
-	// out-of-band. Implementation: kvstorage/disk.
-	SessionStoreKindDisk = "disk"
-)`}</code>
-              </pre>
-              <p className="doc-description">SessionStoreKind values name the available SessionStore backends. Listed under sdk/kronk/kvstorage/&lt;kind&gt;/, mirroring the parser-plugin layout under sdk/kronk/parsers/.</p>
-            </div>
-
             <div className="doc-section" id="const-expertsallongpu">
               <h4>ExpertsAllOnGPU</h4>
               <pre className="code-block">
@@ -1896,6 +1908,46 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">ErrMessagesMissing indicates that a chat request has no messages field.</p>
             </div>
+
+            <div className="doc-section" id="var-moemodeauto">
+              <h4>MoEModeAuto</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeAuto = newMoEMode("auto")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeAuto uses catalog defaults.</p>
+            </div>
+
+            <div className="doc-section" id="var-moemodecustom">
+              <h4>MoEModeCustom</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeCustom = newMoEMode("custom")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeCustom defers to TensorBuftOverrides for expert placement.</p>
+            </div>
+
+            <div className="doc-section" id="var-moemodeexpertscpu">
+              <h4>MoEModeExpertsCPU</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeExpertsCPU = newMoEMode("experts_cpu")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeExpertsCPU places all routed expert tensors on CPU. Recommended for VRAM-constrained setups.</p>
+            </div>
+
+            <div className="doc-section" id="var-moemodeexpertsgpu">
+              <h4>MoEModeExpertsGPU</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeExpertsGPU = newMoEMode("experts_gpu")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeExpertsGPU keeps all expert tensors on GPU. Requires sufficient VRAM for the full model.</p>
+            </div>
+
+            <div className="doc-section" id="var-moemodekeeptopn">
+              <h4>MoEModeKeepTopN</h4>
+              <pre className="code-block">
+                <code>{`var MoEModeKeepTopN = newMoEMode("keep_top_n")`}</code>
+              </pre>
+              <p className="doc-description">MoEModeKeepTopN keeps routed experts on GPU for the top N layers. All other expert layers go to CPU.</p>
+            </div>
           </div>
         </div>
 
@@ -1914,6 +1966,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-newmodel">NewModel</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
+                <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsesplitmode">ParseSplitMode</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
@@ -1958,6 +2011,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-paramsadjuster">ParamsAdjuster</a></li>
                 <li><a href="#type-parser">Parser</a></li>
                 <li><a href="#type-parserfactory">ParserFactory</a></li>
+                <li><a href="#type-prompttokensdetails">PromptTokensDetails</a></li>
                 <li><a href="#type-rerankresponse">RerankResponse</a></li>
                 <li><a href="#type-rerankresult">RerankResult</a></li>
                 <li><a href="#type-rerankusage">RerankUsage</a></li>
@@ -1969,6 +2023,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-result">Result</a></li>
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
                 <li><a href="#type-sessionstore">SessionStore</a></li>
+                <li><a href="#type-sessionstorefactory">SessionStoreFactory</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-statemachine">StateMachine</a></li>
                 <li><a href="#type-statemachineflusher">StateMachineFlusher</a></li>
@@ -2038,6 +2093,11 @@ export default function DocsSDKModel() {
                 <li><a href="#method-loadmode-unmarshaljson">LoadMode.UnmarshalJSON</a></li>
                 <li><a href="#method-loadmode-unmarshalyaml">LoadMode.UnmarshalYAML</a></li>
                 <li><a href="#method-moeconfig-keepexpertsongpufortopnlayers">MoEConfig.KeepExpertsOnGPUForTopNLayers</a></li>
+                <li><a href="#method-moemode-equal">MoEMode.Equal</a></li>
+                <li><a href="#method-moemode-iszero">MoEMode.IsZero</a></li>
+                <li><a href="#method-moemode-marshaltext">MoEMode.MarshalText</a></li>
+                <li><a href="#method-moemode-string">MoEMode.String</a></li>
+                <li><a href="#method-moemode-unmarshaltext">MoEMode.UnmarshalText</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
@@ -2079,7 +2139,6 @@ export default function DocsSDKModel() {
                 <li><a href="#const-defadaptivepdecay">DefAdaptivePDecay</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
-                <li><a href="#const-sessionstorekindram">SessionStoreKindRAM</a></li>
                 <li><a href="#const-expertsallongpu">ExpertsAllOnGPU</a></li>
               </ul>
             </div>
@@ -2090,6 +2149,11 @@ export default function DocsSDKModel() {
                 <li><a href="#var-errinvalidrequest">ErrInvalidRequest</a></li>
                 <li><a href="#var-errmessagesinvalid">ErrMessagesInvalid</a></li>
                 <li><a href="#var-errmessagesmissing">ErrMessagesMissing</a></li>
+                <li><a href="#var-moemodeauto">MoEModeAuto</a></li>
+                <li><a href="#var-moemodecustom">MoEModeCustom</a></li>
+                <li><a href="#var-moemodeexpertscpu">MoEModeExpertsCPU</a></li>
+                <li><a href="#var-moemodeexpertsgpu">MoEModeExpertsGPU</a></li>
+                <li><a href="#var-moemodekeeptopn">MoEModeKeepTopN</a></li>
               </ul>
             </div>
           </div>

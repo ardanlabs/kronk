@@ -13,10 +13,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -54,7 +55,7 @@ func run() error {
 		}
 	}()
 
-	if err := chat(krn); err != nil {
+	if err := chat(context.Background(), krn); err != nil {
 		return err
 	}
 
@@ -118,7 +119,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
 	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
 	fmt.Println("- modelType      :", krn.ModelInfo().Type)
-	fmt.Println("- isGPT          :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
 	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
 	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
@@ -140,83 +140,64 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	return krn, nil
 }
 
-func chat(krn *kronk.Kronk) error {
-	messages := model.DocumentArray()
+const systemPrompt = `You are designed to help users answer questions, create
+content, and provide information in a helpful and accurate manner. Always follow
+the user's instructions carefully and respond with clear, concise, and
+well-structured answers.`
 
-	// needUserInput controls whether we prompt the user for the next message.
-	// After the model requests a tool call, we append the tool result and loop
-	// back to the model (without asking the user) so it can respond using that
-	// result.
-	needUserInput := true
+func chat(ctx context.Context, krn *kronk.Kronk) error {
+	conversation := []model.D{
+		{"role": "system", "content": systemPrompt},
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		if needUserInput {
-			var err error
-			messages, err = userInput(messages)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					return nil
-				}
-				return fmt.Errorf("run:user input: %w", err)
-			}
+		nextConversation, ok := promptUser(scanner, conversation)
+		if !ok {
+			return scanner.Err()
 		}
+		conversation = nextConversation
 
-		toolCall, err := func() (bool, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-			defer cancel()
-
-			d := model.D{
-				"input":       messages,
-				"tools":       toolDocuments(),
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"top_p":       0.9,
-				"top_k":       40,
-			}
-
-			ch, err := performChat(ctx, krn, d)
+		// Keep running model turns until the assistant responds without asking
+		// for another tool. Only then prompt the user again.
+		for {
+			content, toolCalls, usage, err := streamModelTurn(ctx, krn, conversation)
 			if err != nil {
-				return false, fmt.Errorf("run: unable to perform chat: %w", err)
+				return err
 			}
 
-			var toolCall bool
-			messages, toolCall, err = modelResponse(krn, messages, ch)
-			if err != nil {
-				return false, fmt.Errorf("run: model response: %w", err)
+			printUsage(krn, usage)
+
+			if len(toolCalls) == 0 {
+				conversation = appendAssistant(conversation, content)
+				break
 			}
 
-			return toolCall, nil
-		}()
-
-		if err != nil {
-			return fmt.Errorf("run: unable to perform chat: %w", err)
+			conversation = appendToolCalls(conversation, toolCalls)
+			conversation = append(conversation, callTools(toolCalls)...)
 		}
-
-		// If the model requested a tool, we already appended the tool result;
-		// loop back to the model instead of prompting the user.
-		needUserInput = !toolCall
 	}
 }
 
-func userInput(messages []model.D) ([]model.D, error) {
+func promptUser(scanner *bufio.Scanner, conversation []model.D) ([]model.D, bool) {
 	fmt.Print("\nUSER> ")
 
-	reader := bufio.NewReader(os.Stdin)
-
-	userInput, err := reader.ReadString('\n')
-	if err != nil {
-		return messages, fmt.Errorf("unable to read user input: %w", err)
+	if !scanner.Scan() {
+		return conversation, false
 	}
 
-	if userInput == "quit\n" {
-		return nil, io.EOF
+	userInput := scanner.Text()
+	if userInput == "quit" {
+		return conversation, false
 	}
 
-	messages = append(messages,
-		model.TextMessage(model.RoleUser, userInput),
-	)
+	conversation = append(conversation, model.D{
+		"role":    "user",
+		"content": userInput,
+	})
 
-	return messages, nil
+	return conversation, true
 }
 
 func toolDocuments() []model.D {
@@ -241,124 +222,142 @@ func toolDocuments() []model.D {
 	)
 }
 
-func performChat(ctx context.Context, krn *kronk.Kronk, d model.D) (<-chan kronk.ResponseStreamEvent, error) {
-	ch, err := krn.ResponseStreaming(ctx, d)
-	if err != nil {
-		return nil, fmt.Errorf("response streaming: %w", err)
+func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model.D) (string, []model.ResponseToolCall, *kronk.ResponseUsage, error) {
+	d := model.D{
+		"input":             conversation,
+		"tools":             toolDocuments(),
+		"max_output_tokens": 2048,
 	}
 
-	return ch, nil
-}
-
-func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan kronk.ResponseStreamEvent) ([]model.D, bool, error) {
 	fmt.Print("\nMODEL> ")
 
-	var fullText string
-	var finalResp *kronk.ResponseResponse
-	var reasoning bool
+	callCtx, cancelCall := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelCall()
 
-	type pendingToolCall struct {
-		id        string
-		name      string
-		arguments string
+	ch, err := krn.ResponseStreaming(callCtx, d)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("response streaming: %w", err)
 	}
-	var pendingCalls []pendingToolCall
+
+	var content strings.Builder
+	var toolCalls []model.ResponseToolCall
+	var usage *kronk.ResponseUsage
+	reasoning := false
 
 	for event := range ch {
 		switch event.Type {
 		case "response.reasoning_summary_text.delta":
-			fmt.Printf("\u001b[91m%s\u001b[0m", event.Delta)
 			reasoning = true
+			fmt.Printf("\u001b[91m%s\u001b[0m", event.Delta)
 
 		case "response.output_text.delta":
 			if reasoning {
 				reasoning = false
-				fmt.Println()
-				if krn.ModelInfo().IsGPTModel {
-					fmt.Println()
-				}
+				fmt.Print("\n\n")
 			}
-			fmt.Printf("%s", event.Delta)
 
-		case "response.output_text.done":
-			fullText = event.Text
+			fmt.Print(event.Delta)
+			content.WriteString(event.Delta)
+
+		case "response.output_item.added":
+			if event.Item != nil && event.Item.Type == "function_call" {
+				fmt.Printf("\n\n\u001b[92mExecuting %s...\u001b[0m", event.Item.Name)
+			}
 
 		case "response.function_call_arguments.done":
-			fmt.Println()
-			if krn.ModelInfo().IsGPTModel {
-				fmt.Println()
+			var arguments model.ToolCallArguments
+			if err := json.Unmarshal([]byte(event.Arguments), &arguments); err != nil {
+				return "", nil, usage, fmt.Errorf("decode tool arguments: %w", err)
 			}
 
-			fmt.Printf("\u001b[92mModel Asking For Tool Calls:\n\u001b[0m")
-			fmt.Printf("\u001b[92mToolID[%s]: %s(%s)\n\u001b[0m",
-				event.ItemID,
-				event.Name,
-				event.Arguments,
-			)
-
-			pendingCalls = append(pendingCalls, pendingToolCall{
-				id:        event.ItemID,
-				name:      event.Name,
-				arguments: event.Arguments,
-			})
-
-		case "response.completed":
-			finalResp = event.Response
-		}
-	}
-
-	if fullText != "" {
-		messages = append(messages,
-			model.TextMessage("assistant", fullText),
-		)
-	}
-
-	if len(pendingCalls) > 0 {
-		var toolCallDocs []model.D
-		for _, tc := range pendingCalls {
-			toolCallDocs = append(toolCallDocs, model.D{
-				"id":   tc.id,
-				"type": "function",
-				"function": model.D{
-					"name":      tc.name,
-					"arguments": tc.arguments,
+			toolCalls = append(toolCalls, model.ResponseToolCall{
+				ID:    event.ItemID,
+				Index: len(toolCalls),
+				Type:  "function",
+				Function: model.ResponseToolCallFunction{
+					Name:      event.Name,
+					Arguments: arguments,
 				},
 			})
-		}
 
-		messages = append(messages, model.D{
-			"role":       "assistant",
-			"tool_calls": toolCallDocs,
+		case "response.completed", "response.incomplete":
+			if event.Response != nil {
+				usage = &event.Response.Usage
+			}
+
+		case "response.failed":
+			if event.Response != nil && event.Response.Error != nil {
+				return "", nil, usage, fmt.Errorf("error from model: %s", event.Response.Error.Message)
+			}
+			return "", nil, usage, errors.New("error from model: response failed")
+		}
+	}
+
+	return strings.TrimLeft(content.String(), "\n"), toolCalls, usage, nil
+}
+
+func appendToolCalls(conversation []model.D, toolCalls []model.ResponseToolCall) []model.D {
+	fmt.Print("\n\n")
+
+	var toolCallDocs []model.D
+	for _, toolCall := range toolCalls {
+		argsJSON, _ := json.Marshal(toolCall.Function.Arguments)
+		toolCallDocs = append(toolCallDocs, model.D{
+			"id":   toolCall.ID,
+			"type": "function",
+			"function": model.D{
+				"name":      toolCall.Function.Name,
+				"arguments": string(argsJSON),
+			},
 		})
-
-		for _, tc := range pendingCalls {
-			messages = append(messages, model.D{
-				"role":         "tool",
-				"tool_call_id": tc.id,
-				"name":         tc.name,
-				"content":      `{"temperature": "72°F", "condition": "sunny"}`,
-			})
-		}
 	}
 
-	// -------------------------------------------------------------------------
+	return append(conversation, model.D{
+		"role":       "assistant",
+		"tool_calls": toolCallDocs,
+	})
+}
 
-	if finalResp != nil {
-		contextTokens := finalResp.Usage.InputTokens + finalResp.Usage.OutputTokens
-		contextWindow := krn.ModelConfig().ContextWindow()
-		percentage := (float64(contextTokens) / float64(contextWindow)) * 100
-		of := float32(contextWindow) / float32(1024)
-
-		fmt.Printf("\n\n\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Output: %d  Window: %d (%.0f%% of %.0fK)\u001b[0m\n",
-			finalResp.Usage.InputTokens,
-			finalResp.Usage.OutputTokenDetail.ReasoningTokens,
-			finalResp.Usage.OutputTokens,
-			finalResp.Usage.OutputTokens,
-			contextTokens,
-			percentage,
-			of,
-		)
+func appendAssistant(conversation []model.D, content string) []model.D {
+	if content == "" {
+		return conversation
 	}
 
-	return messages, len(pendingCalls) > 0, nil
+	fmt.Print("\n")
+	return append(conversation, model.D{"role": "assistant", "content": content})
+}
+
+func printUsage(krn *kronk.Kronk, usage *kronk.ResponseUsage) {
+	if usage == nil {
+		return
+	}
+
+	reasoningTokens := usage.OutputTokenDetail.ReasoningTokens
+	completionTokens := usage.OutputTokens - reasoningTokens
+	contextWindow := krn.ModelConfig().ContextWindow()
+	percentage := (float64(usage.TotalTokens) / float64(contextWindow)) * 100
+	of := float32(contextWindow) / float32(1024)
+
+	fmt.Printf("\n\n\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Output: %d  Window: %d (%.0f%% of %.0fK)\u001b[0m",
+		usage.InputTokens, reasoningTokens, completionTokens, usage.OutputTokens, usage.TotalTokens, percentage, of)
+}
+
+func callTools(toolCalls []model.ResponseToolCall) []model.D {
+	results := make([]model.D, 0, len(toolCalls))
+
+	for _, toolCall := range toolCalls {
+		fmt.Printf("\u001b[92m%s(%v)\u001b[0m: \u001b[90mok\u001b[0m\n",
+			toolCall.Function.Name, toolCall.Function.Arguments)
+
+		// This example hard-codes the tool execution and its result. The agent
+		// example replaces this with registered Tool implementations.
+		results = append(results, model.D{
+			"role":         "tool",
+			"name":         toolCall.Function.Name,
+			"tool_call_id": toolCall.ID,
+			"content":      `{"temperature": "72°F", "condition": "sunny"}`,
+		})
+	}
+
+	return results
 }

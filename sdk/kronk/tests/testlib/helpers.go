@@ -113,8 +113,12 @@ func TestChatBasics(resp model.ChatResponse, modelName string, object string, re
 
 	msg := GetMsg(resp.Choices[0], streaming)
 
-	if resp.Choices[0].FinishReason() == "" && msg.Content == "" && msg.Reasoning == "" {
-		return fmt.Errorf("basics: expected delta content and reasoning to be non-empty")
+	if resp.Choices[0].FinishReason() == "" &&
+		msg.Content == "" &&
+		msg.Reasoning == "" &&
+		len(msg.ToolCalls) == 0 &&
+		len(msg.ToolCallDeltas) == 0 {
+		return fmt.Errorf("basics: expected delta content, reasoning, or tool calls to be non-empty")
 	}
 
 	if resp.Choices[0].FinishReason() == "" && msg.Role != "assistant" {

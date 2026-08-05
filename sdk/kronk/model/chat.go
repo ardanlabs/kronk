@@ -39,7 +39,7 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		return ChatResponse{}, err
 	}
 
-	ch := m.ChatStreaming(ctx, d)
+	ch := m.chatStreaming(ctx, d, false)
 
 	var lastMsg ChatResponse
 	for msg := range ch {
@@ -77,6 +77,10 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // concurrently based on the NSeqMax config value, which controls parallel
 // sequence processing.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
+	return m.chatStreaming(ctx, d, true)
+}
+
+func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan ChatResponse {
 	returnCh := make(chan ChatResponse, streamChBuffer)
 	ch := m.wrapChannelForLogging(ctx, returnCh)
 	requestStart := time.Now()
@@ -138,6 +142,8 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
+
+		params.Stream = streaming
 
 		d, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
@@ -376,11 +382,12 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcMatchKind:        cache.imcMatchKind,
 		imcPromptPlan:       cache.imcPromptPlan,
 
-		imcSession:      cache.imcSession,
-		imcSessionMedia: cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
-		imcSessionID:    cache.imcSessionID,
-		imcCacheHit:     imcCacheHit,
-		imcExpectedHash: cache.imcExpectedHash,
+		imcSession:         cache.imcSession,
+		imcSessionMedia:    cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
+		imcSessionID:       cache.imcSessionID,
+		imcCacheHit:        imcCacheHit,
+		reusedPromptTokens: int(cache.cacheIdx),
+		imcExpectedHash:    cache.imcExpectedHash,
 
 		imcExpectedCachedMsgs:  cache.imcExpectedCachedMsgs,
 		imcExpectedTokens:      cache.imcExpectedTokens,
@@ -624,6 +631,7 @@ func (m *Model) validateDocument(ctx context.Context, d D) (Params, error) {
 	if err := ValidateChatRequest(d); err != nil {
 		return Params{}, err
 	}
+	applyToolChoice(d)
 
 	p, err := m.parseParams(ctx, d)
 	if err != nil {
@@ -654,27 +662,120 @@ func validateToolChoice(d D) error {
 		return nil
 	}
 
-	choice, ok := toolChoice.(string)
-	if !ok {
-		return fmt.Errorf("%w: tool_choice must be a string", ErrInvalidRequest)
+	mode, name, err := parseToolChoice(toolChoice)
+	if err != nil {
+		return err
 	}
-	if choice == "auto" {
+
+	if mode == "none" || mode == "auto" {
 		return nil
 	}
 
-	tools, _ := d["tools"].([]D)
-	for _, tool := range tools {
-		if tool["type"] != "function" {
-			continue
+	tools := functionTools(d)
+	if mode == "required" {
+		if len(tools) == 0 {
+			return fmt.Errorf("%w: tool_choice %q requires at least one function tool", ErrInvalidRequest, mode)
 		}
+		return nil
+	}
 
+	for _, tool := range tools {
 		function, _ := tool["function"].(D)
-		if function["name"] == choice {
+		if function["name"] == name {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("%w: tool_choice %q does not match a declared function tool", ErrInvalidRequest, choice)
+	return fmt.Errorf("%w: tool_choice function %q does not match a declared function tool", ErrInvalidRequest, name)
+}
+
+func parseToolChoice(toolChoice any) (string, string, error) {
+	switch choice := toolChoice.(type) {
+	case string:
+		switch choice {
+		case "none", "auto", "required":
+			return choice, "", nil
+		default:
+			return "", "", fmt.Errorf("%w: unsupported tool_choice %q", ErrInvalidRequest, choice)
+		}
+
+	case map[string]any:
+		return parseToolChoice(D(choice))
+
+	case D:
+		if choice["type"] != "function" {
+			return "", "", fmt.Errorf("%w: tool_choice type must be %q", ErrInvalidRequest, "function")
+		}
+
+		// Chat Completions nests the selected function under "function".
+		// Responses normalizes its flat wire representation before reaching
+		// this shared validator.
+		value, exists := choice["function"]
+		if !exists {
+			return "", "", fmt.Errorf("%w: tool_choice function object is required", ErrInvalidRequest)
+		}
+
+		var name string
+		switch function := value.(type) {
+		case D:
+			name, _ = function["name"].(string)
+		case map[string]any:
+			name, _ = function["name"].(string)
+		default:
+			return "", "", fmt.Errorf("%w: tool_choice function must be an object", ErrInvalidRequest)
+		}
+		if name == "" {
+			return "", "", fmt.Errorf("%w: tool_choice function name is required", ErrInvalidRequest)
+		}
+
+		return "function", name, nil
+
+	default:
+		return "", "", fmt.Errorf("%w: tool_choice must be a string or function object", ErrInvalidRequest)
+	}
+}
+
+func functionTools(d D) []D {
+	tools, _ := d["tools"].([]D)
+	functions := make([]D, 0, len(tools))
+	for _, tool := range tools {
+		if tool["type"] != "function" {
+			continue
+		}
+		function, ok := tool["function"].(D)
+		if !ok {
+			continue
+		}
+		name, _ := function["name"].(string)
+		if name != "" {
+			functions = append(functions, tool)
+		}
+	}
+	return functions
+}
+
+// applyToolChoice updates the cloned inference document so tool selection is
+// reflected by both prompt rendering and output parsing. Validation must run
+// first.
+func applyToolChoice(d D) {
+	mode, name, _ := parseToolChoice(d["tool_choice"])
+	switch mode {
+	case "none":
+		delete(d, "tools")
+
+	case "function":
+		for _, tool := range functionTools(d) {
+			function, _ := tool["function"].(D)
+			if function["name"] == name {
+				d["tools"] = []D{tool}
+				d["tool_choice"] = D{
+					"type":     "function",
+					"function": D{"name": name},
+				}
+				return
+			}
+		}
+	}
 }
 
 // ValidateMessages validates the messages field of a chat document.

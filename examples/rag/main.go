@@ -195,7 +195,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	fmt.Println("- contextWindow:", krn.ModelConfig().ContextWindow())
 	fmt.Println("- embeddings   :", krn.ModelInfo().IsEmbedModel)
-	fmt.Println("- isGPT        :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template     :", krn.ModelInfo().Template.FileName)
 
 	return krn, nil
@@ -309,9 +308,6 @@ loop:
 
 		case model.FinishReasonTool:
 			fmt.Println()
-			if krn.ModelInfo().IsGPTModel {
-				fmt.Println()
-			}
 
 			fmt.Printf("\u001b[92mModel Asking For Tool Call:\nToolID[%s]: %s(%s)\u001b[0m\n",
 				resp.Choices[0].Delta.ToolCalls[0].ID,
@@ -339,9 +335,6 @@ loop:
 				reasoning = false
 
 				fmt.Println()
-				if krn.ModelInfo().IsGPTModel {
-					fmt.Println()
-				}
 			}
 
 			fmt.Printf("%s", resp.Choices[0].Delta.Content)

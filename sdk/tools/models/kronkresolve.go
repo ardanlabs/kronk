@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
@@ -55,6 +57,10 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 	out.AutoTuned = autoTuneApplied(sizing)
 	out.ModelFiles = fp.ModelFiles
 	out.ProjFile = fp.ProjFile
+	out.SessionStoreFactory, err = resolveSessionStoreFactory(cfg)
+	if err != nil {
+		return model.Config{}, fmt.Errorf("kronk-resolved-config: %w", err)
+	}
 
 	adapters, err := m.resolveAdapters(cfg.Adapters)
 	if err != nil {
@@ -92,6 +98,15 @@ func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 	}
 
 	return out, nil
+}
+
+func resolveSessionStoreFactory(cfg ModelConfig) (model.SessionStoreFactory, error) {
+	switch cfg.SessionStoreKind {
+	case kvstorage.Kind{}, kvstorage.RAM:
+		return ram.NewFactory(), nil
+	default:
+		return nil, fmt.Errorf("session-store: unknown kind %q (valid: %q)", cfg.SessionStoreKind, kvstorage.RAM)
+	}
 }
 
 func autoTuneApplied(cfg ModelConfig) bool {
@@ -368,10 +383,7 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrCacheMinTokens != nil {
 		dst.PtrCacheMinTokens = src.PtrCacheMinTokens
 	}
-	if src.SessionStoreDir != "" {
-		dst.SessionStoreDir = src.SessionStoreDir
-	}
-	if src.SessionStoreKind != "" {
+	if src.SessionStoreKind != (kvstorage.Kind{}) {
 		dst.SessionStoreKind = src.SessionStoreKind
 	}
 	if src.PtrInsecureLogging != nil {

@@ -255,6 +255,12 @@ make example-rerank
 make example-question
 ```
 
+[SESSION-STORE](examples/session-store/main.go) - This example shows how to implement and inject a custom IMC session store. Its temporary disk backend demonstrates the extension contract but is not durable storage.
+
+```shell
+make example-session-store
+```
+
 [VISION](examples/vision/main.go) - This example shows you how to execute a simple prompt against a vision model.
 
 ```shell
@@ -385,7 +391,6 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
 	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
 	fmt.Println("- modelType      :", krn.ModelInfo().Type)
-	fmt.Println("- isGPT          :", krn.ModelInfo().IsGPTModel)
 	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
 	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
 	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
@@ -484,7 +489,6 @@ loading model...
 - nBatch         : 2048
 - nuBatch        : 2048
 - modelType      : dense
-- isGPT          : false
 - template       : tokenizer.chat_template
 - grammar        : false
 - nSeqMax        : 1

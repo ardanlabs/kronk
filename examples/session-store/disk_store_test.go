@@ -1,4 +1,4 @@
-package disk
+package main
 
 import (
 	"bytes"
@@ -30,6 +30,65 @@ func TestNewRequiresDir(t *testing.T) {
 	}
 	if store != nil {
 		t.Errorf("New(\"\") store = %v, want nil", store)
+	}
+}
+
+func TestNewFactory(t *testing.T) {
+	factory, err := NewFactory(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFactory() error = %v, want nil", err)
+	}
+
+	store1, err := factory()
+	if err != nil {
+		t.Fatalf("factory() error = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		if err := store1.Close(); err != nil {
+			t.Errorf("store1.Close() error = %v, want nil", err)
+		}
+	})
+
+	store2, err := factory()
+	if err != nil {
+		t.Fatalf("factory() second error = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		if err := store2.Close(); err != nil {
+			t.Errorf("store2.Close() error = %v, want nil", err)
+		}
+	})
+
+	if store1 == store2 {
+		t.Errorf("factory() returned the same store %p twice", store1)
+	}
+}
+
+func TestNewFactoryRequiresDirectory(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v, want nil", err)
+	}
+
+	tests := []struct {
+		name string
+		dir  string
+	}{
+		{"empty", ""},
+		{"missing", filepath.Join(t.TempDir(), "missing")},
+		{"file", file},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			factory, err := NewFactory(tt.dir)
+			if err == nil {
+				t.Fatal("NewFactory() error = nil, want non-nil")
+			}
+			if factory != nil {
+				t.Errorf("NewFactory() factory = %v, want nil", factory)
+			}
+		})
 	}
 }
 
@@ -279,8 +338,8 @@ func TestResetFailsClosedWhenTruncateFails(t *testing.T) {
 }
 
 // TestCloseRemovesFile verifies that Close removes the per-session
-// file from disk — production calls Close in Model.Unload to keep
-// SessionStoreDir from accumulating leaked files.
+// file from disk so the configured factory directory does not accumulate
+// leaked files during normal model unloads.
 func TestCloseRemovesFile(t *testing.T) {
 	dir := t.TempDir()
 	store, err := New(dir)

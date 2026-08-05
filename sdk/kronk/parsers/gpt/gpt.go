@@ -25,8 +25,7 @@ const name = "gpt-oss"
 type Parser struct{}
 
 // New returns a Parser value if the fingerprint indicates GPT-OSS, otherwise
-// returns false. The legacy detection ("isGPTModel" in modelInfo) is replaced
-// by inspecting the chat template and architecture metadata.
+// returns false. Detection uses the chat template's Harmony markers.
 func New(fp model.Fingerprint) (model.Parser, bool) {
 	// GPT-OSS chat templates contain the unique Harmony markers.
 	if containsHarmonyMarkers(fp.ChatTemplate) {

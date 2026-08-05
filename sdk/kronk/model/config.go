@@ -293,16 +293,12 @@ type AdapterConfig struct {
 // Set to RopeScalingYaRN only when the model supports YaRN and configure the
 // frequency scale required by that model.
 //
-// SessionStoreDir is the directory where the disk session store
-// backend persists per-session KV cache files. Required when
-// SessionStoreKind is SessionStoreKindDisk; ignored otherwise. The
-// directory must exist and be writable; it is not created on demand.
-//
-// SessionStoreKind selects the backend used to externalize each IMC
-// session's KV cache bytes between requests. Valid values are listed
-// under the SessionStoreKind* constants in session_store.go. When the
-// empty string, defaults to SessionStoreKindRAM (in-process RAM
-// buffer). Only meaningful when IncrementalCache is enabled.
+// SessionStoreFactory constructs session stores for direct SDK use.
+// Kronk invokes it separately for every session and checkpoint store it needs,
+// and closes every successfully returned store. The factory must return a new,
+// independent store on each call. When nil, Kronk uses the built-in RAM
+// factory. Backend-specific constructor parameters belong to the backend
+// package and are captured by the injected factory.
 //
 // SWAFull controls whether models with sliding window attention (SWA) use a
 // full-size KV cache for SWA layers instead of the memory-efficient small
@@ -402,8 +398,7 @@ type Config struct {
 	PtrRopeFreqBase       *float32
 	PtrRopeFreqScale      *float32
 	RopeScaling           RopeScalingType
-	SessionStoreDir       string
-	SessionStoreKind      string
+	SessionStoreFactory   SessionStoreFactory
 	PtrSplitMode          *SplitMode
 	PtrSWAFull            *bool
 	TensorBuftOverrides   []string
@@ -454,18 +449,6 @@ func (cfg Config) FlashAttention() FlashAttentionType {
 // PtrSWAFull first because nil leaves the choice to llama.cpp.
 func (cfg Config) SWAFull() bool { return boolOr(cfg.PtrSWAFull, false) }
 
-// sessionStoreKind returns the configured SessionStore backend, or
-// defaultSessionStoreKind ("ram") if unset. Lowercase because Go does
-// not allow a method and field to share a name; callers outside the
-// package read Config.SessionStoreKind directly and apply their own
-// default if needed.
-func (cfg Config) sessionStoreKind() string {
-	if cfg.SessionStoreKind == "" {
-		return defaultSessionStoreKind
-	}
-	return cfg.SessionStoreKind
-}
-
 func (cfg Config) String() string {
 	formatBoolPtr := func(p *bool) string {
 		if p == nil {
@@ -513,7 +496,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreDir[%s]\nSessionStoreKind[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
@@ -522,7 +505,7 @@ func (cfg Config) String() string {
 		cfg.NUMA,
 		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
-		cfg.SessionStoreDir, cfg.sessionStoreKind(),
+		cfg.SessionStoreFactory != nil,
 		formatSplitModePtr(cfg.PtrSplitMode),
 		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit,
 		formatFloat32Ptr(cfg.PtrYarnAttnFactor),
@@ -632,7 +615,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 	if cfg.PtrMoE != nil {
 		switch cfg.PtrMoE.Mode {
-		case MoEModeAuto, MoEModeExpertsCPU, MoEModeExpertsGPU, MoEModeKeepTopN, MoEModeCustom, "":
+		case MoEMode{}, MoEModeAuto, MoEModeExpertsCPU, MoEModeExpertsGPU, MoEModeKeepTopN, MoEModeCustom:
 			// valid
 		default:
 			return fmt.Errorf("validate-config: unknown MoE mode: %s (valid: auto, experts_cpu, experts_gpu, keep_top_n, custom)", cfg.PtrMoE.Mode)
@@ -646,31 +629,13 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 			return fmt.Errorf("validate-config: MoE KeepExpertsOnGPUForTopNLayers must be >= 0, got %d", *cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers)
 		}
 
-		if cfg.PtrMoE.Mode != "" && cfg.PtrMoE.Mode != MoEModeAuto && cfg.PtrMoE.Mode != MoEModeCustom && len(cfg.TensorBuftOverrides) > 0 {
+		if !cfg.PtrMoE.Mode.IsZero() && cfg.PtrMoE.Mode != MoEModeAuto && cfg.PtrMoE.Mode != MoEModeCustom && len(cfg.TensorBuftOverrides) > 0 {
 			return fmt.Errorf("validate-config: MoE mode %s and TensorBuftOverrides are mutually exclusive; use MoE mode 'custom' with TensorBuftOverrides", cfg.PtrMoE.Mode)
 		}
 	}
 
 	if cfg.OpOffloadMinBatch() < 0 {
 		return fmt.Errorf("validate-config: OpOffloadMinBatch must be >= 0, got %d", cfg.OpOffloadMinBatch())
-	}
-
-	switch cfg.SessionStoreKind {
-	case "", SessionStoreKindRAM:
-		// valid (empty defaults to RAM)
-	case SessionStoreKindDisk:
-		if cfg.SessionStoreDir == "" {
-			return fmt.Errorf("validate-config: SessionStoreDir is required when SessionStoreKind is %q", SessionStoreKindDisk)
-		}
-		fi, err := os.Stat(cfg.SessionStoreDir)
-		if err != nil {
-			return fmt.Errorf("validate-config: SessionStoreDir %q: %w", cfg.SessionStoreDir, err)
-		}
-		if !fi.IsDir() {
-			return fmt.Errorf("validate-config: SessionStoreDir %q is not a directory", cfg.SessionStoreDir)
-		}
-	default:
-		return fmt.Errorf("validate-config: unknown SessionStoreKind: %q (valid: %q, %q)", cfg.SessionStoreKind, SessionStoreKindRAM, SessionStoreKindDisk)
 	}
 
 	for _, modelFile := range cfg.ModelFiles {
@@ -1648,28 +1613,90 @@ func ParseRopeScalingType(s string) (RopeScalingType, error) {
 
 // =============================================================================
 
+// Set of known MoE modes.
+var moeModes = make(map[string]MoEMode)
+
+// MoEModeAuto uses catalog defaults.
+var MoEModeAuto = newMoEMode("auto")
+
+// MoEModeExpertsCPU places all routed expert tensors on CPU.
+// Recommended for VRAM-constrained setups.
+var MoEModeExpertsCPU = newMoEMode("experts_cpu")
+
+// MoEModeExpertsGPU keeps all expert tensors on GPU.
+// Requires sufficient VRAM for the full model.
+var MoEModeExpertsGPU = newMoEMode("experts_gpu")
+
+// MoEModeKeepTopN keeps routed experts on GPU for the top N layers.
+// All other expert layers go to CPU.
+var MoEModeKeepTopN = newMoEMode("keep_top_n")
+
+// MoEModeCustom defers to TensorBuftOverrides for expert placement.
+var MoEModeCustom = newMoEMode("custom")
+
 // MoEMode controls expert placement strategy for Mixture of Experts models.
-type MoEMode string
+type MoEMode struct {
+	value string
+}
 
-const (
-	// MoEModeAuto uses catalog defaults.
-	MoEModeAuto MoEMode = "auto"
+func newMoEMode(value string) MoEMode {
+	mode := MoEMode{value: value}
+	moeModes[value] = mode
+	return mode
+}
 
-	// MoEModeExpertsCPU places all routed expert tensors on CPU.
-	// Recommended for VRAM-constrained setups.
-	MoEModeExpertsCPU MoEMode = "experts_cpu"
+// String returns the name of the MoE mode.
+func (mm MoEMode) String() string {
+	return mm.value
+}
 
-	// MoEModeExpertsGPU keeps all expert tensors on GPU.
-	// Requires sufficient VRAM for the full model.
-	MoEModeExpertsGPU MoEMode = "experts_gpu"
+// Equal provides support for the go-cmp package and testing.
+func (mm MoEMode) Equal(mm2 MoEMode) bool {
+	return mm.value == mm2.value
+}
 
-	// MoEModeKeepTopN keeps routed experts on GPU for the top N layers.
-	// All other expert layers go to CPU.
-	MoEModeKeepTopN MoEMode = "keep_top_n"
+// IsZero reports whether the MoE mode is unset.
+func (mm MoEMode) IsZero() bool {
+	return mm.value == ""
+}
 
-	// MoEModeCustom defers to TensorBuftOverrides for expert placement.
-	MoEModeCustom MoEMode = "custom"
-)
+// MarshalText provides support for logging and serialization.
+func (mm MoEMode) MarshalText() ([]byte, error) {
+	return []byte(mm.value), nil
+}
+
+// UnmarshalText parses serialized text into a known MoEMode.
+func (mm *MoEMode) UnmarshalText(data []byte) error {
+	mode, err := ParseMoEMode(string(data))
+	if err != nil {
+		return err
+	}
+
+	*mm = mode
+	return nil
+}
+
+// ParseMoEMode parses value and returns the corresponding MoEMode when it
+// exists.
+func ParseMoEMode(value string) (MoEMode, error) {
+	mode, exists := moeModes[value]
+	if !exists {
+		return MoEMode{}, fmt.Errorf("invalid MoE mode %q", value)
+	}
+
+	return mode, nil
+}
+
+// MustParseMoEMode parses value and returns the corresponding MoEMode. It
+// panics when value does not identify a known MoE mode.
+func MustParseMoEMode(value string) MoEMode {
+	mode, err := ParseMoEMode(value)
+	if err != nil {
+		panic(err)
+	}
+
+	return mode
+}
 
 // MoEConfig configures Mixture of Experts tensor placement.
 // When nil, no MoE-specific behavior is applied.
@@ -1716,7 +1743,7 @@ func (cfg Config) ExpertLayersOnGPU() int64 {
 	case MoEModeKeepTopN:
 		return int64(cfg.PtrMoE.KeepExpertsOnGPUForTopNLayers())
 	default:
-		// MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, "".
+		// MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, or zero value.
 		return ExpertsAllOnGPU
 	}
 }
@@ -1795,4 +1822,8 @@ func WithQueueDepth(v int) Option {
 	return func(c *Config) {
 		c.PtrQueueDepth = new(v)
 	}
+}
+
+func WithSessionStoreFactory(v SessionStoreFactory) Option {
+	return func(c *Config) { c.SessionStoreFactory = v }
 }

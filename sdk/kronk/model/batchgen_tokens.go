@@ -169,6 +169,9 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 
 	// Classify through the parser-plugin state machine.
 	result, eog := s.stateMachine.Classify(content)
+	if s.suppressTools && result.Channel == ChannelTool {
+		result.Channel = ChannelAnswer
+	}
 
 	if eog {
 		s.stopSource = "parser-eog"
@@ -208,7 +211,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 		s.specCoveredTotal++
 	}
 
-	if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok {
+	if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok && !s.suppressTools {
 		deltas := streamer.ToolCallDeltas()
 		if s.job.params.Stream {
 			for _, delta := range deltas {

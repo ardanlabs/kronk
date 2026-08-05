@@ -34,6 +34,24 @@ func TestAuthenticateDisabledModes(t *testing.T) {
 	})
 }
 
+func TestCreateTokenRejectsInvalidRateWindow(t *testing.T) {
+	log := logger.New(io.Discard, logger.LevelInfo, "TEST", func(context.Context) string { return "" })
+	rateLimit := RateLimit_builder{
+		Limit:  new(int32(10)),
+		Window: new("weekly"),
+	}.Build()
+	req := CreateTokenRequest_builder{
+		Duration:  new("1h"),
+		Endpoints: map[string]*RateLimit{"chat-completions": rateLimit},
+	}.Build()
+
+	app := newApp(Config{Log: log})
+	_, err := app.CreateToken(context.Background(), req)
+	if got, want := status.Code(err), codes.InvalidArgument; got != want {
+		t.Errorf("CreateToken() code = %s, want %s", got, want)
+	}
+}
+
 func TestAuthenticationError(t *testing.T) {
 	tests := []struct {
 		name string

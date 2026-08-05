@@ -431,7 +431,6 @@ export default function ModelList() {
                   { key: 'size', label: 'Size', value: formatBytes(modelInfo.size) },
                   { key: 'created', label: 'Created', value: new Date(modelInfo.created).toLocaleString() },
                   { key: 'projection', label: labelWithTip('Has Projection', 'hasProjection'), value: <span className={`badge ${modelInfo.has_projection ? 'badge-yes' : 'badge-no'}`}>{modelInfo.has_projection ? 'Yes' : 'No'}</span> },
-                  { key: 'gpt', label: labelWithTip('Is GPT', 'isGPT'), value: <span className={`badge ${modelInfo.is_gpt ? 'badge-yes' : 'badge-no'}`}>{modelInfo.is_gpt ? 'Yes' : 'No'}</span> },
                   { key: 'validated', label: labelWithTip('Validated', 'validated'), value: (() => { const m = allModels.find((m) => m.id === selectedModelId); return m ? <span style={{ color: m.validated ? 'inherit' : 'var(--color-error)' }}>{m.validated ? '✓' : '✗'}</span> : '-'; })() },
                 ]} />
 

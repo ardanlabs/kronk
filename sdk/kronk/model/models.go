@@ -86,7 +86,6 @@ type ModelInfo struct {
 	SlotMemory    int64
 	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
 	Type          ModelType
-	IsGPTModel    bool
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string
@@ -97,9 +96,6 @@ func (mi ModelInfo) String() string {
 	var flags []string
 	if mi.HasProjection {
 		flags = append(flags, "projection")
-	}
-	if mi.IsGPTModel {
-		flags = append(flags, "gpt")
 	}
 	if mi.IsEmbedModel {
 		flags = append(flags, "embed")
@@ -148,11 +144,6 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
-	var isGPTModel bool
-	if strings.Contains(strings.ToLower(modelID), "gpt") {
-		isGPTModel = true
-	}
-
 	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
 
 	modelType := detectModelType(model, metadata)
@@ -164,7 +155,6 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		Size:          size,
 		NSWA:          llama.ModelNSWA(model),
 		Type:          modelType,
-		IsGPTModel:    isGPTModel,
 		IsEmbedModel:  isEmbedModel,
 		IsRerankModel: isRerankModel,
 		Metadata:      metadata,
@@ -843,18 +833,24 @@ func (c Choice) FinishReason() string {
 // DraftCoverage. DraftDisableReason explains the latter case
 // ("imc-hit", "mirror-error", or empty if MTP was never disabled).
 type Usage struct {
-	PromptTokens        int     `json:"prompt_tokens"`
-	ReasoningTokens     int     `json:"reasoning_tokens"`
-	CompletionTokens    int     `json:"completion_tokens"`
-	OutputTokens        int     `json:"output_tokens"`
-	TotalTokens         int     `json:"total_tokens"`
-	TokensPerSecond     float64 `json:"tokens_per_second"`
-	TimeToFirstTokenMS  float64 `json:"time_to_first_token_ms"`
-	DraftTokens         int     `json:"draft_tokens,omitempty"`
-	DraftAcceptedTokens int     `json:"draft_accepted_tokens,omitempty"`
-	DraftAcceptanceRate float64 `json:"draft_acceptance_rate,omitempty"`
-	DraftCoverage       float64 `json:"draft_coverage,omitempty"`
-	DraftDisableReason  string  `json:"draft_disable_reason,omitempty"`
+	PromptTokens        int                 `json:"prompt_tokens"`
+	PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details"`
+	ReasoningTokens     int                 `json:"reasoning_tokens"`
+	CompletionTokens    int                 `json:"completion_tokens"`
+	OutputTokens        int                 `json:"output_tokens"`
+	TotalTokens         int                 `json:"total_tokens"`
+	TokensPerSecond     float64             `json:"tokens_per_second"`
+	TimeToFirstTokenMS  float64             `json:"time_to_first_token_ms"`
+	DraftTokens         int                 `json:"draft_tokens,omitempty"`
+	DraftAcceptedTokens int                 `json:"draft_accepted_tokens,omitempty"`
+	DraftAcceptanceRate float64             `json:"draft_acceptance_rate,omitempty"`
+	DraftCoverage       float64             `json:"draft_coverage,omitempty"`
+	DraftDisableReason  string              `json:"draft_disable_reason,omitempty"`
+}
+
+// PromptTokensDetails provides a breakdown of prompt tokens.
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 // TopLogprob represents a single token with its log probability.

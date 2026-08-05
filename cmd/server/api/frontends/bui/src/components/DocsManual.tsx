@@ -1163,17 +1163,17 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
             <li>By default, Kronk retains <code>max(nseq-max, 1) × max(3, queue-depth)</code> IMC sessions; <code>imc-session-capacity</code> can override that count.</li>
             <li>Only <code>nseq-max</code> requests can decode concurrently.</li>
             <li>A session can be restored into any available execution slot; it is not tied permanently to one slot.</li>
-            <li>Snapshot bytes and RAM buffers are allocated lazily as conversations begin using them. The disk backend creates empty per-session files at model load.</li>
+            <li>Snapshot bytes and backing storage are allocated lazily as conversations begin using them.</li>
           </ul>
           <p>For example, <code>nseq-max: 2</code> with the default <code>queue-depth: 2</code> provides two concurrent decode slots and six warm IMC session identities. A queue depth greater than 3 expands the session pool so it remains at least as large as the generation admission capacity. Raising <code>nseq-max</code> also adds another full <code>context-window</code> KV stream and its memory cost, so do not raise it solely to retain more conversation branches without considering the effects described in <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a>.</p>
-          <p>An explicit <code>imc-session-capacity</code> must be at least <code>nseq-max × queue-depth</code>. This preserves one reservable session identity for every admitted generation request. Values above that floor retain more completed conversation branches and may reduce LRU rebuilds, at the cost of additional peak session-store memory or disk usage.</p>
+          <p>An explicit <code>imc-session-capacity</code> must be at least <code>nseq-max × queue-depth</code>. This preserves one reservable session identity for every admitted generation request. Values above that floor retain more completed conversation branches and may reduce LRU rebuilds, at the cost of additional session-store capacity.</p>
           <p>Admission waiting is controlled separately by the per-model <code>admission-timeout</code> setting (default <code>3m</code>). It only bounds the wait for an SDK admission permit. The server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>) instead bounds admitted preparation, slot waiting, and inference; neither setting changes IMC session retention.</p>
           <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is held. If all session identities are reserved, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
           <p>The snapshot restores model state, not a long-lived sampler instance. Kronk re-primes repetition penalties and DRY from the authoritative complete logical prompt, including the restored portion, so sampling history agrees with the KV prefix even though only uncached model work is decoded again. For cached media, Kronk retains the text-token history needed for that sampler priming separately from the media embedding cells represented by the native snapshot.</p>
-          <p>For text sessions, Kronk also retains one complete user-turn checkpoint when a rolling snapshot first extends beyond that user boundary. The checkpoint owns an independent target snapshot plus draft/MTP state when configured. It remains unchanged through the assistant/tool loop and is replaced at the next completed user boundary. This can require approximately one additional snapshot-sized host or disk allocation for each active logical session.</p>
+          <p>For text sessions, Kronk also retains one complete user-turn checkpoint when a rolling snapshot first extends beyond that user boundary. The checkpoint owns an independent target snapshot plus draft/MTP state when configured. It remains unchanged through the assistant/tool loop and is replaced at the next completed user boundary. This can require approximately one additional snapshot-sized allocation for each active logical session.</p>
           <p>An exact match may skip rewriting the snapshot when the stable state has not changed. This avoids an unnecessary serialization of the state that was just restored. Exact media-plan reuse can receive the same optimization. These are implementation optimizations; they do not change which content is considered part of the cache.</p>
-          <p>Snapshots externalize inactive session state from the model's active KV cache. They therefore do not permanently occupy an execution slot or pin their state in accelerator KV memory between requests. They do consume host or disk storage, as described in <a href="#55-configuration-and-storage">Configuration and Storage</a>.</p>
+          <p>Snapshots externalize inactive session state from the model's active KV cache. They therefore do not permanently occupy an execution slot or pin their state in accelerator KV memory between requests. They do consume the configured session-store capacity, as described in <a href="#55-configuration-and-storage">Configuration and Storage</a>.</p>
           <h2 id="54-media-requests">5.4 Media Requests</h2>
           <p>IMC supports media processed by Kronk's multimodal pipeline. Instead of relying only on text-token equality, Kronk builds a logical plan containing the ordered text and media inputs.</p>
           <p>Kronk can reuse a media session in two cases:</p>
@@ -1219,12 +1219,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
               <tr>
                 <td><code>session-store-kind</code></td>
                 <td><code>ram</code></td>
-                <td>Stores inactive session snapshots in <code>ram</code> or on <code>disk</code>.</td>
-              </tr>
-              <tr>
-                <td><code>session-store-dir</code></td>
-                <td>None</td>
-                <td>Existing writable directory required by the <code>disk</code> store.</td>
+                <td>Selects the session-store plugin. Currently, only <code>ram</code> is built in.</td>
               </tr>
             </tbody>
           </table>
@@ -1233,16 +1228,21 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <p>The flag's default value <code>0</code> means derive the capacity from <code>nseq-max</code> and <code>queue-depth</code>; it does not disable IMC or create a zero-length pool. A nonzero value is applied to the model loaded by that <code>kronk run</code> process, and startup output reports the effective session count. The same admission-capacity floor applies as in YAML configuration.</p>
           <p>The <code>cache-min-tokens</code> setting applies to the stable text-token-plan length. A text request below the threshold still works, but Kronk processes its complete generation-ready prompt without creating or reusing an IMC session. The current media planner does not apply this threshold; media safety is instead determined by whether it can construct compatible logical stable and actual plans.</p>
           <p>Set <code>incremental-cache: false</code> if a workload is entirely short-lived or if you need to compare behavior without prompt caching.</p>
-          <h3 id="ram-storage">RAM storage</h3>
-          <p>The default <code>ram</code> store keeps snapshots in process memory. Each session buffer grows as needed and retains its peak allocation for reuse. Actual memory use depends on the model, cached conversation lengths, KV data types, and number of sessions that have been used. Budget for peak conversation state across the branches you expect to keep warm, not just the <code>nseq-max</code> requests that can run simultaneously.</p>
-          <h3 id="disk-storage">Disk storage</h3>
-          <p>To place inactive snapshots on disk:</p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
-  incremental-cache: true
-  session-store-kind: disk
-  session-store-dir: /var/lib/kronk/sessions`}</code></pre>
-          <p>The directory must already exist and be writable by the Kronk process. Kronk creates an empty target-snapshot file for every configured session when the model loads and removes it during a normal unload. Own-KV MTP creates a matching draft file per session, and retained turn checkpoints can create additional files later. Snapshot contents and scratch/read buffers are still populated lazily. Files can remain after a process crash, so use a dedicated directory and arrange cleanup appropriate for your deployment.</p>
-          <p>Disk storage changes where inactive snapshots are retained, but it does not eliminate snapshot-sized RAM usage. Snapshot and restore operations require memory buffers, and a session can retain buffers sized to its largest state. Disk also adds I/O latency. Measure both memory and request latency with your model and storage device before relying on it as a capacity solution.</p>
+          <h3 id="built-in-ram-storage">Built-in RAM storage</h3>
+          <p>The built-in <code>ram</code> store keeps snapshots in process memory. It is selected by default when <code>session-store-kind</code> is omitted. Each session buffer grows as needed and retains its peak allocation for reuse. Actual memory use depends on the model, cached conversation lengths, KV data types, and number of sessions that have been used. Budget for peak conversation state across the branches you expect to keep warm, not just the <code>nseq-max</code> requests that can run simultaneously.</p>
+          <h3 id="custom-sdk-storage">Custom SDK storage</h3>
+          <p>Direct SDK users can implement <code>kvstorage.Store</code>, construct a factory that captures the implementation's own dependencies and configuration, and inject that factory into the model:</p>
+          <pre className="code-block"><code className="language-go">{`factory := func() (kvstorage.Store, error) {
+	return myStore.New(dependency)
+}
+
+krn, err := kronk.New(
+	model.WithModelFiles(modelFiles),
+	model.WithIncrementalCache(true),
+	model.WithSessionStoreFactory(factory),
+)`}</code></pre>
+          <p>Kronk calls the factory independently for every target, draft, and checkpoint store it needs. Each call must return a new store; Kronk owns that store and calls <code>Close</code> when it is no longer needed. Direct SDK use defaults to RAM when no factory is injected.</p>
+          <p>The <a href="https://github.com/ardanlabs/kronk/tree/main/examples/session-store"><code>examples/session-store</code></a> program provides a complete custom implementation and shows how to inject it. Its implementation writes snapshots to anonymous temporary files and deletes them on <code>Close</code>. It exists only to demonstrate the extension contract: it has no stable session identity, persisted request history, startup recovery, atomic commits, or reliable way to report I/O failures. <strong>Do not use the example as durable session storage.</strong> A durable implementation needs a higher level persistence design in addition to the byte-store contract.</p>
           <p>Some MTP configurations maintain draft-model cached state and saved hidden state in addition to the target model snapshot. Account for this extra storage when sizing memory. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for MTP configuration and behavior.</p>
           <h2 id="56-invalidation-and-limitations">5.6 Invalidation and Limitations</h2>
           <p>IMC favors safe reuse over partial recovery. A session is rebuilt when Kronk cannot prove that its complete saved prefix matches the new stable prompt. Common causes include:</p>
@@ -1254,11 +1254,11 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
             <li>Producing a stable rendering that is not a prefix of the generation-ready rendering</li>
             <li>For media, failing to construct an append-safe logical plan, including a marker/media-count mismatch, an automatically appended EOS, or a non-text generation tail</li>
           </ul>
-          <p>An unload or server restart clears in-memory sessions. The disk store is an inactive snapshot backend, not a persistent conversation database; do not rely on IMC sessions surviving model or process lifecycles.</p>
+          <p>An unload or server restart clears the built-in in-memory sessions. Do not rely on IMC sessions surviving model or process lifecycles.</p>
           <p>IMC has several practical costs:</p>
           <ul>
             <li>Planning text reuse requires rendering and tokenizing complete prompts.</li>
-            <li>Snapshot and restore operations use host memory bandwidth and, for disk storage, filesystem I/O.</li>
+            <li>Snapshot and restore operations use host memory bandwidth.</li>
             <li>Edited text rebuilds instead of reusing an arbitrary partial prefix.</li>
             <li>The session pool is finite, so inactive least-recently-used branches can be replaced as new branches arrive.</li>
             <li>MTP can require additional draft-side state. If Kronk restores the target prefix without compatible draft state, it can still use the target cache but disables speculative decoding for that request.</li>
@@ -1884,7 +1884,7 @@ data: [DONE]`}</code></pre>
           <p>Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a function name is known. The terminal chunk reconciles every completed tool call, including its arguments, so clients that consume only the final chunk continue to work unchanged.</p>
           <p><code>usage.output_tokens</code> is the sum of reasoning and completion tokens, and <code>usage.total_tokens</code> is prompt plus output tokens. Generated control and tool-call syntax counts toward output usage even when a parser buffers it instead of exposing it as assistant text. <code>usage.reasoning_tokens</code> and <code>usage.completion_tokens</code> provide the output breakdown.</p>
           <h3 id="tool-calls">Tool calls</h3>
-          <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability. Set <code>tool_choice</code> to the name of a declared function tool to select that tool. Other values are rejected.</p>
+          <p>Add OpenAI-style function definitions in <code>tools</code> and use <code>"tool_choice": "auto"</code> to let the model select one. Tool calling requires a compatible model, chat template, and output parser; adding <code>tools</code> cannot give an incompatible model tool-calling ability. Use <code>"none"</code> to withhold tools and prevent structured tool-call output, <code>"required"</code> to request a call from a compatible model template, or the OpenAI forced-function object to limit the request to one declared function. Required and forced selection remain subject to the model and template honoring the requested mode.</p>
           <p>When a tool is selected, the assistant message contains <code>tool_calls</code> and uses an empty string for <code>content</code>:</p>
           <pre className="code-block"><code className="language-json">{`{
   "role": "assistant",
@@ -1900,14 +1900,14 @@ data: [DONE]`}</code></pre>
     }
   ]
 }`}</code></pre>
-          <p>Execute the function in your application, then append the assistant message and a <code>role: "tool"</code> message containing the result and matching <code>tool_call_id</code>. Send the full conversation in the next request. Tool calls can also stream incrementally. Kronk accepts <code>"auto"</code> or the exact name of a declared function for <code>tool_choice</code>; values such as <code>"none"</code>, <code>"required"</code>, and forced-function object forms are rejected.</p>
+          <p>Execute the function in your application, then append the assistant message and a <code>role: "tool"</code> message containing the result and matching <code>tool_call_id</code>. Send the full conversation in the next request. Tool calls can also stream incrementally. Chat Completions selects a specific function with <code>&#123;"type":"function","function":&#123;"name":"get_weather"&#125;&#125;</code>.</p>
           <h2 id="94-responses-api">9.4 Responses API</h2>
           <p><code>POST /v1/responses</code> accepts <code>input</code> as a string:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "Qwen/Qwen3-8B-Q8_0",
   "input": "Explain quantum computing in simple terms."
 }`}</code></pre>
-          <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. As with Chat Completions, <code>tool_choice</code> may be <code>"auto"</code> or the name of a declared function tool.</p>
+          <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. <code>tool_choice</code> accepts <code>"none"</code>, <code>"auto"</code>, or <code>"required"</code>. Select a specific function with the Responses form <code>&#123;"type":"function","name":"get_weather"&#125;</code>.</p>
           <p>Use <code>max_output_tokens</code> to set the Responses output limit. <code>max_tokens</code> remains available as a compatibility alias, but <code>max_output_tokens</code> wins when both are present. When the limit is reached, the response has <code>status: "incomplete"</code>, <code>completed_at: null</code>, and:</p>
           <pre className="code-block"><code className="language-json">{`"incomplete_details": {"reason": "max_output_tokens"}`}</code></pre>
           <p>Output items have the same <code>incomplete</code> status. Usage reports all generated output tokens in <code>output_tokens</code>, including reasoning and tool-call syntax; <code>output_tokens_details.reasoning_tokens</code> supplies the reasoning subset, and <code>total_tokens</code> includes both input and output.</p>
@@ -4335,8 +4335,8 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <div className="doc-index-section">
               <a href="#55-configuration-and-storage" className={`doc-index-header ${activeSection === '55-configuration-and-storage' ? 'active' : ''}`}>5.5 Configuration and Storage</a>
               <ul>
-                <li><a href="#ram-storage" className={activeSection === 'ram-storage' ? 'active' : ''}>RAM storage</a></li>
-                <li><a href="#disk-storage" className={activeSection === 'disk-storage' ? 'active' : ''}>Disk storage</a></li>
+                <li><a href="#built-in-ram-storage" className={activeSection === 'built-in-ram-storage' ? 'active' : ''}>Built-in RAM storage</a></li>
+                <li><a href="#custom-sdk-storage" className={activeSection === 'custom-sdk-storage' ? 'active' : ''}>Custom SDK storage</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

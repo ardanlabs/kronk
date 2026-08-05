@@ -136,20 +136,10 @@ func parseEndpointSpec(spec string) (string, auth.RateLimit, error) {
 }
 
 func parseWindow(s string) (auth.RateWindow, error) {
-	switch strings.ToLower(s) {
-	case "day":
-		return auth.RateDay, nil
-
-	case "month":
-		return auth.RateMonth, nil
-
-	case "year":
-		return auth.RateYear, nil
-
-	case "unlimited":
-		return auth.RateUnlimited, nil
-
-	default:
-		return "", fmt.Errorf("invalid window %q: must be day, month, year, or unlimited", s)
+	window, err := auth.ParseRateWindow(strings.ToLower(s))
+	if err != nil {
+		return auth.RateWindow{}, fmt.Errorf("invalid window %q: must be day, month, year, or unlimited", s)
 	}
+
+	return window, nil
 }

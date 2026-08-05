@@ -601,7 +601,6 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           probeSessionId = probeResp.session_id;
           modelCaps = {
             isHybrid: probeResp.effective_config?.['is_hybrid_model'] === true,
-            isGPT: probeResp.effective_config?.['is_gpt_model'] === true,
           };
         } catch {
           // Probe failed; proceed without model caps filtering.

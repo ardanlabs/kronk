@@ -124,6 +124,17 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 				return lr, nil
 			}
 
+			if resp.Choices[0].FinishReason() == model.FinishReasonError {
+				d, err := marshalChatStreamError(resp)
+				if err != nil {
+					return resp, fmt.Errorf("chat-streaming-http: %w: marshal error: %w", ErrResponseCommitted, err)
+				}
+
+				fmt.Fprintf(w, "data: %s\n\n", d)
+				f.Flush()
+				return resp, nil
+			}
+
 			// OpenAI does not expect the final chunk to have a message field.
 			// The delta should be empty {} per OpenAI spec (except for tool calls).
 			if fr := resp.Choices[0].FinishReason(); fr == model.FinishReasonStop || fr == model.FinishReasonLength || fr == model.FinishReasonTool {
@@ -166,6 +177,28 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 			f.Flush()
 		}
 	}
+}
+
+func marshalChatStreamError(resp model.ChatResponse) ([]byte, error) {
+	choice := resp.Choices[0]
+
+	var message string
+	if choice.Delta != nil {
+		message = choice.Delta.Content
+	}
+	if message == "" && choice.Message != nil {
+		message = choice.Message.Content
+	}
+
+	wireResp := model.D{
+		"error": model.D{
+			"message": message,
+			"type":    "server_error",
+			"code":    "server_error",
+		},
+	}
+
+	return json.Marshal(wireResp)
 }
 
 func streamIncludeUsage(d model.D) bool {

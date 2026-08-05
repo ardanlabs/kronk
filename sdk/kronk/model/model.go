@@ -544,7 +544,7 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 					l(ctx, "MOE-CONFIG", "mode", "keep_top_n", "top_n", topN, "note", "per-layer expert placement requires model metadata; using auto-fit")
 				}
 			}
-		case MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, "":
+		case MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, MoEMode{}:
 			// No overrides needed
 		}
 	}
@@ -630,7 +630,7 @@ func loadModelWithEnvGuard(ctx context.Context, l applog.Logger, cfg Config, mPa
 // settings. Skipped for unconfigured/auto modes since there is nothing
 // meaningful to report.
 func logMoEConfig(ctx context.Context, cfg Config, l applog.Logger) {
-	if cfg.PtrMoE == nil || cfg.PtrMoE.Mode == "" || cfg.PtrMoE.Mode == MoEModeAuto {
+	if cfg.PtrMoE == nil || cfg.PtrMoE.Mode.IsZero() || cfg.PtrMoE.Mode == MoEModeAuto {
 		return
 	}
 
@@ -645,7 +645,7 @@ func logMoEConfig(ctx context.Context, cfg Config, l applog.Logger) {
 	}
 
 	l(ctx, "MOE-CONFIG",
-		"mode", string(cfg.PtrMoE.Mode),
+		"mode", cfg.PtrMoE.Mode.String(),
 		"experts_on_gpu_layers", topN,
 		"overrides_applied", fmt.Sprintf("%v", overrides),
 	)

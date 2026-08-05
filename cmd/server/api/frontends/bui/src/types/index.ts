@@ -176,7 +176,6 @@ export interface ModelInfoResponse {
   desc: string;
   size: number;
   has_projection: boolean;
-  is_gpt: boolean;
   web_page?: string;
   template: string;
   metadata: Record<string, string>;
@@ -956,7 +955,6 @@ export interface ConfigCandidate {
 
 export interface ModelCaps {
   isHybrid?: boolean;
-  isGPT?: boolean;
 }
 
 export interface AutoTestSessionSeed {

@@ -313,8 +313,8 @@ are deliberately separate:
 - Only `nseq-max` requests can decode concurrently.
 - A session can be restored into any available execution slot; it is not tied
   permanently to one slot.
-- Snapshot bytes and RAM buffers are allocated lazily as conversations begin
-  using them. The disk backend creates empty per-session files at model load.
+- Snapshot bytes and backing storage are allocated lazily as conversations
+  begin using them.
 
 For example, `nseq-max: 2` with the default `queue-depth: 2` provides two
 concurrent decode slots and six warm IMC session identities. A queue depth
@@ -328,7 +328,7 @@ An explicit `imc-session-capacity` must be at least
 `nseq-max × queue-depth`. This preserves one reservable session identity for
 every admitted generation request. Values above that floor retain more
 completed conversation branches and may reduce LRU rebuilds, at the cost of
-additional peak session-store memory or disk usage.
+additional session-store capacity.
 
 Admission waiting is controlled separately by the per-model
 `admission-timeout` setting (default `3m`). It only bounds the wait for an SDK
@@ -359,7 +359,7 @@ rolling snapshot first extends beyond that user boundary. The checkpoint owns
 an independent target snapshot plus draft/MTP state when configured. It remains
 unchanged through the assistant/tool loop and is replaced at the next completed
 user boundary. This can require approximately one additional snapshot-sized
-host or disk allocation for each active logical session.
+allocation for each active logical session.
 
 An exact match may skip rewriting the snapshot when the stable state has not
 changed. This avoids an unnecessary serialization of the state that was just
@@ -369,8 +369,9 @@ part of the cache.
 
 Snapshots externalize inactive session state from the model's active KV cache.
 They therefore do not permanently occupy an execution slot or pin their state
-in accelerator KV memory between requests. They do consume host or disk
-storage, as described in [Configuration and Storage](#55-configuration-and-storage).
+in accelerator KV memory between requests. They do consume the configured
+session-store capacity, as described in
+[Configuration and Storage](#55-configuration-and-storage).
 
 ## 5.4 Media Requests
 
@@ -418,8 +419,7 @@ The relevant settings are:
 | `incremental-cache`  | `true`  | Enables IMC for the model.                                          |
 | `cache-min-tokens`   | `100`   | Minimum stable text-token-plan length required for text IMC reuse.  |
 | `imc-session-capacity` | Derived | Reusable identities; must be at least admission capacity.          |
-| `session-store-kind` | `ram`   | Stores inactive session snapshots in `ram` or on `disk`.            |
-| `session-store-dir`  | None    | Existing writable directory required by the `disk` store.           |
+| `session-store-kind` | `ram`   | Selects the session-store plugin. Currently, only `ram` is built in. |
 
 For direct interactive use without the model server, `kronk run` accepts the
 same capacity as a load-time override:
@@ -443,39 +443,47 @@ by whether it can construct compatible logical stable and actual plans.
 Set `incremental-cache: false` if a workload is entirely short-lived or if you
 need to compare behavior without prompt caching.
 
-### RAM storage
+### Built-in RAM storage
 
-The default `ram` store keeps snapshots in process memory. Each session buffer
+The built-in `ram` store keeps snapshots in process memory. It is selected by
+default when `session-store-kind` is omitted. Each session buffer
 grows as needed and retains its peak allocation for reuse. Actual memory use
 depends on the model, cached conversation lengths, KV data types, and number of
 sessions that have been used. Budget for peak conversation state across the
 branches you expect to keep warm, not just the `nseq-max` requests that can run
 simultaneously.
 
-### Disk storage
+### Custom SDK storage
 
-To place inactive snapshots on disk:
+Direct SDK users can implement `kvstorage.Store`, construct a factory that
+captures the implementation's own dependencies and configuration, and inject
+that factory into the model:
 
-```yaml
-Qwen/Qwen3-8B-Q8_0:
-  incremental-cache: true
-  session-store-kind: disk
-  session-store-dir: /var/lib/kronk/sessions
+```go
+factory := func() (kvstorage.Store, error) {
+	return myStore.New(dependency)
+}
+
+krn, err := kronk.New(
+	model.WithModelFiles(modelFiles),
+	model.WithIncrementalCache(true),
+	model.WithSessionStoreFactory(factory),
+)
 ```
 
-The directory must already exist and be writable by the Kronk process. Kronk
-creates an empty target-snapshot file for every configured session when the
-model loads and removes it during a normal unload. Own-KV MTP creates a matching
-draft file per session, and retained turn checkpoints can create additional
-files later. Snapshot contents and scratch/read buffers are still populated
-lazily. Files can remain after a process crash, so use a dedicated directory
-and arrange cleanup appropriate for your deployment.
+Kronk calls the factory independently for every target, draft, and checkpoint
+store it needs. Each call must return a new store; Kronk owns that store and
+calls `Close` when it is no longer needed. Direct SDK use defaults to RAM when
+no factory is injected.
 
-Disk storage changes where inactive snapshots are retained, but it does not
-eliminate snapshot-sized RAM usage. Snapshot and restore operations require
-memory buffers, and a session can retain buffers sized to its largest state.
-Disk also adds I/O latency. Measure both memory and request latency with your
-model and storage device before relying on it as a capacity solution.
+The [`examples/session-store`](https://github.com/ardanlabs/kronk/tree/main/examples/session-store)
+program provides a complete custom implementation and shows how to inject it.
+Its implementation writes snapshots to anonymous temporary files and deletes
+them on `Close`. It exists only to demonstrate the extension contract: it has
+no stable session identity, persisted request history, startup recovery,
+atomic commits, or reliable way to report I/O failures. **Do not use the
+example as durable session storage.** A durable implementation needs a higher
+level persistence design in addition to the byte-store contract.
 
 Some MTP configurations maintain draft-model cached state and saved hidden
 state in addition to the target model snapshot. Account for this extra storage
@@ -498,15 +506,13 @@ Common causes include:
   marker/media-count mismatch, an automatically appended EOS, or a non-text
   generation tail
 
-An unload or server restart clears in-memory sessions. The disk store is an
-inactive snapshot backend, not a persistent conversation database; do not rely
+An unload or server restart clears the built-in in-memory sessions. Do not rely
 on IMC sessions surviving model or process lifecycles.
 
 IMC has several practical costs:
 
 - Planning text reuse requires rendering and tokenizing complete prompts.
-- Snapshot and restore operations use host memory bandwidth and, for disk
-  storage, filesystem I/O.
+- Snapshot and restore operations use host memory bandwidth.
 - Edited text rebuilds instead of reusing an arbitrary partial prefix.
 - The session pool is finite, so inactive least-recently-used branches can be
   replaced as new branches arrive.

@@ -143,7 +143,6 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"incremental_cache": krn.ModelConfig().IncrementalCache(),
 		"split_mode":        formatSplitMode(krn.ModelConfig().PtrSplitMode),
 		"model_type":        krn.ModelInfo().Type.String(),
-		"is_gpt_model":      krn.ModelInfo().IsGPTModel,
 	}
 
 	// Report the active drafter. A separate-GGUF draft carries model files;

@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	buckypool "github.com/ardanlabs/kronk/sdk/bucky/pool"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
@@ -292,7 +293,6 @@ type ModelInfoResponse struct {
 	Desc          string            `json:"desc"`
 	Size          int64             `json:"size"`
 	HasProjection bool              `json:"has_projection"`
-	IsGPT         bool              `json:"is_gpt"`
 	Template      string            `json:"template"`
 	Metadata      map[string]string `json:"metadata"`
 	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
@@ -319,7 +319,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 		Desc:          mi.Desc,
 		Size:          fi.Size,
 		HasProjection: mi.HasProjection,
-		IsGPT:         mi.IsGPTModel,
 		Template:      rmc.Template,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
@@ -348,7 +347,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			PtrSWAFull:            rmc.PtrSWAFull,
 			PtrIncrementalCache:   rmc.PtrIncrementalCache,
 			PtrCacheMinTokens:     rmc.PtrCacheMinTokens,
-			SessionStoreDir:       rmc.SessionStoreDir,
 			SessionStoreKind:      rmc.SessionStoreKind,
 			RopeScaling:           rmc.RopeScaling,
 			PtrRopeFreqBase:       rmc.PtrRopeFreqBase,
@@ -735,8 +733,8 @@ type SamplingConfig struct {
 
 // MoEConfig configures Mixture of Experts tensor placement.
 type MoEConfig struct {
-	Mode                             string `json:"mode,omitempty"`
-	PtrKeepExpertsOnGPUForTopNLayers *int   `json:"keep_experts_top_n,omitempty"`
+	Mode                             model.MoEMode `json:"mode,omitzero"`
+	PtrKeepExpertsOnGPUForTopNLayers *int          `json:"keep_experts_top_n,omitempty"`
 }
 
 func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
@@ -745,7 +743,7 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 	}
 
 	return &MoEConfig{
-		Mode:                             string(m.Mode),
+		Mode:                             m.Mode,
 		PtrKeepExpertsOnGPUForTopNLayers: m.PtrKeepExpertsOnGPUForTopNLayers,
 	}
 }
@@ -777,8 +775,7 @@ type ModelConfig struct {
 	PtrSWAFull            *bool                    `json:"swa-full"`
 	PtrIncrementalCache   *bool                    `json:"incremental-cache"`
 	PtrCacheMinTokens     *int                     `json:"cache-min-tokens"`
-	SessionStoreDir       string                   `json:"session-store-dir,omitempty"`
-	SessionStoreKind      string                   `json:"session-store-kind,omitempty"`
+	SessionStoreKind      kvstorage.Kind           `json:"session-store-kind,omitzero"`
 	Sampling              SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling           model.RopeScalingType    `json:"rope-scaling-type"`
 	PtrRopeFreqBase       *float32                 `json:"rope-freq-base"`

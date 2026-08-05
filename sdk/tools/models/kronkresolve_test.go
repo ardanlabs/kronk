@@ -8,9 +8,75 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"go.yaml.in/yaml/v2"
 )
+
+func TestResolveSessionStoreFactory(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     ModelConfig
+		wantErr bool
+	}{
+		{"default RAM", ModelConfig{}, false},
+		{"explicit RAM", ModelConfig{SessionStoreKind: kvstorage.RAM}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			factory, err := resolveSessionStoreFactory(tt.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveSessionStoreFactory() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+
+			store, err := factory()
+			if err != nil {
+				t.Fatalf("factory() error = %v, want nil", err)
+			}
+			t.Cleanup(func() {
+				if err := store.Close(); err != nil {
+					t.Errorf("store.Close() error = %v, want nil", err)
+				}
+			})
+
+			if _, ok := store.(*ram.Store); !ok {
+				t.Errorf("factory() store = %T, want *ram.Store", store)
+			}
+		})
+	}
+}
+
+func TestSessionStoreKindYAML(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    kvstorage.Kind
+		wantErr bool
+	}{
+		{"RAM", "ram", kvstorage.RAM, false},
+		{"unknown", "unknown", kvstorage.Kind{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte("session-store-kind: " + tt.value + "\n")
+
+			var cfg ModelConfig
+			err := yaml.Unmarshal(data, &cfg)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("yaml.Unmarshal() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if !cfg.SessionStoreKind.Equal(tt.want) {
+				t.Errorf("SessionStoreKind = %q, want %q", cfg.SessionStoreKind, tt.want)
+			}
+		})
+	}
+}
 
 func TestResolveAdapters(t *testing.T) {
 	basePath := t.TempDir()
