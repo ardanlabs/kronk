@@ -54,23 +54,17 @@ func detectMediaContent(d D) (mediaType MediaType, isOpenAIFormat bool, msgs cha
 	return mediaType, false, msgs, nil
 }
 
-// convertPlainBase64ToBytes converts Form1 plain base64 string content to raw bytes.
-// Deep clones messages before mutating since the original slice may be shared.
+// convertPlainBase64ToBytes converts Form1 plain base64 string content to raw
+// bytes. It uses copy-on-write so only messages containing decodable media are
+// copied.
 func convertPlainBase64ToBytes(d D) D {
 	msgs, ok := d["messages"].([]D)
 	if !ok {
 		return d
 	}
 
-	// Deep clone messages since we mutate content in place and the original
-	// messages slice may be shared across concurrent requests.
-	clonedMsgs := make([]D, len(msgs))
+	var copied bool
 	for i, msg := range msgs {
-		clonedMsgs[i] = msg.Clone()
-	}
-	d["messages"] = clonedMsgs
-
-	for _, msg := range clonedMsgs {
 		content, exists := msg["content"]
 		if !exists {
 			continue
@@ -78,7 +72,17 @@ func convertPlainBase64ToBytes(d D) D {
 
 		if s, ok := content.(string); ok {
 			if decoded := tryDecodeMedia(s); decoded != nil {
-				msg["content"] = decoded
+				if !copied {
+					clonedMsgs := make([]D, len(msgs))
+					copy(clonedMsgs, msgs)
+					msgs = clonedMsgs
+					d["messages"] = msgs
+					copied = true
+				}
+
+				clonedMsg := msg.ShallowClone()
+				clonedMsg["content"] = decoded
+				msgs[i] = clonedMsg
 			}
 		}
 	}

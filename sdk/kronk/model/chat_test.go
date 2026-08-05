@@ -47,6 +47,169 @@ func TestFormatLogContentPreservesTextPartBoundaries(t *testing.T) {
 	}
 }
 
+func TestDCloneOwnsNestedJSONContainers(t *testing.T) {
+	type namedMap map[string]string
+	type namedSlice []string
+
+	nested := map[string]any{"mode": "original"}
+	labels := map[string]string{"role": "original"}
+	choices := []string{"original"}
+	namedLabels := namedMap{"role": "original"}
+	namedChoices := namedSlice{"original"}
+	d := D{
+		"chat_template_kwargs": D{
+			"custom":        []any{nested},
+			"labels":        labels,
+			"choices":       choices,
+			"named_labels":  namedLabels,
+			"named_choices": namedChoices,
+		},
+	}
+
+	clone := d.Clone()
+	nested["mode"] = "changed"
+	labels["role"] = "changed"
+	choices[0] = "changed"
+	namedLabels["role"] = "changed"
+	namedChoices[0] = "changed"
+	kwargs := clone["chat_template_kwargs"].(D)
+	items := kwargs["custom"].([]any)
+	got := items[0].(D)["mode"]
+	if got != "original" {
+		t.Errorf("nested mode: got %q, want %q", got, "original")
+	}
+	if got := kwargs["labels"].(map[string]string)["role"]; got != "original" {
+		t.Errorf("labels role: got %q, want %q", got, "original")
+	}
+	if got := kwargs["choices"].([]string)[0]; got != "original" {
+		t.Errorf("choices[0]: got %q, want %q", got, "original")
+	}
+	if got := kwargs["named_labels"].(namedMap)["role"]; got != "original" {
+		t.Errorf("named_labels role: got %q, want %q", got, "original")
+	}
+	if got := kwargs["named_choices"].(namedSlice)[0]; got != "original" {
+		t.Errorf("named_choices[0]: got %q, want %q", got, "original")
+	}
+}
+
+func TestNormalizeChatTemplateKwargs(t *testing.T) {
+	tests := []struct {
+		name         string
+		doc          D
+		wantThinking bool
+		wantCustom   any
+		wantErr      bool
+	}{
+		{
+			name: "nested values promoted",
+			doc: D{
+				"chat_template_kwargs": D{"enable_thinking": false, "custom_mode": "fast"},
+			},
+			wantThinking: false,
+			wantCustom:   "fast",
+		},
+		{
+			name: "top-level value wins",
+			doc: D{
+				"enable_thinking":      true,
+				"chat_template_kwargs": D{"enable_thinking": false},
+			},
+			wantThinking: true,
+		},
+		{
+			name:    "non-object rejected",
+			doc:     D{"chat_template_kwargs": false},
+			wantErr: true,
+		},
+		{
+			name:    "self-reference rejected",
+			doc:     D{"chat_template_kwargs": D{"chat_template_kwargs": D{}}},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := tt.doc.Clone()
+			err := normalizeChatTemplateKwargs(d)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("normalizeChatTemplateKwargs: got nil error, want error")
+				}
+				if !errors.Is(err, ErrInvalidRequest) {
+					t.Errorf("normalizeChatTemplateKwargs error: got %v, want ErrInvalidRequest", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("normalizeChatTemplateKwargs: %v", err)
+			}
+			if got := d["enable_thinking"]; got != tt.wantThinking {
+				t.Errorf("enable_thinking: got %v, want %t", got, tt.wantThinking)
+			}
+			kwargs := d["chat_template_kwargs"].(D)
+			if tt.wantCustom != nil && kwargs["custom_mode"] != tt.wantCustom {
+				t.Errorf("nested custom_mode: got %v, want %v", kwargs["custom_mode"], tt.wantCustom)
+			}
+		})
+	}
+}
+
+func TestChatTemplateKwargsAreTemplateOnly(t *testing.T) {
+	m := Model{log: noopLog}
+	m.template = Template{FileName: "kwargs-test", Script: `{{ custom_mode }}:{{ temperature }}`}
+	d := D{
+		"messages":              []D{{"role": "user", "content": "hello"}},
+		"add_generation_prompt": false,
+		"bos_token":             "",
+		"eos_token":             "",
+		"chat_template_kwargs": D{
+			"custom_mode": "fast",
+			"temperature": 0.1,
+		},
+	}
+
+	if err := normalizeChatTemplateKwargs(d); err != nil {
+		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
+	}
+	params, err := m.parseParams(context.Background(), d)
+	if err != nil {
+		t.Fatalf("parseParams: %v", err)
+	}
+	if params.Temperature == 0.1 {
+		t.Error("nested template temperature changed sampling temperature")
+	}
+
+	prompt, err := m.applyJinjaTemplate(context.Background(), d)
+	if err != nil {
+		t.Fatalf("applyJinjaTemplate: %v", err)
+	}
+	if prompt != "fast:0.1" {
+		t.Errorf("prompt: got %q, want %q", prompt, "fast:0.1")
+	}
+}
+
+func TestParseParamsUsesChatTemplateKwargs(t *testing.T) {
+	m := Model{log: noopLog}
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"chat_template_kwargs": D{
+			"enable_thinking": false,
+		},
+	}
+
+	params, normalized, err := m.validateOwnedDocument(context.Background(), d)
+	if err != nil {
+		t.Fatalf("validateOwnedDocument: %v", err)
+	}
+	if params.Thinking != ThinkingDisabled {
+		t.Errorf("Thinking: got %q, want %q", params.Thinking, ThinkingDisabled)
+	}
+	if got := normalized["enable_thinking"]; got != false {
+		t.Errorf("normalized enable_thinking: got %v, want false", got)
+	}
+}
+
 func TestDeserializeToolCallArguments(t *testing.T) {
 	want := map[string]any{"location": "New York City, NY"}
 

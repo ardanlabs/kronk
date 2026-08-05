@@ -122,7 +122,13 @@ func TestIMCRenderFingerprintChangesWithInputs(t *testing.T) {
 		},
 	}
 	baseTools := []D{{"type": "function", "function": D{"name": "get_weather"}}}
-	baseD := D{"tools": baseTools, "preserve_thinking": true}
+	baseD := D{
+		"tools":                baseTools,
+		"enable_thinking":      true,
+		"reasoning_effort":     ReasoningEffortMedium,
+		"preserve_thinking":    true,
+		"chat_template_kwargs": D{"custom_mode": "a"},
+	}
 
 	m := newFingerprintTestModel("template-a")
 	base, ok := m.imcRenderFingerprint(baseD, baseMsgs)
@@ -139,6 +145,30 @@ func TestIMCRenderFingerprintChangesWithInputs(t *testing.T) {
 			mut: func() (*Model, D, []D) {
 				m2 := newFingerprintTestModel("template-b")
 				return m2, baseD, baseMsgs
+			},
+		},
+		{
+			name: "enable_thinking flips",
+			mut: func() (*Model, D, []D) {
+				d := maps.Clone(baseD)
+				d["enable_thinking"] = false
+				return m, d, baseMsgs
+			},
+		},
+		{
+			name: "reasoning_effort changes",
+			mut: func() (*Model, D, []D) {
+				d := maps.Clone(baseD)
+				d["reasoning_effort"] = ReasoningEffortHigh
+				return m, d, baseMsgs
+			},
+		},
+		{
+			name: "chat_template_kwargs change",
+			mut: func() (*Model, D, []D) {
+				d := maps.Clone(baseD)
+				d["chat_template_kwargs"] = D{"custom_mode": "b"}
+				return m, d, baseMsgs
 			},
 		},
 		{

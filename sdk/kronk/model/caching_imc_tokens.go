@@ -25,6 +25,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	targetLen := len(stable)
 	target := slices.Clone(actual[:targetLen])
 	tail := slices.Clone(actual[targetLen:])
+	renderFingerprint, fingerprintOK := m.imcRenderFingerprint(d, dMessages(d))
 	result.imcTokenPlan = true
 	result.imcSamplerPromptTokens = slices.Clone(actual)
 	result.imcTailTokens = tail
@@ -57,7 +58,10 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 		if lru == nil || session.lastUsed.Before(lru.lastUsed) {
 			lru = session
 		}
-		if !session.hasMedia && len(session.cachedTokens) > 0 && session.kvState != nil && len(session.kvState.Bytes()) > 0 && tokensHavePrefix(target, session.cachedTokens) {
+		rollingExact := len(session.cachedTokens) == len(target)
+		rollingFingerprintOK := !rollingExact || exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK)
+		if !session.hasMedia && len(session.cachedTokens) > 0 && session.kvState != nil && len(session.kvState.Bytes()) > 0 &&
+			tokensHavePrefix(target, session.cachedTokens) && rollingFingerprintOK {
 			if len(session.cachedTokens) > bestLen || (len(session.cachedTokens) == bestLen && bestIsCheckpoint) {
 				best = session
 				bestIsCheckpoint = false
@@ -66,7 +70,10 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 		}
 
 		checkpoint := session.turnCheckpoint
-		if checkpoint != nil && !checkpoint.hasMedia && len(checkpoint.cachedTokens) > 0 && checkpoint.kvState != nil && len(checkpoint.kvState.Bytes()) > 0 && tokensHavePrefix(target, checkpoint.cachedTokens) {
+		checkpointExact := checkpoint != nil && len(checkpoint.cachedTokens) == len(target)
+		checkpointFingerprintOK := !checkpointExact || exactRenderFingerprintMatches(checkpoint.cachedRenderInputHash, renderFingerprint, fingerprintOK)
+		if checkpoint != nil && !checkpoint.hasMedia && len(checkpoint.cachedTokens) > 0 && checkpoint.kvState != nil && len(checkpoint.kvState.Bytes()) > 0 &&
+			tokensHavePrefix(target, checkpoint.cachedTokens) && checkpointFingerprintOK {
 			// Rolling wins ties so the common path does not churn snapshot
 			// ownership when both complete states describe the same prefix.
 			if len(checkpoint.cachedTokens) > bestLen {
@@ -124,8 +131,8 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	result.imcExpectedCachedMsgs = selected.cachedMsgCount
 	result.imcExpectedTokens = selected.totalTokensCached
 	result.imcExpectedPosition = selected.logicalPosition()
-	if fingerprint, ok := m.imcRenderFingerprint(d, dMessages(d)); ok {
-		result.imcExpectedRenderHash = fingerprint
+	if fingerprintOK {
+		result.imcExpectedRenderHash = renderFingerprint
 	}
 	result.imcNewCacheTokens = extension
 	result.imcNewTotalCached = targetLen

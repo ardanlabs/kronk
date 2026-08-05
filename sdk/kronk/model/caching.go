@@ -191,8 +191,11 @@ func textFromPart(part any) string {
 type imcRenderFingerprintInput struct {
 	TemplateHash        string `json:"template_hash"`
 	AddGenerationPrompt bool   `json:"add_generation_prompt"`
+	EnableThinking      bool   `json:"enable_thinking"`
+	ReasoningEffort     any    `json:"reasoning_effort,omitempty"`
 	PreserveThinkingSet bool   `json:"preserve_thinking_set"`
 	PreserveThinking    bool   `json:"preserve_thinking"`
+	ChatTemplateKwargs  any    `json:"chat_template_kwargs,omitempty"`
 	Messages            []D    `json:"messages"`
 	ToolsPresent        bool   `json:"tools_present"`
 	Tools               any    `json:"tools,omitempty"`
@@ -201,8 +204,8 @@ type imcRenderFingerprintInput struct {
 // imcRenderFingerprint computes a SHA-256 fingerprint of the logical inputs
 // that determine what the Jinja template will render for an IMC prefix:
 // template script, add_generation_prompt=false (the IMC fixed setting),
-// preserve_thinking, the cached message slice,
-// and top-level tools.
+// reasoning and template options, the cached message slice, and top-level
+// tools.
 //
 // Returned ok=false on marshal failure so callers can disable any optimization
 // that depends on a stable fingerprint. Used as the safety guard for
@@ -214,8 +217,11 @@ func (m *Model) imcRenderFingerprint(d D, msgs []D) (string, bool) {
 	in := imcRenderFingerprintInput{
 		TemplateHash:        hex.EncodeToString(templateSum[:]),
 		AddGenerationPrompt: false,
+		EnableThinking:      d["enable_thinking"] == true,
+		ReasoningEffort:     d["reasoning_effort"],
 		PreserveThinkingSet: preserveSet,
 		PreserveThinking:    preserve,
+		ChatTemplateKwargs:  d["chat_template_kwargs"],
 		Messages:            msgs,
 	}
 
@@ -232,4 +238,8 @@ func (m *Model) imcRenderFingerprint(d D, msgs []D) (string, bool) {
 	sum := sha256.Sum256(b)
 
 	return hex.EncodeToString(sum[:]), true
+}
+
+func exactRenderFingerprintMatches(cached, current string, ok bool) bool {
+	return ok && current != "" && cached == current
 }

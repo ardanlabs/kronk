@@ -100,6 +100,8 @@ func Test_PlainBase64MediaDetection(t *testing.T) {
 			},
 		),
 	}
+	originalMsgs := d["messages"].([]D)
+	originalMediaMsg := originalMsgs[1]
 
 	mediaType, isOpenAIFormat, _, err := detectMediaContent(d)
 	if err != nil {
@@ -116,6 +118,12 @@ func Test_PlainBase64MediaDetection(t *testing.T) {
 
 	d = convertPlainBase64ToBytes(d)
 	msgs := d["messages"].([]D)
+	if originalMediaMsg["content"] != encoded {
+		t.Error("convertPlainBase64ToBytes mutated the original media message")
+	}
+	if &msgs[0] == &originalMsgs[0] {
+		t.Fatal("converted messages slice aliases the original slice")
+	}
 
 	converted := false
 	for _, msg := range msgs {
