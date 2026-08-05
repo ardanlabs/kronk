@@ -1,29 +1,22 @@
-// Package disk provides a disk-backed implementation of the
-// kvstorage.Store contract used by IMC (Incremental Message Cache)
-// to externalize per-session KV cache bytes between requests.
+// This file provides a temporary disk-backed implementation of the
+// kvstorage.Store contract as an SDK extension example. It is not durable
+// storage: files have no stable identity and Close removes them.
 //
 // Each Store owns one regular file under the directory passed to New.
 // The file is created on construction (via os.CreateTemp, so the name
 // is unique within the directory) and removed on Close. The Store
-// keeps a small RAM scratch buffer used as the cgo target for
-// snapshot writes (Prepare/Commit) and a separate read buffer that is
-// populated lazily on Bytes — both buffers are released on the next
-// Prepare/Commit/Reset/Close so the steady-state RAM footprint is
-// O(peak snapshot size) per active session, vs O(N × peak) for the
-// RAM backend across N sessions.
-//
-// The disk backend trades RAM for I/O. Snapshot writes and restore
-// reads each touch the file once per request; on NVMe class storage
-// this is on the order of milliseconds per GB. Use this backend when
-// the host cannot spare (NSeqMax × peak-conversation-KV) bytes of
-// RAM for IMC.
+// keeps a RAM scratch buffer used as the cgo target for snapshot writes
+// (Prepare/Commit) and a separate read buffer populated lazily on Bytes.
+// The scratch allocation is retained for reuse, so this example does not
+// eliminate snapshot-sized RAM allocations.
 //
 // Crash safety: per-session files leak on process crash because the
 // Store's Close cleanup never runs. They live under the directory passed to
 // NewFactory and are named "kronk-sess-*.kv"; an external
-// cleanup (cron, systemd-tmpfiles, or a future startup-time sweep)
-// can reclaim them.
-package disk
+// cleanup can reclaim them. The implementation also cannot report I/O errors
+// through the current Bytes, Commit, and Reset method signatures. It is an
+// API example only, not a production storage recommendation.
+package main
 
 import (
 	"errors"
@@ -33,9 +26,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 )
-
-// Kind identifies the disk backend in external configuration.
-const Kind = "disk"
 
 // filePattern is the os.CreateTemp pattern used for per-session
 // files. The "*" is replaced by a random suffix that makes the name

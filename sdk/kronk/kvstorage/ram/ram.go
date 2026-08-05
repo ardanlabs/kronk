@@ -11,14 +11,10 @@
 // model context window, so each session's buffer reaches steady-state
 // after a small number of Prepare calls and never reallocates again.
 //
-// Other kvstorage subpackages (e.g. kvstorage/disk) provide alternative
-// backends behind the same contract.
+// SDK users can provide alternative backends behind the same contract.
 package ram
 
 import "github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
-
-// Kind identifies the RAM backend in external configuration.
-const Kind = "ram"
 
 // Store is the in-process RAM session store. It is NOT safe for
 // concurrent use; the IMC scheduler serializes access via the

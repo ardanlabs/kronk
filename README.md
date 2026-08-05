@@ -255,6 +255,12 @@ make example-rerank
 make example-question
 ```
 
+[SESSION-STORE](examples/session-store/main.go) - This example shows how to implement and inject a custom IMC session store. Its temporary disk backend demonstrates the extension contract but is not durable storage.
+
+```shell
+make example-session-store
+```
+
 [VISION](examples/vision/main.go) - This example shows you how to execute a simple prompt against a vision model.
 
 ```shell

@@ -8,25 +8,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/disk"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"go.yaml.in/yaml/v2"
 )
 
 func TestResolveSessionStoreFactory(t *testing.T) {
-	dir := t.TempDir()
 	tests := []struct {
-		name     string
-		cfg      ModelConfig
-		wantKind string
-		wantErr  bool
+		name    string
+		cfg     ModelConfig
+		wantErr bool
 	}{
-		{"default RAM", ModelConfig{}, ram.Kind, false},
-		{"explicit RAM", ModelConfig{SessionStoreKind: ram.Kind}, ram.Kind, false},
-		{"disk", ModelConfig{SessionStoreKind: disk.Kind, SessionStoreDir: dir}, disk.Kind, false},
-		{"disk requires directory", ModelConfig{SessionStoreKind: disk.Kind}, "", true},
-		{"unknown", ModelConfig{SessionStoreKind: "unknown"}, "", true},
+		{"default RAM", ModelConfig{}, false},
+		{"explicit RAM", ModelConfig{SessionStoreKind: kvstorage.RAM}, false},
 	}
 
 	for _, tt := range tests {
@@ -49,15 +44,35 @@ func TestResolveSessionStoreFactory(t *testing.T) {
 				}
 			})
 
-			switch tt.wantKind {
-			case ram.Kind:
-				if _, ok := store.(*ram.Store); !ok {
-					t.Errorf("factory() store = %T, want *ram.Store", store)
-				}
-			case disk.Kind:
-				if _, ok := store.(*disk.Store); !ok {
-					t.Errorf("factory() store = %T, want *disk.Store", store)
-				}
+			if _, ok := store.(*ram.Store); !ok {
+				t.Errorf("factory() store = %T, want *ram.Store", store)
+			}
+		})
+	}
+}
+
+func TestSessionStoreKindYAML(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    kvstorage.Kind
+		wantErr bool
+	}{
+		{"RAM", "ram", kvstorage.RAM, false},
+		{"unknown", "unknown", kvstorage.Kind{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte("session-store-kind: " + tt.value + "\n")
+
+			var cfg ModelConfig
+			err := yaml.Unmarshal(data, &cfg)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("yaml.Unmarshal() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if !cfg.SessionStoreKind.Equal(tt.want) {
+				t.Errorf("SessionStoreKind = %q, want %q", cfg.SessionStoreKind, tt.want)
 			}
 		})
 	}

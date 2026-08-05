@@ -46,6 +46,9 @@ example-question:
 example-response:
 	cd examples && go run ./response/main.go
 
+example-session-store:
+	cd examples && go run ./session-store/...
+
 example-vision:
 	cd examples && go run ./vision/main.go
 
