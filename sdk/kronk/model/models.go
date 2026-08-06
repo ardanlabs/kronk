@@ -748,7 +748,7 @@ type ToolCallArguments map[string]any
 
 func (a ToolCallArguments) MarshalJSON() ([]byte, error) {
 	if a == nil {
-		return []byte(`""`), nil
+		a = ToolCallArguments{}
 	}
 
 	inner, err := json.Marshal(map[string]any(a))

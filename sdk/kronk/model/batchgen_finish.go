@@ -453,7 +453,7 @@ func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseT
 	}
 
 	for i := range toolCalls {
-		arguments := ""
+		arguments := "{}"
 		if toolCalls[i].Function.Arguments != nil {
 			data, err := json.Marshal(map[string]any(toolCalls[i].Function.Arguments))
 			if err != nil {

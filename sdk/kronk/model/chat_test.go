@@ -374,6 +374,18 @@ func TestToolCallArgumentsUnmarshalJSONPreservesNumbers(t *testing.T) {
 	}
 }
 
+func TestToolCallArgumentsMarshalNilAsEmptyObject(t *testing.T) {
+	var arguments ToolCallArguments
+
+	data, err := json.Marshal(arguments)
+	if err != nil {
+		t.Fatalf("marshal tool call arguments: %v", err)
+	}
+	if got, want := string(data), `"{}"`; got != want {
+		t.Errorf("arguments: got %q, want %q", got, want)
+	}
+}
+
 func TestToolNumbersRenderWithoutPrecisionLoss(t *testing.T) {
 	m := Model{log: noopLog}
 	m.template = Template{
@@ -951,6 +963,32 @@ func TestReconcileStartedToolCalls(t *testing.T) {
 	}
 	if got, want := toolCalls[0].ID, "final-id"; got != want {
 		t.Errorf("ID without started calls: got %q, want %q", got, want)
+	}
+}
+
+func TestReconcileStartedToolCallWithoutArguments(t *testing.T) {
+	toolCalls := []ResponseToolCall{{
+		ID:   "final-id",
+		Type: "function",
+		Function: ResponseToolCallFunction{
+			Name: "list_projects",
+		},
+	}}
+	started := []ResponseToolCallDelta{{
+		ID:    "stream-id",
+		Index: 0,
+		Type:  "function",
+		Function: ResponseToolCallDeltaFunction{
+			Name: "list_projects",
+		},
+	}}
+
+	terminal := reconcileStartedToolCalls(toolCalls, started)
+	if len(terminal) != 1 {
+		t.Fatalf("terminal deltas: got %d, want 1", len(terminal))
+	}
+	if got, want := terminal[0].Function.Arguments, `{}`; got != want {
+		t.Errorf("arguments: got %q, want %q", got, want)
 	}
 }
 
