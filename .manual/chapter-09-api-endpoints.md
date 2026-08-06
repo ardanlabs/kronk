@@ -107,11 +107,11 @@ function name is known. Once parsing completes, Kronk emits the completed
 arguments in a nonterminal tool-call delta followed by an empty terminal delta
 with `finish_reason: "tool_calls"`.
 
-`usage.output_tokens` is the sum of reasoning and completion tokens, and
-`usage.total_tokens` is prompt plus output tokens. Generated control and
-tool-call syntax counts toward output usage even when a parser buffers it
-instead of exposing it as assistant text. `usage.reasoning_tokens` and
-`usage.completion_tokens` provide the output breakdown.
+`usage.completion_tokens` includes all generated tokens, including reasoning,
+control, and tool-call syntax that a parser may buffer instead of exposing as
+assistant text. `usage.completion_tokens_details.reasoning_tokens` reports the
+reasoning subset. `usage.total_tokens` is the sum of `prompt_tokens` and
+`completion_tokens`.
 
 ### Tool calls
 

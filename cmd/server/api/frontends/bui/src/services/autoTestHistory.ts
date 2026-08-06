@@ -1,5 +1,6 @@
 import type { AutoTestRun } from '../contexts/AutoTestRunnerContext'
 import type { AutoTestSweepMode } from '../types'
+import { normalizeChatUsage } from './chatDb'
 
 export interface AutoTestHistoryEntry {
   version: 1
@@ -149,6 +150,18 @@ function pruneRunForHistory(run: AutoTestRun): AutoTestRun {
   return clone
 }
 
+function normalizeEntryUsage(entry: AutoTestHistoryEntry): AutoTestHistoryEntry {
+  const clone = structuredClone(entry)
+  for (const trial of clone.run.trials) {
+    for (const scenario of trial.scenarioResults) {
+      for (const prompt of scenario.promptResults) {
+        prompt.usage = normalizeChatUsage(prompt.usage)
+      }
+    }
+  }
+  return clone
+}
+
 function deriveCompletedAt(run: AutoTestRun): string | undefined {
   let max: string | undefined
   for (const trial of run.trials) {
@@ -212,7 +225,7 @@ function loadFromLocalStorage(): AutoTestHistoryEntry[] {
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(isValidEntry) as AutoTestHistoryEntry[]
+    return (parsed.filter(isValidEntry) as AutoTestHistoryEntry[]).map(normalizeEntryUsage)
   } catch {
     return []
   }
@@ -235,7 +248,7 @@ export async function loadAutoTestHistory(): Promise<AutoTestHistoryEntry[]> {
     const idx = tx.objectStore(STORE_ENTRIES).index('by_savedAt')
     const all = await promisifyRequest(idx.getAll())
     // Index returns ascending by savedAt; reverse to get newest first.
-    return all.filter(isValidEntry).reverse()
+    return all.filter(isValidEntry).map(normalizeEntryUsage).reverse()
   } catch {
     return loadFromLocalStorage()
   }
@@ -386,7 +399,7 @@ export async function importAutoTestHistoryJSON(
   for (const c of candidates) {
     if (!isValidEntry(c)) continue
     // Prune ephemeral fields from imported runs.
-    const pruned: AutoTestHistoryEntry = { ...c, run: pruneRunForHistory(c.run) }
+    const pruned = normalizeEntryUsage({ ...c, run: pruneRunForHistory(c.run) })
     const existing = deduped.get(pruned.id)
     if (!existing || pruned.savedAt > existing.savedAt) {
       deduped.set(pruned.id, pruned)

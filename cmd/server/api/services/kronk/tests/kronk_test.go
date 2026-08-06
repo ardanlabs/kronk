@@ -306,7 +306,7 @@ func (v responseValidator) hasUsage(reasoning bool) responseValidator {
 		v.errors = append(v.errors, "expected prompt_tokens to be greater than 0")
 	}
 
-	if reasoning && u.ReasoningTokens <= 0 {
+	if reasoning && u.CompletionTokensDetails.ReasoningTokens <= 0 {
 		v.errors = append(v.errors, "expected reasoning_tokens to be greater than 0")
 	}
 
@@ -314,8 +314,13 @@ func (v responseValidator) hasUsage(reasoning bool) responseValidator {
 		v.errors = append(v.errors, "expected completion_tokens to be greater than 0")
 	}
 
-	if u.OutputTokens <= 0 {
-		v.errors = append(v.errors, "expected output_tokens to be greater than 0")
+	reasoningTokens := u.CompletionTokensDetails.ReasoningTokens
+	if reasoningTokens < 0 || reasoningTokens > u.CompletionTokens {
+		v.errors = append(v.errors, "expected reasoning_tokens to be a subset of completion_tokens")
+	}
+
+	if u.TotalTokens != u.PromptTokens+u.CompletionTokens {
+		v.errors = append(v.errors, "expected total_tokens to equal prompt_tokens + completion_tokens")
 	}
 
 	if u.TotalTokens <= 0 {

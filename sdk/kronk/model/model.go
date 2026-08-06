@@ -1348,6 +1348,8 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	}
 
 	emptyAnswer := finalContent.Len() == 0 && len(respToolCalls) == 0
+	reasoningTokens := usage.CompletionTokensDetails.ReasoningTokens
+	visibleCompletionTokens := usage.CompletionTokens - reasoningTokens
 	args := []any{
 		"status", "final",
 		"id", id,
@@ -1356,9 +1358,9 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		"stop_source", stopSource,
 		"final_channel", channelName(finalChannel),
 		"empty_answer", emptyAnswer,
-		"output_tokens", usage.OutputTokens,
-		"reasoning_tokens", usage.ReasoningTokens,
-		"completion_tokens", usage.CompletionTokens,
+		"output_tokens", usage.CompletionTokens,
+		"reasoning_tokens", reasoningTokens,
+		"completion_tokens", visibleCompletionTokens,
 		"reasoning_bytes", finalReasoning.Len(),
 		"content_bytes", finalContent.Len(),
 		"tool_calls", len(respToolCalls),
@@ -1375,14 +1377,14 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		}
 	}
 	m.log(ctx, "chat-completion", args...)
-	if emptyAnswer && usage.ReasoningTokens > 0 {
+	if emptyAnswer && reasoningTokens > 0 {
 		m.log(ctx, "chat-completion",
 			"status", "warning",
 			"condition", "reasoning-only-response",
 			"id", id,
 			"stop_source", stopSource,
 			"final_channel", channelName(finalChannel),
-			"reasoning_tokens", usage.ReasoningTokens,
+			"reasoning_tokens", reasoningTokens,
 			"reasoning_bytes", finalReasoning.Len(),
 		)
 	}
@@ -1420,7 +1422,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
 
-	m.log(ctx, "chat-completion (send final response)", "prompt", usage.PromptTokens, "output", usage.OutputTokens,
+	m.log(ctx, "chat-completion (send final response)", "prompt", usage.PromptTokens, "output", usage.CompletionTokens,
 		"context", contextTokens, "down", fmt.Sprintf("(%.0f%% of %.0fK) TPS: %.2f", percentage, of, usage.TokensPerSecond))
 }
 

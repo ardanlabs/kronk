@@ -268,6 +268,26 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
+  unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL:
+    provider: unsloth
+    family: Qwen3.6-27B-MTP-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-UD-Q8_K_XL.gguf
+    file_sizes:
+      - 35776484480
+    mmproj: mmproj-mtp-Qwen3.6-27B-UD-Q8_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 927607360
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-19T15:47:26.483029Z
   unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL:
     provider: unsloth
     family: Qwen3.6-35B-A3B-GGUF

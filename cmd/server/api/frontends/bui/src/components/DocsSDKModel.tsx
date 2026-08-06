@@ -255,6 +255,16 @@ export default function DocsSDKModel() {
               <p className="doc-description">Choice represents a single choice in a response.</p>
             </div>
 
+            <div className="doc-section" id="type-completiontokensdetails">
+              <h4>CompletionTokensDetails</h4>
+              <pre className="code-block">
+                <code>{`type CompletionTokensDetails struct {
+	ReasoningTokens int \`json:"reasoning_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">CompletionTokensDetails provides a breakdown of completion tokens.</p>
+            </div>
+
             <div className="doc-section" id="type-config">
               <h4>Config</h4>
               <pre className="code-block">
@@ -987,22 +997,21 @@ export default function DocsSDKModel() {
               <h4>Usage</h4>
               <pre className="code-block">
                 <code>{`type Usage struct {
-	PromptTokens        int                 \`json:"prompt_tokens"\`
-	PromptTokensDetails PromptTokensDetails \`json:"prompt_tokens_details"\`
-	ReasoningTokens     int                 \`json:"reasoning_tokens"\`
-	CompletionTokens    int                 \`json:"completion_tokens"\`
-	OutputTokens        int                 \`json:"output_tokens"\`
-	TotalTokens         int                 \`json:"total_tokens"\`
-	TokensPerSecond     float64             \`json:"tokens_per_second"\`
-	TimeToFirstTokenMS  float64             \`json:"time_to_first_token_ms"\`
-	DraftTokens         int                 \`json:"draft_tokens,omitempty"\`
-	DraftAcceptedTokens int                 \`json:"draft_accepted_tokens,omitempty"\`
-	DraftAcceptanceRate float64             \`json:"draft_acceptance_rate,omitempty"\`
-	DraftCoverage       float64             \`json:"draft_coverage,omitempty"\`
-	DraftDisableReason  string              \`json:"draft_disable_reason,omitempty"\`
+	PromptTokens            int                     \`json:"prompt_tokens"\`
+	PromptTokensDetails     PromptTokensDetails     \`json:"prompt_tokens_details"\`
+	CompletionTokens        int                     \`json:"completion_tokens"\`
+	CompletionTokensDetails CompletionTokensDetails \`json:"completion_tokens_details"\`
+	TotalTokens             int                     \`json:"total_tokens"\`
+	TokensPerSecond         float64                 \`json:"tokens_per_second"\`
+	TimeToFirstTokenMS      float64                 \`json:"time_to_first_token_ms"\`
+	DraftTokens             int                     \`json:"draft_tokens,omitempty"\`
+	DraftAcceptedTokens     int                     \`json:"draft_accepted_tokens,omitempty"\`
+	DraftAcceptanceRate     float64                 \`json:"draft_acceptance_rate,omitempty"\`
+	DraftCoverage           float64                 \`json:"draft_coverage,omitempty"\`
+	DraftDisableReason      string                  \`json:"draft_disable_reason,omitempty"\`
 }`}</code>
               </pre>
-              <p className="doc-description">Usage provides details usage information for the request. DraftAcceptanceRate is the ratio of accepted drafts to total drafts across the spec rounds that actually ran. It is "quality per round" and says nothing about how much of the request used speculation. DraftCoverage is the complementary "how much" metric: the fraction of emitted output positions produced through speculation. Together they distinguish "MTP ran the whole request at 94%" from "MTP ran for 4 rounds at 94% then was disabled and the rest was target-only" — the second case shows high DraftAcceptanceRate but low DraftCoverage. DraftDisableReason explains the latter case ("imc-hit", "mirror-error", or empty if MTP was never disabled).</p>
+              <p className="doc-description">Usage provides token usage information for a chat completion request. CompletionTokens includes all generated tokens, including reasoning tokens. CompletionTokensDetails provides the reasoning-token subset. TotalTokens is the sum of PromptTokens and CompletionTokens. DraftAcceptanceRate is the ratio of accepted drafts to total drafts across the spec rounds that actually ran. It is "quality per round" and says nothing about how much of the request used speculation. DraftCoverage is the complementary "how much" metric: the fraction of emitted output positions produced through speculation. Together they distinguish "MTP ran the whole request at 94%" from "MTP ran for 4 rounds at 94% then was disabled and the rest was target-only" — the second case shows high DraftAcceptanceRate but low DraftCoverage. DraftDisableReason explains the latter case ("imc-hit", "mirror-error", or empty if MTP was never disabled).</p>
             </div>
           </div>
 
@@ -1985,6 +1994,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-channel">Channel</a></li>
                 <li><a href="#type-chatresponse">ChatResponse</a></li>
                 <li><a href="#type-choice">Choice</a></li>
+                <li><a href="#type-completiontokensdetails">CompletionTokensDetails</a></li>
                 <li><a href="#type-config">Config</a></li>
                 <li><a href="#type-contentlogprob">ContentLogprob</a></li>
                 <li><a href="#type-d">D</a></li>

@@ -227,9 +227,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			PromptTokensDetails: PromptTokensDetails{
 				CachedTokens: s.reusedPromptTokens,
 			},
-			ReasoningTokens:     s.reasonTokens,
-			CompletionTokens:    s.completionTokens,
-			OutputTokens:        outputTokens,
+			CompletionTokens: outputTokens,
+			CompletionTokensDetails: CompletionTokensDetails{
+				ReasoningTokens: s.reasonTokens,
+			},
 			TotalTokens:         s.nPrompt + outputTokens,
 			TokensPerSecond:     tokensPerSecond,
 			TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
@@ -364,9 +365,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		PromptTokensDetails: PromptTokensDetails{
 			CachedTokens: s.reusedPromptTokens,
 		},
-		ReasoningTokens:     s.reasonTokens,
-		CompletionTokens:    s.completionTokens,
-		OutputTokens:        outputTokens,
+		CompletionTokens: outputTokens,
+		CompletionTokensDetails: CompletionTokensDetails{
+			ReasoningTokens: s.reasonTokens,
+		},
 		TotalTokens:         totalTokens,
 		TokensPerSecond:     tokensPerSecond,
 		TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,

@@ -712,9 +712,9 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 			InputTokensDetails: InputTokensDetails{
 				CachedTokens: chatResp.Usage.PromptTokensDetails.CachedTokens,
 			},
-			OutputTokens: chatResp.Usage.OutputTokens,
+			OutputTokens: chatResp.Usage.CompletionTokens,
 			OutputTokenDetail: OutputTokensDetails{
-				ReasoningTokens: chatResp.Usage.ReasoningTokens,
+				ReasoningTokens: chatResp.Usage.CompletionTokensDetails.ReasoningTokens,
 			},
 			TotalTokens: chatResp.Usage.TotalTokens,
 		},

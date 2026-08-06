@@ -808,6 +808,45 @@ func TestUsageCachedTokensJSON(t *testing.T) {
 	}
 }
 
+func TestUsageCompletionTokensJSON(t *testing.T) {
+	usage := Usage{
+		PromptTokens:     100,
+		CompletionTokens: 25,
+		CompletionTokensDetails: CompletionTokensDetails{
+			ReasoningTokens: 20,
+		},
+		TotalTokens: 125,
+	}
+
+	data, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if got, want := int(wire["completion_tokens"].(float64)), 25; got != want {
+		t.Errorf("completion_tokens: got %d, want %d", got, want)
+	}
+	if got, want := int(wire["total_tokens"].(float64)), 125; got != want {
+		t.Errorf("total_tokens: got %d, want %d", got, want)
+	}
+
+	details := wire["completion_tokens_details"].(map[string]any)
+	if got, want := int(details["reasoning_tokens"].(float64)), 20; got != want {
+		t.Errorf("reasoning_tokens: got %d, want %d", got, want)
+	}
+
+	for _, field := range []string{"reasoning_tokens", "output_tokens"} {
+		if _, exists := wire[field]; exists {
+			t.Errorf("%s: got top-level field, want absent", field)
+		}
+	}
+}
+
 func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	resp := chatResponseToolCallDelta("id", ObjectChatText, "model", 0, ResponseToolCallDelta{
 		ID:    "call_1",

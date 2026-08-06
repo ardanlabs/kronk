@@ -77,26 +77,19 @@ func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 		t.Errorf("final PromptTokens should be > 0, got %d", finalResp.Usage.PromptTokens)
 	}
 
-	expectedOutput := finalResp.Usage.ReasoningTokens + finalResp.Usage.CompletionTokens
-	if finalResp.Usage.OutputTokens != expectedOutput {
-		t.Errorf("OutputTokens mismatch: got %d, expected %d (reasoning=%d + completion=%d)",
-			finalResp.Usage.OutputTokens, expectedOutput,
-			finalResp.Usage.ReasoningTokens, finalResp.Usage.CompletionTokens)
-	}
-
-	expectedTotal := finalResp.Usage.PromptTokens + finalResp.Usage.OutputTokens
+	expectedTotal := finalResp.Usage.PromptTokens + finalResp.Usage.CompletionTokens
 	if finalResp.Usage.TotalTokens != expectedTotal {
-		t.Errorf("TotalTokens mismatch: got %d, expected %d (prompt=%d + output=%d)",
+		t.Errorf("TotalTokens mismatch: got %d, expected %d (prompt=%d + completion=%d)",
 			finalResp.Usage.TotalTokens, expectedTotal,
-			finalResp.Usage.PromptTokens, finalResp.Usage.OutputTokens)
+			finalResp.Usage.PromptTokens, finalResp.Usage.CompletionTokens)
 	}
 
 	t.Logf("Deltas received: %d (reasoning=%d, content=%d)", deltaCount, reasoningDeltas, contentDeltas)
-	t.Logf("Final usage: prompt=%d, reasoning=%d, completion=%d, output=%d, total=%d",
-		finalResp.Usage.PromptTokens, finalResp.Usage.ReasoningTokens,
-		finalResp.Usage.CompletionTokens, finalResp.Usage.OutputTokens, finalResp.Usage.TotalTokens)
+	t.Logf("Final usage: prompt=%d, reasoning=%d, completion=%d, total=%d",
+		finalResp.Usage.PromptTokens, finalResp.Usage.CompletionTokensDetails.ReasoningTokens,
+		finalResp.Usage.CompletionTokens, finalResp.Usage.TotalTokens)
 
-	outputTokens := finalResp.Usage.OutputTokens
+	outputTokens := finalResp.Usage.CompletionTokens
 	if outputTokens > 0 {
 		ratio := float64(deltaCount) / float64(outputTokens)
 		if ratio < 0.5 || ratio > 2.0 {
@@ -133,27 +126,20 @@ func testNonStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 		t.Errorf("PromptTokens should be > 0, got %d", resp.Usage.PromptTokens)
 	}
 
-	expectedOutput := resp.Usage.ReasoningTokens + resp.Usage.CompletionTokens
-	if resp.Usage.OutputTokens != expectedOutput {
-		t.Errorf("OutputTokens mismatch: got %d, expected %d (reasoning=%d + completion=%d)",
-			resp.Usage.OutputTokens, expectedOutput,
-			resp.Usage.ReasoningTokens, resp.Usage.CompletionTokens)
-	}
-
-	expectedTotal := resp.Usage.PromptTokens + resp.Usage.OutputTokens
+	expectedTotal := resp.Usage.PromptTokens + resp.Usage.CompletionTokens
 	if resp.Usage.TotalTokens != expectedTotal {
-		t.Errorf("TotalTokens mismatch: got %d, expected %d (prompt=%d + output=%d)",
+		t.Errorf("TotalTokens mismatch: got %d, expected %d (prompt=%d + completion=%d)",
 			resp.Usage.TotalTokens, expectedTotal,
-			resp.Usage.PromptTokens, resp.Usage.OutputTokens)
+			resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 	}
 
-	if resp.Usage.OutputTokens == 0 {
-		t.Errorf("OutputTokens should be > 0, got %d", resp.Usage.OutputTokens)
+	if resp.Usage.CompletionTokens == 0 {
+		t.Errorf("CompletionTokens should be > 0, got %d", resp.Usage.CompletionTokens)
 	}
 
-	t.Logf("Non-streaming usage: prompt=%d, reasoning=%d, completion=%d, output=%d, total=%d",
-		resp.Usage.PromptTokens, resp.Usage.ReasoningTokens,
-		resp.Usage.CompletionTokens, resp.Usage.OutputTokens, resp.Usage.TotalTokens)
+	t.Logf("Non-streaming usage: prompt=%d, reasoning=%d, completion=%d, total=%d",
+		resp.Usage.PromptTokens, resp.Usage.CompletionTokensDetails.ReasoningTokens,
+		resp.Usage.CompletionTokens, resp.Usage.TotalTokens)
 }
 
 func testUsageOnlyInFinal(t *testing.T, krn *kronk.Kronk) {
@@ -202,14 +188,14 @@ func testUsageOnlyInFinal(t *testing.T, krn *kronk.Kronk) {
 	if finalResp.Usage.PromptTokens == 0 {
 		t.Errorf("Final response missing PromptTokens")
 	}
-	if finalResp.Usage.OutputTokens == 0 {
-		t.Errorf("Final response missing OutputTokens")
+	if finalResp.Usage.CompletionTokens == 0 {
+		t.Errorf("Final response missing CompletionTokens")
 	}
 	if finalResp.Usage.TotalTokens == 0 {
 		t.Errorf("Final response missing TotalTokens")
 	}
 
 	t.Logf("Total deltas: %d, deltas with non-nil usage: %d", deltaNum, deltasWithUsage)
-	t.Logf("Final usage: prompt=%d, output=%d, total=%d",
-		finalResp.Usage.PromptTokens, finalResp.Usage.OutputTokens, finalResp.Usage.TotalTokens)
+	t.Logf("Final usage: prompt=%d, completion=%d, total=%d",
+		finalResp.Usage.PromptTokens, finalResp.Usage.CompletionTokens, finalResp.Usage.TotalTokens)
 }

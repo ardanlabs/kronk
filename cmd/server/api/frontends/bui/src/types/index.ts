@@ -569,15 +569,20 @@ export interface ChatChoice {
 
 export interface ChatUsage {
   prompt_tokens: number;
+  prompt_tokens_details: {
+    cached_tokens: number;
+  };
   completion_tokens: number;
-  reasoning_tokens: number;
-  output_tokens: number;
+  completion_tokens_details?: {
+    reasoning_tokens: number;
+  };
+  total_tokens: number;
   tokens_per_second: number;
   time_to_first_token_ms?: number;
   draft_tokens?: number;
   draft_accepted_tokens?: number;
   draft_acceptance_rate?: number;
-  // Fraction of output_tokens emitted via speculation (rounds + accepted drafts).
+  // Fraction of completion_tokens emitted via speculation (rounds + accepted drafts).
   // Together with draft_acceptance_rate this distinguishes "MTP ran the whole
   // request at high acceptance" from "MTP ran for a few rounds then was disabled
   // and the rest was target-only".

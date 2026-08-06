@@ -903,7 +903,7 @@ func runStreamingBench(ctx context.Context, krn *kronk.Kronk, d model.D) (benchR
 	if lastResp.Usage != nil {
 		result.tps = lastResp.Usage.TokensPerSecond
 		result.promptTokens = lastResp.Usage.PromptTokens
-		result.outputTokens = lastResp.Usage.OutputTokens
+		result.outputTokens = lastResp.Usage.CompletionTokens
 	}
 
 	return result, nil

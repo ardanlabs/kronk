@@ -53,8 +53,8 @@ func (a *App) Shutdown(ctx context.Context) {
 
 // Authenticate validates a bearer token.
 func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*AuthenticateResponse, error) {
-	if !a.enabled && !(req.GetAdmin() && a.adminAuthEnabled) {
-		a.log.Info(ctx, "***> auth", "status", "authentication disabled")
+	if !a.enabled && (!req.GetAdmin() || !a.adminAuthEnabled) {
+		a.log.Info(ctx, "auth", "status", "authentication disabled")
 
 		arb := AuthenticateResponse_builder{
 			Subject: new(uuid.Nil.String()),
@@ -220,8 +220,8 @@ func (a *App) authInterceptor(ctx context.Context, req any, info *grpc.UnaryServ
 }
 
 func (a *App) requireAuth(ctx context.Context, admin bool, endpoint string, req any, handler grpc.UnaryHandler) (any, error) {
-	if !a.enabled && !(admin && a.adminAuthEnabled) {
-		a.log.Info(ctx, "***> auth", "status", "authentication disabled")
+	if !a.enabled && (!admin || !a.adminAuthEnabled) {
+		a.log.Info(ctx, "auth", "status", "authentication disabled")
 		return handler(ctx, req)
 	}
 

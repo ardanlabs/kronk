@@ -896,7 +896,11 @@ func (c Choice) FinishReason() string {
 	return *c.FinishReasonPtr
 }
 
-// Usage provides details usage information for the request.
+// Usage provides token usage information for a chat completion request.
+//
+// CompletionTokens includes all generated tokens, including reasoning tokens.
+// CompletionTokensDetails provides the reasoning-token subset.
+// TotalTokens is the sum of PromptTokens and CompletionTokens.
 //
 // DraftAcceptanceRate is the ratio of accepted drafts to total drafts
 // across the spec rounds that actually ran. It is "quality per round"
@@ -909,24 +913,28 @@ func (c Choice) FinishReason() string {
 // DraftCoverage. DraftDisableReason explains the latter case
 // ("imc-hit", "mirror-error", or empty if MTP was never disabled).
 type Usage struct {
-	PromptTokens        int                 `json:"prompt_tokens"`
-	PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details"`
-	ReasoningTokens     int                 `json:"reasoning_tokens"`
-	CompletionTokens    int                 `json:"completion_tokens"`
-	OutputTokens        int                 `json:"output_tokens"`
-	TotalTokens         int                 `json:"total_tokens"`
-	TokensPerSecond     float64             `json:"tokens_per_second"`
-	TimeToFirstTokenMS  float64             `json:"time_to_first_token_ms"`
-	DraftTokens         int                 `json:"draft_tokens,omitempty"`
-	DraftAcceptedTokens int                 `json:"draft_accepted_tokens,omitempty"`
-	DraftAcceptanceRate float64             `json:"draft_acceptance_rate,omitempty"`
-	DraftCoverage       float64             `json:"draft_coverage,omitempty"`
-	DraftDisableReason  string              `json:"draft_disable_reason,omitempty"`
+	PromptTokens            int                     `json:"prompt_tokens"`
+	PromptTokensDetails     PromptTokensDetails     `json:"prompt_tokens_details"`
+	CompletionTokens        int                     `json:"completion_tokens"`
+	CompletionTokensDetails CompletionTokensDetails `json:"completion_tokens_details"`
+	TotalTokens             int                     `json:"total_tokens"`
+	TokensPerSecond         float64                 `json:"tokens_per_second"`
+	TimeToFirstTokenMS      float64                 `json:"time_to_first_token_ms"`
+	DraftTokens             int                     `json:"draft_tokens,omitempty"`
+	DraftAcceptedTokens     int                     `json:"draft_accepted_tokens,omitempty"`
+	DraftAcceptanceRate     float64                 `json:"draft_acceptance_rate,omitempty"`
+	DraftCoverage           float64                 `json:"draft_coverage,omitempty"`
+	DraftDisableReason      string                  `json:"draft_disable_reason,omitempty"`
 }
 
 // PromptTokensDetails provides a breakdown of prompt tokens.
 type PromptTokensDetails struct {
 	CachedTokens int `json:"cached_tokens"`
+}
+
+// CompletionTokensDetails provides a breakdown of completion tokens.
+type CompletionTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
 // TopLogprob represents a single token with its log probability.

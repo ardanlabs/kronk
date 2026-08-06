@@ -3108,7 +3108,7 @@ function accumulateMetrics(
   includeInOverall: boolean,
 ) {
   const tps = pr.usage?.tokens_per_second
-  const out = pr.usage?.output_tokens
+  const out = pr.usage?.completion_tokens
 
   if (includeInOverall && tps && tps > 0 && out !== undefined) {
     const gen = Math.max(0, out - 1)
@@ -3250,7 +3250,7 @@ async function runScenarioSequential(
 
         if (!isWarmup) {
           const tps = pr.usage?.tokens_per_second
-          const out = pr.usage?.output_tokens
+          const out = pr.usage?.completion_tokens
           if (tps && tps > 0 && out !== undefined) {
             const gen = Math.max(0, out - 1)
             if (gen > 0) {
@@ -3267,7 +3267,7 @@ async function runScenarioSequential(
         if (prompt.contextFill) {
           const fillLabel = prompt.contextFill.label
           const tps = pr.usage?.tokens_per_second
-          const out = pr.usage?.output_tokens
+          const out = pr.usage?.completion_tokens
           if (tps && tps > 0 && out !== undefined) {
             const gen = Math.max(0, out - 1)
             if (gen > 0) {
