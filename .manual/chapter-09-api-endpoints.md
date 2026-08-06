@@ -97,10 +97,11 @@ data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 data: [DONE]
 ```
 
-By default, streaming chunks omit `usage`. To include usage in the terminal
-streaming chunk, set `"stream_options": {"include_usage": true}`. This option
-affects the streaming response; it does not change generation or server-side
-accounting.
+By default, streaming chunks omit `usage`. To request usage, set
+`"stream_options": {"include_usage": true}`. Each completion chunk then has
+`"usage": null`, and Kronk sends one additional chunk before `[DONE]` with an
+empty `choices` array and the final usage totals. This option affects the
+streaming response; it does not change generation or server-side accounting.
 
 Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a
 function name is known. Once parsing completes, Kronk emits the completed

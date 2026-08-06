@@ -74,6 +74,73 @@ func TestMarshalChatStreamError(t *testing.T) {
 	}
 }
 
+func TestMarshalChatStreamResponseUsage(t *testing.T) {
+	u := model.Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
+	resp := model.ChatResponse{
+		ID:                "chatcmpl-id",
+		Object:            model.ObjectChatText,
+		Created:           123,
+		Model:             "model",
+		SystemFingerprint: "fp_kronk",
+		Choices:           []model.Choice{{Index: 0}},
+		Usage:             &u,
+	}
+
+	tests := []struct {
+		name             string
+		resp             model.ChatResponse
+		includeUsage     bool
+		wantUsageJSON    string
+		wantUsagePresent bool
+		wantChoices      int
+	}{
+		{name: "omitted", resp: resp, wantChoices: 1},
+		{name: "ordinary chunk null", resp: func() model.ChatResponse {
+			resp := resp
+			resp.Usage = nil
+			return resp
+		}(), includeUsage: true, wantUsageJSON: "null", wantChoices: 1},
+		{name: "usage chunk", resp: func() model.ChatResponse {
+			resp := resp
+			resp.Choices = []model.Choice{}
+			return resp
+		}(), includeUsage: true, wantUsagePresent: true, wantChoices: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := marshalChatStreamResponse(tt.resp, tt.includeUsage)
+			if err != nil {
+				t.Fatalf("marshalChatStreamResponse: %v", err)
+			}
+
+			var wire struct {
+				Choices []model.Choice  `json:"choices"`
+				Usage   json.RawMessage `json:"usage"`
+			}
+			if err := json.Unmarshal(data, &wire); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			if got := len(wire.Choices); got != tt.wantChoices {
+				t.Errorf("choices: got %d, want %d", got, tt.wantChoices)
+			}
+			gotUsage := string(wire.Usage)
+			if !tt.wantUsagePresent && gotUsage != tt.wantUsageJSON {
+				t.Errorf("usage: got %s, want %s", gotUsage, tt.wantUsageJSON)
+			}
+			if tt.wantUsagePresent {
+				var got model.Usage
+				if err := json.Unmarshal(wire.Usage, &got); err != nil {
+					t.Fatalf("Unmarshal usage: %v", err)
+				}
+				if got.TotalTokens != u.TotalTokens {
+					t.Errorf("TotalTokens: got %d, want %d", got.TotalTokens, u.TotalTokens)
+				}
+			}
+		})
+	}
+}
+
 func TestChatValidatesMessagesBeforeAdmission(t *testing.T) {
 	tests := []struct {
 		name string

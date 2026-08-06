@@ -196,7 +196,7 @@ export default function DocsAPIChat() {
                     <td><code>stream_options</code></td>
                     <td><code>object</code></td>
                     <td>No</td>
-                    <td>Set include_usage to true to include usage in the terminal streaming chunk (default: false)</td>
+                    <td>Set include_usage to true to send a final usage-only chunk with an empty choices array (default: false)</td>
                   </tr>
                   <tr>
                     <td><code>logprobs</code></td>

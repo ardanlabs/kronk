@@ -1894,7 +1894,7 @@ docker rm kronk
           <pre className="code-block"><code className="language-text">{`data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 
 data: [DONE]`}</code></pre>
-          <p>By default, streaming chunks omit <code>usage</code>. To include usage in the terminal streaming chunk, set <code>"stream_options": &#123;"include_usage": true&#125;</code>. This option affects the streaming response; it does not change generation or server-side accounting.</p>
+          <p>By default, streaming chunks omit <code>usage</code>. To request usage, set <code>"stream_options": &#123;"include_usage": true&#125;</code>. Each completion chunk then has <code>"usage": null</code>, and Kronk sends one additional chunk before <code>[DONE]</code> with an empty <code>choices</code> array and the final usage totals. This option affects the streaming response; it does not change generation or server-side accounting.</p>
           <p>Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a function name is known. Once parsing completes, Kronk emits the completed arguments in a nonterminal tool-call delta followed by an empty terminal delta with <code>finish_reason: "tool_calls"</code>.</p>
           <p><code>usage.completion_tokens</code> includes all generated tokens, including reasoning, control, and tool-call syntax that a parser may buffer instead of exposing as assistant text. <code>usage.completion_tokens_details.reasoning_tokens</code> reports the reasoning subset. <code>usage.total_tokens</code> is the sum of <code>prompt_tokens</code> and <code>completion_tokens</code>.</p>
           <h3 id="tool-calls">Tool calls</h3>

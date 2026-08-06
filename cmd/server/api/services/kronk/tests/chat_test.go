@@ -155,7 +155,9 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					"include_usage": true,
 				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -181,10 +183,10 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					hasNoLogprobs().
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 		{
 			Name:       "good-token-logprobs",
@@ -208,7 +210,9 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					"include_usage": true,
 				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -238,10 +242,10 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					hasNoLogprobs().
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 	}
 }
@@ -271,7 +275,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					"include_usage": true,
 				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -297,9 +303,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 		{
 			Name:       "imc-second-turn-cache-hit",
@@ -323,7 +329,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					"include_usage": true,
 				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -349,9 +357,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 		{
 			Name:       "imc-different-session",
@@ -373,7 +381,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					"include_usage": true,
 				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -399,9 +409,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 	}
 }
@@ -489,7 +499,9 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 					"include_usage": true,
 				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -515,10 +527,10 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					hasNoLogprobs().
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 	}
 }
@@ -728,7 +740,9 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 					"include_usage": true,
 				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -754,9 +768,11 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(false).
 					hasNoLogprobs().
 					result(t)
+			},
+			StreamCmpFunc: func(events []json.RawMessage) string {
+				return validateChatUsageStreamReasoning(events, false)
 			},
 		},
 	}
@@ -881,7 +897,9 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 					"include_usage": true,
 				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -910,11 +928,14 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
 			StreamCmpFunc: func(events []json.RawMessage) string {
-				return validateToolCallStream(events, "get_weather", "location")
+				if result := validateChatUsageStream(events); result != "" {
+					return result
+				}
+
+				return validateToolCallStream(events[:len(events)-1], "get_weather", "location")
 			},
 		},
 	}
