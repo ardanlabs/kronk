@@ -821,7 +821,7 @@ type ResponseToolCallFunction struct {
 
 type ResponseToolCall struct {
 	ID       string                   `json:"id"`
-	Index    int                      `json:"index"`
+	Index    int                      `json:"-"`
 	Type     string                   `json:"type"`
 	Function ResponseToolCallFunction `json:"function"`
 	Status   int                      `json:"status,omitempty"`

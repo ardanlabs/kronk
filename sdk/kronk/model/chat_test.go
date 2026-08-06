@@ -836,11 +836,40 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	if got, want := toolCall["id"], "call_1"; got != want {
 		t.Errorf("tool call ID: got %v, want %v", got, want)
 	}
+	if got, want := toolCall["index"], float64(0); got != want {
+		t.Errorf("tool call index: got %v, want %v", got, want)
+	}
 	if got, want := function["name"], "get_weather"; got != want {
 		t.Errorf("function name: got %v, want %v", got, want)
 	}
 	if got, want := function["arguments"], ""; got != want {
 		t.Errorf("function arguments: got %v, want %v", got, want)
+	}
+}
+
+func TestResponseMessageCompletedToolCallsOmitIndex(t *testing.T) {
+	msg := ResponseMessage{
+		ToolCalls: []ResponseToolCall{
+			{ID: "call_1", Index: 0, Type: "function", Function: ResponseToolCallFunction{Name: "first", Arguments: ToolCallArguments{}}},
+			{ID: "call_2", Index: 1, Type: "function", Function: ResponseToolCallFunction{Name: "second", Arguments: ToolCallArguments{}}},
+		},
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var wire struct {
+		ToolCalls []map[string]any `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for i, toolCall := range wire.ToolCalls {
+		if _, exists := toolCall["index"]; exists {
+			t.Errorf("tool call %d: got index in %v, want omitted", i, toolCall)
+		}
 	}
 }
 
