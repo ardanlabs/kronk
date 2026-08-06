@@ -1,12 +1,33 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { IMCSessionsResponse } from '../types';
-import { labelWithTip } from './ParamTooltips';
+import { labelWithTip, PARAM_TOOLTIPS, type TooltipKey } from './ParamTooltips';
 
-type SortField = 'model_id' | 'id' | 'state' | 'input_messages' | 'input_tokens' | 'reusable_messages' | 'reusable_tokens' | 'output_tokens' | 'request_total' | 'request_utilization' | 'total_allocated' | 'peak_context' | 'context_window' | 'utilization' | 'last_used' | 'has_media';
+type SortField = 'model_id' | 'id' | 'state' | 'messages' | 'context' | 'input_messages' | 'input_tokens' | 'reusable_messages' | 'reusable_tokens' | 'output_tokens' | 'request_total' | 'request_utilization' | 'total_allocated' | 'peak_context' | 'context_window' | 'utilization' | 'last_used' | 'has_media';
 
 const STATE_ORDER = { active: 0, idle: 1, empty: 2 } as const;
 const ALL_MODELS = '';
+
+const FIELD_GUIDE: ReadonlyArray<{ label: string; tooltipKey: TooltipKey }> = [
+  { label: 'Model', tooltipKey: 'imcModelID' },
+  { label: 'Cache Entry', tooltipKey: 'imcSessionID' },
+  { label: 'State', tooltipKey: 'imcState' },
+  { label: 'Last Req Msgs', tooltipKey: 'imcInputMessages' },
+  { label: 'Last Req Input', tooltipKey: 'imcInputTokens' },
+  { label: 'Last Req Output', tooltipKey: 'imcOutputTokens' },
+  { label: 'Last Req Total', tooltipKey: 'imcRequestTotal' },
+  { label: 'Last Req Used', tooltipKey: 'imcRequestUtilization' },
+  { label: 'Rolling Msgs', tooltipKey: 'imcMessages' },
+  { label: 'Rolling Tokens', tooltipKey: 'imcContext' },
+  { label: 'Fallback Msgs', tooltipKey: 'imcFallbackMessages' },
+  { label: 'Fallback Tokens', tooltipKey: 'imcFallbackTokens' },
+  { label: 'Total Allocated', tooltipKey: 'imcTotalAllocated' },
+  { label: 'Peak Context', tooltipKey: 'imcPeakContext' },
+  { label: 'Peak Used', tooltipKey: 'imcUtilization' },
+  { label: 'Window', tooltipKey: 'imcContextWindow' },
+  { label: 'Media', tooltipKey: 'imcMedia' },
+  { label: 'Last Used', tooltipKey: 'imcLastUsed' },
+];
 
 function formatDate(dateStr: string): string {
   if (!dateStr || dateStr.startsWith('0001-01-01')) return '—';
@@ -32,6 +53,7 @@ export default function IMCSessions() {
   const [data, setData] = useState<IMCSessionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showFieldGuide, setShowFieldGuide] = useState(false);
   const [selectedModel, setSelectedModel] = useState(ALL_MODELS);
   const [sortField, setSortField] = useState<SortField>('utilization');
   const [sortAscending, setSortAscending] = useState(false);
@@ -63,6 +85,16 @@ export default function IMCSessions() {
 
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!showFieldGuide) return;
+
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowFieldGuide(false);
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [showFieldGuide]);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
@@ -98,6 +130,12 @@ export default function IMCSessions() {
         break;
       case 'state':
         comparison = STATE_ORDER[a.state] - STATE_ORDER[b.state];
+        break;
+      case 'messages':
+        comparison = a.messages - b.messages;
+        break;
+      case 'context':
+        comparison = a.context - b.context;
         break;
       case 'input_messages':
         comparison = a.input_messages - b.input_messages;
@@ -156,22 +194,42 @@ export default function IMCSessions() {
           <p className="page-description">
             Current bounded Incremental Message Cache entries for loaded models
           </p>
-          <p className="page-description" style={{ marginTop: 6 }}>
-            Each loaded model owns an independent set of entries. Unloading a model removes its entries.{' '}
-            <strong>Active</strong> means the entry is reserved while being restored or updated.{' '}
-            <strong>Idle</strong> means it contains a published snapshot ready for reuse.{' '}
-            <strong>Empty</strong> means it has no cached snapshot.
-          </p>
-          <p className="page-description" style={{ marginTop: 6 }}>
-            <strong>Total Allocated</strong> is the high-water context for the session, including generated output, and does not decrease when the session is reused with a smaller context.{' '}
-            <strong>Request Used</strong> shows the latest input plus output against the window.{' '}
-            <strong>Peak Used</strong> shows the largest execution depth observed for the session.
-          </p>
         </div>
-        <button className="btn btn-primary" onClick={() => loadSessions()} disabled={loading}>
-          Refresh
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-secondary" onClick={() => setShowFieldGuide(true)}>
+            Field Guide
+          </button>
+          <button className="btn btn-primary" onClick={() => loadSessions()} disabled={loading}>
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {showFieldGuide && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="imc-field-guide-title" onClick={() => setShowFieldGuide(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3 id="imc-field-guide-title">IMC Session Field Guide</h3>
+              <button className="modal-close" onClick={() => setShowFieldGuide(false)} aria-label="Close field guide">
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginTop: 0 }}>
+                Each loaded model owns an independent bounded set of cache entries. Unloading a model removes its entries.
+              </p>
+              <dl style={{ margin: '24px 0 0', display: 'grid', gap: '20px' }}>
+                {FIELD_GUIDE.map(({ label, tooltipKey }) => (
+                  <div key={tooltipKey}>
+                    <dt><strong>{label}</strong></dt>
+                    <dd style={{ margin: '4px 0 0' }}>{PARAM_TOOLTIPS[tooltipKey]}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -220,25 +278,31 @@ export default function IMCSessions() {
                     {labelWithTip('State', 'imcState')}{sortIndicator('state')}
                   </th>
                   <th onClick={() => handleSort('input_messages')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Input Msgs', 'imcInputMessages')}{sortIndicator('input_messages')}
+                    {labelWithTip('Last Req Msgs', 'imcInputMessages')}{sortIndicator('input_messages')}
                   </th>
                   <th onClick={() => handleSort('input_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Input Tokens', 'imcInputTokens')}{sortIndicator('input_tokens')}
+                    {labelWithTip('Last Req Input', 'imcInputTokens')}{sortIndicator('input_tokens')}
                   </th>
                   <th onClick={() => handleSort('output_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Output Tokens', 'imcOutputTokens')}{sortIndicator('output_tokens')}
+                    {labelWithTip('Last Req Output', 'imcOutputTokens')}{sortIndicator('output_tokens')}
                   </th>
                   <th onClick={() => handleSort('request_total')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Request Total', 'imcRequestTotal')}{sortIndicator('request_total')}
+                    {labelWithTip('Last Req Total', 'imcRequestTotal')}{sortIndicator('request_total')}
                   </th>
                   <th onClick={() => handleSort('request_utilization')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Request Used', 'imcRequestUtilization')}{sortIndicator('request_utilization')}
+                    {labelWithTip('Last Req Used', 'imcRequestUtilization')}{sortIndicator('request_utilization')}
+                  </th>
+                  <th onClick={() => handleSort('messages')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Rolling Msgs', 'imcMessages')}{sortIndicator('messages')}
+                  </th>
+                  <th onClick={() => handleSort('context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Rolling Tokens', 'imcContext')}{sortIndicator('context')}
                   </th>
                   <th onClick={() => handleSort('reusable_messages')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Reusable Msgs', 'imcReusableMessages')}{sortIndicator('reusable_messages')}
+                    {labelWithTip('Fallback Msgs', 'imcFallbackMessages')}{sortIndicator('reusable_messages')}
                   </th>
                   <th onClick={() => handleSort('reusable_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Reusable Tokens', 'imcReusableTokens')}{sortIndicator('reusable_tokens')}
+                    {labelWithTip('Fallback Tokens', 'imcFallbackTokens')}{sortIndicator('reusable_tokens')}
                   </th>
                   <th onClick={() => handleSort('total_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Total Allocated', 'imcTotalAllocated')}{sortIndicator('total_allocated')}
@@ -271,6 +335,8 @@ export default function IMCSessions() {
                     <td style={{ textAlign: 'right' }}>{session.output_tokens.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{requestTotal(session.input_tokens, session.output_tokens).toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{utilization(requestTotal(session.input_tokens, session.output_tokens), session.context_window)}</td>
+                    <td style={{ textAlign: 'right' }}>{session.messages.toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>{session.context.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.reusable_tokens > 0 && session.reusable_messages === 0 ? '—' : session.reusable_messages.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.reusable_tokens.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.total_allocated.toLocaleString()}</td>
