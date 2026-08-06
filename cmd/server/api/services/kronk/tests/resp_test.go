@@ -197,6 +197,9 @@ func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				"top_p":       0.9,
 				"top_k":       40,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &kronk.ResponseStreamEvent{},
 			ExpResp: &kronk.ResponseResponse{

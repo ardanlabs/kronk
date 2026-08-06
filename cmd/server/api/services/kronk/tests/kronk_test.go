@@ -301,6 +301,10 @@ func (v responseValidator) hasCreated() responseValidator {
 
 func (v responseValidator) hasUsage(reasoning bool) responseValidator {
 	u := v.resp.Usage
+	if u == nil {
+		v.errors = append(v.errors, "expected usage to be present")
+		return v
+	}
 
 	if u.PromptTokens <= 0 {
 		v.errors = append(v.errors, "expected prompt_tokens to be greater than 0")

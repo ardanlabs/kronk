@@ -229,7 +229,7 @@ func marshalChatStreamError(resp model.ChatResponse) ([]byte, error) {
 func streamIncludeUsage(d model.D) bool {
 	streamOpts, exists := d["stream_options"]
 	if !exists {
-		return true
+		return model.DefIncludeUsage
 	}
 
 	var optsMap model.D
@@ -242,7 +242,7 @@ func streamIncludeUsage(d model.D) bool {
 
 	includeUsage, exists := optsMap["include_usage"].(bool)
 	if !exists {
-		return true
+		return model.DefIncludeUsage
 	}
 
 	return includeUsage

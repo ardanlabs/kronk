@@ -97,10 +97,10 @@ data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 data: [DONE]
 ```
 
-By default, the terminal streaming chunk includes `usage`. To omit usage from
-all streaming chunks, set `"stream_options": {"include_usage": false}`. This
-option affects only the streaming wire response; it does not change generation
-or server-side accounting.
+By default, streaming chunks omit `usage`. To include usage in the terminal
+streaming chunk, set `"stream_options": {"include_usage": true}`. This option
+affects the streaming response; it does not change generation or server-side
+accounting.
 
 Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a
 function name is known. Once parsing completes, Kronk emits the completed
@@ -182,7 +182,9 @@ output tokens in `output_tokens`, including reasoning and tool-call syntax;
 `total_tokens` includes both input and output.
 
 With `"stream": true`, each SSE record has a named event and matching JSON
-payload. A text response commonly includes:
+payload. Streaming usage is omitted unless the request sets
+`"stream_options": {"include_usage": true}`. A text response commonly
+includes:
 
 ```text
 event: response.created

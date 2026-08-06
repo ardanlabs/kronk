@@ -15,7 +15,8 @@ func TestStreamIncludeUsage(t *testing.T) {
 		d    model.D
 		want bool
 	}{
-		{name: "omitted defaults true", d: model.D{}, want: true},
+		{name: "omitted defaults false", d: model.D{}, want: false},
+		{name: "empty options defaults false", d: model.D{"stream_options": model.D{}}, want: false},
 		{name: "D true", d: model.D{"stream_options": model.D{"include_usage": true}}, want: true},
 		{name: "D false", d: model.D{"stream_options": model.D{"include_usage": false}}, want: false},
 		{name: "map true", d: model.D{"stream_options": map[string]any{"include_usage": true}}, want: true},

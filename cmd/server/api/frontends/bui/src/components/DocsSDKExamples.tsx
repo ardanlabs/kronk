@@ -188,6 +188,9 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		"top_k":          1,
 		"tools":          a.toolDocuments,
 		"tool_selection": "auto",
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	fmt.Printf("\\u001b[93m\\n%s\\u001b[0m: 0.000", a.krn.ModelInfo().ID)
@@ -636,6 +639,9 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, audioFi
 		"temperature": 0.7,
 		"top_p":       0.9,
 		"top_k":       40,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
@@ -1627,6 +1633,9 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 		"messages":   conversation,
 		"tools":      toolDocuments(),
 		"max_tokens": 2048,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	fmt.Print("\\nMODEL> ")
@@ -3550,6 +3559,9 @@ func run() error {
 				"temperature": 0.7,
 				"top_p":       0.9,
 				"top_k":       40,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			}
 
 			ch, err := performChat(ctx, krnChat, d)
@@ -4194,6 +4206,7 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 		"input":             conversation,
 		"tools":             toolDocuments(),
 		"max_output_tokens": 2048,
+		"stream_options":    model.D{"include_usage": true},
 	}
 
 	fmt.Print("\\nMODEL> ")
@@ -4642,6 +4655,9 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFi
 		"top_p":       0.9,
 		"top_k":       40,
 		"max_tokens":  2048,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)

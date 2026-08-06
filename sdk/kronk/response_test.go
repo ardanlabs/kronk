@@ -65,6 +65,14 @@ func TestToChatResponseToResponsesUsageIncludesReasoning(t *testing.T) {
 	}
 }
 
+func TestToChatResponseToResponsesWithoutUsage(t *testing.T) {
+	resp := toChatResponseToResponses(model.ChatResponse{}, model.D{})
+
+	if got := resp.Usage; got != (ResponseUsage{}) {
+		t.Errorf("Usage: got %+v, want zero value", got)
+	}
+}
+
 func TestToChatResponseToResponsesPreservesToolChoice(t *testing.T) {
 	toolChoice := model.D{"type": "function", "function": model.D{"name": "get_weather"}}
 	want := model.D{"type": "function", "name": "get_weather"}

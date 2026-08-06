@@ -605,7 +605,7 @@ export default function DocsSDKModel() {
 	Grammar string \`json:"grammar"\`
 
 	// IncludeUsage determines whether to include token usage information in
-	// streaming responses. Default is true.
+	// streaming responses. Default is false.
 	IncludeUsage bool \`json:"include_usage"\`
 
 	// Logprobs determines whether to return log probabilities of output tokens.
@@ -1757,7 +1757,7 @@ export default function DocsSDKModel() {
 
 	// DefIncludeUsage determines whether to include token usage information in
 	// streaming responses.
-	DefIncludeUsage = true
+	DefIncludeUsage = false
 
 	// DefLogprobs determines whether to return log probabilities of output tokens.
 	// When enabled, the response includes probability data for each generated token.

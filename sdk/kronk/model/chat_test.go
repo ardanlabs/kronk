@@ -816,7 +816,7 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", tt.toolCalls, nil, tt.finishReason, Usage{})
+			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", tt.toolCalls, nil, tt.finishReason, true, Usage{})
 			if got := resp.Choices[0].FinishReason(); got != tt.want {
 				t.Errorf("FinishReason: got %q, want %q", got, tt.want)
 			}
@@ -893,6 +893,23 @@ func TestUsageCompletionTokensJSON(t *testing.T) {
 		if _, exists := wire[field]; exists {
 			t.Errorf("%s: got top-level field, want absent", field)
 		}
+	}
+}
+
+func TestChatResponseFinalUsage(t *testing.T) {
+	u := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
+
+	withUsage := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "answer", "", nil, nil, FinishReasonStop, true, u)
+	if withUsage.Usage == nil {
+		t.Fatal("Usage: got nil, want usage")
+	}
+	if got := withUsage.Usage.TotalTokens; got != u.TotalTokens {
+		t.Errorf("TotalTokens: got %d, want %d", got, u.TotalTokens)
+	}
+
+	withoutUsage := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "answer", "", nil, nil, FinishReasonStop, false, u)
+	if withoutUsage.Usage != nil {
+		t.Errorf("Usage: got %+v, want nil", withoutUsage.Usage)
 	}
 }
 
@@ -989,7 +1006,7 @@ func TestChatResponseFinalSeparatesCompletedToolCallsFromFinishReason(t *testing
 		t.Errorf("argument delta: got %q, want %q", got, want)
 	}
 
-	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "answer", "thought", toolCalls, nil, "", Usage{})
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "answer", "thought", toolCalls, nil, "", true, Usage{})
 	if resp.Choices[0].Delta == nil {
 		t.Fatal("Delta: got nil, want empty terminal delta")
 	}
@@ -1494,7 +1511,8 @@ func TestParseParamsIncludeUsage(t *testing.T) {
 		include    bool
 		want       bool
 	}{
-		{name: "omitted defaults true", want: true},
+		{name: "omitted defaults false", want: false},
+		{name: "empty options defaults false", streamOpts: D{}, include: true, want: false},
 		{name: "D true", streamOpts: D{"include_usage": true}, include: true, want: true},
 		{name: "D false", streamOpts: D{"include_usage": false}, include: true, want: false},
 		{name: "map true", streamOpts: map[string]any{"include_usage": true}, include: true, want: true},

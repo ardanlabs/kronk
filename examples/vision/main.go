@@ -173,6 +173,9 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFi
 		"top_p":       0.9,
 		"top_k":       40,
 		"max_tokens":  2048,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)

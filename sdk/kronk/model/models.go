@@ -1030,10 +1030,14 @@ func forReasoning(content string, reasoning bool) string {
 	return ""
 }
 
-func chatResponseFinal(id string, object string, model string, index int, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
+func chatResponseFinal(id string, object string, model string, index int, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, includeUsage bool, u Usage) ChatResponse {
 	var logprobs *Logprobs
 	if len(logprobsData) > 0 {
 		logprobs = &Logprobs{Content: logprobsData}
+	}
+	var usage *Usage
+	if includeUsage {
+		usage = &u
 	}
 
 	msg := &ResponseMessage{
@@ -1068,7 +1072,7 @@ func chatResponseFinal(id string, object string, model string, index int, conten
 				FinishReasonPtr: &finishReason,
 			},
 		},
-		Usage: &u,
+		Usage: usage,
 	}
 }
 

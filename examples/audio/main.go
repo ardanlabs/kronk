@@ -169,6 +169,9 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, audioFi
 		"temperature": 0.7,
 		"top_p":       0.9,
 		"top_k":       40,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)

@@ -1894,7 +1894,7 @@ docker rm kronk
           <pre className="code-block"><code className="language-text">{`data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 
 data: [DONE]`}</code></pre>
-          <p>By default, the terminal streaming chunk includes <code>usage</code>. To omit usage from all streaming chunks, set <code>"stream_options": &#123;"include_usage": false&#125;</code>. This option affects only the streaming wire response; it does not change generation or server-side accounting.</p>
+          <p>By default, streaming chunks omit <code>usage</code>. To include usage in the terminal streaming chunk, set <code>"stream_options": &#123;"include_usage": true&#125;</code>. This option affects the streaming response; it does not change generation or server-side accounting.</p>
           <p>Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a function name is known. Once parsing completes, Kronk emits the completed arguments in a nonterminal tool-call delta followed by an empty terminal delta with <code>finish_reason: "tool_calls"</code>.</p>
           <p><code>usage.completion_tokens</code> includes all generated tokens, including reasoning, control, and tool-call syntax that a parser may buffer instead of exposing as assistant text. <code>usage.completion_tokens_details.reasoning_tokens</code> reports the reasoning subset. <code>usage.total_tokens</code> is the sum of <code>prompt_tokens</code> and <code>completion_tokens</code>.</p>
           <h3 id="tool-calls">Tool calls</h3>
@@ -1925,7 +1925,7 @@ data: [DONE]`}</code></pre>
           <p>Use <code>max_output_tokens</code> to set the Responses output limit. <code>max_tokens</code> remains available as a compatibility alias, but <code>max_output_tokens</code> wins when both are present. When the limit is reached, the response has <code>status: "incomplete"</code>, <code>completed_at: null</code>, and:</p>
           <pre className="code-block"><code className="language-json">{`"incomplete_details": {"reason": "max_output_tokens"}`}</code></pre>
           <p>Output items have the same <code>incomplete</code> status. Usage reports all generated output tokens in <code>output_tokens</code>, including reasoning and tool-call syntax; <code>output_tokens_details.reasoning_tokens</code> supplies the reasoning subset, and <code>total_tokens</code> includes both input and output.</p>
-          <p>With <code>"stream": true</code>, each SSE record has a named event and matching JSON payload. A text response commonly includes:</p>
+          <p>With <code>"stream": true</code>, each SSE record has a named event and matching JSON payload. Streaming usage is omitted unless the request sets <code>"stream_options": &#123;"include_usage": true&#125;</code>. A text response commonly includes:</p>
           <pre className="code-block"><code className="language-text">{`event: response.created
 data: {"type":"response.created",...}
 

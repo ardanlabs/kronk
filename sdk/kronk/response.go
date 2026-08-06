@@ -681,6 +681,10 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 
 	tools := extractTools(d)
 	inputParams := extractInputParams(d)
+	chatUsage := model.Usage{}
+	if chatResp.Usage != nil {
+		chatUsage = *chatResp.Usage
+	}
 
 	return ResponseResponse{
 		ID:               "resp_" + chatResp.ID,
@@ -712,15 +716,15 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 		TopP:       inputParams.TopP,
 		Truncation: inputParams.Truncation,
 		Usage: ResponseUsage{
-			InputTokens: chatResp.Usage.PromptTokens,
+			InputTokens: chatUsage.PromptTokens,
 			InputTokensDetails: InputTokensDetails{
-				CachedTokens: chatResp.Usage.PromptTokensDetails.CachedTokens,
+				CachedTokens: chatUsage.PromptTokensDetails.CachedTokens,
 			},
-			OutputTokens: chatResp.Usage.CompletionTokens,
+			OutputTokens: chatUsage.CompletionTokens,
 			OutputTokenDetail: OutputTokensDetails{
-				ReasoningTokens: chatResp.Usage.CompletionTokensDetails.ReasoningTokens,
+				ReasoningTokens: chatUsage.CompletionTokensDetails.ReasoningTokens,
 			},
-			TotalTokens: chatResp.Usage.TotalTokens,
+			TotalTokens: chatUsage.TotalTokens,
 		},
 		User:     nil,
 		Metadata: map[string]any{},

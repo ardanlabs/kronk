@@ -151,6 +151,9 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				"top_p":       0.9,
 				"top_k":       40,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -201,6 +204,9 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				"stream":       true,
 				"logprobs":     true,
 				"top_logprobs": 3,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -261,6 +267,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -276,7 +285,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -310,6 +319,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -325,7 +337,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -357,6 +369,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -372,7 +387,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -470,6 +485,9 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 				"top_p":       0.9,
 				"top_k":       40,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -706,6 +724,9 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 				"max_tokens":   512,
 				"stream":       true,
 				"enable_think": false,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -856,6 +877,9 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 				"max_tokens":   512,
 				"temperature":  0.7,
 				"enable_think": true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{

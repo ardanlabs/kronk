@@ -184,6 +184,9 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		"top_k":          1,
 		"tools":          a.toolDocuments,
 		"tool_selection": "auto",
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	fmt.Printf("\u001b[93m\n%s\u001b[0m: 0.000", a.krn.ModelInfo().ID)
