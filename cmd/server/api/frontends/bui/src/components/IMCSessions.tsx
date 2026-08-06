@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import type { IMCSessionsResponse } from '../types';
 import { labelWithTip } from './ParamTooltips';
 
-type SortField = 'model_id' | 'id' | 'state' | 'context' | 'allocated' | 'checkpoint_context' | 'checkpoint_allocated' | 'total_allocated' | 'messages' | 'context_window' | 'utilization' | 'last_used' | 'has_media';
+type SortField = 'model_id' | 'id' | 'state' | 'context' | 'total_allocated' | 'peak_context' | 'messages' | 'context_window' | 'utilization' | 'last_used' | 'has_media';
 
 const STATE_ORDER = { active: 0, idle: 1, empty: 2 } as const;
 const ALL_MODELS = '';
@@ -15,9 +15,9 @@ function formatDate(dateStr: string): string {
   return date.toLocaleString();
 }
 
-function utilization(context: number, contextWindow: number): string {
+function utilization(peakContext: number, contextWindow: number): string {
   if (contextWindow <= 0) return '0%';
-  return `${((context / contextWindow) * 100).toFixed(1)}%`;
+  return `${((peakContext / contextWindow) * 100).toFixed(1)}%`;
 }
 
 function modelTabLabel(modelID: string): string {
@@ -29,7 +29,7 @@ export default function IMCSessions() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState(ALL_MODELS);
-  const [sortField, setSortField] = useState<SortField>('allocated');
+  const [sortField, setSortField] = useState<SortField>('utilization');
   const [sortAscending, setSortAscending] = useState(false);
 
   const loadSessions = async (silent = false) => {
@@ -98,17 +98,11 @@ export default function IMCSessions() {
       case 'context':
         comparison = a.context - b.context;
         break;
-      case 'allocated':
-        comparison = a.allocated - b.allocated;
-        break;
-      case 'checkpoint_context':
-        comparison = a.checkpoint_context - b.checkpoint_context;
-        break;
-      case 'checkpoint_allocated':
-        comparison = a.checkpoint_allocated - b.checkpoint_allocated;
-        break;
       case 'total_allocated':
         comparison = a.total_allocated - b.total_allocated;
+        break;
+      case 'peak_context':
+        comparison = a.peak_context - b.peak_context;
         break;
       case 'messages':
         comparison = a.messages - b.messages;
@@ -117,8 +111,8 @@ export default function IMCSessions() {
         comparison = a.context_window - b.context_window;
         break;
       case 'utilization':
-        comparison = (a.context_window > 0 ? a.context / a.context_window : 0)
-          - (b.context_window > 0 ? b.context / b.context_window : 0);
+        comparison = (a.context_window > 0 ? a.peak_context / a.context_window : 0)
+          - (b.context_window > 0 ? b.peak_context / b.context_window : 0);
         break;
       case 'last_used':
         comparison = Date.parse(a.last_used) - Date.parse(b.last_used);
@@ -147,6 +141,10 @@ export default function IMCSessions() {
             <strong>Active</strong> means the entry is reserved while being restored or updated.{' '}
             <strong>Idle</strong> means it contains a published snapshot ready for reuse.{' '}
             <strong>Empty</strong> means it has no cached snapshot.
+          </p>
+          <p className="page-description" style={{ marginTop: 6 }}>
+            <strong>Total Allocated</strong> is the retained high-water context for the session and does not decrease when the session is reused with a smaller context.{' '}
+            <strong>Peak Context</strong> includes generated output, and <strong>Used</strong> compares that execution high-water mark with the configured window.
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => loadSessions()} disabled={loading}>
@@ -206,17 +204,11 @@ export default function IMCSessions() {
                   <th onClick={() => handleSort('context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Context', 'imcContext')}{sortIndicator('context')}
                   </th>
-                  <th onClick={() => handleSort('allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Allocated', 'imcAllocated')}{sortIndicator('allocated')}
-                  </th>
-                  <th onClick={() => handleSort('checkpoint_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Checkpoint', 'imcCheckpointContext')}{sortIndicator('checkpoint_context')}
-                  </th>
-                  <th onClick={() => handleSort('checkpoint_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Checkpoint Allocated', 'imcCheckpointAllocated')}{sortIndicator('checkpoint_allocated')}
-                  </th>
                   <th onClick={() => handleSort('total_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Total Allocated', 'imcTotalAllocated')}{sortIndicator('total_allocated')}
+                  </th>
+                  <th onClick={() => handleSort('peak_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Peak Context', 'imcPeakContext')}{sortIndicator('peak_context')}
                   </th>
                   <th onClick={() => handleSort('context_window')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Window', 'imcContextWindow')}{sortIndicator('context_window')}
@@ -240,12 +232,10 @@ export default function IMCSessions() {
                     <td><span className={`badge badge-${session.state}`}>{session.state}</span></td>
                     <td style={{ textAlign: 'right' }}>{session.messages.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.context.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.allocated.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.checkpoint_context.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.checkpoint_allocated.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.total_allocated.toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>{session.peak_context.toLocaleString()}</td>
                     <td style={{ textAlign: 'right' }}>{session.context_window.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{utilization(session.context, session.context_window)}</td>
+                    <td style={{ textAlign: 'right' }}>{utilization(session.peak_context, session.context_window)}</td>
                     <td><span className={`badge badge-${session.has_media ? 'yes' : 'no'}`}>{session.has_media ? 'yes' : 'no'}</span></td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(session.last_used)}</td>
                   </tr>

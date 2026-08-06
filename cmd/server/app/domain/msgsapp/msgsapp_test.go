@@ -1,6 +1,7 @@
 package msgsapp
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +38,61 @@ func TestMessagesRejectsStopSequencesBeforeModelAcquisition(t *testing.T) {
 	if got, want := appErr.Message, "stop_sequences is not supported"; got != want {
 		t.Errorf("Message: got %q, want %q", got, want)
 	}
+}
+
+func TestStreamStateSendEventReportsTransportErrors(t *testing.T) {
+	errWrite := errors.New("write failed")
+	errFlush := errors.New("flush failed")
+
+	tests := []struct {
+		name     string
+		writeErr error
+		flushErr error
+		wantErr  error
+	}{
+		{name: "success"},
+		{name: "write failure", writeErr: errWrite, wantErr: errWrite},
+		{name: "flush failure", flushErr: errFlush, wantErr: errFlush},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := eventResponseWriter{
+				header:   make(http.Header),
+				writeErr: tt.writeErr,
+				flushErr: tt.flushErr,
+			}
+			state := streamState{w: &w}
+
+			err := state.sendEvent("message_stop", map[string]string{"type": "message_stop"})
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("sendEvent error: got %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+type eventResponseWriter struct {
+	header   http.Header
+	writeErr error
+	flushErr error
+}
+
+func (w *eventResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *eventResponseWriter) Write(data []byte) (int, error) {
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
+	return len(data), nil
+}
+
+func (w *eventResponseWriter) WriteHeader(int) {}
+
+func (w *eventResponseWriter) FlushError() error {
+	return w.flushErr
 }
 
 func TestToOpenAIMaxTokens(t *testing.T) {

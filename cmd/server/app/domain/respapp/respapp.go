@@ -54,7 +54,7 @@ func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 
 	if _, err := krn.ResponseStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
 		if errors.Is(err, kronk.ErrResponseCommitted) {
-			return web.NewNoResponse()
+			return web.NewNoResponseError(errs.FromSDK(err))
 		}
 		return errs.FromSDK(err)
 	}

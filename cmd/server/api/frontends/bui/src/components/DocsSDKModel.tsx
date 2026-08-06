@@ -434,6 +434,7 @@ export default function DocsSDKModel() {
 	CheckpointContext   int
 	CheckpointAllocated int
 	TotalAllocated      int
+	PeakContext         int
 	Messages            int
 	ContextWindow       int
 	LastUsed            time.Time

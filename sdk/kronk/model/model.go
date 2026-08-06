@@ -85,6 +85,8 @@ type imcSession struct {
 	lastUsed            time.Time     // Last access time (for eviction)
 	reserved            bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	allocatedContext    int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
+	highWaterContext    int           // Largest rolling context published for this session across reuse and snapshot ownership changes.
+	peakContext         int           // Largest live slot context observed for this session, including generated output.
 	hasMedia            bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE            bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts       []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.

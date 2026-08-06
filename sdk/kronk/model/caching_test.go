@@ -868,6 +868,7 @@ func TestIMCSessions(t *testing.T) {
 			{id: 0, kvState: ramSessionStore()},
 			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
 			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore(), turnCheckpoint: &checkpoint},
+			{id: 3, allocatedContext: 1536, kvState: ramSessionStore(), turnCheckpoint: &imcSnapshot{allocatedContext: 4096, kvState: ramSessionStore()}},
 		},
 	}
 
@@ -885,7 +886,7 @@ func TestIMCSessions(t *testing.T) {
 	if got[2].State != IMCSessionStateIdle {
 		t.Errorf("session 2 state = %q, want %q", got[2].State, IMCSessionStateIdle)
 	}
-	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].TotalAllocated != 5632 || got[2].Messages != 4 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
+	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].TotalAllocated != 4096 || got[2].PeakContext != 4096 || got[2].Messages != 4 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
 		t.Errorf("session 2 detail = %+v, want populated scalar snapshot", got[2])
 	}
 
@@ -897,8 +898,8 @@ func TestIMCSessions(t *testing.T) {
 	m.imcSessions[2].totalTokensCached = 0
 	m.imcSessions[2].allocatedContext = 0
 	got = m.IMCSessions()
-	if got[2].Context != 1024 || got[2].Allocated != 1536 || got[2].CheckpointContext != 0 || got[2].CheckpointAllocated != 0 || got[2].TotalAllocated != 1536 {
-		t.Errorf("session 2 transition detail = %+v, want checkpoint represented once as the current snapshot", got[2])
+	if got[2].State != IMCSessionStateIdle || got[2].Context != 0 || got[2].Allocated != 0 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].TotalAllocated != 0 {
+		t.Errorf("session 2 transition detail = %+v, want fallback reported separately", got[2])
 	}
 
 	m.imcCommitSession(m.imcSessions[0], "hash", 3000, 2, nil, false, nil, "", false)
@@ -912,6 +913,28 @@ func TestIMCSessions(t *testing.T) {
 	if m.imcSessions[0].allocatedContext != 3000 {
 		t.Errorf("allocatedContext after reset = %d, want retained high-water context 3000", m.imcSessions[0].allocatedContext)
 	}
+	got = m.IMCSessions()
+	if got[0].TotalAllocated != 3000 {
+		t.Errorf("TotalAllocated after reset = %d, want retained session capacity 3000", got[0].TotalAllocated)
+	}
+	m.imcSessions[0].allocatedContext = 1000
+	got = m.IMCSessions()
+	if got[0].TotalAllocated != 3000 {
+		t.Errorf("TotalAllocated after backing-store replacement = %d, want session high-water context 3000", got[0].TotalAllocated)
+	}
+	m.imcRecordPeakContext(m.imcSessions[0], 5000)
+	m.imcRecordPeakContext(m.imcSessions[0], 4000)
+	got = m.IMCSessions()
+	if got[0].PeakContext != 5000 {
+		t.Errorf("PeakContext = %d, want observed live-context high-water 5000", got[0].PeakContext)
+	}
+
+	imcResetSession(m.imcSessions[3])
+	got = m.IMCSessions()
+	if got[3].TotalAllocated != 4096 {
+		t.Errorf("TotalAllocated after checkpoint reset = %d, want retained session capacity 4096", got[3].TotalAllocated)
+	}
+
 }
 
 // TestIMCSeqIDUnboundSentinel guards the unbound sentinel value used by

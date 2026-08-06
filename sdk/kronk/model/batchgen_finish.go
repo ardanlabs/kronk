@@ -201,6 +201,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// KV-pressure eviction path should no longer issue MemorySeqRm
 	// against this session's seqID.
 	if s.job.imcSession != nil {
+		e.model.imcRecordPeakContext(s.job.imcSession, int(s.nPast))
 		e.model.cacheMu.Lock()
 		// A newly published snapshot may already be serving another slot.
 		// Only unbind the sequence this request actually owned.

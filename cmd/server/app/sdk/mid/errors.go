@@ -37,6 +37,13 @@ func Errors(log *logger.Logger) web.MidFunc {
 				"source_err_file", path.Base(appErr.FileName),
 				"source_err_func", path.Base(appErr.FuncName))
 
+			// The handler already committed this response. Preserve the
+			// outcome for outer logging and metrics middleware, but do not
+			// convert it into an error response that Respond would write.
+			if _, ok := resp.(web.NoResponse); ok {
+				return resp
+			}
+
 			if appErr.Code == errs.InternalOnlyLog {
 				appErr = errs.Errorf(errs.Internal, "Internal Server Error")
 			}

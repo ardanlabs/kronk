@@ -34,6 +34,7 @@ type IMCSessionDetail struct {
 	CheckpointContext   int
 	CheckpointAllocated int
 	TotalAllocated      int
+	PeakContext         int
 	Messages            int
 	ContextWindow       int
 	LastUsed            time.Time
@@ -53,31 +54,18 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 		}
 
 		context := session.totalTokensCached
-		allocated := session.allocatedContext
-		messages := session.cachedMsgCount
-		hasMedia := session.hasMedia
 		checkpointContext := 0
 		checkpointAllocated := 0
-		totalAllocated := session.allocatedContext
 		if checkpoint := session.turnCheckpoint; checkpoint != nil {
 			checkpointContext = checkpoint.totalTokensCached
 			checkpointAllocated = checkpoint.allocatedContext
-			totalAllocated += checkpoint.allocatedContext
-			if context == 0 && checkpoint.totalTokensCached > 0 {
-				context = checkpoint.totalTokensCached
-				allocated = checkpoint.allocatedContext
-				messages = checkpoint.cachedMsgCount
-				hasMedia = checkpoint.hasMedia
-				checkpointContext = 0
-				checkpointAllocated = 0
-			}
 		}
 
 		state := IMCSessionStateEmpty
 		switch {
 		case session.reserved:
 			state = IMCSessionStateActive
-		case context > 0:
+		case context > 0 || checkpointContext > 0:
 			state = IMCSessionStateIdle
 		}
 
@@ -85,18 +73,29 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 			ID:                  session.id,
 			State:               state,
 			Context:             context,
-			Allocated:           allocated,
+			Allocated:           session.allocatedContext,
 			CheckpointContext:   checkpointContext,
 			CheckpointAllocated: checkpointAllocated,
-			TotalAllocated:      totalAllocated,
-			Messages:            messages,
+			TotalAllocated:      max(session.highWaterContext, session.allocatedContext),
+			PeakContext:         max(session.peakContext, session.highWaterContext, session.allocatedContext),
+			Messages:            session.cachedMsgCount,
 			ContextWindow:       m.cfg.ContextWindow(),
 			LastUsed:            session.lastUsed,
-			HasMedia:            hasMedia,
+			HasMedia:            session.hasMedia,
 		})
 	}
 
 	return details
+}
+
+func (m *Model) imcRecordPeakContext(session *imcSession, context int) {
+	if session == nil {
+		return
+	}
+
+	m.cacheMu.Lock()
+	session.peakContext = max(session.peakContext, context)
+	m.cacheMu.Unlock()
 }
 
 // decodeTokensIntoCache decodes tokens into a cache sequence starting at startPos.
@@ -256,6 +255,9 @@ func imcResetRollingSession(s *imcSession) {
 // (write lock).
 func imcResetSession(s *imcSession) {
 	s.seqID = imcSeqIDUnbound
+	if s.turnCheckpoint != nil && s.turnCheckpoint.allocatedContext > s.allocatedContext {
+		s.swapTurnCheckpoint()
+	}
 	imcResetRollingSession(s)
 	closeIMCSnapshot(s.turnCheckpoint)
 	s.turnCheckpoint = nil
@@ -423,6 +425,7 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	session.lastUsed = time.Now()
 	session.cachedTokens = nil
 	session.allocatedContext = max(session.allocatedContext, totalCached)
+	session.highWaterContext = max(session.highWaterContext, totalCached)
 	if session.draftKVState != nil {
 		session.draftKVState.Reset()
 	}
@@ -445,6 +448,7 @@ func (m *Model) imcPublishSession(session *imcSession) {
 
 	m.cacheMu.Lock()
 	session.allocatedContext = max(session.allocatedContext, session.totalTokensCached)
+	session.highWaterContext = max(session.highWaterContext, session.totalTokensCached)
 	session.reserved = false
 	m.cacheMu.Unlock()
 }

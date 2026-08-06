@@ -81,15 +81,16 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		if _, err := w.Write(data); err != nil {
+			return resp, fmt.Errorf("chat-streaming-http: %w: write response: %w", ErrResponseCommitted, err)
+		}
 
 		return resp, nil
 	}
 
 	// -------------------------------------------------------------------------
 
-	f, ok := w.(http.Flusher)
-	if !ok {
+	if !supportsResponseFlush(w) {
 		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: streaming not supported")
 	}
 
@@ -101,7 +102,9 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Transfer-Encoding", "chunked")
 	w.WriteHeader(http.StatusOK)
-	f.Flush()
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		return model.ChatResponse{}, fmt.Errorf("chat-streaming-http: %w: flush headers: %w", ErrResponseCommitted, err)
+	}
 
 	// Every 15 seconds we will send a SSE keep alive for responses
 	// that are taking a long time to process. We won't reset this
@@ -119,8 +122,9 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 		case resp, ok := <-ch:
 			if !ok {
-				w.Write([]byte("data: [DONE]\n\n"))
-				f.Flush()
+				if err := writeAndFlush(w, []byte("data: [DONE]\n\n")); err != nil {
+					return lr, fmt.Errorf("chat-streaming-http: %w: write done event: %w", ErrResponseCommitted, err)
+				}
 				return lr, nil
 			}
 
@@ -130,8 +134,9 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 					return resp, fmt.Errorf("chat-streaming-http: %w: marshal error: %w", ErrResponseCommitted, err)
 				}
 
-				fmt.Fprintf(w, "data: %s\n\n", d)
-				f.Flush()
+				if err := writeAndFlush(w, fmt.Appendf(nil, "data: %s\n\n", d)); err != nil {
+					return resp, fmt.Errorf("chat-streaming-http: %w: write error event: %w", ErrResponseCommitted, err)
+				}
 				return resp, nil
 			}
 
@@ -156,8 +161,9 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 			// [DEBUG]: Show raw output content.
 			// fmt.Printf("[DEBUG]: {\"resp\":%q}", string(d))
 
-			fmt.Fprintf(w, "data: %s\n\n", d)
-			f.Flush()
+			if err := writeAndFlush(w, fmt.Appendf(nil, "data: %s\n\n", d)); err != nil {
+				return resp, fmt.Errorf("chat-streaming-http: %w: write event: %w", ErrResponseCommitted, err)
+			}
 
 			lr = resp
 
@@ -166,10 +172,36 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 				krn.cfg.Log(ctx, "chat-streaming-http", "status", "keep-alive sent")
 			}
 
-			fmt.Fprint(w, ": keep-alive\n\n")
-			f.Flush()
+			if err := writeAndFlush(w, []byte(": keep-alive\n\n")); err != nil {
+				return lr, fmt.Errorf("chat-streaming-http: %w: write keep-alive: %w", ErrResponseCommitted, err)
+			}
 		}
 	}
+}
+
+func writeAndFlush(w http.ResponseWriter, data []byte) error {
+	if _, err := w.Write(data); err != nil {
+		return err
+	}
+
+	return http.NewResponseController(w).Flush()
+}
+
+func supportsResponseFlush(w http.ResponseWriter) bool {
+	for w != nil {
+		switch v := w.(type) {
+		case interface{ FlushError() error }:
+			return true
+		case http.Flusher:
+			return true
+		case interface{ Unwrap() http.ResponseWriter }:
+			w = v.Unwrap()
+		default:
+			return false
+		}
+	}
+
+	return false
 }
 
 func marshalChatStreamError(resp model.ChatResponse) ([]byte, error) {

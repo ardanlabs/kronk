@@ -8,6 +8,14 @@ import (
 )
 
 func checkIsError(e web.Encoder) error {
+	type responseError interface {
+		ResponseError() error
+	}
+
+	if resp, ok := e.(responseError); ok {
+		return resp.ResponseError()
+	}
+
 	err, hasError := e.(error)
 	if hasError {
 		return err

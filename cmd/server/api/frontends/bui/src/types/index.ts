@@ -67,6 +67,7 @@ export interface IMCSessionDetail {
   checkpoint_context: number;
   checkpoint_allocated: number;
   total_allocated: number;
+  peak_context: number;
   messages: number;
   context_window: number;
   last_used: string;
