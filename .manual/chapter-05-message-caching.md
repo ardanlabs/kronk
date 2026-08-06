@@ -114,9 +114,10 @@ without pretending that media is an ordinary text token.
 #### Step 3: Find the longest complete safe prefix
 
 Kronk searches available sessions for the longest complete saved plan that is
-a prefix of the new stable plan. A text session can retain two complete plans:
-its latest rolling snapshot and an alternate reusable snapshot captured at a
-previously verified token boundary:
+a prefix of the new stable plan. A text session always has its latest rolling
+snapshot and can retain at most one additional alternate reusable snapshot
+captured at a previously verified token boundary. This is one rolling snapshot
+plus one alternate, not two alternate checkpoints:
 
 ```text
 New stable plan: [A B C D E F]
@@ -354,16 +355,19 @@ prefix even though only uncached model work is decoded again. For cached media,
 Kronk retains the text-token history needed for that sampler priming separately
 from the media embedding cells represented by the native snapshot.
 
-For text sessions, Kronk can also retain one alternate reusable snapshot. When
-a new render diverges from the rolling snapshot, Kronk compares the token
-sequences to find their longest exact common prefix. It never trims the old
-model state at that position. Instead, it restores an earlier complete
-snapshot, recomputes through the newly stable boundary, and serializes the live
-target state there before continuing to the complete current input. The
-alternate snapshot includes matching draft/MTP state when available and can end
-at a token-only boundary that has no reliable message count. This can require
-approximately one additional snapshot-sized allocation for each active logical
-session.
+For text sessions, Kronk can also retain one alternate reusable snapshot in
+addition to the rolling snapshot. When a new render diverges from the rolling
+snapshot, Kronk compares the token sequences to find their longest exact common
+prefix. It never trims the old model state at that position. Instead, it
+restores an earlier complete snapshot, recomputes through the newly stable
+boundary, and serializes the live target state there before continuing to the
+complete current input. The alternate snapshot includes matching draft/MTP
+state when available and can end at a token-only boundary that has no reliable
+message count. Publishing a new alternate replaces the previous alternate; a
+session does not retain both a user-turn alternate and a progressive alternate.
+The one alternate can require approximately one additional snapshot-sized
+allocation for each active logical session, making the maximum two complete
+states: rolling plus alternate.
 
 An exact match may skip rewriting the snapshot when the stable state has not
 changed. This avoids an unnecessary serialization of the state that was just

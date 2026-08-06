@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -173,6 +175,10 @@ type AdapterConfig struct {
 // When set to 0, the default value is 4096.
 //
 // DefaultParams contains the default sampling parameters for requests.
+//
+// ChatTemplateKwargs contains model-level defaults passed only to the Jinja
+// chat template. Request-level chat_template_kwargs override matching keys,
+// and explicit top-level request fields override both.
 //
 // Devices is a list of device names to use for model execution. When multiple
 // devices are specified, the model is distributed across them according to the
@@ -369,6 +375,7 @@ type Config struct {
 	CacheTypeV            GGMLType
 	PtrContextWindow      *int
 	DefaultParams         Params
+	ChatTemplateKwargs    D
 	PtrDraftModel         *DraftModelConfig
 	Devices               []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
 	PtrFlashAttention     *FlashAttentionType
@@ -496,9 +503,9 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
-		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.Devices, cfg.FlashAttention(),
+		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrNUBatch),
@@ -510,6 +517,24 @@ func (cfg Config) String() string {
 		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit,
 		formatFloat32Ptr(cfg.PtrYarnAttnFactor),
 		formatFloat32Ptr(cfg.PtrYarnBetaFast), formatFloat32Ptr(cfg.PtrYarnBetaSlow), formatFloat32Ptr(cfg.PtrYarnExtFactor), formatIntPtr(cfg.PtrYarnOrigCtx), cfg.PtrDraftModel)
+}
+
+func chatTemplateKwargsSummary(kwargs D) string {
+	if len(kwargs) == 0 {
+		return "none"
+	}
+
+	keys := slices.Sorted(maps.Keys(kwargs))
+	values := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := "configured"
+		if boolean, ok := kwargs[key].(bool); ok {
+			value = strconv.FormatBool(boolean)
+		}
+		values = append(values, key+"="+value)
+	}
+
+	return strings.Join(values, " ")
 }
 
 func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
@@ -1771,12 +1796,15 @@ func WithAdapters(v []AdapterConfig) Option { return func(c *Config) { c.Adapter
 func WithAdmissionTimeout(v time.Duration) Option {
 	return func(c *Config) { c.PtrAdmissionTimeout = new(v) }
 }
-func WithAutoTune(v bool) Option                { return func(c *Config) { c.AutoTune = v } }
-func WithCacheMinTokens(v int) Option           { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
-func WithCacheTypeK(v GGMLType) Option          { return func(c *Config) { c.CacheTypeK = v } }
-func WithCacheTypeV(v GGMLType) Option          { return func(c *Config) { c.CacheTypeV = v } }
-func WithContextWindow(v int) Option            { return func(c *Config) { c.PtrContextWindow = new(v) } }
-func WithDefaultParams(v Params) Option         { return func(c *Config) { c.DefaultParams = v } }
+func WithAutoTune(v bool) Option        { return func(c *Config) { c.AutoTune = v } }
+func WithCacheMinTokens(v int) Option   { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
+func WithCacheTypeK(v GGMLType) Option  { return func(c *Config) { c.CacheTypeK = v } }
+func WithCacheTypeV(v GGMLType) Option  { return func(c *Config) { c.CacheTypeV = v } }
+func WithContextWindow(v int) Option    { return func(c *Config) { c.PtrContextWindow = new(v) } }
+func WithDefaultParams(v Params) Option { return func(c *Config) { c.DefaultParams = v } }
+func WithChatTemplateKwargs(v D) Option {
+	return func(c *Config) { c.ChatTemplateKwargs = v.Clone() }
+}
 func WithDevices(v []string) Option             { return func(c *Config) { c.Devices = v } }
 func WithDraftModel(v *DraftModelConfig) Option { return func(c *Config) { c.PtrDraftModel = v } }
 func WithFlashAttention(v FlashAttentionType) Option {

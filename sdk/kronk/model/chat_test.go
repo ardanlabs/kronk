@@ -131,7 +131,7 @@ func TestNormalizeChatTemplateKwargs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := tt.doc.Clone()
-			err := normalizeChatTemplateKwargs(d)
+			err := normalizeChatTemplateKwargs(d, nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("normalizeChatTemplateKwargs: got nil error, want error")
@@ -155,6 +155,55 @@ func TestNormalizeChatTemplateKwargs(t *testing.T) {
 	}
 }
 
+func TestNormalizeChatTemplateKwargsMergesModelDefaults(t *testing.T) {
+	defaults := D{
+		"preserve_thinking": true,
+		"custom_mode":       "default",
+	}
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"chat_template_kwargs": D{
+			"custom_mode": "request",
+		},
+	}
+
+	if err := normalizeChatTemplateKwargs(d, defaults); err != nil {
+		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
+	}
+
+	kwargs := d["chat_template_kwargs"].(D)
+	if got := kwargs["preserve_thinking"]; got != true {
+		t.Errorf("preserve_thinking: got %v, want true", got)
+	}
+	if got := kwargs["custom_mode"]; got != "request" {
+		t.Errorf("custom_mode: got %v, want request", got)
+	}
+	if got := defaults["custom_mode"]; got != "default" {
+		t.Errorf("default custom_mode mutated: got %v, want default", got)
+	}
+}
+
+func TestNormalizeChatTemplateKwargsTopLevelOverridesModelDefault(t *testing.T) {
+	d := D{
+		"messages":          []D{{"role": "user", "content": "hello"}},
+		"preserve_thinking": false,
+	}
+
+	if err := normalizeChatTemplateKwargs(d, D{"preserve_thinking": true}); err != nil {
+		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
+	}
+
+	m := Model{log: noopLog}
+	m.template = Template{FileName: "kwargs-default-test", Script: `{{ preserve_thinking }}`}
+	prompt, err := m.applyJinjaTemplate(context.Background(), d)
+	if err != nil {
+		t.Fatalf("applyJinjaTemplate: %v", err)
+	}
+	if prompt != "False" {
+		t.Errorf("prompt: got %q, want %q", prompt, "False")
+	}
+}
+
 func TestChatTemplateKwargsAreTemplateOnly(t *testing.T) {
 	m := Model{log: noopLog}
 	m.template = Template{FileName: "kwargs-test", Script: `{{ custom_mode }}:{{ temperature }}`}
@@ -169,7 +218,7 @@ func TestChatTemplateKwargsAreTemplateOnly(t *testing.T) {
 		},
 	}
 
-	if err := normalizeChatTemplateKwargs(d); err != nil {
+	if err := normalizeChatTemplateKwargs(d, nil); err != nil {
 		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
 	}
 	params, err := m.parseParams(context.Background(), d)

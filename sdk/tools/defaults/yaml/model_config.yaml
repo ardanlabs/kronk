@@ -193,6 +193,8 @@ unsloth/mtp-Qwen3.5-122B-A10B-UD-Q4_K_M/AGENT:
 
 # ~82GB VRAM
 unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+  chat-template-kwargs:
+    preserve_thinking: true
   context-window: 131072
   nseq-max: 2
   sampling-parameters:

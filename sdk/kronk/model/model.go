@@ -268,6 +268,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
 	}
+	if cfg.ChatTemplateKwargs != nil {
+		cfg.ChatTemplateKwargs = cfg.ChatTemplateKwargs.Clone()
+	}
 
 	if len(cfg.ModelFiles) == 0 {
 		return nil, fmt.Errorf("model required")
@@ -1278,7 +1281,11 @@ func (m *Model) Unload(ctx context.Context) error {
 }
 
 func (m *Model) Config() Config {
-	return m.cfg
+	cfg := m.cfg
+	if cfg.ChatTemplateKwargs != nil {
+		cfg.ChatTemplateKwargs = cfg.ChatTemplateKwargs.Clone()
+	}
+	return cfg
 }
 
 func (m *Model) ModelInfo() ModelInfo {
