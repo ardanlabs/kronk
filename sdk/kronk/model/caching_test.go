@@ -867,7 +867,7 @@ func TestIMCSessions(t *testing.T) {
 		imcSessions: []*imcSession{
 			{id: 0, kvState: ramSessionStore()},
 			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
-			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore(), turnCheckpoint: &checkpoint},
+			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore(), turnCheckpoint: &checkpoint},
 			{id: 3, allocatedContext: 1536, kvState: ramSessionStore(), turnCheckpoint: &imcSnapshot{allocatedContext: 4096, kvState: ramSessionStore()}},
 		},
 	}
@@ -886,7 +886,7 @@ func TestIMCSessions(t *testing.T) {
 	if got[2].State != IMCSessionStateIdle {
 		t.Errorf("session 2 state = %q, want %q", got[2].State, IMCSessionStateIdle)
 	}
-	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].TotalAllocated != 4096 || got[2].PeakContext != 4096 || got[2].Messages != 4 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
+	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].ReusableTokens != 1024 || got[2].ReusableMessages != 0 || got[2].TotalAllocated != 4096 || got[2].PeakContext != 4096 || got[2].Messages != 4 || got[2].InputMessages != 4 || got[2].InputTokens != 2200 || got[2].OutputTokens != 300 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
 		t.Errorf("session 2 detail = %+v, want populated scalar snapshot", got[2])
 	}
 
@@ -922,11 +922,13 @@ func TestIMCSessions(t *testing.T) {
 	if got[0].TotalAllocated != 3000 {
 		t.Errorf("TotalAllocated after backing-store replacement = %d, want session high-water context 3000", got[0].TotalAllocated)
 	}
-	m.imcRecordPeakContext(m.imcSessions[0], 5000)
-	m.imcRecordPeakContext(m.imcSessions[0], 4000)
+	oldVersion := m.imcBeginRequestUsage(m.imcSessions[0])
+	newVersion := m.imcBeginRequestUsage(m.imcSessions[0])
+	m.imcRecordRequestUsage(m.imcSessions[0], oldVersion, 6, 3500, 1500, 5000)
+	m.imcRecordRequestUsage(m.imcSessions[0], newVersion, 8, 3000, 1000, 4000)
 	got = m.IMCSessions()
-	if got[0].PeakContext != 5000 {
-		t.Errorf("PeakContext = %d, want observed live-context high-water 5000", got[0].PeakContext)
+	if got[0].TotalAllocated != 5000 || got[0].PeakContext != 5000 || got[0].InputMessages != 8 || got[0].InputTokens != 3000 || got[0].OutputTokens != 1000 {
+		t.Errorf("request usage = %+v, want latest 8/3000/1000 and peak 5000", got[0])
 	}
 
 	imcResetSession(m.imcSessions[3])

@@ -69,6 +69,11 @@ export interface IMCSessionDetail {
   total_allocated: number;
   peak_context: number;
   messages: number;
+  input_messages: number;
+  input_tokens: number;
+  output_tokens: number;
+  reusable_messages: number;
+  reusable_tokens: number;
   context_window: number;
   last_used: string;
   has_media: boolean;

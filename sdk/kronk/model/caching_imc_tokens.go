@@ -42,6 +42,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	var best *imcSession
 	var bestIsCheckpoint bool
 	var bestLen int
+	var candidateLCP int
 	var empty *imcSession
 	var lru *imcSession
 	for _, session := range m.imcSessions {
@@ -57,6 +58,12 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 		}
 		if lru == nil || session.lastUsed.Before(lru.lastUsed) {
 			lru = session
+		}
+		if !session.hasMedia && len(session.cachedTokens) > 0 {
+			lcp := commonTokenPrefixLen(session.cachedTokens, target)
+			if lcp >= m.cfg.CacheMinTokens() && lcp < len(session.cachedTokens) && lcp < len(target) {
+				candidateLCP = max(candidateLCP, lcp)
+			}
 		}
 		rollingExact := len(session.cachedTokens) == len(target)
 		rollingFingerprintOK := !rollingExact || exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK)
@@ -145,15 +152,32 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = matchKind == "exact"
 	result.imcPromoteCheckpoint = !clearSeq && len(extension) > 0 && selected.rollingEndsAtUser && !selected.hasMedia
+	if candidateLCP > reusable {
+		result.imcCheckpointTokens = candidateLCP
+		result.imcPromoteCheckpoint = false
+	}
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
 		"imc_cache_entry", selected.id, "match_kind", matchKind, "match_reason", matchReason, "reusable_tokens", reusable,
+		"candidate_lcp_tokens", candidateLCP, "recomputed_to_checkpoint", max(0, result.imcCheckpointTokens-reusable),
+		"reusable_snapshot_tokens", result.imcCheckpointTokens, "reusable_snapshot_messages", 0,
+		"full_input_snapshot_tokens", targetLen, "full_input_snapshot_messages", messageCount(d),
 		"extension_tokens", len(extension), "tail_tokens", len(tail), "actual_tokens", len(actual),
 		"stable_tokens", targetLen, "logical_units", targetLen, "text_tokens", targetLen, "kv_positions", targetLen,
 		"request_age", fmtDur(time.Since(requestStart)))
 
 	return result
+}
+
+func commonTokenPrefixLen(a, b []llama.Token) int {
+	limit := min(len(a), len(b))
+	for i := range limit {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return limit
 }
 
 func tokensHavePrefix(tokens, prefix []llama.Token) bool {

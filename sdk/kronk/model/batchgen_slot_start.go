@@ -19,12 +19,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
+	job.imcUsageVersion = e.model.imcBeginRequestUsage(job.imcSession)
 	s.reusedPromptTokens = job.reusedPromptTokens
 	s.suppressTools = job.d["tool_choice"] == "none"
-	if job.params.Seed != nil {
-		s.specAccEMA = 1.0
-		s.mtpProbeTick = 0
-	}
 	if stateMachine, ok := s.stateMachine.(ToolAwareStateMachine); ok {
 		tools, _ := job.d["tools"].([]D)
 		stateMachine.SetTools(tools)
@@ -151,6 +148,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// fixed slot-to-session correspondence: the session is bound to this
 	// slot's KV sequence here and unbound in finishSlot.
 	var cacheIdx llama.Pos
+	var sessionUpdateDisabled bool
 
 	// sessionWasCommitted records whether we called imcCommitSession in
 	// the cache-build / cache-extend branches below. When true, the
@@ -270,13 +268,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// the target's kvState read above) so we don't race with
 			// a concurrent evictor / writer mutating draftKVState's
 			// slice header.
-			if ext, ok := e.model.draft.(draftKVExternalizer); ok && job.imcSession != nil && job.imcSession.draftKVState != nil {
+			if ext, ok := e.model.draft.(draftKVExternalizer); ok && job.imcSession != nil {
 				draft := ext.core()
 
 				var draftBytes []byte
 				var savedPendingH []float32
 				e.model.cacheMu.RLock()
-				draftBytes = job.imcSession.draftKVState.Bytes()
+				if job.imcSession.draftKVState != nil {
+					draftBytes = job.imcSession.draftKVState.Bytes()
+				}
 				if len(job.imcSession.pendingH) == draft.nEmbd {
 					savedPendingH = append(savedPendingH, job.imcSession.pendingH...)
 				}
@@ -322,6 +322,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 						e.model.decodeMu.Unlock()
 						s.draftNPast = 0
 						s.pendingH = s.pendingH[:0]
+						s.mtpDisabledForRequest = true
+						s.mtpDisableReason = "imc-hit"
 						e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-failed",
 							"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 							"restored_bytes", fmtBytes(nDraftRead),
@@ -335,6 +337,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					// seq empty so startSlotText disables MTP for the
 					// request via the existing mtp-disabled-imc-hit
 					// path.
+					s.mtpDisabledForRequest = true
+					s.mtpDisableReason = "imc-hit"
 					e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-skip-empty",
 						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
 				}
@@ -364,6 +368,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 			cacheIdx = llama.Pos(nextLogicalPos)
+			job.imcPhysicalCached = physicalKVCells
 
 			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
 			e.model.cacheMu.Lock()
@@ -377,8 +382,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			sessionWasCommitted = true
 
 			if s.mtmdCtx != 0 && job.imcSession != nil {
+				job.imcSessionUseMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
 				e.model.cacheMu.Lock()
-				job.imcSession.useMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
+				job.imcSession.useMRoPE = job.imcSessionUseMRoPE
 				e.model.cacheMu.Unlock()
 			}
 
@@ -392,7 +398,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			var decodeErr error
 			switch {
-			case job.imcSession != nil && job.imcSession.useMRoPE:
+			case job.imcSessionUseMRoPE:
 				_, decodeErr = e.model.decodeTextMRoPEIntoCache(advanceTokens, s.seqID, oldLogicalPosition)
 			case e.model.draft != nil:
 				if _, shared := e.model.draft.(*sharedMTPDrafter); shared {
@@ -410,6 +416,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 			cacheIdx = llama.Pos(job.imcNewLogicalPosition)
+			job.imcPhysicalCached = job.imcNewTotalCached
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-advanced-in-slot",
 				"slot", s.id, "seq", s.seqID, "replay_text_tokens", len(advanceTokens),
@@ -499,12 +506,38 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			// cached prefix instead of being disabled.
 			imcDecodeStart := time.Now()
 
+			decode := func(tokens []llama.Token, position int) error {
+				if e.model.draft != nil && e.model.draft.mtp() && !s.mtpDisabledForRequest {
+					return e.decodeTokensIntoCacheMTP(job.ctx, s, tokens, position)
+				}
+				return e.model.decodeTokensIntoCache(job.ctx, tokens, s.seqID, position)
+			}
+
+			checkpointExtension := 0
+			if job.imcCheckpointTokens > int(cacheIdx) && job.imcCheckpointTokens < job.imcNewTotalCached {
+				checkpointExtension = job.imcCheckpointTokens - int(cacheIdx)
+			}
+
 			var decodeErr error
-			switch {
-			case e.model.draft != nil && e.model.draft.mtp():
-				decodeErr = e.decodeTokensIntoCacheMTP(job.ctx, s, job.imcNewCacheTokens, int(cacheIdx))
-			default:
-				decodeErr = e.model.decodeTokensIntoCache(job.ctx, job.imcNewCacheTokens, s.seqID, int(cacheIdx))
+			if checkpointExtension > 0 {
+				decodeErr = decode(job.imcNewCacheTokens[:checkpointExtension], int(cacheIdx))
+				if decodeErr == nil {
+					checkpointPublished := e.snapshotProgressiveCheckpoint(job.ctx, s, job, job.imcCheckpointTokens)
+					if !checkpointPublished && job.reusedPromptTokens > 0 {
+						preserved, preserveErr := e.model.imcPreserveRollingSnapshot(job.ctx, job.imcSession, false)
+						if preserveErr != nil || !preserved {
+							sessionUpdateDisabled = true
+							e.model.log(job.ctx, "start-slot", "status", "imc-progressive-update-disabled",
+								"session_id", job.imcSessionID, "reused_tokens", job.reusedPromptTokens,
+								"checkpoint_tokens", job.imcCheckpointTokens, "err", preserveErr)
+						}
+					}
+				}
+				if decodeErr == nil {
+					decodeErr = decode(job.imcNewCacheTokens[checkpointExtension:], job.imcCheckpointTokens)
+				}
+			} else {
+				decodeErr = decode(job.imcNewCacheTokens, int(cacheIdx))
 			}
 			if decodeErr != nil {
 				e.model.decodeMu.Lock()
@@ -523,20 +556,24 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
 
 			cacheIdx = llama.Pos(job.imcNewTotalCached)
+			job.imcPhysicalCached = job.imcNewTotalCached
 
-			if job.imcPromoteCheckpoint {
+			if job.imcPromoteCheckpoint && !sessionUpdateDisabled {
 				if err := e.model.imcPromoteTurnCheckpoint(job.ctx, job.imcSession); err != nil {
-					e.finishSlot(s, fmt.Errorf("start-slot: preserve IMC turn checkpoint: %w", err))
-					return
+					sessionUpdateDisabled = true
+					e.model.log(job.ctx, "start-slot", "status", "imc-reusable-preserve-failed",
+						"session_id", job.imcSessionID, "err", err)
 				}
 			}
 
-			hasMedia := len(job.imcMediaKVCounts) > 0
-			e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
-			e.model.cacheMu.Lock()
-			job.imcSession.promptPlan = job.imcPromptPlan
-			e.model.cacheMu.Unlock()
-			sessionWasCommitted = true
+			if !sessionUpdateDisabled {
+				hasMedia := len(job.imcMediaKVCounts) > 0
+				e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
+				e.model.cacheMu.Lock()
+				job.imcSession.promptPlan = job.imcPromptPlan
+				e.model.cacheMu.Unlock()
+				sessionWasCommitted = true
+			}
 
 			e.model.log(job.ctx, "start-slot", "status", "imc-cache-ready", "slot", s.id, "seq", s.seqID,
 				"total_cached", job.imcNewTotalCached)
@@ -567,7 +604,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	// StateSeqGetData captures raw KV bytes regardless of whether they were
 	// produced by text tokens or media embeddings (image/audio). For Hybrid
 	// models it also captures recurrent state (DeltaNet/SSM).
-	if e.model.cfg.IncrementalCache() && job.imcCacheHit && cacheIdx > 0 && job.imcSession != nil {
+	if e.model.cfg.IncrementalCache() && job.imcCacheHit && !sessionUpdateDisabled && cacheIdx > 0 && job.imcSession != nil {
 		var snapshotPhysicalKVCells int
 		switch {
 		case job.imcMediaAnchorAdvance:
@@ -929,12 +966,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	// pre-allocated promptBuf to avoid per-request allocations.
 	// Skip when the slot has media cached — cachedTokens can't represent
 	// image/audio embeddings, so the draft model can't reconstruct the prompt.
-	draftSlotHasMedia := false
-	if job.imcCacheHit && job.imcSession != nil {
-		e.model.cacheMu.RLock()
-		draftSlotHasMedia = job.imcSession.hasMedia
-		e.model.cacheMu.RUnlock()
-	}
+	draftSlotHasMedia := job.imcCacheHit && job.imcSessionMedia
 	// MTP draft: skip the separate draft-prefill path. MTP populates the
 	// draft KV by mirroring the TARGET's prefill chunks (each target
 	// decode emits a pre-norm hidden buffer that we replay into the
@@ -971,7 +1003,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		// stays at 0 and we fall back to target-only decoding for
 		// the remainder of the request. Running MTP with stale /
 		// empty draft KV produces near-zero acceptance and poisons
-		// specAccEMA (which persists across requests on the slot).
+		// specAccEMA for the remainder of the request.
 		if job.imcCacheHit && s.draftNPast < cacheIdx {
 			s.mtpDisabledForRequest = true
 			s.mtpDisableReason = "imc-hit"
@@ -986,11 +1018,8 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		var cachedLen int
 
 		switch {
-		case job.imcCacheHit && job.imcSession != nil:
-			e.model.cacheMu.RLock()
-			cached := job.imcSession.cachedTokens
-			e.model.cacheMu.RUnlock()
-
+		case job.imcCacheHit && len(job.imcNewCachedTokens) > 0:
+			cached := job.imcNewCachedTokens
 			cachedLen = len(cached)
 			needed = cachedLen + len(tokens)
 
@@ -1048,15 +1077,7 @@ func (e *batchEngine) slotNeedsMRoPE(s *slot, job *chatJob) bool {
 		return mtmd.DecodeUseMRope(s.mtmdCtx)
 	}
 
-	// For follow-up requests, check the stored flag on the matched session.
-	if job.imcSession != nil {
-		e.model.cacheMu.RLock()
-		needsMRoPE := job.imcSession.useMRoPE
-		e.model.cacheMu.RUnlock()
-		return needsMRoPE
-	}
-
-	return false
+	return job.imcSessionUseMRoPE
 }
 
 // startSlotTextMRoPE initializes a text-only slot that must use M-RoPE 4D
@@ -1074,11 +1095,9 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 	}
 
 	suffixTokens := len(tokens)
-	cachedPromptTokens := int(cacheIdx)
-	if job.imcSession != nil {
-		e.model.cacheMu.RLock()
-		cachedPromptTokens = job.imcSession.totalTokensCached
-		e.model.cacheMu.RUnlock()
+	cachedPromptTokens := job.imcPhysicalCached
+	if cachedPromptTokens == 0 {
+		cachedPromptTokens = int(cacheIdx)
 	}
 	totalPrompt := suffixTokens + cachedPromptTokens
 	s.nPrompt = totalPrompt
@@ -1239,6 +1258,90 @@ func (e *batchEngine) applyContextTokenBudget(s *slot, operation string) bool {
 			"requested_max_tokens", requestedMaxTokens,
 			"effective_max_tokens", effectiveMaxTokens)
 	}
+
+	return true
+}
+
+// snapshotProgressiveCheckpoint serializes the live target and own-KV MTP
+// state at an exact token boundary, then atomically replaces the reusable
+// snapshot. The prior fallback remains owned until the target state is ready.
+// A missing draft snapshot degrades safely to target-only reuse.
+func (e *batchEngine) snapshotProgressiveCheckpoint(ctx context.Context, s *slot, job *chatJob, boundary int) bool {
+	targetStore, err := newSessionStore(e.model.cfg)
+	if err != nil {
+		e.model.log(ctx, "start-slot", "status", "imc-progressive-target-create-failed", "err", err)
+		return false
+	}
+
+	closeTarget := func() {
+		if err := targetStore.Close(); err != nil {
+			e.model.log(ctx, "start-slot", "status", "imc-progressive-target-close-failed", "err", err)
+		}
+	}
+
+	e.model.decodeMu.Lock()
+	llama.Synchronize(e.model.lctx)
+	targetSize := llama.StateSeqGetSize(e.model.lctx, s.seqID)
+	targetExtracted := llama.StateSeqGetData(e.model.lctx, targetStore.Prepare(int(targetSize)), s.seqID)
+	e.model.decodeMu.Unlock()
+	if targetSize == 0 || targetExtracted != targetSize {
+		closeTarget()
+		e.model.log(ctx, "start-slot", "status", "imc-progressive-target-snapshot-failed",
+			"extracted_bytes", targetExtracted, "expected_bytes", targetSize)
+		return false
+	}
+	targetStore.Commit(int(targetExtracted))
+
+	var draftStore SessionStore
+	var pendingH []float32
+	if ext, ok := e.model.draft.(draftKVExternalizer); ok {
+		draftStore, err = newSessionStore(e.model.cfg)
+		if err != nil {
+			e.model.log(ctx, "start-slot", "status", "imc-progressive-draft-create-failed", "err", err)
+		} else {
+			draft := ext.core()
+			dctx := ext.draftKVCtx()
+			e.model.decodeMu.Lock()
+			llama.Synchronize(dctx)
+			draftSize := llama.StateSeqGetSize(dctx, s.seqID)
+			draftExtracted := llama.StateSeqGetData(dctx, draftStore.Prepare(int(draftSize)), s.seqID)
+			e.model.decodeMu.Unlock()
+			if validMTPDraftState(draftExtracted, draftSize, s.pendingH, draft.nEmbd) {
+				draftStore.Commit(int(draftExtracted))
+				pendingH = slices.Clone(s.pendingH)
+			} else {
+				if closeErr := draftStore.Close(); closeErr != nil {
+					e.model.log(ctx, "start-slot", "status", "imc-progressive-draft-close-failed", "err", closeErr)
+				}
+				draftStore = nil
+				e.model.log(ctx, "start-slot", "status", "imc-progressive-draft-snapshot-failed",
+					"extracted_bytes", draftExtracted, "expected_bytes", draftSize)
+			}
+		}
+	}
+
+	checkpoint := imcSnapshot{
+		cachedTokens:      slices.Clone(job.imcNewCachedTokens[:boundary]),
+		totalTokensCached: boundary,
+		nextLogicalPos:    boundary,
+		kvState:           targetStore,
+		draftKVState:      draftStore,
+		pendingH:          pendingH,
+		allocatedContext:  boundary,
+	}
+
+	e.model.cacheMu.Lock()
+	oldCheckpoint := job.imcSession.turnCheckpoint
+	job.imcSession.turnCheckpoint = &checkpoint
+	e.model.cacheMu.Unlock()
+	closeIMCSnapshot(oldCheckpoint)
+
+	e.model.log(ctx, "start-slot", "status", "imc-progressive-snapshot-done",
+		"session_id", job.imcSessionID, "stable_input_messages", job.imcNewCachedMsgCount,
+		"stable_input_tokens", job.imcNewTotalCached, "actual_reused_tokens", job.reusedPromptTokens,
+		"recomputed_tokens", boundary-job.reusedPromptTokens, "reusable_snapshot_tokens", boundary,
+		"reusable_snapshot_messages", 0, "full_input_snapshot_tokens", job.imcNewTotalCached,
+		"full_input_snapshot_messages", job.imcNewCachedMsgCount, "tail_tokens", len(job.tailTokens))
 
 	return true
 }

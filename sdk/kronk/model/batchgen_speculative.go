@@ -147,16 +147,13 @@ const mtpProbeInterval = 32
 // generateDraftTokens / generateDraftTokensMTP both short-circuit on a
 // 0 return and fall through to a plain target decode for the round.
 //
-// The EMA is initialized to 1.0 by newBatchEngine and PERSISTS across
-// requests on the same slot,
-// so a long quiet streak with poor acceptance keeps draft overhead
-// low even when a new request begins on the same slot.
+// The EMA is initialized to 1.0 at the start of each request so adaptive
+// state from an unrelated request cannot affect speculative performance.
 //
 // Recovery probe: the EMA is ONLY updated when a verify round runs
 // (nDraft > 0). Returning 0 below the floor therefore severs the
 // feedback loop — with no draft there is no verify, so the EMA can
-// never climb back and MTP stays latched off for the life of the slot
-// (and, because the EMA persists, for the rest of the conversation).
+// never climb back and MTP stays latched off for the rest of the request.
 // To keep recovery possible while still avoiding per-round draft
 // overhead, fully throttled rounds draft a single probe token once
 // every mtpProbeInterval rounds. One accepted probe lifts the EMA above

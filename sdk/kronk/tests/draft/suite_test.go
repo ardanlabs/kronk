@@ -55,11 +55,11 @@ func TestSuite(t *testing.T) {
 // checkDraftUsage records whether the separate draft model drafted and got
 // tokens accepted on this request. Unlike the MTP head (whose acceptance
 // stays high), a small separate draft model can have acceptance near the
-// adaptive-throttle floor: chooseNDraft returns 0 below an EMA of 0.30 and
-// the EMA PERSISTS across requests on a slot, so it is correct and expected
-// for later requests to draft nothing. A per-request DraftTokens==0 is
-// therefore NOT a failure here — the suite-level sawAcceptedDraft check in
-// TestSuite guards against the drafter never working at all.
+// adaptive-throttle floor: chooseNDraft returns 0 below an EMA of 0.30, so
+// an individual request may stop drafting after poor acceptance. A per-request
+// DraftTokens==0 is therefore NOT a failure here — the suite-level
+// sawAcceptedDraft check in TestSuite guards against the drafter never working
+// at all.
 func checkDraftUsage(t *testing.T, id string, usage *model.Usage) {
 	t.Helper()
 

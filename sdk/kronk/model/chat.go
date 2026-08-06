@@ -426,6 +426,8 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 
 		imcSession:         cache.imcSession,
 		imcSessionMedia:    cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
+		imcSessionUseMRoPE: cache.imcSession != nil && cache.imcSession.useMRoPE,
+		imcPhysicalCached:  cache.imcExpectedTokens,
 		imcSessionID:       cache.imcSessionID,
 		imcCacheHit:        imcCacheHit,
 		reusedPromptTokens: int(cache.cacheIdx),
@@ -442,6 +444,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
 		imcPromoteCheckpoint:   cache.imcPromoteCheckpoint,
+		imcCheckpointTokens:    cache.imcCheckpointTokens,
 
 		imcNewCacheTokens:     cache.imcNewCacheTokens,
 		imcNewTotalCached:     cache.imcNewTotalCached,

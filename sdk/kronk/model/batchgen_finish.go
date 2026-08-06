@@ -35,6 +35,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	imcActive := s.job.imcCacheHit
 	imcSnapshotReused := s.job.imcSnapshotReused
 	imcTailTokens := len(s.job.tailTokens)
+	imcInputMessages := messageCount(s.job.d)
+	imcStableInputTokens := len(s.job.imcNewCachedTokens)
+	imcReusedTokens := s.job.reusedPromptTokens
+	imcCheckpointTokens := s.job.imcCheckpointTokens
 	mtpResumeSource := s.mtpResumeSource
 	stageStarted := s.prefillStart
 
@@ -98,6 +102,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"imc_active", imcActive,
 			"imc_cache_hit", imcSnapshotReused,
 			"imc_match_kind", imcMatchKind,
+			"imc_input_messages", imcInputMessages,
+			"imc_input_tokens", nPrompt,
+			"imc_stable_input_tokens", imcStableInputTokens,
+			"imc_actual_reused_tokens", imcReusedTokens,
+			"imc_progressive_reusable_tokens", imcCheckpointTokens,
 			"imc_tail_tokens", imcTailTokens,
 			"elapsed", elapsed.String(),
 			"active_streams", remaining,
@@ -201,7 +210,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// KV-pressure eviction path should no longer issue MemorySeqRm
 	// against this session's seqID.
 	if s.job.imcSession != nil {
-		e.model.imcRecordPeakContext(s.job.imcSession, int(s.nPast))
+		outputTokens := s.reasonTokens + s.completionTokens
+		e.model.imcRecordRequestUsage(s.job.imcSession, s.job.imcUsageVersion, messageCount(s.job.d), s.nPrompt, outputTokens, int(s.nPast))
 		e.model.cacheMu.Lock()
 		// A newly published snapshot may already be serving another slot.
 		// Only unbind the sequence this request actually owned.

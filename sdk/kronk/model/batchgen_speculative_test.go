@@ -15,6 +15,8 @@ func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 		pendingH:           []float32{1},
 		mtpDraftH:          []float32{2},
 		reusedPromptTokens: 42,
+		specAccEMA:         0.17,
+		mtpProbeTick:       31,
 	}
 
 	s.reset()
@@ -33,6 +35,57 @@ func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 	}
 	if s.reusedPromptTokens != 0 {
 		t.Errorf("reusedPromptTokens = %d, want 0", s.reusedPromptTokens)
+	}
+	if s.specAccEMA != 1.0 {
+		t.Errorf("specAccEMA = %f, want 1.0", s.specAccEMA)
+	}
+	if s.mtpProbeTick != 0 {
+		t.Errorf("mtpProbeTick = %d, want 0", s.mtpProbeTick)
+	}
+}
+
+func TestChooseNDraftPolicy(t *testing.T) {
+	tests := []struct {
+		name     string
+		ema      float64
+		probe    int
+		want     int
+		wantTick int
+	}{
+		{name: "full draft", ema: 1.0, want: 2},
+		{name: "upper boundary", ema: 0.50, want: 2},
+		{name: "reduced draft", ema: 0.499, probe: 7, want: 1},
+		{name: "lower boundary", ema: 0.30, want: 1},
+		{name: "fully throttled", ema: 0.299, want: 0, wantTick: 1},
+		{name: "recovery probe", ema: 0.299, probe: mtpProbeInterval - 1, want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := slot{specAccEMA: tt.ema, mtpProbeTick: tt.probe}
+			if got := chooseNDraft(&s, 2); got != tt.want {
+				t.Errorf("chooseNDraft() = %d, want %d", got, tt.want)
+			}
+			if s.mtpProbeTick != tt.wantTick {
+				t.Errorf("mtpProbeTick = %d, want %d", s.mtpProbeTick, tt.wantTick)
+			}
+		})
+	}
+}
+
+func TestAdaptiveDraftStateDoesNotCrossRequestBoundary(t *testing.T) {
+	s := slot{specAccEMA: 0.29, mtpProbeTick: 7}
+	if got := chooseNDraft(&s, 2); got != 0 {
+		t.Fatalf("chooseNDraft() before reset = %d, want 0", got)
+	}
+
+	s.reset()
+
+	if got := chooseNDraft(&s, 2); got != 2 {
+		t.Errorf("chooseNDraft() after reset = %d, want 2", got)
+	}
+	if s.mtpProbeTick != 0 {
+		t.Errorf("mtpProbeTick = %d, want 0", s.mtpProbeTick)
 	}
 }
 

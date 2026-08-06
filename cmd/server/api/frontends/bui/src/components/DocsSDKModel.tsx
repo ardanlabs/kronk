@@ -436,6 +436,11 @@ export default function DocsSDKModel() {
 	TotalAllocated      int
 	PeakContext         int
 	Messages            int
+	InputMessages       int
+	InputTokens         int
+	OutputTokens        int
+	ReusableTokens      int
+	ReusableMessages    int
 	ContextWindow       int
 	LastUsed            time.Time
 	HasMedia            bool
