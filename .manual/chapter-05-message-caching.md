@@ -48,6 +48,21 @@ embeddings, and positions. Requests with apparently unchanged messages can
 render differently when tools, thinking settings, templates, media, or other
 render-affecting inputs change.
 
+One fallback heuristic is based on a common user-turn transition. Kronk does
+not assume that existing user-message content changes. It assumes that adding
+a new real user message may cause the chat template to re-render earlier
+assistant messages differently, especially by removing or relocating reasoning
+content from a prior assistant turn. Kronk therefore retains the complete
+stable state at a real-user boundary before extending the rolling state through
+assistant and tool activity. If a later user turn makes the rolling state
+incompatible, this earlier checkpoint may still prefix the new rendering.
+
+This is a checkpoint-placement heuristic, not the cache-matching rule. The
+planner always compares complete rendered token or media plans, restores the
+longest compatible rolling or fallback state, and rebuilds when neither is a
+safe prefix. A prefix-stable template can continue using the longer rolling
+state without touching the fallback checkpoint.
+
 The complete generation lifecycle is introduced in
 [Chapter 4 §4.3](https://www.kronkai.com/manual#43-the-generation-inference-lifecycle).
 The focused view below zooms into IMC's Stage 2 responsibility: deciding the
