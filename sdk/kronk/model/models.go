@@ -748,7 +748,7 @@ type ToolCallArguments map[string]any
 
 func (a ToolCallArguments) MarshalJSON() ([]byte, error) {
 	if a == nil {
-		return []byte(`""`), nil
+		a = ToolCallArguments{}
 	}
 
 	inner, err := json.Marshal(map[string]any(a))
@@ -821,7 +821,7 @@ type ResponseToolCallFunction struct {
 
 type ResponseToolCall struct {
 	ID       string                   `json:"id"`
-	Index    int                      `json:"index"`
+	Index    int                      `json:"-"`
 	Type     string                   `json:"type"`
 	Function ResponseToolCallFunction `json:"function"`
 	Status   int                      `json:"status,omitempty"`
@@ -896,7 +896,11 @@ func (c Choice) FinishReason() string {
 	return *c.FinishReasonPtr
 }
 
-// Usage provides details usage information for the request.
+// Usage provides token usage information for a chat completion request.
+//
+// CompletionTokens includes all generated tokens, including reasoning tokens.
+// CompletionTokensDetails provides the reasoning-token subset.
+// TotalTokens is the sum of PromptTokens and CompletionTokens.
 //
 // DraftAcceptanceRate is the ratio of accepted drafts to total drafts
 // across the spec rounds that actually ran. It is "quality per round"
@@ -909,24 +913,28 @@ func (c Choice) FinishReason() string {
 // DraftCoverage. DraftDisableReason explains the latter case
 // ("imc-hit", "mirror-error", or empty if MTP was never disabled).
 type Usage struct {
-	PromptTokens        int                 `json:"prompt_tokens"`
-	PromptTokensDetails PromptTokensDetails `json:"prompt_tokens_details"`
-	ReasoningTokens     int                 `json:"reasoning_tokens"`
-	CompletionTokens    int                 `json:"completion_tokens"`
-	OutputTokens        int                 `json:"output_tokens"`
-	TotalTokens         int                 `json:"total_tokens"`
-	TokensPerSecond     float64             `json:"tokens_per_second"`
-	TimeToFirstTokenMS  float64             `json:"time_to_first_token_ms"`
-	DraftTokens         int                 `json:"draft_tokens,omitempty"`
-	DraftAcceptedTokens int                 `json:"draft_accepted_tokens,omitempty"`
-	DraftAcceptanceRate float64             `json:"draft_acceptance_rate,omitempty"`
-	DraftCoverage       float64             `json:"draft_coverage,omitempty"`
-	DraftDisableReason  string              `json:"draft_disable_reason,omitempty"`
+	PromptTokens            int                     `json:"prompt_tokens"`
+	PromptTokensDetails     PromptTokensDetails     `json:"prompt_tokens_details"`
+	CompletionTokens        int                     `json:"completion_tokens"`
+	CompletionTokensDetails CompletionTokensDetails `json:"completion_tokens_details"`
+	TotalTokens             int                     `json:"total_tokens"`
+	TokensPerSecond         float64                 `json:"tokens_per_second"`
+	TimeToFirstTokenMS      float64                 `json:"time_to_first_token_ms"`
+	DraftTokens             int                     `json:"draft_tokens,omitempty"`
+	DraftAcceptedTokens     int                     `json:"draft_accepted_tokens,omitempty"`
+	DraftAcceptanceRate     float64                 `json:"draft_acceptance_rate,omitempty"`
+	DraftCoverage           float64                 `json:"draft_coverage,omitempty"`
+	DraftDisableReason      string                  `json:"draft_disable_reason,omitempty"`
 }
 
 // PromptTokensDetails provides a breakdown of prompt tokens.
 type PromptTokensDetails struct {
 	CachedTokens int `json:"cached_tokens"`
+}
+
+// CompletionTokensDetails provides a breakdown of completion tokens.
+type CompletionTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
 // TopLogprob represents a single token with its log probability.
@@ -1023,7 +1031,7 @@ func forReasoning(content string, reasoning bool) string {
 	return ""
 }
 
-func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
+func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
 	var logprobs *Logprobs
 	if len(logprobsData) > 0 {
 		logprobs = &Logprobs{Content: logprobsData}
@@ -1036,19 +1044,13 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 		ToolCalls: respToolCalls,
 	}
 
-	// Set Delta when there are tool calls (for streaming clients).
-	// For non-streaming, Chat() clears Delta before returning.
-	var delta *ResponseMessage
+	// Streaming clients receive completed tool-call arguments in a preceding
+	// nonterminal chunk. The terminal delta stays empty per the OpenAI protocol.
+	delta := &ResponseMessage{}
 	if finishReason == "" {
 		finishReason = FinishReasonStop
 		if len(respToolCalls) > 0 {
 			finishReason = FinishReasonTool
-		}
-	}
-	if len(respToolCalls) > 0 {
-		delta = &ResponseMessage{
-			ToolCalls:      msg.ToolCalls,
-			ToolCallDeltas: terminalToolCallDeltas,
 		}
 	}
 

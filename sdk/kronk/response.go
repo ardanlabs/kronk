@@ -226,15 +226,16 @@ func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWrit
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		if _, err := w.Write(data); err != nil {
+			return resp, fmt.Errorf("responses-streaming-http: %w: write response: %w", ErrResponseCommitted, err)
+		}
 
 		return resp, nil
 	}
 
 	// -------------------------------------------------------------------------
 
-	f, ok := w.(http.Flusher)
-	if !ok {
+	if !supportsResponseFlush(w) {
 		return ResponseResponse{}, fmt.Errorf("responses-streaming-http: streaming not supported")
 	}
 
@@ -246,7 +247,9 @@ func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWrit
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Transfer-Encoding", "chunked")
 	w.WriteHeader(http.StatusOK)
-	f.Flush()
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		return ResponseResponse{}, fmt.Errorf("responses-streaming-http: %w: flush headers: %w", ErrResponseCommitted, err)
+	}
 
 	var lr ResponseResponse
 
@@ -260,8 +263,9 @@ func (krn *Kronk) ResponseStreamingHTTP(ctx context.Context, w http.ResponseWrit
 			return lr, fmt.Errorf("responses-streaming-http: %w: marshal: %w", ErrResponseCommitted, err)
 		}
 
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data)
-		f.Flush()
+		if err := writeAndFlush(w, fmt.Appendf(nil, "event: %s\ndata: %s\n\n", event.Type, data)); err != nil {
+			return lr, fmt.Errorf("responses-streaming-http: %w: write event: %w", ErrResponseCommitted, err)
+		}
 
 		if event.Response != nil {
 			lr = *event.Response
@@ -712,9 +716,9 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 			InputTokensDetails: InputTokensDetails{
 				CachedTokens: chatResp.Usage.PromptTokensDetails.CachedTokens,
 			},
-			OutputTokens: chatResp.Usage.OutputTokens,
+			OutputTokens: chatResp.Usage.CompletionTokens,
 			OutputTokenDetail: OutputTokensDetails{
-				ReasoningTokens: chatResp.Usage.ReasoningTokens,
+				ReasoningTokens: chatResp.Usage.CompletionTokensDetails.ReasoningTokens,
 			},
 			TotalTokens: chatResp.Usage.TotalTokens,
 		},

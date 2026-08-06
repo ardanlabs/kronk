@@ -44,6 +44,9 @@ type chatJob struct {
 
 	imcSession         *imcSession // Matched IMC session (the session-pool entry whose KV state will be restored into the assigned slot)
 	imcSessionMedia    bool        // True if session has media (snapshot at job creation; safe to read without lock)
+	imcSessionUseMRoPE bool        // M-RoPE mode captured while the selected session is reserved.
+	imcPhysicalCached  int         // Physical cached context owned by this job after build or extension.
+	imcUsageVersion    uint64      // Session request generation assigned when this job starts execution.
 	imcSessionID       int         // Session-pool index (== imcSession.id); used by imcReleaseReservation lookup and log correlation. Not related to execution slot identity.
 	imcCacheHit        bool        // True when this request uses the IMC build/restore path.
 	reusedPromptTokens int         // Logical prompt-prefix tokens reused by this request.
@@ -62,6 +65,7 @@ type chatJob struct {
 	imcReservationHeld     bool // True until this request publishes or releases its reservation.
 	imcPureHitSkipSnapshot bool // True when startSlot may skip the post-restore snapshot.
 	imcPromoteCheckpoint   bool // True when rolling state must be retained as a user-turn checkpoint before commit.
+	imcCheckpointTokens    int  // Exact target token boundary for a progressive reusable snapshot.
 
 	// IMC dedicated slot fields.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
@@ -169,9 +173,9 @@ type slot struct {
 	specAcceptedTotal   int           // Total draft tokens accepted across all speculative steps
 	specCoveredTotal    int           // Emitted output tokens processed through speculative verification
 	processingSpecToken bool          // True while an accepted draft or bonus token is being processed
-	specAccEMA          float64       // Exponential moving average of acceptance rate (persists across requests)
+	specAccEMA          float64       // Per-request exponential moving average of acceptance rate
 	specRounds          int           // Verify rounds completed this request (used to throttle per-round logging)
-	mtpProbeTick        int           // Counts decode rounds spent fully throttled (EMA < floor); drives the periodic recovery probe in chooseNDraft. Persists across requests.
+	mtpProbeTick        int           // Counts decode rounds spent fully throttled this request (EMA < floor); drives the periodic recovery probe in chooseNDraft.
 	samplingSeeds       samplingSeeds // Derived native and Go RNG seeds for this request
 	specRNG             *rand.Rand    // Request-local RNG for speculative acceptance and manual sampling
 
@@ -359,7 +363,9 @@ func (s *slot) reset() {
 	s.specAcceptedTotal = 0
 	s.specCoveredTotal = 0
 	s.processingSpecToken = false
+	s.specAccEMA = 1.0
 	s.specRounds = 0
+	s.mtpProbeTick = 0
 	s.samplingSeeds = samplingSeeds{}
 	s.specRNG = nil
 	s.specPendingFinalize = false

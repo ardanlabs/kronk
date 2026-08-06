@@ -131,7 +131,7 @@ func TestNormalizeChatTemplateKwargs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := tt.doc.Clone()
-			err := normalizeChatTemplateKwargs(d)
+			err := normalizeChatTemplateKwargs(d, nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("normalizeChatTemplateKwargs: got nil error, want error")
@@ -155,6 +155,55 @@ func TestNormalizeChatTemplateKwargs(t *testing.T) {
 	}
 }
 
+func TestNormalizeChatTemplateKwargsMergesModelDefaults(t *testing.T) {
+	defaults := D{
+		"preserve_thinking": true,
+		"custom_mode":       "default",
+	}
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"chat_template_kwargs": D{
+			"custom_mode": "request",
+		},
+	}
+
+	if err := normalizeChatTemplateKwargs(d, defaults); err != nil {
+		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
+	}
+
+	kwargs := d["chat_template_kwargs"].(D)
+	if got := kwargs["preserve_thinking"]; got != true {
+		t.Errorf("preserve_thinking: got %v, want true", got)
+	}
+	if got := kwargs["custom_mode"]; got != "request" {
+		t.Errorf("custom_mode: got %v, want request", got)
+	}
+	if got := defaults["custom_mode"]; got != "default" {
+		t.Errorf("default custom_mode mutated: got %v, want default", got)
+	}
+}
+
+func TestNormalizeChatTemplateKwargsTopLevelOverridesModelDefault(t *testing.T) {
+	d := D{
+		"messages":          []D{{"role": "user", "content": "hello"}},
+		"preserve_thinking": false,
+	}
+
+	if err := normalizeChatTemplateKwargs(d, D{"preserve_thinking": true}); err != nil {
+		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
+	}
+
+	m := Model{log: noopLog}
+	m.template = Template{FileName: "kwargs-default-test", Script: `{{ preserve_thinking }}`}
+	prompt, err := m.applyJinjaTemplate(context.Background(), d)
+	if err != nil {
+		t.Fatalf("applyJinjaTemplate: %v", err)
+	}
+	if prompt != "False" {
+		t.Errorf("prompt: got %q, want %q", prompt, "False")
+	}
+}
+
 func TestChatTemplateKwargsAreTemplateOnly(t *testing.T) {
 	m := Model{log: noopLog}
 	m.template = Template{FileName: "kwargs-test", Script: `{{ custom_mode }}:{{ temperature }}`}
@@ -169,7 +218,7 @@ func TestChatTemplateKwargsAreTemplateOnly(t *testing.T) {
 		},
 	}
 
-	if err := normalizeChatTemplateKwargs(d); err != nil {
+	if err := normalizeChatTemplateKwargs(d, nil); err != nil {
 		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
 	}
 	params, err := m.parseParams(context.Background(), d)
@@ -371,6 +420,18 @@ func TestToolCallArgumentsUnmarshalJSONPreservesNumbers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestToolCallArgumentsMarshalNilAsEmptyObject(t *testing.T) {
+	var arguments ToolCallArguments
+
+	data, err := json.Marshal(arguments)
+	if err != nil {
+		t.Fatalf("marshal tool call arguments: %v", err)
+	}
+	if got, want := string(data), `"{}"`; got != want {
+		t.Errorf("arguments: got %q, want %q", got, want)
 	}
 }
 
@@ -755,7 +816,7 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", tt.toolCalls, nil, nil, tt.finishReason, Usage{})
+			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", tt.toolCalls, nil, tt.finishReason, Usage{})
 			if got := resp.Choices[0].FinishReason(); got != tt.want {
 				t.Errorf("FinishReason: got %q, want %q", got, tt.want)
 			}
@@ -796,6 +857,45 @@ func TestUsageCachedTokensJSON(t *testing.T) {
 	}
 }
 
+func TestUsageCompletionTokensJSON(t *testing.T) {
+	usage := Usage{
+		PromptTokens:     100,
+		CompletionTokens: 25,
+		CompletionTokensDetails: CompletionTokensDetails{
+			ReasoningTokens: 20,
+		},
+		TotalTokens: 125,
+	}
+
+	data, err := json.Marshal(usage)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if got, want := int(wire["completion_tokens"].(float64)), 25; got != want {
+		t.Errorf("completion_tokens: got %d, want %d", got, want)
+	}
+	if got, want := int(wire["total_tokens"].(float64)), 125; got != want {
+		t.Errorf("total_tokens: got %d, want %d", got, want)
+	}
+
+	details := wire["completion_tokens_details"].(map[string]any)
+	if got, want := int(details["reasoning_tokens"].(float64)), 20; got != want {
+		t.Errorf("reasoning_tokens: got %d, want %d", got, want)
+	}
+
+	for _, field := range []string{"reasoning_tokens", "output_tokens"} {
+		if _, exists := wire[field]; exists {
+			t.Errorf("%s: got top-level field, want absent", field)
+		}
+	}
+}
+
 func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	resp := chatResponseToolCallDelta("id", ObjectChatText, "model", 0, ResponseToolCallDelta{
 		ID:    "call_1",
@@ -824,6 +924,9 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	if got, want := toolCall["id"], "call_1"; got != want {
 		t.Errorf("tool call ID: got %v, want %v", got, want)
 	}
+	if got, want := toolCall["index"], float64(0); got != want {
+		t.Errorf("tool call index: got %v, want %v", got, want)
+	}
 	if got, want := function["name"], "get_weather"; got != want {
 		t.Errorf("function name: got %v, want %v", got, want)
 	}
@@ -832,7 +935,33 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	}
 }
 
-func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
+func TestResponseMessageCompletedToolCallsOmitIndex(t *testing.T) {
+	msg := ResponseMessage{
+		ToolCalls: []ResponseToolCall{
+			{ID: "call_1", Index: 0, Type: "function", Function: ResponseToolCallFunction{Name: "first", Arguments: ToolCallArguments{}}},
+			{ID: "call_2", Index: 1, Type: "function", Function: ResponseToolCallFunction{Name: "second", Arguments: ToolCallArguments{}}},
+		},
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var wire struct {
+		ToolCalls []map[string]any `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for i, toolCall := range wire.ToolCalls {
+		if _, exists := toolCall["index"]; exists {
+			t.Errorf("tool call %d: got index in %v, want omitted", i, toolCall)
+		}
+	}
+}
+
+func TestChatResponseFinalSeparatesCompletedToolCallsFromFinishReason(t *testing.T) {
 	toolCalls := []ResponseToolCall{{
 		ID:    "call_1",
 		Index: 0,
@@ -852,9 +981,17 @@ func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
 	}}
 	terminal := reconcileStartedToolCalls(toolCalls, started)
 
-	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "answer", "thought", toolCalls, terminal, nil, "", Usage{})
+	argumentResp := chatResponseToolCallDelta("id", ObjectChatText, "model", 0, terminal[0])
+	if got := argumentResp.Choices[0].FinishReason(); got != "" {
+		t.Fatalf("argument FinishReason: got %q, want empty", got)
+	}
+	if got, want := argumentResp.Choices[0].Delta.ToolCallDeltas[0].Function.Arguments, `{"location":"London"}`; got != want {
+		t.Errorf("argument delta: got %q, want %q", got, want)
+	}
+
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "answer", "thought", toolCalls, nil, "", Usage{})
 	if resp.Choices[0].Delta == nil {
-		t.Fatal("Delta: got nil, want completed tool calls for streaming compatibility")
+		t.Fatal("Delta: got nil, want empty terminal delta")
 	}
 	if got := resp.Choices[0].Delta.Content; got != "" {
 		t.Errorf("Delta.Content: got %q, want empty terminal delta", got)
@@ -862,11 +999,8 @@ func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
 	if got := resp.Choices[0].Delta.Reasoning; got != "" {
 		t.Errorf("Delta.Reasoning: got %q, want empty terminal delta", got)
 	}
-	if got := resp.Choices[0].Delta.ToolCalls; len(got) != 1 {
-		t.Fatalf("Delta.ToolCalls: got %d calls, want 1", len(got))
-	}
-	if got, want := resp.Choices[0].Delta.ToolCalls[0].Function.Arguments["location"], "London"; got != want {
-		t.Errorf("location: got %v, want %v", got, want)
+	if got := resp.Choices[0].Delta.ToolCalls; len(got) != 0 {
+		t.Fatalf("Delta.ToolCalls: got %d calls, want none in terminal chunk", len(got))
 	}
 	if got, want := resp.Choices[0].Message.Content, "answer"; got != want {
 		t.Errorf("Message.Content: got %q, want %q", got, want)
@@ -875,7 +1009,7 @@ func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
 		t.Errorf("Message.Reasoning: got %q, want %q", got, want)
 	}
 
-	data, err := json.Marshal(resp)
+	data, err := json.Marshal(argumentResp)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
@@ -946,11 +1080,40 @@ func TestReconcileStartedToolCalls(t *testing.T) {
 
 	toolCalls[0].ID = "final-id"
 	terminal = reconcileStartedToolCalls(toolCalls, nil)
-	if terminal != nil {
-		t.Errorf("terminal deltas without started calls: got %v, want nil", terminal)
+	if len(terminal) != 1 {
+		t.Fatalf("terminal deltas without started calls: got %d, want 1", len(terminal))
 	}
 	if got, want := toolCalls[0].ID, "final-id"; got != want {
 		t.Errorf("ID without started calls: got %q, want %q", got, want)
+	}
+	if got, want := terminal[0].Function.Arguments, `{"location":"London"}`; got != want {
+		t.Errorf("arguments without started calls: got %q, want %q", got, want)
+	}
+}
+
+func TestReconcileStartedToolCallWithoutArguments(t *testing.T) {
+	toolCalls := []ResponseToolCall{{
+		ID:   "final-id",
+		Type: "function",
+		Function: ResponseToolCallFunction{
+			Name: "list_projects",
+		},
+	}}
+	started := []ResponseToolCallDelta{{
+		ID:    "stream-id",
+		Index: 0,
+		Type:  "function",
+		Function: ResponseToolCallDeltaFunction{
+			Name: "list_projects",
+		},
+	}}
+
+	terminal := reconcileStartedToolCalls(toolCalls, started)
+	if len(terminal) != 1 {
+		t.Fatalf("terminal deltas: got %d, want 1", len(terminal))
+	}
+	if got, want := terminal[0].Function.Arguments, `{}`; got != want {
+		t.Errorf("arguments: got %q, want %q", got, want)
 	}
 }
 

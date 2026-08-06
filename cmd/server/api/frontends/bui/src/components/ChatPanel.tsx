@@ -44,6 +44,40 @@ export interface ChatPanelProps {
   headerRight?: React.ReactNode;
 }
 
+function ChatUsageDetails({ usage }: { usage: ChatUsage }) {
+  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? 0;
+  const visibleTokens = Math.max(0, usage.completion_tokens - reasoningTokens);
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
+  const draftTokens = usage.draft_tokens ?? 0;
+  const acceptedTokens = usage.draft_accepted_tokens ?? 0;
+  const acceptanceRate = usage.draft_acceptance_rate ?? (draftTokens > 0 ? acceptedTokens / draftTokens : 0);
+  const hasMTPUsage = draftTokens > 0 || acceptedTokens > 0 || usage.draft_acceptance_rate !== undefined || usage.draft_coverage !== undefined || Boolean(usage.draft_disable_reason);
+
+  return (
+    <div className="chat-message-usage">
+      <span title="Tokens in the rendered prompt, including cached tokens">Input: {usage.prompt_tokens}</span>
+      <span title="Prompt tokens restored from the incremental message cache">Cached: {cachedTokens}</span>
+      <span title="All generated tokens, including reasoning and visible output">Completion: {usage.completion_tokens}</span>
+      <span title="Reasoning-token subset of completion tokens">Reasoning: {reasoningTokens}</span>
+      <span title="Visible output tokens derived as completion minus reasoning">Visible: {visibleTokens}</span>
+      <span title="Input plus completion tokens">Total: {usage.total_tokens}</span>
+      <span title="Post-first-token decode throughput">Decode TPS: {usage.tokens_per_second.toFixed(2)}</span>
+      {usage.time_to_first_token_ms !== undefined && (
+        <span title="Time from slot prefill start to the first sampled token">Prefill TTFT: {usage.time_to_first_token_ms.toFixed(0)}ms</span>
+      )}
+      {hasMTPUsage && (
+        <>
+          <span title="Tokens proposed by the draft model">MTP Drafted: {draftTokens}</span>
+          <span title="Draft-model tokens accepted by the target model">MTP Accepted: {acceptedTokens}</span>
+          <span title="Accepted draft tokens divided by drafted tokens">MTP Acceptance: {(acceptanceRate * 100).toFixed(2)}%</span>
+          <span title="Fraction of output positions covered by speculative decoding">MTP Coverage: {((usage.draft_coverage ?? 0) * 100).toFixed(2)}%</span>
+          <span title="Whether MTP remained enabled for the request">MTP Status: {usage.draft_disable_reason ? `disabled (${usage.draft_disable_reason})` : 'enabled'}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Markdown helpers ───────────────────────────────────────────────────
 
 function preprocessContent(content: string): string {
@@ -992,21 +1026,7 @@ export default function ChatPanel({
                 ))}
               </div>
             )}
-            {msg.usage && (
-              <div className="chat-message-usage">
-                Input: {msg.usage.prompt_tokens} | 
-                Reasoning: {msg.usage.reasoning_tokens} | 
-                Completion: {msg.usage.completion_tokens} | 
-                Output: {msg.usage.output_tokens} | 
-                TPS: {msg.usage.tokens_per_second.toFixed(2)}
-                {(msg.usage.draft_tokens ?? 0) > 0 && (
-                  <> | DMAR: {((msg.usage.draft_acceptance_rate ?? (msg.usage.draft_accepted_tokens ?? 0) / (msg.usage.draft_tokens ?? 1)) * 100).toFixed(2)}% | COV: {((msg.usage.draft_coverage ?? 0) * 100).toFixed(0)}%{msg.usage.draft_disable_reason ? ` (off: ${msg.usage.draft_disable_reason})` : ''}</>
-                )}
-                {(msg.usage.time_to_first_token_ms ?? 0) > 0 && (
-                  <> | TTFT: {msg.usage.time_to_first_token_ms!.toFixed(0)}ms</>
-                )}
-              </div>
-            )}
+            {msg.usage && <ChatUsageDetails usage={msg.usage} />}
           </div>
         ))}
         <div ref={messagesEndRef} />

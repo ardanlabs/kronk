@@ -3,6 +3,7 @@ package kronk
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -103,4 +104,114 @@ func TestChatValidatesMessagesBeforeAdmission(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWriteAndFlush(t *testing.T) {
+	errWrite := errors.New("write failed")
+	errFlush := errors.New("flush failed")
+
+	tests := []struct {
+		name      string
+		writeErr  error
+		flushErr  error
+		wantErr   error
+		wantFlush int
+	}{
+		{name: "success", wantFlush: 1},
+		{name: "write failure", writeErr: errWrite, wantErr: errWrite},
+		{name: "flush failure", flushErr: errFlush, wantErr: errFlush, wantFlush: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := streamResponseWriter{
+				header:   make(http.Header),
+				writeErr: tt.writeErr,
+				flushErr: tt.flushErr,
+			}
+
+			err := writeAndFlush(&w, []byte("event"))
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("writeAndFlush error: got %v, want %v", err, tt.wantErr)
+			}
+			if got := w.flushes; got != tt.wantFlush {
+				t.Errorf("flushes: got %d, want %d", got, tt.wantFlush)
+			}
+		})
+	}
+}
+
+func TestSupportsResponseFlush(t *testing.T) {
+	w := flushErrorResponseWriter{header: make(http.Header)}
+	if !supportsResponseFlush(&w) {
+		t.Fatal("FlushError writer reported unsupported")
+	}
+
+	wrapped := unwrapResponseWriter{
+		ResponseWriter: &w,
+		header:         make(http.Header),
+	}
+	if !supportsResponseFlush(&wrapped) {
+		t.Fatal("wrapped FlushError writer reported unsupported")
+	}
+}
+
+type streamResponseWriter struct {
+	header   http.Header
+	writeErr error
+	flushErr error
+	flushes  int
+}
+
+func (w *streamResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *streamResponseWriter) Write(data []byte) (int, error) {
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
+	return len(data), nil
+}
+
+func (w *streamResponseWriter) WriteHeader(int) {}
+
+func (w *streamResponseWriter) Flush() {
+	w.flushes++
+}
+
+func (w *streamResponseWriter) FlushError() error {
+	w.flushes++
+	return w.flushErr
+}
+
+type flushErrorResponseWriter struct {
+	header http.Header
+}
+
+func (w *flushErrorResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *flushErrorResponseWriter) Write(data []byte) (int, error) {
+	return len(data), nil
+}
+
+func (w *flushErrorResponseWriter) WriteHeader(int) {}
+
+func (w *flushErrorResponseWriter) FlushError() error {
+	return nil
+}
+
+type unwrapResponseWriter struct {
+	http.ResponseWriter
+	header http.Header
+}
+
+func (w *unwrapResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *unwrapResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }

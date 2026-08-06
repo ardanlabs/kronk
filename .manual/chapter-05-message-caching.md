@@ -114,9 +114,10 @@ without pretending that media is an ordinary text token.
 #### Step 3: Find the longest complete safe prefix
 
 Kronk searches available sessions for the longest complete saved plan that is
-a prefix of the new stable plan. A text session can retain two complete plans:
-its latest rolling snapshot and a user-turn checkpoint captured before the
-rolling snapshot first extends into assistant/tool activity:
+a prefix of the new stable plan. A text session always has its latest rolling
+snapshot and can retain at most one additional alternate reusable snapshot
+captured at a previously verified token boundary. This is one rolling snapshot
+plus one alternate, not two alternate checkpoints:
 
 ```text
 New stable plan: [A B C D E F]
@@ -125,7 +126,7 @@ Session 1: [A B]          -> safe prefix
 Session 2: [A B C D]      -> safe prefix and better
 Session 3: [A B X]        -> not safe
 Session 4: [A B C D E F]  -> exact and best
-Checkpoint: [A B C]       -> also safe if its rolling snapshot diverges
+Reusable:   [A B C]       -> also safe if its rolling snapshot diverges
 ```
 
 Choosing the longest compatible session minimizes new prefill work. A prefix is
@@ -145,13 +146,13 @@ This conservative rule avoids assuming that an internal KV cut remains valid
 across template boundaries, media embeddings, M-RoPE positions, hybrid
 recurrent state, or draft/MTP state.
 
-The retained user-turn checkpoint is not an arbitrary cut. It is a complete
-snapshot previously committed at a real user-message boundary, including the
-target state and any compatible draft/MTP state. This matters for templates
-that render reasoning only after the latest user message: appending a new user
-message can intentionally remove reasoning from older assistant messages, so
-the rolling snapshot no longer prefixes the new rendering even though the
-earlier user boundary still does.
+The alternate state may be created when two complete renders reveal a longer
+common token prefix than Kronk can currently restore. Kronk first restores an
+earlier complete snapshot, recomputes through that boundary, and captures fresh
+target and compatible draft/MTP state there. The old divergent model state is
+never trimmed or treated as reusable. This matters for templates that move
+reasoning from an older assistant message to the latest one as a conversation
+grows.
 
 #### Step 4: Select exact, append, anchor, or rebuild
 
@@ -181,9 +182,9 @@ Kronk restores `[A B C D]`, prefills `[E F]`, snapshots the new reusable state
 snapshot.
 
 If the rolling snapshot diverges because a template retroactively changes
-historical rendering, append can instead begin from the retained user-turn
-checkpoint. Kronk restores that complete checkpoint and prefills everything
-after it; it never rewinds a later model state or deletes an arbitrary KV range.
+historical rendering, append can instead begin from the alternate reusable
+snapshot. Kronk restores that complete state and prefills everything after it;
+it never rewinds a later model state or deletes an arbitrary KV range.
 
 **Anchor** is the media-safe form of append:
 
@@ -211,8 +212,8 @@ These outcomes describe comparison with the shown anchor. Because Kronk
 searches the full available session pool, it can still reuse another session
 whose complete media plan is compatible with the request.
 
-**Rebuild** means neither a rolling snapshot nor a retained user-turn
-checkpoint prefixes the stable plan. Kronk selects an empty session or the
+**Rebuild** means neither a rolling snapshot nor a retained alternate reusable
+snapshot prefixes the stable plan. Kronk selects an empty session or the
 least recently used available session, resets it, processes the stable plan
 from the beginning, snapshots the resulting state, and then processes the
 generation tail. Rebuild is not a request failure; it means only that the
@@ -267,8 +268,8 @@ reduced message document. Put another way:
 
 ## 5.2 How Kronk Reuses a Text Prefix
 
-Kronk compares the complete stable token sequence with the rolling and retained
-user-turn checkpoint sequences in existing sessions. The result is one of
+Kronk compares the complete stable token sequence with the rolling and
+alternate reusable sequences in existing sessions. The result is one of
 three match types:
 
 - **Exact** — The new stable sequence is identical to a cached sequence. Kronk
@@ -282,10 +283,10 @@ three match types:
 
 Only complete-prefix reuse is allowed. If an earlier message is edited,
 removed, reordered, or rendered differently, Kronk can reuse a retained
-user-turn checkpoint only when that entire checkpoint still prefixes the new
-rendering. Otherwise it rebuilds the prefix. It does not trim an existing
-snapshot at an internal point and attempt to salvage tokens before the
-divergence.
+alternate snapshot only when that entire state still prefixes the new
+rendering. A longer common token prefix can become reusable only after Kronk
+recomputes through it and serializes fresh model state at that exact boundary.
+It does not trim the old divergent snapshot.
 
 For example:
 
@@ -354,12 +355,19 @@ prefix even though only uncached model work is decoded again. For cached media,
 Kronk retains the text-token history needed for that sampler priming separately
 from the media embedding cells represented by the native snapshot.
 
-For text sessions, Kronk also retains one complete user-turn checkpoint when a
-rolling snapshot first extends beyond that user boundary. The checkpoint owns
-an independent target snapshot plus draft/MTP state when configured. It remains
-unchanged through the assistant/tool loop and is replaced at the next completed
-user boundary. This can require approximately one additional snapshot-sized
-allocation for each active logical session.
+For text sessions, Kronk can also retain one alternate reusable snapshot in
+addition to the rolling snapshot. When a new render diverges from the rolling
+snapshot, Kronk compares the token sequences to find their longest exact common
+prefix. It never trims the old model state at that position. Instead, it
+restores an earlier complete snapshot, recomputes through the newly stable
+boundary, and serializes the live target state there before continuing to the
+complete current input. The alternate snapshot includes matching draft/MTP
+state when available and can end at a token-only boundary that has no reliable
+message count. Publishing a new alternate replaces the previous alternate; a
+session does not retain both a user-turn alternate and a progressive alternate.
+The one alternate can require approximately one additional snapshot-sized
+allocation for each active logical session, making the maximum two complete
+states: rolling plus alternate.
 
 An exact match may skip rewriting the snapshot when the stable state has not
 changed. This avoids an unnecessary serialization of the state that was just
@@ -522,7 +530,7 @@ IMC has several practical costs:
 - A corrupt, empty, or partial target snapshot is never treated as a shorter
   reusable prefix. Kronk invalidates the affected rolling state and fails that
   restore so a later request can rebuild safely. An independently retained
-  text user-turn checkpoint remains available; a failed staged media-anchor
+  alternate text snapshot remains available; a failed staged media-anchor
   advance leaves its previously published media snapshot authoritative.
 
 Evaluate IMC using a representative conversation workload rather than a single

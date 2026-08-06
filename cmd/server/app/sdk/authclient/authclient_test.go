@@ -28,6 +28,7 @@ type authClientStub struct {
 	authapp.AuthClient
 	response *authapp.AuthenticateResponse
 	err      error
+	calls    *int
 }
 
 func TestTLSCredentials(t *testing.T) {
@@ -153,7 +154,59 @@ func writeTestCertificate(t *testing.T) (string, string) {
 }
 
 func (acs authClientStub) Authenticate(context.Context, *authapp.AuthenticateRequest, ...grpc.CallOption) (*authapp.AuthenticateResponse, error) {
+	if acs.calls != nil {
+		(*acs.calls)++
+	}
+
 	return acs.response, acs.err
+}
+
+func TestAuthenticateLocalModes(t *testing.T) {
+	subject := uuid.NewString()
+
+	tests := []struct {
+		name         string
+		local        bool
+		enabled      bool
+		adminEnabled bool
+		admin        bool
+		wantCall     bool
+		wantSubject  string
+	}{
+		{name: "external configuration remains authoritative", wantCall: true, wantSubject: subject},
+		{name: "local authentication disabled", local: true, wantSubject: uuid.Nil.String()},
+		{name: "local admin authentication disabled", local: true, admin: true, wantSubject: uuid.Nil.String()},
+		{name: "local admin-only inference bypass", local: true, adminEnabled: true, wantSubject: uuid.Nil.String()},
+		{name: "local admin-only admin call", local: true, adminEnabled: true, admin: true, wantCall: true, wantSubject: subject},
+		{name: "local authentication enabled", local: true, enabled: true, wantCall: true, wantSubject: subject},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			response := authapp.AuthenticateResponse_builder{Subject: &subject}.Build()
+			cln := Client{grpc: authClientStub{response: response, calls: &calls}}
+			if tt.local {
+				WithLocalAuth(tt.enabled, tt.adminEnabled)(&cln)
+			}
+
+			got, err := cln.Authenticate(context.Background(), "", tt.admin, "chat-completions")
+			if err != nil {
+				t.Fatalf("Authenticate: got error %v, want nil", err)
+			}
+			if got.Subject != tt.wantSubject {
+				t.Errorf("subject: got %q, want %q", got.Subject, tt.wantSubject)
+			}
+
+			wantCalls := 0
+			if tt.wantCall {
+				wantCalls = 1
+			}
+			if calls != wantCalls {
+				t.Errorf("calls: got %d, want %d", calls, wantCalls)
+			}
+		})
+	}
 }
 
 func TestAuthenticateRequired(t *testing.T) {

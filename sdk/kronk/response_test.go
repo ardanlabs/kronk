@@ -41,10 +41,11 @@ func TestToChatResponseToResponsesUsageIncludesReasoning(t *testing.T) {
 		Usage: &model.Usage{
 			PromptTokens:        100,
 			PromptTokensDetails: model.PromptTokensDetails{CachedTokens: 80},
-			ReasoningTokens:     20,
-			CompletionTokens:    5,
-			OutputTokens:        25,
-			TotalTokens:         125,
+			CompletionTokens:    25,
+			CompletionTokensDetails: model.CompletionTokensDetails{
+				ReasoningTokens: 20,
+			},
+			TotalTokens: 125,
 		},
 	}
 

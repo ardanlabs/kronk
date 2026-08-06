@@ -57,7 +57,11 @@ func TestMoEModeYAML(t *testing.T) {
 
 func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	cfg := Config{
-		AutoTune:              true,
+		AutoTune: true,
+		ChatTemplateKwargs: D{
+			"preserve_thinking": true,
+			"secret":            "do not log",
+		},
 		DefaultParams:         Params{Grammar: "secret grammar"},
 		PtrAdmissionTimeout:   new(5 * time.Minute),
 		PtrIMCSessionCapacity: new(9),
@@ -68,6 +72,7 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	for _, want := range []string{
 		"AutoTune[true]",
 		"AdmissionTimeout[5m0s]",
+		"ChatTemplateKwargs[preserve_thinking=true secret=configured]",
 		"DefaultParams[",
 		"grammar[true]",
 		"IMCSessionCapacity[9]",
@@ -79,6 +84,39 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	}
 	if strings.Contains(got, cfg.DefaultParams.Grammar) {
 		t.Errorf("Config.String() exposed grammar contents in %q", got)
+	}
+	if strings.Contains(got, cfg.ChatTemplateKwargs["secret"].(string)) {
+		t.Errorf("Config.String() exposed chat template kwarg contents in %q", got)
+	}
+}
+
+func TestChatTemplateKwargsOwnership(t *testing.T) {
+	source := D{
+		"preserve_thinking": true,
+		"nested": D{
+			"mode": "source",
+		},
+	}
+	cfg := NewConfig(WithChatTemplateKwargs(source))
+
+	source["preserve_thinking"] = false
+	source["nested"].(D)["mode"] = "mutated"
+	if got := cfg.ChatTemplateKwargs["preserve_thinking"]; got != true {
+		t.Errorf("configured preserve_thinking: got %v, want true", got)
+	}
+	if got := cfg.ChatTemplateKwargs["nested"].(D)["mode"]; got != "source" {
+		t.Errorf("configured nested mode: got %v, want source", got)
+	}
+
+	m := Model{cfg: cfg}
+	exposed := m.Config()
+	exposed.ChatTemplateKwargs["preserve_thinking"] = false
+	exposed.ChatTemplateKwargs["nested"].(D)["mode"] = "mutated"
+	if got := m.cfg.ChatTemplateKwargs["preserve_thinking"]; got != true {
+		t.Errorf("model preserve_thinking: got %v, want true", got)
+	}
+	if got := m.cfg.ChatTemplateKwargs["nested"].(D)["mode"]; got != "source" {
+		t.Errorf("model nested mode: got %v, want source", got)
 	}
 }
 

@@ -10,17 +10,33 @@ import (
 )
 
 // NoResponse tells the Respond function to not respond to the request. In these
-// cases the app layer code has already done so.
-type NoResponse struct{}
+// cases the app layer code has already done so. If err is non-nil, the response
+// was committed before the request failed and middleware can still observe the
+// application outcome without attempting a second response.
+type NoResponse struct {
+	err error
+}
 
 // NewNoResponse constructs a no response value.
 func NewNoResponse() NoResponse {
 	return NoResponse{}
 }
 
+// NewNoResponseError constructs a no response value that preserves an error
+// that occurred after the response was committed.
+func NewNoResponseError(err error) NoResponse {
+	return NoResponse{err: err}
+}
+
 // Encode implements the Encoder interface.
 func (NoResponse) Encode() ([]byte, string, error) {
 	return nil, "", nil
+}
+
+// ResponseError returns an error that occurred after the response was
+// committed. Middleware uses this for logging, metrics, and tracing.
+func (nr NoResponse) ResponseError() error {
+	return nr.err
 }
 
 // =============================================================================

@@ -1,5 +1,6 @@
 import type { DisplayMessage } from '../contexts/ChatContext'
 import type { SavedChat } from '../contexts/ChatHistoryContext'
+import type { ChatUsage } from '../types'
 
 const SESSION_LS_KEY = 'kronk_chat_messages'
 const HISTORY_LS_KEY = 'kronk_chat_history'
@@ -13,6 +14,36 @@ const DB_VERSION = 1
 const STORE_SESSION = 'session'
 const STORE_HISTORY = 'history'
 const STORE_META = 'meta'
+
+type LegacyChatUsage = ChatUsage & {
+  reasoning_tokens?: number
+  output_tokens?: number
+}
+
+export function normalizeChatUsage(usage: ChatUsage | undefined): ChatUsage | undefined {
+  if (!usage) return undefined
+
+  const legacy = usage as LegacyChatUsage
+  if (typeof legacy.output_tokens !== 'number') return usage
+
+  const { output_tokens, reasoning_tokens, ...standard } = legacy
+
+  return {
+    ...standard,
+    completion_tokens: output_tokens,
+    completion_tokens_details: {
+      reasoning_tokens: reasoning_tokens ?? 0,
+    },
+    total_tokens: usage.total_tokens ?? usage.prompt_tokens + output_tokens,
+  }
+}
+
+function normalizeMessages(messages: DisplayMessage[]): DisplayMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    usage: normalizeChatUsage(message.usage),
+  }))
+}
 
 function promisifyRequest<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -159,7 +190,7 @@ function loadSessionFromLocalStorage(): DisplayMessage[] {
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed as DisplayMessage[]
+    return normalizeMessages(parsed as DisplayMessage[])
   } catch {
     return []
   }
@@ -206,7 +237,7 @@ export async function getSessionMessages(): Promise<DisplayMessage[]> {
     const db = await getDB()
     const tx = db.transaction(STORE_SESSION, 'readonly')
     const row = await promisifyRequest(tx.objectStore(STORE_SESSION).get('messages')) as { key: string, value: DisplayMessage[] } | undefined
-    return row && Array.isArray(row.value) ? row.value : []
+    return row && Array.isArray(row.value) ? normalizeMessages(row.value) : []
   } catch {
     return loadSessionFromLocalStorage()
   }

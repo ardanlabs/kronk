@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -329,6 +330,14 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	}
 	if src.Template != "" {
 		dst.Template = src.Template
+	}
+	if len(src.ChatTemplateKwargs) > 0 {
+		merged := model.D(dst.ChatTemplateKwargs).Clone()
+		if merged == nil {
+			merged = model.D{}
+		}
+		maps.Copy(merged, model.D(src.ChatTemplateKwargs).Clone())
+		dst.ChatTemplateKwargs = ChatTemplateKwargs(merged)
 	}
 	if src.PtrContextWindow != nil {
 		dst.PtrContextWindow = src.PtrContextWindow

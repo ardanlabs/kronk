@@ -2228,9 +2228,16 @@ code[class*="language-"] {
     margin-top: 12px;
     padding-top: 8px;
     border-top: 1px solid var(--color-gray-200);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
     font-size: 12px;
     color: var(--color-gray-600);
     font-family: monospace;
+}
+
+.chat-message-usage span {
+    white-space: nowrap;
 }
 
 .chat-message-user .chat-message-usage {

@@ -568,6 +568,29 @@ Clients can provide request-specific values. See
 [Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters) for behavior and the full
 parameter reference.
 
+#### Per-model chat-template defaults
+
+`chat-template-kwargs` supplies model-specific Jinja variables independently
+from sampling defaults. Request-level `chat_template_kwargs` override matching
+model defaults, and explicit top-level request fields override both:
+
+```yaml
+unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL:
+  chat-template-kwargs:
+    preserve_thinking: true
+```
+
+Only templates that reference a key respond to it. For example, Gemma 4 uses
+`preserve_thinking` to retain reasoning from earlier assistant messages that
+contain tool calls. This can make rendered prompts more stable across user
+turns, but it increases input-token use and does not change Gemma's separate
+look-ahead behavior at some assistant/tool boundaries.
+
+`MODEL-CONFIG` and per-request `FINAL-PARAMS` logs include the effective
+template-kwarg keys. Boolean values are shown directly so settings such as
+`preserve_thinking=true` can be verified; arbitrary non-boolean values are
+reported as `configured` instead of being written to logs.
+
 ### 3.8 Complete Example and Key Reference
 
 This example shows the file structure and naming conventions. It is not a
@@ -625,6 +648,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `draft-model` | Mapping | Separate drafter or MTP draft-count override |
 | `rope-scaling-type` | Supported scaling mode | Extended-context scaling |
 | `sampling-parameters` | Mapping | Per-model generation defaults |
+| `chat-template-kwargs` | Mapping | Per-model Jinja template defaults; request values override matching keys |
 | `template` | File path | Override the model's chat template |
 
 Prefer the automatic values until a measured workload gives you a reason to

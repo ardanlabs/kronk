@@ -35,6 +35,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	imcActive := s.job.imcCacheHit
 	imcSnapshotReused := s.job.imcSnapshotReused
 	imcTailTokens := len(s.job.tailTokens)
+	imcInputMessages := messageCount(s.job.d)
+	imcStableInputTokens := len(s.job.imcNewCachedTokens)
+	imcReusedTokens := s.job.reusedPromptTokens
+	imcCheckpointTokens := s.job.imcCheckpointTokens
 	mtpResumeSource := s.mtpResumeSource
 	stageStarted := s.prefillStart
 
@@ -98,6 +102,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"imc_active", imcActive,
 			"imc_cache_hit", imcSnapshotReused,
 			"imc_match_kind", imcMatchKind,
+			"imc_input_messages", imcInputMessages,
+			"imc_input_tokens", nPrompt,
+			"imc_stable_input_tokens", imcStableInputTokens,
+			"imc_actual_reused_tokens", imcReusedTokens,
+			"imc_progressive_reusable_tokens", imcCheckpointTokens,
 			"imc_tail_tokens", imcTailTokens,
 			"elapsed", elapsed.String(),
 			"active_streams", remaining,
@@ -201,6 +210,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// KV-pressure eviction path should no longer issue MemorySeqRm
 	// against this session's seqID.
 	if s.job.imcSession != nil {
+		outputTokens := s.reasonTokens + s.completionTokens
+		e.model.imcRecordRequestUsage(s.job.imcSession, s.job.imcUsageVersion, messageCount(s.job.d), s.nPrompt, outputTokens, int(s.nPast))
 		e.model.cacheMu.Lock()
 		// A newly published snapshot may already be serving another slot.
 		// Only unbind the sequence this request actually owned.
@@ -227,9 +238,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			PromptTokensDetails: PromptTokensDetails{
 				CachedTokens: s.reusedPromptTokens,
 			},
-			ReasoningTokens:     s.reasonTokens,
-			CompletionTokens:    s.completionTokens,
-			OutputTokens:        outputTokens,
+			CompletionTokens: outputTokens,
+			CompletionTokensDetails: CompletionTokensDetails{
+				ReasoningTokens: s.reasonTokens,
+			},
 			TotalTokens:         s.nPrompt + outputTokens,
 			TokensPerSecond:     tokensPerSecond,
 			TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
@@ -364,9 +376,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		PromptTokensDetails: PromptTokensDetails{
 			CachedTokens: s.reusedPromptTokens,
 		},
-		ReasoningTokens:     s.reasonTokens,
-		CompletionTokens:    s.completionTokens,
-		OutputTokens:        outputTokens,
+		CompletionTokens: outputTokens,
+		CompletionTokensDetails: CompletionTokensDetails{
+			ReasoningTokens: s.reasonTokens,
+		},
 		TotalTokens:         totalTokens,
 		TokensPerSecond:     tokensPerSecond,
 		TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
@@ -433,15 +446,19 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	var terminalToolCallDeltas []ResponseToolCallDelta
-	if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok && s.job.params.Stream {
-		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, streamer.StartedToolCalls())
+	if s.job.params.Stream {
+		var started []ResponseToolCallDelta
+		if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok {
+			started = streamer.StartedToolCalls()
+		}
+		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, started)
 	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, usage)
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {
-	if len(toolCalls) == 0 || len(started) == 0 {
+	if len(toolCalls) == 0 {
 		return nil
 	}
 
@@ -453,7 +470,7 @@ func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseT
 	}
 
 	for i := range toolCalls {
-		arguments := ""
+		arguments := "{}"
 		if toolCalls[i].Function.Arguments != nil {
 			data, err := json.Marshal(map[string]any(toolCalls[i].Function.Arguments))
 			if err != nil {

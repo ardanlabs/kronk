@@ -8,6 +8,22 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
+                "unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL/AGENT": {
+                    "name": "Qwen3.6 MTP 27B UD-Q8_K_XL",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 131072,
+                        "output": 65536
+                    }
+                },
                 "unsloth/mtp-Qwen3.5-122B-A10B-UD-Q4_K_M/AGENT": {
                     "name": "Qwen3.5 MTP 122B-A10B Q4_K_M",
                     "modalities": {

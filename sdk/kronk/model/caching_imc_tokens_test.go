@@ -32,6 +32,71 @@ func TestTokensHavePrefix(t *testing.T) {
 	}
 }
 
+func TestCommonTokenPrefixLen(t *testing.T) {
+	tests := []struct {
+		name string
+		a    []llama.Token
+		b    []llama.Token
+		want int
+	}{
+		{name: "empty", a: nil, b: []llama.Token{1}, want: 0},
+		{name: "diverges immediately", a: []llama.Token{1}, b: []llama.Token{2}, want: 0},
+		{name: "divergent prefix", a: []llama.Token{1, 2, 3, 9}, b: []llama.Token{1, 2, 3, 4}, want: 3},
+		{name: "shorter complete", a: []llama.Token{1, 2}, b: []llama.Token{1, 2, 3}, want: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := commonTokenPrefixLen(tt.a, tt.b); got != tt.want {
+				t.Errorf("commonTokenPrefixLen() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProcessIMCTokenPlanProgressiveReusablePrefix(t *testing.T) {
+	fallback := &imcSession{
+		id:                0,
+		cachedTokens:      []llama.Token{1, 2},
+		totalTokensCached: 2,
+		kvState:           populatedTestSessionStore(),
+	}
+	observer := &imcSession{
+		id:                1,
+		cachedTokens:      []llama.Token{1, 2, 3, 4, 8},
+		totalTokensCached: 5,
+		kvState:           populatedTestSessionStore(),
+	}
+	m := Model{
+		cfg:         Config{PtrCacheMinTokens: new(2)},
+		log:         applog.DiscardLogger,
+		imcSessions: []*imcSession{fallback, observer},
+	}
+	target := []llama.Token{1, 2, 3, 4, 5, 6}
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "r4"}}}, append(slices.Clone(target), 9), target, time.Now())
+
+	if result.cacheIdx != 2 || result.imcCheckpointTokens != 4 {
+		t.Errorf("plan restored/checkpoint tokens = %d/%d, want 2/4", result.cacheIdx, result.imcCheckpointTokens)
+	}
+	if observer.reserved {
+		t.Error("LCP observer was reserved")
+	}
+
+	// Represent publication of the freshly serialized ABCD checkpoint and
+	// prove the next request can select it as the complete reusable prefix.
+	fallback.reserved = false
+	fallback.turnCheckpoint = &imcSnapshot{
+		cachedTokens:      slices.Clone(target[:4]),
+		totalTokensCached: 4,
+		kvState:           populatedTestSessionStore(),
+	}
+	nextTarget := []llama.Token{1, 2, 3, 4, 7}
+	next := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "r5"}}}, append(slices.Clone(nextTarget), 9), nextTarget, time.Now())
+	if next.cacheIdx != 4 {
+		t.Errorf("subsequent cacheIdx = %d, want published checkpoint length 4", next.cacheIdx)
+	}
+}
+
 func TestProcessIMCTokenPlanSelectsLongestCompletePrefix(t *testing.T) {
 	m := Model{
 		cfg: Config{PtrCacheMinTokens: new(1)},
@@ -148,8 +213,9 @@ func TestProcessIMCTokenPlanUsesTurnCheckpointWhenTemplateMovesLastAssistantReas
 	if result.cacheIdx != llama.Pos(len(checkpointTokens)) {
 		t.Errorf("cacheIdx = %d, want checkpoint length %d", result.cacheIdx, len(checkpointTokens))
 	}
-	if !result.imcPromoteCheckpoint {
-		t.Error("imcPromoteCheckpoint = false, want selected user boundary retained during extension")
+	wantCheckpoint := commonTokenPrefixLen(firstStable, secondStable)
+	if result.imcCheckpointTokens != wantCheckpoint {
+		t.Errorf("imcCheckpointTokens = %d, want divergent rolling LCP %d", result.imcCheckpointTokens, wantCheckpoint)
 	}
 	if !m.imcSessions[0].reserved {
 		t.Error("checkpoint session was not reserved")

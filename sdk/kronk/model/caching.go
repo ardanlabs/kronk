@@ -47,6 +47,7 @@ type cacheResult struct {
 	imcNewLogicalPosition  int  // Next logical position after a media-anchor advance.
 	imcPureHitSkipSnapshot bool // True when startSlot may skip the post-restore snapshot.
 	imcPromoteCheckpoint   bool // True when the selected rolling user boundary must be retained before extension commit.
+	imcCheckpointTokens    int  // Exact target token boundary at which to publish a progressive reusable snapshot.
 
 	// imcSession is the matched session pointer; the SessionStore on it
 	// is the authoritative source of the cached prefix bytes restored

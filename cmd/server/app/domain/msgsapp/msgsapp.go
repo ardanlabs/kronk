@@ -60,7 +60,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 		committed, err := a.handleStreaming(ctx, krn, d, req.Model)
 		if err != nil {
 			if committed {
-				return web.NewNoResponse()
+				return web.NewNoResponseError(errs.FromSDK(err))
 			}
 			return errs.FromSDK(err)
 		}
@@ -85,8 +85,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, modelName string) (bool, error) {
 	w := web.GetWriter(ctx)
 
-	f, ok := w.(http.Flusher)
-	if !ok {
+	if !supportsResponseFlush(w) {
 		return false, fmt.Errorf("streaming not supported")
 	}
 
@@ -101,7 +100,6 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 
 	state := streamState{
 		w:         w,
-		f:         f,
 		modelName: modelName,
 	}
 	committed := false
@@ -115,8 +113,10 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 		if !state.started && resp.ID != "" {
 			w.Header().Set("anthropic-request-id", resp.ID)
 			w.WriteHeader(http.StatusOK)
-			f.Flush()
 			committed = true
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				return committed, fmt.Errorf("flush streaming headers: %w", err)
+			}
 		}
 
 		committed = true
@@ -132,7 +132,6 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 
 type streamState struct {
 	w            http.ResponseWriter
-	f            http.Flusher
 	modelName    string
 	messageID    string
 	started      bool
@@ -270,10 +269,31 @@ func (s *streamState) sendEvent(eventType string, data any) error {
 	// fmt.Printf(`[DEBUG]: {"debug_request": %q}`+"\n", string(jsonData))
 	// fmt.Println("================= EVENT ===================")
 
-	fmt.Fprintf(s.w, "event: %s\ndata: %s\n\n", eventType, jsonData)
-	s.f.Flush()
+	if _, err := fmt.Fprintf(s.w, "event: %s\ndata: %s\n\n", eventType, jsonData); err != nil {
+		return fmt.Errorf("write %s event: %w", eventType, err)
+	}
+	if err := http.NewResponseController(s.w).Flush(); err != nil {
+		return fmt.Errorf("flush %s event: %w", eventType, err)
+	}
 
 	return nil
+}
+
+func supportsResponseFlush(w http.ResponseWriter) bool {
+	for w != nil {
+		switch v := w.(type) {
+		case interface{ FlushError() error }:
+			return true
+		case http.Flusher:
+			return true
+		case interface{ Unwrap() http.ResponseWriter }:
+			w = v.Unwrap()
+		default:
+			return false
+		}
+	}
+
+	return false
 }
 
 func (s *streamState) sendMessageStart(resp model.ChatResponse) error {

@@ -23,12 +23,15 @@ import (
 
 // Client represents a client that can talk to the auth service.
 type Client struct {
-	log      *logger.Logger
-	url      string
-	grpcConn *grpc.ClientConn
-	grpc     authapp.AuthClient
-	dialer   func(context.Context, string) (net.Conn, error)
-	creds    credentials.TransportCredentials
+	log              *logger.Logger
+	url              string
+	grpcConn         *grpc.ClientConn
+	grpc             authapp.AuthClient
+	dialer           func(context.Context, string) (net.Conn, error)
+	creds            credentials.TransportCredentials
+	localAuth        bool
+	authEnabled      bool
+	adminAuthEnabled bool
 }
 
 // New constructs an Auth that can be used to talk with the auth service.
@@ -102,6 +105,16 @@ func WithTransportCredentials(creds credentials.TransportCredentials) func(cln *
 	}
 }
 
+// WithLocalAuth configures the modes for an embedded auth service so disabled
+// requests can bypass the in-process gRPC transport.
+func WithLocalAuth(enabled bool, adminEnabled bool) func(cln *Client) {
+	return func(cln *Client) {
+		cln.localAuth = true
+		cln.authEnabled = enabled
+		cln.adminAuthEnabled = adminEnabled
+	}
+}
+
 // Close is used to close the connections.
 func (cln *Client) Close() error {
 	if cln.grpcConn != nil {
@@ -123,6 +136,10 @@ func injectTrace(ctx context.Context) context.Context {
 
 // Authenticate calls the auth service to authenticate the user.
 func (cln *Client) Authenticate(ctx context.Context, bearerToken string, admin bool, endpoint string) (AuthenticateReponse, error) {
+	if cln.localAuth && !cln.authEnabled && !(admin && cln.adminAuthEnabled) {
+		return AuthenticateReponse{Subject: uuid.Nil.String()}, nil
+	}
+
 	arb := authapp.AuthenticateRequest_builder{
 		Admin:    &admin,
 		Endpoint: &endpoint,

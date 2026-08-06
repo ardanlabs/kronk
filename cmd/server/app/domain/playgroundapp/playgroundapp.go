@@ -256,6 +256,7 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 	d := model.MapToModelD(raw)
 
 	if _, err := krn.ChatStreamingHTTP(ctx, web.GetWriter(ctx), d); err != nil {
+		appErr := errs.FromSDK(err)
 
 		// Request exceeded the 29-minute deadline. Clean up the session
 		// so the next automated-test trial starts with a clean slate.
@@ -270,19 +271,13 @@ func (a *app) chatCompletions(ctx context.Context, r *http.Request) web.Encoder 
 			a.mu.Lock()
 			delete(a.sessions, sessionID)
 			a.mu.Unlock()
-			return web.NewNoResponse()
 		}
 
-		// Client disconnected — streaming headers are already committed
-		// so we cannot write an HTTP error response.
-		if ctx.Err() != nil {
-			return web.NewNoResponse()
-		}
 		if errors.Is(err, kronk.ErrResponseCommitted) {
-			return web.NewNoResponse()
+			return web.NewNoResponseError(appErr)
 		}
 
-		return errs.FromSDK(err)
+		return appErr
 	}
 
 	return web.NewNoResponse()

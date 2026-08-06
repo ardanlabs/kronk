@@ -57,7 +57,7 @@ export function sortRows<T extends AutoTestTrialResult>(
 
 export function estimatePromptDurationMs(usage: AutoTestPromptResult['usage']): number | undefined {
   if (!usage) return undefined;
-  const out = usage.output_tokens;
+  const out = usage.completion_tokens;
   const tps = usage.tokens_per_second;
   if (!Number.isFinite(out) || !Number.isFinite(tps) || tps <= 0) return undefined;
   const ttftMs = usage.time_to_first_token_ms ?? 0;
@@ -330,7 +330,7 @@ export function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetails
                                   <span className="autotest-detail-prompt-duration">Duration: {durationLabel}</span>
                                   <span className="autotest-detail-prompt-usage-inline">
                                     <span>In: {pr.usage?.prompt_tokens ?? '—'}</span>
-                                    <span>Out: {pr.usage?.output_tokens ?? '—'}</span>
+                                    <span>Out: {pr.usage?.completion_tokens ?? '—'}</span>
                                     <span>TPS: {pr.usage?.tokens_per_second !== undefined ? pr.usage.tokens_per_second.toFixed(1) : '—'}</span>
                                   </span>
                                 </div>
@@ -367,7 +367,7 @@ export function TrialDetails({ trial, scenarioLookup, hideScores }: TrialDetails
                                     <div className="autotest-detail-label">Usage</div>
                                     <div className="autotest-detail-value autotest-detail-usage">
                                       <span>In: {pr.usage.prompt_tokens}</span>
-                                      <span>Out: {pr.usage.output_tokens}</span>
+                                      <span>Out: {pr.usage.completion_tokens}</span>
                                       <span>TPS: {pr.usage.tokens_per_second.toFixed(1)}</span>
                                       {pr.usage.time_to_first_token_ms !== undefined && (
                                         <span>TTFT: {formatMs(pr.usage.time_to_first_token_ms)}</span>

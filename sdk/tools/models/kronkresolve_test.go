@@ -207,6 +207,98 @@ func TestMergeModelConfigAdapters(t *testing.T) {
 	}
 }
 
+func TestModelConfigChatTemplateKwargs(t *testing.T) {
+	data := []byte(`test-model:
+  chat-template-kwargs:
+    preserve_thinking: true
+    custom_mode: configured
+    nested:
+      modes:
+        - name: precise
+`)
+
+	var configs map[string]ModelConfig
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	cfg := configs["test-model"]
+	if got := cfg.ChatTemplateKwargs["preserve_thinking"]; got != true {
+		t.Errorf("preserve_thinking = %v, want true", got)
+	}
+
+	resolved := cfg.ToKronkConfig()
+	if got := resolved.ChatTemplateKwargs["custom_mode"]; got != "configured" {
+		t.Errorf("ChatTemplateKwargs custom_mode = %v, want configured", got)
+	}
+	nested, ok := resolved.ChatTemplateKwargs["nested"].(model.D)
+	if !ok {
+		t.Fatalf("resolved nested = %T, want model.D", resolved.ChatTemplateKwargs["nested"])
+	}
+	modes, ok := nested["modes"].([]any)
+	if !ok || len(modes) != 1 {
+		t.Fatalf("resolved nested modes = %T(%v), want one-element []any", nested["modes"], nested["modes"])
+	}
+	mode, ok := modes[0].(model.D)
+	if !ok || mode["name"] != "precise" {
+		t.Errorf("resolved nested mode = %T(%v), want name precise", modes[0], modes[0])
+	}
+
+	resolved.ChatTemplateKwargs["custom_mode"] = "mutated"
+	mode["name"] = "mutated"
+	if got := cfg.ChatTemplateKwargs["custom_mode"]; got != "configured" {
+		t.Errorf("source custom_mode mutated: got %v, want configured", got)
+	}
+	sourceNested := cfg.ChatTemplateKwargs["nested"].(map[string]any)
+	sourceMode := sourceNested["modes"].([]any)[0].(map[string]any)
+	if got := sourceMode["name"]; got != "precise" {
+		t.Errorf("source nested mode mutated: got %v, want precise", got)
+	}
+}
+
+func TestMergeModelConfigChatTemplateKwargs(t *testing.T) {
+	dst := ModelConfig{ChatTemplateKwargs: ChatTemplateKwargs{
+		"preserve_thinking": false,
+		"base_only":         true,
+	}}
+	src := ModelConfig{ChatTemplateKwargs: ChatTemplateKwargs{
+		"preserve_thinking": true,
+		"nested": map[string]any{
+			"mode": "source",
+		},
+	}}
+
+	MergeModelConfig(&dst, src)
+
+	if got := dst.ChatTemplateKwargs["preserve_thinking"]; got != true {
+		t.Errorf("preserve_thinking = %v, want true", got)
+	}
+	if got := dst.ChatTemplateKwargs["base_only"]; got != true {
+		t.Errorf("base_only = %v, want true", got)
+	}
+	dst.ChatTemplateKwargs["preserve_thinking"] = false
+	dst.ChatTemplateKwargs["nested"].(model.D)["mode"] = "mutated"
+	if got := src.ChatTemplateKwargs["preserve_thinking"]; got != true {
+		t.Errorf("source preserve_thinking mutated: got %v, want true", got)
+	}
+	if got := src.ChatTemplateKwargs["nested"].(map[string]any)["mode"]; got != "source" {
+		t.Errorf("source nested mode mutated: got %v, want source", got)
+	}
+}
+
+func TestChatTemplateKwargsRejectsNonStringNestedKey(t *testing.T) {
+	data := []byte(`test-model:
+  chat-template-kwargs:
+    nested:
+      1: invalid
+`)
+
+	var configs map[string]ModelConfig
+	if err := yaml.Unmarshal(data, &configs); err == nil {
+		t.Fatal("Unmarshal() error = nil, want non-string key error")
+	}
+}
+
 func TestModelConfigLoadMode(t *testing.T) {
 	data := []byte(`test-model:
   load-mode: mlock

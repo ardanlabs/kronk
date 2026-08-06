@@ -381,9 +381,9 @@ export default function DocsAPIChat() {
   ],
   "usage": {
     "prompt_tokens": 25,
-    "reasoning_tokens": 0,
+    "prompt_tokens_details": {"cached_tokens": 0},
     "completion_tokens": 12,
-    "output_tokens": 12,
+    "completion_tokens_details": {"reasoning_tokens": 0},
     "total_tokens": 37,
     "tokens_per_second": 85.5
   }

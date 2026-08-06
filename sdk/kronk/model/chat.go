@@ -248,7 +248,7 @@ func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatRes
 // the chat pipeline. Downstream functions use copy-on-write when they need to
 // modify individual message maps.
 func (m *Model) validateOwnedDocument(ctx context.Context, d D) (Params, D, error) {
-	if err := normalizeChatTemplateKwargs(d); err != nil {
+	if err := normalizeChatTemplateKwargs(d, m.cfg.ChatTemplateKwargs); err != nil {
 		return Params{}, nil, err
 	}
 
@@ -257,29 +257,36 @@ func (m *Model) validateOwnedDocument(ctx context.Context, d D) (Params, D, erro
 		return Params{}, nil, err
 	}
 
-	m.log(ctx, "chat-streaming", "FINAL-PARAMS", params.String())
+	kwargs, _ := d["chat_template_kwargs"].(D)
+	finalParams := params.String() + fmt.Sprintf("chat_template_kwargs[%s]\n", chatTemplateKwargsSummary(kwargs))
+	m.log(ctx, "chat-streaming", "FINAL-PARAMS", finalParams)
 
 	return params, d, nil
 }
 
-// normalizeChatTemplateKwargs validates vLLM/SGLang-style template arguments
-// and promotes enable_thinking because Kronk uses it for both parameter
-// resolution and Jinja rendering. Other arguments are unpacked only when the
-// template renders so names that overlap sampler fields remain template-only.
-func normalizeChatTemplateKwargs(d D) error {
+// normalizeChatTemplateKwargs merges model defaults with vLLM/SGLang-style
+// request template arguments and promotes enable_thinking because Kronk uses
+// it for both parameter resolution and Jinja rendering. Request arguments
+// override model defaults. Other arguments are unpacked only when the template
+// renders so names that overlap sampler fields remain template-only.
+func normalizeChatTemplateKwargs(d D, defaults D) error {
 	value, exists := d["chat_template_kwargs"]
-	if !exists {
+	if !exists && len(defaults) == 0 {
 		return nil
 	}
 
-	var kwargs D
-	switch value := value.(type) {
-	case D:
-		kwargs = value
-	case map[string]any:
-		kwargs = D(value)
-	default:
-		return fmt.Errorf("%w: chat_template_kwargs must be an object", ErrInvalidRequest)
+	kwargs := D{}
+	maps.Copy(kwargs, defaults)
+
+	if exists {
+		switch value := value.(type) {
+		case D:
+			maps.Copy(kwargs, value)
+		case map[string]any:
+			maps.Copy(kwargs, value)
+		default:
+			return fmt.Errorf("%w: chat_template_kwargs must be an object", ErrInvalidRequest)
+		}
 	}
 
 	if _, exists := kwargs["chat_template_kwargs"]; exists {
@@ -426,6 +433,8 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 
 		imcSession:         cache.imcSession,
 		imcSessionMedia:    cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
+		imcSessionUseMRoPE: cache.imcSession != nil && cache.imcSession.useMRoPE,
+		imcPhysicalCached:  cache.imcExpectedTokens,
 		imcSessionID:       cache.imcSessionID,
 		imcCacheHit:        imcCacheHit,
 		reusedPromptTokens: int(cache.cacheIdx),
@@ -442,6 +451,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
 		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
 		imcPromoteCheckpoint:   cache.imcPromoteCheckpoint,
+		imcCheckpointTokens:    cache.imcCheckpointTokens,
 
 		imcNewCacheTokens:     cache.imcNewCacheTokens,
 		imcNewTotalCached:     cache.imcNewTotalCached,

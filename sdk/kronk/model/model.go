@@ -85,6 +85,12 @@ type imcSession struct {
 	lastUsed            time.Time     // Last access time (for eviction)
 	reserved            bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	allocatedContext    int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
+	highWaterContext    int           // Largest rolling context published for this session across reuse and snapshot ownership changes.
+	peakContext         int           // Largest live slot context observed for this session, including generated output.
+	inputMessages       int           // Message count from the latest request completed by this session.
+	inputTokens         int           // Complete input token count from the latest request, including the generation-template tail.
+	outputTokens        int           // Generated reasoning and completion tokens from the latest request.
+	usageVersion        uint64        // Request generation used to prevent an older completion from replacing newer diagnostics.
 	hasMedia            bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE            bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts       []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
@@ -96,10 +102,10 @@ type imcSession struct {
 	cachedRenderInputHash string
 
 	rollingEndsAtUser bool         // True when the rolling snapshot ends at a real user-turn boundary.
-	turnCheckpoint    *imcSnapshot // Previous complete user-turn snapshot retained across template-induced divergence.
+	turnCheckpoint    *imcSnapshot // Current reusable snapshot; it may end at a token-only boundary.
 }
 
-// imcSnapshot owns one complete, externally restorable IMC state. Rolling
+// imcSnapshot owns one externally restorable IMC state. Rolling
 // state remains directly on imcSession for the hot path; turnCheckpoint uses
 // this shape so the planner can atomically swap a checkpoint into the rolling
 // fields and then reuse the existing restore/extend machinery unchanged.
@@ -261,6 +267,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l := cfg.Log
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
+	}
+	if cfg.ChatTemplateKwargs != nil {
+		cfg.ChatTemplateKwargs = cfg.ChatTemplateKwargs.Clone()
 	}
 
 	if len(cfg.ModelFiles) == 0 {
@@ -1272,7 +1281,11 @@ func (m *Model) Unload(ctx context.Context) error {
 }
 
 func (m *Model) Config() Config {
-	return m.cfg
+	cfg := m.cfg
+	if cfg.ChatTemplateKwargs != nil {
+		cfg.ChatTemplateKwargs = cfg.ChatTemplateKwargs.Clone()
+	}
+	return cfg
 }
 
 func (m *Model) ModelInfo() ModelInfo {
@@ -1348,6 +1361,8 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	}
 
 	emptyAnswer := finalContent.Len() == 0 && len(respToolCalls) == 0
+	reasoningTokens := usage.CompletionTokensDetails.ReasoningTokens
+	visibleCompletionTokens := usage.CompletionTokens - reasoningTokens
 	args := []any{
 		"status", "final",
 		"id", id,
@@ -1356,9 +1371,9 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		"stop_source", stopSource,
 		"final_channel", channelName(finalChannel),
 		"empty_answer", emptyAnswer,
-		"output_tokens", usage.OutputTokens,
-		"reasoning_tokens", usage.ReasoningTokens,
-		"completion_tokens", usage.CompletionTokens,
+		"output_tokens", usage.CompletionTokens,
+		"reasoning_tokens", reasoningTokens,
+		"completion_tokens", visibleCompletionTokens,
 		"reasoning_bytes", finalReasoning.Len(),
 		"content_bytes", finalContent.Len(),
 		"tool_calls", len(respToolCalls),
@@ -1375,14 +1390,14 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		}
 	}
 	m.log(ctx, "chat-completion", args...)
-	if emptyAnswer && usage.ReasoningTokens > 0 {
+	if emptyAnswer && reasoningTokens > 0 {
 		m.log(ctx, "chat-completion",
 			"status", "warning",
 			"condition", "reasoning-only-response",
 			"id", id,
 			"stop_source", stopSource,
 			"final_channel", channelName(finalChannel),
-			"reasoning_tokens", usage.ReasoningTokens,
+			"reasoning_tokens", reasoningTokens,
 			"reasoning_bytes", finalReasoning.Len(),
 		)
 	}
@@ -1392,6 +1407,11 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	finalLogprobs := logprobsData
 	if streaming {
 		finalLogprobs = nil
+	}
+	for _, delta := range terminalToolCallDeltas {
+		if err := m.sendToolCallDeltaResponse(ctx, ch, id, object, choiceIndex, delta); err != nil {
+			return
+		}
 	}
 
 	select {
@@ -1405,7 +1425,6 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
-		terminalToolCallDeltas,
 		finalLogprobs,
 		finishReason,
 		usage):
@@ -1416,7 +1435,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
 	of := float32(contextWindow) / float32(1024)
 
-	m.log(ctx, "chat-completion (send final response)", "prompt", usage.PromptTokens, "output", usage.OutputTokens,
+	m.log(ctx, "chat-completion (send final response)", "prompt", usage.PromptTokens, "output", usage.CompletionTokens,
 		"context", contextTokens, "down", fmt.Sprintf("(%.0f%% of %.0fK) TPS: %.2f", percentage, of, usage.TokensPerSecond))
 }
 

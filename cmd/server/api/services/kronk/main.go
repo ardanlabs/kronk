@@ -265,9 +265,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 		defer authApp.Shutdown(ctx)
 
-		authClientOpts = append(authClientOpts, authclient.WithDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return lis.Dial()
-		}))
+		authClientOpts = append(authClientOpts,
+			authclient.WithLocalAuth(cfg.Auth.Local.Enabled, cfg.Auth.AdminEnabled),
+			authclient.WithDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+				return lis.Dial()
+			}),
+		)
 	}
 
 	// -------------------------------------------------------------------------

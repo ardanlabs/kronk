@@ -57,6 +57,63 @@ type SamplingConfig struct {
 	Grammar          string  `yaml:"grammar,omitempty"`
 }
 
+// ChatTemplateKwargs contains model-specific Jinja template defaults.
+type ChatTemplateKwargs map[string]any
+
+// UnmarshalYAML normalizes YAML containers into JSON-compatible maps and
+// slices so model configuration can own and clone them safely.
+func (ctk *ChatTemplateKwargs) UnmarshalYAML(unmarshal func(any) error) error {
+	var raw map[any]any
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+
+	normalized, err := normalizeChatTemplateMap(raw)
+	if err != nil {
+		return err
+	}
+
+	*ctk = ChatTemplateKwargs(normalized)
+	return nil
+}
+
+func normalizeChatTemplateMap(raw map[any]any) (map[string]any, error) {
+	normalized := make(map[string]any, len(raw))
+	for key, value := range raw {
+		name, ok := key.(string)
+		if !ok {
+			return nil, fmt.Errorf("chat-template-kwargs key must be a string: %v", key)
+		}
+
+		item, err := normalizeChatTemplateValue(value)
+		if err != nil {
+			return nil, err
+		}
+		normalized[name] = item
+	}
+
+	return normalized, nil
+}
+
+func normalizeChatTemplateValue(value any) (any, error) {
+	switch value := value.(type) {
+	case map[any]any:
+		return normalizeChatTemplateMap(value)
+	case []any:
+		normalized := make([]any, len(value))
+		for i, item := range value {
+			var err error
+			normalized[i], err = normalizeChatTemplateValue(item)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return normalized, nil
+	default:
+		return value, nil
+	}
+}
+
 // WithDefaults returns a new SamplingConfig with default values applied
 // for any zero-valued fields.
 func (s SamplingConfig) WithDefaults() SamplingConfig {
@@ -294,6 +351,7 @@ type ModelConfig struct {
 	PtrCacheMinTokens     *int                      `yaml:"cache-min-tokens,omitempty"`
 	CacheTypeK            model.GGMLType            `yaml:"cache-type-k,omitempty"`
 	CacheTypeV            model.GGMLType            `yaml:"cache-type-v,omitempty"`
+	ChatTemplateKwargs    ChatTemplateKwargs        `yaml:"chat-template-kwargs,omitempty"`
 	PtrContextWindow      *int                      `yaml:"context-window,omitempty"`
 	Devices               []string                  `yaml:"devices,omitempty"`
 	DraftModel            *DraftModelConfig         `yaml:"draft-model,omitempty"`
@@ -364,6 +422,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrCacheMinTokens:     mc.PtrCacheMinTokens,
 		CacheTypeK:            mc.CacheTypeK,
 		CacheTypeV:            mc.CacheTypeV,
+		ChatTemplateKwargs:    model.D(mc.ChatTemplateKwargs).Clone(),
 		PtrContextWindow:      mc.PtrContextWindow,
 		DefaultParams:         mc.Sampling.toParams(),
 		Devices:               mc.Devices,

@@ -467,7 +467,13 @@ type IMCSessionDetail struct {
 	CheckpointContext   int       `json:"checkpoint_context"`
 	CheckpointAllocated int       `json:"checkpoint_allocated"`
 	TotalAllocated      int       `json:"total_allocated"`
+	PeakContext         int       `json:"peak_context"`
 	Messages            int       `json:"messages"`
+	InputMessages       int       `json:"input_messages"`
+	InputTokens         int       `json:"input_tokens"`
+	OutputTokens        int       `json:"output_tokens"`
+	ReusableMessages    int       `json:"reusable_messages"`
+	ReusableTokens      int       `json:"reusable_tokens"`
 	ContextWindow       int       `json:"context_window"`
 	LastUsed            time.Time `json:"last_used"`
 	HasMedia            bool      `json:"has_media"`
@@ -495,7 +501,13 @@ func toIMCSessions(sessions []pool.IMCSessionDetail) IMCSessionsResponse {
 			CheckpointContext:   session.CheckpointContext,
 			CheckpointAllocated: session.CheckpointAllocated,
 			TotalAllocated:      session.TotalAllocated,
+			PeakContext:         session.PeakContext,
 			Messages:            session.Messages,
+			InputMessages:       session.InputMessages,
+			InputTokens:         session.InputTokens,
+			OutputTokens:        session.OutputTokens,
+			ReusableMessages:    session.ReusableMessages,
+			ReusableTokens:      session.ReusableTokens,
 			ContextWindow:       session.ContextWindow,
 			LastUsed:            session.LastUsed,
 			HasMedia:            session.HasMedia,

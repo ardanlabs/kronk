@@ -34,7 +34,13 @@ type IMCSessionDetail struct {
 	CheckpointContext   int
 	CheckpointAllocated int
 	TotalAllocated      int
+	PeakContext         int
 	Messages            int
+	InputMessages       int
+	InputTokens         int
+	OutputTokens        int
+	ReusableTokens      int
+	ReusableMessages    int
 	ContextWindow       int
 	LastUsed            time.Time
 	HasMedia            bool
@@ -53,31 +59,20 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 		}
 
 		context := session.totalTokensCached
-		allocated := session.allocatedContext
-		messages := session.cachedMsgCount
-		hasMedia := session.hasMedia
 		checkpointContext := 0
 		checkpointAllocated := 0
-		totalAllocated := session.allocatedContext
+		reusableMessages := 0
 		if checkpoint := session.turnCheckpoint; checkpoint != nil {
 			checkpointContext = checkpoint.totalTokensCached
 			checkpointAllocated = checkpoint.allocatedContext
-			totalAllocated += checkpoint.allocatedContext
-			if context == 0 && checkpoint.totalTokensCached > 0 {
-				context = checkpoint.totalTokensCached
-				allocated = checkpoint.allocatedContext
-				messages = checkpoint.cachedMsgCount
-				hasMedia = checkpoint.hasMedia
-				checkpointContext = 0
-				checkpointAllocated = 0
-			}
+			reusableMessages = checkpoint.cachedMsgCount
 		}
 
 		state := IMCSessionStateEmpty
 		switch {
 		case session.reserved:
 			state = IMCSessionStateActive
-		case context > 0:
+		case context > 0 || checkpointContext > 0:
 			state = IMCSessionStateIdle
 		}
 
@@ -85,18 +80,53 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 			ID:                  session.id,
 			State:               state,
 			Context:             context,
-			Allocated:           allocated,
+			Allocated:           session.allocatedContext,
 			CheckpointContext:   checkpointContext,
 			CheckpointAllocated: checkpointAllocated,
-			TotalAllocated:      totalAllocated,
-			Messages:            messages,
+			TotalAllocated:      max(session.peakContext, session.highWaterContext, session.allocatedContext),
+			PeakContext:         max(session.peakContext, session.highWaterContext, session.allocatedContext),
+			Messages:            session.cachedMsgCount,
+			InputMessages:       session.inputMessages,
+			InputTokens:         session.inputTokens,
+			OutputTokens:        session.outputTokens,
+			ReusableTokens:      checkpointContext,
+			ReusableMessages:    reusableMessages,
 			ContextWindow:       m.cfg.ContextWindow(),
 			LastUsed:            session.lastUsed,
-			HasMedia:            hasMedia,
+			HasMedia:            session.hasMedia,
 		})
 	}
 
 	return details
+}
+
+func (m *Model) imcBeginRequestUsage(session *imcSession) uint64 {
+	if session == nil {
+		return 0
+	}
+
+	m.cacheMu.Lock()
+	session.usageVersion++
+	version := session.usageVersion
+	m.cacheMu.Unlock()
+
+	return version
+}
+
+func (m *Model) imcRecordRequestUsage(session *imcSession, version uint64, inputMessages, inputTokens, outputTokens, context int) {
+	if session == nil {
+		return
+	}
+
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+	session.peakContext = max(session.peakContext, context)
+	if version == 0 || session.usageVersion != version {
+		return
+	}
+	session.inputMessages = inputMessages
+	session.inputTokens = inputTokens
+	session.outputTokens = outputTokens
 }
 
 // decodeTokensIntoCache decodes tokens into a cache sequence starting at startPos.
@@ -256,9 +286,16 @@ func imcResetRollingSession(s *imcSession) {
 // (write lock).
 func imcResetSession(s *imcSession) {
 	s.seqID = imcSeqIDUnbound
+	s.usageVersion++
+	if s.turnCheckpoint != nil && s.turnCheckpoint.allocatedContext > s.allocatedContext {
+		s.swapTurnCheckpoint()
+	}
 	imcResetRollingSession(s)
 	closeIMCSnapshot(s.turnCheckpoint)
 	s.turnCheckpoint = nil
+	s.inputMessages = 0
+	s.inputTokens = 0
+	s.outputTokens = 0
 	s.lastUsed = time.Time{}
 	s.reserved = false
 }
@@ -296,13 +333,21 @@ func (m *Model) imcInvalidateReservedSession(session *imcSession) {
 // avoids a snapshot-sized byte copy. If the new rolling snapshot later fails,
 // invalidation clears only rolling state and leaves this checkpoint reusable.
 func (m *Model) imcPromoteTurnCheckpoint(ctx context.Context, session *imcSession) error {
+	_, err := m.imcPreserveRollingSnapshot(ctx, session, true)
+	return err
+}
+
+// imcPreserveRollingSnapshot moves the current rolling snapshot into the
+// reusable position and installs fresh rolling stores. When requireUser is
+// true, only a complete user-message boundary qualifies for preservation.
+func (m *Model) imcPreserveRollingSnapshot(ctx context.Context, session *imcSession, requireUser bool) (bool, error) {
 	if session == nil {
-		return nil
+		return false, nil
 	}
 
 	targetStore, err := newSessionStore(m.cfg)
 	if err != nil {
-		return fmt.Errorf("create rolling session store: %w", err)
+		return false, fmt.Errorf("create rolling session store: %w", err)
 	}
 
 	var draftStore SessionStore
@@ -310,18 +355,18 @@ func (m *Model) imcPromoteTurnCheckpoint(ctx context.Context, session *imcSessio
 		draftStore, err = newSessionStore(m.cfg)
 		if err != nil {
 			_ = targetStore.Close()
-			return fmt.Errorf("create rolling draft session store: %w", err)
+			return false, fmt.Errorf("create rolling draft session store: %w", err)
 		}
 	}
 
 	m.cacheMu.Lock()
-	if !session.rollingEndsAtUser || session.hasMedia || session.totalTokensCached == 0 || session.kvState == nil || session.kvState.Len() == 0 {
+	if requireUser && !session.rollingEndsAtUser || session.hasMedia || session.totalTokensCached == 0 || session.kvState == nil || session.kvState.Len() == 0 {
 		m.cacheMu.Unlock()
 		_ = targetStore.Close()
 		if draftStore != nil {
 			_ = draftStore.Close()
 		}
-		return nil
+		return false, nil
 	}
 
 	oldCheckpoint := session.turnCheckpoint
@@ -334,11 +379,11 @@ func (m *Model) imcPromoteTurnCheckpoint(ctx context.Context, session *imcSessio
 	m.cacheMu.Unlock()
 
 	closeIMCSnapshot(oldCheckpoint)
-	m.log(ctx, "imc", "status", "turn-checkpoint-promoted", "imc_cache_entry", session.id,
+	m.log(ctx, "imc", "status", "reusable-snapshot-preserved", "imc_cache_entry", session.id,
 		"messages", checkpoint.cachedMsgCount, "tokens", checkpoint.totalTokensCached,
 		"snapshot_bytes", fmtBytes(uint64(checkpoint.kvState.Len())))
 
-	return nil
+	return true, nil
 }
 
 // imcCommitSession updates a session's metadata after a successful cache
@@ -423,6 +468,7 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	session.lastUsed = time.Now()
 	session.cachedTokens = nil
 	session.allocatedContext = max(session.allocatedContext, totalCached)
+	session.highWaterContext = max(session.highWaterContext, totalCached)
 	if session.draftKVState != nil {
 		session.draftKVState.Reset()
 	}
@@ -445,6 +491,7 @@ func (m *Model) imcPublishSession(session *imcSession) {
 
 	m.cacheMu.Lock()
 	session.allocatedContext = max(session.allocatedContext, session.totalTokensCached)
+	session.highWaterContext = max(session.highWaterContext, session.totalTokensCached)
 	session.reserved = false
 	m.cacheMu.Unlock()
 }
