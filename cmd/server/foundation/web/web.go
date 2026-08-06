@@ -137,6 +137,18 @@ func (a *App) HandlerFuncNoMid(method string, group string, path string, handler
 // HandlerFunc sets a handler function for a given HTTP method and path pair
 // to the application server mux.
 func (a *App) HandlerFunc(method string, group string, path string, handlerFunc HandlerFunc, mw ...MidFunc) {
+	h := a.handle(handlerFunc, mw...)
+
+	finalPath := path
+	if group != "" {
+		finalPath = "/" + group + path
+	}
+	finalPath = fmt.Sprintf("%s %s", method, finalPath)
+
+	a.mux.HandleFunc(finalPath, h)
+}
+
+func (a *App) handle(handlerFunc HandlerFunc, mw ...MidFunc) http.HandlerFunc {
 	handlerFunc = wrapMiddleware(mw, handlerFunc)
 	handlerFunc = wrapMiddleware(a.mw, handlerFunc)
 
@@ -165,13 +177,7 @@ func (a *App) HandlerFunc(method string, group string, path string, handlerFunc 
 		}
 	}
 
-	finalPath := path
-	if group != "" {
-		finalPath = "/" + group + path
-	}
-	finalPath = fmt.Sprintf("%s %s", method, finalPath)
-
-	a.mux.HandleFunc(finalPath, h)
+	return h
 }
 
 // RawHandlerFunc sets a raw handler function for a given HTTP method and path
@@ -286,10 +292,11 @@ func (a *App) FileServer(static embed.FS, dir string, path string) error {
 // NotFoundHandler registers a catch-all handler that logs requests to
 // endpoints that are not configured in the server mux.
 func (a *App) NotFoundHandler() {
-	h := func(w http.ResponseWriter, r *http.Request) {
-		a.log(r.Context(), "not-found", "method", r.Method, "path", r.URL.Path, "remoteaddr", r.RemoteAddr)
-		http.Error(w, "Not Found", http.StatusNotFound)
+	handlerFunc := func(ctx context.Context, r *http.Request) Encoder {
+		a.log(ctx, "not-found", "method", r.Method, "path", r.URL.Path, "remoteaddr", r.RemoteAddr)
+		http.Error(GetWriter(ctx), "Not Found", http.StatusNotFound)
+		return NewNoResponse()
 	}
 
-	a.mux.HandleFunc("/", h)
+	a.mux.HandleFunc("/", a.handle(handlerFunc))
 }

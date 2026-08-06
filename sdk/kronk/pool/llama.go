@@ -171,22 +171,52 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		planReq.RAMBytes = result.TotalVRAM + result.TotalSystemRAMEst
 	}
 
+	memoryTopology := "cpu-only"
+	switch {
+	case l.resman.UnifiedMemory():
+		memoryTopology = "unified"
+	case l.resman.HasGPUs():
+		memoryTopology = "discrete"
+	}
+
+	gpuLayerPlacement := "partial"
+	switch vramCfg.GPULayers {
+	case -1:
+		gpuLayerPlacement = "cpu-only"
+	case 0:
+		gpuLayerPlacement = "all"
+	}
+
+	expertLayerPlacement := "not-applicable"
+	if result.MoE != nil && result.MoE.IsMoE {
+		expertLayerPlacement = "partial"
+		switch vramCfg.ExpertLayersOnGPU {
+		case 0:
+			expertLayerPlacement = "cpu-only"
+		case model.ExpertsAllOnGPU:
+			expertLayerPlacement = "all"
+		}
+	}
+
 	l.log(ctx, "plan-request",
 		"key", req.Key,
 		"model-id", req.ModelID,
 		"source", source,
+		"memory-topology", memoryTopology,
 		"predicted-total", humanBytes(planReq.VRAMBytes+planReq.RAMBytes),
 		"predicted-vram", humanBytes(result.TotalVRAM),
 		"predicted-system", humanBytes(result.TotalSystemRAMEst),
 		"context-window", ctxWin,
 		"slots", nseq,
 		"bytes-per-element", bpe,
-		"experts-on-gpu", vramCfg.ExpertLayersOnGPU,
-		"gpu-layers", vramCfg.GPULayers,
+		"expert-layer-placement", expertLayerPlacement,
+		"experts-on-gpu-config", vramCfg.ExpertLayersOnGPU,
+		"gpu-layer-placement", gpuLayerPlacement,
+		"gpu-layers-config", vramCfg.GPULayers,
 		"kv-cache-on-cpu", vramCfg.KVCacheOnCPU,
 		"swa-full", vramCfg.SWAFull,
-		"vram", humanBytes(planReq.VRAMBytes),
-		"ram", humanBytes(planReq.RAMBytes),
+		"reserved-vram", humanBytes(planReq.VRAMBytes),
+		"reserved-ram", humanBytes(planReq.RAMBytes),
 		"devices", planReq.Devices,
 		"tensor-split", planReq.TensorSplit,
 		"allow-split", planReq.AllowSplit,
