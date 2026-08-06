@@ -133,15 +133,9 @@ func TestChatBasics(resp model.ChatResponse, modelName string, object string, re
 		return fmt.Errorf("basics: expected tool calls to be non-empty")
 	}
 
-	if resp.Choices[0].FinishReason() == "tool_calls" && streaming {
-		if resp.Choices[0].Delta == nil || len(resp.Choices[0].Delta.ToolCalls) == 0 {
-			return fmt.Errorf("basics: expected tool calls in Delta for streaming compatibility")
-		}
-	}
-
-	if resp.Choices[0].FinishReason() == "tool_calls" && !streaming {
+	if resp.Choices[0].FinishReason() == "tool_calls" {
 		if resp.Choices[0].Message == nil || len(resp.Choices[0].Message.ToolCalls) == 0 {
-			return fmt.Errorf("basics: expected tool calls in Message for non-streaming")
+			return fmt.Errorf("basics: expected tool calls in Message")
 		}
 	}
 
