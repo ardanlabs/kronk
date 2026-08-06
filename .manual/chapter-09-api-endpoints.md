@@ -103,9 +103,9 @@ option affects only the streaming wire response; it does not change generation
 or server-side accounting.
 
 Compatible tool-call parsers emit an OpenAI-style activity delta as soon as a
-function name is known. The terminal chunk reconciles every completed tool
-call, including its arguments, so clients that consume only the final chunk
-continue to work unchanged.
+function name is known. Once parsing completes, Kronk emits the completed
+arguments in a nonterminal tool-call delta followed by an empty terminal delta
+with `finish_reason: "tool_calls"`.
 
 `usage.output_tokens` is the sum of reasoning and completion tokens, and
 `usage.total_tokens` is prompt plus output tokens. Generated control and

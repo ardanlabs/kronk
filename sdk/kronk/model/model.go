@@ -1393,6 +1393,11 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	if streaming {
 		finalLogprobs = nil
 	}
+	for _, delta := range terminalToolCallDeltas {
+		if err := m.sendToolCallDeltaResponse(ctx, ch, id, object, choiceIndex, delta); err != nil {
+			return
+		}
+	}
 
 	select {
 	case <-ctx.Done():
@@ -1405,7 +1410,6 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
-		terminalToolCallDeltas,
 		finalLogprobs,
 		finishReason,
 		usage):

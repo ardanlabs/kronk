@@ -767,7 +767,7 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", tt.toolCalls, nil, nil, tt.finishReason, Usage{})
+			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", tt.toolCalls, nil, tt.finishReason, Usage{})
 			if got := resp.Choices[0].FinishReason(); got != tt.want {
 				t.Errorf("FinishReason: got %q, want %q", got, tt.want)
 			}
@@ -873,7 +873,7 @@ func TestResponseMessageCompletedToolCallsOmitIndex(t *testing.T) {
 	}
 }
 
-func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
+func TestChatResponseFinalSeparatesCompletedToolCallsFromFinishReason(t *testing.T) {
 	toolCalls := []ResponseToolCall{{
 		ID:    "call_1",
 		Index: 0,
@@ -893,9 +893,17 @@ func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
 	}}
 	terminal := reconcileStartedToolCalls(toolCalls, started)
 
-	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "answer", "thought", toolCalls, terminal, nil, "", Usage{})
+	argumentResp := chatResponseToolCallDelta("id", ObjectChatText, "model", 0, terminal[0])
+	if got := argumentResp.Choices[0].FinishReason(); got != "" {
+		t.Fatalf("argument FinishReason: got %q, want empty", got)
+	}
+	if got, want := argumentResp.Choices[0].Delta.ToolCallDeltas[0].Function.Arguments, `{"location":"London"}`; got != want {
+		t.Errorf("argument delta: got %q, want %q", got, want)
+	}
+
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "answer", "thought", toolCalls, nil, "", Usage{})
 	if resp.Choices[0].Delta == nil {
-		t.Fatal("Delta: got nil, want completed tool calls for streaming compatibility")
+		t.Fatal("Delta: got nil, want empty terminal delta")
 	}
 	if got := resp.Choices[0].Delta.Content; got != "" {
 		t.Errorf("Delta.Content: got %q, want empty terminal delta", got)
@@ -903,11 +911,8 @@ func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
 	if got := resp.Choices[0].Delta.Reasoning; got != "" {
 		t.Errorf("Delta.Reasoning: got %q, want empty terminal delta", got)
 	}
-	if got := resp.Choices[0].Delta.ToolCalls; len(got) != 1 {
-		t.Fatalf("Delta.ToolCalls: got %d calls, want 1", len(got))
-	}
-	if got, want := resp.Choices[0].Delta.ToolCalls[0].Function.Arguments["location"], "London"; got != want {
-		t.Errorf("location: got %v, want %v", got, want)
+	if got := resp.Choices[0].Delta.ToolCalls; len(got) != 0 {
+		t.Fatalf("Delta.ToolCalls: got %d calls, want none in terminal chunk", len(got))
 	}
 	if got, want := resp.Choices[0].Message.Content, "answer"; got != want {
 		t.Errorf("Message.Content: got %q, want %q", got, want)
@@ -916,7 +921,7 @@ func TestChatResponseFinalRetainsCompletedToolCalls(t *testing.T) {
 		t.Errorf("Message.Reasoning: got %q, want %q", got, want)
 	}
 
-	data, err := json.Marshal(resp)
+	data, err := json.Marshal(argumentResp)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
@@ -987,11 +992,14 @@ func TestReconcileStartedToolCalls(t *testing.T) {
 
 	toolCalls[0].ID = "final-id"
 	terminal = reconcileStartedToolCalls(toolCalls, nil)
-	if terminal != nil {
-		t.Errorf("terminal deltas without started calls: got %v, want nil", terminal)
+	if len(terminal) != 1 {
+		t.Fatalf("terminal deltas without started calls: got %d, want 1", len(terminal))
 	}
 	if got, want := toolCalls[0].ID, "final-id"; got != want {
 		t.Errorf("ID without started calls: got %q, want %q", got, want)
+	}
+	if got, want := terminal[0].Function.Arguments, `{"location":"London"}`; got != want {
+		t.Errorf("arguments without started calls: got %q, want %q", got, want)
 	}
 }
 

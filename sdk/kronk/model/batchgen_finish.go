@@ -433,15 +433,19 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	var terminalToolCallDeltas []ResponseToolCallDelta
-	if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok && s.job.params.Stream {
-		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, streamer.StartedToolCalls())
+	if s.job.params.Stream {
+		var started []ResponseToolCallDelta
+		if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok {
+			started = streamer.StartedToolCalls()
+		}
+		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, started)
 	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, usage)
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {
-	if len(toolCalls) == 0 || len(started) == 0 {
+	if len(toolCalls) == 0 {
 		return nil
 	}
 
