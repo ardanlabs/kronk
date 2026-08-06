@@ -966,7 +966,6 @@ type ChatResponse struct {
 	SystemFingerprint string   `json:"system_fingerprint"`
 	Choices           []Choice `json:"choices"`
 	Usage             *Usage   `json:"usage,omitempty"`
-	Prompt            string   `json:"prompt,omitempty"`
 }
 
 func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool, logprob *ContentLogprob) ChatResponse {
@@ -1031,7 +1030,7 @@ func forReasoning(content string, reasoning bool) string {
 	return ""
 }
 
-func chatResponseFinal(id string, object string, model string, index int, prompt string, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
+func chatResponseFinal(id string, object string, model string, index int, content string, reasoning string, respToolCalls []ResponseToolCall, logprobsData []ContentLogprob, finishReason string, u Usage) ChatResponse {
 	var logprobs *Logprobs
 	if len(logprobsData) > 0 {
 		logprobs = &Logprobs{Content: logprobsData}
@@ -1069,12 +1068,11 @@ func chatResponseFinal(id string, object string, model string, index int, prompt
 				FinishReasonPtr: &finishReason,
 			},
 		},
-		Usage:  &u,
-		Prompt: prompt,
+		Usage: &u,
 	}
 }
 
-func ChatResponseErr(id string, object string, model string, index int, prompt string, err error, u Usage) ChatResponse {
+func ChatResponseErr(id string, object string, model string, index int, err error, u Usage) ChatResponse {
 	finishReason := FinishReasonError
 	return ChatResponse{
 		ID:                id,
@@ -1092,8 +1090,7 @@ func ChatResponseErr(id string, object string, model string, index int, prompt s
 				FinishReasonPtr: &finishReason,
 			},
 		},
-		Usage:  &u,
-		Prompt: prompt,
+		Usage: &u,
 	}
 }
 

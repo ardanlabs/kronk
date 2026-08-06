@@ -37,7 +37,6 @@ func TestMarshalChatStreamError(t *testing.T) {
 		model.ObjectChatText,
 		"model",
 		0,
-		"",
 		errors.New("inference failed"),
 		model.Usage{},
 	)

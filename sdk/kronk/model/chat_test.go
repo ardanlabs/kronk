@@ -816,7 +816,7 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", tt.toolCalls, nil, tt.finishReason, Usage{})
+			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", tt.toolCalls, nil, tt.finishReason, Usage{})
 			if got := resp.Choices[0].FinishReason(); got != tt.want {
 				t.Errorf("FinishReason: got %q, want %q", got, tt.want)
 			}
@@ -989,7 +989,7 @@ func TestChatResponseFinalSeparatesCompletedToolCallsFromFinishReason(t *testing
 		t.Errorf("argument delta: got %q, want %q", got, want)
 	}
 
-	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "answer", "thought", toolCalls, nil, "", Usage{})
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "answer", "thought", toolCalls, nil, "", Usage{})
 	if resp.Choices[0].Delta == nil {
 		t.Fatal("Delta: got nil, want empty terminal delta")
 	}

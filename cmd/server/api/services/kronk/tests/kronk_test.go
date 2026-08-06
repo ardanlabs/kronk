@@ -450,14 +450,6 @@ func (v responseValidator) hasLogprobs(topLogprobs int) responseValidator {
 	return v
 }
 
-func (v responseValidator) hasNoPrompt() responseValidator {
-	if v.resp.Prompt != "" {
-		v.errors = append(v.errors, "expected prompt to be empty when return_prompt is not set")
-	}
-
-	return v
-}
-
 func (v responseValidator) hasValidJSON() responseValidator {
 	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")

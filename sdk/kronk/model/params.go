@@ -89,10 +89,6 @@ const (
 	// causing the model to substitute [ for { and producing invalid arguments.
 	DefRepeatPenalty = 1.0
 
-	// DefReturnPrompt determines whether to include the prompt in the final response.
-	// When set to true, the prompt will be included.
-	DefReturnPrompt = false
-
 	// DefTemp controls the randomness of the output. It rescales the probability
 	// distribution of possible next tokens.
 	DefTemp = 0.8
@@ -231,10 +227,6 @@ type Params struct {
 	// strong). Default is 1.0 which turns it off.
 	RepeatPenalty float32 `json:"repeat_penalty"`
 
-	// ReturnPrompt determines whether to include the prompt in the final
-	// response. When set to true, the prompt will be included. Default is false.
-	ReturnPrompt bool `json:"return_prompt"`
-
 	// Seed initializes request sampling randomness. Nil selects a random seed;
 	// any non-nil value, including 0, requests repeatable sampling.
 	Seed *uint32 `json:"seed,omitempty"`
@@ -304,7 +296,6 @@ func (p Params) String() string {
 	fmt.Fprintf(&b, "reasoning_effort[%v]\n", p.ReasoningEffort)
 	fmt.Fprintf(&b, "repeat_last_n[%v]\n", p.RepeatLastN)
 	fmt.Fprintf(&b, "repeat_penalty[%v]\n", p.RepeatPenalty)
-	fmt.Fprintf(&b, "return_prompt[%v]\n", p.ReturnPrompt)
 	if p.Seed == nil {
 		fmt.Fprintln(&b, "seed[random]")
 	} else {
@@ -373,9 +364,6 @@ func AddParams(params Params, d D) {
 	}
 	if params.RepeatPenalty != 0 {
 		d["repeat_penalty"] = params.RepeatPenalty
-	}
-	if params.ReturnPrompt {
-		d["return_prompt"] = params.ReturnPrompt
 	}
 	if params.Seed != nil {
 		d["seed"] = *params.Seed
@@ -569,14 +557,6 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 			return Params{}, err
 		}
 		p.RepeatPenalty = repeatPenalty
-	}
-
-	if val, exists := d["return_prompt"]; exists {
-		returnPrompt, err := parseBool("return_prompt", val)
-		if err != nil {
-			return Params{}, err
-		}
-		p.ReturnPrompt = returnPrompt
 	}
 
 	if val, exists := d["seed"]; exists {

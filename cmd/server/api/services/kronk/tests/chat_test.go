@@ -30,11 +30,10 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"return_prompt": true,
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -49,7 +48,6 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Model:             "Qwen3-8B-Q8_0",
 				Object:            "chat.completion",
 				SystemFingerprint: "fp_kronk",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -86,13 +84,12 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"return_prompt": true,
-				"logprobs":      true,
-				"top_logprobs":  3,
+				"max_tokens":   2048,
+				"temperature":  0.7,
+				"top_p":        0.9,
+				"top_k":        40,
+				"logprobs":     true,
+				"top_logprobs": 3,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -107,7 +104,6 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -150,12 +146,11 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"stream":        true,
-				"return_prompt": true,
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
+				"stream":      true,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -168,7 +163,6 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -200,14 +194,13 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"stream":        true,
-				"return_prompt": true,
-				"logprobs":      true,
-				"top_logprobs":  3,
+				"max_tokens":   2048,
+				"temperature":  0.7,
+				"top_p":        0.9,
+				"top_k":        40,
+				"stream":       true,
+				"logprobs":     true,
+				"top_logprobs": 3,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -220,7 +213,6 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -413,11 +405,10 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 				"messages": model.DocumentArray(
 					model.TextMessageArray(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"return_prompt": true,
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -432,7 +423,6 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -475,12 +465,11 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 				"messages": model.DocumentArray(
 					model.TextMessageArray(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"stream":        true,
-				"return_prompt": true,
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
+				"stream":      true,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -493,7 +482,6 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -571,7 +559,6 @@ func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasUsage(false).
 					hasContent().
 					hasNoLogprobs().
-					hasNoPrompt().
 					warnContainsInContent("giraffes").
 					result(t)
 			},
@@ -634,7 +621,6 @@ func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 					hasUsage(false).
 					hasContent().
 					hasNoLogprobs().
-					hasNoPrompt().
 					warnContainsInContent("speech").
 					result(t)
 			},

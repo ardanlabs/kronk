@@ -21,7 +21,6 @@ export interface SamplingParams {
   frequencyPenalty: number;
   enableThinking: string;
   reasoningEffort: string;
-  returnPrompt: boolean;
   includeUsage: boolean;
   logprobs: boolean;
   topLogprobs: number;
@@ -48,7 +47,6 @@ export const defaultSampling: SamplingParams = {
   frequencyPenalty: 0,
   enableThinking: '',
   reasoningEffort: '',
-  returnPrompt: false,
   includeUsage: true,
   logprobs: false,
   topLogprobs: 0,

@@ -235,7 +235,6 @@ export default function DocsSDKModel() {
 	SystemFingerprint string   \`json:"system_fingerprint"\`
 	Choices           []Choice \`json:"choices"\`
 	Usage             *Usage   \`json:"usage,omitempty"\`
-	Prompt            string   \`json:"prompt,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">ChatResponse represents output for inference models.</p>
@@ -641,10 +640,6 @@ export default function DocsSDKModel() {
 	// Values above 1.0 reduce repetition (e.g., 1.1 is a mild penalty, 1.5 is
 	// strong). Default is 1.0 which turns it off.
 	RepeatPenalty float32 \`json:"repeat_penalty"\`
-
-	// ReturnPrompt determines whether to include the prompt in the final
-	// response. When set to true, the prompt will be included. Default is false.
-	ReturnPrompt bool \`json:"return_prompt"\`
 
 	// Seed initializes request sampling randomness. Nil selects a random seed;
 	// any non-nil value, including 0, requests repeatable sampling.
@@ -1800,10 +1795,6 @@ export default function DocsSDKModel() {
 	// JSON tokens like { in tool call formats (e.g., Gemma's call:func{{...}}),
 	// causing the model to substitute [ for { and producing invalid arguments.
 	DefRepeatPenalty = 1.0
-
-	// DefReturnPrompt determines whether to include the prompt in the final response.
-	// When set to true, the prompt will be included.
-	DefReturnPrompt = false
 
 	// DefTemp controls the randomness of the output. It rescales the probability
 	// distribution of possible next tokens.

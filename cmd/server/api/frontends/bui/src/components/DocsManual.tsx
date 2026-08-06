@@ -2211,12 +2211,6 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td><code>medium</code></td>
                 <td>Requests <code>none</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, or <code>high</code> effort from supported reasoning templates.</td>
               </tr>
-              <tr>
-                <td><code>return_prompt</code></td>
-                <td>boolean</td>
-                <td><code>false</code></td>
-                <td>Includes the rendered prompt in the final Chat Completions response.</td>
-              </tr>
             </tbody>
           </table>
           <p>If neither the request nor model configuration supplies a positive output limit, Kronk uses the model's configured context window. The actual output can be shorter because the prompt and generated text share that window, the model can stop naturally, or another limit can end generation. See Chapter 9 for the limit and termination fields returned by each API format.</p>

@@ -62,7 +62,6 @@ export default function Chat() {
       frequencyPenalty: modelSampling.frequency_penalty ?? defaultSampling.frequencyPenalty,
       enableThinking: modelSampling.enable_thinking ?? defaultSampling.enableThinking,
       reasoningEffort: modelSampling.reasoning_effort ?? defaultSampling.reasoningEffort,
-      returnPrompt: defaultSampling.returnPrompt,
       includeUsage: defaultSampling.includeUsage,
       logprobs: defaultSampling.logprobs,
       topLogprobs: defaultSampling.topLogprobs,
@@ -161,7 +160,6 @@ export default function Chat() {
         frequency_penalty: sampling.frequencyPenalty,
         enable_thinking: sampling.enableThinking || undefined,
         reasoning_effort: sampling.reasoningEffort || undefined,
-        return_prompt: sampling.returnPrompt,
         stream_options: {
           include_usage: sampling.includeUsage,
         },

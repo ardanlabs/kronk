@@ -282,7 +282,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
 		}
 
-		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
+		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, err, usage)
 
 		return
 	}
@@ -425,7 +425,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		if !s.job.requestStart.IsZero() {
 			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
 		}
-		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
+		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, err, usage)
 		return
 	}
 
@@ -440,11 +440,6 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.stopSource == "" {
 		s.stopSource = "unknown"
 	}
-	returnPrompt := ""
-	if s.job.params.ReturnPrompt {
-		returnPrompt = s.job.prompt
-	}
-
 	var terminalToolCallDeltas []ResponseToolCallDelta
 	if s.job.params.Stream {
 		var started []ResponseToolCallDelta
@@ -453,7 +448,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, started)
 	}
-	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
+	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, usage)
 }
 
@@ -584,7 +579,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 		"imc_cache_hit", job.imcSnapshotReused,
 		"err", err, "active_streams", remaining)
 
-	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "", err, Usage{})
+	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, err, Usage{})
 	close(job.ch)
 }
 

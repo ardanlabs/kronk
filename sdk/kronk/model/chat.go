@@ -931,7 +931,7 @@ func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id st
 
 	// I want to try and send this message before we check the context.
 	select {
-	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, "", err, Usage{}):
+	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, err, Usage{}):
 		return
 	default:
 	}
@@ -939,10 +939,10 @@ func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id st
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, "", ctx.Err(), Usage{}):
+		case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, ctx.Err(), Usage{}):
 		default:
 		}
 
-	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, "", err, Usage{}):
+	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, err, Usage{}):
 	}
 }

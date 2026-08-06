@@ -211,12 +211,6 @@ export default function DocsAPIResponses() {
                     <td>Reasoning level for GPT models: none, minimal, low, medium, high</td>
                   </tr>
                   <tr>
-                    <td><code>return_prompt</code></td>
-                    <td><code>bool</code></td>
-                    <td>No</td>
-                    <td>Include the prompt in the final response</td>
-                  </tr>
-                  <tr>
                     <td><code>logprobs</code></td>
                     <td><code>bool</code></td>
                     <td>No</td>

@@ -45,7 +45,7 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 	}
 
 	ef := func(err error) model.ChatResponse {
-		return model.ChatResponseErr("panic", model.ObjectChatUnknown, krn.ModelInfo().ID, 0, "", err, model.Usage{})
+		return model.ChatResponseErr("panic", model.ObjectChatUnknown, krn.ModelInfo().ID, 0, err, model.Usage{})
 	}
 
 	return streaming(ctx, krn, f, ef)

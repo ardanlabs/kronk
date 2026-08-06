@@ -372,7 +372,6 @@ func TestParamsStringIncludesZeroAndFalseValues(t *testing.T) {
 		"include_usage[false]",
 		"logprobs[false]",
 		"min_p[0]",
-		"return_prompt[false]",
 		"stream[false]",
 		"top_logprobs[0]",
 		"xtc_probability[0]",

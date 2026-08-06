@@ -118,7 +118,6 @@ measure an improvement for a specific workload.
 | `max_output_tokens` | integer | model-dependent | Responses API output limit; takes precedence over `max_tokens`. |
 | `enable_thinking`  | boolean | `true`   | Requests thinking from models and templates that support it. |
 | `reasoning_effort` | string  | `medium` | Requests `none`, `minimal`, `low`, `medium`, or `high` effort from supported reasoning templates. |
-| `return_prompt`    | boolean | `false`  | Includes the rendered prompt in the final Chat Completions response. |
 
 If neither the request nor model configuration supplies a positive output
 limit, Kronk uses the model's configured context window. The actual output can

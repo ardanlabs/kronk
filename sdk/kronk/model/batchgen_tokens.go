@@ -279,7 +279,7 @@ func (e *batchEngine) retainAndStreamResult(s *slot, result Result, outputTokens
 	}
 
 	// Per OpenAI spec, usage is only sent in the final response, not deltas.
-	return e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, "", result.Content, result.Channel, s.reasonTokens, outputTokens, logprob)
+	return e.model.sendDeltaResponse(s.job.ctx, s.job.ch, s.job.id, s.job.object, 0, result.Content, result.Channel, s.reasonTokens, outputTokens, logprob)
 }
 
 func updateSlotChannel(s *slot, channel Channel) {

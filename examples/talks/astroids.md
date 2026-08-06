@@ -409,7 +409,7 @@ Pressing Enter while the game is running must do nothing.
 
 Before considering the task complete, confirm all of the following from the implementation:
 
-- `go run ./asteroids` serves the game at `http://localhost:8080/`.
+- The Go service is configured to serve the game at `http://localhost:8080/`.
 - The executable serves embedded assets without relying on the source directory.
 - The browser loads the HTML, CSS, and JavaScript without external resources.
 - The initial HUD reads `Score: 0` and `Lives: 3`.
@@ -449,17 +449,17 @@ After implementation:
    go build -o /tmp/asteroids-game ./asteroids
    ```
 
-4. Start the built service temporarily and verify with `curl` that:
-   - `/` returns HTTP 200 and the HTML document.
-   - `/styles.css` returns HTTP 200.
-   - `/game.js` returns HTTP 200.
+4. Remove `/tmp/asteroids-game` after the build succeeds.
 
-5. If a browser inspection tool is available, open the game and verify the acceptance criteria, including controls, firing, collisions, lives, scoring, game over, and restart.
+Do not run or launch the game as part of implementation or verification. In particular:
 
-6. Stop the temporary service.
+- Do not use `go run ./asteroids`.
+- Do not execute the built `/tmp/asteroids-game` binary.
+- Do not start the service in the foreground or background.
+- Do not use `curl` or another client against the service.
+- Do not open the game in a browser or browser inspection tool.
+- Do not leave any game server process running.
 
-7. Remove `/tmp/asteroids-game`.
-
-Do not claim interactive gameplay was verified unless it was actually exercised in a browser. Report any verification that could not be performed.
+Confirm browser behavior by inspecting the implementation only. State clearly in the final response that the game was not launched or interactively tested, as required by this prompt.
 
 Start coding immediately without questions or a plan.
