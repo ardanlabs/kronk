@@ -36,6 +36,20 @@ func TestResponseValidatesMessagesBeforeAdmission(t *testing.T) {
 	}
 }
 
+func TestResponsesRejectStopWhenPresent(t *testing.T) {
+	for _, value := range []any{nil, "END", []any{"END"}} {
+		d := model.D{"input": "hello", "stop": value}
+		var krn Kronk
+
+		if _, err := krn.Response(t.Context(), d); !errors.Is(err, model.ErrInvalidRequest) {
+			t.Errorf("Response stop %v: got %v, want ErrInvalidRequest", value, err)
+		}
+		if _, err := krn.ResponseStreaming(t.Context(), d); !errors.Is(err, model.ErrInvalidRequest) {
+			t.Errorf("ResponseStreaming stop %v: got %v, want ErrInvalidRequest", value, err)
+		}
+	}
+}
+
 func TestToChatResponseToResponsesUsageIncludesReasoning(t *testing.T) {
 	chatResp := model.ChatResponse{
 		Usage: &model.Usage{

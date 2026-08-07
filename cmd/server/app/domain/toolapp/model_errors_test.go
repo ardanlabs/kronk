@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -37,6 +38,63 @@ func TestModelDetailsNotFound(t *testing.T) {
 	resp := (&app{models: models}).showModel(t.Context(), req)
 
 	assertNotFound(t, resp)
+}
+
+func TestOpenAIModel(t *testing.T) {
+	modified := time.Unix(1_234_567_890, 987_654_321)
+
+	model := toOpenAIModel(llamamodels.File{
+		ID:       "test-model",
+		Modified: modified,
+	})
+
+	if model.ID != "test-model" {
+		t.Errorf("ID: got %q, want %q", model.ID, "test-model")
+	}
+	if model.Object != "model" {
+		t.Errorf("Object: got %q, want %q", model.Object, "model")
+	}
+	if model.Created != modified.Unix() {
+		t.Errorf("Created: got %d, want %d", model.Created, modified.Unix())
+	}
+	if model.OwnedBy != "kronk" {
+		t.Errorf("OwnedBy: got %q, want %q", model.OwnedBy, "kronk")
+	}
+}
+
+func TestModelInfoAdmissionCapacity(t *testing.T) {
+	tests := []struct {
+		name          string
+		nSeqMax       *int
+		queueDepth    *int
+		isEmbedModel  bool
+		isRerankModel bool
+		wantDepth     int
+		wantCapacity  int
+	}{
+		{name: "generation defaults", wantDepth: 2, wantCapacity: 2},
+		{name: "generation configured", nSeqMax: new(4), queueDepth: new(3), wantDepth: 3, wantCapacity: 12},
+		{name: "embedding uses effective queue depth one", nSeqMax: new(4), queueDepth: new(3), isEmbedModel: true, wantDepth: 1, wantCapacity: 4},
+		{name: "reranking uses effective queue depth one", nSeqMax: new(4), queueDepth: new(3), isRerankModel: true, wantDepth: 1, wantCapacity: 4},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := toModelInfo(
+				llamamodels.FileInfo{},
+				llamamodels.ModelInfo{IsEmbedModel: tt.isEmbedModel, IsRerankModel: tt.isRerankModel},
+				llamamodels.ModelConfig{PtrNSeqMax: tt.nSeqMax, PtrQueueDepth: tt.queueDepth},
+				nil,
+			)
+
+			if resp.ModelConfig.QueueDepth != tt.wantDepth {
+				t.Errorf("QueueDepth: got %d, want %d", resp.ModelConfig.QueueDepth, tt.wantDepth)
+			}
+			if resp.ModelConfig.AdmissionCapacity != tt.wantCapacity {
+				t.Errorf("AdmissionCapacity: got %d, want %d", resp.ModelConfig.AdmissionCapacity, tt.wantCapacity)
+			}
+		})
+	}
 }
 
 func TestBuckyModelDetailsNotFound(t *testing.T) {

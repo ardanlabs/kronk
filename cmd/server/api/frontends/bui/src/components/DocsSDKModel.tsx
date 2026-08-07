@@ -648,6 +648,9 @@ export default function DocsSDKModel() {
 	// Stream determines whether to stream the response.
 	Stream bool \`json:"stream"\`
 
+	// Stop contains request-specific sequences that terminate generation.
+	Stop []string \`json:"stop,omitempty"\`
+
 	// Temperature controls the randomness of the output. It rescales the
 	// probability distribution of possible next tokens. Default is 0.8.
 	Temperature float32 \`json:"temperature"\`
@@ -1872,6 +1875,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="const-defaultqueuedepth">
+              <h4>DefaultQueueDepth</h4>
+              <pre className="code-block">
+                <code>{`const DefaultQueueDepth = 2`}</code>
+              </pre>
+              <p className="doc-description">DefaultQueueDepth is the admission-capacity multiplier used when queue depth is not explicitly configured.</p>
+            </div>
+
             <div className="doc-section" id="const-expertsallongpu">
               <h4>ExpertsAllOnGPU</h4>
               <pre className="code-block">
@@ -2147,6 +2158,7 @@ export default function DocsSDKModel() {
                 <li><a href="#const-defadaptivepdecay">DefAdaptivePDecay</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
+                <li><a href="#const-defaultqueuedepth">DefaultQueueDepth</a></li>
                 <li><a href="#const-expertsallongpu">ExpertsAllOnGPU</a></li>
               </ul>
             </div>

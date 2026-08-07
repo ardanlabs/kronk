@@ -11,6 +11,10 @@
 - [9.7 Reranking](#97-reranking)
 - [9.8 Tokenization](#98-tokenization)
 - [9.9 Models and Audio Transcription](#99-models-and-audio-transcription)
+- [9.10 Kronk Administration](#910-kronk-administration)
+- [9.11 Bucky Administration](#911-bucky-administration)
+- [9.12 Operations and Evaluation](#912-operations-and-evaluation)
+- [9.13 Security Administration](#913-security-administration)
 
 ---
 
@@ -60,7 +64,15 @@ statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.
 | `/v1/reranking`                | POST   | Alias for `/v1/rerank`                 |
 | `/v1/tokenize`                 | POST   | Count tokens for text                  |
 | `/v1/models`                   | GET    | List locally available models          |
+| `/v1/models/{model}`           | GET    | Retrieve one locally available model   |
 | `/v1/audio/transcriptions`     | POST   | Transcribe audio with Bucky            |
+
+Sections 9.10 through 9.13 inventory the administration, diagnostics, and
+evaluation endpoints used by the CLI and BUI. Administration endpoints are
+open when administration authentication is disabled. When it is enabled, they
+require an administrator token. `GET /v1/models` and
+`GET /v1/models/{model}` instead follow inference authentication and do not
+require a separate endpoint grant.
 
 ## 9.3 Chat Completions and Tool Calls
 
@@ -84,9 +96,10 @@ suppress thinking when the model and its chat template support that option.
 
 Use `max_completion_tokens` to set the output-token limit. The legacy
 `max_tokens` name remains supported; if both are supplied,
-`max_completion_tokens` takes precedence. Kronk does not support custom stop
-strings, so requests containing `stop` are rejected rather than silently
-ignored. A response that reaches its output-token limit has
+`max_completion_tokens` takes precedence. Use `stop` with a string or an array
+of up to four strings to end generation when Kronk encounters one of those
+sequences. The matched sequence is omitted from the response. A custom stop
+has `finish_reason: "stop"`; a response that reaches its output-token limit has
 `finish_reason: "length"`.
 
 Set `"stream": true` to receive chat completion chunks as SSE records:
@@ -170,8 +183,9 @@ or `"required"`. Select a specific function with the Responses form
 
 Use `max_output_tokens` to set the Responses output limit. `max_tokens` remains
 available as a compatibility alias, but `max_output_tokens` wins when both are
-present. When the limit is reached, the response has `status: "incomplete"`,
-`completed_at: null`, and:
+present. The Responses API does not support `stop`, so requests containing it
+are rejected. When the output-token limit is reached, the response has
+`status: "incomplete"`, `completed_at: null`, and:
 
 ```json
 "incomplete_details": {"reason": "max_output_tokens"}
@@ -322,6 +336,119 @@ memory. Each item includes `id`, `object`, `created`, and `owned_by`.
 `owned_by` comes from model metadata when available and otherwise defaults to
 `kronk`.
 
+`GET /v1/models/{model}` returns the corresponding OpenAI-style model object
+for one model ID. It returns `404 Not Found` when the model is not available.
+
 `POST /v1/audio/transcriptions` accepts multipart audio uploads and uses the
 Bucky speech-to-text runtime. Its request fields, formats, and administrative
 operations are documented in [Chapter 18](https://www.kronkai.com/manual#1861-request-and-response).
+
+## 9.10 Kronk Administration
+
+These routes manage the llama.cpp runtime, local GGUF models, and the personal
+model catalog. Mutating routes may stream progress or perform network and disk
+operations. Clients should use the exact `/v1/kronk/...` prefix; the shorter
+`/v1/libs`, `/v1/models/pull`, and `/v1/catalog` forms are not aliases.
+
+### Libraries
+
+| Method and path | Purpose |
+| ---------------- | ------- |
+| `GET /v1/kronk/libs` | Show the active llama.cpp library installation and upgrade state |
+| `GET /v1/kronk/libs/combinations` | List supported operating-system, architecture, and processor combinations |
+| `GET /v1/kronk/libs/installs` | List installed library bundles |
+| `POST /v1/kronk/libs/pull` | Install a library bundle and stream progress |
+| `DELETE /v1/kronk/libs/installs` | Remove the bundle selected by `arch`, `os`, and `processor` query parameters |
+
+`POST /v1/kronk/libs/pull` accepts optional `arch`, `os`, `processor`, and
+`version` query parameters. Supply `arch`, `os`, and `processor` together for a
+cross-platform bundle; omit all three to operate on the active platform.
+
+### Models
+
+| Method and path | Purpose |
+| ---------------- | ------- |
+| `GET /v1/kronk/models` | List locally installed GGUF models with Kronk metadata |
+| `GET /v1/kronk/models/` | Return the missing-model validation error for an empty model ID |
+| `GET /v1/kronk/models/{model}` | Show detailed metadata and effective configuration for one model |
+| `GET /v1/kronk/models/ps` | List models currently loaded in the pool |
+| `GET /v1/kronk/models/imc-sessions` | List active incremental-message-cache sessions |
+| `POST /v1/kronk/models/index` | Rebuild the local model index |
+| `POST /v1/kronk/models/pull` | Download a model and optional companion files and stream progress |
+| `POST /v1/kronk/models/autotune` | Resolve an automatically tuned runtime configuration for a model |
+| `POST /v1/kronk/models/vram` | Estimate model memory use for the requested runtime settings |
+| `POST /v1/kronk/models/unload` | Unload a model or playground instance from the pool |
+| `DELETE /v1/kronk/models/{model}` | Remove a locally installed model |
+
+The native model list and detail routes are distinct from the OpenAI-compatible
+`GET /v1/models` and `GET /v1/models/{model}` routes. Use the native routes for
+administration metadata and effective Kronk configuration.
+
+### Catalog
+
+| Method and path | Purpose |
+| ---------------- | ------- |
+| `GET /v1/kronk/catalog` | List personal catalog entries and local validation state |
+| `GET /v1/kronk/catalog/{id...}` | Show one catalog entry; the ID may contain slashes |
+| `POST /v1/kronk/catalog/lookup` | List GGUF files for a HuggingFace repository or URL |
+| `POST /v1/kronk/catalog/resolve` | Resolve a model source to canonical download files without downloading |
+| `POST /v1/kronk/catalog/reconcile` | Reconcile catalog metadata with locally installed models |
+| `DELETE /v1/kronk/catalog/{id...}` | Remove a catalog entry and its downloaded and cached files |
+
+`POST /v1/kronk/catalog/lookup` accepts `{"input":"..."}`. The resolve route
+accepts `{"source":"..."}` and may add successfully resolved metadata to the
+personal catalog even though it does not download model files.
+
+## 9.11 Bucky Administration
+
+The Bucky management API mirrors the library and model lifecycle for the
+whisper.cpp backend:
+
+| Method and path | Purpose |
+| ---------------- | ------- |
+| `GET /v1/bucky/libs` | Show the active whisper.cpp library installation |
+| `GET /v1/bucky/libs/combinations` | List supported platform combinations |
+| `GET /v1/bucky/libs/installs` | List installed library bundles |
+| `POST /v1/bucky/libs/pull` | Install a library bundle and stream progress |
+| `DELETE /v1/bucky/libs/installs` | Remove the selected library bundle |
+| `GET /v1/bucky/models` | List installed whisper models |
+| `GET /v1/bucky/models/catalog` | List the bundled short-name model catalog |
+| `POST /v1/bucky/models/pull` | Download a whisper model and stream progress |
+| `GET /v1/bucky/models/{model}/details` | Show model header and file details |
+| `DELETE /v1/bucky/models/{model}` | Remove an installed whisper model |
+
+See [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription)
+for installation, model naming, transcription formats, and Bucky-specific
+runtime behavior.
+
+## 9.12 Operations and Evaluation
+
+| Method and path | Purpose |
+| ---------------- | ------- |
+| `GET /v1/pool/budget` | Report shared host and device memory budgets and current reservations |
+| `GET /v1/devices` | List detected compute devices |
+| `GET /v1/diagnose` | Return the JSON diagnostic report; use `bench=true` to include a benchmark |
+| `GET /v1/accuracy/functions` | List functions available to the code-recall accuracy test |
+| `POST /v1/accuracy/test` | Run one code-recall comparison using `model` and `function` |
+| `POST /v1/efficiency/run` | Warm a model, run one prompt, and report throughput measurements |
+
+`GET /v1/diagnose` also accepts optional `model` and `processor` query
+parameters for its benchmark. The accuracy request body is
+`{"model":"...","function":"..."}`. The efficiency request body contains
+`model`, `prompt`, and an optional positive `max_tokens`, which defaults to
+512. These evaluation routes can load models and may take several minutes.
+
+## 9.13 Security Administration
+
+| Method and path | Purpose |
+| ---------------- | ------- |
+| `POST /v1/security/token/create` | Create a token with administrator status or endpoint grants and quotas |
+| `GET /v1/security/keys` | List signing keys |
+| `POST /v1/security/keys/add` | Create a signing key |
+| `POST /v1/security/keys/remove/{keyid}` | Remove a non-master signing key and revoke its tokens |
+
+These routes are authorized by the authentication service. In protected modes
+they require an administrator token. Token creation accepts `admin`, `duration`,
+and an `endpoints` map of endpoint grants and rate limits. See
+[Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
+for the request model, key rotation, and the effects of deleting a signing key.

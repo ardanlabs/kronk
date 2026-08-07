@@ -69,6 +69,17 @@ func (l *Llama) ModelConfig() map[string]models.ModelConfig {
 	return l.modelConfig
 }
 
+// ResolvedModelConfig returns the same budgeted configuration used to prepare
+// a model for planning and loading.
+func (l *Llama) ResolvedModelConfig(modelID string) (models.ModelConfig, error) {
+	return l.models.ResolvedModelConfigWithBudget(
+		modelID,
+		l.modelConfig,
+		l.autoTuneBudget(modelID),
+		effectiveSWAFull(model.Config{}),
+	)
+}
+
 // Prepare resolves the model configuration once for both planning and loading.
 func (l *Llama) Prepare(_ context.Context, req loader.LoadRequest) (any, error) {
 	return l.resolveConfig(req)

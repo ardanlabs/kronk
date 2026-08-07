@@ -127,6 +127,8 @@ export interface ModelConfig {
   'load-mode': ModelLoadMode;
   'flash-attention': string;
   'nseq-max': number;
+  'queue-depth': number;
+  'admission-capacity': number;
   'imc-session-capacity': number;
   'offload-kqv': boolean | null;
   'op-offload': boolean | null;

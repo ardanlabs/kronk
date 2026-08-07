@@ -45,6 +45,7 @@ func Routes(app *web.App, cfg Config) {
 	// Kronk-specific listing lives at GET /v1/kronk/models.
 
 	app.HandlerFunc(http.MethodGet, version, "/models", api.listModelsOpenAI, inferenceAuth)
+	app.HandlerFunc(http.MethodGet, version, "/models/{model}", api.retrieveModelOpenAI, inferenceAuth)
 
 	// -------------------------------------------------------------------------
 	// Kronk (llama.cpp) backend — libs, models, catalog.

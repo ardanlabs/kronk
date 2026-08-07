@@ -1873,12 +1873,18 @@ docker rm kronk
                 <td>List locally available models</td>
               </tr>
               <tr>
+                <td><code>/v1/models/&#123;model&#125;</code></td>
+                <td>GET</td>
+                <td>Retrieve one locally available model</td>
+              </tr>
+              <tr>
                 <td><code>/v1/audio/transcriptions</code></td>
                 <td>POST</td>
                 <td>Transcribe audio with Bucky</td>
               </tr>
             </tbody>
           </table>
+          <p>Sections 9.10 through 9.13 inventory the administration, diagnostics, and evaluation endpoints used by the CLI and BUI. Administration endpoints are open when administration authentication is disabled. When it is enabled, they require an administrator token. <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code> instead follow inference authentication and do not require a separate endpoint grant.</p>
           <h2 id="93-chat-completions-and-tool-calls">9.3 Chat Completions and Tool Calls</h2>
           <p><code>POST /v1/chat/completions</code> accepts an OpenAI-style <code>model</code> and <code>messages</code> request:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -1889,7 +1895,7 @@ docker rm kronk
   ]
 }`}</code></pre>
           <p>A non-streaming response contains one or more <code>choices</code>, an assistant <code>message</code>, a <code>finish_reason</code>, and token <code>usage</code>. Thinking models can also return <code>reasoning_content</code>. Set the top-level <code>enable_thinking</code> boolean to request or suppress thinking when the model and its chat template support that option.</p>
-          <p>Use <code>max_completion_tokens</code> to set the output-token limit. The legacy <code>max_tokens</code> name remains supported; if both are supplied, <code>max_completion_tokens</code> takes precedence. Kronk does not support custom stop strings, so requests containing <code>stop</code> are rejected rather than silently ignored. A response that reaches its output-token limit has <code>finish_reason: "length"</code>.</p>
+          <p>Use <code>max_completion_tokens</code> to set the output-token limit. The legacy <code>max_tokens</code> name remains supported; if both are supplied, <code>max_completion_tokens</code> takes precedence. Use <code>stop</code> with a string or an array of up to four strings to end generation when Kronk encounters one of those sequences. The matched sequence is omitted from the response. A custom stop has <code>finish_reason: "stop"</code>; a response that reaches its output-token limit has <code>finish_reason: "length"</code>.</p>
           <p>Set <code>"stream": true</code> to receive chat completion chunks as SSE records:</p>
           <pre className="code-block"><code className="language-text">{`data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}
 
@@ -1922,7 +1928,7 @@ data: [DONE]`}</code></pre>
   "input": "Explain quantum computing in simple terms."
 }`}</code></pre>
           <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. <code>tool_choice</code> accepts <code>"none"</code>, <code>"auto"</code>, or <code>"required"</code>. Select a specific function with the Responses form <code>&#123;"type":"function","name":"get_weather"&#125;</code>.</p>
-          <p>Use <code>max_output_tokens</code> to set the Responses output limit. <code>max_tokens</code> remains available as a compatibility alias, but <code>max_output_tokens</code> wins when both are present. When the limit is reached, the response has <code>status: "incomplete"</code>, <code>completed_at: null</code>, and:</p>
+          <p>Use <code>max_output_tokens</code> to set the Responses output limit. <code>max_tokens</code> remains available as a compatibility alias, but <code>max_output_tokens</code> wins when both are present. The Responses API does not support <code>stop</code>, so requests containing it are rejected. When the output-token limit is reached, the response has <code>status: "incomplete"</code>, <code>completed_at: null</code>, and:</p>
           <pre className="code-block"><code className="language-json">{`"incomplete_details": {"reason": "max_output_tokens"}`}</code></pre>
           <p>Output items have the same <code>incomplete</code> status. Usage reports all generated output tokens in <code>output_tokens</code>, including reasoning and tool-call syntax; <code>output_tokens_details.reasoning_tokens</code> supplies the reasoning subset, and <code>total_tokens</code> includes both input and output.</p>
           <p>With <code>"stream": true</code>, each SSE record has a named event and matching JSON payload. Streaming usage is omitted unless the request sets <code>"stream_options": &#123;"include_usage": true&#125;</code>. A text response commonly includes:</p>
@@ -1995,7 +2001,254 @@ data: {"type":"response.completed",...}`}</code></pre>
 }`}</code></pre>
           <h2 id="99-models-and-audio-transcription">9.9 Models and Audio Transcription</h2>
           <p><code>GET /v1/models</code> returns an OpenAI-style list of models and configured model extensions available locally. It is not limited to models currently loaded in memory. Each item includes <code>id</code>, <code>object</code>, <code>created</code>, and <code>owned_by</code>. <code>owned_by</code> comes from model metadata when available and otherwise defaults to <code>kronk</code>.</p>
+          <p><code>GET /v1/models/&#123;model&#125;</code> returns the corresponding OpenAI-style model object for one model ID. It returns <code>404 Not Found</code> when the model is not available.</p>
           <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. Its request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
+          <h2 id="910-kronk-administration">9.10 Kronk Administration</h2>
+          <p>These routes manage the llama.cpp runtime, local GGUF models, and the personal model catalog. Mutating routes may stream progress or perform network and disk operations. Clients should use the exact <code>/v1/kronk/...</code> prefix; the shorter <code>/v1/libs</code>, <code>/v1/models/pull</code>, and <code>/v1/catalog</code> forms are not aliases.</p>
+          <h3 id="libraries">Libraries</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Method and path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET /v1/kronk/libs</code></td>
+                <td>Show the active llama.cpp library installation and upgrade state</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/libs/combinations</code></td>
+                <td>List supported operating-system, architecture, and processor combinations</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/libs/installs</code></td>
+                <td>List installed library bundles</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/libs/pull</code></td>
+                <td>Install a library bundle and stream progress</td>
+              </tr>
+              <tr>
+                <td><code>DELETE /v1/kronk/libs/installs</code></td>
+                <td>Remove the bundle selected by <code>arch</code>, <code>os</code>, and <code>processor</code> query parameters</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>POST /v1/kronk/libs/pull</code> accepts optional <code>arch</code>, <code>os</code>, <code>processor</code>, and <code>version</code> query parameters. Supply <code>arch</code>, <code>os</code>, and <code>processor</code> together for a cross-platform bundle; omit all three to operate on the active platform.</p>
+          <h3 id="models">Models</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Method and path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET /v1/kronk/models</code></td>
+                <td>List locally installed GGUF models with Kronk metadata</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/models/</code></td>
+                <td>Return the missing-model validation error for an empty model ID</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/models/&#123;model&#125;</code></td>
+                <td>Show detailed metadata and effective configuration for one model</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/models/ps</code></td>
+                <td>List models currently loaded in the pool</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/models/imc-sessions</code></td>
+                <td>List active incremental-message-cache sessions</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/models/index</code></td>
+                <td>Rebuild the local model index</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/models/pull</code></td>
+                <td>Download a model and optional companion files and stream progress</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/models/autotune</code></td>
+                <td>Resolve an automatically tuned runtime configuration for a model</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/models/vram</code></td>
+                <td>Estimate model memory use for the requested runtime settings</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/models/unload</code></td>
+                <td>Unload a model or playground instance from the pool</td>
+              </tr>
+              <tr>
+                <td><code>DELETE /v1/kronk/models/&#123;model&#125;</code></td>
+                <td>Remove a locally installed model</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The native model list and detail routes are distinct from the OpenAI-compatible <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code> routes. Use the native routes for administration metadata and effective Kronk configuration.</p>
+          <h3 id="catalog">Catalog</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Method and path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET /v1/kronk/catalog</code></td>
+                <td>List personal catalog entries and local validation state</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/catalog/&#123;id...&#125;</code></td>
+                <td>Show one catalog entry; the ID may contain slashes</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/catalog/lookup</code></td>
+                <td>List GGUF files for a HuggingFace repository or URL</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/catalog/resolve</code></td>
+                <td>Resolve a model source to canonical download files without downloading</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/kronk/catalog/reconcile</code></td>
+                <td>Reconcile catalog metadata with locally installed models</td>
+              </tr>
+              <tr>
+                <td><code>DELETE /v1/kronk/catalog/&#123;id...&#125;</code></td>
+                <td>Remove a catalog entry and its downloaded and cached files</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>POST /v1/kronk/catalog/lookup</code> accepts <code>&#123;"input":"..."&#125;</code>. The resolve route accepts <code>&#123;"source":"..."&#125;</code> and may add successfully resolved metadata to the personal catalog even though it does not download model files.</p>
+          <h2 id="911-bucky-administration">9.11 Bucky Administration</h2>
+          <p>The Bucky management API mirrors the library and model lifecycle for the whisper.cpp backend:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Method and path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET /v1/bucky/libs</code></td>
+                <td>Show the active whisper.cpp library installation</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/bucky/libs/combinations</code></td>
+                <td>List supported platform combinations</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/bucky/libs/installs</code></td>
+                <td>List installed library bundles</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/bucky/libs/pull</code></td>
+                <td>Install a library bundle and stream progress</td>
+              </tr>
+              <tr>
+                <td><code>DELETE /v1/bucky/libs/installs</code></td>
+                <td>Remove the selected library bundle</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/bucky/models</code></td>
+                <td>List installed whisper models</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/bucky/models/catalog</code></td>
+                <td>List the bundled short-name model catalog</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/bucky/models/pull</code></td>
+                <td>Download a whisper model and stream progress</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/bucky/models/&#123;model&#125;/details</code></td>
+                <td>Show model header and file details</td>
+              </tr>
+              <tr>
+                <td><code>DELETE /v1/bucky/models/&#123;model&#125;</code></td>
+                <td>Remove an installed whisper model</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a> for installation, model naming, transcription formats, and Bucky-specific runtime behavior.</p>
+          <h2 id="912-operations-and-evaluation">9.12 Operations and Evaluation</h2>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Method and path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET /v1/pool/budget</code></td>
+                <td>Report shared host and device memory budgets and current reservations</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/devices</code></td>
+                <td>List detected compute devices</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/diagnose</code></td>
+                <td>Return the JSON diagnostic report; use <code>bench=true</code> to include a benchmark</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/accuracy/functions</code></td>
+                <td>List functions available to the code-recall accuracy test</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/accuracy/test</code></td>
+                <td>Run one code-recall comparison using <code>model</code> and <code>function</code></td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/efficiency/run</code></td>
+                <td>Warm a model, run one prompt, and report throughput measurements</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>GET /v1/diagnose</code> also accepts optional <code>model</code> and <code>processor</code> query parameters for its benchmark. The accuracy request body is <code>&#123;"model":"...","function":"..."&#125;</code>. The efficiency request body contains <code>model</code>, <code>prompt</code>, and an optional positive <code>max_tokens</code>, which defaults to</p>
+          <ol>
+            <li>These evaluation routes can load models and may take several minutes.</li>
+          </ol>
+          <h2 id="913-security-administration">9.13 Security Administration</h2>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Method and path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>POST /v1/security/token/create</code></td>
+                <td>Create a token with administrator status or endpoint grants and quotas</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/security/keys</code></td>
+                <td>List signing keys</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/security/keys/add</code></td>
+                <td>Create a signing key</td>
+              </tr>
+              <tr>
+                <td><code>POST /v1/security/keys/remove/&#123;keyid&#125;</code></td>
+                <td>Remove a non-master signing key and revoke its tokens</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>These routes are authorized by the authentication service. In protected modes they require an administrator token. Token creation accepts <code>admin</code>, <code>duration</code>, and an <code>endpoints</code> map of endpoint grants and rate limits. See <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> for the request model, key rotation, and the effects of deleting a signing key.</p>
           <h2 id="chapter-10-request-parameters">Chapter 10: Request Parameters</h2>
           <p>This chapter covers generation parameters used by Chat Completions and the Go SDK. Other API formats expose compatible subsets or translate their own field names into these parameters. See <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> for endpoint-specific request formats and streaming behavior.</p>
           <h2 id="101-scope-and-defaults">10.1 Scope and Defaults</h2>
@@ -4466,6 +4719,23 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             </div>
             <div className="doc-index-section">
               <a href="#99-models-and-audio-transcription" className={`doc-index-header ${activeSection === '99-models-and-audio-transcription' ? 'active' : ''}`}>9.9 Models and Audio Transcription</a>
+            </div>
+            <div className="doc-index-section">
+              <a href="#910-kronk-administration" className={`doc-index-header ${activeSection === '910-kronk-administration' ? 'active' : ''}`}>9.10 Kronk Administration</a>
+              <ul>
+                <li><a href="#libraries" className={activeSection === 'libraries' ? 'active' : ''}>Libraries</a></li>
+                <li><a href="#models" className={activeSection === 'models' ? 'active' : ''}>Models</a></li>
+                <li><a href="#catalog" className={activeSection === 'catalog' ? 'active' : ''}>Catalog</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#911-bucky-administration" className={`doc-index-header ${activeSection === '911-bucky-administration' ? 'active' : ''}`}>9.11 Bucky Administration</a>
+            </div>
+            <div className="doc-index-section">
+              <a href="#912-operations-and-evaluation" className={`doc-index-header ${activeSection === '912-operations-and-evaluation' ? 'active' : ''}`}>9.12 Operations and Evaluation</a>
+            </div>
+            <div className="doc-index-section">
+              <a href="#913-security-administration" className={`doc-index-header ${activeSection === '913-security-administration' ? 'active' : ''}`}>9.13 Security Administration</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-10-request-parameters" className={`doc-index-header ${activeSection === 'chapter-10-request-parameters' ? 'active' : ''}`}>Chapter 10: Request Parameters</a>

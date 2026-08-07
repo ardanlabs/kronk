@@ -234,6 +234,9 @@ type Params struct {
 	// Stream determines whether to stream the response.
 	Stream bool `json:"stream"`
 
+	// Stop contains request-specific sequences that terminate generation.
+	Stop []string `json:"stop,omitempty"`
+
 	// Temperature controls the randomness of the output. It rescales the
 	// probability distribution of possible next tokens. Default is 0.8.
 	Temperature float32 `json:"temperature"`
@@ -371,6 +374,9 @@ func AddParams(params Params, d D) {
 	if params.Stream {
 		d["stream"] = params.Stream
 	}
+	if len(params.Stop) > 0 {
+		d["stop"] = slices.Clone(params.Stop)
+	}
 	if params.Temperature != 0 {
 		d["temperature"] = params.Temperature
 	}
@@ -403,6 +409,7 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	p := m.cfg.DefaultParams
 	p.IncludeUsage = DefIncludeUsage
 	p.Seed = nil
+	p.Stop = nil
 
 	if val, exists := d["adaptive_p_decay"]; exists {
 		adaptivePDecay, err := parseFloat32("adaptive_p_decay", val)
@@ -573,6 +580,14 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 			return Params{}, err
 		}
 		p.Stream = stream
+	}
+
+	if val, exists := d["stop"]; exists {
+		stop, err := parseStop(val)
+		if err != nil {
+			return Params{}, err
+		}
+		p.Stop = stop
 	}
 
 	if streamOpts, exists := d["stream_options"]; exists {

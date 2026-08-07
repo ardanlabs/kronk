@@ -886,6 +886,10 @@ func extractTools(d model.D) []any {
 }
 
 func convertInputToMessages(d model.D) (model.D, error) {
+	if _, exists := d["stop"]; exists {
+		return nil, fmt.Errorf("convert-input-to-messages: %w: stop is not supported", model.ErrInvalidRequest)
+	}
+
 	if containsUnsupportedFileInput(d["input"]) || containsUnsupportedFileInput(d["messages"]) {
 		return nil, fmt.Errorf("convert-input-to-messages: %w", model.ErrFileInputsUnsupported)
 	}

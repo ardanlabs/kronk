@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -721,14 +722,50 @@ func ValidateChatRequest(d D) error {
 	if _, _, err := requestChatTemplateKwargs(d); err != nil {
 		return err
 	}
-	if _, exists := d["stop"]; exists {
-		return fmt.Errorf("%w: stop is not supported", ErrInvalidRequest)
+	if val, exists := d["stop"]; exists {
+		if _, err := parseStop(val); err != nil {
+			return err
+		}
 	}
 	if err := validateToolChoice(d); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func parseStop(val any) ([]string, error) {
+	if val == nil {
+		return nil, nil
+	}
+
+	var stops []string
+	switch value := val.(type) {
+	case string:
+		stops = []string{value}
+	case []string:
+		stops = slices.Clone(value)
+	case []any:
+		stops = make([]string, len(value))
+		for i, item := range value {
+			stop, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("%w: stop entries must be strings", ErrInvalidRequest)
+			}
+			stops[i] = stop
+		}
+	default:
+		return nil, fmt.Errorf("%w: stop must be a string or an array of strings", ErrInvalidRequest)
+	}
+
+	if len(stops) > 4 {
+		return nil, fmt.Errorf("%w: stop supports at most four sequences", ErrInvalidRequest)
+	}
+	if slices.Contains(stops, "") {
+		return nil, fmt.Errorf("%w: stop sequences must not be empty", ErrInvalidRequest)
+	}
+
+	return stops, nil
 }
 
 func validateToolChoice(d D) error {

@@ -141,17 +141,19 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Response Accumulation
 
-	reasonFlag     int             // State: in reasoning section
-	completionFlag int             // State: in completion section
-	toolFlag       int             // State: in tool call section
-	suppressTools  bool            // Request explicitly set tool_choice to none
-	finalContent   strings.Builder // Accumulated completion text
-	finalReasoning strings.Builder // Accumulated reasoning text
-	finalTooling   strings.Builder // Accumulated tool call JSON
-	respToolCalls  []ResponseToolCall
-	finishReason   string
-	stopSource     string
-	utf8Buf        []byte // Buffered bytes from partial multi-byte UTF-8 codepoints
+	reasonFlag       int             // State: in reasoning section
+	completionFlag   int             // State: in completion section
+	toolFlag         int             // State: in tool call section
+	suppressTools    bool            // Request explicitly set tool_choice to none
+	finalContent     strings.Builder // Accumulated completion text
+	finalReasoning   strings.Builder // Accumulated reasoning text
+	finalTooling     strings.Builder // Accumulated tool call JSON
+	respToolCalls    []ResponseToolCall
+	finishReason     string
+	stopSource       string
+	utf8Buf          []byte // Buffered bytes from partial multi-byte UTF-8 codepoints
+	stopGate         *stopGate
+	stopUTF8Logprobs []*ContentLogprob
 
 	// -------------------------------------------------------------------------
 	// Logprobs
@@ -343,6 +345,8 @@ func (s *slot) reset() {
 	s.finishReason = ""
 	s.stopSource = ""
 	s.utf8Buf = s.utf8Buf[:0]
+	s.stopGate = nil
+	s.stopUTF8Logprobs = s.stopUTF8Logprobs[:0]
 	s.span = nil
 	s.iBatch = -1
 	s.sampled = 0

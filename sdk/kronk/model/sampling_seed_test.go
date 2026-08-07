@@ -84,6 +84,21 @@ func TestParseParamsSeedPresence(t *testing.T) {
 	}
 }
 
+func TestAddParamsClonesStop(t *testing.T) {
+	params := Params{Stop: []string{"END"}}
+	d := D{}
+
+	AddParams(params, d)
+	got, ok := d["stop"].([]string)
+	if !ok {
+		t.Fatalf("stop: got %T, want []string", d["stop"])
+	}
+	params.Stop[0] = "changed"
+	if got[0] != "END" {
+		t.Errorf("stop: got %q after source mutation, want %q", got[0], "END")
+	}
+}
+
 func TestResolveSamplingSeeds(t *testing.T) {
 	seed := uint32(math.MaxUint32)
 	got1, rng1, err := resolveSamplingSeedsFrom(&seed, nil)

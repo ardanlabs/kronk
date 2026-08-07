@@ -55,9 +55,12 @@ const (
 	defThreadZero           = 0
 	defNSeqMax              = 1
 	defNDraft               = 5
-	defaultQueueDepth       = 2
 	defaultAdmissionTimeout = 3 * time.Minute
 )
+
+// DefaultQueueDepth is the admission-capacity multiplier used when queue depth
+// is not explicitly configured.
+const DefaultQueueDepth = 2
 
 // Logger provides a function for logging messages from different APIs.
 type Logger = applog.Logger
@@ -551,7 +554,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		nSeqMax := max(cfg.NSeqMax(), defNSeqMax)
 		queueDepth := cfg.QueueDepth()
 		if queueDepth == 0 {
-			queueDepth = defaultQueueDepth
+			queueDepth = DefaultQueueDepth
 		}
 		admissionCapacity := nSeqMax * queueDepth
 		if cfg.IMCSessionCapacity() < admissionCapacity {
@@ -692,7 +695,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 func adjustQueueDepth(cfg Config) Config {
 	if cfg.QueueDepth() == 0 {
-		cfg.PtrQueueDepth = new(defaultQueueDepth)
+		cfg.PtrQueueDepth = new(DefaultQueueDepth)
 	}
 
 	return cfg

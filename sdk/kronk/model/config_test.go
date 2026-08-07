@@ -147,8 +147,8 @@ func TestAdjustAdmissionTimeout(t *testing.T) {
 
 func TestAdjustQueueDepthDefault(t *testing.T) {
 	cfg := adjustQueueDepth(Config{})
-	if got := cfg.QueueDepth(); got != defaultQueueDepth {
-		t.Errorf("QueueDepth: got %d, want %d", got, defaultQueueDepth)
+	if got := cfg.QueueDepth(); got != DefaultQueueDepth {
+		t.Errorf("QueueDepth: got %d, want %d", got, DefaultQueueDepth)
 	}
 	if !strings.Contains(cfg.String(), "QueueDepth[2]") {
 		t.Errorf("adjusted Config.String() missing effective queue-depth default in %q", cfg.String())

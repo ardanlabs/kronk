@@ -64,6 +64,10 @@ export default function DocsCLIServer() {
                   <td>HTTP read timeout (e.g. <code>30s</code>)</td>
                 </tr>
                 <tr>
+                  <td><code>--inference-timeout &lt;duration&gt;</code></td>
+                  <td>Total timeout for inference admission, preparation, waiting, and generation (e.g. <code>60m</code>)</td>
+                </tr>
+                <tr>
                   <td><code>--write-timeout &lt;duration&gt;</code></td>
                   <td>HTTP write timeout (e.g. <code>15m</code>)</td>
                 </tr>
@@ -93,15 +97,67 @@ export default function DocsCLIServer() {
               <tbody>
                 <tr>
                   <td><code>--auth-enabled</code></td>
-                  <td>Enable embedded local authentication</td>
+                  <td>Enable local inference and administrator authentication</td>
+                </tr>
+                <tr>
+                  <td><code>--admin-auth-enabled</code></td>
+                  <td>Require administrator authentication for management APIs</td>
+                </tr>
+                <tr>
+                  <td><code>--web-admin-enabled</code></td>
+                  <td>Serve the Browser UI at <code>/admin/</code></td>
                 </tr>
                 <tr>
                   <td><code>--auth-host &lt;string&gt;</code></td>
                   <td>External auth service host (when not using embedded)</td>
                 </tr>
                 <tr>
+                  <td><code>--auth-tls-enabled</code></td>
+                  <td>Use TLS for the external auth service</td>
+                </tr>
+                <tr>
+                  <td><code>--auth-tls-ca-file &lt;path&gt;</code></td>
+                  <td>CA certificate file for the external auth service</td>
+                </tr>
+                <tr>
+                  <td><code>--auth-tls-server-name &lt;string&gt;</code></td>
+                  <td>TLS server name for the external auth service</td>
+                </tr>
+                <tr>
                   <td><code>--auth-issuer &lt;string&gt;</code></td>
                   <td>Local auth issuer name</td>
+                </tr>
+                <tr>
+                  <td><code>--web-admin-password-sha-256 &lt;digest&gt;</code></td>
+                  <td>SHA-256 digest used for Browser UI administrator login</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h4>MCP Flags</h4>
+            <table className="flags-table">
+              <thead>
+                <tr>
+                  <th>Flag</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>--mcp-enabled &lt;bool&gt;</code></td>
+                  <td>Enable or disable the embedded MCP service (default: <code>true</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>--mcp-host &lt;string&gt;</code></td>
+                  <td>Use an external MCP host instead of the embedded service</td>
+                </tr>
+                <tr>
+                  <td><code>--mcp-auth-enabled</code></td>
+                  <td>Require a Kronk administrator bearer token for MCP access</td>
+                </tr>
+                <tr>
+                  <td><code>--mcp-brave-api-key &lt;string&gt;</code></td>
+                  <td>Brave Search API key for the embedded MCP service</td>
                 </tr>
               </tbody>
             </table>
@@ -142,10 +198,6 @@ export default function DocsCLIServer() {
                 <tr>
                   <td><code>--model-config-file &lt;string&gt;</code></td>
                   <td>Path to the model_config.yaml file</td>
-                </tr>
-                <tr>
-                  <td><code>--model-instances &lt;int&gt;</code></td>
-                  <td>Maximum number of concurrent model instances</td>
                 </tr>
                 <tr>
                   <td><code>--budget-percent &lt;int&gt;</code></td>
@@ -197,7 +249,7 @@ export default function DocsCLIServer() {
                 </tr>
                 <tr>
                   <td><code>--allow-upgrade</code></td>
-                  <td>Allow automatic upgrades (default: <code>true</code>)</td>
+                  <td>Allow automatic upgrades (default: <code>false</code>)</td>
                 </tr>
                 <tr>
                   <td><code>--llama-log &lt;int&gt;</code></td>
@@ -226,18 +278,18 @@ export default function DocsCLIServer() {
               <tbody>
                 <tr>
                   <td><code>KRONK_BASE_PATH</code></td>
-                  <td>Base path for kronk data (default: <code>$HOME/kronk</code>)</td>
+                  <td>Base path for kronk data (default: <code>$HOME/.kronk</code>)</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_WEB_API_HOST</code></td>
-                  <td>API host address (default: <code>localhost:11435</code>)</td>
+                  <td>API host address (default: <code>127.0.0.1:11435</code>)</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_WEB_DEBUG_HOST</code></td>
                   <td>Debug host address</td>
                 </tr>
                 <tr>
-                  <td><code>KRONK_WEB_READ_TIMEOUT</code> / <code>KRONK_WEB_WRITE_TIMEOUT</code> / <code>KRONK_WEB_IDLE_TIMEOUT</code> / <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code></td>
+                  <td><code>KRONK_WEB_READ_TIMEOUT</code> / <code>KRONK_WEB_INFERENCE_TIMEOUT</code> / <code>KRONK_WEB_WRITE_TIMEOUT</code> / <code>KRONK_WEB_IDLE_TIMEOUT</code> / <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code></td>
                   <td>HTTP timeouts</td>
                 </tr>
                 <tr>
@@ -246,7 +298,11 @@ export default function DocsCLIServer() {
                 </tr>
                 <tr>
                   <td><code>KRONK_AUTH_LOCAL_ENABLED</code></td>
-                  <td>Enable embedded local authentication</td>
+                  <td>Enable local inference and administrator authentication</td>
+                </tr>
+                <tr>
+                  <td><code>KRONK_AUTH_ADMIN_ENABLED</code></td>
+                  <td>Require administrator authentication for management APIs</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_AUTH_LOCAL_ISSUER</code></td>
@@ -257,6 +313,18 @@ export default function DocsCLIServer() {
                   <td>External auth service host (when not using embedded)</td>
                 </tr>
                 <tr>
+                  <td><code>KRONK_AUTH_TLS_ENABLED</code> / <code>KRONK_AUTH_TLS_CA_FILE</code> / <code>KRONK_AUTH_TLS_SERVER_NAME</code></td>
+                  <td>External auth service TLS configuration</td>
+                </tr>
+                <tr>
+                  <td><code>KRONK_WEB_ADMIN_ENABLED</code> / <code>KRONK_WEB_ADMIN_PASSWORD_SHA_256</code></td>
+                  <td>Browser UI availability and administrator-login password digest</td>
+                </tr>
+                <tr>
+                  <td><code>KRONK_MCP_ENABLED</code> / <code>KRONK_MCP_HOST</code> / <code>KRONK_MCP_AUTH_ENABLED</code> / <code>KRONK_MCP_BRAVE_API_KEY</code></td>
+                  <td>MCP service configuration</td>
+                </tr>
+                <tr>
                   <td><code>KRONK_TEMPO_HOST</code> / <code>KRONK_TEMPO_SERVICE_NAME</code> / <code>KRONK_TEMPO_PROBABILITY</code></td>
                   <td>Tracing configuration</td>
                 </tr>
@@ -265,7 +333,7 @@ export default function DocsCLIServer() {
                   <td>Path to model_config.yaml</td>
                 </tr>
                 <tr>
-                  <td><code>KRONK_POOL_MODEL_INSTANCES</code> / <code>KRONK_POOL_BUDGET_PERCENT</code> / <code>KRONK_POOL_TTL</code></td>
+                  <td><code>KRONK_POOL_MODELS_IN_POOL</code> / <code>KRONK_POOL_BUDGET_PERCENT</code> / <code>KRONK_POOL_TTL</code></td>
                   <td>Pool settings</td>
                 </tr>
                 <tr>

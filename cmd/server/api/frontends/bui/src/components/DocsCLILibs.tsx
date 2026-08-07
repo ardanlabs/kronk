@@ -114,7 +114,7 @@ export default function DocsCLILibs() {
                 </tr>
                 <tr>
                   <td><code>KRONK_BASE_PATH</code></td>
-                  <td>$HOME/kronk</td>
+                  <td>$HOME/.kronk</td>
                   <td>Base path for kronk data directories (local mode)</td>
                 </tr>
                 <tr>
@@ -134,7 +134,7 @@ export default function DocsCLILibs() {
                 </tr>
                 <tr>
                   <td><code>KRONK_LIB_PATH</code></td>
-                  <td>$HOME/kronk/libraries</td>
+                  <td>$HOME/.kronk/libraries</td>
                   <td>Library directory path (local mode). Set to switch between previously installed bundles.</td>
                 </tr>
               </tbody>

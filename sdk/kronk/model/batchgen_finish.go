@@ -287,6 +287,23 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		return
 	}
 
+	if s.stopGate != nil && s.stopSource != "request-stop" {
+		for _, piece := range s.stopGate.flush() {
+			logprobIndex := appendStopPieceLogprobs(s, piece)
+			outcome := e.processDecodedPiece(s, piece, logprobIndex, true)
+			if outcome.parserEOG {
+				unaccountStopPiece(s, piece)
+				break
+			}
+			if outcome.err != nil {
+				outputTokens := s.reasonTokens + s.completionTokens
+				usage := Usage{PromptTokens: s.nPrompt, CompletionTokens: outputTokens, TotalTokens: s.nPrompt + outputTokens}
+				e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, outcome.err, usage)
+				return
+			}
+		}
+	}
+
 	if flusher, ok := s.stateMachine.(StateMachineFlusher); ok {
 		e.flushStateMachine(s, flusher.Flush())
 	}
@@ -394,7 +411,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if outputTokens > 0 && e.model.draft != nil {
 		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
 	}
-	if toolCallErr != nil && s.finishReason == FinishReasonLength {
+	if toolCallErr != nil && (s.finishReason == FinishReasonLength || s.stopSource == "request-stop") {
 		valid := s.respToolCalls[:0]
 		for _, toolCall := range s.respToolCalls {
 			if toolCall.Status == 0 {
@@ -416,7 +433,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		attribute.Int("draft_accepted_tokens", s.specAcceptedTotal),
 		attribute.Int("draft_covered_tokens", s.specCoveredTotal),
 	)
-	if toolCallErr != nil && s.finishReason != FinishReasonLength {
+	if toolCallErr != nil && s.finishReason != FinishReasonLength && s.stopSource != "request-stop" {
 		err = toolCallErr
 		s.span.RecordError(err)
 		s.span.SetAttributes(attribute.String("request_status", "error"))
@@ -525,7 +542,7 @@ func (e *batchEngine) flushStateMachine(s *slot, result Result) {
 	outputTokens := s.reasonTokens + s.completionTokens
 
 	updateSlotChannel(s, result.Channel)
-	if err := e.retainAndStreamResult(s, result, outputTokens, nil); err != nil {
+	if err := e.retainAndStreamResult(s, result, outputTokens, nil, -1); err != nil {
 		e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
 	}
 }

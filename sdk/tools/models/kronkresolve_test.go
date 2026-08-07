@@ -500,6 +500,59 @@ func TestRestoreAutoTunedSizingEmpty(t *testing.T) {
 	}
 }
 
+func TestFallbackAutoTuneSizing(t *testing.T) {
+	contextWindow := 16_384
+	nSeqMax := 2
+
+	tests := []struct {
+		name        string
+		metadata    map[string]string
+		constraints ModelConfig
+		wantContext int
+		wantNSeqMax int
+	}{
+		{
+			name: "trained context below default cap",
+			metadata: map[string]string{
+				"general.architecture": "test",
+				"test.context_length":  "4096",
+			},
+			wantContext: 4096,
+			wantNSeqMax: 1,
+		},
+		{
+			name: "missing training context uses default cap",
+			metadata: map[string]string{
+				"general.architecture": "test",
+			},
+			wantContext: 8192,
+			wantNSeqMax: 1,
+		},
+		{
+			name: "explicit sizing is preserved",
+			constraints: ModelConfig{
+				PtrContextWindow: &contextWindow,
+				PtrNSeqMax:       &nSeqMax,
+			},
+			wantContext: contextWindow,
+			wantNSeqMax: nSeqMax,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := fallbackAutoTuneSizing(ModelInfo{Metadata: tt.metadata}, tt.constraints)
+
+			if cfg.PtrContextWindow == nil || *cfg.PtrContextWindow != tt.wantContext {
+				t.Errorf("PtrContextWindow: got %v, want %d", cfg.PtrContextWindow, tt.wantContext)
+			}
+			if cfg.PtrNSeqMax == nil || *cfg.PtrNSeqMax != tt.wantNSeqMax {
+				t.Errorf("PtrNSeqMax: got %v, want %d", cfg.PtrNSeqMax, tt.wantNSeqMax)
+			}
+		})
+	}
+}
+
 func TestAutoTuneApplied(t *testing.T) {
 	contextWindow := 131072
 	nSeqMax := 2

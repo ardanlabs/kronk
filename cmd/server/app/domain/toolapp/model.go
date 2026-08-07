@@ -158,6 +158,12 @@ type OpenAIModel struct {
 	OwnedBy string `json:"owned_by"`
 }
 
+// Encode implements the encoder interface.
+func (app OpenAIModel) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
 // OpenAIModelsResponse is the OpenAI-compatible response for GET /v1/models.
 // Apps like OpenWebUI call this endpoint to discover available models.
 type OpenAIModelsResponse struct {
@@ -178,17 +184,7 @@ func toOpenAIModels(modelFiles []models.File) OpenAIModelsResponse {
 	}
 
 	for _, mf := range modelFiles {
-		ownedBy := mf.OwnedBy
-		if ownedBy == "" {
-			ownedBy = "kronk"
-		}
-
-		resp.Data = append(resp.Data, OpenAIModel{
-			ID:      mf.ID,
-			Object:  "model",
-			Created: mf.Modified.Unix(),
-			OwnedBy: ownedBy,
-		})
+		resp.Data = append(resp.Data, toOpenAIModel(mf))
 	}
 
 	slices.SortFunc(resp.Data, func(a, b OpenAIModel) int {
@@ -196,6 +192,20 @@ func toOpenAIModels(modelFiles []models.File) OpenAIModelsResponse {
 	})
 
 	return resp
+}
+
+func toOpenAIModel(mf models.File) OpenAIModel {
+	ownedBy := mf.OwnedBy
+	if ownedBy == "" {
+		ownedBy = "kronk"
+	}
+
+	return OpenAIModel{
+		ID:      mf.ID,
+		Object:  "model",
+		Created: mf.Modified.Unix(),
+		OwnedBy: ownedBy,
+	}
 }
 
 // =============================================================================
@@ -311,6 +321,22 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 		metadata[k] = formatMetadataValue(k, v)
 	}
 
+	nSeqMax := 1
+	if rmc.PtrNSeqMax != nil {
+		nSeqMax = max(*rmc.PtrNSeqMax, 1)
+	}
+
+	queueDepth := model.DefaultQueueDepth
+	if rmc.PtrQueueDepth != nil && *rmc.PtrQueueDepth != 0 {
+		queueDepth = *rmc.PtrQueueDepth
+	}
+
+	admissionCapacity := nSeqMax * queueDepth
+	if mi.IsEmbedModel || mi.IsRerankModel {
+		queueDepth = 1
+		admissionCapacity = nSeqMax
+	}
+
 	mir := ModelInfoResponse{
 		ID:            fi.ID,
 		Object:        fi.Object,
@@ -333,6 +359,8 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			NUMA:                  rmc.NUMA,
 			FlashAttention:        model.DerefFlashAttention(rmc.FlashAttention),
 			PtrNSeqMax:            rmc.PtrNSeqMax,
+			QueueDepth:            queueDepth,
+			AdmissionCapacity:     admissionCapacity,
 			PtrIMCSessionCapacity: rmc.PtrIMCSessionCapacity,
 			PtrOffloadKQV:         rmc.PtrOffloadKQV,
 			PtrOpOffload:          rmc.PtrOpOffload,
@@ -773,6 +801,8 @@ type ModelConfig struct {
 	NUMA                  string                   `json:"numa,omitempty"`
 	FlashAttention        model.FlashAttentionType `json:"flash-attention"`
 	PtrNSeqMax            *int                     `json:"nseq-max"`
+	QueueDepth            int                      `json:"queue-depth"`
+	AdmissionCapacity     int                      `json:"admission-capacity"`
 	PtrIMCSessionCapacity *int                     `json:"imc-session-capacity"`
 	PtrOffloadKQV         *bool                    `json:"offload-kqv"`
 	PtrOpOffload          *bool                    `json:"op-offload"`
