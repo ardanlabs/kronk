@@ -268,8 +268,20 @@ func fullPathLookupKeys(modelID string) []string {
 
 // =============================================================================
 
-// LoadIndex returns the catalog index.
+// loadIndex returns the catalog index. Existing callers treat a missing or
+// unreadable index as an empty catalog.
 func (m *Models) loadIndex() map[string]Path {
+	index, err := m.readIndex()
+	if err != nil {
+		return make(map[string]Path)
+	}
+
+	return index
+}
+
+// readIndex returns the catalog index and preserves read or decoding errors
+// for operations that cannot safely represent them as an empty catalog.
+func (m *Models) readIndex() (map[string]Path, error) {
 	m.biMutex.Lock()
 	defer m.biMutex.Unlock()
 
@@ -277,13 +289,13 @@ func (m *Models) loadIndex() map[string]Path {
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
-		return make(map[string]Path)
+		return nil, fmt.Errorf("read index: %w", err)
 	}
 
 	var index map[string]Path
 	if err := yaml.Unmarshal(data, &index); err != nil {
-		return make(map[string]Path)
+		return nil, fmt.Errorf("decode index: %w", err)
 	}
 
-	return index
+	return index, nil
 }

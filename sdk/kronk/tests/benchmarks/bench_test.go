@@ -854,6 +854,9 @@ type benchResult struct {
 // runStreamingBench executes a single streaming chat request and captures
 // TTFT, TPS, total wall-clock time, and token counts.
 func runStreamingBench(ctx context.Context, krn *kronk.Kronk, d model.D) (benchResult, error) {
+	d = d.Clone()
+	d["stream_options"] = model.D{"include_usage": true}
+
 	start := time.Now()
 
 	ch, err := krn.ChatStreaming(ctx, d)
@@ -900,11 +903,13 @@ func runStreamingBench(ctx context.Context, krn *kronk.Kronk, d model.D) (benchR
 		return benchResult{}, respError
 	}
 
-	if lastResp.Usage != nil {
-		result.tps = lastResp.Usage.TokensPerSecond
-		result.promptTokens = lastResp.Usage.PromptTokens
-		result.outputTokens = lastResp.Usage.CompletionTokens
+	if lastResp.Usage == nil {
+		return benchResult{}, fmt.Errorf("chat streaming: terminal response missing usage")
 	}
+
+	result.tps = lastResp.Usage.TokensPerSecond
+	result.promptTokens = lastResp.Usage.PromptTokens
+	result.outputTokens = lastResp.Usage.CompletionTokens
 
 	return result, nil
 }
@@ -1054,14 +1059,10 @@ func benchChat(b *testing.B, krn *kronk.Kronk) {
 		b.Fatalf("warmup failed: %v", err)
 	}
 
-	// Enable memory profile sampling only for the timed iteration loop so
-	// pprof's -memprofile reflects per-request inference cost, not the
-	// one-shot kronk.New setup or warmup. TestMain disables sampling
-	// globally; we restore the runtime default here and turn it back off
-	// after the loop so subsequent benchmarks' setup is also excluded.
+	// Collect setup garbage before the timed iteration loop. Memory profile
+	// sampling is controlled by go test's -memprofilerate flag and must remain
+	// constant for the lifetime of the process.
 	runtime.GC()
-	runtime.MemProfileRate = defaultMemProfileRate
-	defer func() { runtime.MemProfileRate = 0 }()
 
 	b.ResetTimer()
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/pool"
@@ -16,14 +17,15 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log              *logger.Logger
-	AuthClient       *authclient.Client
-	Pool             *pool.Pool
-	Libs             *libs.Libs
-	Models           *models.Models
-	BuckyLibs        *buckylibs.Libs
-	BuckyModels      *buckymodels.Models
-	AdminAuthEnabled bool
+	Log                    *logger.Logger
+	AuthClient             *authclient.Client
+	Pool                   *pool.Pool
+	Libs                   *libs.Libs
+	Models                 *models.Models
+	BuckyLibs              *buckylibs.Libs
+	BuckyModels            *buckymodels.Models
+	AuthorizationMode      auth.Mode
+	LegacyManagementAccess bool
 }
 
 // Routes adds specific routes for this group.
@@ -32,87 +34,87 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg)
 
-	inferenceAuth := mid.Authenticate(cfg.AuthClient, false, "")
-	authAdmin := mid.Authenticate(cfg.AuthClient, true, "")
-	auth := inferenceAuth
-	if cfg.AdminAuthEnabled {
-		auth = authAdmin
-	}
+	access := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, cfg.LegacyManagementAccess)
+	modelDiscoveryAccess := access.ModelDiscovery()
+	managementAccess := access.Management()
+	administrationAccess := access.Administration()
 
 	// -------------------------------------------------------------------------
 	// OpenAI-compatible model discovery. Apps like OpenWebUI call
 	// GET /v1/models to enumerate available models. The native,
 	// Kronk-specific listing lives at GET /v1/kronk/models.
 
-	app.HandlerFunc(http.MethodGet, version, "/models", api.listModelsOpenAI, inferenceAuth)
-	app.HandlerFunc(http.MethodGet, version, "/models/{model}", api.retrieveModelOpenAI, inferenceAuth)
+	app.HandlerFunc(http.MethodGet, version, "/models", api.listModelsOpenAI, modelDiscoveryAccess)
+	app.HandlerFunc(http.MethodGet, version, "/models/{model}", api.retrieveModelOpenAI, modelDiscoveryAccess)
 
 	// -------------------------------------------------------------------------
 	// Kronk (llama.cpp) backend — libs, models, catalog.
 
-	app.HandlerFunc(http.MethodGet, version, "/kronk/libs", api.listLibs, auth)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/libs/pull", api.pullLibs, authAdmin)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/libs/combinations", api.listLibsCombinations, auth)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/libs/installs", api.listLibsInstalls, auth)
-	app.HandlerFunc(http.MethodDelete, version, "/kronk/libs/installs", api.removeLibsInstall, authAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/libs", api.listLibs, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/libs/pull", api.pullLibs, administrationAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/libs/combinations", api.listLibsCombinations, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/libs/installs", api.listLibsInstalls, managementAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/kronk/libs/installs", api.removeLibsInstall, administrationAccess)
 
-	app.HandlerFunc(http.MethodGet, version, "/kronk/models", api.listModels, auth)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/models/", api.missingModel, auth)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/models/{model}", api.showModel, auth)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/models/ps", api.modelPS, auth)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/models/imc-sessions", api.imcSessions, auth)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/models/index", api.indexModels, authAdmin)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/models/pull", api.pullModels, authAdmin)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/models/autotune", api.autoTuneModel, auth)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/models/vram", api.calculateVRAM, auth)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/models/unload", api.unloadModel, authAdmin)
-	app.HandlerFunc(http.MethodDelete, version, "/kronk/models/{model}", api.removeModel, authAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models", api.listModels, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/", api.missingModel, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/integrity", api.listModelsIntegrity, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/integrity/{model}", api.retrieveModelIntegrity, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/{model}", api.showModel, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/ps", api.modelPS, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/imc-sessions", api.imcSessions, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/models/index", api.indexModels, administrationAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/models/pull", api.pullModels, administrationAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/models/autotune", api.autoTuneModel, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/models/vram", api.calculateVRAM, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/models/unload", api.unloadModel, administrationAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/kronk/models/{model}", api.removeModel, administrationAccess)
 
-	app.HandlerFunc(http.MethodGet, version, "/kronk/catalog", api.listCatalog, auth)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/catalog/reconcile", api.reconcileCatalog, authAdmin)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/catalog/lookup", api.lookupCatalog, auth)
-	app.HandlerFunc(http.MethodPost, version, "/kronk/catalog/resolve", api.resolveCatalog, authAdmin)
-	app.HandlerFunc(http.MethodGet, version, "/kronk/catalog/{id...}", api.showCatalog, auth)
-	app.HandlerFunc(http.MethodDelete, version, "/kronk/catalog/{id...}", api.removeCatalog, authAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/catalog", api.listCatalog, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/catalog/reconcile", api.reconcileCatalog, administrationAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/catalog/lookup", api.lookupCatalog, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/kronk/catalog/resolve", api.resolveCatalog, administrationAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/catalog/{id...}", api.showCatalog, managementAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/kronk/catalog/{id...}", api.removeCatalog, administrationAccess)
 
 	// -------------------------------------------------------------------------
 	// Bucky (whisper.cpp) backend — libs, models. Whisper has no
 	// resolver-backed catalog: the bundled short-name list is exposed
 	// under /bucky/models/catalog.
 
-	app.HandlerFunc(http.MethodGet, version, "/bucky/libs", api.listBuckyLibs, auth)
-	app.HandlerFunc(http.MethodPost, version, "/bucky/libs/pull", api.pullBuckyLibs, authAdmin)
-	app.HandlerFunc(http.MethodGet, version, "/bucky/libs/combinations", api.listBuckyLibsCombinations, auth)
-	app.HandlerFunc(http.MethodGet, version, "/bucky/libs/installs", api.listBuckyLibsInstalls, auth)
-	app.HandlerFunc(http.MethodDelete, version, "/bucky/libs/installs", api.removeBuckyLibsInstall, authAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/bucky/libs", api.listBuckyLibs, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/bucky/libs/pull", api.pullBuckyLibs, administrationAccess)
+	app.HandlerFunc(http.MethodGet, version, "/bucky/libs/combinations", api.listBuckyLibsCombinations, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/bucky/libs/installs", api.listBuckyLibsInstalls, managementAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/bucky/libs/installs", api.removeBuckyLibsInstall, administrationAccess)
 
-	app.HandlerFunc(http.MethodGet, version, "/bucky/models", api.listBuckyModels, auth)
-	app.HandlerFunc(http.MethodGet, version, "/bucky/models/catalog", api.listBuckyCatalog, auth)
-	app.HandlerFunc(http.MethodPost, version, "/bucky/models/pull", api.pullBuckyModel, authAdmin)
-	app.HandlerFunc(http.MethodGet, version, "/bucky/models/{model}/details", api.detailsBuckyModel, auth)
-	app.HandlerFunc(http.MethodDelete, version, "/bucky/models/{model}", api.removeBuckyModel, authAdmin)
+	app.HandlerFunc(http.MethodGet, version, "/bucky/models", api.listBuckyModels, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/bucky/models/catalog", api.listBuckyCatalog, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/bucky/models/pull", api.pullBuckyModel, administrationAccess)
+	app.HandlerFunc(http.MethodGet, version, "/bucky/models/{model}/details", api.detailsBuckyModel, managementAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/bucky/models/{model}", api.removeBuckyModel, administrationAccess)
 
 	// -------------------------------------------------------------------------
 	// Cross-backend infrastructure.
 
-	app.HandlerFunc(http.MethodGet, version, "/pool/budget", api.poolBudget, auth)
-	app.HandlerFunc(http.MethodGet, version, "/devices", api.listDevices, auth)
-	app.HandlerFunc(http.MethodGet, version, "/diagnose", api.diagnose, auth)
+	app.HandlerFunc(http.MethodGet, version, "/pool/budget", api.poolBudget, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/devices", api.listDevices, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/diagnose", api.diagnose, managementAccess)
 
 	// -------------------------------------------------------------------------
 	// Accuracy app — model code-recall comparison.
 
-	app.HandlerFunc(http.MethodGet, version, "/accuracy/functions", api.listAccuracyFunctions, auth)
-	app.HandlerFunc(http.MethodPost, version, "/accuracy/test", api.runAccuracy, auth)
+	app.HandlerFunc(http.MethodGet, version, "/accuracy/functions", api.listAccuracyFunctions, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/accuracy/test", api.runAccuracy, managementAccess)
 
 	// -------------------------------------------------------------------------
 	// Efficiency app — model throughput comparison.
 
-	app.HandlerFunc(http.MethodPost, version, "/efficiency/run", api.runEfficiency, auth)
+	app.HandlerFunc(http.MethodPost, version, "/efficiency/run", api.runEfficiency, managementAccess)
 
 	// Auth is handled by the auth service for these calls.
-	app.HandlerFunc(http.MethodPost, version, "/security/token/create", api.createToken, auth)
-	app.HandlerFunc(http.MethodGet, version, "/security/keys", api.listKeys, auth)
-	app.HandlerFunc(http.MethodPost, version, "/security/keys/add", api.addKey, auth)
-	app.HandlerFunc(http.MethodPost, version, "/security/keys/remove/{keyid}", api.removeKey, auth)
+	app.HandlerFunc(http.MethodPost, version, "/security/token/create", api.createToken, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/security/keys", api.listKeys, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/security/keys/add", api.addKey, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/security/keys/remove/{keyid}", api.removeKey, managementAccess)
 }

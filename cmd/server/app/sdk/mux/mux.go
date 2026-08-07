@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/pool"
@@ -65,6 +66,7 @@ type Config struct {
 	BuckyLibs           *buckylibs.Libs
 	BuckyModels         *buckymodels.Models
 	DownloadEnabled     bool
+	AuthorizationMode   auth.Mode
 	AdminAuthEnabled    bool
 	WebAdminEnabled     bool
 	AdminPasswordSHA256 string

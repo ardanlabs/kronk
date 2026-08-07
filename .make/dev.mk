@@ -56,35 +56,61 @@ test-gh: test-gh-only lint vuln-check diff
 # ==============================================================================
 # Benchmarks
 
+# BENCH_PROFILE_FLAGS passes optional go test profiling flags to one benchmark.
+# Run CPU and allocation profiles separately: -memprofilerate=1 intentionally
+# records every allocation and would distort a CPU profile collected in the
+# same run.
+BENCH_PROFILE_FLAGS ?=
+
+# CPU: make benchmark-dense-nc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-dense-nc.cpu.pprof'
+# Allocations: make benchmark-dense-nc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-dense-nc.mem.pprof -memprofilerate=1'
 benchmark-dense-nc:
-	go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-dense-imc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-dense-imc.cpu.pprof'
+# Allocations: make benchmark-dense-imc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-dense-imc.mem.pprof -memprofilerate=1'
 benchmark-dense-imc:
-	go test -run=none -bench=BenchmarkDense_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkDense_IMC -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-moe-nc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-moe-nc.cpu.pprof'
+# Allocations: make benchmark-moe-nc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-moe-nc.mem.pprof -memprofilerate=1'
 benchmark-moe-nc:
-	go test -run=none -bench=BenchmarkMoE_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkMoE_NonCaching -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-moe-imc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-moe-imc.cpu.pprof'
+# Allocations: make benchmark-moe-imc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-moe-imc.mem.pprof -memprofilerate=1'
 benchmark-moe-imc:
-	go test -run=none -bench=BenchmarkMoE_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkMoE_IMC -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-hybrid-nc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-hybrid-nc.cpu.pprof'
+# Allocations: make benchmark-hybrid-nc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-hybrid-nc.mem.pprof -memprofilerate=1'
 benchmark-hybrid-nc:
-	go test -run=none -bench=BenchmarkHybrid_NonCaching -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkHybrid_NonCaching -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-hybrid-imc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-hybrid-imc.cpu.pprof'
+# Allocations: make benchmark-hybrid-imc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-hybrid-imc.mem.pprof -memprofilerate=1'
 benchmark-hybrid-imc:
-	go test -run=none -bench=BenchmarkHybrid_IMC -benchtime=3x -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkHybrid_IMC -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-embedding-fallback BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-embedding-fallback.cpu.pprof'
+# Allocations: make benchmark-embedding-fallback BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-embedding-fallback.mem.pprof -memprofilerate=1'
 benchmark-embedding-fallback:
-	go test -tags=kronk_benchmark -run=none -bench='^BenchmarkEmbedding_Qwen3_ContextPoolFallback$$' -benchtime=10s -cpu=4 -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -tags=kronk_benchmark -run=none -bench='^BenchmarkEmbedding_Qwen3_ContextPoolFallback$$' -benchtime=10s -cpu=4 -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-embedding-batchseq BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-embedding-batchseq.cpu.pprof'
+# Allocations: make benchmark-embedding-batchseq BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-embedding-batchseq.mem.pprof -memprofilerate=1'
 benchmark-embedding-batchseq:
-	go test -tags=kronk_benchmark -run=none -bench='^BenchmarkEmbedding_Qwen3_BatchSeq$$' -benchtime=10s -cpu=4 -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -tags=kronk_benchmark -run=none -bench='^BenchmarkEmbedding_Qwen3_BatchSeq$$' -benchtime=10s -cpu=4 -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-rerank-fallback BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-rerank-fallback.cpu.pprof'
+# Allocations: make benchmark-rerank-fallback BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-rerank-fallback.mem.pprof -memprofilerate=1'
 benchmark-rerank-fallback:
-	go test -run=none -bench=BenchmarkRerank_Qwen3_ContextPoolFallback -benchtime=10s -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkRerank_Qwen3_ContextPoolFallback -benchtime=10s -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
+# CPU: make benchmark-rerank-batchseq BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-rerank-batchseq.cpu.pprof'
+# Allocations: make benchmark-rerank-batchseq BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-rerank-batchseq.mem.pprof -memprofilerate=1'
 benchmark-rerank-batchseq:
-	go test -run=none -bench=BenchmarkRerank_BGE_BatchSeq -benchtime=10s -timeout=30m ./sdk/kronk/tests/benchmarks/
+	go test -run=none -bench=BenchmarkRerank_BGE_BatchSeq -benchtime=10s -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
 # Run all benchmarks sequentially (each target loads/unloads its own model)
 # and write combined raw output to a single file under runs/.

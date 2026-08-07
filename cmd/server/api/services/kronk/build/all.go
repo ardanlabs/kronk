@@ -33,70 +33,79 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	toolapp.Routes(app, toolapp.Config{
-		Log:              cfg.Log,
-		AuthClient:       cfg.AuthClient,
-		Pool:             cfg.Pool,
-		Libs:             cfg.Libs,
-		Models:           cfg.Models,
-		BuckyLibs:        cfg.BuckyLibs,
-		BuckyModels:      cfg.BuckyModels,
-		AdminAuthEnabled: cfg.AdminAuthEnabled,
+		Log:                    cfg.Log,
+		AuthClient:             cfg.AuthClient,
+		Pool:                   cfg.Pool,
+		Libs:                   cfg.Libs,
+		Models:                 cfg.Models,
+		BuckyLibs:              cfg.BuckyLibs,
+		BuckyModels:            cfg.BuckyModels,
+		AuthorizationMode:      cfg.AuthorizationMode,
+		LegacyManagementAccess: cfg.AdminAuthEnabled,
 	})
 
 	chatapp.Routes(app, chatapp.Config{
-		Log:              cfg.Log,
-		AuthClient:       cfg.AuthClient,
-		Pool:             cfg.Pool,
-		InferenceTimeout: cfg.InferenceTimeout,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
 	})
 
 	embedapp.Routes(app, embedapp.Config{
-		Log:              cfg.Log,
-		AuthClient:       cfg.AuthClient,
-		Pool:             cfg.Pool,
-		InferenceTimeout: cfg.InferenceTimeout,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
 	})
 
 	audioapp.Routes(app, audioapp.Config{
-		Log:        cfg.Log,
-		AuthClient: cfg.AuthClient,
-		Pool:       cfg.Pool,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		AuthorizationMode: cfg.AuthorizationMode,
 	})
 
 	rerankapp.Routes(app, rerankapp.Config{
-		Log:              cfg.Log,
-		AuthClient:       cfg.AuthClient,
-		Pool:             cfg.Pool,
-		InferenceTimeout: cfg.InferenceTimeout,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
 	})
 
 	tokenapp.Routes(app, tokenapp.Config{
-		Log:              cfg.Log,
-		AuthClient:       cfg.AuthClient,
-		Pool:             cfg.Pool,
-		InferenceTimeout: cfg.InferenceTimeout,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
 	})
 
 	respapp.Routes(app, respapp.Config{
-		Log:              cfg.Log,
-		AuthClient:       cfg.AuthClient,
-		Pool:             cfg.Pool,
-		InferenceTimeout: cfg.InferenceTimeout,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
 	})
 
 	msgsapp.Routes(app, msgsapp.Config{
-		Log:              cfg.Log,
-		AuthClient:       cfg.AuthClient,
-		Pool:             cfg.Pool,
-		InferenceTimeout: cfg.InferenceTimeout,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
 	})
 
 	playgroundapp.Routes(app, playgroundapp.Config{
-		Log:              cfg.Log,
-		AuthClient:       cfg.AuthClient,
-		Pool:             cfg.Pool,
-		Models:           cfg.Models,
-		AdminAuthEnabled: cfg.AdminAuthEnabled,
+		Log:                    cfg.Log,
+		AuthClient:             cfg.AuthClient,
+		Pool:                   cfg.Pool,
+		Models:                 cfg.Models,
+		AuthorizationMode:      cfg.AuthorizationMode,
+		LegacyManagementAccess: cfg.AdminAuthEnabled,
 	})
 
 	if cfg.DownloadEnabled {

@@ -959,7 +959,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	if job.imcTokenPlan {
 		samplerTokens = job.samplerPromptTokens
 	}
-	primeSampler(s.sampler, samplerTokens)
+	primeSampler(s.sampler, samplerTokens, job.params)
 
 	// Store full prompt tokens for draft model prefill if speculative decoding
 	// is enabled. The draft model needs all tokens (cached + new suffix) to
@@ -1114,7 +1114,7 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		return false
 	}
 
-	primeSampler(s.sampler, job.samplerPromptTokens)
+	primeSampler(s.sampler, job.samplerPromptTokens, job.params)
 
 	s.useMRoPE = true
 	if e.model.draft != nil && e.model.draft.mtp() {
@@ -1218,7 +1218,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	for i := range numChunks {
 		chunk := mtmd.InputChunksGet(s.inputChunks, i)
 		if mtmd.InputChunkGetType(chunk) == mtmd.InputChunkTypeText {
-			primeSampler(s.sampler, mtmd.InputChunkGetTokensText(chunk))
+			primeSampler(s.sampler, mtmd.InputChunkGetTokensText(chunk), job.params)
 		}
 	}
 
@@ -1359,11 +1359,15 @@ func validMTPDraftState(actualBytes, expectedBytes uint64, pendingH []float32, n
 	return expectedBytes > 0 && actualBytes == expectedBytes && nEmbd > 0 && len(pendingH) == nEmbd
 }
 
-func primeSampler(sampler llama.Sampler, tokens []llama.Token) {
-	primeSamplerWith(sampler, tokens, llama.SamplerAccept)
+func primeSampler(sampler llama.Sampler, tokens []llama.Token, params Params) {
+	primeSamplerWith(sampler, tokens, samplerPromptRequired(params), llama.SamplerAccept)
 }
 
-func primeSamplerWith(sampler llama.Sampler, tokens []llama.Token, accept func(llama.Sampler, llama.Token)) {
+func primeSamplerWith(sampler llama.Sampler, tokens []llama.Token, required bool, accept func(llama.Sampler, llama.Token)) {
+	if !required {
+		return
+	}
+
 	for _, token := range tokens {
 		if token != llama.TokenNull {
 			accept(sampler, token)

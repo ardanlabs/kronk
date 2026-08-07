@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -60,6 +62,80 @@ func TestOpenAIModel(t *testing.T) {
 	if model.OwnedBy != "kronk" {
 		t.Errorf("OwnedBy: got %q, want %q", model.OwnedBy, "kronk")
 	}
+}
+
+func TestModelIntegrityResponse(t *testing.T) {
+	verifiedAt := time.Unix(123, 0).UTC()
+	response := toModelIntegrity([]llamamodels.IntegrityModel{
+		{
+			ID:          "test-model",
+			OwnedBy:     "test-org",
+			ModelFamily: "test-family",
+			Status:      llamamodels.IntegrityVerified,
+			Verified:    true,
+			Artifacts: []llamamodels.IntegrityArtifact{
+				{
+					Role:       llamamodels.IntegrityRoleWeights,
+					Filename:   "test-model.gguf",
+					Digest:     "sha256:abc",
+					Size:       42,
+					Status:     llamamodels.IntegrityVerified,
+					Verified:   true,
+					VerifiedAt: verifiedAt,
+				},
+			},
+		},
+	})
+
+	data, mediaType, err := response.Encode()
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if mediaType != "application/json" {
+		t.Errorf("media type: got %q, want %q", mediaType, "application/json")
+	}
+
+	want := `{"object":"model_integrity.list","data":[{"id":"test-model","owned_by":"test-org","model_family":"test-family","status":"verified","verified":true,"artifacts":[{"role":"weights","filename":"test-model.gguf","digest":"sha256:abc","size":42,"status":"verified","verified":true,"verified_at":"1970-01-01T00:02:03Z"}]}]}`
+	if string(data) != want {
+		t.Errorf("Encode: got %s, want %s", data, want)
+	}
+
+	detailData, _, err := response.Data[0].Encode()
+	if err != nil {
+		t.Fatalf("detail Encode: %v", err)
+	}
+	wantDetail := `{"id":"test-model","owned_by":"test-org","model_family":"test-family","status":"verified","verified":true,"artifacts":[{"role":"weights","filename":"test-model.gguf","digest":"sha256:abc","size":42,"status":"verified","verified":true,"verified_at":"1970-01-01T00:02:03Z"}]}`
+	if string(detailData) != wantDetail {
+		t.Errorf("detail Encode: got %s, want %s", detailData, wantDetail)
+	}
+}
+
+func TestListModelsIntegrity(t *testing.T) {
+	models, err := llamamodels.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(models.Path(), ".index.yaml"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile index: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/kronk/models/integrity", nil)
+	encoder := (&app{models: models}).listModelsIntegrity(t.Context(), req)
+	response, ok := encoder.(ModelIntegrityResponse)
+	if !ok {
+		t.Fatalf("response type: got %T, want ModelIntegrityResponse", encoder)
+	}
+	if response.Object != "model_integrity.list" {
+		t.Errorf("Object: got %q, want %q", response.Object, "model_integrity.list")
+	}
+	if len(response.Data) != 0 {
+		t.Errorf("Data length: got %d, want 0", len(response.Data))
+	}
+
+	retrieveReq := httptest.NewRequest(http.MethodGet, "/v1/kronk/models/integrity/missing", nil)
+	retrieveReq.SetPathValue("model", "missing")
+	retrieveResponse := (&app{models: models}).retrieveModelIntegrity(t.Context(), retrieveReq)
+	assertNotFound(t, retrieveResponse)
 }
 
 func TestModelInfoAdmissionCapacity(t *testing.T) {

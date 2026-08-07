@@ -302,7 +302,7 @@ func TestChatStopValidationAndParsing(t *testing.T) {
 	}
 }
 
-func TestParseParamsDoesNotUseDefaultStop(t *testing.T) {
+func TestParseParamsUsesDefaultStop(t *testing.T) {
 	m := Model{log: noopLog, cfg: Config{DefaultParams: Params{Stop: []string{"default"}}}}
 	d := D{"messages": []D{{"role": "user", "content": "hello"}}}
 
@@ -310,8 +310,8 @@ func TestParseParamsDoesNotUseDefaultStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseParams: %v", err)
 	}
-	if params.Stop != nil {
-		t.Errorf("Stop: got %v, want nil", params.Stop)
+	if !reflect.DeepEqual(params.Stop, []string{"default"}) {
+		t.Errorf("Stop: got %v, want [default]", params.Stop)
 	}
 }
 
@@ -1610,19 +1610,25 @@ func TestParseParamsIncludeUsage(t *testing.T) {
 		name       string
 		streamOpts any
 		include    bool
+		defaultVal bool
 		want       bool
 	}{
 		{name: "omitted defaults false", want: false},
+		{name: "omitted uses configured default", defaultVal: true, want: true},
 		{name: "empty options defaults false", streamOpts: D{}, include: true, want: false},
+		{name: "empty options uses configured default", streamOpts: D{}, include: true, defaultVal: true, want: true},
 		{name: "D true", streamOpts: D{"include_usage": true}, include: true, want: true},
-		{name: "D false", streamOpts: D{"include_usage": false}, include: true, want: false},
+		{name: "D false overrides configured default", streamOpts: D{"include_usage": false}, include: true, defaultVal: true, want: false},
 		{name: "map true", streamOpts: map[string]any{"include_usage": true}, include: true, want: true},
-		{name: "map false", streamOpts: map[string]any{"include_usage": false}, include: true, want: false},
+		{name: "map false overrides configured default", streamOpts: map[string]any{"include_usage": false}, include: true, defaultVal: true, want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := Model{log: noopLog}
+			m := Model{
+				cfg: Config{DefaultParams: Params{IncludeUsage: tt.defaultVal}},
+				log: noopLog,
+			}
 			d := D{}
 			if tt.include {
 				d["stream_options"] = tt.streamOpts

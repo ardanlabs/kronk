@@ -27,11 +27,10 @@ Start the server in the foreground:
 kronk server start
 ```
 
-The API listens on `0.0.0.0:11435` by default. `localhost:11435` works for a
-client on the same machine, but the server is bound to all network interfaces.
-Authentication is disabled by default. Before using an untrusted network,
-bind to loopback, restrict access with a firewall or private network, or enable
-the authentication described in [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication).
+The API listens on `127.0.0.1:11435` by default and is reachable only from the
+local machine. To expose it on another interface, set `--api-host` explicitly,
+restrict access with a firewall or private network, and configure the
+authorization described in [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication).
 
 To bind only to the local machine:
 
@@ -102,8 +101,8 @@ Common settings can be supplied as flags or environment variables:
 
 | Flag | Environment variable | Effective default | Purpose |
 | ---- | -------------------- | ----------------- | ------- |
-| `--api-host` | `KRONK_WEB_API_HOST` | `0.0.0.0:11435` | Main API bind address |
-| `--debug-host` | `KRONK_WEB_DEBUG_HOST` | `0.0.0.0:11445` | Metrics and profiling bind address |
+| `--api-host` | `KRONK_WEB_API_HOST` | `127.0.0.1:11435` | Main API bind address |
+| `--debug-host` | `KRONK_WEB_DEBUG_HOST` | `127.0.0.1:11445` | Metrics and profiling bind address |
 | `--inference-timeout` | `KRONK_WEB_INFERENCE_TIMEOUT` | `60m` | Total timeout for inference admission, preparation, slot waiting, and generation |
 | `--write-timeout` | `KRONK_WEB_WRITE_TIMEOUT` | `61m` | HTTP response write timeout; `0` disables it, otherwise it must exceed the inference timeout |
 | `--base-path` | `KRONK_BASE_PATH` | `~/.kronk` | Root for Kronk data |

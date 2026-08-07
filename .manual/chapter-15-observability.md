@@ -24,8 +24,8 @@ to standard output.
 
 #### Debug Server
 
-The main API binds to `0.0.0.0:11435` by default. Observability endpoints use
-a separate server at `0.0.0.0:11445`:
+The main API binds to `127.0.0.1:11435` by default. Observability endpoints use
+a separate server at `127.0.0.1:11445`:
 
 | Path | Purpose |
 | ---- | ------- |

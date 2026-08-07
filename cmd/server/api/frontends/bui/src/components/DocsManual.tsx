@@ -344,7 +344,7 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
           <p>The background process writes logs to <code>~/.kronk/kronk.log</code>. Manage it with:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server logs
 kronk server stop`}</code></pre>
-          <p>The server's configured default is <code>0.0.0.0:11435</code>, which listens on every network interface. The commands above deliberately use <code>127.0.0.1</code> for local operation. The API and BUI share port <code>11435</code>; the BUI is enabled by default and is served under <code>/admin/</code>. Disable it for a headless server with:</p>
+          <p>The server defaults to <code>127.0.0.1:11435</code> for local-only access. The API and BUI share port <code>11435</code>; the BUI is enabled by default and is served under <code>/admin/</code>. Disable it for a headless server with:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=127.0.0.1:11435 \\
   --web-admin-enabled=false`}</code></pre>
@@ -401,7 +401,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
   context-window: 65536`}</code></pre>
           <p>Select the variant by sending the complete name, including <code>/LONG</code>, as the API request's <code>model</code> value. Variants let applications use different runtime settings without keeping duplicate model files.</p>
           <h4 id="other-configuration-surfaces">Other configuration surfaces</h4>
-          <p>Applications embedding the Go SDK can construct a <code>model.Config</code> directly. Request fields such as <code>temperature</code>, <code>top_p</code>, and <code>max_tokens</code> can override generation behavior for an individual request. Those request fields are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>.</p>
+          <p>Applications embedding the Go SDK can construct a <code>model.Config</code> directly. Request fields such as <code>temperature</code>, <code>top_p</code>, <code>seed</code>, and <code>max_tokens</code> can override generation behavior for an individual request. A configured seed makes requests that omit <code>seed</code> repeatable; omit it from both places to use random sampling. Those request fields are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>.</p>
           <p>The hardware processor (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>rocm</code>, or <code>vulkan</code>) selects a native library bundle rather than a per-model setting. Kronk detects it during library installation. Set <code>KRONK_PROCESSOR</code> before installing libraries only when you need to override detection; see <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2 §2.4</a>.</p>
           <h4 id="311-chat-templates-define-the-model-protocol">3.1.1 Chat Templates Define the Model Protocol</h4>
           <p>A chat template is not cosmetic string formatting. It is executable, model-specific protocol logic that converts portable request data—messages, roles, tools, optional media, and supported reasoning controls—into the exact prompt syntax the model learned during training. The model never receives the original message objects.</p>
@@ -1573,7 +1573,7 @@ Qwen/Qwen3-8B-Q8_0:
           <h2 id="81-server-lifecycle">8.1 Server Lifecycle</h2>
           <p>Start the server in the foreground:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
-          <p>The API listens on <code>0.0.0.0:11435</code> by default. <code>localhost:11435</code> works for a client on the same machine, but the server is bound to all network interfaces. Authentication is disabled by default. Before using an untrusted network, bind to loopback, restrict access with a firewall or private network, or enable the authentication described in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
+          <p>The API listens on <code>127.0.0.1:11435</code> by default and is reachable only from the local machine. To expose it on another interface, set <code>--api-host</code> explicitly, restrict access with a firewall or private network, and configure the authorization described in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
           <p>To bind only to the local machine:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=127.0.0.1:11435`}</code></pre>
           <p>Run the server in the background with:</p>
@@ -1612,13 +1612,13 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--api-host</code></td>
                 <td><code>KRONK_WEB_API_HOST</code></td>
-                <td><code>0.0.0.0:11435</code></td>
+                <td><code>127.0.0.1:11435</code></td>
                 <td>Main API bind address</td>
               </tr>
               <tr>
                 <td><code>--debug-host</code></td>
                 <td><code>KRONK_WEB_DEBUG_HOST</code></td>
-                <td><code>0.0.0.0:11445</code></td>
+                <td><code>127.0.0.1:11445</code></td>
                 <td>Metrics and profiling bind address</td>
               </tr>
               <tr>
@@ -2055,6 +2055,14 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td>Return the missing-model validation error for an empty model ID</td>
               </tr>
               <tr>
+                <td><code>GET /v1/kronk/models/integrity</code></td>
+                <td>List local artifact digests and persisted verification evidence without hashing model files</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/models/integrity/&#123;model&#125;</code></td>
+                <td>Return integrity information for one local model without inspecting other models</td>
+              </tr>
+              <tr>
                 <td><code>GET /v1/kronk/models/&#123;model&#125;</code></td>
                 <td>Show detailed metadata and effective configuration for one model</td>
               </tr>
@@ -2093,6 +2101,152 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p>The native model list and detail routes are distinct from the OpenAI-compatible <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code> routes. Use the native routes for administration metadata and effective Kronk configuration.</p>
+          <p><code>GET /v1/kronk/models/integrity</code> returns each indexed physical model with its weight shards, projection, and MTP artifacts. Each artifact includes the local filename and size, its Hugging Face SHA-256 digest when available, and one of these evidence states. For example:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "object": "model_integrity.list",
+  "data": [
+    {
+      "id": "Qwen3-VL-30B-Q4_K_M",
+      "owned_by": "unsloth",
+      "model_family": "Qwen3-VL-30B-GGUF",
+      "status": "unavailable",
+      "verified": false,
+      "artifacts": [
+        {
+          "role": "weights",
+          "filename": "Qwen3-VL-30B-Q4_K_M.gguf",
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "size": 18456789012,
+          "status": "verified",
+          "verified": true,
+          "verified_at": "2026-08-07T14:35:09Z"
+        },
+        {
+          "role": "projection",
+          "filename": "mmproj-Qwen3-VL-30B-Q4_K_M.gguf",
+          "size": 734567890,
+          "status": "unavailable",
+          "verified": false,
+          "reason": "digest_unavailable"
+        }
+      ]
+    }
+  ]
+}`}</code></pre>
+          <p>Use <code>GET /v1/kronk/models/integrity/&#123;model&#125;</code> when only one model is needed. It reads the index and inspects sidecars and filesystem metadata only for that model. The response is the matching model object directly, without the list envelope:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "id": "Qwen3-VL-30B-Q4_K_M",
+  "owned_by": "unsloth",
+  "model_family": "Qwen3-VL-30B-GGUF",
+  "status": "verified",
+  "verified": true,
+  "artifacts": [
+    {
+      "role": "weights",
+      "filename": "Qwen3-VL-30B-Q4_K_M.gguf",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 18456789012,
+      "status": "verified",
+      "verified": true,
+      "verified_at": "2026-08-07T14:35:09Z"
+    }
+  ]
+}`}</code></pre>
+          <p>The targeted route returns <code>404 Not Found</code> when the model is not present in the local index. It is preferable to the collection route on installations with a large model inventory when a caller needs only one model.</p>
+          <p>The response envelope and model fields are:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>object</code></td>
+                <td>Always <code>model_integrity.list</code>.</td>
+              </tr>
+              <tr>
+                <td><code>data</code></td>
+                <td>Models physically present in the local model index. Configured extension aliases are not duplicated here.</td>
+              </tr>
+              <tr>
+                <td><code>id</code></td>
+                <td>Kronk model ID from the local index.</td>
+              </tr>
+              <tr>
+                <td><code>owned_by</code></td>
+                <td>Provider or organization directory containing the model.</td>
+              </tr>
+              <tr>
+                <td><code>model_family</code></td>
+                <td>Model-family directory containing the artifacts.</td>
+              </tr>
+              <tr>
+                <td><code>status</code></td>
+                <td>Least trustworthy status among the model's required artifacts: <code>unavailable</code>, then <code>stale</code>, then <code>unverified</code>, then <code>verified</code>.</td>
+              </tr>
+              <tr>
+                <td><code>verified</code></td>
+                <td><code>true</code> only when every required artifact has status <code>verified</code>.</td>
+              </tr>
+              <tr>
+                <td><code>artifacts</code></td>
+                <td>Physical weight shards followed by an optional projection and optional MTP drafter.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Each artifact provides:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>role</code></td>
+                <td><code>weights</code>, <code>projection</code>, or <code>mtp</code>. Each weight shard is a separate artifact.</td>
+              </tr>
+              <tr>
+                <td><code>filename</code></td>
+                <td>Basename of the local artifact.</td>
+              </tr>
+              <tr>
+                <td><code>digest</code></td>
+                <td>Hugging Face Git LFS SHA-256 identity in <code>sha256:&lt;hex&gt;</code> form. Omitted when unavailable.</td>
+              </tr>
+              <tr>
+                <td><code>size</code></td>
+                <td>Current local file size in bytes. It is <code>0</code> when an indexed file is absent.</td>
+              </tr>
+              <tr>
+                <td><code>status</code></td>
+                <td>Current evidence state described below.</td>
+              </tr>
+              <tr>
+                <td><code>verified</code></td>
+                <td>Convenience boolean that is <code>true</code> only for status <code>verified</code>.</td>
+              </tr>
+              <tr>
+                <td><code>verified_at</code></td>
+                <td>UTC time of the last successful full-file verification. Omitted when no usable verification record exists.</td>
+              </tr>
+              <tr>
+                <td><code>reason</code></td>
+                <td>Machine-readable explanation when applicable: <code>digest_unavailable</code> or <code>file_metadata_changed</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Artifact statuses mean:</p>
+          <ul>
+            <li><code>verified</code> — the published digest, persisted verification record, and current file size and modification time agree;</li>
+            <li><code>unverified</code> — a published digest exists, but no persisted verification record exists;</li>
+            <li><code>stale</code> — persisted verification or current file metadata no longer agrees;</li>
+            <li><code>unavailable</code> — the published digest sidecar is missing or malformed.</li>
+          </ul>
+          <p>This endpoint reads only the model index, small sidecar files, and filesystem metadata. It does not hash model contents or freshly verify their bytes. A <code>verified</code> result means Kronk previously hashed that artifact successfully and the tracked file metadata has not changed since. It does not prove the current bytes through a new content read.</p>
           <h3 id="catalog">Catalog</h3>
           <table className="flags-table">
             <thead>
@@ -2301,7 +2455,7 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p>Explicit request values override model-specific sampling defaults, including <code>top_p: 1</code>, which disables nucleus filtering. When <code>temperature</code>, <code>top_k</code>, or <code>top_p</code> is omitted, Kronk uses the configured value, GGUF recommendation, or baseline default in that order. Set <code>temperature: 0</code> explicitly to request greedy generation. Set <code>top_k: 0</code> to disable top-k filtering.</p>
-          <p>When <code>seed</code> is omitted, Kronk chooses random sampler state for the request. An explicit seed, including <code>seed: 0</code>, makes target sampling, classic draft sampling, and speculative acceptance and replacement decisions repeatable. Kronk derives independent request-local streams for the target distribution, XTC, Adaptive-P, the classic draft distribution, and speculative decisions. Concurrent requests therefore do not advance one another's seeded streams. Repeatability requires the same Kronk and native-library builds, model files, request, sampling settings, backend and devices, speculative mode, and equivalent batching conditions. It is not guaranteed across software versions, backends, quantizations, sampler changes, or different batching schedules.</p>
+          <p>When <code>seed</code> is omitted, Kronk uses the model's configured <code>sampling-parameters.seed</code> default, or chooses random sampler state when no default is configured. An explicit request seed, including <code>seed: 0</code>, overrides the configured default and makes target sampling, classic draft sampling, and speculative acceptance and replacement decisions repeatable. Kronk derives independent request-local streams for the target distribution, XTC, Adaptive-P, the classic draft distribution, and speculative decisions. Concurrent requests therefore do not advance one another's seeded streams. Repeatability requires the same Kronk and native-library builds, model files, request, sampling settings, backend and devices, speculative mode, and equivalent batching conditions. It is not guaranteed across software versions, backends, quantizations, sampler changes, or different batching schedules.</p>
           <h2 id="103-repetition-control">10.3 Repetition Control</h2>
           <p>Kronk supports both token penalties and DRY n-gram penalties:</p>
           <table className="flags-table">
@@ -2607,47 +2761,50 @@ EOF`}</code></pre>
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
           <h2 id="chapter-12-security-and-authentication">Chapter 12: Security and Authentication</h2>
           <p>Kronk signs JWT bearer tokens with local RSA keys. A token can be an unrestricted administrator credential or a user credential limited to specific inference endpoints and request quotas.</p>
-          <h2 id="121-authentication-modes">12.1 Authentication Modes</h2>
-          <p>Inference and administrative protection are configured separately:</p>
+          <h2 id="121-authorization-modes">12.1 Authorization Modes</h2>
+          <p><code>KRONK_AUTHORIZATION_MODE</code> selects the API access policy independently of whether Kronk uses its embedded auth service or <code>KRONK_AUTH_HOST</code>:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Mode</th>
-                <th>Inference auth</th>
-                <th>Admin auth</th>
-                <th>Effect</th>
+                <th>Value</th>
+                <th>Model discovery</th>
+                <th>Inference</th>
+                <th>Management</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Open</td>
-                <td>Off</td>
-                <td>Off</td>
-                <td>Inference and management APIs are open.</td>
+                <td><code>open</code></td>
+                <td>Public</td>
+                <td>Public</td>
+                <td>Public</td>
               </tr>
               <tr>
-                <td>Admin-only</td>
-                <td>Off</td>
-                <td>On</td>
-                <td>Inference is open; management, playground, BUI login, and security APIs require an admin token.</td>
+                <td><code>management</code></td>
+                <td>Public</td>
+                <td>Public</td>
+                <td>Admin JWT</td>
               </tr>
               <tr>
-                <td>Fully protected</td>
-                <td>On</td>
-                <td>On automatically</td>
-                <td>Inference requires a valid scoped token, and administrative APIs require an admin token.</td>
+                <td><code>authenticated</code></td>
+                <td>Valid JWT</td>
+                <td>Valid JWT without an endpoint grant</td>
+                <td>Admin JWT</td>
+              </tr>
+              <tr>
+                <td><code>full-protected</code></td>
+                <td>Valid JWT</td>
+                <td>JWT with the matching endpoint grant</td>
+                <td>Admin JWT</td>
               </tr>
             </tbody>
           </table>
-          <p>Start a fully protected server with:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --auth-enabled`}</code></pre>
-          <p>To leave inference open while protecting administration:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --admin-auth-enabled`}</code></pre>
-          <p>The equivalent environment variables are:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTH_LOCAL_ENABLED=true
-export KRONK_AUTH_ADMIN_ENABLED=true
+          <p>Health endpoints remain public in every mode. Model discovery consists of <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code>. Native Kronk model, integrity, catalog, device, diagnostic, pool, playground, and security endpoints are management APIs.</p>
+          <p>For example:</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTHORIZATION_MODE=full-protected
 kronk server start`}</code></pre>
-          <p>Setting <code>KRONK_AUTH_LOCAL_ENABLED=true</code> always enables admin authentication as well. <code>GET /v1/models</code> follows inference authentication: it requires a valid token in fully protected mode but has no separate <code>models</code> endpoint grant.</p>
+          <p>When <code>KRONK_AUTHORIZATION_MODE</code> is set, it overrides the legacy <code>KRONK_AUTH_LOCAL_ENABLED</code> and <code>KRONK_AUTH_ADMIN_ENABLED</code> settings. When the new mode is unset, those settings retain their existing behavior for compatibility. This allows deployments to migrate before the legacy settings are deprecated.</p>
+          <p><code>KRONK_AUTH_HOST</code> selects the authentication provider; it does not change the rights in this table. <code>KRONK_WEB_ADMIN_ENABLED</code> independently controls whether the BUI is served. When using an external auth host with a mode that protects management, disable the BUI because its password login uses the embedded security store.</p>
           <h2 id="122-initial-credentials">12.2 Initial Credentials</h2>
           <p>When the embedded security store initializes for the first time, Kronk creates:</p>
           <ul>
@@ -2757,14 +2914,19 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
             </thead>
             <tbody>
               <tr>
+                <td>—</td>
+                <td><code>KRONK_AUTHORIZATION_MODE</code></td>
+                <td>Select <code>open</code>, <code>management</code>, <code>authenticated</code>, or <code>full-protected</code>; overrides the legacy authorization settings.</td>
+              </tr>
+              <tr>
                 <td><code>--auth-enabled</code></td>
                 <td><code>KRONK_AUTH_LOCAL_ENABLED</code></td>
-                <td>Protect inference and administration.</td>
+                <td>Legacy setting that protects inference and administration.</td>
               </tr>
               <tr>
                 <td><code>--admin-auth-enabled</code></td>
                 <td><code>KRONK_AUTH_ADMIN_ENABLED</code></td>
-                <td>Protect administration only.</td>
+                <td>Legacy setting that protects administration only.</td>
               </tr>
               <tr>
                 <td><code>--auth-issuer</code></td>
@@ -2797,9 +2959,9 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
           <p>The standalone MCP service uses <code>MCP_AUTH_TLS_ENABLED</code>, <code>MCP_AUTH_TLS_CA_FILE</code>, and <code>MCP_AUTH_TLS_SERVER_NAME</code> for its connection to the auth service.</p>
           <p>CLI web mode reads <code>KRONK_WEB_API_HOST</code>, which defaults to <code>localhost:11435</code>.</p>
           <h2 id="128-production-hardening">12.8 Production Hardening</h2>
-          <p>Kronk listens on <code>0.0.0.0:11435</code> and serves plain HTTP by default. For any traffic outside a trusted host:</p>
+          <p>Kronk listens on <code>127.0.0.1:11435</code> and serves plain HTTP by default. Before binding Kronk to another interface or allowing traffic outside a trusted host:</p>
           <ul>
-            <li>enable full or admin authentication as appropriate;</li>
+            <li>select <code>management</code>, <code>authenticated</code>, or <code>full-protected</code> authorization as appropriate;</li>
             <li>terminate TLS at a trusted reverse proxy and do not expose the API port directly to the public internet;</li>
             <li>enable auth TLS whenever the auth service is reached across an untrusted network, or use an authenticated encrypted service mesh;</li>
             <li>restrict network access with host or cloud firewall rules;</li>
@@ -2817,7 +2979,7 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
           <h3 id="131-accessing-the-bui">13.1 Accessing the BUI</h3>
           <p>The BUI is enabled by default. Start the server and open:</p>
           <pre className="code-block"><code>{`http://localhost:11435/admin/`}</code></pre>
-          <p>The address comes from <code>KRONK_WEB_API_HOST</code>, whose default is <code>0.0.0.0:11435</code>. The server root and <code>/admin</code> redirect to <code>/admin/</code> while the BUI is enabled.</p>
+          <p>The address comes from <code>KRONK_WEB_API_HOST</code>, whose default is <code>127.0.0.1:11435</code>. The server root and <code>/admin</code> redirect to <code>/admin/</code> while the BUI is enabled.</p>
           <p>For a headless deployment, disable it with either form:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_WEB_ADMIN_ENABLED=false
 kronk server start`}</code></pre>
@@ -2866,12 +3028,12 @@ kronk server start`}</code></pre>
             <li><strong>Web API</strong> — inference and management endpoint reference</li>
           </ul>
           <h3 id="133-authentication">13.3 Authentication</h3>
-          <p>By default, the BUI and management APIs do not require a login. To protect browser administration, enable admin authentication and configure the SHA-256 digest of the password:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTH_ADMIN_ENABLED=true
-export KRONK_WEB_ADMIN_PASSWORD_SHA_256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
+          <p>By default, the BUI and management APIs do not require a login. To protect browser administration, select a mode that protects management and configure the SHA-256 digest of the password:</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTHORIZATION_MODE=management
+export KRONK_WEB_ADMIN_PASSWORD_SHA256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
 kronk server start`}</code></pre>
           <p>Login creates a one-hour admin token in an HttpOnly, SameSite cookie. The browser cannot read the token, and the server uses it to authenticate the BUI's same-origin <code>/v1</code> requests. Sign out from the sidebar to end the browser session.</p>
-          <p>General authentication also enables admin authentication. Chapter 12 explains the open, admin-only, and fully protected modes, including TLS and reverse proxy considerations.</p>
+          <p>Chapter 12 explains the <code>open</code>, <code>management</code>, <code>authenticated</code>, and <code>full-protected</code> modes, including TLS and reverse proxy considerations.</p>
           <h3 id="134-operational-notes">13.4 Operational Notes</h3>
           <ul>
             <li>Downloading a library bundle does not switch the libraries used by the running process. Set <code>KRONK_LIB_PATH</code> or <code>KRONK_BUCKY_LIB_PATH</code> to the selected bundle and restart the server.</li>
@@ -3044,7 +3206,7 @@ print(response.content)`}</code></pre>
           <p>Kronk exposes health checks on the Web API and runs a separate debug server for metrics, profiling, and runtime visualization. It can also export traces to an OTLP gRPC collector such as Grafana Tempo. Structured logs are written to standard output.</p>
           <h3 id="151-debug-and-health-endpoints">15.1 Debug and Health Endpoints</h3>
           <h4 id="debug-server">Debug Server</h4>
-          <p>The main API binds to <code>0.0.0.0:11435</code> by default. Observability endpoints use a separate server at <code>0.0.0.0:11445</code>:</p>
+          <p>The main API binds to <code>127.0.0.1:11435</code> by default. Observability endpoints use a separate server at <code>127.0.0.1:11445</code>:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -4792,7 +4954,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#chapter-12-security-and-authentication" className={`doc-index-header ${activeSection === 'chapter-12-security-and-authentication' ? 'active' : ''}`}>Chapter 12: Security and Authentication</a>
             </div>
             <div className="doc-index-section">
-              <a href="#121-authentication-modes" className={`doc-index-header ${activeSection === '121-authentication-modes' ? 'active' : ''}`}>12.1 Authentication Modes</a>
+              <a href="#121-authorization-modes" className={`doc-index-header ${activeSection === '121-authorization-modes' ? 'active' : ''}`}>12.1 Authorization Modes</a>
             </div>
             <div className="doc-index-section">
               <a href="#122-initial-credentials" className={`doc-index-header ${activeSection === '122-initial-credentials' ? 'active' : ''}`}>12.2 Initial Credentials</a>

@@ -10,7 +10,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
@@ -408,7 +407,7 @@ func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log
 		if err := os.Remove(shaFile); err != nil && !os.IsNotExist(err) {
 			log(ctx, "remove-catalog-entry: sha", "path", shaFile, "ERROR", err)
 		}
-		if err := model.RemoveVerifiedSentinel(p); err != nil {
+		if err := removeArtifactVerification(p); err != nil {
 			log(ctx, "remove-catalog-entry: verified-sentinel", "path", p, "ERROR", err)
 		}
 	}

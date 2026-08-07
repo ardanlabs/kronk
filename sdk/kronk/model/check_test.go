@@ -9,191 +9,109 @@ import (
 	"time"
 )
 
-// writeFakeModel creates a fake model file plus its companion sha file
-// (in <dir>/sha/<base>) and returns (modelPath, computedSHA).
-func writeFakeModel(t *testing.T, dir string, name string, payload []byte) (string, string) {
+func writeArtifact(t *testing.T, payload []byte) (string, ArtifactDigest) {
 	t.Helper()
 
-	modelPath := filepath.Join(dir, name)
+	modelPath := filepath.Join(t.TempDir(), "model.gguf")
 	if err := os.WriteFile(modelPath, payload, 0o644); err != nil {
-		t.Fatalf("write model: %v", err)
+		t.Fatalf("WriteFile: %v", err)
 	}
 
 	sum := sha256.Sum256(payload)
-	sha := fmt.Sprintf("%x", sum)
-
-	shaDir := filepath.Join(dir, "sha")
-	if err := os.MkdirAll(shaDir, 0o755); err != nil {
-		t.Fatalf("mkdir sha: %v", err)
-	}
-	shaContents := fmt.Sprintf("oid sha256:%s\nsize %d\n", sha, len(payload))
-	if err := os.WriteFile(filepath.Join(shaDir, name), []byte(shaContents), 0o644); err != nil {
-		t.Fatalf("write sha file: %v", err)
+	digest := ArtifactDigest{
+		SHA256: fmt.Sprintf("%x", sum),
+		Size:   int64(len(payload)),
 	}
 
-	return modelPath, sha
+	return modelPath, digest
 }
 
-// TestCheckModel_FirstCallWritesSentinel verifies that a successful full
-// sha-check leaves a sentinel behind so subsequent calls can short-circuit.
-func TestCheckModel_FirstCallWritesSentinel(t *testing.T) {
-	dir := t.TempDir()
-	modelPath, _ := writeFakeModel(t, dir, "fake.gguf", []byte("hello kronk"))
+func TestVerifyArtifact(t *testing.T) {
+	modelPath, digest := writeArtifact(t, []byte("hello kronk"))
 
-	sentinel := verifiedFilePath(modelPath)
-	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
-		t.Fatalf("sentinel should not exist before first check; got err=%v", err)
+	verification, changed, err := VerifyArtifact(modelPath, digest, nil, true)
+	if err != nil {
+		t.Fatalf("VerifyArtifact: %v", err)
+	}
+	if !changed {
+		t.Error("changed: got false, want true")
+	}
+	if verification.SHA256 != digest.SHA256 {
+		t.Errorf("SHA256: got %q, want %q", verification.SHA256, digest.SHA256)
+	}
+	if verification.Size != digest.Size {
+		t.Errorf("Size: got %d, want %d", verification.Size, digest.Size)
+	}
+	if verification.VerifiedAt == 0 {
+		t.Error("VerifiedAt: got 0, want verification time")
 	}
 
-	if err := CheckModel(modelPath, true); err != nil {
-		t.Fatalf("first CheckModel: unexpected error: %v", err)
+	got, changed, err := VerifyArtifact(modelPath, digest, &verification, true)
+	if err != nil {
+		t.Fatalf("VerifyArtifact cached: %v", err)
 	}
-
-	if _, err := os.Stat(sentinel); err != nil {
-		t.Fatalf("sentinel should exist after first successful check: %v", err)
+	if changed {
+		t.Error("cached changed: got true, want false")
+	}
+	if got != verification {
+		t.Errorf("cached verification: got %+v, want %+v", got, verification)
 	}
 }
 
-// TestCheckModel_SecondCallSkipsRehash verifies the fast-path: if the
-// sentinel matches the file's expected sha + size + mtime, CheckModel
-// must NOT re-open the file body. We prove this by removing the model
-// file body after the first verify and confirming the second call still
-// succeeds (it would fail with ENOENT if it tried to re-hash).
-func TestCheckModel_SecondCallSkipsRehash(t *testing.T) {
-	dir := t.TempDir()
-	modelPath, _ := writeFakeModel(t, dir, "fake.gguf", []byte("hello kronk"))
+func TestVerifyArtifactMetadataChangeRehashes(t *testing.T) {
+	modelPath, digest := writeArtifact(t, []byte("hello kronk"))
 
-	if err := CheckModel(modelPath, true); err != nil {
-		t.Fatalf("first CheckModel: %v", err)
+	verification, _, err := VerifyArtifact(modelPath, digest, nil, true)
+	if err != nil {
+		t.Fatalf("VerifyArtifact: %v", err)
 	}
 
-	// Capture the stat info we'd need to "lie" to CheckModel about the
-	// file body. We can't actually delete it (CheckModel calls os.Stat
-	// up front) but we can truncate-then-restore-mtime/size to confirm
-	// the sentinel is what's deciding the outcome.
 	info, err := os.Stat(modelPath)
 	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-
-	// Replace the body with garbage of the same size and restore mtime.
-	garbage := make([]byte, info.Size())
-	for i := range garbage {
-		garbage[i] = 0xff
-	}
-	if err := os.WriteFile(modelPath, garbage, 0o644); err != nil {
-		t.Fatalf("rewrite body: %v", err)
-	}
-	if err := os.Chtimes(modelPath, time.Now(), info.ModTime()); err != nil {
-		t.Fatalf("chtimes: %v", err)
-	}
-
-	// Second call must succeed because the sentinel says we already
-	// verified — even though the body now hashes to something else.
-	if err := CheckModel(modelPath, true); err != nil {
-		t.Fatalf("second CheckModel: expected fast-path success, got: %v", err)
-	}
-}
-
-// TestCheckModel_MTimeChangeInvalidatesSentinel verifies that a changed
-// mtime forces a re-hash (and therefore detects the changed body).
-func TestCheckModel_MTimeChangeInvalidatesSentinel(t *testing.T) {
-	dir := t.TempDir()
-	modelPath, _ := writeFakeModel(t, dir, "fake.gguf", []byte("hello kronk"))
-
-	if err := CheckModel(modelPath, true); err != nil {
-		t.Fatalf("first CheckModel: %v", err)
-	}
-
-	// Replace body with same-size garbage and bump mtime to "now".
-	info, err := os.Stat(modelPath)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
+		t.Fatalf("Stat: %v", err)
 	}
 	garbage := make([]byte, info.Size())
 	for i := range garbage {
 		garbage[i] = 0xff
 	}
 	if err := os.WriteFile(modelPath, garbage, 0o644); err != nil {
-		t.Fatalf("rewrite body: %v", err)
+		t.Fatalf("WriteFile garbage: %v", err)
 	}
-	// Default mtime from WriteFile is "now" which differs from sentinel's mtime.
-	if err := CheckModel(modelPath, true); err == nil {
-		t.Fatalf("expected sha mismatch after mtime change + body change, got nil")
+	if err := os.Chtimes(modelPath, time.Now(), info.ModTime().Add(time.Second)); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	if _, _, err := VerifyArtifact(modelPath, digest, &verification, true); err == nil {
+		t.Fatal("VerifyArtifact: got nil, want sha256 mismatch")
 	}
 }
 
-// TestCheckModel_SizeChangeFailsBeforeFastPath verifies that a size
-// change is caught by the existing size-mismatch guard well before the
-// sentinel has a chance to short-circuit.
-func TestCheckModel_SizeChangeFailsBeforeFastPath(t *testing.T) {
-	dir := t.TempDir()
-	modelPath, _ := writeFakeModel(t, dir, "fake.gguf", []byte("hello kronk"))
+func TestVerifyArtifactSizeOnly(t *testing.T) {
+	modelPath, digest := writeArtifact(t, []byte("hello kronk"))
 
-	if err := CheckModel(modelPath, true); err != nil {
-		t.Fatalf("first CheckModel: %v", err)
+	verification, changed, err := VerifyArtifact(modelPath, digest, nil, false)
+	if err != nil {
+		t.Fatalf("VerifyArtifact: %v", err)
+	}
+	if changed {
+		t.Error("changed: got true, want false")
+	}
+	if verification != (ArtifactVerification{}) {
+		t.Errorf("verification: got %+v, want zero value", verification)
 	}
 
 	if err := os.WriteFile(modelPath, []byte("different size"), 0o644); err != nil {
-		t.Fatalf("rewrite: %v", err)
+		t.Fatalf("WriteFile: %v", err)
 	}
-	if err := CheckModel(modelPath, true); err == nil {
-		t.Fatalf("expected size-mismatch error, got nil")
-	}
-}
-
-// TestCheckModel_SHAFileChangeInvalidatesSentinel verifies that if the
-// expected sha in the sha file changes (e.g. the model was repackaged
-// with the same byte length but different contents and the sha file got
-// updated to match), we re-hash rather than trusting the stale sentinel.
-func TestCheckModel_SHAFileChangeInvalidatesSentinel(t *testing.T) {
-	dir := t.TempDir()
-	modelPath, _ := writeFakeModel(t, dir, "fake.gguf", []byte("hello kronk"))
-
-	if err := CheckModel(modelPath, true); err != nil {
-		t.Fatalf("first CheckModel: %v", err)
-	}
-
-	// Overwrite the sha file with a different expected sha but the same
-	// size, simulating a "repacked-to-same-size" scenario where the
-	// sentinel must NOT short-circuit.
-	shaPath := filepath.Join(dir, "sha", "fake.gguf")
-	bogus := fmt.Sprintf("oid sha256:%s\nsize %d\n",
-		"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-		len("hello kronk"))
-	if err := os.WriteFile(shaPath, []byte(bogus), 0o644); err != nil {
-		t.Fatalf("rewrite sha file: %v", err)
-	}
-
-	if err := CheckModel(modelPath, true); err == nil {
-		t.Fatalf("expected sha mismatch from re-hash, got nil")
+	if _, _, err := VerifyArtifact(modelPath, digest, nil, false); err == nil {
+		t.Fatal("VerifyArtifact size mismatch: got nil, want error")
 	}
 }
 
-// TestRemoveVerifiedSentinel verifies the cleanup helper removes the
-// sentinel and treats a missing sentinel as a no-op.
-func TestRemoveVerifiedSentinel(t *testing.T) {
-	dir := t.TempDir()
-	modelPath, _ := writeFakeModel(t, dir, "fake.gguf", []byte("hello kronk"))
+func TestVerifyArtifactInvalidDigest(t *testing.T) {
+	modelPath, _ := writeArtifact(t, []byte("hello kronk"))
 
-	if err := CheckModel(modelPath, true); err != nil {
-		t.Fatalf("CheckModel: %v", err)
-	}
-
-	sentinel := verifiedFilePath(modelPath)
-	if _, err := os.Stat(sentinel); err != nil {
-		t.Fatalf("sentinel should exist: %v", err)
-	}
-
-	if err := RemoveVerifiedSentinel(modelPath); err != nil {
-		t.Fatalf("RemoveVerifiedSentinel: %v", err)
-	}
-	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
-		t.Fatalf("sentinel should have been removed; got err=%v", err)
-	}
-
-	// Second call must be a no-op (missing file is not an error).
-	if err := RemoveVerifiedSentinel(modelPath); err != nil {
-		t.Fatalf("RemoveVerifiedSentinel on missing sentinel should not error: %v", err)
+	if _, _, err := VerifyArtifact(modelPath, ArtifactDigest{SHA256: "invalid", Size: 11}, nil, true); err == nil {
+		t.Fatal("VerifyArtifact: got nil, want invalid digest error")
 	}
 }

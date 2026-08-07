@@ -297,12 +297,16 @@ export default function DocsCLIServer() {
                   <td>CORS allowed origins (comma-separated)</td>
                 </tr>
                 <tr>
+                  <td><code>KRONK_AUTHORIZATION_MODE</code></td>
+                  <td>Select <code>open</code>, <code>management</code>, <code>authenticated</code>, or <code>full-protected</code></td>
+                </tr>
+                <tr>
                   <td><code>KRONK_AUTH_LOCAL_ENABLED</code></td>
-                  <td>Enable local inference and administrator authentication</td>
+                  <td>Legacy inference-authentication setting; ignored when an authorization mode is set</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_AUTH_ADMIN_ENABLED</code></td>
-                  <td>Require administrator authentication for management APIs</td>
+                  <td>Legacy management-authentication setting; ignored when an authorization mode is set</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_AUTH_LOCAL_ISSUER</code></td>
@@ -317,7 +321,7 @@ export default function DocsCLIServer() {
                   <td>External auth service TLS configuration</td>
                 </tr>
                 <tr>
-                  <td><code>KRONK_WEB_ADMIN_ENABLED</code> / <code>KRONK_WEB_ADMIN_PASSWORD_SHA_256</code></td>
+                  <td><code>KRONK_WEB_ADMIN_ENABLED</code> / <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code></td>
                   <td>Browser UI availability and administrator-login password digest</td>
                 </tr>
                 <tr>

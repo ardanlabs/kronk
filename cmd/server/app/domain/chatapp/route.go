@@ -6,6 +6,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/pool"
@@ -13,10 +14,11 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log              *logger.Logger
-	AuthClient       *authclient.Client
-	Pool             *pool.Pool
-	InferenceTimeout time.Duration
+	Log               *logger.Logger
+	AuthClient        *authclient.Client
+	Pool              *pool.Pool
+	AuthorizationMode auth.Mode
+	InferenceTimeout  time.Duration
 }
 
 // Routes adds specific routes for this group.
@@ -25,7 +27,7 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg)
 
-	auth := mid.Authenticate(cfg.AuthClient, false, "chat-completions")
+	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, false).Inference("chat-completions")
 
-	app.HandlerFunc(http.MethodPost, version, "/chat/completions", api.chatCompletions, mid.Timeout(cfg.InferenceTimeout), auth)
+	app.HandlerFunc(http.MethodPost, version, "/chat/completions", api.chatCompletions, mid.Timeout(cfg.InferenceTimeout), inferenceAccess)
 }

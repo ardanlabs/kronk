@@ -3,7 +3,47 @@ package kronk
 import (
 	"testing"
 	"time"
+
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 )
+
+func TestResolveAuthorizationSettings(t *testing.T) {
+	tests := []struct {
+		name                 string
+		mode                 auth.Mode
+		legacyInference      bool
+		legacyManagement     bool
+		mcp                  bool
+		wantInference        bool
+		wantManagement       bool
+		wantServiceAdminAuth bool
+	}{
+		{name: "legacy open"},
+		{name: "legacy management", legacyManagement: true, wantManagement: true, wantServiceAdminAuth: true},
+		{name: "legacy inference implies management", legacyInference: true, wantInference: true, wantManagement: true, wantServiceAdminAuth: true},
+		{name: "legacy MCP implies management", mcp: true, wantManagement: true, wantServiceAdminAuth: true},
+		{name: "open overrides legacy", mode: auth.Open, legacyInference: true, legacyManagement: true},
+		{name: "open preserves MCP auth service", mode: auth.Open, mcp: true, wantServiceAdminAuth: true},
+		{name: "management overrides legacy", mode: auth.Management, legacyInference: true, wantManagement: true, wantServiceAdminAuth: true},
+		{name: "authenticated", mode: auth.Authenticated, wantInference: true, wantManagement: true, wantServiceAdminAuth: true},
+		{name: "full protected", mode: auth.FullProtected, wantInference: true, wantManagement: true, wantServiceAdminAuth: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotInference, gotManagement, gotServiceAdminAuth := resolveAuthorizationSettings(tt.mode, tt.legacyInference, tt.legacyManagement, tt.mcp)
+			if gotInference != tt.wantInference {
+				t.Errorf("inference enabled: got %t, want %t", gotInference, tt.wantInference)
+			}
+			if gotManagement != tt.wantManagement {
+				t.Errorf("management enabled: got %t, want %t", gotManagement, tt.wantManagement)
+			}
+			if gotServiceAdminAuth != tt.wantServiceAdminAuth {
+				t.Errorf("service admin auth enabled: got %t, want %t", gotServiceAdminAuth, tt.wantServiceAdminAuth)
+			}
+		})
+	}
+}
 
 func TestValidateTimeoutConfig(t *testing.T) {
 	tests := []struct {

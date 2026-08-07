@@ -130,6 +130,10 @@ func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 		out.PtrDraftModel.ModelFiles = draftPath.ModelFiles
 	}
 
+	if err := configureArtifactIntegrity(&out); err != nil {
+		return model.Config{}, fmt.Errorf("kronk-resolved-config: %w", err)
+	}
+
 	return out, nil
 }
 

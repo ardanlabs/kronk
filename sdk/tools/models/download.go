@@ -15,7 +15,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
 )
@@ -612,7 +611,7 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return "", false, fmt.Errorf("download-model: unable to rename %s file: %w", kind.label, err)
 	}
 
-	if err := model.CheckModel(dstFileName, true); err != nil {
+	if err := checkModel(dstFileName, true); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
@@ -644,7 +643,7 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 	// Re-verify every recorded file (model splits and any projection) is
 	// still present on disk AND matches the size from its sha pointer.
 	for _, mf := range mp.ModelFiles {
-		if err := model.CheckModel(mf, false); err != nil {
+		if err := checkModel(mf, false); err != nil {
 			log(ctx, "download-model: index entry stale, re-downloading", "model-file", mf, "ERROR", err)
 			return Path{}, false
 		}
@@ -654,7 +653,7 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 		if mp.ProjFile == "" {
 			return Path{}, false
 		}
-		if err := model.CheckModel(mp.ProjFile, false); err != nil {
+		if err := checkModel(mp.ProjFile, false); err != nil {
 			log(ctx, "download-model: index entry stale, re-downloading projection", "proj-file", mp.ProjFile, "ERROR", err)
 			return Path{}, false
 		}
@@ -664,7 +663,7 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 		if mp.MTPFile == "" {
 			return Path{}, false
 		}
-		if err := model.CheckModel(mp.MTPFile, false); err != nil {
+		if err := checkModel(mp.MTPFile, false); err != nil {
 			log(ctx, "download-model: index entry stale, re-downloading mtp", "mtp-file", mp.MTPFile, "ERROR", err)
 			return Path{}, false
 		}
@@ -689,7 +688,7 @@ func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress d
 		return "", false, err
 	}
 
-	if err := model.CheckModel(modelFileName, true); err != nil {
+	if err := checkModel(modelFileName, true); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
@@ -723,7 +722,7 @@ func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Lo
 		}
 	}
 
-	if err := model.CheckModel(dstFileName, true); err != nil {
+	if err := checkModel(dstFileName, true); err != nil {
 		// Copied file failed verification — fall through to regular download.
 		return "", false, nil
 	}
@@ -749,7 +748,7 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 	// than copying. Note: orgShaFileName is left in place on the miss return
 	// so the caller's fall-through rename still has its source pointer.
 	if filepath.Clean(existing) == filepath.Clean(dstFileName) {
-		if err := model.CheckModel(dstFileName, true); err != nil {
+		if err := checkModel(dstFileName, true); err != nil {
 			// On-disk companion is bad — fall through to a fresh download.
 			return "", false, nil
 		}
@@ -772,7 +771,7 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 		return "", false, fmt.Errorf("download-model: unable to copy %s sha file: %w", kind.label, err)
 	}
 
-	if err := model.CheckModel(dstFileName, true); err != nil {
+	if err := checkModel(dstFileName, true); err != nil {
 		// Copied file failed verification — fall through to regular download.
 		// orgShaFileName is intentionally left in place for the caller's
 		// rename step.
@@ -926,19 +925,19 @@ func (l Locator) ModelPath(m *Models) string {
 // detecting an interrupted download a size mismatch is all we need.
 func verifyAllSizes(mp Path) error {
 	for _, mf := range mp.ModelFiles {
-		if err := model.CheckModel(mf, false); err != nil {
+		if err := checkModel(mf, false); err != nil {
 			return fmt.Errorf("verify-sizes: model-file[%s]: %w", filepath.Base(mf), err)
 		}
 	}
 
 	if mp.ProjFile != "" {
-		if err := model.CheckModel(mp.ProjFile, false); err != nil {
+		if err := checkModel(mp.ProjFile, false); err != nil {
 			return fmt.Errorf("verify-sizes: proj-file[%s]: %w", filepath.Base(mp.ProjFile), err)
 		}
 	}
 
 	if mp.MTPFile != "" {
-		if err := model.CheckModel(mp.MTPFile, false); err != nil {
+		if err := checkModel(mp.MTPFile, false); err != nil {
 			return fmt.Errorf("verify-sizes: mtp-file[%s]: %w", filepath.Base(mp.MTPFile), err)
 		}
 	}
