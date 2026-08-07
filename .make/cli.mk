@@ -1,6 +1,11 @@
 # ==============================================================================
 # Kronk CLI — llama (kronk) verbs
 
+kronk-diagnose:
+	go run cmd/kronk/main.go diagnose
+
+# ------------------------------------------------------------------------------
+
 kronk-libs:
 	go run cmd/kronk/main.go libs
 

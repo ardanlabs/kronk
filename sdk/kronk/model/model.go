@@ -1414,21 +1414,33 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		}
 	}
 
+	finalResp := chatResponseFinal(id, object, m.modelInfo.ID, choiceIndex,
+		finalContent.String(),
+		finalReasoning.String(),
+		respToolCalls,
+		finalLogprobs,
+		finishReason,
+		includeUsage && !streaming,
+		usage)
+
 	select {
 	case <-ctx.Done():
 		select {
 		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), usage):
 		default:
 		}
+		return
 
-	case ch <- chatResponseFinal(id, object, m.modelInfo.ID, choiceIndex,
-		finalContent.String(),
-		finalReasoning.String(),
-		respToolCalls,
-		finalLogprobs,
-		finishReason,
-		includeUsage,
-		usage):
+	case ch <- finalResp:
+	}
+
+	if streaming && includeUsage {
+		select {
+		case <-ctx.Done():
+			return
+
+		case ch <- chatResponseUsage(finalResp, usage):
+		}
 	}
 
 	contextTokens := usage.TotalTokens

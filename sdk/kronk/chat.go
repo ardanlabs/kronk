@@ -35,6 +35,8 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 // For text models, NSeqMax controls parallel sequence processing within a single
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
+// When stream_options.include_usage is true, the terminal choice is followed
+// by a usage response with an empty Choices slice.
 func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
 	if err := model.ValidateChatRequest(d); err != nil {
 		return nil, fmt.Errorf("chat-streaming: %w", err)
@@ -114,7 +116,6 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	defer ticker.Stop()
 
 	var lr model.ChatResponse
-	var pendingUsage *model.ChatResponse
 
 	for {
 		select {
@@ -123,20 +124,21 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 		case resp, ok := <-ch:
 			if !ok {
-				if pendingUsage != nil {
-					d, err := marshalChatStreamResponse(*pendingUsage, true)
-					if err != nil {
-						return lr, fmt.Errorf("chat-streaming-http: %w: marshal usage event: %w", ErrResponseCommitted, err)
-					}
-					if err := writeAndFlush(w, fmt.Appendf(nil, "data: %s\n\n", d)); err != nil {
-						return lr, fmt.Errorf("chat-streaming-http: %w: write usage event: %w", ErrResponseCommitted, err)
-					}
-				}
-
 				if err := writeAndFlush(w, []byte("data: [DONE]\n\n")); err != nil {
 					return lr, fmt.Errorf("chat-streaming-http: %w: write done event: %w", ErrResponseCommitted, err)
 				}
 				return lr, nil
+			}
+
+			if len(resp.Choices) == 0 {
+				d, err := marshalChatStreamResponse(resp, includeUsage)
+				if err != nil {
+					return lr, fmt.Errorf("chat-streaming-http: %w: marshal usage event: %w", ErrResponseCommitted, err)
+				}
+				if err := writeAndFlush(w, fmt.Appendf(nil, "data: %s\n\n", d)); err != nil {
+					return lr, fmt.Errorf("chat-streaming-http: %w: write usage event: %w", ErrResponseCommitted, err)
+				}
+				continue
 			}
 
 			if resp.Choices[0].FinishReason() == model.FinishReasonError {
@@ -174,16 +176,6 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 
 			if err := writeAndFlush(w, fmt.Appendf(nil, "data: %s\n\n", d)); err != nil {
 				return resp, fmt.Errorf("chat-streaming-http: %w: write event: %w", ErrResponseCommitted, err)
-			}
-
-			if includeUsage && terminal {
-				if resp.Usage == nil {
-					return resp, fmt.Errorf("chat-streaming-http: %w: terminal response missing requested usage", ErrResponseCommitted)
-				}
-
-				usageResp := resp
-				usageResp.Choices = []model.Choice{}
-				pendingUsage = &usageResp
 			}
 
 			lr = resp

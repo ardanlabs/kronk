@@ -321,7 +321,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (&lt;-chan model.ChatResponse, error)</code>
               </pre>
-              <p className="doc-description">ChatStreaming provides support to interact with an inference model. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
+              <p className="doc-description">ChatStreaming provides support to interact with an inference model. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling. When stream_options.include_usage is true, the terminal choice is followed by a usage response with an empty Choices slice.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-chatstreaminghttp">

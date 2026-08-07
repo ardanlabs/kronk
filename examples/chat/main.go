@@ -242,30 +242,33 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 	}
 
 	var content strings.Builder
-	var lastResp model.ChatResponse
+	var usage *model.Usage
+	var toolCalls []model.ResponseToolCall
 	reasoning := false
 
 	for resp := range ch {
-		lastResp = resp
-
 		if len(resp.Choices) == 0 {
+			usage = resp.Usage
 			continue
 		}
 
 		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
+			return "", nil, usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
-		case model.FinishReasonStop:
-			return strings.TrimLeft(content.String(), "\n"), nil, lastResp.Usage, nil
+		case model.FinishReasonStop, model.FinishReasonLength:
+			continue
 
 		case model.FinishReasonTool:
-			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
+			toolCalls = resp.Choices[0].Message.ToolCalls
+			continue
 
 		default:
 			delta := resp.Choices[0].Delta
 			for _, tool := range delta.ToolCallDeltas {
-				fmt.Printf("\n\n\u001b[92mExecuting %s...\u001b[0m", tool.Function.Name)
+				if tool.Function.Name != "" {
+					fmt.Printf("\n\n\u001b[92mExecuting %s...\u001b[0m", tool.Function.Name)
+				}
 			}
 
 			switch {
@@ -285,7 +288,11 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 		}
 	}
 
-	return strings.TrimLeft(content.String(), "\n"), nil, lastResp.Usage, nil
+	if len(toolCalls) > 0 {
+		return "", toolCalls, usage, nil
+	}
+
+	return strings.TrimLeft(content.String(), "\n"), nil, usage, nil
 }
 
 func appendToolCalls(conversation []model.D, toolCalls []model.ResponseToolCall) []model.D {

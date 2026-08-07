@@ -913,6 +913,31 @@ func TestChatResponseFinalUsage(t *testing.T) {
 	}
 }
 
+func TestChatResponseUsage(t *testing.T) {
+	u := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
+	terminal := chatResponseFinal("id", ObjectChatText, "model", 0, "answer", "", nil, nil, FinishReasonStop, false, u)
+
+	resp := chatResponseUsage(terminal, u)
+	if resp.Choices == nil || len(resp.Choices) != 0 {
+		t.Fatalf("Choices: got %v, want []", resp.Choices)
+	}
+	if resp.Usage == nil {
+		t.Fatal("Usage: got nil, want usage")
+	}
+	if got := resp.Usage.TotalTokens; got != u.TotalTokens {
+		t.Errorf("TotalTokens: got %d, want %d", got, u.TotalTokens)
+	}
+	if resp.ID != terminal.ID || resp.Object != terminal.Object || resp.Created != terminal.Created || resp.Model != terminal.Model || resp.SystemFingerprint != terminal.SystemFingerprint {
+		t.Error("Metadata: got values that differ from terminal response")
+	}
+	if got := len(terminal.Choices); got != 1 {
+		t.Errorf("terminal Choices: got %d, want 1", got)
+	}
+	if terminal.Usage != nil {
+		t.Errorf("terminal Usage: got %+v, want nil", terminal.Usage)
+	}
+}
+
 func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	resp := chatResponseToolCallDelta("id", ObjectChatText, "model", 0, ResponseToolCallDelta{
 		ID:    "call_1",

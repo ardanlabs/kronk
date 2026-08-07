@@ -1076,6 +1076,12 @@ func chatResponseFinal(id string, object string, model string, index int, conten
 	}
 }
 
+func chatResponseUsage(resp ChatResponse, usage Usage) ChatResponse {
+	resp.Choices = []Choice{}
+	resp.Usage = &usage
+	return resp
+}
+
 func ChatResponseErr(id string, object string, model string, index int, err error, u Usage) ChatResponse {
 	finishReason := FinishReasonError
 	return ChatResponse{

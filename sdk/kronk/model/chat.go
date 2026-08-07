@@ -76,6 +76,8 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // All requests (including vision/audio) use batch processing and can run
 // concurrently based on the NSeqMax config value, which controls parallel
 // sequence processing.
+// When stream_options.include_usage is true, the terminal choice is followed
+// by a usage response with an empty Choices slice.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	return m.chatStreaming(ctx, d, true)
 }

@@ -295,6 +295,8 @@ type streamState struct {
 	fcIDs           []string
 	fcArgsAccum     []string
 	toolCallsSeenID map[string]int
+	lastChatResp    model.ChatResponse
+	usage           *model.Usage
 }
 
 func (ss *streamState) start() []ResponseStreamEvent {
@@ -322,8 +324,10 @@ func (ss *streamState) start() []ResponseStreamEvent {
 
 func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEvent {
 	if len(chatResp.Choices) == 0 {
+		ss.usage = chatResp.Usage
 		return nil
 	}
+	ss.lastChatResp = chatResp
 
 	choice := chatResp.Choices[0]
 
@@ -351,6 +355,13 @@ func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEven
 
 func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEvent {
 	var events []ResponseStreamEvent
+	if len(lastResp.Choices) > 0 {
+		ss.lastChatResp = lastResp
+	}
+	if lastResp.Usage != nil {
+		ss.usage = lastResp.Usage
+	}
+	ss.lastChatResp.Usage = ss.usage
 
 	if ss.msgItemEmitted {
 		events = append(events, ss.finalizeMessageItem()...)
@@ -358,7 +369,7 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 
 	events = append(events, ss.finalizeToolCalls()...)
 
-	finalResp := toChatResponseToResponses(lastResp, ss.d)
+	finalResp := toChatResponseToResponses(ss.lastChatResp, ss.d)
 	finalResp.ID = ss.responseID
 	finalResp.CreatedAt = ss.createdAt
 
