@@ -71,6 +71,16 @@ type Error struct {
 	FileName string  `json:"-"`
 }
 
+type errorResponse struct {
+	Error errorDetail `json:"error"`
+}
+
+type errorDetail struct {
+	Message string  `json:"message"`
+	Type    string  `json:"type"`
+	Code    ErrCode `json:"code"`
+}
+
 // New constructs an error based on an app error.
 func New(code ErrCode, err error) *Error {
 	return newError(code, err, 2)
@@ -152,6 +162,32 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
+// MarshalJSON implements the json.Marshaler interface.
+func (e *Error) MarshalJSON() ([]byte, error) {
+	resp := errorResponse{
+		Error: errorDetail{
+			Message: e.Message,
+			Type:    errorType(e.Code),
+			Code:    e.Code,
+		},
+	}
+
+	return json.Marshal(resp)
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (e *Error) UnmarshalJSON(data []byte) error {
+	var resp errorResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return fmt.Errorf("unmarshal error response: %w", err)
+	}
+
+	e.Code = resp.Error.Code
+	e.Message = resp.Error.Message
+
+	return nil
+}
+
 // Encode implements the encoder interface.
 func (e *Error) Encode() ([]byte, string, error) {
 	data, err := json.Marshal(e)
@@ -167,6 +203,25 @@ func (e *Error) HTTPStatus() int {
 // Equal provides support for the go-cmp package and testing.
 func (e *Error) Equal(e2 *Error) bool {
 	return e.Code == e2.Code && e.Message == e2.Message
+}
+
+func errorType(code ErrCode) string {
+	switch code {
+	case InvalidArgument, FailedPrecondition, OutOfRange:
+		return "invalid_request_error"
+	case Unauthenticated:
+		return "authentication_error"
+	case PermissionDenied:
+		return "permission_error"
+	case NotFound:
+		return "not_found_error"
+	case AlreadyExists, Aborted:
+		return "conflict_error"
+	case ResourceExhausted, TooManyRequests:
+		return "rate_limit_error"
+	default:
+		return "server_error"
+	}
 }
 
 // =============================================================================
