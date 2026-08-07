@@ -221,10 +221,11 @@ CLI web mode reads `KRONK_WEB_API_HOST`, which defaults to
 
 ## 12.8 Production Hardening
 
-Kronk listens on `0.0.0.0:11435` and serves plain HTTP by default. For any
-traffic outside a trusted host:
+Kronk listens on `127.0.0.1:11435` and serves plain HTTP by default. Before
+binding Kronk to another interface or allowing traffic outside a trusted host:
 
-- enable full or admin authentication as appropriate;
+- select `management`, `authenticated`, or `full-protected` authorization as
+  appropriate;
 - terminate TLS at a trusted reverse proxy and do not expose the API port
   directly to the public internet;
 - enable auth TLS whenever the auth service is reached across an untrusted

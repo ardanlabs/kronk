@@ -344,7 +344,7 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
           <p>The background process writes logs to <code>~/.kronk/kronk.log</code>. Manage it with:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server logs
 kronk server stop`}</code></pre>
-          <p>The server's configured default is <code>0.0.0.0:11435</code>, which listens on every network interface. The commands above deliberately use <code>127.0.0.1</code> for local operation. The API and BUI share port <code>11435</code>; the BUI is enabled by default and is served under <code>/admin/</code>. Disable it for a headless server with:</p>
+          <p>The server defaults to <code>127.0.0.1:11435</code> for local-only access. The API and BUI share port <code>11435</code>; the BUI is enabled by default and is served under <code>/admin/</code>. Disable it for a headless server with:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=127.0.0.1:11435 \\
   --web-admin-enabled=false`}</code></pre>
@@ -1573,7 +1573,7 @@ Qwen/Qwen3-8B-Q8_0:
           <h2 id="81-server-lifecycle">8.1 Server Lifecycle</h2>
           <p>Start the server in the foreground:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start`}</code></pre>
-          <p>The API listens on <code>0.0.0.0:11435</code> by default. <code>localhost:11435</code> works for a client on the same machine, but the server is bound to all network interfaces. Authentication is disabled by default. Before using an untrusted network, bind to loopback, restrict access with a firewall or private network, or enable the authentication described in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
+          <p>The API listens on <code>127.0.0.1:11435</code> by default and is reachable only from the local machine. To expose it on another interface, set <code>--api-host</code> explicitly, restrict access with a firewall or private network, and configure the authorization described in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
           <p>To bind only to the local machine:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=127.0.0.1:11435`}</code></pre>
           <p>Run the server in the background with:</p>
@@ -1612,13 +1612,13 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--api-host</code></td>
                 <td><code>KRONK_WEB_API_HOST</code></td>
-                <td><code>0.0.0.0:11435</code></td>
+                <td><code>127.0.0.1:11435</code></td>
                 <td>Main API bind address</td>
               </tr>
               <tr>
                 <td><code>--debug-host</code></td>
                 <td><code>KRONK_WEB_DEBUG_HOST</code></td>
-                <td><code>0.0.0.0:11445</code></td>
+                <td><code>127.0.0.1:11445</code></td>
                 <td>Metrics and profiling bind address</td>
               </tr>
               <tr>
@@ -2959,9 +2959,9 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
           <p>The standalone MCP service uses <code>MCP_AUTH_TLS_ENABLED</code>, <code>MCP_AUTH_TLS_CA_FILE</code>, and <code>MCP_AUTH_TLS_SERVER_NAME</code> for its connection to the auth service.</p>
           <p>CLI web mode reads <code>KRONK_WEB_API_HOST</code>, which defaults to <code>localhost:11435</code>.</p>
           <h2 id="128-production-hardening">12.8 Production Hardening</h2>
-          <p>Kronk listens on <code>0.0.0.0:11435</code> and serves plain HTTP by default. For any traffic outside a trusted host:</p>
+          <p>Kronk listens on <code>127.0.0.1:11435</code> and serves plain HTTP by default. Before binding Kronk to another interface or allowing traffic outside a trusted host:</p>
           <ul>
-            <li>enable full or admin authentication as appropriate;</li>
+            <li>select <code>management</code>, <code>authenticated</code>, or <code>full-protected</code> authorization as appropriate;</li>
             <li>terminate TLS at a trusted reverse proxy and do not expose the API port directly to the public internet;</li>
             <li>enable auth TLS whenever the auth service is reached across an untrusted network, or use an authenticated encrypted service mesh;</li>
             <li>restrict network access with host or cloud firewall rules;</li>
@@ -2979,7 +2979,7 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
           <h3 id="131-accessing-the-bui">13.1 Accessing the BUI</h3>
           <p>The BUI is enabled by default. Start the server and open:</p>
           <pre className="code-block"><code>{`http://localhost:11435/admin/`}</code></pre>
-          <p>The address comes from <code>KRONK_WEB_API_HOST</code>, whose default is <code>0.0.0.0:11435</code>. The server root and <code>/admin</code> redirect to <code>/admin/</code> while the BUI is enabled.</p>
+          <p>The address comes from <code>KRONK_WEB_API_HOST</code>, whose default is <code>127.0.0.1:11435</code>. The server root and <code>/admin</code> redirect to <code>/admin/</code> while the BUI is enabled.</p>
           <p>For a headless deployment, disable it with either form:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_WEB_ADMIN_ENABLED=false
 kronk server start`}</code></pre>
@@ -3028,12 +3028,12 @@ kronk server start`}</code></pre>
             <li><strong>Web API</strong> — inference and management endpoint reference</li>
           </ul>
           <h3 id="133-authentication">13.3 Authentication</h3>
-          <p>By default, the BUI and management APIs do not require a login. To protect browser administration, enable admin authentication and configure the SHA-256 digest of the password:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTH_ADMIN_ENABLED=true
-export KRONK_WEB_ADMIN_PASSWORD_SHA_256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
+          <p>By default, the BUI and management APIs do not require a login. To protect browser administration, select a mode that protects management and configure the SHA-256 digest of the password:</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTHORIZATION_MODE=management
+export KRONK_WEB_ADMIN_PASSWORD_SHA256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
 kronk server start`}</code></pre>
           <p>Login creates a one-hour admin token in an HttpOnly, SameSite cookie. The browser cannot read the token, and the server uses it to authenticate the BUI's same-origin <code>/v1</code> requests. Sign out from the sidebar to end the browser session.</p>
-          <p>General authentication also enables admin authentication. Chapter 12 explains the open, admin-only, and fully protected modes, including TLS and reverse proxy considerations.</p>
+          <p>Chapter 12 explains the <code>open</code>, <code>management</code>, <code>authenticated</code>, and <code>full-protected</code> modes, including TLS and reverse proxy considerations.</p>
           <h3 id="134-operational-notes">13.4 Operational Notes</h3>
           <ul>
             <li>Downloading a library bundle does not switch the libraries used by the running process. Set <code>KRONK_LIB_PATH</code> or <code>KRONK_BUCKY_LIB_PATH</code> to the selected bundle and restart the server.</li>
@@ -3206,7 +3206,7 @@ print(response.content)`}</code></pre>
           <p>Kronk exposes health checks on the Web API and runs a separate debug server for metrics, profiling, and runtime visualization. It can also export traces to an OTLP gRPC collector such as Grafana Tempo. Structured logs are written to standard output.</p>
           <h3 id="151-debug-and-health-endpoints">15.1 Debug and Health Endpoints</h3>
           <h4 id="debug-server">Debug Server</h4>
-          <p>The main API binds to <code>0.0.0.0:11435</code> by default. Observability endpoints use a separate server at <code>0.0.0.0:11445</code>:</p>
+          <p>The main API binds to <code>127.0.0.1:11435</code> by default. Observability endpoints use a separate server at <code>127.0.0.1:11445</code>:</p>
           <table className="flags-table">
             <thead>
               <tr>

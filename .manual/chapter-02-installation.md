@@ -372,10 +372,9 @@ kronk server logs
 kronk server stop
 ```
 
-The server's configured default is `0.0.0.0:11435`, which listens on every
-network interface. The commands above deliberately use `127.0.0.1` for local
-operation. The API and BUI share port `11435`; the BUI is enabled by default
-and is served under `/admin/`. Disable it for a headless server with:
+The server defaults to `127.0.0.1:11435` for local-only access. The API and BUI
+share port `11435`; the BUI is enabled by default and is served under
+`/admin/`. Disable it for a headless server with:
 
 ```shell
 kronk server start \
