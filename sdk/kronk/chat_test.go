@@ -141,7 +141,7 @@ func TestMarshalChatStreamResponseUsage(t *testing.T) {
 	}
 }
 
-func TestChatValidatesMessagesBeforeAdmission(t *testing.T) {
+func TestChatValidatesRequestBeforeAdmission(t *testing.T) {
 	tests := []struct {
 		name string
 		d    model.D
@@ -154,6 +154,24 @@ func TestChatValidatesMessagesBeforeAdmission(t *testing.T) {
 			d: model.D{
 				"messages":    []model.D{{"role": "user", "content": "hello"}},
 				"tool_choice": "required",
+			},
+			want: model.ErrInvalidRequest,
+		},
+		{
+			name: "chat template kwargs non-object",
+			d: model.D{
+				"messages":             []model.D{{"role": "user", "content": "hello"}},
+				"chat_template_kwargs": false,
+			},
+			want: model.ErrInvalidRequest,
+		},
+		{
+			name: "chat template kwargs self-reference",
+			d: model.D{
+				"messages": []model.D{{"role": "user", "content": "hello"}},
+				"chat_template_kwargs": model.D{
+					"chat_template_kwargs": model.D{},
+				},
 			},
 			want: model.ErrInvalidRequest,
 		},

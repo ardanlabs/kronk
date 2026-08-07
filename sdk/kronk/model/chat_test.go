@@ -728,6 +728,30 @@ func TestValidateChatRequestToolChoice(t *testing.T) {
 	}
 }
 
+func TestValidateChatRequestChatTemplateKwargs(t *testing.T) {
+	tests := []struct {
+		name   string
+		kwargs any
+	}{
+		{name: "non-object", kwargs: false},
+		{name: "self-reference", kwargs: D{"chat_template_kwargs": D{}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{
+				"messages":             []D{{"role": "user", "content": "hello"}},
+				"chat_template_kwargs": tt.kwargs,
+			}
+
+			err := ValidateChatRequest(d)
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("ValidateChatRequest: got %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
 func TestApplyToolChoice(t *testing.T) {
 	tools := []D{
 		{"type": "function", "function": D{"name": "get_weather"}},

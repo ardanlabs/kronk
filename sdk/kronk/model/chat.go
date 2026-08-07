@@ -272,23 +272,18 @@ func (m *Model) validateOwnedDocument(ctx context.Context, d D) (Params, D, erro
 // override model defaults. Other arguments are unpacked only when the template
 // renders so names that overlap sampler fields remain template-only.
 func normalizeChatTemplateKwargs(d D, defaults D) error {
-	value, exists := d["chat_template_kwargs"]
+	requestKwargs, exists, err := requestChatTemplateKwargs(d)
+	if err != nil {
+		return err
+	}
 	if !exists && len(defaults) == 0 {
 		return nil
 	}
 
 	kwargs := D{}
 	maps.Copy(kwargs, defaults)
-
 	if exists {
-		switch value := value.(type) {
-		case D:
-			maps.Copy(kwargs, value)
-		case map[string]any:
-			maps.Copy(kwargs, value)
-		default:
-			return fmt.Errorf("%w: chat_template_kwargs must be an object", ErrInvalidRequest)
-		}
+		maps.Copy(kwargs, requestKwargs)
 	}
 
 	if _, exists := kwargs["chat_template_kwargs"]; exists {
@@ -303,6 +298,29 @@ func normalizeChatTemplateKwargs(d D, defaults D) error {
 	d["chat_template_kwargs"] = kwargs
 
 	return nil
+}
+
+func requestChatTemplateKwargs(d D) (D, bool, error) {
+	value, exists := d["chat_template_kwargs"]
+	if !exists {
+		return nil, false, nil
+	}
+
+	var kwargs D
+	switch value := value.(type) {
+	case D:
+		kwargs = value
+	case map[string]any:
+		kwargs = value
+	default:
+		return nil, true, fmt.Errorf("%w: chat_template_kwargs must be an object", ErrInvalidRequest)
+	}
+
+	if _, exists := kwargs["chat_template_kwargs"]; exists {
+		return nil, true, fmt.Errorf("%w: chat_template_kwargs cannot contain itself", ErrInvalidRequest)
+	}
+
+	return kwargs, true, nil
 }
 
 // prepareContext prepares the document for inference, handling both text-only
@@ -698,6 +716,9 @@ func (m *Model) validateDocument(ctx context.Context, d D) (Params, error) {
 // ValidateChatRequest validates the fields in a chat request document.
 func ValidateChatRequest(d D) error {
 	if err := ValidateMessages(d); err != nil {
+		return err
+	}
+	if _, _, err := requestChatTemplateKwargs(d); err != nil {
 		return err
 	}
 	if _, exists := d["stop"]; exists {
