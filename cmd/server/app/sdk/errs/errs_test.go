@@ -2,6 +2,7 @@ package errs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http/httptest"
@@ -78,12 +79,13 @@ func TestFromSDKHTTPResponse(t *testing.T) {
 		err        error
 		statusCode int
 		code       string
+		errType    string
 	}{
-		{name: "model not found", err: llamamodels.ErrModelNotFound, statusCode: 404, code: "not_found"},
-		{name: "server busy", err: kronkpool.ErrServerBusy, statusCode: 503, code: "unavailable"},
-		{name: "admission timeout", err: kronk.ErrAdmissionTimeout, statusCode: 429, code: "resource_exhausted"},
-		{name: "invalid messages", err: model.ErrMessagesInvalid, statusCode: 400, code: "invalid_argument"},
-		{name: "invalid request", err: model.ErrInvalidRequest, statusCode: 400, code: "invalid_argument"},
+		{name: "model not found", err: llamamodels.ErrModelNotFound, statusCode: 404, code: "not_found", errType: "not_found_error"},
+		{name: "server busy", err: kronkpool.ErrServerBusy, statusCode: 503, code: "unavailable", errType: "server_error"},
+		{name: "admission timeout", err: kronk.ErrAdmissionTimeout, statusCode: 429, code: "resource_exhausted", errType: "rate_limit_error"},
+		{name: "invalid messages", err: model.ErrMessagesInvalid, statusCode: 400, code: "invalid_argument", errType: "invalid_request_error"},
+		{name: "invalid request", err: model.ErrInvalidRequest, statusCode: 400, code: "invalid_argument", errType: "invalid_request_error"},
 	}
 
 	for _, tt := range tests {
@@ -98,8 +100,33 @@ func TestFromSDKHTTPResponse(t *testing.T) {
 			if recorder.Code != tt.statusCode {
 				t.Errorf("status: got %d, want %d", recorder.Code, tt.statusCode)
 			}
-			if !strings.Contains(recorder.Body.String(), fmt.Sprintf(`"code":%q`, tt.code)) {
-				t.Errorf("body: got %q, want code %q", recorder.Body.String(), tt.code)
+
+			var got struct {
+				Error struct {
+					Message string `json:"message"`
+					Type    string `json:"type"`
+					Code    string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			if got.Error.Message != appErr.Message {
+				t.Errorf("message: got %q, want %q", got.Error.Message, appErr.Message)
+			}
+			if got.Error.Type != tt.errType {
+				t.Errorf("type: got %q, want %q", got.Error.Type, tt.errType)
+			}
+			if got.Error.Code != tt.code {
+				t.Errorf("code: got %q, want %q", got.Error.Code, tt.code)
+			}
+
+			var roundTrip Error
+			if err := json.Unmarshal(recorder.Body.Bytes(), &roundTrip); err != nil {
+				t.Fatalf("Unmarshal Error: %v", err)
+			}
+			if !roundTrip.Equal(appErr) {
+				t.Errorf("round trip: got %+v, want %+v", roundTrip, *appErr)
 			}
 		})
 	}

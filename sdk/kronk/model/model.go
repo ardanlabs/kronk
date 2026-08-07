@@ -1306,7 +1306,7 @@ func (m *Model) isUnnecessaryCRLF(reasonFlag int, completionFlag int, content st
 	return false
 }
 
-func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, content string, channel Channel, reasoningTokens int, outputTokens int, logprob *ContentLogprob) error {
+func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, content string, channel Channel, reasoningTokens int, outputTokens int, logprob *ContentLogprob) error {
 	if outputTokens%500 == 0 {
 		m.log(ctx, "chat-completion",
 			"status", "delta",
@@ -1323,7 +1323,7 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt, ctx.Err(), Usage{}):
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), Usage{}):
 		default:
 		}
 
@@ -1339,7 +1339,7 @@ func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatRes
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, "", ctx.Err(), Usage{}):
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), Usage{}):
 		default:
 		}
 
@@ -1351,7 +1351,7 @@ func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatRes
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, usage Usage) {
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, includeUsage bool, usage Usage) {
 	effectiveFinishReason := finishReason
 	if effectiveFinishReason == "" {
 		effectiveFinishReason = FinishReasonStop
@@ -1414,20 +1414,33 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		}
 	}
 
-	select {
-	case <-ctx.Done():
-		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt, ctx.Err(), usage):
-		default:
-		}
-
-	case ch <- chatResponseFinal(id, object, m.modelInfo.ID, choiceIndex, prompt,
+	finalResp := chatResponseFinal(id, object, m.modelInfo.ID, choiceIndex,
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
 		finalLogprobs,
 		finishReason,
-		usage):
+		includeUsage && !streaming,
+		usage)
+
+	select {
+	case <-ctx.Done():
+		select {
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), usage):
+		default:
+		}
+		return
+
+	case ch <- finalResp:
+	}
+
+	if streaming && includeUsage {
+		select {
+		case <-ctx.Done():
+			return
+
+		case ch <- chatResponseUsage(finalResp, usage):
+		}
 	}
 
 	contextTokens := usage.TotalTokens
@@ -1439,13 +1452,13 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		"context", contextTokens, "down", fmt.Sprintf("(%.0f%% of %.0fK) TPS: %.2f", percentage, of, usage.TokensPerSecond))
 }
 
-func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, prompt string, err error, usage Usage) {
+func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, err error, usage Usage) {
 	m.log(ctx, "chat-completion", "status", "ERROR", "msg", err, "id", id, "object", object)
 
 	select {
 	case <-ctx.Done():
 
-	case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, prompt,
+	case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex,
 		err,
 		usage):
 	}

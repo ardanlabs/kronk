@@ -39,6 +39,7 @@ func TestClassifyDeviceType(t *testing.T) {
 		{"CUDA0", "gpu_cuda"},
 		{"CUDA1", "gpu_cuda"},
 		{"Metal", "gpu_metal"},
+		{"MTL0", "gpu_metal"},
 		{"HIP0", "gpu_rocm"},
 		{"ROCm0", "gpu_rocm"},
 		{"ROCm1", "gpu_rocm"},

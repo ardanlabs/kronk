@@ -235,7 +235,6 @@ export default function DocsSDKModel() {
 	SystemFingerprint string   \`json:"system_fingerprint"\`
 	Choices           []Choice \`json:"choices"\`
 	Usage             *Usage   \`json:"usage,omitempty"\`
-	Prompt            string   \`json:"prompt,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">ChatResponse represents output for inference models.</p>
@@ -606,7 +605,7 @@ export default function DocsSDKModel() {
 	Grammar string \`json:"grammar"\`
 
 	// IncludeUsage determines whether to include token usage information in
-	// streaming responses. Default is true.
+	// streaming responses. Default is false.
 	IncludeUsage bool \`json:"include_usage"\`
 
 	// Logprobs determines whether to return log probabilities of output tokens.
@@ -642,16 +641,15 @@ export default function DocsSDKModel() {
 	// strong). Default is 1.0 which turns it off.
 	RepeatPenalty float32 \`json:"repeat_penalty"\`
 
-	// ReturnPrompt determines whether to include the prompt in the final
-	// response. When set to true, the prompt will be included. Default is false.
-	ReturnPrompt bool \`json:"return_prompt"\`
-
 	// Seed initializes request sampling randomness. Nil selects a random seed;
 	// any non-nil value, including 0, requests repeatable sampling.
 	Seed *uint32 \`json:"seed,omitempty"\`
 
 	// Stream determines whether to stream the response.
 	Stream bool \`json:"stream"\`
+
+	// Stop contains request-specific sequences that terminate generation.
+	Stop []string \`json:"stop,omitempty"\`
 
 	// Temperature controls the randomness of the output. It rescales the
 	// probability distribution of possible next tokens. Default is 0.8.
@@ -1459,7 +1457,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (m *Model) ChatStreaming(ctx context.Context, d D) &lt;-chan ChatResponse</code>
               </pre>
-              <p className="doc-description">ChatStreaming performs a chat request and streams the response. All requests (including vision/audio) use batch processing and can run concurrently based on the NSeqMax config value, which controls parallel sequence processing.</p>
+              <p className="doc-description">ChatStreaming performs a chat request and streams the response. All requests (including vision/audio) use batch processing and can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. When stream_options.include_usage is true, the terminal choice is followed by a usage response with an empty Choices slice.</p>
             </div>
 
             <div className="doc-section" id="method-model-config">
@@ -1762,7 +1760,7 @@ export default function DocsSDKModel() {
 
 	// DefIncludeUsage determines whether to include token usage information in
 	// streaming responses.
-	DefIncludeUsage = true
+	DefIncludeUsage = false
 
 	// DefLogprobs determines whether to return log probabilities of output tokens.
 	// When enabled, the response includes probability data for each generated token.
@@ -1800,10 +1798,6 @@ export default function DocsSDKModel() {
 	// JSON tokens like { in tool call formats (e.g., Gemma's call:func{{...}}),
 	// causing the model to substitute [ for { and producing invalid arguments.
 	DefRepeatPenalty = 1.0
-
-	// DefReturnPrompt determines whether to include the prompt in the final response.
-	// When set to true, the prompt will be included.
-	DefReturnPrompt = false
 
 	// DefTemp controls the randomness of the output. It rescales the probability
 	// distribution of possible next tokens.
@@ -1879,6 +1873,14 @@ export default function DocsSDKModel() {
 	ReasoningEffortHigh = "high"
 )`}</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="const-defaultqueuedepth">
+              <h4>DefaultQueueDepth</h4>
+              <pre className="code-block">
+                <code>{`const DefaultQueueDepth = 2`}</code>
+              </pre>
+              <p className="doc-description">DefaultQueueDepth is the admission-capacity multiplier used when queue depth is not explicitly configured.</p>
             </div>
 
             <div className="doc-section" id="const-expertsallongpu">
@@ -2156,6 +2158,7 @@ export default function DocsSDKModel() {
                 <li><a href="#const-defadaptivepdecay">DefAdaptivePDecay</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
+                <li><a href="#const-defaultqueuedepth">DefaultQueueDepth</a></li>
                 <li><a href="#const-expertsallongpu">ExpertsAllOnGPU</a></li>
               </ul>
             </div>

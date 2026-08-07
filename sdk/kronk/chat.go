@@ -35,6 +35,8 @@ func (krn *Kronk) Chat(ctx context.Context, d model.D) (model.ChatResponse, erro
 // For text models, NSeqMax controls parallel sequence processing within a single
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
+// When stream_options.include_usage is true, the terminal choice is followed
+// by a usage response with an empty Choices slice.
 func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.ChatResponse, error) {
 	if err := model.ValidateChatRequest(d); err != nil {
 		return nil, fmt.Errorf("chat-streaming: %w", err)
@@ -45,7 +47,7 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 	}
 
 	ef := func(err error) model.ChatResponse {
-		return model.ChatResponseErr("panic", model.ObjectChatUnknown, krn.ModelInfo().ID, 0, "", err, model.Usage{})
+		return model.ChatResponseErr("panic", model.ObjectChatUnknown, krn.ModelInfo().ID, 0, err, model.Usage{})
 	}
 
 	return streaming(ctx, krn, f, ef)
@@ -128,6 +130,17 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 				return lr, nil
 			}
 
+			if len(resp.Choices) == 0 {
+				d, err := marshalChatStreamResponse(resp, includeUsage)
+				if err != nil {
+					return lr, fmt.Errorf("chat-streaming-http: %w: marshal usage event: %w", ErrResponseCommitted, err)
+				}
+				if err := writeAndFlush(w, fmt.Appendf(nil, "data: %s\n\n", d)); err != nil {
+					return lr, fmt.Errorf("chat-streaming-http: %w: write usage event: %w", ErrResponseCommitted, err)
+				}
+				continue
+			}
+
 			if resp.Choices[0].FinishReason() == model.FinishReasonError {
 				d, err := marshalChatStreamError(resp)
 				if err != nil {
@@ -143,17 +156,17 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 			// OpenAI does not expect the final chunk to have a message field.
 			// The terminal delta is empty; tool-call arguments arrive in the
 			// preceding nonterminal chunk.
-			if fr := resp.Choices[0].FinishReason(); fr == model.FinishReasonStop || fr == model.FinishReasonLength || fr == model.FinishReasonTool {
+			fr := resp.Choices[0].FinishReason()
+			terminal := fr == model.FinishReasonStop || fr == model.FinishReasonLength || fr == model.FinishReasonTool
+			if terminal {
 				resp.Choices[0].Message = nil
 				resp.Choices[0].Delta = &model.ResponseMessage{}
 			}
 
 			wireResp := resp
-			if !includeUsage {
-				wireResp.Usage = nil
-			}
+			wireResp.Usage = nil
 
-			d, err := json.Marshal(wireResp)
+			d, err := marshalChatStreamResponse(wireResp, includeUsage)
 			if err != nil {
 				return resp, fmt.Errorf("chat-streaming-http: %w: marshal: %w", ErrResponseCommitted, err)
 			}
@@ -226,10 +239,37 @@ func marshalChatStreamError(resp model.ChatResponse) ([]byte, error) {
 	return json.Marshal(wireResp)
 }
 
+func marshalChatStreamResponse(resp model.ChatResponse, includeUsage bool) ([]byte, error) {
+	if !includeUsage {
+		resp.Usage = nil
+		return json.Marshal(resp)
+	}
+
+	wireResp := struct {
+		ID                string         `json:"id"`
+		Object            string         `json:"object"`
+		Created           int64          `json:"created"`
+		Model             string         `json:"model"`
+		SystemFingerprint string         `json:"system_fingerprint"`
+		Choices           []model.Choice `json:"choices"`
+		Usage             *model.Usage   `json:"usage"`
+	}{
+		ID:                resp.ID,
+		Object:            resp.Object,
+		Created:           resp.Created,
+		Model:             resp.Model,
+		SystemFingerprint: resp.SystemFingerprint,
+		Choices:           resp.Choices,
+		Usage:             resp.Usage,
+	}
+
+	return json.Marshal(wireResp)
+}
+
 func streamIncludeUsage(d model.D) bool {
 	streamOpts, exists := d["stream_options"]
 	if !exists {
-		return true
+		return model.DefIncludeUsage
 	}
 
 	var optsMap model.D
@@ -242,7 +282,7 @@ func streamIncludeUsage(d model.D) bool {
 
 	includeUsage, exists := optsMap["include_usage"].(bool)
 	if !exists {
-		return true
+		return model.DefIncludeUsage
 	}
 
 	return includeUsage

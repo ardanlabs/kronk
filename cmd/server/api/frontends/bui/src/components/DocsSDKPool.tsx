@@ -183,6 +183,14 @@ export default function DocsSDKPool() {
               <p className="doc-description">Prepare resolves the model configuration once for both planning and loading.</p>
             </div>
 
+            <div className="doc-section" id="method-llama-resolvedmodelconfig">
+              <h4>Llama.ResolvedModelConfig</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) ResolvedModelConfig(modelID string) (models.ModelConfig, error)</code>
+              </pre>
+              <p className="doc-description">ResolvedModelConfig returns the same budgeted configuration used to prepare a model for planning and loading.</p>
+            </div>
+
             <div className="doc-section" id="method-pool-aquirecustom">
               <h4>Pool.AquireCustom</h4>
               <pre className="code-block">
@@ -245,6 +253,14 @@ export default function DocsSDKPool() {
                 <code>func (p *Pool) ModelStatus() ([]ModelDetail, error)</code>
               </pre>
               <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests. Cache keys may be the bare catalog ID, or any of the variants accepted by Models.LookupFile (e.g. "&lt;org&gt;/&lt;model&gt;", "&lt;model&gt;/&lt;variant&gt;", "&lt;org&gt;/&lt;model&gt;/&lt;variant&gt;"), so the catalog resolver is used to recover the row metadata rather than splitting the key here.</p>
+            </div>
+
+            <div className="doc-section" id="method-pool-resolvedmodelconfig">
+              <h4>Pool.ResolvedModelConfig</h4>
+              <pre className="code-block">
+                <code>func (p *Pool) ResolvedModelConfig(modelID string) (models.ModelConfig, error)</code>
+              </pre>
+              <p className="doc-description">ResolvedModelConfig returns the same budgeted configuration used to prepare a model for planning and loading.</p>
             </div>
 
             <div className="doc-section" id="method-pool-resourcemanager">
@@ -334,6 +350,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-llama-models">Llama.Models</a></li>
                 <li><a href="#method-llama-plan">Llama.Plan</a></li>
                 <li><a href="#method-llama-prepare">Llama.Prepare</a></li>
+                <li><a href="#method-llama-resolvedmodelconfig">Llama.ResolvedModelConfig</a></li>
                 <li><a href="#method-pool-aquirecustom">Pool.AquireCustom</a></li>
                 <li><a href="#method-pool-aquiremodel">Pool.AquireModel</a></li>
                 <li><a href="#method-pool-getexisting">Pool.GetExisting</a></li>
@@ -342,6 +359,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-pool-invalidatesync">Pool.InvalidateSync</a></li>
                 <li><a href="#method-pool-modelconfig">Pool.ModelConfig</a></li>
                 <li><a href="#method-pool-modelstatus">Pool.ModelStatus</a></li>
+                <li><a href="#method-pool-resolvedmodelconfig">Pool.ResolvedModelConfig</a></li>
                 <li><a href="#method-pool-resourcemanager">Pool.ResourceManager</a></li>
                 <li><a href="#method-pool-shutdown">Pool.Shutdown</a></li>
               </ul>

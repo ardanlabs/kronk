@@ -227,6 +227,7 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 		"input":             conversation,
 		"tools":             toolDocuments(),
 		"max_output_tokens": 2048,
+		"stream_options":    model.D{"include_usage": true},
 	}
 
 	fmt.Print("\nMODEL> ")

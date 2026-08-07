@@ -179,7 +179,7 @@ export default function DocsCLIRun() {
               <tbody>
                 <tr>
                   <td><code>KRONK_BASE_PATH</code></td>
-                  <td>$HOME/kronk</td>
+                  <td>$HOME/.kronk</td>
                   <td>Base directory for kronk data (models, libraries, catalog, model_config)</td>
                 </tr>
                 <tr>

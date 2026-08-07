@@ -259,6 +259,62 @@ func TestParseParamsUsesChatTemplateKwargs(t *testing.T) {
 	}
 }
 
+func TestChatStopValidationAndParsing(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   any
+		want    []string
+		wantErr bool
+	}{
+		{name: "null", value: nil},
+		{name: "string", value: "END", want: []string{"END"}},
+		{name: "decoded array", value: []any{"A", "B"}, want: []string{"A", "B"}},
+		{name: "native array", value: []string{"A", "B"}, want: []string{"A", "B"}},
+		{name: "empty", value: "", wantErr: true},
+		{name: "too many", value: []any{"1", "2", "3", "4", "5"}, wantErr: true},
+		{name: "wrong scalar", value: true, wantErr: true},
+		{name: "wrong entry", value: []any{"A", 2}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{"messages": []D{{"role": "user", "content": "hello"}}, "stop": tt.value}
+			err := ValidateChatRequest(d)
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidRequest) {
+					t.Errorf("ValidateChatRequest: got %v, want ErrInvalidRequest", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateChatRequest: %v", err)
+			}
+
+			m := Model{log: noopLog}
+			params, err := m.parseParams(t.Context(), d)
+			if err != nil {
+				t.Fatalf("parseParams: %v", err)
+			}
+			if !reflect.DeepEqual(params.Stop, tt.want) {
+				t.Errorf("Stop: got %v, want %v", params.Stop, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseParamsDoesNotUseDefaultStop(t *testing.T) {
+	m := Model{log: noopLog, cfg: Config{DefaultParams: Params{Stop: []string{"default"}}}}
+	d := D{"messages": []D{{"role": "user", "content": "hello"}}}
+
+	params, err := m.parseParams(t.Context(), d)
+	if err != nil {
+		t.Fatalf("parseParams: %v", err)
+	}
+	if params.Stop != nil {
+		t.Errorf("Stop: got %v, want nil", params.Stop)
+	}
+}
+
 func TestDeserializeToolCallArguments(t *testing.T) {
 	want := map[string]any{"location": "New York City, NY"}
 
@@ -728,6 +784,30 @@ func TestValidateChatRequestToolChoice(t *testing.T) {
 	}
 }
 
+func TestValidateChatRequestChatTemplateKwargs(t *testing.T) {
+	tests := []struct {
+		name   string
+		kwargs any
+	}{
+		{name: "non-object", kwargs: false},
+		{name: "self-reference", kwargs: D{"chat_template_kwargs": D{}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{
+				"messages":             []D{{"role": "user", "content": "hello"}},
+				"chat_template_kwargs": tt.kwargs,
+			}
+
+			err := ValidateChatRequest(d)
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("ValidateChatRequest: got %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
 func TestApplyToolChoice(t *testing.T) {
 	tools := []D{
 		{"type": "function", "function": D{"name": "get_weather"}},
@@ -774,18 +854,14 @@ func TestApplyToolChoice(t *testing.T) {
 	})
 }
 
-func TestValidateChatRequestRejectsStop(t *testing.T) {
+func TestValidateChatRequestAcceptsStopWithoutLoggingIt(t *testing.T) {
 	d := D{
 		"messages": []D{{"role": "user", "content": "hello"}},
 		"stop":     []string{"END"},
 	}
 
-	err := ValidateChatRequest(d)
-	if !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("ValidateChatRequest: got %v, want ErrInvalidRequest", err)
-	}
-	if got, want := err.Error(), "stop is not supported"; !strings.Contains(got, want) {
-		t.Errorf("error: got %q, want to contain %q", got, want)
+	if err := ValidateChatRequest(d); err != nil {
+		t.Fatalf("ValidateChatRequest: %v", err)
 	}
 	if got := d.String(); strings.Contains(got, "stop") {
 		t.Errorf("D.String: got %q, want stop omitted", got)
@@ -816,7 +892,7 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", "", tt.toolCalls, nil, tt.finishReason, Usage{})
+			resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "", tt.toolCalls, nil, tt.finishReason, true, Usage{})
 			if got := resp.Choices[0].FinishReason(); got != tt.want {
 				t.Errorf("FinishReason: got %q, want %q", got, tt.want)
 			}
@@ -893,6 +969,48 @@ func TestUsageCompletionTokensJSON(t *testing.T) {
 		if _, exists := wire[field]; exists {
 			t.Errorf("%s: got top-level field, want absent", field)
 		}
+	}
+}
+
+func TestChatResponseFinalUsage(t *testing.T) {
+	u := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
+
+	withUsage := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "answer", "", nil, nil, FinishReasonStop, true, u)
+	if withUsage.Usage == nil {
+		t.Fatal("Usage: got nil, want usage")
+	}
+	if got := withUsage.Usage.TotalTokens; got != u.TotalTokens {
+		t.Errorf("TotalTokens: got %d, want %d", got, u.TotalTokens)
+	}
+
+	withoutUsage := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "answer", "", nil, nil, FinishReasonStop, false, u)
+	if withoutUsage.Usage != nil {
+		t.Errorf("Usage: got %+v, want nil", withoutUsage.Usage)
+	}
+}
+
+func TestChatResponseUsage(t *testing.T) {
+	u := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
+	terminal := chatResponseFinal("id", ObjectChatText, "model", 0, "answer", "", nil, nil, FinishReasonStop, false, u)
+
+	resp := chatResponseUsage(terminal, u)
+	if resp.Choices == nil || len(resp.Choices) != 0 {
+		t.Fatalf("Choices: got %v, want []", resp.Choices)
+	}
+	if resp.Usage == nil {
+		t.Fatal("Usage: got nil, want usage")
+	}
+	if got := resp.Usage.TotalTokens; got != u.TotalTokens {
+		t.Errorf("TotalTokens: got %d, want %d", got, u.TotalTokens)
+	}
+	if resp.ID != terminal.ID || resp.Object != terminal.Object || resp.Created != terminal.Created || resp.Model != terminal.Model || resp.SystemFingerprint != terminal.SystemFingerprint {
+		t.Error("Metadata: got values that differ from terminal response")
+	}
+	if got := len(terminal.Choices); got != 1 {
+		t.Errorf("terminal Choices: got %d, want 1", got)
+	}
+	if terminal.Usage != nil {
+		t.Errorf("terminal Usage: got %+v, want nil", terminal.Usage)
 	}
 }
 
@@ -989,7 +1107,7 @@ func TestChatResponseFinalSeparatesCompletedToolCallsFromFinishReason(t *testing
 		t.Errorf("argument delta: got %q, want %q", got, want)
 	}
 
-	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "", "answer", "thought", toolCalls, nil, "", Usage{})
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, "answer", "thought", toolCalls, nil, "", true, Usage{})
 	if resp.Choices[0].Delta == nil {
 		t.Fatal("Delta: got nil, want empty terminal delta")
 	}
@@ -1338,7 +1456,7 @@ func TestRetainAndStreamResultUsesCleanedContentConsistently(t *testing.T) {
 			}
 			e := batchEngine{model: &Model{}}
 
-			if err := e.retainAndStreamResult(&s, tt.result, 1, &logprob); err != nil {
+			if err := e.retainAndStreamResult(&s, tt.result, 1, &logprob, 0); err != nil {
 				t.Fatalf("retainAndStreamResult: %v", err)
 			}
 
@@ -1494,7 +1612,8 @@ func TestParseParamsIncludeUsage(t *testing.T) {
 		include    bool
 		want       bool
 	}{
-		{name: "omitted defaults true", want: true},
+		{name: "omitted defaults false", want: false},
+		{name: "empty options defaults false", streamOpts: D{}, include: true, want: false},
 		{name: "D true", streamOpts: D{"include_usage": true}, include: true, want: true},
 		{name: "D false", streamOpts: D{"include_usage": false}, include: true, want: false},
 		{name: "map true", streamOpts: map[string]any{"include_usage": true}, include: true, want: true},

@@ -19,6 +19,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
+	s.stopGate = newStopGate(job.params.Stop)
 	job.imcUsageVersion = e.model.imcBeginRequestUsage(job.imcSession)
 	s.reusedPromptTokens = job.reusedPromptTokens
 	s.suppressTools = job.d["tool_choice"] == "none"

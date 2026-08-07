@@ -155,11 +155,6 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
   const [toolCalls, setToolCalls] = useState<ChatToolCall[]>([]);
   const [toolTestRunning, setToolTestRunning] = useState(false);
 
-  // Inspector state
-  const [inspectorPrompt, setInspectorPrompt] = useState('Hello, how are you?');
-  const [renderedPrompt, setRenderedPrompt] = useState('');
-  const [inspectorRunning, setInspectorRunning] = useState(false);
-
   const loadTemplates = useCallback(async () => {
     try {
       const list = await api.listPlaygroundTemplates();
@@ -445,46 +440,6 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
     toolTestAbortRef.current = abort;
   }, [session, toolTestRunning, toolDefs, toolPrompt]);
 
-  const handleInspector = useCallback(() => {
-    if (!session || inspectorRunning) return;
-
-    setInspectorRunning(true);
-    setRenderedPrompt('');
-
-    const messages: ChatMessage[] = [
-      { role: 'user', content: inspectorPrompt },
-    ];
-
-    if (systemPrompt.trim()) {
-      messages.unshift({ role: 'system', content: systemPrompt });
-    }
-
-    let prompt = '';
-
-    api.streamPlaygroundChat(
-      {
-        session_id: session.session_id,
-        messages,
-        stream: true,
-        return_prompt: true,
-        max_tokens: 1,
-      },
-      (data: any) => {
-        if (data.prompt) {
-          prompt = data.prompt;
-        }
-      },
-      (error: string) => {
-        setRenderedPrompt(`Error: ${error}`);
-        setInspectorRunning(false);
-      },
-      () => {
-        setRenderedPrompt(prompt || '(No prompt returned — prompt may appear in final response)');
-        setInspectorRunning(false);
-      }
-    );
-  }, [session, inspectorRunning, inspectorPrompt, systemPrompt]);
-
   // ── ChatPanel bridge for Basic Chat tab ─────────────────────────────
   const playgroundSampling = useMemo<SamplingParams>(() => ({
     maxTokens,
@@ -505,7 +460,6 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
     frequencyPenalty,
     enableThinking,
     reasoningEffort,
-    returnPrompt: false,
     includeUsage: true,
     logprobs: false,
     topLogprobs: 0,
@@ -567,7 +521,6 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
         enable_thinking: (sampling.enableThinking || undefined) as 'true' | 'false' | undefined,
         reasoning_effort: (sampling.reasoningEffort || undefined) as PlaygroundChatRequest['reasoning_effort'],
         grammar: sampling.grammar || undefined,
-        return_prompt: sampling.returnPrompt,
         logprobs: sampling.logprobs,
         top_logprobs: sampling.topLogprobs,
       },
@@ -1172,16 +1125,6 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
             >
               Tool Calling Test
             </button>
-            <button
-              role="tab"
-              id="tab-inspector"
-              aria-selected={activeTab === 'inspector'}
-              aria-controls="tabpanel-inspector"
-              className={`playground-tab ${activeTab === 'inspector' ? 'active' : ''}`}
-              onClick={() => setActiveTab('inspector')}
-            >
-              Prompt Inspector
-            </button>
           </div>
 
           <div className="playground-tab-content">
@@ -1254,42 +1197,6 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                         <pre>{toolResult}</pre>
                       </div>
                     )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'inspector' && (
-              <div role="tabpanel" id="tabpanel-inspector" aria-labelledby="tab-inspector" className="playground-inspector">
-                <div className="form-group">
-                  <label>Test Message</label>
-                  <input
-                    type="text"
-                    value={inspectorPrompt}
-                    onChange={(e) => setInspectorPrompt(e.target.value)}
-                  />
-                </div>
-
-                <button
-                  className="btn btn-primary"
-                  onClick={handleInspector}
-                  disabled={!session || inspectorRunning}
-                >
-                  {inspectorRunning ? 'Rendering...' : 'Render Prompt'}
-                </button>
-
-                {renderedPrompt && (
-                  <div className="playground-rendered-prompt">
-                    <div className="playground-prompt-header">
-                      <h4>Rendered Prompt</h4>
-                      <button
-                        className="btn btn-secondary btn-small"
-                        onClick={() => navigator.clipboard.writeText(renderedPrompt)}
-                      >
-                        Copy
-                      </button>
-                    </div>
-                    <pre className="playground-prompt-text">{renderedPrompt}</pre>
                   </div>
                 )}
               </div>

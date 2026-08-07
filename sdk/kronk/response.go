@@ -295,6 +295,8 @@ type streamState struct {
 	fcIDs           []string
 	fcArgsAccum     []string
 	toolCallsSeenID map[string]int
+	lastChatResp    model.ChatResponse
+	usage           *model.Usage
 }
 
 func (ss *streamState) start() []ResponseStreamEvent {
@@ -322,8 +324,10 @@ func (ss *streamState) start() []ResponseStreamEvent {
 
 func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEvent {
 	if len(chatResp.Choices) == 0 {
+		ss.usage = chatResp.Usage
 		return nil
 	}
+	ss.lastChatResp = chatResp
 
 	choice := chatResp.Choices[0]
 
@@ -351,6 +355,13 @@ func (ss *streamState) process(chatResp model.ChatResponse) []ResponseStreamEven
 
 func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEvent {
 	var events []ResponseStreamEvent
+	if len(lastResp.Choices) > 0 {
+		ss.lastChatResp = lastResp
+	}
+	if lastResp.Usage != nil {
+		ss.usage = lastResp.Usage
+	}
+	ss.lastChatResp.Usage = ss.usage
 
 	if ss.msgItemEmitted {
 		events = append(events, ss.finalizeMessageItem()...)
@@ -358,7 +369,7 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 
 	events = append(events, ss.finalizeToolCalls()...)
 
-	finalResp := toChatResponseToResponses(lastResp, ss.d)
+	finalResp := toChatResponseToResponses(ss.lastChatResp, ss.d)
 	finalResp.ID = ss.responseID
 	finalResp.CreatedAt = ss.createdAt
 
@@ -681,6 +692,10 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 
 	tools := extractTools(d)
 	inputParams := extractInputParams(d)
+	chatUsage := model.Usage{}
+	if chatResp.Usage != nil {
+		chatUsage = *chatResp.Usage
+	}
 
 	return ResponseResponse{
 		ID:               "resp_" + chatResp.ID,
@@ -712,15 +727,15 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 		TopP:       inputParams.TopP,
 		Truncation: inputParams.Truncation,
 		Usage: ResponseUsage{
-			InputTokens: chatResp.Usage.PromptTokens,
+			InputTokens: chatUsage.PromptTokens,
 			InputTokensDetails: InputTokensDetails{
-				CachedTokens: chatResp.Usage.PromptTokensDetails.CachedTokens,
+				CachedTokens: chatUsage.PromptTokensDetails.CachedTokens,
 			},
-			OutputTokens: chatResp.Usage.CompletionTokens,
+			OutputTokens: chatUsage.CompletionTokens,
 			OutputTokenDetail: OutputTokensDetails{
-				ReasoningTokens: chatResp.Usage.CompletionTokensDetails.ReasoningTokens,
+				ReasoningTokens: chatUsage.CompletionTokensDetails.ReasoningTokens,
 			},
-			TotalTokens: chatResp.Usage.TotalTokens,
+			TotalTokens: chatUsage.TotalTokens,
 		},
 		User:     nil,
 		Metadata: map[string]any{},
@@ -871,6 +886,10 @@ func extractTools(d model.D) []any {
 }
 
 func convertInputToMessages(d model.D) (model.D, error) {
+	if _, exists := d["stop"]; exists {
+		return nil, fmt.Errorf("convert-input-to-messages: %w: stop is not supported", model.ErrInvalidRequest)
+	}
+
 	if containsUnsupportedFileInput(d["input"]) || containsUnsupportedFileInput(d["messages"]) {
 		return nil, fmt.Errorf("convert-input-to-messages: %w", model.ErrFileInputsUnsupported)
 	}

@@ -188,6 +188,9 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		"top_k":          1,
 		"tools":          a.toolDocuments,
 		"tool_selection": "auto",
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	fmt.Printf("\\u001b[93m\\n%s\\u001b[0m: 0.000", a.krn.ModelInfo().ID)
@@ -205,14 +208,14 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 	defer stopPrinter()
 
 	var content strings.Builder
-	var lastResp model.ChatResponse
+	var usage *model.Usage
+	var toolCalls []model.ResponseToolCall
 	firstChunk := true
 	reasoning := false
 
 	for resp := range ch {
-		lastResp = resp
-
 		if len(resp.Choices) == 0 {
+			usage = resp.Usage
 			continue
 		}
 
@@ -225,18 +228,21 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 
 		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
+			return "", nil, usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
-		case model.FinishReasonStop:
-			return strings.TrimLeft(content.String(), "\\n"), nil, lastResp.Usage, nil
+		case model.FinishReasonStop, model.FinishReasonLength:
+			continue
 
 		case model.FinishReasonTool:
-			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
+			toolCalls = resp.Choices[0].Message.ToolCalls
+			continue
 
 		default:
 			delta := resp.Choices[0].Delta
 			for _, tool := range delta.ToolCallDeltas {
-				fmt.Printf("\\n\\n\\u001b[92mExecuting %s...\\u001b[0m", tool.Function.Name)
+				if tool.Function.Name != "" {
+					fmt.Printf("\\n\\n\\u001b[92mExecuting %s...\\u001b[0m", tool.Function.Name)
+				}
 			}
 
 			switch {
@@ -257,8 +263,11 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		}
 	}
 
-	// Stream ended without an explicit finish reason.
-	return strings.TrimLeft(content.String(), "\\n"), nil, lastResp.Usage, nil
+	if len(toolCalls) > 0 {
+		return "", toolCalls, usage, nil
+	}
+
+	return strings.TrimLeft(content.String(), "\\n"), nil, usage, nil
 }
 
 // startLatencyPrinter starts a goroutine that displays elapsed time while
@@ -636,6 +645,9 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, audioFi
 		"temperature": 0.7,
 		"top_p":       0.9,
 		"top_k":       40,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
@@ -652,13 +664,15 @@ func modelResponse(krn *kronk.Kronk, ch <-chan model.ChatResponse) error {
 	var reasoning bool
 	var lr model.ChatResponse
 
-loop:
 	for resp := range ch {
 		lr = resp
+		if len(resp.Choices) == 0 {
+			continue
+		}
 
 		switch resp.Choices[0].FinishReason() {
-		case model.FinishReasonStop:
-			break loop
+		case model.FinishReasonStop, model.FinishReasonLength:
+			continue
 
 		case model.FinishReasonError:
 			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
@@ -679,6 +693,9 @@ loop:
 	}
 
 	// -------------------------------------------------------------------------
+	if lr.Usage == nil {
+		return fmt.Errorf("stream ended without usage")
+	}
 
 	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
 	contextWindow := krn.ModelConfig().ContextWindow()
@@ -1627,6 +1644,9 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 		"messages":   conversation,
 		"tools":      toolDocuments(),
 		"max_tokens": 2048,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	fmt.Print("\\nMODEL> ")
@@ -1640,30 +1660,33 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 	}
 
 	var content strings.Builder
-	var lastResp model.ChatResponse
+	var usage *model.Usage
+	var toolCalls []model.ResponseToolCall
 	reasoning := false
 
 	for resp := range ch {
-		lastResp = resp
-
 		if len(resp.Choices) == 0 {
+			usage = resp.Usage
 			continue
 		}
 
 		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
+			return "", nil, usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
-		case model.FinishReasonStop:
-			return strings.TrimLeft(content.String(), "\\n"), nil, lastResp.Usage, nil
+		case model.FinishReasonStop, model.FinishReasonLength:
+			continue
 
 		case model.FinishReasonTool:
-			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
+			toolCalls = resp.Choices[0].Message.ToolCalls
+			continue
 
 		default:
 			delta := resp.Choices[0].Delta
 			for _, tool := range delta.ToolCallDeltas {
-				fmt.Printf("\\n\\n\\u001b[92mExecuting %s...\\u001b[0m", tool.Function.Name)
+				if tool.Function.Name != "" {
+					fmt.Printf("\\n\\n\\u001b[92mExecuting %s...\\u001b[0m", tool.Function.Name)
+				}
 			}
 
 			switch {
@@ -1683,7 +1706,11 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 		}
 	}
 
-	return strings.TrimLeft(content.String(), "\\n"), nil, lastResp.Usage, nil
+	if len(toolCalls) > 0 {
+		return "", toolCalls, usage, nil
+	}
+
+	return strings.TrimLeft(content.String(), "\\n"), nil, usage, nil
 }
 
 func appendToolCalls(conversation []model.D, toolCalls []model.ResponseToolCall) []model.D {
@@ -3550,6 +3577,9 @@ func run() error {
 				"temperature": 0.7,
 				"top_p":       0.9,
 				"top_k":       40,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			}
 
 			ch, err := performChat(ctx, krnChat, d)
@@ -3725,34 +3755,37 @@ func modelResponse(krn *kronk.Kronk, messages []model.D, ch <-chan model.ChatRes
 	var reasoning bool
 	var lr model.ChatResponse
 
-loop:
 	for resp := range ch {
 		lr = resp
+		if len(resp.Choices) == 0 {
+			continue
+		}
 
 		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
 			return messages, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
-		case model.FinishReasonStop:
-			break loop
+		case model.FinishReasonStop, model.FinishReasonLength:
+			continue
 
 		case model.FinishReasonTool:
 			fmt.Println()
+			toolCall := resp.Choices[0].Message.ToolCalls[0]
 
 			fmt.Printf("\\u001b[92mModel Asking For Tool Call:\\nToolID[%s]: %s(%s)\\u001b[0m\\n",
-				resp.Choices[0].Delta.ToolCalls[0].ID,
-				resp.Choices[0].Delta.ToolCalls[0].Function.Name,
-				resp.Choices[0].Delta.ToolCalls[0].Function.Arguments,
+				toolCall.ID,
+				toolCall.Function.Name,
+				toolCall.Function.Arguments,
 			)
 
 			messages = append(messages,
 				model.TextMessage("tool", fmt.Sprintf("Tool call %s: %s(%v)",
-					resp.Choices[0].Delta.ToolCalls[0].ID,
-					resp.Choices[0].Delta.ToolCalls[0].Function.Name,
-					resp.Choices[0].Delta.ToolCalls[0].Function.Arguments),
+					toolCall.ID,
+					toolCall.Function.Name,
+					toolCall.Function.Arguments),
 				),
 			)
-			break loop
+			continue
 
 		default:
 			if resp.Choices[0].Delta.Reasoning != "" {
@@ -3772,6 +3805,9 @@ loop:
 	}
 
 	// -------------------------------------------------------------------------
+	if lr.Usage == nil {
+		return messages, fmt.Errorf("stream ended without usage")
+	}
 
 	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
 	contextWindow := krn.ModelConfig().ContextWindow()
@@ -4194,6 +4230,7 @@ func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model
 		"input":             conversation,
 		"tools":             toolDocuments(),
 		"max_output_tokens": 2048,
+		"stream_options":    model.D{"include_usage": true},
 	}
 
 	fmt.Print("\\nMODEL> ")
@@ -4642,6 +4679,9 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, imageFi
 		"top_p":       0.9,
 		"top_k":       40,
 		"max_tokens":  2048,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
@@ -4658,13 +4698,15 @@ func modelResponse(krn *kronk.Kronk, ch <-chan model.ChatResponse) error {
 	var reasoning bool
 	var lr model.ChatResponse
 
-loop:
 	for resp := range ch {
 		lr = resp
+		if len(resp.Choices) == 0 {
+			continue
+		}
 
 		switch resp.Choices[0].FinishReason() {
-		case model.FinishReasonStop:
-			break loop
+		case model.FinishReasonStop, model.FinishReasonLength:
+			continue
 
 		case model.FinishReasonError:
 			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
@@ -4685,6 +4727,9 @@ loop:
 	}
 
 	// -------------------------------------------------------------------------
+	if lr.Usage == nil {
+		return fmt.Errorf("stream ended without usage")
+	}
 
 	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
 	contextWindow := krn.ModelConfig().ContextWindow()

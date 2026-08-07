@@ -16,6 +16,7 @@ package gemma4mtp_test
 import (
 	"context"
 	"fmt"
+	"maps"
 	"testing"
 	"time"
 
@@ -129,6 +130,9 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D) {
 		t.Parallel()
 	}
 
+	d = maps.Clone(d)
+	d["stream_options"] = model.D{"include_usage": true}
+
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -147,9 +151,17 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D) {
 
 		reasoning := testlib.HasReasoningField(krn)
 
-		var acc testlib.StreamAccumulator
-		var lastResp model.ChatResponse
+		var (
+			acc      testlib.StreamAccumulator
+			lastResp model.ChatResponse
+			usage    *model.Usage
+		)
 		for resp := range ch {
+			if len(resp.Choices) == 0 {
+				usage = resp.Usage
+				continue
+			}
+
 			acc.Accumulate(resp)
 			lastResp = resp
 
@@ -171,7 +183,7 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D) {
 			return result.Err
 		}
 
-		checkMTPUsage(t, id, lastResp.Usage)
+		checkMTPUsage(t, id, usage)
 
 		return nil
 	}

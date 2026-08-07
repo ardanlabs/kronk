@@ -191,9 +191,11 @@ const menuStructure: MenuCategory[] = [
         items: [
           { page: 'docs-cli-bucky', label: 'bucky' },
           { page: 'docs-cli-catalog', label: 'catalog' },
+          { page: 'docs-cli-completion', label: 'completion' },
           { page: 'docs-cli-devices', label: 'devices' },
           { page: 'docs-cli-diagnose', label: 'diagnose' },
           { page: 'docs-cli-libs', label: 'libs' },
+          { page: 'docs-cli-launch', label: 'launch' },
           { page: 'docs-cli-model', label: 'model' },
           { page: 'docs-cli-run', label: 'run' },
           { page: 'docs-cli-security', label: 'security' },

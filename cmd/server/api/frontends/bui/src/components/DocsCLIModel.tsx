@@ -3,7 +3,7 @@ export default function DocsCLIModel() {
     <div>
       <div className="page-header">
         <h2>model</h2>
-        <p>Manage local models (index, list, pull, remove, resolve, show, ps).</p>
+        <p>Manage local models (index, list, pull, remove, resolve, show, ps, sessions).</p>
       </div>
 
       <div className="doc-layout">
@@ -64,7 +64,7 @@ export default function DocsCLIModel() {
                   </tr>
                   <tr>
                     <td><code>KRONK_BASE_PATH</code></td>
-                    <td>$HOME/kronk</td>
+                    <td>$HOME/.kronk</td>
                     <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                   <tr>
@@ -130,7 +130,7 @@ kronk model index --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_BASE_PATH</code></td>
-                    <td>$HOME/kronk</td>
+                    <td>$HOME/.kronk</td>
                     <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                   <tr>
@@ -187,7 +187,7 @@ kronk model ps`}</code>
 
             <div className="doc-section" id="cmd-pull">
               <h4>pull</h4>
-              <p className="doc-description">Pull a model from the web. The projection file is located automatically.</p>
+              <p className="doc-description">Pull a model from the web. Projection and MTP drafter files are located automatically when available.</p>
               <pre className="code-block">
                 <code>kronk model pull &lt;SOURCE&gt; [flags]</code>
               </pre>
@@ -211,13 +211,13 @@ kronk model ps`}</code>
                 them.
               </p>
               <p>
-                Use <code>--proj &lt;URL&gt;</code> to pin a specific projection
-                file. The flag takes a fully qualified HuggingFace URL and forces
-                the explicit-URL workflow:
+                Use <code>--proj &lt;URL&gt;</code> to pin a projection file and{' '}
+                <code>--mtp-draft &lt;URL&gt;</code> to pin an MTP drafter. Both flags
+                take fully qualified HuggingFace URLs and force the explicit-URL workflow:
               </p>
               <ul>
-                <li>With an id source the resolver is consulted only to expand split shards; the supplied projection URL replaces the resolver's choice.</li>
-                <li>With a URL source the model file at that URL is paired directly with the supplied projection URL — no resolver lookup.</li>
+                <li>With an ID source the resolver expands split shards. A supplied companion URL replaces that companion's resolved URL; companions not explicitly pinned are still auto-resolved.</li>
+                <li>With a URL source the model file is paired directly with the supplied companion URLs without a resolver lookup.</li>
               </ul>
               <table className="flags-table">
                 <thead>
@@ -229,7 +229,11 @@ kronk model ps`}</code>
                 <tbody>
                   <tr>
                     <td><code>--proj &lt;URL&gt;</code></td>
-                    <td>Fully qualified projection (mmproj) URL to pin (skips auto-resolution)</td>
+                    <td>Fully qualified projection (mmproj) URL to pin</td>
+                  </tr>
+                  <tr>
+                    <td><code>--mtp-draft &lt;URL&gt;</code></td>
+                    <td>Fully qualified MTP drafter URL to pin</td>
                   </tr>
                   <tr>
                     <td><code>--local</code></td>
@@ -263,7 +267,7 @@ kronk model ps`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_BASE_PATH</code></td>
-                    <td>$HOME/kronk</td>
+                    <td>$HOME/.kronk</td>
                     <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                   <tr>
@@ -283,6 +287,9 @@ kronk model pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
 # Pull a vision model and pin a specific projection file
 kronk model pull <MODEL_URL> --proj <MMPROJ_URL>
+
+# Pull a model and pin a specific MTP drafter
+kronk model pull <MODEL_URL> --mtp-draft <MTP_URL>
 
 # Pull with local mode
 kronk model pull unsloth/Qwen3-8B-GGUF --local`}</code>
@@ -335,7 +342,7 @@ kronk model pull unsloth/Qwen3-8B-GGUF --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_BASE_PATH</code></td>
-                    <td>$HOME/kronk</td>
+                    <td>$HOME/.kronk</td>
                     <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                   <tr>
@@ -439,7 +446,7 @@ kronk model resolve Qwen3-0.6B-Q8_0 --refresh`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_BASE_PATH</code></td>
-                    <td>$HOME/kronk</td>
+                    <td>$HOME/.kronk</td>
                     <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                   <tr>
@@ -456,6 +463,42 @@ kronk model show unsloth/Qwen3-8B-GGUF
 
 # Show with local mode
 kronk model show unsloth/Qwen3-8B-GGUF --local`}</code>
+              </pre>
+            </div>
+
+            <div className="doc-section" id="cmd-sessions">
+              <h4>sessions</h4>
+              <p className="doc-description">List the bounded incremental-message-cache entries for loaded models.</p>
+              <pre className="code-block">
+                <code>kronk model sessions</code>
+              </pre>
+              <p>The output reports each model and cache entry, its state, message and context counts, allocated tokens, checkpoint usage, context-window utilization, media state, and last-used age.</p>
+              <h5>Environment Variables</h5>
+              <table className="flags-table">
+                <thead>
+                  <tr>
+                    <th>Variable</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>KRONK_TOKEN</code></td>
+                    <td></td>
+                    <td>Authentication token for the Kronk server (required when authentication is enabled)</td>
+                  </tr>
+                  <tr>
+                    <td><code>KRONK_WEB_API_HOST</code></td>
+                    <td>localhost:11435</td>
+                    <td>Address of the Kronk server</td>
+                  </tr>
+                </tbody>
+              </table>
+              <h5>Example</h5>
+              <pre className="code-block">
+                <code>{`# Inspect active IMC cache entries
+kronk model sessions`}</code>
               </pre>
             </div>
           </div>
@@ -476,6 +519,7 @@ kronk model show unsloth/Qwen3-8B-GGUF --local`}</code>
                 <li><a href="#cmd-remove">remove</a></li>
                 <li><a href="#cmd-resolve">resolve</a></li>
                 <li><a href="#cmd-show">show</a></li>
+                <li><a href="#cmd-sessions">sessions</a></li>
               </ul>
             </div>
           </div>

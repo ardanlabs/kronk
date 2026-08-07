@@ -184,6 +184,9 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		"top_k":          1,
 		"tools":          a.toolDocuments,
 		"tool_selection": "auto",
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	fmt.Printf("\u001b[93m\n%s\u001b[0m: 0.000", a.krn.ModelInfo().ID)
@@ -201,14 +204,14 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 	defer stopPrinter()
 
 	var content strings.Builder
-	var lastResp model.ChatResponse
+	var usage *model.Usage
+	var toolCalls []model.ResponseToolCall
 	firstChunk := true
 	reasoning := false
 
 	for resp := range ch {
-		lastResp = resp
-
 		if len(resp.Choices) == 0 {
+			usage = resp.Usage
 			continue
 		}
 
@@ -221,18 +224,21 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 
 		switch resp.Choices[0].FinishReason() {
 		case model.FinishReasonError:
-			return "", nil, lastResp.Usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
+			return "", nil, usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
 
-		case model.FinishReasonStop:
-			return strings.TrimLeft(content.String(), "\n"), nil, lastResp.Usage, nil
+		case model.FinishReasonStop, model.FinishReasonLength:
+			continue
 
 		case model.FinishReasonTool:
-			return "", resp.Choices[0].Delta.ToolCalls, lastResp.Usage, nil
+			toolCalls = resp.Choices[0].Message.ToolCalls
+			continue
 
 		default:
 			delta := resp.Choices[0].Delta
 			for _, tool := range delta.ToolCallDeltas {
-				fmt.Printf("\n\n\u001b[92mExecuting %s...\u001b[0m", tool.Function.Name)
+				if tool.Function.Name != "" {
+					fmt.Printf("\n\n\u001b[92mExecuting %s...\u001b[0m", tool.Function.Name)
+				}
 			}
 
 			switch {
@@ -253,8 +259,11 @@ func (a *Agent) streamModelTurn(ctx context.Context, conversation []model.D) (st
 		}
 	}
 
-	// Stream ended without an explicit finish reason.
-	return strings.TrimLeft(content.String(), "\n"), nil, lastResp.Usage, nil
+	if len(toolCalls) > 0 {
+		return "", toolCalls, usage, nil
+	}
+
+	return strings.TrimLeft(content.String(), "\n"), nil, usage, nil
 }
 
 // startLatencyPrinter starts a goroutine that displays elapsed time while

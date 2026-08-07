@@ -23,4 +23,9 @@ type Table struct {
 	ExpResp       any
 	CmpFunc       func(got any, exp any) string
 	StreamCmpFunc func(events []json.RawMessage) string
+	// StreamResponseOffset selects which SSE data event to decode for CmpFunc,
+	// counting backward from the final non-[DONE] event. The default is 0.
+	StreamResponseOffset int
+	// RequireDone requires exactly one [DONE] event and no later data events.
+	RequireDone bool
 }

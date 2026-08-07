@@ -178,24 +178,38 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 				}
 
 				var events []json.RawMessage
-				var lastData string
+				doneCount := 0
 				scanner := bufio.NewScanner(w.Body)
 				for scanner.Scan() {
 					line := scanner.Text()
 					if after, ok := strings.CutPrefix(line, "data: "); ok {
 						data := after
-						if data != "[DONE]" {
-							events = append(events, json.RawMessage(data))
-							lastData = data
+						if data == "[DONE]" {
+							doneCount++
+							continue
 						}
+						if tt.RequireDone && doneCount > 0 {
+							t.Fatalf("Should not receive an SSE data event after [DONE]")
+						}
+						events = append(events, json.RawMessage(data))
 					}
 				}
-
-				if lastData == "" {
-					t.Fatalf("Should have received at least one SSE data event")
+				if err := scanner.Err(); err != nil {
+					t.Fatalf("Should be able to scan the streaming response: %s", err)
+				}
+				if tt.RequireDone && doneCount != 1 {
+					t.Fatalf("Should receive exactly one [DONE] SSE data event, got %d", doneCount)
 				}
 
-				if err := json.Unmarshal([]byte(lastData), tt.GotResp); err != nil {
+				if len(events) == 0 {
+					t.Fatalf("Should have received at least one SSE data event")
+				}
+				responseIndex := len(events) - 1 - tt.StreamResponseOffset
+				if responseIndex < 0 || responseIndex >= len(events) {
+					t.Fatalf("StreamResponseOffset %d exceeds %d SSE data events", tt.StreamResponseOffset, len(events))
+				}
+
+				if err := json.Unmarshal(events[responseIndex], tt.GotResp); err != nil {
 					t.Fatalf("Should be able to unmarshal the response : %s", err)
 				}
 

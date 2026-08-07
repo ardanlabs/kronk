@@ -825,19 +825,6 @@ export default function ChatPanel({
                     max={20}
                   />
                 </div>
-                <div className={`chat-setting chat-setting-checkbox ${isChangedFrom('returnPrompt', sampling.returnPrompt, modelBaseline) ? 'chat-setting-changed' : ''}`}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={sampling.returnPrompt}
-                      onChange={(e) => setSampling({ returnPrompt: e.target.checked })}
-                    />
-                    Return Prompt
-                    {isChangedFrom('returnPrompt', sampling.returnPrompt, modelBaseline) && (
-                      <span className="chat-setting-default" title={`Default: ${formatBaselineValue('returnPrompt', modelBaseline)}`}>●</span>
-                    )}
-                  </label>
-                </div>
                 <div className={`chat-setting chat-setting-checkbox ${isChangedFrom('includeUsage', sampling.includeUsage, modelBaseline) ? 'chat-setting-changed' : ''}`}>
                   <label>
                     <input

@@ -162,7 +162,7 @@ func ClassifyDeviceType(name string) string {
 		return "cpu"
 	case strings.HasPrefix(name, "CUDA"):
 		return "gpu_cuda"
-	case name == "Metal":
+	case name == "Metal", strings.HasPrefix(name, "MTL"):
 		return "gpu_metal"
 	case strings.HasPrefix(name, "HIP"), strings.HasPrefix(name, "ROCm"):
 		return "gpu_rocm"

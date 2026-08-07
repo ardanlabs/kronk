@@ -14,7 +14,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -52,6 +51,25 @@ func (a *app) listModelsOpenAI(ctx context.Context, r *http.Request) web.Encoder
 	return toOpenAIModels(modelFiles)
 }
 
+// retrieveModelOpenAI returns the OpenAI-compatible model object served at
+// GET /v1/models/{model}.
+func (a *app) retrieveModelOpenAI(ctx context.Context, r *http.Request) web.Encoder {
+	modelID := web.Param(r, "model")
+
+	modelFiles, err := a.collectModelFiles()
+	if err != nil {
+		return errs.Errorf(errs.Internal, "unable to retrieve model list: %s", err)
+	}
+
+	for _, mf := range modelFiles {
+		if mf.ID == modelID {
+			return toOpenAIModel(mf)
+		}
+	}
+
+	return errs.FromSDK(fmt.Errorf("%w: %q", models.ErrModelNotFound, modelID))
+}
+
 func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	modelFiles, err := a.collectModelFiles()
 	if err != nil {
@@ -67,7 +85,11 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 		resolvedConfigs = make(map[string]models.ModelConfig, len(modelFiles))
 		for _, mf := range modelFiles {
 			a.log.Info(ctx, "resolved-model-config", "id", mf.ID)
-			rmc := a.resolvedModelConfig(mf.ID)
+			rmc, err := a.pool.Kronk.ResolvedModelConfig(mf.ID)
+			if err != nil {
+				a.log.Info(ctx, "resolved-model-config", "id", mf.ID, "ERROR", err)
+				continue
+			}
 			if mi, err := a.models.ModelInformation(mf.ID); err == nil {
 				rmc.Sampling = rmc.Sampling.WithMetadataDefaults(mi.Metadata)
 			} else {
@@ -129,32 +151,6 @@ func (a *app) collectModelFiles() ([]models.File, error) {
 	}
 
 	return modelFiles, nil
-}
-
-// resolvedModelConfig assembles the analysis-derived defaults overlaid
-// with the user-supplied model_config.yaml entry for the given model.
-func (a *app) resolvedModelConfig(modelID string) models.ModelConfig {
-	override, ok := a.pool.Kronk.ModelConfig()[modelID]
-	cfg := a.models.AnalysisDefaultsWithConfig(modelID, override)
-
-	if ok {
-		sizing := cfg
-		models.MergeModelConfig(&cfg, override)
-		if sizing.PtrContextWindow != nil {
-			cfg.PtrContextWindow = sizing.PtrContextWindow
-		}
-		if sizing.PtrNSeqMax != nil {
-			cfg.PtrNSeqMax = sizing.PtrNSeqMax
-		}
-		if sizing.CacheTypeK != model.GGMLTypeAuto {
-			cfg.CacheTypeK = sizing.CacheTypeK
-		}
-		if sizing.CacheTypeV != model.GGMLTypeAuto {
-			cfg.CacheTypeV = sizing.CacheTypeV
-		}
-	}
-
-	return cfg
 }
 
 func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
@@ -497,7 +493,10 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.FromSDK(err)
 	}
 
-	rmc := a.resolvedModelConfig(modelID)
+	rmc, err := a.pool.Kronk.ResolvedModelConfig(modelID)
+	if err != nil {
+		return errs.FromSDK(err)
+	}
 	rmc.Sampling = rmc.Sampling.WithMetadataDefaults(mi.Metadata)
 
 	var vramResp *VRAMResponse

@@ -193,16 +193,10 @@ export default function DocsAPIChat() {
                     <td>Reasoning level for GPT models: none, minimal, low, medium, high</td>
                   </tr>
                   <tr>
-                    <td><code>return_prompt</code></td>
-                    <td><code>bool</code></td>
-                    <td>No</td>
-                    <td>Include the prompt in the final response</td>
-                  </tr>
-                  <tr>
                     <td><code>stream_options</code></td>
                     <td><code>object</code></td>
                     <td>No</td>
-                    <td>Set include_usage to false to omit usage from streaming chunks (default: true)</td>
+                    <td>Set include_usage to true to send a final usage-only chunk with an empty choices array (default: false)</td>
                   </tr>
                   <tr>
                     <td><code>logprobs</code></td>
@@ -234,6 +228,7 @@ export default function DocsAPIChat() {
   -H "Content-Type: application/json" \\
   -d '{
     "stream": true,
+    "stream_options": {"include_usage": true},
     "model": "qwen3-8b-q8_0",
     "messages": [
       {

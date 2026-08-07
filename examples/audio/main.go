@@ -169,6 +169,9 @@ func performChat(ctx context.Context, krn *kronk.Kronk, question string, audioFi
 		"temperature": 0.7,
 		"top_p":       0.9,
 		"top_k":       40,
+		"stream_options": model.D{
+			"include_usage": true,
+		},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
@@ -185,13 +188,15 @@ func modelResponse(krn *kronk.Kronk, ch <-chan model.ChatResponse) error {
 	var reasoning bool
 	var lr model.ChatResponse
 
-loop:
 	for resp := range ch {
 		lr = resp
+		if len(resp.Choices) == 0 {
+			continue
+		}
 
 		switch resp.Choices[0].FinishReason() {
-		case model.FinishReasonStop:
-			break loop
+		case model.FinishReasonStop, model.FinishReasonLength:
+			continue
 
 		case model.FinishReasonError:
 			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
@@ -212,6 +217,9 @@ loop:
 	}
 
 	// -------------------------------------------------------------------------
+	if lr.Usage == nil {
+		return fmt.Errorf("stream ended without usage")
+	}
 
 	contextTokens := lr.Usage.PromptTokens + lr.Usage.CompletionTokens
 	contextWindow := krn.ModelConfig().ContextWindow()

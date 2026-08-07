@@ -301,6 +301,10 @@ func (v responseValidator) hasCreated() responseValidator {
 
 func (v responseValidator) hasUsage(reasoning bool) responseValidator {
 	u := v.resp.Usage
+	if u == nil {
+		v.errors = append(v.errors, "expected usage to be present")
+		return v
+	}
 
 	if u.PromptTokens <= 0 {
 		v.errors = append(v.errors, "expected prompt_tokens to be greater than 0")
@@ -450,14 +454,6 @@ func (v responseValidator) hasLogprobs(topLogprobs int) responseValidator {
 	return v
 }
 
-func (v responseValidator) hasNoPrompt() responseValidator {
-	if v.resp.Prompt != "" {
-		v.errors = append(v.errors, "expected prompt to be empty when return_prompt is not set")
-	}
-
-	return v
-}
-
 func (v responseValidator) hasValidJSON() responseValidator {
 	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")
@@ -511,6 +507,79 @@ func (v responseValidator) hasToolCalls(funcName string) responseValidator {
 	}
 
 	return v
+}
+
+func validateChatUsageStream(events []json.RawMessage) string {
+	return validateChatUsageStreamReasoning(events, true)
+}
+
+func validateChatUsageStreamReasoning(events []json.RawMessage, reasoning bool) string {
+	if len(events) < 2 {
+		return fmt.Sprintf("expected terminal choice and usage events, got %d events", len(events))
+	}
+
+	for i, data := range events[:len(events)-1] {
+		var event map[string]json.RawMessage
+		if err := json.Unmarshal(data, &event); err != nil {
+			return fmt.Sprintf("stream event %d: unmarshal: %v", i, err)
+		}
+
+		usage, exists := event["usage"]
+		if !exists || string(usage) != "null" {
+			return fmt.Sprintf("stream event %d: usage: got %s, want null", i, usage)
+		}
+	}
+
+	var terminal model.ChatResponse
+	if err := json.Unmarshal(events[len(events)-2], &terminal); err != nil {
+		return fmt.Sprintf("terminal choice event: unmarshal: %v", err)
+	}
+	if len(terminal.Choices) != 1 {
+		return fmt.Sprintf("terminal choice event: got %d choices, want 1", len(terminal.Choices))
+	}
+	switch terminal.Choices[0].FinishReason() {
+	case model.FinishReasonStop, model.FinishReasonLength, model.FinishReasonTool:
+	default:
+		return fmt.Sprintf("terminal choice event: invalid finish_reason %q", terminal.Choices[0].FinishReason())
+	}
+
+	var trailer model.ChatResponse
+	if err := json.Unmarshal(events[len(events)-1], &trailer); err != nil {
+		return fmt.Sprintf("usage event: unmarshal: %v", err)
+	}
+	if trailer.Choices == nil || len(trailer.Choices) != 0 {
+		return fmt.Sprintf("usage event choices: got %v, want []", trailer.Choices)
+	}
+	if trailer.Usage == nil {
+		return "usage event: expected usage"
+	}
+	if trailer.Usage.PromptTokens <= 0 {
+		return fmt.Sprintf("usage event prompt_tokens: got %d, want greater than 0", trailer.Usage.PromptTokens)
+	}
+	if trailer.Usage.CompletionTokens <= 0 {
+		return fmt.Sprintf("usage event completion_tokens: got %d, want greater than 0", trailer.Usage.CompletionTokens)
+	}
+	if reasoning && trailer.Usage.CompletionTokensDetails.ReasoningTokens <= 0 {
+		return fmt.Sprintf("usage event reasoning_tokens: got %d, want greater than 0", trailer.Usage.CompletionTokensDetails.ReasoningTokens)
+	}
+	if reasoningTokens := trailer.Usage.CompletionTokensDetails.ReasoningTokens; reasoningTokens < 0 || reasoningTokens > trailer.Usage.CompletionTokens {
+		return fmt.Sprintf("usage event reasoning_tokens: got %d, want a subset of completion_tokens", reasoningTokens)
+	}
+	if trailer.Usage.TotalTokens != trailer.Usage.PromptTokens+trailer.Usage.CompletionTokens {
+		return fmt.Sprintf("usage event total_tokens: got %d, want prompt_tokens + completion_tokens", trailer.Usage.TotalTokens)
+	}
+	if trailer.Usage.TokensPerSecond <= 0 {
+		return fmt.Sprintf("usage event tokens_per_second: got %f, want greater than 0", trailer.Usage.TokensPerSecond)
+	}
+	if trailer.ID != terminal.ID ||
+		trailer.Object != terminal.Object ||
+		trailer.Created != terminal.Created ||
+		trailer.Model != terminal.Model ||
+		trailer.SystemFingerprint != terminal.SystemFingerprint {
+		return "usage event metadata does not match the terminal choice event"
+	}
+
+	return ""
 }
 
 func validateToolCallStream(events []json.RawMessage, funcName string, argName string) string {

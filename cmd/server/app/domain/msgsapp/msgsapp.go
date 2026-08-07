@@ -88,6 +88,7 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 	if !supportsResponseFlush(w) {
 		return false, fmt.Errorf("streaming not supported")
 	}
+	d["stream_options"] = model.D{"include_usage": true}
 
 	ch, err := krn.ChatStreaming(ctx, d)
 	if err != nil {
@@ -153,6 +154,11 @@ func (s *streamState) processChunk(resp model.ChatResponse) error {
 		s.started = true
 	}
 
+	if resp.Usage != nil {
+		s.inputTokens = resp.Usage.PromptTokens
+		s.outputTokens = resp.Usage.CompletionTokens
+	}
+
 	if len(resp.Choices) == 0 {
 		return nil
 	}
@@ -202,17 +208,6 @@ func (s *streamState) processChunk(resp model.ChatResponse) error {
 				return err
 			}
 		}
-	}
-
-	// Usage is only populated on the final chunk produced by chatResponseFinal.
-	// Capture both PromptTokens (cache-inclusive input count from nPrompt =
-	// cacheIdx + suffixTokens) and CompletionTokens so the closing
-	// message_delta event can report accurate cumulative usage. Without this,
-	// only message_start carried input_tokens — and on the first chunk
-	// resp.Usage is nil, so input_tokens was always reported as 0.
-	if resp.Usage != nil {
-		s.inputTokens = resp.Usage.PromptTokens
-		s.outputTokens = resp.Usage.CompletionTokens
 	}
 
 	// Capture the model's finish reason from the final chunk so finish() can

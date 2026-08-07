@@ -282,9 +282,26 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
 		}
 
-		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
+		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, err, usage)
 
 		return
+	}
+
+	if s.stopGate != nil && s.stopSource != "request-stop" {
+		for _, piece := range s.stopGate.flush() {
+			logprobIndex := appendStopPieceLogprobs(s, piece)
+			outcome := e.processDecodedPiece(s, piece, logprobIndex, true)
+			if outcome.parserEOG {
+				unaccountStopPiece(s, piece)
+				break
+			}
+			if outcome.err != nil {
+				outputTokens := s.reasonTokens + s.completionTokens
+				usage := Usage{PromptTokens: s.nPrompt, CompletionTokens: outputTokens, TotalTokens: s.nPrompt + outputTokens}
+				e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, outcome.err, usage)
+				return
+			}
+		}
 	}
 
 	if flusher, ok := s.stateMachine.(StateMachineFlusher); ok {
@@ -394,7 +411,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if outputTokens > 0 && e.model.draft != nil {
 		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
 	}
-	if toolCallErr != nil && s.finishReason == FinishReasonLength {
+	if toolCallErr != nil && (s.finishReason == FinishReasonLength || s.stopSource == "request-stop") {
 		valid := s.respToolCalls[:0]
 		for _, toolCall := range s.respToolCalls {
 			if toolCall.Status == 0 {
@@ -416,7 +433,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		attribute.Int("draft_accepted_tokens", s.specAcceptedTotal),
 		attribute.Int("draft_covered_tokens", s.specCoveredTotal),
 	)
-	if toolCallErr != nil && s.finishReason != FinishReasonLength {
+	if toolCallErr != nil && s.finishReason != FinishReasonLength && s.stopSource != "request-stop" {
 		err = toolCallErr
 		s.span.RecordError(err)
 		s.span.SetAttributes(attribute.String("request_status", "error"))
@@ -425,7 +442,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		if !s.job.requestStart.IsZero() {
 			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
 		}
-		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, "", err, usage)
+		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, err, usage)
 		return
 	}
 
@@ -440,11 +457,6 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.stopSource == "" {
 		s.stopSource = "unknown"
 	}
-	returnPrompt := ""
-	if s.job.params.ReturnPrompt {
-		returnPrompt = s.job.prompt
-	}
-
 	var terminalToolCallDeltas []ResponseToolCallDelta
 	if s.job.params.Stream {
 		var started []ResponseToolCallDelta
@@ -453,8 +465,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, started)
 	}
-	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, returnPrompt,
-		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, usage)
+	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
+		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {
@@ -530,7 +542,7 @@ func (e *batchEngine) flushStateMachine(s *slot, result Result) {
 	outputTokens := s.reasonTokens + s.completionTokens
 
 	updateSlotChannel(s, result.Channel)
-	if err := e.retainAndStreamResult(s, result, outputTokens, nil); err != nil {
+	if err := e.retainAndStreamResult(s, result, outputTokens, nil, -1); err != nil {
 		e.model.log(s.job.ctx, "parser-flush", "status", "delta-failed", "err", err)
 	}
 }
@@ -584,7 +596,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 		"imc_cache_hit", job.imcSnapshotReused,
 		"err", err, "active_streams", remaining)
 
-	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, "", err, Usage{})
+	e.model.sendErrorResponse(job.ctx, job.ch, job.id, job.object, 0, err, Usage{})
 	close(job.ch)
 }
 

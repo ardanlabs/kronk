@@ -50,7 +50,7 @@ const (
 
 	// DefIncludeUsage determines whether to include token usage information in
 	// streaming responses.
-	DefIncludeUsage = true
+	DefIncludeUsage = false
 
 	// DefLogprobs determines whether to return log probabilities of output tokens.
 	// When enabled, the response includes probability data for each generated token.
@@ -88,10 +88,6 @@ const (
 	// JSON tokens like { in tool call formats (e.g., Gemma's call:func{{...}}),
 	// causing the model to substitute [ for { and producing invalid arguments.
 	DefRepeatPenalty = 1.0
-
-	// DefReturnPrompt determines whether to include the prompt in the final response.
-	// When set to true, the prompt will be included.
-	DefReturnPrompt = false
 
 	// DefTemp controls the randomness of the output. It rescales the probability
 	// distribution of possible next tokens.
@@ -195,7 +191,7 @@ type Params struct {
 	Grammar string `json:"grammar"`
 
 	// IncludeUsage determines whether to include token usage information in
-	// streaming responses. Default is true.
+	// streaming responses. Default is false.
 	IncludeUsage bool `json:"include_usage"`
 
 	// Logprobs determines whether to return log probabilities of output tokens.
@@ -231,16 +227,15 @@ type Params struct {
 	// strong). Default is 1.0 which turns it off.
 	RepeatPenalty float32 `json:"repeat_penalty"`
 
-	// ReturnPrompt determines whether to include the prompt in the final
-	// response. When set to true, the prompt will be included. Default is false.
-	ReturnPrompt bool `json:"return_prompt"`
-
 	// Seed initializes request sampling randomness. Nil selects a random seed;
 	// any non-nil value, including 0, requests repeatable sampling.
 	Seed *uint32 `json:"seed,omitempty"`
 
 	// Stream determines whether to stream the response.
 	Stream bool `json:"stream"`
+
+	// Stop contains request-specific sequences that terminate generation.
+	Stop []string `json:"stop,omitempty"`
 
 	// Temperature controls the randomness of the output. It rescales the
 	// probability distribution of possible next tokens. Default is 0.8.
@@ -304,7 +299,6 @@ func (p Params) String() string {
 	fmt.Fprintf(&b, "reasoning_effort[%v]\n", p.ReasoningEffort)
 	fmt.Fprintf(&b, "repeat_last_n[%v]\n", p.RepeatLastN)
 	fmt.Fprintf(&b, "repeat_penalty[%v]\n", p.RepeatPenalty)
-	fmt.Fprintf(&b, "return_prompt[%v]\n", p.ReturnPrompt)
 	if p.Seed == nil {
 		fmt.Fprintln(&b, "seed[random]")
 	} else {
@@ -374,14 +368,14 @@ func AddParams(params Params, d D) {
 	if params.RepeatPenalty != 0 {
 		d["repeat_penalty"] = params.RepeatPenalty
 	}
-	if params.ReturnPrompt {
-		d["return_prompt"] = params.ReturnPrompt
-	}
 	if params.Seed != nil {
 		d["seed"] = *params.Seed
 	}
 	if params.Stream {
 		d["stream"] = params.Stream
+	}
+	if len(params.Stop) > 0 {
+		d["stop"] = slices.Clone(params.Stop)
 	}
 	if params.Temperature != 0 {
 		d["temperature"] = params.Temperature
@@ -415,6 +409,7 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	p := m.cfg.DefaultParams
 	p.IncludeUsage = DefIncludeUsage
 	p.Seed = nil
+	p.Stop = nil
 
 	if val, exists := d["adaptive_p_decay"]; exists {
 		adaptivePDecay, err := parseFloat32("adaptive_p_decay", val)
@@ -571,14 +566,6 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 		p.RepeatPenalty = repeatPenalty
 	}
 
-	if val, exists := d["return_prompt"]; exists {
-		returnPrompt, err := parseBool("return_prompt", val)
-		if err != nil {
-			return Params{}, err
-		}
-		p.ReturnPrompt = returnPrompt
-	}
-
 	if val, exists := d["seed"]; exists {
 		seed, err := parseSeed(val)
 		if err != nil {
@@ -593,6 +580,14 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 			return Params{}, err
 		}
 		p.Stream = stream
+	}
+
+	if val, exists := d["stop"]; exists {
+		stop, err := parseStop(val)
+		if err != nil {
+			return Params{}, err
+		}
+		p.Stop = stop
 	}
 
 	if streamOpts, exists := d["stream_options"]; exists {

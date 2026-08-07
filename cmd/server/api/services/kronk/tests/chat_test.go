@@ -30,11 +30,10 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"return_prompt": true,
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -49,7 +48,6 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Model:             "Qwen3-8B-Q8_0",
 				Object:            "chat.completion",
 				SystemFingerprint: "fp_kronk",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -86,13 +84,12 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"return_prompt": true,
-				"logprobs":      true,
-				"top_logprobs":  3,
+				"max_tokens":   2048,
+				"temperature":  0.7,
+				"top_p":        0.9,
+				"top_k":        40,
+				"logprobs":     true,
+				"top_logprobs": 3,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -107,7 +104,6 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -150,14 +146,18 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"stream":        true,
-				"return_prompt": true,
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
+				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -168,7 +168,6 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -184,10 +183,10 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					hasNoLogprobs().
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 		{
 			Name:       "good-token-logprobs",
@@ -200,16 +199,20 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"stream":        true,
-				"return_prompt": true,
-				"logprobs":      true,
-				"top_logprobs":  3,
+				"max_tokens":   2048,
+				"temperature":  0.7,
+				"top_p":        0.9,
+				"top_k":        40,
+				"stream":       true,
+				"logprobs":     true,
+				"top_logprobs": 3,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -220,7 +223,6 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -240,10 +242,10 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					hasNoLogprobs().
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 	}
 }
@@ -269,8 +271,13 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -284,7 +291,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -296,9 +303,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 		{
 			Name:       "imc-second-turn-cache-hit",
@@ -318,8 +325,13 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -333,7 +345,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -345,9 +357,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 		{
 			Name:       "imc-different-session",
@@ -365,8 +377,13 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				"max_tokens":  2048,
 				"temperature": 0.7,
 				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -380,7 +397,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "Prompt"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -392,9 +409,9 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 	}
 }
@@ -413,11 +430,10 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 				"messages": model.DocumentArray(
 					model.TextMessageArray(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"return_prompt": true,
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
 			},
 			GotResp: &model.ChatResponse{},
 			ExpResp: &model.ChatResponse{
@@ -432,7 +448,6 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -475,14 +490,18 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 				"messages": model.DocumentArray(
 					model.TextMessageArray(model.RoleUser, "Echo back the word: Gorilla"),
 				),
-				"max_tokens":    2048,
-				"temperature":   0.7,
-				"top_p":         0.9,
-				"top_k":         40,
-				"stream":        true,
-				"return_prompt": true,
+				"max_tokens":  2048,
+				"temperature": 0.7,
+				"top_p":       0.9,
+				"top_k":       40,
+				"stream":      true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -493,7 +512,6 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 				Model:             "Qwen3-8B-Q8_0",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
-				Prompt:            "<|im_start|>user\nEcho back the word: Gorilla<|im_end|>\n<|im_start|>assistant\n",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -509,10 +527,10 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					hasNoLogprobs().
 					result(t)
 			},
+			StreamCmpFunc: validateChatUsageStream,
 		},
 	}
 }
@@ -571,7 +589,6 @@ func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasUsage(false).
 					hasContent().
 					hasNoLogprobs().
-					hasNoPrompt().
 					warnContainsInContent("giraffes").
 					result(t)
 			},
@@ -634,7 +651,6 @@ func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 					hasUsage(false).
 					hasContent().
 					hasNoLogprobs().
-					hasNoPrompt().
 					warnContainsInContent("speech").
 					result(t)
 			},
@@ -720,8 +736,13 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 				"max_tokens":   512,
 				"stream":       true,
 				"enable_think": false,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -747,9 +768,11 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(false).
 					hasNoLogprobs().
 					result(t)
+			},
+			StreamCmpFunc: func(events []json.RawMessage) string {
+				return validateChatUsageStreamReasoning(events, false)
 			},
 		},
 	}
@@ -870,8 +893,13 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 				"max_tokens":   512,
 				"temperature":  0.7,
 				"enable_think": true,
+				"stream_options": model.D{
+					"include_usage": true,
+				},
 			},
-			GotResp: &model.ChatResponse{},
+			GotResp:              &model.ChatResponse{},
+			StreamResponseOffset: 1,
+			RequireDone:          true,
 			ExpResp: &model.ChatResponse{
 				Choices: []model.Choice{
 					{
@@ -900,11 +928,14 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
-					hasUsage(true).
 					result(t)
 			},
 			StreamCmpFunc: func(events []json.RawMessage) string {
-				return validateToolCallStream(events, "get_weather", "location")
+				if result := validateChatUsageStream(events); result != "" {
+					return result
+				}
+
+				return validateToolCallStream(events[:len(events)-1], "get_weather", "location")
 			},
 		},
 	}

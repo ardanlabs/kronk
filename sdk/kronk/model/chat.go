@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,6 +77,8 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // All requests (including vision/audio) use batch processing and can run
 // concurrently based on the NSeqMax config value, which controls parallel
 // sequence processing.
+// When stream_options.include_usage is true, the terminal choice is followed
+// by a usage response with an empty Choices slice.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
 	return m.chatStreaming(ctx, d, true)
 }
@@ -270,23 +273,18 @@ func (m *Model) validateOwnedDocument(ctx context.Context, d D) (Params, D, erro
 // override model defaults. Other arguments are unpacked only when the template
 // renders so names that overlap sampler fields remain template-only.
 func normalizeChatTemplateKwargs(d D, defaults D) error {
-	value, exists := d["chat_template_kwargs"]
+	requestKwargs, exists, err := requestChatTemplateKwargs(d)
+	if err != nil {
+		return err
+	}
 	if !exists && len(defaults) == 0 {
 		return nil
 	}
 
 	kwargs := D{}
 	maps.Copy(kwargs, defaults)
-
 	if exists {
-		switch value := value.(type) {
-		case D:
-			maps.Copy(kwargs, value)
-		case map[string]any:
-			maps.Copy(kwargs, value)
-		default:
-			return fmt.Errorf("%w: chat_template_kwargs must be an object", ErrInvalidRequest)
-		}
+		maps.Copy(kwargs, requestKwargs)
 	}
 
 	if _, exists := kwargs["chat_template_kwargs"]; exists {
@@ -301,6 +299,29 @@ func normalizeChatTemplateKwargs(d D, defaults D) error {
 	d["chat_template_kwargs"] = kwargs
 
 	return nil
+}
+
+func requestChatTemplateKwargs(d D) (D, bool, error) {
+	value, exists := d["chat_template_kwargs"]
+	if !exists {
+		return nil, false, nil
+	}
+
+	var kwargs D
+	switch value := value.(type) {
+	case D:
+		kwargs = value
+	case map[string]any:
+		kwargs = value
+	default:
+		return nil, true, fmt.Errorf("%w: chat_template_kwargs must be an object", ErrInvalidRequest)
+	}
+
+	if _, exists := kwargs["chat_template_kwargs"]; exists {
+		return nil, true, fmt.Errorf("%w: chat_template_kwargs cannot contain itself", ErrInvalidRequest)
+	}
+
+	return kwargs, true, nil
 }
 
 // prepareContext prepares the document for inference, handling both text-only
@@ -698,14 +719,53 @@ func ValidateChatRequest(d D) error {
 	if err := ValidateMessages(d); err != nil {
 		return err
 	}
-	if _, exists := d["stop"]; exists {
-		return fmt.Errorf("%w: stop is not supported", ErrInvalidRequest)
+	if _, _, err := requestChatTemplateKwargs(d); err != nil {
+		return err
+	}
+	if val, exists := d["stop"]; exists {
+		if _, err := parseStop(val); err != nil {
+			return err
+		}
 	}
 	if err := validateToolChoice(d); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func parseStop(val any) ([]string, error) {
+	if val == nil {
+		return nil, nil
+	}
+
+	var stops []string
+	switch value := val.(type) {
+	case string:
+		stops = []string{value}
+	case []string:
+		stops = slices.Clone(value)
+	case []any:
+		stops = make([]string, len(value))
+		for i, item := range value {
+			stop, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("%w: stop entries must be strings", ErrInvalidRequest)
+			}
+			stops[i] = stop
+		}
+	default:
+		return nil, fmt.Errorf("%w: stop must be a string or an array of strings", ErrInvalidRequest)
+	}
+
+	if len(stops) > 4 {
+		return nil, fmt.Errorf("%w: stop supports at most four sequences", ErrInvalidRequest)
+	}
+	if slices.Contains(stops, "") {
+		return nil, fmt.Errorf("%w: stop sequences must not be empty", ErrInvalidRequest)
+	}
+
+	return stops, nil
 }
 
 func validateToolChoice(d D) error {
@@ -931,7 +991,7 @@ func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id st
 
 	// I want to try and send this message before we check the context.
 	select {
-	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, "", err, Usage{}):
+	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, err, Usage{}):
 		return
 	default:
 	}
@@ -939,10 +999,10 @@ func (m *Model) sendChatError(ctx context.Context, ch chan<- ChatResponse, id st
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, "", ctx.Err(), Usage{}):
+		case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, ctx.Err(), Usage{}):
 		default:
 		}
 
-	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, "", err, Usage{}):
+	case ch <- ChatResponseErr(id, ObjectChatUnknown, m.modelInfo.ID, 0, err, Usage{}):
 	}
 }

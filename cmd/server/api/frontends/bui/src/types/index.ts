@@ -127,6 +127,8 @@ export interface ModelConfig {
   'load-mode': ModelLoadMode;
   'flash-attention': string;
   'nseq-max': number;
+  'queue-depth': number;
+  'admission-capacity': number;
   'imc-session-capacity': number;
   'offload-kqv': boolean | null;
   'op-offload': boolean | null;
@@ -539,7 +541,6 @@ export interface ChatRequest {
   frequency_penalty?: number;
   enable_thinking?: string;
   reasoning_effort?: string;
-  return_prompt?: boolean;
   stream_options?: {
     include_usage?: boolean;
   };
@@ -762,7 +763,6 @@ export interface PlaygroundChatRequest {
   messages: ChatMessage[];
   tools?: ChatToolDefinition[];
   stream?: boolean;
-  return_prompt?: boolean;
   temperature?: number;
   top_k?: number;
   top_p?: number;

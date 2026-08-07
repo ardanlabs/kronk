@@ -79,6 +79,12 @@ export default function DocsAPIResponses() {
                     <td>Enable streaming responses (default: false)</td>
                   </tr>
                   <tr>
+                    <td><code>stream_options</code></td>
+                    <td><code>object</code></td>
+                    <td>No</td>
+                    <td>Set include_usage to true to include usage in the completed streaming response (default: false)</td>
+                  </tr>
+                  <tr>
                     <td><code>instructions</code></td>
                     <td><code>string</code></td>
                     <td>No</td>
@@ -211,12 +217,6 @@ export default function DocsAPIResponses() {
                     <td>Reasoning level for GPT models: none, minimal, low, medium, high</td>
                   </tr>
                   <tr>
-                    <td><code>return_prompt</code></td>
-                    <td><code>bool</code></td>
-                    <td>No</td>
-                    <td>Include the prompt in the final response</td>
-                  </tr>
-                  <tr>
                     <td><code>logprobs</code></td>
                     <td><code>bool</code></td>
                     <td>No</td>
@@ -261,7 +261,8 @@ export default function DocsAPIResponses() {
     "input": [
       {"role": "user", "content": "Write a short poem about coding"}
     ],
-    "stream": true
+    "stream": true,
+    "stream_options": {"include_usage": true}
   }'`}</code>
               </pre>
               <p className="example-label"><strong>With tools:</strong></p>

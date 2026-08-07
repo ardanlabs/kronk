@@ -228,6 +228,12 @@ func (p *Pool) ModelConfig() map[string]models.ModelConfig {
 	return p.llama.ModelConfig()
 }
 
+// ResolvedModelConfig returns the same budgeted configuration used to prepare
+// a model for planning and loading.
+func (p *Pool) ResolvedModelConfig(modelID string) (models.ModelConfig, error) {
+	return p.llama.ResolvedModelConfig(modelID)
+}
+
 // GetExisting returns a pooled model if it exists, without creating
 // one.
 func (p *Pool) GetExisting(key string) (*kronk.Kronk, bool) {

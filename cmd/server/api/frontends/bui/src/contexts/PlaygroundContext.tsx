@@ -25,8 +25,8 @@ interface PlaygroundState {
   setSweepMode: React.Dispatch<React.SetStateAction<'sampling' | 'config'>>;
 
   // Active tab (within manual mode)
-  activeTab: 'chat' | 'tools' | 'inspector';
-  setActiveTab: React.Dispatch<React.SetStateAction<'chat' | 'tools' | 'inspector'>>;
+  activeTab: 'chat' | 'tools';
+  setActiveTab: React.Dispatch<React.SetStateAction<'chat' | 'tools'>>;
 
   // System prompt
   systemPrompt: string;
@@ -80,7 +80,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [selectedModel, setSelectedModel] = useState('');
   const [playgroundMode, setPlaygroundMode] = useState<'automated' | 'manual' | 'history'>('automated');
   const [sweepMode, setSweepMode] = useState<'sampling' | 'config'>('sampling');
-  const [activeTab, setActiveTab] = useState<'chat' | 'tools' | 'inspector'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'tools'>('chat');
   const [systemPrompt, setSystemPrompt] = useState('You are a helpful assistant.');
   const [lastTPS, setLastTPS] = useState<number | null>(null);
   const [templateMode, setTemplateMode] = useState<'builtin' | 'custom'>('builtin');

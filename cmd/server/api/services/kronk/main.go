@@ -101,8 +101,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			InferenceTimeout   time.Duration `conf:"default:60m"`
 			IdleTimeout        time.Duration `conf:"default:1m"`
 			ShutdownTimeout    time.Duration `conf:"default:1m"`
-			APIHost            string        `conf:"default:0.0.0.0:11435"`
-			DebugHost          string        `conf:"default:0.0.0.0:11445"`
+			APIHost            string        `conf:"default:127.0.0.1:11435"`
+			DebugHost          string        `conf:"default:127.0.0.1:11445"`
 			CORSAllowedOrigins []string      `conf:"default:*"`
 			Admin              struct {
 				Enabled        bool   `conf:"default:true"`

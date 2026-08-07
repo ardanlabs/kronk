@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -32,12 +33,18 @@ func (m *Models) KronkResolvedConfigWithBudget(modelID string, mc map[string]Mod
 	return m.kronkResolvedConfig(modelID, mc, &budget, nativeSWAFull...)
 }
 
-func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, budget *AutoTuneBudget, nativeSWAFull ...bool) (model.Config, error) {
+// ResolvedModelConfigWithBudget returns the hardware-aware model configuration
+// used by KronkResolvedConfigWithBudget before it is converted to model.Config.
+func (m *Models) ResolvedModelConfigWithBudget(modelID string, mc map[string]ModelConfig, budget AutoTuneBudget, nativeSWAFull ...bool) (ModelConfig, error) {
+	cfg, _, _, err := m.resolvedModelConfig(modelID, mc, &budget, nativeSWAFull...)
+	return cfg, err
+}
 
+func (m *Models) resolvedModelConfig(modelID string, mc map[string]ModelConfig, budget *AutoTuneBudget, nativeSWAFull ...bool) (ModelConfig, bool, Path, error) {
 	// Confirm the model is on disk before resolving anything else.
 	fp, err := m.FullPath(modelID)
 	if err != nil {
-		return model.Config{}, fmt.Errorf("kronk-resolved-config: unable to get model[%s] path: %w", modelID, err)
+		return ModelConfig{}, false, Path{}, fmt.Errorf("kronk-resolved-config: unable to get model[%s] path: %w", modelID, err)
 	}
 
 	// Layer 1: hardware-aware defaults derived from the GGUF file metadata.
@@ -50,6 +57,12 @@ func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 	}
 	cfg := m.analysisDefaultsWithConfigAndBudget(modelID, analysisOverride, budget)
 	sizing := cfg
+	if !autoTuneApplied(sizing) {
+		if info, err := m.ModelInformation(modelID); err == nil {
+			sizing = fallbackAutoTuneSizing(info, analysisOverride)
+			cfg = sizing
+		}
+	}
 
 	// Layer 3: user overrides from model_config.yaml.
 	if _, ok := mc[modelID]; ok {
@@ -59,13 +72,22 @@ func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 
 	// Resolve grammar (.grm filename -> contents) before converting.
 	if err := m.ResolveGrammar(&cfg.Sampling); err != nil {
-		return model.Config{}, fmt.Errorf("kronk-resolved-config: %w", err)
+		return ModelConfig{}, false, Path{}, fmt.Errorf("kronk-resolved-config: %w", err)
+	}
+
+	return cfg, autoTuneApplied(sizing), fp, nil
+}
+
+func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, budget *AutoTuneBudget, nativeSWAFull ...bool) (model.Config, error) {
+	cfg, autoTuned, fp, err := m.resolvedModelConfig(modelID, mc, budget, nativeSWAFull...)
+	if err != nil {
+		return model.Config{}, err
 	}
 
 	// Convert to model.Config and attach on-disk paths.
 	out := cfg.ToKronkConfig()
 	out.AutoTune = true
-	out.AutoTuned = autoTuneApplied(sizing)
+	out.AutoTuned = autoTuned
 	out.ModelFiles = fp.ModelFiles
 	out.ProjFile = fp.ProjFile
 	out.SessionStoreFactory, err = resolveSessionStoreFactory(cfg)
@@ -122,6 +144,28 @@ func resolveSessionStoreFactory(cfg ModelConfig) (model.SessionStoreFactory, err
 
 func autoTuneApplied(cfg ModelConfig) bool {
 	return cfg.PtrContextWindow != nil && cfg.PtrNSeqMax != nil
+}
+
+// fallbackAutoTuneSizing materializes the runtime's deterministic sizing
+// defaults when hardware analysis cannot recommend a configuration. This keeps
+// pool planning and loading on the same configuration without retrying AutoTune
+// against a fresh device snapshot during load.
+func fallbackAutoTuneSizing(info ModelInfo, constraints ModelConfig) ModelConfig {
+	arch := info.Metadata["general.architecture"]
+	trainingCtx, _ := gguf.ParseInt64WithFallback(info.Metadata, arch+".context_length", ".context_length")
+
+	cfg := ModelConfig{
+		PtrContextWindow: new(0),
+		PtrNSeqMax:       new(0),
+	}
+	if constraints.PtrContextWindow != nil {
+		cfg.PtrContextWindow = constraints.PtrContextWindow
+	}
+	if constraints.PtrNSeqMax != nil {
+		cfg.PtrNSeqMax = constraints.PtrNSeqMax
+	}
+
+	return normalizeAnalysisConfig(cfg, trainingCtx)
 }
 
 // restoreAutoTunedSizing ensures the resolved config uses the sizing values

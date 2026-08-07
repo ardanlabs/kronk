@@ -71,7 +71,7 @@ export default function DocsCLICatalog() {
                   </tr>
                   <tr>
                     <td><code>KRONK_BASE_PATH</code></td>
-                    <td>$HOME/kronk</td>
+                    <td>$HOME/.kronk</td>
                     <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                 </tbody>
@@ -132,7 +132,7 @@ kronk catalog list --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_BASE_PATH</code></td>
-                    <td>$HOME/kronk</td>
+                    <td>$HOME/.kronk</td>
                     <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                 </tbody>
@@ -193,7 +193,7 @@ kronk catalog show unsloth/Qwen3-8B-GGUF --local`}</code>
                   </tr>
                   <tr>
                     <td><code>KRONK_BASE_PATH</code></td>
-                    <td>$HOME/kronk</td>
+                    <td>$HOME/.kronk</td>
                     <td>Base path for kronk data directories (local mode)</td>
                   </tr>
                 </tbody>
