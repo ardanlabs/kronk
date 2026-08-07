@@ -2,6 +2,7 @@ package qwen3_test
 
 import (
 	"context"
+	"maps"
 	"testing"
 	"time"
 
@@ -215,7 +216,8 @@ func TestUsageAccumulation(t *testing.T) {
 					"content": "List three colors: red, blue, green.",
 				},
 			},
-			"max_tokens": 1024,
+			"max_tokens":     1024,
+			"stream_options": model.D{"include_usage": true},
 		}
 
 		ch, err := krn.ChatStreaming(ctx, d)
@@ -278,22 +280,31 @@ func TestUsageWithToolCalls(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
-		ch, err := krn.ChatStreaming(ctx, testlib.DChatTool)
+		d := maps.Clone(testlib.DChatTool)
+		d["stream_options"] = model.D{"include_usage": true}
+
+		ch, err := krn.ChatStreaming(ctx, d)
 		if err != nil {
 			t.Fatalf("chat streaming: %v", err)
 		}
 
-		var finalResp model.ChatResponse
+		var (
+			terminalResp model.ChatResponse
+			finalResp    model.ChatResponse
+		)
 		for resp := range ch {
 			finalResp = resp
+			if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() != "" {
+				terminalResp = resp
+			}
 		}
 
-		if len(finalResp.Choices) == 0 {
+		if len(terminalResp.Choices) == 0 {
 			t.Fatalf("expected at least one choice")
 		}
 
-		if finalResp.Choices[0].FinishReason() != "tool_calls" {
-			t.Logf("Warning: expected finish_reason=tool_calls, got %s", finalResp.Choices[0].FinishReason())
+		if terminalResp.Choices[0].FinishReason() != "tool_calls" {
+			t.Logf("Warning: expected finish_reason=tool_calls, got %s", terminalResp.Choices[0].FinishReason())
 		}
 
 		if finalResp.Usage == nil {
@@ -332,7 +343,8 @@ func TestUsageDeltaNil(t *testing.T) {
 					"content": "Count: 1 2 3 4 5",
 				},
 			},
-			"max_tokens": 128,
+			"max_tokens":     128,
+			"stream_options": model.D{"include_usage": true},
 		}
 
 		ch, err := krn.ChatStreaming(ctx, d)
