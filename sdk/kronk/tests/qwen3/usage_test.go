@@ -35,7 +35,8 @@ func testStreamingUsage(t *testing.T, krn *kronk.Kronk) {
 				"content": "Count from 1 to 5, one number per line.",
 			},
 		},
-		"max_tokens": 256,
+		"max_tokens":     256,
+		"stream_options": model.D{"include_usage": true},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
@@ -154,7 +155,8 @@ func testUsageOnlyInFinal(t *testing.T, krn *kronk.Kronk) {
 				"content": "Write a short poem about the sea.",
 			},
 		},
-		"max_tokens": 512,
+		"max_tokens":     512,
+		"stream_options": model.D{"include_usage": true},
 	}
 
 	ch, err := krn.ChatStreaming(ctx, d)
