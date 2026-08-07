@@ -58,6 +58,8 @@ func Routes(app *web.App, cfg Config) {
 
 	app.HandlerFunc(http.MethodGet, version, "/kronk/models", api.listModels, auth)
 	app.HandlerFunc(http.MethodGet, version, "/kronk/models/", api.missingModel, auth)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/integrity", api.listModelsIntegrity, auth)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/integrity/{model}", api.retrieveModelIntegrity, auth)
 	app.HandlerFunc(http.MethodGet, version, "/kronk/models/{model}", api.showModel, auth)
 	app.HandlerFunc(http.MethodGet, version, "/kronk/models/ps", api.modelPS, auth)
 	app.HandlerFunc(http.MethodGet, version, "/kronk/models/imc-sessions", api.imcSessions, auth)

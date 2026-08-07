@@ -369,55 +369,57 @@ type AdapterConfig struct {
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
-	Adapters              []AdapterConfig
-	PtrAdmissionTimeout   *time.Duration
-	AutoTune              bool
-	AutoTuned             bool
-	PtrCacheMinTokens     *int
-	CacheTypeK            GGMLType
-	CacheTypeV            GGMLType
-	PtrContextWindow      *int
-	DefaultParams         Params
-	ChatTemplateKwargs    D
-	PtrDraftModel         *DraftModelConfig
-	Devices               []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
-	PtrFlashAttention     *FlashAttentionType
-	PtrIMCSessionCapacity *int
-	PtrIncrementalCache   *bool
-	PtrInsecureLogging    *bool
-	JinjaFile             string
-	LoadMode              LoadMode
-	Log                   applog.Logger
-	PtrMainGPU            *int
-	PtrMoE                *MoEConfig
-	ModelFiles            []string
-	PtrNBatch             *int
-	PtrNGpuLayers         *int
-	PtrNSeqMax            *int
-	PtrNThreads           *int
-	PtrNThreadsBatch      *int
-	PtrNUBatch            *int
-	NUMA                  string
-	PtrOffloadKQV         *bool
-	PtrOpOffload          *bool
-	PtrOpOffloadMinBatch  *int
-	ProjFile              string
-	MTPDrafterFile        string
-	PtrProjOnCPU          *bool
-	PtrQueueDepth         *int
-	PtrRopeFreqBase       *float32
-	PtrRopeFreqScale      *float32
-	RopeScaling           RopeScalingType
-	SessionStoreFactory   SessionStoreFactory
-	PtrSplitMode          *SplitMode
-	PtrSWAFull            *bool
-	TensorBuftOverrides   []string
-	TensorSplit           []float32
-	PtrYarnAttnFactor     *float32
-	PtrYarnBetaFast       *float32
-	PtrYarnBetaSlow       *float32
-	PtrYarnExtFactor      *float32
-	PtrYarnOrigCtx        *int
+	Adapters                   []AdapterConfig
+	ArtifactIntegrity          map[string]ArtifactIntegrity
+	PtrAdmissionTimeout        *time.Duration
+	AutoTune                   bool
+	AutoTuned                  bool
+	PtrCacheMinTokens          *int
+	CacheTypeK                 GGMLType
+	CacheTypeV                 GGMLType
+	PtrContextWindow           *int
+	DefaultParams              Params
+	ChatTemplateKwargs         D
+	PtrDraftModel              *DraftModelConfig
+	Devices                    []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
+	PtrFlashAttention          *FlashAttentionType
+	PtrIMCSessionCapacity      *int
+	PtrIncrementalCache        *bool
+	PtrInsecureLogging         *bool
+	JinjaFile                  string
+	LoadMode                   LoadMode
+	Log                        applog.Logger
+	PtrMainGPU                 *int
+	PtrMoE                     *MoEConfig
+	ModelFiles                 []string
+	PtrNBatch                  *int
+	PtrNGpuLayers              *int
+	PtrNSeqMax                 *int
+	PtrNThreads                *int
+	PtrNThreadsBatch           *int
+	PtrNUBatch                 *int
+	NUMA                       string
+	PtrOffloadKQV              *bool
+	PtrOpOffload               *bool
+	PtrOpOffloadMinBatch       *int
+	ProjFile                   string
+	MTPDrafterFile             string
+	PtrProjOnCPU               *bool
+	PtrQueueDepth              *int
+	PtrRopeFreqBase            *float32
+	PtrRopeFreqScale           *float32
+	RecordArtifactVerification ArtifactVerificationRecorder
+	RopeScaling                RopeScalingType
+	SessionStoreFactory        SessionStoreFactory
+	PtrSplitMode               *SplitMode
+	PtrSWAFull                 *bool
+	TensorBuftOverrides        []string
+	TensorSplit                []float32
+	PtrYarnAttnFactor          *float32
+	PtrYarnBetaFast            *float32
+	PtrYarnBetaSlow            *float32
+	PtrYarnExtFactor           *float32
+	PtrYarnOrigCtx             *int
 }
 
 func (cfg Config) AdmissionTimeout() time.Duration {
@@ -626,7 +628,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 			}
 			for _, modelFile := range cfg.PtrDraftModel.ModelFiles {
 				log(ctx, "validate-config", "draft-model-file", modelFile)
-				if err := CheckModel(modelFile, true); err != nil {
+				if err := verifyConfiguredArtifact(ctx, cfg, log, modelFile); err != nil {
 					return fmt.Errorf("validate-config: draft model: %w", err)
 				}
 			}
@@ -669,7 +671,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	for _, modelFile := range cfg.ModelFiles {
 		log(ctx, "validate-config", "model-file", modelFile)
 
-		if err := CheckModel(modelFile, true); err != nil {
+		if err := verifyConfiguredArtifact(ctx, cfg, log, modelFile); err != nil {
 			return fmt.Errorf("validate-config: %w", err)
 		}
 	}
@@ -677,7 +679,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	if cfg.ProjFile != "" {
 		log(ctx, "validate-config", "model-file", cfg.ProjFile)
 
-		if err := CheckModel(cfg.ProjFile, true); err != nil {
+		if err := verifyConfiguredArtifact(ctx, cfg, log, cfg.ProjFile); err != nil {
 			return fmt.Errorf("validate-config: prog-file[%s]: %w", cfg.ProjFile, err)
 		}
 	}
@@ -685,8 +687,27 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	if cfg.MTPDrafterFile != "" {
 		log(ctx, "validate-config", "model-file", cfg.MTPDrafterFile)
 
-		if err := CheckModel(cfg.MTPDrafterFile, true); err != nil {
+		if err := verifyConfiguredArtifact(ctx, cfg, log, cfg.MTPDrafterFile); err != nil {
 			return fmt.Errorf("validate-config: mtp-drafter-file[%s]: %w", cfg.MTPDrafterFile, err)
+		}
+	}
+
+	return nil
+}
+
+func verifyConfiguredArtifact(ctx context.Context, cfg Config, log applog.Logger, modelFile string) error {
+	integrity, exists := cfg.ArtifactIntegrity[modelFile]
+	if !exists {
+		return nil
+	}
+
+	verification, changed, err := VerifyArtifact(modelFile, integrity.Digest, integrity.Verification, true)
+	if err != nil {
+		return err
+	}
+	if changed && cfg.RecordArtifactVerification != nil {
+		if err := cfg.RecordArtifactVerification(modelFile, verification); err != nil {
+			log(ctx, "record-artifact-verification", "model-file", modelFile, "ERROR", err)
 		}
 	}
 

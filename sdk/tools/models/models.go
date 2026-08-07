@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
@@ -202,7 +201,7 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 
 					for _, file := range files {
 						log(ctx, "running check ", "model", path.Base(file))
-						if err := model.CheckModel(file, true); err != nil {
+						if err := checkModel(file, true); err != nil {
 							log(ctx, "running check ", "model", path.Base(file), "ERROR", err)
 							validated = false
 						}
@@ -210,7 +209,7 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 
 					if mp.ProjFile != "" {
 						log(ctx, "running check ", "proj", path.Base(mp.ProjFile))
-						if err := model.CheckModel(mp.ProjFile, true); err != nil {
+						if err := checkModel(mp.ProjFile, true); err != nil {
 							log(ctx, "running check ", "proj", path.Base(mp.ProjFile), "ERROR", err)
 							validated = false
 						}
@@ -218,7 +217,7 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 
 					if mp.MTPFile != "" {
 						log(ctx, "running check ", "mtp", path.Base(mp.MTPFile))
-						if err := model.CheckModel(mp.MTPFile, true); err != nil {
+						if err := checkModel(mp.MTPFile, true); err != nil {
 							log(ctx, "running check ", "mtp", path.Base(mp.MTPFile), "ERROR", err)
 							validated = false
 						}
@@ -277,7 +276,7 @@ func matchMTPToModel(mtpPath string, modelfiles map[string][]string) (string, bo
 
 // MarkValidated sets Validated=true for the specified model in the index,
 // without performing a full rebuild. The download flow already verifies SHAs
-// for each file via model.CheckModel, so the entry can be trusted as soon as
+// for each file via checkModel, so the entry can be trusted as soon as
 // the index has been (re)built. Returns an error if the model is not present
 // in the index or the index cannot be written.
 func (m *Models) MarkValidated(modelID string) error {

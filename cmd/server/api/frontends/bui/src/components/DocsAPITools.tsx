@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 type Method = 'GET' | 'POST' | 'DELETE';
 
 type Endpoint = {
@@ -12,6 +14,7 @@ type EndpointGroup = {
   title: string;
   description: string;
   endpoints: Endpoint[];
+  details?: ReactNode;
 };
 
 const endpointGroups: EndpointGroup[] = [
@@ -43,6 +46,8 @@ const endpointGroups: EndpointGroup[] = [
     endpoints: [
       { method: 'GET', path: '/v1/kronk/models', description: 'List locally installed GGUF models with Kronk metadata.', auth: 'Admin' },
       { method: 'GET', path: '/v1/kronk/models/', description: 'Return the missing-model validation error for an empty model ID.', auth: 'Admin' },
+      { method: 'GET', path: '/v1/kronk/models/integrity', description: 'List local artifact digests and persisted verification evidence without hashing model files.', auth: 'Admin' },
+      { method: 'GET', path: '/v1/kronk/models/integrity/{model}', description: 'Return integrity information for one model without inspecting other models.', auth: 'Admin' },
       { method: 'GET', path: '/v1/kronk/models/{model}', description: 'Show metadata and effective configuration for one model.', auth: 'Admin' },
       { method: 'GET', path: '/v1/kronk/models/ps', description: 'List models currently loaded in the pool.', auth: 'Admin' },
       { method: 'GET', path: '/v1/kronk/models/imc-sessions', description: 'List active incremental-message-cache sessions.', auth: 'Admin' },
@@ -53,6 +58,109 @@ const endpointGroups: EndpointGroup[] = [
       { method: 'POST', path: '/v1/kronk/models/unload', description: 'Unload a model or playground instance from the pool.', auth: 'Admin' },
       { method: 'DELETE', path: '/v1/kronk/models/{model}', description: 'Remove a locally installed model.', auth: 'Admin' },
     ],
+    details: (
+      <>
+        <h4><code>GET /v1/kronk/models/integrity</code> response</h4>
+        <p>
+          Returns physical models from the local index, including every weight shard and optional projection and MTP artifacts.
+          Configured extension aliases are not duplicated. The request reads only the index, sidecars, and filesystem metadata; it
+          does not hash model contents.
+        </p>
+        <pre className="code-block"><code>{`{
+  "object": "model_integrity.list",
+  "data": [
+    {
+      "id": "Qwen3-VL-30B-Q4_K_M",
+      "owned_by": "unsloth",
+      "model_family": "Qwen3-VL-30B-GGUF",
+      "status": "unavailable",
+      "verified": false,
+      "artifacts": [
+        {
+          "role": "weights",
+          "filename": "Qwen3-VL-30B-Q4_K_M.gguf",
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "size": 18456789012,
+          "status": "verified",
+          "verified": true,
+          "verified_at": "2026-08-07T14:35:09Z"
+        },
+        {
+          "role": "projection",
+          "filename": "mmproj-Qwen3-VL-30B-Q4_K_M.gguf",
+          "size": 734567890,
+          "status": "unavailable",
+          "verified": false,
+          "reason": "digest_unavailable"
+        }
+      ]
+    }
+  ]
+}`}</code></pre>
+
+        <h4><code>GET /v1/kronk/models/integrity/{'{model}'}</code> response</h4>
+        <p>
+          Use the targeted route when only one model is needed, especially on installations with a large model inventory. It inspects
+          only that model and returns the model object directly, without the <code>object</code> and <code>data</code> list envelope. A
+          missing model returns <code>404 Not Found</code>.
+        </p>
+        <pre className="code-block"><code>{`{
+  "id": "Qwen3-VL-30B-Q4_K_M",
+  "owned_by": "unsloth",
+  "model_family": "Qwen3-VL-30B-GGUF",
+  "status": "verified",
+  "verified": true,
+  "artifacts": [
+    {
+      "role": "weights",
+      "filename": "Qwen3-VL-30B-Q4_K_M.gguf",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 18456789012,
+      "status": "verified",
+      "verified": true,
+      "verified_at": "2026-08-07T14:35:09Z"
+    }
+  ]
+}`}</code></pre>
+
+        <h4>Model fields</h4>
+        <table className="flags-table">
+          <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>object</code></td><td>Always <code>model_integrity.list</code>.</td></tr>
+            <tr><td><code>data</code></td><td>Physical models present in the local index.</td></tr>
+            <tr><td><code>id</code></td><td>Kronk model ID from the local index.</td></tr>
+            <tr><td><code>owned_by</code></td><td>Provider or organization directory containing the model.</td></tr>
+            <tr><td><code>model_family</code></td><td>Model-family directory containing the artifacts.</td></tr>
+            <tr><td><code>status</code></td><td>Least trustworthy artifact status: unavailable, stale, unverified, then verified.</td></tr>
+            <tr><td><code>verified</code></td><td>True only when every required artifact is verified.</td></tr>
+            <tr><td><code>artifacts</code></td><td>Weight shards followed by an optional projection and optional MTP drafter.</td></tr>
+          </tbody>
+        </table>
+
+        <h4>Artifact fields</h4>
+        <table className="flags-table">
+          <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>role</code></td><td><code>weights</code>, <code>projection</code>, or <code>mtp</code>. Every weight shard is separate.</td></tr>
+            <tr><td><code>filename</code></td><td>Basename of the local artifact.</td></tr>
+            <tr><td><code>digest</code></td><td>Hugging Face Git LFS identity as <code>sha256:&lt;hex&gt;</code>; omitted when unavailable.</td></tr>
+            <tr><td><code>size</code></td><td>Current local size in bytes; zero when the indexed file is absent.</td></tr>
+            <tr><td><code>status</code></td><td><code>verified</code>, <code>unverified</code>, <code>stale</code>, or <code>unavailable</code>.</td></tr>
+            <tr><td><code>verified</code></td><td>Convenience boolean that is true only for status <code>verified</code>.</td></tr>
+            <tr><td><code>verified_at</code></td><td>UTC time of the last successful full-file verification; omitted without a usable record.</td></tr>
+            <tr><td><code>reason</code></td><td>When applicable, <code>digest_unavailable</code> or <code>file_metadata_changed</code>.</td></tr>
+          </tbody>
+        </table>
+
+        <p>
+          <strong>Status meaning:</strong> <code>verified</code> means the published digest, persisted verification record, and current
+          size and modification time agree. <code>unverified</code> means a digest exists without a verification record. <code>stale</code>
+          means verification evidence or file metadata changed. <code>unavailable</code> means the digest sidecar is absent or malformed.
+          A verified result records an earlier full hash; this GET does not freshly prove the current bytes.
+        </p>
+      </>
+    ),
   },
   {
     id: 'kronk-catalog',
@@ -173,6 +281,7 @@ export default function DocsAPITools() {
                   ))}
                 </tbody>
               </table>
+              {group.details}
             </div>
           ))}
         </div>

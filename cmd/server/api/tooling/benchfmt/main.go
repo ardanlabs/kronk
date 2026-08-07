@@ -565,12 +565,16 @@ func writePerfGrid(out *strings.Builder, current run, prev *run) {
 			end := min(start+colsPerRow, len(names))
 			chunk := names[start:end]
 
-			// Headers.
-			var headers []string
-			for _, name := range chunk {
-				headers = append(headers, fmt.Sprintf("%-26s", shortName(name)))
+			// Headers. Match the width of the metric columns so each heading
+			// starts above its right-aligned metric values.
+			for i, name := range chunk {
+				if i == len(chunk)-1 {
+					out.WriteString(shortName(name))
+					continue
+				}
+				fmt.Fprintf(out, "%-32s", shortName(name))
 			}
-			out.WriteString(strings.Join(headers, "") + "\n")
+			out.WriteByte('\n')
 
 			// tok/s row.
 			var tokCols []string

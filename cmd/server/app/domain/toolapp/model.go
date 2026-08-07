@@ -150,6 +150,93 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]models.M
 
 // =============================================================================
 
+// ModelIntegrityArtifact provides integrity evidence for one physical model
+// artifact.
+type ModelIntegrityArtifact struct {
+	Role       string                 `json:"role"`
+	Filename   string                 `json:"filename"`
+	Digest     string                 `json:"digest,omitempty"`
+	Size       int64                  `json:"size"`
+	Status     models.IntegrityStatus `json:"status"`
+	Verified   bool                   `json:"verified"`
+	VerifiedAt *time.Time             `json:"verified_at,omitempty"`
+	Reason     string                 `json:"reason,omitempty"`
+}
+
+// ModelIntegrityDetail provides integrity information for one indexed model.
+type ModelIntegrityDetail struct {
+	ID          string                   `json:"id"`
+	OwnedBy     string                   `json:"owned_by"`
+	ModelFamily string                   `json:"model_family"`
+	Status      models.IntegrityStatus   `json:"status"`
+	Verified    bool                     `json:"verified"`
+	Artifacts   []ModelIntegrityArtifact `json:"artifacts"`
+}
+
+// Encode implements the encoder interface.
+func (app ModelIntegrityDetail) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// ModelIntegrityResponse contains the integrity inventory for locally
+// installed models.
+type ModelIntegrityResponse struct {
+	Object string                 `json:"object"`
+	Data   []ModelIntegrityDetail `json:"data"`
+}
+
+// Encode implements the encoder interface.
+func (app ModelIntegrityResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toModelIntegrity(modelIntegrity []models.IntegrityModel) ModelIntegrityResponse {
+	response := ModelIntegrityResponse{
+		Object: "model_integrity.list",
+		Data:   make([]ModelIntegrityDetail, 0, len(modelIntegrity)),
+	}
+
+	for _, integrity := range modelIntegrity {
+		response.Data = append(response.Data, toModelIntegrityDetail(integrity))
+	}
+
+	return response
+}
+
+func toModelIntegrityDetail(integrity models.IntegrityModel) ModelIntegrityDetail {
+	detail := ModelIntegrityDetail{
+		ID:          integrity.ID,
+		OwnedBy:     integrity.OwnedBy,
+		ModelFamily: integrity.ModelFamily,
+		Status:      integrity.Status,
+		Verified:    integrity.Verified,
+		Artifacts:   make([]ModelIntegrityArtifact, 0, len(integrity.Artifacts)),
+	}
+
+	for _, artifact := range integrity.Artifacts {
+		appArtifact := ModelIntegrityArtifact{
+			Role:     artifact.Role,
+			Filename: artifact.Filename,
+			Digest:   artifact.Digest,
+			Size:     artifact.Size,
+			Status:   artifact.Status,
+			Verified: artifact.Verified,
+			Reason:   artifact.Reason,
+		}
+		if !artifact.VerifiedAt.IsZero() {
+			appArtifact.VerifiedAt = &artifact.VerifiedAt
+		}
+
+		detail.Artifacts = append(detail.Artifacts, appArtifact)
+	}
+
+	return detail
+}
+
+// =============================================================================
+
 // OpenAIModel is a single entry in the OpenAI-compatible /v1/models list.
 type OpenAIModel struct {
 	ID      string `json:"id"`

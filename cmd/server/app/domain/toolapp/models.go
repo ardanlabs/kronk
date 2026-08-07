@@ -102,6 +102,26 @@ func (a *app) listModels(ctx context.Context, r *http.Request) web.Encoder {
 	return toListModelsInfo(modelFiles, resolvedConfigs, extendedConfig)
 }
 
+func (a *app) listModelsIntegrity(ctx context.Context, r *http.Request) web.Encoder {
+	integrity, err := a.models.Integrity()
+	if err != nil {
+		return errs.Errorf(errs.Internal, "unable to retrieve model integrity: %s", err)
+	}
+
+	return toModelIntegrity(integrity)
+}
+
+func (a *app) retrieveModelIntegrity(ctx context.Context, r *http.Request) web.Encoder {
+	modelID := web.Param(r, "model")
+
+	integrity, err := a.models.IntegrityFor(modelID)
+	if err != nil {
+		return errs.FromSDK(err)
+	}
+
+	return toModelIntegrityDetail(integrity)
+}
+
 // collectModelFiles returns all on-disk model files plus any extension
 // models declared in the model config that inherit from a base model.
 // Extension models use "/" in their ID (e.g. "model/FMC") and reuse the

@@ -370,6 +370,8 @@ cross-platform bundle; omit all three to operate on the active platform.
 | ---------------- | ------- |
 | `GET /v1/kronk/models` | List locally installed GGUF models with Kronk metadata |
 | `GET /v1/kronk/models/` | Return the missing-model validation error for an empty model ID |
+| `GET /v1/kronk/models/integrity` | List local artifact digests and persisted verification evidence without hashing model files |
+| `GET /v1/kronk/models/integrity/{model}` | Return integrity information for one local model without inspecting other models |
 | `GET /v1/kronk/models/{model}` | Show detailed metadata and effective configuration for one model |
 | `GET /v1/kronk/models/ps` | List models currently loaded in the pool |
 | `GET /v1/kronk/models/imc-sessions` | List active incremental-message-cache sessions |
@@ -383,6 +385,116 @@ cross-platform bundle; omit all three to operate on the active platform.
 The native model list and detail routes are distinct from the OpenAI-compatible
 `GET /v1/models` and `GET /v1/models/{model}` routes. Use the native routes for
 administration metadata and effective Kronk configuration.
+
+`GET /v1/kronk/models/integrity` returns each indexed physical model with its
+weight shards, projection, and MTP artifacts. Each artifact includes the local
+filename and size, its Hugging Face SHA-256 digest when available, and one of
+these evidence states. For example:
+
+```json
+{
+  "object": "model_integrity.list",
+  "data": [
+    {
+      "id": "Qwen3-VL-30B-Q4_K_M",
+      "owned_by": "unsloth",
+      "model_family": "Qwen3-VL-30B-GGUF",
+      "status": "unavailable",
+      "verified": false,
+      "artifacts": [
+        {
+          "role": "weights",
+          "filename": "Qwen3-VL-30B-Q4_K_M.gguf",
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "size": 18456789012,
+          "status": "verified",
+          "verified": true,
+          "verified_at": "2026-08-07T14:35:09Z"
+        },
+        {
+          "role": "projection",
+          "filename": "mmproj-Qwen3-VL-30B-Q4_K_M.gguf",
+          "size": 734567890,
+          "status": "unavailable",
+          "verified": false,
+          "reason": "digest_unavailable"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Use `GET /v1/kronk/models/integrity/{model}` when only one model is needed. It
+reads the index and inspects sidecars and filesystem metadata only for that
+model. The response is the matching model object directly, without the list
+envelope:
+
+```json
+{
+  "id": "Qwen3-VL-30B-Q4_K_M",
+  "owned_by": "unsloth",
+  "model_family": "Qwen3-VL-30B-GGUF",
+  "status": "verified",
+  "verified": true,
+  "artifacts": [
+    {
+      "role": "weights",
+      "filename": "Qwen3-VL-30B-Q4_K_M.gguf",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 18456789012,
+      "status": "verified",
+      "verified": true,
+      "verified_at": "2026-08-07T14:35:09Z"
+    }
+  ]
+}
+```
+
+The targeted route returns `404 Not Found` when the model is not present in the
+local index. It is preferable to the collection route on installations with a
+large model inventory when a caller needs only one model.
+
+The response envelope and model fields are:
+
+| Field | Meaning |
+| ----- | ------- |
+| `object` | Always `model_integrity.list`. |
+| `data` | Models physically present in the local model index. Configured extension aliases are not duplicated here. |
+| `id` | Kronk model ID from the local index. |
+| `owned_by` | Provider or organization directory containing the model. |
+| `model_family` | Model-family directory containing the artifacts. |
+| `status` | Least trustworthy status among the model's required artifacts: `unavailable`, then `stale`, then `unverified`, then `verified`. |
+| `verified` | `true` only when every required artifact has status `verified`. |
+| `artifacts` | Physical weight shards followed by an optional projection and optional MTP drafter. |
+
+Each artifact provides:
+
+| Field | Meaning |
+| ----- | ------- |
+| `role` | `weights`, `projection`, or `mtp`. Each weight shard is a separate artifact. |
+| `filename` | Basename of the local artifact. |
+| `digest` | Hugging Face Git LFS SHA-256 identity in `sha256:<hex>` form. Omitted when unavailable. |
+| `size` | Current local file size in bytes. It is `0` when an indexed file is absent. |
+| `status` | Current evidence state described below. |
+| `verified` | Convenience boolean that is `true` only for status `verified`. |
+| `verified_at` | UTC time of the last successful full-file verification. Omitted when no usable verification record exists. |
+| `reason` | Machine-readable explanation when applicable: `digest_unavailable` or `file_metadata_changed`. |
+
+Artifact statuses mean:
+
+- `verified` — the published digest, persisted verification record, and current
+  file size and modification time agree;
+- `unverified` — a published digest exists, but no persisted verification
+  record exists;
+- `stale` — persisted verification or current file metadata no longer agrees;
+- `unavailable` — the published digest sidecar is missing or malformed.
+
+This endpoint reads only the model index, small sidecar files, and filesystem
+metadata. It does not hash model contents or freshly verify their bytes. A
+`verified` result means Kronk previously hashed that artifact successfully and
+the tracked file metadata has not changed since. It does not prove the current
+bytes through a new content read.
 
 ### Catalog
 

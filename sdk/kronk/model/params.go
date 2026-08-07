@@ -904,13 +904,13 @@ func (m *Model) toSampler(ctx context.Context, p Params, seeds samplingSeeds) ll
 	// min-p → XTC → Temperature → dist. This ordering is critical for tool
 	// calling stability.
 
-	if p.RepeatPenalty != 1.0 || p.FrequencyPenalty != 0 || p.PresencePenalty != 0 {
+	if penaltiesEnabled(p) {
 		order++
 		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, p.FrequencyPenalty, p.PresencePenalty))
 		m.log(ctx, "sampler-chain", "order", order, "sampler", "penalties", "repeat_last_n", p.RepeatLastN, "repeat_penalty", fmt.Sprintf("%.2f", p.RepeatPenalty), "frequency_penalty", fmt.Sprintf("%.2f", p.FrequencyPenalty), "presence_penalty", fmt.Sprintf("%.2f", p.PresencePenalty))
 	}
 
-	if p.DryMultiplier > 0 {
+	if dryEnabled(p) {
 		order++
 		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow()), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, []string{"\n", ":", "\"", "*"}))
 		m.log(ctx, "sampler-chain", "order", order, "sampler", "dry", "multiplier", fmt.Sprintf("%.2f", p.DryMultiplier), "base", fmt.Sprintf("%.2f", p.DryBase), "allowed_len", p.DryAllowedLen, "penalty_last_n", p.DryPenaltyLast)
@@ -949,6 +949,18 @@ func (m *Model) toSampler(ctx context.Context, p Params, seeds samplingSeeds) ll
 	m.log(ctx, "sampler-chain", "order", order, "sampler", "dist")
 
 	return sampler
+}
+
+func penaltiesEnabled(p Params) bool {
+	return p.RepeatPenalty != 1.0 || p.FrequencyPenalty != 0 || p.PresencePenalty != 0
+}
+
+func dryEnabled(p Params) bool {
+	return p.DryMultiplier > 0
+}
+
+func samplerPromptRequired(p Params) bool {
+	return penaltiesEnabled(p) || dryEnabled(p)
 }
 
 func copySuppressTokens(vocab llama.Vocab) []llama.Token {

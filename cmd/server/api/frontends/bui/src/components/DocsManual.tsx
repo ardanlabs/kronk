@@ -2055,6 +2055,14 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td>Return the missing-model validation error for an empty model ID</td>
               </tr>
               <tr>
+                <td><code>GET /v1/kronk/models/integrity</code></td>
+                <td>List local artifact digests and persisted verification evidence without hashing model files</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/kronk/models/integrity/&#123;model&#125;</code></td>
+                <td>Return integrity information for one local model without inspecting other models</td>
+              </tr>
+              <tr>
                 <td><code>GET /v1/kronk/models/&#123;model&#125;</code></td>
                 <td>Show detailed metadata and effective configuration for one model</td>
               </tr>
@@ -2093,6 +2101,152 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p>The native model list and detail routes are distinct from the OpenAI-compatible <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code> routes. Use the native routes for administration metadata and effective Kronk configuration.</p>
+          <p><code>GET /v1/kronk/models/integrity</code> returns each indexed physical model with its weight shards, projection, and MTP artifacts. Each artifact includes the local filename and size, its Hugging Face SHA-256 digest when available, and one of these evidence states. For example:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "object": "model_integrity.list",
+  "data": [
+    {
+      "id": "Qwen3-VL-30B-Q4_K_M",
+      "owned_by": "unsloth",
+      "model_family": "Qwen3-VL-30B-GGUF",
+      "status": "unavailable",
+      "verified": false,
+      "artifacts": [
+        {
+          "role": "weights",
+          "filename": "Qwen3-VL-30B-Q4_K_M.gguf",
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "size": 18456789012,
+          "status": "verified",
+          "verified": true,
+          "verified_at": "2026-08-07T14:35:09Z"
+        },
+        {
+          "role": "projection",
+          "filename": "mmproj-Qwen3-VL-30B-Q4_K_M.gguf",
+          "size": 734567890,
+          "status": "unavailable",
+          "verified": false,
+          "reason": "digest_unavailable"
+        }
+      ]
+    }
+  ]
+}`}</code></pre>
+          <p>Use <code>GET /v1/kronk/models/integrity/&#123;model&#125;</code> when only one model is needed. It reads the index and inspects sidecars and filesystem metadata only for that model. The response is the matching model object directly, without the list envelope:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "id": "Qwen3-VL-30B-Q4_K_M",
+  "owned_by": "unsloth",
+  "model_family": "Qwen3-VL-30B-GGUF",
+  "status": "verified",
+  "verified": true,
+  "artifacts": [
+    {
+      "role": "weights",
+      "filename": "Qwen3-VL-30B-Q4_K_M.gguf",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 18456789012,
+      "status": "verified",
+      "verified": true,
+      "verified_at": "2026-08-07T14:35:09Z"
+    }
+  ]
+}`}</code></pre>
+          <p>The targeted route returns <code>404 Not Found</code> when the model is not present in the local index. It is preferable to the collection route on installations with a large model inventory when a caller needs only one model.</p>
+          <p>The response envelope and model fields are:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>object</code></td>
+                <td>Always <code>model_integrity.list</code>.</td>
+              </tr>
+              <tr>
+                <td><code>data</code></td>
+                <td>Models physically present in the local model index. Configured extension aliases are not duplicated here.</td>
+              </tr>
+              <tr>
+                <td><code>id</code></td>
+                <td>Kronk model ID from the local index.</td>
+              </tr>
+              <tr>
+                <td><code>owned_by</code></td>
+                <td>Provider or organization directory containing the model.</td>
+              </tr>
+              <tr>
+                <td><code>model_family</code></td>
+                <td>Model-family directory containing the artifacts.</td>
+              </tr>
+              <tr>
+                <td><code>status</code></td>
+                <td>Least trustworthy status among the model's required artifacts: <code>unavailable</code>, then <code>stale</code>, then <code>unverified</code>, then <code>verified</code>.</td>
+              </tr>
+              <tr>
+                <td><code>verified</code></td>
+                <td><code>true</code> only when every required artifact has status <code>verified</code>.</td>
+              </tr>
+              <tr>
+                <td><code>artifacts</code></td>
+                <td>Physical weight shards followed by an optional projection and optional MTP drafter.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Each artifact provides:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>role</code></td>
+                <td><code>weights</code>, <code>projection</code>, or <code>mtp</code>. Each weight shard is a separate artifact.</td>
+              </tr>
+              <tr>
+                <td><code>filename</code></td>
+                <td>Basename of the local artifact.</td>
+              </tr>
+              <tr>
+                <td><code>digest</code></td>
+                <td>Hugging Face Git LFS SHA-256 identity in <code>sha256:&lt;hex&gt;</code> form. Omitted when unavailable.</td>
+              </tr>
+              <tr>
+                <td><code>size</code></td>
+                <td>Current local file size in bytes. It is <code>0</code> when an indexed file is absent.</td>
+              </tr>
+              <tr>
+                <td><code>status</code></td>
+                <td>Current evidence state described below.</td>
+              </tr>
+              <tr>
+                <td><code>verified</code></td>
+                <td>Convenience boolean that is <code>true</code> only for status <code>verified</code>.</td>
+              </tr>
+              <tr>
+                <td><code>verified_at</code></td>
+                <td>UTC time of the last successful full-file verification. Omitted when no usable verification record exists.</td>
+              </tr>
+              <tr>
+                <td><code>reason</code></td>
+                <td>Machine-readable explanation when applicable: <code>digest_unavailable</code> or <code>file_metadata_changed</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Artifact statuses mean:</p>
+          <ul>
+            <li><code>verified</code> — the published digest, persisted verification record, and current file size and modification time agree;</li>
+            <li><code>unverified</code> — a published digest exists, but no persisted verification record exists;</li>
+            <li><code>stale</code> — persisted verification or current file metadata no longer agrees;</li>
+            <li><code>unavailable</code> — the published digest sidecar is missing or malformed.</li>
+          </ul>
+          <p>This endpoint reads only the model index, small sidecar files, and filesystem metadata. It does not hash model contents or freshly verify their bytes. A <code>verified</code> result means Kronk previously hashed that artifact successfully and the tracked file metadata has not changed since. It does not prove the current bytes through a new content read.</p>
           <h3 id="catalog">Catalog</h3>
           <table className="flags-table">
             <thead>
