@@ -2,7 +2,7 @@
 
 ## Table of Contents
 
-- [12.1 Authentication Modes](#121-authentication-modes)
+- [12.1 Authorization Modes](#121-authorization-modes)
 - [12.2 Initial Credentials](#122-initial-credentials)
 - [12.3 Admin and User Tokens](#123-admin-and-user-tokens)
 - [12.4 Endpoint Grants and Rate Limits](#124-endpoint-grants-and-rate-limits)
@@ -17,39 +17,40 @@ Kronk signs JWT bearer tokens with local RSA keys. A token can be an
 unrestricted administrator credential or a user credential limited to
 specific inference endpoints and request quotas.
 
-## 12.1 Authentication Modes
+## 12.1 Authorization Modes
 
-Inference and administrative protection are configured separately:
+`KRONK_AUTHORIZATION_MODE` selects the API access policy independently of
+whether Kronk uses its embedded auth service or `KRONK_AUTH_HOST`:
 
-| Mode | Inference auth | Admin auth | Effect |
-| ---- | -------------- | ---------- | ------ |
-| Open | Off | Off | Inference and management APIs are open. |
-| Admin-only | Off | On | Inference is open; management, playground, BUI login, and security APIs require an admin token. |
-| Fully protected | On | On automatically | Inference requires a valid scoped token, and administrative APIs require an admin token. |
+| Value | Model discovery | Inference | Management |
+| ----- | --------------- | --------- | ---------- |
+| `open` | Public | Public | Public |
+| `management` | Public | Public | Admin JWT |
+| `authenticated` | Valid JWT | Valid JWT without an endpoint grant | Admin JWT |
+| `full-protected` | Valid JWT | JWT with the matching endpoint grant | Admin JWT |
 
-Start a fully protected server with:
+Health endpoints remain public in every mode. Model discovery consists of
+`GET /v1/models` and `GET /v1/models/{model}`. Native Kronk model, integrity,
+catalog, device, diagnostic, pool, playground, and security endpoints are
+management APIs.
 
-```shell
-kronk server start --auth-enabled
-```
-
-To leave inference open while protecting administration:
-
-```shell
-kronk server start --admin-auth-enabled
-```
-
-The equivalent environment variables are:
+For example:
 
 ```shell
-export KRONK_AUTH_LOCAL_ENABLED=true
-export KRONK_AUTH_ADMIN_ENABLED=true
+export KRONK_AUTHORIZATION_MODE=full-protected
 kronk server start
 ```
 
-Setting `KRONK_AUTH_LOCAL_ENABLED=true` always enables admin authentication as
-well. `GET /v1/models` follows inference authentication: it requires a valid
-token in fully protected mode but has no separate `models` endpoint grant.
+When `KRONK_AUTHORIZATION_MODE` is set, it overrides the legacy
+`KRONK_AUTH_LOCAL_ENABLED` and `KRONK_AUTH_ADMIN_ENABLED` settings. When the new
+mode is unset, those settings retain their existing behavior for compatibility.
+This allows deployments to migrate before the legacy settings are deprecated.
+
+`KRONK_AUTH_HOST` selects the authentication provider; it does not change the
+rights in this table. `KRONK_WEB_ADMIN_ENABLED` independently controls whether
+the BUI is served. When using an external auth host with a mode that protects
+management, disable the BUI because its password login uses the embedded
+security store.
 
 ## 12.2 Initial Credentials
 
@@ -194,8 +195,9 @@ listener. Relevant server settings are:
 
 | Flag | Environment variable | Purpose |
 | ---- | -------------------- | ------- |
-| `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | Protect inference and administration. |
-| `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | Protect administration only. |
+| — | `KRONK_AUTHORIZATION_MODE` | Select `open`, `management`, `authenticated`, or `full-protected`; overrides the legacy authorization settings. |
+| `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | Legacy setting that protects inference and administration. |
+| `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | Legacy setting that protects administration only. |
 | `--auth-issuer` | `KRONK_AUTH_LOCAL_ISSUER` | Set the expected JWT issuer. |
 | `--auth-host` | `KRONK_AUTH_HOST` | Connect to an external auth service instead. |
 | `--auth-tls-enabled` | `KRONK_AUTH_TLS_ENABLED` | Use TLS for an external auth connection. |

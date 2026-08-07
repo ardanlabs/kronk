@@ -24,6 +24,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/bucky"
@@ -78,20 +79,16 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Configuration
 
-	// +-------------------+--------------------+--------------------------+---------------------------------------------------------------+
-	// | WEB_ADMIN_ENABLED | AUTH_ADMIN_ENABLED | AUTH_LOCAL_ENABLED       | Effective mode                                                |
-	// +-------------------+--------------------+--------------------------+---------------------------------------------------------------+
-	// | false             | false              | false                    | Headless; inference is open                                   |
-	// | true              | false              | false                    | BUI without login; inference is open                          |
-	// | true              | true               | false                    | BUI login; management protected; inference is open            |
-	// | true              | implied true       | true                     | BUI login; management and inference are protected             |
-	// | false             | implied true       | true                     | Headless; management and inference are protected              |
-	// +-------------------+--------------------+--------------------------+---------------------------------------------------------------+
-
-	// Notes:
-	// - WEB_ADMIN_ENABLED  controls whether the BUI is served under /admin/.
-	// - AUTH_ADMIN_ENABLED protects BUI login and management, playground, tool, and security endpoints.
-	// - AUTH_LOCAL_ENABLED protects inference endpoints and automatically enables admin authentication.
+	// AUTHORIZATION_MODE provides the explicit API access policy:
+	// - open: discovery, inference, and management are open.
+	// - management: management requires an administrator; discovery and inference are open.
+	// - authenticated: discovery and inference require a valid JWT; management requires an administrator.
+	// - full-protected: inference requires endpoint grants, discovery requires a valid JWT, and management requires an administrator.
+	//
+	// When AUTHORIZATION_MODE is set, it overrides AUTH_LOCAL_ENABLED and
+	// AUTH_ADMIN_ENABLED. When it is unset, the legacy settings retain their
+	// existing behavior. WEB_ADMIN_ENABLED independently controls whether the
+	// BUI is served under /admin/.
 
 	cfg := struct {
 		conf.Version
@@ -121,6 +118,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 				Issuer  string `conf:"default:kronk project"`
 				Enabled bool   `conf:"default:false"`
 			}
+		}
+		Authorization struct {
+			Mode auth.Mode
 		}
 		MCP struct {
 			Enabled     bool   `conf:"default:true"`
@@ -179,8 +179,13 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("parsing config: %w", err)
 	}
 	mcpAuthEnabled := cfg.MCP.Enabled && cfg.MCP.Host == "" && cfg.MCP.AuthEnabled
-	cfg.Auth.AdminEnabled = cfg.Auth.AdminEnabled || cfg.Auth.Local.Enabled || mcpAuthEnabled
-	if err := validateAdminConfig(cfg.Auth.AdminEnabled, cfg.Web.Admin.Enabled, cfg.Web.Admin.PasswordSHA256, cfg.Auth.Host); err != nil {
+	inferenceAuthEnabled, managementAuthEnabled, authServiceAdminEnabled := resolveAuthorizationSettings(
+		cfg.Authorization.Mode,
+		cfg.Auth.Local.Enabled,
+		cfg.Auth.AdminEnabled,
+		mcpAuthEnabled,
+	)
+	if err := validateAdminConfig(managementAuthEnabled, cfg.Web.Admin.Enabled, cfg.Web.Admin.PasswordSHA256, cfg.Auth.Host); err != nil {
 		return err
 	}
 	if err := validateTimeoutConfig(cfg.Web.InferenceTimeout, cfg.Web.WriteTimeout); err != nil {
@@ -259,14 +264,14 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			Security:         sec,
 			Listener:         lis,
 			Tracer:           tracer,
-			Enabled:          cfg.Auth.Local.Enabled,
-			AdminAuthEnabled: cfg.Auth.AdminEnabled,
+			Enabled:          inferenceAuthEnabled,
+			AdminAuthEnabled: authServiceAdminEnabled,
 		})
 
 		defer authApp.Shutdown(ctx)
 
 		authClientOpts = append(authClientOpts,
-			authclient.WithLocalAuth(cfg.Auth.Local.Enabled, cfg.Auth.AdminEnabled),
+			authclient.WithLocalAuth(inferenceAuthEnabled, authServiceAdminEnabled),
 			authclient.WithDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 				return lis.Dial()
 			}),
@@ -529,7 +534,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		BuckyLibs:           buckyLibs,
 		BuckyModels:         buckyModels,
 		DownloadEnabled:     cfg.Download.Enabled,
-		AdminAuthEnabled:    cfg.Auth.AdminEnabled,
+		AuthorizationMode:   cfg.Authorization.Mode,
+		AdminAuthEnabled:    managementAuthEnabled,
 		WebAdminEnabled:     cfg.Web.Admin.Enabled,
 		AdminPasswordSHA256: cfg.Web.Admin.PasswordSHA256,
 		Security:            sec,

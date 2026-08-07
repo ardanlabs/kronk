@@ -2761,47 +2761,50 @@ EOF`}</code></pre>
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
           <h2 id="chapter-12-security-and-authentication">Chapter 12: Security and Authentication</h2>
           <p>Kronk signs JWT bearer tokens with local RSA keys. A token can be an unrestricted administrator credential or a user credential limited to specific inference endpoints and request quotas.</p>
-          <h2 id="121-authentication-modes">12.1 Authentication Modes</h2>
-          <p>Inference and administrative protection are configured separately:</p>
+          <h2 id="121-authorization-modes">12.1 Authorization Modes</h2>
+          <p><code>KRONK_AUTHORIZATION_MODE</code> selects the API access policy independently of whether Kronk uses its embedded auth service or <code>KRONK_AUTH_HOST</code>:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Mode</th>
-                <th>Inference auth</th>
-                <th>Admin auth</th>
-                <th>Effect</th>
+                <th>Value</th>
+                <th>Model discovery</th>
+                <th>Inference</th>
+                <th>Management</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Open</td>
-                <td>Off</td>
-                <td>Off</td>
-                <td>Inference and management APIs are open.</td>
+                <td><code>open</code></td>
+                <td>Public</td>
+                <td>Public</td>
+                <td>Public</td>
               </tr>
               <tr>
-                <td>Admin-only</td>
-                <td>Off</td>
-                <td>On</td>
-                <td>Inference is open; management, playground, BUI login, and security APIs require an admin token.</td>
+                <td><code>management</code></td>
+                <td>Public</td>
+                <td>Public</td>
+                <td>Admin JWT</td>
               </tr>
               <tr>
-                <td>Fully protected</td>
-                <td>On</td>
-                <td>On automatically</td>
-                <td>Inference requires a valid scoped token, and administrative APIs require an admin token.</td>
+                <td><code>authenticated</code></td>
+                <td>Valid JWT</td>
+                <td>Valid JWT without an endpoint grant</td>
+                <td>Admin JWT</td>
+              </tr>
+              <tr>
+                <td><code>full-protected</code></td>
+                <td>Valid JWT</td>
+                <td>JWT with the matching endpoint grant</td>
+                <td>Admin JWT</td>
               </tr>
             </tbody>
           </table>
-          <p>Start a fully protected server with:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --auth-enabled`}</code></pre>
-          <p>To leave inference open while protecting administration:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --admin-auth-enabled`}</code></pre>
-          <p>The equivalent environment variables are:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTH_LOCAL_ENABLED=true
-export KRONK_AUTH_ADMIN_ENABLED=true
+          <p>Health endpoints remain public in every mode. Model discovery consists of <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code>. Native Kronk model, integrity, catalog, device, diagnostic, pool, playground, and security endpoints are management APIs.</p>
+          <p>For example:</p>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_AUTHORIZATION_MODE=full-protected
 kronk server start`}</code></pre>
-          <p>Setting <code>KRONK_AUTH_LOCAL_ENABLED=true</code> always enables admin authentication as well. <code>GET /v1/models</code> follows inference authentication: it requires a valid token in fully protected mode but has no separate <code>models</code> endpoint grant.</p>
+          <p>When <code>KRONK_AUTHORIZATION_MODE</code> is set, it overrides the legacy <code>KRONK_AUTH_LOCAL_ENABLED</code> and <code>KRONK_AUTH_ADMIN_ENABLED</code> settings. When the new mode is unset, those settings retain their existing behavior for compatibility. This allows deployments to migrate before the legacy settings are deprecated.</p>
+          <p><code>KRONK_AUTH_HOST</code> selects the authentication provider; it does not change the rights in this table. <code>KRONK_WEB_ADMIN_ENABLED</code> independently controls whether the BUI is served. When using an external auth host with a mode that protects management, disable the BUI because its password login uses the embedded security store.</p>
           <h2 id="122-initial-credentials">12.2 Initial Credentials</h2>
           <p>When the embedded security store initializes for the first time, Kronk creates:</p>
           <ul>
@@ -2911,14 +2914,19 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
             </thead>
             <tbody>
               <tr>
+                <td>—</td>
+                <td><code>KRONK_AUTHORIZATION_MODE</code></td>
+                <td>Select <code>open</code>, <code>management</code>, <code>authenticated</code>, or <code>full-protected</code>; overrides the legacy authorization settings.</td>
+              </tr>
+              <tr>
                 <td><code>--auth-enabled</code></td>
                 <td><code>KRONK_AUTH_LOCAL_ENABLED</code></td>
-                <td>Protect inference and administration.</td>
+                <td>Legacy setting that protects inference and administration.</td>
               </tr>
               <tr>
                 <td><code>--admin-auth-enabled</code></td>
                 <td><code>KRONK_AUTH_ADMIN_ENABLED</code></td>
-                <td>Protect administration only.</td>
+                <td>Legacy setting that protects administration only.</td>
               </tr>
               <tr>
                 <td><code>--auth-issuer</code></td>
@@ -4946,7 +4954,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#chapter-12-security-and-authentication" className={`doc-index-header ${activeSection === 'chapter-12-security-and-authentication' ? 'active' : ''}`}>Chapter 12: Security and Authentication</a>
             </div>
             <div className="doc-index-section">
-              <a href="#121-authentication-modes" className={`doc-index-header ${activeSection === '121-authentication-modes' ? 'active' : ''}`}>12.1 Authentication Modes</a>
+              <a href="#121-authorization-modes" className={`doc-index-header ${activeSection === '121-authorization-modes' ? 'active' : ''}`}>12.1 Authorization Modes</a>
             </div>
             <div className="doc-index-section">
               <a href="#122-initial-credentials" className={`doc-index-header ${activeSection === '122-initial-credentials' ? 'active' : ''}`}>12.2 Initial Credentials</a>

@@ -4,7 +4,30 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
+
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 )
+
+func resolveAuthorizationSettings(mode auth.Mode, legacyInference, legacyManagement, mcpAuthEnabled bool) (bool, bool, bool) {
+	if mode.IsZero() {
+		inferenceEnabled := legacyInference
+		managementEnabled := legacyManagement || inferenceEnabled || mcpAuthEnabled
+		return inferenceEnabled, managementEnabled, managementEnabled
+	}
+
+	switch mode {
+	case auth.Open:
+		return false, false, mcpAuthEnabled
+
+	case auth.Management:
+		return false, true, true
+
+	case auth.Authenticated, auth.FullProtected:
+		return true, true, true
+	}
+
+	return false, false, false
+}
 
 func validateTimeoutConfig(inferenceTimeout, writeTimeout time.Duration) error {
 	if inferenceTimeout <= 0 {
