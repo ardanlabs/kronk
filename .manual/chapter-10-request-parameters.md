@@ -58,11 +58,12 @@ Explicit request values override model-specific sampling defaults, including
 baseline default in that order. Set `temperature: 0` explicitly to request
 greedy generation. Set `top_k: 0` to disable top-k filtering.
 
-When `seed` is omitted, Kronk chooses random sampler state for the request. An
-explicit seed, including `seed: 0`, makes target sampling, classic draft
-sampling, and speculative acceptance and replacement decisions repeatable.
-Kronk derives independent request-local streams for the target distribution,
-XTC, Adaptive-P, the classic draft distribution, and speculative decisions.
+When `seed` is omitted, Kronk uses the model's configured `sampling-parameters.seed`
+default, or chooses random sampler state when no default is configured. An explicit
+request seed, including `seed: 0`, overrides the configured default and makes target
+sampling, classic draft sampling, and speculative acceptance and replacement
+decisions repeatable. Kronk derives independent request-local streams for the target
+distribution, XTC, Adaptive-P, the classic draft distribution, and speculative decisions.
 Concurrent requests therefore do not advance one another's seeded streams.
 Repeatability requires the same Kronk and native-library builds, model files,
 request, sampling settings, backend and devices, speculative mode, and

@@ -408,6 +408,32 @@ func TestModelConfigLeavesSamplingDefaultsUnset(t *testing.T) {
 	}
 }
 
+func TestModelConfigSamplingSeed(t *testing.T) {
+	data := []byte(`test-model:
+  sampling-parameters:
+    seed: 0
+`)
+
+	var configs map[string]ModelConfig
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	seed := configs["test-model"].ToKronkConfig().DefaultParams.Seed
+	if seed == nil || *seed != 0 {
+		t.Errorf("Seed = %v, want pointer to 0", seed)
+	}
+
+	baseSeed := uint32(99)
+	merged := mergeSampling(
+		SamplingConfig{Seed: &baseSeed},
+		configs["test-model"].Sampling,
+	)
+	if merged.Seed == nil || *merged.Seed != 0 {
+		t.Errorf("merged Seed = %v, want pointer to 0", merged.Seed)
+	}
+}
+
 func TestSamplingConfigWithMetadataDefaults(t *testing.T) {
 	metadata := map[string]string{
 		"general.sampling.temp":  "1.0",

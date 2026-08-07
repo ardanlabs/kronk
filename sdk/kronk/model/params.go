@@ -234,7 +234,7 @@ type Params struct {
 	// Stream determines whether to stream the response.
 	Stream bool `json:"stream"`
 
-	// Stop contains request-specific sequences that terminate generation.
+	// Stop contains sequences that terminate generation.
 	Stop []string `json:"stop,omitempty"`
 
 	// Temperature controls the randomness of the output. It rescales the
@@ -407,9 +407,6 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	m.log(ctx, "parse-params", "request", d.String())
 
 	p := m.cfg.DefaultParams
-	p.IncludeUsage = DefIncludeUsage
-	p.Seed = nil
-	p.Stop = nil
 
 	if val, exists := d["adaptive_p_decay"]; exists {
 		adaptivePDecay, err := parseFloat32("adaptive_p_decay", val)

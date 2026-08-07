@@ -40,6 +40,7 @@ type SamplingConfig struct {
 	TopK             int32   `yaml:"top_k,omitempty"`
 	TopP             float32 `yaml:"top_p,omitempty"`
 	MinP             float32 `yaml:"min_p,omitempty"`
+	Seed             *uint32 `yaml:"seed,omitempty"`
 	MaxTokens        int     `yaml:"max_tokens,omitempty"`
 	RepeatPenalty    float32 `yaml:"repeat_penalty,omitempty"`
 	RepeatLastN      int32   `yaml:"repeat_last_n,omitempty"`
@@ -271,6 +272,9 @@ func mergeSampling(base SamplingConfig, override SamplingConfig) SamplingConfig 
 	if override.MinP != 0 {
 		base.MinP = override.MinP
 	}
+	if override.Seed != nil {
+		base.Seed = override.Seed
+	}
 	if override.MaxTokens != 0 {
 		base.MaxTokens = override.MaxTokens
 	}
@@ -326,6 +330,7 @@ func (s SamplingConfig) toParams() model.Params {
 		TopK:             s.TopK,
 		TopP:             s.TopP,
 		MinP:             s.MinP,
+		Seed:             s.Seed,
 		MaxTokens:        s.MaxTokens,
 		RepeatPenalty:    s.RepeatPenalty,
 		RepeatLastN:      s.RepeatLastN,

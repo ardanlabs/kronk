@@ -80,9 +80,11 @@ settings without keeping duplicate model files.
 #### Other configuration surfaces
 
 Applications embedding the Go SDK can construct a `model.Config` directly.
-Request fields such as `temperature`, `top_p`, and `max_tokens` can override
-generation behavior for an individual request. Those request fields are
-documented in [Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters).
+Request fields such as `temperature`, `top_p`, `seed`, and `max_tokens` can override
+generation behavior for an individual request. A configured seed makes requests
+that omit `seed` repeatable; omit it from both places to use random sampling.
+Those request fields are documented in
+[Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters).
 
 The hardware processor (`cpu`, `metal`, `cuda`, `rocm`, or `vulkan`) selects a
 native library bundle rather than a per-model setting. Kronk detects it during

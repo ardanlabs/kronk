@@ -15,7 +15,7 @@
 #   cache-type-k: q8_0                   # Explicit KV key type; omit for AutoTune (f16, then q8_0)
 #   cache-type-v: q8_0                   # Explicit KV value type; omit for AutoTune (f16, then q8_0)
 #   chat-template-kwargs:                # Model-level Jinja defaults; request values override matching keys
-#     preserve_thinking: true            # Preserve prior tool-call reasoning when supported by the template
+#   preserve_thinking: true              # Preserve prior tool-call reasoning when supported by the template
 #   context-window: 8192                 # Per-sequence token capacity; explicit value is fixed
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
 #   flash-attention: auto                # Flash Attention: enabled, disabled, auto (default: auto)
@@ -81,6 +81,7 @@
 #     top_k: 20                          # Top-K sampling
 #     top_p: 0.95                        # Top-P (nucleus) sampling
 #     min_p: 0.0                         # Min-P sampling
+#     seed: 42                           # Sampling seed (unset = random)
 #     max_tokens: 0                      # Max tokens to generate (0 = until stop/EOS)
 #     repeat_penalty: 1.0                # Repetition penalty
 #     repeat_last_n: 64                  # Tokens to consider for repetition penalty
@@ -189,6 +190,7 @@ unsloth/mtp-Qwen3.5-122B-A10B-UD-Q4_K_M/AGENT:
   context-window: 131072
   nseq-max: 2
   sampling-parameters:
+    seed: 42
     temperature: 0.6
     top_k: 20
     top_p: 1

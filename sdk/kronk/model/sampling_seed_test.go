@@ -65,8 +65,8 @@ func TestParseParamsSeedPresence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseParams omitted seed: %v", err)
 	}
-	if omitted.Seed != nil {
-		t.Errorf("omitted Seed: got %v, want nil", *omitted.Seed)
+	if omitted.Seed == nil || *omitted.Seed != defaultSeed {
+		t.Errorf("omitted Seed: got %v, want pointer to %d", omitted.Seed, defaultSeed)
 	}
 
 	explicit, err := m.parseParams(t.Context(), D{"seed": 0})
@@ -81,6 +81,14 @@ func TestParseParamsSeedPresence(t *testing.T) {
 	AddParams(explicit, d)
 	if got, exists := d["seed"]; !exists || got != uint32(0) {
 		t.Errorf("AddParams seed: got %v, exists %t, want uint32(0)", got, exists)
+	}
+
+	random, err := (&Model{log: noopLog}).parseParams(t.Context(), D{})
+	if err != nil {
+		t.Fatalf("parseParams random seed: %v", err)
+	}
+	if random.Seed != nil {
+		t.Errorf("random Seed: got %v, want nil", *random.Seed)
 	}
 }
 

@@ -79,6 +79,7 @@
 #     top_k: 20                          # Top-K sampling
 #     top_p: 0.95                        # Top-P (nucleus) sampling
 #     min_p: 0.0                         # Min-P sampling
+#     seed: 42                           # Sampling seed (unset = random)
 #     max_tokens: 0                      # Max tokens to generate (0 = until stop/EOS)
 #     repeat_penalty: 1.0                # Repetition penalty
 #     repeat_last_n: 64                  # Tokens to consider for repetition penalty

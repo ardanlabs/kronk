@@ -66,7 +66,7 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 	if ok {
 		stream = streamReq
 	}
-	includeUsage := streamIncludeUsage(d)
+	includeUsage := streamIncludeUsage(d, krn.cfg.DefaultParams.IncludeUsage)
 
 	// -------------------------------------------------------------------------
 
@@ -266,10 +266,10 @@ func marshalChatStreamResponse(resp model.ChatResponse, includeUsage bool) ([]by
 	return json.Marshal(wireResp)
 }
 
-func streamIncludeUsage(d model.D) bool {
+func streamIncludeUsage(d model.D, defaultValue bool) bool {
 	streamOpts, exists := d["stream_options"]
 	if !exists {
-		return model.DefIncludeUsage
+		return defaultValue
 	}
 
 	var optsMap model.D
@@ -282,7 +282,7 @@ func streamIncludeUsage(d model.D) bool {
 
 	includeUsage, exists := optsMap["include_usage"].(bool)
 	if !exists {
-		return model.DefIncludeUsage
+		return defaultValue
 	}
 
 	return includeUsage

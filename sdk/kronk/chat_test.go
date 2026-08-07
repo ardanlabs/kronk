@@ -11,21 +11,24 @@ import (
 
 func TestStreamIncludeUsage(t *testing.T) {
 	tests := []struct {
-		name string
-		d    model.D
-		want bool
+		name       string
+		d          model.D
+		defaultVal bool
+		want       bool
 	}{
 		{name: "omitted defaults false", d: model.D{}, want: false},
+		{name: "omitted uses configured default", d: model.D{}, defaultVal: true, want: true},
 		{name: "empty options defaults false", d: model.D{"stream_options": model.D{}}, want: false},
+		{name: "empty options uses configured default", d: model.D{"stream_options": model.D{}}, defaultVal: true, want: true},
 		{name: "D true", d: model.D{"stream_options": model.D{"include_usage": true}}, want: true},
-		{name: "D false", d: model.D{"stream_options": model.D{"include_usage": false}}, want: false},
+		{name: "D false overrides configured default", d: model.D{"stream_options": model.D{"include_usage": false}}, defaultVal: true, want: false},
 		{name: "map true", d: model.D{"stream_options": map[string]any{"include_usage": true}}, want: true},
-		{name: "map false", d: model.D{"stream_options": map[string]any{"include_usage": false}}, want: false},
+		{name: "map false overrides configured default", d: model.D{"stream_options": map[string]any{"include_usage": false}}, defaultVal: true, want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := streamIncludeUsage(tt.d); got != tt.want {
+			if got := streamIncludeUsage(tt.d, tt.defaultVal); got != tt.want {
 				t.Errorf("streamIncludeUsage: got %t, want %t", got, tt.want)
 			}
 		})

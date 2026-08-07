@@ -648,7 +648,7 @@ export default function DocsSDKModel() {
 	// Stream determines whether to stream the response.
 	Stream bool \`json:"stream"\`
 
-	// Stop contains request-specific sequences that terminate generation.
+	// Stop contains sequences that terminate generation.
 	Stop []string \`json:"stop,omitempty"\`
 
 	// Temperature controls the randomness of the output. It rescales the
