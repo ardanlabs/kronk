@@ -1,6 +1,8 @@
 package gemma
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -119,9 +121,60 @@ func TestParser_ToolCall(t *testing.T) {
 		{token: "</tool_call>", channel: model.ChannelTool,
 			content: `call:get_weather{location:<|"|>NYC<|"|>}` + "\n"},
 	})
-	_, eog := c.Classify("done")
-	if !eog {
-		t.Errorf("expected EOG after tool call closed")
+	result, eog := c.Classify("done")
+	if eog {
+		t.Error("unexpected continuation after a tool call must be preserved for final validation")
+	}
+	if result.Channel != model.ChannelTool || result.Content != "done" {
+		t.Errorf("unexpected continuation: got %+v, want tool content %q", result, "done")
+	}
+}
+
+func TestParser_PreservesMalformedTrailingContent(t *testing.T) {
+	tests := []struct {
+		name string
+		tail []string
+	}{
+		{name: "whole delimiter", tail: []string{`<|"|>}`}},
+		{name: "split delimiter", tail: []string{`<|`, `"|>}`}},
+		{name: "prefixed delimiter", tail: []string{`unexpected<|"|>}`}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Parser{}.NewStateMachine()
+			var tooling strings.Builder
+			tokens := []string{
+				"<tool_call>",
+				`call:write_file{content:<|"|><|"|>}`,
+				"</tool_call>",
+				"<tool_call>",
+				`call:bash{command:<|"|>id<|"|>}`,
+				"</tool_call>",
+			}
+			tokens = append(tokens, tt.tail...)
+
+			for _, token := range tokens {
+				result, eog := c.Classify(token)
+				if eog {
+					t.Fatalf("Classify(%q): got EOG before malformed output was preserved", token)
+				}
+				if result.Channel == model.ChannelTool {
+					tooling.WriteString(result.Content)
+				}
+			}
+
+			calls := Parser{}.ToolCall(context.Background(), nil, tooling.String())
+			if len(calls) != 1 {
+				t.Fatalf("ToolCall: got %d calls, want 1 failed call", len(calls))
+			}
+			if calls[0].Status == 0 {
+				t.Fatalf("Status: got 0, want parse failure: %+v", calls[0])
+			}
+			if calls[0].Function.Name != "" {
+				t.Errorf("Function.Name: got %q, want no executable function", calls[0].Function.Name)
+			}
+		})
 	}
 }
 
