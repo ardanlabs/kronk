@@ -184,6 +184,21 @@ func TestParser_RoleRecipientToolCall(t *testing.T) {
 	}
 }
 
+func TestParser_VocabEOGToolCall(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	stream := `<|start|>assistant to=functions.get_weather<|channel|>commentary<|constrain|>json<|message|>{"location":"London"}`
+
+	if _, eog := c.Classify(stream); eog {
+		t.Fatal("Classify: got eog true before the call marker")
+	}
+	c.(model.VocabEOGConsumer).ConsumeVocabEOG("<|call|>")
+	tooling := c.(model.StateMachineFlusher).Flush()
+	calls := Parser{}.ToolCall(t.Context(), nil, tooling.Content)
+	if tooling.Channel != model.ChannelTool || len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "get_weather" {
+		t.Fatalf("ToolCall: got tooling %+v, calls %+v; want one valid get_weather call", tooling, calls)
+	}
+}
+
 func TestParser_ToolCallFlushMultipleAndReset(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	streamer := c.(model.ToolCallDeltaStreamer)

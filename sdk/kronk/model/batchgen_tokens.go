@@ -76,6 +76,10 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 
 	// Check for end of generation.
 	if llama.VocabIsEOG(e.model.vocab, token) {
+		if consumer, ok := s.stateMachine.(VocabEOGConsumer); ok {
+			l := llama.TokenToPiece(e.model.vocab, token, buf, 0, true)
+			consumer.ConsumeVocabEOG(string(buf[:l]))
+		}
 		s.stopSource = "vocab-eog"
 		e.finishSlot(s, nil)
 		return

@@ -39,6 +39,13 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	return sm.nextResult(), eog
 }
 
+// ConsumeVocabEOG consumes Harmony framing that llama also identifies as a
+// vocabulary end-of-generation token, such as <|call|>.
+func (sm *stateMachine) ConsumeVocabEOG(content string) {
+	sm.inputBuf += content
+	sm.consume(false)
+}
+
 func (sm *stateMachine) consume(flush bool) bool {
 	var eog bool
 	for sm.inputBuf != "" {
