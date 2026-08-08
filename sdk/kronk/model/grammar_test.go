@@ -1,9 +1,28 @@
 package model
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+func TestGrammarSamplerInitialization(t *testing.T) {
+	gs, err := newGrammarSampler(0, "")
+	if err != nil {
+		t.Fatalf("newGrammarSampler: got %v, want nil", err)
+	}
+	if gs != nil {
+		t.Fatalf("newGrammarSampler: got %v, want nil", gs)
+	}
+
+	gs, err = newGrammarSampler(0, `root ::= "ok"`)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("newGrammarSampler: got %v, want ErrInvalidRequest", err)
+	}
+	if gs != nil {
+		t.Fatalf("newGrammarSampler: got %v, want nil", gs)
+	}
+}
 
 func TestFromJSONSchema_SimpleObject(t *testing.T) {
 	schema := D{
