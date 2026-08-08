@@ -307,7 +307,11 @@ func (gb *grammarBuilder) enumToRule(values []any) (string, error) {
 		return "value", nil
 	}
 
-	return strings.Join(options, " | "), nil
+	if len(options) == 1 {
+		return options[0], nil
+	}
+
+	return fmt.Sprintf("( %s )", strings.Join(options, " | ")), nil
 }
 
 func (gb *grammarBuilder) addCommonRules() {
@@ -356,13 +360,18 @@ type grammarSampler struct {
 // NewGrammarSampler creates a grammar sampler that will be managed separately
 // from the main sampler chain.
 func NewGrammarSampler(vocab llama.Vocab, grammar string) *grammarSampler {
+	gs, _ := newGrammarSampler(vocab, grammar)
+	return gs
+}
+
+func newGrammarSampler(vocab llama.Vocab, grammar string) (*grammarSampler, error) {
 	if grammar == "" {
-		return nil
+		return nil, nil
 	}
 
 	sampler := llama.SamplerInitGrammar(vocab, grammar, "root")
 	if sampler == 0 {
-		return nil
+		return nil, fmt.Errorf("%w: invalid grammar", ErrInvalidRequest)
 	}
 
 	nVocab := int(llama.VocabNTokens(vocab))
@@ -374,7 +383,7 @@ func NewGrammarSampler(vocab llama.Vocab, grammar string) *grammarSampler {
 		sampler:   sampler,
 		nVocab:    nVocab,
 		tokenData: tokenData,
-	}
+	}, nil
 }
 
 // SampleWithGrammar samples a token using the main sampler chain with grammar

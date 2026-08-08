@@ -6,132 +6,142 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-// stateMachine is a per-slot streaming state machine for Mistral and Devstral.
-//
-// Recognized markers:
-//   - <think>…</think>           reasoning wrap (Magistral/Devstral)
-//   - [THINK]…[/THINK]           reasoning wrap (Mistral Medium 3.5+)
-//   - [TOOL_CALLS]               opens a streaming tool-call buffer
-//
-// Once [TOOL_CALLS] is emitted, every subsequent token (until EOG) is
-// classified on the tool channel. The buffered payload is parsed at
-// finish time via ToolCall.
+// stateMachine recognizes Mistral framing independently of decoded chunk
+// boundaries. Native tool output is retained verbatim until EOS.
 type stateMachine struct {
-	status         model.Channel
-	inToolCall     bool
-	toolCallBuf    strings.Builder
-	toolCallDeltas []model.ResponseToolCallDelta
-	startedCalls   []model.ResponseToolCallDelta
-	scanOffset     int
-	awaitingArgEnd bool
+	status      model.Channel
+	pending     strings.Builder
+	toolCallBuf strings.Builder
+	inToolCall  bool
+	output      []model.Result
 }
+
+var streamMarkers = []string{toolCallsMarker, "<think>", "</think>", "[THINK]", "[/THINK]"}
 
 // Reset returns the stateMachine to its initial state for reuse on a new
 // request.
 func (sm *stateMachine) Reset() {
 	sm.status = model.ChannelAnswer
-	sm.inToolCall = false
+	sm.pending.Reset()
 	sm.toolCallBuf.Reset()
-	sm.toolCallDeltas = nil
-	sm.startedCalls = nil
-	sm.scanOffset = 0
-	sm.awaitingArgEnd = false
+	sm.inToolCall = false
+	sm.output = nil
 }
 
-// Classify classifies a single decoded token's content.
-//
-// Behavior is undefined if Classify is called after a previous call returned
-// eog=true. Reset must be invoked between requests.
+// Classify classifies a single decoded chunk.
 func (sm *stateMachine) Classify(content string) (model.Result, bool) {
-	// Once we are in tool mode, every token is tool-channel content. A
-	// repeated [TOOL_CALLS] marker is silent (state already correct).
 	if sm.inToolCall {
 		sm.toolCallBuf.WriteString(content)
-		sm.updateToolCallDeltas()
-		return model.Result{}, false
+	} else {
+		sm.pending.WriteString(content)
+		sm.scan()
 	}
-
-	switch content {
-	case "<think>", "[THINK]":
-		sm.status = model.ChannelReasoning
-		return model.Result{}, false
-
-	case "</think>", "[/THINK]":
-		sm.status = model.ChannelAnswer
-		return model.Result{}, false
-
-	case "[TOOL_CALLS]":
-		sm.status = model.ChannelTool
-		sm.inToolCall = true
-		sm.toolCallBuf.WriteString(content)
-		return model.Result{}, false
-
-	default:
-		return model.Result{Channel: sm.status, Content: content}, false
-	}
+	return sm.popOutput(), false
 }
 
-func (sm *stateMachine) updateToolCallDeltas() {
-	content := sm.toolCallBuf.String()
-	for {
-		if sm.awaitingArgEnd {
-			argsEnd := findJSONObjectEnd(content[sm.scanOffset:])
-			if argsEnd == -1 {
+func (sm *stateMachine) scan() {
+	for sm.pending.Len() > 0 {
+		candidate := sm.pending.String()
+		at, marker := nextMarker(candidate)
+		if at >= 0 {
+			sm.emit(candidate[:at])
+			rest := candidate[at+len(marker):]
+			sm.pending.Reset()
+			if marker == toolCallsMarker {
+				sm.inToolCall = true
+				sm.status = model.ChannelTool
+				sm.toolCallBuf.WriteString(marker)
+				sm.toolCallBuf.WriteString(rest)
 				return
 			}
-			sm.scanOffset += argsEnd
-			sm.awaitingArgEnd = false
+			sm.setReasoning(marker)
+			sm.pending.WriteString(rest)
+			continue
 		}
 
-		callOffset := strings.Index(content[sm.scanOffset:], "[TOOL_CALLS]")
-		if callOffset == -1 {
-			return
-		}
-		callStart := sm.scanOffset + callOffset
-		nameStart := callStart + len("[TOOL_CALLS]")
-		argsOffset := strings.Index(content[nameStart:], "[ARGS]")
-		if argsOffset == -1 {
-			return
-		}
-
-		name := strings.TrimSpace(content[nameStart : nameStart+argsOffset])
-		if name != "" {
-			delta := model.ResponseToolCallDelta{
-				ID:       newToolCallID(),
-				Index:    len(sm.startedCalls),
-				Type:     "function",
-				Function: model.ResponseToolCallDeltaFunction{Name: name},
-			}
-			sm.toolCallDeltas = append(sm.toolCallDeltas, delta)
-			sm.startedCalls = append(sm.startedCalls, delta)
-		}
-		sm.scanOffset = nameStart + argsOffset + len("[ARGS]")
-		sm.awaitingArgEnd = true
+		keep := partialMarkerSuffix(candidate)
+		sm.emit(candidate[:len(candidate)-keep])
+		sm.pending.Reset()
+		sm.pending.WriteString(candidate[len(candidate)-keep:])
+		return
 	}
 }
 
-// Flush releases the complete buffered native tool-call stream.
-func (sm *stateMachine) Flush() model.Result {
-	if sm.toolCallBuf.Len() == 0 {
+func (sm *stateMachine) emit(content string) {
+	if content == "" {
+		return
+	}
+	result := model.Result{Channel: sm.status, Content: content}
+	if len(sm.output) > 0 && sm.output[len(sm.output)-1].Channel == result.Channel {
+		sm.output[len(sm.output)-1].Content += content
+		return
+	}
+	sm.output = append(sm.output, result)
+}
+
+func (sm *stateMachine) setReasoning(marker string) {
+	switch marker {
+	case "<think>", "[THINK]":
+		sm.status = model.ChannelReasoning
+	default:
+		sm.status = model.ChannelAnswer
+	}
+}
+
+func (sm *stateMachine) popOutput() model.Result {
+	if len(sm.output) == 0 {
 		return model.Result{}
 	}
-
-	content := sm.toolCallBuf.String()
-	sm.toolCallBuf.Reset()
-	sm.inToolCall = false
-	sm.scanOffset = 0
-	sm.awaitingArgEnd = false
-	return model.Result{Channel: model.ChannelTool, Content: content}
+	result := sm.output[0]
+	sm.output = sm.output[1:]
+	return result
 }
 
-// ToolCallDeltas drains tool-call identity deltas produced by Classify.
-func (sm *stateMachine) ToolCallDeltas() []model.ResponseToolCallDelta {
-	deltas := sm.toolCallDeltas
-	sm.toolCallDeltas = nil
-	return deltas
+func nextMarker(content string) (int, string) {
+	at := -1
+	marker := ""
+	for _, candidate := range streamMarkers {
+		index := strings.Index(content, candidate)
+		if index >= 0 && (at < 0 || index < at) {
+			at = index
+			marker = candidate
+		}
+	}
+	return at, marker
 }
 
-// StartedToolCalls returns identities emitted during the current request.
-func (sm *stateMachine) StartedToolCalls() []model.ResponseToolCallDelta {
-	return sm.startedCalls
+func partialMarkerSuffix(content string) int {
+	for length := min(len(content), len(toolCallsMarker)-1); length > 0; length-- {
+		suffix := content[len(content)-length:]
+		for _, marker := range streamMarkers {
+			if strings.HasPrefix(marker, suffix) {
+				return length
+			}
+		}
+	}
+	return 0
+}
+
+// Flush releases buffered output at EOS. Partial marker prefixes are tool
+// evidence so the strict full-buffer parser, rather than answer handling,
+// decides their validity.
+func (sm *stateMachine) Flush() model.Result {
+	if result := sm.popOutput(); result != (model.Result{}) {
+		return result
+	}
+	if sm.toolCallBuf.Len() > 0 {
+		content := sm.toolCallBuf.String()
+		sm.toolCallBuf.Reset()
+		sm.inToolCall = false
+		return model.Result{Channel: model.ChannelTool, Content: content}
+	}
+	if sm.pending.Len() > 0 {
+		content := sm.pending.String()
+		sm.pending.Reset()
+		if strings.HasPrefix(toolCallsMarker, content) {
+			return model.Result{Channel: model.ChannelTool, Content: content}
+		}
+		return model.Result{Channel: sm.status, Content: content}
+	}
+	return model.Result{}
 }

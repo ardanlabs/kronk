@@ -66,6 +66,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 	// After a tool call closes, only another opener avoids EOG.
 	if sm.toolCallDone {
+		content = strings.TrimLeft(content, " \t\r\n")
 		switch content {
 		case "<tool_call>", "<|tool_call>":
 			sm.toolCallDone = false
@@ -74,8 +75,14 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			sm.detectedCalls = 0
 			return model.Result{}, false
 		default:
+			if content == "" {
+				return model.Result{}, false
+			}
+			// Gemma's final parser validates the complete accumulated grammar.
+			// Preserve unexpected continuations so malformed delimiter text
+			// cannot disappear at a token boundary and expose partial calls.
 			sm.toolCallDone = false
-			return model.Result{}, true
+			return model.Result{Channel: model.ChannelTool, Content: content}, false
 		}
 	}
 

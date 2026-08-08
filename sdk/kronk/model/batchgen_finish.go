@@ -287,12 +287,13 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		return
 	}
 
-	if s.stopGate != nil && s.stopSource != "request-stop" {
-		for _, piece := range s.stopGate.flush() {
+	if s.stopGate != nil && s.stopSource != "request-stop" && s.stopSource != "parser-eog" {
+		pieces := s.stopGate.flush()
+		for i, piece := range pieces {
 			logprobIndex := appendStopPieceLogprobs(s, piece)
 			outcome := e.processDecodedPiece(s, piece, logprobIndex, true)
 			if outcome.parserEOG {
-				unaccountStopPiece(s, piece)
+				reconcileParserEOGRemainder(s, pieces[i+1:])
 				break
 			}
 			if outcome.err != nil {
@@ -305,7 +306,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	if flusher, ok := s.stateMachine.(StateMachineFlusher); ok {
-		e.flushStateMachine(s, flusher.Flush())
+		e.flushAllStateMachine(s, flusher)
 	}
 
 	// Flush any remaining buffered UTF-8 bytes into the final accumulators.
@@ -330,7 +331,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Process tool calls if any. Token counts are already tracked
 	// per-token in processSlotToken, so no re-tokenization needed.
 	var toolCallErr error
-	if s.toolFlag > 0 {
+	if s.finalTooling.Len() > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		s.finalTooling.Reset()
 		s.finalTooling.WriteString(content)
@@ -411,7 +412,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if outputTokens > 0 && e.model.draft != nil {
 		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
 	}
-	if toolCallErr != nil && (s.finishReason == FinishReasonLength || s.stopSource == "request-stop") {
+	var truncatedToolContent string
+	if s.finishReason == FinishReasonLength && s.finalTooling.Len() > 0 {
+		s.respToolCalls, truncatedToolContent = retainTruncatedToolOutput(&s.finalContent, s.finalTooling.String(), s.respToolCalls)
+	} else if toolCallErr != nil && s.stopSource == "request-stop" {
 		valid := s.respToolCalls[:0]
 		for _, toolCall := range s.respToolCalls {
 			if toolCall.Status == 0 {
@@ -457,6 +461,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.stopSource == "" {
 		s.stopSource = "unknown"
 	}
+	if s.job.params.Stream && truncatedToolContent != "" {
+		if sendErr := e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, truncatedToolContent, ChannelAnswer, s.reasonTokens, outputTokens, nil); sendErr != nil {
+			err = sendErr
+			return
+		}
+	}
 	var terminalToolCallDeltas []ResponseToolCallDelta
 	if s.job.params.Stream {
 		var started []ResponseToolCallDelta
@@ -467,6 +477,22 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
+}
+
+func retainTruncatedToolOutput(finalContent *strings.Builder, finalTooling string, toolCalls []ResponseToolCall) ([]ResponseToolCall, string) {
+	valid := toolCalls[:0]
+	for _, toolCall := range toolCalls {
+		if toolCall.Status == 0 {
+			valid = append(valid, toolCall)
+		}
+	}
+
+	if len(toolCalls) > 0 && len(valid) == len(toolCalls) {
+		return valid, ""
+	}
+
+	finalContent.WriteString(finalTooling)
+	return valid, finalTooling
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {
@@ -527,6 +553,12 @@ func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseT
 	}
 
 	return terminal
+}
+
+func (e *batchEngine) flushAllStateMachine(s *slot, flusher StateMachineFlusher) {
+	for result := flusher.Flush(); result != (Result{}); result = flusher.Flush() {
+		e.flushStateMachine(s, result)
+	}
 }
 
 // flushStateMachine preserves model output held by parser lookahead when

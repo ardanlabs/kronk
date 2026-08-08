@@ -1,9 +1,28 @@
 package model
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+func TestGrammarSamplerInitialization(t *testing.T) {
+	gs, err := newGrammarSampler(0, "")
+	if err != nil {
+		t.Fatalf("newGrammarSampler: got %v, want nil", err)
+	}
+	if gs != nil {
+		t.Fatalf("newGrammarSampler: got %v, want nil", gs)
+	}
+
+	gs, err = newGrammarSampler(0, `root ::= "ok"`)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("newGrammarSampler: got %v, want ErrInvalidRequest", err)
+	}
+	if gs != nil {
+		t.Fatalf("newGrammarSampler: got %v, want nil", gs)
+	}
+}
 
 func TestFromJSONSchema_SimpleObject(t *testing.T) {
 	schema := D{
@@ -32,26 +51,74 @@ func TestFromJSONSchema_SimpleObject(t *testing.T) {
 }
 
 func TestFromJSONSchema_WithEnum(t *testing.T) {
-	schema := D{
-		"type": "object",
-		"properties": D{
-			"status": D{
-				"type": "string",
-				"enum": []any{"pending", "active", "completed"},
+	tests := []struct {
+		name       string
+		schema     D
+		wantRules  []string
+		rootHasAlt bool
+	}{
+		{
+			name: "object property",
+			schema: D{
+				"type": "object",
+				"properties": D{
+					"verdict": D{
+						"type": "string",
+						"enum": []any{"yes", "no", "maybe"},
+					},
+				},
+				"required": []string{"verdict"},
 			},
+			wantRules: []string{
+				`root ::= "{" ws "\"" "verdict" "\"" ws ":" ws root_verdict ws "}"`,
+				`root_verdict ::= ( "\"" "yes" "\"" | "\"" "no" "\"" | "\"" "maybe" "\"" )`,
+			},
+		},
+		{
+			name: "array items",
+			schema: D{
+				"type": "array",
+				"items": D{
+					"type": "string",
+					"enum": []any{"yes", "no"},
+				},
+			},
+			wantRules: []string{
+				`root ::= "[" ws ( root_item ( ws "," ws root_item )* )? ws "]"`,
+				`root_item ::= ( "\"" "yes" "\"" | "\"" "no" "\"" )`,
+			},
+		},
+		{
+			name: "top level",
+			schema: D{
+				"type": "string",
+				"enum": []any{"yes", "no"},
+			},
+			wantRules: []string{
+				`root ::= ( "\"" "yes" "\"" | "\"" "no" "\"" )`,
+			},
+			rootHasAlt: true,
 		},
 	}
 
-	grammar, err := fromJSONSchema(schema)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			grammar, err := fromJSONSchema(tt.schema)
+			if err != nil {
+				t.Fatalf("fromJSONSchema: unexpected error: %v", err)
+			}
 
-	if !strings.Contains(grammar, "pending") {
-		t.Error("grammar should contain enum value 'pending'")
-	}
-	if !strings.Contains(grammar, "active") {
-		t.Error("grammar should contain enum value 'active'")
+			for _, want := range tt.wantRules {
+				if !strings.Contains(grammar, want) {
+					t.Errorf("grammar: got\n%s\nwant rule %q", grammar, want)
+				}
+			}
+
+			root, _, _ := strings.Cut(grammar, "\n")
+			if got := strings.Contains(root, " | "); got != tt.rootHasAlt {
+				t.Errorf("root alternation: got %t, want %t in %q", got, tt.rootHasAlt, root)
+			}
+		})
 	}
 }
 

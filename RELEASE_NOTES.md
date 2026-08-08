@@ -1,4 +1,4 @@
-# Release Notes
+# Important Release Notes v1.30.3
 
 ## Index
 
@@ -337,9 +337,9 @@ should expect totals to change for reasoning and tool-calling requests.
 
 The Go SDK `model.Usage` shape also changed:
 
-| Removed field | Replacement |
-| ------------- | ----------- |
-| `Usage.OutputTokens` | `Usage.CompletionTokens` |
+| Removed field           | Replacement                                     |
+| ----------------------- | ----------------------------------------------- |
+| `Usage.OutputTokens`    | `Usage.CompletionTokens`                        |
 | `Usage.ReasoningTokens` | `Usage.CompletionTokensDetails.ReasoningTokens` |
 
 The corresponding top-level JSON properties `output_tokens` and
@@ -359,10 +359,10 @@ exported `ChatResponseErr` helper also removed its `prompt` argument.
 The default server bind addresses changed from all network interfaces to
 loopback:
 
-| Listener | Previous default | New default |
-| -------- | ---------------- | ----------- |
-| Main API and BUI | `0.0.0.0:11435` | `127.0.0.1:11435` |
-| Debug, metrics, and profiling | `0.0.0.0:11445` | `127.0.0.1:11445` |
+| Listener                      | Previous default | New default       |
+| ----------------------------- | ---------------- | ----------------- |
+| Main API and BUI              | `0.0.0.0:11435`  | `127.0.0.1:11435` |
+| Debug, metrics, and profiling | `0.0.0.0:11445`  | `127.0.0.1:11445` |
 
 Local clients continue to work. LAN clients, containers, Kubernetes services,
 and remote monitoring systems will no longer reach a default configuration.

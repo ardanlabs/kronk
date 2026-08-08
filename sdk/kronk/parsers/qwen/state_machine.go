@@ -20,10 +20,11 @@ type stateMachine struct {
 	status model.Channel
 
 	// Tool-call accumulation across tokens.
-	toolCallBuf  strings.Builder
-	inToolCall   bool
-	wrappedTool  bool
-	toolCallDone bool // After a complete call; whitespace and another opener avoid EOG.
+	toolCallBuf        strings.Builder
+	inToolCall         bool
+	wrappedTool        bool
+	toolCallDone       bool // After a complete call; whitespace and another opener avoid EOG.
+	directToolCallDone bool // The completed buffer used direct XML rather than a JSON envelope.
 
 	// Lookahead buffer for split <function=… tokens.
 	pendingTagBuf strings.Builder
@@ -44,6 +45,7 @@ func (sm *stateMachine) Reset() {
 	sm.inToolCall = false
 	sm.wrappedTool = false
 	sm.toolCallDone = false
+	sm.directToolCallDone = false
 	sm.pendingTagBuf.Reset()
 	sm.inPendingTag = false
 	sm.toolCallDeltas = nil
@@ -71,10 +73,15 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 		if !strings.HasPrefix("<function=", accumulated) {
 			wasAfterToolCall := sm.toolCallDone
+			wasAfterDirectToolCall := sm.directToolCallDone
 			sm.inPendingTag = false
 			sm.toolCallDone = false
+			sm.directToolCallDone = false
 			sm.pendingTagBuf.Reset()
 			if wasAfterToolCall {
+				if wasAfterDirectToolCall {
+					return model.Result{Channel: model.ChannelTool, Content: accumulated}, false
+				}
 				return model.Result{}, true
 			}
 			return model.Result{Channel: sm.status, Content: accumulated}, false
@@ -144,7 +151,16 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 					return model.Result{}, false
 				}
 			}
+			if sm.directToolCallDone {
+				// Preserve every unexpected continuation after direct XML for the
+				// final parser. If it were discarded here, token boundaries could
+				// turn malformed nested delimiter text into valid-looking calls.
+				sm.toolCallDone = false
+				sm.directToolCallDone = false
+				return model.Result{Channel: model.ChannelTool, Content: content}, false
+			}
 			sm.toolCallDone = false
+			sm.directToolCallDone = false
 			return model.Result{}, true
 		}
 	}
@@ -187,6 +203,7 @@ func (sm *stateMachine) startToolCall(wrapped bool, content string) {
 	sm.inToolCall = true
 	sm.wrappedTool = wrapped
 	sm.toolCallDone = false
+	sm.directToolCallDone = false
 	sm.toolCallBuf.Reset()
 	sm.toolCallBuf.WriteString(content)
 	sm.deltaCallID = ""
@@ -195,6 +212,7 @@ func (sm *stateMachine) startToolCall(wrapped bool, content string) {
 
 func (sm *stateMachine) completeToolCall() model.Result {
 	content := strings.Trim(sm.toolCallBuf.String(), "\n")
+	direct := strings.HasPrefix(strings.TrimSpace(content), "<function=")
 	if content != "" {
 		content += "\n"
 	}
@@ -203,6 +221,7 @@ func (sm *stateMachine) completeToolCall() model.Result {
 	sm.inToolCall = false
 	sm.wrappedTool = false
 	sm.toolCallDone = true
+	sm.directToolCallDone = direct
 	if sm.deltaCallID != "" {
 		sm.deltaCallIndex++
 	}
@@ -361,6 +380,7 @@ func (sm *stateMachine) Flush() model.Result {
 	sm.pendingTagBuf.Reset()
 	sm.inPendingTag = false
 	sm.toolCallDone = false
+	sm.directToolCallDone = false
 
 	return result
 }

@@ -945,7 +945,7 @@ export default function DocsSDKModel() {
 	Flush() Result
 }`}</code>
               </pre>
-              <p className="doc-description">StateMachineFlusher is implemented by state machines that may retain model output not yet returned by Classify. Flush drains that output at successful end-of-generation. It must not return content previously returned by Classify, and subsequent calls must return a zero Result.</p>
+              <p className="doc-description">StateMachineFlusher is implemented by state machines that may retain model output not yet returned by Classify. Flush drains that output at successful end-of-generation. It must not return content previously returned by Classify. Callers invoke Flush until it returns a zero Result so state machines can preserve multiple channel transitions retained from one decoded piece.</p>
             </div>
 
             <div className="doc-section" id="type-streamingresponselogger">
@@ -1055,6 +1055,18 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">Usage provides token usage information for a chat completion request. CompletionTokens includes all generated tokens, including reasoning tokens. CompletionTokensDetails provides the reasoning-token subset. TotalTokens is the sum of PromptTokens and CompletionTokens. DraftAcceptanceRate is the ratio of accepted drafts to total drafts across the spec rounds that actually ran. It is "quality per round" and says nothing about how much of the request used speculation. DraftCoverage is the complementary "how much" metric: the fraction of emitted output positions produced through speculation. Together they distinguish "MTP ran the whole request at 94%" from "MTP ran for 4 rounds at 94% then was disabled and the rest was target-only" — the second case shows high DraftAcceptanceRate but low DraftCoverage. DraftDisableReason explains the latter case ("imc-hit", "mirror-error", or empty if MTP was never disabled).</p>
+            </div>
+
+            <div className="doc-section" id="type-vocabeogconsumer">
+              <h4>VocabEOGConsumer</h4>
+              <pre className="code-block">
+                <code>{`type VocabEOGConsumer interface {
+	// ConsumeVocabEOG consumes the textual representation of the sampled EOG
+	// token before the state machine is flushed.
+	ConsumeVocabEOG(content string)
+}`}</code>
+              </pre>
+              <p className="doc-description">VocabEOGConsumer is optionally implemented by state machines whose native framing uses a token that the vocabulary also classifies as end-of-generation.</p>
             </div>
           </div>
 
@@ -2096,6 +2108,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-toolcallschemaparser">ToolCallSchemaParser</a></li>
                 <li><a href="#type-toplogprob">TopLogprob</a></li>
                 <li><a href="#type-usage">Usage</a></li>
+                <li><a href="#type-vocabeogconsumer">VocabEOGConsumer</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

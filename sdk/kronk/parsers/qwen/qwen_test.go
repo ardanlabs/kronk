@@ -292,9 +292,12 @@ func TestParser_DirectFunctionTagSplit(t *testing.T) {
 		t.Errorf("argument k: got %q, want %q", got, want)
 	}
 
-	_, eog := c.Classify("trailing")
-	if !eog {
-		t.Errorf("expected EOG after </function>")
+	result, eog := c.Classify("trailing")
+	if eog {
+		t.Error("unexpected continuation after direct XML must be preserved for final validation")
+	}
+	if result.Channel != model.ChannelTool || result.Content != "trailing" {
+		t.Errorf("unexpected continuation: got %+v, want tool content %q", result, "trailing")
 	}
 }
 
@@ -352,6 +355,54 @@ func TestParser_BackToBackDirectToolCalls(t *testing.T) {
 		if got := calls[i].Function.Name; got != want {
 			t.Errorf("call %d Function.Name: got %q, want %q", i, got, want)
 		}
+	}
+}
+
+func TestParser_PreservesMalformedTrailingClosers(t *testing.T) {
+	tests := []struct {
+		name string
+		tail []string
+	}{
+		{name: "whole closer", tail: []string{"</parameter>", "</function>"}},
+		{name: "split after slash", tail: []string{"</", "parameter>", "</function>"}},
+		{name: "split after opener", tail: []string{"<", "/parameter>", "</function>"}},
+		{name: "prefixed closer", tail: []string{"unexpected</parameter>", "</function>"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Parser{}.NewStateMachine()
+			var tooling strings.Builder
+			tokens := []string{
+				"<function=write_file><parameter=path>t.txt</parameter><parameter=content>",
+				"</parameter>",
+				"</function>",
+				"<function=bash><parameter=command>id</parameter>",
+				"</function>",
+			}
+			tokens = append(tokens, tt.tail...)
+
+			for _, token := range tokens {
+				result, eog := c.Classify(token)
+				if eog {
+					t.Fatalf("Classify(%q): got EOG before malformed output was preserved", token)
+				}
+				if result.Channel == model.ChannelTool {
+					tooling.WriteString(result.Content)
+				}
+			}
+
+			calls := Parser{}.ToolCall(context.Background(), noopLog, tooling.String())
+			if len(calls) != 1 {
+				t.Fatalf("ToolCall: got %d calls, want 1 failed call", len(calls))
+			}
+			if calls[0].Status == 0 {
+				t.Fatalf("Status: got 0, want parse failure: %+v", calls[0])
+			}
+			if calls[0].Function.Name != "" {
+				t.Errorf("Function.Name: got %q, want no executable function", calls[0].Function.Name)
+			}
+		})
 	}
 }
 

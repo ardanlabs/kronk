@@ -105,6 +105,14 @@ type StateMachine interface {
 	Reset()
 }
 
+// VocabEOGConsumer is optionally implemented by state machines whose native
+// framing uses a token that the vocabulary also classifies as end-of-generation.
+type VocabEOGConsumer interface {
+	// ConsumeVocabEOG consumes the textual representation of the sampled EOG
+	// token before the state machine is flushed.
+	ConsumeVocabEOG(content string)
+}
+
 // ToolAwareStateMachine is optionally implemented by state machines that
 // need the request's declared tools to distinguish an unmarked tool call from
 // ordinary answer content.
@@ -116,8 +124,9 @@ type ToolAwareStateMachine interface {
 // output not yet returned by Classify.
 //
 // Flush drains that output at successful end-of-generation. It must not return
-// content previously returned by Classify, and subsequent calls must return a
-// zero Result.
+// content previously returned by Classify. Callers invoke Flush until it returns
+// a zero Result so state machines can preserve multiple channel transitions
+// retained from one decoded piece.
 type StateMachineFlusher interface {
 	Flush() Result
 }

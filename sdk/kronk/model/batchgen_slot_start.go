@@ -114,7 +114,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 	// Create grammar sampler if grammar is specified (kept separate from chain).
 	if job.params.Grammar != "" {
-		s.grammarSampler = NewGrammarSampler(e.model.vocab, job.params.Grammar)
+		s.grammarSampler, err = newGrammarSampler(e.model.vocab, job.params.Grammar)
+		if err != nil {
+			e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
+			return
+		}
 	}
 
 	// Create a fresh per-request mtmd context for any request that touches

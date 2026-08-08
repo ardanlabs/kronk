@@ -4,7 +4,8 @@
 //
 // Reasoning, completion, and tool-call routing all hinge on the same
 // <|channel|> marker (e.g. "analysis" → reasoning, "final" → completion,
-// "commentary to=functions.X" → tool call). Because the marker is shared,
+// a functions recipient on the role or an analysis/commentary channel → tool
+// call). Because the marker is shared,
 // the stateMachine here cannot be assembled from independent reasoning and
 // tool-call plugins; it must be a single state machine, which is why
 // GPT-OSS is its own parser rather than a parser-only variant of standard.
