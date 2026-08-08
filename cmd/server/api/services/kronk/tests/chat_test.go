@@ -85,7 +85,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
 				"max_tokens":   2048,
-				"temperature":  0.7,
+				"temperature":  0,
 				"top_p":        0.9,
 				"top_k":        40,
 				"logprobs":     true,
@@ -116,7 +116,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					return diff
 				}
 
-				return validateResponse(got, false).
+				validation := validateResponse(got, false).
 					hasValidUUID().
 					hasCreated().
 					hasValidChoice().
@@ -127,6 +127,94 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 					warnContainsInContent("gorilla").
 					warnContainsInReasoning("gorilla").
 					result(t)
+				if validation != "" {
+					return validation
+				}
+
+				resp := got.(*model.ChatResponse)
+				for _, logprob := range resp.Choices[0].Logprobs.Content {
+					if logprob.Token == "<|im_end|>" {
+						return "expected logprobs.content to exclude the vocabulary EOG token"
+					}
+				}
+
+				return ""
+			},
+		},
+		{
+			Name:       "good-token-logprobs-no-thinking",
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
+				),
+				"max_tokens":           2048,
+				"temperature":          0,
+				"top_p":                0.9,
+				"top_k":                40,
+				"logprobs":             true,
+				"top_logprobs":         3,
+				"chat_template_kwargs": model.D{"enable_thinking": false},
+			},
+			GotResp: &model.ChatResponse{},
+			ExpResp: &model.ChatResponse{
+				Choices: []model.Choice{
+					{
+						Message: &model.ResponseMessage{
+							Role: "assistant",
+						},
+						FinishReasonPtr: new("stop"),
+					},
+				},
+				Model:             "Qwen3-8B-Q8_0",
+				SystemFingerprint: "fp_kronk",
+				Object:            "chat.completion",
+			},
+			CmpFunc: func(got any, exp any) string {
+				diff := cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage"),
+					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta", "Logprobs"),
+					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
+				)
+
+				if diff != "" {
+					return diff
+				}
+
+				validation := validateResponse(got, false).
+					hasValidUUID().
+					hasCreated().
+					hasValidChoice().
+					hasUsage(false).
+					hasContent().
+					hasLogprobs(3).
+					warnContainsInContent("gorilla").
+					result(t)
+				if validation != "" {
+					return validation
+				}
+
+				resp := got.(*model.ChatResponse)
+				if resp.Choices[0].Message.Reasoning != "" {
+					return "expected reasoning to be empty when thinking is disabled"
+				}
+				if resp.Usage.CompletionTokensDetails.ReasoningTokens != 0 {
+					return "expected reasoning_tokens to be zero when thinking is disabled"
+				}
+
+				var logprobBytes []byte
+				for _, logprob := range resp.Choices[0].Logprobs.Content {
+					if logprob.Token == "<|im_end|>" {
+						return "expected logprobs.content to exclude the vocabulary EOG token"
+					}
+					logprobBytes = append(logprobBytes, logprob.Bytes...)
+				}
+
+				return cmp.Diff(resp.Choices[0].Message.Content, string(logprobBytes))
 			},
 		},
 	}
