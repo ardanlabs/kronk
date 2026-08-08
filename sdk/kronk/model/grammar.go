@@ -307,7 +307,11 @@ func (gb *grammarBuilder) enumToRule(values []any) (string, error) {
 		return "value", nil
 	}
 
-	return strings.Join(options, " | "), nil
+	if len(options) == 1 {
+		return options[0], nil
+	}
+
+	return fmt.Sprintf("( %s )", strings.Join(options, " | ")), nil
 }
 
 func (gb *grammarBuilder) addCommonRules() {
