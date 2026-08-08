@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
@@ -192,65 +191,6 @@ func TestChatValidatesRequestBeforeAdmission(t *testing.T) {
 				t.Errorf("ChatStreaming: got %v, want %v", err, tt.want)
 			}
 		})
-	}
-}
-
-func TestStreamingStartupErrorReleasesAdmission(t *testing.T) {
-	startupErr := errors.New("startup failed")
-	krn := Kronk{
-		cfg:         model.NewConfig(model.WithAdmissionTimeout(time.Second)),
-		model:       &model.Model{},
-		admissionCh: make(chan struct{}, 1),
-	}
-
-	ch, err := streaming(t.Context(), &krn,
-		func(*model.Model) (<-chan model.ChatResponse, error) { return nil, startupErr },
-		func(err error) model.ChatResponse { return model.ChatResponse{} },
-	)
-	if !errors.Is(err, startupErr) {
-		t.Fatalf("streaming: got %v, want startup error", err)
-	}
-	if ch != nil {
-		t.Fatal("streaming: got channel, want nil")
-	}
-	if got := len(krn.admissionCh); got != 0 {
-		t.Fatalf("admission permits: got %d, want 0", got)
-	}
-	if got := krn.activeStreams.Load(); got != 0 {
-		t.Fatalf("active streams: got %d, want 0", got)
-	}
-}
-
-func TestStreamingWithDoesNotEmitStartEventsOnStartupError(t *testing.T) {
-	startupErr := errors.New("startup failed")
-	krn := Kronk{
-		cfg:         model.NewConfig(model.WithAdmissionTimeout(time.Second)),
-		model:       &model.Model{},
-		admissionCh: make(chan struct{}, 1),
-	}
-	started := false
-
-	ch, err := streamingWith(t.Context(), &krn,
-		func(*model.Model) (<-chan model.ChatResponse, error) { return nil, startupErr },
-		streamProcessor[model.ChatResponse, string]{
-			Start: func() []string {
-				started = true
-				return []string{"started"}
-			},
-		},
-		func(error) string { return "error" },
-	)
-	if !errors.Is(err, startupErr) {
-		t.Fatalf("streamingWith: got %v, want startup error", err)
-	}
-	if ch != nil {
-		t.Fatal("streamingWith: got channel, want nil")
-	}
-	if started {
-		t.Fatal("streamingWith: emitted start events before successful startup")
-	}
-	if got := len(krn.admissionCh); got != 0 {
-		t.Fatalf("admission permits: got %d, want 0", got)
 	}
 }
 

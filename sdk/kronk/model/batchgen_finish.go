@@ -607,10 +607,6 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	if job.hasIMCReservation() {
 		e.model.imcReleaseReservation(job.imcSessionID)
 	}
-	if job.grammarSampler != nil {
-		job.grammarSampler.Free()
-		job.grammarSampler = nil
-	}
 
 	// Decrement activeStreams BEFORE close(job.ch). See finishSlot's
 	// defer for the full rationale: closing first leaves a race window

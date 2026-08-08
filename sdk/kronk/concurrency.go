@@ -26,17 +26,12 @@ func nonStreaming[T any](ctx context.Context, krn *Kronk, f nonStreamingFunc[T])
 
 // =============================================================================
 
-type streamingFunc[T any] func(llama *model.Model) (<-chan T, error)
+type streamingFunc[T any] func(llama *model.Model) <-chan T
 type errorFunc[T any] func(err error) T
 
 func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef errorFunc[T]) (<-chan T, error) {
 	mdl, err := krn.acquireAdmission(ctx)
 	if err != nil {
-		return nil, err
-	}
-	lch, err := startStreaming(mdl, f)
-	if err != nil {
-		krn.releaseAdmission()
 		return nil, err
 	}
 
@@ -61,6 +56,8 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 			close(ch)
 		}()
 
+		lch := f(mdl)
+
 		var cancelled bool
 		for msg := range lch {
 			if err := sendMessage(ctx, ch, msg); err != nil {
@@ -75,16 +72,6 @@ func streaming[T any](ctx context.Context, krn *Kronk, f streamingFunc[T], ef er
 	}()
 
 	return ch, nil
-}
-
-func startStreaming[T any](mdl *model.Model, f streamingFunc[T]) (ch <-chan T, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = fmt.Errorf("start streaming: %v", rec)
-		}
-	}()
-
-	return f(mdl)
 }
 
 func sendMessage[T any](ctx context.Context, ch chan T, msg T) error {
@@ -117,11 +104,6 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 	if err != nil {
 		return nil, err
 	}
-	lch, err := startStreaming(mdl, f)
-	if err != nil {
-		krn.releaseAdmission()
-		return nil, err
-	}
 
 	ch := make(chan U, streamChBuffer)
 
@@ -152,6 +134,8 @@ func streamingWith[T, U any](ctx context.Context, krn *Kronk, f streamingFunc[T]
 				return
 			}
 		}
+
+		lch := f(mdl)
 
 		var lastChunk T
 		for chunk := range lch {

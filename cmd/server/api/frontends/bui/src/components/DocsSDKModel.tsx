@@ -190,7 +190,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func NewGrammarSampler(vocab llama.Vocab, grammar string) *grammarSampler</code>
               </pre>
-              <p className="doc-description">NewGrammarSampler creates a grammar sampler that will be managed separately from the main sampler chain. Deprecated: request processing uses newGrammarSampler so initialization failures can be reported instead of silently disabling grammar constraints.</p>
+              <p className="doc-description">NewGrammarSampler creates a grammar sampler that will be managed separately from the main sampler chain.</p>
             </div>
           </div>
 
@@ -1498,14 +1498,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">ChatStreaming performs a chat request and streams the response. All requests (including vision/audio) use batch processing and can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. When stream_options.include_usage is true, the terminal choice is followed by a usage response with an empty Choices slice.</p>
             </div>
 
-            <div className="doc-section" id="method-model-chatstreamingchecked">
-              <h4>Model.ChatStreamingChecked</h4>
-              <pre className="code-block">
-                <code>func (m *Model) ChatStreamingChecked(ctx context.Context, d D) (&lt;-chan ChatResponse, error)</code>
-              </pre>
-              <p className="doc-description">ChatStreamingChecked performs the synchronous, model-aware validation needed by error-capable SDK and HTTP streaming callers before they commit a response.</p>
-            </div>
-
             <div className="doc-section" id="method-model-config">
               <h4>Model.Config</h4>
               <pre className="code-block">
@@ -2168,7 +2160,6 @@ export default function DocsSDKModel() {
                 <li><a href="#method-moemode-unmarshaltext">MoEMode.UnmarshalText</a></li>
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
-                <li><a href="#method-model-chatstreamingchecked">Model.ChatStreamingChecked</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
                 <li><a href="#method-model-embeddings">Model.Embeddings</a></li>
                 <li><a href="#method-model-imcsessions">Model.IMCSessions</a></li>

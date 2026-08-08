@@ -1,28 +1,9 @@
 package model
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
-
-func TestGrammarSamplerDistinguishesAbsentFromInitializationFailure(t *testing.T) {
-	gs, err := newGrammarSampler(0, "")
-	if err != nil {
-		t.Fatalf("empty grammar: unexpected error: %v", err)
-	}
-	if gs != nil {
-		t.Fatal("empty grammar: got sampler, want nil")
-	}
-
-	gs, err = newGrammarSampler(0, `root ::= "ok"`)
-	if !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("failed initialization: got %v, want ErrInvalidRequest", err)
-	}
-	if gs != nil {
-		t.Fatal("failed initialization: got sampler, want nil")
-	}
-}
 
 func TestFromJSONSchema_SimpleObject(t *testing.T) {
 	schema := D{
