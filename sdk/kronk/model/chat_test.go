@@ -900,6 +900,80 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 	}
 }
 
+func TestRetainTruncatedToolOutput(t *testing.T) {
+	validCall := ResponseToolCall{
+		ID:   "valid",
+		Type: "function",
+		Function: ResponseToolCallFunction{
+			Name:      "lookup",
+			Arguments: ToolCallArguments{"query": "weather"},
+		},
+	}
+	invalidCall := ResponseToolCall{ID: "invalid", Type: "function", Status: 2, Raw: `{"name":"write_file"`}
+
+	tests := []struct {
+		name        string
+		tooling     string
+		toolCalls   []ResponseToolCall
+		wantContent string
+		wantCalls   int
+	}{
+		{name: "parser returned no calls", tooling: `<function=write_file>`, wantContent: `<function=write_file>`},
+		{name: "parser returned invalid call", tooling: `{"name":"write_file"`, toolCalls: []ResponseToolCall{invalidCall}, wantContent: `{"name":"write_file"`},
+		{name: "complete call remains tooling", tooling: `{"name":"lookup","arguments":{"query":"weather"}}`, toolCalls: []ResponseToolCall{validCall}, wantCalls: 1},
+		{name: "valid call survives malformed output", tooling: "complete\nincomplete", toolCalls: []ResponseToolCall{validCall, invalidCall}, wantContent: "complete\nincomplete", wantCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var content strings.Builder
+			toolCalls := append([]ResponseToolCall(nil), tt.toolCalls...)
+
+			gotCalls, gotTruncated := retainTruncatedToolOutput(&content, tt.tooling, toolCalls)
+
+			if got := content.String(); got != tt.wantContent {
+				t.Errorf("content: got %q, want %q", got, tt.wantContent)
+			}
+			if got := len(gotCalls); got != tt.wantCalls {
+				t.Errorf("tool calls: got %d, want %d", got, tt.wantCalls)
+			}
+			if gotTruncated != tt.wantContent {
+				t.Errorf("truncated content: got %q, want %q", gotTruncated, tt.wantContent)
+			}
+		})
+	}
+}
+
+func TestTruncatedToolOutputResponse(t *testing.T) {
+	const tooling = `{"name":"write_file","arguments":{"path":"main.go","content":"package main`
+
+	toolCalls := []ResponseToolCall{{
+		ID:     "invalid",
+		Type:   "function",
+		Status: 2,
+		Raw:    tooling,
+		Error:  "jsonrepair: irrecoverable JSON",
+	}}
+	var content strings.Builder
+
+	toolCalls, _ = retainTruncatedToolOutput(&content, tooling, toolCalls)
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, content.String(), "", toolCalls, nil, FinishReasonLength, true, Usage{CompletionTokens: 256})
+
+	choice := resp.Choices[0]
+	if got := choice.FinishReason(); got != FinishReasonLength {
+		t.Errorf("finish reason: got %q, want %q", got, FinishReasonLength)
+	}
+	if got := choice.Message.Content; got != tooling {
+		t.Errorf("content: got %q, want %q", got, tooling)
+	}
+	if got := len(choice.Message.ToolCalls); got != 0 {
+		t.Errorf("tool calls: got %d, want 0", got)
+	}
+	if got := resp.Usage.CompletionTokens; got != 256 {
+		t.Errorf("completion tokens: got %d, want 256", got)
+	}
+}
+
 func TestUsageCachedTokensJSON(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1426,6 +1500,72 @@ func TestFlushStateMachine(t *testing.T) {
 	}
 }
 
+func TestFlushAllStateMachine(t *testing.T) {
+	sm := &flushStateMachine{results: []Result{
+		{Channel: ChannelTool, Content: "first"},
+		{Channel: ChannelTool, Content: "second"},
+		{Channel: ChannelTool, Content: "malformed"},
+	}}
+	s := slot{
+		job:          &chatJob{ctx: context.Background(), ch: make(chan ChatResponse, 1), id: "id", object: ObjectChatText},
+		finishReason: FinishReasonStop,
+	}
+	e := batchEngine{model: &Model{}}
+
+	e.flushAllStateMachine(&s, sm)
+
+	if got := s.finalTooling.String(); got != "firstsecondmalformed" {
+		t.Fatalf("finalTooling: got %q, want all queued results", got)
+	}
+	if got := sm.Flush(); got != (Result{}) {
+		t.Fatalf("Flush after drain: got %+v, want zero result", got)
+	}
+}
+
+func TestProcessDecodedPieceRetainsResultOnParserEOG(t *testing.T) {
+	sm := &flushStateMachine{classifyResult: Result{Channel: ChannelTool, Content: "tooling"}, classifyEOG: true}
+	s := slot{
+		stateMachine: sm,
+		job:          &chatJob{ctx: context.Background(), ch: make(chan ChatResponse, 1), id: "id", object: ObjectChatText},
+		toolFlag:     1,
+	}
+	e := batchEngine{model: &Model{}}
+
+	outcome := e.processDecodedPiece(&s, stopPiece{content: "terminal"}, -1, false)
+
+	if !outcome.parserEOG || outcome.err != nil {
+		t.Fatalf("outcome: got %+v, want parser EOG without error", outcome)
+	}
+	if got := s.finalTooling.String(); got != "tooling" {
+		t.Fatalf("finalTooling: got %q, want retained EOG result", got)
+	}
+	if got := s.completionTokens; got != 1 {
+		t.Fatalf("completionTokens: got %d, want parser-EOG piece counted", got)
+	}
+}
+
+func TestReconcileParserEOGRemainder(t *testing.T) {
+	released := stopPiece{content: "released", provisionalReason: true}
+	pending := stopPiece{content: "pending", provisionalReason: true}
+	discarded := stopPiece{content: "discarded", provisionalReason: true}
+	s := slot{
+		reasonTokens: 3,
+		stopGate: &stopGate{
+			pending:   []stopPiece{pending},
+			discarded: []stopPiece{discarded},
+		},
+	}
+
+	reconcileParserEOGRemainder(&s, []stopPiece{released})
+
+	if s.reasonTokens != 0 || s.completionTokens != 3 {
+		t.Fatalf("tokens: got reasoning=%d completion=%d, want 0/3", s.reasonTokens, s.completionTokens)
+	}
+	if len(s.stopGate.pending) != 0 || len(s.stopGate.discarded) != 0 {
+		t.Fatalf("stop gate was not drained: %+v", s.stopGate)
+	}
+}
+
 func TestRetainAndStreamResultUsesCleanedContentConsistently(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -1485,16 +1625,24 @@ func TestRetainAndStreamResultUsesCleanedContentConsistently(t *testing.T) {
 }
 
 type flushStateMachine struct {
-	result Result
+	result         Result
+	results        []Result
+	classifyResult Result
+	classifyEOG    bool
 }
 
 func (sm *flushStateMachine) Classify(string) (Result, bool) {
-	return Result{}, false
+	return sm.classifyResult, sm.classifyEOG
 }
 
 func (sm *flushStateMachine) Reset() {}
 
 func (sm *flushStateMachine) Flush() Result {
+	if len(sm.results) > 0 {
+		result := sm.results[0]
+		sm.results = sm.results[1:]
+		return result
+	}
 	result := sm.result
 	sm.result = Result{}
 	return result

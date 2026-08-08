@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$HOME/.local/bin:$PATH"
+export GOTOOLCHAIN=local
+
+[[ -x "$HOME/.local/bin/go" ]] || { echo 'Go is missing; rerun .agents/setup' >&2; exit 1; }
+[[ -x "$HOME/.local/bin/node" ]] || { echo 'Node.js is missing; rerun .agents/setup' >&2; exit 1; }
+[[ -d "$repo_root/cmd/server/api/frontends/bui/node_modules" ]] || {
+	echo 'Frontend dependencies are missing; rerun .agents/setup' >&2
+	exit 1
+}
+
+printf 'Kronk orb ready: %s, Node %s\n' "$(go version)" "$(node --version)"

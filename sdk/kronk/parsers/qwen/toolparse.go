@@ -3,6 +3,8 @@ package qwen
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 
@@ -15,9 +17,12 @@ import (
 // parseQwenXML parses Qwen3-Coder style tool calls with XML-like tags.
 // Format: <function=get_weather>\n<parameter=location>\nNYC\n</parameter>\n</function>
 //
-// Direct port of the legacy parseQwenToolCall.
+// The format has no escaping rule for its closing markers. Values containing
+// those markers are therefore malformed and fail the entire parse rather than
+// being reinterpreted as additional tool calls.
 func parseQwenXML(content string) []model.ResponseToolCall {
 	var toolCalls []model.ResponseToolCall
+	raw := content
 
 	// NOTE: We intentionally do NOT convert literal \n to actual newlines here.
 	// The model uses real newlines to delimit parameters in the XML format.
@@ -25,56 +30,77 @@ func parseQwenXML(content string) []model.ResponseToolCall {
 	// fmt.Printf("hello\n")) must be preserved as-is so that the content
 	// written to files retains the correct escape sequences.
 
-	for {
-		funcStart := strings.Index(content, "<function=")
-		if funcStart == -1 {
-			break
+	content = strings.TrimLeft(content, " \t\n\r")
+	if content == "" {
+		return []model.ResponseToolCall{failedXMLToolCall(raw, errors.New("parse qwen XML: tool call is empty"))}
+	}
+
+	for content != "" {
+		if !strings.HasPrefix(content, "<function=") {
+			return []model.ResponseToolCall{failedXMLToolCall(raw,
+				errors.New("parse qwen XML: unexpected content outside function"))}
 		}
 
-		funcEnd := strings.Index(content[funcStart:], ">")
+		funcEnd := strings.IndexByte(content, '>')
 		if funcEnd == -1 {
-			break
+			return []model.ResponseToolCall{failedXMLToolCall(raw,
+				errors.New("parse qwen XML: function opener is unterminated"))}
 		}
 
-		name := strings.TrimSpace(content[funcStart+10 : funcStart+funcEnd])
-
-		bodyStart := funcStart + funcEnd + 1
-		closeFunc := strings.Index(content[bodyStart:], "</function>")
-		if closeFunc == -1 {
-			break
+		name := strings.TrimSpace(content[len("<function="):funcEnd])
+		if name == "" {
+			return []model.ResponseToolCall{failedXMLToolCall(raw,
+				errors.New("parse qwen XML: function name is empty"))}
 		}
-		closeFunc += bodyStart
 
-		funcBody := content[bodyStart:closeFunc]
 		args := make(map[string]any)
-
-		remaining := funcBody
+		content = content[funcEnd+1:]
 		for {
-			paramStart := strings.Index(remaining, "<parameter=")
-			if paramStart == -1 {
+			content = strings.TrimLeft(content, " \t\n\r")
+			if strings.HasPrefix(content, "</function>") {
+				content = content[len("</function>"):]
 				break
 			}
 
-			paramNameEnd := strings.Index(remaining[paramStart:], ">")
+			if !strings.HasPrefix(content, "<parameter=") {
+				return []model.ResponseToolCall{failedXMLToolCall(raw,
+					fmt.Errorf("parse qwen XML: unexpected content inside function %q", name))}
+			}
+
+			paramNameEnd := strings.IndexByte(content, '>')
 			if paramNameEnd == -1 {
-				break
+				return []model.ResponseToolCall{failedXMLToolCall(raw,
+					fmt.Errorf("parse qwen XML: parameter opener in function %q is unterminated", name))}
 			}
 
-			paramName := strings.TrimSpace(remaining[paramStart+11 : paramStart+paramNameEnd])
+			paramName := strings.TrimSpace(content[len("<parameter="):paramNameEnd])
+			if paramName == "" {
+				return []model.ResponseToolCall{failedXMLToolCall(raw,
+					fmt.Errorf("parse qwen XML: parameter name in function %q is empty", name))}
+			}
 
-			valueStart := paramStart + paramNameEnd + 1
-			paramCloseRel := strings.Index(remaining[valueStart:], "</parameter>")
+			valueStart := paramNameEnd + 1
+			paramCloseRel := strings.Index(content[valueStart:], "</parameter>")
 			if paramCloseRel == -1 {
-				break
+				return []model.ResponseToolCall{failedXMLToolCall(raw,
+					fmt.Errorf("parse qwen XML: parameter %q in function %q is not closed", paramName, name))}
+			}
+			if funcCloseRel := strings.Index(content[valueStart:], "</function>"); funcCloseRel != -1 && funcCloseRel < paramCloseRel {
+				return []model.ResponseToolCall{failedXMLToolCall(raw,
+					fmt.Errorf("parse qwen XML: function %q closes before parameter %q", name, paramName))}
 			}
 			paramClose := valueStart + paramCloseRel
 
-			paramValue := remaining[valueStart:paramClose]
+			paramValue := content[valueStart:paramClose]
 			paramValue = strings.TrimPrefix(paramValue, "\n")
 			paramValue = strings.TrimSuffix(paramValue, "\n")
+			if _, exists := args[paramName]; exists {
+				return []model.ResponseToolCall{failedXMLToolCall(raw,
+					fmt.Errorf("parse qwen XML: parameter %q in function %q is duplicated", paramName, name))}
+			}
 			args[paramName] = paramValue
 
-			remaining = remaining[paramClose+12:]
+			content = content[paramClose+len("</parameter>"):]
 		}
 
 		toolCalls = append(toolCalls, model.ResponseToolCall{
@@ -86,10 +112,20 @@ func parseQwenXML(content string) []model.ResponseToolCall {
 			},
 		})
 
-		content = content[closeFunc+11:]
+		content = strings.TrimLeft(content, " \t\n\r")
 	}
 
 	return toolCalls
+}
+
+func failedXMLToolCall(raw string, err error) model.ResponseToolCall {
+	return model.ResponseToolCall{
+		ID:     newToolCallID(),
+		Type:   "function",
+		Status: 2,
+		Raw:    raw,
+		Error:  err.Error(),
+	}
 }
 
 // normalizeXMLArguments converts direct-XML parameter text according to the

@@ -80,6 +80,7 @@ func TestParseJSON_ArgumentTypes(t *testing.T) {
 			"null_text":"null",
 			"object":{"name":"x","port":8080},
 			"array":[1,2,3],
+			"empty_array":[],
 			"bool":true,
 			"number":1.50,
 			"large_integer":9007199254740993,
@@ -100,6 +101,7 @@ func TestParseJSON_ArgumentTypes(t *testing.T) {
 		"null_text":     "null",
 		"object":        map[string]any{"name": "x", "port": json.Number("8080")},
 		"array":         []any{json.Number("1"), json.Number("2"), json.Number("3")},
+		"empty_array":   []any{},
 		"bool":          true,
 		"number":        json.Number("1.50"),
 		"large_integer": json.Number("9007199254740993"),
@@ -140,6 +142,19 @@ func TestParseJSON_RepairsUnescapedQuotes(t *testing.T) {
 	}
 	if got, want := calls[0].Function.Arguments["content"], "import \"fmt\"\\n"; got != want {
 		t.Errorf("content: got %#v, want %#v", got, want)
+	}
+}
+
+func TestParseJSON_RejectsStructuralRepairs(t *testing.T) {
+	for _, content := range []string{
+		"{\"name\":`bash`,\"arguments\":{\"command\":`id`}}",
+		`{name:"bash",arguments:{command:"id"}}`,
+		`{"name":"bash","arguments":{"confirm:true}}`,
+	} {
+		calls := parseJSON(t.Context(), noopLog, content)
+		if len(calls) != 1 || calls[0].Status != 2 || calls[0].Function.Name != "" {
+			t.Errorf("parseJSON(%q): got %+v, want one unnamed failed call", content, calls)
+		}
 	}
 }
 
@@ -201,31 +216,9 @@ func TestFindJSONObjectEnd(t *testing.T) {
 	}
 }
 
-func TestStateMachineToolCallDeltas(t *testing.T) {
-	var sm stateMachine
-	sm.Reset()
-	for _, token := range []string{"<tool_call>", `{"arguments":{},"name":".get_`, `weather"}`, "</tool_call>", "<tool_call>", `{"name":"forecast","arguments":{}}`} {
-		sm.Classify(token)
-	}
-
-	deltas := sm.ToolCallDeltas()
-	if len(deltas) != 2 {
-		t.Fatalf("ToolCallDeltas: got %d, want 2", len(deltas))
-	}
-	if deltas[0].Function.Name != "get_weather" || deltas[1].Function.Name != "forecast" {
-		t.Errorf("names: got [%q %q], want [get_weather forecast]", deltas[0].Function.Name, deltas[1].Function.Name)
-	}
-	if deltas[0].ID == "" || deltas[0].ID == deltas[1].ID || deltas[0].Index != 0 || deltas[1].Index != 1 || deltas[0].Type != "function" || deltas[0].Function.Arguments != "" {
-		t.Errorf("identity-only deltas: got %+v", deltas)
-	}
-	if got := sm.ToolCallDeltas(); len(got) != 0 {
-		t.Errorf("drained deltas: got %d, want 0", len(got))
-	}
-	if got := sm.StartedToolCalls(); len(got) != 2 {
-		t.Errorf("StartedToolCalls: got %d, want 2", len(got))
-	}
-	sm.Reset()
-	if len(sm.StartedToolCalls()) != 0 || len(sm.ToolCallDeltas()) != 0 {
-		t.Error("Reset did not clear tool-call delta state")
+func TestStateMachineDoesNotStreamProvisionalToolCalls(t *testing.T) {
+	sm := Parser{}.NewStateMachine()
+	if _, ok := sm.(model.ToolCallDeltaStreamer); ok {
+		t.Fatal("generic tool-call parser must wait for aggregate validation before streaming identities")
 	}
 }

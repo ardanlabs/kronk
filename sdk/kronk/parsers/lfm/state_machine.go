@@ -13,6 +13,8 @@ type stateMachine struct {
 	pending string
 	tool    strings.Builder
 	inTool  bool
+	quote   byte
+	escaped bool
 	queue   []model.Result
 
 	deltas  []model.ResponseToolCallDelta
@@ -26,6 +28,8 @@ func (sm *stateMachine) Reset() {
 	sm.pending = ""
 	sm.tool.Reset()
 	sm.inTool = false
+	sm.quote = 0
+	sm.escaped = false
 	sm.queue = nil
 	sm.deltas = nil
 	sm.started = nil
@@ -47,21 +51,22 @@ func (sm *stateMachine) process(text string) {
 	sm.pending = ""
 	for text != "" {
 		if sm.inTool {
-			before, after, ok := strings.Cut(text, toolClose)
+			closeAt, safeAt, ok := sm.toolCloser(text)
 			if !ok {
-				at := partialSuffix(text, toolClose)
-				sm.tool.WriteString(text[:at])
-				sm.pending = text[at:]
+				sm.tool.WriteString(text[:safeAt])
+				sm.pending = text[safeAt:]
 				sm.updateDeltas(sm.tool.String())
 				return
 			}
-			sm.tool.WriteString(before)
+			sm.tool.WriteString(text[:closeAt])
 			body := sm.tool.String()
 			sm.updateDeltas(body)
-			sm.enqueue(model.ChannelTool, body)
+			sm.enqueue(model.ChannelTool, toolOpen+body+toolClose)
 			sm.tool.Reset()
 			sm.inTool = false
-			text = after
+			sm.quote = 0
+			sm.escaped = false
+			text = text[closeAt+len(toolClose):]
 			continue
 		}
 
@@ -89,6 +94,33 @@ func (sm *stateMachine) process(text string) {
 	}
 }
 
+func (sm *stateMachine) toolCloser(text string) (int, int, bool) {
+	for pos := 0; pos < len(text); pos++ {
+		ch := text[pos]
+		if sm.quote != 0 {
+			if sm.escaped {
+				sm.escaped = false
+			} else if ch == '\\' {
+				sm.escaped = true
+			} else if ch == sm.quote {
+				sm.quote = 0
+			}
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			sm.quote = ch
+			continue
+		}
+		if strings.HasPrefix(text[pos:], toolClose) {
+			return pos, pos, true
+		}
+	}
+	if sm.quote != 0 {
+		return 0, len(text), false
+	}
+	return 0, partialSuffix(text, toolClose), false
+}
+
 func (sm *stateMachine) enqueue(channel model.Channel, content string) {
 	if content == "" {
 		return
@@ -108,10 +140,12 @@ func (sm *stateMachine) Flush() model.Result {
 		return result
 	}
 	if sm.inTool {
-		content := sm.tool.String() + sm.pending
+		content := toolOpen + sm.tool.String() + sm.pending
 		sm.tool.Reset()
 		sm.pending = ""
 		sm.inTool = false
+		sm.quote = 0
+		sm.escaped = false
 		return model.Result{Channel: model.ChannelTool, Content: content}
 	}
 	if sm.pending == "" {

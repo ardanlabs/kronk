@@ -1,6 +1,8 @@
 package glm
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -101,9 +103,55 @@ func TestParser_ToolCall(t *testing.T) {
 		{token: "</tool_call>", channel: model.ChannelTool,
 			content: "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>\n"},
 	})
-	_, eog := c.Classify("done")
-	if !eog {
-		t.Errorf("expected EOG after tool call closed")
+	result, eog := c.Classify("done")
+	if eog {
+		t.Error("unexpected continuation after a tool call must be preserved for final validation")
+	}
+	want := "\n</tool_call>done"
+	if result.Channel != model.ChannelTool || result.Content != want {
+		t.Errorf("unexpected continuation: got %+v, want tool content %q", result, want)
+	}
+}
+
+func TestParser_PreservesMalformedTrailingContent(t *testing.T) {
+	tests := []struct {
+		name string
+		tail []string
+	}{
+		{name: "whole delimiter", tail: []string{"</arg_value>"}},
+		{name: "split delimiter", tail: []string{"</arg_", "value>"}},
+		{name: "prefixed delimiter", tail: []string{"unexpected</arg_value>"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Parser{}.NewStateMachine()
+			var tooling strings.Builder
+			tokens := []string{
+				"<tool_call>",
+				"write_file<arg_key>content</arg_key><arg_value></arg_value>",
+				"</tool_call>",
+				"<tool_call>",
+				"bash<arg_key>command</arg_key><arg_value>id</arg_value>",
+				"</tool_call>",
+			}
+			tokens = append(tokens, tt.tail...)
+
+			for _, token := range tokens {
+				result, eog := c.Classify(token)
+				if eog {
+					t.Fatalf("Classify(%q): got EOG before malformed output was preserved", token)
+				}
+				if result.Channel == model.ChannelTool {
+					tooling.WriteString(result.Content)
+				}
+			}
+
+			calls := Parser{}.ToolCall(context.Background(), nil, tooling.String())
+			if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+				t.Fatalf("ToolCall: got %+v, want one non-executable failed call", calls)
+			}
+		})
 	}
 }
 
@@ -114,12 +162,68 @@ func TestParser_FlushIncompleteToolCall(t *testing.T) {
 
 	flusher := c.(model.StateMachineFlusher)
 	got := flusher.Flush()
-	want := "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>\n"
+	want := "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>\n</tool_call>"
 	if got.Channel != model.ChannelTool || got.Content != want {
 		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelTool, want)
 	}
 	if got := flusher.Flush(); got != (model.Result{}) {
 		t.Errorf("second Flush: got %+v, want zero result", got)
+	}
+}
+
+func TestParser_EnvelopeTokenBoundaries(t *testing.T) {
+	body := "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>"
+	for _, markers := range [][2]string{{"<tool_call>", "</tool_call>"}, {"<|tool_call>", "<tool_call|>"}} {
+		for openerSplit := 1; openerSplit < len(markers[0]); openerSplit++ {
+			for closerSplit := 1; closerSplit < len(markers[1]); closerSplit++ {
+				sm := Parser{}.NewStateMachine()
+				var aggregate strings.Builder
+				for _, token := range []string{markers[0][:openerSplit], markers[0][openerSplit:], body + markers[1][:closerSplit], markers[1][closerSplit:]} {
+					result, _ := sm.Classify(token)
+					if result.Channel == model.ChannelTool {
+						aggregate.WriteString(result.Content)
+					}
+				}
+				calls := Parser{}.ToolCall(t.Context(), nil, aggregate.String())
+				if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "get_weather" {
+					t.Fatalf("markers %q/%q splits %d/%d: got %+v", markers[0], markers[1], openerSplit, closerSplit, calls)
+				}
+			}
+		}
+	}
+}
+
+func TestParser_CoalescedConsecutiveEnvelopes(t *testing.T) {
+	first := "<tool_call>first<arg_key>value</arg_key><arg_value>x</arg_value></tool_call>"
+	second := "<tool_call>second<arg_key>value</arg_key><arg_value>y</arg_value></tool_call>"
+	sm := Parser{}.NewStateMachine()
+	result, _ := sm.Classify(first + second)
+	calls := Parser{}.ToolCall(t.Context(), nil, result.Content)
+	if len(calls) != 2 || calls[0].Function.Name != "first" || calls[1].Function.Name != "second" {
+		t.Fatalf("ToolCall: got %+v, want successful calls [first second]", calls)
+	}
+}
+
+func TestParser_EmptyTrailingEnvelopeFailsAtomically(t *testing.T) {
+	first := "<tool_call>first<arg_key>value</arg_key><arg_value>x</arg_value></tool_call>"
+	for _, markers := range [][2]string{{"<tool_call>", "</tool_call>"}, {"<|tool_call>", "<tool_call|>"}} {
+		for _, body := range []string{"", " \t\r\n"} {
+			sm := Parser{}.NewStateMachine()
+			result, _ := sm.Classify(first + markers[0] + body + markers[1])
+			calls := Parser{}.ToolCall(t.Context(), nil, result.Content)
+			if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+				t.Fatalf("completed %q/%q body %q: got %+v, want one non-executable failure", markers[0], markers[1], body, calls)
+			}
+		}
+
+		sm := Parser{}.NewStateMachine()
+		complete, _ := sm.Classify(first)
+		sm.Classify(markers[0])
+		tail := sm.(model.StateMachineFlusher).Flush()
+		calls := Parser{}.ToolCall(t.Context(), nil, complete.Content+tail.Content)
+		if tail.Channel != model.ChannelTool || len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+			t.Fatalf("incomplete %q: tail %+v, calls %+v; want one non-executable failure", markers[0], tail, calls)
+		}
 	}
 }
 

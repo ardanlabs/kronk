@@ -945,7 +945,7 @@ export default function DocsSDKModel() {
 	Flush() Result
 }`}</code>
               </pre>
-              <p className="doc-description">StateMachineFlusher is implemented by state machines that may retain model output not yet returned by Classify. Flush drains that output at successful end-of-generation. It must not return content previously returned by Classify, and subsequent calls must return a zero Result.</p>
+              <p className="doc-description">StateMachineFlusher is implemented by state machines that may retain model output not yet returned by Classify. Flush drains that output at successful end-of-generation. It must not return content previously returned by Classify. Callers invoke Flush until it returns a zero Result so state machines can preserve multiple channel transitions retained from one decoded piece.</p>
             </div>
 
             <div className="doc-section" id="type-streamingresponselogger">

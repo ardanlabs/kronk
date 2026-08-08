@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+local_bin="$HOME/.local/bin"
+toolchains="$HOME/.local/share/kronk-toolchains"
+
+mkdir -p "$local_bin" "$toolchains"
+export PATH="$local_bin:$PATH"
+export GOBIN="$local_bin"
+export GOTOOLCHAIN=local
+
+step() {
+	local label="$1"
+	shift
+	local start=$SECONDS
+	printf '==> %s\n' "$label"
+	"$@"
+	printf '<== %s (%ss)\n' "$label" "$((SECONDS - start))"
+}
+
+install_system_packages() {
+	local -a packages=()
+	command -v curl >/dev/null || packages+=(curl)
+	command -v git >/dev/null || packages+=(git)
+	command -v make >/dev/null || packages+=(make)
+	command -v gcc >/dev/null || packages+=(build-essential)
+	command -v sha256sum >/dev/null || packages+=(coreutils)
+	command -v tar >/dev/null || packages+=(tar)
+	command -v jq >/dev/null || packages+=(jq)
+
+	((${#packages[@]} == 0)) && return
+
+	local -a elevate=()
+	((EUID == 0)) || elevate=(sudo)
+	"${elevate[@]}" apt-get update
+	"${elevate[@]}" apt-get install -y --no-install-recommends "${packages[@]}"
+}
+
+install_go() {
+	local version arch archive url expected actual install_dir temp_dir
+	version="$(tr -d '[:space:]' < "$repo_root/.go-version")"
+	case "$(uname -m)" in
+		x86_64) arch=amd64 ;;
+		aarch64 | arm64) arch=arm64 ;;
+		*) printf 'unsupported architecture: %s\n' "$(uname -m)" >&2; return 1 ;;
+	esac
+
+	install_dir="$toolchains/go-$version"
+	if [[ ! -x "$install_dir/bin/go" ]]; then
+		archive="go${version}.linux-${arch}.tar.gz"
+		url="https://go.dev/dl/$archive"
+		temp_dir="$(mktemp -d)"
+		trap 'rm -rf "$temp_dir"' RETURN
+		curl -fsSL "$url" -o "$temp_dir/$archive"
+		expected="$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | jq -r --arg file "$archive" '.[] | .files[] | select(.filename == $file) | .sha256')"
+		actual="$(sha256sum "$temp_dir/$archive" | awk '{print $1}')"
+		[[ -n "$expected" && "$actual" == "$expected" ]] || { echo 'Go archive checksum mismatch' >&2; return 1; }
+		tar -xzf "$temp_dir/$archive" -C "$temp_dir"
+		mv "$temp_dir/go" "$install_dir"
+		rm -rf "$temp_dir"
+		trap - RETURN
+	fi
+
+	ln -sfn "$install_dir/bin/go" "$local_bin/go"
+	ln -sfn "$install_dir/bin/gofmt" "$local_bin/gofmt"
+	[[ "$(go version)" == "go version go${version} "* ]]
+}
+
+install_node() {
+	local version=v22.14.0 arch archive base_url expected actual install_dir temp_dir
+	case "$(uname -m)" in
+		x86_64) arch=x64 ;;
+		aarch64 | arm64) arch=arm64 ;;
+		*) printf 'unsupported architecture: %s\n' "$(uname -m)" >&2; return 1 ;;
+	esac
+
+	install_dir="$toolchains/node-$version"
+	if [[ ! -x "$install_dir/bin/node" ]]; then
+		archive="node-${version}-linux-${arch}.tar.xz"
+		base_url="https://nodejs.org/dist/$version"
+		temp_dir="$(mktemp -d)"
+		trap 'rm -rf "$temp_dir"' RETURN
+		curl -fsSL "$base_url/$archive" -o "$temp_dir/$archive"
+		expected="$(curl -fsSL "$base_url/SHASUMS256.txt" | awk -v file="$archive" '$2 == file {print $1}')"
+		actual="$(sha256sum "$temp_dir/$archive" | awk '{print $1}')"
+		[[ -n "$expected" && "$actual" == "$expected" ]] || { echo 'Node archive checksum mismatch' >&2; return 1; }
+		tar -xJf "$temp_dir/$archive" -C "$temp_dir"
+		mv "$temp_dir/node-${version}-linux-${arch}" "$install_dir"
+		rm -rf "$temp_dir"
+		trap - RETURN
+	fi
+
+	for command in node npm npx corepack; do
+		ln -sfn "$install_dir/bin/$command" "$local_bin/$command"
+	done
+	[[ "$(node --version)" == "$version" ]]
+}
+
+install_go_tools() {
+	if ! staticcheck -version 2>/dev/null | grep -q 'staticcheck 2026.1'; then
+		go install honnef.co/go/tools/cmd/staticcheck@2026.1
+	fi
+	if ! govulncheck -version 2>/dev/null | grep -q 'Go: go1.26'; then
+		go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+	fi
+}
+
+step 'Install required system packages' install_system_packages
+step 'Install pinned Go toolchain' install_go
+step 'Install Node.js for the Vite frontend' install_node
+step 'Download root Go module dependencies' go -C "$repo_root" mod download
+step 'Download example Go module dependencies' go -C "$repo_root/examples" mod download
+step 'Install pinned Go analysis tools' install_go_tools
+step 'Install locked frontend dependencies' npm --prefix "$repo_root/cmd/server/api/frontends/bui" ci --no-audit --no-fund
+step 'Configure repository Git hooks' git -C "$repo_root" config core.hooksPath .githooks
+
+printf 'Orb setup complete: %s, Node %s\n' "$(go version)" "$(node --version)"

@@ -12,10 +12,13 @@ import (
 type stateMachine struct {
 	status model.Channel
 
-	pending strings.Builder
-	tools   strings.Builder
-	inTag   bool
-	inTools bool
+	pending           strings.Builder
+	tools             strings.Builder
+	inTag             bool
+	inTools           bool
+	afterTools        bool
+	malformedTool     bool
+	pendingAfterTools bool
 
 	toolCallDeltas []model.ResponseToolCallDelta
 	startedCalls   []model.ResponseToolCallDelta
@@ -29,6 +32,9 @@ func (sm *stateMachine) Reset() {
 	sm.tools.Reset()
 	sm.inTag = false
 	sm.inTools = false
+	sm.afterTools = false
+	sm.malformedTool = false
+	sm.pendingAfterTools = false
 	sm.toolCallDeltas = nil
 	sm.startedCalls = nil
 	sm.detectedCalls = 0
@@ -36,6 +42,10 @@ func (sm *stateMachine) Reset() {
 
 // Classify classifies one decoded token's content.
 func (sm *stateMachine) Classify(content string) (model.Result, bool) {
+	if sm.malformedTool {
+		return model.Result{Channel: model.ChannelTool, Content: content}, false
+	}
+
 	if sm.inTools {
 		sm.tools.WriteString(content)
 		sm.updateToolCallDeltas()
@@ -48,6 +58,11 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		if !possibleControlTag(candidate) {
 			sm.pending.Reset()
 			sm.inTag = false
+			if sm.pendingAfterTools {
+				sm.pendingAfterTools = false
+				sm.malformedTool = true
+				return model.Result{Channel: model.ChannelTool, Content: candidate}, false
+			}
 			return sm.Classify(candidate)
 		}
 		if !strings.Contains(candidate, sepToken) {
@@ -56,7 +71,37 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 		sm.pending.Reset()
 		sm.inTag = false
+		if sm.pendingAfterTools {
+			sm.pendingAfterTools = false
+			if !strings.HasPrefix(candidate, toolsOpen) {
+				sm.malformedTool = true
+				return model.Result{Channel: model.ChannelTool, Content: candidate}, false
+			}
+		}
 		return sm.classifyTag(candidate)
+	}
+
+	if sm.afterTools {
+		trimmed := strings.TrimLeft(content, " \t\r\n")
+		if trimmed == "" {
+			return model.Result{}, false
+		}
+		if trimmed == "<|end_of_msg|>" {
+			sm.afterTools = false
+			return model.Result{}, true
+		}
+		if strings.HasPrefix(trimmed, toolsOpen) {
+			sm.afterTools = false
+			return sm.Classify(trimmed)
+		}
+		if strings.HasPrefix(toolsOpen, trimmed) {
+			sm.afterTools = false
+			sm.pendingAfterTools = true
+			return sm.Classify(trimmed)
+		}
+		sm.afterTools = false
+		sm.malformedTool = true
+		return model.Result{Channel: model.ChannelTool, Content: trimmed}, false
 	}
 
 	start := firstControlTag(content)
@@ -134,6 +179,7 @@ func (sm *stateMachine) classifyTag(candidate string) (model.Result, bool) {
 	case toolsOpen:
 		sm.status = model.ChannelTool
 		sm.inTools = true
+		sm.afterTools = false
 		sm.tools.Reset()
 		sm.tools.WriteString(candidate)
 		sm.detectedCalls = 0
@@ -159,9 +205,13 @@ func (sm *stateMachine) completeTools() model.Result {
 	end := closeAt + len(toolsClose)
 	complete := content[:end]
 	remainder := content[end:]
+	if strings.TrimSpace(remainder) == "<|end_of_msg|>" {
+		remainder = ""
+	}
 	sm.tools.Reset()
 	sm.tools.WriteString(remainder)
 	sm.inTools = remainder != ""
+	sm.afterTools = remainder == ""
 	sm.detectedCalls = strings.Count(remainder, callOpen)
 	return model.Result{Channel: model.ChannelTool, Content: complete}
 }
@@ -182,9 +232,9 @@ func (sm *stateMachine) updateToolCallDeltas() {
 		}
 		openerEnd += callAt + len(sepToken)
 		if seen >= sm.detectedCalls {
-			name, err := attribute(content[callAt:openerEnd], "tool")
+			attributes, err := parseElementAttributes(content[callAt:openerEnd], callOpen, sepToken, "tool", "index")
 			if err == nil {
-				sm.addToolCallDelta(name)
+				sm.addToolCallDelta(attributes["tool"])
 			}
 		}
 		seen++

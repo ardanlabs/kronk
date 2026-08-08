@@ -210,11 +210,11 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 	accountStopPiece(s, piece)
 	pieces, matched := s.stopGate.feed(piece)
 
-	for _, piece := range pieces {
+	for i, piece := range pieces {
 		logprobIndex := appendStopPieceLogprobs(s, piece)
 		outcome := e.processDecodedPiece(s, piece, logprobIndex, true)
 		if outcome.parserEOG {
-			unaccountStopPiece(s, piece)
+			reconcileParserEOGRemainder(s, pieces[i+1:])
 			s.stopSource = "parser-eog"
 			e.finishSlot(s, nil)
 			return
@@ -259,10 +259,6 @@ func (e *batchEngine) processDecodedPiece(s *slot, piece stopPiece, logprobIndex
 		result.Channel = ChannelAnswer
 	}
 
-	if eog {
-		return decodedPieceOutcome{parserEOG: true}
-	}
-
 	previousChannel := slotChannel(s)
 
 	updateSlotChannel(s, result.Channel)
@@ -299,7 +295,7 @@ func (e *batchEngine) processDecodedPiece(s *slot, piece stopPiece, logprobIndex
 	// Non-streamable tokens (ChannelNone) have been counted above but have
 	// no content to stream or further process.
 	if result.Channel == ChannelNone {
-		return decodedPieceOutcome{}
+		return decodedPieceOutcome{parserEOG: eog}
 	}
 
 	outputTokens := s.reasonTokens + s.completionTokens
@@ -308,7 +304,22 @@ func (e *batchEngine) processDecodedPiece(s *slot, piece stopPiece, logprobIndex
 		return decodedPieceOutcome{err: err}
 	}
 
-	return decodedPieceOutcome{}
+	return decodedPieceOutcome{parserEOG: eog}
+}
+
+func reconcileParserEOGRemainder(s *slot, released []stopPiece) {
+	for _, piece := range released {
+		reconcileStopPiece(s, piece)
+	}
+	if s.stopGate == nil {
+		return
+	}
+	for _, piece := range s.stopGate.flush() {
+		reconcileStopPiece(s, piece)
+	}
+	for _, piece := range s.stopGate.takeDiscarded() {
+		reconcileStopPiece(s, piece)
+	}
 }
 
 func accountCurrentChannel(s *slot, speculative bool) {

@@ -6,201 +6,320 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-// stateMachine is a per-slot streaming state machine for the GPT-OSS Harmony
-// format. Direct port of model.stateMachine.stepGPT preserved as faithfully as
-// possible.
-//
-// Behavior is undefined if Classify is called after a previous call returned
-// eog=true. Reset returns the state machine to its initial configuration.
+var harmonyMarkers = []string{"<|constrain|>", "<|message|>", "<|channel|>", "<|return|>", "<|start|>", "<|call|>", "<|end|>"}
+
+// stateMachine is a token-boundary-independent Harmony stream classifier.
 type stateMachine struct {
 	status            model.Channel
 	collecting        bool
+	awaitingHeader    bool
 	awaitingChannel   bool
 	awaitingConstrain bool
-
-	// Channel name accumulator (e.g. "analysis", "final", "commentary to=...").
-	channelBuf strings.Builder
-
-	// Function name extracted from "commentary to=functions.NAME" channel.
-	toolFuncName string
-
-	toolCallBuf    strings.Builder
-	toolCallDeltas []model.ResponseToolCallDelta
-	startedCalls   []model.ResponseToolCallDelta
+	headerBuf         strings.Builder
+	channelBuf        strings.Builder
+	constraintBuf     strings.Builder
+	toolFuncName      string
+	toolChannel       bool
+	toolCallBuf       strings.Builder
+	inputBuf          string
+	results           []model.Result
+	toolCallDeltas    []model.ResponseToolCallDelta
+	startedCalls      []model.ResponseToolCallDelta
 }
 
-// Reset returns the stateMachine to its initial state for reuse on a new
-// request. Mirrors stateMachine.resetState() for the fields stepGPT touches.
+// Reset returns the stateMachine to its initial state.
 func (sm *stateMachine) Reset() {
-	sm.status = model.ChannelNone
-	sm.collecting = false
-	sm.awaitingChannel = false
-	sm.awaitingConstrain = false
-	sm.channelBuf.Reset()
-	sm.toolFuncName = ""
-	sm.toolCallBuf.Reset()
-	sm.toolCallDeltas = nil
-	sm.startedCalls = nil
+	*sm = stateMachine{status: model.ChannelNone}
 }
 
-// Classify classifies a single decoded token's content. Direct port of stepGPT from
-// parser_gpt.go; comments and branch ordering are preserved so the diff
-// against the original is mechanical.
+// Classify consumes an arbitrary stream chunk and returns the first available result.
 func (sm *stateMachine) Classify(content string) (model.Result, bool) {
-	if sm.collecting {
-		if content == "<|return|>" || content == "<|call|>" {
-			sm.collecting = false
-			sm.status = model.ChannelNone
-			return model.Result{}, true // End of generation; Flush releases a buffered tool call.
+	sm.inputBuf += content
+	eog := sm.consume(false)
+	return sm.nextResult(), eog
+}
+
+func (sm *stateMachine) consume(flush bool) bool {
+	var eog bool
+	for sm.inputBuf != "" {
+		idx, marker := nextHarmonyMarker(sm.inputBuf)
+		if idx < 0 {
+			keep := partialMarkerSuffix(sm.inputBuf)
+			if flush {
+				keep = 0
+			}
+			sm.consumeText(sm.inputBuf[:len(sm.inputBuf)-keep])
+			sm.inputBuf = sm.inputBuf[len(sm.inputBuf)-keep:]
+			break
 		}
 
-		if content == "<|end|>" {
-			sm.collecting = false
-			sm.status = model.ChannelNone
-			return sm.releaseToolCall(), false
+		if idx > 0 {
+			sm.consumeText(sm.inputBuf[:idx])
+			sm.inputBuf = sm.inputBuf[idx:]
+			continue
 		}
 
-		// Handle non-deterministic models that emit <|start|> or <|channel|>
-		// without first closing the current block with <|end|>.
-		if content == "<|start|>" {
-			sm.collecting = false
-			sm.status = model.ChannelNone
-			sm.awaitingChannel = false
-			sm.awaitingConstrain = false
-			sm.channelBuf.Reset()
-			return model.Result{}, false
+		// Harmony-like text in a tool JSON string is payload, not framing.
+		if sm.status == model.ChannelTool && sm.collecting && toolMarkerIsData(sm.toolCallBuf.String(), marker) {
+			sm.toolCallBuf.WriteString(marker)
+			sm.inputBuf = sm.inputBuf[len(marker):]
+			continue
 		}
 
-		if content == "<|channel|>" {
-			sm.collecting = false
+		sm.inputBuf = sm.inputBuf[len(marker):]
+		if sm.consumeMarker(marker) {
+			eog = true
+			if sm.toolCallBuf.Len() > 0 && trimASCIIWhitespace(sm.inputBuf) != "" {
+				sm.toolCallBuf.WriteString("<|post-eog|>")
+				sm.toolCallBuf.WriteString(sm.inputBuf)
+			}
+			sm.inputBuf = ""
+			break
+		}
+	}
+	return eog
+}
+
+func (sm *stateMachine) consumeText(text string) {
+	if text == "" {
+		return
+	}
+	if sm.awaitingHeader {
+		sm.headerBuf.WriteString(text)
+		return
+	}
+	if sm.awaitingConstrain {
+		sm.constraintBuf.WriteString(text)
+		return
+	}
+	if sm.awaitingChannel {
+		sm.channelBuf.WriteString(text)
+		return
+	}
+	if !sm.collecting {
+		return
+	}
+	if sm.status == model.ChannelTool {
+		sm.toolCallBuf.WriteString(text)
+		return
+	}
+	if sm.status != model.ChannelNone {
+		sm.results = append(sm.results, model.Result{Channel: sm.status, Content: text})
+	}
+}
+
+func (sm *stateMachine) consumeMarker(marker string) bool {
+	if sm.awaitingHeader {
+		if marker == "<|channel|>" {
+			sm.finishHeader()
 			sm.awaitingChannel = true
 			sm.channelBuf.Reset()
-			return model.Result{}, false
+			return false
 		}
-
-		if sm.status == model.ChannelTool {
-			sm.toolCallBuf.WriteString(content)
-			return model.Result{}, false
-		}
-
-		return model.Result{Channel: sm.status, Content: content}, false
+		sm.awaitingHeader = false
+		sm.headerBuf.Reset()
 	}
 
-	// Skip tokens between <|constrain|> and <|message|> (e.g., "json").
 	if sm.awaitingConstrain {
-		if content == "<|message|>" {
+		if marker == messageMarker {
+			if trimASCIIWhitespace(sm.constraintBuf.String()) != "json" {
+				sm.preserveMalformed(marker)
+				return false
+			}
+			sm.constraintBuf.Reset()
 			sm.awaitingConstrain = false
-			sm.collecting = true
-
-			if sm.status == model.ChannelTool && sm.toolFuncName != "" {
-				sm.toolCallBuf.WriteString("." + sm.toolFuncName + " <|message|>")
-				sm.toolFuncName = ""
-			}
+			sm.beginMessage()
+			return false
 		}
-		return model.Result{}, false
+		sm.preserveMalformed(marker)
+		return false
 	}
 
-	// Accumulate channel name tokens until <|message|> or <|constrain|>.
 	if sm.awaitingChannel {
-		if content == "<|message|>" || content == "<|constrain|>" {
-			sm.awaitingChannel = false
-			channelName := strings.TrimSpace(sm.channelBuf.String())
-			sm.channelBuf.Reset()
-
-			// Determine status from channel name prefix.
-			switch {
-			case strings.HasPrefix(channelName, "analysis"):
-				sm.status = model.ChannelReasoning
-
-			case strings.HasPrefix(channelName, "final"):
-				sm.status = model.ChannelAnswer
-
-			case strings.HasPrefix(channelName, "commentary"):
-				sm.status = model.ChannelTool
-
-				// Extract function name from "commentary to=functions.FUNC_NAME".
-				if _, after, ok := strings.Cut(channelName, " to="); ok {
-					funcName := strings.TrimSpace(after)
-					sm.toolFuncName = strings.TrimPrefix(funcName, "functions.")
-					if sm.toolFuncName != "" {
-						sm.startToolCall(sm.toolFuncName)
-					}
-				}
-			}
-
-			switch content == "<|constrain|>" {
-			case true:
-				sm.awaitingConstrain = true
-			case false:
-				sm.collecting = true
-				if sm.status == model.ChannelTool && sm.toolFuncName != "" {
-					sm.toolCallBuf.WriteString("." + sm.toolFuncName + " <|message|>")
-					sm.toolFuncName = ""
-				}
-			}
-
-			return model.Result{}, false
+		if marker == messageMarker || marker == "<|constrain|>" {
+			sm.finishChannel(marker == "<|constrain|>")
+			return false
 		}
-
-		sm.channelBuf.WriteString(content)
-
-		return model.Result{}, false
+		sm.preserveMalformed(marker)
+		return false
 	}
 
-	switch content {
+	if sm.collecting {
+		switch marker {
+		case "<|call|>", "<|return|>":
+			if sm.status == model.ChannelTool {
+				if marker != "<|call|>" || !completeToolArguments(sm.toolCallBuf.String()) {
+					sm.toolCallBuf.WriteString(marker)
+				}
+			}
+			sm.collecting = false
+			sm.status = model.ChannelNone
+			return true
+		case "<|end|>":
+			if sm.status == model.ChannelTool {
+				sm.toolCallBuf.WriteString(marker)
+				sm.queueToolCall()
+			}
+			sm.collecting = false
+			sm.status = model.ChannelNone
+			return false
+		case "<|start|>", "<|channel|>":
+			if sm.status == model.ChannelTool {
+				sm.toolCallBuf.WriteString(marker)
+				sm.queueToolCall()
+			}
+			sm.collecting = false
+			sm.status = model.ChannelNone
+			if marker == "<|start|>" {
+				sm.awaitingHeader = true
+				sm.headerBuf.Reset()
+			} else {
+				sm.awaitingChannel = true
+				sm.channelBuf.Reset()
+			}
+			return false
+		default:
+			if sm.status == model.ChannelTool {
+				sm.toolCallBuf.WriteString(marker)
+			}
+			return false
+		}
+	}
+
+	switch marker {
 	case "<|start|>":
 		sm.status = model.ChannelNone
-		sm.collecting = false
-		sm.awaitingChannel = false
-		sm.awaitingConstrain = false
-		sm.channelBuf.Reset()
-		return model.Result{}, false
-
+		sm.awaitingHeader = true
+		sm.headerBuf.Reset()
 	case "<|channel|>":
 		sm.awaitingChannel = true
 		sm.channelBuf.Reset()
-		return model.Result{}, false
-
-	case "<|message|>":
+	case messageMarker:
 		sm.collecting = true
-		return model.Result{}, false
+	}
+	return false
+}
 
-	case "functions":
-		sm.collecting = true
+func (sm *stateMachine) finishHeader() {
+	header := trimASCIIWhitespace(sm.headerBuf.String())
+	sm.headerBuf.Reset()
+	sm.awaitingHeader = false
+
+	role, recipient, ok := strings.Cut(header, " to=functions.")
+	if ok && role == "assistant" {
+		sm.toolFuncName = recipient
+	}
+}
+
+func (sm *stateMachine) finishChannel(constrained bool) {
+	name := trimASCIIWhitespace(sm.channelBuf.String())
+	sm.channelBuf.Reset()
+	sm.awaitingChannel = false
+	sm.status = model.ChannelNone
+
+	channel, recipient, hasRecipient := strings.Cut(name, " to=functions.")
+	if hasRecipient && (channel == "analysis" || channel == "commentary") {
 		sm.status = model.ChannelTool
-		return model.Result{}, false
-
-	default:
-		return model.Result{}, false
+		sm.toolFuncName = recipient
+		sm.toolChannel = true
+	} else if sm.toolFuncName != "" && (channel == "analysis" || channel == "commentary") {
+		sm.status = model.ChannelTool
+		sm.toolChannel = true
+	} else {
+		sm.toolFuncName = ""
+		switch channel {
+		case "analysis":
+			sm.status = model.ChannelReasoning
+		case "final":
+			sm.status = model.ChannelAnswer
+		}
+	}
+	if constrained {
+		sm.awaitingConstrain = true
+		sm.constraintBuf.Reset()
+	} else {
+		sm.beginMessage()
 	}
 }
 
-func (sm *stateMachine) startToolCall(name string) {
-	delta := model.ResponseToolCallDelta{
-		ID:    newToolCallID(),
-		Index: len(sm.startedCalls),
-		Type:  "function",
-		Function: model.ResponseToolCallDeltaFunction{
-			Name: name,
-		},
+func (sm *stateMachine) beginMessage() {
+	sm.collecting = true
+	if sm.status == model.ChannelTool && sm.toolChannel {
+		sm.toolCallBuf.WriteByte('.')
+		sm.toolCallBuf.WriteString(sm.toolFuncName)
+		sm.toolCallBuf.WriteByte(' ')
+		sm.toolCallBuf.WriteString(messageMarker)
+		sm.toolFuncName = ""
+		sm.toolChannel = false
 	}
-	sm.toolCallDeltas = append(sm.toolCallDeltas, delta)
-	sm.startedCalls = append(sm.startedCalls, delta)
 }
 
-func (sm *stateMachine) releaseToolCall() model.Result {
+func (sm *stateMachine) preserveMalformed(marker string) {
+	channel := trimASCIIWhitespace(sm.channelBuf.String())
+	if sm.toolCallBuf.Len() == 0 && sm.toolFuncName != "" {
+		sm.toolCallBuf.WriteByte('.')
+		sm.toolCallBuf.WriteString(sm.toolFuncName)
+		sm.toolCallBuf.WriteString(" <|invalid-framing|>")
+	} else if sm.toolCallBuf.Len() == 0 && strings.HasPrefix(channel, "commentary") {
+		sm.toolCallBuf.WriteString(channel)
+	}
+	if sm.status == model.ChannelTool || sm.toolCallBuf.Len() > 0 {
+		sm.toolCallBuf.WriteString(sm.constraintBuf.String())
+		sm.toolCallBuf.WriteString(marker)
+		sm.queueToolCall()
+	}
+	sm.channelBuf.Reset()
+	sm.headerBuf.Reset()
+	sm.constraintBuf.Reset()
+	sm.toolFuncName = ""
+	sm.toolChannel = false
+	sm.awaitingHeader = false
+	sm.awaitingChannel = false
+	sm.awaitingConstrain = false
+	sm.collecting = false
+	sm.status = model.ChannelNone
+}
+
+func (sm *stateMachine) queueToolCall() {
 	if sm.toolCallBuf.Len() == 0 {
+		return
+	}
+	sm.results = append(sm.results, model.Result{Channel: model.ChannelTool, Content: sm.toolCallBuf.String()})
+	sm.toolCallBuf.Reset()
+}
+
+func (sm *stateMachine) nextResult() model.Result {
+	if len(sm.results) == 0 {
 		return model.Result{}
 	}
-
-	content := sm.toolCallBuf.String()
-	sm.toolCallBuf.Reset()
-	return model.Result{Channel: model.ChannelTool, Content: content}
+	result := sm.results[0]
+	sm.results = sm.results[1:]
+	return result
 }
 
-// Flush releases an incomplete buffered native tool call.
+// Flush releases queued output and incomplete framing without discarding evidence.
 func (sm *stateMachine) Flush() model.Result {
-	return sm.releaseToolCall()
+	if len(sm.results) > 0 {
+		return sm.nextResult()
+	}
+	sm.consume(true)
+	if sm.awaitingChannel && strings.HasPrefix(strings.TrimSpace(sm.channelBuf.String()), "commentary") {
+		sm.toolCallBuf.WriteString(sm.channelBuf.String())
+		sm.channelBuf.Reset()
+		sm.awaitingChannel = false
+	}
+	if sm.toolFuncName != "" && sm.toolCallBuf.Len() == 0 {
+		sm.toolCallBuf.WriteByte('.')
+		sm.toolCallBuf.WriteString(sm.toolFuncName)
+		sm.toolFuncName = ""
+	}
+	if sm.collecting && sm.status == model.ChannelTool && completeToolArguments(sm.toolCallBuf.String()) {
+		sm.toolCallBuf.WriteString("<|missing-end|>")
+	}
+	if sm.toolCallBuf.Len() > 0 {
+		sm.queueToolCall()
+	}
+	return sm.nextResult()
 }
 
 // ToolCallDeltas drains tool-call identity deltas produced by Classify.
@@ -211,6 +330,68 @@ func (sm *stateMachine) ToolCallDeltas() []model.ResponseToolCallDelta {
 }
 
 // StartedToolCalls returns identities emitted during the current request.
-func (sm *stateMachine) StartedToolCalls() []model.ResponseToolCallDelta {
-	return sm.startedCalls
+func (sm *stateMachine) StartedToolCalls() []model.ResponseToolCallDelta { return sm.startedCalls }
+
+func nextHarmonyMarker(s string) (int, string) {
+	best := -1
+	var marker string
+	for _, candidate := range harmonyMarkers {
+		if idx := strings.Index(s, candidate); idx >= 0 && (best < 0 || idx < best) {
+			best, marker = idx, candidate
+		}
+	}
+	return best, marker
+}
+
+func partialMarkerSuffix(s string) int {
+	best := 0
+	for _, marker := range harmonyMarkers {
+		for n := 1; n < len(marker) && n <= len(s); n++ {
+			if strings.HasSuffix(s, marker[:n]) {
+				best = max(best, n)
+			}
+		}
+	}
+	return best
+}
+
+func toolMarkerIsData(payload, marker string) bool {
+	_, inString, _ := jsonStructure(payload)
+	return inString || completeToolArguments(payload) && marker == messageMarker
+}
+
+func completeToolArguments(payload string) bool {
+	_, after, ok := strings.Cut(payload, messageMarker)
+	if !ok {
+		return false
+	}
+	args := trimASCIIWhitespace(after)
+	end, err := strictJSONObjectEnd(args)
+	return err == nil && trimASCIIWhitespace(args[end:]) == ""
+}
+
+func jsonStructure(s string) (depth int, inString, escape bool) {
+	idx := strings.Index(s, messageMarker)
+	if idx >= 0 {
+		s = s[idx+len(messageMarker):]
+	}
+	for i := range len(s) {
+		c := s[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if inString && c == '\\' {
+			escape = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+		} else if !inString && c == '{' {
+			depth++
+		} else if !inString && c == '}' {
+			depth--
+		}
+	}
+	return depth, inString, escape
 }

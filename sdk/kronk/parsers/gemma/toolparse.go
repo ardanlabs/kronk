@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"math/big"
 	"strings"
 
@@ -16,61 +18,66 @@ import (
 // parseGemma parses Gemma4-style tool calls.
 // Format: call:get_weather{location:<|"|>New York City, NY<|"|>}
 // Multiple calls may appear separated by newlines or back-to-back.
-//
-// Direct port of the legacy parseGemmaToolCall.
 func parseGemma(ctx context.Context, log applog.Logger, content string) []model.ResponseToolCall {
 	var toolCalls []model.ResponseToolCall
+	raw := content
 
-	remaining := content
-	for {
-		callIdx := strings.Index(remaining, "call:")
-		if callIdx == -1 {
-			break
+	remaining := strings.TrimSpace(content)
+	if remaining == "" {
+		return []model.ResponseToolCall{failedGemmaToolCall(raw, errors.New("parse gemma: tool call is empty"))}
+	}
+
+	for remaining != "" {
+		if !strings.HasPrefix(remaining, "call:") {
+			return []model.ResponseToolCall{failedGemmaToolCall(raw,
+				errors.New("parse gemma: unexpected content outside call"))}
 		}
 
-		remaining = remaining[callIdx+5:]
+		remaining = remaining[len("call:"):]
 
 		braceIdx := strings.Index(remaining, "{")
 		if braceIdx == -1 {
-			break
+			return []model.ResponseToolCall{failedGemmaToolCall(raw,
+				errors.New("parse gemma: call argument block is missing"))}
 		}
 
 		name := strings.TrimSpace(remaining[:braceIdx])
+		if name == "" {
+			return []model.ResponseToolCall{failedGemmaToolCall(raw,
+				errors.New("parse gemma: call name is empty"))}
+		}
 		remaining = remaining[braceIdx:]
 
 		braceEnd := findGemmaBraceEnd(remaining)
-
-		var argsRaw string
 		if braceEnd == -1 {
-			argsRaw = remaining[1:]
-			remaining = ""
-		} else {
-			argsRaw = remaining[1:braceEnd]
-			remaining = remaining[braceEnd+1:]
+			return []model.ResponseToolCall{failedGemmaToolCall(raw,
+				fmt.Errorf("parse gemma: call %q argument block is not closed", name))}
 		}
+		argsRaw := remaining[1:braceEnd]
+		remaining = remaining[braceEnd+1:]
 
-		var args map[string]any
 		trimmed := strings.TrimSpace(argsRaw)
-
 		jsonCandidate := trimmed
 		if len(jsonCandidate) > 0 && jsonCandidate[0] != '{' {
 			jsonCandidate = "{" + jsonCandidate + "}"
 		}
 
-		if err := unmarshalGemmaJSON(jsonCandidate, &args); err != nil {
+		args, err := decodeRepairedGemmaObject(jsonCandidate)
+		if err != nil {
+			if errors.Is(err, errDuplicateGemmaKey) {
+				return []model.ResponseToolCall{failedGemmaToolCall(raw,
+					fmt.Errorf("parse gemma: call %q arguments: %w", name, err))}
+			}
 			if log != nil {
 				log(ctx, "jsonrepair", "status", "unmarshal-failed",
 					"format", "gemma", "error", err, "json", jsonCandidate)
 			}
 
-			inner := trimmed
-			if len(inner) > 0 && inner[0] == '{' {
-				inner = inner[1:]
-				if idx := strings.LastIndex(inner, "}"); idx >= 0 {
-					inner = inner[:idx]
-				}
+			args, err = parseGemmaArgs(trimmed)
+			if err != nil {
+				return []model.ResponseToolCall{failedGemmaToolCall(raw,
+					fmt.Errorf("parse gemma: call %q arguments: %w", name, err))}
 			}
-			args = parseGemmaArgs(inner)
 		}
 
 		toolCalls = append(toolCalls, model.ResponseToolCall{
@@ -81,246 +88,207 @@ func parseGemma(ctx context.Context, log applog.Logger, content string) []model.
 				Arguments: args,
 			},
 		})
+
+		remaining = strings.TrimSpace(remaining)
 	}
 
 	return toolCalls
 }
 
+var errDuplicateGemmaKey = errors.New("duplicate JSON key")
+
+func failedGemmaToolCall(raw string, err error) model.ResponseToolCall {
+	return model.ResponseToolCall{
+		ID:     newToolCallID(),
+		Type:   "function",
+		Status: 2,
+		Raw:    raw,
+		Error:  err.Error(),
+	}
+}
+
 // findGemmaBraceEnd finds the closing brace that matches the opening brace
 // at position 0, accounting for nested braces and Gemma's two quoting modes.
 func findGemmaBraceEnd(s string) int {
-	if len(s) == 0 || s[0] != '{' {
+	end := findGemmaDelimitedEnd(s)
+	if end == -1 || s[0] != '{' {
 		return -1
 	}
 
-	useJSONQuotes := !strings.Contains(s, "<|\"|>")
-
-	depth := 0
-	i := 0
-	for i < len(s) {
-		if strings.HasPrefix(s[i:], "<|\"|>") {
-			i += len("<|\"|>")
-			for i < len(s) {
-				if strings.HasPrefix(s[i:], "<|\"|>") {
-					i += len("<|\"|>")
-					break
-				}
-				i++
-			}
-			continue
-		}
-
-		if useJSONQuotes && s[i] == '"' {
-			i++
-			for i < len(s) {
-				if s[i] == '\\' {
-					i += 2
-					continue
-				}
-				if s[i] == '"' {
-					i++
-					break
-				}
-				i++
-			}
-			continue
-		}
-
-		switch s[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-		i++
-	}
-
-	return -1
+	return end - 1
 }
 
 func findClosingGemmaQuote(s string) int {
-	const token = "<|\"|>"
-	searchFrom := 0
-
-	for {
-		idx := strings.Index(s[searchFrom:], token)
-		if idx == -1 {
-			return -1
-		}
-
-		pos := searchFrom + idx
-		afterQuote := pos + len(token)
-
-		if afterQuote >= len(s) {
-			return pos
-		}
-
-		switch s[afterQuote] {
-		case ',', '}', ']', '"':
-			return pos
-		}
-
-		searchFrom = afterQuote
-	}
+	return strings.Index(s, "<|\"|>")
 }
 
 func findGemmaStructEnd(s string) int {
-	if len(s) == 0 {
-		return -1
-	}
+	return findGemmaDelimitedEnd(s)
+}
 
-	open := s[0]
-	var close byte
-	switch open {
-	case '[':
-		close = ']'
-	case '{':
-		close = '}'
-	default:
-		return -1
-	}
-
-	depth := 0
-	i := 0
-	for i < len(s) {
-		if strings.HasPrefix(s[i:], "<|\"|>") {
-			i += len("<|\"|>")
+func findClosingStandardQuote(s string) int {
+	escaped := false
+	for i := range len(s) {
+		if escaped {
+			escaped = false
 			continue
 		}
-
-		switch s[i] {
-		case open:
-			depth++
-		case close:
-			depth--
-			if depth == 0 {
-				return i + 1
-			}
+		if s[i] == '\\' {
+			escaped = true
+			continue
 		}
-		i++
+		if s[i] == '"' {
+			return i
+		}
 	}
 
 	return -1
 }
 
-func findClosingStandardQuote(s string) int {
-	searchFrom := 0
-
-	for {
-		idx := strings.Index(s[searchFrom:], "\"")
-		if idx == -1 {
-			return -1
-		}
-
-		pos := searchFrom + idx
-
-		if pos > 0 && s[pos-1] == '\\' {
-			searchFrom = pos + 1
-			continue
-		}
-
-		afterQuote := pos + 1
-
-		if afterQuote >= len(s) {
-			return pos
-		}
-
-		next := s[afterQuote]
-		if next == ',' || next == '}' || next == ' ' || next == '\n' || next == '\r' || next == '\t' {
-			return pos
-		}
-
-		searchFrom = afterQuote
+func findGemmaDelimitedEnd(s string) int {
+	if len(s) == 0 || (s[0] != '{' && s[0] != '[') {
+		return -1
 	}
+
+	close := byte('}')
+	if s[0] == '[' {
+		close = ']'
+	}
+	stack := []byte{close}
+	for i := 1; i < len(s); {
+		switch {
+		case strings.HasPrefix(s[i:], "<|\"|>"):
+			quoteEnd := findClosingGemmaQuote(s[i+len("<|\"|>"):])
+			if quoteEnd == -1 {
+				return -1
+			}
+			i += len("<|\"|>") + quoteEnd + len("<|\"|>")
+
+		case s[i] == '"':
+			quoteEnd := findClosingStandardQuote(s[i+1:])
+			if quoteEnd == -1 {
+				return -1
+			}
+			i += quoteEnd + 2
+
+		case s[i] == '{':
+			stack = append(stack, '}')
+			i++
+
+		case s[i] == '[':
+			stack = append(stack, ']')
+			i++
+
+		case s[i] == '}' || s[i] == ']':
+			if len(stack) == 0 || s[i] != stack[len(stack)-1] {
+				return -1
+			}
+			stack = stack[:len(stack)-1]
+			i++
+			if len(stack) == 0 {
+				return i
+			}
+
+		default:
+			i++
+		}
+	}
+
+	return -1
 }
 
 // parseGemmaArgs parses the key-value pairs inside a Gemma4 tool-call
 // argument block. Values are delimited by <|"|> tokens (acting as quotes).
-func parseGemmaArgs(raw string) map[string]any {
+func parseGemmaArgs(raw string) (map[string]any, error) {
 	args := make(map[string]any)
 
-	remaining := raw
+	remaining := strings.TrimSpace(raw)
 	for len(remaining) > 0 {
 		colonIdx := strings.Index(remaining, ":")
 		if colonIdx == -1 {
-			break
+			return nil, errors.New("argument is missing a colon")
 		}
 
-		key := strings.TrimLeft(remaining[:colonIdx], ", \t\n")
-		key = strings.Trim(key, "\"")
-		remaining = remaining[colonIdx+1:]
+		key := strings.Trim(strings.TrimSpace(remaining[:colonIdx]), "\"")
+		if key == "" {
+			return nil, errors.New("argument name is empty")
+		}
+		if _, exists := args[key]; exists {
+			return nil, fmt.Errorf("argument %q is duplicated", key)
+		}
+		remaining = strings.TrimLeft(remaining[colonIdx+1:], " \t\n\r")
+
+		var value any
+		var rest string
 
 		if strings.HasPrefix(remaining, "<|\"|>") {
 			remaining = remaining[len("<|\"|>"):]
 
 			endQuote := findClosingGemmaQuote(remaining)
 			if endQuote == -1 {
-				args[key] = strings.TrimSpace(remaining)
-				break
+				return nil, fmt.Errorf("argument %q has an unterminated gemma quote", key)
 			}
 
-			value := remaining[:endQuote]
-
-			args[key] = value
-			remaining = remaining[endQuote+len("<|\"|>"):]
-			continue
-		}
-
-		if strings.HasPrefix(remaining, "\"") {
+			value = remaining[:endQuote]
+			rest = remaining[endQuote+len("<|\"|>"):]
+		} else if strings.HasPrefix(remaining, "\"") {
 			remaining = remaining[1:]
 
 			endQuote := findClosingStandardQuote(remaining)
 			if endQuote == -1 {
-				args[key] = strings.TrimSpace(remaining)
-				break
+				return nil, fmt.Errorf("argument %q has an unterminated quote", key)
 			}
 
-			args[key] = remaining[:endQuote]
-			remaining = remaining[endQuote+1:]
-			continue
-		}
-
-		if len(remaining) > 0 && (remaining[0] == '[' || remaining[0] == '{') {
+			value = remaining[:endQuote]
+			rest = remaining[endQuote+1:]
+		} else if len(remaining) > 0 && (remaining[0] == '[' || remaining[0] == '{') {
 			endIdx := findGemmaStructEnd(remaining)
 			if endIdx == -1 {
-				args[key] = strings.TrimSpace(remaining)
-				break
+				return nil, fmt.Errorf("argument %q has an unterminated composite value", key)
 			}
 
-			raw := remaining[:endIdx]
-			jsonVal := strings.ReplaceAll(raw, "<|\"|>", "\"")
+			rawValue := remaining[:endIdx]
+			jsonVal := strings.ReplaceAll(rawValue, "<|\"|>", "\"")
 
-			var parsed any
-			if err := decodeGemmaJSONValue(jsonVal, &parsed); err == nil {
-				args[key] = parsed
-			} else {
-				args[key] = raw
+			parsed, err := decodeRepairedGemmaJSON(jsonVal)
+			if err != nil {
+				return nil, fmt.Errorf("argument %q has an invalid composite value: %w", key, err)
 			}
+			value = parsed
 
-			remaining = remaining[endIdx:]
-			continue
-		}
-
-		endIdx := strings.IndexAny(remaining, ",}")
-		var rawVal string
-		if endIdx == -1 {
-			rawVal = strings.TrimSpace(remaining)
+			rest = remaining[endIdx:]
 		} else {
-			rawVal = strings.TrimSpace(remaining[:endIdx])
+			endIdx := strings.IndexAny(remaining, ",}")
+			var rawValue string
+			if endIdx == -1 {
+				rawValue = strings.TrimSpace(remaining)
+				rest = ""
+			} else {
+				rawValue = strings.TrimSpace(remaining[:endIdx])
+				rest = remaining[endIdx:]
+			}
+			if rawValue == "" {
+				return nil, fmt.Errorf("argument %q has an empty value", key)
+			}
+			value = parseGemmaBareValue(rawValue)
 		}
 
-		args[key] = parseGemmaBareValue(rawVal)
+		args[key] = value
 
-		if endIdx == -1 {
+		remaining = strings.TrimSpace(rest)
+		if remaining == "" {
 			break
 		}
-		remaining = remaining[endIdx:]
+		if remaining[0] != ',' {
+			return nil, fmt.Errorf("unexpected content after argument %q", key)
+		}
+		remaining = strings.TrimSpace(remaining[1:])
+		if remaining == "" {
+			return nil, errors.New("argument list has a trailing comma")
+		}
 	}
 
-	return args
+	return args, nil
 }
 
 // parseGemmaBareValue converts a bare (unquoted) value string to its native
@@ -346,13 +314,107 @@ func parseGemmaBareValue(s string) any {
 	return s
 }
 
-func unmarshalGemmaJSON(raw string, value any) error {
-	repaired, err := jsonrepair.Repair(raw)
+func decodeRepairedGemmaObject(raw string) (map[string]any, error) {
+	value, err := decodeRepairedGemmaJSON(raw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return decodeGemmaJSONValue(repaired, value)
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, errors.New("gemma arguments must be an object")
+	}
+
+	return object, nil
+}
+
+func decodeRepairedGemmaJSON(raw string) (any, error) {
+	repaired, err := jsonrepair.Repair(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	value, err := decodeUniqueGemmaJSON(repaired)
+	if err != nil {
+		return nil, err
+	}
+
+	return value, nil
+}
+
+func decodeUniqueGemmaJSON(raw string) (any, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+
+	value, err := decodeUniqueGemmaJSONValue(decoder)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New("unexpected data after JSON value")
+		}
+		return nil, err
+	}
+
+	return value, nil
+}
+
+func decodeUniqueGemmaJSONValue(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return token, nil
+	}
+
+	switch delim {
+	case '{':
+		object := make(map[string]any)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return nil, errors.New("JSON object key is not a string")
+			}
+			if _, exists := object[key]; exists {
+				return nil, fmt.Errorf("%w %q", errDuplicateGemmaKey, key)
+			}
+
+			value, err := decodeUniqueGemmaJSONValue(decoder)
+			if err != nil {
+				return nil, err
+			}
+			object[key] = value
+		}
+		if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+			return nil, errors.New("JSON object is not closed")
+		}
+		return object, nil
+
+	case '[':
+		var array []any
+		for decoder.More() {
+			value, err := decodeUniqueGemmaJSONValue(decoder)
+			if err != nil {
+				return nil, err
+			}
+			array = append(array, value)
+		}
+		if token, err := decoder.Token(); err != nil || token != json.Delim(']') {
+			return nil, errors.New("JSON array is not closed")
+		}
+		return array, nil
+	}
+
+	return nil, fmt.Errorf("unexpected JSON delimiter %q", delim)
 }
 
 func decodeGemmaJSONValue(raw string, value any) error {

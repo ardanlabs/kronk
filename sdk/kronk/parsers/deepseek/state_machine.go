@@ -16,6 +16,8 @@ type stateMachine struct {
 	toolCallBuf   strings.Builder
 	inPending     bool
 	inToolCall    bool
+	afterToolCall bool
+	malformedTool bool
 
 	toolCallDeltas []model.ResponseToolCallDelta
 	startedCalls   []model.ResponseToolCallDelta
@@ -29,6 +31,8 @@ func (sm *stateMachine) Reset() {
 	sm.toolCallBuf.Reset()
 	sm.inPending = false
 	sm.inToolCall = false
+	sm.afterToolCall = false
+	sm.malformedTool = false
 	sm.toolCallDeltas = nil
 	sm.startedCalls = nil
 	sm.detectedCalls = 0
@@ -36,6 +40,10 @@ func (sm *stateMachine) Reset() {
 
 // Classify classifies one decoded token's content.
 func (sm *stateMachine) Classify(content string) (model.Result, bool) {
+	if sm.malformedTool {
+		return model.Result{Channel: model.ChannelTool, Content: content}, false
+	}
+
 	if sm.inToolCall {
 		return sm.bufferToolContent(content), false
 	}
@@ -57,8 +65,26 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		default:
 			sm.inPending = false
 			sm.pendingOpener.Reset()
+			if sm.afterToolCall {
+				sm.afterToolCall = false
+				sm.malformedTool = true
+				return model.Result{Channel: model.ChannelTool, Content: candidate}, false
+			}
 			return sm.classifyContent(candidate)
 		}
+	}
+
+	if sm.afterToolCall {
+		trimmed := strings.TrimLeft(content, " \t\r\n")
+		if trimmed == "" {
+			return model.Result{}, false
+		}
+		if strings.HasPrefix(trimmed, toolCallsOpen) || strings.HasPrefix(toolCallsOpen, trimmed) {
+			return sm.classifyContent(trimmed)
+		}
+		sm.afterToolCall = false
+		sm.malformedTool = true
+		return model.Result{Channel: model.ChannelTool, Content: trimmed}, false
 	}
 
 	return sm.classifyContent(content)
@@ -76,7 +102,12 @@ func (sm *stateMachine) Flush() model.Result {
 		return model.Result{}
 	}
 
-	result := model.Result{Channel: sm.status, Content: sm.pendingOpener.String()}
+	channel := sm.status
+	if sm.afterToolCall {
+		channel = model.ChannelTool
+		sm.afterToolCall = false
+	}
+	result := model.Result{Channel: channel, Content: sm.pendingOpener.String()}
 	sm.pendingOpener.Reset()
 	sm.inPending = false
 
@@ -129,6 +160,7 @@ func (sm *stateMachine) classifyContent(content string) (model.Result, bool) {
 
 func (sm *stateMachine) startToolCall(content string) {
 	sm.inToolCall = true
+	sm.afterToolCall = false
 	sm.toolCallBuf.Reset()
 	sm.toolCallBuf.WriteString(content)
 	sm.detectedCalls = 0
@@ -154,6 +186,7 @@ func (sm *stateMachine) completeBufferedTool() model.Result {
 	sm.toolCallBuf.Reset()
 	sm.toolCallBuf.WriteString(remainder)
 	sm.inToolCall = remainder != ""
+	sm.afterToolCall = remainder == ""
 	sm.detectedCalls = countInvokeOpeners(remainder)
 	return model.Result{Channel: model.ChannelTool, Content: complete}
 }
@@ -185,9 +218,9 @@ func (sm *stateMachine) updateToolCallDeltas() {
 		}
 		openerEnd += invokeAt
 		if seen >= sm.detectedCalls {
-			name, err := attribute(content[invokeAt:openerEnd+1], "name")
+			attributes, err := parseElementAttributes(content[invokeAt:openerEnd+1], invokeOpen, ">", "name")
 			if err == nil {
-				sm.addToolCallDelta(name)
+				sm.addToolCallDelta(attributes["name"])
 			}
 		}
 		seen++
