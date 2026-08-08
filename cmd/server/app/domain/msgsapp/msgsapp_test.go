@@ -1,6 +1,7 @@
 package msgsapp
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -100,6 +101,46 @@ func TestToOpenAIMaxTokens(t *testing.T) {
 
 	if got := d["max_tokens"]; got != 32 {
 		t.Errorf("max_tokens: got %v, want 32", got)
+	}
+}
+
+func TestToMessagesResponseToolInputIsObject(t *testing.T) {
+	resp := model.ChatResponse{
+		Choices: []model.Choice{
+			{
+				Message: &model.ResponseMessage{
+					ToolCalls: []model.ResponseToolCall{
+						{
+							ID: "call-1",
+							Function: model.ResponseToolCallFunction{
+								Name: "bash",
+								Arguments: model.ToolCallArguments{
+									"command": "echo hello",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(toMessagesResponse(resp))
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+
+	var got struct {
+		Content []struct {
+			Input map[string]any `json:"input"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got, want := got.Content[0].Input["command"], "echo hello"; got != want {
+		t.Errorf("input command: got %v, want %v", got, want)
 	}
 }
 
