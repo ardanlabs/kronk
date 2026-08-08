@@ -107,9 +107,9 @@ func TestParser_SingleToolCall(t *testing.T) {
 	if _, eog := c.Classify("\n"); eog {
 		t.Errorf("unexpected EOG while waiting through whitespace after tool call")
 	}
-	_, eog := c.Classify("done")
-	if !eog {
-		t.Errorf("expected EOG on non-tool content after tool call closed")
+	got, _ := c.Classify("done")
+	if got.Channel != model.ChannelTool || !strings.Contains(got.Content, "unexpected-content-after-tool") {
+		t.Errorf("trailing content: got %+v, want invalid tool evidence", got)
 	}
 }
 
@@ -120,9 +120,8 @@ func TestParser_FlushIncompleteToolCall(t *testing.T) {
 
 	flusher := c.(model.StateMachineFlusher)
 	got := flusher.Flush()
-	want := `{"name":"get_weather","arguments":{"loc":"NYC"}}` + "\n"
-	if got.Channel != model.ChannelTool || got.Content != want {
-		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelTool, want)
+	if got.Channel != model.ChannelTool || !strings.Contains(got.Content, "missing-tool-call-close") {
+		t.Errorf("Flush: got {%v %q}, want invalid missing-close evidence", got.Channel, got.Content)
 	}
 	if got := flusher.Flush(); got != (model.Result{}) {
 		t.Errorf("second Flush: got %+v, want zero result", got)
@@ -155,9 +154,105 @@ func TestParser_MultipleToolCalls(t *testing.T) {
 			content: `{"name":"b","arguments":{}}` + "\n"},
 	})
 
-	_, eog := c.Classify("done")
-	if !eog {
-		t.Errorf("expected EOG after final tool call")
+	got, _ := c.Classify("done")
+	if got.Channel != model.ChannelTool || !strings.Contains(got.Content, "unexpected-content-after-tool") {
+		t.Errorf("trailing content: got %+v, want invalid tool evidence", got)
+	}
+}
+
+func TestParser_CoalescedTransitionsAndMalformedSiblings(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantAnswer string
+		wantTool   string
+	}{
+		{
+			name:       "answer then tool",
+			input:      `prefix<tool_call>{"name":"ok","arguments":{}}</tool_call>`,
+			wantAnswer: "prefix",
+			wantTool:   `{"name":"ok","arguments":{}}` + "\n",
+		},
+		{
+			name:     "empty sibling",
+			input:    `<tool_call>{"name":"ok","arguments":{}}</tool_call><tool_call></tool_call>`,
+			wantTool: `{"name":"ok","arguments":{}}` + "\n<empty-tool-call>\n",
+		},
+		{
+			name:     "trailing junk",
+			input:    `<tool_call>{"name":"ok","arguments":{}}</tool_call>junk`,
+			wantTool: `{"name":"ok","arguments":{}}` + "\n<unexpected-content-after-tool>junk",
+		},
+		{
+			name:     "cross-wrapper splice",
+			input:    `<tool_call>{"name":"bash","arguments":{</tool_call><tool_call>"command":"id"}}</tool_call>`,
+			wantTool: `{"name":"bash","arguments":{<invalid-tool-call-boundary>` + "\n" + `"command":"id"}}<invalid-tool-call-boundary>` + "\n",
+		},
+		{
+			name:     "valid then cross-wrapper splice",
+			input:    `<tool_call>{"name":"ok","arguments":{}}{"name":"bash","arguments":{</tool_call><tool_call>"command":"id"}}</tool_call>`,
+			wantTool: `{"name":"ok","arguments":{}}{"name":"bash","arguments":{<invalid-tool-call-boundary>` + "\n" + `"command":"id"}}<invalid-tool-call-boundary>` + "\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Parser{}.NewStateMachine()
+			first, _ := c.Classify(tt.input)
+			results := []model.Result{first}
+			flusher := c.(model.StateMachineFlusher)
+			for result := flusher.Flush(); result != (model.Result{}); result = flusher.Flush() {
+				results = append(results, result)
+			}
+			var answer, tool strings.Builder
+			for _, result := range results {
+				switch result.Channel {
+				case model.ChannelAnswer:
+					answer.WriteString(result.Content)
+				case model.ChannelTool:
+					tool.WriteString(result.Content)
+				}
+			}
+			if answer.String() != tt.wantAnswer || tool.String() != tt.wantTool {
+				t.Errorf("got answer %q tool %q, want answer %q tool %q", answer.String(), tool.String(), tt.wantAnswer, tt.wantTool)
+			}
+		})
+	}
+}
+
+func TestParser_PreservesFramingAtEverySplit(t *testing.T) {
+	inputs := []string{
+		`<tool_call>{"name":"ok","arguments":{"text":"</tool_call>"}}</tool_call>`,
+		`<|tool_call>{"name":"ok","arguments":{}}<tool_call|>`,
+		`<tool_call>{"name":"ok","arguments":{}}<tool_call|>`,
+		`<|tool_call>{"name":"ok","arguments":{}}</tool_call>`,
+		`<tool_call>{"name":"ok","arguments":{}}</tool_call><tool_call>`,
+		`<tool_call>{"name":"ok","arguments":{}}</tool_call><tool`,
+		`<tool_call>{"name":"bash","arguments":{</tool_call><tool_call>"command":"id"}}</tool_call>`,
+		`<tool_call>{"name":"ok","arguments":{}}{"name":"bash","arguments":{</tool_call><tool_call>"command":"id"}}</tool_call>`,
+	}
+	for _, input := range inputs {
+		var baseline string
+		for split := 0; split <= len(input); split++ {
+			c := Parser{}.NewStateMachine()
+			var tool strings.Builder
+			for _, fragment := range []string{input[:split], input[split:]} {
+				result, _ := c.Classify(fragment)
+				if result.Channel == model.ChannelTool {
+					tool.WriteString(result.Content)
+				}
+			}
+			for result := c.(model.StateMachineFlusher).Flush(); result != (model.Result{}); result = c.(model.StateMachineFlusher).Flush() {
+				if result.Channel == model.ChannelTool {
+					tool.WriteString(result.Content)
+				}
+			}
+			if split == 0 {
+				baseline = tool.String()
+			} else if tool.String() != baseline {
+				t.Fatalf("input %q split %d: tool = %q, want %q", input, split, tool.String(), baseline)
+			}
+		}
 	}
 }
 

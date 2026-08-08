@@ -41,12 +41,11 @@ func TestParseGPTToolCall_Multiple(t *testing.T) {
 	}
 }
 
-// TestParseGPTToolCall_NoCalls returns nil for buffers without a leading
-// dot prefix.
+// TestParseGPTToolCall_NoCalls rejects buffers without a leading dot prefix.
 func TestParseGPTToolCall_NoCalls(t *testing.T) {
 	calls := parseGPTToolCall(context.Background(), noopLog, "no tool calls here")
-	if calls != nil {
-		t.Errorf("expected nil for buffer without tool calls, got %v", calls)
+	if len(calls) != 1 || calls[0].Status != 2 || calls[0].Raw != "no tool calls here" {
+		t.Errorf("got %+v, want one atomic failure", calls)
 	}
 }
 
@@ -100,5 +99,42 @@ func TestFindJSONObjectEnd_LocalCopy(t *testing.T) {
 		if got := findJSONObjectEnd(tc.in); got != tc.want {
 			t.Errorf("findJSONObjectEnd(%q) = %d, want %d", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestParseGPTToolCall_StrictAtomicFailures(t *testing.T) {
+	tests := []string{
+		`junk.a <|message|>{}`,
+		`.a <|message|>{}junk`,
+		`.a <|message|>{}junk.b <|message|>{}`,
+		`. <|message|>{}`,
+		`.bad/name <|message|>{}`,
+		`.a {}`,
+		`.a <|message|>`,
+		`.a <|message|>{`,
+		`.a <|message|>{"x":1}.b <|message|>{"x":}.c <|message|>{}`,
+		`.a <|message|>{"x":1,"x":2}`,
+		`.a <|message|>{"x":{"k":1,"\u006b":2}}`,
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			calls := parseGPTToolCall(context.Background(), noopLog, input)
+			if len(calls) != 1 || calls[0].Status != 2 || calls[0].Function.Name != "" || calls[0].Raw != input {
+				t.Errorf("got %+v, want one atomic full-input failure", calls)
+			}
+		})
+	}
+}
+
+func TestParseGPTToolCall_DelimitersAndEmptyArray(t *testing.T) {
+	input := `.exact <|message|>{"text":".fake <|message|>{}","nested":{"x":1},"empty":[]}`
+	calls := parseGPTToolCall(context.Background(), noopLog, input)
+	if len(calls) != 1 || calls[0].Status != 0 {
+		t.Fatalf("got %+v, want one valid call", calls)
+	}
+	empty, ok := calls[0].Function.Arguments["empty"].([]any)
+	if !ok || empty == nil || len(empty) != 0 {
+		t.Errorf("empty = %#v, want non-nil empty array", calls[0].Function.Arguments["empty"])
 	}
 }

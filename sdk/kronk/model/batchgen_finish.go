@@ -287,12 +287,13 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		return
 	}
 
-	if s.stopGate != nil && s.stopSource != "request-stop" {
-		for _, piece := range s.stopGate.flush() {
+	if s.stopGate != nil && s.stopSource != "request-stop" && s.stopSource != "parser-eog" {
+		pieces := s.stopGate.flush()
+		for i, piece := range pieces {
 			logprobIndex := appendStopPieceLogprobs(s, piece)
 			outcome := e.processDecodedPiece(s, piece, logprobIndex, true)
 			if outcome.parserEOG {
-				unaccountStopPiece(s, piece)
+				reconcileParserEOGRemainder(s, pieces[i+1:])
 				break
 			}
 			if outcome.err != nil {
@@ -305,7 +306,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	if flusher, ok := s.stateMachine.(StateMachineFlusher); ok {
-		e.flushStateMachine(s, flusher.Flush())
+		e.flushAllStateMachine(s, flusher)
 	}
 
 	// Flush any remaining buffered UTF-8 bytes into the final accumulators.
@@ -330,7 +331,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Process tool calls if any. Token counts are already tracked
 	// per-token in processSlotToken, so no re-tokenization needed.
 	var toolCallErr error
-	if s.toolFlag > 0 {
+	if s.finalTooling.Len() > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		s.finalTooling.Reset()
 		s.finalTooling.WriteString(content)
@@ -552,6 +553,12 @@ func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseT
 	}
 
 	return terminal
+}
+
+func (e *batchEngine) flushAllStateMachine(s *slot, flusher StateMachineFlusher) {
+	for result := flusher.Flush(); result != (Result{}); result = flusher.Flush() {
+		e.flushStateMachine(s, result)
+	}
 }
 
 // flushStateMachine preserves model output held by parser lookahead when

@@ -128,6 +128,52 @@ func TestStateMachineEveryToolOpenerSplit(t *testing.T) {
 	}
 }
 
+func TestStateMachinePreservesMalformedPostToolContent(t *testing.T) {
+	first := toolCallsOpen + invokeOpen + ` name="write_file">` + invokeClose + toolCallsClose
+	second := toolCallsOpen + invokeOpen + ` name="bash">` + invokeClose + toolCallsClose
+
+	for _, tt := range []struct {
+		name string
+		tail []string
+	}{
+		{name: "whole", tail: []string{parameterClose + invokeClose + toolCallsClose}},
+		{name: "split", tail: []string{"</", "｜DSML｜parameter>" + invokeClose + toolCallsClose}},
+		{name: "prefixed", tail: []string{"unexpected" + parameterClose + invokeClose + toolCallsClose}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := Parser{}.NewStateMachine()
+			var aggregate strings.Builder
+			for _, token := range append([]string{first, second}, tt.tail...) {
+				result, _ := sm.Classify(token)
+				if result.Channel == model.ChannelTool {
+					aggregate.WriteString(result.Content)
+				}
+			}
+			calls := Parser{}.ToolCall(t.Context(), nil, aggregate.String())
+			if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+				t.Fatalf("ToolCall: got %+v, want one non-executable failed call", calls)
+			}
+		})
+	}
+}
+
+func TestStateMachineFlushesPostToolOpenerPrefixesAsToolContent(t *testing.T) {
+	block := toolCallsOpen + invokeOpen + ` name="first">` + invokeClose + toolCallsClose
+	for splitAt := 1; splitAt < len(toolCallsOpen); splitAt++ {
+		sm := Parser{}.NewStateMachine()
+		complete, _ := sm.Classify(block)
+		sm.Classify(toolCallsOpen[:splitAt])
+		tail := sm.(model.StateMachineFlusher).Flush()
+		if tail.Channel != model.ChannelTool || tail.Content != toolCallsOpen[:splitAt] {
+			t.Fatalf("split %d: Flush got %+v, want tool suffix", splitAt, tail)
+		}
+		calls := Parser{}.ToolCall(t.Context(), nil, complete.Content+tail.Content)
+		if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+			t.Fatalf("split %d: ToolCall got %+v, want one non-executable failure", splitAt, calls)
+		}
+	}
+}
+
 func TestStateMachineBuffersIncompleteToolBlock(t *testing.T) {
 	sm := Parser{}.NewStateMachine()
 	assertResult(t, sm, toolCallsOpen, model.ChannelNone, "", false)
@@ -158,6 +204,14 @@ func TestStateMachineToolActivityAndCompleteRelease(t *testing.T) {
 		t.Errorf("drained ToolCallDeltas: got %d, want 0", len(got))
 	}
 	assertResult(t, sm, toolCallsClose+"ignored", model.ChannelTool, block, false)
+	remainder := sm.(model.StateMachineFlusher).Flush()
+	if remainder.Channel != model.ChannelTool || remainder.Content != "ignored" {
+		t.Fatalf("Flush malformed remainder: got %+v, want tool content %q", remainder, "ignored")
+	}
+	calls := Parser{}.ToolCall(t.Context(), nil, block+remainder.Content)
+	if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+		t.Fatalf("ToolCall malformed aggregate: got %+v, want one non-executable failed call", calls)
+	}
 	started := streamer.StartedToolCalls()
 	if len(started) != 2 || started[0].ID != deltas[0].ID || started[1].ID != deltas[1].ID {
 		t.Errorf("StartedToolCalls: got %+v, want delta identities", started)

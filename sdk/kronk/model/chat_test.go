@@ -1500,6 +1500,72 @@ func TestFlushStateMachine(t *testing.T) {
 	}
 }
 
+func TestFlushAllStateMachine(t *testing.T) {
+	sm := &flushStateMachine{results: []Result{
+		{Channel: ChannelTool, Content: "first"},
+		{Channel: ChannelTool, Content: "second"},
+		{Channel: ChannelTool, Content: "malformed"},
+	}}
+	s := slot{
+		job:          &chatJob{ctx: context.Background(), ch: make(chan ChatResponse, 1), id: "id", object: ObjectChatText},
+		finishReason: FinishReasonStop,
+	}
+	e := batchEngine{model: &Model{}}
+
+	e.flushAllStateMachine(&s, sm)
+
+	if got := s.finalTooling.String(); got != "firstsecondmalformed" {
+		t.Fatalf("finalTooling: got %q, want all queued results", got)
+	}
+	if got := sm.Flush(); got != (Result{}) {
+		t.Fatalf("Flush after drain: got %+v, want zero result", got)
+	}
+}
+
+func TestProcessDecodedPieceRetainsResultOnParserEOG(t *testing.T) {
+	sm := &flushStateMachine{classifyResult: Result{Channel: ChannelTool, Content: "tooling"}, classifyEOG: true}
+	s := slot{
+		stateMachine: sm,
+		job:          &chatJob{ctx: context.Background(), ch: make(chan ChatResponse, 1), id: "id", object: ObjectChatText},
+		toolFlag:     1,
+	}
+	e := batchEngine{model: &Model{}}
+
+	outcome := e.processDecodedPiece(&s, stopPiece{content: "terminal"}, -1, false)
+
+	if !outcome.parserEOG || outcome.err != nil {
+		t.Fatalf("outcome: got %+v, want parser EOG without error", outcome)
+	}
+	if got := s.finalTooling.String(); got != "tooling" {
+		t.Fatalf("finalTooling: got %q, want retained EOG result", got)
+	}
+	if got := s.completionTokens; got != 1 {
+		t.Fatalf("completionTokens: got %d, want parser-EOG piece counted", got)
+	}
+}
+
+func TestReconcileParserEOGRemainder(t *testing.T) {
+	released := stopPiece{content: "released", provisionalReason: true}
+	pending := stopPiece{content: "pending", provisionalReason: true}
+	discarded := stopPiece{content: "discarded", provisionalReason: true}
+	s := slot{
+		reasonTokens: 3,
+		stopGate: &stopGate{
+			pending:   []stopPiece{pending},
+			discarded: []stopPiece{discarded},
+		},
+	}
+
+	reconcileParserEOGRemainder(&s, []stopPiece{released})
+
+	if s.reasonTokens != 0 || s.completionTokens != 3 {
+		t.Fatalf("tokens: got reasoning=%d completion=%d, want 0/3", s.reasonTokens, s.completionTokens)
+	}
+	if len(s.stopGate.pending) != 0 || len(s.stopGate.discarded) != 0 {
+		t.Fatalf("stop gate was not drained: %+v", s.stopGate)
+	}
+}
+
 func TestRetainAndStreamResultUsesCleanedContentConsistently(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -1559,16 +1625,24 @@ func TestRetainAndStreamResultUsesCleanedContentConsistently(t *testing.T) {
 }
 
 type flushStateMachine struct {
-	result Result
+	result         Result
+	results        []Result
+	classifyResult Result
+	classifyEOG    bool
 }
 
 func (sm *flushStateMachine) Classify(string) (Result, bool) {
-	return Result{}, false
+	return sm.classifyResult, sm.classifyEOG
 }
 
 func (sm *flushStateMachine) Reset() {}
 
 func (sm *flushStateMachine) Flush() Result {
+	if len(sm.results) > 0 {
+		result := sm.results[0]
+		sm.results = sm.results[1:]
+		return result
+	}
 	result := sm.result
 	sm.result = Result{}
 	return result

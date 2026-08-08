@@ -1,6 +1,7 @@
 package gpt
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -132,12 +133,8 @@ func TestParser_CommentaryToolCall(t *testing.T) {
 		{token: "<|call|>", channel: model.ChannelNone, eog: true},
 	})
 
-	deltas := streamer.ToolCallDeltas()
-	if len(deltas) != 1 || deltas[0].Index != 0 || deltas[0].Function.Name != "get_weather" || deltas[0].ID == "" {
-		t.Fatalf("ToolCallDeltas: got %+v, want one get_weather identity", deltas)
-	}
-	if deltas[0].Function.Arguments != "" {
-		t.Errorf("delta arguments: got %q, want empty", deltas[0].Function.Arguments)
+	if deltas := streamer.ToolCallDeltas(); len(deltas) != 0 {
+		t.Fatalf("ToolCallDeltas: got %+v, want identities deferred until final validation", deltas)
 	}
 	if got := streamer.ToolCallDeltas(); got != nil {
 		t.Errorf("drained ToolCallDeltas: got %+v, want nil", got)
@@ -155,12 +152,11 @@ func TestParser_ToolCallFlushMultipleAndReset(t *testing.T) {
 	for _, token := range []string{"<|channel|>", "commentary to=functions.", "first", "<|message|>", `{}`, "<|end|>", "<|channel|>", "commentary to=functions.second", "<|message|>", `{"x":1}`} {
 		c.Classify(token)
 	}
-	deltas := streamer.ToolCallDeltas()
-	if len(deltas) != 2 || deltas[0].Index != 0 || deltas[1].Index != 1 || deltas[0].ID == deltas[1].ID {
-		t.Fatalf("ToolCallDeltas: got %+v, want two distinct indexed calls", deltas)
+	if deltas := streamer.ToolCallDeltas(); len(deltas) != 0 {
+		t.Fatalf("ToolCallDeltas: got %+v, want identities deferred until final validation", deltas)
 	}
 	got := flusher.Flush()
-	if got.Channel != model.ChannelTool || got.Content != `.second <|message|>{"x":1}` {
+	if got.Channel != model.ChannelTool || got.Content != `.second <|message|>{"x":1}<|missing-end|>` {
 		t.Errorf("Flush: got %+v", got)
 	}
 	c.Reset()
@@ -220,6 +216,126 @@ func TestParser_Reset(t *testing.T) {
 	}
 	if got.Channel != model.ChannelNone {
 		t.Errorf("after Reset, <|start|> channel = %v, want None", got.Channel)
+	}
+}
+
+func TestParser_HarmonyEverySplitPoint(t *testing.T) {
+	stream := `<|start|>assistant<|channel|>commentary to=functions.echo<|constrain|>json<|message|>{"text":"<|call|> and \\"quoted\\""}<|call|>`
+	for split := 0; split <= len(stream); split++ {
+		t.Run(strconv.Itoa(split), func(t *testing.T) {
+			c := Parser{}.NewStateMachine()
+			flusher := c.(model.StateMachineFlusher)
+			var results []model.Result
+			for _, chunk := range []string{stream[:split], stream[split:]} {
+				if result, _ := c.Classify(chunk); result.Channel != model.ChannelNone {
+					results = append(results, result)
+				}
+			}
+			for result := flusher.Flush(); result.Channel != model.ChannelNone; result = flusher.Flush() {
+				results = append(results, result)
+			}
+			if len(results) != 1 || results[0].Channel != model.ChannelTool || results[0].Content != `.echo <|message|>{"text":"<|call|> and \\"quoted\\""}` {
+				t.Errorf("split %d: got %+v", split, results)
+			}
+		})
+	}
+}
+
+func TestParser_EndDoesNotAuthorizeToolCalls(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	flusher := c.(model.StateMachineFlusher)
+	stream := `<|channel|>commentary to=functions.one<|message|>{}<|end|><|channel|>commentary to=functions.two<|message|>{"x":2}<|end|>`
+	var contents []string
+	if result, _ := c.Classify(stream); result.Channel == model.ChannelTool {
+		contents = append(contents, result.Content)
+	}
+	for result := flusher.Flush(); result.Channel != model.ChannelNone; result = flusher.Flush() {
+		contents = append(contents, result.Content)
+	}
+	got := strings.Join(contents, "")
+	calls := Parser{}.ToolCall(t.Context(), nil, got)
+	if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+		t.Errorf("got content %q, calls %+v; want one non-executable failure", got, calls)
+	}
+}
+
+func TestParser_MalformedToolEvidenceSurvivesLaterFinalChannel(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	stream := `<|channel|>commentary to=functions.echo<|constrain|>json<|message|>{}<|end|><|channel|>final<|message|>ok<|return|>`
+	result, eog := c.Classify(stream)
+	var tooling, answer strings.Builder
+	for result != (model.Result{}) {
+		switch result.Channel {
+		case model.ChannelTool:
+			tooling.WriteString(result.Content)
+		case model.ChannelAnswer:
+			answer.WriteString(result.Content)
+		}
+		result = c.(model.StateMachineFlusher).Flush()
+	}
+	if !eog || answer.String() != "ok" {
+		t.Fatalf("got eog=%v answer=%q, want final answer retained", eog, answer.String())
+	}
+	calls := Parser{}.ToolCall(t.Context(), nil, tooling.String())
+	if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+		t.Fatalf("tooling %q parsed as %+v, want one non-executable failure", tooling.String(), calls)
+	}
+}
+
+func TestParser_OnlyCallAuthorizesTool(t *testing.T) {
+	for _, marker := range []string{"<|call|>", "<|return|>", "<|end|>"} {
+		t.Run(marker, func(t *testing.T) {
+			c := Parser{}.NewStateMachine()
+			result, eog := c.Classify(`<|channel|>commentary to=functions.echo<|constrain|>json<|message|>{}` + marker)
+			var tooling strings.Builder
+			if result.Channel == model.ChannelTool {
+				tooling.WriteString(result.Content)
+			}
+			for result = c.(model.StateMachineFlusher).Flush(); result != (model.Result{}); result = c.(model.StateMachineFlusher).Flush() {
+				if result.Channel == model.ChannelTool {
+					tooling.WriteString(result.Content)
+				}
+			}
+			calls := Parser{}.ToolCall(t.Context(), nil, tooling.String())
+			if marker == "<|call|>" {
+				if !eog || len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "echo" {
+					t.Fatalf("got eog=%v calls=%+v, want executable echo", eog, calls)
+				}
+				return
+			}
+			if marker == "<|return|>" && !eog {
+				t.Error("return marker did not signal EOG")
+			}
+			if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+				t.Fatalf("got %+v, want one non-executable failure", calls)
+			}
+		})
+	}
+}
+
+func TestParser_RejectsMalformedConstraintAndPostEOGContent(t *testing.T) {
+	for _, stream := range []string{
+		`<|channel|>commentary to=functions.echo<|constrain|>not-json<|message|>{}<|call|>`,
+		`<|channel|>commentary to=functions.echo<|call|>`,
+		`<|channel|>commentary to=functions.bad/name<|constrain|>json<|message|>{}<|call|>`,
+		`<|channel|>commentary to=functions.<|constrain|>json<|message|>{}<|call|>`,
+		"<|channel|>commentary to=functions.echo\u00a0<|constrain|>json<|message|>{}<|call|>",
+		`<|channel|>commentary to=functions.echo<|message|>{}<|call|><|channel|>commentary to=functions.other<|message|>{}<|call|>`,
+	} {
+		c := Parser{}.NewStateMachine()
+		var tooling strings.Builder
+		if result, _ := c.Classify(stream); result.Channel == model.ChannelTool {
+			tooling.WriteString(result.Content)
+		}
+		for result := c.(model.StateMachineFlusher).Flush(); result != (model.Result{}); result = c.(model.StateMachineFlusher).Flush() {
+			if result.Channel == model.ChannelTool {
+				tooling.WriteString(result.Content)
+			}
+		}
+		calls := Parser{}.ToolCall(t.Context(), nil, tooling.String())
+		if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+			t.Fatalf("stream %q: content %q calls %+v, want one non-executable failure", stream, tooling.String(), calls)
+		}
 	}
 }
 

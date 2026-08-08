@@ -7,171 +7,200 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
-const pythonTag = "<|python_tag|>"
+const (
+	pythonTag  = "<|python_tag|>"
+	thinkOpen  = "<think>"
+	thinkClose = "</think>"
+)
 
-// stateMachine recognizes marked Llama calls and conservatively buffers bare
-// JSON only when the request declares tools.
+// stateMachine recognizes Llama markers without depending on tokenizer chunk
+// boundaries. Tool candidates are retained until EOS so only complete output
+// can be classified as executable.
 type stateMachine struct {
 	status        model.Channel
-	candidate     strings.Builder
+	pending       strings.Builder
 	toolNames     map[string]struct{}
 	answerStarted bool
+	marked        bool
+	queue         []model.Result
 }
 
 // Reset returns the state machine to its initial state.
 func (sm *stateMachine) Reset() {
 	sm.status = model.ChannelAnswer
-	sm.candidate.Reset()
+	sm.pending.Reset()
 	sm.toolNames = nil
 	sm.answerStarted = false
+	sm.marked = false
+	sm.queue = nil
 }
 
-// SetTools supplies the request's declared tools for conservative bare-JSON
-// classification.
+// SetTools supplies the request's declared tools.
 func (sm *stateMachine) SetTools(tools []model.D) {
 	sm.toolNames = make(map[string]struct{}, len(tools))
 	for _, tool := range tools {
-		name := declaredToolName(tool)
-		if name != "" {
+		if name := declaredToolName(tool); name != "" {
 			sm.toolNames[name] = struct{}{}
 		}
 	}
 }
 
-// Classify classifies one decoded token.
+// Classify classifies one decoded piece.
 func (sm *stateMachine) Classify(content string) (model.Result, bool) {
-	if sm.status == model.ChannelTool {
-		return model.Result{Channel: model.ChannelTool, Content: content}, false
+	sm.process(content)
+	if len(sm.queue) == 0 {
+		return model.Result{}, false
 	}
 
-	if sm.candidate.Len() > 0 && strings.TrimSpace(sm.candidate.String()) == "" {
-		switch {
-		case strings.HasPrefix(content, pythonTag) && len(sm.toolNames) > 0:
-			sm.candidate.Reset()
-			sm.status = model.ChannelTool
-			return model.Result{Channel: model.ChannelTool, Content: pythonTagPayload(content)}, false
+	result := sm.queue[0]
+	sm.queue = sm.queue[1:]
+	return result, false
+}
 
-		case content == "<think>":
-			sm.candidate.Reset()
-			sm.status = model.ChannelReasoning
-			return model.Result{}, false
-		}
+func (sm *stateMachine) process(content string) {
+	if sm.marked {
+		sm.pending.WriteString(content)
+		return
+	}
+	if sm.status == model.ChannelReasoning {
+		sm.processReasoning(content)
+		return
+	}
+	if sm.answerStarted {
+		sm.enqueue(model.ChannelAnswer, content)
+		return
 	}
 
-	if strings.HasPrefix(content, pythonTag) && len(sm.toolNames) > 0 {
+	sm.pending.WriteString(content)
+	candidate := sm.pending.String()
+	trimmed := strings.TrimLeft(candidate, " \t\r\n")
+	leading := candidate[:len(candidate)-len(trimmed)]
+
+	if strings.HasPrefix(pythonTag, trimmed) && len(trimmed) < len(pythonTag) {
+		return
+	}
+	if strings.HasPrefix(trimmed, pythonTag) {
+		sm.marked = true
 		sm.status = model.ChannelTool
-		return model.Result{Channel: model.ChannelTool, Content: pythonTagPayload(content)}, false
+		return
 	}
-
-	if sm.candidate.Len() > 0 {
-		sm.candidate.WriteString(content)
-		return sm.classifyCandidate(false)
+	if strings.HasPrefix(thinkOpen, trimmed) && len(trimmed) < len(thinkOpen) {
+		return
 	}
-
-	switch content {
-	case "<think>":
+	if strings.HasPrefix(trimmed, thinkOpen) {
+		sm.pending.Reset()
 		sm.status = model.ChannelReasoning
-		return model.Result{}, false
+		remainder := trimmed[len(thinkOpen):]
+		sm.enqueue(model.ChannelAnswer, leading)
+		sm.processReasoning(remainder)
+		return
+	}
+	if trimmed == "" {
+		return
+	}
+	if len(sm.toolNames) > 0 && strings.HasPrefix(trimmed, "{") {
+		if name, ok := envelopeName(trimmed); ok {
+			if _, declared := sm.toolNames[name]; declared {
+				return
+			}
+			sm.pending.Reset()
+			sm.answerStarted = true
+			sm.enqueue(model.ChannelAnswer, candidate)
+			return
+		}
+		if !firstJSONValueComplete(trimmed) {
+			return
+		}
+	}
 
-	case "</think>":
+	sm.pending.Reset()
+	sm.answerStarted = true
+	sm.enqueue(model.ChannelAnswer, candidate)
+}
+
+func firstJSONValueComplete(content string) bool {
+	decoder := json.NewDecoder(strings.NewReader(content))
+	var value json.RawMessage
+	return decoder.Decode(&value) == nil
+}
+
+func (sm *stateMachine) processReasoning(content string) {
+	sm.pending.WriteString(content)
+	candidate := sm.pending.String()
+	if before, after, ok := strings.Cut(candidate, thinkClose); ok {
+		sm.pending.Reset()
 		sm.status = model.ChannelAnswer
-		return model.Result{}, false
-
-	case pythonTag:
-		if len(sm.toolNames) > 0 {
-			sm.status = model.ChannelTool
-			return model.Result{}, false
-		}
+		sm.enqueue(model.ChannelReasoning, before)
+		sm.process(after)
+		return
 	}
 
-	if sm.status == model.ChannelAnswer && !sm.answerStarted && len(sm.toolNames) > 0 {
-		trimmed := strings.TrimLeft(content, " \t\r\n")
-		if trimmed == "" || strings.HasPrefix(trimmed, "{") {
-			sm.candidate.WriteString(content)
-			return sm.classifyCandidate(false)
-		}
-	}
-
-	if sm.status == model.ChannelAnswer && strings.TrimSpace(content) != "" {
-		sm.answerStarted = true
-	}
-	return model.Result{Channel: sm.status, Content: content}, false
+	keep := markerPrefixSuffix(candidate, thinkClose)
+	emit := candidate[:len(candidate)-keep]
+	sm.pending.Reset()
+	sm.pending.WriteString(candidate[len(candidate)-keep:])
+	sm.enqueue(model.ChannelReasoning, emit)
 }
 
-func pythonTagPayload(content string) string {
-	payload := strings.TrimPrefix(content, pythonTag)
-	if payload == "" {
-		return pythonTag
+func (sm *stateMachine) enqueue(channel model.Channel, content string) {
+	if content == "" {
+		return
 	}
-	return payload
+	if len(sm.queue) > 0 && sm.queue[len(sm.queue)-1].Channel == channel {
+		sm.queue[len(sm.queue)-1].Content += content
+		return
+	}
+	sm.queue = append(sm.queue, model.Result{Channel: channel, Content: content})
 }
 
-// Flush drains a possible bare-JSON call or returns it as answer content.
+func markerPrefixSuffix(content, marker string) int {
+	for size := min(len(content), len(marker)-1); size > 0; size-- {
+		if strings.HasSuffix(content, marker[:size]) {
+			return size
+		}
+	}
+	return 0
+}
+
+// Flush drains buffered output at EOS.
 func (sm *stateMachine) Flush() model.Result {
-	if sm.candidate.Len() == 0 {
+	if len(sm.queue) > 0 {
+		result := sm.queue[0]
+		sm.queue = sm.queue[1:]
+		return result
+	}
+	if sm.pending.Len() == 0 {
 		return model.Result{}
 	}
 
-	result, _ := sm.classifyCandidate(true)
-	return result
-}
-
-func (sm *stateMachine) classifyCandidate(flush bool) (model.Result, bool) {
-	content := sm.candidate.String()
-	trimmed := strings.TrimSpace(content)
-	if trimmed == "" && !flush {
-		return model.Result{}, false
+	content := sm.pending.String()
+	sm.pending.Reset()
+	if sm.marked {
+		if name, ok := envelopeName(content); ok {
+			if _, declared := sm.toolNames[name]; !declared {
+				return model.Result{Channel: model.ChannelAnswer, Content: content}
+			}
+		}
+		return model.Result{Channel: model.ChannelTool, Content: content}
 	}
-	if !strings.HasPrefix(trimmed, "{") {
-		sm.candidate.Reset()
-		return model.Result{Channel: model.ChannelAnswer, Content: content}, false
+	if sm.status == model.ChannelReasoning {
+		return model.Result{Channel: model.ChannelReasoning, Content: content}
 	}
-
-	end := findJSONObjectEnd(trimmed)
-	if end == -1 && !flush {
-		return model.Result{}, false
+	trimmed := trimASCIIWhitespace(content)
+	if name, ok := envelopeName(trimmed); ok {
+		if _, declared := sm.toolNames[name]; declared {
+			return model.Result{Channel: model.ChannelTool, Content: trimmed}
+		}
 	}
-	if end == -1 || strings.TrimSpace(trimmed[end:]) != "" {
-		return sm.releaseCandidate(content)
-	}
-
-	name, ok := envelopeName(trimmed[:end])
-	if !ok {
-		return sm.releaseCandidate(content)
-	}
-	if _, ok := sm.toolNames[name]; !ok {
-		return sm.releaseCandidate(content)
-	}
-	if !flush {
-		return model.Result{}, false
-	}
-
-	sm.candidate.Reset()
-	sm.status = model.ChannelTool
-	return model.Result{Channel: model.ChannelTool, Content: trimmed[:end]}, false
-}
-
-func (sm *stateMachine) releaseCandidate(content string) (model.Result, bool) {
-	sm.candidate.Reset()
-	if strings.TrimSpace(content) != "" {
-		sm.answerStarted = true
-	}
-	return model.Result{Channel: model.ChannelAnswer, Content: content}, false
+	return model.Result{Channel: model.ChannelAnswer, Content: content}
 }
 
 func envelopeName(content string) (string, bool) {
-	var envelope struct {
-		Name       string          `json:"name"`
-		Parameters json.RawMessage `json:"parameters"`
-	}
-	if err := json.Unmarshal([]byte(content), &envelope); err != nil {
+	var function model.ResponseToolCallFunction
+	if unmarshalFunction(content, &function) != nil {
 		return "", false
 	}
-	if envelope.Name == "" || len(envelope.Parameters) == 0 || envelope.Parameters[0] != '{' {
-		return "", false
-	}
-
-	return envelope.Name, true
+	return function.Name, true
 }
 
 func declaredToolName(tool model.D) string {
@@ -184,39 +213,4 @@ func declaredToolName(tool model.D) string {
 	}
 	name, _ := function["name"].(string)
 	return name
-}
-
-func findJSONObjectEnd(content string) int {
-	depth := 0
-	inString := false
-	escaped := false
-	for i := range len(content) {
-		char := content[i]
-		if escaped {
-			escaped = false
-			continue
-		}
-		if inString && char == '\\' {
-			escaped = true
-			continue
-		}
-		if char == '"' {
-			inString = !inString
-			continue
-		}
-		if inString {
-			continue
-		}
-		switch char {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return i + 1
-			}
-		}
-	}
-
-	return -1
 }

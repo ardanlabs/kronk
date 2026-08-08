@@ -118,6 +118,59 @@ func TestStateMachineMultipleToolBlocks(t *testing.T) {
 	}
 }
 
+func TestStateMachinePreservesMalformedPostToolContent(t *testing.T) {
+	first := toolsOpen + callOpen + ` tool="write_file" index="1"` + sepToken + callClose + toolsClose
+	second := toolsOpen + callOpen + ` tool="bash" index="1"` + sepToken + callClose + toolsClose
+
+	for _, tt := range []struct {
+		name string
+		tail []string
+	}{
+		{name: "whole", tail: []string{argumentClose + callClose + toolsClose}},
+		{name: "split", tail: []string{"<|cl", "ose|>argument" + callClose + toolsClose}},
+		{name: "prefixed", tail: []string{"unexpected" + argumentClose + callClose + toolsClose}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := Parser{}.NewStateMachine()
+			var aggregate strings.Builder
+			for _, token := range append([]string{first, second}, tt.tail...) {
+				result, _ := sm.Classify(token)
+				if result.Channel == model.ChannelTool {
+					aggregate.WriteString(result.Content)
+				}
+			}
+			calls := Parser{}.ToolCall(t.Context(), nil, aggregate.String())
+			if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+				t.Fatalf("ToolCall: got %+v, want one non-executable failed call", calls)
+			}
+		})
+	}
+}
+
+func TestStateMachineEndOfMessageAfterTools(t *testing.T) {
+	block := toolsOpen + callOpen + ` tool="ping" index="1"` + sepToken + callClose + toolsClose
+	for _, marker := range []string{"<|end_of_msg|>", " \n<|end_of_msg|>"} {
+		sm := Parser{}.NewStateMachine()
+		result, _ := sm.Classify(block)
+		if result.Channel != model.ChannelTool || result.Content != block {
+			t.Fatalf("tool result = %+v, want complete block", result)
+		}
+		result, eog := sm.Classify(marker)
+		if result != (model.Result{}) || !eog {
+			t.Fatalf("end marker %q: got (%+v, %v), want empty EOG", marker, result, eog)
+		}
+	}
+
+	sm := Parser{}.NewStateMachine()
+	result, eog := sm.Classify(block + "<|end_of_msg|>")
+	if result.Channel != model.ChannelTool || result.Content != block || eog {
+		t.Fatalf("coalesced end marker: got (%+v, %v), want tool block without immediate EOG", result, eog)
+	}
+	if tail := sm.(model.StateMachineFlusher).Flush(); tail != (model.Result{}) {
+		t.Fatalf("coalesced end marker Flush = %+v, want empty", tail)
+	}
+}
+
 func TestStateMachineToolActivityAndCompleteRelease(t *testing.T) {
 	sm := Parser{}.NewStateMachine()
 	streamer := sm.(model.ToolCallDeltaStreamer)
@@ -142,6 +195,14 @@ func TestStateMachineToolActivityAndCompleteRelease(t *testing.T) {
 		t.Errorf("drained ToolCallDeltas: got %d, want 0", len(got))
 	}
 	assertResult(t, sm, toolsClose+"ignored", model.ChannelTool, block, false)
+	remainder := sm.(model.StateMachineFlusher).Flush()
+	if remainder.Channel != model.ChannelTool || remainder.Content != "ignored" {
+		t.Fatalf("Flush malformed remainder: got %+v, want tool content %q", remainder, "ignored")
+	}
+	calls := Parser{}.ToolCall(t.Context(), nil, block+remainder.Content)
+	if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+		t.Fatalf("ToolCall malformed aggregate: got %+v, want one non-executable failed call", calls)
+	}
 	started := streamer.StartedToolCalls()
 	if len(started) != 2 || started[0].ID != deltas[0].ID || started[1].ID != deltas[1].ID {
 		t.Errorf("StartedToolCalls: got %+v, want delta identities", started)

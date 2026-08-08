@@ -1,9 +1,12 @@
 package toolcall
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -12,155 +15,193 @@ import (
 	"github.com/google/uuid"
 )
 
-// parseJSON parses a sequence of JSON tool-call objects.
-// Format: {"name":"get_weather","arguments":{"location":"NYC"}}
+// parseJSON parses a strictly whitespace-separated sequence of JSON tool calls.
 func parseJSON(ctx context.Context, log applog.Logger, content string) []model.ResponseToolCall {
-	var toolCalls []model.ResponseToolCall
-	if strings.TrimSpace(content) == "" {
+	if strings.Trim(content, " \t\r\n") == "" {
 		return []model.ResponseToolCall{failedToolCall(content, errors.New("tool call is empty"))}
 	}
 
-	remaining := content
-	for len(remaining) > 0 {
-		remaining = strings.TrimLeft(remaining, " \t\n\r")
-		if len(remaining) == 0 {
-			break
-		}
-
+	remaining := strings.TrimLeft(content, " \t\r\n")
+	var calls []model.ResponseToolCall
+	for remaining != "" {
 		if remaining[0] != '{' {
-			idx := strings.Index(remaining, "{")
-			if idx == -1 {
-				toolCalls = append(toolCalls, failedToolCall(remaining, errors.New("tool call does not contain a JSON object")))
-				break
-			}
-			remaining = remaining[idx:]
+			return []model.ResponseToolCall{failedToolCall(content, errors.New("unexpected content outside tool call object"))}
+		}
+		end := findJSONObjectEnd(remaining)
+		if end < 0 {
+			return []model.ResponseToolCall{failedToolCall(content, errors.New("incomplete tool call object"))}
 		}
 
-		jsonEnd := findJSONObjectEnd(remaining)
-		if jsonEnd == -1 {
-			jsonEnd = len(remaining)
+		raw := remaining[:end]
+		function, err := decodeFunction(raw)
+		if err != nil {
+			function, err = repairFunction(raw, err)
 		}
-
-		call := remaining[:jsonEnd]
-		remaining = remaining[jsonEnd:]
-
-		toolCall := model.ResponseToolCall{
-			ID:   newToolCallID(),
-			Type: "function",
-		}
-
-		if err := unmarshalStandardFunction(call, &toolCall.Function); err != nil {
+		if err != nil {
 			if log != nil {
-				log(ctx, "jsonrepair", "status", "unmarshal-failed",
-					"format", "json", "error", err, "json", call)
+				log(ctx, "jsonrepair", "status", "unmarshal-failed", "format", "json", "error", err, "json", raw)
 			}
-			toolCall.Status = 2
-			toolCall.Error = err.Error()
-			toolCall.Raw = call
+			return []model.ResponseToolCall{failedToolCall(content, err)}
 		}
 
-		// GPT models prefix function names with a dot (e.g. ".Kronk_web_search").
-		// Strip it so clients can match the name to their registered tools.
-		toolCall.Function.Name = strings.TrimPrefix(toolCall.Function.Name, ".")
-
-		toolCalls = append(toolCalls, toolCall)
+		function.Name = strings.TrimPrefix(function.Name, ".")
+		if function.Name == "" {
+			return []model.ResponseToolCall{failedToolCall(content, errors.New("tool call name is empty"))}
+		}
+		calls = append(calls, model.ResponseToolCall{ID: newToolCallID(), Type: "function", Function: function})
+		remaining = strings.TrimLeft(remaining[end:], " \t\r\n")
 	}
 
-	return toolCalls
+	return calls
 }
 
 func failedToolCall(raw string, err error) model.ResponseToolCall {
-	return model.ResponseToolCall{
-		ID:     newToolCallID(),
-		Type:   "function",
-		Status: 2,
-		Error:  err.Error(),
-		Raw:    raw,
-	}
+	return model.ResponseToolCall{ID: newToolCallID(), Type: "function", Status: 2, Error: err.Error(), Raw: raw}
 }
 
-func unmarshalStandardFunction(raw string, function *model.ResponseToolCallFunction) error {
+func repairFunction(raw string, original error) (model.ResponseToolCallFunction, error) {
+	// Repair is only permitted for a physically complete object. In particular,
+	// never synthesize missing framing at end of generation.
+	if findJSONObjectEnd(raw) != len(raw) {
+		return model.ResponseToolCallFunction{}, original
+	}
 	repaired, err := jsonrepair.Repair(raw)
-	if err != nil {
-		return err
+	if err != nil || !onlyAddsEscapes(raw, repaired) {
+		return model.ResponseToolCallFunction{}, original
 	}
-
-	var wire struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal([]byte(repaired), &wire); err != nil {
-		return err
-	}
-	if wire.Name == "" {
-		return errors.New("tool call name is empty")
-	}
-	if len(wire.Arguments) == 0 || string(wire.Arguments) == "null" {
-		return errors.New("tool call arguments must be an object")
-	}
-	function.Name = wire.Name
-
-	arguments, err := decodeStandardArguments(wire.Arguments)
-	if err != nil {
-		return err
-	}
-
-	function.Arguments = arguments
-
-	return nil
+	return decodeFunction(repaired)
 }
 
-func decodeStandardArguments(raw json.RawMessage) (model.ToolCallArguments, error) {
-	if raw[0] == '"' {
-		var encoded string
-		if err := json.Unmarshal(raw, &encoded); err != nil {
-			return nil, err
+// onlyAddsEscapes permits the one repair this parser historically supported:
+// inserting backslashes to preserve malformed quotes or escapes inside a JSON
+// string. It rejects repairs that create names, values, delimiters, or fields.
+func onlyAddsEscapes(raw, repaired string) bool {
+	for rawPos, repairedPos := 0, 0; rawPos < len(raw) || repairedPos < len(repaired); {
+		if rawPos < len(raw) && repairedPos < len(repaired) && raw[rawPos] == repaired[repairedPos] {
+			rawPos++
+			repairedPos++
+			continue
 		}
-		if encoded == "" {
-			return nil, errors.New("tool call arguments must be an object")
+		if repairedPos < len(repaired) && repaired[repairedPos] == '\\' {
+			repairedPos++
+			continue
 		}
-		raw = json.RawMessage(encoded)
+		return false
+	}
+	return true
+}
+
+func decodeFunction(raw string) (model.ResponseToolCallFunction, error) {
+	value, err := decodeUniqueJSON([]byte(raw))
+	if err != nil {
+		return model.ResponseToolCallFunction{}, err
+	}
+	envelope, ok := value.(map[string]any)
+	if !ok {
+		return model.ResponseToolCallFunction{}, errors.New("tool call must be an object")
+	}
+	name, ok := envelope["name"].(string)
+	if !ok || name == "" {
+		return model.ResponseToolCallFunction{}, errors.New("tool call name is empty")
+	}
+	argumentValue, ok := envelope["arguments"]
+	if !ok {
+		return model.ResponseToolCallFunction{}, errors.New("tool call arguments must be an object")
+	}
+	if encoded, ok := argumentValue.(string); ok {
+		argumentValue, err = decodeUniqueJSON([]byte(encoded))
+		if err != nil {
+			return model.ResponseToolCallFunction{}, fmt.Errorf("invalid tool arguments JSON: %w", err)
+		}
+	}
+	arguments, ok := argumentValue.(map[string]any)
+	if !ok {
+		return model.ResponseToolCallFunction{}, errors.New("tool call arguments must be an object")
 	}
 
-	if !json.Valid(raw) {
-		return nil, errors.New("invalid tool arguments JSON")
-	}
+	return model.ResponseToolCallFunction{Name: name, Arguments: model.ToolCallArguments(arguments)}, nil
+}
 
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+func decodeUniqueJSON(raw []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
-
-	var arguments map[string]any
-	if err := decoder.Decode(&arguments); err != nil {
+	value, err := decodeUniqueValue(decoder)
+	if err != nil {
 		return nil, err
 	}
-	if arguments == nil {
-		return nil, errors.New("tool call arguments must be an object")
+	if token, err := decoder.Token(); err != io.EOF {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("unexpected trailing JSON token %v", token)
 	}
-
-	return model.ToolCallArguments(arguments), nil
+	return value, nil
 }
 
-// findJSONObjectEnd finds the end of a JSON object starting at the beginning
-// of s. Returns the index after the closing brace, or -1 if not found.
-func findJSONObjectEnd(s string) int {
-	if len(s) == 0 || s[0] != '{' {
-		idx := strings.Index(s, "{")
-		if idx == -1 {
-			return -1
-		}
-		s = s[idx:]
+func decodeUniqueValue(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
 	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return token, nil
+	}
+	switch delimiter {
+	case '{':
+		object := make(map[string]any)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			key := keyToken.(string)
+			if _, exists := object[key]; exists {
+				return nil, fmt.Errorf("duplicate JSON key %q", key)
+			}
+			value, err := decodeUniqueValue(decoder)
+			if err != nil {
+				return nil, err
+			}
+			object[key] = value
+		}
+		if _, err := decoder.Token(); err != nil {
+			return nil, err
+		}
+		return object, nil
+	case '[':
+		array := make([]any, 0)
+		for decoder.More() {
+			value, err := decodeUniqueValue(decoder)
+			if err != nil {
+				return nil, err
+			}
+			array = append(array, value)
+		}
+		if _, err := decoder.Token(); err != nil {
+			return nil, err
+		}
+		return array, nil
+	default:
+		return nil, errors.New("unexpected JSON delimiter")
+	}
+}
 
+// findJSONObjectEnd returns the byte immediately following a balanced object.
+func findJSONObjectEnd(s string) int {
+	if s == "" || s[0] != '{' {
+		return -1
+	}
 	depth := 0
 	inString := false
 	escape := false
-
-	for i, c := range s {
+	for i := range len(s) {
+		c := s[i]
 		if escape {
 			escape = false
 			continue
 		}
-		if c == '\\' && inString {
+		if inString && c == '\\' {
 			escape = true
 			continue
 		}
@@ -181,10 +222,7 @@ func findJSONObjectEnd(s string) int {
 			}
 		}
 	}
-
 	return -1
 }
 
-func newToolCallID() string {
-	return "call_" + uuid.NewString()
-}
+func newToolCallID() string { return "call_" + uuid.NewString() }

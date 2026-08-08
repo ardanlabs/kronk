@@ -4,81 +4,129 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
-	"github.com/ardanlabs/kronk/sdk/kronk/jsonrepair"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/google/uuid"
 )
 
-func parseJSON(ctx context.Context, log applog.Logger, content string) []model.ResponseToolCall {
-	content = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(content), pythonTag))
-	start := strings.IndexByte(content, '{')
-	if start == -1 {
-		err := errors.New("tool call does not contain a JSON object")
-		return []model.ResponseToolCall{{
-			ID:     "call_" + uuid.NewString(),
-			Type:   "function",
-			Status: 2,
-			Error:  err.Error(),
-			Raw:    content,
-		}}
-	}
-	content = content[start:]
-	end := findJSONObjectEnd(content)
-	if end == -1 {
-		end = len(content)
-	}
-	raw := content[:end]
+const parseErrorStatus = 2
 
-	toolCall := model.ResponseToolCall{
-		ID:   "call_" + uuid.NewString(),
-		Type: "function",
-	}
-	if err := unmarshalFunction(raw, &toolCall.Function); err != nil {
+func parseJSON(ctx context.Context, log applog.Logger, content string) []model.ResponseToolCall {
+	toolCall := model.ResponseToolCall{ID: "call_" + uuid.NewString(), Type: "function"}
+	if err := unmarshalFunction(content, &toolCall.Function); err != nil {
 		if log != nil {
-			log(ctx, "jsonrepair", "status", "unmarshal-failed", "format", "llama", "error", err, "json", raw)
+			log(ctx, "tool-call", "status", "unmarshal-failed", "format", "llama", "error", err, "json", content)
 		}
-		toolCall.Status = 2
+		toolCall.Function = model.ResponseToolCallFunction{}
+		toolCall.Status = parseErrorStatus
 		toolCall.Error = err.Error()
-		toolCall.Raw = raw
+		toolCall.Raw = content
 	}
 
 	return []model.ResponseToolCall{toolCall}
 }
 
 func unmarshalFunction(raw string, function *model.ResponseToolCallFunction) error {
-	repaired, err := jsonrepair.Repair(raw)
+	content := trimASCIIWhitespace(raw)
+	if strings.HasPrefix(content, pythonTag) {
+		content = trimASCIIWhitespace(content[len(pythonTag):])
+		if content == "" {
+			return errors.New("tool call after python tag is empty")
+		}
+	}
+	if content == "" || content[0] != '{' {
+		return errors.New("tool call must be one JSON object")
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(content))
+	decoder.UseNumber()
+	value, err := decodeUnique(decoder)
 	if err != nil {
 		return err
 	}
+	if token, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return fmt.Errorf("reading tool call tail: %w", err)
+		}
+		return fmt.Errorf("unexpected JSON value after tool call: %v", token)
+	}
 
-	var envelope struct {
-		Name       string          `json:"name"`
-		Parameters json.RawMessage `json:"parameters"`
+	envelope, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("tool call must be one JSON object")
 	}
-	if err := json.Unmarshal([]byte(repaired), &envelope); err != nil {
-		return err
-	}
-	if envelope.Name == "" {
+	name, ok := envelope["name"].(string)
+	if !ok || name == "" {
 		return errors.New("tool call name is empty")
 	}
-	if len(envelope.Parameters) == 0 || string(envelope.Parameters) == "null" || envelope.Parameters[0] != '{' {
+	parameters, ok := envelope["parameters"].(map[string]any)
+	if !ok {
 		return errors.New("tool call parameters must be an object")
 	}
 
-	decoder := json.NewDecoder(strings.NewReader(string(envelope.Parameters)))
-	decoder.UseNumber()
-	var arguments map[string]any
-	if err := decoder.Decode(&arguments); err != nil {
-		return err
-	}
-	if arguments == nil {
-		return errors.New("tool call parameters must be an object")
-	}
-
-	function.Name = envelope.Name
-	function.Arguments = model.ToolCallArguments(arguments)
+	function.Name = name
+	function.Arguments = model.ToolCallArguments(parameters)
 	return nil
+}
+
+func decodeUnique(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, fmt.Errorf("decoding tool call: %w", err)
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return token, nil
+	}
+
+	switch delim {
+	case '{':
+		object := make(map[string]any)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return nil, fmt.Errorf("decoding object key: %w", err)
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return nil, errors.New("JSON object key is not a string")
+			}
+			if _, exists := object[key]; exists {
+				return nil, fmt.Errorf("duplicate JSON key %q", key)
+			}
+			value, err := decodeUnique(decoder)
+			if err != nil {
+				return nil, err
+			}
+			object[key] = value
+		}
+		if _, err := decoder.Token(); err != nil {
+			return nil, fmt.Errorf("closing JSON object: %w", err)
+		}
+		return object, nil
+
+	case '[':
+		array := make([]any, 0)
+		for decoder.More() {
+			value, err := decodeUnique(decoder)
+			if err != nil {
+				return nil, err
+			}
+			array = append(array, value)
+		}
+		if _, err := decoder.Token(); err != nil {
+			return nil, fmt.Errorf("closing JSON array: %w", err)
+		}
+		return array, nil
+	}
+
+	return nil, fmt.Errorf("unexpected JSON delimiter %q", delim)
+}
+
+func trimASCIIWhitespace(content string) string {
+	return strings.Trim(content, " \t\r\n")
 }

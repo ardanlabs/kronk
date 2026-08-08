@@ -19,42 +19,97 @@ type valueParser struct {
 }
 
 func parseToolCalls(content string) []model.ResponseToolCall {
+	calls, err := parseToolCallsStrict(content)
+	if err != nil {
+		return []model.ResponseToolCall{failedCall(content, err)}
+	}
+	return calls
+}
+
+func parseToolCallsStrict(content string) ([]model.ResponseToolCall, error) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
-		return []model.ResponseToolCall{failedCall(content, errors.New("parse lfm tools: empty payload"))}
+		return nil, errors.New("parse lfm tools: empty payload")
 	}
 	if strings.HasPrefix(trimmed, toolOpen) {
 		var calls []model.ResponseToolCall
 		for {
 			if !strings.HasPrefix(trimmed, toolOpen) {
-				calls = append(calls, failedCall(trimmed, errors.New("parse lfm tools: unexpected content outside tool marker")))
-				break
+				return nil, errors.New("parse lfm tools: unexpected content outside tool marker")
 			}
 			after := trimmed[len(toolOpen):]
-			body, rest, ok := strings.Cut(after, toolClose)
+			closeAt, ok := structuralMarker(after, toolClose)
 			if !ok {
-				calls = append(calls, failedCall(after, errors.New("parse lfm tools: missing closing marker")))
-				break
+				return nil, errors.New("parse lfm tools: missing closing marker")
 			}
-			calls = append(calls, parseToolCalls(body)...)
-			trimmed = strings.TrimSpace(rest)
+			body := after[:closeAt]
+			bodyCalls, err := parseToolCallsStrict(body)
+			if err != nil {
+				return nil, err
+			}
+			calls = append(calls, bodyCalls...)
+			trimmed = strings.TrimSpace(after[closeAt+len(toolClose):])
 			if trimmed == "" {
 				break
 			}
 		}
-		return calls
+		return calls, nil
+	}
+	if _, ok := structuralMarker(trimmed, toolOpen); ok {
+		return nil, errors.New("parse lfm tools: unexpected content outside tool marker")
+	}
+	if _, ok := structuralMarker(trimmed, toolClose); ok {
+		return nil, errors.New("parse lfm tools: unexpected content outside tool marker")
 	}
 	if payloads := splitPayloads(trimmed); len(payloads) > 1 {
 		var calls []model.ResponseToolCall
 		for _, payload := range payloads {
-			calls = append(calls, parseToolCalls(payload)...)
+			payloadCalls, err := parseToolCallsStrict(payload)
+			if err != nil {
+				return nil, err
+			}
+			calls = append(calls, payloadCalls...)
 		}
-		return calls
+		return calls, nil
 	}
+	var calls []model.ResponseToolCall
 	if trimmed[0] == '{' || jsonArrayEnvelope(trimmed) {
-		return parseJSONCalls(trimmed)
+		calls = parseJSONCalls(trimmed)
+	} else {
+		calls = parsePythonCalls(trimmed)
 	}
-	return parsePythonCalls(trimmed)
+	for _, call := range calls {
+		if call.Status == parseErrorStatus {
+			return nil, errors.New(call.Error)
+		}
+	}
+	return calls, nil
+}
+
+func structuralMarker(content, marker string) (int, bool) {
+	quote := byte(0)
+	escaped := false
+	for pos := 0; pos < len(content); pos++ {
+		ch := content[pos]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if ch == '\\' {
+				escaped = true
+			} else if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			continue
+		}
+		if strings.HasPrefix(content[pos:], marker) {
+			return pos, true
+		}
+	}
+	return 0, false
 }
 
 func splitPayloads(content string) []string {
@@ -92,6 +147,9 @@ func jsonArrayEnvelope(content string) bool {
 }
 
 func parseJSONCalls(content string) []model.ResponseToolCall {
+	if err := rejectDuplicateJSONKeys(content); err != nil {
+		return []model.ResponseToolCall{failedCall(content, fmt.Errorf("parse lfm JSON: %w", err))}
+	}
 	var value any
 	decoder := json.NewDecoder(strings.NewReader(content))
 	decoder.UseNumber()
@@ -102,6 +160,48 @@ func parseJSONCalls(content string) []model.ResponseToolCall {
 		return []model.ResponseToolCall{failedCall(content, errors.New("parse lfm JSON: trailing content"))}
 	}
 	return jsonValueCalls(value, content)
+}
+
+func rejectDuplicateJSONKeys(content string) error {
+	decoder := json.NewDecoder(strings.NewReader(content))
+	var walk func() error
+	walk = func() error {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delim {
+		case '{':
+			keys := make(map[string]struct{})
+			for decoder.More() {
+				keyToken, err := decoder.Token()
+				if err != nil {
+					return err
+				}
+				key := keyToken.(string)
+				if _, exists := keys[key]; exists {
+					return fmt.Errorf("duplicate key %q", key)
+				}
+				keys[key] = struct{}{}
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+		case '[':
+			for decoder.More() {
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+		}
+		_, err = decoder.Token()
+		return err
+	}
+	return walk()
 }
 
 func jsonValueCalls(value any, raw string) []model.ResponseToolCall {
@@ -296,7 +396,7 @@ func jsonNumber(word string) (json.Number, bool) {
 
 func (p *valueParser) array() ([]any, error) {
 	p.pos++
-	var values []any
+	values := make([]any, 0)
 	for {
 		p.skipSpace()
 		if p.consume(']') {
@@ -338,6 +438,9 @@ func (p *valueParser) object() (map[string]any, error) {
 		value, err := p.value()
 		if err != nil {
 			return nil, err
+		}
+		if _, exists := values[key]; exists {
+			return nil, fmt.Errorf("duplicate object key %q", key)
 		}
 		values[key] = value
 		p.skipSpace()

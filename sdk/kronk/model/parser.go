@@ -116,8 +116,9 @@ type ToolAwareStateMachine interface {
 // output not yet returned by Classify.
 //
 // Flush drains that output at successful end-of-generation. It must not return
-// content previously returned by Classify, and subsequent calls must return a
-// zero Result.
+// content previously returned by Classify. Callers invoke Flush until it returns
+// a zero Result so state machines can preserve multiple channel transitions
+// retained from one decoded piece.
 type StateMachineFlusher interface {
 	Flush() Result
 }
