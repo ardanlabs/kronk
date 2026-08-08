@@ -411,7 +411,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if outputTokens > 0 && e.model.draft != nil {
 		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
 	}
-	if toolCallErr != nil && (s.finishReason == FinishReasonLength || s.stopSource == "request-stop") {
+	var truncatedToolContent string
+	if s.finishReason == FinishReasonLength && s.finalTooling.Len() > 0 {
+		s.respToolCalls, truncatedToolContent = retainTruncatedToolOutput(&s.finalContent, s.finalTooling.String(), s.respToolCalls)
+	} else if toolCallErr != nil && s.stopSource == "request-stop" {
 		valid := s.respToolCalls[:0]
 		for _, toolCall := range s.respToolCalls {
 			if toolCall.Status == 0 {
@@ -457,6 +460,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.stopSource == "" {
 		s.stopSource = "unknown"
 	}
+	if s.job.params.Stream && truncatedToolContent != "" {
+		if sendErr := e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, truncatedToolContent, ChannelAnswer, s.reasonTokens, outputTokens, nil); sendErr != nil {
+			err = sendErr
+			return
+		}
+	}
 	var terminalToolCallDeltas []ResponseToolCallDelta
 	if s.job.params.Stream {
 		var started []ResponseToolCallDelta
@@ -467,6 +476,22 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
+}
+
+func retainTruncatedToolOutput(finalContent *strings.Builder, finalTooling string, toolCalls []ResponseToolCall) ([]ResponseToolCall, string) {
+	valid := toolCalls[:0]
+	for _, toolCall := range toolCalls {
+		if toolCall.Status == 0 {
+			valid = append(valid, toolCall)
+		}
+	}
+
+	if len(toolCalls) > 0 && len(valid) == len(toolCalls) {
+		return valid, ""
+	}
+
+	finalContent.WriteString(finalTooling)
+	return valid, finalTooling
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {
