@@ -699,7 +699,11 @@ func (m *Model) validateDocument(ctx context.Context, d D) (Params, error) {
 
 	p, err := m.parseParams(ctx, d)
 	if err != nil {
-		return Params{}, err
+		if errors.Is(err, ErrInvalidRequest) {
+			return Params{}, err
+		}
+
+		return Params{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
 	return p, nil

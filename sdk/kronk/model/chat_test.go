@@ -268,6 +268,10 @@ func TestChatPreservesValidationError(t *testing.T) {
 		{name: "invalid seed", field: "seed", value: -1},
 		{name: "unsupported response format", field: "response_format", value: D{"type": "banana"}},
 		{name: "missing response schema", field: "response_format", value: D{"type": "json_schema"}},
+		{name: "invalid float parameter", field: "temperature", value: D{"invalid": true}},
+		{name: "invalid integer parameter", field: "max_tokens", value: D{"invalid": true}},
+		{name: "invalid boolean parameter", field: "logprobs", value: "invalid"},
+		{name: "invalid reasoning parameter", field: "reasoning_effort", value: "invalid"},
 	}
 
 	for _, tt := range tests {
