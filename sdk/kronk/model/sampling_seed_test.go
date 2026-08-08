@@ -3,6 +3,7 @@ package model
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"math"
 	"math/rand"
 	"strings"
@@ -39,8 +40,8 @@ func TestParseSeed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parseSeed(tt.value)
 			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("parseSeed(%v): got nil error, want error", tt.value)
+				if !errors.Is(err, ErrInvalidRequest) {
+					t.Fatalf("parseSeed(%v): got %v, want ErrInvalidRequest", tt.value, err)
 				}
 				return
 			}

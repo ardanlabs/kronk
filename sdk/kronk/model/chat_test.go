@@ -259,6 +259,57 @@ func TestParseParamsUsesChatTemplateKwargs(t *testing.T) {
 	}
 }
 
+func TestChatPreservesValidationError(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "invalid seed", field: "seed", value: -1},
+		{name: "unsupported response format", field: "response_format", value: D{"type": "banana"}},
+		{name: "missing response schema", field: "response_format", value: D{"type": "json_schema"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{log: noopLog}
+			d := D{
+				"messages": []D{{"role": "user", "content": "hello"}},
+				tt.field:   tt.value,
+			}
+
+			if _, err := m.Chat(t.Context(), d); !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("Chat: got %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
+func TestChatStreamingReturnsValidationError(t *testing.T) {
+	m := Model{log: noopLog}
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"seed":     -1,
+		"chat_template_kwargs": D{
+			"enable_thinking": false,
+		},
+	}
+
+	ch, err := m.ChatStreaming(t.Context(), d)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ChatStreaming: got %v, want ErrInvalidRequest", err)
+	}
+	if ch != nil {
+		t.Error("ChatStreaming: got non-nil channel, want nil")
+	}
+	if active := m.activeStreams.Load(); active != 0 {
+		t.Errorf("active streams: got %d, want 0", active)
+	}
+	if _, exists := d["enable_thinking"]; exists {
+		t.Error("ChatStreaming modified caller-owned request")
+	}
+}
+
 func TestChatStopValidationAndParsing(t *testing.T) {
 	tests := []struct {
 		name    string

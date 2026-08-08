@@ -1505,9 +1505,9 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="method-model-chatstreaming">
               <h4>Model.ChatStreaming</h4>
               <pre className="code-block">
-                <code>func (m *Model) ChatStreaming(ctx context.Context, d D) &lt;-chan ChatResponse</code>
+                <code>func (m *Model) ChatStreaming(ctx context.Context, d D) (&lt;-chan ChatResponse, error)</code>
               </pre>
-              <p className="doc-description">ChatStreaming performs a chat request and streams the response. All requests (including vision/audio) use batch processing and can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. When stream_options.include_usage is true, the terminal choice is followed by a usage response with an empty Choices slice.</p>
+              <p className="doc-description">ChatStreaming performs a chat request and streams the response. All requests (including vision/audio) use batch processing and can run concurrently based on the NSeqMax config value, which controls parallel sequence processing. When stream_options.include_usage is true, the terminal choice is followed by a usage response with an empty Choices slice. Validation failures are returned before a response channel is created.</p>
             </div>
 
             <div className="doc-section" id="method-model-config">
@@ -1958,7 +1958,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`var ErrInvalidRequest = errors.New("validate-document: invalid request")`}</code>
               </pre>
-              <p className="doc-description">ErrInvalidRequest indicates that a chat request contains an invalid or unsupported field value.</p>
+              <p className="doc-description">ErrInvalidRequest indicates that a model request contains an invalid or unsupported field value.</p>
             </div>
 
             <div className="doc-section" id="var-errmessagesinvalid">

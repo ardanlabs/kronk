@@ -1,19 +1,19 @@
-# Important Release Notes v1.30.3
+# Breaking Changes by Version
 
 ## Index
 
-- [BREAKING CHANGES](#breaking-changes)
-  - [Auth Changes](#auth-changes)
-  - [Tool Calling Changes](#tool-calling-changes)
-  - [Usage Changes](#usage-changes)
-  - [Network Binding Changes](#network-binding-changes)
-  - [HTTP Error Response Changes](#http-error-response-changes)
-  - [Session Storage Changes](#session-storage-changes)
-  - [Go SDK Changes](#go-sdk-changes)
+- [v1.30.3](#v1303)
+  - [Auth Changes](#v1303-auth-changes)
+  - [Tool Calling Changes](#v1303-tool-calling-changes)
+  - [Usage Changes](#v1303-usage-changes)
+  - [Network Binding Changes](#v1303-network-binding-changes)
+  - [HTTP Error Response Changes](#v1303-http-error-response-changes)
+  - [Session Storage Changes](#v1303-session-storage-changes)
+  - [Go SDK Changes](#v1303-go-sdk-changes)
 
-# BREAKING CHANGES
+## v1.30.3
 
-## Auth Changes
+### v1.30.3: Auth Changes
 
 Kronk now uses one setting to describe API access:
 
@@ -21,7 +21,7 @@ Kronk now uses one setting to describe API access:
 KRONK_AUTHORIZATION_MODE=<mode>
 ```
 
-### Choose the intended mode
+#### Choose the intended mode
 
 | Mode             | `/v1/models` discovery | Inference                              | Management APIs |
 | ---------------- | ---------------------- | -------------------------------------- | --------------- |
@@ -42,7 +42,7 @@ GET /v1/kronk/models/integrity/{model}
 
 They also include catalog, device, diagnostic, pool, playground, security, model-management, and library-management routes.
 
-### Recommended mapping from the old settings
+#### Recommended mapping from the old settings
 
 | Previous embedded-auth configuration                               | New mode         |
 | ------------------------------------------------------------------ | ---------------- |
@@ -58,7 +58,7 @@ For production installations already using endpoint-specific token grants and ra
 KRONK_AUTHORIZATION_MODE=full-protected
 ```
 
-### Remove the legacy settings
+#### Remove the legacy settings
 
 Once the deployed Kronk version supports authorization modes, remove these from Kronk’s configuration:
 
@@ -82,7 +82,7 @@ KRONK_AUTH_TLS_SERVER_NAME
 
 `KRONK_WEB_ADMIN_ENABLED` controls whether the BUI is served. It does not select API permissions.
 
-### Embedded authentication
+#### Embedded authentication
 
 When `KRONK_AUTH_HOST` is empty, Kronk runs the embedded authentication service. The selected authorization mode automatically configures it; do not set `KRONK_AUTH_LOCAL_ENABLED`.
 
@@ -99,7 +99,7 @@ For protected BUI login, retain the configured admin password digest:
 KRONK_WEB_ADMIN_PASSWORD_SHA256=<sha256>
 ```
 
-### External authentication
+#### External authentication
 
 When using a standalone auth service:
 
@@ -124,7 +124,7 @@ AUTH_AUTH_ISSUER="kronk project"
 
 Enable TLS when the auth service crosses an untrusted network.
 
-#### External auth and the BUI
+##### External auth and the BUI
 
 Protected BUI password login currently uses Kronk’s embedded security store. Therefore, when using an external auth host with `management`, `authenticated`, or `full-protected`, disable the BUI:
 
@@ -134,7 +134,7 @@ KRONK_WEB_ADMIN_ENABLED=false
 
 API clients can continue using bearer JWTs issued by the external auth service.
 
-### Suggested production configuration
+#### Suggested production configuration
 
 For scoped inference tokens:
 
@@ -155,7 +155,7 @@ For clients that cannot manage endpoint grants but can send a JWT:
 KRONK_AUTHORIZATION_MODE=authenticated
 ```
 
-### Post-deployment checks
+#### Post-deployment checks
 
 Assuming:
 
@@ -203,7 +203,7 @@ curl -i \
 
 Under `full-protected`, inference should accept the user token only when it contains the matching endpoint grant, such as `chat-completions`, `responses`, `messages`, `embeddings`, `rerank`, `tokenize`, or `transcriptions`.
 
-## Tool Calling Changes
+### v1.30.3: Tool Calling Changes
 
 Tool selection is now validated and normalized according to the OpenAI Chat
 Completions and Responses API shapes. Requests that previously relied on a bare
@@ -260,7 +260,7 @@ structured tool-call output. Forced selection limits prompt rendering to the
 selected function. Actual selection still depends on the model and chat
 template honoring the requested mode.
 
-### Streaming tool calls
+#### Streaming tool calls
 
 Streaming clients must aggregate `tool_calls` deltas rather than expecting the
 terminal chunk to contain the completed call:
@@ -288,7 +288,7 @@ Additional SDK and wire changes:
 - `ResponseResponse.ToolChoice` changed from `string` to `any`. SDK consumers
   must type-switch between the string modes and the forced-function object.
 
-## Usage Changes
+### v1.30.3: Usage Changes
 
 Streaming usage is now opt-in. Previously, streaming responses included usage
 by default. Clients that need final token accounting must now request it:
@@ -354,7 +354,7 @@ The nonstandard `return_prompt` request parameter and the Go SDK
 rendered or source prompt must record it before submitting the request. The
 exported `ChatResponseErr` helper also removed its `prompt` argument.
 
-## Network Binding Changes
+### v1.30.3: Network Binding Changes
 
 The default server bind addresses changed from all network interfaces to
 loopback:
@@ -379,7 +379,7 @@ KRONK_WEB_DEBUG_HOST=0.0.0.0:11445
 Expose the debug listener only on trusted networks. It includes operational
 metrics and profiling endpoints.
 
-## HTTP Error Response Changes
+### v1.30.3: HTTP Error Response Changes
 
 Application errors now use an OpenAI-style nested envelope. Clients that
 decode error bodies must update from:
@@ -413,7 +413,7 @@ error object independently of normal events containing `choices`; they should
 no longer expect every streaming failure to arrive as a choice with
 `finish_reason: "error"`.
 
-## Session Storage Changes
+### v1.30.3: Session Storage Changes
 
 The built-in disk-backed IMC session store was removed. The server no longer
 supports this model configuration:
@@ -446,9 +446,9 @@ Old disk session files were temporary process-owned KV snapshots rather than
 durable resumable conversations. No data conversion is required; stale
 `kronk-sess-*.kv` files can be removed after the old server is stopped.
 
-## Go SDK Changes
+### v1.30.3: Go SDK Changes
 
-### VRAM AutoFit
+#### VRAM AutoFit
 
 `vram.AutoFit` now returns a fourth value reporting whether a verified fitting
 placement was found:
@@ -463,7 +463,7 @@ if !fits {
 Existing three-result assignments will no longer compile. Explicit CPU-only
 placement now uses `gpuLayers == -1`; zero is not the CPU-only sentinel.
 
-### MoE mode
+#### MoE mode
 
 `model.MoEMode` changed from an open string type to a registered enum value.
 Predefined values retain the same serialized strings, but callers can no
@@ -478,7 +478,7 @@ Replace custom `const` declarations with package values or parsed values.
 Existing valid YAML strings remain unchanged; unknown values are now rejected
 during decoding.
 
-### Model information
+#### Model information
 
 The heuristic `IsGPTModel` field was removed from both
 `model.ModelInfo` and `models.ModelInfo`. The native
@@ -486,7 +486,7 @@ The heuristic `IsGPTModel` field was removed from both
 Consumers should use actual model capabilities instead of inferring behavior
 from `gpt` appearing in a model filename.
 
-### Model integrity API
+#### Model integrity API
 
 `model.CheckModel` and `model.RemoveVerifiedSentinel` were removed. Filesystem,
 digest-sidecar, and verification-record ownership now belongs to
@@ -497,7 +497,7 @@ Low-level callers can use `model.VerifyArtifact`, but must provide the parsed
 `ArtifactDigest` and prior `ArtifactVerification` and must persist returned
 verification state themselves.
 
-### Configured sampling seeds
+#### Configured sampling seeds
 
 When a request omits `seed`, Kronk now honors a seed configured in
 `model.Config.DefaultParams` or `sampling-parameters.seed`. Previously that

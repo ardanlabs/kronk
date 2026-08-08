@@ -114,7 +114,7 @@ func fromResponseFormat(rf any) (string, error) {
 			wrapper = map[string]any(s)
 
 		default:
-			return "", fmt.Errorf("from-response-format: missing json_schema field")
+			return "", fmt.Errorf("%w: from-response-format: missing json_schema field", ErrInvalidRequest)
 		}
 
 		// OpenAI's standard wraps the schema under a "schema" key. Accept the
@@ -126,7 +126,7 @@ func fromResponseFormat(rf any) (string, error) {
 		return fromJSONSchema(wrapper)
 
 	default:
-		return "", fmt.Errorf("from-response-format: unsupported type %q", formatType)
+		return "", fmt.Errorf("%w: from-response-format: unsupported type %q", ErrInvalidRequest, formatType)
 	}
 }
 

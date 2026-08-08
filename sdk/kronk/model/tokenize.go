@@ -23,7 +23,7 @@ import (
 func (m *Model) Tokenize(ctx context.Context, d D) (TokenizeResponse, error) {
 	input, ok := d["input"].(string)
 	if !ok || input == "" {
-		return TokenizeResponse{}, fmt.Errorf("tokenize: missing or invalid input parameter (expected non-empty string)")
+		return TokenizeResponse{}, fmt.Errorf("%w: tokenize: missing or invalid input parameter (expected non-empty string)", ErrInvalidRequest)
 	}
 
 	text := input
