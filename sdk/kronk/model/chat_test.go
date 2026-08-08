@@ -259,6 +259,73 @@ func TestParseParamsUsesChatTemplateKwargs(t *testing.T) {
 	}
 }
 
+func TestParseParamsRejectsNonStringGrammar(t *testing.T) {
+	m := Model{log: noopLog}
+
+	_, err := m.parseParams(t.Context(), D{"grammar": true})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("parseParams: got %v, want ErrInvalidRequest", err)
+	}
+}
+
+func TestChatStreamingCheckedRejectsGrammarInitializationFailure(t *testing.T) {
+	m := Model{log: noopLog}
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"grammar":  `root ::= "ok"`,
+	}
+
+	ch, err := m.ChatStreamingChecked(t.Context(), d)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ChatStreamingChecked: got %v, want ErrInvalidRequest", err)
+	}
+	if ch != nil {
+		t.Fatal("ChatStreamingChecked: got channel, want nil")
+	}
+	if got := m.activeStreams.Load(); got != 0 {
+		t.Fatalf("active streams: got %d, want 0", got)
+	}
+}
+
+func TestChatStreamingReportsGrammarInitializationFailure(t *testing.T) {
+	m := Model{log: noopLog}
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"grammar":  `root ::= "ok"`,
+	}
+
+	ch := m.ChatStreaming(t.Context(), d)
+	resp, ok := <-ch
+	if !ok {
+		t.Fatal("ChatStreaming: channel closed before error response")
+	}
+	if got := resp.Choices[0].FinishReason(); got != FinishReasonError {
+		t.Fatalf("finish reason: got %q, want %q", got, FinishReasonError)
+	}
+	if _, ok := <-ch; ok {
+		t.Fatal("ChatStreaming: got extra response after startup error")
+	}
+	if got := m.activeStreams.Load(); got != 0 {
+		t.Fatalf("active streams: got %d, want 0", got)
+	}
+}
+
+func TestChatStreamingCheckedRecoversStartupPanic(t *testing.T) {
+	m := Model{log: func(context.Context, string, ...any) { panic("boom") }}
+	d := D{"messages": []D{{"role": "user", "content": "hello"}}}
+
+	ch, err := m.ChatStreamingChecked(t.Context(), d)
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("ChatStreamingChecked: got %v, want startup panic error", err)
+	}
+	if ch != nil {
+		t.Fatal("ChatStreamingChecked: got channel, want nil")
+	}
+	if got := m.activeStreams.Load(); got != 0 {
+		t.Fatalf("active streams: got %d, want 0", got)
+	}
+}
+
 func TestChatStopValidationAndParsing(t *testing.T) {
 	tests := []struct {
 		name    string

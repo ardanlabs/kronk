@@ -28,11 +28,12 @@ type chatJob struct {
 	// -------------------------------------------------------------------------
 	// Request Content
 
-	d                   D             // Original request document (messages, parameters)
-	object              string        // Request type: ObjectChatText or ObjectChatMedia
-	prompt              string        // Templated prompt string ready for tokenization
-	media               [][]byte      // Raw media bytes (images/audio) for vision/audio models
-	params              Params        // Sampling and generation parameters
+	d                   D        // Original request document (messages, parameters)
+	object              string   // Request type: ObjectChatText or ObjectChatMedia
+	prompt              string   // Templated prompt string ready for tokenization
+	media               [][]byte // Raw media bytes (images/audio) for vision/audio models
+	params              Params   // Sampling and generation parameters
+	grammarSampler      *grammarSampler
 	samplerPromptTokens []llama.Token // Complete logical text-token prompt used to prime the request sampler.
 	tailTokens          []llama.Token // Non-empty inference tail after the stable cached target.
 	imcTokenPlan        bool          // True when samplerPromptTokens/tailTokens are authoritative.

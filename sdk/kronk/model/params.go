@@ -473,9 +473,11 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	}
 
 	if val, exists := d["grammar"]; exists {
-		if grammar, ok := val.(string); ok {
-			p.Grammar = grammar
+		grammar, ok := val.(string)
+		if !ok {
+			return Params{}, fmt.Errorf("%w: grammar must be a string", ErrInvalidRequest)
 		}
+		p.Grammar = grammar
 	}
 
 	if val, exists := d["json_schema"]; exists {

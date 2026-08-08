@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const streamChBuffer = 32
@@ -40,7 +41,10 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		return ChatResponse{}, err
 	}
 
-	ch := m.chatStreaming(ctx, d, false)
+	ch, err := m.chatStreaming(ctx, d, false)
+	if err != nil {
+		return ChatResponse{}, err
+	}
 
 	var lastMsg ChatResponse
 	for msg := range ch {
@@ -80,12 +84,24 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // When stream_options.include_usage is true, the terminal choice is followed
 // by a usage response with an empty Choices slice.
 func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
+	ch, err := m.ChatStreamingChecked(ctx, d)
+	if err == nil {
+		return ch
+	}
+
+	errCh := make(chan ChatResponse, 1)
+	errCh <- ChatResponseErr("chatcmpl-"+uuid.NewString(), ObjectChatUnknown, m.modelInfo.ID, 0, err, Usage{})
+	close(errCh)
+	return errCh
+}
+
+// ChatStreamingChecked performs the synchronous, model-aware validation needed
+// by error-capable SDK and HTTP streaming callers before they commit a response.
+func (m *Model) ChatStreamingChecked(ctx context.Context, d D) (<-chan ChatResponse, error) {
 	return m.chatStreaming(ctx, d, true)
 }
 
-func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan ChatResponse {
-	returnCh := make(chan ChatResponse, streamChBuffer)
-	ch := m.wrapChannelForLogging(ctx, returnCh)
+func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (result <-chan ChatResponse, retErr error) {
 	requestStart := time.Now()
 
 	// Increment active streams before launching the goroutine to prevent a race
@@ -94,22 +110,65 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 	active := m.activeStreams.Add(1)
 	metrics.AddPoolActiveStreams(m.modelInfo.ID, 1)
 
+	startupOwned := true
+	var prepSpan trace.Span
+	var grammarSampler *grammarSampler
+	defer func() {
+		if rec := recover(); rec != nil {
+			result = nil
+			retErr = fmt.Errorf("chat-streaming startup: %v", rec)
+		}
+		if !startupOwned {
+			return
+		}
+		if prepSpan != nil {
+			prepSpan.End()
+		}
+		if grammarSampler != nil {
+			grammarSampler.Free()
+		}
+		m.activeStreams.Add(-1)
+		metrics.AddPoolActiveStreams(m.modelInfo.ID, -1)
+	}()
+
 	// Establish ownership before asynchronous processing starts. Callers may
 	// reuse or modify their request after ChatStreaming returns; the queued job
 	// must retain a stable snapshot of all mutable JSON containers.
 	d = d.Clone()
+	id := "chatcmpl-" + uuid.NewString()
 
+	m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
+	m.log(ctx, "request-lifecycle",
+		"stage", 2,
+		"stage_name", "prepare-model-work",
+		"status", "started",
+		"id", id,
+	)
+
+	prepCtx, span := otel.AddSpan(ctx, "prepare-request")
+	prepSpan = span
+	params, d, err := m.validateOwnedDocument(prepCtx, d)
+	if err != nil {
+		m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+			"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
+		m.recordChatFailure(ctx, requestStart, err)
+		return nil, err
+	}
+	params.Stream = streaming
+
+	grammarSampler, err = newGrammarSampler(m.vocab, params.Grammar)
+	if err != nil {
+		m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+			"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
+		m.recordChatFailure(ctx, requestStart, err)
+		return nil, err
+	}
+
+	returnCh := make(chan ChatResponse, streamChBuffer)
+	ch := m.wrapChannelForLogging(ctx, returnCh)
+
+	startupOwned = false
 	go func() {
-		id := "chatcmpl-" + uuid.NewString()
-
-		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
-		m.log(ctx, "request-lifecycle",
-			"stage", 2,
-			"stage_name", "prepare-model-work",
-			"status", "started",
-			"id", id,
-		)
-
 		batching := false
 		var cache cacheResult
 
@@ -123,6 +182,9 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 			}
 
 			if !batching {
+				if grammarSampler != nil {
+					grammarSampler.Free()
+				}
 				// Decrement activeStreams BEFORE close(ch). The HTTP handler
 				// (and Chat()'s range loop) blocks on the response channel; the
 				// instant close fires, the request is considered done by the
@@ -138,20 +200,6 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 				m.log(ctx, "chat-streaming", "status", "finished", "id", id, "active_streams", remaining)
 			}
 		}()
-
-		prepCtx, prepSpan := otel.AddSpan(ctx, "prepare-request")
-
-		params, d, err := m.validateOwnedDocument(prepCtx, d)
-		if err != nil {
-			prepSpan.End()
-			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
-			m.recordChatFailure(ctx, requestStart, err)
-			m.sendChatError(ctx, ch, id, err)
-			return
-		}
-
-		params.Stream = streaming
 
 		d, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
@@ -207,13 +255,15 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 			"imc_match_kind", cache.imcMatchKind,
 		)
 
-		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, cache, requestStart) {
+		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, cache, grammarSampler, requestStart) {
+			grammarSampler = nil
 			batching = true
 			return
 		}
+		grammarSampler = nil
 	}()
 
-	return returnCh
+	return returnCh, nil
 }
 
 // wrapChannelForLogging wraps the response channel with logging when insecure
@@ -420,10 +470,12 @@ func (m *Model) releaseIMCReservationIfHeld(cache cacheResult) {
 	m.imcReleaseReservation(cache.imcSessionID)
 }
 
-// submitToBatchEngine attempts to submit the request to the batch engine.
+// submitToBatchEngine attempts to submit the request to the batch engine and
+// transfers grammarSampler ownership to the job. It frees the sampler if the
+// batch engine does not take ownership.
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
-func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, cache cacheResult, requestStart time.Time) bool {
+func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, cache cacheResult, grammarSampler *grammarSampler, requestStart time.Time) bool {
 	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
@@ -445,6 +497,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		prompt:              prompt,
 		media:               media,
 		params:              params,
+		grammarSampler:      grammarSampler,
 		ch:                  ch,
 		samplerPromptTokens: cache.imcSamplerPromptTokens,
 		tailTokens:          cache.imcTailTokens,
@@ -488,6 +541,10 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 	}
 
 	if err := m.batch.submit(&job); err != nil {
+		if job.grammarSampler != nil {
+			job.grammarSampler.Free()
+			job.grammarSampler = nil
+		}
 		queueSpan.RecordError(err)
 		queueSpan.End()
 		if !job.queuedAt.IsZero() {

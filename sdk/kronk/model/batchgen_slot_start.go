@@ -19,6 +19,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.reset()
 	s.active = true
 	s.job = job
+	s.grammarSampler = job.grammarSampler
+	job.grammarSampler = nil
 	s.stopGate = newStopGate(job.params.Stop)
 	job.imcUsageVersion = e.model.imcBeginRequestUsage(job.imcSession)
 	s.reusedPromptTokens = job.reusedPromptTokens
@@ -111,11 +113,6 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.samplingSeeds = seeds
 	s.specRNG = specRNG
 	s.sampler = e.model.toSampler(job.ctx, job.params, seeds)
-
-	// Create grammar sampler if grammar is specified (kept separate from chain).
-	if job.params.Grammar != "" {
-		s.grammarSampler = NewGrammarSampler(e.model.vocab, job.params.Grammar)
-	}
 
 	// Create a fresh per-request mtmd context for any request that touches
 	// the mtmd pipeline (media-bearing requests, or IMC media cache builds
