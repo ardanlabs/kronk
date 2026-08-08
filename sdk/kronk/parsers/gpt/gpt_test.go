@@ -144,6 +144,46 @@ func TestParser_CommentaryToolCall(t *testing.T) {
 	}
 }
 
+func TestParser_AnalysisToolCall(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	stream := `<|start|>assistant<|channel|>analysis to=functions.get_weather<|constrain|>json<|message|>{"location":"London"}<|call|>`
+
+	result, eog := c.Classify(stream)
+	if !eog {
+		t.Fatal("Classify: got eog false, want true")
+	}
+	if result != (model.Result{}) {
+		t.Errorf("Classify: got %+v, want empty result before flush", result)
+	}
+
+	tooling := c.(model.StateMachineFlusher).Flush()
+	if tooling.Channel != model.ChannelTool {
+		t.Fatalf("Flush: got channel %v, want %v", tooling.Channel, model.ChannelTool)
+	}
+	calls := Parser{}.ToolCall(t.Context(), nil, tooling.Content)
+	if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "get_weather" {
+		t.Fatalf("ToolCall: got %+v, want one valid get_weather call", calls)
+	}
+	if got := calls[0].Function.Arguments["location"]; got != "London" {
+		t.Errorf("location: got %v, want London", got)
+	}
+}
+
+func TestParser_RoleRecipientToolCall(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	stream := `<|start|>assistant to=functions.get_weather<|channel|>commentary<|constrain|>json<|message|>{"location":"London"}<|call|>`
+
+	_, eog := c.Classify(stream)
+	if !eog {
+		t.Fatal("Classify: got eog false, want true")
+	}
+	tooling := c.(model.StateMachineFlusher).Flush()
+	calls := Parser{}.ToolCall(t.Context(), nil, tooling.Content)
+	if tooling.Channel != model.ChannelTool || len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "get_weather" {
+		t.Fatalf("ToolCall: got tooling %+v, calls %+v; want one valid get_weather call", tooling, calls)
+	}
+}
+
 func TestParser_ToolCallFlushMultipleAndReset(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	streamer := c.(model.ToolCallDeltaStreamer)

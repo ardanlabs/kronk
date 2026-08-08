@@ -12,8 +12,10 @@ var harmonyMarkers = []string{"<|constrain|>", "<|message|>", "<|channel|>", "<|
 type stateMachine struct {
 	status            model.Channel
 	collecting        bool
+	awaitingHeader    bool
 	awaitingChannel   bool
 	awaitingConstrain bool
+	headerBuf         strings.Builder
 	channelBuf        strings.Builder
 	constraintBuf     strings.Builder
 	toolFuncName      string
@@ -82,6 +84,10 @@ func (sm *stateMachine) consumeText(text string) {
 	if text == "" {
 		return
 	}
+	if sm.awaitingHeader {
+		sm.headerBuf.WriteString(text)
+		return
+	}
 	if sm.awaitingConstrain {
 		sm.constraintBuf.WriteString(text)
 		return
@@ -103,6 +109,17 @@ func (sm *stateMachine) consumeText(text string) {
 }
 
 func (sm *stateMachine) consumeMarker(marker string) bool {
+	if sm.awaitingHeader {
+		if marker == "<|channel|>" {
+			sm.finishHeader()
+			sm.awaitingChannel = true
+			sm.channelBuf.Reset()
+			return false
+		}
+		sm.awaitingHeader = false
+		sm.headerBuf.Reset()
+	}
+
 	if sm.awaitingConstrain {
 		if marker == messageMarker {
 			if trimASCIIWhitespace(sm.constraintBuf.String()) != "json" {
@@ -153,7 +170,10 @@ func (sm *stateMachine) consumeMarker(marker string) bool {
 			}
 			sm.collecting = false
 			sm.status = model.ChannelNone
-			if marker == "<|channel|>" {
+			if marker == "<|start|>" {
+				sm.awaitingHeader = true
+				sm.headerBuf.Reset()
+			} else {
 				sm.awaitingChannel = true
 				sm.channelBuf.Reset()
 			}
@@ -169,6 +189,8 @@ func (sm *stateMachine) consumeMarker(marker string) bool {
 	switch marker {
 	case "<|start|>":
 		sm.status = model.ChannelNone
+		sm.awaitingHeader = true
+		sm.headerBuf.Reset()
 	case "<|channel|>":
 		sm.awaitingChannel = true
 		sm.channelBuf.Reset()
@@ -178,23 +200,38 @@ func (sm *stateMachine) consumeMarker(marker string) bool {
 	return false
 }
 
+func (sm *stateMachine) finishHeader() {
+	header := trimASCIIWhitespace(sm.headerBuf.String())
+	sm.headerBuf.Reset()
+	sm.awaitingHeader = false
+
+	role, recipient, ok := strings.Cut(header, " to=functions.")
+	if ok && role == "assistant" {
+		sm.toolFuncName = recipient
+	}
+}
+
 func (sm *stateMachine) finishChannel(constrained bool) {
 	name := trimASCIIWhitespace(sm.channelBuf.String())
 	sm.channelBuf.Reset()
 	sm.awaitingChannel = false
 	sm.status = model.ChannelNone
 
-	switch name {
-	case "analysis":
-		sm.status = model.ChannelReasoning
-	case "final":
-		sm.status = model.ChannelAnswer
-	default:
-		const prefix = "commentary to=functions."
-		if after, ok := strings.CutPrefix(name, prefix); ok {
-			sm.status = model.ChannelTool
-			sm.toolFuncName = after
-			sm.toolChannel = true
+	channel, recipient, hasRecipient := strings.Cut(name, " to=functions.")
+	if hasRecipient && (channel == "analysis" || channel == "commentary") {
+		sm.status = model.ChannelTool
+		sm.toolFuncName = recipient
+		sm.toolChannel = true
+	} else if sm.toolFuncName != "" && (channel == "analysis" || channel == "commentary") {
+		sm.status = model.ChannelTool
+		sm.toolChannel = true
+	} else {
+		sm.toolFuncName = ""
+		switch channel {
+		case "analysis":
+			sm.status = model.ChannelReasoning
+		case "final":
+			sm.status = model.ChannelAnswer
 		}
 	}
 	if constrained {
@@ -232,9 +269,11 @@ func (sm *stateMachine) preserveMalformed(marker string) {
 		sm.queueToolCall()
 	}
 	sm.channelBuf.Reset()
+	sm.headerBuf.Reset()
 	sm.constraintBuf.Reset()
 	sm.toolFuncName = ""
 	sm.toolChannel = false
+	sm.awaitingHeader = false
 	sm.awaitingChannel = false
 	sm.awaitingConstrain = false
 	sm.collecting = false
