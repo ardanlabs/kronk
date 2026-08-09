@@ -28,8 +28,6 @@ type ModelInfo struct {
 // the shared sdk/kronk/gguf reader so the SDK and tools side stay in sync
 // on metadata semantics (notably ARRAY-typed values).
 func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
-	modelID, _, _ = strings.Cut(modelID, "/")
-
 	path, err := m.FullPath(modelID)
 	if err != nil {
 		return ModelInfo{}, fmt.Errorf("failed to retrieve path modelID[%s] file: %w", modelID, err)
@@ -98,8 +96,6 @@ func ModelInfoFromMetadata(id string, metadata map[string]string, size uint64, h
 // use compatible tokenizers and can be paired for speculative decoding.
 // The fingerprint format is "<tokenizer_model>:<tokenizer_pre>".
 func (m *Models) TokenizerFingerprint(modelID string) string {
-	modelID, _, _ = strings.Cut(modelID, "/")
-
 	path, err := m.FullPath(modelID)
 	if err != nil || len(path.ModelFiles) == 0 {
 		return ""

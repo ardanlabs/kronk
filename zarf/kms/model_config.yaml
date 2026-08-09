@@ -185,41 +185,31 @@
 # ==============================================================================
 # CODING MODELS
 
-# ~82GB VRAM
-unsloth/mtp-Qwen3.5-122B-A10B-UD-Q4_K_M/AGENT:
-  context-window: 131072
-  nseq-max: 2
-  sampling-parameters:
-    seed: 42
-    temperature: 0.6
-    top_k: 20
-    top_p: 1
-
-# ~82GB VRAM
+# ~54GB VRAM
 unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   chat-template-kwargs:
     preserve_thinking: true
   context-window: 131072
-  nseq-max: 2
   sampling-parameters:
+    max_tokens: 8192
     temperature: 1.0
     top_k: 64
     top_p: 1
 
-# ~52GB VRAM
+# ~43GB VRAM
 unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL/AGENT:
   context-window: 131072
-  nseq-max: 2
   sampling-parameters:
+    max_tokens: 8192
     temperature: 0.6
     top_k: 20
     top_p: 1
 
-# ~45GB VRAM
+# ~40GB VRAM
 unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
-  nseq-max: 2
   sampling-parameters:
+    max_tokens: 8192
     temperature: 0.6
     top_k: 20
     top_p: 1
@@ -228,6 +218,7 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
 unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
   context-window: 131072
   sampling-parameters:
+    max_tokens: 8192
     temperature: 1.0
     top_k: 64
     top_p: 1
@@ -236,6 +227,7 @@ unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
 mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
   context-window: 73728
   sampling-parameters:
+    max_tokens: 8192
     temperature: 0.6
     top_k: 20
     top_p: 1

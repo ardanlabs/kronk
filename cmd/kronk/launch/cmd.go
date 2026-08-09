@@ -1,163 +1,197 @@
+// Package launch provides the "kronk launch opencode" command.
 package launch
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
+	"slices"
 	"strings"
+	"syscall"
+	"time"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/spf13/cobra"
 )
 
-// longTemplate is the "kronk launch" long help. The two %s placeholders are
-// filled at init time from the embedded curated-models metadata (see
-// curatedAliasReference and curatedAliasExamples) so the alias help stays in
-// sync with yaml/models.yaml instead of being hardcoded here.
-const longTemplate = `Launch a coding agent pre-configured to use your local Kronk server and the
-chat models installed on it.
-
-The launcher talks to a running Kronk server, discovers the installed
-chat-capable models, and starts the agent with a generated configuration.
-The Kronk server must already be running; start it first with "kronk server
-start" if it is not.
-
-Supported agents:
-  opencode   OpenCode (https://opencode.ai)
-  claude     Claude Code (https://claude.com/claude-code)
-  codex      Codex CLI (https://developers.openai.com/codex)
-  copilot    GitHub Copilot CLI (https://github.com/features/copilot/cli)
-  pi         Pi (https://pi.dev)
-  openclaw   OpenClaw (https://openclaw.ai)
-  hermes     Hermes Agent (https://hermes-agent.nousresearch.com)
-
-EXAMPLES
-
-  # Launch OpenCode using the first installed chat model as the default
-  kronk launch opencode
-
-  # Launch Claude Code wired to the local Kronk server
-  kronk launch claude
-
-  # Launch Codex CLI wired to the local Kronk server
-  kronk launch codex
-
-  # Launch GitHub Copilot CLI wired to the local Kronk server
-  kronk launch copilot
-
-  # Launch Pi wired to the local Kronk server
-  kronk launch pi
-
-  # Launch OpenClaw's local TUI wired to the local Kronk server
-  kronk launch openclaw
-
-  # Launch Hermes Agent wired to the local Kronk server
-  kronk launch hermes
-
-  # Swap models with a short curated alias (works for ANY agent):
-%s
-%s
-
-  # Or pass any installed model id shown by "kronk model ls"
-  kronk launch codex --model Qwen3-8B-Q8_0
-
-  # Pass extra arguments through to the agent
-  kronk launch opencode -- --help`
-
 // Cmd is the "kronk launch" command.
-var Cmd = &cobra.Command{
-	Use:   "launch [agent] [-- extra args]",
-	Short: "Launch a coding agent wired to your local Kronk server",
-	Args:  cobra.ArbitraryArgs,
-	Run:   main,
-}
+var Cmd = newCommand()
 
-func main(cmd *cobra.Command, args []string) {
-	if err := run(cmd, args); err != nil {
-		// When the launched agent exits non-zero, propagate its exit code
-		// instead of collapsing to 1 (and don't print "exit status N" on top
-		// of the agent's own output, e.g. after Ctrl-C).
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			if code := exitErr.ExitCode(); code >= 0 {
-				os.Exit(code)
+func newCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "launch opencode <model> [--host <IP:PORT>] [-- OpenCode arguments]",
+		Short: "Install and launch OpenCode in an isolated temporary environment",
+		Long: `Install OpenCode when necessary and launch it with Kronk's default
+configuration in an isolated temporary environment.
+
+OpenCode uses the selected model ID exactly as provided. Kronk resolves that ID
+to an available downloaded model and optional configuration profile. Only that
+model is exposed to the launched session.
+
+Launch requires an already-running Kronk server. The default address is
+localhost:11435; use --host when it runs elsewhere. Launch does not start,
+configure, or stop the server.
+
+The temporary workspace, configuration, credentials, cache, and session data
+are removed when OpenCode exits. Existing user and project OpenCode
+configuration is not loaded or modified.
+
+Run 'kronk launch opencode uninstall' to invoke OpenCode's confirmed uninstall
+flow.`,
+		Args: cobra.ArbitraryArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := run(cmd, args); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+
+				if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+					os.Exit(exitErr.ExitCode())
+				}
+				os.Exit(1)
 			}
-			os.Exit(1)
-		}
+		},
+	}
+	cmd.Flags().String("host", "localhost:11435", "Address of the running Kronk server (IP:PORT)")
 
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	return cmd
+}
+
+func run(cmd *cobra.Command, args []string) error {
+	requested, opencodeArgs, err := parseArgs(args, cmd.ArgsLenAtDash())
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(requested, "uninstall") {
+		if len(opencodeArgs) > 0 {
+			return fmt.Errorf("OpenCode uninstall does not accept pass-through arguments")
+		}
+		return uninstallOpenCode()
+	}
+	host, _ := cmd.Flags().GetString("host")
+	serverURL, err := normalizeServerURL(host)
+	if err != nil {
+		return err
+	}
+
+	selected := strings.TrimSpace(requested)
+	fmt.Fprintf(os.Stderr, "Launching OpenCode\n  Kronk server: %s\n  Model: %s\n\n", serverURL, selected)
+
+	fmt.Fprintln(os.Stderr, "[1/4] Checking the Kronk server and downloaded model...")
+	ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+	defer cancel()
+	if err := verifyServer(ctx, serverURL, selected); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "      Kronk is ready and the model is available.")
+
+	fmt.Fprintln(os.Stderr, "[2/4] Locating OpenCode...")
+	bin, err := ensureOpenCode()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "      OpenCode: %s\n", bin)
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
+	return launchOpenCode(bin, opencodeArgs, []string{selected}, serverURL, signals)
+}
+
+func normalizeServerURL(host string) (string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		host = "localhost:11435"
+	}
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+
+	u, err := url.Parse(host)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return "", fmt.Errorf("invalid Kronk server address %q (expected IP:PORT)", host)
+	}
+	if _, _, err := net.SplitHostPort(u.Host); err != nil {
+		return "", fmt.Errorf("invalid Kronk server address %q (expected IP:PORT)", host)
+	}
+
+	return strings.TrimSuffix(u.String(), "/"), nil
+}
+
+func verifyServer(ctx context.Context, serverURL, modelID string) error {
+	modelsURL, err := url.JoinPath(serverURL, "/v1/models")
+	if err != nil {
+		return fmt.Errorf("building Kronk models URL: %w", err)
+	}
+
+	cln := client.New(client.NoopLogger, client.WithBearer(os.Getenv("KRONK_TOKEN")))
+	var response struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := cln.Do(ctx, http.MethodGet, modelsURL, nil, &response); err != nil {
+		return fmt.Errorf("connecting to Kronk at %s: %w\n\nverify the server is running and --host is correct", serverURL, err)
+	}
+
+	ids := make([]string, len(response.Data))
+	for i, model := range response.Data {
+		ids[i] = model.ID
+	}
+
+	if !slices.ContainsFunc(modelLookupIDs(modelID), func(candidate string) bool {
+		return slices.Contains(ids, candidate)
+	}) {
+		return fmt.Errorf("model %q is not available from Kronk at %s", modelID, serverURL)
+	}
+
+	return nil
+}
+
+// modelLookupIDs mirrors Kronk's model resolution for bare IDs,
+// owner/model IDs, model/profile IDs, and owner/model/profile IDs.
+func modelLookupIDs(modelID string) []string {
+	parts := strings.Split(modelID, "/")
+
+	switch len(parts) {
+	case 1:
+		return []string{parts[0]}
+	case 2:
+		return []string{modelID, parts[0], parts[1]}
+	default:
+		return []string{modelID, parts[1], parts[0], parts[len(parts)-1]}
 	}
 }
 
-func init() {
-	Cmd.Long = fmt.Sprintf(longTemplate, curatedAliasReference(), curatedAliasExamples())
-
-	usage := "Model for the agent: any installed model id. Defaults to the preferred curated model."
-	if list := curatedAliasList(); list != "" {
-		usage = fmt.Sprintf("Model for the agent: a curated alias (%s) or any installed model id. Defaults to the preferred curated model.", list)
+// parseArgs validates the supported agent and returns arguments following the
+// "--" separator for OpenCode.
+func parseArgs(args []string, dash int) (string, []string, error) {
+	if len(args) == 0 {
+		return "", nil, fmt.Errorf("an agent name and model are required\n\nexample: kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT")
 	}
-	Cmd.Flags().String("model", "", usage)
-}
 
-// curatedAliasList returns the curated aliases in metadata order joined by
-// ", " (e.g. "qwen, qwen-mtp, gemma"), for the --model flag usage. It is empty
-// when metadata is unavailable.
-func curatedAliasList() string {
-	var names []string
-	for _, m := range orderedCurated() {
-		if m.Alias != "" {
-			names = append(names, m.Alias)
+	if !strings.EqualFold(args[0], "opencode") {
+		return "", nil, fmt.Errorf("unsupported agent %q (supported: opencode)", args[0])
+	}
+
+	if dash == -1 {
+		if len(args) < 2 {
+			return "", nil, fmt.Errorf("a model is required\n\nexample: kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT")
 		}
-	}
-
-	return strings.Join(names, ", ")
-}
-
-// curatedAliasReference returns the indented "  #   <alias>  <Display> (<Quant>)"
-// lines (aliases aligned) in metadata order for the command's long help. It is
-// empty when metadata is unavailable.
-func curatedAliasReference() string {
-	cur := orderedCurated()
-
-	width := 0
-	for _, m := range cur {
-		if len(m.Alias) > width {
-			width = len(m.Alias)
+		if len(args) > 2 {
+			return "", nil, fmt.Errorf("unexpected arguments: %v\nuse '--' to pass arguments to OpenCode", args[2:])
 		}
+		return args[1], nil, nil
 	}
 
-	var b strings.Builder
-	for _, m := range cur {
-		if m.Alias == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "  #   %-*s  %s (%s)\n", width, m.Alias, m.Display, m.Quant)
+	if dash != 2 {
+		return "", nil, fmt.Errorf("expected 'opencode <model>' before '--'")
 	}
 
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// curatedAliasExamples returns two example "--model <alias>" launch lines built
-// from the first (and second, when present) curated alias, so the examples in
-// the long help track yaml/models.yaml. It is empty when no alias exists.
-func curatedAliasExamples() string {
-	var aliases []string
-	for _, m := range orderedCurated() {
-		if m.Alias != "" {
-			aliases = append(aliases, m.Alias)
-		}
-	}
-
-	if len(aliases) == 0 {
-		return ""
-	}
-
-	first := aliases[0]
-	second := first
-	if len(aliases) > 1 {
-		second = aliases[1]
-	}
-
-	return fmt.Sprintf("  kronk launch claude   --model %s\n  kronk launch opencode --model %s", first, second)
+	return args[1], args[2:], nil
 }

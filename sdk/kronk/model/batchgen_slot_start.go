@@ -93,6 +93,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		attribute.Int("slot", s.id),
 	)
 	s.prefillStart = time.Now()
+
+	// Resolve one concrete master seed for every request. A matched IMC
+	// session retains its seed across conversation turns; a new or reused
+	// session gets a fresh seed when the caller does not provide one.
+	_, seedProvided := job.d["seed"]
+	seeds, specRNG, seedSource, err := e.model.resolveRequestSamplingSeeds(job.params.Seed, seedProvided, job.imcSession)
+	if err != nil {
+		e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
+		return
+	}
 	e.model.log(job.ctx, "request-lifecycle",
 		"stage", 4,
 		"stage_name", "execute-in-slot",
@@ -100,14 +110,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		"id", job.id,
 		"slot", s.id,
 		"seq", s.seqID,
+		"seed", seeds.master,
+		"seed_source", seedSource,
 	)
 
 	// Create sampler and speculative RNG state for this request.
-	seeds, specRNG, err := resolveSamplingSeeds(job.params.Seed)
-	if err != nil {
-		e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
-		return
-	}
 	s.samplingSeeds = seeds
 	s.specRNG = specRNG
 	s.sampler = e.model.toSampler(job.ctx, job.params, seeds)

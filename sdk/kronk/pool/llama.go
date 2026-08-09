@@ -248,23 +248,45 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 	}
 
 	cfg.Log = l.log
-	if req.Custom == nil && cfg.AutoTune && cfg.AutoTuned {
-		l.log(ctx, "AUTO-TUNE",
-			"status", "pre-applied",
-			"context_window", cfg.ContextWindow(),
-			"nseq_max", cfg.NSeqMax(),
-			"cache_type_k", cfg.CacheTypeK,
-			"cache_type_v", cfg.CacheTypeV,
-			"flash_attention", cfg.FlashAttention(),
-			"split_mode", splitModeName(cfg.PtrSplitMode),
-			"ngpu_layers", nGpuLayersName(cfg.PtrNGpuLayers),
-		)
+	status := "disabled"
+	if cfg.AutoTune {
+		status = "deferred-to-sdk"
+		if cfg.AutoTuned {
+			status = "pre-applied"
+		}
 	}
+	l.log(ctx, "AUTO-TUNE",
+		"status", status,
+		"enabled", cfg.AutoTune,
+		"pre_applied", cfg.AutoTuned,
+		"model_id", req.ModelID,
+		"context_window", cfg.ContextWindow(),
+		"nseq_max", cfg.NSeqMax(),
+		"cache_type_k", cfg.CacheTypeK,
+		"cache_type_v", cfg.CacheTypeV,
+		"flash_attention", cfg.FlashAttention(),
+		"split_mode", splitModeName(cfg.PtrSplitMode),
+		"ngpu_layers", nGpuLayersName(cfg.PtrNGpuLayers),
+	)
 
 	krn, err := kronk.NewWithContext(ctx, model.WithConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("load: unable to create inference model: %w", err)
 	}
+	effective := krn.ModelConfig()
+	l.log(ctx, "AUTO-TUNE",
+		"status", "effective",
+		"enabled", effective.AutoTune,
+		"applied", effective.AutoTuned,
+		"model_id", req.ModelID,
+		"context_window", effective.ContextWindow(),
+		"nseq_max", effective.NSeqMax(),
+		"cache_type_k", effective.CacheTypeK,
+		"cache_type_v", effective.CacheTypeV,
+		"flash_attention", effective.FlashAttention(),
+		"split_mode", splitModeName(effective.PtrSplitMode),
+		"ngpu_layers", nGpuLayersName(effective.PtrNGpuLayers),
+	)
 
 	totalEntries := len(krn.SystemInfo())*2 + (5 * 2)
 	info := make([]any, 0, totalEntries)

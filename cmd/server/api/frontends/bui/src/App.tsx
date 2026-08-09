@@ -33,7 +33,6 @@ import DocsCLIDiagnose from './components/DocsCLIDiagnose';
 import DocsCLILibs from './components/DocsCLILibs';
 import DocsCLILaunch from './components/DocsCLILaunch';
 import DocsCLIModel from './components/DocsCLIModel';
-import DocsCLIRun from './components/DocsCLIRun';
 import DocsCLISecurity from './components/DocsCLISecurity';
 import DocsCLIServer from './components/DocsCLIServer';
 import DocsAPIChat from './components/DocsAPIChat';
@@ -102,7 +101,6 @@ export type Page =
   | 'docs-cli-libs'
   | 'docs-cli-launch'
   | 'docs-cli-model'
-  | 'docs-cli-run'
   | 'docs-cli-security'
   | 'docs-cli-server'
   | 'docs-api-chat'
@@ -154,7 +152,6 @@ export const routeMap: Record<Page, string> = {
   'docs-cli-libs': '/docs/cli/libs',
   'docs-cli-launch': '/docs/cli/launch',
   'docs-cli-model': '/docs/cli/model',
-  'docs-cli-run': '/docs/cli/run',
   'docs-cli-security': '/docs/cli/security',
   'docs-cli-server': '/docs/cli/server',
   'docs-api-chat': '/docs/api/chat',
@@ -302,7 +299,6 @@ function App() {
                 <Route path="/docs/cli/libs" element={<DocsCLILibs />} />
                 <Route path="/docs/cli/launch" element={<DocsCLILaunch />} />
                 <Route path="/docs/cli/model" element={<DocsCLIModel />} />
-                <Route path="/docs/cli/run" element={<DocsCLIRun />} />
                 <Route path="/docs/cli/security" element={<DocsCLISecurity />} />
                 <Route path="/docs/cli/server" element={<DocsCLIServer />} />
                 <Route path="/docs/api/chat" element={<DocsAPIChat />} />

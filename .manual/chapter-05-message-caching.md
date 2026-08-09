@@ -444,18 +444,9 @@ The relevant settings are:
 | `imc-session-capacity` | Derived | Reusable identities; must be at least admission capacity.          |
 | `session-store-kind` | `ram`   | Selects the session-store plugin. Currently, only `ram` is built in. |
 
-For direct interactive use without the model server, `kronk run` accepts the
-same capacity as a load-time override:
-
-```shell
-kronk run Qwen3-8B-Q8_0 --imc-session-capacity=8
-```
-
-The flag's default value `0` means derive the capacity from `nseq-max` and
-`queue-depth`; it does not disable IMC or create a zero-length pool. A nonzero
-value is applied to the model loaded by that `kronk run` process, and startup
-output reports the effective session count. The same admission-capacity floor
-applies as in YAML configuration.
+When `imc-session-capacity` is omitted, Kronk derives the capacity from
+`nseq-max` and `queue-depth`. The same admission-capacity floor applies to an
+explicit value in `model_config.yaml`.
 
 The `cache-min-tokens` setting applies to the stable text-token-plan length. A
 text request below the threshold still works, but Kronk processes its complete

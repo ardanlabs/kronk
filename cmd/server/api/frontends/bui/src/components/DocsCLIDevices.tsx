@@ -21,8 +21,7 @@ export default function DocsCLIDevices() {
             </p>
             <p>
               The device names shown here can be used with the{' '}
-              <code>--devices</code> flag of the <code>run</code> command, or
-              the <code>devices</code> field in model configuration.
+              <code>devices</code> field in model configuration.
             </p>
           </div>
 

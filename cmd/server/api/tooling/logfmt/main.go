@@ -35,7 +35,9 @@ func main() {
 		s := scanner.Text()
 
 		m := make(map[string]any)
-		err := json.Unmarshal([]byte(s), &m)
+		dec := json.NewDecoder(strings.NewReader(s))
+		dec.UseNumber()
+		err := dec.Decode(&m)
 		if err != nil {
 			if service == "" {
 				fmt.Println(s)

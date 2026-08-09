@@ -162,8 +162,6 @@ type FileInfo struct {
 
 // FileInformation provides details for the specified model.
 func (m *Models) FileInformation(modelID string) (FileInfo, error) {
-	modelID, _, _ = strings.Cut(modelID, "/")
-
 	mf, err := m.retrieveFile(modelID)
 	if err != nil {
 		return FileInfo{}, fmt.Errorf("retrieve-info: unable to get model file information: %w", err)
@@ -191,10 +189,9 @@ type Path = backend.ModelPath
 // FullPath locates the physical location on disk and returns the full path.
 //
 // The index is keyed by the bare model name (e.g. "Qwen3-8B-Q8_0"). Callers
-// may pass that bare name, an "<org>/<model>" pair (e.g. "Qwen/Qwen3-8B-Q8_0"),
-// a "<model>/<variant>" pair (e.g. "Qwen3-8B-Q8_0/IMC"), or the full
-// "<org>/<model>/<variant>" form. This resolver tries each segment in the
-// most-specific-first order until it finds a key that exists in the index.
+// may pass a model name, a "<provider>/<model>" pair, or the full
+// "<provider>/<model>/<user>" form. This resolver tries the model segment
+// first, followed by compatibility fallbacks, until it finds an index key.
 func (m *Models) FullPath(modelID string) (Path, error) {
 	index := m.loadIndex()
 
@@ -209,9 +206,9 @@ func (m *Models) FullPath(modelID string) (Path, error) {
 
 // LookupFile resolves a model identifier to its catalog File entry using
 // the same precedence rules as FullPath. The identifier may be the bare
-// model name ("Qwen3-8B-Q8_0"), an "<org>/<model>" pair, a
-// "<model>/<variant>" pair, or the full "<org>/<model>/<variant>" form.
-// Returns the matching File and true, or the zero value and false.
+// model name ("Qwen3-8B-Q8_0"), a "<provider>/<model>" pair, or the full
+// "<provider>/<model>/<user>" form. Returns the matching File and true, or
+// the zero value and false.
 func (m *Models) LookupFile(modelID string) (File, bool) {
 	files, err := m.Files()
 	if err != nil {
@@ -254,12 +251,11 @@ func fullPathLookupKeys(modelID string) []string {
 	case 1:
 		return []string{parts[0]}
 	case 2:
-		// Could be "<model>/<variant>" or "<org>/<model>". Try the leading
-		// segment first to preserve the original variant-strip semantics,
-		// then fall back to the trailing segment for org-prefixed input.
-		return []string{parts[0], parts[1]}
+		// "<provider>/<model>" — prefer the indexed model segment, then retain
+		// the leading segment as a compatibility fallback.
+		return []string{parts[1], parts[0]}
 	default:
-		// "<org>/<model>/<variant>..." — the bare model name lives in the
+		// "<provider>/<model>/<user>..." — the bare model name lives in the
 		// middle. Prefer that, then fall back to the leading and trailing
 		// segments.
 		return []string{parts[1], parts[0], parts[len(parts)-1]}

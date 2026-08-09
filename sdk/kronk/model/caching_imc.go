@@ -296,6 +296,8 @@ func imcResetSession(s *imcSession) {
 	s.inputMessages = 0
 	s.inputTokens = 0
 	s.outputTokens = 0
+	s.samplingSeed = 0
+	s.hasSamplingSeed = false
 	s.lastUsed = time.Time{}
 	s.reserved = false
 }

@@ -679,8 +679,9 @@ export default function DocsSDKModel() {
 	// strong). Default is 1.0 which turns it off.
 	RepeatPenalty float32 \`json:"repeat_penalty"\`
 
-	// Seed initializes request sampling randomness. Nil selects a random seed;
-	// any non-nil value, including 0, requests repeatable sampling.
+	// Seed initializes sampling randomness. Nil reuses a matched IMC session's
+	// seed or generates one; any non-nil value, including 0, requests repeatable
+	// sampling and becomes the session's retained seed.
 	Seed *uint32 \`json:"seed,omitempty"\`
 
 	// Stream determines whether to stream the response.

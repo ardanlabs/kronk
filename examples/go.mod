@@ -6,7 +6,7 @@ replace github.com/ardanlabs/kronk => ../
 
 require (
 	github.com/ardanlabs/bucky v1.0.6
-	github.com/ardanlabs/kronk v1.30.3
+	github.com/ardanlabs/kronk v1.30.5
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.25
 	github.com/google/uuid v1.6.0
