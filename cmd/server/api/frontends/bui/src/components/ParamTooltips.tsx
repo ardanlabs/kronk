@@ -174,7 +174,7 @@ export const PARAM_TOOLTIPS = {
   runningModelVRAMTotal: 'Predicted total memory footprint computed by CalculateVRAM: model weights + KV cache + estimated compute buffer. Hardware-agnostic — on Apple unified memory this same number lives in system RAM.',
   runningModelKVCache: 'Memory consumed by the KV cache across all slots at the current context window and slot count.',
   runningModelSlots: 'Number of parallel sequences (NSeqMax) configured for this model. Each slot can host one in-flight request.',
-  runningModelExpiresAt: 'Wall-clock time at which the pool will idle-evict this model unless it is touched again.',
+  runningModelExpiresAt: 'Wall-clock time at which the pool will idle-evict this model unless it is touched again. Shows Never when pool TTL is 0.',
   runningModelActiveStreams: 'Number of in-flight chat/embed/rerank streams currently using this model. The pool refuses to evict a model with active streams.',
   runningModelStatus: 'Lifecycle stage in the pool. "loaded" means the GGUF is open in llama.cpp and the model can serve requests. "loading" means the resource manager has reserved memory for the load but the GGUF is still being SHA-verified and read from disk; the model is not servable yet but the budget already accounts for it.',
 

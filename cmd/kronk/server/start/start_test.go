@@ -37,6 +37,35 @@ func TestBuildEnvVarsInferenceTimeout(t *testing.T) {
 	}
 }
 
+func TestBuildEnvVarsPoolTTL(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantEnv bool
+	}{
+		{name: "omitted"},
+		{name: "disabled", value: "0", wantEnv: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			cmd.Flags().String("pool-ttl", "", "")
+			if tt.value != "" {
+				if err := cmd.Flags().Set("pool-ttl", tt.value); err != nil {
+					t.Fatalf("Set: %v", err)
+				}
+			}
+
+			const want = "KRONK_POOL_TTL=0"
+			got := slices.Contains(buildEnvVars(cmd), want)
+			if got != tt.wantEnv {
+				t.Errorf("buildEnvVars contains %q: got %t, want %t", want, got, tt.wantEnv)
+			}
+		})
+	}
+}
+
 func TestBuildEnvVarsAuthTLS(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().Bool("auth-tls-enabled", false, "")

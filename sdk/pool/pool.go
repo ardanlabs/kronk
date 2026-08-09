@@ -42,8 +42,9 @@ import (
 // backend (the corresponding p.Kronk / p.Bucky will be nil).
 //
 // BudgetPercent feeds the shared resman.Manager (defaults to 95 when
-// zero). ModelsInPool and TTL apply to both backend pools (defaults
-// to 10 and 5 minutes respectively).
+// zero). ModelsInPool applies to both backend pools and defaults to 10
+// when zero. TTL also applies to both pools; zero disables idle
+// expiration and negative values are invalid.
 type Config struct {
 	Log             applog.Logger
 	KronkModels     *kronkmodels.Models

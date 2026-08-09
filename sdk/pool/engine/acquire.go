@@ -32,8 +32,8 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 		c.log(ctx, "acquire",
 			"status", "cache-hit",
 			"key", req.Key,
-			"ttl-reset", true,
-			"expires-at", entry.ExpiresAt(),
+			"ttl-reset", c.ttl > 0,
+			"expires-at", c.EntryExpiresAt(entry),
 			"active-streams", entry.Value.ActiveStreams(),
 		)
 		metrics.AddPoolAcquire("hit")
@@ -104,8 +104,8 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 			c.log(ctx, "acquire",
 				"status", "cache-set",
 				"key", req.Key,
-				"expires-at", entry.ExpiresAt(),
-				"ttl", entry.ExpiresAfter().String(),
+				"expires-at", c.EntryExpiresAt(entry),
+				"ttl", c.ttl.String(),
 			)
 		}
 

@@ -65,7 +65,7 @@ func HumanBytes(n int64) string {
 // zero.
 //
 // TTL is the time an existing model can live in the pool without being
-// used. Defaults to 5 minutes when zero.
+// used. Zero disables idle expiration. Negative values are invalid.
 //
 // InsecureLogging, when true, logs potentially sensitive data such as
 // message content and detailed model configuration.
@@ -82,10 +82,9 @@ type Config struct {
 	InsecureLogging bool
 }
 
-// Default config values applied when the corresponding field is zero.
+// Default config value applied when ModelsInPool is zero.
 const (
 	defaultModelsInPool = 10
-	defaultTTL          = 5 * time.Minute
 )
 
 func validateConfig(cfg Config) (Config, error) {
@@ -102,8 +101,8 @@ func validateConfig(cfg Config) (Config, error) {
 	if cfg.ModelsInPool <= 0 {
 		cfg.ModelsInPool = defaultModelsInPool
 	}
-	if cfg.TTL <= 0 {
-		cfg.TTL = defaultTTL
+	if cfg.TTL < 0 {
+		return Config{}, errors.New("ttl must be >= 0")
 	}
 
 	return cfg, nil
@@ -294,7 +293,7 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 			VRAMTotal:     disp.VRAMTotal,
 			KVCache:       disp.KVCache,
 			Slots:         max(disp.Slots, 1),
-			ExpiresAt:     entry.ExpiresAt(),
+			ExpiresAt:     p.engine.EntryExpiresAt(entry),
 			ActiveStreams: krn.ActiveStreams(),
 			Status:        ModelStatusLoaded,
 		})

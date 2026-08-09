@@ -113,7 +113,7 @@ Common settings can be supplied as flags or environment variables:
 | `--model-config-file` | `KRONK_POOL_MODEL_CONFIG_FILE` | `<base>/models/model_config.yaml` | Per-model overrides |
 | `--budget-percent` | `KRONK_POOL_BUDGET_PERCENT` | `95` | Memory-budget input for loaded models |
 | `--models-in-pool` | `KRONK_POOL_MODELS_IN_POOL` | `10` | Maximum loaded entries in each model pool |
-| `--pool-ttl` | `KRONK_POOL_TTL` | `20m` | Idle model retention time |
+| `--pool-ttl` | `KRONK_POOL_TTL` | `20m` | Idle model retention time; `0` disables idle expiration |
 | `--web-admin-enabled` | `KRONK_WEB_ADMIN_ENABLED` | `true` | Serve the BUI under `/admin/` |
 | `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | `false` | Protect inference and administration with local authentication |
 | `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | `false` | Protect administration without requiring inference authentication |
@@ -175,6 +175,9 @@ request. Three settings govern retention:
 - `budget-percent` controls memory admission.
 - `models-in-pool` places a count limit on each backend pool.
 - `pool-ttl` unloads entries that remain unused past the configured duration.
+  Set it to `0` to keep loaded models resident regardless of inactivity. This
+  does not prevent eviction caused by the pool-count limit, memory pressure,
+  explicit unload, or server shutdown.
 
 At the default `budget-percent: 95`, each discrete GPU receives a 95% budget
 minus 256 MiB of headroom. Host RAM receives a 90% budget because Kronk reserves

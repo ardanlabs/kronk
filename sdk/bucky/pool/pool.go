@@ -35,7 +35,8 @@ var ErrServerBusy = engine.ErrServerBusy
 // lets every backend (kronk, bucky, …) charge the same byte budget.
 // Required.
 //
-// ModelsInPool and TTL fall back to defaults when zero.
+// ModelsInPool falls back to its default when zero. A zero TTL disables
+// idle expiration; negative TTL values are invalid.
 type Config struct {
 	Log          applog.Logger
 	Models       *buckymodels.Models
@@ -44,10 +45,9 @@ type Config struct {
 	TTL          time.Duration
 }
 
-// Default config values applied when the corresponding field is zero.
+// Default config value applied when ModelsInPool is zero.
 const (
 	defaultModelsInPool = 10
-	defaultTTL          = 5 * time.Minute
 )
 
 func validateConfig(cfg Config) (Config, error) {
@@ -64,8 +64,8 @@ func validateConfig(cfg Config) (Config, error) {
 	if cfg.ModelsInPool <= 0 {
 		cfg.ModelsInPool = defaultModelsInPool
 	}
-	if cfg.TTL <= 0 {
-		cfg.TTL = defaultTTL
+	if cfg.TTL < 0 {
+		return Config{}, errors.New("ttl must be >= 0")
 	}
 
 	return cfg, nil
@@ -189,7 +189,7 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 			Backend:       "bucky",
 			Size:          sizeByID[entry.Key],
 			VRAMTotal:     reservedByKey[entry.Key],
-			ExpiresAt:     entry.ExpiresAt(),
+			ExpiresAt:     p.engine.EntryExpiresAt(entry),
 			ActiveStreams: b.ActiveStreams(),
 			Status:        ModelStatusLoaded,
 			ModelType:     mi.Type,

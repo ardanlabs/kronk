@@ -7,11 +7,10 @@ import UsageBar from './UsageBar';
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '—';
-  // Go's zero time.Time marshals to "0001-01-01T00:00:00Z". The pool
-  // emits this for in-flight reservations whose ExpiresAt isn't known
-  // yet; rendering it through Date() yields "12/31/1, 4:07:02 PM" which
-  // is misleading garbage on screen.
-  if (dateStr.startsWith('0001-01-01')) return '—';
+  // A loaded model has Go's zero time when idle expiration is disabled.
+  // Loading rows bypass this formatter because their expiration is not
+  // known until the model enters the cache.
+  if (dateStr.startsWith('0001-01-01')) return 'Never';
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString();
