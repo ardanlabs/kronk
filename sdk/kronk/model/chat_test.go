@@ -1205,6 +1205,9 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	}
 	choices := wire["choices"].([]any)
 	delta := choices[0].(map[string]any)["delta"].(map[string]any)
+	if _, exists := delta["role"]; exists {
+		t.Errorf("role: got %v, want omitted", delta["role"])
+	}
 	toolCalls := delta["tool_calls"].([]any)
 	toolCall := toolCalls[0].(map[string]any)
 	function := toolCall["function"].(map[string]any)
@@ -1220,6 +1223,29 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	}
 	if got, want := function["arguments"], ""; got != want {
 		t.Errorf("function arguments: got %v, want %v", got, want)
+	}
+}
+
+func TestChatResponseRoleDeltaJSON(t *testing.T) {
+	resp := chatResponseRoleDelta("id", ObjectChatText, "model", 0)
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	choices := wire["choices"].([]any)
+	delta := choices[0].(map[string]any)["delta"].(map[string]any)
+
+	if got, want := delta["role"], RoleAssistant; got != want {
+		t.Errorf("role: got %v, want %v", got, want)
+	}
+	if got, want := delta["content"], ""; got != want {
+		t.Errorf("content: got %v, want %v", got, want)
 	}
 }
 
@@ -1330,6 +1356,9 @@ func TestChatResponseTextDeltaOmitsToolCalls(t *testing.T) {
 	}
 	if strings.Contains(string(data), `"tool_calls"`) {
 		t.Errorf("JSON: got %s, want tool_calls omitted", data)
+	}
+	if strings.Contains(string(data), `"role"`) {
+		t.Errorf("JSON: got %s, want role omitted", data)
 	}
 }
 

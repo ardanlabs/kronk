@@ -2,6 +2,11 @@
 
 ## Index
 
+- [v1.30.4](#v1304)
+  - [Go SDK Streaming Changes](#v1304-go-sdk-streaming-changes)
+  - [Request Validation Changes](#v1304-request-validation-changes)
+  - [Tool Parsing Changes](#v1304-tool-parsing-changes)
+  - [Log Probability Changes](#v1304-log-probability-changes)
 - [v1.30.3](#v1303)
   - [Auth Changes](#v1303-auth-changes)
   - [Tool Calling Changes](#v1303-tool-calling-changes)
@@ -10,6 +15,130 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.30.4
+
+### v1.30.4: Go SDK Streaming Changes
+
+The low-level `model.(*Model).ChatStreaming` method now returns a startup error
+in addition to the response channel:
+
+```go
+// Before
+ch := mdl.ChatStreaming(ctx, request)
+
+// After
+ch, err := mdl.ChatStreaming(ctx, request)
+if err != nil {
+	// The request failed validation before streaming started.
+}
+```
+
+Existing callers that assign one result, range directly over the method call,
+use its method expression, or implement an interface containing the old
+signature will no longer compile.
+
+Request validation now runs before the response channel is created. Validation
+failures are returned directly as `nil, err`; they are no longer delivered as
+an error `model.ChatResponse` on the channel. Errors that happen after startup
+continue to be reported through the stream.
+
+The higher-level `kronk.(*Kronk).ChatStreaming` and
+`kronk.(*Kronk).ResponseStreaming` signatures did not change because they
+already returned `(channel, error)`. Callers of those methods should continue
+checking the returned error before reading the channel.
+
+Streaming responses now report `delta.role: "assistant"` once, in an initial
+empty-content delta. Subsequent text and tool-call deltas omit `role`.
+Previously, each text or tool-call delta repeated the assistant role. Consumers
+must retain the role from the initial delta and must not discard later deltas
+merely because their `ResponseMessage.Role` or JSON `delta.role` is empty.
+
+### v1.30.4: Request Validation Changes
+
+Invalid model request parameters now consistently wrap
+`model.ErrInvalidRequest`. This includes parameter parsing, invalid sampling
+seeds, unsupported response formats or grammars, and invalid tokenize input.
+Direct SDK consumers should classify these errors with:
+
+```go
+if errors.Is(err, model.ErrInvalidRequest) {
+	// Correct the request rather than retrying it unchanged.
+}
+```
+
+This changes observable error strings and changes `errors.Is` from false to
+true for affected errors. Integrations that map `ErrInvalidRequest` to a
+protocol status now classify these failures as client errors; the Kronk HTTP
+server returns HTTP 400 for them instead of treating them as internal model
+errors.
+
+The Chat Completions `n` parameter now supports only the value `1`. Omitted or
+null `n` remains valid. Requests that previously supplied zero, a negative or
+fractional value, a string value, or a numeric value greater than one now fail
+with `model.ErrInvalidRequest`. Kronk does not generate multiple choices in one
+request; clients must submit separate requests when multiple samples are
+needed.
+
+### v1.30.4: Tool Parsing Changes
+
+Tool-call parsing is now strict and atomic in these exported parser packages:
+
+- `sdk/kronk/parsers/deepseek`
+- `sdk/kronk/parsers/gemma`
+- `sdk/kronk/parsers/glm`
+- `sdk/kronk/parsers/gpt`
+- `sdk/kronk/parsers/kimi`
+- `sdk/kronk/parsers/lfm`
+- `sdk/kronk/parsers/llama`
+- `sdk/kronk/parsers/mistral`
+- `sdk/kronk/parsers/qwen`
+- `sdk/kronk/parsers/toolcall`
+
+Malformed or mixed output that was previously repaired, partially accepted, or
+reduced to its valid calls is now rejected as one failed
+`model.ResponseToolCall`. The failed result has `Status == 2`, retains the
+original model output in `Raw`, and describes the parse failure in `Error`.
+Newly rejected forms include duplicate JSON keys or XML parameters, junk around
+or between calls, malformed siblings after a valid call, missing wrappers or
+delimiters, non-object arguments, and structural JSON repairs.
+
+Consumers must check every returned tool call's `Status` before execution and
+must not execute a valid-looking subset when the parser reports an atomic
+failure. Applications that intentionally accept nonstandard model output must
+normalize and validate it outside these parsers.
+
+The state machines returned by the `mistral` and `toolcall` parsers no longer
+implement `model.ToolCallDeltaStreamer`. Dynamic assertions to that optional
+interface now return false, and those parser families no longer emit
+provisional tool-call identity/name deltas while arguments are still being
+generated. Streaming consumers must wait for the completed tool-call delta and
+the terminal `finish_reason: "tool_calls"` before execution.
+
+When generation reaches the token limit with incomplete or invalid tool-call
+syntax, Kronk now preserves the raw truncated text as assistant content and
+removes failed tool-call entries. Previously that output could remain on the
+tool channel or be represented as failed `tool_calls`. Streaming and
+non-streaming consumers must therefore allow a length-limited response to
+contain ordinary assistant content that resembles an unfinished tool call.
+
+Parser end-of-generation and flush handling is also lossless and may expose
+malformed trailing output that older parsers silently discarded. This is part
+of the strict atomic behavior above; callers should treat the parser's failed
+result as authoritative rather than attempting to execute an earlier call from
+the same model output.
+
+### v1.30.4: Log Probability Changes
+
+When `logprobs` is enabled, `choices[].logprobs.content` no longer includes an
+entry for the terminal vocabulary end-of-generation token. The terminal token
+does not produce response content, so each log-probability entry now aligns
+with an emitted output token.
+
+Consumers that expected one extra terminal entry or compared the logprobs
+array length with raw generated-token accounting must remove that assumption.
+This does not change sampling and does not affect requests with
+`logprobs: false`.
 
 ## v1.30.3
 

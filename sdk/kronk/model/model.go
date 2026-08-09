@@ -1335,6 +1335,22 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 	return nil
 }
 
+func (m *Model) sendRoleDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int) error {
+	select {
+	case <-ctx.Done():
+		select {
+		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), Usage{}):
+		default:
+		}
+
+		return ctx.Err()
+
+	case ch <- chatResponseRoleDelta(id, object, m.modelInfo.ID, choiceIndex):
+	}
+
+	return nil
+}
+
 func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, delta ResponseToolCallDelta) error {
 	select {
 	case <-ctx.Done():

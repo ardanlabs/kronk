@@ -199,6 +199,12 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan 
 			"imc_match_kind", cache.imcMatchKind,
 		)
 
+		if streaming {
+			if err := m.sendRoleDeltaResponse(ctx, ch, id, object, 0); err != nil {
+				return
+			}
+		}
+
 		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, cache, requestStart) {
 			batching = true
 			return

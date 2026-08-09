@@ -24,15 +24,7 @@ import (
 var tag = "develop"
 
 func main() {
-	var log *logger.Logger
-
-	events := logger.Events{
-		Error: func(ctx context.Context, r logger.Record) {
-			log.Info(ctx, "******* SEND ALERT *******")
-		},
-	}
-
-	log = logger.NewWithEvents(os.Stdout, logger.LevelInfo, "AUTH", otel.GetTraceID, events)
+	log := logger.New(os.Stdout, logger.LevelInfo, "AUTH", otel.GetTraceID)
 
 	// -------------------------------------------------------------------------
 
