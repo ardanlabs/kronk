@@ -3759,6 +3759,9 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
             <li>whether the failure occurs on the first request, after warmup, or only under concurrency.</li>
           </ul>
           <p>Remove tokens, prompts, responses, filesystem secrets, and other sensitive values before sharing diagnostic output.</p>
+          <p>For a suspected API-contract problem — constrained decoding, tool-call parsing, speculative decoding, logprobs, the Anthropic or Responses translations, or parameter validation — reproduce it with the stress harness from a clone of the repository and attach the relevant part of the report:</p>
+          <pre className="code-block"><code className="language-shell">{`make test-stress ARGS="--tier=smoke"`}</code></pre>
+          <p>Findings land in <code>zarf/tmp/kronk-stress/findings.txt</code>, which includes the full request and response of every flagged call. Name individual probe groups to narrow the run, and see <a href="https://www.kronkai.com/manual#chapter-19-developer-guide">Chapter 19.4.2</a> for tiers, environment variables, and the full output layout.</p>
           <hr />
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription"&gt;Chapter 18: Bucky (Audio Transcription)&lt;/a&gt;</em></p>
           <h2 id="chapter-18-bucky-audio-transcription">Chapter 18: Bucky (Audio Transcription)</h2>
@@ -4488,6 +4491,56 @@ if err := kronk.Init(kronk.WithLibPath(lib.LibsPath())); err != nil {
           <p>Call <code>kronk.Init</code> after runtime detection and installation but before constructing a Kronk model. Passing the manager's resolved <code>LibsPath</code> is required: calling bare <code>kronk.Init()</code> can repeat default selection and load a different bundle from the one the example just verified. Initialization is process-wide and should occur once.</p>
           <p>Bucky examples follow the same sequence with <code>sdk/tools/bucky/libs</code>, <code>bucky.Init</code>, and <code>bucky.WithLibPath(lib.LibsPath())</code>. Keep library installation separate from model download in both example families so failures identify the correct dependency.</p>
           <p>The exact development toolchain is pinned by <code>.go-version</code>, while <code>go.mod</code> declares the minimum language version. Patch versions may differ, but major and minor must match. The workflow version script enforces this relationship; read both files rather than copying their current values into new documentation.</p>
+          <h4 id="1942-server-stress-probes">19.4.2 Server stress probes</h4>
+          <p><code>zarf/scripts/kronk-stress.sh</code> is an adversarial probe harness that exercises a running Kronk server's HTTP API: constrained decoding, the MTP/speculative decode path, the Anthropic and Responses translations, logprobs, and parameter validation. It treats "returned 200 and quietly ignored what was asked" as a defect, and a probe that cannot assert an invariant reports <code>NO SIGNAL</code> rather than <code>PASS</code>.</p>
+          <pre className="code-block"><code className="language-shell">{`make test-stress`}</code></pre>
+          <p>The target runs the default <code>deep</code> tier, which needs a real generation-capable model and takes tens of minutes. Pass arguments through <code>ARGS</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`make test-stress ARGS="--tier=smoke"        # contract probes only, minutes
+make test-stress ARGS="--tier=all"          # deep plus soak and TTL eviction
+make test-stress ARGS="stream structured"   # only these probe groups
+make test-stress ARGS="-l"                  # list groups and their tiers`}</code></pre>
+          <p>The script starts and stops its own server by default. To probe a server that is already running, set <code>SERVER=0</code>. <code>HOST</code>, <code>MODEL</code>, <code>THINK</code>, <code>TIMEOUT</code>, <code>SERVER_CMD</code>, and <code>KEEP_ALL</code> are the other tuning knobs; run <code>zarf/scripts/kronk-stress.sh -h</code> for the full list and current defaults.</p>
+          <p>Results land under <code>zarf/tmp/kronk-stress</code> (ignored by Git, overridable with <code>OUT</code>): <code>findings.txt</code> holds a result line per probe, a verdict block, and the full request/response of every flagged call, and <code>kronk-server.log</code> holds the server's own log when the script manages the server. Exit status is <code>0</code> when nothing is flagged, <code>1</code> when there are findings, and <code>2</code> when the run could not proceed.</p>
+          <p>This is a deliberate human/integration run, not part of <code>make test</code> and not an agent default — see <a href="#1991-required-go-post-edit-sequence">19.9.1</a>.</p>
+          <h5>Triaging the findings</h5>
+          <p>A finding is a flagged probe, not a proven defect: the probe itself can be wrong, and the cause may sit in yzma or llama.cpp rather than in Kronk. <code>make test-stress</code> prints a triage prompt after every run — including the exit-1 run that produced findings — which hands the report to a coding agent for verification. The prompt lives in <code>zarf/scripts/kronk-stress-triage.md</code>; it is reproduced here as the reference for what that triage must cover:</p>
+          <pre className="code-block"><code className="language-text">{`Triage the stress run into a verified bug report.
+
+Input:
+- \`zarf/tmp/kronk-stress/findings.txt\` — probe results, verdict block, flagged calls
+- \`zarf/tmp/kronk-stress/kronk-server.log\` — server + llama.cpp log
+- \`zarf/scripts/kronk-stress.sh\` — probe source
+
+Code, in ownership order:
+1. Kronk — \`cmd/server/app/domain/*app/\`, \`cmd/server/foundation/web/\`,
+   \`sdk/kronk/model/\` (batch, sampling, grammar, IMC, MTP), \`sdk/kronk/parsers/<family>/\`
+2. yzma — \`.extras/yzma/pkg/\`, \`.extras/yzma/lib/\`
+3. llama.cpp — \`.extras/llama.cpp/src/\`, \`.extras/llama.cpp/common/\`, \`.extras/llama.cpp/ggml/\`
+
+Steps:
+1. Candidates = every flagged probe + every NO SIGNAL. Dedupe by root cause.
+2. Verify each independently. Subagents optional — one per candidate when there are
+   many. Each verification:
+   - Read the flagged call's request/response in \`findings.txt\` and its probe in
+     \`kronk-stress.sh\`; confirm the probe asserts a real invariant.
+   - Correlate by timestamp with \`kronk-server.log\`.
+   - Trace to owning code, cite \`file:line\`, name the layer. Follow Kronk → yzma →
+     llama.cpp when the cause is not in Kronk.
+   - Verdict: CONFIRMED (code path proves it) | EXPECTED (server right, probe or spec
+     reading wrong — say which) | UNPROVEN (not pinnable to code).
+   - Uncertain → EXPECTED or UNPROVEN. No defect without a mechanism shown in source.
+3. Report CONFIRMED only.
+
+Output — bullets, no prose, no preamble:
+
+- **<symptom>** — \`<probe-id>\` · \`path/file.go:LINE\` (kronk|yzma|llama.cpp)
+  - Expected: <invariant> · Actual: <observed>
+  - Cause: <one sentence, cites code path>
+  - Repro: <single command from findings.txt>
+
+Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}</code></pre>
+          <p>The yzma and llama.cpp trees the prompt cites are working checkouts under <code>.extras/</code>, which is untracked. Clone them there before triaging, or drop those two sources from the prompt and accept that a defect below the Kronk boundary can only be localized to the binding call site.</p>
+          <p>Editing the prompt means editing <code>zarf/scripts/kronk-stress-triage.md</code> and this chapter together; the file is what the Make target prints.</p>
           <h3 id="195-request-and-model-lifecycle">19.5 Request and Model Lifecycle</h3>
           <h4 id="1951-server-request-flow">19.5.1 Server request flow</h4>
           <p>The stable request path is:</p>
@@ -4627,7 +4680,7 @@ export GITHUB_WORKSPACE="$(pwd -P)"`}</code></pre>
           <p><code>GITHUB_WORKSPACE</code> must be the absolute repository root. Then run a package test or a specific test, for example:</p>
           <pre className="code-block"><code className="language-shell">{`go test -count=1 ./sdk/kronk/model
 go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></pre>
-          <p>Agents must <strong>never prescribe or run a full repository test run</strong>, and must <strong>never launch tests from &lt;code&gt;sdk/kronk/tests&lt;/code&gt;</strong>. Those suites require managed libraries/models and belong to CI or deliberate human integration runs. Commands such as <code>make test</code> exist as broad human/CI-maintainer context, but they are not the agent default. Do not use a broad command merely because focused ownership is unclear; inspect the owner.</p>
+          <p>Agents must <strong>never prescribe or run a full repository test run</strong>, and must <strong>never launch tests from &lt;code&gt;sdk/kronk/tests&lt;/code&gt;</strong>. Those suites require managed libraries/models and belong to CI or deliberate human integration runs. Commands such as <code>make test</code> and <code>make test-stress</code> (<a href="#1942-server-stress-probes">19.4.2</a>) exist as broad human/CI-maintainer context, but they are not the agent default. Do not use a broad command merely because focused ownership is unclear; inspect the owner.</p>
           <h4 id="1992-choosing-effective-checks">19.9.2 Choosing effective checks</h4>
           <ul>
             <li>Pure logic changes: focused unit test plus package static checks.</li>
@@ -4694,6 +4747,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <li>[ ] Ensure <code>.github/test-models.txt</code> covers model-backed CI requirements.</li>
             <li>[ ] Regenerate documentation and BUI assets; build the BUI and server embedding.</li>
             <li>[ ] Confirm focused package checks and the four Linux CI jobs are green.</li>
+            <li>[ ] Run <code>make test-stress</code> against a generation-capable model on a machine that has one, and review <code>zarf/tmp/kronk-stress/findings.txt</code>.</li>
             <li>[ ] Review <code>.github/workflows/docker.yml</code> for the intended image variants and publication/signing behavior.</li>
             <li>[ ] Review Nix dependency outputs if Go dependencies changed.</li>
             <li>[ ] Verify GoReleaser configuration with an appropriate non-publishing check or snapshot.</li>

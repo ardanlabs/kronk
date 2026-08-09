@@ -114,6 +114,27 @@ To run Kronk headless with Docker on a remote machine (first run, user
 security, auto-restart on reboot, preinstalling models, updating, and
 uninstalling), see [Chapter 2.4: Docker / OCI Container](.manual/chapter-02-installation.md#24-docker--oci-container) in the manual.
 
+## Development
+
+From a clone of the project, the test suite runs with:
+
+```shell
+$ make test
+```
+
+There is also an adversarial probe harness (`zarf/scripts/kronk-stress.sh`) that
+exercises a running Kronk server's HTTP API: constrained decoding, the MTP/speculative
+decode path, the Anthropic and Responses translations, logprobs, and parameter
+validation.
+
+```shell
+$ make test-stress                          # deep tier, needs a real model, tens of minutes
+$ make test-stress ARGS="--tier=smoke"      # contract probes only, minutes
+$ make test-stress ARGS="-l"                # list the probe groups
+```
+
+Results land in `zarf/tmp/kronk-stress/findings.txt`. See [Chapter 19.4.2: Server Stress Probes](.manual/chapter-19-developer-guide.md#1942-server-stress-probes) in the manual for tiers, environment variables, and output layout.
+
 ## Issues/Features
 
 Here is the existing [Issues/Features](https://github.com/ardanlabs/kronk/issues) for the project and the things being worked on or things that would be nice to have.

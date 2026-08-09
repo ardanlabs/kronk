@@ -86,7 +86,7 @@ endif
 #   .make/install.mk      setup, install-gotooling/tooling/kronk,
 #                        install-libraries, install-*-models, install-docker
 #
-#   .make/dev.mk          lint, vuln-check, diff, test, test-gh, llama-bench,
+#   .make/dev.mk          lint, vuln-check, diff, test, test-gh, test-stress, llama-bench,
 #                        authapp-proto-gen, benchmark-*, tidy, deps-upgrade,
 #                        yzma-latest
 #
