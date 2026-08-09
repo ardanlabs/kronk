@@ -1,7 +1,6 @@
 package launch
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,97 +9,85 @@ import (
 	"strings"
 )
 
-// agentInstall describes how to locate and, if necessary, install a coding
-// agent's binary. It is populated from the embedded agents metadata (see
-// metadata.go) so the find/install flow is shared and data-driven instead of
-// duplicated per agent.
-type agentInstall struct {
-	// bin is the executable name to look for (e.g. "opencode", "claude").
-	bin string
+const openCodeInstallHint = "curl -fsSL https://opencode.ai/install | bash"
+const openCodeDocsURL = "https://opencode.ai/docs/"
 
-	// display is the human-facing agent name (e.g. "OpenCode", "Claude Code").
-	display string
-
-	// fallbackDirs are directories under the user's home to search when bin is
-	// not on PATH (e.g. ".opencode/bin", ".local/bin"), since a fresh
-	// installer may not be on PATH in the current shell yet.
-	fallbackDirs []string
-
-	// docsURL backs the "see <url> for installation instructions" message shown
-	// on platforms with no install recipe.
-	docsURL string
-
-	// perOS holds the per-OS install recipe, keyed by runtime.GOOS values
-	// (darwin | linux | windows).
-	perOS map[string]osInstall
-}
-
-// installHint returns the human-readable install command for goos, or a
-// docs-link fallback when the platform has no recipe.
-func (a agentInstall) installHint(goos string) string {
-	if oi, ok := a.perOS[goos]; ok {
-		return oi.Hint
+// ensureOpenCode returns the OpenCode executable, offering to install it when
+// it is not already available.
+func ensureOpenCode() (string, error) {
+	if bin, ok := findOpenCode(); ok {
+		return bin, nil
 	}
 
-	return fmt.Sprintf("see %s for installation instructions", a.docsURL)
-}
-
-// installerCommand returns the command and args that install the agent on goos,
-// or an error when the platform is unsupported.
-func (a agentInstall) installerCommand(goos string) (string, []string, error) {
-	oi, ok := a.perOS[goos]
-	if !ok {
-		return "", nil, fmt.Errorf("unsupported platform for %s install: %s", a.bin, goos)
+	bin, args, hint, deps, err := openCodeInstaller(runtime.GOOS)
+	if err != nil {
+		return "", err
 	}
 
-	return oi.Command.Bin, oi.Command.Args, nil
-}
-
-// checkDeps verifies the tools needed to run the installer on goos are present.
-// The message is built from a shared, neutral template fed by the per-OS
-// metadata: it always surfaces the actual install command (the real fix), notes
-// any version/edition specifics (deps_note), and can be fully overridden by a
-// bespoke deps_error when the template cannot be made correct.
-func (a agentInstall) checkDeps(goos string) error {
-	oi, ok := a.perOS[goos]
-	if !ok {
-		return fmt.Errorf("%s is not installed and automatic install is not supported on %s\n\ninstall it manually: %s", a.display, goos, a.installHint(goos))
-	}
-
-	var missing []string
-	for _, dep := range oi.Deps {
+	missing := make([]string, 0, len(deps))
+	for _, dep := range deps {
 		if _, err := exec.LookPath(dep); err != nil {
 			missing = append(missing, dep)
 		}
 	}
-
-	if len(missing) == 0 {
-		return nil
+	if len(missing) > 0 {
+		return "", fmt.Errorf("OpenCode installation requires %s\n\ninstall the missing tools, then run:\n  %s", strings.Join(missing, ", "), hint)
 	}
 
-	// Guardrail: a fully bespoke message wins verbatim when supplied.
-	if oi.DepsError != "" {
-		return errors.New(oi.DepsError)
+	if !isInteractive() {
+		return "", fmt.Errorf("OpenCode is not installed\n\nmore information: %s\ninstall it, then re-run the launch command:\n  %s", openCodeDocsURL, hint)
 	}
 
-	// Shared template. Phrasing is neutral about why a dep is needed ("for
-	// setup", not "to install it"), the version nuance is preserved via
-	// deps_note, and the actual install command is always shown as the fix.
-	note := ""
-	if oi.DepsNote != "" {
-		note = " (" + oi.DepsNote + ")"
+	fmt.Fprintf(os.Stderr, "OpenCode is not installed.\n\nMore information: %s\nKronk can install it with:\n  %s\n\nInstall OpenCode now? (y/N): ", openCodeDocsURL, hint)
+	answer := readPromptLine()
+	if answer != "y" && answer != "yes" {
+		return "", fmt.Errorf("OpenCode was not installed\n\nmore information: %s", openCodeDocsURL)
 	}
 
-	return fmt.Errorf("%s requires %s for setup%s.\n\ninstall them, then run:\n  %s\n\nthen re-run: kronk launch %s",
-		a.display, strings.Join(missing, ", "), note, a.installHint(goos), a.bin)
+	fmt.Fprintln(os.Stderr, "Installing OpenCode...")
+
+	cmd := exec.Command(bin, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("installing OpenCode: %w", err)
+	}
+
+	installed, ok := findOpenCode()
+	if !ok {
+		return "", fmt.Errorf("OpenCode was installed but its executable could not be found")
+	}
+
+	return installed, nil
 }
 
-// find returns the agent binary path, checking PATH first and then the
-// installer's fallback directories under the user's home (which may not be on
-// PATH in the current shell yet).
-func (a agentInstall) find() (string, bool) {
-	if p, err := exec.LookPath(a.bin); err == nil {
-		return p, true
+// uninstallOpenCode delegates removal to OpenCode so its own installer and
+// package-manager-aware cleanup and confirmation flow remain authoritative.
+func uninstallOpenCode() error {
+	bin, ok := findOpenCode()
+	if !ok {
+		return fmt.Errorf("OpenCode is not installed\n\nmore information: %s", openCodeDocsURL)
+	}
+
+	fmt.Fprintf(os.Stderr, "OpenCode will show what it plans to remove and ask for confirmation.\nMore information: %s\n\n", openCodeDocsURL+"cli/#uninstall")
+
+	cmd := exec.Command(bin, "uninstall")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("uninstalling OpenCode: %w", err)
+	}
+
+	return nil
+}
+
+// findOpenCode locates OpenCode on PATH or in the official installer's default
+// directory.
+func findOpenCode() (string, bool) {
+	if bin, err := exec.LookPath("opencode"); err == nil {
+		return bin, true
 	}
 
 	home, err := os.UserHomeDir()
@@ -108,111 +95,54 @@ func (a agentInstall) find() (string, bool) {
 		return "", false
 	}
 
-	name := a.bin
+	name := "opencode"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 
-	for _, dir := range a.fallbackDirs {
-		candidate := filepath.Join(home, filepath.FromSlash(dir), name)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, true
-		}
+	bin := filepath.Join(home, ".opencode", "bin", name)
+	if info, err := os.Stat(bin); err == nil && !info.IsDir() {
+		return bin, true
 	}
 
 	return "", false
 }
 
-// ensureInstalled returns the agent binary path, installing it first if it is
-// not already present. On a non-interactive terminal it never runs a network
-// installer and instead returns an error pointing at the install command.
-func ensureInstalled(a agentInstall) (string, error) {
-	if bin, ok := a.find(); ok {
-		return bin, nil
-	}
-
-	notInstalledErr := fmt.Errorf("%s is not installed\n\ninstall it and re-run: kronk launch %s\n\ninstall command:\n  %s", a.display, a.bin, a.installHint(runtime.GOOS))
-
-	// On a non-interactive terminal never run a network installer; just point
-	// the user at the install command.
-	if !isInteractive() {
-		return "", notInstalledErr
-	}
-
-	if err := a.checkDeps(runtime.GOOS); err != nil {
-		return "", err
-	}
-
-	if !confirmInstall(a.display, a.installHint(runtime.GOOS)) {
-		return "", notInstalledErr
-	}
-
-	bin, args, err := a.installerCommand(runtime.GOOS)
-	if err != nil {
-		return "", err
-	}
-
-	fmt.Fprintf(os.Stderr, "Installing %s...\n", a.display)
-
-	cmd := exec.Command(bin, args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("install %s: %w", a.bin, err)
-	}
-
-	p, ok := a.find()
-	if !ok {
-		return "", fmt.Errorf("%s was installed but not found on PATH; restart your shell and re-run: kronk launch %s", a.display, a.bin)
-	}
-
-	return p, nil
-}
-
-// isInteractive reports whether stdin is a terminal (so we can safely prompt).
-func isInteractive() bool {
-	stat, err := os.Stdin.Stat()
-	return err == nil && stat.Mode()&os.ModeCharDevice != 0
-}
-
-// confirmInstall asks the user for permission before running an agent's
-// installer. Only "y"/"yes" (case-insensitive) confirms; empty input, EOF, or
-// anything else declines.
-func confirmInstall(display, hint string) bool {
-	fmt.Fprintf(os.Stderr, "%s is not installed. Install it now with:\n  %s\nProceed? (y/N): ", display, hint)
-
-	line, _ := readPromptLine()
-	switch strings.ToLower(line) {
-	case "y", "yes":
-		return true
+// openCodeInstaller returns the official OpenCode installation command for the
+// specified operating system.
+func openCodeInstaller(goos string) (string, []string, string, []string, error) {
+	switch goos {
+	case "darwin", "linux":
+		return "bash", []string{"-c", "set -o pipefail; " + openCodeInstallHint}, openCodeInstallHint, []string{"bash", "curl"}, nil
+	case "windows":
+		hint := "npm install -g opencode-ai@latest"
+		return "npm", []string{"install", "-g", "opencode-ai@latest"}, hint, []string{"npm"}, nil
 	default:
-		return false
+		return "", nil, "", nil, fmt.Errorf("automatic OpenCode installation is not supported on %s\n\nsee https://opencode.ai/docs for installation instructions", goos)
 	}
 }
 
-// readPromptLine reads a single line from stdin for an interactive prompt,
-// returning it trimmed of surrounding whitespace. ok is false on EOF or a read
-// error before any newline, which callers treat as "no input".
-//
-// It reads one byte at a time from os.Stdin rather than using a buffered reader:
-// these prompts run immediately before the launcher execs an agent that inherits
-// the same stdin, so a buffered reader could consume input past the newline and
-// swallow the user's first keystrokes to the agent.
-func readPromptLine() (string, bool) {
-	var b []byte
-	buf := make([]byte, 1)
+func isInteractive() bool {
+	info, err := os.Stdin.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func readPromptLine() string {
+	var input []byte
+	one := make([]byte, 1)
 
 	for {
-		n, err := os.Stdin.Read(buf)
+		n, err := os.Stdin.Read(one)
 		if n > 0 {
-			if buf[0] == '\n' {
-				return strings.TrimSpace(string(b)), true
+			if one[0] == '\n' {
+				break
 			}
-			b = append(b, buf[0])
+			input = append(input, one[0])
 		}
 		if err != nil {
-			return strings.TrimSpace(string(b)), len(b) > 0
+			break
 		}
 	}
+
+	return strings.ToLower(strings.TrimSpace(string(input)))
 }

@@ -95,7 +95,7 @@ endif
 #                        kronk-server-detach/-logs/-stop
 #
 #   .make/cli.mk          kronk-diagnose, kronk-libs, kronk-model-*, kronk-catalog-*,
-#                        kronk-security-*, kronk-run, bucky-libs,
+#                        kronk-security-*, kronk-launch, bucky-libs,
 #                        bucky-model-*
 #
 #   .make/endpoints.mk    curl-liveness/readiness, curl-kronk-* (chat,

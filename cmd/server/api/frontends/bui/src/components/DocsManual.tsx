@@ -1237,9 +1237,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>For direct interactive use without the model server, <code>kronk run</code> accepts the same capacity as a load-time override:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk run Qwen3-8B-Q8_0 --imc-session-capacity=8`}</code></pre>
-          <p>The flag's default value <code>0</code> means derive the capacity from <code>nseq-max</code> and <code>queue-depth</code>; it does not disable IMC or create a zero-length pool. A nonzero value is applied to the model loaded by that <code>kronk run</code> process, and startup output reports the effective session count. The same admission-capacity floor applies as in YAML configuration.</p>
+          <p>When <code>imc-session-capacity</code> is omitted, Kronk derives the capacity from <code>nseq-max</code> and <code>queue-depth</code>. The same admission-capacity floor applies to an explicit value in <code>model_config.yaml</code>.</p>
           <p>The <code>cache-min-tokens</code> setting applies to the stable text-token-plan length. A text request below the threshold still works, but Kronk processes its complete generation-ready prompt without creating or reusing an IMC session. The current media planner does not apply this threshold; media safety is instead determined by whether it can construct compatible logical stable and actual plans.</p>
           <p>Set <code>incremental-cache: false</code> if a workload is entirely short-lived or if you need to compare behavior without prompt caching.</p>
           <h3 id="built-in-ram-storage">Built-in RAM storage</h3>
@@ -3075,13 +3073,26 @@ kronk server start`}</code></pre>
           <p>If the client runs in a container, <code>localhost</code> refers to the container rather than the host. Use the container runtime's host address, such as <code>host.docker.internal</code>, or place both services on the same container network.</p>
           <h3 id="142-opencode">14.2 OpenCode</h3>
           <p>OpenCode is the coding agent for which this repository ships a ready-to-use configuration. It registers Kronk as an OpenAI-compatible provider and connects OpenCode to Kronk's MCP service.</p>
+          <h4 id="launch-an-isolated-session">Launch an Isolated Session</h4>
+          <p>For a disposable session, use the preferred launch workflow:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local
+kronk server start
+kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT`}</code></pre>
+          <p>OpenCode uses the model ID exactly as provided, with Kronk responsible for resolving it to the downloaded model and optional configuration profile. The model must already be available from the running Kronk server. Launch never starts a server or downloads models. It connects to <code>localhost:11435</code> by default and verifies the server and selected model through <code>GET /v1/models</code>. Use <code>--host</code> when Kronk runs elsewhere:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT \\
+  --host 192.168.1.10:11435`}</code></pre>
+          <p>The server remains independently managed and continues running after OpenCode exits. Its normal <code>model_config.yaml</code> resolution and AutoTune behavior apply.</p>
+          <p>OpenCode runs with only the selected model in a temporary workspace and temporary XDG config, data, cache, and state directories. User and project OpenCode configuration is not loaded or changed. Arguments after <code>--</code> pass directly to OpenCode.</p>
+          <p>If OpenCode is missing, Kronk displays the official install command and <a href="https://opencode.ai/docs/">OpenCode documentation</a>, asks permission, and installs only after a yes response. To use OpenCode's official preview and confirmed removal workflow, run:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk launch opencode uninstall`}</code></pre>
+          <p>See the <a href="https://opencode.ai/docs/cli/#uninstall">OpenCode uninstall documentation</a>. The persistent bundle installation below is an advanced alternative for users who want a reusable OpenCode configuration connected to a separately managed Kronk server.</p>
           <h4 id="install-opencode">Install OpenCode</h4>
           <p>Install OpenCode with its official installer:</p>
           <pre className="code-block"><code className="language-shell">{`curl -fsSL https://opencode.ai/install | bash`}</code></pre>
           <p>Other installation options are listed at <a href="https://opencode.ai/download">opencode.ai/download</a>. Verify the result with:</p>
           <pre className="code-block"><code className="language-shell">{`opencode --version`}</code></pre>
           <h4 id="install-the-kronk-bundle">Install the Kronk Bundle</h4>
-          <p>From a Kronk source checkout, run:</p>
+          <p>For advanced, persistent configuration, run this from a Kronk source checkout:</p>
           <pre className="code-block"><code className="language-shell">{`make agents-default-opencode`}</code></pre>
           <blockquote><strong>Warning:</strong> This target is intended to install the repository's complete</blockquote>
           <blockquote>OpenCode setup. It overwrites <code>opencode.jsonc</code>, <code>tui.jsonc</code>, <code>auth.json</code>, and</blockquote>

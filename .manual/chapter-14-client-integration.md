@@ -4,6 +4,7 @@
 
 - [14.1 Connection Settings](#141-connection-settings)
 - [14.2 OpenCode](#142-opencode)
+  - [Launch an Isolated Session](#launch-an-isolated-session)
   - [Install OpenCode](#install-opencode)
   - [Install the Kronk Bundle](#install-the-kronk-bundle)
   - [Configure a Coding Model](#configure-a-coding-model)
@@ -52,6 +53,50 @@ OpenCode is the coding agent for which this repository ships a ready-to-use
 configuration. It registers Kronk as an OpenAI-compatible provider and
 connects OpenCode to Kronk's MCP service.
 
+#### Launch an Isolated Session
+
+For a disposable session, use the preferred launch workflow:
+
+```shell
+kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local
+kronk server start
+kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT
+```
+
+OpenCode uses the model ID exactly as provided, with Kronk responsible for
+resolving it to the downloaded model and optional configuration profile. The
+model must already be available from the running Kronk server. Launch never
+starts a server or downloads models. It connects to `localhost:11435` by
+default and verifies the server and selected model through `GET /v1/models`.
+Use `--host` when Kronk runs elsewhere:
+
+```shell
+kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT \
+  --host 192.168.1.10:11435
+```
+
+The server remains independently managed and continues running after OpenCode
+exits. Its normal `model_config.yaml` resolution and AutoTune behavior apply.
+
+OpenCode runs with only the selected model in a temporary workspace and
+temporary XDG config, data, cache, and state directories. User and project
+OpenCode configuration is not loaded or changed. Arguments after `--` pass
+directly to OpenCode.
+
+If OpenCode is missing, Kronk displays the official install command and
+[OpenCode documentation](https://opencode.ai/docs/), asks permission, and
+installs only after a yes response. To use OpenCode's official preview and
+confirmed removal workflow, run:
+
+```shell
+kronk launch opencode uninstall
+```
+
+See the [OpenCode uninstall documentation](https://opencode.ai/docs/cli/#uninstall).
+The persistent bundle installation below is an advanced alternative for users
+who want a reusable OpenCode configuration connected to a separately managed
+Kronk server.
+
 #### Install OpenCode
 
 Install OpenCode with its official installer:
@@ -69,7 +114,7 @@ opencode --version
 
 #### Install the Kronk Bundle
 
-From a Kronk source checkout, run:
+For advanced, persistent configuration, run this from a Kronk source checkout:
 
 ```shell
 make agents-default-opencode

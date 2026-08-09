@@ -93,9 +93,9 @@ kronk-security-token-create-local:
 
 # ------------------------------------------------------------------------------
 
-# make kronk-run ID="Qwen/Qwen3-8B-Q8_0"
-kronk-run:
-	go run cmd/kronk/main.go run "$(ID)"
+# Launch OpenCode with the Qwen3.6 35B-A3B coding model.
+kronk-launch:
+	go run cmd/kronk/main.go launch opencode "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL"
 
 # ==============================================================================
 # Bucky (whisper) verbs

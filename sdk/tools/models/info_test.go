@@ -105,3 +105,50 @@ func TestModelMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestModelInformationQualifiedIDs(t *testing.T) {
+	m, err := models.New()
+	if err != nil {
+		t.Fatalf("Unable to create models api: %v", err)
+	}
+	wantFingerprint := m.TokenizerFingerprint("Qwen3-8B-Q8_0")
+	if wantFingerprint == "" {
+		t.Fatal("TokenizerFingerprint returned an empty fingerprint for the bare model ID")
+	}
+
+	tests := []struct {
+		name    string
+		modelID string
+	}{
+		{name: "model profile", modelID: "Qwen3-8B-Q8_0/AGENT"},
+		{name: "provider model", modelID: "Qwen/Qwen3-8B-Q8_0"},
+		{name: "provider model profile", modelID: "Qwen/Qwen3-8B-Q8_0/AGENT"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info, err := m.ModelInformation(tt.modelID)
+			if err != nil {
+				t.Fatalf("ModelInformation(%q) failed: %v", tt.modelID, err)
+			}
+			if info.ID != tt.modelID {
+				t.Errorf("ID: got %q, want %q", info.ID, tt.modelID)
+			}
+			if info.Desc != expDesc {
+				t.Errorf("Desc: got %q, want %q", info.Desc, expDesc)
+			}
+
+			file, err := m.FileInformation(tt.modelID)
+			if err != nil {
+				t.Fatalf("FileInformation(%q) failed: %v", tt.modelID, err)
+			}
+			if file.ID != tt.modelID {
+				t.Errorf("File ID: got %q, want %q", file.ID, tt.modelID)
+			}
+
+			if got := m.TokenizerFingerprint(tt.modelID); got != wantFingerprint {
+				t.Errorf("TokenizerFingerprint: got %q, want %q", got, wantFingerprint)
+			}
+		})
+	}
+}

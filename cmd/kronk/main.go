@@ -10,7 +10,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/catalog"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model"
-	"github.com/ardanlabs/kronk/cmd/kronk/kronk/run"
 	"github.com/ardanlabs/kronk/cmd/kronk/launch"
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
@@ -45,7 +44,7 @@ COMMANDS
   catalog   Browse and manage the model catalog (list, show, remove)
   libs      Install/upgrade llama.cpp libraries
   security  Manage API keys and JWT tokens
-  run       Run a model directly for interactive chat (no server needed)
+  launch    Run OpenCode with a local Kronk model
   bucky     Whisper (whisper.cpp) backend: libs and model management
 
 QUICK START
@@ -97,7 +96,6 @@ func init() {
 	rootCmd.AddCommand(libs.Cmd)
 	rootCmd.AddCommand(model.Cmd)
 	rootCmd.AddCommand(catalog.Cmd)
-	rootCmd.AddCommand(run.Cmd)
 
 	// Whisper (bucky) backend verbs mount under "bucky".
 	rootCmd.AddCommand(bucky.Cmd)

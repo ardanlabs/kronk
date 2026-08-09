@@ -19,15 +19,15 @@ func Test_fullPathLookupKeys(t *testing.T) {
 		{
 			name:    "model/variant",
 			modelID: "Qwopus3.5-4B-Coder.Q8_0/AGENT",
-			want:    []string{"Qwopus3.5-4B-Coder.Q8_0", "AGENT"},
+			want:    []string{"AGENT", "Qwopus3.5-4B-Coder.Q8_0"},
 		},
 		{
-			name:    "org/model",
+			name:    "provider/model",
 			modelID: "mradermacher/Qwopus3.5-4B-Coder.Q8_0",
-			want:    []string{"mradermacher", "Qwopus3.5-4B-Coder.Q8_0"},
+			want:    []string{"Qwopus3.5-4B-Coder.Q8_0", "mradermacher"},
 		},
 		{
-			name:    "org/model/variant prefers bare model in the middle",
+			name:    "provider/model/user prefers bare model in the middle",
 			modelID: "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT",
 			want:    []string{"Qwopus3.5-4B-Coder.Q8_0", "mradermacher", "AGENT"},
 		},
