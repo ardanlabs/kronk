@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -717,6 +718,9 @@ func ValidateChatRequest(d D) error {
 	if _, _, err := requestChatTemplateKwargs(d); err != nil {
 		return err
 	}
+	if err := validateChoiceCount(d); err != nil {
+		return err
+	}
 	if val, exists := d["stop"]; exists {
 		if _, err := parseStop(val); err != nil {
 			return err
@@ -724,6 +728,36 @@ func ValidateChatRequest(d D) error {
 	}
 	if err := validateToolChoice(d); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func validateChoiceCount(d D) error {
+	val, exists := d["n"]
+	if !exists || val == nil {
+		return nil
+	}
+
+	var supported bool
+	switch value := val.(type) {
+	case json.Number:
+		n, err := value.Float64()
+		supported = err == nil && n == 1
+	case float32:
+		supported = value == 1
+	case float64:
+		supported = value == 1
+	case int:
+		supported = value == 1
+	case int32:
+		supported = value == 1
+	case int64:
+		supported = value == 1
+	}
+
+	if !supported {
+		return fmt.Errorf("%w: n values other than 1 are not supported", ErrInvalidRequest)
 	}
 
 	return nil

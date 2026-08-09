@@ -1895,6 +1895,7 @@ docker rm kronk
   ]
 }`}</code></pre>
           <p>A non-streaming response contains one or more <code>choices</code>, an assistant <code>message</code>, a <code>finish_reason</code>, and token <code>usage</code>. Thinking models can also return <code>reasoning_content</code>. Set the top-level <code>enable_thinking</code> boolean to request or suppress thinking when the model and its chat template support that option.</p>
+          <p>Kronk currently generates one choice per request. The optional <code>n</code> field may be omitted, <code>null</code>, or <code>1</code>; other values are rejected because multiple choices are not supported.</p>
           <p>Use <code>max_completion_tokens</code> to set the output-token limit. The legacy <code>max_tokens</code> name remains supported; if both are supplied, <code>max_completion_tokens</code> takes precedence. Use <code>stop</code> with a string or an array of up to four strings to end generation when Kronk encounters one of those sequences. The matched sequence is omitted from the response. A custom stop has <code>finish_reason: "stop"</code>; a response that reaches its output-token limit has <code>finish_reason: "length"</code>.</p>
           <p>Set <code>"stream": true</code> to receive chat completion chunks as SSE records:</p>
           <pre className="code-block"><code className="language-text">{`data: {"id":"chatcmpl-...","object":"chat.completion.chunk",...}

@@ -272,6 +272,7 @@ func TestChatPreservesValidationError(t *testing.T) {
 		{name: "invalid integer parameter", field: "max_tokens", value: D{"invalid": true}},
 		{name: "invalid boolean parameter", field: "logprobs", value: "invalid"},
 		{name: "invalid reasoning parameter", field: "reasoning_effort", value: "invalid"},
+		{name: "unsupported choice count", field: "n", value: 4},
 	}
 
 	for _, tt := range tests {
@@ -311,6 +312,46 @@ func TestChatStreamingReturnsValidationError(t *testing.T) {
 	}
 	if _, exists := d["enable_thinking"]; exists {
 		t.Error("ChatStreaming modified caller-owned request")
+	}
+}
+
+func TestChatChoiceCountValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   any
+		wantErr bool
+	}{
+		{name: "omitted"},
+		{name: "null", value: nil},
+		{name: "one decoded", value: json.Number("1")},
+		{name: "one decoded decimal", value: json.Number("1.0")},
+		{name: "one native", value: 1},
+		{name: "multiple", value: json.Number("4"), wantErr: true},
+		{name: "zero", value: json.Number("0"), wantErr: true},
+		{name: "negative", value: -1, wantErr: true},
+		{name: "fractional", value: json.Number("1.5"), wantErr: true},
+		{name: "string", value: "1", wantErr: true},
+		{name: "boolean", value: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{"messages": []D{{"role": "user", "content": "hello"}}}
+			if tt.name != "omitted" {
+				d["n"] = tt.value
+			}
+
+			err := ValidateChatRequest(d)
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidRequest) {
+					t.Errorf("ValidateChatRequest: got %v, want ErrInvalidRequest", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ValidateChatRequest: %v", err)
+			}
+		})
 	}
 }
 
