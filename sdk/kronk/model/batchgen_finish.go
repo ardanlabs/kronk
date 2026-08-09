@@ -345,9 +345,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					"bytes", len(content), "content", content)
 			}
 
-			if s.finishReason == FinishReasonLength {
-				s.respToolCalls = nil
-				lengthTerminatedToolContent = retainLengthTerminatedToolOutput(&s.finalContent, content)
+			var retained bool
+			lengthTerminatedToolContent, retained = retainLengthTerminatedToolOutput(s.finishReason, &s.finalContent, content, &s.respToolCalls)
+			if retained {
 				e.model.log(ctx, "tool-call",
 					"status", "max-tokens-retained-as-content",
 					"bytes", len(lengthTerminatedToolContent),
@@ -491,9 +491,14 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, finalChannel, s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
 }
 
-func retainLengthTerminatedToolOutput(finalContent *strings.Builder, finalTooling string) string {
+func retainLengthTerminatedToolOutput(finishReason string, finalContent *strings.Builder, finalTooling string, respToolCalls *[]ResponseToolCall) (string, bool) {
+	if finishReason != FinishReasonLength {
+		return "", false
+	}
+
 	finalContent.WriteString(finalTooling)
-	return finalTooling
+	*respToolCalls = nil
+	return finalTooling, true
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {

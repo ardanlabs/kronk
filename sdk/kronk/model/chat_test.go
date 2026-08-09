@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/applog"
 )
 
 func TestFormatLogContentPreservesTextPartBoundaries(t *testing.T) {
@@ -997,61 +999,109 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 }
 
 func TestRetainLengthTerminatedToolOutput(t *testing.T) {
+	toolCall := ResponseToolCall{
+		ID:   "call_1",
+		Type: "function",
+		Function: ResponseToolCallFunction{
+			Name:      "lookup",
+			Arguments: ToolCallArguments{},
+		},
+	}
 	tests := []struct {
-		name        string
-		content     string
-		tooling     string
-		wantContent string
+		name         string
+		finishReason string
+		content      string
+		tooling      string
+		wantContent  string
+		wantDelta    string
+		wantCalls    int
+		wantRetained bool
 	}{
-		{name: "incomplete call", tooling: `{"name":"write_file"`, wantContent: `{"name":"write_file"`},
-		{name: "complete call", tooling: `{"name":"lookup","arguments":{}}`, wantContent: `{"name":"lookup","arguments":{}}`},
-		{name: "mixed calls", tooling: "complete\nincomplete", wantContent: "complete\nincomplete"},
-		{name: "existing answer", content: "answer: ", tooling: "partial", wantContent: "answer: partial"},
+		{name: "incomplete call", finishReason: FinishReasonLength, tooling: `{"name":"write_file"`, wantContent: `{"name":"write_file"`, wantDelta: `{"name":"write_file"`, wantRetained: true},
+		{name: "complete call", finishReason: FinishReasonLength, tooling: `{"name":"lookup","arguments":{}}`, wantContent: `{"name":"lookup","arguments":{}}`, wantDelta: `{"name":"lookup","arguments":{}}`, wantRetained: true},
+		{name: "mixed calls", finishReason: FinishReasonLength, tooling: "complete\nincomplete", wantContent: "complete\nincomplete", wantDelta: "complete\nincomplete", wantRetained: true},
+		{name: "existing answer", finishReason: FinishReasonLength, content: "answer: ", tooling: "partial", wantContent: "answer: partial", wantDelta: "partial", wantRetained: true},
+		{name: "natural stop", finishReason: FinishReasonStop, content: "answer", tooling: "complete", wantContent: "answer", wantCalls: 1},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var content strings.Builder
 			content.WriteString(tt.content)
+			toolCalls := []ResponseToolCall{toolCall}
 
-			gotDelta := retainLengthTerminatedToolOutput(&content, tt.tooling)
+			gotDelta, gotRetained := retainLengthTerminatedToolOutput(tt.finishReason, &content, tt.tooling, &toolCalls)
 
 			if got := content.String(); got != tt.wantContent {
 				t.Errorf("content: got %q, want %q", got, tt.wantContent)
 			}
-			if gotDelta != tt.tooling {
-				t.Errorf("delta: got %q, want %q", gotDelta, tt.tooling)
+			if gotDelta != tt.wantDelta {
+				t.Errorf("delta: got %q, want %q", gotDelta, tt.wantDelta)
+			}
+			if got := len(toolCalls); got != tt.wantCalls {
+				t.Errorf("tool calls: got %d, want %d", got, tt.wantCalls)
+			}
+			if gotRetained != tt.wantRetained {
+				t.Errorf("retained: got %t, want %t", gotRetained, tt.wantRetained)
 			}
 		})
 	}
 }
 
 func TestLengthTerminatedToolOutputResponse(t *testing.T) {
+	const answer = "I will update the file. "
 	const tooling = `{"name":"write_file","arguments":{"path":"main.go","content":"package main`
 
 	var content strings.Builder
-	deltaContent := retainLengthTerminatedToolOutput(&content, tooling)
-	delta := chatResponseDelta("id", ObjectChatText, "model", 0, deltaContent, false, nil)
-	if got, want := delta.Choices[0].Delta.Role, RoleAssistant; got != want {
-		t.Errorf("delta role: got %q, want %q", got, want)
+	content.WriteString(answer)
+	toolCalls := []ResponseToolCall{{ID: "call_1", Type: "function"}}
+	deltaContent, retained := retainLengthTerminatedToolOutput(FinishReasonLength, &content, tooling, &toolCalls)
+	if !retained {
+		t.Fatal("retained: got false, want true")
 	}
-	if got := delta.Choices[0].Delta.Content; got != tooling {
-		t.Errorf("delta content: got %q, want %q", got, tooling)
+	if got := len(toolCalls); got != 0 {
+		t.Fatalf("tool calls: got %d, want 0", got)
 	}
 
-	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, content.String(), "", nil, nil, FinishReasonLength, true, Usage{CompletionTokens: 256})
-	choice := resp.Choices[0]
+	ctx := t.Context()
+	ch := make(chan ChatResponse, 3)
+	m := Model{log: applog.DiscardLogger}
+	if err := m.sendDeltaResponse(ctx, ch, "id", ObjectChatText, 0, answer, ChannelAnswer, 0, 1, nil); err != nil {
+		t.Fatalf("send answer delta: %v", err)
+	}
+	if err := m.sendDeltaResponse(ctx, ch, "id", ObjectChatText, 0, deltaContent, ChannelAnswer, 0, 256, nil); err != nil {
+		t.Fatalf("send retained tool delta: %v", err)
+	}
+	m.sendFinalResponse(ctx, ch, "id", ObjectChatText, 0, &content, &strings.Builder{}, toolCalls, nil, nil, FinishReasonLength, "max-tokens", ChannelAnswer, len(tooling), true, false, Usage{CompletionTokens: 256})
+
+	answerDelta := <-ch
+	toolDelta := <-ch
+	terminal := <-ch
+	if got := len(ch); got != 0 {
+		t.Fatalf("responses after terminal: got %d, want 0", got)
+	}
+	if got, want := answerDelta.Choices[0].Delta.Content+toolDelta.Choices[0].Delta.Content, content.String(); got != want {
+		t.Errorf("reconstructed content: got %q, want %q", got, want)
+	}
+	if got, want := toolDelta.Choices[0].Delta.Role, RoleAssistant; got != want {
+		t.Errorf("tool delta role: got %q, want %q", got, want)
+	}
+	if got := toolDelta.Choices[0].Delta.Content; got != tooling {
+		t.Errorf("tool delta content: got %q, want %q", got, tooling)
+	}
+
+	choice := terminal.Choices[0]
 	if got := choice.FinishReason(); got != FinishReasonLength {
 		t.Errorf("finish reason: got %q, want %q", got, FinishReasonLength)
 	}
-	if got := choice.Message.Content; got != tooling {
-		t.Errorf("content: got %q, want %q", got, tooling)
+	if got := choice.Message.Content; got != content.String() {
+		t.Errorf("content: got %q, want %q", got, content.String())
 	}
 	if got := len(choice.Message.ToolCalls); got != 0 {
 		t.Errorf("tool calls: got %d, want 0", got)
 	}
-	if got := resp.Usage.CompletionTokens; got != 256 {
-		t.Errorf("completion tokens: got %d, want 256", got)
+	if got := choice.Delta.Content; got != "" {
+		t.Errorf("terminal delta content: got %q, want empty", got)
 	}
 }
 
