@@ -93,6 +93,19 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		attribute.Int("slot", s.id),
 	)
 	s.prefillStart = time.Now()
+
+	// Resolve one concrete master seed for every request. When the caller did
+	// not provide one, Kronk generates it so the logged value can be supplied
+	// later to replay the same sampling streams.
+	seeds, specRNG, err := resolveSamplingSeeds(job.params.Seed)
+	if err != nil {
+		e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
+		return
+	}
+	seedSource := "provided"
+	if seeds.generated {
+		seedSource = "generated"
+	}
 	e.model.log(job.ctx, "request-lifecycle",
 		"stage", 4,
 		"stage_name", "execute-in-slot",
@@ -100,14 +113,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		"id", job.id,
 		"slot", s.id,
 		"seq", s.seqID,
+		"seed", seeds.master,
+		"seed_source", seedSource,
 	)
 
 	// Create sampler and speculative RNG state for this request.
-	seeds, specRNG, err := resolveSamplingSeeds(job.params.Seed)
-	if err != nil {
-		e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
-		return
-	}
 	s.samplingSeeds = seeds
 	s.specRNG = specRNG
 	s.sampler = e.model.toSampler(job.ctx, job.params, seeds)

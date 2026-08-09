@@ -19,6 +19,8 @@ const (
 )
 
 type samplingSeeds struct {
+	master          uint32
+	generated       bool
 	targetDist      uint32
 	targetXTC       uint32
 	targetAdaptiveP uint32
@@ -31,24 +33,20 @@ func resolveSamplingSeeds(seed *uint32) (samplingSeeds, *rand.Rand, error) {
 }
 
 func resolveSamplingSeedsFrom(seed *uint32, entropy io.Reader) (samplingSeeds, *rand.Rand, error) {
+	generated := seed == nil
 	if seed == nil {
-		var buf [8]byte
+		var buf [4]byte
 		if _, err := io.ReadFull(entropy, buf[:]); err != nil {
 			return samplingSeeds{}, nil, fmt.Errorf("resolve sampling seed: %w", err)
 		}
 
-		seeds := samplingSeeds{
-			targetDist:      llama.DefaultSeed,
-			targetXTC:       llama.DefaultSeed,
-			targetAdaptiveP: llama.DefaultSeed,
-			draftDist:       llama.DefaultSeed,
-			speculative:     binary.LittleEndian.Uint64(buf[:]),
-		}
-
-		return seeds, rand.New(rand.NewSource(int64(seeds.speculative))), nil
+		value := binary.LittleEndian.Uint32(buf[:])
+		seed = &value
 	}
 
 	seeds := samplingSeeds{
+		master:          *seed,
+		generated:       generated,
 		targetDist:      deriveNativeSeed(*seed, seedDomainTargetDist),
 		targetXTC:       deriveNativeSeed(*seed, seedDomainTargetXTC),
 		targetAdaptiveP: deriveNativeSeed(*seed, seedDomainTargetAdaptiveP),
