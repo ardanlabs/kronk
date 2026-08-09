@@ -14,6 +14,32 @@ export default function DocsCLILaunch() {
               <code>kronk launch opencode &lt;model&gt; [--host &lt;IP:PORT&gt;] [-- &lt;OpenCode arguments&gt;]</code>
             </pre>
             <p>OpenCode is the only supported client. It uses the model ID exactly as provided, with Kronk responsible for resolving it to a downloaded model and optional configuration profile. Launch never starts a server or downloads models.</p>
+            <p>Accepted model ID forms are <code>modelName</code>, <code>provider/modelName</code>, and <code>provider/modelName/userName</code>.</p>
+          </div>
+
+          <div className="card" id="flags">
+            <h3>Flags</h3>
+            <table className="flags-table">
+              <thead>
+                <tr>
+                  <th>Flag</th>
+                  <th>Default</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>--host &lt;IP:PORT&gt;</code></td>
+                  <td><code>localhost:11435</code></td>
+                  <td>Address of the running Kronk server.</td>
+                </tr>
+                <tr>
+                  <td><code>-- &lt;arguments&gt;</code></td>
+                  <td>None</td>
+                  <td>Pass all arguments after <code>--</code> directly to OpenCode.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           <div className="card" id="prerequisites">
@@ -30,6 +56,7 @@ kronk launch opencode unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT --host 192.16
             <h3>Isolated OpenCode Session</h3>
             <p>The existing Kronk server remains independently managed and continues running when OpenCode exits. Its normal <code>model_config.yaml</code> resolution and AutoTune behavior apply.</p>
             <p>OpenCode receives only the selected model and runs with temporary workspace and XDG config, data, cache, and state directories. Existing user and project OpenCode configuration is neither loaded nor modified.</p>
+            <p>Kronk prints the temporary environment path before OpenCode starts and confirms its removal after OpenCode exits.</p>
           </div>
 
           <div className="card" id="install">
@@ -64,6 +91,7 @@ kronk launch opencode uninstall`}</code>
         <nav className="doc-sidebar">
           <div className="doc-sidebar-content">
             <div className="doc-index-section"><a href="#usage" className="doc-index-header">Usage</a></div>
+            <div className="doc-index-section"><a href="#flags" className="doc-index-header">Flags</a></div>
             <div className="doc-index-section"><a href="#prerequisites" className="doc-index-header">Prerequisites</a></div>
             <div className="doc-index-section"><a href="#session" className="doc-index-header">Isolated Session</a></div>
             <div className="doc-index-section"><a href="#install" className="doc-index-header">Installation</a></div>

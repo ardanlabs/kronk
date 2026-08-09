@@ -68,6 +68,8 @@ resolving it to the downloaded model and optional configuration profile. The
 model must already be available from the running Kronk server. Launch never
 starts a server or downloads models. It connects to `localhost:11435` by
 default and verifies the server and selected model through `GET /v1/models`.
+Accepted model ID forms are `modelName`, `provider/modelName`, and
+`provider/modelName/userName`.
 Use `--host` when Kronk runs elsewhere:
 
 ```shell
@@ -80,8 +82,13 @@ exits. Its normal `model_config.yaml` resolution and AutoTune behavior apply.
 
 OpenCode runs with only the selected model in a temporary workspace and
 temporary XDG config, data, cache, and state directories. User and project
-OpenCode configuration is not loaded or changed. Arguments after `--` pass
-directly to OpenCode.
+OpenCode configuration is not loaded or changed. Kronk prints the temporary
+environment path before OpenCode starts and confirms its removal after
+OpenCode exits. Arguments after `--` pass directly to OpenCode:
+
+```shell
+kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT -- --help
+```
 
 If OpenCode is missing, Kronk displays the official install command and
 [OpenCode documentation](https://opencode.ai/docs/), asks permission, and

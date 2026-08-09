@@ -23,7 +23,15 @@ func launchOpenCode(bin string, args, availableModels []string, serverURL string
 	if err != nil {
 		return fmt.Errorf("creating temporary OpenCode environment: %w", err)
 	}
-	defer os.RemoveAll(root)
+	fmt.Fprintf(os.Stderr, "      Temporary environment: %s\n", root)
+	fmt.Fprintln(os.Stderr, "      It will be removed when OpenCode exits.")
+	defer func() {
+		if err := os.RemoveAll(root); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: unable to remove temporary OpenCode environment %s: %v\n", root, err)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "Removed temporary OpenCode environment: %s\n", root)
+	}()
 
 	workspace, env, err := prepareOpenCode(root, os.Environ(), availableModels, serverURL)
 	if err != nil {
