@@ -331,6 +331,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Process tool calls if any. Token counts are already tracked
 	// per-token in processSlotToken, so no re-tokenization needed.
 	var toolCallErr error
+	var lengthTerminatedToolContent string
 	if s.finalTooling.Len() > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		s.finalTooling.Reset()
@@ -344,36 +345,46 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					"bytes", len(content), "content", content)
 			}
 
-			if parser, ok := e.model.parser.(ToolCallSchemaParser); ok {
-				tools, _ := s.job.d["tools"].([]D)
-				s.respToolCalls = parser.ToolCallWithSchema(ctx, e.model.log, content, tools)
+			if s.finishReason == FinishReasonLength {
+				s.respToolCalls = nil
+				lengthTerminatedToolContent = retainLengthTerminatedToolOutput(&s.finalContent, content)
+				e.model.log(ctx, "tool-call",
+					"status", "max-tokens-retained-as-content",
+					"bytes", len(lengthTerminatedToolContent),
+					"stream", s.job.params.Stream,
+					"parser", e.model.parser.Name())
 			} else {
-				s.respToolCalls = e.model.parser.ToolCall(ctx, e.model.log, content)
-			}
-
-			// Validate parsed tool call arguments produce valid JSON.
-			for i, tc := range s.respToolCalls {
-				if tc.Status != 0 {
-					e.model.log(ctx, "tool-call", "status", "parse-error",
-						"index", i, "func", tc.Function.Name,
-						"error", tc.Error, "raw", tc.Raw)
-					if toolCallErr == nil {
-						toolCallErr = fmt.Errorf("model emitted an invalid tool call at index %d: %s", i, tc.Error)
-					}
-					continue
+				if parser, ok := e.model.parser.(ToolCallSchemaParser); ok {
+					tools, _ := s.job.d["tools"].([]D)
+					s.respToolCalls = parser.ToolCallWithSchema(ctx, e.model.log, content, tools)
+				} else {
+					s.respToolCalls = e.model.parser.ToolCall(ctx, e.model.log, content)
 				}
 
-				argsJSON, err := json.Marshal(map[string]any(tc.Function.Arguments))
-				if err != nil {
-					e.model.log(ctx, "tool-call", "status", "invalid-args",
-						"index", i, "func", tc.Function.Name,
-						"error", err)
-				} else {
-					var check map[string]any
-					if err := json.Unmarshal(argsJSON, &check); err != nil {
-						e.model.log(ctx, "tool-call", "status", "invalid-args-json",
+				// Validate parsed tool call arguments produce valid JSON.
+				for i, tc := range s.respToolCalls {
+					if tc.Status != 0 {
+						e.model.log(ctx, "tool-call", "status", "parse-error",
 							"index", i, "func", tc.Function.Name,
-							"error", err, "json", string(argsJSON))
+							"error", tc.Error, "raw", tc.Raw)
+						if toolCallErr == nil {
+							toolCallErr = fmt.Errorf("model emitted an invalid tool call at index %d: %s", i, tc.Error)
+						}
+						continue
+					}
+
+					argsJSON, err := json.Marshal(map[string]any(tc.Function.Arguments))
+					if err != nil {
+						e.model.log(ctx, "tool-call", "status", "invalid-args",
+							"index", i, "func", tc.Function.Name,
+							"error", err)
+					} else {
+						var check map[string]any
+						if err := json.Unmarshal(argsJSON, &check); err != nil {
+							e.model.log(ctx, "tool-call", "status", "invalid-args-json",
+								"index", i, "func", tc.Function.Name,
+								"error", err, "json", string(argsJSON))
+						}
 					}
 				}
 			}
@@ -412,7 +423,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if outputTokens > 0 && e.model.draft != nil {
 		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
 	}
-	if toolCallErr != nil && (s.finishReason == FinishReasonLength || s.stopSource == "request-stop") {
+	if toolCallErr != nil && s.stopSource == "request-stop" {
 		valid := s.respToolCalls[:0]
 		for _, toolCall := range s.respToolCalls {
 			if toolCall.Status == 0 {
@@ -458,6 +469,12 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.stopSource == "" {
 		s.stopSource = "unknown"
 	}
+	if s.job.params.Stream && lengthTerminatedToolContent != "" {
+		if sendErr := e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, lengthTerminatedToolContent, ChannelAnswer, s.reasonTokens, outputTokens, nil); sendErr != nil {
+			err = sendErr
+			return
+		}
+	}
 	var terminalToolCallDeltas []ResponseToolCallDelta
 	if s.job.params.Stream {
 		var started []ResponseToolCallDelta
@@ -466,8 +483,17 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, started)
 	}
+	finalChannel := slotChannel(s)
+	if lengthTerminatedToolContent != "" {
+		finalChannel = ChannelAnswer
+	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
-		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, slotChannel(s), s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
+		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, finalChannel, s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
+}
+
+func retainLengthTerminatedToolOutput(finalContent *strings.Builder, finalTooling string) string {
+	finalContent.WriteString(finalTooling)
+	return finalTooling
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {

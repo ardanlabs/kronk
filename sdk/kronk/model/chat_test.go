@@ -996,6 +996,65 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 	}
 }
 
+func TestRetainLengthTerminatedToolOutput(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		tooling     string
+		wantContent string
+	}{
+		{name: "incomplete call", tooling: `{"name":"write_file"`, wantContent: `{"name":"write_file"`},
+		{name: "complete call", tooling: `{"name":"lookup","arguments":{}}`, wantContent: `{"name":"lookup","arguments":{}}`},
+		{name: "mixed calls", tooling: "complete\nincomplete", wantContent: "complete\nincomplete"},
+		{name: "existing answer", content: "answer: ", tooling: "partial", wantContent: "answer: partial"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var content strings.Builder
+			content.WriteString(tt.content)
+
+			gotDelta := retainLengthTerminatedToolOutput(&content, tt.tooling)
+
+			if got := content.String(); got != tt.wantContent {
+				t.Errorf("content: got %q, want %q", got, tt.wantContent)
+			}
+			if gotDelta != tt.tooling {
+				t.Errorf("delta: got %q, want %q", gotDelta, tt.tooling)
+			}
+		})
+	}
+}
+
+func TestLengthTerminatedToolOutputResponse(t *testing.T) {
+	const tooling = `{"name":"write_file","arguments":{"path":"main.go","content":"package main`
+
+	var content strings.Builder
+	deltaContent := retainLengthTerminatedToolOutput(&content, tooling)
+	delta := chatResponseDelta("id", ObjectChatText, "model", 0, deltaContent, false, nil)
+	if got, want := delta.Choices[0].Delta.Role, RoleAssistant; got != want {
+		t.Errorf("delta role: got %q, want %q", got, want)
+	}
+	if got := delta.Choices[0].Delta.Content; got != tooling {
+		t.Errorf("delta content: got %q, want %q", got, tooling)
+	}
+
+	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, content.String(), "", nil, nil, FinishReasonLength, true, Usage{CompletionTokens: 256})
+	choice := resp.Choices[0]
+	if got := choice.FinishReason(); got != FinishReasonLength {
+		t.Errorf("finish reason: got %q, want %q", got, FinishReasonLength)
+	}
+	if got := choice.Message.Content; got != tooling {
+		t.Errorf("content: got %q, want %q", got, tooling)
+	}
+	if got := len(choice.Message.ToolCalls); got != 0 {
+		t.Errorf("tool calls: got %d, want 0", got)
+	}
+	if got := resp.Usage.CompletionTokens; got != 256 {
+		t.Errorf("completion tokens: got %d, want 256", got)
+	}
+}
+
 func TestUsageCachedTokensJSON(t *testing.T) {
 	tests := []struct {
 		name string
