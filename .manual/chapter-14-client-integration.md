@@ -84,7 +84,10 @@ OpenCode runs with only the selected model in a temporary workspace and
 temporary XDG config, data, cache, and state directories. User and project
 OpenCode configuration is not loaded or changed. Kronk prints the temporary
 environment path before OpenCode starts and confirms its removal after
-OpenCode exits. Arguments after `--` pass directly to OpenCode:
+OpenCode exits. In an interactive terminal, Kronk warns that OpenCode may show
+a blank screen for up to 20 seconds while it initializes and waits for Enter
+before handing over the terminal. Arguments after `--` pass directly to
+OpenCode:
 
 ```shell
 kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT -- --help

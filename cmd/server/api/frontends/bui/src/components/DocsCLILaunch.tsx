@@ -56,7 +56,7 @@ kronk launch opencode unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT --host 192.16
             <h3>Isolated OpenCode Session</h3>
             <p>The existing Kronk server remains independently managed and continues running when OpenCode exits. Its normal <code>model_config.yaml</code> resolution and AutoTune behavior apply.</p>
             <p>OpenCode receives only the selected model and runs with temporary workspace and XDG config, data, cache, and state directories. Existing user and project OpenCode configuration is neither loaded nor modified.</p>
-            <p>Kronk prints the temporary environment path before OpenCode starts and confirms its removal after OpenCode exits.</p>
+            <p>Kronk prints the temporary environment path before OpenCode starts and confirms its removal after OpenCode exits. In an interactive terminal, Kronk warns that OpenCode may show a blank screen for up to 20 seconds while it initializes and waits for Enter before handing over the terminal.</p>
           </div>
 
           <div className="card" id="install">

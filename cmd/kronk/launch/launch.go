@@ -23,6 +23,7 @@ func launchOpenCode(bin string, args, availableModels []string, serverURL string
 	if err != nil {
 		return fmt.Errorf("creating temporary OpenCode environment: %w", err)
 	}
+	started := false
 	fmt.Fprintf(os.Stderr, "      Temporary environment: %s\n", root)
 	fmt.Fprintln(os.Stderr, "      It will be removed when OpenCode exits.")
 	defer func() {
@@ -30,7 +31,11 @@ func launchOpenCode(bin string, args, availableModels []string, serverURL string
 			fmt.Fprintf(os.Stderr, "Warning: unable to remove temporary OpenCode environment %s: %v\n", root, err)
 			return
 		}
-		fmt.Fprintf(os.Stderr, "Removed temporary OpenCode environment: %s\n", root)
+		if started {
+			fmt.Fprintf(os.Stderr, "OpenCode exited. Removed temporary environment: %s\n", root)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "OpenCode did not start. Removed temporary environment: %s\n", root)
 	}()
 
 	workspace, env, err := prepareOpenCode(root, os.Environ(), availableModels, serverURL)
@@ -46,14 +51,29 @@ func launchOpenCode(bin string, args, availableModels []string, serverURL string
 	cmd.Stderr = os.Stderr
 
 	fmt.Fprintln(os.Stderr, "      Existing OpenCode configuration will not be changed.")
-	fmt.Fprintln(os.Stderr, "[4/4] Starting OpenCode (the terminal may clear while its interface initializes)...")
+	fmt.Fprintln(os.Stderr, "[4/4] Ready to start OpenCode.")
 	if isInteractive() {
-		time.Sleep(time.Second)
+		fmt.Fprintln(os.Stderr, "      OpenCode may show a blank screen for up to 20 seconds while it initializes.")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "      Press Enter to Continue...")
+
+		ready := make(chan struct{})
+		go func() {
+			readPromptLine()
+			close(ready)
+		}()
+
+		select {
+		case <-ready:
+		case <-signals:
+			return fmt.Errorf("launch canceled")
+		}
 	}
 
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	started = true
 
 	done := make(chan error, 1)
 	go func() {
