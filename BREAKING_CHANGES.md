@@ -7,6 +7,7 @@
   - [Request Validation Changes](#v1304-request-validation-changes)
   - [Tool Parsing Changes](#v1304-tool-parsing-changes)
   - [Log Probability Changes](#v1304-log-probability-changes)
+  - [Pool TTL Changes](#v1304-pool-ttl-changes)
 - [v1.30.3](#v1303)
   - [Auth Changes](#v1303-auth-changes)
   - [Tool Calling Changes](#v1303-tool-calling-changes)
@@ -139,6 +140,22 @@ Consumers that expected one extra terminal entry or compared the logprobs
 array length with raw generated-token accounting must remove that assumption.
 This does not change sampling and does not affect requests with
 `logprobs: false`.
+
+### v1.30.4: Pool TTL Changes
+
+A pool TTL of zero now disables idle model expiration. Previously, the Kronk
+and Bucky Go SDK pools silently replaced zero or negative TTL values with a
+five-minute default. Negative TTL values now return a configuration error.
+
+Direct SDK consumers that relied on a zero-valued `pool.Config.TTL`,
+`kronk/pool.Config.TTL`, or `bucky/pool.Config.TTL` selecting the old default
+must now set a positive duration explicitly. The server default remains 20
+minutes when `KRONK_POOL_TTL` and `--pool-ttl` are omitted; set either one to
+`0` to disable idle expiration.
+
+Disabling idle expiration does not pin a model. Loaded models can still be
+evicted to satisfy the pool-count limit or memory budget, and explicit unload,
+server shutdown, and process termination continue to remove them.
 
 ## v1.30.3
 

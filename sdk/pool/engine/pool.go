@@ -58,7 +58,7 @@ type Config struct {
 	MaxItems int
 
 	// TTL is the duration an entry can live in the cache without being
-	// accessed before the cache evicts it.
+	// accessed before the cache evicts it. Zero disables idle expiration.
 	TTL time.Duration
 }
 
@@ -69,6 +69,7 @@ type Pool[H loader.Handle] struct {
 	cache       *otter.Cache[string, H]
 	itemsInPool atomic.Int32
 	maxItems    int
+	ttl         time.Duration
 	loadGroup   singleflight.Group
 	resman      *resman.Manager
 	ticketsMu   sync.Mutex
@@ -91,22 +92,25 @@ func New[H loader.Handle](cfg Config, l loader.Loader[H]) (*Pool[H], error) {
 	if cfg.MaxItems <= 0 {
 		return nil, errors.New("engine: new: max-items must be > 0")
 	}
-	if cfg.TTL <= 0 {
-		return nil, errors.New("engine: new: ttl must be > 0")
+	if cfg.TTL < 0 {
+		return nil, errors.New("engine: new: ttl must be >= 0")
 	}
 
 	c := Pool[H]{
 		log:      cfg.Log,
 		loader:   l,
 		maxItems: cfg.MaxItems,
+		ttl:      cfg.TTL,
 		resman:   cfg.Resman,
 		tickets:  make(map[string]resman.Ticket),
 	}
 
 	opt := otter.Options[string, H]{
-		MaximumSize:      cfg.MaxItems,
-		ExpiryCalculator: otter.ExpiryAccessing[string, H](cfg.TTL),
-		OnDeletion:       c.eviction,
+		MaximumSize: cfg.MaxItems,
+		OnDeletion:  c.eviction,
+	}
+	if cfg.TTL > 0 {
+		opt.ExpiryCalculator = otter.ExpiryAccessing[string, H](cfg.TTL)
 	}
 
 	cache, err := otter.New(&opt)
@@ -203,6 +207,16 @@ func (c *Pool[H]) Shutdown(ctx context.Context) error {
 // (coldest-first) order. Used by wrappers for ModelStatus listings.
 func (c *Pool[H]) Coldest() iter.Seq[otter.Entry[string, H]] {
 	return c.cache.Coldest()
+}
+
+// EntryExpiresAt reports when an entry will expire from inactivity. It
+// returns the zero time when idle expiration is disabled.
+func (c *Pool[H]) EntryExpiresAt(entry otter.Entry[string, H]) time.Time {
+	if c.ttl == 0 {
+		return time.Time{}
+	}
+
+	return entry.ExpiresAt()
 }
 
 // All returns a weakly consistent iterator over the current cached handles.

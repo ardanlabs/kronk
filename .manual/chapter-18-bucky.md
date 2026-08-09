@@ -204,7 +204,7 @@ Bucky uses the server's shared pool settings:
 | Setting          | Server default | Purpose                              |
 | ---------------- | -------------- | ------------------------------------ |
 | Models in pool   | `10`           | Maximum cached models                |
-| Pool TTL         | `20m`          | How long an idle model remains loaded |
+| Pool TTL         | `20m`          | How long an idle model remains loaded; `0` disables idle expiration |
 | Memory budget    | Shared         | Bucky and language models compete for the same host memory budget |
 
 If the server starts without usable Whisper libraries, it logs that Bucky is

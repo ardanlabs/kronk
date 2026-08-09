@@ -1685,7 +1685,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--pool-ttl</code></td>
                 <td><code>KRONK_POOL_TTL</code></td>
                 <td><code>20m</code></td>
-                <td>Idle model retention time</td>
+                <td>Idle model retention time; <code>0</code> disables idle expiration</td>
               </tr>
               <tr>
                 <td><code>--web-admin-enabled</code></td>
@@ -1733,7 +1733,7 @@ kronk libs --local`}</code></pre>
           <ul>
             <li><code>budget-percent</code> controls memory admission.</li>
             <li><code>models-in-pool</code> places a count limit on each backend pool.</li>
-            <li><code>pool-ttl</code> unloads entries that remain unused past the configured duration.</li>
+            <li><code>pool-ttl</code> unloads entries that remain unused past the configured duration. Set it to <code>0</code> to keep loaded models resident regardless of inactivity. This does not prevent eviction caused by the pool-count limit, memory pressure, explicit unload, or server shutdown.</li>
           </ul>
           <p>At the default <code>budget-percent: 95</code>, each discrete GPU receives a 95% budget minus 256 MiB of headroom. Host RAM receives a 90% budget because Kronk reserves an additional five percentage points for the operating system, allocators, and memory not represented in model estimates. Apple Silicon unified memory is accounted as one host-memory pool rather than independent RAM and Metal VRAM.</p>
           <p>Admission uses predicted model, KV-cache, and runtime memory. These predictions are planning estimates, not a guarantee that every backend allocation will succeed. Context size, cache types, sequence count, CPU offload, and model architecture all affect the estimate.</p>
@@ -3970,7 +3970,7 @@ kronk bucky model remove tiny`}</code></pre>
               <tr>
                 <td>Pool TTL</td>
                 <td><code>20m</code></td>
-                <td>How long an idle model remains loaded</td>
+                <td>How long an idle model remains loaded; <code>0</code> disables idle expiration</td>
               </tr>
               <tr>
                 <td>Memory budget</td>
