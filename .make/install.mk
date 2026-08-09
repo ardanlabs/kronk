@@ -81,6 +81,8 @@ install-test-models: install-kronk
 	@echo
 	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M"
 	@echo
+	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q8_K_XL"
+	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-Omni-3B-Q8_0"
 	@echo
 	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"
@@ -88,6 +90,8 @@ install-test-models: install-kronk
 	kronk model pull --local "Qwen/Qwen3-8B-Q8_0"
 	@echo
 	kronk model pull --local "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
+	@echo
+	kronk model pull --local "ggml-org/qwen3-reranker-0.6b-q8_0"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
