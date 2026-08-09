@@ -42,7 +42,7 @@ func (krn *Kronk) ChatStreaming(ctx context.Context, d model.D) (<-chan model.Ch
 		return nil, fmt.Errorf("chat-streaming: %w", err)
 	}
 
-	f := func(m *model.Model) <-chan model.ChatResponse {
+	f := func(m *model.Model) (<-chan model.ChatResponse, error) {
 		return m.ChatStreaming(ctx, d)
 	}
 

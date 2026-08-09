@@ -56,9 +56,6 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 		}
 		if logprob != nil {
 			s.currentLogprob = logprob
-			if s.stopGate == nil {
-				s.logprobsData = append(s.logprobsData, *logprob)
-			}
 		}
 	}
 
@@ -83,6 +80,10 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 		s.stopSource = "vocab-eog"
 		e.finishSlot(s, nil)
 		return
+	}
+
+	if s.stopGate == nil && s.currentLogprob != nil {
+		s.logprobsData = append(s.logprobsData, *s.currentLogprob)
 	}
 
 	// Convert token to text, buffering partial UTF-8 codepoints.

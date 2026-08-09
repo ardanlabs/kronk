@@ -1081,7 +1081,7 @@ func parseInt(fieldName string, val any) (int, error) {
 
 func parseSeed(val any) (uint32, error) {
 	invalid := func() (uint32, error) {
-		return 0, fmt.Errorf("parse-seed: field-name[seed] must be an integer between 0 and %d", uint64(math.MaxUint32))
+		return 0, fmt.Errorf("%w: parse-seed: field-name[seed] must be an integer between 0 and %d", ErrInvalidRequest, uint64(math.MaxUint32))
 	}
 	fromUint64 := func(v uint64) (uint32, error) {
 		if v > math.MaxUint32 {

@@ -579,7 +579,7 @@ func toMessagesResponse(resp model.ChatResponse) *MessagesResponse {
 					Type:  "tool_use",
 					ID:    tc.ID,
 					Name:  tc.Function.Name,
-					Input: tc.Function.Arguments,
+					Input: map[string]any(tc.Function.Arguments),
 				})
 			}
 		}

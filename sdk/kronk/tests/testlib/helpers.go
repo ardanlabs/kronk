@@ -38,9 +38,10 @@ type TestResult struct {
 
 // StreamAccumulator collects content from streaming delta chunks.
 type StreamAccumulator struct {
-	Content   strings.Builder
-	Reasoning strings.Builder
-	ToolCalls []model.ResponseToolCall
+	Content    strings.Builder
+	Reasoning  strings.Builder
+	ToolCalls  []model.ResponseToolCall
+	RoleDeltas int
 }
 
 // Accumulate adds delta content from a streaming response chunk.
@@ -52,6 +53,9 @@ func (sa *StreamAccumulator) Accumulate(resp model.ChatResponse) {
 	choice := resp.Choices[0]
 
 	if choice.FinishReason() == "" && choice.Delta != nil {
+		if choice.Delta.Role != "" {
+			sa.RoleDeltas++
+		}
 		sa.Content.WriteString(choice.Delta.Content)
 		sa.Reasoning.WriteString(choice.Delta.Reasoning)
 		if len(choice.Delta.ToolCalls) > 0 {
@@ -117,12 +121,13 @@ func TestChatBasics(resp model.ChatResponse, modelName string, object string, re
 		msg.Content == "" &&
 		msg.Reasoning == "" &&
 		len(msg.ToolCalls) == 0 &&
-		len(msg.ToolCallDeltas) == 0 {
+		len(msg.ToolCallDeltas) == 0 &&
+		msg.Role == "" {
 		return fmt.Errorf("basics: expected delta content, reasoning, or tool calls to be non-empty")
 	}
 
-	if resp.Choices[0].FinishReason() == "" && msg.Role != "assistant" {
-		return fmt.Errorf("basics: expected delta role to be assistant, got %s", msg.Role)
+	if msg.Role != "" && msg.Role != "assistant" {
+		return fmt.Errorf("basics: expected delta role to be empty or assistant, got %s", msg.Role)
 	}
 
 	if resp.Choices[0].FinishReason() == "stop" && msg.Content == "" {
@@ -226,6 +231,11 @@ func TestChatResponse(resp model.ChatResponse, modelName string, object string, 
 func TestStreamingContent(acc *StreamAccumulator, lastResp model.ChatResponse, find string) TestResult {
 	var result TestResult
 
+	if acc.RoleDeltas != 1 {
+		result.Err = fmt.Errorf("streaming: got %d role deltas, want 1", acc.RoleDeltas)
+		return result
+	}
+
 	content := strings.ToLower(acc.Content.String())
 	reasoning := strings.ToLower(acc.Reasoning.String())
 	find = strings.ToLower(find)
@@ -245,6 +255,11 @@ func TestStreamingContent(acc *StreamAccumulator, lastResp model.ChatResponse, f
 // TestStreamingToolCall validates accumulated streaming tool call content.
 func TestStreamingToolCall(acc *StreamAccumulator, lastResp model.ChatResponse, find string, funct string, arg string) TestResult {
 	var result TestResult
+
+	if acc.RoleDeltas != 1 {
+		result.Err = fmt.Errorf("streaming: got %d role deltas, want 1", acc.RoleDeltas)
+		return result
+	}
 
 	find = strings.ToLower(find)
 	funct = strings.ToLower(funct)

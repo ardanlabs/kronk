@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -27,7 +28,7 @@ var ErrMessagesMissing = errors.New("validate-document: no messages found in req
 // ErrMessagesInvalid indicates that a chat request's messages field has an invalid type.
 var ErrMessagesInvalid = errors.New("validate-document: messages is not a slice of documents")
 
-// ErrInvalidRequest indicates that a chat request contains an invalid or
+// ErrInvalidRequest indicates that a model request contains an invalid or
 // unsupported field value.
 var ErrInvalidRequest = errors.New("validate-document: invalid request")
 
@@ -40,7 +41,10 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		return ChatResponse{}, err
 	}
 
-	ch := m.chatStreaming(ctx, d, false)
+	ch, err := m.chatStreaming(ctx, d, false)
+	if err != nil {
+		return ChatResponse{}, err
+	}
 
 	var lastMsg ChatResponse
 	for msg := range ch {
@@ -79,13 +83,12 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 // sequence processing.
 // When stream_options.include_usage is true, the terminal choice is followed
 // by a usage response with an empty Choices slice.
-func (m *Model) ChatStreaming(ctx context.Context, d D) <-chan ChatResponse {
+// Validation failures are returned before a response channel is created.
+func (m *Model) ChatStreaming(ctx context.Context, d D) (<-chan ChatResponse, error) {
 	return m.chatStreaming(ctx, d, true)
 }
 
-func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan ChatResponse {
-	returnCh := make(chan ChatResponse, streamChBuffer)
-	ch := m.wrapChannelForLogging(ctx, returnCh)
+func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan ChatResponse, error) {
 	requestStart := time.Now()
 
 	// Increment active streams before launching the goroutine to prevent a race
@@ -98,18 +101,36 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 	// reuse or modify their request after ChatStreaming returns; the queued job
 	// must retain a stable snapshot of all mutable JSON containers.
 	d = d.Clone()
+	id := "chatcmpl-" + uuid.NewString()
+
+	m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
+	m.log(ctx, "request-lifecycle",
+		"stage", 2,
+		"stage_name", "prepare-model-work",
+		"status", "started",
+		"id", id,
+	)
+
+	prepCtx, prepSpan := otel.AddSpan(ctx, "prepare-request")
+
+	params, d, err := m.validateOwnedDocument(prepCtx, d)
+	if err != nil {
+		prepSpan.End()
+		m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
+			"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
+		m.recordChatFailure(ctx, requestStart, err)
+		remaining := m.activeStreams.Add(-1)
+		metrics.AddPoolActiveStreams(m.modelInfo.ID, -1)
+		m.log(ctx, "chat-streaming", "status", "finished", "id", id, "active_streams", remaining)
+		return nil, err
+	}
+
+	params.Stream = streaming
+
+	returnCh := make(chan ChatResponse, streamChBuffer)
+	ch := m.wrapChannelForLogging(ctx, returnCh)
 
 	go func() {
-		id := "chatcmpl-" + uuid.NewString()
-
-		m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
-		m.log(ctx, "request-lifecycle",
-			"stage", 2,
-			"stage_name", "prepare-model-work",
-			"status", "started",
-			"id", id,
-		)
-
 		batching := false
 		var cache cacheResult
 
@@ -139,20 +160,6 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 			}
 		}()
 
-		prepCtx, prepSpan := otel.AddSpan(ctx, "prepare-request")
-
-		params, d, err := m.validateOwnedDocument(prepCtx, d)
-		if err != nil {
-			prepSpan.End()
-			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
-			m.recordChatFailure(ctx, requestStart, err)
-			m.sendChatError(ctx, ch, id, err)
-			return
-		}
-
-		params.Stream = streaming
-
 		d, object, err := m.prepareContext(prepCtx, d)
 		if err != nil {
 			prepSpan.End()
@@ -162,21 +169,6 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 			m.sendChatError(ctx, ch, id, err)
 			return
 		}
-
-		// The per-request mtmd processing context is owned by the slot
-		// (created in startSlot, freed in freeSlotResources). The chat
-		// handler does not own one — it only uses m.mtmdMetaCtx for
-		// SupportVision/SupportAudio metadata reads.
-		//
-		// NOTE: We must NOT call m.resetContext() on the failure path here.
-		// resetContext() calls llama.MemoryClear(mem, true) which wipes the
-		// ENTIRE KV cache — including sequences owned by other in-flight
-		// batched requests and other clients' IMC sessions. It also races
-		// with the batch engine's llama.Decode because it does not hold
-		// m.decodeMu, which is the SIGSEGV we hit when VS Code cancelled
-		// one of three concurrent chat streams. Per-request IMC cleanup on
-		// submit failure is already handled inside submitToBatchEngine via
-		// m.imcReleaseReservation(cache.imcSessionID).
 
 		var prompt string
 		var media [][]byte
@@ -207,13 +199,19 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) <-chan C
 			"imc_match_kind", cache.imcMatchKind,
 		)
 
+		if streaming {
+			if err := m.sendRoleDeltaResponse(ctx, ch, id, object, 0); err != nil {
+				return
+			}
+		}
+
 		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, cache, requestStart) {
 			batching = true
 			return
 		}
 	}()
 
-	return returnCh
+	return returnCh, nil
 }
 
 // wrapChannelForLogging wraps the response channel with logging when insecure
@@ -708,7 +706,11 @@ func (m *Model) validateDocument(ctx context.Context, d D) (Params, error) {
 
 	p, err := m.parseParams(ctx, d)
 	if err != nil {
-		return Params{}, err
+		if errors.Is(err, ErrInvalidRequest) {
+			return Params{}, err
+		}
+
+		return Params{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 
 	return p, nil
@@ -722,6 +724,9 @@ func ValidateChatRequest(d D) error {
 	if _, _, err := requestChatTemplateKwargs(d); err != nil {
 		return err
 	}
+	if err := validateChoiceCount(d); err != nil {
+		return err
+	}
 	if val, exists := d["stop"]; exists {
 		if _, err := parseStop(val); err != nil {
 			return err
@@ -729,6 +734,36 @@ func ValidateChatRequest(d D) error {
 	}
 	if err := validateToolChoice(d); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func validateChoiceCount(d D) error {
+	val, exists := d["n"]
+	if !exists || val == nil {
+		return nil
+	}
+
+	var supported bool
+	switch value := val.(type) {
+	case json.Number:
+		n, err := value.Float64()
+		supported = err == nil && n == 1
+	case float32:
+		supported = value == 1
+	case float64:
+		supported = value == 1
+	case int:
+		supported = value == 1
+	case int32:
+		supported = value == 1
+	case int64:
+		supported = value == 1
+	}
+
+	if !supported {
+		return fmt.Errorf("%w: n values other than 1 are not supported", ErrInvalidRequest)
 	}
 
 	return nil

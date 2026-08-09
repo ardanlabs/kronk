@@ -223,3 +223,33 @@ func TestAcquireAdmissionTimeoutIsLocal(t *testing.T) {
 		t.Errorf("caller context after admission = %v, want nil", err)
 	}
 }
+
+func TestStreamingStartupErrorReleasesAdmission(t *testing.T) {
+	wantErr := errors.New("startup failed")
+	krn := Kronk{
+		cfg:         model.NewConfig(model.WithAdmissionTimeout(time.Hour)),
+		model:       &model.Model{},
+		admissionCh: make(chan struct{}, 1),
+	}
+
+	f := func(*model.Model) (<-chan model.ChatResponse, error) {
+		return nil, wantErr
+	}
+	ef := func(err error) model.ChatResponse {
+		return model.ChatResponseErr("id", model.ObjectChatUnknown, "model", 0, err, model.Usage{})
+	}
+
+	ch, err := streaming(t.Context(), &krn, f, ef)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("streaming: got %v, want %v", err, wantErr)
+	}
+	if ch != nil {
+		t.Error("streaming: got non-nil channel, want nil")
+	}
+	if active := krn.ActiveStreams(); active != 0 {
+		t.Errorf("ActiveStreams: got %d, want 0", active)
+	}
+	if admitted := len(krn.admissionCh); admitted != 0 {
+		t.Errorf("admission permits: got %d, want 0", admitted)
+	}
+}

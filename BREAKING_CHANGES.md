@@ -1,19 +1,148 @@
-# Important Release Notes v1.30.3
+# Breaking Changes by Version
 
 ## Index
 
-- [BREAKING CHANGES](#breaking-changes)
-  - [Auth Changes](#auth-changes)
-  - [Tool Calling Changes](#tool-calling-changes)
-  - [Usage Changes](#usage-changes)
-  - [Network Binding Changes](#network-binding-changes)
-  - [HTTP Error Response Changes](#http-error-response-changes)
-  - [Session Storage Changes](#session-storage-changes)
-  - [Go SDK Changes](#go-sdk-changes)
+- [v1.30.4](#v1304)
+  - [Go SDK Streaming Changes](#v1304-go-sdk-streaming-changes)
+  - [Request Validation Changes](#v1304-request-validation-changes)
+  - [Tool Parsing Changes](#v1304-tool-parsing-changes)
+  - [Log Probability Changes](#v1304-log-probability-changes)
+- [v1.30.3](#v1303)
+  - [Auth Changes](#v1303-auth-changes)
+  - [Tool Calling Changes](#v1303-tool-calling-changes)
+  - [Usage Changes](#v1303-usage-changes)
+  - [Network Binding Changes](#v1303-network-binding-changes)
+  - [HTTP Error Response Changes](#v1303-http-error-response-changes)
+  - [Session Storage Changes](#v1303-session-storage-changes)
+  - [Go SDK Changes](#v1303-go-sdk-changes)
 
-# BREAKING CHANGES
+## v1.30.4
 
-## Auth Changes
+### v1.30.4: Go SDK Streaming Changes
+
+The low-level `model.(*Model).ChatStreaming` method now returns a startup error
+in addition to the response channel:
+
+```go
+// Before
+ch := mdl.ChatStreaming(ctx, request)
+
+// After
+ch, err := mdl.ChatStreaming(ctx, request)
+if err != nil {
+	// The request failed validation before streaming started.
+}
+```
+
+Existing callers that assign one result, range directly over the method call,
+use its method expression, or implement an interface containing the old
+signature will no longer compile.
+
+Request validation now runs before the response channel is created. Validation
+failures are returned directly as `nil, err`; they are no longer delivered as
+an error `model.ChatResponse` on the channel. Errors that happen after startup
+continue to be reported through the stream.
+
+The higher-level `kronk.(*Kronk).ChatStreaming` and
+`kronk.(*Kronk).ResponseStreaming` signatures did not change because they
+already returned `(channel, error)`. Callers of those methods should continue
+checking the returned error before reading the channel.
+
+Streaming responses now report `delta.role: "assistant"` once, in an initial
+empty-content delta. Subsequent text and tool-call deltas omit `role`.
+Previously, each text or tool-call delta repeated the assistant role. Consumers
+must retain the role from the initial delta and must not discard later deltas
+merely because their `ResponseMessage.Role` or JSON `delta.role` is empty.
+
+### v1.30.4: Request Validation Changes
+
+Invalid model request parameters now consistently wrap
+`model.ErrInvalidRequest`. This includes parameter parsing, invalid sampling
+seeds, unsupported response formats or grammars, and invalid tokenize input.
+Direct SDK consumers should classify these errors with:
+
+```go
+if errors.Is(err, model.ErrInvalidRequest) {
+	// Correct the request rather than retrying it unchanged.
+}
+```
+
+This changes observable error strings and changes `errors.Is` from false to
+true for affected errors. Integrations that map `ErrInvalidRequest` to a
+protocol status now classify these failures as client errors; the Kronk HTTP
+server returns HTTP 400 for them instead of treating them as internal model
+errors.
+
+The Chat Completions `n` parameter now supports only the value `1`. Omitted or
+null `n` remains valid. Requests that previously supplied zero, a negative or
+fractional value, a string value, or a numeric value greater than one now fail
+with `model.ErrInvalidRequest`. Kronk does not generate multiple choices in one
+request; clients must submit separate requests when multiple samples are
+needed.
+
+### v1.30.4: Tool Parsing Changes
+
+Tool-call parsing is now strict and atomic in these exported parser packages:
+
+- `sdk/kronk/parsers/deepseek`
+- `sdk/kronk/parsers/gemma`
+- `sdk/kronk/parsers/glm`
+- `sdk/kronk/parsers/gpt`
+- `sdk/kronk/parsers/kimi`
+- `sdk/kronk/parsers/lfm`
+- `sdk/kronk/parsers/llama`
+- `sdk/kronk/parsers/mistral`
+- `sdk/kronk/parsers/qwen`
+- `sdk/kronk/parsers/toolcall`
+
+Malformed or mixed output that was previously repaired, partially accepted, or
+reduced to its valid calls is now rejected as one failed
+`model.ResponseToolCall`. The failed result has `Status == 2`, retains the
+original model output in `Raw`, and describes the parse failure in `Error`.
+Newly rejected forms include duplicate JSON keys or XML parameters, junk around
+or between calls, malformed siblings after a valid call, missing wrappers or
+delimiters, non-object arguments, and structural JSON repairs.
+
+Consumers must check every returned tool call's `Status` before execution and
+must not execute a valid-looking subset when the parser reports an atomic
+failure. Applications that intentionally accept nonstandard model output must
+normalize and validate it outside these parsers.
+
+The state machines returned by the `mistral` and `toolcall` parsers no longer
+implement `model.ToolCallDeltaStreamer`. Dynamic assertions to that optional
+interface now return false, and those parser families no longer emit
+provisional tool-call identity/name deltas while arguments are still being
+generated. Streaming consumers must wait for the completed tool-call delta and
+the terminal `finish_reason: "tool_calls"` before execution.
+
+When generation reaches the token limit with incomplete or invalid tool-call
+syntax, Kronk now preserves the raw truncated text as assistant content and
+removes failed tool-call entries. Previously that output could remain on the
+tool channel or be represented as failed `tool_calls`. Streaming and
+non-streaming consumers must therefore allow a length-limited response to
+contain ordinary assistant content that resembles an unfinished tool call.
+
+Parser end-of-generation and flush handling is also lossless and may expose
+malformed trailing output that older parsers silently discarded. This is part
+of the strict atomic behavior above; callers should treat the parser's failed
+result as authoritative rather than attempting to execute an earlier call from
+the same model output.
+
+### v1.30.4: Log Probability Changes
+
+When `logprobs` is enabled, `choices[].logprobs.content` no longer includes an
+entry for the terminal vocabulary end-of-generation token. The terminal token
+does not produce response content, so each log-probability entry now aligns
+with an emitted output token.
+
+Consumers that expected one extra terminal entry or compared the logprobs
+array length with raw generated-token accounting must remove that assumption.
+This does not change sampling and does not affect requests with
+`logprobs: false`.
+
+## v1.30.3
+
+### v1.30.3: Auth Changes
 
 Kronk now uses one setting to describe API access:
 
@@ -21,7 +150,7 @@ Kronk now uses one setting to describe API access:
 KRONK_AUTHORIZATION_MODE=<mode>
 ```
 
-### Choose the intended mode
+#### Choose the intended mode
 
 | Mode             | `/v1/models` discovery | Inference                              | Management APIs |
 | ---------------- | ---------------------- | -------------------------------------- | --------------- |
@@ -42,7 +171,7 @@ GET /v1/kronk/models/integrity/{model}
 
 They also include catalog, device, diagnostic, pool, playground, security, model-management, and library-management routes.
 
-### Recommended mapping from the old settings
+#### Recommended mapping from the old settings
 
 | Previous embedded-auth configuration                               | New mode         |
 | ------------------------------------------------------------------ | ---------------- |
@@ -58,7 +187,7 @@ For production installations already using endpoint-specific token grants and ra
 KRONK_AUTHORIZATION_MODE=full-protected
 ```
 
-### Remove the legacy settings
+#### Remove the legacy settings
 
 Once the deployed Kronk version supports authorization modes, remove these from Kronk’s configuration:
 
@@ -82,7 +211,7 @@ KRONK_AUTH_TLS_SERVER_NAME
 
 `KRONK_WEB_ADMIN_ENABLED` controls whether the BUI is served. It does not select API permissions.
 
-### Embedded authentication
+#### Embedded authentication
 
 When `KRONK_AUTH_HOST` is empty, Kronk runs the embedded authentication service. The selected authorization mode automatically configures it; do not set `KRONK_AUTH_LOCAL_ENABLED`.
 
@@ -99,7 +228,7 @@ For protected BUI login, retain the configured admin password digest:
 KRONK_WEB_ADMIN_PASSWORD_SHA256=<sha256>
 ```
 
-### External authentication
+#### External authentication
 
 When using a standalone auth service:
 
@@ -124,7 +253,7 @@ AUTH_AUTH_ISSUER="kronk project"
 
 Enable TLS when the auth service crosses an untrusted network.
 
-#### External auth and the BUI
+##### External auth and the BUI
 
 Protected BUI password login currently uses Kronk’s embedded security store. Therefore, when using an external auth host with `management`, `authenticated`, or `full-protected`, disable the BUI:
 
@@ -134,7 +263,7 @@ KRONK_WEB_ADMIN_ENABLED=false
 
 API clients can continue using bearer JWTs issued by the external auth service.
 
-### Suggested production configuration
+#### Suggested production configuration
 
 For scoped inference tokens:
 
@@ -155,7 +284,7 @@ For clients that cannot manage endpoint grants but can send a JWT:
 KRONK_AUTHORIZATION_MODE=authenticated
 ```
 
-### Post-deployment checks
+#### Post-deployment checks
 
 Assuming:
 
@@ -203,7 +332,7 @@ curl -i \
 
 Under `full-protected`, inference should accept the user token only when it contains the matching endpoint grant, such as `chat-completions`, `responses`, `messages`, `embeddings`, `rerank`, `tokenize`, or `transcriptions`.
 
-## Tool Calling Changes
+### v1.30.3: Tool Calling Changes
 
 Tool selection is now validated and normalized according to the OpenAI Chat
 Completions and Responses API shapes. Requests that previously relied on a bare
@@ -260,7 +389,7 @@ structured tool-call output. Forced selection limits prompt rendering to the
 selected function. Actual selection still depends on the model and chat
 template honoring the requested mode.
 
-### Streaming tool calls
+#### Streaming tool calls
 
 Streaming clients must aggregate `tool_calls` deltas rather than expecting the
 terminal chunk to contain the completed call:
@@ -288,7 +417,7 @@ Additional SDK and wire changes:
 - `ResponseResponse.ToolChoice` changed from `string` to `any`. SDK consumers
   must type-switch between the string modes and the forced-function object.
 
-## Usage Changes
+### v1.30.3: Usage Changes
 
 Streaming usage is now opt-in. Previously, streaming responses included usage
 by default. Clients that need final token accounting must now request it:
@@ -354,7 +483,7 @@ The nonstandard `return_prompt` request parameter and the Go SDK
 rendered or source prompt must record it before submitting the request. The
 exported `ChatResponseErr` helper also removed its `prompt` argument.
 
-## Network Binding Changes
+### v1.30.3: Network Binding Changes
 
 The default server bind addresses changed from all network interfaces to
 loopback:
@@ -379,7 +508,7 @@ KRONK_WEB_DEBUG_HOST=0.0.0.0:11445
 Expose the debug listener only on trusted networks. It includes operational
 metrics and profiling endpoints.
 
-## HTTP Error Response Changes
+### v1.30.3: HTTP Error Response Changes
 
 Application errors now use an OpenAI-style nested envelope. Clients that
 decode error bodies must update from:
@@ -413,7 +542,7 @@ error object independently of normal events containing `choices`; they should
 no longer expect every streaming failure to arrive as a choice with
 `finish_reason: "error"`.
 
-## Session Storage Changes
+### v1.30.3: Session Storage Changes
 
 The built-in disk-backed IMC session store was removed. The server no longer
 supports this model configuration:
@@ -446,9 +575,9 @@ Old disk session files were temporary process-owned KV snapshots rather than
 durable resumable conversations. No data conversion is required; stale
 `kronk-sess-*.kv` files can be removed after the old server is stopped.
 
-## Go SDK Changes
+### v1.30.3: Go SDK Changes
 
-### VRAM AutoFit
+#### VRAM AutoFit
 
 `vram.AutoFit` now returns a fourth value reporting whether a verified fitting
 placement was found:
@@ -463,7 +592,7 @@ if !fits {
 Existing three-result assignments will no longer compile. Explicit CPU-only
 placement now uses `gpuLayers == -1`; zero is not the CPU-only sentinel.
 
-### MoE mode
+#### MoE mode
 
 `model.MoEMode` changed from an open string type to a registered enum value.
 Predefined values retain the same serialized strings, but callers can no
@@ -478,7 +607,7 @@ Replace custom `const` declarations with package values or parsed values.
 Existing valid YAML strings remain unchanged; unknown values are now rejected
 during decoding.
 
-### Model information
+#### Model information
 
 The heuristic `IsGPTModel` field was removed from both
 `model.ModelInfo` and `models.ModelInfo`. The native
@@ -486,7 +615,7 @@ The heuristic `IsGPTModel` field was removed from both
 Consumers should use actual model capabilities instead of inferring behavior
 from `gpt` appearing in a model filename.
 
-### Model integrity API
+#### Model integrity API
 
 `model.CheckModel` and `model.RemoveVerifiedSentinel` were removed. Filesystem,
 digest-sidecar, and verification-record ownership now belongs to
@@ -497,7 +626,7 @@ Low-level callers can use `model.VerifyArtifact`, but must provide the parsed
 `ArtifactDigest` and prior `ArtifactVerification` and must persist returned
 verification state themselves.
 
-### Configured sampling seeds
+#### Configured sampling seeds
 
 When a request omits `seed`, Kronk now honors a seed configured in
 `model.Config.DefaultParams` or `sampling-parameters.seed`. Previously that

@@ -303,16 +303,16 @@ func TestFromResponseFormat_JSONSchema_DirectSchema(t *testing.T) {
 func TestFromResponseFormat_JSONSchema_MissingJSONSchema(t *testing.T) {
 	rf := D{"type": "json_schema"}
 
-	if _, err := fromResponseFormat(rf); err == nil {
-		t.Error("expected error when json_schema field is missing")
+	if _, err := fromResponseFormat(rf); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("fromResponseFormat: got %v, want ErrInvalidRequest", err)
 	}
 }
 
 func TestFromResponseFormat_UnsupportedType(t *testing.T) {
 	rf := D{"type": "xml"}
 
-	if _, err := fromResponseFormat(rf); err == nil {
-		t.Error("expected error for unsupported type")
+	if _, err := fromResponseFormat(rf); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("fromResponseFormat: got %v, want ErrInvalidRequest", err)
 	}
 }
 

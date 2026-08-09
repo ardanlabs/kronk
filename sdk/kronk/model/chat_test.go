@@ -259,6 +259,102 @@ func TestParseParamsUsesChatTemplateKwargs(t *testing.T) {
 	}
 }
 
+func TestChatPreservesValidationError(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "invalid seed", field: "seed", value: -1},
+		{name: "unsupported response format", field: "response_format", value: D{"type": "banana"}},
+		{name: "missing response schema", field: "response_format", value: D{"type": "json_schema"}},
+		{name: "invalid float parameter", field: "temperature", value: D{"invalid": true}},
+		{name: "invalid integer parameter", field: "max_tokens", value: D{"invalid": true}},
+		{name: "invalid boolean parameter", field: "logprobs", value: "invalid"},
+		{name: "invalid reasoning parameter", field: "reasoning_effort", value: "invalid"},
+		{name: "unsupported choice count", field: "n", value: 4},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{log: noopLog}
+			d := D{
+				"messages": []D{{"role": "user", "content": "hello"}},
+				tt.field:   tt.value,
+			}
+
+			if _, err := m.Chat(t.Context(), d); !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("Chat: got %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
+func TestChatStreamingReturnsValidationError(t *testing.T) {
+	m := Model{log: noopLog}
+	d := D{
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"seed":     -1,
+		"chat_template_kwargs": D{
+			"enable_thinking": false,
+		},
+	}
+
+	ch, err := m.ChatStreaming(t.Context(), d)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ChatStreaming: got %v, want ErrInvalidRequest", err)
+	}
+	if ch != nil {
+		t.Error("ChatStreaming: got non-nil channel, want nil")
+	}
+	if active := m.activeStreams.Load(); active != 0 {
+		t.Errorf("active streams: got %d, want 0", active)
+	}
+	if _, exists := d["enable_thinking"]; exists {
+		t.Error("ChatStreaming modified caller-owned request")
+	}
+}
+
+func TestChatChoiceCountValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   any
+		wantErr bool
+	}{
+		{name: "omitted"},
+		{name: "null", value: nil},
+		{name: "one decoded", value: json.Number("1")},
+		{name: "one decoded decimal", value: json.Number("1.0")},
+		{name: "one native", value: 1},
+		{name: "multiple", value: json.Number("4"), wantErr: true},
+		{name: "zero", value: json.Number("0"), wantErr: true},
+		{name: "negative", value: -1, wantErr: true},
+		{name: "fractional", value: json.Number("1.5"), wantErr: true},
+		{name: "string", value: "1", wantErr: true},
+		{name: "boolean", value: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{"messages": []D{{"role": "user", "content": "hello"}}}
+			if tt.name != "omitted" {
+				d["n"] = tt.value
+			}
+
+			err := ValidateChatRequest(d)
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidRequest) {
+					t.Errorf("ValidateChatRequest: got %v, want ErrInvalidRequest", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ValidateChatRequest: %v", err)
+			}
+		})
+	}
+}
+
 func TestChatStopValidationAndParsing(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1109,6 +1205,9 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	}
 	choices := wire["choices"].([]any)
 	delta := choices[0].(map[string]any)["delta"].(map[string]any)
+	if _, exists := delta["role"]; exists {
+		t.Errorf("role: got %v, want omitted", delta["role"])
+	}
 	toolCalls := delta["tool_calls"].([]any)
 	toolCall := toolCalls[0].(map[string]any)
 	function := toolCall["function"].(map[string]any)
@@ -1124,6 +1223,29 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	}
 	if got, want := function["arguments"], ""; got != want {
 		t.Errorf("function arguments: got %v, want %v", got, want)
+	}
+}
+
+func TestChatResponseRoleDeltaJSON(t *testing.T) {
+	resp := chatResponseRoleDelta("id", ObjectChatText, "model", 0)
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	choices := wire["choices"].([]any)
+	delta := choices[0].(map[string]any)["delta"].(map[string]any)
+
+	if got, want := delta["role"], RoleAssistant; got != want {
+		t.Errorf("role: got %v, want %v", got, want)
+	}
+	if got, want := delta["content"], ""; got != want {
+		t.Errorf("content: got %v, want %v", got, want)
 	}
 }
 
@@ -1234,6 +1356,9 @@ func TestChatResponseTextDeltaOmitsToolCalls(t *testing.T) {
 	}
 	if strings.Contains(string(data), `"tool_calls"`) {
 		t.Errorf("JSON: got %s, want tool_calls omitted", data)
+	}
+	if strings.Contains(string(data), `"role"`) {
+		t.Errorf("JSON: got %s, want role omitted", data)
 	}
 }
 

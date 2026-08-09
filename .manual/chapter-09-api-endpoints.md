@@ -94,6 +94,10 @@ A non-streaming response contains one or more `choices`, an assistant
 `reasoning_content`. Set the top-level `enable_thinking` boolean to request or
 suppress thinking when the model and its chat template support that option.
 
+Kronk currently generates one choice per request. The optional `n` field may be
+omitted, `null`, or `1`; other values are rejected because multiple choices are
+not supported.
+
 Use `max_completion_tokens` to set the output-token limit. The legacy
 `max_tokens` name remains supported; if both are supplied,
 `max_completion_tokens` takes precedence. Use `stop` with a string or an array
