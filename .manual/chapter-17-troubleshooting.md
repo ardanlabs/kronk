@@ -401,6 +401,21 @@ Include:
 Remove tokens, prompts, responses, filesystem secrets, and other sensitive
 values before sharing diagnostic output.
 
+For a suspected API-contract problem — constrained decoding, tool-call parsing,
+speculative decoding, logprobs, the Anthropic or Responses translations, or parameter
+validation — reproduce it with the stress harness from a clone of the repository and
+attach the relevant part of the report:
+
+```shell
+make test-stress ARGS="--tier=smoke"
+```
+
+Findings land in `zarf/tmp/kronk-stress/findings.txt`, which includes the full
+request and response of every flagged call. Name individual probe groups to narrow the
+run, and see
+[Chapter 19.4.2](https://www.kronkai.com/manual#chapter-19-developer-guide) for tiers,
+environment variables, and the full output layout.
+
 ---
 
 _Next: [Chapter 18: Bucky (Audio Transcription)](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription)_
