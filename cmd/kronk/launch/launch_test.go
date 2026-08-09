@@ -148,6 +148,33 @@ func TestPrepareOpenCode(t *testing.T) {
 	}
 }
 
+func TestFilterOpenCodeModelsPreservesOutputLimit(t *testing.T) {
+	configDir := t.TempDir()
+	modelID := "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT"
+
+	if err := filterOpenCodeModels(configDir, []string{modelID}); err != nil {
+		t.Fatalf("filterOpenCodeModels: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(configDir, "opencode.jsonc"))
+	if err != nil {
+		t.Fatalf("reading filtered OpenCode config: %v", err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("filtered OpenCode config is not valid JSON: %v", err)
+	}
+	entries, err := modelEntries(config)
+	if err != nil {
+		t.Fatalf("modelEntries: %v", err)
+	}
+	model := entries[modelID].(map[string]any)
+	limit := model["limit"].(map[string]any)
+	if got, want := limit["output"], float64(8192); got != want {
+		t.Errorf("output limit: got %v, want %v", got, want)
+	}
+}
+
 func TestModelLookupIDs(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -191,6 +191,7 @@ unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     preserve_thinking: true
   context-window: 131072
   sampling-parameters:
+    max_tokens: 8192
     temperature: 1.0
     top_k: 64
     top_p: 1
@@ -199,6 +200,7 @@ unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
 unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL/AGENT:
   context-window: 131072
   sampling-parameters:
+    max_tokens: 8192
     temperature: 0.6
     top_k: 20
     top_p: 1
@@ -207,6 +209,7 @@ unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL/AGENT:
 unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
   sampling-parameters:
+    max_tokens: 8192
     temperature: 0.6
     top_k: 20
     top_p: 1
@@ -215,6 +218,7 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
 unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
   context-window: 131072
   sampling-parameters:
+    max_tokens: 8192
     temperature: 1.0
     top_k: 64
     top_p: 1
@@ -223,6 +227,7 @@ unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
 mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
   context-window: 73728
   sampling-parameters:
+    max_tokens: 8192
     temperature: 0.6
     top_k: 20
     top_p: 1

@@ -94,17 +94,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	)
 	s.prefillStart = time.Now()
 
-	// Resolve one concrete master seed for every request. When the caller did
-	// not provide one, Kronk generates it so the logged value can be supplied
-	// later to replay the same sampling streams.
-	seeds, specRNG, err := resolveSamplingSeeds(job.params.Seed)
+	// Resolve one concrete master seed for every request. A matched IMC
+	// session retains its seed across conversation turns; a new or reused
+	// session gets a fresh seed when the caller does not provide one.
+	_, seedProvided := job.d["seed"]
+	seeds, specRNG, seedSource, err := e.model.resolveRequestSamplingSeeds(job.params.Seed, seedProvided, job.imcSession)
 	if err != nil {
 		e.finishSlot(s, fmt.Errorf("start-slot: %w", err))
 		return
-	}
-	seedSource := "provided"
-	if seeds.generated {
-		seedSource = "generated"
 	}
 	e.model.log(job.ctx, "request-lifecycle",
 		"stage", 4,

@@ -91,6 +91,8 @@ type imcSession struct {
 	inputTokens         int           // Complete input token count from the latest request, including the generation-template tail.
 	outputTokens        int           // Generated reasoning and completion tokens from the latest request.
 	usageVersion        uint64        // Request generation used to prevent an older completion from replacing newer diagnostics.
+	samplingSeed        uint32        // Concrete master sampling seed retained for this conversation.
+	hasSamplingSeed     bool          // True once samplingSeed has been generated or explicitly supplied.
 	hasMedia            bool          // True if the cached content includes media tokens (image/audio)
 	useMRoPE            bool          // True if the cached media used M-RoPE 4D positional encoding
 	mediaKVCounts       []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.

@@ -167,6 +167,66 @@ func TestResolveSamplingSeedsOmitted(t *testing.T) {
 	}
 }
 
+func TestResolveRequestSamplingSeedsSession(t *testing.T) {
+	m := Model{}
+	session := imcSession{}
+
+	first, _, source, err := m.resolveRequestSamplingSeeds(nil, false, &session)
+	if err != nil {
+		t.Fatalf("resolveRequestSamplingSeeds first: %v", err)
+	}
+	if source != "generated" {
+		t.Errorf("first source: got %q, want %q", source, "generated")
+	}
+	if !session.hasSamplingSeed || session.samplingSeed != first.master {
+		t.Errorf("session seed: got %d present[%t], want %d present[true]", session.samplingSeed, session.hasSamplingSeed, first.master)
+	}
+
+	second, _, source, err := m.resolveRequestSamplingSeeds(nil, false, &session)
+	if err != nil {
+		t.Fatalf("resolveRequestSamplingSeeds second: %v", err)
+	}
+	if source != "session" {
+		t.Errorf("second source: got %q, want %q", source, "session")
+	}
+	if second.master != first.master {
+		t.Errorf("second master: got %d, want %d", second.master, first.master)
+	}
+
+	explicit := uint32(99)
+	third, _, source, err := m.resolveRequestSamplingSeeds(&explicit, true, &session)
+	if err != nil {
+		t.Fatalf("resolveRequestSamplingSeeds explicit: %v", err)
+	}
+	if source != "provided" {
+		t.Errorf("explicit source: got %q, want %q", source, "provided")
+	}
+	if third.master != explicit || session.samplingSeed != explicit {
+		t.Errorf("explicit master: got %d session[%d], want %d", third.master, session.samplingSeed, explicit)
+	}
+	configured := uint32(7)
+	fourth, _, source, err := m.resolveRequestSamplingSeeds(&configured, false, &session)
+	if err != nil {
+		t.Fatalf("resolveRequestSamplingSeeds after explicit: %v", err)
+	}
+	if source != "session" || fourth.master != explicit {
+		t.Errorf("master after explicit: got %d source[%s], want %d source[session]", fourth.master, source, explicit)
+	}
+
+	imcResetSession(&session)
+	if session.hasSamplingSeed || session.samplingSeed != 0 {
+		t.Errorf("reset session seed: got %d present[%t], want 0 present[false]", session.samplingSeed, session.hasSamplingSeed)
+	}
+
+	fifth, _, source, err := m.resolveRequestSamplingSeeds(&configured, false, &session)
+	if err != nil {
+		t.Fatalf("resolveRequestSamplingSeeds configured: %v", err)
+	}
+	if source != "configured" || fifth.master != configured || session.samplingSeed != configured {
+		t.Errorf("configured master: got %d session[%d] source[%s], want %d session[%d] source[configured]", fifth.master, session.samplingSeed, source, configured, configured)
+	}
+}
+
 func TestSeededProbabilitySamplingIsRepeatable(t *testing.T) {
 	probs := []float32{0.1, 0.2, 0.3, 0.4}
 	rng1 := rand.New(rand.NewSource(42))
