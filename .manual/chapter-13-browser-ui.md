@@ -153,7 +153,7 @@ the SHA-256 digest of the password:
 
 ```shell
 export KRONK_AUTHORIZATION_MODE=management
-export KRONK_WEB_ADMIN_PASSWORD_SHA256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
+export KRONK_WEB_ADMIN_PASSWORD_SHA_256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
 kronk server start
 ```
 
