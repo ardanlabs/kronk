@@ -321,7 +321,7 @@ export default function DocsCLIServer() {
                   <td>External auth service TLS configuration</td>
                 </tr>
                 <tr>
-                  <td><code>KRONK_WEB_ADMIN_ENABLED</code> / <code>KRONK_WEB_ADMIN_PASSWORD_SHA256</code></td>
+                  <td><code>KRONK_WEB_ADMIN_ENABLED</code> / <code>KRONK_WEB_ADMIN_PASSWORD_SHA_256</code></td>
                   <td>Browser UI availability and administrator-login password digest</td>
                 </tr>
                 <tr>

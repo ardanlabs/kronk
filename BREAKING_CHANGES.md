@@ -245,7 +245,7 @@ KRONK_WEB_ADMIN_ENABLED=true
 For protected BUI login, retain the configured admin password digest:
 
 ```shell
-KRONK_WEB_ADMIN_PASSWORD_SHA256=<sha256>
+KRONK_WEB_ADMIN_PASSWORD_SHA_256=<sha256>
 ```
 
 #### External authentication
