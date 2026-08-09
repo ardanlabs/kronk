@@ -984,6 +984,7 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 			{
 				Index: index,
 				Delta: &ResponseMessage{
+					Role:      RoleAssistant,
 					Content:   forContent(content, reasoning),
 					Reasoning: forReasoning(content, reasoning),
 				},
@@ -992,12 +993,6 @@ func chatResponseDelta(id string, object string, model string, index int, conten
 			},
 		},
 	}
-}
-
-func chatResponseRoleDelta(id string, object string, model string, index int) ChatResponse {
-	resp := chatResponseDelta(id, object, model, index, "", false, nil)
-	resp.Choices[0].Delta.Role = RoleAssistant
-	return resp
 }
 
 func chatResponseToolCallDelta(id string, object string, model string, index int, delta ResponseToolCallDelta) ChatResponse {
@@ -1011,6 +1006,7 @@ func chatResponseToolCallDelta(id string, object string, model string, index int
 			{
 				Index: index,
 				Delta: &ResponseMessage{
+					Role:           RoleAssistant,
 					ToolCallDeltas: []ResponseToolCallDelta{delta},
 				},
 			},

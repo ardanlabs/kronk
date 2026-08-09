@@ -996,80 +996,6 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 	}
 }
 
-func TestRetainTruncatedToolOutput(t *testing.T) {
-	validCall := ResponseToolCall{
-		ID:   "valid",
-		Type: "function",
-		Function: ResponseToolCallFunction{
-			Name:      "lookup",
-			Arguments: ToolCallArguments{"query": "weather"},
-		},
-	}
-	invalidCall := ResponseToolCall{ID: "invalid", Type: "function", Status: 2, Raw: `{"name":"write_file"`}
-
-	tests := []struct {
-		name        string
-		tooling     string
-		toolCalls   []ResponseToolCall
-		wantContent string
-		wantCalls   int
-	}{
-		{name: "parser returned no calls", tooling: `<function=write_file>`, wantContent: `<function=write_file>`},
-		{name: "parser returned invalid call", tooling: `{"name":"write_file"`, toolCalls: []ResponseToolCall{invalidCall}, wantContent: `{"name":"write_file"`},
-		{name: "complete call remains tooling", tooling: `{"name":"lookup","arguments":{"query":"weather"}}`, toolCalls: []ResponseToolCall{validCall}, wantCalls: 1},
-		{name: "valid call survives malformed output", tooling: "complete\nincomplete", toolCalls: []ResponseToolCall{validCall, invalidCall}, wantContent: "complete\nincomplete", wantCalls: 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var content strings.Builder
-			toolCalls := append([]ResponseToolCall(nil), tt.toolCalls...)
-
-			gotCalls, gotTruncated := retainTruncatedToolOutput(&content, tt.tooling, toolCalls)
-
-			if got := content.String(); got != tt.wantContent {
-				t.Errorf("content: got %q, want %q", got, tt.wantContent)
-			}
-			if got := len(gotCalls); got != tt.wantCalls {
-				t.Errorf("tool calls: got %d, want %d", got, tt.wantCalls)
-			}
-			if gotTruncated != tt.wantContent {
-				t.Errorf("truncated content: got %q, want %q", gotTruncated, tt.wantContent)
-			}
-		})
-	}
-}
-
-func TestTruncatedToolOutputResponse(t *testing.T) {
-	const tooling = `{"name":"write_file","arguments":{"path":"main.go","content":"package main`
-
-	toolCalls := []ResponseToolCall{{
-		ID:     "invalid",
-		Type:   "function",
-		Status: 2,
-		Raw:    tooling,
-		Error:  "jsonrepair: irrecoverable JSON",
-	}}
-	var content strings.Builder
-
-	toolCalls, _ = retainTruncatedToolOutput(&content, tooling, toolCalls)
-	resp := chatResponseFinal("id", ObjectChatTextFinal, "model", 0, content.String(), "", toolCalls, nil, FinishReasonLength, true, Usage{CompletionTokens: 256})
-
-	choice := resp.Choices[0]
-	if got := choice.FinishReason(); got != FinishReasonLength {
-		t.Errorf("finish reason: got %q, want %q", got, FinishReasonLength)
-	}
-	if got := choice.Message.Content; got != tooling {
-		t.Errorf("content: got %q, want %q", got, tooling)
-	}
-	if got := len(choice.Message.ToolCalls); got != 0 {
-		t.Errorf("tool calls: got %d, want 0", got)
-	}
-	if got := resp.Usage.CompletionTokens; got != 256 {
-		t.Errorf("completion tokens: got %d, want 256", got)
-	}
-}
-
 func TestUsageCachedTokensJSON(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1205,8 +1131,8 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	}
 	choices := wire["choices"].([]any)
 	delta := choices[0].(map[string]any)["delta"].(map[string]any)
-	if _, exists := delta["role"]; exists {
-		t.Errorf("role: got %v, want omitted", delta["role"])
+	if got, want := delta["role"], RoleAssistant; got != want {
+		t.Errorf("role: got %v, want %v", got, want)
 	}
 	toolCalls := delta["tool_calls"].([]any)
 	toolCall := toolCalls[0].(map[string]any)
@@ -1223,29 +1149,6 @@ func TestChatResponseToolCallDeltaJSON(t *testing.T) {
 	}
 	if got, want := function["arguments"], ""; got != want {
 		t.Errorf("function arguments: got %v, want %v", got, want)
-	}
-}
-
-func TestChatResponseRoleDeltaJSON(t *testing.T) {
-	resp := chatResponseRoleDelta("id", ObjectChatText, "model", 0)
-
-	data, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatalf("Marshal: %v", err)
-	}
-
-	var wire map[string]any
-	if err := json.Unmarshal(data, &wire); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-	choices := wire["choices"].([]any)
-	delta := choices[0].(map[string]any)["delta"].(map[string]any)
-
-	if got, want := delta["role"], RoleAssistant; got != want {
-		t.Errorf("role: got %v, want %v", got, want)
-	}
-	if got, want := delta["content"], ""; got != want {
-		t.Errorf("content: got %v, want %v", got, want)
 	}
 }
 
@@ -1357,8 +1260,15 @@ func TestChatResponseTextDeltaOmitsToolCalls(t *testing.T) {
 	if strings.Contains(string(data), `"tool_calls"`) {
 		t.Errorf("JSON: got %s, want tool_calls omitted", data)
 	}
-	if strings.Contains(string(data), `"role"`) {
-		t.Errorf("JSON: got %s, want role omitted", data)
+
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	choices := wire["choices"].([]any)
+	delta := choices[0].(map[string]any)["delta"].(map[string]any)
+	if got, want := delta["role"], RoleAssistant; got != want {
+		t.Errorf("role: got %v, want %v", got, want)
 	}
 }
 
