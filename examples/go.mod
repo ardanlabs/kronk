@@ -5,12 +5,13 @@ go 1.26.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
-	github.com/ardanlabs/bucky v1.0.6
-	github.com/ardanlabs/kronk v1.30.5
+	github.com/ardanlabs/bucky v1.0.8
+	github.com/ardanlabs/kronk v1.30.6
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.25
 	github.com/google/uuid v1.6.0
 	github.com/hybridgroup/yzma v1.22.0
+	golang.org/x/image v0.44.0
 )
 
 require (
@@ -27,6 +28,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.59.0 // indirect
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/ardanlabs/jinja v1.5.0 // indirect
+	github.com/ardanlabs/malina v1.0.1 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.16 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.35 // indirect
@@ -77,6 +79,7 @@ require (
 	github.com/hashicorp/go-getter v1.8.6 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
+	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4 // indirect
 	github.com/jupiterrider/ffi v0.7.0 // indirect
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
@@ -112,7 +115,6 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
-	golang.org/x/image v0.44.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect

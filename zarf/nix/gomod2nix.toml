@@ -38,14 +38,17 @@ schema = 3
     version = "v1.2.1"
     hash = "sha256-3XnCzf7tFgEE0MmjxvjfWaw6qK6mKLabFZ3c23JIH9Y="
   [mod."github.com/ardanlabs/bucky"]
-    version = "v1.0.6"
-    hash = "sha256-XjacSUsH4hnVKeiAKzeRZjyMU1qv1LlhkCpeJtzJ0oU="
+    version = "v1.0.8"
+    hash = "sha256-nghLu5q1vuMTT0Ev6Edg2jaaaNhwhItBBg0CpiKUkr4="
   [mod."github.com/ardanlabs/conf/v3"]
     version = "v3.13.0"
     hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="
   [mod."github.com/ardanlabs/jinja"]
     version = "v1.5.0"
     hash = "sha256-ZwN11ft8Pjk4B7LU09tkz7PPv0BkidZIktblrUEbBO8="
+  [mod."github.com/ardanlabs/malina"]
+    version = "v1.0.1"
+    hash = "sha256-LiTop+JPGJV0o3k5gPXtA5NF7iJYG4TGwp/7zYKL/C8="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.1"
     hash = "sha256-c64Cjjy25oYyAUtAbd8KD8XwHzhb48P7z4V6D1QVJIQ="
@@ -211,6 +214,9 @@ schema = 3
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
+  [mod."github.com/icza/mjpeg"]
+    version = "v0.0.0-20230330134156-38318e5ab8f4"
+    hash = "sha256-c5bC4+8LV6GvstV+1qZJxKrDE7fmWyjKCK8jo9Mz1J0="
   [mod."github.com/inconshreveable/mousetrap"]
     version = "v1.1.0"
     hash = "sha256-XWlYH0c8IcxAwQTnIi6WYqq44nOKUylSWxWO/vi+8pE="

@@ -3,9 +3,10 @@ module github.com/ardanlabs/kronk
 go 1.26.0
 
 require (
-	github.com/ardanlabs/bucky v1.0.6
+	github.com/ardanlabs/bucky v1.0.8
 	github.com/ardanlabs/conf/v3 v3.13.0
 	github.com/ardanlabs/jinja v1.5.0
+	github.com/ardanlabs/malina v1.0.1
 	github.com/arl/statsviz v0.8.1
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v4 v4.5.2
@@ -13,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.6
 	github.com/hybridgroup/yzma v1.22.0
+	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
 	github.com/jupiterrider/ffi v0.7.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0

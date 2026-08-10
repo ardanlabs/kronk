@@ -2989,6 +2989,498 @@ func awaitResult(ctx context.Context, result <-chan requestResult) (requestResul
 }
 `;
 
+const malinaExample = `// This example generates a PNG with the Malina SDK.
+// It uses a local stable-diffusion.cpp model and native library.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// Set MALINA_LIB to the stable-diffusion.cpp library directory and
+// MALINA_MODEL to an all-in-one checkpoint file before running:
+//
+//	MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors make example-malina
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+)
+
+const (
+	outputFile = "malina.png"
+	prompt     = "a small red sailboat crossing a calm mountain lake at sunrise"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	modelPath := os.Getenv("MALINA_MODEL")
+	if modelPath == "" {
+		return errors.New("MALINA_MODEL is required")
+	}
+
+	if err := malina.Init(); err != nil {
+		return fmt.Errorf("initialize Malina: %w", err)
+	}
+
+	m, err := malina.New(model.WithModelPath(modelPath))
+	if err != nil {
+		return fmt.Errorf("load model: %w", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		fmt.Println("Unloading model")
+		if err := m.Unload(ctx); err != nil {
+			fmt.Printf("unload: %v\\n", err)
+		}
+	}()
+
+	info, err := malina.SystemInfo()
+	if err != nil {
+		return fmt.Errorf("system info: %w", err)
+	}
+
+	fmt.Println("Generating image")
+	fmt.Println("- native version  :", info.NativeVersion)
+	fmt.Println("- physical cores  :", info.PhysicalCores)
+	fmt.Println("- backend devices :", info.BackendDeviceCount)
+	fmt.Println("- model            :", modelPath)
+	fmt.Println("- prompt           :", prompt)
+
+	params := model.NewGenerateParams()
+	params.Prompt = prompt
+	params.Seed = 42
+
+	start := time.Now()
+	image, err := m.Generate(context.Background(), params)
+	if err != nil {
+		return fmt.Errorf("generate image: %w", err)
+	}
+
+	if err := os.WriteFile(outputFile, image.PNG, 0644); err != nil {
+		return fmt.Errorf("write %s: %w", outputFile, err)
+	}
+
+	fmt.Println("- dimensions       :", fmt.Sprintf("%dx%d", image.Width, image.Height))
+	fmt.Println("- seed             :", image.Seed)
+	fmt.Println("- elapsed          :", time.Since(start).Round(time.Millisecond))
+	fmt.Println("- output           :", outputFile)
+
+	return nil
+}
+`;
+
+const malinaFlux2Example = `// This example generates a PNG with a multi-file FLUX.2 model.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// Set MALINA_LIB and the three component paths before running:
+//
+//	MALINA_LIB=/path/to/libs \\
+//	MALINA_DIFFUSION_MODEL=/path/to/flux.gguf \\
+//	MALINA_VAE_MODEL=/path/to/ae.safetensors \\
+//	MALINA_LLM_MODEL=/path/to/qwen.gguf \\
+//	make example-malina-flux2
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+)
+
+const outputFile = "malina-flux2.png"
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	diffusion := os.Getenv("MALINA_DIFFUSION_MODEL")
+	vae := os.Getenv("MALINA_VAE_MODEL")
+	llm := os.Getenv("MALINA_LLM_MODEL")
+	if diffusion == "" || vae == "" || llm == "" {
+		return errors.New("MALINA_DIFFUSION_MODEL, MALINA_VAE_MODEL, and MALINA_LLM_MODEL are required")
+	}
+
+	if err := malina.Init(); err != nil {
+		return fmt.Errorf("initialize Malina: %w", err)
+	}
+
+	m, err := malina.New(
+		model.WithDiffusionModelPath(diffusion),
+		model.WithVAEPath(vae),
+		model.WithLLMPath(llm),
+	)
+	if err != nil {
+		return fmt.Errorf("load FLUX.2 model: %w", err)
+	}
+	defer unload(m)
+
+	params := model.NewGenerateParams()
+	params.Prompt = "an orange cat on a tropical beach playing with oranges"
+	params.NegativePrompt = "mascots, watermark, signature"
+	params.Steps = 4
+
+	fmt.Println("Generating FLUX.2 image")
+	start := time.Now()
+	image, err := m.Generate(context.Background(), params)
+	if err != nil {
+		return fmt.Errorf("generate image: %w", err)
+	}
+	if err := os.WriteFile(outputFile, image.PNG, 0644); err != nil {
+		return fmt.Errorf("write %s: %w", outputFile, err)
+	}
+
+	fmt.Printf("Wrote %s (%dx%d) in %s\\n", outputFile, image.Width, image.Height, time.Since(start).Round(time.Millisecond))
+
+	return nil
+}
+
+func unload(m *malina.Malina) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := m.Unload(ctx); err != nil {
+		fmt.Printf("unload: %v\\n", err)
+	}
+}
+`;
+
+const malinaImg2imgExample = `// This example transforms an existing image with the Malina SDK.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// Set MALINA_LIB and MALINA_MODEL, then run with a PNG or JPEG source:
+//
+//	MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors \\
+//	make example-malina-img2img
+package main
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+)
+
+type config struct {
+	input    string
+	output   string
+	prompt   string
+	strength float64
+	steps    int
+	seed     int64
+}
+
+func main() {
+	var cfg config
+	flag.StringVar(&cfg.input, "in", "samples/giraffe.jpg", "source PNG or JPEG path")
+	flag.StringVar(&cfg.output, "out", "malina-img2img.png", "output PNG path")
+	flag.StringVar(&cfg.prompt, "prompt", "a watercolor painting at sunset", "prompt that steers the image")
+	flag.Float64Var(&cfg.strength, "strength", 0.6, "noise strength in (0,1]")
+	flag.IntVar(&cfg.steps, "steps", 20, "denoising steps")
+	flag.Int64Var(&cfg.seed, "seed", 42, "RNG seed (-1 selects a random seed)")
+	flag.Parse()
+
+	if err := run(cfg); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(cfg config) error {
+	modelPath := os.Getenv("MALINA_MODEL")
+	if modelPath == "" {
+		return errors.New("MALINA_MODEL is required")
+	}
+
+	source, err := loadImage(cfg.input)
+	if err != nil {
+		return err
+	}
+
+	if err := malina.Init(); err != nil {
+		return fmt.Errorf("initialize Malina: %w", err)
+	}
+
+	m, err := malina.New(model.WithModelPath(modelPath))
+	if err != nil {
+		return fmt.Errorf("load img2img model: %w", err)
+	}
+	defer unload(m)
+
+	params := model.NewGenerateParams()
+	params.Prompt = cfg.prompt
+	params.InitImage = source
+	params.Strength = float32(cfg.strength)
+	params.Steps = cfg.steps
+	params.Seed = cfg.seed
+	params.Width, params.Height, err = generationSize(source.Bounds())
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Transforming %s with strength %.2f\\n", cfg.input, cfg.strength)
+	start := time.Now()
+	generated, err := m.Generate(context.Background(), params)
+	if err != nil {
+		return fmt.Errorf("generate image: %w", err)
+	}
+	if err := os.WriteFile(cfg.output, generated.PNG, 0644); err != nil {
+		return fmt.Errorf("write %s: %w", cfg.output, err)
+	}
+
+	fmt.Printf("Wrote %s (%dx%d) in %s\\n", cfg.output, generated.Width, generated.Height, time.Since(start).Round(time.Millisecond))
+
+	return nil
+}
+
+func loadImage(filename string) (image.Image, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("read source image: %w", err)
+	}
+
+	image, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode source image: %w", err)
+	}
+
+	return image, nil
+}
+
+func generationSize(bounds image.Rectangle) (int, int, error) {
+	const (
+		alignment    = 8
+		minDimension = 64
+		maxDimension = 1024
+	)
+
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 {
+		return 0, 0, errors.New("source image dimensions must be positive")
+	}
+
+	scale := min(1, min(float64(maxDimension)/float64(width), float64(maxDimension)/float64(height)))
+	width = int(float64(width)*scale) / alignment * alignment
+	height = int(float64(height)*scale) / alignment * alignment
+	if width < minDimension || height < minDimension {
+		return 0, 0, fmt.Errorf("source aspect ratio produces dimensions below %d pixels", minDimension)
+	}
+
+	return width, height, nil
+}
+
+func unload(m *malina.Malina) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := m.Unload(ctx); err != nil {
+		fmt.Printf("unload: %v\\n", err)
+	}
+}
+`;
+
+const malinaSdEncodeExample = `// This example encodes PNG and JPEG frames into a Motion-JPEG AVI.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// No model or native library is required:
+//
+//	make example-malina-sd-encode
+package main
+
+import (
+	"bytes"
+	"flag"
+	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"golang.org/x/image/draw"
+)
+
+type config struct {
+	inputDir string
+	output   string
+	fps      int
+	quality  int
+}
+
+func main() {
+	var cfg config
+	flag.StringVar(&cfg.inputDir, "i", "samples/deer", "directory containing PNG and JPEG frames")
+	flag.StringVar(&cfg.output, "o", "malina-output.avi", "output AVI path")
+	flag.IntVar(&cfg.fps, "fps", 24, "frames per second")
+	flag.IntVar(&cfg.quality, "quality", 90, "JPEG quality from 1 to 100")
+	flag.Parse()
+
+	if err := run(cfg); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(cfg config) error {
+	paths, err := imagePaths(cfg.inputDir)
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("no PNG or JPEG files found in %s", cfg.inputDir)
+	}
+
+	frames := make([]image.Image, 0, len(paths))
+	var target image.Rectangle
+	for _, path := range paths {
+		frame, err := loadImage(path)
+		if err != nil {
+			return err
+		}
+		if target.Empty() {
+			target = image.Rect(0, 0, frame.Bounds().Dx(), frame.Bounds().Dy())
+		}
+		frames = append(frames, resize(frame, target))
+	}
+
+	if err := model.SaveAVI(cfg.output, frames, cfg.fps, cfg.quality); err != nil {
+		return fmt.Errorf("save AVI: %w", err)
+	}
+
+	fmt.Printf("Wrote %s (%d frames, %dx%d at %d fps)\\n", cfg.output, len(frames), target.Dx(), target.Dy(), cfg.fps)
+
+	return nil
+}
+
+func imagePaths(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read frames directory: %w", err)
+	}
+
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(entry.Name())) {
+		case ".jpg", ".jpeg", ".png":
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	slices.Sort(paths)
+
+	return paths, nil
+}
+
+func loadImage(filename string) (image.Image, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", filename, err)
+	}
+
+	frame, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", filename, err)
+	}
+
+	return frame, nil
+}
+
+func resize(source image.Image, target image.Rectangle) image.Image {
+	if source.Bounds().Dx() == target.Dx() && source.Bounds().Dy() == target.Dy() {
+		return source
+	}
+
+	frame := image.NewRGBA(target)
+	draw.BiLinear.Scale(frame, target, source, source.Bounds(), draw.Src, nil)
+
+	return frame
+}
+`;
+
+const malinaSystemExample = `// This example prints Malina and stable-diffusion.cpp system information.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// Set MALINA_LIB to the stable-diffusion.cpp library directory before running:
+//
+//	MALINA_LIB=/path/to/libs make example-malina-system
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	if err := malina.Init(); err != nil {
+		return fmt.Errorf("initialize Malina: %w", err)
+	}
+
+	info, err := malina.SystemInfo()
+	if err != nil {
+		return fmt.Errorf("system info: %w", err)
+	}
+
+	fmt.Println("-- stable-diffusion.cpp --")
+	fmt.Println("version:              ", info.NativeVersion)
+	fmt.Println("physical cores:       ", info.PhysicalCores)
+	fmt.Println("GGML backend devices: ", info.BackendDeviceCount)
+	fmt.Println()
+	fmt.Println("-- System info --")
+	fmt.Println(info.Description)
+
+	return nil
+}
+`;
+
 const poolExample = `// This example shows you how to use the pool package to manage multiple
 // models in memory at the same time. The pool will load models on demand,
 // keep them resident up to a configured cap, and unload them after a TTL
@@ -4847,6 +5339,36 @@ export default function DocsSDKExamples() {
             <CodeBlock code={lifecycleLoadExample} language="go" />
           </div>
 
+          <div className="card" id="example-malina">
+            <h3>Malina</h3>
+            <p className="doc-description">This example generates a PNG with the Malina SDK.</p>
+            <CodeBlock code={malinaExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-flux2">
+            <h3>Malina-Flux2</h3>
+            <p className="doc-description">This example generates a PNG with a multi-file FLUX.2 model.</p>
+            <CodeBlock code={malinaFlux2Example} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-img2img">
+            <h3>Malina-Img2img</h3>
+            <p className="doc-description">This example transforms an existing image with the Malina SDK.</p>
+            <CodeBlock code={malinaImg2imgExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-sd-encode">
+            <h3>Malina-Sd-Encode</h3>
+            <p className="doc-description">This example encodes PNG and JPEG frames into a Motion-JPEG AVI.</p>
+            <CodeBlock code={malinaSdEncodeExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-system">
+            <h3>Malina-System</h3>
+            <p className="doc-description">This example prints Malina and stable-diffusion.cpp system information.</p>
+            <CodeBlock code={malinaSystemExample} language="go" />
+          </div>
+
           <div className="card" id="example-pool">
             <h3>Pool</h3>
             <p className="doc-description">This example shows you how to use the pool package to manage multiple</p>
@@ -4905,6 +5427,11 @@ export default function DocsSDKExamples() {
                 <li><a href="#example-embedding">Embedding</a></li>
                 <li><a href="#example-grammar">Grammar</a></li>
                 <li><a href="#example-lifecycle-load">Lifecycle-Load</a></li>
+                <li><a href="#example-malina">Malina</a></li>
+                <li><a href="#example-malina-flux2">Malina-Flux2</a></li>
+                <li><a href="#example-malina-img2img">Malina-Img2img</a></li>
+                <li><a href="#example-malina-sd-encode">Malina-Sd-Encode</a></li>
+                <li><a href="#example-malina-system">Malina-System</a></li>
                 <li><a href="#example-pool">Pool</a></li>
                 <li><a href="#example-question">Question</a></li>
                 <li><a href="#example-rag">Rag</a></li>

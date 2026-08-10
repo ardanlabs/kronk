@@ -50,27 +50,24 @@ Read the [Manual](./manual) to learn more about running the Kronk Model Server.
 
 [![Linux](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml/badge.svg)](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml)
 
-Sometimes there are breaking changes to llama.cpp that require an update to yzma and Kronk. Here are some of the known compatible versions:
+Sometimes there are breaking changes to the family of ggml libraries that require an update to yzma, bucky, malina and/or Kronk. Always choose to use the downloader for each system to make sure you have a compatible version of the libraries. A working version of each library is bound to each release.
 
-As of May 15th, 2026 please use version b9163 until we can fix the problems with b9165+
-
-You can use this environment variable: `export KRONK_LIB_VERSION=b9163`
+Here are some of the known compatible versions:
 
 | llama.cpp | yzma    | kronk  |
 | --------- | ------- | ------ |
-| b8864     | v1.12.0 | 1.23.1 |
-| b8865+    | v1.13.0 | 1.23.2 |
-| b9180+    | v1.14.0 | 1.25.8 |
-| b9460+    | v1.15.0 | 1.26.7 |
-| b9549+    | v1.16.1 | 1.27.4 |
-| b9562+    | v1.17.0 | 1.27.6 |
-| b9616+    | v1.17.1 | 1.27.9 |
-| b9750+    | v1.18.0 | 1.28.3 |
-| b9750+    | v1.18.0 | 1.28.3 |
-| b9979+    | v1.19.0 | 1.28.7 |
-| b10105+   | v1.20.0 | 1.29.1 |
-| b10182+   | v1.21.0 | 1.29.8 |
 | b10212+   | v1.22.0 | 1.30.0 |
+| b10182+   | v1.21.0 | 1.29.8 |
+| b10105+   | v1.20.0 | 1.29.1 |
+
+| whisper.cpp | bucky  | kronk  |
+| ----------- | ------ | ------ |
+| v1.9.2      | v1.0.8 | 1.30.0 |
+| v1.9.1      | v1.0.6 | 1.29.8 |
+
+| stable-diffusion.cpp | malina | kronk   | Notes          |
+| -------------------- | ------ | ------- | -------------- |
+| master-813-bfbef5b   | v1.0.1 | v1.30.7 | (experimental) |
 
 ## Owner Information
 
@@ -244,6 +241,41 @@ make example-embedding
 
 ```shell
 make example-grammar
+```
+
+> [!WARNING]
+> The Malina SDK is experimental. Its public API is subject to change.
+
+[MALINA](examples/malina/main.go) - This example shows how to generate a PNG with the Malina SDK and a local stable-diffusion.cpp model. Set `MALINA_LIB` to the native library directory and `MALINA_MODEL` to an all-in-one checkpoint file.
+
+```shell
+MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors make example-malina
+```
+
+[MALINA-FLUX2](examples/malina-flux2/main.go) - This example generates a PNG from a multi-file FLUX.2 pipeline using separate diffusion, VAE, and LLM components.
+
+```shell
+MALINA_LIB=/path/to/libs MALINA_DIFFUSION_MODEL=/path/to/flux.gguf \
+MALINA_VAE_MODEL=/path/to/ae.safetensors MALINA_LLM_MODEL=/path/to/qwen.gguf \
+make example-malina-flux2
+```
+
+[MALINA-IMG2IMG](examples/malina-img2img/main.go) - This example transforms an existing PNG or JPEG with a prompt and configurable strength.
+
+```shell
+MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors make example-malina-img2img
+```
+
+[MALINA-SD-ENCODE](examples/malina-sd-encode/main.go) - This example encodes a directory of PNG and JPEG frames into a Motion-JPEG AVI without loading a model.
+
+```shell
+make example-malina-sd-encode
+```
+
+[MALINA-SYSTEM](examples/malina-system/main.go) - This example initializes Malina and displays stable-diffusion.cpp system diagnostics without loading a model.
+
+```shell
+MALINA_LIB=/path/to/libs make example-malina-system
 ```
 
 [POOL](examples/pool/main.go) - This example shows you how to use the pool package to manage multipl models in memory at the same time.
