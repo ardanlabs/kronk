@@ -28,6 +28,7 @@ func init() {
 	Cmd.Flags().String("idle-timeout", "", "HTTP idle timeout (e.g., 1m)")
 	Cmd.Flags().String("shutdown-timeout", "", "Server shutdown timeout (e.g., 1m)")
 	Cmd.Flags().StringSlice("cors-allowed-origins", nil, "CORS allowed origins")
+	Cmd.Flags().Bool("download-enabled", false, "Enable model and library download service routes")
 
 	// Auth settings
 	Cmd.Flags().Bool("auth-enabled", false, "Enable local inference and admin authentication")

@@ -90,6 +90,10 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	if v, _ := cmd.Flags().GetStringSlice("cors-allowed-origins"); len(v) > 0 {
 		envVars = append(envVars, "KRONK_WEB_CORS_ALLOWED_ORIGINS="+strings.Join(v, ","))
 	}
+	if cmd.Flags().Changed("download-enabled") {
+		v, _ := cmd.Flags().GetBool("download-enabled")
+		envVars = append(envVars, "KRONK_DOWNLOAD_ENABLED="+strconv.FormatBool(v))
+	}
 
 	// Auth settings
 	if cmd.Flags().Changed("auth-enabled") {

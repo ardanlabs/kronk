@@ -2,6 +2,7 @@ package start
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -34,6 +35,44 @@ func TestBuildEnvVarsInferenceTimeout(t *testing.T) {
 	want := "KRONK_WEB_INFERENCE_TIMEOUT=" + value
 	if envVars := buildEnvVars(cmd); !slices.Contains(envVars, want) {
 		t.Errorf("buildEnvVars: got %v, want entry %q", envVars, want)
+	}
+}
+
+func TestBuildEnvVarsDownloadEnabled(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantEnv string
+	}{
+		{name: "omitted"},
+		{name: "enabled", value: "true", wantEnv: "KRONK_DOWNLOAD_ENABLED=true"},
+		{name: "disabled", value: "false", wantEnv: "KRONK_DOWNLOAD_ENABLED=false"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			cmd.Flags().Bool("download-enabled", false, "")
+			if tt.value != "" {
+				if err := cmd.Flags().Set("download-enabled", tt.value); err != nil {
+					t.Fatalf("Set: %v", err)
+				}
+			}
+
+			envVars := buildEnvVars(cmd)
+			if tt.wantEnv == "" {
+				if slices.ContainsFunc(envVars, func(env string) bool {
+					return strings.HasPrefix(env, "KRONK_DOWNLOAD_ENABLED=")
+				}) {
+					t.Errorf("buildEnvVars: got %v, want no download setting", envVars)
+				}
+				return
+			}
+
+			if !slices.Contains(envVars, tt.wantEnv) {
+				t.Errorf("buildEnvVars: got %v, want entry %q", envVars, tt.wantEnv)
+			}
+		})
 	}
 }
 
