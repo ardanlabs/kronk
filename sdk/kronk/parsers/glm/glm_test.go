@@ -101,13 +101,13 @@ func TestParser_ToolCall(t *testing.T) {
 		{token: "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>",
 			channel: model.ChannelNone},
 		{token: "</tool_call>", channel: model.ChannelTool,
-			content: "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>\n"},
+			content: "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>\n</tool_call>"},
 	})
 	result, eog := c.Classify("done")
 	if eog {
 		t.Error("unexpected continuation after a tool call must be preserved for final validation")
 	}
-	want := "\n</tool_call>done"
+	want := "done"
 	if result.Channel != model.ChannelTool || result.Content != want {
 		t.Errorf("unexpected continuation: got %+v, want tool content %q", result, want)
 	}
@@ -162,7 +162,7 @@ func TestParser_FlushIncompleteToolCall(t *testing.T) {
 
 	flusher := c.(model.StateMachineFlusher)
 	got := flusher.Flush()
-	want := "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>\n</tool_call>"
+	want := "get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>\n<missing-tool-call-close>"
 	if got.Channel != model.ChannelTool || got.Content != want {
 		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelTool, want)
 	}

@@ -14,6 +14,30 @@ type step struct {
 	eog     bool
 }
 
+func TestStripToolCallMarkup(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"complete", `[TOOL_CALLS]weather[ARGS]{"city":"NYC"}`, ""},
+		{"truncated payload", `[TOOL_CALLS]weather[ARGS]{"city":`, ""},
+		{"truncated marker", `[TOOL_`, ""},
+		{"repeated", `[TOOL_CALLS]a[ARGS]{}[TOOL_CALLS]b[ARGS]{}`, ""},
+		{"surrounding before", `answer [TOOL_CALLS]a[ARGS]{}`, `answer `},
+		{"ordinary", `answer [TOOL_BOX]`, `answer [TOOL_BOX]`},
+		{"foreign markup", `<tool_call>{}</tool_call>`, `<tool_call>{}</tool_call>`},
+		{"whitespace", " \n", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func runSteps(t *testing.T, name string, c model.StateMachine, steps []step) {
 	t.Helper()
 	for i, s := range steps {

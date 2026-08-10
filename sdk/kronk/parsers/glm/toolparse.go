@@ -14,6 +14,15 @@ import (
 func parseGLM(content string) []model.ResponseToolCall {
 	var toolCalls []model.ResponseToolCall
 	raw := content
+	if parts := strings.Split(content, glmToolCallEvidence); len(parts) > 1 {
+		for _, part := range parts[:len(parts)-1] {
+			if strings.TrimSpace(part) == "" {
+				return []model.ResponseToolCall{failedGLMToolCall(raw,
+					errors.New("parse glm: tool call is empty"))}
+			}
+		}
+	}
+	content = strings.ReplaceAll(content, glmToolCallEvidence, "\n")
 
 	for call := range strings.SplitSeq(content, "\n") {
 		call = strings.TrimSpace(call)

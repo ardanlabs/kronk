@@ -37,6 +37,24 @@ func TestAdminRedirects(t *testing.T) {
 	}
 }
 
+func TestAdminRedirectDoesNotCaptureUnknownRoutes(t *testing.T) {
+	app := web.NewApp(func(context.Context, string, ...any) {})
+	registerAdminRoutes(app, Config{})
+	app.NotFoundHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.test/v1/not-a-route", nil)
+	rr := httptest.NewRecorder()
+
+	app.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status: got %d, want %d", rr.Code, http.StatusNotFound)
+	}
+	if location := rr.Header().Get("Location"); location != "" {
+		t.Errorf("Location: got %q, want empty value", location)
+	}
+}
+
 func TestAdminCookieMiddleware(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer cookie-token" {

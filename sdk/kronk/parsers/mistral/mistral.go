@@ -86,6 +86,26 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 	return parseMistral(ctx, log, buf)
 }
 
+// StripToolCallMarkup removes the Mistral tool-call region, which has no
+// reliable closing delimiter, while preserving content before it.
+func (Parser) StripToolCallMarkup(buf string) string {
+	if before, _, ok := strings.Cut(buf, toolCallsMarker); ok {
+		return emptyMistralWhitespace(before)
+	}
+	trimmed := strings.TrimLeft(buf, " \t\r\n")
+	if trimmed != "" && strings.HasPrefix(toolCallsMarker, trimmed) {
+		return ""
+	}
+	return emptyMistralWhitespace(buf)
+}
+
+func emptyMistralWhitespace(content string) string {
+	if strings.Trim(content, " \t\r\n") == "" {
+		return ""
+	}
+	return content
+}
+
 // AdjustParams coerces request Params into values the model's chat template
 // will accept. For templates that restrict reasoning_effort to "none" or
 // "high" (Mistral Medium 3.5+), any other value is coerced to "high" so the

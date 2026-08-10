@@ -332,6 +332,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// per-token in processSlotToken, so no re-tokenization needed.
 	var toolCallErr error
 	var lengthTerminatedToolContent string
+	var toolCallsDiscarded bool
 	if s.finalTooling.Len() > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		s.finalTooling.Reset()
@@ -345,12 +346,13 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 					"bytes", len(content), "content", content)
 			}
 
-			var retained bool
-			lengthTerminatedToolContent, retained = retainLengthTerminatedToolOutput(s.finishReason, &s.finalContent, content, &s.respToolCalls)
-			if retained {
+			lengthTerminatedToolContent, toolCallsDiscarded = discardLengthTerminatedToolCalls(s.finishReason, e.model.parser, &s.finalContent, content, &s.respToolCalls)
+
+			if toolCallsDiscarded {
 				e.model.log(ctx, "tool-call",
-					"status", "max-tokens-retained-as-content",
-					"bytes", len(lengthTerminatedToolContent),
+					"status", "max-tokens-finalized",
+					"buffered_bytes", len(content),
+					"retained_bytes", len(lengthTerminatedToolContent),
 					"stream", s.job.params.Stream,
 					"parser", e.model.parser.Name())
 			} else {
@@ -484,18 +486,19 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, started)
 	}
 	finalChannel := slotChannel(s)
-	if lengthTerminatedToolContent != "" {
+	if toolCallsDiscarded {
 		finalChannel = ChannelAnswer
 	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, finalChannel, s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
 }
 
-func retainLengthTerminatedToolOutput(finishReason string, finalContent *strings.Builder, finalTooling string, respToolCalls *[]ResponseToolCall) (string, bool) {
+func discardLengthTerminatedToolCalls(finishReason string, parser Parser, finalContent *strings.Builder, finalTooling string, respToolCalls *[]ResponseToolCall) (string, bool) {
 	if finishReason != FinishReasonLength {
 		return "", false
 	}
 
+	finalTooling = parser.StripToolCallMarkup(finalTooling)
 	finalContent.WriteString(finalTooling)
 	*respToolCalls = nil
 	return finalTooling, true

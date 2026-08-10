@@ -41,6 +41,35 @@ func TestNewClaimsKimiK3(t *testing.T) {
 	}
 }
 
+func TestStripToolCallMarkup(t *testing.T) {
+	call := toolsOpen + callOpen + ` tool="ping" index="1"` + sepToken + callClose + toolsClose
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"complete", call, ""},
+		{"truncated", "before" + toolsOpen + callOpen, "before"},
+		{"trailing marker prefix", call + toolsOpen[:len(toolsOpen)-2], ""},
+		{"closer in payload", toolsOpen + callOpen + ` tool="ping" index="1"` + sepToken + argumentOpen + ` name="text"` + sepToken + `before` + toolsClose + `after` + argumentClose + callClose + toolsClose, ""},
+		{"truncated after closer in payload", toolsOpen + callOpen + ` tool="ping" index="1"` + sepToken + argumentOpen + ` name="text"` + sepToken + `before` + toolsClose + `after`, ""},
+		{"repeated mixed", call + "middle" + call, "middle"},
+		{"surrounding and trailing", "before\n" + call + "\nafter ", "before\n\nafter "},
+		{"ordinary content", "ordinary <tag> content", "ordinary <tag> content"},
+		{"ordinary marker prefix", "ordinary <", "ordinary <"},
+		{"foreign markup", "a<｜DSML｜tool_calls>x</｜DSML｜tool_calls>b", "a<｜DSML｜tool_calls>x</｜DSML｜tool_calls>b"},
+		{"whitespace only", " \n" + call + "\t", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup(%q): got %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStateMachineReasoningResponseAndTools(t *testing.T) {
 	sm := Parser{}.NewStateMachine()
 

@@ -23,13 +23,20 @@ func withCleanRegistry(t *testing.T) {
 // without pulling in real parser packages (which would create import
 // cycles).
 type fakeParser struct {
-	name string
+	name        string
+	stripMarkup bool
 }
 
 func (f fakeParser) Name() string                  { return f.name }
 func (f fakeParser) NewStateMachine() StateMachine { return nil }
 func (f fakeParser) ToolCall(_ context.Context, _ applog.Logger, _ string) []ResponseToolCall {
 	return nil
+}
+func (f fakeParser) StripToolCallMarkup(buf string) string {
+	if f.stripMarkup {
+		return ""
+	}
+	return buf
 }
 
 // claimingFactory builds a factory that claims a fingerprint when its match

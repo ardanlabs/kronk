@@ -39,6 +39,35 @@ func TestNewClaimsDeepSeek(t *testing.T) {
 	}
 }
 
+func TestStripToolCallMarkup(t *testing.T) {
+	call := toolCallsOpen + invokeOpen + ` name="ping">` + invokeClose + toolCallsClose
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"complete", call, ""},
+		{"truncated", "before" + toolCallsOpen + invokeOpen, "before"},
+		{"trailing marker prefix", call + toolCallsOpen[:len(toolCallsOpen)-2], ""},
+		{"closer in payload", toolCallsOpen + invokeOpen + ` name="ping">` + parameterOpen + ` name="text" string="true">before` + toolCallsClose + `after` + parameterClose + invokeClose + toolCallsClose, ""},
+		{"truncated after closer in payload", toolCallsOpen + invokeOpen + ` name="ping">` + parameterOpen + ` name="text" string="true">before` + toolCallsClose + `after`, ""},
+		{"repeated mixed", call + "middle" + call, "middle"},
+		{"surrounding and trailing", "before\n" + call + "\nafter ", "before\n\nafter "},
+		{"ordinary content", "ordinary <tag> content", "ordinary <tag> content"},
+		{"ordinary marker prefix", "ordinary <", "ordinary <"},
+		{"foreign markup", "a<|tool_call_start|>x<|tool_call_end|>b", "a<|tool_call_start|>x<|tool_call_end|>b"},
+		{"whitespace only", " \n" + call + "\t", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup(%q): got %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStateMachineReasoningThenAnswer(t *testing.T) {
 	sm := Parser{}.NewStateMachine()
 

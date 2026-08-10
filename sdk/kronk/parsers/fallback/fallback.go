@@ -37,3 +37,9 @@ func (Parser) NewStateMachine() model.StateMachine {
 func (Parser) ToolCall(context.Context, applog.Logger, string) []model.ResponseToolCall {
 	return nil
 }
+
+// StripToolCallMarkup preserves output because the fallback parser does not
+// recognize model-native tool-call markup.
+func (Parser) StripToolCallMarkup(buf string) string {
+	return buf
+}

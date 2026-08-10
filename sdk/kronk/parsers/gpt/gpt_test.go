@@ -220,6 +220,25 @@ func TestParser_ToolCallFlushMultipleAndReset(t *testing.T) {
 	}
 }
 
+func TestParser_FlushIncompleteCommentaryFraming(t *testing.T) {
+	for _, content := range []string{"commentary", "commentary to=functions.weather"} {
+		t.Run(content, func(t *testing.T) {
+			sm := Parser{}.NewStateMachine()
+			if got, _ := sm.Classify("<|channel|>" + content); got != (model.Result{}) {
+				t.Fatalf("Classify: got %+v, want buffered", got)
+			}
+			got := sm.(model.StateMachineFlusher).Flush()
+			want := incompleteFramingMarker + content
+			if got.Channel != model.ChannelTool || got.Content != want {
+				t.Fatalf("Flush: got %+v, want tool content %q", got, want)
+			}
+			if stripped := (Parser{}).StripToolCallMarkup(got.Content); stripped != "" {
+				t.Errorf("StripToolCallMarkup: got %q, want empty", stripped)
+			}
+		})
+	}
+}
+
 // TestParser_RecoversFromMissingEnd covers the resilience path where the
 // model emits <|start|> or <|channel|> without first closing the previous
 // block with <|end|>.

@@ -95,20 +95,29 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	if sm.inToolCall {
 		switch content {
 		case "<tool_call>", "<|tool_call>":
-			// Repeated opener inside an open block — skip.
+			sm.toolCallBuf.WriteString(content)
+			sm.updateToolCallDeltas()
 			return model.Result{}, false
 
 		case "</tool_call>", "<tool_call|>":
-			return sm.completeToolCall(), false
+			if sm.wrappedTool && !qwenWrapperCloseAllowed(sm.toolCallBuf.String()) {
+				sm.toolCallBuf.WriteString(content)
+				sm.updateToolCallDeltas()
+				return model.Result{}, false
+			}
+			return sm.completeToolCall(true), false
 
 		default:
 			if sm.wrappedTool {
 				for _, marker := range []string{"</tool_call>", "<tool_call|>"} {
 					trimmed := strings.TrimRight(content, " \t\r\n")
 					if before, ok := strings.CutSuffix(trimmed, marker); ok {
+						if !qwenWrapperCloseAllowed(sm.toolCallBuf.String() + before) {
+							continue
+						}
 						sm.toolCallBuf.WriteString(before)
 						sm.updateToolCallDeltas()
-						return sm.completeToolCall(), false
+						return sm.completeToolCall(true), false
 					}
 				}
 			}
@@ -120,7 +129,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			// only at </tool_call>, after the complete inner XML is buffered.
 			accumulated := sm.toolCallBuf.String()
 			if !sm.wrappedTool && strings.HasSuffix(strings.TrimSpace(accumulated), "</function>") {
-				return sm.completeToolCall(), false
+				return sm.completeToolCall(true), false
 			}
 
 			return model.Result{}, false
@@ -198,6 +207,33 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	}
 }
 
+func qwenWrapperCloseAllowed(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "<function=") {
+		return qwenFunctionEnd(trimmed) != -1
+	}
+	if !strings.HasPrefix(trimmed, "{") {
+		return true
+	}
+
+	inString := false
+	escaped := false
+	for i := range len(trimmed) {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inString && trimmed[i] == '\\' {
+			escaped = true
+			continue
+		}
+		if trimmed[i] == '"' {
+			inString = !inString
+		}
+	}
+	return !inString
+}
+
 func (sm *stateMachine) startToolCall(wrapped bool, content string) {
 	sm.status = model.ChannelTool
 	sm.inToolCall = true
@@ -210,11 +246,15 @@ func (sm *stateMachine) startToolCall(wrapped bool, content string) {
 	sm.updateToolCallDeltas()
 }
 
-func (sm *stateMachine) completeToolCall() model.Result {
+func (sm *stateMachine) completeToolCall(closed bool) model.Result {
 	content := strings.Trim(sm.toolCallBuf.String(), "\n")
 	direct := strings.HasPrefix(strings.TrimSpace(content), "<function=")
+	wrapped := sm.wrappedTool
 	if content != "" {
 		content += "\n"
+	}
+	if wrapped {
+		content = encodeQwenWrapperFrame(content, closed)
 	}
 
 	sm.toolCallBuf.Reset()
@@ -369,7 +409,7 @@ func jsonStringEnd(content string, start int) (int, bool) {
 // generation ends before the state machine sees its closing delimiter.
 func (sm *stateMachine) Flush() model.Result {
 	if sm.inToolCall {
-		return sm.completeToolCall()
+		return sm.completeToolCall(false)
 	}
 
 	if !sm.inPendingTag {

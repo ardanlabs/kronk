@@ -138,3 +138,36 @@ func TestParseGPTToolCall_DelimitersAndEmptyArray(t *testing.T) {
 		t.Errorf("empty = %#v, want non-nil empty array", calls[0].Function.Arguments["empty"])
 	}
 }
+
+func TestStripToolCallMarkup(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"complete", `.weather <|message|>{"city":"NYC"}`, ""},
+		{"truncated", `.weather <|message|>{"city":"NY`, ""},
+		{"repeated mixed", `.first <|message|>{}.second <|message|>{"x":1}tail`, "tail"},
+		{"synthetic incomplete", `.weather <|message|>{}<|missing-end|>`, ""},
+		{"partial call marker", `.weather <|message|>{}<|ca`, ""},
+		{"partial message marker", `.weather <|message|>{}<|mess`, ""},
+		{"unfinished next header", `.one <|message|>{}<|end|>` + incompleteFramingMarker + `commentary to=functions.two<|mess`, ""},
+		{"synthetic malformed", `.weather <|invalid-framing|><|end|>`, ""},
+		{"truncated header", `.weather`, ""},
+		{"surrounding truncated header", `before .weather`, "before "},
+		{"surrounding text", `before .weather <|message|>{} after`, "before  after"},
+		{"unfinished commentary evidence", incompleteFramingMarker + `commentary to=functions.weather`, ""},
+		{"ordinary commentary", `commentary to=functions.weather is documentation`, `commentary to=functions.weather is documentation`},
+		{"ordinary text", `please invoke .weather with JSON`, `please invoke .weather with JSON`},
+		{"foreign markup", `<tool_call>.weather {}</tool_call>`, `<tool_call>.weather {}</tool_call>`},
+		{"whitespace residual", " \n.weather <|message|>{}\t", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -116,10 +116,10 @@ func TestParser_StructuralMarkersSkipped(t *testing.T) {
 func TestParser_ToolCall(t *testing.T) {
 	c := Parser{}.NewStateMachine()
 	runSteps(t, "tool-call", c, []step{
-		{token: "<tool_call>", channel: model.ChannelNone},
+		{token: "<tool_call>", channel: model.ChannelTool},
 		{token: `call:get_weather{location:<|"|>NYC<|"|>}`, channel: model.ChannelNone},
 		{token: "</tool_call>", channel: model.ChannelTool,
-			content: `call:get_weather{location:<|"|>NYC<|"|>}` + "\n"},
+			content: encodeGemmaWrapperFrame(`call:get_weather{location:<|"|>NYC<|"|>}`+"\n", true)},
 	})
 	result, eog := c.Classify("done")
 	if eog {
@@ -185,12 +185,62 @@ func TestParser_FlushIncompleteToolCall(t *testing.T) {
 
 	flusher := c.(model.StateMachineFlusher)
 	got := flusher.Flush()
-	want := `call:get_weather{location:<|"|>NYC<|"|>}` + "\n"
+	want := encodeGemmaWrapperFrame(`call:get_weather{location:<|"|>NYC<|"|>}`+"\n", false)
 	if got.Channel != model.ChannelTool || got.Content != want {
 		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelTool, want)
 	}
 	if got := flusher.Flush(); got != (model.Result{}) {
 		t.Errorf("second Flush: got %+v, want zero result", got)
+	}
+}
+
+func TestParser_WrappedCallPreservesNativeMarkerTextInArguments(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	var tooling strings.Builder
+	for _, token := range []string{"<tool_call>", `call:write{text:<|"|>before `, "</tool_call>", "<tool_call>", ` after<|"|>}`, "</tool_call>"} {
+		result, _ := c.Classify(token)
+		if result.Channel == model.ChannelTool {
+			tooling.WriteString(result.Content)
+		}
+	}
+
+	calls := Parser{}.ToolCall(t.Context(), nil, tooling.String())
+	if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Arguments["text"] != "before </tool_call><tool_call> after" {
+		t.Fatalf("ToolCall: got %+v, want original marker text in argument", calls)
+	}
+	if got := (Parser{}).StripToolCallMarkup(tooling.String()); got != "" {
+		t.Errorf("StripToolCallMarkup: got %q, want empty", got)
+	}
+}
+
+func TestParser_StateMachineWrapperEvidenceStripsInvalidBodies(t *testing.T) {
+	for _, complete := range []bool{true, false} {
+		t.Run(map[bool]string{true: "complete", false: "missing close"}[complete], func(t *testing.T) {
+			c := Parser{}.NewStateMachine()
+			var tooling strings.Builder
+			for _, token := range []string{"<tool_call>", "ordinary"} {
+				result, eog := c.Classify(token)
+				if eog {
+					t.Fatalf("Classify(%q): got unexpected EOG", token)
+				}
+				if result.Channel == model.ChannelTool {
+					tooling.WriteString(result.Content)
+				}
+			}
+			if complete {
+				result, eog := c.Classify("</tool_call>")
+				if eog {
+					t.Fatal("Classify(close): got unexpected EOG")
+				}
+				tooling.WriteString(result.Content)
+			} else {
+				tooling.WriteString(c.(model.StateMachineFlusher).Flush().Content)
+			}
+
+			if got := (Parser{}).StripToolCallMarkup(tooling.String()); got != "" {
+				t.Errorf("StripToolCallMarkup(%q): got %q, want empty", tooling.String(), got)
+			}
+		})
 	}
 }
 

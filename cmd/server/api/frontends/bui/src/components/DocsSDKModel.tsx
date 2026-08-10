@@ -758,6 +758,11 @@ export default function DocsSDKModel() {
 	// per-token path. The logger is used for repair/parse failures; tests
 	// may pass a no-op logger.
 	ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
+
+	// StripToolCallMarkup removes model-native tool-call markup from a
+	// discarded tool-channel response and returns any ordinary assistant
+	// content that remains.
+	StripToolCallMarkup(buf string) string
 }`}</code>
               </pre>
               <p className="doc-description">Parser is the plugin interface implemented by each model lineage. Implementations live in sdk/kronk/parsers/&lt;name&gt;/ and are registered at startup via RegisterParser.</p>

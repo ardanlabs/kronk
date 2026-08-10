@@ -125,6 +125,16 @@ function name is known. Once parsing completes, Kronk emits the completed
 arguments in a nonterminal tool-call delta followed by an empty terminal delta
 with `finish_reason: "tool_calls"`.
 
+If generation reaches the output-token limit while native tool output is
+buffered, Kronk discards the entire tool round. Recognized complete and
+truncated native tool-call syntax is omitted from assistant content, and no
+executable tool calls are returned from that round. Ordinary assistant text
+outside recognized tool spans is preserved when the parser can safely
+distinguish it. The terminal response keeps `finish_reason: "length"`, and
+usage still includes every generated token. An earlier streaming activity
+delta may contain the function name; consumers must wait for completed
+arguments and terminal `finish_reason: "tool_calls"` before execution.
+
 `usage.completion_tokens` includes all generated tokens, including reasoning,
 control, and tool-call syntax that a parser may buffer instead of exposing as
 assistant text. `usage.completion_tokens_details.reasoning_tokens` reports the

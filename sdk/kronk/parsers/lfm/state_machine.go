@@ -9,13 +9,14 @@ import (
 )
 
 type stateMachine struct {
-	channel model.Channel
-	pending string
-	tool    strings.Builder
-	inTool  bool
-	quote   byte
-	escaped bool
-	queue   []model.Result
+	channel        model.Channel
+	pending        string
+	tool           strings.Builder
+	inTool         bool
+	quote          byte
+	escaped        bool
+	queue          []model.Result
+	toolProvenance bool
 
 	deltas  []model.ResponseToolCallDelta
 	started []model.ResponseToolCallDelta
@@ -31,6 +32,7 @@ func (sm *stateMachine) Reset() {
 	sm.quote = 0
 	sm.escaped = false
 	sm.queue = nil
+	sm.toolProvenance = false
 	sm.deltas = nil
 	sm.started = nil
 	sm.seen = 0
@@ -62,6 +64,7 @@ func (sm *stateMachine) process(text string) {
 			body := sm.tool.String()
 			sm.updateDeltas(body)
 			sm.enqueue(model.ChannelTool, toolOpen+body+toolClose)
+			sm.toolProvenance = true
 			sm.tool.Reset()
 			sm.inTool = false
 			sm.quote = 0
@@ -125,6 +128,9 @@ func (sm *stateMachine) enqueue(channel model.Channel, content string) {
 	if content == "" {
 		return
 	}
+	if channel != model.ChannelTool && strings.TrimSpace(content) != "" {
+		sm.toolProvenance = false
+	}
 	if len(sm.queue) > 0 && sm.queue[len(sm.queue)-1].Channel == channel {
 		sm.queue[len(sm.queue)-1].Content += content
 		return
@@ -153,6 +159,10 @@ func (sm *stateMachine) Flush() model.Result {
 	}
 	content := sm.pending
 	sm.pending = ""
+	if sm.toolProvenance && len(content) < len(toolOpen) && strings.HasPrefix(toolOpen, content) {
+		sm.toolProvenance = false
+		return model.Result{Channel: model.ChannelTool, Content: content}
+	}
 	return model.Result{Channel: sm.channel, Content: content}
 }
 

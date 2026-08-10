@@ -58,6 +58,53 @@ func (Parser) ToolCall(_ context.Context, _ applog.Logger, buf string) []model.R
 	return parseGLM(buf)
 }
 
+// StripToolCallMarkup removes GLM tool-call bodies from a tool buffer.
+func (Parser) StripToolCallMarkup(buf string) string {
+	var removed bool
+	for {
+		at, marker := firstGLMEvidence(buf)
+		if at == -1 {
+			break
+		}
+		removed = true
+		buf = buf[at+len(marker):]
+	}
+
+	result := buf
+	if removed {
+		result = stripGLMMarkerPrefix(result)
+	}
+	if strings.TrimSpace(result) == "" {
+		return ""
+	}
+	return result
+}
+
+func stripGLMMarkerPrefix(content string) string {
+	markers := append(append([]string{}, glmOpeners...), glmClosers...)
+	markers = append(markers, glmMissingToolCallClose)
+	for _, marker := range markers {
+		for size := min(len(content), len(marker)-1); size > 0; size-- {
+			if strings.HasSuffix(content, marker[:size]) {
+				return content[:len(content)-size]
+			}
+		}
+	}
+	return content
+}
+
+func firstGLMEvidence(content string) (int, string) {
+	first := -1
+	var marker string
+	for _, candidate := range []string{glmToolCallEvidence, glmMissingToolCallClose} {
+		if at := strings.Index(content, candidate); at != -1 && (first == -1 || at < first) {
+			first = at
+			marker = candidate
+		}
+	}
+	return first, marker
+}
+
 // containsGLMMarkers reports whether a chat template carries distinctive
 // GLM tool-call tokens. The <arg_key>/<arg_value> pair is unique to GLM's
 // tool-call format and unlikely to appear in any other lineage's template.

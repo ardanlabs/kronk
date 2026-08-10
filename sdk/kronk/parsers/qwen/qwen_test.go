@@ -93,11 +93,30 @@ func TestParser_JSONToolCall(t *testing.T) {
 		{token: "<tool_call>", channel: model.ChannelTool},
 		{token: `{"name":"a","arguments":{}}`, channel: model.ChannelNone},
 		{token: "</tool_call>", channel: model.ChannelTool,
-			content: `{"name":"a","arguments":{}}` + "\n"},
+			content: encodeQwenWrapperFrame(`{"name":"a","arguments":{}}`+"\n", true)},
 	})
 	_, eog := c.Classify("done")
 	if !eog {
 		t.Errorf("expected EOG after tool call closed")
+	}
+}
+
+func TestParser_WrappedJSONPreservesNativeMarkerTextInArguments(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	var tooling strings.Builder
+	for _, token := range []string{"<tool_call>", `{"name":"write","arguments":{"text":"before `, "</tool_call>", "<tool_call>", ` after"}}`, "</tool_call>"} {
+		result, _ := c.Classify(token)
+		if result.Channel == model.ChannelTool {
+			tooling.WriteString(result.Content)
+		}
+	}
+
+	calls := Parser{}.ToolCall(t.Context(), nil, tooling.String())
+	if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Arguments["text"] != "before </tool_call><tool_call> after" {
+		t.Fatalf("ToolCall: got %+v, want original marker text in argument", calls)
+	}
+	if got := (Parser{}).StripToolCallMarkup(tooling.String()); got != "" {
+		t.Errorf("StripToolCallMarkup: got %q, want empty", got)
 	}
 }
 
@@ -222,6 +241,76 @@ func TestParser_TruncatedJSONToolCall(t *testing.T) {
 	}
 	if got, want := calls[0].Function.Name, "get_weather"; got != want {
 		t.Errorf("Function.Name: got %q, want %q", got, want)
+	}
+}
+
+func TestParser_StripToolCallMarkup(t *testing.T) {
+	tests := []struct {
+		name string
+		buf  string
+		want string
+	}{
+		{name: "complete JSON", buf: `{"name":"get_weather","arguments":{"location":"Paris"}}`},
+		{name: "truncated JSON", buf: `{"name":"get_weather","arguments":{"location":"Paris"`},
+		{name: "wrapped JSON", buf: `<tool_call>{"name":"get_weather","arguments":{}}</tool_call>`},
+		{name: "alternate wrapped JSON", buf: `<|tool_call>{"name":"get_weather","arguments":{}}<tool_call|>`},
+		{name: "wrapped JSON closer in string", buf: `<tool_call>{"name":"write","arguments":{"text":"before </tool_call> after"}}</tool_call>`},
+		{name: "truncated wrapped JSON", buf: `<tool_call>{"name":"get_weather"`},
+		{name: "complete direct XML", buf: `<function=get_weather><parameter=location>Paris</parameter></function>`},
+		{name: "truncated direct XML", buf: `<function=get_weather><parameter=location>Paris`},
+		{name: "direct XML closer in value", buf: `<function=write><parameter=text>before </function> after</parameter></function>`},
+		{name: "truncated direct XML structural close", buf: `<function=write><parameter=text>before </function>after`},
+		{name: "trailing marker prefix", buf: `{"name":"first","arguments":{}}<tool_`},
+		{name: "mixed calls", buf: `{"name":"first","arguments":{}}` + "\n" + `<function=second></function>`},
+		{name: "ordinary JSON after direct call", buf: `<function=get_weather></function>` + "\n" + `{"ordinary":true}`, want: "\n" + `{"ordinary":true}`},
+		{name: "ordinary JSON", buf: `{"ordinary":true}`, want: `{"ordinary":true}`},
+		{name: "surrounding content", buf: `before {"name":"get_weather","arguments":{}} after`, want: "before  after"},
+		{name: "trailing content", buf: `<function=get_weather></function> explanation`, want: " explanation"},
+		{name: "ordinary content", buf: "explanation", want: "explanation"},
+		{name: "ordinary marker prefix", buf: "explanation <", want: "explanation <"},
+		{name: "foreign markup", buf: "[TOOL_CALLS]", want: "[TOOL_CALLS]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.buf); got != tt.want {
+				t.Errorf("StripToolCallMarkup: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParser_StateMachineWrapperEvidenceStripsInvalidBodies(t *testing.T) {
+	tests := []struct {
+		name   string
+		tokens []string
+		flush  bool
+	}{
+		{name: "complete ordinary JSON", tokens: []string{"<tool_call>", `{"ordinary":true}`, "</tool_call>"}},
+		{name: "truncated named JSON", tokens: []string{"<tool_call>", `{"name":"get_weather"`}, flush: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Parser{}.NewStateMachine()
+			var tooling strings.Builder
+			for _, token := range tt.tokens {
+				result, eog := c.Classify(token)
+				if eog {
+					t.Fatalf("Classify(%q): got unexpected EOG", token)
+				}
+				if result.Channel == model.ChannelTool {
+					tooling.WriteString(result.Content)
+				}
+			}
+			if tt.flush {
+				tooling.WriteString(c.(model.StateMachineFlusher).Flush().Content)
+			}
+
+			if got := (Parser{}).StripToolCallMarkup(tooling.String()); got != "" {
+				t.Errorf("StripToolCallMarkup(%q): got %q, want empty", tooling.String(), got)
+			}
+		})
 	}
 }
 

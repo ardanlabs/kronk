@@ -276,6 +276,34 @@ func TestStateMachineToolCallDeltas(t *testing.T) {
 	}
 }
 
+func TestStripToolCallMarkup(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"complete", `call:weather{city:<|"|>NYC<|"|>}`, ""},
+		{"truncated", `call:weather{city:<|"|>NYC`, ""},
+		{"trailing marker prefix", `call:weather{}<tool_`, ""},
+		{"wrapped trailing marker prefix", `<tool_call>call:weather{}</tool_call><tool_`, ""},
+		{"wrapped closer in string", `<tool_call>call:write{text:<|"|>before </tool_call> after<|"|>}</tool_call>`, ""},
+		{"coalesced wrappers", `call:first{}</tool_call><tool_call>call:second{}</tool_call>`, ""},
+		{"repeated mixed", "call:first{}\ncall:second{x:1}tail", "\ntail"},
+		{"surrounding text", "before call:weather{} after", "before  after"},
+		{"ordinary text", "please call: weather", "please call: weather"},
+		{"wrapped ordinary body", "<tool_call>foreign</tool_call>", ""},
+		{"whitespace residual", " \ncall:weather{}\t", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStateMachineCallMarkerInsideArgumentsIsNotActivity(t *testing.T) {
 	var sm stateMachine
 	sm.Reset()

@@ -998,7 +998,7 @@ func TestChatResponseFinalFinishReason(t *testing.T) {
 	}
 }
 
-func TestRetainLengthTerminatedToolOutput(t *testing.T) {
+func TestDiscardLengthTerminatedToolCalls(t *testing.T) {
 	toolCall := ResponseToolCall{
 		ID:   "call_1",
 		Type: "function",
@@ -1008,29 +1008,35 @@ func TestRetainLengthTerminatedToolOutput(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name         string
-		finishReason string
-		content      string
-		tooling      string
-		wantContent  string
-		wantDelta    string
-		wantCalls    int
-		wantRetained bool
+		name          string
+		finishReason  string
+		parser        Parser
+		content       string
+		tooling       string
+		wantContent   string
+		wantDelta     string
+		wantCalls     int
+		wantDiscarded bool
 	}{
-		{name: "incomplete call", finishReason: FinishReasonLength, tooling: `{"name":"write_file"`, wantContent: `{"name":"write_file"`, wantDelta: `{"name":"write_file"`, wantRetained: true},
-		{name: "complete call", finishReason: FinishReasonLength, tooling: `{"name":"lookup","arguments":{}}`, wantContent: `{"name":"lookup","arguments":{}}`, wantDelta: `{"name":"lookup","arguments":{}}`, wantRetained: true},
-		{name: "mixed calls", finishReason: FinishReasonLength, tooling: "complete\nincomplete", wantContent: "complete\nincomplete", wantDelta: "complete\nincomplete", wantRetained: true},
-		{name: "existing answer", finishReason: FinishReasonLength, content: "answer: ", tooling: "partial", wantContent: "answer: partial", wantDelta: "partial", wantRetained: true},
+		{name: "incomplete call", finishReason: FinishReasonLength, tooling: `{"name":"write_file"`, wantContent: `{"name":"write_file"`, wantDelta: `{"name":"write_file"`, wantDiscarded: true},
+		{name: "complete call", finishReason: FinishReasonLength, tooling: `{"name":"lookup","arguments":{}}`, wantContent: `{"name":"lookup","arguments":{}}`, wantDelta: `{"name":"lookup","arguments":{}}`, wantDiscarded: true},
+		{name: "mixed calls", finishReason: FinishReasonLength, tooling: "complete\nincomplete", wantContent: "complete\nincomplete", wantDelta: "complete\nincomplete", wantDiscarded: true},
+		{name: "existing answer", finishReason: FinishReasonLength, content: "answer: ", tooling: "partial", wantContent: "answer: partial", wantDelta: "partial", wantDiscarded: true},
+		{name: "parser strips markup", finishReason: FinishReasonLength, parser: fakeParser{stripMarkup: true}, content: "answer", tooling: `{"name":"lookup","arguments":{}}`, wantContent: "answer", wantDiscarded: true},
 		{name: "natural stop", finishReason: FinishReasonStop, content: "answer", tooling: "complete", wantContent: "answer", wantCalls: 1},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			parser := tt.parser
+			if parser == nil {
+				parser = fakeParser{}
+			}
 			var content strings.Builder
 			content.WriteString(tt.content)
 			toolCalls := []ResponseToolCall{toolCall}
 
-			gotDelta, gotRetained := retainLengthTerminatedToolOutput(tt.finishReason, &content, tt.tooling, &toolCalls)
+			gotDelta, gotDiscarded := discardLengthTerminatedToolCalls(tt.finishReason, parser, &content, tt.tooling, &toolCalls)
 
 			if got := content.String(); got != tt.wantContent {
 				t.Errorf("content: got %q, want %q", got, tt.wantContent)
@@ -1041,8 +1047,8 @@ func TestRetainLengthTerminatedToolOutput(t *testing.T) {
 			if got := len(toolCalls); got != tt.wantCalls {
 				t.Errorf("tool calls: got %d, want %d", got, tt.wantCalls)
 			}
-			if gotRetained != tt.wantRetained {
-				t.Errorf("retained: got %t, want %t", gotRetained, tt.wantRetained)
+			if gotDiscarded != tt.wantDiscarded {
+				t.Errorf("discarded: got %t, want %t", gotDiscarded, tt.wantDiscarded)
 			}
 		})
 	}
@@ -1055,9 +1061,9 @@ func TestLengthTerminatedToolOutputResponse(t *testing.T) {
 	var content strings.Builder
 	content.WriteString(answer)
 	toolCalls := []ResponseToolCall{{ID: "call_1", Type: "function"}}
-	deltaContent, retained := retainLengthTerminatedToolOutput(FinishReasonLength, &content, tooling, &toolCalls)
-	if !retained {
-		t.Fatal("retained: got false, want true")
+	deltaContent, discarded := discardLengthTerminatedToolCalls(FinishReasonLength, fakeParser{}, &content, tooling, &toolCalls)
+	if !discarded {
+		t.Fatal("discarded: got false, want true")
 	}
 	if got := len(toolCalls); got != 0 {
 		t.Fatalf("tool calls: got %d, want 0", got)

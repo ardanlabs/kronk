@@ -14,6 +14,40 @@ type step struct {
 	eog     bool
 }
 
+func TestStripToolCallMarkup(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"complete", `{"name":"weather","arguments":{"city":"NYC"}}` + "\n", ""},
+		{"truncated", `{"name":"weather","arguments":{"city":<missing-tool-call-close>`, ""},
+		{"truncated before arguments", `{"name":"weather"<missing-tool-call-close>`, ""},
+		{"truncated non-JSON body", `oops<missing-tool-call-close>`, ""},
+		{"truncated partial closer", `{"name":"weather","arguments":{}}</tool_<missing-tool-call-close>`, ""},
+		{"empty call", `<tool_call>`, ""},
+		{"invalid non-JSON body", `oops<invalid-tool-call-boundary>`, ""},
+		{"invalid complete envelope", `{"name":"weather","arguments":[]}<invalid-tool-call-boundary>`, ""},
+		{"repeated and mixed", `{"name":"a","arguments":{}}` + "\ntext\n" + `{"name":"b","arguments":{}}` + "\n", "\ntext\n\n"},
+		{"unexpected trailing content", `{"name":"a","arguments":{}}` + "\n<unexpected-content-after-tool>junk", "\njunk"},
+		{"invalid before unexpected trailing content", `oops<invalid-tool-call-boundary>` + "\n<unexpected-content-after-tool>tail", "\ntail"},
+		{"unexpected call-shaped content", `{"name":"a","arguments":{}}` + "\n<unexpected-content-after-tool>" + `{"name":"ordinary","arguments":{}}`, "\n" + `{"name":"ordinary","arguments":{}}`},
+		{"unexpected trailing marker prefix", `{"name":"a","arguments":{}}` + "\n<unexpected-content-after-tool><tool_", ""},
+		{"surrounding", `before {"name":"a","arguments":{}} after`, `before  after`},
+		{"ordinary JSON", `{"value":1}`, `{"value":1}`},
+		{"ordinary JSON with marker text", `{"value":"<unexpected-content-after-tool>"}`, `{"value":"<unexpected-content-after-tool>"}`},
+		{"foreign markup", `[TOOL_CALLS]a[ARGS]{}`, `[TOOL_CALLS]a[ARGS]{}`},
+		{"whitespace", " \t\n", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func runSteps(t *testing.T, name string, c model.StateMachine, steps []step) {
 	t.Helper()
 

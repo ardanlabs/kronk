@@ -108,6 +108,9 @@ func (sm *stateMachine) process(content string) {
 			sm.enqueue(model.ChannelAnswer, candidate)
 			return
 		}
+		if sm.declaredEnvelopeWithMarkerPrefix(trimmed) {
+			return
+		}
 		if !firstJSONValueComplete(trimmed) {
 			return
 		}
@@ -192,7 +195,24 @@ func (sm *stateMachine) Flush() model.Result {
 			return model.Result{Channel: model.ChannelTool, Content: trimmed}
 		}
 	}
+	if sm.declaredEnvelopeWithMarkerPrefix(trimmed) {
+		return model.Result{Channel: model.ChannelTool, Content: trimmed}
+	}
 	return model.Result{Channel: model.ChannelAnswer, Content: content}
+}
+
+func (sm *stateMachine) declaredEnvelopeWithMarkerPrefix(content string) bool {
+	end := findLlamaObjectEnd(content)
+	if end < 0 || end == len(content) {
+		return false
+	}
+	name, ok := envelopeName(content[:end])
+	if !ok {
+		return false
+	}
+	_, declared := sm.toolNames[name]
+	suffix := strings.TrimLeft(content[end:], " \t\r\n")
+	return declared && len(suffix) < len(pythonTag) && strings.HasPrefix(pythonTag, suffix)
 }
 
 func envelopeName(content string) (string, bool) {

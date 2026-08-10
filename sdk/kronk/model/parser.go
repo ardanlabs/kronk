@@ -159,6 +159,11 @@ type Parser interface {
 	// per-token path. The logger is used for repair/parse failures; tests
 	// may pass a no-op logger.
 	ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
+
+	// StripToolCallMarkup removes model-native tool-call markup from a
+	// discarded tool-channel response and returns any ordinary assistant
+	// content that remains.
+	StripToolCallMarkup(buf string) string
 }
 
 // ToolCallSchemaParser is optionally implemented by parsers whose native tool

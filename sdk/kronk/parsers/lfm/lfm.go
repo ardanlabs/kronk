@@ -55,3 +55,38 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 	}
 	return calls
 }
+
+// StripToolCallMarkup removes complete and truncated native LFM tool-call spans
+// while preserving all other content.
+func (Parser) StripToolCallMarkup(buf string) string {
+	var stripped strings.Builder
+	var removed bool
+	for {
+		openAt, ok := structuralMarker(buf, toolOpen)
+		if !ok {
+			if removed && properToolOpenPrefix(buf) {
+				break
+			}
+			stripped.WriteString(buf)
+			break
+		}
+
+		stripped.WriteString(buf[:openAt])
+		removed = true
+		buf = buf[openAt+len(toolOpen):]
+		closeAt, ok := structuralMarker(buf, toolClose)
+		if !ok {
+			break
+		}
+		buf = buf[closeAt+len(toolClose):]
+	}
+
+	if strings.TrimSpace(stripped.String()) == "" {
+		return ""
+	}
+	return stripped.String()
+}
+
+func properToolOpenPrefix(content string) bool {
+	return content != "" && len(content) < len(toolOpen) && strings.HasPrefix(toolOpen, content)
+}

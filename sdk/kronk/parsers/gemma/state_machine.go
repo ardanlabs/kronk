@@ -50,10 +50,17 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 	if sm.inToolCall {
 		switch content {
 		case "<tool_call>", "<|tool_call>":
+			sm.toolCallBuf.WriteString(content)
+			sm.updateToolCallDeltas()
 			return model.Result{}, false
 
 		case "</tool_call>", "<tool_call|>":
-			result := sm.flushToolCall()
+			if !gemmaWrapperCloseAllowed(sm.toolCallBuf.String()) {
+				sm.toolCallBuf.WriteString(content)
+				sm.updateToolCallDeltas()
+				return model.Result{}, false
+			}
+			result := sm.flushToolCall(true)
 			sm.toolCallDone = true
 			return result, false
 
@@ -73,7 +80,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			sm.inToolCall = true
 			sm.toolCallBuf.Reset()
 			sm.detectedCalls = 0
-			return model.Result{}, false
+			return model.Result{Channel: model.ChannelTool}, false
 		default:
 			if content == "" {
 				return model.Result{}, false
@@ -108,7 +115,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		sm.inToolCall = true
 		sm.toolCallBuf.Reset()
 		sm.detectedCalls = 0
-		return model.Result{}, false
+		return model.Result{Channel: model.ChannelTool}, false
 
 	case "<tool_call|>", "<|tool_response>", "<tool_response|>":
 		// Structural markers outside tool-call accumulation; skip silently.
@@ -170,10 +177,10 @@ func (sm *stateMachine) Flush() model.Result {
 		return model.Result{}
 	}
 
-	return sm.flushToolCall()
+	return sm.flushToolCall(false)
 }
 
-func (sm *stateMachine) flushToolCall() model.Result {
+func (sm *stateMachine) flushToolCall(closed bool) model.Result {
 	content := strings.Trim(sm.toolCallBuf.String(), "\n")
 	sm.toolCallBuf.Reset()
 	sm.inToolCall = false
@@ -181,5 +188,40 @@ func (sm *stateMachine) flushToolCall() model.Result {
 		return model.Result{}
 	}
 
-	return model.Result{Channel: model.ChannelTool, Content: content + "\n"}
+	content += "\n"
+	content = encodeGemmaWrapperFrame(content, closed)
+
+	return model.Result{Channel: model.ChannelTool, Content: content}
+}
+
+func gemmaWrapperCloseAllowed(content string) bool {
+	gemmaQuoted := false
+	standardQuoted := false
+	escaped := false
+	for cursor := 0; cursor < len(content); {
+		if !standardQuoted && strings.HasPrefix(content[cursor:], `<|"|>`) {
+			gemmaQuoted = !gemmaQuoted
+			cursor += len(`<|"|>`)
+			continue
+		}
+		if gemmaQuoted {
+			cursor++
+			continue
+		}
+		if escaped {
+			escaped = false
+			cursor++
+			continue
+		}
+		if standardQuoted && content[cursor] == '\\' {
+			escaped = true
+			cursor++
+			continue
+		}
+		if content[cursor] == '"' {
+			standardQuoted = !standardQuoted
+		}
+		cursor++
+	}
+	return !gemmaQuoted && !standardQuoted
 }

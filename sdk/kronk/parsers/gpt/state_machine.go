@@ -8,6 +8,8 @@ import (
 
 var harmonyMarkers = []string{"<|constrain|>", "<|message|>", "<|channel|>", "<|return|>", "<|start|>", "<|call|>", "<|end|>"}
 
+const incompleteFramingMarker = "<|incomplete-framing|>"
+
 // stateMachine is a token-boundary-independent Harmony stream classifier.
 type stateMachine struct {
 	status            model.Channel
@@ -311,6 +313,7 @@ func (sm *stateMachine) Flush() model.Result {
 	}
 	sm.consume(true)
 	if sm.awaitingChannel && strings.HasPrefix(strings.TrimSpace(sm.channelBuf.String()), "commentary") {
+		sm.toolCallBuf.WriteString(incompleteFramingMarker)
 		sm.toolCallBuf.WriteString(sm.channelBuf.String())
 		sm.channelBuf.Reset()
 		sm.awaitingChannel = false

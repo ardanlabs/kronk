@@ -8,6 +8,32 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+func TestStripToolCallMarkup(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"marked complete", `<|python_tag|>{"name":"weather","parameters":{"city":"NYC"}}`, ""},
+		{"bare complete", `{"name":"weather","parameters":{}}`, ""},
+		{"truncated", `<|python_tag|>{"name":"weather","parameters":{"city":`, ""},
+		{"marked invalid envelope", `<|python_tag|>{"value":1}`, ""},
+		{"trailing marker prefix", `{"name":"weather","parameters":{}}<|python_`, ""},
+		{"repeated and surrounding", `before {"name":"a","parameters":{}} middle <|python_tag|>{"name":"b","parameters":{}} after`, "before  middle  after"},
+		{"ordinary JSON", `before {"value":1} after`, `before {"value":1} after`},
+		{"ordinary marker prefix", `ordinary <|python_`, `ordinary <|python_`},
+		{"foreign markup", `<tool_call>{"name":"x","arguments":{}}</tool_call>`, `<tool_call>{"name":"x","arguments":{}}</tool_call>`},
+		{"whitespace", " \t\n", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func testTools() []model.D {
 	return []model.D{{
 		"type": "function",
@@ -90,6 +116,31 @@ func TestBareJSONAcrossTokens(t *testing.T) {
 	got = sm.Flush()
 	if got.Channel != model.ChannelTool || got.Content != `{"name":"get_weather","parameters":{"location":"NYC"}}` {
 		t.Errorf("Flush: got %+v", got)
+	}
+}
+
+func TestBareJSONWithTrailingPythonTagPrefix(t *testing.T) {
+	call := `{"name":"get_weather","parameters":{"location":"NYC"}}`
+	for _, separator := range []string{"", "\n"} {
+		for size := 1; size < len(pythonTag); size++ {
+			t.Run(separator+pythonTag[:size], func(t *testing.T) {
+				sm := &stateMachine{status: model.ChannelAnswer}
+				sm.SetTools(testTools())
+				stream := call + separator + pythonTag[:size]
+				for _, piece := range []string{call, separator + pythonTag[:size]} {
+					if got, _ := sm.Classify(piece); got != (model.Result{}) {
+						t.Fatalf("Classify(%q): got %+v, want buffered", piece, got)
+					}
+				}
+				got := sm.Flush()
+				if got.Channel != model.ChannelTool || got.Content != stream {
+					t.Errorf("Flush: got %+v, want tool content %q", got, stream)
+				}
+				if stripped := (Parser{}).StripToolCallMarkup(got.Content); stripped != "" {
+					t.Errorf("StripToolCallMarkup: got %q, want empty", stripped)
+				}
+			})
+		}
 	}
 }
 

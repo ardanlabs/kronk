@@ -119,3 +119,33 @@ func TestStateMachineToolCallDeltas(t *testing.T) {
 		t.Error("Reset did not clear tool-call delta state")
 	}
 }
+
+func TestStripToolCallMarkup(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"complete", "weather<arg_key>city</arg_key><arg_value>NYC</arg_value>" + glmToolCallEvidence, ""},
+		{"complete without argument", "ping" + glmToolCallEvidence, ""},
+		{"name containing spaces", "foo bar<arg_key>city</arg_key><arg_value>NYC</arg_value>" + glmToolCallEvidence, ""},
+		{"truncated", "weather<arg_key>city</arg_key><arg_value>NY" + glmMissingToolCallClose, ""},
+		{"trailing marker prefix", "weather<arg_key>x</arg_key><arg_value>1</arg_value>" + glmToolCallEvidence + "<tool_", ""},
+		{"truncated before argument", "weather" + glmToolCallEvidence, ""},
+		{"repeated mixed", "first<arg_key>x</arg_key><arg_value>1</arg_value>" + glmToolCallEvidence + "second<arg_key>y</arg_key><arg_value>2</arg_value>" + glmToolCallEvidence + "tail", "tail"},
+		{"sentinel and trailing text", "weather<arg_key>x</arg_key>" + glmToolCallEvidence + "tail", "tail"},
+		{"sentinel and arg-like trailing text", "weather<arg_key>x</arg_key>" + glmToolCallEvidence + "notes <arg_key>literal", "notes <arg_key>literal"},
+		{"ordinary text", "weather report without tags", "weather report without tags"},
+		{"ordinary marker prefix", "weather report <", "weather report <"},
+		{"foreign markup", "<tool_call>foreign</tool_call>", "<tool_call>foreign</tool_call>"},
+		{"whitespace residual", "weather<arg_key>x" + glmToolCallEvidence + " \t", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

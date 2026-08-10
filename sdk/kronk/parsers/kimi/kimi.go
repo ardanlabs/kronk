@@ -78,6 +78,94 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 	return calls
 }
 
+// StripToolCallMarkup removes complete and truncated Kimi tools blocks while
+// preserving all other content.
+func (Parser) StripToolCallMarkup(buf string) string {
+	var stripped strings.Builder
+	var removed bool
+	for {
+		openAt := strings.Index(buf, toolsOpen)
+		if openAt == -1 {
+			stripped.WriteString(buf)
+			break
+		}
+
+		stripped.WriteString(buf[:openAt])
+		buf = buf[openAt+len(toolsOpen):]
+		search := buf
+		if nextOpen := strings.Index(search, toolsOpen); nextOpen >= 0 {
+			search = search[:nextOpen]
+		}
+		closeAt := kimiToolsClose(search)
+		if closeAt == -1 {
+			removed = true
+			break
+		}
+		removed = true
+		buf = buf[closeAt+len(toolsClose):]
+	}
+
+	result := stripped.String()
+	if removed {
+		result = stripKimiMarkerPrefix(result)
+	}
+	if strings.TrimSpace(result) == "" {
+		return ""
+	}
+	return result
+}
+
+func kimiToolsClose(content string) int {
+	callDepth := 0
+	argumentDepth := 0
+	for cursor := 0; cursor < len(content); {
+		at, marker := nextKimiStructure(content[cursor:])
+		if at == -1 {
+			return -1
+		}
+		at += cursor
+		switch marker {
+		case callOpen:
+			callDepth++
+		case callClose:
+			callDepth = max(callDepth-1, 0)
+		case argumentOpen:
+			argumentDepth++
+		case argumentClose:
+			argumentDepth = max(argumentDepth-1, 0)
+		case toolsClose:
+			if callDepth == 0 && argumentDepth == 0 {
+				return at
+			}
+		}
+		cursor = at + len(marker)
+	}
+	return -1
+}
+
+func nextKimiStructure(content string) (int, string) {
+	first := -1
+	var marker string
+	for _, candidate := range []string{callOpen, callClose, argumentOpen, argumentClose, toolsClose} {
+		if at := strings.Index(content, candidate); at != -1 && (first == -1 || at < first) {
+			first = at
+			marker = candidate
+		}
+	}
+	return first, marker
+}
+
+func stripKimiMarkerPrefix(content string) string {
+	for _, marker := range []string{toolsOpen, toolsClose, callOpen, callClose, argumentOpen, argumentClose} {
+		for size := min(len(content), len(marker)-1); size > 0; size-- {
+			if strings.HasSuffix(content, marker[:size]) {
+				return content[:len(content)-size]
+			}
+		}
+	}
+	return content
+}
+
 // containsKimiMarkers recognizes both rendered markers and the macro-based
 // construction used by the official Kimi K3 template.
 func containsKimiMarkers(template string) bool {

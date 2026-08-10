@@ -36,6 +36,35 @@ func TestDetection(t *testing.T) {
 	}
 }
 
+func TestStripToolCallMarkup(t *testing.T) {
+	call := toolOpen + `send(text="ok")` + toolClose
+	quotedClose := toolOpen + `send(text="before <|tool_call_end|> after")` + toolClose
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"complete", call, ""},
+		{"truncated", "before" + toolOpen + `send(text="unfinished`, "before"},
+		{"repeated mixed", call + "middle" + quotedClose, "middle"},
+		{"surrounding and trailing", "before\n" + call + "\nafter ", "before\n\nafter "},
+		{"tool with trailing opener prefix", call + `<|tool_`, ""},
+		{"ordinary trailing opener prefix", `ordinary <|tool_`, `ordinary <|tool_`},
+		{"ordinary content", "ordinary <tag> content", "ordinary <tag> content"},
+		{"foreign markup", "a<|open|>tools<|sep|>x<|close|>tools<|sep|>b", "a<|open|>tools<|sep|>x<|close|>tools<|sep|>b"},
+		{"quoted ordinary opener", `say "<|tool_call_start|>" unchanged`, `say "<|tool_call_start|>" unchanged`},
+		{"whitespace only", " \n" + call + "\t", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := (Parser{}).StripToolCallMarkup(tt.input); got != tt.want {
+				t.Errorf("StripToolCallMarkup(%q): got %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPythonToolCalls(t *testing.T) {
 	input := `[get_weather(location="Paris", enabled="true", count=9223372036854775807, active=True, missing=None, json="{\"x\":1}", code="import (\"fmt\")", nested=[1, {"ok": false}]), second(text='a, b (c) \'quoted\'')]`
 	calls := Parser{}.ToolCall(context.Background(), nil, input)
@@ -230,6 +259,44 @@ func TestFlushAndReset(t *testing.T) {
 	}
 	if got := sm.(model.ToolCallDeltaStreamer).StartedToolCalls(); len(got) != 0 {
 		t.Errorf("StartedToolCalls after Reset: got %#v", got)
+	}
+}
+
+func TestFlushTrailingToolMarkerPrefix(t *testing.T) {
+	call := toolOpen + `weather(city="Paris")` + toolClose
+	sm := Parser{}.NewStateMachine()
+	first, _ := sm.Classify(call + `<|tool_`)
+	if first.Channel != model.ChannelTool || first.Content != call {
+		t.Fatalf("Classify: got %#v, want completed tool call", first)
+	}
+	trailing := sm.(model.StateMachineFlusher).Flush()
+	if trailing.Channel != model.ChannelTool || trailing.Content != `<|tool_` {
+		t.Fatalf("Flush: got %#v, want trailing tool prefix", trailing)
+	}
+	if stripped := (Parser{}).StripToolCallMarkup(first.Content + trailing.Content); stripped != "" {
+		t.Errorf("StripToolCallMarkup: got %q, want empty", stripped)
+	}
+
+	sm.Reset()
+	answer, _ := sm.Classify(`ordinary <|tool_`)
+	if answer.Channel != model.ChannelAnswer || answer.Content != "ordinary " {
+		t.Fatalf("ordinary Classify: got %#v", answer)
+	}
+	trailing = sm.(model.StateMachineFlusher).Flush()
+	if trailing.Channel != model.ChannelAnswer || trailing.Content != `<|tool_` {
+		t.Errorf("ordinary Flush: got %#v, want answer prefix", trailing)
+	}
+
+	sm.Reset()
+	first, _ = sm.Classify(call + "\n<|tool_")
+	separator := sm.(model.StateMachineFlusher).Flush()
+	trailing = sm.(model.StateMachineFlusher).Flush()
+	if first.Channel != model.ChannelTool || separator.Channel != model.ChannelAnswer || separator.Content != "\n" ||
+		trailing.Channel != model.ChannelTool || trailing.Content != `<|tool_` {
+		t.Fatalf("whitespace-separated prefix: got first %#v separator %#v trailing %#v", first, separator, trailing)
+	}
+	if stripped := (Parser{}).StripToolCallMarkup(first.Content + trailing.Content); stripped != "" {
+		t.Errorf("whitespace-separated StripToolCallMarkup: got %q, want empty", stripped)
 	}
 }
 

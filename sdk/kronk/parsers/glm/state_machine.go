@@ -57,7 +57,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		}
 		if sm.pendingAfterTool {
 			sm.pendingAfterTool = false
-			return model.Result{Channel: model.ChannelTool, Content: "\n</tool_call>" + candidate}, false
+			return model.Result{Channel: model.ChannelTool, Content: candidate}, false
 		}
 		return model.Result{Channel: sm.status, Content: candidate}, false
 	}
@@ -83,7 +83,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 			return model.Result{}, false
 		}
 		sm.pendingAfterTool = false
-		return model.Result{Channel: model.ChannelTool, Content: "\n</tool_call>" + content}, false
+		return model.Result{Channel: model.ChannelTool, Content: content}, false
 	}
 
 	switch content {
@@ -114,6 +114,9 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 var glmOpeners = []string{"<tool_call>", "<|tool_call>"}
 var glmClosers = []string{"</tool_call>", "<tool_call|>"}
 
+const glmToolCallEvidence = "\n</tool_call>"
+const glmMissingToolCallClose = "\n<missing-tool-call-close>"
+
 func isGLMOpenerPrefix(content string) bool {
 	for _, opener := range glmOpeners {
 		if len(content) < len(opener) && strings.HasPrefix(opener, content) {
@@ -139,10 +142,7 @@ func (sm *stateMachine) consumeToolContent(content string) model.Result {
 	}
 
 	body := strings.Trim(buffered[:closeAt], "\n")
-	complete := body + "\n"
-	if strings.TrimSpace(body) == "" {
-		complete = "</tool_call>\n"
-	}
+	complete := body + glmToolCallEvidence
 	remainder := strings.TrimLeft(buffered[closeAt+len(closer):], " \t\r\n")
 	sm.toolCallBuf.Reset()
 	sm.inToolCall = false
@@ -163,7 +163,7 @@ func (sm *stateMachine) consumeToolContent(content string) model.Result {
 		return model.Result{Channel: model.ChannelTool, Content: complete}
 	}
 	sm.pendingAfterTool = false
-	return model.Result{Channel: model.ChannelTool, Content: complete + "</tool_call>" + remainder}
+	return model.Result{Channel: model.ChannelTool, Content: complete + remainder}
 }
 
 func firstGLMCloser(content string) (int, string) {
@@ -216,7 +216,7 @@ func (sm *stateMachine) Flush() model.Result {
 		content := strings.Trim(sm.toolCallBuf.String(), "\n")
 		sm.toolCallBuf.Reset()
 		sm.inToolCall = false
-		return model.Result{Channel: model.ChannelTool, Content: content + "\n</tool_call>"}
+		return model.Result{Channel: model.ChannelTool, Content: content + glmMissingToolCallClose}
 	}
 	if sm.pendingEnvelope.Len() > 0 {
 		content := sm.pendingEnvelope.String()

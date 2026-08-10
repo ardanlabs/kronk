@@ -2,6 +2,8 @@
 
 ## Index
 
+- [v1.30.8](#v1308)
+  - [Length-Terminated Tool Call Changes](#v1308-length-terminated-tool-call-changes)
 - [v1.30.5](#v1305)
   - [Pool TTL Changes](#v1305-pool-ttl-changes)
 - [v1.30.4](#v1304)
@@ -17,6 +19,25 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.30.8
+
+### v1.30.8: Length-Terminated Tool Call Changes
+
+When generation reaches the output-token limit while native tool output is
+buffered, Kronk now discards the entire tool round. Recognized complete and
+truncated native tool-call syntax is not returned as assistant content, and no
+executable tool calls are returned from that round. Ordinary assistant text
+outside recognized tool-call spans is preserved when the parser can safely
+distinguish it.
+
+The terminal response retains `finish_reason: "length"`, and usage and billing
+still include every generated token, including discarded tool-call syntax.
+This is not a tool-call-markup-leak error or a zero-cost response.
+
+Streaming consumers may already have received a provisional tool-call activity
+delta containing a function name. They must wait for completed arguments and a
+terminal `finish_reason: "tool_calls"` before executing any tool.
 
 ## v1.30.5
 

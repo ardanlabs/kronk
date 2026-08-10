@@ -47,6 +47,7 @@ kronk-server:
 	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_WEB_API_HOST=0.0.0.0:11435 && \
 	go run -a cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-build: kronk-build
@@ -54,6 +55,7 @@ kronk-server-build: kronk-build
 	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_WEB_API_HOST=0.0.0.0:11435 && \
 	go run -a cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-upgrade: install-latest-libs kronk-build
@@ -62,6 +64,7 @@ kronk-server-upgrade: install-latest-libs kronk-build
 	export KRONK_DOWNLOAD_ENABLED=true && \
 	export KRONK_INSECURE_LOGGING=true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_WEB_API_HOST=0.0.0.0:11435 && \
 	go run -a cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
 kronk-server-detach: kronk-build
