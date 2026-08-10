@@ -274,3 +274,22 @@ func TestInitRejectsConflictingPath(t *testing.T) {
 		t.Fatal("Init() conflicting path error = nil, want error")
 	}
 }
+
+func TestInitWithoutPathIsIdempotent(t *testing.T) {
+	initState.Lock()
+	oldDone := initState.done
+	oldPath := initState.path
+	initState.done = true
+	initState.path = "/custom"
+	initState.Unlock()
+	t.Cleanup(func() {
+		initState.Lock()
+		initState.done = oldDone
+		initState.path = oldPath
+		initState.Unlock()
+	})
+
+	if err := Init(); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+}

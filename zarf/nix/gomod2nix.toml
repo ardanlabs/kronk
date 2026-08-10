@@ -47,8 +47,8 @@ schema = 3
     version = "v1.5.0"
     hash = "sha256-ZwN11ft8Pjk4B7LU09tkz7PPv0BkidZIktblrUEbBO8="
   [mod."github.com/ardanlabs/malina"]
-    version = "v1.0.1"
-    hash = "sha256-LiTop+JPGJV0o3k5gPXtA5NF7iJYG4TGwp/7zYKL/C8="
+    version = "v1.0.2"
+    hash = "sha256-qxbDPg80ZjgLR6uV9PcYSDHob/cnSLI3v0iOs6BSj0Q="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.1"
     hash = "sha256-c64Cjjy25oYyAUtAbd8KD8XwHzhb48P7z4V6D1QVJIQ="

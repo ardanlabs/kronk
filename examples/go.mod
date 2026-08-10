@@ -28,7 +28,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.59.0 // indirect
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/ardanlabs/jinja v1.5.0 // indirect
-	github.com/ardanlabs/malina v1.0.1 // indirect
+	github.com/ardanlabs/malina v1.0.2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.16 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.35 // indirect

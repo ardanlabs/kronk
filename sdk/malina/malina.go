@@ -195,6 +195,11 @@ func (m *Malina) ModelInfo() model.ModelInfo {
 	return m.backend.Info()
 }
 
+// SystemInfo returns native library and host diagnostics.
+func (m *Malina) SystemInfo() SystemDiagnostics {
+	return systemDiagnostics()
+}
+
 // ActiveGenerations returns the number of admitted generation calls.
 func (m *Malina) ActiveGenerations() int {
 	return int(m.active.Load())

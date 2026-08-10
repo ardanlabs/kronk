@@ -135,7 +135,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			ModelConfigFile string
 			BudgetPercent   int           `conf:"default:95"`
 			ModelsInPool    int           `conf:"default:10"`
-			TTL             time.Duration `conf:"default:20m"`
+			TTL             time.Duration `conf:"default:0m"`
 		}
 		BasePath        string
 		LibPath         string

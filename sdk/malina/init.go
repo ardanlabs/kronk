@@ -11,6 +11,9 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	backendtools "github.com/ardanlabs/kronk/sdk/tools/backend"
+	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/malina/pkg/sd"
 )
 
@@ -24,7 +27,9 @@ var initState struct {
 }
 
 type initOptions struct {
-	libPath string
+	libPath  string
+	logLevel LogLevel
+	progress ProgressFunc
 }
 
 // InitOption represents options for configuring Init.
@@ -37,6 +42,23 @@ func WithLibPath(libPath string) InitOption {
 	}
 }
 
+// WithLogLevel sets the log level for stable-diffusion.cpp and GGML. Logging
+// is silent by default. Pass LogNormal to write native diagnostics to stderr.
+func WithLogLevel(logLevel LogLevel) InitOption {
+	return func(o *initOptions) {
+		o.logLevel = logLevel
+	}
+}
+
+// WithProgress replaces stable-diffusion.cpp's native terminal progress with
+// progress. Pass DiscardProgress to suppress model loading and generation
+// progress. A nil function retains the native terminal display.
+func WithProgress(progress ProgressFunc) InitOption {
+	return func(o *initOptions) {
+		o.progress = progress
+	}
+}
+
 // Initialized reports whether the Malina backend has been successfully
 // initialized.
 func Initialized() bool {
@@ -46,8 +68,9 @@ func Initialized() bool {
 	return initState.done
 }
 
-// Init loads stable-diffusion.cpp and registers its dynamic backends. The
-// MALINA_LIB environment variable is used when no library path is supplied.
+// Init registers Malina tooling, then loads stable-diffusion.cpp and its
+// dynamic backends. KRONK_MALINA_LIB_PATH (or legacy MALINA_LIB) is used when
+// no library path is supplied.
 func Init(opts ...InitOption) error {
 	initState.Lock()
 	defer initState.Unlock()
@@ -56,9 +79,17 @@ func Init(opts ...InitOption) error {
 	for _, opt := range opts {
 		opt(&o)
 	}
-	if o.libPath == "" {
-		o.libPath = os.Getenv("MALINA_LIB")
+	if err := backendtools.Register(backendtools.Backend{
+		Kind:       backendtools.KindStableDiffusion,
+		NewLibs:    func() (backendtools.LibsManager, error) { return malinalibs.New() },
+		NewCatalog: func(basePath string) (backendtools.Catalog, error) { return malinamodels.NewWithPaths(basePath) },
+	}); err != nil {
+		return fmt.Errorf("init: register backend: %w", err)
 	}
+	if initState.done && o.libPath == "" {
+		return nil
+	}
+	o.libPath = malinalibs.Path(o.libPath)
 
 	if initState.done {
 		if o.libPath != "" && o.libPath != initState.path {
@@ -66,10 +97,24 @@ func Init(opts ...InitOption) error {
 		}
 		return nil
 	}
-	if o.libPath == "" {
-		return errors.New("init: library path is required (set MALINA_LIB or use WithLibPath)")
+	if o.logLevel < LogSilent || o.logLevel > LogNormal {
+		o.logLevel = LogSilent
 	}
-
+	switch o.logLevel {
+	case LogSilent:
+		sd.SetLogCallback(func(sd.LogLevel, string) {})
+	default:
+		sd.SetLogCallback(func(_ sd.LogLevel, text string) {
+			fmt.Fprintln(os.Stderr, text)
+		})
+	}
+	if o.progress == nil {
+		sd.SetProgressCallback(nil)
+	} else {
+		sd.SetProgressCallback(func(step int, steps int, secondsPerStep float32) {
+			o.progress(step, steps, secondsPerStep)
+		})
+	}
 	if err := sd.Load(o.libPath); err != nil {
 		return fmt.Errorf("init: unable to load stable-diffusion library: %w", err)
 	}
@@ -98,13 +143,14 @@ func SystemInfo() (SystemDiagnostics, error) {
 	if !Initialized() {
 		return SystemDiagnostics{}, errors.New("system-info: malina is not initialized")
 	}
+	return systemDiagnostics(), nil
+}
 
-	info := SystemDiagnostics{
+func systemDiagnostics() SystemDiagnostics {
+	return SystemDiagnostics{
 		NativeVersion:      sd.Version(),
 		PhysicalCores:      sd.NumPhysicalCores(),
 		BackendDeviceCount: sd.GGMLBackendDeviceCount(),
 		Description:        sd.SystemInfo(),
 	}
-
-	return info, nil
 }

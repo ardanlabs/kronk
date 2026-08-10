@@ -3920,26 +3920,38 @@ func awaitResult(ctx context.Context, result <-chan requestResult) (requestResul
 		return rr, nil
 	}
 }
-`,dv=`// This example generates a PNG with the Malina SDK.
-// It uses a local stable-diffusion.cpp model and native library.
+`,dv=`// This example shows you how to generate an image with the Malina SDK
+// (stable-diffusion.cpp under the hood).
 //
 // Experimental: The Malina SDK public API is subject to change.
 //
-// Set MALINA_LIB to the stable-diffusion.cpp library directory and
-// MALINA_MODEL to an all-in-one checkpoint file before running:
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries and a Stable Diffusion 1.5 model bundle.
 //
-//	MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors make example-malina
+// Run the example like this from the root of the project:
+// $ make example-malina
+
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+// modelSource names the curated Malina model bundle to download. Valid names
+// are listed by models.SupportedBundles().
+var (
+	modelSource = models.BundleSD15.String()
+	progressMu  sync.Mutex
 )
 
 const (
@@ -3955,39 +3967,105 @@ func main() {
 }
 
 func run() error {
-	modelPath := os.Getenv("MALINA_MODEL")
-	if modelPath == "" {
-		return errors.New("MALINA_MODEL is required")
-	}
-
-	if err := malina.Init(); err != nil {
-		return fmt.Errorf("initialize Malina: %w", err)
-	}
-
-	m, err := malina.New(model.WithModelPath(modelPath))
+	mp, err := installSystem()
 	if err != nil {
-		return fmt.Errorf("load model: %w", err)
+		return fmt.Errorf("unable to install system: %w", err)
+	}
+
+	mln, err := newMalina(mp)
+	if err != nil {
+		return fmt.Errorf("unable to init Malina: %w", err)
 	}
 	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		fmt.Println("Unloading model")
-		if err := m.Unload(ctx); err != nil {
+		fmt.Println("\\nUnloading Malina")
+		if err := mln.Unload(context.Background()); err != nil {
 			fmt.Printf("unload: %v\\n", err)
 		}
 	}()
 
-	info, err := malina.SystemInfo()
-	if err != nil {
-		return fmt.Errorf("system info: %w", err)
+	if err := generate(mln); err != nil {
+		return fmt.Errorf("generate: %w", err)
 	}
 
-	fmt.Println("Generating image")
-	fmt.Println("- native version  :", info.NativeVersion)
-	fmt.Println("- physical cores  :", info.PhysicalCores)
-	fmt.Println("- backend devices :", info.BackendDeviceCount)
-	fmt.Println("- model            :", modelPath)
+	return nil
+}
+
+// =============================================================================
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithDetect(ctx, malina.FmtLogger),
+	)
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	}
+
+	if err := malina.Init(
+		malina.WithLibPath(libs.LibsPath()),
+		malina.WithProgress(progress),
+	); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init Malina: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
+	}
+
+	fmt.Println("Downloading model bundle:", modelSource)
+
+	mp, err := mdls.Download(ctx, malina.FmtLogger, modelSource)
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model bundle: %w", err)
+	}
+
+	return mp, nil
+}
+
+func newMalina(mp models.Path) (*malina.Malina, error) {
+	fmt.Println("Loading model...")
+
+	if len(mp.ModelFiles) == 0 {
+		return nil, fmt.Errorf("no model files on disk")
+	}
+
+	mln, err := malina.New(
+		model.WithModelPath(mp.ModelFiles[0]),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image generation model: %w", err)
+	}
+
+	si := mln.SystemInfo()
+	cfg := mln.ModelConfig()
+	mi := mln.ModelInfo()
+
+	fmt.Println("- native version    :", si.NativeVersion)
+	fmt.Println("- physical cores    :", si.PhysicalCores)
+	fmt.Println("- backend devices   :", si.BackendDeviceCount)
+	fmt.Println("- model             :", mi.ModelPath)
+	fmt.Println("- cpu threads       :", cfg.CPUThreads)
+	fmt.Println("- active generations:", mln.ActiveGenerations())
+
+	return mln, nil
+}
+
+// =============================================================================
+
+func generate(mln *malina.Malina) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	fmt.Println("\\nGenerating image...")
 	fmt.Println("- prompt           :", prompt)
 
 	params := model.NewGenerateParams()
@@ -3995,12 +4073,12 @@ func run() error {
 	params.Seed = 42
 
 	start := time.Now()
-	image, err := m.Generate(context.Background(), params)
+	image, err := mln.Generate(ctx, params)
 	if err != nil {
-		return fmt.Errorf("generate image: %w", err)
+		return err
 	}
 
-	if err := os.WriteFile(outputFile, image.PNG, 0644); err != nil {
+	if err := os.WriteFile(outputFile, image.PNG, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", outputFile, err)
 	}
 
@@ -4011,28 +4089,65 @@ func run() error {
 
 	return nil
 }
-`,fv=`// This example generates a PNG with a multi-file FLUX.2 model.
+
+// progress renders model loading and image generation progress reported by
+// stable-diffusion.cpp.
+func progress(step int, steps int, secondsPerStep float32) {
+	if step <= 0 || steps <= 0 {
+		return
+	}
+
+	progressMu.Lock()
+	defer progressMu.Unlock()
+
+	const width = 50
+	current := min(step, steps)
+	filled := min(current*width/steps, width)
+	bar := strings.Repeat("=", filled)
+	if filled < width {
+		bar += ">"
+	}
+
+	speed := fmt.Sprintf("%.2fs/it", secondsPerStep)
+	if secondsPerStep > 0 && secondsPerStep < 1 {
+		speed = fmt.Sprintf("%.2fit/s", 1/secondsPerStep)
+	}
+
+	fmt.Printf("\\r  |%-50s| %d/%d - %s\\x1b[K", bar, current, steps, speed)
+	if current == steps {
+		fmt.Println()
+	}
+}
+`,fv=`// This example shows you how to generate an image with the Malina SDK and a
+// multi-file FLUX.2 model.
 //
 // Experimental: The Malina SDK public API is subject to change.
 //
-// Set MALINA_LIB and the three component paths before running:
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries and the FLUX.2 Klein 9B model bundle.
 //
-//	MALINA_LIB=/path/to/libs \\
-//	MALINA_DIFFUSION_MODEL=/path/to/flux.gguf \\
-//	MALINA_VAE_MODEL=/path/to/ae.safetensors \\
-//	MALINA_LLM_MODEL=/path/to/qwen.gguf \\
-//	make example-malina-flux2
+// Run the example like this from the root of the project:
+// $ make example-malina-flux2
+
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+var (
+	modelSource = models.BundleFlux2Klein9B
+	progressMu  sync.Mutex
 )
 
 const outputFile = "malina-flux2.png"
@@ -4045,39 +4160,115 @@ func main() {
 }
 
 func run() error {
-	diffusion := os.Getenv("MALINA_DIFFUSION_MODEL")
-	vae := os.Getenv("MALINA_VAE_MODEL")
-	llm := os.Getenv("MALINA_LLM_MODEL")
-	if diffusion == "" || vae == "" || llm == "" {
-		return errors.New("MALINA_DIFFUSION_MODEL, MALINA_VAE_MODEL, and MALINA_LLM_MODEL are required")
+	manifest, err := installSystem()
+	if err != nil {
+		return fmt.Errorf("unable to install system: %w", err)
 	}
 
-	if err := malina.Init(); err != nil {
-		return fmt.Errorf("initialize Malina: %w", err)
+	mln, err := newMalina(manifest)
+	if err != nil {
+		return fmt.Errorf("unable to init Malina: %w", err)
+	}
+	defer func() {
+		fmt.Println("\\nUnloading Malina")
+		if err := mln.Unload(context.Background()); err != nil {
+			fmt.Printf("unload: %v\\n", err)
+		}
+	}()
+
+	if err := generate(mln); err != nil {
+		return fmt.Errorf("generate: %w", err)
 	}
 
-	m, err := malina.New(
-		model.WithDiffusionModelPath(diffusion),
-		model.WithVAEPath(vae),
-		model.WithLLMPath(llm),
+	return nil
+}
+
+// =============================================================================
+
+func installSystem() (models.Manifest, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithDetect(ctx, malina.FmtLogger),
 	)
 	if err != nil {
-		return fmt.Errorf("load FLUX.2 model: %w", err)
+		return models.Manifest{}, err
 	}
-	defer unload(m)
+
+	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	}
+
+	if err := malina.Init(
+		malina.WithLibPath(libs.LibsPath()),
+		malina.WithProgress(progress),
+	); err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to init Malina: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to init models: %w", err)
+	}
+
+	fmt.Println("Downloading model bundle:", modelSource)
+
+	manifest, err := mdls.DownloadBundle(ctx, modelSource)
+	if err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to install model bundle: %w", err)
+	}
+
+	return manifest, nil
+}
+
+func newMalina(manifest models.Manifest) (*malina.Malina, error) {
+	fmt.Println("Loading model...")
+
+	mln, err := malina.New(
+		model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
+		model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
+		model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image generation model: %w", err)
+	}
+
+	si := mln.SystemInfo()
+	cfg := mln.ModelConfig()
+	mi := mln.ModelInfo()
+
+	fmt.Println("- native version    :", si.NativeVersion)
+	fmt.Println("- physical cores    :", si.PhysicalCores)
+	fmt.Println("- backend devices   :", si.BackendDeviceCount)
+	fmt.Println("- model             :", mi.DiffusionModelPath)
+	fmt.Println("- cpu threads       :", cfg.CPUThreads)
+	fmt.Println("- active generations:", mln.ActiveGenerations())
+
+	return mln, nil
+}
+
+// =============================================================================
+
+func generate(mln *malina.Malina) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	params := model.NewGenerateParams()
 	params.Prompt = "an orange cat on a tropical beach playing with oranges"
 	params.NegativePrompt = "mascots, watermark, signature"
 	params.Steps = 4
 
-	fmt.Println("Generating FLUX.2 image")
+	fmt.Println("\\nGenerating FLUX.2 image...")
 	start := time.Now()
-	image, err := m.Generate(context.Background(), params)
+
+	image, err := mln.Generate(ctx, params)
 	if err != nil {
-		return fmt.Errorf("generate image: %w", err)
+		return err
 	}
-	if err := os.WriteFile(outputFile, image.PNG, 0644); err != nil {
+	if err := os.WriteFile(outputFile, image.PNG, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", outputFile, err)
 	}
 
@@ -4086,22 +4277,45 @@ func run() error {
 	return nil
 }
 
-func unload(m *malina.Malina) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+// progress renders model loading and image generation progress reported by
+// stable-diffusion.cpp.
+func progress(step int, steps int, secondsPerStep float32) {
+	if step <= 0 || steps <= 0 {
+		return
+	}
 
-	if err := m.Unload(ctx); err != nil {
-		fmt.Printf("unload: %v\\n", err)
+	progressMu.Lock()
+	defer progressMu.Unlock()
+
+	const width = 50
+	current := min(step, steps)
+	filled := min(current*width/steps, width)
+	bar := strings.Repeat("=", filled)
+	if filled < width {
+		bar += ">"
+	}
+
+	speed := fmt.Sprintf("%.2fs/it", secondsPerStep)
+	if secondsPerStep > 0 && secondsPerStep < 1 {
+		speed = fmt.Sprintf("%.2fit/s", 1/secondsPerStep)
+	}
+
+	fmt.Printf("\\r  |%-50s| %d/%d - %s\\x1b[K", bar, current, steps, speed)
+	if current == steps {
+		fmt.Println()
 	}
 }
-`,pv=`// This example transforms an existing image with the Malina SDK.
+`,pv=`// This example shows you how to transform an existing image with the Malina
+// SDK.
 //
 // Experimental: The Malina SDK public API is subject to change.
 //
-// Set MALINA_LIB and MALINA_MODEL, then run with a PNG or JPEG source:
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries and a Stable Diffusion 1.5 model bundle.
 //
-//	MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors \\
-//	make example-malina-img2img
+// Run the example like this from the root of the project:
+// $ make example-malina-img2img
+
 package main
 
 import (
@@ -4114,10 +4328,19 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+var (
+	modelSource = models.BundleSD15.String()
+	progressMu  sync.Mutex
 )
 
 type config struct {
@@ -4146,25 +4369,108 @@ func main() {
 }
 
 func run(cfg config) error {
-	modelPath := os.Getenv("MALINA_MODEL")
-	if modelPath == "" {
-		return errors.New("MALINA_MODEL is required")
+	mp, err := installSystem()
+	if err != nil {
+		return fmt.Errorf("unable to install system: %w", err)
 	}
+
+	mln, err := newMalina(mp)
+	if err != nil {
+		return fmt.Errorf("unable to init Malina: %w", err)
+	}
+	defer func() {
+		fmt.Println("\\nUnloading Malina")
+		if err := mln.Unload(context.Background()); err != nil {
+			fmt.Printf("unload: %v\\n", err)
+		}
+	}()
+
+	if err := transform(mln, cfg); err != nil {
+		return fmt.Errorf("transform: %w", err)
+	}
+
+	return nil
+}
+
+// =============================================================================
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithDetect(ctx, malina.FmtLogger),
+	)
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	}
+
+	if err := malina.Init(
+		malina.WithLibPath(libs.LibsPath()),
+		malina.WithProgress(progress),
+	); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init Malina: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
+	}
+
+	fmt.Println("Downloading model bundle:", modelSource)
+
+	mp, err := mdls.Download(ctx, malina.FmtLogger, modelSource)
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model bundle: %w", err)
+	}
+
+	return mp, nil
+}
+
+func newMalina(mp models.Path) (*malina.Malina, error) {
+	fmt.Println("Loading model...")
+
+	if len(mp.ModelFiles) == 0 {
+		return nil, fmt.Errorf("no model files on disk")
+	}
+
+	mln, err := malina.New(
+		model.WithModelPath(mp.ModelFiles[0]),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image generation model: %w", err)
+	}
+
+	si := mln.SystemInfo()
+	cfg := mln.ModelConfig()
+	mi := mln.ModelInfo()
+
+	fmt.Println("- native version    :", si.NativeVersion)
+	fmt.Println("- physical cores    :", si.PhysicalCores)
+	fmt.Println("- backend devices   :", si.BackendDeviceCount)
+	fmt.Println("- model             :", mi.ModelPath)
+	fmt.Println("- cpu threads       :", cfg.CPUThreads)
+	fmt.Println("- active generations:", mln.ActiveGenerations())
+
+	return mln, nil
+}
+
+// =============================================================================
+
+func transform(mln *malina.Malina, cfg config) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	source, err := loadImage(cfg.input)
 	if err != nil {
 		return err
 	}
-
-	if err := malina.Init(); err != nil {
-		return fmt.Errorf("initialize Malina: %w", err)
-	}
-
-	m, err := malina.New(model.WithModelPath(modelPath))
-	if err != nil {
-		return fmt.Errorf("load img2img model: %w", err)
-	}
-	defer unload(m)
 
 	params := model.NewGenerateParams()
 	params.Prompt = cfg.prompt
@@ -4177,19 +4483,49 @@ func run(cfg config) error {
 		return err
 	}
 
-	fmt.Printf("Transforming %s with strength %.2f\\n", cfg.input, cfg.strength)
+	fmt.Printf("\\nTransforming %s with strength %.2f...\\n", cfg.input, cfg.strength)
 	start := time.Now()
-	generated, err := m.Generate(context.Background(), params)
+
+	generated, err := mln.Generate(ctx, params)
 	if err != nil {
-		return fmt.Errorf("generate image: %w", err)
+		return err
 	}
-	if err := os.WriteFile(cfg.output, generated.PNG, 0644); err != nil {
+	if err := os.WriteFile(cfg.output, generated.PNG, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", cfg.output, err)
 	}
 
 	fmt.Printf("Wrote %s (%dx%d) in %s\\n", cfg.output, generated.Width, generated.Height, time.Since(start).Round(time.Millisecond))
 
 	return nil
+}
+
+// progress renders model loading and image generation progress reported by
+// stable-diffusion.cpp.
+func progress(step int, steps int, secondsPerStep float32) {
+	if step <= 0 || steps <= 0 {
+		return
+	}
+
+	progressMu.Lock()
+	defer progressMu.Unlock()
+
+	const width = 50
+	current := min(step, steps)
+	filled := min(current*width/steps, width)
+	bar := strings.Repeat("=", filled)
+	if filled < width {
+		bar += ">"
+	}
+
+	speed := fmt.Sprintf("%.2fs/it", secondsPerStep)
+	if secondsPerStep > 0 && secondsPerStep < 1 {
+		speed = fmt.Sprintf("%.2fit/s", 1/secondsPerStep)
+	}
+
+	fmt.Printf("\\r  |%-50s| %d/%d - %s\\x1b[K", bar, current, steps, speed)
+	if current == steps {
+		fmt.Println()
+	}
 }
 
 func loadImage(filename string) (image.Image, error) {
@@ -4228,22 +4564,16 @@ func generationSize(bounds image.Rectangle) (int, int, error) {
 
 	return width, height, nil
 }
-
-func unload(m *malina.Malina) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := m.Unload(ctx); err != nil {
-		fmt.Printf("unload: %v\\n", err)
-	}
-}
-`,mv=`// This example encodes PNG and JPEG frames into a Motion-JPEG AVI.
+`,mv=`// This example shows you how to encode PNG and JPEG frames into a Motion-JPEG
+// AVI with the Malina SDK.
 //
 // Experimental: The Malina SDK public API is subject to change.
 //
-// No model or native library is required:
+// No model or native library is required.
 //
-//	make example-malina-sd-encode
+// Run the example like this from the root of the project:
+// $ make example-malina-sd-encode
+
 package main
 
 import (
@@ -4360,19 +4690,26 @@ func resize(source image.Image, target image.Rectangle) image.Image {
 	return frame
 }
 `,hv=`// This example prints Malina and stable-diffusion.cpp system information.
+// Compatible libraries are downloaded automatically.
 //
 // Experimental: The Malina SDK public API is subject to change.
 //
-// Set MALINA_LIB to the stable-diffusion.cpp library directory before running:
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries.
 //
-//	MALINA_LIB=/path/to/libs make example-malina-system
+// Run the example like this from the root of the project:
+// $ make example-malina-system
+
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 )
 
 func main() {
@@ -4383,8 +4720,8 @@ func main() {
 }
 
 func run() error {
-	if err := malina.Init(); err != nil {
-		return fmt.Errorf("initialize Malina: %w", err)
+	if err := installSystem(); err != nil {
+		return fmt.Errorf("unable to install system: %w", err)
 	}
 
 	info, err := malina.SystemInfo()
@@ -4399,6 +4736,30 @@ func run() error {
 	fmt.Println()
 	fmt.Println("-- System info --")
 	fmt.Println(info.Description)
+
+	return nil
+}
+
+// =============================================================================
+
+func installSystem() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithDetect(ctx, malina.FmtLogger),
+	)
+	if err != nil {
+		return err
+	}
+
+	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+		return fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	}
+
+	if err := malina.Init(malina.WithLibPath(libs.LibsPath())); err != nil {
+		return fmt.Errorf("unable to init Malina: %w", err)
+	}
 
 	return nil
 }
@@ -6155,7 +6516,7 @@ func readImage(imageFile string) ([]byte, error) {
 
 	return image, nil
 }
-`;function Cv(){let e=tt();return(0,x.useEffect)(()=>{let t=document.querySelector(`.main-content`);if(!t)return;if(!e.hash){t.scrollTo({top:0});return}let n=e.hash.slice(1);requestAnimationFrame(()=>{let e=document.getElementById(n);if(!e)return;let r=t.getBoundingClientRect(),i=e.getBoundingClientRect().top-r.top+t.scrollTop;t.scrollTo({top:i-20,behavior:`smooth`})})},[e.key,e.hash]),(0,W.jsxs)(`div`,{children:[(0,W.jsxs)(`div`,{className:`page-header`,children:[(0,W.jsx)(`h2`,{children:`SDK Examples`}),(0,W.jsx)(`p`,{children:`Complete working examples demonstrating how to use the Kronk SDK`})]}),(0,W.jsxs)(`div`,{className:`doc-layout`,children:[(0,W.jsxs)(`div`,{className:`doc-content`,children:[(0,W.jsxs)(`div`,{className:`card`,id:`example-agent`,children:[(0,W.jsx)(`h3`,{children:`Agent`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple agent application against an`}),(0,W.jsx)(fa,{code:tv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-audio`,children:[(0,W.jsx)(`h3`,{children:`Audio`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to execute a simple prompt against an audio model.`}),(0,W.jsx)(fa,{code:nv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-bucky`,children:[(0,W.jsx)(`h3`,{children:`Bucky`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to transcribe an audio file with the`}),(0,W.jsx)(fa,{code:rv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-bucky-diar`,children:[(0,W.jsx)(`h3`,{children:`Bucky-Diar`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to perform channel-separated speaker`}),(0,W.jsx)(fa,{code:iv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-bucky-stream`,children:[(0,W.jsx)(`h3`,{children:`Bucky-Stream`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example is a LIVE MICROPHONE transcription demo for the bucky`}),(0,W.jsx)(fa,{code:av,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-chat`,children:[(0,W.jsx)(`h3`,{children:`Chat`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple chat application against an`}),(0,W.jsx)(fa,{code:ov,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-concurrency`,children:[(0,W.jsx)(`h3`,{children:`Concurrency`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to leverage Kronk's batch processing by running`}),(0,W.jsx)(fa,{code:sv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-embedding`,children:[(0,W.jsx)(`h3`,{children:`Embedding`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use an embedding model.`}),(0,W.jsx)(fa,{code:cv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-grammar`,children:[(0,W.jsx)(`h3`,{children:`Grammar`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows how to use GBNF grammars to constrain model output.`}),(0,W.jsx)(fa,{code:lv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-lifecycle-load`,children:[(0,W.jsx)(`h3`,{children:`Lifecycle-Load`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example exercises Kronk's four-stage request lifecycle through a running`}),(0,W.jsx)(fa,{code:uv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina`,children:[(0,W.jsx)(`h3`,{children:`Malina`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example generates a PNG with the Malina SDK.`}),(0,W.jsx)(fa,{code:dv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina-flux2`,children:[(0,W.jsx)(`h3`,{children:`Malina-Flux2`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example generates a PNG with a multi-file FLUX.2 model.`}),(0,W.jsx)(fa,{code:fv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina-img2img`,children:[(0,W.jsx)(`h3`,{children:`Malina-Img2img`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example transforms an existing image with the Malina SDK.`}),(0,W.jsx)(fa,{code:pv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina-sd-encode`,children:[(0,W.jsx)(`h3`,{children:`Malina-Sd-Encode`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example encodes PNG and JPEG frames into a Motion-JPEG AVI.`}),(0,W.jsx)(fa,{code:mv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina-system`,children:[(0,W.jsx)(`h3`,{children:`Malina-System`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example prints Malina and stable-diffusion.cpp system information.`}),(0,W.jsx)(fa,{code:hv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-pool`,children:[(0,W.jsx)(`h3`,{children:`Pool`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use the pool package to manage multiple`}),(0,W.jsx)(fa,{code:gv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-question`,children:[(0,W.jsx)(`h3`,{children:`Question`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you a basic program of using Kronk to ask a model a question.`}),(0,W.jsx)(fa,{code:_v,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-rag`,children:[(0,W.jsx)(`h3`,{children:`Rag`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you a complete RAG application using DuckDB as an embedding`}),(0,W.jsx)(fa,{code:vv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-rerank`,children:[(0,W.jsx)(`h3`,{children:`Rerank`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use a reranker model.`}),(0,W.jsx)(fa,{code:yv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-response`,children:[(0,W.jsx)(`h3`,{children:`Response`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple chat application against an`}),(0,W.jsx)(fa,{code:bv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-session-store`,children:[(0,W.jsx)(`h3`,{children:`Session-Store`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows how SDK users can implement and inject a custom IMC`}),(0,W.jsx)(fa,{code:xv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-vision`,children:[(0,W.jsx)(`h3`,{children:`Vision`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to execute a simple prompt against a vision model.`}),(0,W.jsx)(fa,{code:Sv,language:`go`})]})]}),(0,W.jsx)(`nav`,{className:`doc-sidebar`,children:(0,W.jsx)(`div`,{className:`doc-sidebar-content`,children:(0,W.jsxs)(`div`,{className:`doc-index-section`,children:[(0,W.jsx)(`span`,{className:`doc-index-header`,children:`Examples`}),(0,W.jsxs)(`ul`,{children:[(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-agent`,children:`Agent`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-audio`,children:`Audio`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-bucky`,children:`Bucky`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-bucky-diar`,children:`Bucky-Diar`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-bucky-stream`,children:`Bucky-Stream`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-chat`,children:`Chat`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-concurrency`,children:`Concurrency`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-embedding`,children:`Embedding`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-grammar`,children:`Grammar`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-lifecycle-load`,children:`Lifecycle-Load`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina`,children:`Malina`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina-flux2`,children:`Malina-Flux2`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina-img2img`,children:`Malina-Img2img`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina-sd-encode`,children:`Malina-Sd-Encode`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina-system`,children:`Malina-System`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-pool`,children:`Pool`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-question`,children:`Question`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-rag`,children:`Rag`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-rerank`,children:`Rerank`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-response`,children:`Response`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-session-store`,children:`Session-Store`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-vision`,children:`Vision`})})]})]})})})]})]})}function wv(){return(0,W.jsxs)(`div`,{children:[(0,W.jsxs)(`div`,{className:`page-header`,children:[(0,W.jsx)(`h2`,{children:`bucky`}),(0,W.jsx)(`p`,{children:`Whisper (whisper.cpp) backend: libs and model management.`})]}),(0,W.jsxs)(`div`,{className:`doc-layout`,children:[(0,W.jsxs)(`div`,{className:`doc-content`,children:[(0,W.jsxs)(`div`,{className:`card`,id:`usage`,children:[(0,W.jsx)(`h3`,{children:`Usage`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`kronk bucky <command> [flags]`})}),(0,W.jsxs)(`p`,{children:[`The `,(0,W.jsx)(`code`,{children:`bucky`}),` sub-command tree targets the whisper.cpp runtime (audio transcription). It mirrors the top-level llama verbs: use it to install the whisper shared libraries and to download / manage whisper GGML models. Whisper has no chat or generation surface, so there is no `,(0,W.jsx)(`code`,{children:`bucky run`}),` verb.`]}),(0,W.jsxs)(`p`,{children:[`Every bucky verb accepts a `,(0,W.jsx)(`code`,{children:`--local`}),` flag. The default web mode talks to the model server's`,` `,(0,W.jsx)(`code`,{children:`/v1/bucky/libs/...`}),` and`,` `,(0,W.jsx)(`code`,{children:`/v1/bucky/models/...`}),` endpoints; local mode runs in-process without a server.`]}),(0,W.jsx)(`h5`,{children:`Commands`}),(0,W.jsxs)(`ul`,{children:[(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`libs`}),` — install or upgrade whisper.cpp libraries`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`model catalog`}),` — list the bundled catalog of well-known whisper models`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`model list`}),` — list installed whisper models`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`model pull`}),` — download a whisper model by short name or URL`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`model remove`}),` — remove an installed whisper model from disk`]})]})]}),(0,W.jsxs)(`div`,{className:`card`,id:`cmd-libs`,children:[(0,W.jsx)(`h3`,{children:`libs — Install or upgrade whisper.cpp libraries`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`kronk bucky libs [flags]`})}),(0,W.jsxs)(`p`,{className:`doc-description`,children:[`Downloads and installs the whisper.cpp library bundle for your hardware platform under the bucky libraries root (default:`,` `,(0,W.jsx)(`code`,{children:`~/.kronk/bucky-libraries/`}),`). Auto-detects architecture (amd64/arm64), OS (linux/darwin/windows), and processor (cpu/cuda/metal/vulkan).`]}),(0,W.jsxs)(`table`,{className:`flags-table`,children:[(0,W.jsx)(`thead`,{children:(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`th`,{children:`Flag`}),(0,W.jsx)(`th`,{children:`Description`})]})}),(0,W.jsxs)(`tbody`,{children:[(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--local`})}),(0,W.jsx)(`td`,{children:`Run without the model server (direct download)`})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--upgrade`})}),(0,W.jsxs)(`td`,{children:[`Track the latest whisper.cpp release instead of the well-known default version (default: `,(0,W.jsx)(`code`,{children:`false`}),`)`]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--version <string>`})}),(0,W.jsxs)(`td`,{children:[`Download a specific whisper.cpp version instead of the default (e.g. `,(0,W.jsx)(`code`,{children:`v1.9.1`}),`)`]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--install`})}),(0,W.jsxs)(`td`,{children:[`Install for the supplied `,(0,W.jsx)(`code`,{children:`--arch`}),`/`,(0,W.jsx)(`code`,{children:`--os`}),`/`,(0,W.jsx)(`code`,{children:`--processor`}),` triple (lands in its own folder under the libraries root)`]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--arch <string>`})}),(0,W.jsxs)(`td`,{children:[`Architecture for triple-aware install operations: `,(0,W.jsx)(`code`,{children:`amd64`}),`, `,(0,W.jsx)(`code`,{children:`arm64`})]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--os <string>`})}),(0,W.jsxs)(`td`,{children:[`Operating system for triple-aware install operations: `,(0,W.jsx)(`code`,{children:`linux`}),`, `,(0,W.jsx)(`code`,{children:`darwin`}),`, `,(0,W.jsx)(`code`,{children:`windows`})]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--processor <string>`})}),(0,W.jsxs)(`td`,{children:[`Processor for triple-aware install operations: `,(0,W.jsx)(`code`,{children:`cpu`}),`, `,(0,W.jsx)(`code`,{children:`cuda`}),`, `,(0,W.jsx)(`code`,{children:`metal`}),`, `,(0,W.jsx)(`code`,{children:`vulkan`})]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--list-combinations`})}),(0,W.jsx)(`td`,{children:`List supported (arch, os, processor) combinations and exit`})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--list-installs`})}),(0,W.jsx)(`td`,{children:`List installed library bundles under the libraries root and exit`})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--remove-install`})}),(0,W.jsxs)(`td`,{children:[`Remove the install matching `,(0,W.jsx)(`code`,{children:`--arch`}),`/`,(0,W.jsx)(`code`,{children:`--os`}),`/`,(0,W.jsx)(`code`,{children:`--processor`})]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--base-path <string>`})}),(0,W.jsx)(`td`,{children:`Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag`})]})]})]}),(0,W.jsx)(`h5`,{children:`Example`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`# Install the default whisper.cpp libraries for the current host
+`;function Cv(){let e=tt();return(0,x.useEffect)(()=>{let t=document.querySelector(`.main-content`);if(!t)return;if(!e.hash){t.scrollTo({top:0});return}let n=e.hash.slice(1);requestAnimationFrame(()=>{let e=document.getElementById(n);if(!e)return;let r=t.getBoundingClientRect(),i=e.getBoundingClientRect().top-r.top+t.scrollTop;t.scrollTo({top:i-20,behavior:`smooth`})})},[e.key,e.hash]),(0,W.jsxs)(`div`,{children:[(0,W.jsxs)(`div`,{className:`page-header`,children:[(0,W.jsx)(`h2`,{children:`SDK Examples`}),(0,W.jsx)(`p`,{children:`Complete working examples demonstrating how to use the Kronk SDK`})]}),(0,W.jsxs)(`div`,{className:`doc-layout`,children:[(0,W.jsxs)(`div`,{className:`doc-content`,children:[(0,W.jsxs)(`div`,{className:`card`,id:`example-agent`,children:[(0,W.jsx)(`h3`,{children:`Agent`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple agent application against an`}),(0,W.jsx)(fa,{code:tv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-audio`,children:[(0,W.jsx)(`h3`,{children:`Audio`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to execute a simple prompt against an audio model.`}),(0,W.jsx)(fa,{code:nv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-bucky`,children:[(0,W.jsx)(`h3`,{children:`Bucky`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to transcribe an audio file with the`}),(0,W.jsx)(fa,{code:rv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-bucky-diar`,children:[(0,W.jsx)(`h3`,{children:`Bucky-Diar`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to perform channel-separated speaker`}),(0,W.jsx)(fa,{code:iv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-bucky-stream`,children:[(0,W.jsx)(`h3`,{children:`Bucky-Stream`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example is a LIVE MICROPHONE transcription demo for the bucky`}),(0,W.jsx)(fa,{code:av,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-chat`,children:[(0,W.jsx)(`h3`,{children:`Chat`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple chat application against an`}),(0,W.jsx)(fa,{code:ov,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-concurrency`,children:[(0,W.jsx)(`h3`,{children:`Concurrency`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to leverage Kronk's batch processing by running`}),(0,W.jsx)(fa,{code:sv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-embedding`,children:[(0,W.jsx)(`h3`,{children:`Embedding`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use an embedding model.`}),(0,W.jsx)(fa,{code:cv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-grammar`,children:[(0,W.jsx)(`h3`,{children:`Grammar`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows how to use GBNF grammars to constrain model output.`}),(0,W.jsx)(fa,{code:lv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-lifecycle-load`,children:[(0,W.jsx)(`h3`,{children:`Lifecycle-Load`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example exercises Kronk's four-stage request lifecycle through a running`}),(0,W.jsx)(fa,{code:uv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina`,children:[(0,W.jsx)(`h3`,{children:`Malina`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to generate an image with the Malina SDK`}),(0,W.jsx)(fa,{code:dv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina-flux2`,children:[(0,W.jsx)(`h3`,{children:`Malina-Flux2`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to generate an image with the Malina SDK and a`}),(0,W.jsx)(fa,{code:fv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina-img2img`,children:[(0,W.jsx)(`h3`,{children:`Malina-Img2img`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to transform an existing image with the Malina`}),(0,W.jsx)(fa,{code:pv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina-sd-encode`,children:[(0,W.jsx)(`h3`,{children:`Malina-Sd-Encode`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to encode PNG and JPEG frames into a Motion-JPEG`}),(0,W.jsx)(fa,{code:mv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-malina-system`,children:[(0,W.jsx)(`h3`,{children:`Malina-System`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example prints Malina and stable-diffusion.cpp system information.`}),(0,W.jsx)(fa,{code:hv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-pool`,children:[(0,W.jsx)(`h3`,{children:`Pool`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use the pool package to manage multiple`}),(0,W.jsx)(fa,{code:gv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-question`,children:[(0,W.jsx)(`h3`,{children:`Question`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you a basic program of using Kronk to ask a model a question.`}),(0,W.jsx)(fa,{code:_v,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-rag`,children:[(0,W.jsx)(`h3`,{children:`Rag`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you a complete RAG application using DuckDB as an embedding`}),(0,W.jsx)(fa,{code:vv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-rerank`,children:[(0,W.jsx)(`h3`,{children:`Rerank`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use a reranker model.`}),(0,W.jsx)(fa,{code:yv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-response`,children:[(0,W.jsx)(`h3`,{children:`Response`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple chat application against an`}),(0,W.jsx)(fa,{code:bv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-session-store`,children:[(0,W.jsx)(`h3`,{children:`Session-Store`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows how SDK users can implement and inject a custom IMC`}),(0,W.jsx)(fa,{code:xv,language:`go`})]}),(0,W.jsxs)(`div`,{className:`card`,id:`example-vision`,children:[(0,W.jsx)(`h3`,{children:`Vision`}),(0,W.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to execute a simple prompt against a vision model.`}),(0,W.jsx)(fa,{code:Sv,language:`go`})]})]}),(0,W.jsx)(`nav`,{className:`doc-sidebar`,children:(0,W.jsx)(`div`,{className:`doc-sidebar-content`,children:(0,W.jsxs)(`div`,{className:`doc-index-section`,children:[(0,W.jsx)(`span`,{className:`doc-index-header`,children:`Examples`}),(0,W.jsxs)(`ul`,{children:[(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-agent`,children:`Agent`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-audio`,children:`Audio`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-bucky`,children:`Bucky`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-bucky-diar`,children:`Bucky-Diar`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-bucky-stream`,children:`Bucky-Stream`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-chat`,children:`Chat`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-concurrency`,children:`Concurrency`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-embedding`,children:`Embedding`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-grammar`,children:`Grammar`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-lifecycle-load`,children:`Lifecycle-Load`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina`,children:`Malina`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina-flux2`,children:`Malina-Flux2`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina-img2img`,children:`Malina-Img2img`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina-sd-encode`,children:`Malina-Sd-Encode`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-malina-system`,children:`Malina-System`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-pool`,children:`Pool`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-question`,children:`Question`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-rag`,children:`Rag`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-rerank`,children:`Rerank`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-response`,children:`Response`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-session-store`,children:`Session-Store`})}),(0,W.jsx)(`li`,{children:(0,W.jsx)(`a`,{href:`#example-vision`,children:`Vision`})})]})]})})})]})]})}function wv(){return(0,W.jsxs)(`div`,{children:[(0,W.jsxs)(`div`,{className:`page-header`,children:[(0,W.jsx)(`h2`,{children:`bucky`}),(0,W.jsx)(`p`,{children:`Whisper (whisper.cpp) backend: libs and model management.`})]}),(0,W.jsxs)(`div`,{className:`doc-layout`,children:[(0,W.jsxs)(`div`,{className:`doc-content`,children:[(0,W.jsxs)(`div`,{className:`card`,id:`usage`,children:[(0,W.jsx)(`h3`,{children:`Usage`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`kronk bucky <command> [flags]`})}),(0,W.jsxs)(`p`,{children:[`The `,(0,W.jsx)(`code`,{children:`bucky`}),` sub-command tree targets the whisper.cpp runtime (audio transcription). It mirrors the top-level llama verbs: use it to install the whisper shared libraries and to download / manage whisper GGML models. Whisper has no chat or generation surface, so there is no `,(0,W.jsx)(`code`,{children:`bucky run`}),` verb.`]}),(0,W.jsxs)(`p`,{children:[`Every bucky verb accepts a `,(0,W.jsx)(`code`,{children:`--local`}),` flag. The default web mode talks to the model server's`,` `,(0,W.jsx)(`code`,{children:`/v1/bucky/libs/...`}),` and`,` `,(0,W.jsx)(`code`,{children:`/v1/bucky/models/...`}),` endpoints; local mode runs in-process without a server.`]}),(0,W.jsx)(`h5`,{children:`Commands`}),(0,W.jsxs)(`ul`,{children:[(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`libs`}),` — install or upgrade whisper.cpp libraries`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`model catalog`}),` — list the bundled catalog of well-known whisper models`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`model list`}),` — list installed whisper models`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`model pull`}),` — download a whisper model by short name or URL`]}),(0,W.jsxs)(`li`,{children:[(0,W.jsx)(`code`,{children:`model remove`}),` — remove an installed whisper model from disk`]})]})]}),(0,W.jsxs)(`div`,{className:`card`,id:`cmd-libs`,children:[(0,W.jsx)(`h3`,{children:`libs — Install or upgrade whisper.cpp libraries`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`kronk bucky libs [flags]`})}),(0,W.jsxs)(`p`,{className:`doc-description`,children:[`Downloads and installs the whisper.cpp library bundle for your hardware platform under the bucky libraries root (default:`,` `,(0,W.jsx)(`code`,{children:`~/.kronk/bucky-libraries/`}),`). Auto-detects architecture (amd64/arm64), OS (linux/darwin/windows), and processor (cpu/cuda/metal/vulkan).`]}),(0,W.jsxs)(`table`,{className:`flags-table`,children:[(0,W.jsx)(`thead`,{children:(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`th`,{children:`Flag`}),(0,W.jsx)(`th`,{children:`Description`})]})}),(0,W.jsxs)(`tbody`,{children:[(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--local`})}),(0,W.jsx)(`td`,{children:`Run without the model server (direct download)`})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--upgrade`})}),(0,W.jsxs)(`td`,{children:[`Track the latest whisper.cpp release instead of the well-known default version (default: `,(0,W.jsx)(`code`,{children:`false`}),`)`]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--version <string>`})}),(0,W.jsxs)(`td`,{children:[`Download a specific whisper.cpp version instead of the default (e.g. `,(0,W.jsx)(`code`,{children:`v1.9.1`}),`)`]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--install`})}),(0,W.jsxs)(`td`,{children:[`Install for the supplied `,(0,W.jsx)(`code`,{children:`--arch`}),`/`,(0,W.jsx)(`code`,{children:`--os`}),`/`,(0,W.jsx)(`code`,{children:`--processor`}),` triple (lands in its own folder under the libraries root)`]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--arch <string>`})}),(0,W.jsxs)(`td`,{children:[`Architecture for triple-aware install operations: `,(0,W.jsx)(`code`,{children:`amd64`}),`, `,(0,W.jsx)(`code`,{children:`arm64`})]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--os <string>`})}),(0,W.jsxs)(`td`,{children:[`Operating system for triple-aware install operations: `,(0,W.jsx)(`code`,{children:`linux`}),`, `,(0,W.jsx)(`code`,{children:`darwin`}),`, `,(0,W.jsx)(`code`,{children:`windows`})]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--processor <string>`})}),(0,W.jsxs)(`td`,{children:[`Processor for triple-aware install operations: `,(0,W.jsx)(`code`,{children:`cpu`}),`, `,(0,W.jsx)(`code`,{children:`cuda`}),`, `,(0,W.jsx)(`code`,{children:`metal`}),`, `,(0,W.jsx)(`code`,{children:`vulkan`})]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--list-combinations`})}),(0,W.jsx)(`td`,{children:`List supported (arch, os, processor) combinations and exit`})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--list-installs`})}),(0,W.jsx)(`td`,{children:`List installed library bundles under the libraries root and exit`})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--remove-install`})}),(0,W.jsxs)(`td`,{children:[`Remove the install matching `,(0,W.jsx)(`code`,{children:`--arch`}),`/`,(0,W.jsx)(`code`,{children:`--os`}),`/`,(0,W.jsx)(`code`,{children:`--processor`})]})]}),(0,W.jsxs)(`tr`,{children:[(0,W.jsx)(`td`,{children:(0,W.jsx)(`code`,{children:`--base-path <string>`})}),(0,W.jsx)(`td`,{children:`Base path for kronk data (models, libraries, catalog, model_config) — persistent global flag`})]})]})]}),(0,W.jsx)(`h5`,{children:`Example`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`# Install the default whisper.cpp libraries for the current host
 kronk bucky libs
 
 # Install a Linux/CUDA bundle alongside the active install

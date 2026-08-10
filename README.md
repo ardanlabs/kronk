@@ -67,7 +67,7 @@ Here are some of the known compatible versions:
 
 | stable-diffusion.cpp | malina | kronk   | Notes          |
 | -------------------- | ------ | ------- | -------------- |
-| master-813-bfbef5b   | v1.0.1 | v1.30.7 | (experimental) |
+| master-813-bfbef5b   | v1.0.2 | v1.30.7 | (experimental) |
 
 ## Owner Information
 
@@ -246,24 +246,34 @@ make example-grammar
 > [!WARNING]
 > The Malina SDK is experimental. Its public API is subject to change.
 
-[MALINA](examples/malina/main.go) - This example shows how to generate a PNG with the Malina SDK and a local stable-diffusion.cpp model. Set `MALINA_LIB` to the native library directory and `MALINA_MODEL` to an all-in-one checkpoint file.
+The Malina SDK supports these curated model bundles through `sdk/tools/malina/models`:
+
+| Bundle | Description | Download size |
+| ------ | ----------- | ------------- |
+| `sd-1.5` | Stable Diffusion 1.5 single-file baseline | 4.3 GB |
+| `sdxl-base-1.0` | Stable Diffusion XL base 1.0 single-file model | 6.9 GB |
+| `flux2-klein-9b` | FLUX.2 Klein 9B diffusion, VAE, and LLM components (license-gated) | 11 GB |
+
+Use `models.SupportedBundles()` to list their names and `models.Catalog()` to inspect their files, licenses, and descriptions. The exported `models.BundleSD15`, `models.BundleSDXLBase10`, and `models.BundleFlux2Klein9B` names can be passed directly to `DownloadBundle`.
+
+Malina suppresses stable-diffusion.cpp and GGML diagnostic logging by default. Pass `malina.WithLogLevel(malina.LogNormal)` to `malina.Init` to restore it. Native model-loading and generation progress remains visible by default; replace it with `malina.WithProgress(callback)`, or suppress it with `malina.WithProgress(malina.DiscardProgress)`.
+
+[MALINA](examples/malina/main.go) - This example generates a PNG with automatically downloaded compatible libraries and the default model bundle.
 
 ```shell
-MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors make example-malina
+make example-malina
 ```
 
-[MALINA-FLUX2](examples/malina-flux2/main.go) - This example generates a PNG from a multi-file FLUX.2 pipeline using separate diffusion, VAE, and LLM components.
+[MALINA-FLUX2](examples/malina-flux2/main.go) - This example generates a PNG from a multi-file FLUX.2 pipeline, automatically downloading compatible libraries and the curated FLUX.2 Klein 9B bundle.
 
 ```shell
-MALINA_LIB=/path/to/libs MALINA_DIFFUSION_MODEL=/path/to/flux.gguf \
-MALINA_VAE_MODEL=/path/to/ae.safetensors MALINA_LLM_MODEL=/path/to/qwen.gguf \
 make example-malina-flux2
 ```
 
-[MALINA-IMG2IMG](examples/malina-img2img/main.go) - This example transforms an existing PNG or JPEG with a prompt and configurable strength.
+[MALINA-IMG2IMG](examples/malina-img2img/main.go) - This example transforms an existing PNG or JPEG with a prompt and configurable strength, automatically downloading compatible libraries and the curated Stable Diffusion 1.5 bundle.
 
 ```shell
-MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors make example-malina-img2img
+make example-malina-img2img
 ```
 
 [MALINA-SD-ENCODE](examples/malina-sd-encode/main.go) - This example encodes a directory of PNG and JPEG frames into a Motion-JPEG AVI without loading a model.
@@ -272,10 +282,10 @@ MALINA_LIB=/path/to/libs MALINA_MODEL=/path/to/model.safetensors make example-ma
 make example-malina-sd-encode
 ```
 
-[MALINA-SYSTEM](examples/malina-system/main.go) - This example initializes Malina and displays stable-diffusion.cpp system diagnostics without loading a model.
+[MALINA-SYSTEM](examples/malina-system/main.go) - This example automatically downloads compatible libraries, initializes Malina, and displays stable-diffusion.cpp system diagnostics.
 
 ```shell
-MALINA_LIB=/path/to/libs make example-malina-system
+make example-malina-system
 ```
 
 [POOL](examples/pool/main.go) - This example shows you how to use the pool package to manage multipl models in memory at the same time.

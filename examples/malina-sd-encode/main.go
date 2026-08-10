@@ -1,10 +1,13 @@
-// This example encodes PNG and JPEG frames into a Motion-JPEG AVI.
+// This example shows you how to encode PNG and JPEG frames into a Motion-JPEG
+// AVI with the Malina SDK.
 //
 // Experimental: The Malina SDK public API is subject to change.
 //
-// No model or native library is required:
+// No model or native library is required.
 //
-//	make example-malina-sd-encode
+// Run the example like this from the root of the project:
+// $ make example-malina-sd-encode
+
 package main
 
 import (
