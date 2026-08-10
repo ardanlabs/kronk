@@ -24,6 +24,8 @@ import DocsSDKModel from './components/DocsSDKModel';
 import DocsSDKPool from './components/DocsSDKPool';
 import DocsSDKBucky from './components/DocsSDKBucky';
 import DocsSDKBuckyModel from './components/DocsSDKBuckyModel';
+import DocsSDKMalina from './components/DocsSDKMalina';
+import DocsSDKMalinaModel from './components/DocsSDKMalinaModel';
 import DocsSDKExamples from './components/DocsSDKExamples';
 import DocsCLIBucky from './components/DocsCLIBucky';
 import DocsCLICatalog from './components/DocsCLICatalog';
@@ -92,6 +94,8 @@ export type Page =
   | 'docs-sdk-pool'
   | 'docs-sdk-bucky'
   | 'docs-sdk-bucky-model'
+  | 'docs-sdk-malina'
+  | 'docs-sdk-malina-model'
   | 'docs-sdk-examples'
   | 'docs-cli-bucky'
   | 'docs-cli-catalog'
@@ -143,6 +147,8 @@ export const routeMap: Record<Page, string> = {
   'docs-sdk-pool': '/docs/sdk/pool',
   'docs-sdk-bucky': '/docs/sdk/bucky',
   'docs-sdk-bucky-model': '/docs/sdk/bucky/model',
+  'docs-sdk-malina': '/docs/sdk/malina',
+  'docs-sdk-malina-model': '/docs/sdk/malina/model',
   'docs-sdk-examples': '/docs/sdk/examples',
   'docs-cli-bucky': '/docs/cli/bucky',
   'docs-cli-catalog': '/docs/cli/catalog',
@@ -290,6 +296,8 @@ function App() {
                 <Route path="/docs/sdk/pool" element={<DocsSDKPool />} />
                 <Route path="/docs/sdk/bucky" element={<DocsSDKBucky />} />
                 <Route path="/docs/sdk/bucky/model" element={<DocsSDKBuckyModel />} />
+                <Route path="/docs/sdk/malina" element={<DocsSDKMalina />} />
+                <Route path="/docs/sdk/malina/model" element={<DocsSDKMalinaModel />} />
                 <Route path="/docs/sdk/examples" element={<DocsSDKExamples />} />
                 <Route path="/docs/cli/bucky" element={<DocsCLIBucky />} />
                 <Route path="/docs/cli/catalog" element={<DocsCLICatalog />} />

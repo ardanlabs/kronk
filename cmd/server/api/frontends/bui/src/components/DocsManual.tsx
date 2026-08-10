@@ -1447,7 +1447,7 @@ krn, err := kronk.New(
             <li><strong>Media support is conservative.</strong> Media projection and media prefill run on the target, and target IMC can cache and restore that media state. Kronk does not carry an own-KV draft snapshot across a media cache commit because it cannot prove that the draft covers the projected media cells. Unsupported own-KV media combinations and all M-RoPE media requests therefore run without MTP while target IMC remains active. See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a>.</li>
             <li><strong>Drafting consumes resources.</strong> A classic draft loads another model and KV cache. MTP heads and companion assistants also require compute and memory. Hybrid recurrent targets retain current state plus rollback copies sized by the MTP draft ceiling. Automatic detection does not guarantee a performance improvement.</li>
           </ul>
-          <p>Implementation details for drafting, verification, state synchronization, and hybrid-model rollback belong in <a href="https://www.kronkai.com/manual#1966-speculative-decoding-and-mtp">Chapter 19</a>.</p>
+          <p>Implementation details for drafting, verification, state synchronization, and hybrid-model rollback belong in <a href="https://www.kronkai.com/manual#2066-speculative-decoding-and-mtp">Chapter 20</a>.</p>
           <h2 id="chapter-7-yarn-extended-context">Chapter 7: YaRN Extended Context</h2>
           <h2 id="71-context-size-and-rope-scaling">7.1 Context Size and RoPE Scaling</h2>
           <p><code>context-window</code> sets the token capacity available to one sequence. Input, chat-template tokens, and generated output all consume this capacity.</p>
@@ -3773,7 +3773,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           <p>Remove tokens, prompts, responses, filesystem secrets, and other sensitive values before sharing diagnostic output.</p>
           <p>For a suspected API-contract problem — constrained decoding, tool-call parsing, speculative decoding, logprobs, the Anthropic or Responses translations, or parameter validation — reproduce it with the stress harness from a clone of the repository and attach the relevant part of the report:</p>
           <pre className="code-block"><code className="language-shell">{`make test-stress ARGS="--tier=smoke"`}</code></pre>
-          <p>Findings land in <code>zarf/tmp/kronk-stress/findings.txt</code>, which includes the full request and response of every flagged call. Name individual probe groups to narrow the run, and see <a href="https://www.kronkai.com/manual#chapter-19-developer-guide">Chapter 19.4.2</a> for tiers, environment variables, and the full output layout.</p>
+          <p>Findings land in <code>zarf/tmp/kronk-stress/findings.txt</code>, which includes the full request and response of every flagged call. Name individual probe groups to narrow the run, and see <a href="https://www.kronkai.com/manual#2042-server-stress-probes">Chapter 20.4.2</a> for tiers, environment variables, and the full output layout.</p>
           <hr />
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription"&gt;Chapter 18: Bucky (Audio Transcription)&lt;/a&gt;</em></p>
           <h2 id="chapter-18-bucky-audio-transcription">Chapter 18: Bucky (Audio Transcription)</h2>
@@ -3785,7 +3785,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
             <li>the Go packages under <code>sdk/bucky</code>.</li>
           </ul>
           <p>Using Bucky requires both a compatible whisper.cpp library bundle and a Whisper model. The libraries run the inference engine; the model contains the speech-recognition weights.</p>
-          <p>Developer-level package, lifecycle, and test information belongs in <a href="https://www.kronkai.com/manual#chapter-19-developer-guide">Chapter 19: Developer Guide</a>.</p>
+          <p>Developer-level package, lifecycle, and test information belongs in <a href="https://www.kronkai.com/manual#chapter-20-developer-guide">Chapter 20: Developer Guide</a>.</p>
           <h3 id="181-overview">18.1 Overview</h3>
           <p>Bucky supports these common workflows:</p>
           <ul>
@@ -4284,11 +4284,411 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             </tbody>
           </table>
           <hr />
-          <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-19-developer-guide"&gt;Chapter 19: Developer Guide&lt;/a&gt;</em></p>
-          <h2 id="chapter-19-developer-guide">Chapter 19: Developer Guide</h2>
-          <h3 id="191-how-to-use-this-guide">19.1 How to Use This Guide</h3>
+          <p>Next: <a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19: Malina (Image Generation)</a></p>
+          <h2 id="chapter-19-malina-image-generation">Chapter 19: Malina (Image Generation)</h2>
+          <p><strong>Experimental:</strong> The Malina SDK public API is subject to change.</p>
+          <p>Malina is Kronk's image-generation SDK. It uses <a href="https://github.com/leejet/stable-diffusion.cpp"><code>stable-diffusion.cpp</code></a> through the <a href="https://github.com/ardanlabs/malina"><code>malina</code></a> bindings and is available through the Go packages under <code>sdk/malina</code>.</p>
+          <p>Using Malina requires both a compatible stable-diffusion.cpp library bundle and a supported model bundle. The libraries provide the native inference engine. The model bundle contains either one complete checkpoint or the set of component files required by a diffusion pipeline.</p>
+          <h3 id="191-overview">19.1 Overview</h3>
+          <p>The current SDK supports:</p>
+          <ul>
+            <li>text-to-image generation;</li>
+            <li>image-to-image generation from a Go <code>image.Image</code>;</li>
+            <li>single-checkpoint and multi-file diffusion pipelines;</li>
+            <li>curated model-bundle download and validation;</li>
+            <li>native library detection, installation, and version management;</li>
+            <li>application-controlled native logging and progress reporting;</li>
+            <li>stable-diffusion.cpp system diagnostics; and</li>
+            <li>Motion-JPEG AVI encoding from generated or existing image frames.</li>
+          </ul>
+          <p>The Malina API follows the same high-level shape as the Kronk and Bucky SDKs:</p>
+          <ol>
+            <li>Detect and install compatible native libraries.</li>
+            <li>Initialize the process-wide native backend.</li>
+            <li>Download a curated model bundle.</li>
+            <li>Construct a handle for one loaded model.</li>
+            <li>Perform work through the handle.</li>
+            <li>Unload the handle.</li>
+          </ol>
+          <p>Malina is currently an SDK and tooling integration. It is <strong>not yet an inference backend in the Kronk model server</strong>. There are no Malina HTTP generation endpoints, CLI management commands, BUI management screens, or Malina model pool in this release. Model-server integration depends on reliable memory and VRAM planning for stable-diffusion model bundles.</p>
+          <h3 id="192-install-stable-diffusion-libraries">19.2 Install Stable Diffusion Libraries</h3>
+          <p>The normal SDK flow detects the current host, resolves a compatible runtime, and installs Kronk's pinned stable-diffusion.cpp version:</p>
+          <pre className="code-block"><code className="language-go">{`ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+defer cancel()
+
+libs, err := libs.New(
+    libs.WithDetect(ctx, malina.FmtLogger),
+)
+if err != nil {
+    return err
+}
+
+if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+    return err
+}`}</code></pre>
+          <p>Libraries are installed below <code>~/.kronk/malina-libraries/</code> by default, using one directory per operating-system, architecture, and processor combination:</p>
+          <pre className="code-block"><code className="language-text">{`~/.kronk/malina-libraries/<os>/<arch>/<processor>/`}</code></pre>
+          <p>The published combinations are:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Operating system</th>
+                <th>Architecture</th>
+                <th>Processors</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>macOS</td>
+                <td><code>arm64</code></td>
+                <td><code>cpu</code>, <code>metal</code></td>
+              </tr>
+              <tr>
+                <td>Linux</td>
+                <td><code>amd64</code></td>
+                <td><code>cpu</code>, <code>vulkan</code>, <code>rocm</code></td>
+              </tr>
+              <tr>
+                <td>Windows</td>
+                <td><code>amd64</code></td>
+                <td><code>cpu</code>, <code>cuda</code>, <code>vulkan</code>, <code>rocm</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Use <code>libs.SupportedCombinations()</code> as the source of truth for combinations available to the installed Kronk version.</p>
+          <p>Automatic selection treats detected hardware and environment-derived runtime values as preferences and falls back to a compatible runtime when possible. The <code>libs.WithArch</code>, <code>libs.WithOS</code>, and <code>libs.WithProcessor</code> options are authoritative when they form a published combination. An explicit library path is also authoritative.</p>
+          <p>The library manager recognizes these path and platform overrides:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>KRONK_BASE_PATH</code></td>
+                <td>Changes the root below which Kronk-managed files are stored.</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_MALINA_LIB_PATH</code></td>
+                <td>Selects an exact stable-diffusion.cpp library directory.</td>
+              </tr>
+              <tr>
+                <td><code>MALINA_LIB</code></td>
+                <td>Legacy fallback for <code>KRONK_MALINA_LIB_PATH</code>.</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_ARCH</code></td>
+                <td>Supplies the preferred architecture during automatic selection.</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_OS</code></td>
+                <td>Supplies the preferred operating system during automatic selection.</td>
+              </tr>
+              <tr>
+                <td><code>KRONK_PROCESSOR</code></td>
+                <td>Supplies the preferred processor during automatic selection; compatibility checks may fall back.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>A selected directory containing <code>version.json</code> is treated as a Kronk-managed installation. A non-empty directory without that file is treated as a read-only user-managed build: Malina can load from it, but the library manager will not upgrade, replace, or remove it.</p>
+          <p>By default, <code>Download</code> uses the stable-diffusion.cpp version pinned by the Malina release that Kronk depends on. This is the supported choice. Advanced users can request a specific version with <code>libs.WithVersion</code>, or opt into the latest upstream release with:</p>
+          <pre className="code-block"><code className="language-go">{`libs, err := libs.New(
+    libs.WithDetect(ctx, malina.FmtLogger),
+    libs.WithAllowUpgrade(true),
+)`}</code></pre>
+          <p>An upgraded upstream library may not be ABI-compatible with the Malina and Kronk versions in use. Use this option for testing, not as a compatibility guarantee. Library installation is staged and activated atomically so a failed download does not replace a working installation.</p>
+          <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
+          <p>Kronk provides a small, curated catalog rather than accepting arbitrary model repository layouts. This keeps component roles and known-compatible files in the high-level SDK instead of requiring applications to use Malina's raw download API.</p>
+          <p>The current bundles are:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Bundle</th>
+                <th>Files</th>
+                <th>License</th>
+                <th>Approximate download</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>sd-1.5</code></td>
+                <td>Stable Diffusion 1.5 checkpoint</td>
+                <td>CreativeML Open RAIL-M</td>
+                <td>4.3 GB</td>
+              </tr>
+              <tr>
+                <td><code>sdxl-base-1.0</code></td>
+                <td>SDXL Base 1.0 checkpoint</td>
+                <td>CreativeML Open RAIL++-M</td>
+                <td>6.9 GB</td>
+              </tr>
+              <tr>
+                <td><code>flux2-klein-9b</code></td>
+                <td>Diffusion model, VAE, and LLM text encoder</td>
+                <td>FLUX Non-Commercial</td>
+                <td>11 GB</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Use <code>models.SupportedBundles()</code> to enumerate names and <code>models.Catalog()</code> to inspect descriptions, licenses, gating, files, and component roles.</p>
+          <p>Models are installed below <code>~/.kronk/malina-models/</code> by default:</p>
+          <pre className="code-block"><code className="language-text">{`~/.kronk/malina-models/<bundle>/`}</code></pre>
+          <p>Download a single-file bundle with the backend-compatible <code>Download</code> method:</p>
+          <pre className="code-block"><code className="language-go">{`mdls, err := models.New()
+if err != nil {
+    return err
+}
+
+mp, err := mdls.Download(
+    ctx,
+    malina.FmtLogger,
+    models.BundleSD15.String(),
+)
+if err != nil {
+    return err
+}`}</code></pre>
+          <p>For a component bundle, use <code>DownloadBundle</code> and configure the model from the returned role-to-path manifest:</p>
+          <pre className="code-block"><code className="language-go">{`manifest, err := mdls.DownloadBundle(ctx, models.BundleFlux2Klein9B)
+if err != nil {
+    return err
+}`}</code></pre>
+          <p>Downloads are staged, checked for all required non-empty files, recorded in <code>manifest.json</code>, and then activated atomically. A complete installed bundle is reused on later calls.</p>
+          <p>The FLUX.2 bundle is license-gated. Accept the model license on Hugging Face, then provide a read token through <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code> before downloading it.</p>
+          <h3 id="194-go-sdk">19.4 Go SDK</h3>
+          <p>The complete Stable Diffusion 1.5 flow is demonstrated by <a href="../examples/malina/main.go"><code>examples/malina/main.go</code></a>. The important phases are initialization, model construction, generation, and unloading.</p>
+          <h4 id="1941-initialize-malina">19.4.1 Initialize Malina</h4>
+          <p>After installing the libraries, initialize the process-wide backend from the resolved directory:</p>
+          <pre className="code-block"><code className="language-go">{`if err := malina.Init(
+    malina.WithLibPath(libs.LibsPath()),
+); err != nil {
+    return err
+}`}</code></pre>
+          <p>Call <code>Init</code> before constructing a Malina handle. Repeated calls using the same library path are safe. Once initialized, the process cannot switch to a different stable-diffusion.cpp library directory.</p>
+          <h4 id="1942-load-and-unload-a-model">19.4.2 Load and Unload a Model</h4>
+          <p>Construct one handle for one model checkpoint:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+)
+if err != nil {
+    return err
+}
+
+defer func() {
+    if err := mln.Unload(context.Background()); err != nil {
+        fmt.Println("unload:", err)
+    }
+}()`}</code></pre>
+          <p>Use <code>NewWithContext</code> when model loading needs a deadline or cancellation. <code>Unload</code> stops new admission and waits until native work can be released safely. If its context expires, cleanup continues in the background and a later <code>Unload</code> call can wait for completion.</p>
+          <p>Each handle serializes generation through one reusable native model context. Concurrent callers share a default total admitted capacity of 2, including the running generation, and a three-minute admission timeout. Configure these with <code>model.WithQueueDepth</code> and <code>model.WithAdmissionTimeout</code> when constructing the handle.</p>
+          <h4 id="1943-generate-an-image">19.4.3 Generate an Image</h4>
+          <p>Start with the stable-diffusion.cpp generation defaults and set a prompt:</p>
+          <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
+params.Prompt = "a small red sailboat crossing a calm mountain lake at sunrise"
+params.Seed = 42
+
+generated, err := mln.Generate(ctx, params)
+if err != nil {
+    return err
+}
+
+if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
+    return err
+}`}</code></pre>
+          <p><code>GeneratedImage</code> contains an owned PNG byte slice, output dimensions, and the requested seed value. When <code>-1</code> asks the native backend to select a random seed, the result retains <code>-1</code>; it does not expose the effective native seed.</p>
+          <p>The default parameters are:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>Default</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Width</td>
+                <td>512</td>
+              </tr>
+              <tr>
+                <td>Height</td>
+                <td>512</td>
+              </tr>
+              <tr>
+                <td>Steps</td>
+                <td>20</td>
+              </tr>
+              <tr>
+                <td>CFG scale</td>
+                <td>7</td>
+              </tr>
+              <tr>
+                <td>Seed</td>
+                <td><code>-1</code> (random)</td>
+              </tr>
+              <tr>
+                <td>Image-to-image strength</td>
+                <td>0.75</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Dimensions must be multiples of 8 from 64 through 1024, with no more than 1,048,576 total pixels. A request needs a non-empty prompt, positive finite CFG scale, and between 1 and 1,000 steps.</p>
+          <p>Waiting for admission is cancellable. Once native generation starts, Malina waits for it to finish before returning a cancellation error; the native context cannot safely be reused or freed while stable-diffusion.cpp is still working.</p>
+          <h3 id="195-multi-file-model-bundles">19.5 Multi-File Model Bundles</h3>
+          <p>Some pipelines require several files with distinct roles. The FLUX.2 example downloads a manifest and maps its diffusion, VAE, and LLM components into the model configuration:</p>
+          <pre className="code-block"><code className="language-go">{`manifest, err := mdls.DownloadBundle(ctx, models.BundleFlux2Klein9B)
+if err != nil {
+    return err
+}
+
+mln, err := malina.New(
+    model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
+    model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
+    model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
+)
+if err != nil {
+    return err
+}`}</code></pre>
+          <p>Use the exported <code>models.Role...</code> values instead of relying on filenames or file ordering. This keeps application configuration tied to the curated bundle contract.</p>
+          <h3 id="196-image-to-image-generation">19.6 Image-to-Image Generation</h3>
+          <p>Set <code>GenerateParams.InitImage</code> to transform an existing Go image. The request still needs a prompt, and <code>Strength</code> must be greater than zero and no more than one:</p>
+          <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
+params.Prompt = "a watercolor painting at sunset"
+params.InitImage = source
+params.Strength = 0.6
+params.Width = 768
+params.Height = 512
+
+generated, err := mln.Generate(ctx, params)`}</code></pre>
+          <p>The requested dimensions are the generation dimensions; prepare the source image and choose valid dimensions for the desired aspect ratio. The <a href="../examples/malina-img2img/main.go"><code>malina-img2img</code></a> example accepts PNG and JPEG input, constrains the image to 1024 pixels per side, and rounds dimensions down to multiples of 8.</p>
+          <h3 id="197-logging-progress-and-diagnostics">19.7 Logging, Progress, and Diagnostics</h3>
+          <p>Native stable-diffusion.cpp and GGML diagnostics are silent by default. Enable them when diagnosing native behavior:</p>
+          <pre className="code-block"><code className="language-go">{`malina.Init(
+    malina.WithLibPath(libs.LibsPath()),
+    malina.WithLogLevel(malina.LogNormal),
+)`}</code></pre>
+          <p>Model-loading and generation progress uses the native terminal display by default. Applications can replace it with a callback:</p>
+          <pre className="code-block"><code className="language-go">{`func progress(step int, steps int, secondsPerStep float32) {
+    fmt.Printf("\\r%d/%d %.2fs/step", step, steps, secondsPerStep)
+}
+
+malina.Init(
+    malina.WithLibPath(libs.LibsPath()),
+    malina.WithProgress(progress),
+)`}</code></pre>
+          <p>Progress callbacks are process-wide and may be invoked concurrently. Protect shared output or UI state as needed. Use <code>malina.WithProgress(malina.DiscardProgress)</code> to suppress progress completely.</p>
+          <p>After initialization, inspect the native backend and host with:</p>
+          <pre className="code-block"><code className="language-go">{`info, err := malina.SystemInfo()
+if err != nil {
+    return err
+}
+
+fmt.Println(info.NativeVersion)
+fmt.Println(info.PhysicalCores)
+fmt.Println(info.BackendDeviceCount)
+fmt.Println(info.Description)`}</code></pre>
+          <p>A loaded handle also exposes <code>SystemInfo</code>, <code>ModelInfo</code>, <code>ModelConfig</code>, <code>ActiveGenerations</code>, and <code>Ready</code> for application observability.</p>
+          <h3 id="198-motion-jpeg-encoding">19.8 Motion-JPEG Encoding</h3>
+          <p><code>model.SaveAVI</code> writes same-sized Go images as a Motion-JPEG AVI without loading stable-diffusion.cpp or a model:</p>
+          <pre className="code-block"><code className="language-go">{`if err := model.SaveAVI("output.avi", frames, 24, 90); err != nil {
+    return err
+}`}</code></pre>
+          <p>The frame rate must be positive, JPEG quality must be from 1 through 100, and all frames must have the same dimensions. This helper encodes an in-memory frame sequence; it is not a streaming video-generation API.</p>
+          <h3 id="199-examples">19.9 Examples</h3>
+          <p>The examples install their own compatible libraries and model bundles using default Kronk paths. They do not require path environment variables.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>make example-malina</code></td>
+                <td>Generate a deterministic Stable Diffusion 1.5 PNG.</td>
+              </tr>
+              <tr>
+                <td><code>make example-malina-flux2</code></td>
+                <td>Generate a PNG with the multi-file FLUX.2 Klein 9B bundle.</td>
+              </tr>
+              <tr>
+                <td><code>make example-malina-img2img</code></td>
+                <td>Transform a PNG or JPEG with a prompt and strength.</td>
+              </tr>
+              <tr>
+                <td><code>make example-malina-sd-encode</code></td>
+                <td>Encode a directory of PNG/JPEG frames as Motion-JPEG AVI.</td>
+              </tr>
+              <tr>
+                <td><code>make example-malina-system</code></td>
+                <td>Install libraries and print native system diagnostics.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The first run of an inference example can take significant time and disk space because it downloads native libraries and multi-gigabyte model files. Later runs reuse complete installations.</p>
+          <h3 id="1910-current-scope-and-limitations">19.10 Current Scope and Limitations</h3>
+          <ul>
+            <li>The public API is experimental and may change between Kronk releases.</li>
+            <li>Malina image inference is available through the Go SDK, not the Kronk model server or its HTTP API.</li>
+            <li>Malina models are not managed by the shared Kronk/Bucky model pool and do not yet participate in model-server RAM or VRAM admission and eviction.</li>
+            <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
+            <li>Native callbacks, backend initialization, model-context construction, generation, and destruction have process-wide synchronization constraints. Multiple handles are safe to construct, but native operations are currently serialized conservatively.</li>
+            <li>Native generation cannot be interrupted safely after it begins. Context cancellation prevents queued work and controls the returned result, but it does not free an active native context early.</li>
+          </ul>
+          <h3 id="1911-troubleshooting">19.11 Troubleshooting</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Symptom</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Init</code> cannot find or load stable-diffusion.cpp</td>
+                <td>Construct <code>libs.New</code> with detection, call <code>Download</code>, and pass <code>libs.LibsPath()</code> to <code>malina.Init</code>.</td>
+              </tr>
+              <tr>
+                <td>No compatible bundle is published for the host</td>
+                <td>Check <code>libs.SupportedCombinations()</code>; use one of the published operating-system, architecture, and processor triples.</td>
+              </tr>
+              <tr>
+                <td>A custom library directory cannot be upgraded or removed</td>
+                <td>A non-empty directory without <code>version.json</code> is intentionally read-only. Manage that build yourself or use a Kronk-managed install directory.</td>
+              </tr>
+              <tr>
+                <td>A gated FLUX.2 download returns 401 or 403</td>
+                <td>Accept the Hugging Face license and set <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code> to a token with read access.</td>
+              </tr>
+              <tr>
+                <td>Generation reports an invalid request</td>
+                <td>Start with <code>model.NewGenerateParams</code>; provide a prompt and valid dimensions, steps, CFG scale, and image-to-image strength.</td>
+              </tr>
+              <tr>
+                <td>Generation waits and then returns an admission timeout</td>
+                <td>Other calls are using the handle's admitted capacity. Increase admitted capacity or the admission timeout only when the application can tolerate the additional work or wait.</td>
+              </tr>
+              <tr>
+                <td>Native diagnostic output is too verbose</td>
+                <td>Remove <code>malina.WithLogLevel(malina.LogNormal)</code>; native logging is silent by default.</td>
+              </tr>
+              <tr>
+                <td>Progress output is unwanted</td>
+                <td>Pass <code>malina.WithProgress(malina.DiscardProgress)</code> during initialization.</td>
+              </tr>
+              <tr>
+                <td>A different library path is rejected after initialization</td>
+                <td>Native initialization is process-wide. Restart the process to load a different stable-diffusion.cpp installation.</td>
+              </tr>
+            </tbody>
+          </table>
+          <hr />
+          <p>Next: <a href="https://www.kronkai.com/manual#chapter-20-developer-guide">Chapter 20: Developer Guide</a></p>
+          <h2 id="chapter-20-developer-guide">Chapter 20: Developer Guide</h2>
+          <h3 id="201-how-to-use-this-guide">20.1 How to Use This Guide</h3>
           <p>This chapter is a durable orientation guide for contributors and coding agents. It describes ownership boundaries, lifecycle contracts, and the smallest useful checks for common changes. It intentionally does not narrate every function, reproduce private structures, or freeze today's source layout at the individual-file level.</p>
-          <h4 id="1911-source-of-truth-hierarchy">19.1.1 Source-of-truth hierarchy</h4>
+          <h4 id="2011-source-of-truth-hierarchy">20.1.1 Source-of-truth hierarchy</h4>
           <p>When sources disagree, use this order:</p>
           <ol>
             <li><strong>Applicable &lt;code&gt;AGENTS.md&lt;/code&gt; files.</strong> Read the root instructions and every scoped instruction file governing the path being changed. A deeper file overrides or supplements broader guidance for its subtree.</li>
@@ -4297,7 +4697,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li><strong>This chapter.</strong> It provides background and navigation, not a replacement for scoped instructions or source inspection.</li>
           </ol>
           <p>Treat names and defaults in this chapter as wayfinding aids. Before relying on an exact flag, timeout, model capability, or API signature, inspect its current owner. Do not expand a task merely to make the repository resemble this overview.</p>
-          <h4 id="1912-a-productive-agent-loop">19.1.2 A productive agent loop</h4>
+          <h4 id="2012-a-productive-agent-loop">20.1.2 A productive agent loop</h4>
           <p>For most work, the safest loop is:</p>
           <ol>
             <li>Identify the public behavior being changed and its owning package.</li>
@@ -4307,8 +4707,8 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li>Format and run package-scoped static checks, then focused tests. Regenerate only artifacts derived from changed sources.</li>
             <li>Review the diff for accidental generated-file edits, private data in logs, unrelated formatting, and stale documentation.</li>
           </ol>
-          <h3 id="192-task-to-owner-and-verification-map">19.2 Task-to-Owner and Verification Map</h3>
-          <p>The following table is a starting point, not permission to skip local instructions. “Focused verification” means the narrowest package or command that exercises the change. Go commands require the environment described in <a href="#199-verification-for-llm-agents">§19.9</a>.</p>
+          <h3 id="202-task-to-owner-and-verification-map">20.2 Task-to-Owner and Verification Map</h3>
+          <p>The following table is a starting point, not permission to skip local instructions. “Focused verification” means the narrowest package or command that exercises the change. Go commands require the environment described in <a href="#209-verification-for-llm-agents">§20.9</a>.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -4386,6 +4786,18 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
                 <td>tooling package tests and a harmless <code>--local</code> listing command</td>
               </tr>
               <tr>
+                <td>Malina handle or image generation</td>
+                <td><code>sdk/malina/</code> and <code>sdk/malina/model/</code></td>
+                <td><code>sdk/tools/malina/</code>, examples, Chapter 19 for user behavior</td>
+                <td>package unit tests and compile affected examples; model-backed generation is deliberate human work</td>
+              </tr>
+              <tr>
+                <td>Malina libraries/model-bundle tooling</td>
+                <td><code>sdk/tools/malina/</code></td>
+                <td><code>sdk/malina/</code>, curated bundle catalog, examples</td>
+                <td>tooling package tests and catalog drift tests; do not download multi-gigabyte models merely to verify tooling</td>
+              </tr>
+              <tr>
                 <td>General library/model/catalog/device tooling</td>
                 <td><code>sdk/tools/</code></td>
                 <td>local CLI and <code>toolapp</code> web wrappers</td>
@@ -4436,8 +4848,8 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             </tbody>
           </table>
           <p>Tests close to an owner are usually more diagnostic than a repository-wide command. If a change crosses rows, verify each changed contract rather than choosing only the largest command.</p>
-          <h3 id="193-repository-ownership-map">19.3 Repository Ownership Map</h3>
-          <h4 id="1931-commands-and-server">19.3.1 Commands and server</h4>
+          <h3 id="203-repository-ownership-map">20.3 Repository Ownership Map</h3>
+          <h4 id="2031-commands-and-server">20.3.1 Commands and server</h4>
           <ul>
             <li><strong>&lt;code&gt;cmd/kronk/&lt;/code&gt;</strong> owns the installed <code>kronk</code> executable, command hierarchy, flags, local-versus-server dispatch, terminal presentation, and process control. Commands should orchestrate reusable managers rather than become a second implementation of catalogs, downloads, inference, or authentication. <code>make install-kronk</code> is simply <code>go install ./cmd/kronk</code>; there are no project build tags required for installation.</li>
             <li><strong>&lt;code&gt;cmd/server/api/&lt;/code&gt;</strong> composes executable services, startup configuration, embedded assets, and tooling binaries. <code>cmd/server/api/services/kronk/main.go</code> is the Kronk service composition root and the BUI embedding owner.</li>
@@ -4445,14 +4857,14 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li><strong>&lt;code&gt;cmd/server/app/&lt;/code&gt;</strong> also contains application wiring and adapters shared by domains. It is below service startup and above reusable SDK packages.</li>
             <li><strong>&lt;code&gt;cmd/server/foundation/&lt;/code&gt;</strong> owns cross-cutting server infrastructure. <code>web/</code> owns request lifecycle, context, middleware, error/response writing, and transport-level tracing; <code>logger/</code> owns server logging primitives. Domain packages should use these facilities rather than invent parallel conventions.</li>
           </ul>
-          <h4 id="1932-language-model-sdk-and-engine">19.3.2 Language-model SDK and engine</h4>
+          <h4 id="2032-language-model-sdk-and-engine">20.3.2 Language-model SDK and engine</h4>
           <ul>
             <li><strong>&lt;code&gt;sdk/kronk/&lt;/code&gt;</strong> is the public language-model handle and API surface. A <code>kronk.Kronk</code> owns <strong>one primary loaded model</strong> and a semaphore governing admission to that handle. Its low-level model may also own draft or MTP resources. The handle exposes chat, streaming, Responses, embeddings, reranking, tokenization, model information, and unload behavior. It is not a model pool.</li>
             <li><strong>&lt;code&gt;sdk/kronk/model/&lt;/code&gt;</strong> owns low-level llama/yzma inference: model/context creation, prompt planning, batch slots, sequence IDs, prefill/decode, media handling, IMC, samplers, parser interfaces, and draft/MTP behavior. Changes here must preserve cross-slot isolation and native-resource cleanup on every exit path.</li>
             <li><strong>&lt;code&gt;sdk/kronk/parsers/&lt;/code&gt;</strong> contains model-family parser plug-ins. Family packages own streaming state machines and extraction/normalization of reasoning and tool calls. The model package owns the registry contract and selection boundary; parser packages should not reach into batch-engine state.</li>
             <li><strong>&lt;code&gt;sdk/kronk/observ/&lt;/code&gt;</strong>, <code>sdk/kronk/kvstorage/</code>, <code>sdk/kronk/vram/</code>, <code>sdk/kronk/gguf/</code>, and <code>sdk/kronk/hf/</code> own their named concerns. Prefer these boundaries to embedding format, storage, or resource calculations in request handlers.</li>
           </ul>
-          <h4 id="1933-pools-and-shared-resources">19.3.3 Pools and shared resources</h4>
+          <h4 id="2033-pools-and-shared-resources">20.3.3 Pools and shared resources</h4>
           <ul>
             <li><strong>&lt;code&gt;sdk/pool/&lt;/code&gt;</strong> is the server-facing application facade over the language and audio typed pools and their shared resource manager. It coordinates backends; it does not replace either SDK handle.</li>
             <li><strong>&lt;code&gt;sdk/kronk/pool/&lt;/code&gt;</strong> adapts Kronk model discovery, planning, loading, display, and unloading to the generic pool engine.</li>
@@ -4460,16 +4872,17 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li><strong>&lt;code&gt;sdk/pool/engine/&lt;/code&gt;</strong> owns typed cache mechanics: acquisition coalescing, admission, idle-entry selection, expiry, invalidation, and eviction callbacks. The shared resource manager owns RAM/VRAM reservations and budget decisions across backends. Eviction is therefore budget-aware and constrained by active use and releasable reservations; it is not a simple model-ID LRU.</li>
           </ul>
           <p>The service supplies shared-pool settings to both typed pools. A typed pool used independently may therefore have different fallback values. Check the composition layer before documenting effective server behavior, and check the typed constructor before documenting standalone behavior.</p>
-          <h4 id="1934-bucky-tools-ui-examples-and-deployment">19.3.4 Bucky, tools, UI, examples, and deployment</h4>
+          <h4 id="2034-bucky-malina-tools-ui-examples-and-deployment">20.3.4 Bucky, Malina, tools, UI, examples, and deployment</h4>
           <ul>
             <li><strong>&lt;code&gt;sdk/bucky/&lt;/code&gt;</strong> is the public concurrent audio handle. <strong>&lt;code&gt;sdk/bucky/model/&lt;/code&gt;</strong> owns whisper context/state operations, decoding, transcription, and stream mechanics.</li>
-            <li><strong>&lt;code&gt;sdk/tools/&lt;/code&gt;</strong> owns reusable catalog, downloader, backend, device, diagnostics, library, and model-management operations used by CLI and server tools. Bucky-specific installers and catalogs live below <code>sdk/tools/bucky/</code>.</li>
+            <li><strong>&lt;code&gt;sdk/malina/&lt;/code&gt;</strong> is the experimental public image-generation handle. <strong>&lt;code&gt;sdk/malina/model/&lt;/code&gt;</strong> owns stable-diffusion model configuration, native context lifecycle, generation, and Motion-JPEG encoding. Malina is not yet part of the model server or shared model pool.</li>
+            <li><strong>&lt;code&gt;sdk/tools/&lt;/code&gt;</strong> owns reusable catalog, downloader, backend, device, diagnostics, library, and model-management operations used by CLI and server tools. Bucky-specific installers and catalogs live below <code>sdk/tools/bucky/</code>; Malina's native-library manager and curated diffusion bundles live below <code>sdk/tools/malina/</code>.</li>
             <li><strong>&lt;code&gt;cmd/server/api/frontends/bui/&lt;/code&gt;</strong> is the React/TypeScript browser application. Component-level conventions are deliberately delegated to the applicable <code>AGENTS.md</code>; this guide does not duplicate them.</li>
             <li><strong>&lt;code&gt;examples/&lt;/code&gt;</strong> is a separate Go module of runnable public-SDK examples and a source for generated documentation. Keep examples public and instructional: do not import internal server implementation to make them convenient.</li>
             <li><strong>&lt;code&gt;.manual/&lt;/code&gt;</strong> contains authored manual chapters. The docs tool converts manuals, public SDK documentation, and examples into BUI components.</li>
             <li><strong>&lt;code&gt;zarf/&lt;/code&gt;</strong>, <code>.github/workflows/</code>, <code>.goreleaser.yaml</code>, and <code>.release/</code> own deployment, reproducibility, and release automation. Runtime image behavior must agree with the Docker workflow and entrypoint, not with an old prose inventory.</li>
           </ul>
-          <h3 id="194-developer-setup-and-daily-commands">19.4 Developer Setup and Daily Commands</h3>
+          <h3 id="204-developer-setup-and-daily-commands">20.4 Developer Setup and Daily Commands</h3>
           <p>From the repository root, install the CLI with:</p>
           <pre className="code-block"><code className="language-shell">{`go install ./cmd/kronk`}</code></pre>
           <p>The Make target is a convenient alias:</p>
@@ -4485,7 +4898,7 @@ make kronk-server-detach
 make kronk-server-logs
 make kronk-server-stop`}</code></pre>
           <p>Native llama and Whisper libraries and test models are large external prerequisites. Use the CLI and Make targets appropriate to the focused test rather than downloading every supported artifact. The Bucky CLI uses <code>--local</code> for direct filesystem work; web/server operation is the default and there is no <code>--web</code> flag.</p>
-          <h4 id="1941-native-library-compatibility-and-sdk-initialization">19.4.1 Native-library compatibility and SDK initialization</h4>
+          <h4 id="2041-native-library-compatibility-and-sdk-initialization">20.4.1 Native-library compatibility and SDK initialization</h4>
           <p>The versions in <code>go.mod</code>, <code>sdk/tools/libs</code> defaults, and the README compatibility matrix describe one tested Kronk/Yzma/llama.cpp set. The Kronk 1.30.0 line uses Yzma v1.22.0 with llama.cpp b10212 or newer. A dependency update is incomplete unless the binding, pinned native build, root and examples modules, generated Nix module data, and focused model tests remain aligned. Do not update Yzma or select a newer llama.cpp build independently merely because it is available upstream.</p>
           <p>Runnable language-model examples should resolve and initialize the same runtime they install:</p>
           <pre className="code-block"><code className="language-go">{`lib, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger))
@@ -4503,7 +4916,7 @@ if err := kronk.Init(kronk.WithLibPath(lib.LibsPath())); err != nil {
           <p>Call <code>kronk.Init</code> after runtime detection and installation but before constructing a Kronk model. Passing the manager's resolved <code>LibsPath</code> is required: calling bare <code>kronk.Init()</code> can repeat default selection and load a different bundle from the one the example just verified. Initialization is process-wide and should occur once.</p>
           <p>Bucky examples follow the same sequence with <code>sdk/tools/bucky/libs</code>, <code>bucky.Init</code>, and <code>bucky.WithLibPath(lib.LibsPath())</code>. Keep library installation separate from model download in both example families so failures identify the correct dependency.</p>
           <p>The exact development toolchain is pinned by <code>.go-version</code>, while <code>go.mod</code> declares the minimum language version. Patch versions may differ, but major and minor must match. The workflow version script enforces this relationship; read both files rather than copying their current values into new documentation.</p>
-          <h4 id="1942-server-stress-probes">19.4.2 Server stress probes</h4>
+          <h4 id="2042-server-stress-probes">20.4.2 Server stress probes</h4>
           <p><code>zarf/scripts/kronk-stress.sh</code> is an adversarial probe harness that exercises a running Kronk server's HTTP API: constrained decoding, the MTP/speculative decode path, the Anthropic and Responses translations, logprobs, and parameter validation. It treats "returned 200 and quietly ignored what was asked" as a defect, and a probe that cannot assert an invariant reports <code>NO SIGNAL</code> rather than <code>PASS</code>.</p>
           <pre className="code-block"><code className="language-shell">{`make test-stress`}</code></pre>
           <p>The target runs the default <code>deep</code> tier, which needs a real generation-capable model and takes tens of minutes. Pass arguments through <code>ARGS</code>:</p>
@@ -4513,7 +4926,7 @@ make test-stress ARGS="stream structured"   # only these probe groups
 make test-stress ARGS="-l"                  # list groups and their tiers`}</code></pre>
           <p>The script starts and stops its own server by default. To probe a server that is already running, set <code>SERVER=0</code>. <code>HOST</code>, <code>MODEL</code>, <code>THINK</code>, <code>TIMEOUT</code>, <code>SERVER_CMD</code>, and <code>KEEP_ALL</code> are the other tuning knobs; run <code>zarf/scripts/kronk-stress.sh -h</code> for the full list and current defaults.</p>
           <p>Results land under <code>zarf/tmp/kronk-stress</code> (ignored by Git, overridable with <code>OUT</code>): <code>findings.txt</code> holds a result line per probe, a verdict block, and the full request/response of every flagged call, and <code>kronk-server.log</code> holds the server's own log when the script manages the server. Exit status is <code>0</code> when nothing is flagged, <code>1</code> when there are findings, and <code>2</code> when the run could not proceed.</p>
-          <p>This is a deliberate human/integration run, not part of <code>make test</code> and not an agent default — see <a href="#1991-required-go-post-edit-sequence">19.9.1</a>.</p>
+          <p>This is a deliberate human/integration run, not part of <code>make test</code> and not an agent default — see <a href="#2091-required-go-post-edit-sequence">20.9.1</a>.</p>
           <h5>Triaging the findings</h5>
           <p>A finding is a flagged probe, not a proven defect: the probe itself can be wrong, and the cause may sit in yzma or llama.cpp rather than in Kronk. <code>make test-stress</code> prints a triage prompt after every run — including the exit-1 run that produced findings — which hands the report to a coding agent for verification. The prompt lives in <code>zarf/scripts/kronk-stress-triage.md</code>; it is reproduced here as the reference for what that triage must cover:</p>
           <pre className="code-block"><code className="language-text">{`Triage the stress run into a verified bug report.
@@ -4553,8 +4966,8 @@ Output — bullets, no prose, no preamble:
 Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}</code></pre>
           <p>The yzma and llama.cpp trees the prompt cites are working checkouts under <code>.extras/</code>, which is untracked. Clone them there before triaging, or drop those two sources from the prompt and accept that a defect below the Kronk boundary can only be localized to the binding call site.</p>
           <p>Editing the prompt means editing <code>zarf/scripts/kronk-stress-triage.md</code> and this chapter together; the file is what the Make target prints.</p>
-          <h3 id="195-request-and-model-lifecycle">19.5 Request and Model Lifecycle</h3>
-          <h4 id="1951-server-request-flow">19.5.1 Server request flow</h4>
+          <h3 id="205-request-and-model-lifecycle">20.5 Request and Model Lifecycle</h3>
+          <h4 id="2051-server-request-flow">20.5.1 Server request flow</h4>
           <p>The stable request path is:</p>
           <pre className="code-block"><code className="language-text">{`HTTP request
   -> foundation/web middleware and request context
@@ -4566,14 +4979,14 @@ Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}<
   -> SDK result or stream
   -> protocol response`}</code></pre>
           <p>Every arrow is an ownership boundary. Middleware owns transport concerns. Domains own HTTP compatibility. Pools own model residency and resource tickets. Handles own per-model admission and shutdown coordination. Engines own native contexts, sequences, and inference state. Preserve error identities long enough for the domain layer to map capacity, cancellation, validation, and internal failures correctly.</p>
-          <h4 id="1952-typed-pool-acquisition-loading-and-eviction">19.5.2 Typed pool acquisition, loading, and eviction</h4>
+          <h4 id="2052-typed-pool-acquisition-loading-and-eviction">20.5.2 Typed pool acquisition, loading, and eviction</h4>
           <p>An acquisition first checks/coalesces a typed cache entry. A cold load is planned by the backend loader, then reserved against the shared memory manager before expensive native loading. The loaded handle becomes visible only after initialization succeeds. Failed planning or loading must release its reservation and must not publish a partial cache entry. Concurrent acquisition of the same key should share load work rather than multiply memory commitments.</p>
           <p>Item count and available RAM/VRAM are independent admission constraints. Normal admission-driven eviction selects only idle handles; the pool observes each handle's active-operation counter rather than owning a separate request lease. Explicit invalidation and shutdown may remove an active entry and rely on the handle's <code>Unload</code> method to drain active work according to its context.</p>
           <p>Asynchronous invalidation does not imply that its eviction callback has finished. Synchronous invalidation waits for callback and reservation-ticket completion, but it does not prove native unload succeeded: the callback can report an unload error and still release the reservation. Preserve the engine-level distinction between a model that cannot fit the configured budget and temporary pressure where no idle candidate can be evicted; typed/public APIs may translate those errors differently.</p>
-          <h4 id="1953-semaphore-lifetime-and-cancellation">19.5.3 Semaphore lifetime and cancellation</h4>
+          <h4 id="2053-semaphore-lifetime-and-cancellation">20.5.3 Semaphore lifetime and cancellation</h4>
           <p>The <code>Kronk</code> handle's semaphore is admission control around one model. A permit belongs to the operation, not merely to function setup. For a non-streaming call, hold it until the operation returns. For streaming, hold it until the stream is terminal or closed, including cancellation/error cleanup. Releasing at stream construction over-admits; forgetting to release on an early error deadlocks future work. The pool's active-use lease similarly spans the entire externally visible operation so eviction cannot unload native resources while output is still being consumed.</p>
           <p>Context cancellation must propagate inward to queue waits and inference. The layer that creates a goroutine, stream, native object, or lease owns its shutdown. Do not close caller-owned channels or unload a caller-owned handle. Unload prevents new work, waits for owned active work according to its context, then tears down engine/native resources. Pool shutdown owns handles created by that pool.</p>
-          <h4 id="1954-batch-slots-and-sequence-isolation">19.5.4 Batch slots and sequence isolation</h4>
+          <h4 id="2054-batch-slots-and-sequence-isolation">20.5.4 Batch slots and sequence isolation</h4>
           <p>Text generation uses a batch engine. A slot is an execution reservation and mutable per-request state; its sequence ID partitions KV/cache operations in the shared native context. Scheduling several slots into one decode is safe only if every token, logit index, sampler, parser, cancellation flag, speculative buffer, media position, and KV operation remains associated with the correct slot/sequence.</p>
           <p>The main invariants are:</p>
           <ul>
@@ -4584,11 +4997,11 @@ Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}<
             <li>A blocked or cancelled caller must not strand a slot or semaphore permit.</li>
             <li>Native decode failure is attributed to affected jobs and followed by deterministic cleanup; it must not silently publish partly advanced session state.</li>
           </ul>
-          <h4 id="1955-generation-versus-embedding-and-reranking-engines">19.5.5 Generation versus embedding and reranking engines</h4>
+          <h4 id="2055-generation-versus-embedding-and-reranking-engines">20.5.5 Generation versus embedding and reranking engines</h4>
           <p>Text generation benefits from shared batched execution and sequence-partitioned KV. Embeddings and reranking never use generation slots. Proven architectures use the separate sequence-batch engine, which schedules complete embedding inputs or query-document pairs across sequence IDs on one context. Unsupported architectures acquire an independent context from the fallback pool and perform their own decode/clear cycle. Reranking must not allow one document's state to contaminate the next. Embedding pooling and normalization are model/output concerns, not chat-slot concerns. Do not merge the sequence-batch and generation engines merely to share code; their lifecycle contracts differ.</p>
           <p>Compatibility is an explicit allowlist based on <code>general.architecture</code>. Add an architecture only after a native yzma proof, model-backed concurrent tests, and a benchmark. Some llama.cpp failures assert instead of returning an error, so probing an unknown architecture at runtime is not a safe fallback strategy.</p>
-          <h3 id="196-core-inference-invariants">19.6 Core Inference Invariants</h3>
-          <h4 id="1961-imc-sessions-slots-and-external-storage">19.6.1 IMC sessions, slots, and external storage</h4>
+          <h3 id="206-core-inference-invariants">20.6 Core Inference Invariants</h3>
+          <h4 id="2061-imc-sessions-slots-and-external-storage">20.6.1 IMC sessions, slots, and external storage</h4>
           <p>Incremental Message Cache (IMC) sessions are cache identities, not execution slots. A stable cache/session identifier allows a conversation prefix to survive movement between batch slots. A slot is short-lived compute capacity; binding a session to a slot would reduce concurrency and make slot reuse unsafe.</p>
           <p>The <code>SessionStore</code> contract externalizes each session's native KV snapshot. RAM and disk implementations differ in storage and I/O, but the model layer owns when a snapshot is read, prepared, committed, reset, and closed. Session metadata—cached tokens, render-sensitive identity/version, and snapshot—must describe the same prefix. Do not update one independently and call the session valid.</p>
           <p>The session's <code>reserved</code> state serializes mutation and hides the session from competing selection until metadata and snapshot bytes agree. The reservation begins in prompt planning and survives the queue wait and restore; exact read-only hits keep it through generation, while a successfully published text build/extension can release it after the stable snapshot is committed. Restore only a committed snapshot whose complete token or media plan and expected version still match. Ordinary text build/extension prepares and commits through the session's existing store; if snapshot publication fails, invalidate that rolling state so later work rebuilds it rather than claiming the old or partial state is valid.</p>
@@ -4614,13 +5027,13 @@ Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}<
           <p>Media-anchor advancement has a stronger replacement contract: it writes a separately staged store and swaps the store plus matching plan/count metadata only after success, so failure leaves the previous media snapshot published. Do not generalize that staged replacement guarantee to every IMC path. A <code>SessionStore</code> implementation must honor the interface's read/prepare/commit/reset lifetime rules and clean up temporary resources; callers must not assume bytes remain stable across the next mutation.</p>
           <p>Restored KV and sampler history are separate correctness concerns. Prime sampler penalties and DRY with the complete logical prompt after restore. An own-KV MTP session may publish draft KV only with the matching target snapshot and final hidden row; a media commit clears that draft state. Shared-target-KV MTP derives its resume point from the restored target and must not allocate or restore an independent draft store. A draft-only restore failure permits target-only fallback. Target-side rejection has two distinct outcomes: a stale expected-version mismatch is a retryable busy error and leaves the published session intact, while empty target bytes or a partial native target restore are request-fatal and invalidate the affected rolling state.</p>
           <p>Snapshot publication failures also differ by path. Ordinary text build/append and initial media build write through the rolling store; incomplete target serialization invalidates that rolling cache state, but target generation for the current request can continue. Media-anchor advancement instead uses a replacement store and requires a complete staged snapshot before swapping metadata; decode or snapshot failure fails the request while preserving the old published anchor.</p>
-          <h4 id="1962-prompt-plans-text-and-media">19.6.2 Prompt plans: text and media</h4>
+          <h4 id="2062-prompt-plans-text-and-media">20.6.2 Prompt plans: text and media</h4>
           <p>Prompt planning converts normalized messages and parameters into the exact work the engine will execute. The plan, cache identity, token accounting, and decode positions must agree. Text-only plans can compare rendered/tokenized prefixes directly and may take optimized exact-hit paths. Media plans carry more than text tokens: ordered media parts, placeholder/embedding expansion, positions, and render-affecting metadata are part of identity and execution.</p>
           <p>Do not treat a media prompt as text with an attachment ignored by caching. A text prefix match is insufficient if image/audio/video content, ordering, sizing, or model projection changes. Media prefill must align embeddings and positions with the same sequence that receives surrounding text. A media-anchor advance stages replacement state separately, so decode or snapshot failure leaves that anchor's prior published snapshot authoritative. Do not claim the same preservation for an LRU rebuild: prompt planning intentionally resets the selected session before rebuilding it.</p>
-          <h4 id="1963-parser-registry-ownership">19.6.3 Parser registry ownership</h4>
+          <h4 id="2063-parser-registry-ownership">20.6.3 Parser registry ownership</h4>
           <p>Parser implementations live under <code>sdk/kronk/parsers/</code>, grouped by model family. The registry interface and registration entry point live in <code>sdk/kronk/model/</code>. A parser plug-in supplies factories/state machines for its advertised family and must tolerate stream chunk boundaries: tags, JSON, reasoning delimiters, and tool arguments may span chunks. It must keep request state per parser instance and produce equivalent logical results for streaming and non-streaming input.</p>
           <p>To add or change a parser, edit the family package, update registration/selection only where necessary, and test fragmented as well as complete input. Keep generic JSON repair separate from family recognition. Unknown families need an intentional fallback or error; registration order must not create accidental model-family selection.</p>
-          <h4 id="1964-responses-normalization">19.6.4 Responses normalization</h4>
+          <h4 id="2064-responses-normalization">20.6.4 Responses normalization</h4>
           <p>The Responses API adapts to the chat/inference pipeline in <code>sdk/kronk/response.go</code>. Normalization has a compatibility-sensitive mutation contract:</p>
           <ul>
             <li>Preserve existing <code>messages</code>; they win when already supplied.</li>
@@ -4629,10 +5042,10 @@ Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}<
             <li>Mutate the supplied <code>model.D</code> document map. Callers that require isolation must clone before invoking the Responses path.</li>
           </ul>
           <p>Do not “clean up” this code by always rebuilding messages or silently switching to a copy. Either change breaks callers that combine compatibility fields or inspect the document after normalization. Add tests for existing messages, input-only requests, and observable in-place mutation.</p>
-          <h4 id="1965-tracing-and-logging">19.6.5 Tracing and logging</h4>
+          <h4 id="2065-tracing-and-logging">20.6.5 Tracing and logging</h4>
           <p>Tracing should identify major waits and ownership boundaries: request handling, model acquisition/load, queue wait, prompt/prefill, generation, and unload when relevant. Keep spans concise. Avoid a span per token, duplicated nested timing, giant model-config attribute sets, prompt/media payloads, and unbounded IDs. Propagate the request context instead of creating unrelated roots. Logs and metrics should help distinguish queue, capacity, cancellation, and inference failures without exposing user content unless an explicit insecure-logging mode authorizes it.</p>
           <p>Embedding/reranking metrics distinguish the operation and selected runtime. Sequence- batch queue wait and batch width are engine-level measurements; request duration, active requests, status, and prompt-token usage are operation-level measurements. Resource reservations remain owned by the shared pool/resource manager and must not be duplicated inside either inference engine.</p>
-          <h4 id="1966-speculative-decoding-and-mtp">19.6.6 Speculative decoding and MTP</h4>
+          <h4 id="2066-speculative-decoding-and-mtp">20.6.6 Speculative decoding and MTP</h4>
           <p>Speculative support has three ownership shapes:</p>
           <ol>
             <li><strong>Separate GGUF draft model.</strong> The draft has its own model/context/KV and proposes tokens; the target verifies them. Loading, memory planning, sequence cleanup, and rollback must account for both models.</li>
@@ -4643,17 +5056,17 @@ Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}<
           <p>Verification in a multi-slot batch is explicitly read-before-mutate. First read all target logits/hidden-state rows and decide each slot's accepted prefix while the shared batch outputs are intact. Only then mutate KV, counters, slot buffers, stream output, or MTP mirror state. Mutating one slot during the read phase can invalidate indices or native output needed by another slot.</p>
           <p>Ordinary transformer KV can often remove a rejected suffix. Hybrid recurrent/state- space models cannot assume partial KV deletion restores prior state. Request bounded recurrent rollback through <code>NRsSeq</code> and use it only when the context reports enough effective rollback depth for the speculative round. Otherwise take a full pre-speculation per-sequence snapshot, and on rejection restore it and re-decode exactly the accepted prefix. Preserve captured target hidden-state rows needed to synchronize MTP. For own-KV MTP, rollback removes speculative draft state before mirroring accepted target state. For shared-target-KV Gemma4, do not apply independent-draft rollback to the shared target cache. If rollback, restore, or synchronization fails, fail the affected slot or safely disable MTP rather than retaining ambiguous state.</p>
           <p>Unit-level owners are the batch/speculative files and tests in <code>sdk/kronk/model/</code>. Model-backed MTP suites live in <code>sdk/kronk/tests/mtp</code> and <code>sdk/kronk/tests/gemma4mtp</code>; they are CI/human suites, not commands agents should launch from the forbidden integration-test tree.</p>
-          <h3 id="197-server-bui-and-generated-documentation">19.7 Server, BUI, and Generated Documentation</h3>
-          <h4 id="1971-routes-middleware-and-domains">19.7.1 Routes, middleware, and domains</h4>
+          <h3 id="207-server-bui-and-generated-documentation">20.7 Server, BUI, and Generated Documentation</h3>
+          <h4 id="2071-routes-middleware-and-domains">20.7.1 Routes, middleware, and domains</h4>
           <p>Route declarations belong with their domain package, normally in <code>route.go</code>. Keep authentication/authorization, tracing, request IDs, panic recovery, and common response behavior in foundation middleware. Domain handlers decode and validate protocol input, select the appropriate application capability, call SDK/facade methods, and encode the protocol result. They should not manipulate native model state or implement pool eviction.</p>
           <p>When adding an endpoint, follow a neighboring domain end to end: registration, middleware order, request model, error mapping, streaming behavior, and service wiring. Test malformed input and cancellation as well as success. A server build catches route composition errors that a leaf-package test may miss.</p>
-          <h4 id="1972-bui-ownership-and-embedding">19.7.2 BUI ownership and embedding</h4>
+          <h4 id="2072-bui-ownership-and-embedding">20.7.2 BUI ownership and embedding</h4>
           <p>The BUI lives at <code>cmd/server/api/frontends/bui/</code>. Follow its own package scripts and the applicable component <code>AGENTS.md</code>; component structure and UI conventions change more quickly than this chapter. The production bundle is embedded by <code>cmd/server/api/services/kronk/main.go</code>. Editing TypeScript does not alter the server binary until the frontend is rebuilt and embedded output is rebuilt into Go.</p>
           <p>For frontend changes:</p>
           <pre className="code-block"><code className="language-shell">{`cd cmd/server/api/frontends/bui
 npm run build`}</code></pre>
           <p>Then build the server (or the narrow service package) and verify that the expected static bundle is present in the embedding location. Avoid hand-editing minified/static output.</p>
-          <h4 id="1973-documentation-generation">19.7.3 Documentation generation</h4>
+          <h4 id="2073-documentation-generation">20.7.3 Documentation generation</h4>
           <p><code>cmd/server/api/tooling/docs/main.go</code> orchestrates three conceptual pipelines:</p>
           <pre className="code-block"><code className="language-text">{`public SDK Go documentation -> SDK BUI documentation
 examples source             -> example BUI documentation
@@ -4661,9 +5074,9 @@ examples source             -> example BUI documentation
           <p>Author manual content in <code>.manual/</code>, public API descriptions in Go doc comments, and examples in <code>examples/</code>. <code>DocsManual.tsx</code> and generated SDK/example documentation are outputs and must not be hand-edited. Run:</p>
           <pre className="code-block"><code className="language-shell">{`make kronk-docs`}</code></pre>
           <p>Review generated diffs for malformed Markdown conversion and then run <code>npm run build</code> in the BUI. Finally build the server to check that generated components compile into the embedded bundle. Generation may update more than one documented package; do not discard legitimate generated changes. If the requested scope intentionally excludes generated artifacts, report that regeneration remains pending.</p>
-          <h3 id="198-bucky-implementation-map">19.8 Bucky Implementation Map</h3>
+          <h3 id="208-bucky-implementation-map">20.8 Bucky Implementation Map</h3>
           <p>This is an implementation map only. Chapter 18 owns installation, configuration, streaming usage, and API examples.</p>
-          <h4 id="1981-owners">19.8.1 Owners</h4>
+          <h4 id="2081-owners">20.8.1 Owners</h4>
           <ul>
             <li><strong>&lt;code&gt;sdk/bucky/&lt;/code&gt;</strong> owns initialization and the public <code>Bucky</code> handle. A handle owns one Whisper model and admission/shutdown coordination.</li>
             <li><strong>&lt;code&gt;sdk/bucky/model/&lt;/code&gt;</strong> owns the Whisper context, its pool of model states, audio decode/transcription primitives, language operations, and stream implementation. Model weights/context are shared by the handle while state isolates concurrent work.</li>
@@ -4673,13 +5086,13 @@ examples source             -> example BUI documentation
             <li><strong>&lt;code&gt;cmd/kronk/bucky/&lt;/code&gt;</strong> exposes those tools. Web/server mode is default; <code>--local</code> requests direct local operation.</li>
             <li><strong>&lt;code&gt;cmd/server/app/domain/audioapp/&lt;/code&gt;</strong> owns the OpenAI-compatible transcription route. Administrative library/model routes are in <code>toolapp</code>. Service startup wires the Bucky backend and shared pool.</li>
           </ul>
-          <h4 id="1982-lifecycle-invariants">19.8.2 Lifecycle invariants</h4>
+          <h4 id="2082-lifecycle-invariants">20.8.2 Lifecycle invariants</h4>
           <p><code>Init</code> registers/resolves/loads the backend. Technically, a failed <code>Init</code> can be called again and retry. The current server calls it only during startup, however. Installing missing libraries through CLI or BUI does <strong>not</strong> promise automatic server re-init; restart the server so startup calls <code>Init</code> again.</p>
           <p>A transcription acquires handle capacity and a model state, performs decode/inference, then releases both on every completion path. A streaming session is longer-lived: opening it reserves a state and capacity until its worker exits. <code>Close</code> requests the normal final flush and waits for that exit; a terminal worker error also exits and releases automatically. Callers should still defer the idempotent <code>Close</code>, including when feed/event handling fails. Unload must not destroy the Whisper context while transcriptions or streams remain active.</p>
           <p>The audio HTTP handler delegates file decoding and transcription to <code>Bucky.TranscribeFile</code>. It explicitly enforces the 25 MB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.</p>
           <p>Focused tests that exist include unit tests under <code>sdk/bucky/model/</code> and <code>sdk/bucky/ffmpeg/</code>, transcription/pool/stream suites under <code>sdk/bucky/tests/transcribe/</code>, and the server audio API tests under <code>cmd/server/api/services/kronk/tests/</code>. Choose the narrowest test whose native library and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.</p>
-          <h3 id="199-verification-for-llm-agents">19.9 Verification for LLM Agents</h3>
-          <h4 id="1991-required-go-post-edit-sequence">19.9.1 Required Go post-edit sequence</h4>
+          <h3 id="209-verification-for-llm-agents">20.9 Verification for LLM Agents</h3>
+          <h4 id="2091-required-go-post-edit-sequence">20.9.1 Required Go post-edit sequence</h4>
           <p>After changing Go, obey the root instructions and scope work to the changed package. For each changed Go file/package:</p>
           <pre className="code-block"><code className="language-shell">{`go fix ./path/to/changed/package
 gofmt -s -w path/to/all-changed.go
@@ -4692,8 +5105,8 @@ export GITHUB_WORKSPACE="$(pwd -P)"`}</code></pre>
           <p><code>GITHUB_WORKSPACE</code> must be the absolute repository root. Then run a package test or a specific test, for example:</p>
           <pre className="code-block"><code className="language-shell">{`go test -count=1 ./sdk/kronk/model
 go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></pre>
-          <p>Agents must <strong>never prescribe or run a full repository test run</strong>, and must <strong>never launch tests from &lt;code&gt;sdk/kronk/tests&lt;/code&gt;</strong>. Those suites require managed libraries/models and belong to CI or deliberate human integration runs. Commands such as <code>make test</code> and <code>make test-stress</code> (<a href="#1942-server-stress-probes">19.4.2</a>) exist as broad human/CI-maintainer context, but they are not the agent default. Do not use a broad command merely because focused ownership is unclear; inspect the owner.</p>
-          <h4 id="1992-choosing-effective-checks">19.9.2 Choosing effective checks</h4>
+          <p>Agents must <strong>never prescribe or run a full repository test run</strong>, and must <strong>never launch tests from &lt;code&gt;sdk/kronk/tests&lt;/code&gt;</strong>. Those suites require managed libraries/models and belong to CI or deliberate human integration runs. Commands such as <code>make test</code> and <code>make test-stress</code> (<a href="#2042-server-stress-probes">20.4.2</a>) exist as broad human/CI-maintainer context, but they are not the agent default. Do not use a broad command merely because focused ownership is unclear; inspect the owner.</p>
+          <h4 id="2092-choosing-effective-checks">20.9.2 Choosing effective checks</h4>
           <ul>
             <li>Pure logic changes: focused unit test plus package static checks.</li>
             <li>Public API changes: owner tests, direct dependent package build/test, and generated SDK docs when comments/signatures changed.</li>
@@ -4702,15 +5115,16 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <li>Route changes: domain tests and a server build. Use the relevant API test only when its server/model prerequisites are available.</li>
             <li>CLI changes: command package tests, <code>go install ./cmd/kronk</code>, and one safe invocation.</li>
             <li>Bucky changes: package tests; transcription integration only with installed Whisper libraries/model. Streaming changes require close/cancellation coverage.</li>
+            <li>Malina changes: package tests and affected example builds. Native generation requires compatible stable-diffusion.cpp libraries and multi-gigabyte model bundles, so keep model-backed runs deliberate and do not make them an unconditional CI requirement.</li>
           </ul>
-          <h4 id="1993-markdown-generated-docs-and-bui">19.9.3 Markdown, generated docs, and BUI</h4>
+          <h4 id="2093-markdown-generated-docs-and-bui">20.9.3 Markdown, generated docs, and BUI</h4>
           <p>For a manual-only edit, run formatting/sanity checks appropriate to the task, including <code>git diff --check</code>. <code>make kronk-docs</code> validates the manual conversion pipeline but also changes generated <code>DocsManual</code>; honor any task restriction on edited files. For normal documentation changes, commit source and generated output together, then run the BUI build.</p>
           <p>For BUI changes, install dependencies according to its lockfile/workflow and run:</p>
           <pre className="code-block"><code className="language-shell">{`npm run build`}</code></pre>
           <p>Run it from <code>cmd/server/api/frontends/bui/</code>. For docs or BUI work that affects the production bundle, also build the server to verify the bundle embedded by <code>cmd/server/api/services/kronk/main.go</code> exists and compiles. A successful Vite build alone does not prove the Go binary contains current assets.</p>
           <p>Always report what actually ran, including skipped integration prerequisites. Never claim CI parity from a narrower local test.</p>
-          <h3 id="1910-ci-release-containers-and-nix">19.10 CI, Release, Containers, and Nix</h3>
-          <h4 id="19101-linux-ci">19.10.1 Linux CI</h4>
+          <h3 id="2010-ci-release-containers-and-nix">20.10 CI, Release, Containers, and Nix</h3>
+          <h4 id="20101-linux-ci">20.10.1 Linux CI</h4>
           <p><code>.github/workflows/linux.yml</code> is the authoritative Linux pipeline. It currently has four parallel jobs:</p>
           <ul>
             <li><code>static</code>: source/static quality checks;</li>
@@ -4720,7 +5134,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
           </ul>
           <p>The shared setup action is under <code>.github/actions/setup-kronk/</code>. CI model dependencies are declared in <code>.github/test-models.txt</code>; its contents also participate in cache behavior. When a CI test gains a required model, update the manifest with the correct backend and model ID and check the setup action's parser. Keep local human setup in sync where the Make workflow maintains a separate install list.</p>
           <p>The exact CI toolchain comes from <code>.go-version</code>, while <code>go.mod</code> declares the minimum language version. Their major/minor versions must match. Update workflow assumptions and run <code>.github/scripts/check-go-version.sh</code> when changing either.</p>
-          <h4 id="19102-release">19.10.2 Release</h4>
+          <h4 id="20102-release">20.10.2 Release</h4>
           <p>The release workflow, GoReleaser configuration, scripts, and release notes divide responsibility:</p>
           <ul>
             <li><code>.github/workflows/release.yaml</code> owns trigger, permissions, setup, checks, and release execution.</li>
@@ -4730,13 +5144,13 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <li><code>.release/</code> owns maintained release-note/checklist material.</li>
           </ul>
           <p>The release tag must equal <code>v</code> plus the <code>Version</code> constant. Update the constant and release material intentionally before creating the tag; do not bypass the guard. Also confirm the Go major/minor guard, generated docs/BUI, clean tree, and relevant Linux jobs before tagging.</p>
-          <h4 id="19103-containers">19.10.3 Containers</h4>
+          <h4 id="20103-containers">20.10.3 Containers</h4>
           <p><code>.github/workflows/docker.yml</code> is authoritative for image variants, target/platform matrix, registry publication, attestations, and signing. <code>zarf/docker/</code> owns Dockerfile, runtime configuration, and entrypoint behavior. Native llama and Bucky processor availability can differ by image variant, so inspect the workflow matrix and tooling combination tables before changing an image. Avoid copying a variant table into docs; it becomes stale faster than the workflow.</p>
           <p>For a container change, build the affected target and architecture where practical, exercise entrypoint startup/configuration, and verify expected native libraries. Do not infer publication or signature behavior from a local build; review the workflow.</p>
-          <h4 id="19104-nix">19.10.4 Nix</h4>
+          <h4 id="20104-nix">20.10.4 Nix</h4>
           <p>The flake at <code>zarf/nix/flake.nix</code> defines how developers/users enter or build the project; generated Go dependency data lives beside it. Entering a development shell runs <code>gomod2nix import</code> from its shell hook and may dirty that generated material. When Go module dependencies change, update the Nix dependency material with the repository's configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix owners rather than adding environment special cases to Go code.</p>
-          <h3 id="1911-change-and-release-checklists">19.11 Change and Release Checklists</h3>
-          <h4 id="19111-focused-change-checklist">19.11.1 Focused change checklist</h4>
+          <h3 id="2011-change-and-release-checklists">20.11 Change and Release Checklists</h3>
+          <h4 id="20111-focused-change-checklist">20.11.1 Focused change checklist</h4>
           <ul>
             <li>[ ] Read all applicable <code>AGENTS.md</code> files.</li>
             <li>[ ] Locate the owning package, direct caller, and focused tests.</li>
@@ -4750,7 +5164,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <li>[ ] Run <code>git diff --check</code> and inspect the complete diff for unrelated changes.</li>
             <li>[ ] Report commands, results, skipped prerequisites, and residual uncertainty.</li>
           </ul>
-          <h4 id="19112-release-checklist">19.11.2 Release checklist</h4>
+          <h4 id="20112-release-checklist">20.11.2 Release checklist</h4>
           <ul>
             <li>[ ] Choose the release version and update <code>sdk/kronk</code>'s <code>Version</code> constant.</li>
             <li>[ ] Ensure the intended tag is exactly <code>v&lt;Version&gt;</code> and run the version guard.</li>
@@ -5116,19 +5530,35 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#chapter-19-developer-guide" className={`doc-index-header ${activeSection === 'chapter-19-developer-guide' ? 'active' : ''}`}>Chapter 19: Developer Guide</a>
+              <a href="#chapter-19-malina-image-generation" className={`doc-index-header ${activeSection === 'chapter-19-malina-image-generation' ? 'active' : ''}`}>Chapter 19: Malina (Image Generation)</a>
               <ul>
-                <li><a href="#191-how-to-use-this-guide" className={activeSection === '191-how-to-use-this-guide' ? 'active' : ''}>19.1 How to Use This Guide</a></li>
-                <li><a href="#192-task-to-owner-and-verification-map" className={activeSection === '192-task-to-owner-and-verification-map' ? 'active' : ''}>19.2 Task-to-Owner and Verification Map</a></li>
-                <li><a href="#193-repository-ownership-map" className={activeSection === '193-repository-ownership-map' ? 'active' : ''}>19.3 Repository Ownership Map</a></li>
-                <li><a href="#194-developer-setup-and-daily-commands" className={activeSection === '194-developer-setup-and-daily-commands' ? 'active' : ''}>19.4 Developer Setup and Daily Commands</a></li>
-                <li><a href="#195-request-and-model-lifecycle" className={activeSection === '195-request-and-model-lifecycle' ? 'active' : ''}>19.5 Request and Model Lifecycle</a></li>
-                <li><a href="#196-core-inference-invariants" className={activeSection === '196-core-inference-invariants' ? 'active' : ''}>19.6 Core Inference Invariants</a></li>
-                <li><a href="#197-server-bui-and-generated-documentation" className={activeSection === '197-server-bui-and-generated-documentation' ? 'active' : ''}>19.7 Server, BUI, and Generated Documentation</a></li>
-                <li><a href="#198-bucky-implementation-map" className={activeSection === '198-bucky-implementation-map' ? 'active' : ''}>19.8 Bucky Implementation Map</a></li>
-                <li><a href="#199-verification-for-llm-agents" className={activeSection === '199-verification-for-llm-agents' ? 'active' : ''}>19.9 Verification for LLM Agents</a></li>
-                <li><a href="#1910-ci-release-containers-and-nix" className={activeSection === '1910-ci-release-containers-and-nix' ? 'active' : ''}>19.10 CI, Release, Containers, and Nix</a></li>
-                <li><a href="#1911-change-and-release-checklists" className={activeSection === '1911-change-and-release-checklists' ? 'active' : ''}>19.11 Change and Release Checklists</a></li>
+                <li><a href="#191-overview" className={activeSection === '191-overview' ? 'active' : ''}>19.1 Overview</a></li>
+                <li><a href="#192-install-stable-diffusion-libraries" className={activeSection === '192-install-stable-diffusion-libraries' ? 'active' : ''}>19.2 Install Stable Diffusion Libraries</a></li>
+                <li><a href="#193-manage-model-bundles" className={activeSection === '193-manage-model-bundles' ? 'active' : ''}>19.3 Manage Model Bundles</a></li>
+                <li><a href="#194-go-sdk" className={activeSection === '194-go-sdk' ? 'active' : ''}>19.4 Go SDK</a></li>
+                <li><a href="#195-multi-file-model-bundles" className={activeSection === '195-multi-file-model-bundles' ? 'active' : ''}>19.5 Multi-File Model Bundles</a></li>
+                <li><a href="#196-image-to-image-generation" className={activeSection === '196-image-to-image-generation' ? 'active' : ''}>19.6 Image-to-Image Generation</a></li>
+                <li><a href="#197-logging-progress-and-diagnostics" className={activeSection === '197-logging-progress-and-diagnostics' ? 'active' : ''}>19.7 Logging, Progress, and Diagnostics</a></li>
+                <li><a href="#198-motion-jpeg-encoding" className={activeSection === '198-motion-jpeg-encoding' ? 'active' : ''}>19.8 Motion-JPEG Encoding</a></li>
+                <li><a href="#199-examples" className={activeSection === '199-examples' ? 'active' : ''}>19.9 Examples</a></li>
+                <li><a href="#1910-current-scope-and-limitations" className={activeSection === '1910-current-scope-and-limitations' ? 'active' : ''}>19.10 Current Scope and Limitations</a></li>
+                <li><a href="#1911-troubleshooting" className={activeSection === '1911-troubleshooting' ? 'active' : ''}>19.11 Troubleshooting</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#chapter-20-developer-guide" className={`doc-index-header ${activeSection === 'chapter-20-developer-guide' ? 'active' : ''}`}>Chapter 20: Developer Guide</a>
+              <ul>
+                <li><a href="#201-how-to-use-this-guide" className={activeSection === '201-how-to-use-this-guide' ? 'active' : ''}>20.1 How to Use This Guide</a></li>
+                <li><a href="#202-task-to-owner-and-verification-map" className={activeSection === '202-task-to-owner-and-verification-map' ? 'active' : ''}>20.2 Task-to-Owner and Verification Map</a></li>
+                <li><a href="#203-repository-ownership-map" className={activeSection === '203-repository-ownership-map' ? 'active' : ''}>20.3 Repository Ownership Map</a></li>
+                <li><a href="#204-developer-setup-and-daily-commands" className={activeSection === '204-developer-setup-and-daily-commands' ? 'active' : ''}>20.4 Developer Setup and Daily Commands</a></li>
+                <li><a href="#205-request-and-model-lifecycle" className={activeSection === '205-request-and-model-lifecycle' ? 'active' : ''}>20.5 Request and Model Lifecycle</a></li>
+                <li><a href="#206-core-inference-invariants" className={activeSection === '206-core-inference-invariants' ? 'active' : ''}>20.6 Core Inference Invariants</a></li>
+                <li><a href="#207-server-bui-and-generated-documentation" className={activeSection === '207-server-bui-and-generated-documentation' ? 'active' : ''}>20.7 Server, BUI, and Generated Documentation</a></li>
+                <li><a href="#208-bucky-implementation-map" className={activeSection === '208-bucky-implementation-map' ? 'active' : ''}>20.8 Bucky Implementation Map</a></li>
+                <li><a href="#209-verification-for-llm-agents" className={activeSection === '209-verification-for-llm-agents' ? 'active' : ''}>20.9 Verification for LLM Agents</a></li>
+                <li><a href="#2010-ci-release-containers-and-nix" className={activeSection === '2010-ci-release-containers-and-nix' ? 'active' : ''}>20.10 CI, Release, Containers, and Nix</a></li>
+                <li><a href="#2011-change-and-release-checklists" className={activeSection === '2011-change-and-release-checklists' ? 'active' : ''}>20.11 Change and Release Checklists</a></li>
               </ul>
             </div>
           </div>

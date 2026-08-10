@@ -2989,6 +2989,859 @@ func awaitResult(ctx context.Context, result <-chan requestResult) (requestResul
 }
 `;
 
+const malinaExample = `// This example shows you how to generate an image with the Malina SDK
+// (stable-diffusion.cpp under the hood).
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries and a Stable Diffusion 1.5 model bundle.
+//
+// Run the example like this from the root of the project:
+// $ make example-malina
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+// modelSource names the curated Malina model bundle to download. Valid names
+// are listed by models.SupportedBundles().
+var (
+	modelSource = models.BundleSD15.String()
+	progressMu  sync.Mutex
+)
+
+const (
+	outputFile = "malina.png"
+	prompt     = "a small red sailboat crossing a calm mountain lake at sunrise"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	mp, err := installSystem()
+	if err != nil {
+		return fmt.Errorf("unable to install system: %w", err)
+	}
+
+	mln, err := newMalina(mp)
+	if err != nil {
+		return fmt.Errorf("unable to init Malina: %w", err)
+	}
+	defer func() {
+		fmt.Println("\\nUnloading Malina")
+		if err := mln.Unload(context.Background()); err != nil {
+			fmt.Printf("unload: %v\\n", err)
+		}
+	}()
+
+	if err := generate(mln); err != nil {
+		return fmt.Errorf("generate: %w", err)
+	}
+
+	return nil
+}
+
+// =============================================================================
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithDetect(ctx, malina.FmtLogger),
+	)
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	}
+
+	if err := malina.Init(
+		malina.WithLibPath(libs.LibsPath()),
+		malina.WithProgress(progress),
+	); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init Malina: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
+	}
+
+	fmt.Println("Downloading model bundle:", modelSource)
+
+	mp, err := mdls.Download(ctx, malina.FmtLogger, modelSource)
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model bundle: %w", err)
+	}
+
+	return mp, nil
+}
+
+func newMalina(mp models.Path) (*malina.Malina, error) {
+	fmt.Println("Loading model...")
+
+	if len(mp.ModelFiles) == 0 {
+		return nil, fmt.Errorf("no model files on disk")
+	}
+
+	mln, err := malina.New(
+		model.WithModelPath(mp.ModelFiles[0]),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image generation model: %w", err)
+	}
+
+	si := mln.SystemInfo()
+	cfg := mln.ModelConfig()
+	mi := mln.ModelInfo()
+
+	fmt.Println("- native version    :", si.NativeVersion)
+	fmt.Println("- physical cores    :", si.PhysicalCores)
+	fmt.Println("- backend devices   :", si.BackendDeviceCount)
+	fmt.Println("- model             :", mi.ModelPath)
+	fmt.Println("- cpu threads       :", cfg.CPUThreads)
+	fmt.Println("- active generations:", mln.ActiveGenerations())
+
+	return mln, nil
+}
+
+// =============================================================================
+
+func generate(mln *malina.Malina) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	fmt.Println("\\nGenerating image...")
+	fmt.Println("- prompt           :", prompt)
+
+	params := model.NewGenerateParams()
+	params.Prompt = prompt
+	params.Seed = 42
+
+	start := time.Now()
+	image, err := mln.Generate(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(outputFile, image.PNG, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", outputFile, err)
+	}
+
+	fmt.Println("- dimensions       :", fmt.Sprintf("%dx%d", image.Width, image.Height))
+	fmt.Println("- seed             :", image.Seed)
+	fmt.Println("- elapsed          :", time.Since(start).Round(time.Millisecond))
+	fmt.Println("- output           :", outputFile)
+
+	return nil
+}
+
+// progress renders model loading and image generation progress reported by
+// stable-diffusion.cpp.
+func progress(step int, steps int, secondsPerStep float32) {
+	if step <= 0 || steps <= 0 {
+		return
+	}
+
+	progressMu.Lock()
+	defer progressMu.Unlock()
+
+	const width = 50
+	current := min(step, steps)
+	filled := min(current*width/steps, width)
+	bar := strings.Repeat("=", filled)
+	if filled < width {
+		bar += ">"
+	}
+
+	speed := fmt.Sprintf("%.2fs/it", secondsPerStep)
+	if secondsPerStep > 0 && secondsPerStep < 1 {
+		speed = fmt.Sprintf("%.2fit/s", 1/secondsPerStep)
+	}
+
+	fmt.Printf("\\r  |%-50s| %d/%d - %s\\x1b[K", bar, current, steps, speed)
+	if current == steps {
+		fmt.Println()
+	}
+}
+`;
+
+const malinaFlux2Example = `// This example shows you how to generate an image with the Malina SDK and a
+// multi-file FLUX.2 model.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries and the FLUX.2 Klein 9B model bundle.
+//
+// Run the example like this from the root of the project:
+// $ make example-malina-flux2
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+var (
+	modelSource = models.BundleFlux2Klein9B
+	progressMu  sync.Mutex
+)
+
+const outputFile = "malina-flux2.png"
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	manifest, err := installSystem()
+	if err != nil {
+		return fmt.Errorf("unable to install system: %w", err)
+	}
+
+	mln, err := newMalina(manifest)
+	if err != nil {
+		return fmt.Errorf("unable to init Malina: %w", err)
+	}
+	defer func() {
+		fmt.Println("\\nUnloading Malina")
+		if err := mln.Unload(context.Background()); err != nil {
+			fmt.Printf("unload: %v\\n", err)
+		}
+	}()
+
+	if err := generate(mln); err != nil {
+		return fmt.Errorf("generate: %w", err)
+	}
+
+	return nil
+}
+
+// =============================================================================
+
+func installSystem() (models.Manifest, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithDetect(ctx, malina.FmtLogger),
+	)
+	if err != nil {
+		return models.Manifest{}, err
+	}
+
+	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	}
+
+	if err := malina.Init(
+		malina.WithLibPath(libs.LibsPath()),
+		malina.WithProgress(progress),
+	); err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to init Malina: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to init models: %w", err)
+	}
+
+	fmt.Println("Downloading model bundle:", modelSource)
+
+	manifest, err := mdls.DownloadBundle(ctx, modelSource)
+	if err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to install model bundle: %w", err)
+	}
+
+	return manifest, nil
+}
+
+func newMalina(manifest models.Manifest) (*malina.Malina, error) {
+	fmt.Println("Loading model...")
+
+	mln, err := malina.New(
+		model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
+		model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
+		model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image generation model: %w", err)
+	}
+
+	si := mln.SystemInfo()
+	cfg := mln.ModelConfig()
+	mi := mln.ModelInfo()
+
+	fmt.Println("- native version    :", si.NativeVersion)
+	fmt.Println("- physical cores    :", si.PhysicalCores)
+	fmt.Println("- backend devices   :", si.BackendDeviceCount)
+	fmt.Println("- model             :", mi.DiffusionModelPath)
+	fmt.Println("- cpu threads       :", cfg.CPUThreads)
+	fmt.Println("- active generations:", mln.ActiveGenerations())
+
+	return mln, nil
+}
+
+// =============================================================================
+
+func generate(mln *malina.Malina) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	params := model.NewGenerateParams()
+	params.Prompt = "an orange cat on a tropical beach playing with oranges"
+	params.NegativePrompt = "mascots, watermark, signature"
+	params.Steps = 4
+
+	fmt.Println("\\nGenerating FLUX.2 image...")
+	start := time.Now()
+
+	image, err := mln.Generate(ctx, params)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(outputFile, image.PNG, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", outputFile, err)
+	}
+
+	fmt.Printf("Wrote %s (%dx%d) in %s\\n", outputFile, image.Width, image.Height, time.Since(start).Round(time.Millisecond))
+
+	return nil
+}
+
+// progress renders model loading and image generation progress reported by
+// stable-diffusion.cpp.
+func progress(step int, steps int, secondsPerStep float32) {
+	if step <= 0 || steps <= 0 {
+		return
+	}
+
+	progressMu.Lock()
+	defer progressMu.Unlock()
+
+	const width = 50
+	current := min(step, steps)
+	filled := min(current*width/steps, width)
+	bar := strings.Repeat("=", filled)
+	if filled < width {
+		bar += ">"
+	}
+
+	speed := fmt.Sprintf("%.2fs/it", secondsPerStep)
+	if secondsPerStep > 0 && secondsPerStep < 1 {
+		speed = fmt.Sprintf("%.2fit/s", 1/secondsPerStep)
+	}
+
+	fmt.Printf("\\r  |%-50s| %d/%d - %s\\x1b[K", bar, current, steps, speed)
+	if current == steps {
+		fmt.Println()
+	}
+}
+`;
+
+const malinaImg2imgExample = `// This example shows you how to transform an existing image with the Malina
+// SDK.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries and a Stable Diffusion 1.5 model bundle.
+//
+// Run the example like this from the root of the project:
+// $ make example-malina-img2img
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+var (
+	modelSource = models.BundleSD15.String()
+	progressMu  sync.Mutex
+)
+
+type config struct {
+	input    string
+	output   string
+	prompt   string
+	strength float64
+	steps    int
+	seed     int64
+}
+
+func main() {
+	var cfg config
+	flag.StringVar(&cfg.input, "in", "samples/giraffe.jpg", "source PNG or JPEG path")
+	flag.StringVar(&cfg.output, "out", "malina-img2img.png", "output PNG path")
+	flag.StringVar(&cfg.prompt, "prompt", "a watercolor painting at sunset", "prompt that steers the image")
+	flag.Float64Var(&cfg.strength, "strength", 0.6, "noise strength in (0,1]")
+	flag.IntVar(&cfg.steps, "steps", 20, "denoising steps")
+	flag.Int64Var(&cfg.seed, "seed", 42, "RNG seed (-1 selects a random seed)")
+	flag.Parse()
+
+	if err := run(cfg); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(cfg config) error {
+	mp, err := installSystem()
+	if err != nil {
+		return fmt.Errorf("unable to install system: %w", err)
+	}
+
+	mln, err := newMalina(mp)
+	if err != nil {
+		return fmt.Errorf("unable to init Malina: %w", err)
+	}
+	defer func() {
+		fmt.Println("\\nUnloading Malina")
+		if err := mln.Unload(context.Background()); err != nil {
+			fmt.Printf("unload: %v\\n", err)
+		}
+	}()
+
+	if err := transform(mln, cfg); err != nil {
+		return fmt.Errorf("transform: %w", err)
+	}
+
+	return nil
+}
+
+// =============================================================================
+
+func installSystem() (models.Path, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithDetect(ctx, malina.FmtLogger),
+	)
+	if err != nil {
+		return models.Path{}, err
+	}
+
+	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Path{}, fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	}
+
+	if err := malina.Init(
+		malina.WithLibPath(libs.LibsPath()),
+		malina.WithProgress(progress),
+	); err != nil {
+		return models.Path{}, fmt.Errorf("unable to init Malina: %w", err)
+	}
+
+	// -------------------------------------------------------------------------
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
+	}
+
+	fmt.Println("Downloading model bundle:", modelSource)
+
+	mp, err := mdls.Download(ctx, malina.FmtLogger, modelSource)
+	if err != nil {
+		return models.Path{}, fmt.Errorf("unable to install model bundle: %w", err)
+	}
+
+	return mp, nil
+}
+
+func newMalina(mp models.Path) (*malina.Malina, error) {
+	fmt.Println("Loading model...")
+
+	if len(mp.ModelFiles) == 0 {
+		return nil, fmt.Errorf("no model files on disk")
+	}
+
+	mln, err := malina.New(
+		model.WithModelPath(mp.ModelFiles[0]),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image generation model: %w", err)
+	}
+
+	si := mln.SystemInfo()
+	cfg := mln.ModelConfig()
+	mi := mln.ModelInfo()
+
+	fmt.Println("- native version    :", si.NativeVersion)
+	fmt.Println("- physical cores    :", si.PhysicalCores)
+	fmt.Println("- backend devices   :", si.BackendDeviceCount)
+	fmt.Println("- model             :", mi.ModelPath)
+	fmt.Println("- cpu threads       :", cfg.CPUThreads)
+	fmt.Println("- active generations:", mln.ActiveGenerations())
+
+	return mln, nil
+}
+
+// =============================================================================
+
+func transform(mln *malina.Malina, cfg config) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	source, err := loadImage(cfg.input)
+	if err != nil {
+		return err
+	}
+
+	params := model.NewGenerateParams()
+	params.Prompt = cfg.prompt
+	params.InitImage = source
+	params.Strength = float32(cfg.strength)
+	params.Steps = cfg.steps
+	params.Seed = cfg.seed
+	params.Width, params.Height, err = generationSize(source.Bounds())
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\\nTransforming %s with strength %.2f...\\n", cfg.input, cfg.strength)
+	start := time.Now()
+
+	generated, err := mln.Generate(ctx, params)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(cfg.output, generated.PNG, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", cfg.output, err)
+	}
+
+	fmt.Printf("Wrote %s (%dx%d) in %s\\n", cfg.output, generated.Width, generated.Height, time.Since(start).Round(time.Millisecond))
+
+	return nil
+}
+
+// progress renders model loading and image generation progress reported by
+// stable-diffusion.cpp.
+func progress(step int, steps int, secondsPerStep float32) {
+	if step <= 0 || steps <= 0 {
+		return
+	}
+
+	progressMu.Lock()
+	defer progressMu.Unlock()
+
+	const width = 50
+	current := min(step, steps)
+	filled := min(current*width/steps, width)
+	bar := strings.Repeat("=", filled)
+	if filled < width {
+		bar += ">"
+	}
+
+	speed := fmt.Sprintf("%.2fs/it", secondsPerStep)
+	if secondsPerStep > 0 && secondsPerStep < 1 {
+		speed = fmt.Sprintf("%.2fit/s", 1/secondsPerStep)
+	}
+
+	fmt.Printf("\\r  |%-50s| %d/%d - %s\\x1b[K", bar, current, steps, speed)
+	if current == steps {
+		fmt.Println()
+	}
+}
+
+func loadImage(filename string) (image.Image, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("read source image: %w", err)
+	}
+
+	image, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode source image: %w", err)
+	}
+
+	return image, nil
+}
+
+func generationSize(bounds image.Rectangle) (int, int, error) {
+	const (
+		alignment    = 8
+		minDimension = 64
+		maxDimension = 1024
+	)
+
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 {
+		return 0, 0, errors.New("source image dimensions must be positive")
+	}
+
+	scale := min(1, min(float64(maxDimension)/float64(width), float64(maxDimension)/float64(height)))
+	width = int(float64(width)*scale) / alignment * alignment
+	height = int(float64(height)*scale) / alignment * alignment
+	if width < minDimension || height < minDimension {
+		return 0, 0, fmt.Errorf("source aspect ratio produces dimensions below %d pixels", minDimension)
+	}
+
+	return width, height, nil
+}
+`;
+
+const malinaSdEncodeExample = `// This example shows you how to encode PNG and JPEG frames into a Motion-JPEG
+// AVI with the Malina SDK.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// No model or native library is required.
+//
+// Run the example like this from the root of the project:
+// $ make example-malina-sd-encode
+
+package main
+
+import (
+	"bytes"
+	"flag"
+	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"golang.org/x/image/draw"
+)
+
+type config struct {
+	inputDir string
+	output   string
+	fps      int
+	quality  int
+}
+
+func main() {
+	var cfg config
+	flag.StringVar(&cfg.inputDir, "i", "samples/deer", "directory containing PNG and JPEG frames")
+	flag.StringVar(&cfg.output, "o", "malina-output.avi", "output AVI path")
+	flag.IntVar(&cfg.fps, "fps", 24, "frames per second")
+	flag.IntVar(&cfg.quality, "quality", 90, "JPEG quality from 1 to 100")
+	flag.Parse()
+
+	if err := run(cfg); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(cfg config) error {
+	paths, err := imagePaths(cfg.inputDir)
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("no PNG or JPEG files found in %s", cfg.inputDir)
+	}
+
+	frames := make([]image.Image, 0, len(paths))
+	var target image.Rectangle
+	for _, path := range paths {
+		frame, err := loadImage(path)
+		if err != nil {
+			return err
+		}
+		if target.Empty() {
+			target = image.Rect(0, 0, frame.Bounds().Dx(), frame.Bounds().Dy())
+		}
+		frames = append(frames, resize(frame, target))
+	}
+
+	if err := model.SaveAVI(cfg.output, frames, cfg.fps, cfg.quality); err != nil {
+		return fmt.Errorf("save AVI: %w", err)
+	}
+
+	fmt.Printf("Wrote %s (%d frames, %dx%d at %d fps)\\n", cfg.output, len(frames), target.Dx(), target.Dy(), cfg.fps)
+
+	return nil
+}
+
+func imagePaths(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read frames directory: %w", err)
+	}
+
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(entry.Name())) {
+		case ".jpg", ".jpeg", ".png":
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	slices.Sort(paths)
+
+	return paths, nil
+}
+
+func loadImage(filename string) (image.Image, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", filename, err)
+	}
+
+	frame, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", filename, err)
+	}
+
+	return frame, nil
+}
+
+func resize(source image.Image, target image.Rectangle) image.Image {
+	if source.Bounds().Dx() == target.Dx() && source.Bounds().Dy() == target.Dy() {
+		return source
+	}
+
+	frame := image.NewRGBA(target)
+	draw.BiLinear.Scale(frame, target, source, source.Bounds(), draw.Src, nil)
+
+	return frame
+}
+`;
+
+const malinaSystemExample = `// This example prints Malina and stable-diffusion.cpp system information.
+// Compatible libraries are downloaded automatically.
+//
+// Experimental: The Malina SDK public API is subject to change.
+//
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries.
+//
+// Run the example like this from the root of the project:
+// $ make example-malina-system
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\\nERROR: %s\\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	if err := installSystem(); err != nil {
+		return fmt.Errorf("unable to install system: %w", err)
+	}
+
+	info, err := malina.SystemInfo()
+	if err != nil {
+		return fmt.Errorf("system info: %w", err)
+	}
+
+	fmt.Println("-- stable-diffusion.cpp --")
+	fmt.Println("version:              ", info.NativeVersion)
+	fmt.Println("physical cores:       ", info.PhysicalCores)
+	fmt.Println("GGML backend devices: ", info.BackendDeviceCount)
+	fmt.Println()
+	fmt.Println("-- System info --")
+	fmt.Println(info.Description)
+
+	return nil
+}
+
+// =============================================================================
+
+func installSystem() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	libs, err := libs.New(
+		libs.WithDetect(ctx, malina.FmtLogger),
+	)
+	if err != nil {
+		return err
+	}
+
+	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
+		return fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	}
+
+	if err := malina.Init(malina.WithLibPath(libs.LibsPath())); err != nil {
+		return fmt.Errorf("unable to init Malina: %w", err)
+	}
+
+	return nil
+}
+`;
+
 const poolExample = `// This example shows you how to use the pool package to manage multiple
 // models in memory at the same time. The pool will load models on demand,
 // keep them resident up to a configured cap, and unload them after a TTL
@@ -4847,6 +5700,36 @@ export default function DocsSDKExamples() {
             <CodeBlock code={lifecycleLoadExample} language="go" />
           </div>
 
+          <div className="card" id="example-malina">
+            <h3>Malina</h3>
+            <p className="doc-description">This example shows you how to generate an image with the Malina SDK</p>
+            <CodeBlock code={malinaExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-flux2">
+            <h3>Malina-Flux2</h3>
+            <p className="doc-description">This example shows you how to generate an image with the Malina SDK and a</p>
+            <CodeBlock code={malinaFlux2Example} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-img2img">
+            <h3>Malina-Img2img</h3>
+            <p className="doc-description">This example shows you how to transform an existing image with the Malina</p>
+            <CodeBlock code={malinaImg2imgExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-sd-encode">
+            <h3>Malina-Sd-Encode</h3>
+            <p className="doc-description">This example shows you how to encode PNG and JPEG frames into a Motion-JPEG</p>
+            <CodeBlock code={malinaSdEncodeExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-system">
+            <h3>Malina-System</h3>
+            <p className="doc-description">This example prints Malina and stable-diffusion.cpp system information.</p>
+            <CodeBlock code={malinaSystemExample} language="go" />
+          </div>
+
           <div className="card" id="example-pool">
             <h3>Pool</h3>
             <p className="doc-description">This example shows you how to use the pool package to manage multiple</p>
@@ -4905,6 +5788,11 @@ export default function DocsSDKExamples() {
                 <li><a href="#example-embedding">Embedding</a></li>
                 <li><a href="#example-grammar">Grammar</a></li>
                 <li><a href="#example-lifecycle-load">Lifecycle-Load</a></li>
+                <li><a href="#example-malina">Malina</a></li>
+                <li><a href="#example-malina-flux2">Malina-Flux2</a></li>
+                <li><a href="#example-malina-img2img">Malina-Img2img</a></li>
+                <li><a href="#example-malina-sd-encode">Malina-Sd-Encode</a></li>
+                <li><a href="#example-malina-system">Malina-System</a></li>
                 <li><a href="#example-pool">Pool</a></li>
                 <li><a href="#example-question">Question</a></li>
                 <li><a href="#example-rag">Rag</a></li>

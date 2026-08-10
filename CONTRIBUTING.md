@@ -16,7 +16,7 @@ behavioral reason for a change, and include tests where behavior changes.
    ```
 4. Install the development tools when needed with `make install-gotooling`.
 
-The [developer guide](.manual/chapter-19-developer-guide.md) describes the
+The [developer guide](.manual/chapter-20-developer-guide.md) describes the
 repository ownership boundaries and focused verification commands. Applicable
 `AGENTS.md` files contain additional instructions for coding agents.
 

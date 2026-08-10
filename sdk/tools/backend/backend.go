@@ -26,4 +26,7 @@ const (
 	// (catalog). The underlying FFI bindings and download primitives
 	// live in github.com/ardanlabs/bucky.
 	KindWhisper = "whisper"
+
+	// KindStableDiffusion identifies the stable-diffusion.cpp backend.
+	KindStableDiffusion = "stable-diffusion"
 )

@@ -31,6 +31,21 @@ example-grammar:
 example-lifecycle-load:
 	cd examples && go run ./lifecycle-load/main.go
 
+example-malina:
+	cd examples && go run ./malina/main.go
+
+example-malina-flux2:
+	cd examples && go run ./malina-flux2/main.go
+
+example-malina-img2img:
+	cd examples && go run ./malina-img2img/main.go
+
+example-malina-sd-encode:
+	cd examples && go run ./malina-sd-encode/main.go
+
+example-malina-system:
+	cd examples && go run ./malina-system/main.go
+
 example-pool:
 	cd examples && go run ./pool/main.go
 

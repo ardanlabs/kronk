@@ -50,27 +50,24 @@ Read the [Manual](./manual) to learn more about running the Kronk Model Server.
 
 [![Linux](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml/badge.svg)](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml)
 
-Sometimes there are breaking changes to llama.cpp that require an update to yzma and Kronk. Here are some of the known compatible versions:
+Sometimes there are breaking changes to the family of ggml libraries that require an update to yzma, bucky, malina and/or Kronk. Always choose to use the downloader for each system to make sure you have a compatible version of the libraries. A working version of each library is bound to each release.
 
-As of May 15th, 2026 please use version b9163 until we can fix the problems with b9165+
-
-You can use this environment variable: `export KRONK_LIB_VERSION=b9163`
+Here are some of the known compatible versions:
 
 | llama.cpp | yzma    | kronk  |
 | --------- | ------- | ------ |
-| b8864     | v1.12.0 | 1.23.1 |
-| b8865+    | v1.13.0 | 1.23.2 |
-| b9180+    | v1.14.0 | 1.25.8 |
-| b9460+    | v1.15.0 | 1.26.7 |
-| b9549+    | v1.16.1 | 1.27.4 |
-| b9562+    | v1.17.0 | 1.27.6 |
-| b9616+    | v1.17.1 | 1.27.9 |
-| b9750+    | v1.18.0 | 1.28.3 |
-| b9750+    | v1.18.0 | 1.28.3 |
-| b9979+    | v1.19.0 | 1.28.7 |
-| b10105+   | v1.20.0 | 1.29.1 |
-| b10182+   | v1.21.0 | 1.29.8 |
 | b10212+   | v1.22.0 | 1.30.0 |
+| b10182+   | v1.21.0 | 1.29.8 |
+| b10105+   | v1.20.0 | 1.29.1 |
+
+| whisper.cpp | bucky  | kronk  |
+| ----------- | ------ | ------ |
+| v1.9.2      | v1.0.8 | 1.30.0 |
+| v1.9.1      | v1.0.6 | 1.29.8 |
+
+| stable-diffusion.cpp | malina | kronk   | Notes          |
+| -------------------- | ------ | ------- | -------------- |
+| master-813-bfbef5b   | v1.0.2 | v1.30.7 | (experimental) |
 
 ## Owner Information
 
@@ -133,7 +130,7 @@ $ make test-stress ARGS="--tier=smoke"      # contract probes only, minutes
 $ make test-stress ARGS="-l"                # list the probe groups
 ```
 
-Results land in `zarf/tmp/kronk-stress/findings.txt`. See [Chapter 19.4.2: Server Stress Probes](.manual/chapter-19-developer-guide.md#1942-server-stress-probes) in the manual for tiers, environment variables, and output layout.
+Results land in `zarf/tmp/kronk-stress/findings.txt`. See [Chapter 20.4.2: Server Stress Probes](.manual/chapter-20-developer-guide.md#2042-server-stress-probes) in the manual for tiers, environment variables, and output layout.
 
 ## Issues/Features
 
@@ -244,6 +241,51 @@ make example-embedding
 
 ```shell
 make example-grammar
+```
+
+> [!WARNING]
+> The Malina SDK is experimental. Its public API is subject to change.
+
+The Malina SDK supports these curated model bundles through `sdk/tools/malina/models`:
+
+| Bundle | Description | Download size |
+| ------ | ----------- | ------------- |
+| `sd-1.5` | Stable Diffusion 1.5 single-file baseline | 4.3 GB |
+| `sdxl-base-1.0` | Stable Diffusion XL base 1.0 single-file model | 6.9 GB |
+| `flux2-klein-9b` | FLUX.2 Klein 9B diffusion, VAE, and LLM components (license-gated) | 11 GB |
+
+Use `models.SupportedBundles()` to list their names and `models.Catalog()` to inspect their files, licenses, and descriptions. The exported `models.BundleSD15`, `models.BundleSDXLBase10`, and `models.BundleFlux2Klein9B` names can be passed directly to `DownloadBundle`.
+
+Malina suppresses stable-diffusion.cpp and GGML diagnostic logging by default. Pass `malina.WithLogLevel(malina.LogNormal)` to `malina.Init` to restore it. Native model-loading and generation progress remains visible by default; replace it with `malina.WithProgress(callback)`, or suppress it with `malina.WithProgress(malina.DiscardProgress)`.
+
+[MALINA](examples/malina/main.go) - This example generates a PNG with automatically downloaded compatible libraries and the default model bundle.
+
+```shell
+make example-malina
+```
+
+[MALINA-FLUX2](examples/malina-flux2/main.go) - This example generates a PNG from a multi-file FLUX.2 pipeline, automatically downloading compatible libraries and the curated FLUX.2 Klein 9B bundle.
+
+```shell
+make example-malina-flux2
+```
+
+[MALINA-IMG2IMG](examples/malina-img2img/main.go) - This example transforms an existing PNG or JPEG with a prompt and configurable strength, automatically downloading compatible libraries and the curated Stable Diffusion 1.5 bundle.
+
+```shell
+make example-malina-img2img
+```
+
+[MALINA-SD-ENCODE](examples/malina-sd-encode/main.go) - This example encodes a directory of PNG and JPEG frames into a Motion-JPEG AVI without loading a model.
+
+```shell
+make example-malina-sd-encode
+```
+
+[MALINA-SYSTEM](examples/malina-system/main.go) - This example automatically downloads compatible libraries, initializes Malina, and displays stable-diffusion.cpp system diagnostics.
+
+```shell
+make example-malina-system
 ```
 
 [POOL](examples/pool/main.go) - This example shows you how to use the pool package to manage multipl models in memory at the same time.

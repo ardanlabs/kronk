@@ -7,7 +7,7 @@
   SYNC CHECKLIST when changing publishing/signing behaviour:
     - .github/workflows/docker.yml  (the `Sign published manifests`
       step — cosign keyless config, COSIGN_REPOSITORY, etc.)
-    - .manual/chapter-19-developer-guide.md  (the "Merge + sign"
+    - .manual/chapter-20-developer-guide.md  (the "Merge + sign"
       section under the Docker workflow notes)
     - This file — the "Image Tags You'll See" and "Verifying Image
       Signatures" sections below. Keep the verify commands and the

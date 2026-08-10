@@ -1,29 +1,29 @@
-# Chapter 19: Developer Guide
+# Chapter 20: Developer Guide
 
 ## Table of Contents
 
-- [19.1 How to Use This Guide](#191-how-to-use-this-guide)
-- [19.2 Task-to-Owner and Verification Map](#192-task-to-owner-and-verification-map)
-- [19.3 Repository Ownership Map](#193-repository-ownership-map)
-- [19.4 Developer Setup and Daily Commands](#194-developer-setup-and-daily-commands)
-- [19.5 Request and Model Lifecycle](#195-request-and-model-lifecycle)
-- [19.6 Core Inference Invariants](#196-core-inference-invariants)
-- [19.7 Server, BUI, and Generated Documentation](#197-server-bui-and-generated-documentation)
-- [19.8 Bucky Implementation Map](#198-bucky-implementation-map)
-- [19.9 Verification for LLM Agents](#199-verification-for-llm-agents)
-- [19.10 CI, Release, Containers, and Nix](#1910-ci-release-containers-and-nix)
-- [19.11 Change and Release Checklists](#1911-change-and-release-checklists)
+- [20.1 How to Use This Guide](#201-how-to-use-this-guide)
+- [20.2 Task-to-Owner and Verification Map](#202-task-to-owner-and-verification-map)
+- [20.3 Repository Ownership Map](#203-repository-ownership-map)
+- [20.4 Developer Setup and Daily Commands](#204-developer-setup-and-daily-commands)
+- [20.5 Request and Model Lifecycle](#205-request-and-model-lifecycle)
+- [20.6 Core Inference Invariants](#206-core-inference-invariants)
+- [20.7 Server, BUI, and Generated Documentation](#207-server-bui-and-generated-documentation)
+- [20.8 Bucky Implementation Map](#208-bucky-implementation-map)
+- [20.9 Verification for LLM Agents](#209-verification-for-llm-agents)
+- [20.10 CI, Release, Containers, and Nix](#2010-ci-release-containers-and-nix)
+- [20.11 Change and Release Checklists](#2011-change-and-release-checklists)
 
 ---
 
-### 19.1 How to Use This Guide
+### 20.1 How to Use This Guide
 
 This chapter is a durable orientation guide for contributors and coding agents. It
 describes ownership boundaries, lifecycle contracts, and the smallest useful checks
 for common changes. It intentionally does not narrate every function, reproduce
 private structures, or freeze today's source layout at the individual-file level.
 
-#### 19.1.1 Source-of-truth hierarchy
+#### 20.1.1 Source-of-truth hierarchy
 
 When sources disagree, use this order:
 
@@ -43,7 +43,7 @@ Treat names and defaults in this chapter as wayfinding aids. Before relying on a
 exact flag, timeout, model capability, or API signature, inspect its current owner.
 Do not expand a task merely to make the repository resemble this overview.
 
-#### 19.1.2 A productive agent loop
+#### 20.1.2 A productive agent loop
 
 For most work, the safest loop is:
 
@@ -59,11 +59,11 @@ For most work, the safest loop is:
 6. Review the diff for accidental generated-file edits, private data in logs,
    unrelated formatting, and stale documentation.
 
-### 19.2 Task-to-Owner and Verification Map
+### 20.2 Task-to-Owner and Verification Map
 
 The following table is a starting point, not permission to skip local instructions.
 “Focused verification” means the narrowest package or command that exercises the
-change. Go commands require the environment described in [§19.9](#199-verification-for-llm-agents).
+change. Go commands require the environment described in [§20.9](#209-verification-for-llm-agents).
 
 | Task | Primary owner | Read adjacent | Focused verification |
 | --- | --- | --- | --- |
@@ -78,6 +78,8 @@ change. Go commands require the environment described in [§19.9](#199-verificat
 | Resource accounting | shared resource manager used through `sdk/pool/engine/` | each typed loader's plan/display/unload methods | synthetic budget/reservation tests; never rely on host memory alone |
 | Bucky handle, transcription, or stream | `sdk/bucky/` and `sdk/bucky/model/` | `sdk/bucky/pool/`, audio route, Chapter 18 for user behavior | package unit tests and focused `sdk/bucky/tests/transcribe` tests where dependencies are available |
 | Bucky libraries/models tooling | `sdk/tools/bucky/` | `cmd/kronk/bucky/`, server `toolapp` routes | tooling package tests and a harmless `--local` listing command |
+| Malina handle or image generation | `sdk/malina/` and `sdk/malina/model/` | `sdk/tools/malina/`, examples, Chapter 19 for user behavior | package unit tests and compile affected examples; model-backed generation is deliberate human work |
+| Malina libraries/model-bundle tooling | `sdk/tools/malina/` | `sdk/malina/`, curated bundle catalog, examples | tooling package tests and catalog drift tests; do not download multi-gigabyte models merely to verify tooling |
 | General library/model/catalog/device tooling | `sdk/tools/` | local CLI and `toolapp` web wrappers | changed package tests; compare local and default web behavior where both exist |
 | BUI page or API client | `cmd/server/api/frontends/bui/` | scoped component instructions and matching HTTP route | `npm run build` from the BUI directory; server embedding check |
 | Manual source | `.manual/` | docs manual generator and generated `DocsManual` | `make kronk-docs`, then BUI build |
@@ -91,9 +93,9 @@ Tests close to an owner are usually more diagnostic than a repository-wide comma
 If a change crosses rows, verify each changed contract rather than choosing only the
 largest command.
 
-### 19.3 Repository Ownership Map
+### 20.3 Repository Ownership Map
 
-#### 19.3.1 Commands and server
+#### 20.3.1 Commands and server
 
 - **`cmd/kronk/`** owns the installed `kronk` executable, command hierarchy, flags,
   local-versus-server dispatch, terminal presentation, and process control. Commands
@@ -114,7 +116,7 @@ largest command.
   tracing; `logger/` owns server logging primitives. Domain packages should use these
   facilities rather than invent parallel conventions.
 
-#### 19.3.2 Language-model SDK and engine
+#### 20.3.2 Language-model SDK and engine
 
 - **`sdk/kronk/`** is the public language-model handle and API surface. A
   `kronk.Kronk` owns **one primary loaded model** and a semaphore governing admission
@@ -133,7 +135,7 @@ largest command.
   and `sdk/kronk/hf/` own their named concerns. Prefer these boundaries to embedding
   format, storage, or resource calculations in request handlers.
 
-#### 19.3.3 Pools and shared resources
+#### 20.3.3 Pools and shared resources
 
 - **`sdk/pool/`** is the server-facing application facade over the language and audio
   typed pools and their shared resource manager. It coordinates backends; it does not
@@ -152,13 +154,18 @@ independently may therefore have different fallback values. Check the compositio
 layer before documenting effective server behavior, and check the typed constructor
 before documenting standalone behavior.
 
-#### 19.3.4 Bucky, tools, UI, examples, and deployment
+#### 20.3.4 Bucky, Malina, tools, UI, examples, and deployment
 
 - **`sdk/bucky/`** is the public concurrent audio handle. **`sdk/bucky/model/`** owns
   whisper context/state operations, decoding, transcription, and stream mechanics.
+- **`sdk/malina/`** is the experimental public image-generation handle.
+  **`sdk/malina/model/`** owns stable-diffusion model configuration, native context
+  lifecycle, generation, and Motion-JPEG encoding. Malina is not yet part of the model
+  server or shared model pool.
 - **`sdk/tools/`** owns reusable catalog, downloader, backend, device, diagnostics,
   library, and model-management operations used by CLI and server tools. Bucky-specific
-  installers and catalogs live below `sdk/tools/bucky/`.
+  installers and catalogs live below `sdk/tools/bucky/`; Malina's native-library
+  manager and curated diffusion bundles live below `sdk/tools/malina/`.
 - **`cmd/server/api/frontends/bui/`** is the React/TypeScript browser application.
   Component-level conventions are deliberately delegated to the applicable
   `AGENTS.md`; this guide does not duplicate them.
@@ -171,7 +178,7 @@ before documenting standalone behavior.
   own deployment, reproducibility, and release automation. Runtime image behavior must
   agree with the Docker workflow and entrypoint, not with an old prose inventory.
 
-### 19.4 Developer Setup and Daily Commands
+### 20.4 Developer Setup and Daily Commands
 
 From the repository root, install the CLI with:
 
@@ -215,7 +222,7 @@ Use the CLI and Make targets appropriate to the focused test rather than downloa
 every supported artifact. The Bucky CLI uses `--local` for direct filesystem work;
 web/server operation is the default and there is no `--web` flag.
 
-#### 19.4.1 Native-library compatibility and SDK initialization
+#### 20.4.1 Native-library compatibility and SDK initialization
 
 The versions in `go.mod`, `sdk/tools/libs` defaults, and the README compatibility
 matrix describe one tested Kronk/Yzma/llama.cpp set. The Kronk 1.30.0 line uses Yzma
@@ -256,7 +263,7 @@ the minimum language version. Patch versions may differ, but major and minor mus
 match. The workflow version script enforces this relationship; read both files rather
 than copying their current values into new documentation.
 
-#### 19.4.2 Server stress probes
+#### 20.4.2 Server stress probes
 
 `zarf/scripts/kronk-stress.sh` is an adversarial probe harness that exercises a running
 Kronk server's HTTP API: constrained decoding, the MTP/speculative decode path, the
@@ -290,7 +297,7 @@ log when the script manages the server. Exit status is `0` when nothing is flagg
 `1` when there are findings, and `2` when the run could not proceed.
 
 This is a deliberate human/integration run, not part of `make test` and not an agent
-default — see [19.9.1](#1991-required-go-post-edit-sequence).
+default — see [20.9.1](#2091-required-go-post-edit-sequence).
 
 ##### Triaging the findings
 
@@ -347,9 +354,9 @@ the binding call site.
 Editing the prompt means editing `zarf/scripts/kronk-stress-triage.md` and this
 chapter together; the file is what the Make target prints.
 
-### 19.5 Request and Model Lifecycle
+### 20.5 Request and Model Lifecycle
 
-#### 19.5.1 Server request flow
+#### 20.5.1 Server request flow
 
 The stable request path is:
 
@@ -371,7 +378,7 @@ per-model admission and shutdown coordination. Engines own native contexts, sequ
 and inference state. Preserve error identities long enough for the domain layer to map
 capacity, cancellation, validation, and internal failures correctly.
 
-#### 19.5.2 Typed pool acquisition, loading, and eviction
+#### 20.5.2 Typed pool acquisition, loading, and eviction
 
 An acquisition first checks/coalesces a typed cache entry. A cold load is planned by
 the backend loader, then reserved against the shared memory manager before expensive
@@ -393,7 +400,7 @@ still release the reservation. Preserve the engine-level distinction between a m
 that cannot fit the configured budget and temporary pressure where no idle candidate
 can be evicted; typed/public APIs may translate those errors differently.
 
-#### 19.5.3 Semaphore lifetime and cancellation
+#### 20.5.3 Semaphore lifetime and cancellation
 
 The `Kronk` handle's semaphore is admission control around one model. A permit belongs
 to the operation, not merely to function setup. For a non-streaming call, hold it until
@@ -409,7 +416,7 @@ close caller-owned channels or unload a caller-owned handle. Unload prevents new
 waits for owned active work according to its context, then tears down engine/native
 resources. Pool shutdown owns handles created by that pool.
 
-#### 19.5.4 Batch slots and sequence isolation
+#### 20.5.4 Batch slots and sequence isolation
 
 Text generation uses a batch engine. A slot is an execution reservation and mutable
 per-request state; its sequence ID partitions KV/cache operations in the shared native
@@ -428,7 +435,7 @@ The main invariants are:
 - Native decode failure is attributed to affected jobs and followed by deterministic
   cleanup; it must not silently publish partly advanced session state.
 
-#### 19.5.5 Generation versus embedding and reranking engines
+#### 20.5.5 Generation versus embedding and reranking engines
 
 Text generation benefits from shared batched execution and sequence-partitioned KV.
 Embeddings and reranking never use generation slots. Proven architectures use the
@@ -445,9 +452,9 @@ architecture only after a native yzma proof, model-backed concurrent tests, and 
 benchmark. Some llama.cpp failures assert instead of returning an error, so probing an
 unknown architecture at runtime is not a safe fallback strategy.
 
-### 19.6 Core Inference Invariants
+### 20.6 Core Inference Invariants
 
-#### 19.6.1 IMC sessions, slots, and external storage
+#### 20.6.1 IMC sessions, slots, and external storage
 
 Incremental Message Cache (IMC) sessions are cache identities, not execution slots.
 A stable cache/session identifier allows a conversation prefix to survive movement
@@ -573,7 +580,7 @@ continue. Media-anchor advancement instead uses a replacement store and requires
 complete staged snapshot before swapping metadata; decode or snapshot failure fails the
 request while preserving the old published anchor.
 
-#### 19.6.2 Prompt plans: text and media
+#### 20.6.2 Prompt plans: text and media
 
 Prompt planning converts normalized messages and parameters into the exact work the
 engine will execute. The plan, cache identity, token accounting, and decode positions
@@ -590,7 +597,7 @@ state separately, so decode or snapshot failure leaves that anchor's prior publi
 snapshot authoritative. Do not claim the same preservation for an LRU rebuild: prompt
 planning intentionally resets the selected session before rebuilding it.
 
-#### 19.6.3 Parser registry ownership
+#### 20.6.3 Parser registry ownership
 
 Parser implementations live under `sdk/kronk/parsers/`, grouped by model family. The
 registry interface and registration entry point live in `sdk/kronk/model/`. A parser
@@ -604,7 +611,7 @@ where necessary, and test fragmented as well as complete input. Keep generic JSO
 repair separate from family recognition. Unknown families need an intentional fallback
 or error; registration order must not create accidental model-family selection.
 
-#### 19.6.4 Responses normalization
+#### 20.6.4 Responses normalization
 
 The Responses API adapts to the chat/inference pipeline in `sdk/kronk/response.go`.
 Normalization has a compatibility-sensitive mutation contract:
@@ -620,7 +627,7 @@ copy. Either change breaks callers that combine compatibility fields or inspect 
 document after normalization. Add tests for existing messages, input-only requests,
 and observable in-place mutation.
 
-#### 19.6.5 Tracing and logging
+#### 20.6.5 Tracing and logging
 
 Tracing should identify major waits and ownership boundaries: request handling, model
 acquisition/load, queue wait, prompt/prefill, generation, and unload when relevant.
@@ -636,7 +643,7 @@ active requests, status, and prompt-token usage are operation-level measurements
 Resource reservations remain owned by the shared pool/resource manager and must not be
 duplicated inside either inference engine.
 
-#### 19.6.6 Speculative decoding and MTP
+#### 20.6.6 Speculative decoding and MTP
 
 Speculative support has three ownership shapes:
 
@@ -679,9 +686,9 @@ Model-backed MTP suites live in `sdk/kronk/tests/mtp` and
 `sdk/kronk/tests/gemma4mtp`; they are CI/human suites, not commands agents should launch
 from the forbidden integration-test tree.
 
-### 19.7 Server, BUI, and Generated Documentation
+### 20.7 Server, BUI, and Generated Documentation
 
-#### 19.7.1 Routes, middleware, and domains
+#### 20.7.1 Routes, middleware, and domains
 
 Route declarations belong with their domain package, normally in `route.go`. Keep
 authentication/authorization, tracing, request IDs, panic recovery, and common response
@@ -695,7 +702,7 @@ middleware order, request model, error mapping, streaming behavior, and service 
 Test malformed input and cancellation as well as success. A server build catches route
 composition errors that a leaf-package test may miss.
 
-#### 19.7.2 BUI ownership and embedding
+#### 20.7.2 BUI ownership and embedding
 
 The BUI lives at `cmd/server/api/frontends/bui/`. Follow its own package scripts and
 the applicable component `AGENTS.md`; component structure and UI conventions change
@@ -714,7 +721,7 @@ Then build the server (or the narrow service package) and verify that the expect
 static bundle is present in the embedding location. Avoid hand-editing minified/static
 output.
 
-#### 19.7.3 Documentation generation
+#### 20.7.3 Documentation generation
 
 `cmd/server/api/tooling/docs/main.go` orchestrates three conceptual pipelines:
 
@@ -738,12 +745,12 @@ the embedded bundle. Generation may update more than one documented package; do 
 discard legitimate generated changes. If the requested scope intentionally excludes
 generated artifacts, report that regeneration remains pending.
 
-### 19.8 Bucky Implementation Map
+### 20.8 Bucky Implementation Map
 
 This is an implementation map only. Chapter 18 owns installation, configuration,
 streaming usage, and API examples.
 
-#### 19.8.1 Owners
+#### 20.8.1 Owners
 
 - **`sdk/bucky/`** owns initialization and the public `Bucky` handle. A handle owns one
   Whisper model and admission/shutdown coordination.
@@ -761,7 +768,7 @@ streaming usage, and API examples.
   Administrative library/model routes are in `toolapp`. Service startup wires the
   Bucky backend and shared pool.
 
-#### 19.8.2 Lifecycle invariants
+#### 20.8.2 Lifecycle invariants
 
 `Init` registers/resolves/loads the backend. Technically, a failed `Init` can be called
 again and retry. The current server calls it only during startup, however. Installing
@@ -787,9 +794,9 @@ Focused tests that exist include unit tests under `sdk/bucky/model/` and
 `cmd/server/api/services/kronk/tests/`. Choose the narrowest test whose native library
 and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.
 
-### 19.9 Verification for LLM Agents
+### 20.9 Verification for LLM Agents
 
-#### 19.9.1 Required Go post-edit sequence
+#### 20.9.1 Required Go post-edit sequence
 
 After changing Go, obey the root instructions and scope work to the changed package.
 For each changed Go file/package:
@@ -824,11 +831,11 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen
 Agents must **never prescribe or run a full repository test run**, and must **never
 launch tests from `sdk/kronk/tests`**. Those suites require managed libraries/models
 and belong to CI or deliberate human integration runs. Commands such as `make test`
-and `make test-stress` ([19.4.2](#1942-server-stress-probes)) exist as broad
+and `make test-stress` ([20.4.2](#2042-server-stress-probes)) exist as broad
 human/CI-maintainer context, but they are not the agent default. Do not use a broad
 command merely because focused ownership is unclear; inspect the owner.
 
-#### 19.9.2 Choosing effective checks
+#### 20.9.2 Choosing effective checks
 
 - Pure logic changes: focused unit test plus package static checks.
 - Public API changes: owner tests, direct dependent package build/test, and generated
@@ -842,8 +849,11 @@ command merely because focused ownership is unclear; inspect the owner.
 - CLI changes: command package tests, `go install ./cmd/kronk`, and one safe invocation.
 - Bucky changes: package tests; transcription integration only with installed Whisper
   libraries/model. Streaming changes require close/cancellation coverage.
+- Malina changes: package tests and affected example builds. Native generation requires
+  compatible stable-diffusion.cpp libraries and multi-gigabyte model bundles, so keep
+  model-backed runs deliberate and do not make them an unconditional CI requirement.
 
-#### 19.9.3 Markdown, generated docs, and BUI
+#### 20.9.3 Markdown, generated docs, and BUI
 
 For a manual-only edit, run formatting/sanity checks appropriate to the task, including
 `git diff --check`. `make kronk-docs` validates the manual conversion pipeline but also
@@ -865,9 +875,9 @@ alone does not prove the Go binary contains current assets.
 Always report what actually ran, including skipped integration prerequisites. Never
 claim CI parity from a narrower local test.
 
-### 19.10 CI, Release, Containers, and Nix
+### 20.10 CI, Release, Containers, and Nix
 
-#### 19.10.1 Linux CI
+#### 20.10.1 Linux CI
 
 `.github/workflows/linux.yml` is the authoritative Linux pipeline. It currently has
 four parallel jobs:
@@ -887,7 +897,7 @@ The exact CI toolchain comes from `.go-version`, while `go.mod` declares the min
 language version. Their major/minor versions must match. Update workflow assumptions
 and run `.github/scripts/check-go-version.sh` when changing either.
 
-#### 19.10.2 Release
+#### 20.10.2 Release
 
 The release workflow, GoReleaser configuration, scripts, and release notes divide
 responsibility:
@@ -904,7 +914,7 @@ release material intentionally before creating the tag; do not bypass the guard.
 confirm the Go major/minor guard, generated docs/BUI, clean tree, and relevant Linux
 jobs before tagging.
 
-#### 19.10.3 Containers
+#### 20.10.3 Containers
 
 `.github/workflows/docker.yml` is authoritative for image variants, target/platform
 matrix, registry publication, attestations, and signing. `zarf/docker/` owns Dockerfile,
@@ -917,7 +927,7 @@ For a container change, build the affected target and architecture where practic
 exercise entrypoint startup/configuration, and verify expected native libraries. Do not
 infer publication or signature behavior from a local build; review the workflow.
 
-#### 19.10.4 Nix
+#### 20.10.4 Nix
 
 The flake at `zarf/nix/flake.nix` defines how developers/users enter or build the
 project; generated Go dependency data lives beside it. Entering a development shell
@@ -926,9 +936,9 @@ Go module dependencies change, update the Nix dependency material with the repos
 configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix
 owners rather than adding environment special cases to Go code.
 
-### 19.11 Change and Release Checklists
+### 20.11 Change and Release Checklists
 
-#### 19.11.1 Focused change checklist
+#### 20.11.1 Focused change checklist
 
 - [ ] Read all applicable `AGENTS.md` files.
 - [ ] Locate the owning package, direct caller, and focused tests.
@@ -945,7 +955,7 @@ owners rather than adding environment special cases to Go code.
 - [ ] Run `git diff --check` and inspect the complete diff for unrelated changes.
 - [ ] Report commands, results, skipped prerequisites, and residual uncertainty.
 
-#### 19.11.2 Release checklist
+#### 20.11.2 Release checklist
 
 - [ ] Choose the release version and update `sdk/kronk`'s `Version` constant.
 - [ ] Ensure the intended tag is exactly `v<Version>` and run the version guard.

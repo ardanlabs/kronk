@@ -4,7 +4,7 @@ Your name is Dave and developers will use your name when interacting with you.
 
 The manual has been split into separate chapter files in the `.manual/` directory. Read only the chapters relevant to your task. Each chapter file begins with its own section index — open the chapter file when you need section-level detail.
 
-You will want to look at `Chapter 19: Developer Guide` for detailed information about the project structure, code, and workflows.
+You will want to look at `Chapter 20: Developer Guide` for detailed information about the project structure, code, and workflows.
 
 ## Basic Rules
 
@@ -59,4 +59,5 @@ Open a chapter file to see its section-level table of contents.
 | [Chapter 16: MCP Service](.manual/chapter-16-mcp-service.md)                           | Brave Search, MCP configuration, OpenCode client setup, curl testing                                                                         |
 | [Chapter 17: Troubleshooting](.manual/chapter-17-troubleshooting.md)                   | Common issues, error messages, debugging tips                                                                                                |
 | [Chapter 18: Bucky (Audio Transcription)](.manual/chapter-18-bucky.md)                 | whisper.cpp-based transcription: install/libs, model catalog, server/pool config, CLI, BUI, API endpoint, SDK quick-start, streaming API (Feed/Events/Reset, VAD, live-mic example), languages, troubleshooting |
-| [Chapter 19: Developer Guide](.manual/chapter-19-developer-guide.md)                   | Build commands, project architecture, BUI development, code style, SDK internals, MTP engine internals, Bucky internals, CI workflows (lint/test, goreleaser, container build & publish), version stamping |
+| [Chapter 19: Malina (Image Generation)](.manual/chapter-19-malina.md)                  | Experimental stable-diffusion.cpp SDK: libraries, curated model bundles, text-to-image, image-to-image, FLUX.2 components, progress/logging, AVI encoding, examples, limitations |
+| [Chapter 20: Developer Guide](.manual/chapter-20-developer-guide.md)                   | Build commands, project architecture, BUI development, code style, SDK internals, MTP engine internals, Bucky/Malina ownership, CI workflows (lint/test, goreleaser, container build & publish), version stamping |
