@@ -858,8 +858,13 @@ class ApiService {
   }
 
   async listPeerModels(host: string): Promise<PeerModelListResponse> {
-    const params = new URLSearchParams({ host });
-    return this.request<PeerModelListResponse>(`/download/models/peer-models?${params.toString()}`);
+    const response = await this.fetch(`http://${host}/download/models`, {
+      headers: this.headers(),
+    });
+    if (!response.ok) {
+      throw new Error(await this.parseErrorMessage(response));
+    }
+    return response.json();
   }
 
   pullLibsFromPeer(
