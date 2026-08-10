@@ -1,4 +1,4 @@
-// Package gofmt provides a documentation generator for sdk/docs/kronk and models.
+// Package gofmt provides a documentation generator for the public SDK packages.
 package gofmt
 
 import (
@@ -51,7 +51,7 @@ type function struct {
 // =============================================================================
 
 func Run() error {
-	pkg := flag.String("pkg", "all", "Package to generate docs for: kronk, model, pool, bucky, bucky-model, or all")
+	pkg := flag.String("pkg", "all", "Package to generate docs for: kronk, model, pool, bucky, bucky-model, malina, malina-model, or all")
 	flag.Parse()
 
 	packages := make(map[string]string)
@@ -60,6 +60,8 @@ func Run() error {
 	packages["pool"] = "github.com/ardanlabs/kronk/sdk/kronk/pool"
 	packages["bucky"] = "github.com/ardanlabs/kronk/sdk/bucky"
 	packages["bucky-model"] = "github.com/ardanlabs/kronk/sdk/bucky/model"
+	packages["malina"] = "github.com/ardanlabs/kronk/sdk/malina"
+	packages["malina-model"] = "github.com/ardanlabs/kronk/sdk/malina/model"
 
 	outputDir := "cmd/server/api/frontends/bui/src/components"
 
@@ -89,6 +91,16 @@ func Run() error {
 			return fmt.Errorf("generating bucky-model docs: %w", err)
 		}
 
+	case "malina":
+		if err := generateDocs(packages["malina"], outputDir, "DocsSDKMalina.tsx", "Malina"); err != nil {
+			return fmt.Errorf("generating malina docs: %w", err)
+		}
+
+	case "malina-model":
+		if err := generateDocs(packages["malina-model"], outputDir, "DocsSDKMalinaModel.tsx", "MalinaModel"); err != nil {
+			return fmt.Errorf("generating malina-model docs: %w", err)
+		}
+
 	case "all":
 		if err := generateDocs(packages["kronk"], outputDir, "DocsSDKKronk.tsx", "Kronk"); err != nil {
 			return fmt.Errorf("generating kronk docs: %w", err)
@@ -110,8 +122,16 @@ func Run() error {
 			return fmt.Errorf("generating bucky-model docs: %w", err)
 		}
 
+		if err := generateDocs(packages["malina"], outputDir, "DocsSDKMalina.tsx", "Malina"); err != nil {
+			return fmt.Errorf("generating malina docs: %w", err)
+		}
+
+		if err := generateDocs(packages["malina-model"], outputDir, "DocsSDKMalinaModel.tsx", "MalinaModel"); err != nil {
+			return fmt.Errorf("generating malina-model docs: %w", err)
+		}
+
 	default:
-		return fmt.Errorf("unknown package: %s (use kronk, model, pool, bucky, bucky-model, or all)", *pkg)
+		return fmt.Errorf("unknown package: %s (use kronk, model, pool, bucky, bucky-model, malina, malina-model, or all)", *pkg)
 	}
 
 	fmt.Println("Documentation generated successfully")

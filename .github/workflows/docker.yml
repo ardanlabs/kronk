@@ -1082,7 +1082,7 @@ jobs:
       # update these too:
       #   - DockerHub.md  ("Verifying Image Signatures" section, then
       #     paste into the Docker Hub repo description)
-      #   - .manual/chapter-19-developer-guide.md  ("Merge + sign"
+      #   - .manual/chapter-20-developer-guide.md  ("Merge + sign"
       #     section under the Docker workflow notes)
       #
       # Consumers verify with:

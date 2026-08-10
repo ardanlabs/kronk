@@ -130,7 +130,7 @@ $ make test-stress ARGS="--tier=smoke"      # contract probes only, minutes
 $ make test-stress ARGS="-l"                # list the probe groups
 ```
 
-Results land in `zarf/tmp/kronk-stress/findings.txt`. See [Chapter 19.4.2: Server Stress Probes](.manual/chapter-19-developer-guide.md#1942-server-stress-probes) in the manual for tiers, environment variables, and output layout.
+Results land in `zarf/tmp/kronk-stress/findings.txt`. See [Chapter 20.4.2: Server Stress Probes](.manual/chapter-20-developer-guide.md#2042-server-stress-probes) in the manual for tiers, environment variables, and output layout.
 
 ## Issues/Features
 

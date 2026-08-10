@@ -151,8 +151,9 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-manual', label: 'Observability', hash: 'chapter-15-observability' },
           { page: 'docs-manual', label: 'MCP Service', hash: 'chapter-16-mcp-service' },
           { page: 'docs-manual', label: 'Troubleshooting', hash: 'chapter-17-troubleshooting' },
-          { page: 'docs-manual', label: 'Bucky (Audio Transcription)', hash: 'chapter-18-bucky' },
-          { page: 'docs-manual', label: 'Developer Guide', hash: 'chapter-19-developer-guide' },
+          { page: 'docs-manual', label: 'Bucky (Audio Transcription)', hash: 'chapter-18-bucky-audio-transcription' },
+          { page: 'docs-manual', label: 'Malina (Image Generation)', hash: 'chapter-19-malina-image-generation' },
+          { page: 'docs-manual', label: 'Developer Guide', hash: 'chapter-20-developer-guide' },
         ],
       },
       {
@@ -164,6 +165,8 @@ const menuStructure: MenuCategory[] = [
           { page: 'docs-sdk-pool', label: 'Pool' },
           { page: 'docs-sdk-bucky', label: 'Bucky' },
           { page: 'docs-sdk-bucky-model', label: 'Bucky Model' },
+          { page: 'docs-sdk-malina', label: 'Malina' },
+          { page: 'docs-sdk-malina-model', label: 'Malina Model' },
           { page: 'docs-sdk-examples', label: 'Examples', children: [
             { page: 'docs-sdk-examples', label: 'Agent', hash: 'example-agent' },
             { page: 'docs-sdk-examples', label: 'Audio', hash: 'example-audio' },

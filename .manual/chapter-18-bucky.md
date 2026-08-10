@@ -33,7 +33,7 @@ Whisper model. The libraries run the inference engine; the model contains the
 speech-recognition weights.
 
 Developer-level package, lifecycle, and test information belongs in
-[Chapter 19: Developer Guide](https://www.kronkai.com/manual#chapter-19-developer-guide).
+[Chapter 20: Developer Guide](https://www.kronkai.com/manual#chapter-20-developer-guide).
 
 ### 18.1 Overview
 
@@ -474,4 +474,4 @@ not translate into arbitrary target languages.
 
 ---
 
-_Next: [Chapter 19: Developer Guide](https://www.kronkai.com/manual#chapter-19-developer-guide)_
+Next: [Chapter 19: Malina (Image Generation)](https://www.kronkai.com/manual#chapter-19-malina-image-generation)

@@ -413,7 +413,7 @@ make test-stress ARGS="--tier=smoke"
 Findings land in `zarf/tmp/kronk-stress/findings.txt`, which includes the full
 request and response of every flagged call. Name individual probe groups to narrow the
 run, and see
-[Chapter 19.4.2](https://www.kronkai.com/manual#chapter-19-developer-guide) for tiers,
+[Chapter 20.4.2](https://www.kronkai.com/manual#2042-server-stress-probes) for tiers,
 environment variables, and the full output layout.
 
 ---

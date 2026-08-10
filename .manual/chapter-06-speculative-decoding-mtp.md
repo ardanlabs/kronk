@@ -270,4 +270,4 @@ Startup events under `draft-model`, `draft-model-mtp`, and
 
 Implementation details for drafting, verification, state synchronization, and
 hybrid-model rollback belong in
-[Chapter 19](https://www.kronkai.com/manual#1966-speculative-decoding-and-mtp).
+[Chapter 20](https://www.kronkai.com/manual#2066-speculative-decoding-and-mtp).
