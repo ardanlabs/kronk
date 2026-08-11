@@ -16,8 +16,8 @@ func TestChatResponseErrPreservesErrorIdentity(t *testing.T) {
 	wantErr := fmt.Errorf("context limit: %w", ErrInvalidRequest)
 	resp := ChatResponseErr("id", ObjectChatText, "model", 0, wantErr, Usage{})
 
-	if !errors.Is(resp.err, ErrInvalidRequest) {
-		t.Errorf("response error: got %v, want %v", resp.err, ErrInvalidRequest)
+	if !errors.Is(resp.internal.cause, ErrInvalidRequest) {
+		t.Errorf("response error: got %v, want %v", resp.internal.cause, ErrInvalidRequest)
 	}
 }
 

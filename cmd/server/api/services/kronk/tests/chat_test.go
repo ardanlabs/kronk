@@ -51,7 +51,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -107,7 +107,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta", "Logprobs"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -176,7 +176,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta", "Logprobs"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -259,7 +259,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -314,7 +314,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta", "Logprobs"),
 				)
 
@@ -379,7 +379,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -433,7 +433,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -485,7 +485,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -539,7 +539,7 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -603,7 +603,7 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -661,7 +661,7 @@ func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -723,7 +723,7 @@ func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -782,7 +782,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -844,7 +844,7 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 				)
 
@@ -921,7 +921,7 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
@@ -1003,7 +1003,7 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "err"),
+					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
 					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
 					cmpopts.IgnoreFields(model.ResponseMessage{}, "Content", "Reasoning", "ToolCalls"),
 				)
