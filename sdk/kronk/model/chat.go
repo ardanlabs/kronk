@@ -57,6 +57,9 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		if err := ctx.Err(); err != nil {
 			return lastMsg, err
 		}
+		if lastMsg.err != nil {
+			return lastMsg, lastMsg.err
+		}
 
 		errMsg := "unknown error"
 		if lastMsg.Choices[0].Delta != nil && lastMsg.Choices[0].Delta.Content != "" {

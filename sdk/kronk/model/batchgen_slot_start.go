@@ -94,6 +94,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	)
 	s.prefillStart = time.Now()
 
+	// Token-v2 planning already computed the complete prompt size. Reject an
+	// oversized prompt before restoring or extending its cached KV state.
+	if job.imcTokenPlan {
+		s.nPrompt = job.imcNewTotalCached + len(job.tailTokens)
+		if !e.applyContextTokenBudget(s, "start-slot") {
+			return
+		}
+	}
+
 	// Resolve one concrete master seed for every request. A matched IMC
 	// session retains its seed across conversation turns; a new or reused
 	// session gets a fresh seed when the caller does not provide one.
@@ -1255,7 +1264,7 @@ func (e *batchEngine) applyContextTokenBudget(s *slot, operation string) bool {
 	contextWindow := e.model.cfg.ContextWindow()
 	effectiveMaxTokens, ok := contextOutputBudget(s.nPrompt, s.job.params.MaxTokens, contextWindow)
 	if !ok {
-		err := fmt.Errorf("%s: input tokens [%d] exceed context window [%d]", operation, s.nPrompt, contextWindow)
+		err := fmt.Errorf("%s: %w: input tokens [%d] exceed context window [%d]", operation, ErrInvalidRequest, s.nPrompt, contextWindow)
 		e.finishSlot(s, err)
 		return false
 	}
