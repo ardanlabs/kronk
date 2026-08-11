@@ -122,11 +122,11 @@ def model_matches(identifier: str, configured: str) -> bool:
     )
 
 
-def loaded_model(args: argparse.Namespace) -> dict:
+def loaded_model(args: argparse.Namespace) -> dict | None:
     models = request_json(args.host, "/v1/kronk/models/ps", 30)
     if not isinstance(models, list):
         raise RuntimeError("/v1/kronk/models/ps returned a non-list response")
-    model = next(
+    return next(
         (
             item
             for item in models
@@ -134,16 +134,30 @@ def loaded_model(args: argparse.Namespace) -> dict:
         ),
         None,
     )
-    if model is None:
-        raise RuntimeError(f"model {args.model!r} is not loaded")
-    return model
+
+
+def warm_model(args: argparse.Namespace) -> None:
+    response = request_json(
+        args.host,
+        "/v1/chat/completions",
+        args.timeout,
+        {
+            "model": args.model,
+            "stream": False,
+            "max_tokens": 16,
+            "enable_thinking": False,
+            "messages": [{"role": "user", "content": "Hello model."}],
+        },
+    )
+    if not isinstance(response, dict) or not response.get("choices"):
+        raise RuntimeError("model warm-up returned no completion")
 
 
 def token_count(args: argparse.Namespace, text: str) -> int:
     response = request_json(
         args.host,
         "/v1/tokenize",
-        30,
+        args.timeout,
         {"model": args.model, "input": text, "apply_template": False},
     )
     if not isinstance(response, dict):
@@ -347,6 +361,12 @@ def run_load(args: argparse.Namespace, records: int) -> dict:
 def main() -> int:
     args = arguments()
     model = loaded_model(args)
+    if model is None:
+        print(f"model={args.model} is not loaded; loading it now")
+        warm_model(args)
+        model = loaded_model(args)
+    if model is None:
+        raise RuntimeError(f"model {args.model!r} did not appear after loading")
     if model.get("slots") != args.slots:
         raise RuntimeError(
             f"expected {args.slots} loaded slots for {args.model}, "
