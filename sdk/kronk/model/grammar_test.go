@@ -2,9 +2,16 @@ package model
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+const grammarTestModelFile = "Qwen3-0.6B-Q8_0.gguf"
 
 func TestGrammarSamplerInitialization(t *testing.T) {
 	gs, err := newGrammarSampler(0, "")
@@ -70,8 +77,8 @@ func TestFromJSONSchema_WithEnum(t *testing.T) {
 				"required": []string{"verdict"},
 			},
 			wantRules: []string{
-				`root ::= "{" ws "\"" "verdict" "\"" ws ":" ws root_verdict ws "}"`,
-				`root_verdict ::= ( "\"" "yes" "\"" | "\"" "no" "\"" | "\"" "maybe" "\"" )`,
+				`root ::= "{" ws "\"" "verdict" "\"" ws ":" ws root-verdict ws "}"`,
+				`root-verdict ::= ( "\"" "yes" "\"" | "\"" "no" "\"" | "\"" "maybe" "\"" )`,
 			},
 		},
 		{
@@ -84,8 +91,8 @@ func TestFromJSONSchema_WithEnum(t *testing.T) {
 				},
 			},
 			wantRules: []string{
-				`root ::= "[" ws ( root_item ( ws "," ws root_item )* )? ws "]"`,
-				`root_item ::= ( "\"" "yes" "\"" | "\"" "no" "\"" )`,
+				`root ::= "[" ws ( root-item ( ws "," ws root-item )* )? ws "]"`,
+				`root-item ::= ( "\"" "yes" "\"" | "\"" "no" "\"" )`,
 			},
 		},
 		{
@@ -120,6 +127,60 @@ func TestFromJSONSchema_WithEnum(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFromJSONSchema_EnumGrammarInitializes(t *testing.T) {
+	schema := D{
+		"type": "object",
+		"properties": D{
+			"verdict": D{
+				"type": "string",
+				"enum": []any{"yes", "no", "maybe"},
+			},
+		},
+		"required": []string{"verdict"},
+	}
+
+	grammar, err := fromJSONSchema(schema)
+	if err != nil {
+		t.Fatalf("fromJSONSchema: unexpected error: %v", err)
+	}
+
+	pattern := filepath.Join(defaults.BaseDir(""), "models", "*", "*", grammarTestModelFile)
+	modelFiles, err := filepath.Glob(pattern)
+	if err != nil {
+		t.Fatalf("find model vocabulary: %v", err)
+	}
+	if len(modelFiles) == 0 {
+		t.Skipf("model %s not downloaded", grammarTestModelFile)
+	}
+
+	if err := llama.Load(libs.Path("")); err != nil {
+		t.Fatalf("load llama library: %v", err)
+	}
+	llama.Init()
+	llama.LogSet(llama.LogSilent())
+
+	params := llama.ModelDefaultParams()
+	params.VocabOnly = 1
+
+	mdl, err := llama.ModelLoadFromFile(modelFiles[0], params)
+	if err != nil {
+		t.Fatalf("load model vocabulary: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := llama.ModelFree(mdl); err != nil {
+			t.Errorf("free model: %v", err)
+		}
+	})
+
+	sampler := llama.SamplerInitGrammar(llama.ModelGetVocab(mdl), grammar, "root")
+	if sampler == 0 {
+		t.Fatal("SamplerInitGrammar: got zero sampler, want initialized sampler")
+	}
+	t.Cleanup(func() {
+		llama.SamplerFree(sampler)
+	})
 }
 
 func TestFromJSONSchema_Array(t *testing.T) {
