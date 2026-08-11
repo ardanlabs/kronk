@@ -28,9 +28,6 @@ example-embedding:
 example-grammar:
 	cd examples && go run ./grammar/main.go
 
-example-lifecycle-load:
-	cd examples && go run ./lifecycle-load/main.go
-
 example-malina:
 	cd examples && go run ./malina/main.go
 

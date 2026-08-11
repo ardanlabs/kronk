@@ -324,6 +324,47 @@ func TestAdjustConfigPreservesExplicitBatchSizes(t *testing.T) {
 	}
 }
 
+func TestAdjustMTPBatch(t *testing.T) {
+	tests := []struct {
+		name       string
+		mtpEnabled bool
+		nSeqMax    int
+		nBatch     int
+		nUBatch    int
+		wantNBatch int
+	}{
+		{"MTP multi-slot", true, 2, 4096, 2048, 2048},
+		{"MTP single-slot", true, 1, 4096, 2048, 4096},
+		{"MTP already one ubatch", true, 2, 2048, 2048, 2048},
+		{"non-MTP multi-slot", false, 2, 4096, 2048, 4096},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig(
+				WithNSeqMax(tt.nSeqMax),
+				WithNBatch(tt.nBatch),
+				WithNUBatch(tt.nUBatch),
+			)
+
+			got := adjustMTPBatch(cfg, tt.mtpEnabled)
+			if got.NBatch() != tt.wantNBatch {
+				t.Errorf("NBatch: got %d, want %d", got.NBatch(), tt.wantNBatch)
+			}
+		})
+	}
+
+	cfg := adjustConfig(NewConfig(
+		WithContextWindow(8192),
+		WithNSeqMax(2),
+	), 0)
+
+	got := adjustMTPBatch(cfg, true)
+	if got.NBatch() != got.NUBatch() {
+		t.Errorf("default MTP batch: NBatch got %d, want NUBatch %d", got.NBatch(), got.NUBatch())
+	}
+}
+
 func TestContextTopologyParamsProvidesFullContextPerSequence(t *testing.T) {
 	got := contextTopologyParams(llama.ContextParams{}, 32_768, 4)
 

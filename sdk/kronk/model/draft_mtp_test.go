@@ -34,6 +34,28 @@ func TestMetadataHasMTP(t *testing.T) {
 	}
 }
 
+func TestMetadataHasAssistantMTP(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]string
+		want     bool
+	}{
+		{"assistant with MTP", map[string]string{"general.architecture": "gemma4-assistant", "gemma4.nextn_predict_layers": "1"}, true},
+		{"assistant without MTP", map[string]string{"general.architecture": "gemma4-assistant"}, false},
+		{"target with MTP", map[string]string{"general.architecture": "gemma4", "gemma4.nextn_predict_layers": "1"}, false},
+		{"malformed MTP", map[string]string{"general.architecture": "gemma4-assistant", "gemma4.nextn_predict_layers": "invalid"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := metadataHasAssistantMTP(tt.metadata)
+			if got != tt.want {
+				t.Errorf("metadataHasAssistantMTP() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestModelFilesLoadMTPUsesFirstShard(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "model-00001-of-00002.gguf")

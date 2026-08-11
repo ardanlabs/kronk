@@ -1,120 +1,95 @@
-# Check to see if we can use ash, in Alpine images, or default to BASH.
-# On Windows/MSYS2, derive bash.exe from the default sh.exe path.
-# On Unix, uses `which` to find bash for environments like NixOS where
-# bash lives in the Nix store rather than /bin/bash.
+# ==============================================================================
+# Shell Configuration
+#
+# Use ash in Alpine images and otherwise default to Bash. On Windows/MSYS2,
+# derive bash.exe from the default sh.exe path. On Unix, use `which` to support
+# environments such as NixOS, where Bash may live outside /bin.
 ifeq ($(OS),Windows_NT)
     SHELL := $(subst sh.exe,bash.exe,$(SHELL))
 else
     SHELL := $(if $(wildcard /bin/ash),/bin/ash,$(shell which bash 2>/dev/null || echo /bin/sh))
 endif
 
-
 # ==============================================================================
-# Class Notes
+# Class Setup
 #
-# At this point you have cloned the project so we need to install a few things.
-# 	make install-gotooling
-#	make install-tooling
+# 1. Install the required Go and project tooling:
 #
-# Now let's get the frontend system initialized.
-#	make bui-install
+#      make install-gotooling
+#      make install-tooling
 #
-# Next we need to download the models for the class.
-#	make install-class-models
+# 2. Initialize the frontend:
 #
-# Let's test if these models are working by starting model server.
-#	make kronk-server-build
-#	Open browser to: http://localhost:11435
+#      make bui-install
 #
-#	Navigate to Apps/Chat to go to the chat application. Make sure you clear
-#	the session when trying different models.
+# 3. Download the models used in class:
 #
-#	Choose the `Qwen3-0.6B-Q8_0` model first since it's the smallest. Ask it
-#	a simple question like, write a hello world program in Go. If that works try
-#	the other 3 models (`LFM2-700M-Q8_0`, `Qwen3-8B-Q8_0` and `Qwopus3.5-4B-Coder.Q8_0`)
-#	and ask the same question. Do not be alarmed if the model server panics. It
-#	just means you can't run that model. Just make a note of the models that work
-#	and don't.
+#      make install-class-models
 #
-#	Now try the smallest vision model `Qwen3.5-0.8B-Q8_0`. There is an image
-#	of a giraffe under the examples folder (examples/samples/giraffe.jpg). Select
-#	that image and ask the model what it sees. If that works try the two larger
-#	vision model `LFM2.5-VL-1.6B-Q8_0` and `Qwen2.5-VL-3B-Instruct-Q8_0`.
+# 4. Build and start the model server:
 #
-#	Don't try the audio example, llama.cpp has broken the audio models and I 
-#   can't get them to listen to my problems. :(
+#      make kronk-server-build
 #
-#	Hopefully all the models work for you, but again don't worry if the model
-#	server panics. Just send me an email (bill@ardanlabs.com) and I will try
-#	to help you.
+#    Open http://localhost:11435 and navigate to Apps/Chat. Clear the session
+#    before switching models.
 #
-# Memory
-#	This is going to be your first biggest obstacle. You basically won't be able
-#	to use a model that is larger than 80% of the total memory you have on the
-#	machine if you are using Apple Silicon. For systems that have separate CPU
-#   and GPU memory, you are free to use all of the GPU memory, but if some of the
-#   model will run on CPU, I like the 80% rule again.
+# Model Validation
 #
-# GPU
-#	This is going to be your second biggest obstacle. These models are not
-#	designed to run at any level of performance on CPU alone. Without a GPU,
-#	I'm not sure how things will run. Don't stress if you can run everything in
-#	the class, you will still learn a lot.
+# Start with `Qwen3-0.6B-Q8_0`, the smallest text model. Ask it a simple question,
+# such as how to write a Hello World program in Go. If it works, repeat the test
+# with `LFM2-700M-Q8_0`, `Qwen3-8B-Q8_0`, and `Qwopus3.5-4B-Coder.Q8_0`.
 #
-# Operating Systems
-#	I've been testing mostly on a MacBook Pro M4. If you have a Mac I feel pretty
-#	good things should work. Llama.cpp is good at recognizing the Mac and the
-#	GPU that exists.
+# For vision, start with `Qwen3.5-0.8B-Q8_0`. Upload
+# `examples/samples/giraffe.jpg` and ask the model what it sees. If it works,
+# repeat the test with `LFM2.5-VL-1.6B-Q8_0` and
+# `Qwen2.5-VL-3B-Instruct-Q8_0`.
 #
-#	If you are running Linux, you most likely will need to download drivers for
-#	your GPU. You need to talk to me before you come to class so I can try to
-#	help you.
+# Skip the audio example because llama.cpp currently has broken audio-model
+# support. A server panic generally means the selected model is too large for
+# the machine. Record which models work and continue with those.
 #
-#	If you are on Windows, we have tested the code will run but not extensively.
-#	We will have to learn in class as we go.
+# Hardware Notes
 #
-# Having Problems
-#	You need to email me (bill@ardanlabs.com) if you are running into problems
-#	and need help.
+# Memory is usually the primary constraint. On Apple Silicon, select models that
+# use no more than roughly 80% of total system memory. On systems with separate
+# CPU and GPU memory, all GPU memory is available; apply the same 80% guideline
+# if any part of the model runs on the CPU.
 #
-# ------------------------------------------------------------------------------
-# Where to find things
+# A GPU is strongly recommended because these models are not designed to run
+# efficiently on a CPU alone. The class is still useful if only some models run.
 #
-# Targets are split across topic-specific files under `make/`. Open the one
-# that matches what you're trying to do:
+# Platform Notes
 #
-#   .make/install.mk      setup, install-gotooling/tooling/kronk,
-#                        install-libraries, install-*-models, install-docker
+# macOS on Apple Silicon is the most extensively tested platform. Linux users
+# may need to install GPU drivers before class. Windows is supported but has
+# received less testing.
 #
-#   .make/dev.mk          lint, vuln-check, diff, test, test-gh, test-stress, llama-bench,
-#                        authapp-proto-gen, benchmark-*, tidy, deps-upgrade,
-#                        yzma-latest
+# For help before class, email bill@ardanlabs.com.
 #
-#   .make/server.mk       bui-install/run/build/upgrade, kronk-build,
-#                        kronk-docs, kronk-server, kronk-server-build,
-#                        kronk-server-detach/-logs/-stop
+# ==============================================================================
+# Target Index
 #
-#   .make/cli.mk          kronk-diagnose, kronk-libs, kronk-model-*, kronk-catalog-*,
-#                        kronk-security-*, kronk-launch, bucky-libs,
-#                        bucky-model-*
+# Targets are grouped in topic-specific files under `.make/`:
 #
-#   .make/endpoints.mk    curl-liveness/readiness, curl-kronk-* (chat,
-#                        embeddings, rerank, responses, tools, tokenize),
-#                        mcp-server, curl-mcp-*
+#   .make/agents.mk     Default and rote agent-bundle management.
+#   .make/cli.mk        Diagnostics, libraries, models, catalogs, and security.
+#   .make/dev.mk        Linting, tests, benchmarks, dependencies, and generation.
+#   .make/endpoints.mk  Health, inference, tokenization, and MCP requests.
+#   .make/examples.mk   Runnable SDK and yzma examples.
+#   .make/install.mk    Setup, tooling, libraries, models, and Docker.
+#   .make/ops.mk        Open WebUI, Grafana, Statsviz, website, and debugging.
+#   .make/server.mk     Browser UI, documentation, builds, and server lifecycle.
+#   .make/tools.mk      MTP load and adversarial probes.
 #
-#   .make/ops.mk          owu-*, grafana-*, statsviz, website,
-#                        debug-responses-*, debug-completions-*
-#
-#   .make/examples.mk     example-* (agent, audio, bucky, chat, ...) and
-#                        example-yzma-step1..6, example-yzma-parallel-*
-#
-#   .make/agents.mk       agents-default-*, agents-rote-*, agents-wipe
+# ==============================================================================
+# Includes
 
-include .make/install.mk
-include .make/dev.mk
-include .make/server.mk
-include .make/cli.mk
-include .make/endpoints.mk
-include .make/ops.mk
-include .make/examples.mk
 include .make/agents.mk
+include .make/cli.mk
+include .make/dev.mk
+include .make/endpoints.mk
+include .make/examples.mk
+include .make/install.mk
+include .make/ops.mk
+include .make/server.mk
+include .make/tools.mk

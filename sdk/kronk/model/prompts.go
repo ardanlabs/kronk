@@ -110,7 +110,13 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 
 func (m *Model) applyJinjaTemplate(ctx context.Context, d map[string]any) (string, error) {
 	messages, _ := d["messages"].([]D)
-	m.log(ctx, "applyJinjaTemplate", "template", m.template.FileName, "messages", len(messages))
+
+	addGenerationPrompt, ok := d["add_generation_prompt"].(bool)
+	if !ok {
+		addGenerationPrompt = true
+	}
+
+	m.log(ctx, "applyJinjaTemplate", "template", m.template.FileName, "messages", len(messages), "add_generation_prompt", addGenerationPrompt)
 
 	if m.template.Script == "" {
 		return "", errors.New("apply-jinja-template: no template found")

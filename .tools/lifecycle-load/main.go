@@ -101,6 +101,10 @@ func (se *serverError) Error() string {
 	return fmt.Sprintf("HTTP error %s: %s", se.Code, se.Message)
 }
 
+type serverErrorResponse struct {
+	Error serverError `json:"error"`
+}
+
 type chatEvent struct {
 	Choices []struct {
 		Delta *struct {
@@ -164,13 +168,13 @@ func run() error {
 		cancelBlocked()
 		return fmt.Errorf("third request was admitted; configure %s with nseq-max: 1, queue-depth: 2, and admission-timeout: %s, then restart the server", cfg.model, expectedAdmissionTimeout)
 	}
-	if blockedResult.status != http.StatusInternalServerError {
+	if blockedResult.status != http.StatusTooManyRequests {
 		return fmt.Errorf("third request status: got %d after %s, want %d from admission timeout: %v",
-			blockedResult.status, blockedResult.elapsed.Round(time.Millisecond), http.StatusInternalServerError, blockedResult.err)
+			blockedResult.status, blockedResult.elapsed.Round(time.Millisecond), http.StatusTooManyRequests, blockedResult.err)
 	}
 	var responseErr *serverError
-	if !errors.As(blockedResult.err, &responseErr) || responseErr.Code != "internal" ||
-		!strings.Contains(responseErr.Message, "chat-streaming-http: stream-response: context deadline exceeded") {
+	if !errors.As(blockedResult.err, &responseErr) || responseErr.Code != "resource_exhausted" ||
+		!strings.Contains(responseErr.Message, "admission timeout") {
 		return fmt.Errorf("third request did not return the expected admission deadline error: %v", blockedResult.err)
 	}
 	if blockedResult.elapsed < expectedAdmissionTimeout || blockedResult.elapsed > 500*time.Millisecond {
@@ -317,11 +321,11 @@ func streamRequest(ctx context.Context, client *http.Client, cfg config, traceID
 			return resp.StatusCode, fmt.Errorf("read HTTP %d response: %w", resp.StatusCode, readErr)
 		}
 
-		var responseErr serverError
+		var responseErr serverErrorResponse
 		if err := json.Unmarshal(response, &responseErr); err != nil {
 			return resp.StatusCode, fmt.Errorf("decode HTTP %d response %q: %w", resp.StatusCode, strings.TrimSpace(string(response)), err)
 		}
-		return resp.StatusCode, &responseErr
+		return resp.StatusCode, &responseErr.Error
 	}
 	close(headers)
 

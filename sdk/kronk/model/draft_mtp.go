@@ -62,6 +62,10 @@ func metadataHasMTP(metadata map[string]string) bool {
 	return false
 }
 
+func metadataHasAssistantMTP(metadata map[string]string) bool {
+	return strings.Contains(metadata["general.architecture"], "assistant") && metadataHasMTP(metadata)
+}
+
 // mtpNDraft returns the starting (ceiling) number of draft tokens for the
 // auto-detected MTP drafter. An MTP nDraft override — a DraftModel block
 // with no model files — sets the ceiling explicitly; otherwise the
@@ -149,13 +153,15 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// the MTP head runs on the same backend. NCtx / NBatch / NUbatch /
 	// NSeqMax are inherited so the drafter can host the same number of
 	// concurrent sequences the target serves and score the same prompts
-	// the target sees.
+	// the target sees. NRsSeq is required for rolling back draft positions
+	// when the MTP context contains recurrent layers.
 	params := llama.ContextDefaultParams()
 	params.CtxType = llama.ContextTypeMTP
 	params.NCtx = targetCtxParams.NCtx
 	params.NBatch = targetCtxParams.NBatch
 	params.NUbatch = targetCtxParams.NUbatch
 	params.NSeqMax = targetCtxParams.NSeqMax
+	params.NRsSeq = targetCtxParams.NRsSeq
 	params.NThreads = targetCtxParams.NThreads
 	params.NThreadsBatch = targetCtxParams.NThreadsBatch
 	params.FlashAttentionType = targetCtxParams.FlashAttentionType
@@ -177,7 +183,8 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		"nCtx", params.NCtx,
 		"nBatch", params.NBatch,
 		"nUbatch", params.NUbatch,
-		"nSeqMax", params.NSeqMax)
+		"nSeqMax", params.NSeqMax,
+		"nRsSeq", params.NRsSeq)
 
 	lctx, err := llama.InitFromModel(targetModel, params)
 	if err != nil {
@@ -308,18 +315,7 @@ func probeGemma4AssistantMTP(ctx context.Context, log applog.Logger, file string
 		return false
 	}
 
-	if !strings.Contains(md["general.architecture"], "assistant") {
-		return false
-	}
-
-	for k, v := range md {
-		if strings.Contains(k, "nextn_predict_layers") {
-			n, err := strconv.Atoi(strings.TrimSpace(v))
-			return err == nil && n > 0
-		}
-	}
-
-	return false
+	return metadataHasAssistantMTP(md)
 }
 
 // loadDraftModelMTPShared loads a separate-file MTP assistant (Gemma4
@@ -483,7 +479,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 //
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
-func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams) (drafter, error) {
+func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, companionMTP bool) (drafter, error) {
 	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
 		d, err := loadDraftModel(ctx, log, cfg, targetModel, targetCtxParams)
 		if err != nil {
@@ -501,7 +497,7 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 	// the same pre-norm APIs the embedded MTP path does; if the loaded
 	// llama build doesn't export them, skip with a loud WARN (handled below
 	// for the embedded path, mirrored here).
-	if cfg.MTPDrafterFile != "" && probeGemma4AssistantMTP(ctx, log, cfg.MTPDrafterFile) {
+	if companionMTP {
 		if !MTPAvailable() {
 			const reason = "MTPDrafterFile is a gemma4-assistant MTP head but the loaded llama library does not export the pre-norm hidden-state APIs (llama_set_embeddings_nextn / llama_get_embeddings_nextn / _ith). MTP speculative decoding is DISABLED for this model. Update sdk/kronk/model/yzma.go with the symbol names exported by your llama build."
 

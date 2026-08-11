@@ -398,13 +398,15 @@ Two settings control prompt batching:
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
 | `nubatch` | `2048` | Physical compute chunk size |
-| `nbatch` | `nubatch × nseq-max` | Maximum logical decode batch |
+| `nbatch` | `nubatch × nseq-max` | Maximum logical decode batch; multi-slot MTP is capped at `nubatch` |
 
 Most deployments should leave both unset. Larger values can improve prompt
 throughput but require larger compute buffers. `nubatch` must not exceed
-`nbatch`. Multimodal encoders may require an entire media token chunk to fit in
-one `nubatch`, so do not lower it for a multimodal model without testing media
-input.
+`nbatch`. For MTP with more than one slot, Kronk keeps `nbatch` equal to
+`nubatch` because dense NextN hidden-state rows are only safe to mirror while
+the logical decode fits in one physical batch. Multimodal encoders may require
+an entire media token chunk to fit in one `nubatch`, so do not lower it for a
+multimodal model without testing media input.
 
 Incremental Message Caching is configured separately with
 `incremental-cache` and related cache settings. See

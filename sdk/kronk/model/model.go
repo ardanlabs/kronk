@@ -304,7 +304,18 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	cfg = adjustConfig(cfg, mdl)
+
+	mtpCandidate := cfg.PtrDraftModel == nil || !cfg.PtrDraftModel.IsSeparate()
+
+	companionMTP := mtpCandidate && cfg.MTPDrafterFile != "" &&
+		probeGemma4AssistantMTP(ctx, l, cfg.MTPDrafterFile)
+
+	mtpEnabled := mtpCandidate && MTPAvailable() && (loadMTP || companionMTP)
+
+	cfg = adjustMTPBatch(cfg, mtpEnabled)
+
 	modelInfo := toModelInfo(cfg, mdl)
+
 	cfg.DefaultParams = resolveSamplingDefaults(cfg.DefaultParams, modelInfo.Metadata, cfg.ContextWindow())
 
 	metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
@@ -438,7 +449,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		}
 
 	default:
-		if err := initGenerationRuntime(ctx, &m, nSlots); err != nil {
+		if err := initGenerationRuntime(ctx, &m, nSlots, companionMTP); err != nil {
 			if m.mtmdMetaCtx != 0 {
 				mtmd.Free(m.mtmdMetaCtx)
 			}
@@ -703,7 +714,7 @@ func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNa
 // context, KV memory, IMC sessions, family plugin, batch engine, and the
 // optional draft model for speculative decoding. On error the helper frees
 // any partial state it created, but leaves m.model for the caller to free.
-func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
+func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, companionMTP bool) error {
 	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
 	if err != nil {
 		return fmt.Errorf("init-from-model: unable to init context: %w", err)
@@ -795,7 +806,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int) error {
 	// an auto-detected MTP head living inside the target GGUF
 	// (nextn_predict_layers > 0, qwen35 architecture). Returns (nil, nil)
 	// when no draft applies.
-	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams)
+	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams, companionMTP)
 	if err != nil {
 		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("load-draft-model: %w", err))
 	}
