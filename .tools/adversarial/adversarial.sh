@@ -590,7 +590,7 @@ chat() {
   # early 'local TIMEOUT' would make chat_timeout clamp against an empty string.
   budget=$(chat_timeout "$2")
   local body
-  body=$(chat_body "$2" "$3" "${4:-{\}}" "${5:-$TOOLS}")
+  body=$(chat_body "$2" "$3" "${4:-}" "${5:-$TOOLS}")
   local TIMEOUT=$budget
   resp=$(post "$label" /v1/chat/completions "$body")
   describe "$label" "$resp"

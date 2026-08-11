@@ -40,29 +40,31 @@ test-load:
 
 # ==============================================================================
 
-# Long-running one-slot IMC load and eviction probe. The loaded model must use
-# nseq-max: 1, incremental-cache: true, and imc-session-capacity: 3.
-IMC_LOAD_HOST ?= http://localhost:11435
-IMC_LOAD_MODEL ?= Qwen3-8B-Q8_0/IMC
-IMC_LOAD_TURNS ?= 21
-IMC_LOAD_TARGET_TOKENS ?= 30000
-IMC_LOAD_TOKENS_PER_TURN ?= 1400
-IMC_LOAD_MAX_TOKENS ?= 32
-IMC_LOAD_CAPACITY ?= 3
-IMC_LOAD_WORKERS ?= 2
-IMC_LOAD_OUT ?= .tools/imc-load/output/summary.json
+# Long-running multi-slot batch-isolation probe. Every turn starts all
+# conversations together, proves their streamed generation overlaps, and
+# verifies that no response contains another conversation's marker. Set both
+# BATCH_LOAD_SLOTS and BATCH_LOAD_CONVERSATIONS to 4 to exercise four slots.
+BATCH_LOAD_HOST ?= http://localhost:11435
+BATCH_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+BATCH_LOAD_TURNS ?= 21
+BATCH_LOAD_TARGET_TOKENS ?= 30000
+BATCH_LOAD_TOKENS_PER_TURN ?= 1400
+BATCH_LOAD_MAX_TOKENS ?= 128
+BATCH_LOAD_SLOTS ?= 3
+BATCH_LOAD_CONVERSATIONS ?= 3
+BATCH_LOAD_OUT ?= .tools/batch-load/output/summary.json
 
-test-imc-load:
-	python3 .tools/imc-load/imc-load.py \
-		--host "$(IMC_LOAD_HOST)" \
-		--model "$(IMC_LOAD_MODEL)" \
-		--turns "$(IMC_LOAD_TURNS)" \
-		--target-tokens "$(IMC_LOAD_TARGET_TOKENS)" \
-		--tokens-per-turn "$(IMC_LOAD_TOKENS_PER_TURN)" \
-		--max-tokens "$(IMC_LOAD_MAX_TOKENS)" \
-		--capacity "$(IMC_LOAD_CAPACITY)" \
-		--workers "$(IMC_LOAD_WORKERS)" \
-		--out "$(IMC_LOAD_OUT)"
+test-batch-load:
+	python3 .tools/batch-load/batch-load.py \
+		--host "$(BATCH_LOAD_HOST)" \
+		--model "$(BATCH_LOAD_MODEL)" \
+		--turns "$(BATCH_LOAD_TURNS)" \
+		--target-tokens "$(BATCH_LOAD_TARGET_TOKENS)" \
+		--tokens-per-turn "$(BATCH_LOAD_TOKENS_PER_TURN)" \
+		--max-tokens "$(BATCH_LOAD_MAX_TOKENS)" \
+		--slots "$(BATCH_LOAD_SLOTS)" \
+		--conversations "$(BATCH_LOAD_CONVERSATIONS)" \
+		--out "$(BATCH_LOAD_OUT)"
 
 # ==============================================================================
 
