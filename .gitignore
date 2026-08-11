@@ -14,6 +14,7 @@ zarf/docker/promtail/positions/
 .tools/http-replay/output/
 .tools/mtp-load/output/
 .tools/adversarial/output/
+.tools/batch-load/output/
 
 # Binaries for programs and plugins
 *.exe
