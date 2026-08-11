@@ -106,6 +106,25 @@ See [Breaking Changes](BREAKING_CHANGES.md), the
 [release history](https://github.com/ardanlabs/kronk/releases), and the
 [open issues](https://github.com/ardanlabs/kronk/issues) for current status.
 
+Sometimes there are breaking changes to the family of ggml libraries that require an update to yzma, bucky, malina and/or Kronk. Always choose to use the downloader for each system to make sure you have a compatible version of the libraries. A working version of each library is bound to each release.
+
+Here are some of the known compatible versions:
+
+| llama.cpp     | yzma    | kronk   |
+| ------------- | ------- | ------- |
+| b10212+       | v1.22.0 | 1.30.0+ |
+| b10182+       | v1.21.0 | 1.29.8+ |
+| b10105-b10354 | v1.20.0 | 1.29.1+ |
+
+| whisper.cpp | bucky  | kronk   |
+| ----------- | ------ | ------- |
+| v1.9.2      | v1.0.8 | 1.30.0+ |
+| v1.9.1      | v1.0.6 | 1.29.8+ |
+
+| stable-diffusion.cpp | malina | kronk    | Notes          |
+| -------------------- | ------ | -------- | -------------- |
+| master-813-bfbef5b   | v1.0.2 | v1.30.7+ | (experimental) |
+
 ## Documentation and Examples
 
 - [Manual](https://www.kronkai.com/manual)
