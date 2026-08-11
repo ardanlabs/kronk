@@ -4,12 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/applog"
 )
+
+func TestChatResponseErrPreservesErrorIdentity(t *testing.T) {
+	wantErr := fmt.Errorf("context limit: %w", ErrInvalidRequest)
+	resp := ChatResponseErr("id", ObjectChatText, "model", 0, wantErr, Usage{})
+
+	if !errors.Is(resp.internal.cause, ErrInvalidRequest) {
+		t.Errorf("response error: got %v, want %v", resp.internal.cause, ErrInvalidRequest)
+	}
+}
 
 func TestFormatLogContentPreservesTextPartBoundaries(t *testing.T) {
 	tests := []struct {

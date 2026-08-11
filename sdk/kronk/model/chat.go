@@ -51,11 +51,14 @@ func (m *Model) Chat(ctx context.Context, d D) (ChatResponse, error) {
 		lastMsg = msg
 	}
 
-	// If the response is an error, extract the error message from Delta
-	// (where ChatResponseErr stores it) and return it as a Go error.
+	// If the response is an error, return the original internal error. Fall
+	// back to the message in Delta if the response does not contain one.
 	if len(lastMsg.Choices) > 0 && lastMsg.Choices[0].FinishReason() == FinishReasonError {
 		if err := ctx.Err(); err != nil {
 			return lastMsg, err
+		}
+		if lastMsg.internal.cause != nil {
+			return lastMsg, lastMsg.internal.cause
 		}
 
 		errMsg := "unknown error"

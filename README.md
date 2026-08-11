@@ -1,77 +1,163 @@
-![kronk logo](./images/project/kronk_banner.jpg?v5)
-
-Copyright 2025-2026 Ardan Labs
-
-hello@ardanlabs.com
-
-https://kronkai.com
+![Kronk logo](./images/project/kronk_banner.jpg?v5)
 
 # Kronk
 
-This project lets you use Go for hardware accelerated local inference with llama.cpp and whisper.cpp directly integrated into your Go applications via the [yzma](https://github.com/hybridgroup/yzma) and [bucky](https://github.com/ardanlabs/bucky) modules. Kronk provides a high-level API that feels similar to using an OpenAI compatible API.
+[![Go Reference](https://pkg.go.dev/badge/github.com/ardanlabs/kronk.svg)](https://pkg.go.dev/github.com/ardanlabs/kronk)
+[![Go version](https://img.shields.io/github/go-mod/go-version/ardanlabs/kronk)](https://github.com/ardanlabs/kronk)
+[![Linux](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml/badge.svg)](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml)
+[![llama.cpp release](https://img.shields.io/github/v/release/ggml-org/llama.cpp?label=llama.cpp)](https://github.com/ggml-org/llama.cpp/releases)
 
-This project also provides a model server for chat completions, responses, messages, embeddings, reranking, and audio transcription. The server is compatible with OpenWebUI, OpenCode, and the Claude Code project.
+Kronk is a Go SDK and model server for hardware-accelerated local inference. It
+provides high-level Go APIs over native inference engines without requiring Python or
+a separate model-serving stack:
 
-To see all the documentation, clone the project and run the Kronk Model Server:
+- **Kronk** runs text, vision, embedding, and reranking models through
+  [llama.cpp](https://github.com/ggml-org/llama.cpp) and
+  [yzma](https://github.com/hybridgroup/yzma).
+- **Bucky** provides speech-to-text through
+  [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and
+  [bucky](https://github.com/ardanlabs/bucky).
+- **Malina** is an experimental image-generation SDK built on
+  [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and
+  [malina](https://github.com/ardanlabs/malina).
+
+The Kronk model server exposes OpenAI-compatible APIs for Chat Completions,
+Responses, embeddings, reranking, and audio transcription, plus an
+Anthropic-compatible Messages API. It also includes a browser interface, model
+management, security, observability, and integrations with OpenWebUI, OpenCode, and
+Claude Code. Malina is currently SDK-only and is not integrated into the model server.
+
+Visit [kronkai.com](https://kronkai.com) or read the
+[manual](https://www.kronkai.com/manual) for complete documentation.
+
+## Quick Start
+
+The recommended installation method on macOS and Linux is Homebrew:
 
 ```shell
-$ make kronk-server
+brew tap ardanlabs/kronk
+brew trust ardanlabs/kronk
+brew install kronk
 
-$ make website
+kronk server start
 ```
 
-You can also install Kronk, run the Kronk Model Server, and open the browser to localhost:11435
-
-On macOS or Linux with Homebrew:
+You can also install the CLI with Go on a supported platform:
 
 ```shell
-$ brew tap ardanlabs/kronk
-$ brew trust ardanlabs/kronk
-$ brew install kronk
+go install github.com/ardanlabs/kronk/cmd/kronk@latest
 
-$ kronk server start
+kronk server start
 ```
 
-Or with Go:
+Open [http://localhost:11435](http://localhost:11435) to manage models and use the
+Browser UI. The first model or SDK example you run can download the compatible native
+libraries and model files automatically.
 
-```shell
-$ go install github.com/ardanlabs/kronk/cmd/kronk@latest
+For container deployment, persistent storage, and production setup, see
+[Container Quick Start](.manual/chapter-02-installation.md#23-container-quick-start).
 
-$ kronk server start
-```
+## SDK or Model Server
 
-Read the [Manual](./manual) to learn more about running the Kronk Model Server.
+The model server is built on the same public SDKs available to Go applications.
+
+| Use the SDK when you need                      | Use the model server when you need                  |
+| ---------------------------------------------- | --------------------------------------------------- |
+| Inference inside a Go process                  | HTTP APIs for one or more clients                   |
+| Direct control over model loading and lifetime | OpenAI- and Anthropic-compatible APIs               |
+| No separate server process                     | Browser-based model management and testing          |
+| Application-specific caching and concurrency   | Authentication, rate limiting, metrics, and tracing |
+
+The Kronk SDK supports text generation, streaming, reasoning, tool calls, vision,
+embeddings, reranking, concurrent processing, and incremental message caching. Bucky
+supports file transcription, translation, channel-separated diarization, and live
+streaming transcription. Experimental Malina supports text-to-image, image-to-image,
+single-checkpoint and multi-file diffusion pipelines, and Motion-JPEG encoding.
+
+## Platform Support
+
+Hardware acceleration depends on the operating system, architecture, inference
+engine, and library bundle. Kronk downloads native libraries that are compatible with
+the installed release.
+
+| OS      | CPU architectures | Available GPU backends          |
+| ------- | ----------------- | ------------------------------- |
+| Linux   | amd64, arm64      | CUDA, Vulkan, HIP, ROCm, SYCL   |
+| macOS   | arm64             | Metal                           |
+| Windows | amd64             | CUDA, Vulkan, HIP, SYCL, OpenCL |
+
+Not every backend is available for every SDK or architecture. Use the CLI or SDK
+library manager as the source of truth for combinations supported by your installed
+version. See [Installation and Quick Start](.manual/chapter-02-installation.md) for
+current requirements.
 
 ## Project Status
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/ardanlabs/kronk.svg)](https://pkg.go.dev/github.com/ardanlabs/kronk)
-[![go.mod Go version](https://img.shields.io/github/go-mod/go-version/ardanlabs/kronk)](https://github.com/ardanlabs/kronk)
-[![llama.cpp Release](https://img.shields.io/github/v/release/ggml-org/llama.cpp?label=llama.cpp)](https://github.com/ggml-org/llama.cpp/releases)
+Kronk follows the native engines it integrates, and upstream changes can require
+coordinated releases of Yzma, Bucky, Malina, and Kronk. Use each subsystem's downloader
+instead of mixing native libraries from unrelated releases; every Kronk release is
+bound to known-compatible library versions.
 
-[![Linux](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml/badge.svg)](https://github.com/ardanlabs/kronk/actions/workflows/linux.yml)
+> [!WARNING]
+> Malina is experimental. Its public API is subject to change, and it is not yet a
+> Kronk model-server backend.
+
+See [Breaking Changes](BREAKING_CHANGES.md), the
+[release history](https://github.com/ardanlabs/kronk/releases), and the
+[open issues](https://github.com/ardanlabs/kronk/issues) for current status.
 
 Sometimes there are breaking changes to the family of ggml libraries that require an update to yzma, bucky, malina and/or Kronk. Always choose to use the downloader for each system to make sure you have a compatible version of the libraries. A working version of each library is bound to each release.
 
 Here are some of the known compatible versions:
 
-| llama.cpp | yzma    | kronk  |
-| --------- | ------- | ------ |
-| b10212+   | v1.22.0 | 1.30.0 |
-| b10182+   | v1.21.0 | 1.29.8 |
-| b10105+   | v1.20.0 | 1.29.1 |
+| llama.cpp     | yzma    | kronk   |
+| ------------- | ------- | ------- |
+| b10212+       | v1.22.0 | 1.30.0+ |
+| b10182+       | v1.21.0 | 1.29.8+ |
+| b10105-b10354 | v1.20.0 | 1.29.1+ |
 
-| whisper.cpp | bucky  | kronk  |
-| ----------- | ------ | ------ |
-| v1.9.2      | v1.0.8 | 1.30.0 |
-| v1.9.1      | v1.0.6 | 1.29.8 |
+| whisper.cpp | bucky  | kronk   |
+| ----------- | ------ | ------- |
+| v1.9.2      | v1.0.8 | 1.30.0+ |
+| v1.9.1      | v1.0.6 | 1.29.8+ |
 
-| stable-diffusion.cpp | malina | kronk   | Notes          |
-| -------------------- | ------ | ------- | -------------- |
-| master-813-bfbef5b   | v1.0.2 | v1.30.7 | (experimental) |
+| stable-diffusion.cpp | malina | kronk    | Notes          |
+| -------------------- | ------ | -------- | -------------- |
+| master-813-bfbef5b   | v1.0.2 | v1.30.7+ | (experimental) |
+
+## Documentation and Examples
+
+- [Manual](https://www.kronkai.com/manual)
+- [Go API reference](https://pkg.go.dev/github.com/ardanlabs/kronk)
+- [Examples directory](examples/)
+- [Model catalog and management](.manual/chapter-08-model-server.md)
+- [Bucky: Audio Transcription](.manual/chapter-18-bucky.md)
+- [Malina: Image Generation](.manual/chapter-19-malina.md)
+
+Representative examples:
+
+```shell
+make example-question  # Ask a local language model a question.
+make example-agent     # Run a small coding agent.
+make example-vision    # Prompt a vision model with an image.
+make example-bucky     # Transcribe an audio file with Bucky.
+make example-malina    # Generate an image with experimental Malina.
+```
+
+Examples download compatible libraries and models on their first run. Browse the
+[complete examples module](examples/) for chat, Responses, embeddings, reranking,
+RAG, streaming transcription, image-to-image generation, model pools, session stores,
+and lower-level yzma usage.
+
+## Community and Support
+
+Use [GitHub Issues](https://github.com/ardanlabs/kronk/issues) for bugs, feature
+requests, and planned work. If you are interested in contributing or need help, email
+[Bill Kennedy](mailto:bill@ardanlabs.com) or [Ardan Labs](mailto:hello@ardanlabs.com).
 
 ## Owner Information
 
-```
+```text
 Name:     Bill Kennedy
 Company:  Ardan Labs
 Title:    Managing Partner
@@ -81,498 +167,10 @@ LinkedIn: www.linkedin.com/in/william-kennedy-5b318778/
 Twitter:  https://x.com/goinggodotnet
 ```
 
-## Install Kronk
-
-The recommended way to install Kronk on macOS or Linux is with Homebrew:
-
-```shell
-$ brew tap ardanlabs/kronk
-$ brew trust ardanlabs/kronk
-$ brew install kronk
-
-$ kronk --help
-```
-
-To upgrade later:
-
-```shell
-$ brew upgrade kronk
-```
-
-You can also install via Go on any supported platform:
-
-```shell
-$ go install github.com/ardanlabs/kronk/cmd/kronk@latest
-
-$ kronk --help
-```
-
-To run Kronk headless with Docker on a remote machine (first run, user
-security, auto-restart on reboot, preinstalling models, updating, and
-uninstalling), see [Chapter 2.4: Docker / OCI Container](.manual/chapter-02-installation.md#24-docker--oci-container) in the manual.
-
-## Development
-
-From a clone of the project, the test suite runs with:
-
-```shell
-$ make test
-```
-
-There is also an adversarial probe harness (`zarf/scripts/kronk-stress.sh`) that
-exercises a running Kronk server's HTTP API: constrained decoding, the MTP/speculative
-decode path, the Anthropic and Responses translations, logprobs, and parameter
-validation.
-
-```shell
-$ make test-stress                          # deep tier, needs a real model, tens of minutes
-$ make test-stress ARGS="--tier=smoke"      # contract probes only, minutes
-$ make test-stress ARGS="-l"                # list the probe groups
-```
-
-Results land in `zarf/tmp/kronk-stress/findings.txt`. See [Chapter 20.4.2: Server Stress Probes](.manual/chapter-20-developer-guide.md#2042-server-stress-probes) in the manual for tiers, environment variables, and output layout.
-
-## Issues/Features
-
-Here is the existing [Issues/Features](https://github.com/ardanlabs/kronk/issues) for the project and the things being worked on or things that would be nice to have.
-
-If you are interested in helping in any way, please send an email to [Bill Kennedy](mailto:bill@ardanlabs.com).
-
-## Architecture
-
-The architecture of Kronk is designed to be simple and scalable.
-
-Watch this [video](https://www.youtube.com/live/gjSrYkYc-yo) to learn more about the project and the architecture.
-
-### SDK
-
-The Kronk SDK allows you to write applications that can directly interact with local open source GGUF models (supported by llama.cpp) that provide inference for text and media (vision and audio). The Bucky SDK provides the same surface for speech-to-text via whisper.cpp — see the [Bucky chapter](.manual/chapter-18-bucky.md).
-
-Generation uses Kronk's generation batch engine. Supported embedding and
-reranking architectures use a separate sequence-batch engine that combines
-complete inputs from concurrent requests on one model context; unverified
-architectures use a context-pool fallback. See
-[Chapter 4](.manual/chapter-04-batch-processing.md) for the runtime and
-`nseq-max` behavior.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./images/project/sdk-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="./images/project/sdk-light.png">
-  <img alt="Kronk SDK Architecture" src="./images/project/sdk-light.png">
-</picture>
-
-Check out the [examples](#examples) section below.
-
-## Models
-
-Kronk uses models in the GGUF format supported by llama.cpp. You can find many models in GGUF format on Hugging Face (over 147k at last count):
-
-models?library=gguf&sort=trending
-
-## Support
-
-Kronk currently has support for over 94% of llama.cpp functionality thanks to yzma. See the yzma [ROADMAP.md](https://github.com/hybridgroup/yzma/blob/main/ROADMAP.md) for the complete list.
-
-You can use multimodal models (image/audio) and text language models with full hardware acceleration on Linux, on macOS, and on Windows.
-
-| OS      | CPU          | GPU                             |
-| ------- | ------------ | ------------------------------- |
-| Linux   | amd64, arm64 | CUDA, Vulkan, HIP, ROCm, SYCL   |
-| macOS   | arm64        | Metal                           |
-| Windows | amd64        | CUDA, Vulkan, HIP, SYCL, OpenCL |
-
-Whenever there is a new release of llama.cpp, the tests for yzma are run automatically. Kronk runs tests once a day and will check for updates to llama.cpp. This helps us stay up to date with the latest code and models.
-
-## API Examples
-
-There are examples in the examples direction:
-
-_The first time you run these programs the system will download and install the model and libraries._
-
-[AGENT](examples/agent/main.go) - This example shows you how to write a small coding agent.
-
-```shell
-make example-agent
-```
-
-[AUDIO](examples/audio/main.go) - This example shows you how to execute a simple prompt against an audio model.
-
-```shell
-make example-audio
-```
-
-[BUCKY](examples/bucky/main.go) - This example shows you how to transcribe an audio file with the bucky SDK (whisper.cpp under the hood). See the manual chapter [Bucky (Audio Transcription)](.manual/chapter-18-bucky.md) for the full subsystem reference.
-
-```shell
-make example-bucky
-```
-
-[BUCKY-STREAM](examples/bucky-stream/main.go) - This example shows you how to do live microphone transcription with the bucky streaming SDK: partials are revised in place and finals commit as you speak. Say "STOP" to end. See [Streaming Transcription](.manual/chapter-18-bucky.md#189-streaming-transcription-sdk) in the manual.
-
-```shell
-make example-bucky-stream
-```
-
-[BUCKY-DIAR](examples/bucky-diar/main.go) - This example shows you how to do channel-separated speaker diarization with the bucky SDK: each speaker is recorded on a dedicated channel, and `TranscribeChannelsFile` transcribes every channel on its own and merges the results into one time-sorted transcript tagged by speaker. See [Channel-Separated Diarization](.manual/chapter-18-bucky.md#188-sdk-quick-start) in the manual.
-
-```shell
-make example-bucky-diar
-```
-
-[CHAT](examples/chat/main.go) - This example shows you how to chat with the chat-completion api.
-
-```shell
-make example-chat
-```
-
-[CONCURRENCY](examples/concurrency/main.go) - This example shows you how to leverage concurrency using vision models.
-
-```shell
-make example-concurrency
-```
-
-[EMBEDDING](examples/embedding/main.go) - This example shows you a basic program using Kronk to perform an embedding operation.
-
-```shell
-make example-embedding
-```
-
-[GRAMMAR](examples/grammar/main.go) - This example shows how to use GBNF grammars to constrain model output.
-
-```shell
-make example-grammar
-```
-
-> [!WARNING]
-> The Malina SDK is experimental. Its public API is subject to change.
-
-The Malina SDK supports these curated model bundles through `sdk/tools/malina/models`:
-
-| Bundle | Description | Download size |
-| ------ | ----------- | ------------- |
-| `sd-1.5` | Stable Diffusion 1.5 single-file baseline | 4.3 GB |
-| `sdxl-base-1.0` | Stable Diffusion XL base 1.0 single-file model | 6.9 GB |
-| `flux2-klein-9b` | FLUX.2 Klein 9B diffusion, VAE, and LLM components (license-gated) | 11 GB |
-
-Use `models.SupportedBundles()` to list their names and `models.Catalog()` to inspect their files, licenses, and descriptions. The exported `models.BundleSD15`, `models.BundleSDXLBase10`, and `models.BundleFlux2Klein9B` names can be passed directly to `DownloadBundle`.
-
-Malina suppresses stable-diffusion.cpp and GGML diagnostic logging by default. Pass `malina.WithLogLevel(malina.LogNormal)` to `malina.Init` to restore it. Native model-loading and generation progress remains visible by default; replace it with `malina.WithProgress(callback)`, or suppress it with `malina.WithProgress(malina.DiscardProgress)`.
-
-[MALINA](examples/malina/main.go) - This example generates a PNG with automatically downloaded compatible libraries and the default model bundle.
-
-```shell
-make example-malina
-```
-
-[MALINA-FLUX2](examples/malina-flux2/main.go) - This example generates a PNG from a multi-file FLUX.2 pipeline, automatically downloading compatible libraries and the curated FLUX.2 Klein 9B bundle.
-
-```shell
-make example-malina-flux2
-```
-
-[MALINA-IMG2IMG](examples/malina-img2img/main.go) - This example transforms an existing PNG or JPEG with a prompt and configurable strength, automatically downloading compatible libraries and the curated Stable Diffusion 1.5 bundle.
-
-```shell
-make example-malina-img2img
-```
-
-[MALINA-SD-ENCODE](examples/malina-sd-encode/main.go) - This example encodes a directory of PNG and JPEG frames into a Motion-JPEG AVI without loading a model.
-
-```shell
-make example-malina-sd-encode
-```
-
-[MALINA-SYSTEM](examples/malina-system/main.go) - This example automatically downloads compatible libraries, initializes Malina, and displays stable-diffusion.cpp system diagnostics.
-
-```shell
-make example-malina-system
-```
-
-[POOL](examples/pool/main.go) - This example shows you how to use the pool package to manage multipl models in memory at the same time.
-
-```shell
-make example-pool
-```
-
-[QUESTION](examples/question/main.go) - This example shows you how to ask a simple question with the chat-completion api.
-
-```shell
-make example-question
-```
-
-[RAG](examples/rag/main.go) - This example shows you a complete RAG application.
-
-```shell
-make example-rag
-```
-
-[RERANK](examples/rerank/main.go) - This example shows you how to use a rerank model.
-
-```shell
-make example-rerank
-```
-
-[RESPONSE](examples/response/main.go) - This example shows you how to chat with the response api.
-
-```shell
-make example-question
-```
-
-[SESSION-STORE](examples/session-store/main.go) - This example shows how to implement and inject a custom IMC session store. Its temporary disk backend demonstrates the extension contract but is not durable storage.
-
-```shell
-make example-session-store
-```
-
-[VISION](examples/vision/main.go) - This example shows you how to execute a simple prompt against a vision model.
-
-```shell
-make example-vision
-```
-
-[YZMA](examples/yzma/main.go) - This example shows you how to use the yzma api at it's basic level.
-
-```shell
-make example-yzma
-```
-
-You can find more examples in the ArdanLabs AI training repo at [Example13](https://github.com/ardanlabs/ai-training/tree/main/cmd/examples/example13).
-
-## Sample API Program - Question Example
-
-```go
-// This example shows you a basic program of using Kronk to ask a model a question.
-//
-// The first time you run this program the system will download and install
-// the model and libraries.
-//
-// Run the example like this from the root of the project:
-// $ make example-question
-
-package main
-
-import (
-	"context"
-	"fmt"
-	"os"
-	"time"
-
-	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/tools/libs"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
-)
-
-const modelSource = "unsloth/Qwen3-0.6B-Q8_0"
-
-func main() {
-	if err := run(); err != nil {
-		fmt.Printf("\nERROR: %s\n", err)
-		os.Exit(1)
-	}
-}
-
-func run() error {
-	mp, err := installSystem()
-	if err != nil {
-		return fmt.Errorf("unable to install system: %w", err)
-	}
-
-	krn, err := newKronk(mp)
-	if err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	defer func() {
-		fmt.Println("\nUnloading Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			fmt.Printf("failed to unload model: %v", err)
-		}
-	}()
-
-	if err := question(krn); err != nil {
-		fmt.Println(err)
-	}
-
-	return nil
-}
-
-func installSystem() (models.Path, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-
-	libs, err := libs.New(
-		libs.WithDetect(ctx, kronk.FmtLogger),
-	)
-	if err != nil {
-		return models.Path{}, err
-	}
-
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
-	}
-
-	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
-		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
-	}
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource)
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	return mp, nil
-}
-
-func newKronk(mp models.Path) (*kronk.Kronk, error) {
-	fmt.Println("loading model...")
-
-	krn, err := kronk.New(
-		model.WithModelFiles(mp.ModelFiles),
-		model.WithAutoTune(true),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create inference model: %w", err)
-	}
-
-	fmt.Print("- system info:\n\t")
-	for k, v := range krn.SystemInfo() {
-		fmt.Printf("%s:%v, ", k, v)
-	}
-	fmt.Println()
-
-	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow())
-	fmt.Printf("- k/v            : %s/%s\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention())
-	fmt.Println("- nBatch         :", krn.ModelConfig().NBatch())
-	fmt.Println("- nuBatch        :", krn.ModelConfig().NUBatch())
-	fmt.Println("- modelType      :", krn.ModelInfo().Type)
-	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
-	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
-	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
-	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
-	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
-	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache())
-	if n := krn.ModelConfig().PtrNGpuLayers; n != nil {
-		fmt.Println("- nGPULayers     :", *n)
-	} else {
-		fmt.Println("- nGPULayers     : all")
-	}
-	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
-		fmt.Println("- splitMode      :", sm)
-	} else {
-		fmt.Println("- splitMode      : auto")
-	}
-
-	return krn, nil
-}
-
-func question(krn *kronk.Kronk) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	question := "Hello model"
-
-	fmt.Println()
-	fmt.Println("QUESTION:", question)
-	fmt.Println()
-
-	d := model.D{
-		"messages": model.DocumentArray(
-			model.TextMessage(model.RoleUser, question),
-		),
-		"temperature": 0.7,
-		"top_p":       0.9,
-		"top_k":       40,
-		"max_tokens":  2048,
-	}
-
-	ch, err := krn.ChatStreaming(ctx, d)
-	if err != nil {
-		return fmt.Errorf("chat streaming: %w", err)
-	}
-
-	// -------------------------------------------------------------------------
-
-	var reasoning bool
-
-	for resp := range ch {
-		switch resp.Choices[0].FinishReason() {
-		case model.FinishReasonError:
-			return fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
-
-		case model.FinishReasonStop:
-			return nil
-
-		default:
-			if resp.Choices[0].Delta.Reasoning != "" {
-				reasoning = true
-				fmt.Printf("\u001b[91m%s\u001b[0m", resp.Choices[0].Delta.Reasoning)
-				continue
-			}
-
-			if reasoning {
-				reasoning = false
-				fmt.Println()
-				continue
-			}
-
-			fmt.Printf("%s", resp.Choices[0].Delta.Content)
-		}
-	}
-
-	return nil
-}
-```
-
-This example can produce the following output:
-
-```shell
-$ make example-question
-cd examples && go run ./question/main.go
-KRONK: 2026-07-31T16:48:48.063008-07:00: select-host-runtime: preferred[metal] selected[metal] reason[preferred host runtime retained]
-KRONK: 2026-07-31T16:48:48.096632-07:00: download-libraries: check libraries version information: arch[arm64] os[darwin] processor[metal]
-KRONK: 2026-07-31T16:48:48.096765-07:00: download-libraries: check llama.cpp installation: arch[arm64] os[darwin] processor[metal] latest[b10216] current[b10216]
-KRONK: 2026-07-31T16:48:48.096775-07:00: download-libraries: already installed: latest[b10216] current[b10216]
-KRONK: 2026-07-31T16:48:48.105792-07:00: download-model: model file:  Qwen3-0.6B-Q8_0.gguf -> already downloaded:
-loading model...
-- system info:
-	LLAMAFILE:on, ACCELERATE:on, REPACK:on, MTL:EMBED_LIBRARY, CPU:NEON, ARM_FMA:on, DOTPROD:on,
-- contextWindow  : 32768
-- k/v            : f16/f16
-- flashAttention : auto
-- nBatch         : 2048
-- nuBatch        : 2048
-- modelType      : dense
-- template       : tokenizer.chat_template
-- grammar        : false
-- nSeqMax        : 1
-- vramTotal      : 4545 MiB
-- slotMemory     : 3584 MiB
-- modelSize      : 633 MB
-- imc            : true
-- nGPULayers     : all
-- splitMode      : layer
-
-QUESTION: Hello model
-
-Okay, the user said "Hello model," so I need to respond politely. I should greet them, maybe mention that I'm here to help, and offer assistance. Keep it friendly and open-ended. Let me make sure there's no confusion and that the response is clear and helpful.
-
-! How can I assist you today? 😊
-Unloading Kronk
-```
-
 ## Travel Schedule
 
-Come find me in any of these cities or events this year. I will be giving workshops and talks about Kronk
+Come find me at any of these cities or events this year. I will be giving workshops
+and talks about Kronk.
 
 | Dates           | Event                      | Location              | Comments       |
 | --------------- | -------------------------- | --------------------- | -------------- |
@@ -580,7 +178,7 @@ Come find me in any of these cities or events this year. I will be giving worksh
 | Mar 4th - 5th   | Ardan Connect              | São Paulo, Brazil     | Workshop       |
 | Apr 20th - 25th | Gophercamp 2026            | Brno, Czech Republic  | Workshop, Talk |
 | Apr 27th - 29th | AI Dev 26                  | San Francisco, USA    | Attendee       |
-| May 17th - 23rd | Gophercon Signapore        | Singapore             | Workshop, Talk |
+| May 17th - 23rd | GopherCon Singapore        | Singapore             | Workshop, Talk |
 | Jun 8th - 12th  | Genetec Corporate Training | Montreal, Canada      | Workshop       |
 | Jun 14th - 19th | GopherCon EU               | Berlin, Germany       | Workshop, Talk |
 | JULY            | Summer Vacation            | Huntsville, AL        | Rest           |
@@ -591,3 +189,5 @@ Come find me in any of these cities or events this year. I will be giving worksh
 | Oct 6th - 9th   | Crusoe Corporate Training  | San Francisco, USA    | Workshop       |
 | Oct 12th - 18th | GopherCon Africa           | Kenya, East Africa    | Workshop, Talk |
 | Oct 29th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Workshop, Talk |
+
+Copyright 2025-2026 Ardan Labs

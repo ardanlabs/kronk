@@ -53,25 +53,6 @@ test-gh-only: install-libraries-gh install-test-gh-models
 
 test-gh: test-gh-only lint vuln-check diff
 
-# Adversarial probe harness against a running (or self-started) Kronk server.
-# Everything is env-tunable — see zarf/scripts/kronk-stress.sh -h. Results land
-# in zarf/tmp/kronk-stress. Pass groups or a tier through ARGS:
-#   make test-stress ARGS="--tier=smoke"
-#   make test-stress ARGS="stream structured"
-#
-# The script exits 1 when it flags anything. Print the triage prompt regardless, then
-# re-raise the script's status so the target still fails on findings.
-test-stress:
-	@echo ========== RUN STRESS PROBES ==========
-	@zarf/scripts/kronk-stress.sh $(ARGS); \
-	status=$$?; \
-	echo; \
-	echo "========== TRIAGE PROMPT =========="; \
-	echo "Hand this to a coding agent to turn the findings into a verified bug report:"; \
-	echo; \
-	cat zarf/scripts/kronk-stress-triage.md; \
-	exit $$status
-
 # ==============================================================================
 # Benchmarks
 

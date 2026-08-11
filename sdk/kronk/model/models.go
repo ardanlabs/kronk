@@ -966,6 +966,11 @@ type ChatResponse struct {
 	SystemFingerprint string   `json:"system_fingerprint"`
 	Choices           []Choice `json:"choices"`
 	Usage             *Usage   `json:"usage,omitempty"`
+	internal          internalChatResponse
+}
+
+type internalChatResponse struct {
+	cause error
 }
 
 func chatResponseDelta(id string, object string, model string, index int, content string, reasoning bool, logprob *ContentLogprob) ChatResponse {
@@ -1101,6 +1106,9 @@ func ChatResponseErr(id string, object string, model string, index int, err erro
 			},
 		},
 		Usage: &u,
+		internal: internalChatResponse{
+			cause: err,
+		},
 	}
 }
 

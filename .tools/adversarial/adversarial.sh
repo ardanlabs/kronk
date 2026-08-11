@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# kronk-stress.sh -- adversarial probe harness for a Kronk server's HTTP API.
+# adversarial.sh -- adversarial probe harness for a Kronk server's HTTP API.
 #
-# Design stance (stated once, applies throughout): assume the server is wrong
+# Adversarial stance (stated once, applies throughout): assume the server is wrong
 # until a probe proves otherwise, and treat "returned 200 and quietly ignored
 # what I asked for" as a defect, not a pass. Every probe states the invariant it
 # asserts; a probe that cannot assert one reports NO SIGNAL, never PASS.
@@ -12,31 +12,31 @@
 # build, so every request goes through it), the Anthropic and Responses API
 # translations, logprobs, and parameter validation.
 #
-# All output lands under $OUT (default <repo>/zarf/tmp/kronk-stress).
+# All output lands under $OUT (default <repo>/.tools/adversarial/output).
 #
 # Requires: bash 3.2+ (macOS stock), curl, jq. Nothing else.
 #
 # Usage:
-#   make test-stress                                  # --tier=deep (smoke + deep)
-#   zarf/scripts/kronk-stress.sh                      # same, run directly
-#   zarf/scripts/kronk-stress.sh --tier=smoke         # contract probes only, no long gens
-#   zarf/scripts/kronk-stress.sh --tier=all           # everything, incl. soak and TTL eviction
-#   zarf/scripts/kronk-stress.sh stream structured    # only these probe groups
-#   zarf/scripts/kronk-stress.sh -l                   # list groups and their tiers
-#   SERVER=0 zarf/scripts/kronk-stress.sh             # probe a server I started myself
-#   MODEL=other/MODEL zarf/scripts/kronk-stress.sh    # any model; see MODEL notes below
+#   make test-adversarial                                  # --tier=deep (smoke + deep)
+#   .tools/adversarial/adversarial.sh                      # same, run directly
+#   .tools/adversarial/adversarial.sh --tier=smoke         # contract probes only, no long gens
+#   .tools/adversarial/adversarial.sh --tier=all           # everything, incl. soak and TTL eviction
+#   .tools/adversarial/adversarial.sh stream structured    # only these probe groups
+#   .tools/adversarial/adversarial.sh -l                   # list groups and their tiers
+#   SERVER=1 .tools/adversarial/adversarial.sh             # start and manage a server for the run
+#   MODEL=other/MODEL .tools/adversarial/adversarial.sh    # any model; see MODEL notes below
 #
 set -uo pipefail
 
 # --- configuration ----------------------------------------------------------
-# Repo root, derived from this script's location (zarf/scripts/), so output
+# Repo root, derived from this script's location (.tools/adversarial/), so output
 # lands in the same place no matter what directory the script is invoked from.
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 HOST=${HOST:-http://127.0.0.1:11435}
 MODEL=${MODEL:-mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT}
 THINK=${THINK:-1}
-OUT=${OUT:-$REPO_ROOT/zarf/tmp/kronk-stress}
+OUT=${OUT:-$REPO_ROOT/.tools/adversarial/output}
 # Per-request ceiling and hang detector. Generation probes derive a smaller
 # budget from max_tokens (see chat_timeout) and are clamped to this.
 TIMEOUT=${TIMEOUT:-2400}
@@ -51,9 +51,10 @@ TIER=${TIER:-deep}
 # leaves findings.txt and the server log, flagged bodies inlined into findings.
 KEEP_ALL=${KEEP_ALL:-0}
 
-# By default the script owns the server's lifetime: starts SERVER_CMD, waits for
-# it to answer, kills it (and everything it spawned) on exit.
-SERVER=${SERVER:-1}
+# By default the script probes an existing server. Set SERVER=1 to start
+# SERVER_CMD, wait for it to answer, and kill it (and everything it spawned)
+# on exit.
+SERVER=${SERVER:-0}
 SERVER_CMD=${SERVER_CMD:-"go run $REPO_ROOT/cmd/kronk server start --insecure-logging --llama-log 1"}
 SERVERLOG=${SERVERLOG:-$OUT/kronk-server.log}
 SERVER_WAIT=${SERVER_WAIT:-300}
@@ -91,7 +92,7 @@ group_desc()  { printf '%s\n' "$PROBES" | grep "^$1:" | cut -d: -f3-; }
 
 usage() {
   cat <<EOF
-kronk-stress.sh -- adversarial probe harness for a Kronk server.
+adversarial.sh -- adversarial probe harness for a Kronk server.
 
 usage: $0 [-h] [-l] [--tier=smoke|deep|all] [group...]
 
@@ -282,7 +283,11 @@ if [ "$SERVER" = 1 ]; then
 elif ! curl -sf --max-time 10 "$HOST/v1/models" >/dev/null 2>&1; then
   echo "cannot reach $HOST -- is the server up? (start one with SERVER=1)" >&2
   exit 2
+else
+  echo "== using existing server: $HOST"
+  echo "== server log: not captured when SERVER=0; inspect the server's own terminal"
 fi
+echo "== findings: $FINDINGS"
 
 # say() appends to whatever $SUMMARY points at: the findings file, except inside
 # concurrent subshells, which repoint it per session so reports cannot interleave.
@@ -585,7 +590,7 @@ chat() {
   # early 'local TIMEOUT' would make chat_timeout clamp against an empty string.
   budget=$(chat_timeout "$2")
   local body
-  body=$(chat_body "$2" "$3" "${4:-{\}}" "${5:-$TOOLS}")
+  body=$(chat_body "$2" "$3" "${4:-}" "${5:-$TOOLS}")
   local TIMEOUT=$budget
   resp=$(post "$label" /v1/chat/completions "$body")
   describe "$label" "$resp"

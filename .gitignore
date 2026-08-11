@@ -9,8 +9,12 @@ node_modules
 zarf/docker/openwebui/
 zarf/docker/promtail/positions/
 
-# Scratch output from local tooling (e.g. zarf/scripts/kronk-stress.sh)
-zarf/tmp/
+# Scratch output from local tooling
+.tools/http-capture/output/
+.tools/http-replay/output/
+.tools/mtp-load/output/
+.tools/adversarial/output/
+.tools/batch-load/output/
 
 # Binaries for programs and plugins
 *.exe

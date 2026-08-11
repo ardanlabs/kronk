@@ -23,7 +23,7 @@
 #   incremental-cache: true              # Incremental message caching (IMC) for agentic workflows (default: true)
 #   insecure-logging: false              # Log potentially sensitive data like message content (debug only)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
-#   nbatch: 2048                         # Logical batch size (default: nubatch * nseq-max)
+#   nbatch: 2048                         # Logical batch size (default: nubatch * nseq-max; multi-slot MTP caps at nubatch)
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   nseq-max: 2                          # Parallel sequences; explicit value is fixed
 #   nthreads: 0                          # Threads for generation (0 = llama.cpp default)

@@ -403,17 +403,17 @@ values before sharing diagnostic output.
 
 For a suspected API-contract problem — constrained decoding, tool-call parsing,
 speculative decoding, logprobs, the Anthropic or Responses translations, or parameter
-validation — reproduce it with the stress harness from a clone of the repository and
+validation — reproduce it with the adversarial harness from a clone of the repository and
 attach the relevant part of the report:
 
 ```shell
-make test-stress ARGS="--tier=smoke"
+make test-adversarial ARGS="--tier=smoke"
 ```
 
-Findings land in `zarf/tmp/kronk-stress/findings.txt`, which includes the full
+Findings land in `.tools/adversarial/output/findings.txt`, which includes the full
 request and response of every flagged call. Name individual probe groups to narrow the
 run, and see
-[Chapter 20.4.2](https://www.kronkai.com/manual#2042-server-stress-probes) for tiers,
+[Chapter 20.4.2](https://www.kronkai.com/manual#2042-server-adversarial-probes) for tiers,
 environment variables, and the full output layout.
 
 ---

@@ -263,34 +263,34 @@ the minimum language version. Patch versions may differ, but major and minor mus
 match. The workflow version script enforces this relationship; read both files rather
 than copying their current values into new documentation.
 
-#### 20.4.2 Server stress probes
+#### 20.4.2 Server adversarial probes
 
-`zarf/scripts/kronk-stress.sh` is an adversarial probe harness that exercises a running
+`.tools/adversarial/adversarial.sh` is an adversarial probe harness that exercises a running
 Kronk server's HTTP API: constrained decoding, the MTP/speculative decode path, the
 Anthropic and Responses translations, logprobs, and parameter validation. It treats
 "returned 200 and quietly ignored what was asked" as a defect, and a probe that cannot
 assert an invariant reports `NO SIGNAL` rather than `PASS`.
 
 ```shell
-make test-stress
+make test-adversarial
 ```
 
 The target runs the default `deep` tier, which needs a real generation-capable model
 and takes tens of minutes. Pass arguments through `ARGS`:
 
 ```shell
-make test-stress ARGS="--tier=smoke"        # contract probes only, minutes
-make test-stress ARGS="--tier=all"          # deep plus soak and TTL eviction
-make test-stress ARGS="stream structured"   # only these probe groups
-make test-stress ARGS="-l"                  # list groups and their tiers
+make test-adversarial ARGS="--tier=smoke"        # contract probes only, minutes
+make test-adversarial ARGS="--tier=all"          # deep plus soak and TTL eviction
+make test-adversarial ARGS="stream structured"   # only these probe groups
+make test-adversarial ARGS="-l"                  # list groups and their tiers
 ```
 
-The script starts and stops its own server by default. To probe a server that is
-already running, set `SERVER=0`. `HOST`, `MODEL`, `THINK`, `TIMEOUT`, `SERVER_CMD`,
-and `KEEP_ALL` are the other tuning knobs; run `zarf/scripts/kronk-stress.sh -h` for
-the full list and current defaults.
+The script probes an existing server by default. Set `SERVER=1` to have the script
+start and stop its own server. `HOST`, `MODEL`, `THINK`, `TIMEOUT`, `SERVER_CMD`, and
+`KEEP_ALL` are the other tuning knobs; run `.tools/adversarial/adversarial.sh -h` for the full
+list and current defaults.
 
-Results land under `zarf/tmp/kronk-stress` (ignored by Git, overridable with `OUT`):
+Results land under `.tools/adversarial/output` (ignored by Git, overridable with `OUT`):
 `findings.txt` holds a result line per probe, a verdict block, and the full
 request/response of every flagged call, and `kronk-server.log` holds the server's own
 log when the script manages the server. Exit status is `0` when nothing is flagged,
@@ -302,21 +302,21 @@ default — see [20.9.1](#2091-required-go-post-edit-sequence).
 ##### Triaging the findings
 
 A finding is a flagged probe, not a proven defect: the probe itself can be wrong, and
-the cause may sit in yzma or llama.cpp rather than in Kronk. `make test-stress` prints
+the cause may sit in yzma or llama.cpp rather than in Kronk. `make test-adversarial` prints
 a triage prompt after every run — including the exit-1 run that produced findings —
 which hands the report to a coding agent for verification. The prompt lives in
-`zarf/scripts/kronk-stress-triage.md`; it is reproduced here as the reference for what
+`.tools/adversarial/adversarial-triage.md`; it is reproduced here as the reference for what
 that triage must cover:
 
 ```text
-Triage the stress run into a verified bug report.
+Triage the adversarial run into a verified bug report.
 
 Input:
-- `zarf/tmp/kronk-stress/findings.txt` — probe results, verdict block, flagged calls
-- `zarf/tmp/kronk-stress/kronk-server.log` — server + llama.cpp log
-- `zarf/scripts/kronk-stress.sh` — probe source
+- `.tools/adversarial/output/findings.txt` — probe results, verdict block, flagged calls
+- `.tools/adversarial/output/kronk-server.log` — server + llama.cpp log
+- `.tools/adversarial/adversarial.sh` — probe source
 
-Code, in ownership order:
+Source code, in ownership order:
 1. Kronk — `cmd/server/app/domain/*app/`, `cmd/server/foundation/web/`,
    `sdk/kronk/model/` (batch, sampling, grammar, IMC, MTP), `sdk/kronk/parsers/<family>/`
 2. yzma — `.extras/yzma/pkg/`, `.extras/yzma/lib/`
@@ -327,7 +327,7 @@ Steps:
 2. Verify each independently. Subagents optional — one per candidate when there are
    many. Each verification:
    - Read the flagged call's request/response in `findings.txt` and its probe in
-     `kronk-stress.sh`; confirm the probe asserts a real invariant.
+     `adversarial.sh`; confirm the probe asserts a real invariant.
    - Correlate by timestamp with `kronk-server.log`.
    - Trace to owning code, cite `file:line`, name the layer. Follow Kronk → yzma →
      llama.cpp when the cause is not in Kronk.
@@ -351,7 +351,7 @@ which is untracked. Clone them there before triaging, or drop those two sources 
 the prompt and accept that a defect below the Kronk boundary can only be localized to
 the binding call site.
 
-Editing the prompt means editing `zarf/scripts/kronk-stress-triage.md` and this
+Editing the prompt means editing `.tools/adversarial/adversarial-triage.md` and this
 chapter together; the file is what the Make target prints.
 
 ### 20.5 Request and Model Lifecycle
@@ -831,7 +831,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen
 Agents must **never prescribe or run a full repository test run**, and must **never
 launch tests from `sdk/kronk/tests`**. Those suites require managed libraries/models
 and belong to CI or deliberate human integration runs. Commands such as `make test`
-and `make test-stress` ([20.4.2](#2042-server-stress-probes)) exist as broad
+and `make test-adversarial` ([20.4.2](#2042-server-adversarial-probes)) exist as broad
 human/CI-maintainer context, but they are not the agent default. Do not use a broad
 command merely because focused ownership is unclear; inspect the owner.
 
@@ -965,8 +965,8 @@ owners rather than adding environment special cases to Go code.
 - [ ] Ensure `.github/test-models.txt` covers model-backed CI requirements.
 - [ ] Regenerate documentation and BUI assets; build the BUI and server embedding.
 - [ ] Confirm focused package checks and the four Linux CI jobs are green.
-- [ ] Run `make test-stress` against a generation-capable model on a machine that has
-      one, and review `zarf/tmp/kronk-stress/findings.txt`.
+- [ ] Run `make test-adversarial` against a generation-capable model on a machine that has
+      one, and review `.tools/adversarial/output/findings.txt`.
 - [ ] Review `.github/workflows/docker.yml` for the intended image variants and
       publication/signing behavior.
 - [ ] Review Nix dependency outputs if Go dependencies changed.

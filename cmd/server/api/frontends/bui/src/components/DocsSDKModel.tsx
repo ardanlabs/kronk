@@ -271,6 +271,7 @@ export default function DocsSDKModel() {
 	SystemFingerprint string   \`json:"system_fingerprint"\`
 	Choices           []Choice \`json:"choices"\`
 	Usage             *Usage   \`json:"usage,omitempty"\`
+	// Has unexported fields.
 }`}</code>
               </pre>
               <p className="doc-description">ChatResponse represents output for inference models.</p>

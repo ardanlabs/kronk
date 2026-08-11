@@ -890,6 +890,21 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 	return cfg
 }
 
+func adjustMTPBatch(cfg Config, mtpEnabled bool) Config {
+	if !mtpEnabled || cfg.NSeqMax() <= 1 || cfg.NBatch() <= cfg.NUBatch() {
+		return cfg
+	}
+
+	// Dense NextN rows are emitted in physical-ubatch order. A logical batch
+	// larger than NUBatch can therefore interleave multiple sequences while
+	// Kronk's MTP mirror still indexes rows in logical-batch order. Keep each
+	// target decode within one physical ubatch until llama.cpp exposes a full
+	// physical-to-logical row mapping for dense NextN output.
+	cfg.PtrNBatch = new(cfg.NUBatch())
+
+	return cfg
+}
+
 func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
 

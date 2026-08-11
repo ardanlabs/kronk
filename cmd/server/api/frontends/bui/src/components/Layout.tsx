@@ -177,7 +177,6 @@ const menuStructure: MenuCategory[] = [
             { page: 'docs-sdk-examples', label: 'Concurrency', hash: 'example-concurrency' },
             { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
             { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
-            { page: 'docs-sdk-examples', label: 'Lifecycle-Load', hash: 'example-lifecycle-load' },
             { page: 'docs-sdk-examples', label: 'Malina', hash: 'example-malina' },
             { page: 'docs-sdk-examples', label: 'Malina-Flux2', hash: 'example-malina-flux2' },
             { page: 'docs-sdk-examples', label: 'Malina-Img2img', hash: 'example-malina-img2img' },

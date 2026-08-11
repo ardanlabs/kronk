@@ -217,7 +217,7 @@ func (gb *grammarBuilder) objectToRule(name string, schema map[string]any) (stri
 			continue
 		}
 
-		propRuleName := fmt.Sprintf("%s_%s", name, key)
+		propRuleName := fmt.Sprintf("%s-%s", name, key)
 		propRule, err := gb.schemaToRule(propRuleName, propSchema)
 		if err != nil {
 			return "", err
@@ -254,7 +254,7 @@ func (gb *grammarBuilder) arrayToRule(name string, schema map[string]any) (strin
 		return "array", nil
 	}
 
-	itemRuleName := fmt.Sprintf("%s_item", name)
+	itemRuleName := fmt.Sprintf("%s-item", name)
 	itemRule, err := gb.schemaToRule(itemRuleName, items)
 	if err != nil {
 		return "", err
