@@ -65,10 +65,10 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 				candidateLCP = max(candidateLCP, lcp)
 			}
 		}
-		rollingExact := len(session.cachedTokens) == len(target)
-		rollingFingerprintOK := !rollingExact || exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK)
+		currentExact := len(session.cachedTokens) == len(target)
+		currentFingerprintOK := !currentExact || exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK)
 		if !session.hasMedia && len(session.cachedTokens) > 0 && session.kvState != nil && len(session.kvState.Bytes()) > 0 &&
-			tokensHavePrefix(target, session.cachedTokens) && rollingFingerprintOK {
+			tokensHavePrefix(target, session.cachedTokens) && currentFingerprintOK {
 			if len(session.cachedTokens) > bestLen || (len(session.cachedTokens) == bestLen && bestIsCheckpoint) {
 				best = session
 				bestIsCheckpoint = false
@@ -81,7 +81,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 		checkpointFingerprintOK := !checkpointExact || exactRenderFingerprintMatches(checkpoint.cachedRenderInputHash, renderFingerprint, fingerprintOK)
 		if checkpoint != nil && !checkpoint.hasMedia && len(checkpoint.cachedTokens) > 0 && checkpoint.kvState != nil && len(checkpoint.kvState.Bytes()) > 0 &&
 			tokensHavePrefix(target, checkpoint.cachedTokens) && checkpointFingerprintOK {
-			// Rolling wins ties so the common path does not churn snapshot
+			// Current wins ties so the common path does not churn snapshot
 			// ownership when both complete states describe the same prefix.
 			if len(checkpoint.cachedTokens) > bestLen {
 				best = session
@@ -151,7 +151,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	result.imcMatchKind = matchKind
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = matchKind == "exact"
-	result.imcPromoteCheckpoint = !clearSeq && len(extension) > 0 && selected.rollingEndsAtUser && !selected.hasMedia
+	result.imcPromoteCheckpoint = !clearSeq && len(extension) > 0 && selected.currentEndsAtUser && !selected.hasMedia
 	if candidateLCP > reusable {
 		result.imcCheckpointTokens = candidateLCP
 		result.imcPromoteCheckpoint = false

@@ -85,7 +85,7 @@ type imcSession struct {
 	lastUsed            time.Time     // Last access time (for eviction)
 	reserved            bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	allocatedContext    int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
-	highWaterContext    int           // Largest rolling context published for this session across reuse and snapshot ownership changes.
+	highWaterContext    int           // Largest current context published for this session across reuse and snapshot ownership changes.
 	peakContext         int           // Largest live slot context observed for this session, including generated output.
 	inputMessages       int           // Message count from the latest request completed by this session.
 	inputTokens         int           // Complete input token count from the latest request, including the generation-template tail.
@@ -103,13 +103,13 @@ type imcSession struct {
 	// changes to template inputs that are not represented by message tokens.
 	cachedRenderInputHash string
 
-	rollingEndsAtUser bool         // True when the rolling snapshot ends at a real user-turn boundary.
+	currentEndsAtUser bool         // True when the current snapshot ends at a real user-turn boundary.
 	turnCheckpoint    *imcSnapshot // Current reusable snapshot; it may end at a token-only boundary.
 }
 
-// imcSnapshot owns one externally restorable IMC state. Rolling
+// imcSnapshot owns one externally restorable IMC state. Current
 // state remains directly on imcSession for the hot path; turnCheckpoint uses
-// this shape so the planner can atomically swap a checkpoint into the rolling
+// this shape so the planner can atomically swap a checkpoint into the current
 // fields and then reuse the existing restore/extend machinery unchanged.
 type imcSnapshot struct {
 	cachedMsgsHash        string

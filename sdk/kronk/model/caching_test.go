@@ -373,7 +373,7 @@ func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
 		pendingH:              []float32{4, 5},
 		allocatedContext:      3,
 		cachedRenderInputHash: "render-user",
-		rollingEndsAtUser:     true,
+		currentEndsAtUser:     true,
 		reserved:              true,
 		turnCheckpoint: &imcSnapshot{
 			cachedTokens:      []llama.Token{9},
@@ -389,10 +389,10 @@ func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
 
 	checkpoint := session.turnCheckpoint
 	if checkpoint == nil {
-		t.Fatal("turnCheckpoint = nil, want promoted rolling state")
+		t.Fatal("turnCheckpoint = nil, want promoted current state")
 	}
 	if checkpoint.kvState != targetStore || checkpoint.draftKVState != draftStore {
-		t.Fatal("promoted checkpoint did not take ownership of rolling stores")
+		t.Fatal("promoted checkpoint did not take ownership of current stores")
 	}
 	if checkpoint.cachedMsgsHash != "user-boundary" || checkpoint.cachedMsgCount != 1 || checkpoint.totalTokensCached != 3 || !checkpoint.endsAtUser {
 		t.Errorf("promoted checkpoint metadata = %+v, want complete user boundary", checkpoint)
@@ -401,19 +401,19 @@ func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
 		t.Errorf("promoted pendingH = %v, want [4 5]", checkpoint.pendingH)
 	}
 	if session.kvState == nil || session.kvState == targetStore || session.kvState.Len() != 0 {
-		t.Fatal("rolling target store was not replaced with a fresh empty store")
+		t.Fatal("current target store was not replaced with a fresh empty store")
 	}
 	if session.draftKVState == nil || session.draftKVState == draftStore || session.draftKVState.Len() != 0 {
-		t.Fatal("rolling draft store was not replaced with a fresh empty store")
+		t.Fatal("current draft store was not replaced with a fresh empty store")
 	}
-	if session.totalTokensCached != 0 || session.cachedTokens != nil || session.rollingEndsAtUser {
-		t.Fatal("rolling metadata was not cleared before the new snapshot commit")
+	if session.totalTokensCached != 0 || session.cachedTokens != nil || session.currentEndsAtUser {
+		t.Fatal("current metadata was not cleared before the new snapshot commit")
 	}
 
-	// A failed new rolling snapshot must not discard the known-good boundary.
+	// A failed new current snapshot must not discard the known-good boundary.
 	m.imcInvalidateReservedSession(session)
 	if session.turnCheckpoint != checkpoint || checkpoint.kvState.Len() == 0 {
-		t.Fatal("rolling invalidation discarded the retained turn checkpoint")
+		t.Fatal("current invalidation discarded the retained turn checkpoint")
 	}
 
 	imcResetSession(session)

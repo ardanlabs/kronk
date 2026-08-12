@@ -474,25 +474,25 @@ generation, while a successfully published text build/extension can release it a
 the stable snapshot is committed. Restore only a committed snapshot whose complete
 token or media plan and expected version still match. Ordinary text build/extension
 prepares and commits through the session's existing store; if snapshot publication
-fails, invalidate that rolling state so later work rebuilds it rather than claiming the
+fails, invalidate that current state so later work rebuilds it rather than claiming the
 old or partial state is valid.
 
 Text planning compares complete token sequences and chooses the longest compatible
-rolling state or retained user-turn checkpoint. It never trims a snapshot at an
-internal token match. Before extending rolling state that ends at a real user message,
+current state or retained user-turn checkpoint. It never trims a snapshot at an
+internal token match. Before extending current state that ends at a real user message,
 move that complete state—including target KV and compatible own-KV MTP state—into the
-independent checkpoint and install fresh rolling stores. Rolling invalidation must not
+independent checkpoint and install fresh current stores. Current-state invalidation must not
 discard that checkpoint; full reset or LRU replacement must close both states.
 
 ##### Template stability and the one-alternate-snapshot tradeoff
 
-A text session currently retains the latest rolling snapshot and at most one additional
+A text session retains the latest current snapshot and at most one additional
 alternate reusable snapshot. The alternate can begin as a complete user-turn checkpoint
 and later become a progressive token-boundary checkpoint when Kronk restores an earlier
 state, recomputes to a longer exact common prefix, and snapshots that prefix. Publishing
 the progressive checkpoint replaces the prior alternate; Kronk does not also retain the
 older user-turn state. Thus, "one alternate snapshot" can mean two complete model states
-are allocated for the session—rolling plus alternate—but it never means two alternate
+are allocated for the session—current plus alternate—but it never means two alternate
 checkpoints. This is a deliberate host-memory tradeoff, not proof that the older boundary
 is unimportant.
 
@@ -508,7 +508,7 @@ state normally.
 An observed Gemma 4 MTP trace exposed a different pattern. The template's look-ahead
 continuation logic changed a previously rendered assistant/tool turn ending after later
 assistant messages were appended. Several tool-loop iterations diverged two tokens
-before the prior rolling boundary: 21,212 became a 21,210-token common prefix, 23,105
+before the prior current boundary: 21,212 became a 21,210-token common prefix, 23,105
 became 23,103, and later turns showed the same pattern. Progressive checkpoints sped up
 those intra-turn recoveries, but they displaced the older 11,799-token complete-user
 turn checkpoint. When a new user message subsequently removed prior-turn reasoning,
@@ -523,19 +523,19 @@ or incompatible. There are two independent stability questions:
 2. Does appending a real user message remove or relocate prior assistant reasoning?
 
 The current design performs well when the first answer is no because the one alternate
-checkpoint remains available for the second transition. Preserve the current one-
-rolling-plus-one-alternate design unless measurements justify its memory cost changing:
+checkpoint remains available for the second transition. Preserve the
+current-plus-one-alternate design unless measurements justify its memory cost changing:
 native sequence snapshots in the observed traces consumed hundreds of megabytes each,
 RAM stores retain peak backing capacity, and own-KV MTP configurations may require
 matching draft state as well.
 
 If this tradeoff is revisited, the smallest alternatives are:
 
-- Keep the current rolling snapshot and pin the one alternate as a complete-user-turn
+- Keep the current snapshot and pin the one alternate as a complete-user-turn
   checkpoint instead of replacing it with a progressive checkpoint. This preserves
   cross-user-turn recovery without adding a third complete state, but a template such
   as Gemma's may repeatedly recompute most of the current tool turn.
-- Add one on-demand progressive checkpoint, giving rolling, durable user-turn, and
+- Add one on-demand progressive checkpoint, giving current, durable user-turn, and
   progressive roles. Evict the progressive state first under memory pressure and
   prefer a byte budget over a snapshot-count limit. This would cover the observed
   Qwen and Gemma patterns but can add another full snapshot per affected session.
@@ -571,11 +571,11 @@ the restored target and must not allocate or restore an independent draft store.
 draft-only restore failure permits target-only fallback. Target-side rejection has two
 distinct outcomes: a stale expected-version mismatch is a retryable busy error and
 leaves the published session intact, while empty target bytes or a partial native target
-restore are request-fatal and invalidate the affected rolling state.
+restore are request-fatal and invalidate the affected current state.
 
 Snapshot publication failures also differ by path. Ordinary text build/append and
-initial media build write through the rolling store; incomplete target serialization
-invalidates that rolling cache state, but target generation for the current request can
+initial media build write through the current store; incomplete target serialization
+invalidates that current cache state, but target generation for the current request can
 continue. Media-anchor advancement instead uses a replacement store and requires a
 complete staged snapshot before swapping metadata; decode or snapshot failure fails the
 request while preserving the old published anchor.
