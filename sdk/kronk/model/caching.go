@@ -46,7 +46,7 @@ type cacheResult struct {
 	imcMediaAnchorAdvance  bool // True when text after a media anchor should be atomically committed as a larger snapshot.
 	imcNewLogicalPosition  int  // Next logical position after a media-anchor advance.
 	imcPureHitSkipSnapshot bool // True when startSlot may skip the post-restore snapshot.
-	imcPromoteCheckpoint   bool // True when the selected rolling user boundary must be retained before extension commit.
+	imcPromoteCheckpoint   bool // True when the selected current user boundary must be retained before extension commit.
 	imcCheckpointTokens    int  // Exact target token boundary at which to publish a progressive reusable snapshot.
 
 	// imcSession is the matched session pointer; the SessionStore on it
@@ -59,7 +59,7 @@ type cacheResult struct {
 	imcNewTotalCached    int           // Total cached KV positions after extension
 	imcNewCachedMsgCount int           // New cachedMsgCount after extension
 	imcNewMsgsHash       string        // New cachedMsgsHash after extension
-	imcNewEndsAtUser     bool          // True when the new rolling snapshot ends at a real user message.
+	imcNewEndsAtUser     bool          // True when the new current snapshot ends at a real user message.
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild from scratch)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 

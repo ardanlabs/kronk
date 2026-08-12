@@ -545,7 +545,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				if decodeErr == nil {
 					checkpointPublished := e.snapshotProgressiveCheckpoint(job.ctx, s, job, job.imcCheckpointTokens)
 					if !checkpointPublished && job.reusedPromptTokens > 0 {
-						preserved, preserveErr := e.model.imcPreserveRollingSnapshot(job.ctx, job.imcSession, false)
+						preserved, preserveErr := e.model.imcPreserveCurrentSnapshot(job.ctx, job.imcSession, false)
 						if preserveErr != nil || !preserved {
 							sessionUpdateDisabled = true
 							e.model.log(job.ctx, "start-slot", "status", "imc-progressive-update-disabled",

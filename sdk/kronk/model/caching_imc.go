@@ -184,7 +184,7 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	return nil
 }
 
-func (s *imcSession) takeRollingSnapshot() imcSnapshot {
+func (s *imcSession) takeCurrentSnapshot() imcSnapshot {
 	snapshot := imcSnapshot{
 		cachedMsgsHash:        s.cachedMsgsHash,
 		cachedTokens:          s.cachedTokens,
@@ -201,15 +201,15 @@ func (s *imcSession) takeRollingSnapshot() imcSnapshot {
 		promptPlan:            s.promptPlan,
 		samplerPromptTokens:   s.samplerPromptTokens,
 		cachedRenderInputHash: s.cachedRenderInputHash,
-		endsAtUser:            s.rollingEndsAtUser,
+		endsAtUser:            s.currentEndsAtUser,
 	}
 
-	s.installRollingSnapshot(imcSnapshot{})
+	s.installCurrentSnapshot(imcSnapshot{})
 
 	return snapshot
 }
 
-func (s *imcSession) installRollingSnapshot(snapshot imcSnapshot) {
+func (s *imcSession) installCurrentSnapshot(snapshot imcSnapshot) {
 	s.cachedMsgsHash = snapshot.cachedMsgsHash
 	s.cachedTokens = snapshot.cachedTokens
 	s.totalTokensCached = snapshot.totalTokensCached
@@ -225,7 +225,7 @@ func (s *imcSession) installRollingSnapshot(snapshot imcSnapshot) {
 	s.promptPlan = snapshot.promptPlan
 	s.samplerPromptTokens = snapshot.samplerPromptTokens
 	s.cachedRenderInputHash = snapshot.cachedRenderInputHash
-	s.rollingEndsAtUser = snapshot.endsAtUser
+	s.currentEndsAtUser = snapshot.endsAtUser
 }
 
 func (s *imcSession) swapTurnCheckpoint() {
@@ -233,9 +233,9 @@ func (s *imcSession) swapTurnCheckpoint() {
 		return
 	}
 
-	rolling := s.takeRollingSnapshot()
-	s.installRollingSnapshot(*s.turnCheckpoint)
-	s.turnCheckpoint = &rolling
+	current := s.takeCurrentSnapshot()
+	s.installCurrentSnapshot(*s.turnCheckpoint)
+	s.turnCheckpoint = &current
 }
 
 func closeIMCSnapshot(snapshot *imcSnapshot) {
@@ -250,7 +250,7 @@ func closeIMCSnapshot(snapshot *imcSnapshot) {
 	}
 }
 
-func imcResetRollingSession(s *imcSession) {
+func imcResetCurrentSession(s *imcSession) {
 	if s == nil {
 		return
 	}
@@ -276,7 +276,7 @@ func imcResetRollingSession(s *imcSession) {
 	s.promptPlan = promptPlan{}
 	s.samplerPromptTokens = nil
 	s.cachedRenderInputHash = ""
-	s.rollingEndsAtUser = false
+	s.currentEndsAtUser = false
 }
 
 // imcResetSession clears all metadata on an IMC session, returning it to
@@ -290,7 +290,7 @@ func imcResetSession(s *imcSession) {
 	if s.turnCheckpoint != nil && s.turnCheckpoint.allocatedContext > s.allocatedContext {
 		s.swapTurnCheckpoint()
 	}
-	imcResetRollingSession(s)
+	imcResetCurrentSession(s)
 	closeIMCSnapshot(s.turnCheckpoint)
 	s.turnCheckpoint = nil
 	s.inputMessages = 0
@@ -315,7 +315,7 @@ func (m *Model) imcReleaseReservation(sessionID int) {
 	m.cacheMu.Unlock()
 }
 
-// imcInvalidateReservedSession removes corrupt rolling state while preserving
+// imcInvalidateReservedSession removes corrupt current state while preserving
 // both this request's reservation and any independent turn checkpoint.
 func (m *Model) imcInvalidateReservedSession(session *imcSession) {
 	if session == nil {
@@ -323,33 +323,33 @@ func (m *Model) imcInvalidateReservedSession(session *imcSession) {
 	}
 
 	m.cacheMu.Lock()
-	imcResetRollingSession(session)
+	imcResetCurrentSession(session)
 	session.seqID = imcSeqIDUnbound
 	session.reserved = true
 	m.cacheMu.Unlock()
 }
 
-// imcPromoteTurnCheckpoint moves the selected rolling user-boundary snapshot
-// into the retained checkpoint and installs fresh rolling stores. The slot has
+// imcPromoteTurnCheckpoint moves the selected current user-boundary snapshot
+// into the retained checkpoint and installs fresh current stores. The slot has
 // already restored and extended the model state, so moving host-side ownership
-// avoids a snapshot-sized byte copy. If the new rolling snapshot later fails,
-// invalidation clears only rolling state and leaves this checkpoint reusable.
+// avoids a snapshot-sized byte copy. If the new current snapshot later fails,
+// invalidation clears only current state and leaves this checkpoint reusable.
 func (m *Model) imcPromoteTurnCheckpoint(ctx context.Context, session *imcSession) error {
-	_, err := m.imcPreserveRollingSnapshot(ctx, session, true)
+	_, err := m.imcPreserveCurrentSnapshot(ctx, session, true)
 	return err
 }
 
-// imcPreserveRollingSnapshot moves the current rolling snapshot into the
-// reusable position and installs fresh rolling stores. When requireUser is
+// imcPreserveCurrentSnapshot moves the current snapshot into the reusable
+// position and installs fresh current stores. When requireUser is
 // true, only a complete user-message boundary qualifies for preservation.
-func (m *Model) imcPreserveRollingSnapshot(ctx context.Context, session *imcSession, requireUser bool) (bool, error) {
+func (m *Model) imcPreserveCurrentSnapshot(ctx context.Context, session *imcSession, requireUser bool) (bool, error) {
 	if session == nil {
 		return false, nil
 	}
 
 	targetStore, err := newSessionStore(m.cfg)
 	if err != nil {
-		return false, fmt.Errorf("create rolling session store: %w", err)
+		return false, fmt.Errorf("create current session store: %w", err)
 	}
 
 	var draftStore SessionStore
@@ -357,12 +357,12 @@ func (m *Model) imcPreserveRollingSnapshot(ctx context.Context, session *imcSess
 		draftStore, err = newSessionStore(m.cfg)
 		if err != nil {
 			_ = targetStore.Close()
-			return false, fmt.Errorf("create rolling draft session store: %w", err)
+			return false, fmt.Errorf("create current draft session store: %w", err)
 		}
 	}
 
 	m.cacheMu.Lock()
-	if requireUser && !session.rollingEndsAtUser || session.hasMedia || session.totalTokensCached == 0 || session.kvState == nil || session.kvState.Len() == 0 {
+	if requireUser && !session.currentEndsAtUser || session.hasMedia || session.totalTokensCached == 0 || session.kvState == nil || session.kvState.Len() == 0 {
 		m.cacheMu.Unlock()
 		_ = targetStore.Close()
 		if draftStore != nil {
@@ -372,8 +372,8 @@ func (m *Model) imcPreserveRollingSnapshot(ctx context.Context, session *imcSess
 	}
 
 	oldCheckpoint := session.turnCheckpoint
-	checkpoint := session.takeRollingSnapshot()
-	session.installRollingSnapshot(imcSnapshot{
+	checkpoint := session.takeCurrentSnapshot()
+	session.installCurrentSnapshot(imcSnapshot{
 		kvState:      targetStore,
 		draftKVState: draftStore,
 	})
@@ -422,7 +422,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 	session.hasMedia = hasMedia
 	session.mediaKVCounts = mediaKVCounts
 	session.cachedRenderInputHash = renderInputHash
-	session.rollingEndsAtUser = endsAtUser
+	session.currentEndsAtUser = endsAtUser
 	session.samplerPromptTokens = nil
 	if !hasMedia {
 		session.useMRoPE = false
@@ -466,7 +466,7 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	session.promptPlan = plan
 	session.samplerPromptTokens = samplerPromptTokens
 	session.cachedRenderInputHash = renderInputHash
-	session.rollingEndsAtUser = endsAtUser
+	session.currentEndsAtUser = endsAtUser
 	session.lastUsed = time.Now()
 	session.cachedTokens = nil
 	session.allocatedContext = max(session.allocatedContext, totalCached)

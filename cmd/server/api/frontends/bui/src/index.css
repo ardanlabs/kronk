@@ -1138,6 +1138,40 @@ tr.selected:hover td {
     border-top-left-radius: 0;
 }
 
+.imc-table-groups th {
+    vertical-align: middle;
+}
+
+.imc-table-group {
+    text-align: center;
+    border-left: 1px solid var(--color-gray-200);
+}
+
+.imc-table-group-current,
+.imc-current-cell,
+.imc-capacity-cell {
+    background: color-mix(in srgb, var(--color-orange) 5%, transparent);
+}
+
+.imc-table-group-session,
+.imc-table-group-fallback,
+.imc-table-group-details,
+.imc-fallback-cell {
+    background: color-mix(in srgb, var(--color-blue) 5%, transparent);
+}
+
+.imc-table-columns th:nth-child(1),
+.imc-table-columns th:nth-child(4),
+.imc-table-columns th:nth-child(7),
+.imc-table-columns th:nth-child(9),
+.imc-table-columns th:nth-child(11),
+.imc-sessions-table tbody td:nth-child(4),
+.imc-sessions-table tbody td:nth-child(7),
+.imc-sessions-table tbody td:nth-child(9),
+.imc-sessions-table tbody td:nth-child(11) {
+    border-left: 1px solid var(--color-gray-200);
+}
+
 /* Documentation Styles */
 .doc-layout {
     display: flex;

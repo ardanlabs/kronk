@@ -215,20 +215,20 @@ func TestProcessIMCTokenPlanUsesTurnCheckpointWhenTemplateMovesLastAssistantReas
 	}
 	wantCheckpoint := commonTokenPrefixLen(firstStable, secondStable)
 	if result.imcCheckpointTokens != wantCheckpoint {
-		t.Errorf("imcCheckpointTokens = %d, want divergent rolling LCP %d", result.imcCheckpointTokens, wantCheckpoint)
+		t.Errorf("imcCheckpointTokens = %d, want divergent current LCP %d", result.imcCheckpointTokens, wantCheckpoint)
 	}
 	if !m.imcSessions[0].reserved {
 		t.Error("checkpoint session was not reserved")
 	}
 	if !slices.Equal(m.imcSessions[0].cachedTokens, checkpointTokens) {
-		t.Errorf("rolling tokens after selection = %v, want checkpoint %v", m.imcSessions[0].cachedTokens, checkpointTokens)
+		t.Errorf("current tokens after selection = %v, want checkpoint %v", m.imcSessions[0].cachedTokens, checkpointTokens)
 	}
 	if m.imcSessions[0].turnCheckpoint == nil || !slices.Equal(m.imcSessions[0].turnCheckpoint.cachedTokens, firstStable) {
-		t.Error("prior rolling snapshot was not retained after checkpoint selection swap")
+		t.Error("prior current snapshot was not retained after checkpoint selection swap")
 	}
 }
 
-func TestProcessIMCTokenPlanPrefersLongerRollingSnapshotOverCheckpoint(t *testing.T) {
+func TestProcessIMCTokenPlanPrefersLongerCurrentSnapshotOverCheckpoint(t *testing.T) {
 	session := &imcSession{
 		id:                0,
 		cachedTokens:      []llama.Token{1, 2, 3},
@@ -250,10 +250,10 @@ func TestProcessIMCTokenPlanPrefersLongerRollingSnapshotOverCheckpoint(t *testin
 	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3, 4, 5}, []llama.Token{1, 2, 3, 4}, time.Now())
 
 	if result.cacheIdx != 3 {
-		t.Errorf("cacheIdx = %d, want longer rolling prefix 3", result.cacheIdx)
+		t.Errorf("cacheIdx = %d, want longer current prefix 3", result.cacheIdx)
 	}
 	if !slices.Equal(session.cachedTokens, []llama.Token{1, 2, 3}) {
-		t.Error("planner swapped in shorter checkpoint instead of retaining rolling state")
+		t.Error("planner swapped in shorter checkpoint instead of retaining current state")
 	}
 }
 

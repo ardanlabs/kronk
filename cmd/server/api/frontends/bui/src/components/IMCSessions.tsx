@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import type { IMCSessionsResponse } from '../types';
 import { labelWithTip, PARAM_TOOLTIPS, type TooltipKey } from './ParamTooltips';
 
-type SortField = 'model_id' | 'id' | 'state' | 'messages' | 'context' | 'input_messages' | 'input_tokens' | 'reusable_messages' | 'reusable_tokens' | 'output_tokens' | 'request_total' | 'request_utilization' | 'total_allocated' | 'peak_context' | 'context_window' | 'utilization' | 'last_used' | 'has_media';
+type SortField = 'model_id' | 'id' | 'state' | 'messages' | 'context' | 'allocated' | 'reusable_tokens' | 'checkpoint_allocated' | 'peak_context' | 'utilization' | 'last_used' | 'has_media';
 
 const STATE_ORDER = { active: 0, idle: 1, empty: 2 } as const;
 const ALL_MODELS = '';
@@ -12,19 +12,13 @@ const FIELD_GUIDE: ReadonlyArray<{ label: string; tooltipKey: TooltipKey }> = [
   { label: 'Model', tooltipKey: 'imcModelID' },
   { label: 'Cache Entry', tooltipKey: 'imcSessionID' },
   { label: 'State', tooltipKey: 'imcState' },
-  { label: 'Last Req Msgs', tooltipKey: 'imcInputMessages' },
-  { label: 'Last Req Input', tooltipKey: 'imcInputTokens' },
-  { label: 'Last Req Output', tooltipKey: 'imcOutputTokens' },
-  { label: 'Last Req Total', tooltipKey: 'imcRequestTotal' },
-  { label: 'Last Req Used', tooltipKey: 'imcRequestUtilization' },
-  { label: 'Rolling Msgs', tooltipKey: 'imcMessages' },
-  { label: 'Rolling Tokens', tooltipKey: 'imcContext' },
-  { label: 'Fallback Msgs', tooltipKey: 'imcFallbackMessages' },
+  { label: 'Current Messages', tooltipKey: 'imcMessages' },
+  { label: 'Current Tokens', tooltipKey: 'imcContext' },
+  { label: 'Current Allocated', tooltipKey: 'imcAllocated' },
   { label: 'Fallback Tokens', tooltipKey: 'imcFallbackTokens' },
-  { label: 'Total Allocated', tooltipKey: 'imcTotalAllocated' },
+  { label: 'Fallback Allocated', tooltipKey: 'imcCheckpointAllocated' },
   { label: 'Peak Context', tooltipKey: 'imcPeakContext' },
   { label: 'Peak Used', tooltipKey: 'imcUtilization' },
-  { label: 'Window', tooltipKey: 'imcContextWindow' },
   { label: 'Media', tooltipKey: 'imcMedia' },
   { label: 'Last Used', tooltipKey: 'imcLastUsed' },
 ];
@@ -39,10 +33,6 @@ function formatDate(dateStr: string): string {
 function utilization(peakContext: number, contextWindow: number): string {
   if (contextWindow <= 0) return '0%';
   return `${((peakContext / contextWindow) * 100).toFixed(1)}%`;
-}
-
-function requestTotal(inputTokens: number, outputTokens: number): number {
-  return inputTokens + outputTokens;
 }
 
 function modelTabLabel(modelID: string): string {
@@ -137,36 +127,17 @@ export default function IMCSessions() {
       case 'context':
         comparison = a.context - b.context;
         break;
-      case 'input_messages':
-        comparison = a.input_messages - b.input_messages;
-        break;
-      case 'input_tokens':
-        comparison = a.input_tokens - b.input_tokens;
-        break;
-      case 'reusable_messages':
-        comparison = a.reusable_messages - b.reusable_messages;
+      case 'allocated':
+        comparison = a.allocated - b.allocated;
         break;
       case 'reusable_tokens':
         comparison = a.reusable_tokens - b.reusable_tokens;
         break;
-      case 'output_tokens':
-        comparison = a.output_tokens - b.output_tokens;
-        break;
-      case 'request_total':
-        comparison = requestTotal(a.input_tokens, a.output_tokens) - requestTotal(b.input_tokens, b.output_tokens);
-        break;
-      case 'request_utilization':
-        comparison = (a.context_window > 0 ? requestTotal(a.input_tokens, a.output_tokens) / a.context_window : 0)
-          - (b.context_window > 0 ? requestTotal(b.input_tokens, b.output_tokens) / b.context_window : 0);
-        break;
-      case 'total_allocated':
-        comparison = a.total_allocated - b.total_allocated;
+      case 'checkpoint_allocated':
+        comparison = a.checkpoint_allocated - b.checkpoint_allocated;
         break;
       case 'peak_context':
         comparison = a.peak_context - b.peak_context;
-        break;
-      case 'context_window':
-        comparison = a.context_window - b.context_window;
         break;
       case 'utilization':
         comparison = (a.context_window > 0 ? a.peak_context / a.context_window : 0)
@@ -192,7 +163,7 @@ export default function IMCSessions() {
         <div>
           <h2>IMC Sessions</h2>
           <p className="page-description">
-            Current bounded Incremental Message Cache entries for loaded models
+            Current working and fallback cache snapshots for loaded models
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -265,9 +236,18 @@ export default function IMCSessions() {
           <div className="loading">Loading IMC sessions...</div>
         ) : sortedData && sortedData.length > 0 ? (
           <div style={{ overflowX: 'auto' }}>
-            <table>
+            <table className="imc-sessions-table">
               <thead>
-                <tr>
+                <tr className="imc-table-groups">
+                  <th colSpan={3} className="imc-table-group imc-table-group-session">Session</th>
+                  <th colSpan={3} className="imc-table-group imc-table-group-current">
+                    Current Working Cache
+                  </th>
+                  <th colSpan={2} className="imc-table-group imc-table-group-fallback">Fallback Cache</th>
+                  <th colSpan={2} className="imc-table-group imc-table-group-capacity">Capacity / Usage</th>
+                  <th colSpan={2} className="imc-table-group imc-table-group-details">Details</th>
+                </tr>
+                <tr className="imc-table-columns">
                   <th onClick={() => handleSort('model_id')} className="catalog-table-sortable">
                     {labelWithTip('Model', 'imcModelID')}{sortIndicator('model_id')}
                   </th>
@@ -277,44 +257,26 @@ export default function IMCSessions() {
                   <th onClick={() => handleSort('state')} className="catalog-table-sortable">
                     {labelWithTip('State', 'imcState')}{sortIndicator('state')}
                   </th>
-                  <th onClick={() => handleSort('input_messages')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Last Req Msgs', 'imcInputMessages')}{sortIndicator('input_messages')}
-                  </th>
-                  <th onClick={() => handleSort('input_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Last Req Input', 'imcInputTokens')}{sortIndicator('input_tokens')}
-                  </th>
-                  <th onClick={() => handleSort('output_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Last Req Output', 'imcOutputTokens')}{sortIndicator('output_tokens')}
-                  </th>
-                  <th onClick={() => handleSort('request_total')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Last Req Total', 'imcRequestTotal')}{sortIndicator('request_total')}
-                  </th>
-                  <th onClick={() => handleSort('request_utilization')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Last Req Used', 'imcRequestUtilization')}{sortIndicator('request_utilization')}
-                  </th>
                   <th onClick={() => handleSort('messages')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Rolling Msgs', 'imcMessages')}{sortIndicator('messages')}
+                    {labelWithTip('Messages', 'imcMessages')}{sortIndicator('messages')}
                   </th>
                   <th onClick={() => handleSort('context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Rolling Tokens', 'imcContext')}{sortIndicator('context')}
+                    {labelWithTip('Tokens', 'imcContext')}{sortIndicator('context')}
                   </th>
-                  <th onClick={() => handleSort('reusable_messages')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Fallback Msgs', 'imcFallbackMessages')}{sortIndicator('reusable_messages')}
+                  <th onClick={() => handleSort('allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Allocated', 'imcAllocated')}{sortIndicator('allocated')}
                   </th>
                   <th onClick={() => handleSort('reusable_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Fallback Tokens', 'imcFallbackTokens')}{sortIndicator('reusable_tokens')}
+                    {labelWithTip('Tokens', 'imcFallbackTokens')}{sortIndicator('reusable_tokens')}
                   </th>
-                  <th onClick={() => handleSort('total_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Total Allocated', 'imcTotalAllocated')}{sortIndicator('total_allocated')}
+                  <th onClick={() => handleSort('checkpoint_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Allocated', 'imcCheckpointAllocated')}{sortIndicator('checkpoint_allocated')}
                   </th>
                   <th onClick={() => handleSort('peak_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Peak Context', 'imcPeakContext')}{sortIndicator('peak_context')}
                   </th>
                   <th onClick={() => handleSort('utilization')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Peak Used', 'imcUtilization')}{sortIndicator('utilization')}
-                  </th>
-                  <th onClick={() => handleSort('context_window')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Window', 'imcContextWindow')}{sortIndicator('context_window')}
                   </th>
                   <th onClick={() => handleSort('has_media')} className="catalog-table-sortable">
                     {labelWithTip('Media', 'imcMedia')}{sortIndicator('has_media')}
@@ -330,19 +292,13 @@ export default function IMCSessions() {
                     <td>{session.model_id}</td>
                     <td>{session.id}</td>
                     <td><span className={`badge badge-${session.state}`}>{session.state}</span></td>
-                    <td style={{ textAlign: 'right' }}>{session.input_messages.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.input_tokens.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.output_tokens.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{requestTotal(session.input_tokens, session.output_tokens).toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{utilization(requestTotal(session.input_tokens, session.output_tokens), session.context_window)}</td>
-                    <td style={{ textAlign: 'right' }}>{session.messages.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.context.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.reusable_tokens > 0 && session.reusable_messages === 0 ? '—' : session.reusable_messages.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.reusable_tokens.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.total_allocated.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{session.peak_context.toLocaleString()}</td>
-                    <td style={{ textAlign: 'right' }}>{utilization(session.peak_context, session.context_window)}</td>
-                    <td style={{ textAlign: 'right' }}>{session.context_window.toLocaleString()}</td>
+                    <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.messages.toLocaleString()}</td>
+                    <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.context.toLocaleString()}</td>
+                    <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.allocated.toLocaleString()}</td>
+                    <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.reusable_tokens > 0 ? session.reusable_tokens.toLocaleString() : '—'}</td>
+                    <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.checkpoint_allocated > 0 ? session.checkpoint_allocated.toLocaleString() : '—'}</td>
+                    <td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{session.peak_context.toLocaleString()}</td>
+                    <td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{utilization(session.peak_context, session.context_window)}</td>
                     <td><span className={`badge badge-${session.has_media ? 'yes' : 'no'}`}>{session.has_media ? 'yes' : 'no'}</span></td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(session.last_used)}</td>
                   </tr>
