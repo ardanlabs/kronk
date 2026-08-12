@@ -398,8 +398,8 @@ func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
 	if checkpoint.cachedMsgsHash != "user-boundary" || checkpoint.cachedMsgCount != 1 || checkpoint.totalTokensCached != 3 || !checkpoint.endsAtUser {
 		t.Errorf("promoted checkpoint metadata = %+v, want complete user boundary", checkpoint)
 	}
-	if session.fallbackUpdates != 1 {
-		t.Errorf("fallback updates = %d, want 1", session.fallbackUpdates)
+	if session.fallbackUpdates != 0 {
+		t.Errorf("fallback updates = %d, want 0 when restoring a selected fallback", session.fallbackUpdates)
 	}
 	if session.fallbackSelected {
 		t.Error("fallback selection remained active after checkpoint promotion")
@@ -426,6 +426,28 @@ func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
 	imcResetSession(session)
 	if session.turnCheckpoint != nil {
 		t.Fatal("full session reset retained a turn checkpoint")
+	}
+}
+
+func TestIMCPromoteTurnCheckpointCountsNewFallback(t *testing.T) {
+	session := &imcSession{
+		cachedTokens:      []llama.Token{1},
+		totalTokensCached: 1,
+		cachedMsgCount:    1,
+		kvState:           populatedTestSessionStore(),
+		currentEndsAtUser: true,
+	}
+	m := Model{log: applog.DiscardLogger}
+
+	if err := m.imcPromoteTurnCheckpoint(context.Background(), session); err != nil {
+		t.Fatalf("imcPromoteTurnCheckpoint: %v", err)
+	}
+	t.Cleanup(func() {
+		imcResetSession(session)
+	})
+
+	if session.fallbackUpdates != 1 {
+		t.Errorf("fallback updates = %d, want 1 for a new fallback", session.fallbackUpdates)
 	}
 }
 
@@ -945,8 +967,8 @@ func TestIMCSessions(t *testing.T) {
 	}
 	oldVersion := m.imcBeginRequestUsage(m.imcSessions[0])
 	newVersion := m.imcBeginRequestUsage(m.imcSessions[0])
-	m.imcRecordRequestUsage(m.imcSessions[0], oldVersion, 6, 3500, 1500, 5000)
-	m.imcRecordRequestUsage(m.imcSessions[0], newVersion, 8, 3000, 1000, 4000)
+	m.imcRecordRequestUsage(m.imcSessions[0], oldVersion, 6, 3500, 1500, 4999)
+	m.imcRecordRequestUsage(m.imcSessions[0], newVersion, 8, 3000, 1000, 3999)
 	got = m.IMCSessions()
 	if got[0].TotalAllocated != 5000 || got[0].PeakContext != 5000 || got[0].InputMessages != 8 || got[0].InputTokens != 3000 || got[0].OutputTokens != 1000 {
 		t.Errorf("request usage = %+v, want latest 8/3000/1000 and peak 5000", got[0])

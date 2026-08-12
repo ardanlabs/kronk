@@ -139,7 +139,7 @@ func (m *Model) imcRecordRequestUsage(session *imcSession, version uint64, input
 
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
-	session.peakContext = max(session.peakContext, context)
+	session.peakContext = max(session.peakContext, context, inputTokens+outputTokens)
 	if version == 0 || session.usageVersion != version {
 		return
 	}
@@ -396,13 +396,16 @@ func (m *Model) imcPreserveCurrentSnapshot(ctx context.Context, session *imcSess
 
 	oldCheckpoint := session.turnCheckpoint
 	checkpoint := session.takeCurrentSnapshot()
+	fallbackAdvanced := !session.fallbackSelected
 	session.installCurrentSnapshot(imcSnapshot{
 		kvState:      targetStore,
 		draftKVState: draftStore,
 	})
 	session.turnCheckpoint = &checkpoint
 	session.fallbackSelected = false
-	session.fallbackUpdates++
+	if fallbackAdvanced {
+		session.fallbackUpdates++
+	}
 	m.cacheMu.Unlock()
 
 	closeIMCSnapshot(oldCheckpoint)
