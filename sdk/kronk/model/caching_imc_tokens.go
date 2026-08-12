@@ -13,7 +13,7 @@ import (
 // processIMCTokenPlan selects a text session using cached tokens as the
 // authority. Only complete cached sequences are reusable; divergence never
 // trims an existing session and instead rebuilds an empty/LRU session.
-func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []llama.Token, requestStart time.Time) cacheResult {
+func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []llama.Token, finalUserBoundary int, requestStart time.Time) cacheResult {
 	result := cacheResult{modifiedD: d}
 	if len(actual) == 0 || len(stable) >= len(actual) || !tokensHavePrefix(actual, stable) {
 		return result
@@ -42,7 +42,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	var best *imcSession
 	var bestIsCheckpoint bool
 	var bestLen int
-	var candidateLCP int
+	var candidateUserBoundary int
 	var empty *imcSession
 	var lru *imcSession
 	for _, session := range m.imcSessions {
@@ -61,8 +61,8 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 		}
 		if !session.hasMedia && len(session.cachedTokens) > 0 {
 			lcp := commonTokenPrefixLen(session.cachedTokens, target)
-			if lcp >= m.cfg.CacheMinTokens() && lcp < len(session.cachedTokens) && lcp < len(target) {
-				candidateLCP = max(candidateLCP, lcp)
+			if finalUserBoundary >= m.cfg.CacheMinTokens() && finalUserBoundary <= lcp && finalUserBoundary < len(session.cachedTokens) && finalUserBoundary < len(target) {
+				candidateUserBoundary = finalUserBoundary
 			}
 		}
 		currentExact := len(session.cachedTokens) == len(target)
@@ -100,6 +100,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	if best != nil {
 		if bestIsCheckpoint {
 			best.swapTurnCheckpoint()
+			best.fallbackSelected = true
 		}
 		reusable = len(best.cachedTokens)
 		extension = slices.Clone(target[reusable:])
@@ -152,15 +153,15 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable []l
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = matchKind == "exact"
 	result.imcPromoteCheckpoint = !clearSeq && len(extension) > 0 && selected.currentEndsAtUser && !selected.hasMedia
-	if candidateLCP > reusable {
-		result.imcCheckpointTokens = candidateLCP
+	if candidateUserBoundary > reusable {
+		result.imcCheckpointTokens = candidateUserBoundary
 		result.imcPromoteCheckpoint = false
 	}
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
 		"imc_cache_entry", selected.id, "match_kind", matchKind, "match_reason", matchReason, "reusable_tokens", reusable,
-		"candidate_lcp_tokens", candidateLCP, "recomputed_to_checkpoint", max(0, result.imcCheckpointTokens-reusable),
+		"candidate_user_boundary_tokens", candidateUserBoundary, "recomputed_to_checkpoint", max(0, result.imcCheckpointTokens-reusable),
 		"reusable_snapshot_tokens", result.imcCheckpointTokens, "reusable_snapshot_messages", 0,
 		"full_input_snapshot_tokens", targetLen, "full_input_snapshot_messages", messageCount(d),
 		"extension_tokens", len(extension), "tail_tokens", len(tail), "actual_tokens", len(actual),

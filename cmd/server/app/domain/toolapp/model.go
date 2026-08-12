@@ -589,6 +589,8 @@ type IMCSessionDetail struct {
 	OutputTokens        int       `json:"output_tokens"`
 	ReusableMessages    int       `json:"reusable_messages"`
 	ReusableTokens      int       `json:"reusable_tokens"`
+	FallbackKind        string    `json:"fallback_kind"`
+	FallbackUpdates     uint64    `json:"fallback_updates"`
 	ContextWindow       int       `json:"context_window"`
 	LastUsed            time.Time `json:"last_used"`
 	HasMedia            bool      `json:"has_media"`
@@ -623,6 +625,8 @@ func toIMCSessions(sessions []pool.IMCSessionDetail) IMCSessionsResponse {
 			OutputTokens:        session.OutputTokens,
 			ReusableMessages:    session.ReusableMessages,
 			ReusableTokens:      session.ReusableTokens,
+			FallbackKind:        session.FallbackKind,
+			FallbackUpdates:     session.FallbackUpdates,
 			ContextWindow:       session.ContextWindow,
 			LastUsed:            session.LastUsed,
 			HasMedia:            session.HasMedia,

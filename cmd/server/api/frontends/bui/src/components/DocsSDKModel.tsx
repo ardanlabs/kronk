@@ -480,6 +480,8 @@ export default function DocsSDKModel() {
 	OutputTokens        int
 	ReusableTokens      int
 	ReusableMessages    int
+	FallbackKind        string
+	FallbackUpdates     uint64
 	ContextWindow       int
 	LastUsed            time.Time
 	HasMedia            bool

@@ -41,6 +41,8 @@ type IMCSessionDetail struct {
 	OutputTokens        int
 	ReusableTokens      int
 	ReusableMessages    int
+	FallbackKind        string
+	FallbackUpdates     uint64
 	ContextWindow       int
 	LastUsed            time.Time
 	HasMedia            bool
@@ -59,14 +61,29 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 		}
 
 		context := session.totalTokensCached
+		allocated := max(session.allocatedContext, context)
 		checkpointContext := 0
 		checkpointAllocated := 0
 		reusableMessages := 0
+		fallbackKind := ""
+		retainedCheckpointAllocated := 0
 		if checkpoint := session.turnCheckpoint; checkpoint != nil {
+			retainedCheckpointAllocated = max(checkpoint.allocatedContext, checkpoint.totalTokensCached)
 			checkpointContext = checkpoint.totalTokensCached
-			checkpointAllocated = checkpoint.allocatedContext
+			checkpointAllocated = retainedCheckpointAllocated
 			reusableMessages = checkpoint.cachedMsgCount
+			fallbackKind = "calculating"
+			if checkpoint.endsAtUser {
+				fallbackKind = "user"
+			}
 		}
+		if session.fallbackSelected {
+			checkpointContext = context
+			checkpointAllocated = allocated
+			reusableMessages = session.cachedMsgCount
+			fallbackKind = "calculating"
+		}
+		peakContext := max(session.peakContext, session.highWaterContext, allocated, retainedCheckpointAllocated)
 
 		state := IMCSessionStateEmpty
 		switch {
@@ -80,17 +97,19 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 			ID:                  session.id,
 			State:               state,
 			Context:             context,
-			Allocated:           session.allocatedContext,
+			Allocated:           allocated,
 			CheckpointContext:   checkpointContext,
 			CheckpointAllocated: checkpointAllocated,
-			TotalAllocated:      max(session.peakContext, session.highWaterContext, session.allocatedContext),
-			PeakContext:         max(session.peakContext, session.highWaterContext, session.allocatedContext),
+			TotalAllocated:      peakContext,
+			PeakContext:         peakContext,
 			Messages:            session.cachedMsgCount,
 			InputMessages:       session.inputMessages,
 			InputTokens:         session.inputTokens,
 			OutputTokens:        session.outputTokens,
 			ReusableTokens:      checkpointContext,
 			ReusableMessages:    reusableMessages,
+			FallbackKind:        fallbackKind,
+			FallbackUpdates:     session.fallbackUpdates,
 			ContextWindow:       m.cfg.ContextWindow(),
 			LastUsed:            session.lastUsed,
 			HasMedia:            session.hasMedia,
@@ -120,7 +139,7 @@ func (m *Model) imcRecordRequestUsage(session *imcSession, version uint64, input
 
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
-	session.peakContext = max(session.peakContext, context)
+	session.peakContext = max(session.peakContext, context, inputTokens+outputTokens)
 	if version == 0 || session.usageVersion != version {
 		return
 	}
@@ -296,6 +315,8 @@ func imcResetSession(s *imcSession) {
 	s.inputMessages = 0
 	s.inputTokens = 0
 	s.outputTokens = 0
+	s.fallbackSelected = false
+	s.fallbackUpdates = 0
 	s.samplingSeed = 0
 	s.hasSamplingSeed = false
 	s.lastUsed = time.Time{}
@@ -311,6 +332,7 @@ func (m *Model) imcReleaseReservation(sessionID int) {
 	m.cacheMu.Lock()
 	if sessionID >= 0 && sessionID < len(m.imcSessions) {
 		m.imcSessions[sessionID].reserved = false
+		m.imcSessions[sessionID].fallbackSelected = false
 	}
 	m.cacheMu.Unlock()
 }
@@ -326,6 +348,7 @@ func (m *Model) imcInvalidateReservedSession(session *imcSession) {
 	imcResetCurrentSession(session)
 	session.seqID = imcSeqIDUnbound
 	session.reserved = true
+	session.fallbackSelected = false
 	m.cacheMu.Unlock()
 }
 
@@ -373,11 +396,16 @@ func (m *Model) imcPreserveCurrentSnapshot(ctx context.Context, session *imcSess
 
 	oldCheckpoint := session.turnCheckpoint
 	checkpoint := session.takeCurrentSnapshot()
+	fallbackAdvanced := !session.fallbackSelected
 	session.installCurrentSnapshot(imcSnapshot{
 		kvState:      targetStore,
 		draftKVState: draftStore,
 	})
 	session.turnCheckpoint = &checkpoint
+	session.fallbackSelected = false
+	if fallbackAdvanced {
+		session.fallbackUpdates++
+	}
 	m.cacheMu.Unlock()
 
 	closeIMCSnapshot(oldCheckpoint)
@@ -423,6 +451,7 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 	session.mediaKVCounts = mediaKVCounts
 	session.cachedRenderInputHash = renderInputHash
 	session.currentEndsAtUser = endsAtUser
+	session.fallbackSelected = false
 	session.samplerPromptTokens = nil
 	if !hasMedia {
 		session.useMRoPE = false
@@ -467,6 +496,7 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	session.samplerPromptTokens = samplerPromptTokens
 	session.cachedRenderInputHash = renderInputHash
 	session.currentEndsAtUser = endsAtUser
+	session.fallbackSelected = false
 	session.lastUsed = time.Now()
 	session.cachedTokens = nil
 	session.allocatedContext = max(session.allocatedContext, totalCached)
@@ -495,5 +525,6 @@ func (m *Model) imcPublishSession(session *imcSession) {
 	session.allocatedContext = max(session.allocatedContext, session.totalTokensCached)
 	session.highWaterContext = max(session.highWaterContext, session.totalTokensCached)
 	session.reserved = false
+	session.fallbackSelected = false
 	m.cacheMu.Unlock()
 }

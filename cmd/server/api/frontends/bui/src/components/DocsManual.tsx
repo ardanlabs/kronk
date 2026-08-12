@@ -1065,9 +1065,15 @@ make benchmark-rerank-batchseq`}</code></pre>
           <p>Short, one-shot prompts generally gain little from caching. IMC also performs host-side rendering, tokenization, snapshot, and restore work, so it is not a replacement for choosing an appropriate context window and concurrency level.</p>
           <h3 id="511-quick-semantic-understanding">5.1.1 Quick Semantic Understanding</h3>
           <p>IMC is best understood as <strong>prompt planning backed by reusable model state</strong>. Before assigning a request to an execution slot, Kronk determines the exact rendered prompt, its reusable stable portion, the inference-only tail, the compatible saved state, and the work required to move from that state to the current request.</p>
+          <p>Kronk does not restore token text. It restores the target model's serialized session state produced by processing those tokens: primarily KV-cache tensor state and, for hybrid models, recurrent state. Compatible speculative/MTP state is saved alongside it when available. Kronk retains token IDs and prompt metadata separately so it can prove that a snapshot matches a later rendering.</p>
           <p>This is prompt-oriented rather than message-oriented because the model does not consume message objects directly. It consumes rendered tokens, media embeddings, and positions. Requests with apparently unchanged messages can render differently when tools, thinking settings, templates, media, or other render-affecting inputs change.</p>
-          <p>One fallback heuristic is based on a common user-turn transition. Kronk does not assume that existing user-message content changes. It assumes that adding a new real user message may cause the chat template to re-render earlier assistant messages differently, especially by removing or relocating reasoning content from a prior assistant turn. Kronk therefore retains the complete stable state at a real-user boundary before extending the current state through assistant and tool activity. If a later user turn makes the current state incompatible, this earlier checkpoint may still prefix the new rendering.</p>
-          <p>This is a checkpoint-placement heuristic, not the cache-matching rule. The planner always compares complete rendered token or media plans, restores the longest compatible current or fallback state, and rebuilds when neither is a safe prefix. A prefix-stable template can continue using the longer current state without touching the fallback checkpoint.</p>
+          <p>Each text session can own two snapshots:</p>
+          <ul>
+            <li><strong>Current</strong> is the latest complete stable prompt state and is the normal append path.</li>
+            <li><strong>Fallback</strong> is the latest verified user-turn boundary that Kronk retained as a recovery point.</li>
+          </ul>
+          <p>The fallback exists because adding a new real user message can cause a chat template to re-render earlier assistant messages differently. A reasoning template may preserve thinking for the latest assistant message but omit it once that message becomes historical. The message history grew, yet its newly rendered token sequence can be shorter or can diverge before the new user message. Current is then unusable even though the conversation was only appended.</p>
+          <p>Kronk never restores an arbitrary longest common prefix (LCP). It restores only a complete Current snapshot or a verified Fallback snapshot whose full token sequence prefixes the new stable rendering. If neither qualifies, Kronk rebuilds from the beginning. The LCP can prove that a proposed user-turn boundary is unchanged, but the LCP itself is not model state and is not a safe restoration boundary.</p>
           <p>The complete generation lifecycle is introduced in <a href="https://www.kronkai.com/manual#43-the-generation-inference-lifecycle">Chapter 4 §4.3</a>. The focused view below zooms into IMC's Stage 2 responsibility: deciding the safest minimum work and reserving the session that owns reusable state.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-session-selection.svg" alt="IMC session selection using complete saved prompt plans" /></p>
           <p>The planning process has five steps.</p>
@@ -1087,14 +1093,14 @@ Actual plan: [A B C D][G]`}</code></pre>
           <p>This plan captures media content, count, order, and placement relative to text. It is called canonical because it is the authoritative logical description of what the engine must execute, not merely a normalized version of the client's messages.</p>
           <p>A media item is one logical plan unit, but the multimodal pipeline may expand it into many physical KV cells. Models using M-RoPE can also distinguish the next logical decode position from the physical KV-cell count. IMC therefore keeps the logical plan, logical position, and physical snapshot accounting consistent without pretending that media is an ordinary text token.</p>
           <h4 id="step-3-find-the-longest-complete-safe-prefix">Step 3: Find the longest complete safe prefix</h4>
-          <p>Kronk searches available sessions for the longest complete saved plan that is a prefix of the new stable plan. A text session always has its latest current snapshot and can retain at most one additional alternate reusable snapshot captured at a previously verified token boundary. This is one current snapshot plus one alternate, not two alternate checkpoints:</p>
+          <p>Kronk searches available sessions for the longest complete saved plan that is a prefix of the new stable plan. A text session can retain its Current snapshot and one Fallback snapshot at a verified real-user boundary. This is one current state plus one fallback, not an arbitrary collection of token checkpoints:</p>
           <pre className="code-block"><code className="language-text">{`New stable plan: [A B C D E F]
 
-Session 1: [A B]          -> safe prefix
-Session 2: [A B C D]      -> safe prefix and better
-Session 3: [A B X]        -> not safe
-Session 4: [A B C D E F]  -> exact and best
-Reusable:   [A B C]       -> also safe if its current snapshot diverges`}</code></pre>
+Session 1 Current:  [A B]          -> safe prefix
+Session 2 Current:  [A B C D]      -> safe prefix and better
+Session 3 Current:  [A B X]        -> not safe
+Session 4 Current:  [A B C D E F]  -> exact and best
+Session 3 Fallback: [A B C]        -> also safe`}</code></pre>
           <p>Choosing the longest compatible session minimizes new prefill work. A prefix is safe only when:</p>
           <ul>
             <li>It ends at a complete, committed session boundary.</li>
@@ -1103,8 +1109,12 @@ Reusable:   [A B C]       -> also safe if its current snapshot diverges`}</code>
             <li>The session is available rather than reserved by another request.</li>
             <li>For media, the saved media plan is unchanged and anything added after the anchor is text-only.</li>
           </ul>
-          <p>"Longest complete prefix" does not mean the longest coincidental token overlap. For example, <code>[A B C D]</code> is not reused for <code>[A B X D]</code>, even though <code>[A B]</code> matches. Kronk does not trim an existing session at an arbitrary internal point. This conservative rule avoids assuming that an internal KV cut remains valid across template boundaries, media embeddings, M-RoPE positions, hybrid recurrent state, or draft/MTP state.</p>
-          <p>The alternate state may be created when two complete renders reveal a longer common token prefix than Kronk can currently restore. Kronk first restores an earlier complete snapshot, recomputes through that boundary, and captures fresh target and compatible draft/MTP state there. The old divergent model state is never trimmed or treated as reusable. This matters for templates that move reasoning from an older assistant message to the latest one as a conversation grows.</p>
+          <p>"Longest complete prefix" does not mean the longest coincidental token overlap. For example, <code>[A B C D]</code> is not shortened and reused for <code>[A B X D]</code>, even though <code>[A B]</code> matches. The LCP is not selected as the boundary. Kronk restores only model state that it explicitly serialized at a complete Current or Fallback boundary. This avoids assuming that an internal KV cut remains valid across template boundaries, media embeddings, M-RoPE positions, hybrid recurrent state, or draft/MTP state.</p>
+          <p>When the request ends with a new real user message, Kronk also independently renders and tokenizes the history with that final message removed:</p>
+          <pre className="code-block"><code className="language-text">{`[SYSTEM][USER1][ASSISTANT][USER2]
+                         ^
+                         candidate boundary`}</code></pre>
+          <p>The candidate is accepted only when those independently rendered tokens are an exact prefix of the complete stable request and remain equal through the same position in an available saved Current sequence. If extending from an earlier saved state, Kronk can prefill to that verified boundary, serialize fresh target and compatible draft/MTP state there, and continue to the complete Current state. It never extracts a checkpoint merely because an LCP ended at that token.</p>
           <h4 id="step-4-select-exact-append-anchor-or-rebuild">Step 4: Select exact, append, anchor, or rebuild</h4>
           <p>The selected action follows from the stable plan and the best safe session.</p>
           <p><strong>Exact</strong> means the cached stable plan and new stable plan are identical:</p>
@@ -1117,7 +1127,7 @@ Actual:        [A B C D][G]`}</code></pre>
 New stable:    [A B C D E F]
 Actual:        [A B C D E F][G]`}</code></pre>
           <p>Kronk restores <code>[A B C D]</code>, prefills <code>[E F]</code>, snapshots the new reusable state <code>[A B C D E F]</code>, and then processes <code>[G]</code> without adding it to that stable snapshot.</p>
-          <p>If the current snapshot diverges because a template retroactively changes historical rendering, append can instead begin from the alternate reusable snapshot. Kronk restores that complete state and prefills everything after it; it never rewinds a later model state or deletes an arbitrary KV range.</p>
+          <p>If Current diverges because a template retroactively changes historical rendering, append can instead begin from Fallback. Kronk restores that complete state and prefills everything after it; it never rewinds a later model state or deletes an arbitrary KV range.</p>
           <p><strong>Anchor</strong> is the media-safe form of append:</p>
           <pre className="code-block"><code className="language-text">{`Cached plan: [A B][image-1][C D]
 New plan:    [A B][image-1][C D E F]`}</code></pre>
@@ -1128,7 +1138,7 @@ New plan:    [A B][image-1][C D E F]`}</code></pre>
 [A B][C D][image-1]             -> rebuild: reordered media
 [A B][C D]                      -> rebuild: removed media`}</code></pre>
           <p>These outcomes describe comparison with the shown anchor. Because Kronk searches the full available session pool, it can still reuse another session whose complete media plan is compatible with the request.</p>
-          <p><strong>Rebuild</strong> means neither a current snapshot nor a retained alternate reusable snapshot prefixes the stable plan. Kronk selects an empty session or the least recently used available session, resets it, processes the stable plan from the beginning, snapshots the resulting state, and then processes the generation tail. Rebuild is not a request failure; it means only that the request receives no saved-prefill benefit.</p>
+          <p><strong>Rebuild</strong> means neither Current nor Fallback prefixes the stable plan. Kronk selects an empty session or the least recently used available session, resets it, processes the stable plan from the beginning, snapshots the resulting state, and then processes the generation tail. Rebuild is not a request failure; it means only that the request receives no saved-prefill benefit.</p>
           <h4 id="step-5-reserve-the-selected-session">Step 5: Reserve the selected session</h4>
           <p>Planning and execution do not happen at the same instant. A request may wait for an execution slot after selecting a session, so Kronk immediately marks the session reserved while holding the cache lock:</p>
           <pre className="code-block"><code className="language-text">{`select session -> reserve -> queue -> restore/build stable state
@@ -1157,13 +1167,13 @@ exact read-only hit or media-anchor advance:
           <blockquote>the safest minimum work needed to reach it?" IMC supplies the reusable model</blockquote>
           <blockquote>state that makes the answer efficient.</blockquote>
           <h2 id="52-how-kronk-reuses-a-text-prefix">5.2 How Kronk Reuses a Text Prefix</h2>
-          <p>Kronk compares the complete stable token sequence with the current and alternate reusable sequences in existing sessions. The result is one of three match types:</p>
+          <p>Kronk compares the complete stable token sequence with the Current and Fallback sequences in available sessions. The result is one of three match types:</p>
           <ul>
             <li><strong>Exact</strong> — The new stable sequence is identical to a cached sequence. Kronk restores that session and processes only the generation-ready tail.</li>
             <li><strong>Append</strong> — A cached sequence is a complete prefix of the new stable sequence. Kronk restores it, processes the appended stable tokens, and then processes the generation-ready tail.</li>
             <li><strong>Rebuild</strong> — No complete cached sequence prefixes the new stable sequence. Kronk uses an empty session or replaces the least recently used available session and processes the stable prefix from the beginning.</li>
           </ul>
-          <p>Only complete-prefix reuse is allowed. If an earlier message is edited, removed, reordered, or rendered differently, Kronk can reuse a retained alternate snapshot only when that entire state still prefixes the new rendering. A longer common token prefix can become reusable only after Kronk recomputes through it and serializes fresh model state at that exact boundary. It does not trim the old divergent snapshot.</p>
+          <p>Only complete-prefix reuse is allowed. If an earlier message is edited, removed, reordered, or rendered differently, Kronk can reuse a retained Fallback only when that entire state still prefixes the new rendering. Kronk does not turn a coincidental partial token match into cached model state.</p>
           <p>For example:</p>
           <pre className="code-block"><code className="language-text">{`Cached stable tokens: [A B C D]
 
@@ -1171,6 +1181,31 @@ New stable tokens:    [A B C D]       -> exact
 New stable tokens:    [A B C D E F]   -> append E F
 New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <p>This comparison uses rendered tokens, not only the message objects supplied by the client. Changes to the chat template, tool definitions, thinking options, or other inputs that affect rendering can therefore prevent reuse even when the visible message text appears unchanged.</p>
+          <h3 id="521-current-and-fallback-lifecycle">5.2.1 Current and Fallback Lifecycle</h3>
+          <p>A <strong>real user message</strong> is a user-authored turn, not a tool response represented with the <code>user</code> role. Kronk uses real user messages because they begin a new model thought and provide a meaningful boundary before subsequent assistant and tool activity.</p>
+          <p>The normal lifecycle is:</p>
+          <ol>
+            <li>A first request such as <code>[SYSTEM][USER1]</code> is built and published as Current. No Fallback is required yet.</li>
+            <li>When that exact Current prefixes a later request, Kronk restores and extends it. If Current ended at a real user message, Kronk preserves that verified state as Fallback before publishing the longer Current.</li>
+            <li>If a later rendering still starts with Current, Kronk continues extending Current and can advance Fallback to the most recent verified user boundary.</li>
+            <li>If Current no longer prefixes the rendering but Fallback does, Kronk restores Fallback, prefills the extension, retains the verified Fallback, and publishes the rebuilt Current.</li>
+            <li>If neither snapshot is an exact prefix, Kronk rebuilds from the beginning.</li>
+          </ol>
+          <p>For example:</p>
+          <pre className="code-block"><code className="language-text">{`After request 1:
+  Current:  [SYSTEM][USER1]
+  Fallback: none
+
+After compatible assistant/tool activity and USER2:
+  Current:  [SYSTEM][USER1][ASSISTANT/TOOLS][USER2]
+  Fallback: [SYSTEM][USER1]
+
+After the next compatible extension:
+  Current:  [SYSTEM][USER1][ASSISTANT/TOOLS][USER2][ASSISTANT/TOOLS]
+  Fallback: [SYSTEM][USER1][ASSISTANT/TOOLS][USER2]`}</code></pre>
+          <p>The exact token lengths depend on the template; the brackets show logical message boundaries, not token counts. A template can make the middle history incompatible by changing how historical assistant reasoning is rendered. In that case Kronk uses the last Fallback that still matches rather than leaking a few tokens from the divergent assistant turn into the restore boundary.</p>
+          <p>Kronk may also build a newer Fallback while prefilling a request that ends in a real user message. It independently renders the history without that final user message and verifies that the resulting tokens are an exact prefix of the full stable rendering and the previously saved tokens. Only then does it serialize model state at that boundary. This verification is important for templates whose output depends on which assistant message is last: the independent boundary render is useful only when it produces the same bytes in the full request.</p>
+          <p>Internally, selecting Fallback temporarily swaps snapshot ownership so the normal Current restore path can execute. This bookkeeping does not mean the old divergent Current is a valid fallback. While a request is rebuilding, the BUI reports the fallback kind as <code>calculating</code>; after a verified boundary is published it reports <code>user</code>. The Fallback Updates value counts installations and advances for that cache entry and resets when the bounded entry is recycled.</p>
           <h2 id="53-sessions-slots-and-snapshots">5.3 Sessions, Slots, and Snapshots</h2>
           <p>An IMC <strong>session</strong> is a reusable conversation identity and its saved model state. An execution <strong>slot</strong> is a lane that can actively run a request. These are deliberately separate:</p>
           <ul>
@@ -1185,7 +1220,7 @@ New stable tokens:    [A B X D]       -> rebuild`}</code></pre>
           <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is held. If all session identities are reserved, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
           <p>The snapshot restores model state, not a long-lived sampler instance. Kronk re-primes repetition penalties and DRY from the authoritative complete logical prompt, including the restored portion, so sampling history agrees with the KV prefix even though only uncached model work is decoded again. For cached media, Kronk retains the text-token history needed for that sampler priming separately from the media embedding cells represented by the native snapshot.</p>
-          <p>For text sessions, Kronk can also retain one alternate reusable snapshot in addition to the current snapshot. When a new render diverges from the current snapshot, Kronk compares the token sequences to find their longest exact common prefix. It never trims the old model state at that position. Instead, it restores an earlier complete snapshot, recomputes through the newly stable boundary, and serializes the live target state there before continuing to the complete current input. The alternate snapshot includes matching draft/MTP state when available and can end at a token-only boundary that has no reliable message count. Publishing a new alternate replaces the previous alternate; a session does not retain both a user-turn alternate and a progressive alternate. The one alternate can require approximately one additional snapshot-sized allocation for each active logical session, making the maximum two complete states: current plus alternate.</p>
+          <p>For text sessions, Kronk can retain one Fallback snapshot in addition to Current. Fallback ends at a verified real-user boundary and includes matching draft/MTP state when available. Kronk may create it by preserving a Current state that already ended at a real user message or by prefilling and serializing an independently verified final-user boundary. Publishing a new Fallback replaces the prior one. It can require approximately one additional snapshot-sized allocation for each active logical session, making the maximum two complete states: Current plus Fallback.</p>
           <p>An exact match may skip rewriting the snapshot when the stable state has not changed. This avoids an unnecessary serialization of the state that was just restored. Exact media-plan reuse can receive the same optimization. These are implementation optimizations; they do not change which content is considered part of the cache.</p>
           <p>Snapshots externalize inactive session state from the model's active KV cache. They therefore do not permanently occupy an execution slot or pin their state in accelerator KV memory between requests. They do consume the configured session-store capacity, as described in <a href="#55-configuration-and-storage">Configuration and Storage</a>.</p>
           <h2 id="54-media-requests">5.4 Media Requests</h2>
@@ -1253,7 +1288,7 @@ krn, err := kronk.New(
 	model.WithIncrementalCache(true),
 	model.WithSessionStoreFactory(factory),
 )`}</code></pre>
-          <p>Kronk calls the factory independently for every target, draft, and checkpoint store it needs. Each call must return a new store; Kronk owns that store and calls <code>Close</code> when it is no longer needed. Direct SDK use defaults to RAM when no factory is injected.</p>
+          <p>Kronk calls the factory independently for every Current, draft, and Fallback store it needs. Each call must return a new store; Kronk owns that store and calls <code>Close</code> when it is no longer needed. Direct SDK use defaults to RAM when no factory is injected.</p>
           <p>The <a href="https://github.com/ardanlabs/kronk/tree/main/examples/session-store"><code>examples/session-store</code></a> program provides a complete custom implementation and shows how to inject it. Its implementation writes snapshots to anonymous temporary files and deletes them on <code>Close</code>. It exists only to demonstrate the extension contract: it has no stable session identity, persisted request history, startup recovery, atomic commits, or reliable way to report I/O failures. <strong>Do not use the example as durable session storage.</strong> A durable implementation needs a higher level persistence design in addition to the byte-store contract.</p>
           <p>Some MTP configurations maintain draft-model cached state and saved hidden state in addition to the target model snapshot. Account for this extra storage when sizing memory. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for MTP configuration and behavior.</p>
           <h2 id="56-invalidation-and-limitations">5.6 Invalidation and Limitations</h2>
@@ -1274,12 +1309,13 @@ krn, err := kronk.New(
             <li>Edited text rebuilds instead of reusing an arbitrary partial prefix.</li>
             <li>The session pool is finite, so inactive least-recently-used branches can be replaced as new branches arrive.</li>
             <li>MTP can require additional draft-side state. If Kronk restores the target prefix without compatible draft state, it can still use the target cache but disables speculative decoding for that request.</li>
-            <li>A corrupt, empty, or partial target snapshot is never treated as a shorter reusable prefix. Kronk invalidates the affected current state and fails that restore so a later request can rebuild safely. An independently retained alternate text snapshot remains available; a failed staged media-anchor advance leaves its previously published media snapshot authoritative.</li>
+            <li>A corrupt, empty, or partial target snapshot is never treated as a shorter reusable prefix. Kronk invalidates the affected current state and fails that restore so a later request can rebuild safely. An independently retained Fallback text snapshot remains available; a failed staged media-anchor advance leaves its previously published media snapshot authoritative.</li>
           </ul>
           <p>Evaluate IMC using a representative conversation workload rather than a single prompt benchmark. The benefit grows with reusable prefix length and follow-up frequency.</p>
           <h2 id="57-observability">5.7 Observability</h2>
           <p>At debug log level, IMC planning events identify the selected <code>match_kind</code> (<code>exact</code>, <code>append</code>, or <code>rebuild</code>) and report reusable, extension, stable, and tail token counts. Media planning events similarly identify exact, anchor, and rebuild decisions. Request-completion events include whether IMC participated and whether a prior snapshot was restored.</p>
           <p>The Prometheus counters <code>imc_snapshot_skipped_total</code> and <code>imc_pure_hit_stale_session_total</code> expose exact-hit snapshot skips and rejected stale-session races. A rising rebuild rate usually means clients are changing earlier prompt content, media, tools, or rendering inputs rather than appending to a stable conversation.</p>
+          <p>Per-entry gauges expose Current and Fallback token/allocation values, Fallback kind and update count, latest-request input/output/context, peak context, and context-window utilization. <code>imc_session_fallback_kind</code> uses <code>user</code> for a verified real-user boundary and <code>calculating</code> for transient snapshot ownership while Current is being rebuilt. The series is absent when no Fallback exists. These are bounded current-state gauges, not a history of every conversation transition.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging, metrics, tracing, and profiling configuration.</p>
           <h2 id="chapter-6-speculative-decoding-and-mtp">Chapter 6: Speculative Decoding and MTP</h2>
           <h3 id="61-what-speculative-decoding-does">6.1 What Speculative Decoding Does</h3>
@@ -3326,7 +3362,7 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
               </tr>
               <tr>
                 <td>IMC</td>
-                <td><code>imc_session_state</code>, <code>imc_session_messages</code>, <code>imc_session_context_tokens</code>, <code>imc_session_allocated_tokens</code>, <code>imc_session_window_tokens</code>, <code>imc_session_used_percent</code>, <code>imc_session_has_media</code>, <code>imc_session_last_used_timestamp_seconds</code>, <code>imc_snapshot_skipped_total</code>, <code>imc_pure_hit_stale_session_total</code></td>
+                <td><code>imc_session_state</code>, <code>imc_session_context_tokens</code>, <code>imc_session_fallback_context_tokens</code>, <code>imc_session_latest_request_context_tokens</code>, <code>imc_session_peak_context_tokens</code>, <code>imc_snapshot_skipped_total</code>, <code>imc_pure_hit_stale_session_total</code></td>
               </tr>
             </tbody>
           </table>
@@ -3351,7 +3387,90 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
           <pre className="code-block"><code className="language-promql">{`rate(batchseq_items_sum[5m])
   / rate(batchseq_items_count[5m])`}</code></pre>
           <p>Embedding and reranking request metrics include <code>operation</code> (<code>embedding</code> or <code>rerank</code>) and <code>runtime</code> (<code>batchseq</code> or <code>context_pool</code>) labels. Resource-manager reservation metrics already account for both runtime types because they are published for every loaded model, independently of its inference engine. The <code>inference_*</code> request metrics start after SDK admission, so they exclude admission wait and attempts that fail or are cancelled before a permit is acquired.</p>
-          <p>Current IMC cache entries are exposed with <code>model_id</code> and <code>entry</code> labels. These gauges report the same bounded scalar snapshot as the BUI <strong>IMC Sessions</strong> page; they do not retain session history. The bundled Grafana dashboard presents the values in an <strong>IMC Sessions</strong> table. <code>imc_session_state</code> has a <code>state</code> label of <code>active</code>, <code>idle</code>, or <code>empty</code> and a value of <code>1</code>. <code>imc_session_has_media</code> uses <code>1</code> for yes and <code>0</code> for no. A never-used entry has a <code>imc_session_last_used_timestamp_seconds</code> value of <code>0</code>.</p>
+          <p>Current IMC cache entries are exposed with <code>model_id</code> and <code>entry</code> labels. These gauges report the same bounded scalar snapshot as the BUI <strong>IMC Sessions</strong> page; they do not retain session history. The bundled Grafana dashboard presents the values in an <strong>IMC Sessions</strong> table.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>imc_session_state</code></td>
+                <td>One-hot entry state. The <code>state</code> label is <code>active</code>, <code>idle</code>, or <code>empty</code>.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_messages</code></td>
+                <td>Complete messages represented by Current.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_context_tokens</code></td>
+                <td>Physical token context represented by Current.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_allocated_tokens</code></td>
+                <td>Largest physical token context retained by Current's backing allocation.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_fallback_context_tokens</code></td>
+                <td>Physical token context represented by Fallback; zero when absent.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_fallback_allocated_tokens</code></td>
+                <td>Largest physical token context retained by Fallback's backing allocation; zero when absent.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_fallback_kind</code></td>
+                <td>One-hot Fallback state. The bounded <code>kind</code> label is <code>user</code> or <code>calculating</code>; the series is absent when no Fallback exists.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_fallback_updates</code></td>
+                <td>Number of Fallback installations or advances for this bounded entry. This is a gauge because it resets when the entry is recycled.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_latest_request_messages</code></td>
+                <td>Messages in the latest completed request tracked by the entry.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_latest_request_input_tokens</code></td>
+                <td>Complete input tokens in that request, including the generation-template tail.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_latest_request_output_tokens</code></td>
+                <td>Reasoning and completion tokens generated by that request.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_latest_request_context_tokens</code></td>
+                <td>Latest request input plus generated output tokens.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_peak_context_tokens</code></td>
+                <td>Largest live context observed across the entry's requests, including generated output.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_window_tokens</code></td>
+                <td>Configured context window.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_used_percent</code></td>
+                <td>Current context divided by the configured window.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_peak_used_percent</code></td>
+                <td>Peak context divided by the configured window.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_has_media</code></td>
+                <td><code>1</code> when the retained Current snapshot includes media; otherwise <code>0</code>.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_last_used_timestamp_seconds</code></td>
+                <td>Current eviction/LRU Unix timestamp; zero when never used.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>calculating</code> is transient. It means Kronk is rebuilding Current from the selected Fallback or has not yet published a verified user-boundary fallback. The Current values can therefore move before the latest-request values update: the former are published during prompt preparation, while the latter describe the most recently completed request. Peak context is an entry lifetime high water mark and can describe an earlier request.</p>
           <h3 id="153-bundled-observability-stack">15.3 Bundled Observability Stack</h3>
           <p>The repository includes a Docker Compose stack containing Grafana, Prometheus, Tempo, Loki, and Promtail. It provisions the data sources and a Kronk dashboard without manual Grafana setup.</p>
           <p>Download the pinned images once, start the stack, and open Grafana:</p>
@@ -5248,6 +5367,9 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             </div>
             <div className="doc-index-section">
               <a href="#52-how-kronk-reuses-a-text-prefix" className={`doc-index-header ${activeSection === '52-how-kronk-reuses-a-text-prefix' ? 'active' : ''}`}>5.2 How Kronk Reuses a Text Prefix</a>
+              <ul>
+                <li><a href="#521-current-and-fallback-lifecycle" className={activeSection === '521-current-and-fallback-lifecycle' ? 'active' : ''}>5.2.1 Current and Fallback Lifecycle</a></li>
+              </ul>
             </div>
             <div className="doc-index-section">
               <a href="#53-sessions-slots-and-snapshots" className={`doc-index-header ${activeSection === '53-sessions-slots-and-snapshots' ? 'active' : ''}`}>5.3 Sessions, Slots, and Snapshots</a>

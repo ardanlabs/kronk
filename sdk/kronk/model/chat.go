@@ -379,7 +379,24 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 		} else {
 			actualTokens := llama.Tokenize(m.vocab, actualPrompt, m.addBOSToken, true)
 			stableTokens := llama.Tokenize(m.vocab, stablePrompt, m.addBOSToken, true)
-			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, requestStart)
+
+			var finalUserBoundary int
+			messages := dMessages(stableD)
+			if len(messages) > 1 && messagesEndAtRealUser(messages) {
+				boundaryD := maps.Clone(stableD)
+				boundaryD["messages"] = messages[:len(messages)-1]
+				boundaryPrompt, _, boundaryErr := m.createPrompt(ctx, boundaryD)
+				if boundaryErr == nil {
+					boundaryTokens := llama.Tokenize(m.vocab, boundaryPrompt, m.addBOSToken, true)
+					if tokensHavePrefix(stableTokens, boundaryTokens) {
+						finalUserBoundary = len(boundaryTokens)
+					}
+				} else {
+					m.log(ctx, "imc", "status", "final-user-boundary-render-skipped", "err", boundaryErr)
+				}
+			}
+
+			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, finalUserBoundary, requestStart)
 		}
 		if cache.err != nil {
 			return "", nil, cache, cache.err

@@ -54,7 +54,7 @@ func TestCommonTokenPrefixLen(t *testing.T) {
 	}
 }
 
-func TestProcessIMCTokenPlanProgressiveReusablePrefix(t *testing.T) {
+func TestProcessIMCTokenPlanUsesBoundaryBeforeFinalUserMessage(t *testing.T) {
 	fallback := &imcSession{
 		id:                0,
 		cachedTokens:      []llama.Token{1, 2},
@@ -73,7 +73,7 @@ func TestProcessIMCTokenPlanProgressiveReusablePrefix(t *testing.T) {
 		imcSessions: []*imcSession{fallback, observer},
 	}
 	target := []llama.Token{1, 2, 3, 4, 5, 6}
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "r4"}}}, append(slices.Clone(target), 9), target, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "r4"}}}, append(slices.Clone(target), 9), target, 4, time.Now())
 
 	if result.cacheIdx != 2 || result.imcCheckpointTokens != 4 {
 		t.Errorf("plan restored/checkpoint tokens = %d/%d, want 2/4", result.cacheIdx, result.imcCheckpointTokens)
@@ -91,9 +91,29 @@ func TestProcessIMCTokenPlanProgressiveReusablePrefix(t *testing.T) {
 		kvState:           populatedTestSessionStore(),
 	}
 	nextTarget := []llama.Token{1, 2, 3, 4, 7}
-	next := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "r5"}}}, append(slices.Clone(nextTarget), 9), nextTarget, time.Now())
+	next := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "r5"}}}, append(slices.Clone(nextTarget), 9), nextTarget, 0, time.Now())
 	if next.cacheIdx != 4 {
 		t.Errorf("subsequent cacheIdx = %d, want published checkpoint length 4", next.cacheIdx)
+	}
+}
+
+func TestProcessIMCTokenPlanRejectsBoundaryPastCommonPrefix(t *testing.T) {
+	m := Model{
+		cfg: Config{PtrCacheMinTokens: new(2)},
+		log: applog.DiscardLogger,
+		imcSessions: []*imcSession{
+			{id: 0, cachedTokens: []llama.Token{1, 2}, totalTokensCached: 2, kvState: populatedTestSessionStore()},
+			{id: 1, cachedTokens: []llama.Token{1, 2, 3, 9}, totalTokensCached: 4, kvState: populatedTestSessionStore()},
+		},
+	}
+	target := []llama.Token{1, 2, 3, 4, 5}
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "next"}}}, append(slices.Clone(target), 9), target, 4, time.Now())
+
+	if result.cacheIdx != 2 {
+		t.Errorf("cacheIdx = %d, want 2", result.cacheIdx)
+	}
+	if result.imcCheckpointTokens != 0 {
+		t.Errorf("imcCheckpointTokens = %d, want 0 for a boundary past the common prefix", result.imcCheckpointTokens)
 	}
 }
 
@@ -110,7 +130,7 @@ func TestProcessIMCTokenPlanSelectsLongestCompletePrefix(t *testing.T) {
 
 	actual := []llama.Token{1, 2, 3, 4}
 	stable := []llama.Token{1, 2, 3}
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, actual, stable, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, actual, stable, 0, time.Now())
 
 	if result.imcSessionID != 1 {
 		t.Errorf("imcSessionID = %d, want 1", result.imcSessionID)
@@ -128,7 +148,7 @@ func TestProcessIMCTokenPlanSelectsLongestCompletePrefix(t *testing.T) {
 
 func TestProcessIMCTokenPlanRejectsNonPrefixRender(t *testing.T) {
 	m := Model{cfg: Config{PtrCacheMinTokens: new(1)}}
-	result := m.processIMCTokenPlan(context.Background(), nil, []llama.Token{1, 2}, []llama.Token{1, 9}, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), nil, []llama.Token{1, 2}, []llama.Token{1, 9}, 0, time.Now())
 	if result.imcTokenPlan {
 		t.Fatal("imcTokenPlan = true, want false")
 	}
@@ -202,7 +222,7 @@ func TestProcessIMCTokenPlanUsesTurnCheckpointWhenTemplateMovesLastAssistantReas
 	secondMessages := append(slices.Clone(firstMessages), D{"role": "user", "content": "next"})
 	secondStable := render(t, secondMessages, false)
 	secondActual := render(t, secondMessages, true)
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": secondMessages}, secondActual, secondStable, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": secondMessages}, secondActual, secondStable, 0, time.Now())
 
 	if result.imcMatchKind != "append" {
 		t.Errorf("imcMatchKind = %q, want append", result.imcMatchKind)
@@ -213,12 +233,14 @@ func TestProcessIMCTokenPlanUsesTurnCheckpointWhenTemplateMovesLastAssistantReas
 	if result.cacheIdx != llama.Pos(len(checkpointTokens)) {
 		t.Errorf("cacheIdx = %d, want checkpoint length %d", result.cacheIdx, len(checkpointTokens))
 	}
-	wantCheckpoint := commonTokenPrefixLen(firstStable, secondStable)
-	if result.imcCheckpointTokens != wantCheckpoint {
-		t.Errorf("imcCheckpointTokens = %d, want divergent current LCP %d", result.imcCheckpointTokens, wantCheckpoint)
+	if result.imcCheckpointTokens != 0 {
+		t.Errorf("imcCheckpointTokens = %d, want no progressive checkpoint without a safe user boundary", result.imcCheckpointTokens)
 	}
 	if !m.imcSessions[0].reserved {
 		t.Error("checkpoint session was not reserved")
+	}
+	if !m.imcSessions[0].fallbackSelected {
+		t.Error("checkpoint selection was not retained for in-flight reporting")
 	}
 	if !slices.Equal(m.imcSessions[0].cachedTokens, checkpointTokens) {
 		t.Errorf("current tokens after selection = %v, want checkpoint %v", m.imcSessions[0].cachedTokens, checkpointTokens)
@@ -247,7 +269,7 @@ func TestProcessIMCTokenPlanPrefersLongerCurrentSnapshotOverCheckpoint(t *testin
 		imcSessions: []*imcSession{session},
 	}
 
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3, 4, 5}, []llama.Token{1, 2, 3, 4}, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3, 4, 5}, []llama.Token{1, 2, 3, 4}, 0, time.Now())
 
 	if result.cacheIdx != 3 {
 		t.Errorf("cacheIdx = %d, want longer current prefix 3", result.cacheIdx)
@@ -294,7 +316,7 @@ func TestProcessIMCTokenPlanReservesExactMatch(t *testing.T) {
 	}
 	session.cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
 
-	result := m.processIMCTokenPlan(context.Background(), d, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), d, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, 0, time.Now())
 
 	if result.imcMatchKind != "exact" {
 		t.Errorf("imcMatchKind = %q, want exact", result.imcMatchKind)
@@ -336,7 +358,7 @@ func TestProcessIMCTokenPlanPreservesCompletePrompt(t *testing.T) {
 			}
 			sessions[0].cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
 
-			result := m.processIMCTokenPlan(context.Background(), d, tt.actual, tt.stable, time.Now())
+			result := m.processIMCTokenPlan(context.Background(), d, tt.actual, tt.stable, 0, time.Now())
 			if result.imcMatchKind != tt.wantMatch {
 				t.Errorf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
 			}
@@ -371,7 +393,7 @@ func TestProcessIMCTokenPlanRebuildsExactTokensWhenRenderFingerprintChanges(t *t
 	}
 	m.imcSessions[0].cachedRenderInputHash, _ = m.imcRenderFingerprint(priorD, dMessages(priorD))
 
-	result := m.processIMCTokenPlan(context.Background(), currentD, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), currentD, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, 0, time.Now())
 	if result.imcMatchKind != "rebuild" {
 		t.Errorf("imcMatchKind: got %q, want %q", result.imcMatchKind, "rebuild")
 	}

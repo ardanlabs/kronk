@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import type { IMCSessionsResponse } from '../types';
 import { labelWithTip, PARAM_TOOLTIPS, type TooltipKey } from './ParamTooltips';
 
-type SortField = 'model_id' | 'id' | 'state' | 'messages' | 'context' | 'allocated' | 'reusable_tokens' | 'checkpoint_allocated' | 'peak_context' | 'utilization' | 'last_used' | 'has_media';
+type SortField = 'model_id' | 'id' | 'state' | 'messages' | 'context' | 'allocated' | 'fallback_kind' | 'reusable_tokens' | 'checkpoint_allocated' | 'fallback_updates' | 'input_tokens' | 'output_tokens' | 'request_context' | 'peak_context' | 'utilization' | 'last_used' | 'has_media';
 
 const STATE_ORDER = { active: 0, idle: 1, empty: 2 } as const;
 const ALL_MODELS = '';
@@ -17,6 +17,11 @@ const FIELD_GUIDE: ReadonlyArray<{ label: string; tooltipKey: TooltipKey }> = [
   { label: 'Current Allocated', tooltipKey: 'imcAllocated' },
   { label: 'Fallback Tokens', tooltipKey: 'imcFallbackTokens' },
   { label: 'Fallback Allocated', tooltipKey: 'imcCheckpointAllocated' },
+  { label: 'Fallback Kind', tooltipKey: 'imcFallbackKind' },
+  { label: 'Fallback Updates', tooltipKey: 'imcFallbackUpdates' },
+  { label: 'Latest Request Input', tooltipKey: 'imcInputTokens' },
+  { label: 'Latest Request Output', tooltipKey: 'imcOutputTokens' },
+  { label: 'Latest Request Context', tooltipKey: 'imcRequestTotal' },
   { label: 'Peak Context', tooltipKey: 'imcPeakContext' },
   { label: 'Peak Used', tooltipKey: 'imcUtilization' },
   { label: 'Media', tooltipKey: 'imcMedia' },
@@ -36,7 +41,8 @@ function utilization(peakContext: number, contextWindow: number): string {
 }
 
 function modelTabLabel(modelID: string): string {
-  return modelID.split('/').at(-1) || modelID;
+  const parts = modelID.split('/');
+  return parts[parts.length > 1 ? 1 : 0] || modelID;
 }
 
 export default function IMCSessions() {
@@ -130,11 +136,26 @@ export default function IMCSessions() {
       case 'allocated':
         comparison = a.allocated - b.allocated;
         break;
+      case 'fallback_kind':
+        comparison = a.fallback_kind.localeCompare(b.fallback_kind);
+        break;
       case 'reusable_tokens':
         comparison = a.reusable_tokens - b.reusable_tokens;
         break;
       case 'checkpoint_allocated':
         comparison = a.checkpoint_allocated - b.checkpoint_allocated;
+        break;
+      case 'fallback_updates':
+        comparison = a.fallback_updates - b.fallback_updates;
+        break;
+      case 'input_tokens':
+        comparison = a.input_tokens - b.input_tokens;
+        break;
+      case 'output_tokens':
+        comparison = a.output_tokens - b.output_tokens;
+        break;
+      case 'request_context':
+        comparison = (a.input_tokens + a.output_tokens) - (b.input_tokens + b.output_tokens);
         break;
       case 'peak_context':
         comparison = a.peak_context - b.peak_context;
@@ -243,7 +264,8 @@ export default function IMCSessions() {
                   <th colSpan={3} className="imc-table-group imc-table-group-current">
                     Current Working Cache
                   </th>
-                  <th colSpan={2} className="imc-table-group imc-table-group-fallback">Fallback Cache</th>
+                  <th colSpan={4} className="imc-table-group imc-table-group-fallback">Fallback Cache</th>
+                  <th colSpan={3} className="imc-table-group imc-table-group-request">Latest Request</th>
                   <th colSpan={2} className="imc-table-group imc-table-group-capacity">Capacity / Usage</th>
                   <th colSpan={2} className="imc-table-group imc-table-group-details">Details</th>
                 </tr>
@@ -272,6 +294,21 @@ export default function IMCSessions() {
                   <th onClick={() => handleSort('checkpoint_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Allocated', 'imcCheckpointAllocated')}{sortIndicator('checkpoint_allocated')}
                   </th>
+                  <th onClick={() => handleSort('fallback_kind')} className="catalog-table-sortable">
+                    {labelWithTip('Kind', 'imcFallbackKind')}{sortIndicator('fallback_kind')}
+                  </th>
+                  <th onClick={() => handleSort('fallback_updates')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Updates', 'imcFallbackUpdates')}{sortIndicator('fallback_updates')}
+                  </th>
+                  <th onClick={() => handleSort('input_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Input', 'imcInputTokens')}{sortIndicator('input_tokens')}
+                  </th>
+                  <th onClick={() => handleSort('output_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Output', 'imcOutputTokens')}{sortIndicator('output_tokens')}
+                  </th>
+                  <th onClick={() => handleSort('request_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Context', 'imcRequestTotal')}{sortIndicator('request_context')}
+                  </th>
                   <th onClick={() => handleSort('peak_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Peak Context', 'imcPeakContext')}{sortIndicator('peak_context')}
                   </th>
@@ -297,6 +334,11 @@ export default function IMCSessions() {
                     <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.allocated.toLocaleString()}</td>
                     <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.reusable_tokens > 0 ? session.reusable_tokens.toLocaleString() : '—'}</td>
                     <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.checkpoint_allocated > 0 ? session.checkpoint_allocated.toLocaleString() : '—'}</td>
+                    <td className="imc-fallback-cell">{session.fallback_kind || '—'}</td>
+                    <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.fallback_updates.toLocaleString()}</td>
+                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{session.input_tokens.toLocaleString()}</td>
+                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{session.output_tokens.toLocaleString()}</td>
+                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{(session.input_tokens + session.output_tokens).toLocaleString()}</td>
                     <td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{session.peak_context.toLocaleString()}</td>
                     <td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{utilization(session.peak_context, session.context_window)}</td>
                     <td><span className={`badge badge-${session.has_media ? 'yes' : 'no'}`}>{session.has_media ? 'yes' : 'no'}</span></td>

@@ -588,15 +588,23 @@ func registerIMCSessionMetrics(p *pool.Pool) (func(), error) {
 
 		for i, session := range sessions {
 			details[i] = metrics.IMCSession{
-				ModelID:   session.ModelID,
-				Entry:     session.ID,
-				State:     string(session.State),
-				Messages:  session.Messages,
-				Context:   session.Context,
-				Allocated: session.Allocated,
-				Window:    session.ContextWindow,
-				HasMedia:  session.HasMedia,
-				LastUsed:  session.LastUsed,
+				ModelID:           session.ModelID,
+				Entry:             session.ID,
+				State:             string(session.State),
+				Messages:          session.Messages,
+				Context:           session.Context,
+				Allocated:         session.Allocated,
+				FallbackContext:   session.ReusableTokens,
+				FallbackAllocated: session.CheckpointAllocated,
+				FallbackKind:      session.FallbackKind,
+				FallbackUpdates:   session.FallbackUpdates,
+				InputMessages:     session.InputMessages,
+				InputTokens:       session.InputTokens,
+				OutputTokens:      session.OutputTokens,
+				PeakContext:       session.PeakContext,
+				Window:            session.ContextWindow,
+				HasMedia:          session.HasMedia,
+				LastUsed:          session.LastUsed,
 			}
 		}
 
