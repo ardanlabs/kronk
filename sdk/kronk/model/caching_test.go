@@ -374,6 +374,7 @@ func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
 		allocatedContext:      3,
 		cachedRenderInputHash: "render-user",
 		currentEndsAtUser:     true,
+		fallbackSelected:      true,
 		reserved:              true,
 		turnCheckpoint: &imcSnapshot{
 			cachedTokens:      []llama.Token{9},
@@ -399,6 +400,9 @@ func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
 	}
 	if session.fallbackUpdates != 1 {
 		t.Errorf("fallback updates = %d, want 1", session.fallbackUpdates)
+	}
+	if session.fallbackSelected {
+		t.Error("fallback selection remained active after checkpoint promotion")
 	}
 	if len(checkpoint.pendingH) != 2 || checkpoint.pendingH[0] != 4 || checkpoint.pendingH[1] != 5 {
 		t.Errorf("promoted pendingH = %v, want [4 5]", checkpoint.pendingH)
@@ -864,6 +868,7 @@ func TestIMCSessions(t *testing.T) {
 	checkpoint := imcSnapshot{
 		totalTokensCached: 1024,
 		allocatedContext:  1536,
+		endsAtUser:        true,
 	}
 	m := &Model{
 		cfg: Config{PtrContextWindow: new(8192)},
@@ -872,6 +877,7 @@ func TestIMCSessions(t *testing.T) {
 			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
 			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore(), turnCheckpoint: &checkpoint},
 			{id: 3, totalTokensCached: 2048, allocatedContext: 1536, kvState: ramSessionStore(), turnCheckpoint: &imcSnapshot{totalTokensCached: 4096, allocatedContext: 4096, kvState: ramSessionStore()}},
+			{id: 4, reserved: true, totalTokensCached: 1024, allocatedContext: 1536, cachedMsgCount: 2, currentEndsAtUser: true, fallbackSelected: true, kvState: ramSessionStore(), turnCheckpoint: &imcSnapshot{totalTokensCached: 4096, allocatedContext: 4096, kvState: ramSessionStore()}},
 		},
 	}
 
@@ -892,8 +898,17 @@ func TestIMCSessions(t *testing.T) {
 	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].ReusableTokens != 1024 || got[2].ReusableMessages != 0 || got[2].TotalAllocated != 4096 || got[2].PeakContext != 4096 || got[2].Messages != 4 || got[2].InputMessages != 4 || got[2].InputTokens != 2200 || got[2].OutputTokens != 300 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
 		t.Errorf("session 2 detail = %+v, want populated scalar snapshot", got[2])
 	}
+	if got[2].FallbackKind != "user" {
+		t.Errorf("session 2 fallback kind = %q, want user", got[2].FallbackKind)
+	}
 	if got[3].Allocated != 2048 || got[3].CheckpointAllocated != 4096 || got[3].PeakContext != 4096 {
 		t.Errorf("session 3 detail = %+v, want allocations to cover tokens and peak to cover both caches", got[3])
+	}
+	if got[3].FallbackKind != "calculating" {
+		t.Errorf("session 3 fallback kind = %q, want calculating", got[3].FallbackKind)
+	}
+	if got[4].Context != 1024 || got[4].CheckpointContext != 1024 || got[4].CheckpointAllocated != 1536 || got[4].FallbackKind != "calculating" || got[4].PeakContext != 4096 {
+		t.Errorf("session 4 detail = %+v, want selected fallback projected without exposing displaced current", got[4])
 	}
 
 	got[2].Context = 1

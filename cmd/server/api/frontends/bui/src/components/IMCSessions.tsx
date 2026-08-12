@@ -41,7 +41,8 @@ function utilization(peakContext: number, contextWindow: number): string {
 }
 
 function modelTabLabel(modelID: string): string {
-  return modelID.split('/').at(-1) || modelID;
+  const parts = modelID.split('/');
+  return parts[parts.length > 1 ? 1 : 0] || modelID;
 }
 
 export default function IMCSessions() {

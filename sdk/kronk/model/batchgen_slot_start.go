@@ -1349,11 +1349,13 @@ func (e *batchEngine) snapshotProgressiveCheckpoint(ctx context.Context, s *slot
 		draftKVState:      draftStore,
 		pendingH:          pendingH,
 		allocatedContext:  boundary,
+		endsAtUser:        true,
 	}
 
 	e.model.cacheMu.Lock()
 	oldCheckpoint := job.imcSession.turnCheckpoint
 	job.imcSession.turnCheckpoint = &checkpoint
+	job.imcSession.fallbackSelected = false
 	job.imcSession.fallbackUpdates++
 	e.model.cacheMu.Unlock()
 	closeIMCSnapshot(oldCheckpoint)
