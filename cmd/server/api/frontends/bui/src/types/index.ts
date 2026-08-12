@@ -74,6 +74,8 @@ export interface IMCSessionDetail {
   output_tokens: number;
   reusable_messages: number;
   reusable_tokens: number;
+  fallback_kind: 'token' | 'user' | '';
+  fallback_updates: number;
   context_window: number;
   last_used: string;
   has_media: boolean;

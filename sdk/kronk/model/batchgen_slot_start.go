@@ -1354,6 +1354,7 @@ func (e *batchEngine) snapshotProgressiveCheckpoint(ctx context.Context, s *slot
 	e.model.cacheMu.Lock()
 	oldCheckpoint := job.imcSession.turnCheckpoint
 	job.imcSession.turnCheckpoint = &checkpoint
+	job.imcSession.fallbackUpdates++
 	e.model.cacheMu.Unlock()
 	closeIMCSnapshot(oldCheckpoint)
 
@@ -1363,7 +1364,6 @@ func (e *batchEngine) snapshotProgressiveCheckpoint(ctx context.Context, s *slot
 		"recomputed_tokens", boundary-job.reusedPromptTokens, "reusable_snapshot_tokens", boundary,
 		"reusable_snapshot_messages", 0, "full_input_snapshot_tokens", job.imcNewTotalCached,
 		"full_input_snapshot_messages", job.imcNewCachedMsgCount, "tail_tokens", len(job.tailTokens))
-
 	return true
 }
 

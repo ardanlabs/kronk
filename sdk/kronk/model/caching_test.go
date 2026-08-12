@@ -397,6 +397,9 @@ func TestIMCPromoteTurnCheckpointMovesCompleteRollingState(t *testing.T) {
 	if checkpoint.cachedMsgsHash != "user-boundary" || checkpoint.cachedMsgCount != 1 || checkpoint.totalTokensCached != 3 || !checkpoint.endsAtUser {
 		t.Errorf("promoted checkpoint metadata = %+v, want complete user boundary", checkpoint)
 	}
+	if session.fallbackUpdates != 1 {
+		t.Errorf("fallback updates = %d, want 1", session.fallbackUpdates)
+	}
 	if len(checkpoint.pendingH) != 2 || checkpoint.pendingH[0] != 4 || checkpoint.pendingH[1] != 5 {
 		t.Errorf("promoted pendingH = %v, want [4 5]", checkpoint.pendingH)
 	}
@@ -868,7 +871,7 @@ func TestIMCSessions(t *testing.T) {
 			{id: 0, kvState: ramSessionStore()},
 			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
 			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, hasMedia: true, kvState: ramSessionStore(), turnCheckpoint: &checkpoint},
-			{id: 3, allocatedContext: 1536, kvState: ramSessionStore(), turnCheckpoint: &imcSnapshot{allocatedContext: 4096, kvState: ramSessionStore()}},
+			{id: 3, totalTokensCached: 2048, allocatedContext: 1536, kvState: ramSessionStore(), turnCheckpoint: &imcSnapshot{totalTokensCached: 4096, allocatedContext: 4096, kvState: ramSessionStore()}},
 		},
 	}
 
@@ -889,6 +892,9 @@ func TestIMCSessions(t *testing.T) {
 	if got[2].Context != 2048 || got[2].Allocated != 4096 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].ReusableTokens != 1024 || got[2].ReusableMessages != 0 || got[2].TotalAllocated != 4096 || got[2].PeakContext != 4096 || got[2].Messages != 4 || got[2].InputMessages != 4 || got[2].InputTokens != 2200 || got[2].OutputTokens != 300 || got[2].ContextWindow != 8192 || got[2].LastUsed != lastUsed || !got[2].HasMedia {
 		t.Errorf("session 2 detail = %+v, want populated scalar snapshot", got[2])
 	}
+	if got[3].Allocated != 2048 || got[3].CheckpointAllocated != 4096 || got[3].PeakContext != 4096 {
+		t.Errorf("session 3 detail = %+v, want allocations to cover tokens and peak to cover both caches", got[3])
+	}
 
 	got[2].Context = 1
 	if m.imcSessions[2].logicalPosition() != 2100 {
@@ -898,7 +904,7 @@ func TestIMCSessions(t *testing.T) {
 	m.imcSessions[2].totalTokensCached = 0
 	m.imcSessions[2].allocatedContext = 0
 	got = m.IMCSessions()
-	if got[2].State != IMCSessionStateIdle || got[2].Context != 0 || got[2].Allocated != 0 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].TotalAllocated != 0 {
+	if got[2].State != IMCSessionStateIdle || got[2].Context != 0 || got[2].Allocated != 0 || got[2].CheckpointContext != 1024 || got[2].CheckpointAllocated != 1536 || got[2].TotalAllocated != 1536 {
 		t.Errorf("session 2 transition detail = %+v, want fallback reported separately", got[2])
 	}
 

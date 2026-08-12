@@ -105,6 +105,7 @@ type imcSession struct {
 
 	currentEndsAtUser bool         // True when the current snapshot ends at a real user-turn boundary.
 	turnCheckpoint    *imcSnapshot // Current reusable snapshot; it may end at a token-only boundary.
+	fallbackUpdates   uint64       // Number of times the fallback snapshot was installed or advanced.
 }
 
 // imcSnapshot owns one externally restorable IMC state. Current
