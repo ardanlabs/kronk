@@ -44,6 +44,13 @@ func TestIMCSessionsCollector(t *testing.T) {
 				State:   "empty",
 				Window:  4096,
 			},
+			{
+				ModelID:      "test-model",
+				Entry:        4,
+				State:        "idle",
+				FallbackKind: "unbounded-value",
+				Window:       4096,
+			},
 		}
 	}
 
@@ -179,6 +186,9 @@ func TestIMCSessionsCollector(t *testing.T) {
 	}
 	if metric := findMetric(families, "imc_session_fallback_kind", map[string]string{"model_id": "test-model", "entry": "3"}); metric != nil {
 		t.Error("fallback kind metric found for entry without a fallback")
+	}
+	if metric := findMetric(families, "imc_session_fallback_kind", map[string]string{"model_id": "test-model", "entry": "4"}); metric != nil {
+		t.Error("fallback kind metric found for unknown kind")
 	}
 
 	unregister()

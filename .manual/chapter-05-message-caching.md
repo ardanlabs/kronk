@@ -186,10 +186,11 @@ renders and tokenizes the history with that final message removed:
 
 The candidate is accepted only when those independently rendered tokens are an
 exact prefix of the complete stable request and remain equal through the same
-position in the selected saved sequence. If extending from an earlier saved
-state, Kronk can prefill to that verified boundary, serialize fresh target and
-compatible draft/MTP state there, and continue to the complete Current state.
-It never extracts a checkpoint merely because an LCP ended at that token.
+position in an available saved Current sequence. If extending from an earlier
+saved state, Kronk can prefill to that verified boundary, serialize fresh
+target and compatible draft/MTP state there, and continue to the complete
+Current state. It never extracts a checkpoint merely because an LCP ended at
+that token.
 
 #### Step 4: Select exact, append, anchor, or rebuild
 
@@ -629,6 +630,14 @@ The Prometheus counters `imc_snapshot_skipped_total` and
 stale-session races. A rising rebuild rate usually means clients are changing
 earlier prompt content, media, tools, or rendering inputs rather than appending
 to a stable conversation.
+
+Per-entry gauges expose Current and Fallback token/allocation values, Fallback
+kind and update count, latest-request input/output/context, peak context, and
+context-window utilization. `imc_session_fallback_kind` uses `user` for a
+verified real-user boundary and `calculating` for transient snapshot ownership
+while Current is being rebuilt. The series is absent when no Fallback exists.
+These are bounded current-state gauges, not a history of every conversation
+transition.
 
 See [Chapter 15](https://www.kronkai.com/manual#chapter-15-observability) for logging, metrics, tracing, and
 profiling configuration.

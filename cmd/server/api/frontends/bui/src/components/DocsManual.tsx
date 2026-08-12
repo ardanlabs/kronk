@@ -1114,7 +1114,7 @@ Session 3 Fallback: [A B C]        -> also safe`}</code></pre>
           <pre className="code-block"><code className="language-text">{`[SYSTEM][USER1][ASSISTANT][USER2]
                          ^
                          candidate boundary`}</code></pre>
-          <p>The candidate is accepted only when those independently rendered tokens are an exact prefix of the complete stable request and remain equal through the same position in the selected saved sequence. If extending from an earlier saved state, Kronk can prefill to that verified boundary, serialize fresh target and compatible draft/MTP state there, and continue to the complete Current state. It never extracts a checkpoint merely because an LCP ended at that token.</p>
+          <p>The candidate is accepted only when those independently rendered tokens are an exact prefix of the complete stable request and remain equal through the same position in an available saved Current sequence. If extending from an earlier saved state, Kronk can prefill to that verified boundary, serialize fresh target and compatible draft/MTP state there, and continue to the complete Current state. It never extracts a checkpoint merely because an LCP ended at that token.</p>
           <h4 id="step-4-select-exact-append-anchor-or-rebuild">Step 4: Select exact, append, anchor, or rebuild</h4>
           <p>The selected action follows from the stable plan and the best safe session.</p>
           <p><strong>Exact</strong> means the cached stable plan and new stable plan are identical:</p>
@@ -1315,6 +1315,7 @@ krn, err := kronk.New(
           <h2 id="57-observability">5.7 Observability</h2>
           <p>At debug log level, IMC planning events identify the selected <code>match_kind</code> (<code>exact</code>, <code>append</code>, or <code>rebuild</code>) and report reusable, extension, stable, and tail token counts. Media planning events similarly identify exact, anchor, and rebuild decisions. Request-completion events include whether IMC participated and whether a prior snapshot was restored.</p>
           <p>The Prometheus counters <code>imc_snapshot_skipped_total</code> and <code>imc_pure_hit_stale_session_total</code> expose exact-hit snapshot skips and rejected stale-session races. A rising rebuild rate usually means clients are changing earlier prompt content, media, tools, or rendering inputs rather than appending to a stable conversation.</p>
+          <p>Per-entry gauges expose Current and Fallback token/allocation values, Fallback kind and update count, latest-request input/output/context, peak context, and context-window utilization. <code>imc_session_fallback_kind</code> uses <code>user</code> for a verified real-user boundary and <code>calculating</code> for transient snapshot ownership while Current is being rebuilt. The series is absent when no Fallback exists. These are bounded current-state gauges, not a history of every conversation transition.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging, metrics, tracing, and profiling configuration.</p>
           <h2 id="chapter-6-speculative-decoding-and-mtp">Chapter 6: Speculative Decoding and MTP</h2>
           <h3 id="61-what-speculative-decoding-does">6.1 What Speculative Decoding Does</h3>
@@ -3361,7 +3362,7 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
               </tr>
               <tr>
                 <td>IMC</td>
-                <td><code>imc_session_state</code>, <code>imc_session_messages</code>, <code>imc_session_context_tokens</code>, <code>imc_session_allocated_tokens</code>, <code>imc_session_window_tokens</code>, <code>imc_session_used_percent</code>, <code>imc_session_has_media</code>, <code>imc_session_last_used_timestamp_seconds</code>, <code>imc_snapshot_skipped_total</code>, <code>imc_pure_hit_stale_session_total</code></td>
+                <td><code>imc_session_state</code>, <code>imc_session_context_tokens</code>, <code>imc_session_fallback_context_tokens</code>, <code>imc_session_latest_request_context_tokens</code>, <code>imc_session_peak_context_tokens</code>, <code>imc_snapshot_skipped_total</code>, <code>imc_pure_hit_stale_session_total</code></td>
               </tr>
             </tbody>
           </table>
@@ -3386,7 +3387,90 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
           <pre className="code-block"><code className="language-promql">{`rate(batchseq_items_sum[5m])
   / rate(batchseq_items_count[5m])`}</code></pre>
           <p>Embedding and reranking request metrics include <code>operation</code> (<code>embedding</code> or <code>rerank</code>) and <code>runtime</code> (<code>batchseq</code> or <code>context_pool</code>) labels. Resource-manager reservation metrics already account for both runtime types because they are published for every loaded model, independently of its inference engine. The <code>inference_*</code> request metrics start after SDK admission, so they exclude admission wait and attempts that fail or are cancelled before a permit is acquired.</p>
-          <p>Current IMC cache entries are exposed with <code>model_id</code> and <code>entry</code> labels. These gauges report the same bounded scalar snapshot as the BUI <strong>IMC Sessions</strong> page; they do not retain session history. The bundled Grafana dashboard presents the values in an <strong>IMC Sessions</strong> table. <code>imc_session_state</code> has a <code>state</code> label of <code>active</code>, <code>idle</code>, or <code>empty</code> and a value of <code>1</code>. <code>imc_session_has_media</code> uses <code>1</code> for yes and <code>0</code> for no. A never-used entry has a <code>imc_session_last_used_timestamp_seconds</code> value of <code>0</code>.</p>
+          <p>Current IMC cache entries are exposed with <code>model_id</code> and <code>entry</code> labels. These gauges report the same bounded scalar snapshot as the BUI <strong>IMC Sessions</strong> page; they do not retain session history. The bundled Grafana dashboard presents the values in an <strong>IMC Sessions</strong> table.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>imc_session_state</code></td>
+                <td>One-hot entry state. The <code>state</code> label is <code>active</code>, <code>idle</code>, or <code>empty</code>.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_messages</code></td>
+                <td>Complete messages represented by Current.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_context_tokens</code></td>
+                <td>Physical token context represented by Current.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_allocated_tokens</code></td>
+                <td>Largest physical token context retained by Current's backing allocation.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_fallback_context_tokens</code></td>
+                <td>Physical token context represented by Fallback; zero when absent.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_fallback_allocated_tokens</code></td>
+                <td>Largest physical token context retained by Fallback's backing allocation; zero when absent.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_fallback_kind</code></td>
+                <td>One-hot Fallback state. The bounded <code>kind</code> label is <code>user</code> or <code>calculating</code>; the series is absent when no Fallback exists.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_fallback_updates</code></td>
+                <td>Number of Fallback installations or advances for this bounded entry. This is a gauge because it resets when the entry is recycled.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_latest_request_messages</code></td>
+                <td>Messages in the latest completed request tracked by the entry.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_latest_request_input_tokens</code></td>
+                <td>Complete input tokens in that request, including the generation-template tail.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_latest_request_output_tokens</code></td>
+                <td>Reasoning and completion tokens generated by that request.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_latest_request_context_tokens</code></td>
+                <td>Latest request input plus generated output tokens.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_peak_context_tokens</code></td>
+                <td>Largest live context observed across the entry's requests, including generated output.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_window_tokens</code></td>
+                <td>Configured context window.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_used_percent</code></td>
+                <td>Current context divided by the configured window.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_peak_used_percent</code></td>
+                <td>Peak context divided by the configured window.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_has_media</code></td>
+                <td><code>1</code> when the retained Current snapshot includes media; otherwise <code>0</code>.</td>
+              </tr>
+              <tr>
+                <td><code>imc_session_last_used_timestamp_seconds</code></td>
+                <td>Current eviction/LRU Unix timestamp; zero when never used.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>calculating</code> is transient. It means Kronk is rebuilding Current from the selected Fallback or has not yet published a verified user-boundary fallback. The Current values can therefore move before the latest-request values update: the former are published during prompt preparation, while the latter describe the most recently completed request. Peak context is an entry lifetime high water mark and can describe an earlier request.</p>
           <h3 id="153-bundled-observability-stack">15.3 Bundled Observability Stack</h3>
           <p>The repository includes a Docker Compose stack containing Grafana, Prometheus, Tempo, Loki, and Promtail. It provisions the data sources and a Kronk dashboard without manual Grafana setup.</p>
           <p>Download the pinned images once, start the stack, and open Grafana:</p>
