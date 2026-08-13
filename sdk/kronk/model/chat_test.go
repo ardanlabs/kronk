@@ -1021,17 +1021,16 @@ func TestRetainLengthTerminatedToolOutput(t *testing.T) {
 		name         string
 		finishReason string
 		content      string
-		tooling      string
 		wantContent  string
 		wantDelta    string
 		wantCalls    int
 		wantRetained bool
 	}{
-		{name: "incomplete call", finishReason: FinishReasonLength, tooling: `{"name":"write_file"`, wantContent: `{"name":"write_file"`, wantDelta: `{"name":"write_file"`, wantRetained: true},
-		{name: "complete call", finishReason: FinishReasonLength, tooling: `{"name":"lookup","arguments":{}}`, wantContent: `{"name":"lookup","arguments":{}}`, wantDelta: `{"name":"lookup","arguments":{}}`, wantRetained: true},
-		{name: "mixed calls", finishReason: FinishReasonLength, tooling: "complete\nincomplete", wantContent: "complete\nincomplete", wantDelta: "complete\nincomplete", wantRetained: true},
-		{name: "existing answer", finishReason: FinishReasonLength, content: "answer: ", tooling: "partial", wantContent: "answer: partial", wantDelta: "partial", wantRetained: true},
-		{name: "natural stop", finishReason: FinishReasonStop, content: "answer", tooling: "complete", wantContent: "answer", wantCalls: 1},
+		{name: "incomplete call", finishReason: FinishReasonLength, wantContent: lengthTerminatedToolMessage, wantDelta: lengthTerminatedToolMessage, wantRetained: true},
+		{name: "complete call", finishReason: FinishReasonLength, wantContent: lengthTerminatedToolMessage, wantDelta: lengthTerminatedToolMessage, wantRetained: true},
+		{name: "mixed calls", finishReason: FinishReasonLength, wantContent: lengthTerminatedToolMessage, wantDelta: lengthTerminatedToolMessage, wantRetained: true},
+		{name: "existing answer", finishReason: FinishReasonLength, content: "answer: ", wantContent: "answer: " + lengthTerminatedToolMessage, wantDelta: lengthTerminatedToolMessage, wantRetained: true},
+		{name: "natural stop", finishReason: FinishReasonStop, content: "answer", wantContent: "answer", wantCalls: 1},
 	}
 
 	for _, tt := range tests {
@@ -1040,7 +1039,7 @@ func TestRetainLengthTerminatedToolOutput(t *testing.T) {
 			content.WriteString(tt.content)
 			toolCalls := []ResponseToolCall{toolCall}
 
-			gotDelta, gotRetained := retainLengthTerminatedToolOutput(tt.finishReason, &content, tt.tooling, &toolCalls)
+			gotDelta, gotRetained := retainLengthTerminatedToolOutput(tt.finishReason, &content, &toolCalls)
 
 			if got := content.String(); got != tt.wantContent {
 				t.Errorf("content: got %q, want %q", got, tt.wantContent)
@@ -1060,12 +1059,12 @@ func TestRetainLengthTerminatedToolOutput(t *testing.T) {
 
 func TestLengthTerminatedToolOutputResponse(t *testing.T) {
 	const answer = "I will update the file. "
-	const tooling = `{"name":"write_file","arguments":{"path":"main.go","content":"package main`
+	const tooling = `<tool_call>{"name":"write_file","arguments":{"path":"main.go","content":"package main</tool_ca`
 
 	var content strings.Builder
 	content.WriteString(answer)
 	toolCalls := []ResponseToolCall{{ID: "call_1", Type: "function"}}
-	deltaContent, retained := retainLengthTerminatedToolOutput(FinishReasonLength, &content, tooling, &toolCalls)
+	deltaContent, retained := retainLengthTerminatedToolOutput(FinishReasonLength, &content, &toolCalls)
 	if !retained {
 		t.Fatal("retained: got false, want true")
 	}
@@ -1096,8 +1095,8 @@ func TestLengthTerminatedToolOutputResponse(t *testing.T) {
 	if got, want := toolDelta.Choices[0].Delta.Role, RoleAssistant; got != want {
 		t.Errorf("tool delta role: got %q, want %q", got, want)
 	}
-	if got := toolDelta.Choices[0].Delta.Content; got != tooling {
-		t.Errorf("tool delta content: got %q, want %q", got, tooling)
+	if got := toolDelta.Choices[0].Delta.Content; got != lengthTerminatedToolMessage {
+		t.Errorf("tool delta content: got %q, want %q", got, lengthTerminatedToolMessage)
 	}
 
 	choice := terminal.Choices[0]
@@ -1109,6 +1108,9 @@ func TestLengthTerminatedToolOutputResponse(t *testing.T) {
 	}
 	if got := len(choice.Message.ToolCalls); got != 0 {
 		t.Errorf("tool calls: got %d, want 0", got)
+	}
+	if strings.Contains(choice.Message.Content, "<tool_call>") || strings.Contains(choice.Message.Content, "</tool_ca") {
+		t.Errorf("content: got tool markers in %q", choice.Message.Content)
 	}
 	if got := choice.Delta.Content; got != "" {
 		t.Errorf("terminal delta content: got %q, want empty", got)

@@ -328,28 +328,33 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		s.utf8Buf = s.utf8Buf[:0]
 	}
 
-	// Process tool calls if any. Token counts are already tracked
-	// per-token in processSlotToken, so no re-tokenization needed.
+	// Process tool calls if any.
 	var toolCallErr error
 	var lengthTerminatedToolContent string
+	var lengthTerminatedToolOutput bool
 	if s.finalTooling.Len() > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
 		s.finalTooling.Reset()
 		s.finalTooling.WriteString(content)
 		if len(content) > 0 {
 
-			// Log the raw model output before parsing so tool call issues
-			// can be debugged. Only logged when insecure logging is enabled.
+			// Log the decoded model output captured before parser classification
+			// so tool call issues can be debugged. Only logged when insecure
+			// logging is enabled.
 			if e.model.cfg.InsecureLogging() {
+				rawContent := s.rawOutput.String()
+				if rawContent == "" {
+					rawContent = content
+				}
 				e.model.log(ctx, "tool-call", "status", "raw-model-output",
-					"bytes", len(content), "content", content)
+					"bytes", len(rawContent), "content", rawContent,
+					"buffered_content", content)
 			}
 
-			var retained bool
-			lengthTerminatedToolContent, retained = retainLengthTerminatedToolOutput(s.finishReason, &s.finalContent, content, &s.respToolCalls)
-			if retained {
+			lengthTerminatedToolContent, lengthTerminatedToolOutput = retainLengthTerminatedToolOutput(s.finishReason, &s.finalContent, &s.respToolCalls)
+			if lengthTerminatedToolOutput {
 				e.model.log(ctx, "tool-call",
-					"status", "max-tokens-retained-as-content",
+					"status", "max-tokens-output-replaced",
 					"bytes", len(lengthTerminatedToolContent),
 					"stream", s.job.params.Stream,
 					"parser", e.model.parser.Name())
@@ -484,21 +489,23 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, started)
 	}
 	finalChannel := slotChannel(s)
-	if lengthTerminatedToolContent != "" {
+	if lengthTerminatedToolOutput {
 		finalChannel = ChannelAnswer
 	}
 	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
 		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, finalChannel, s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
 }
 
-func retainLengthTerminatedToolOutput(finishReason string, finalContent *strings.Builder, finalTooling string, respToolCalls *[]ResponseToolCall) (string, bool) {
+const lengthTerminatedToolMessage = "Response truncated before completion."
+
+func retainLengthTerminatedToolOutput(finishReason string, finalContent *strings.Builder, respToolCalls *[]ResponseToolCall) (string, bool) {
 	if finishReason != FinishReasonLength {
 		return "", false
 	}
 
-	finalContent.WriteString(finalTooling)
+	finalContent.WriteString(lengthTerminatedToolMessage)
 	*respToolCalls = nil
-	return finalTooling, true
+	return lengthTerminatedToolMessage, true
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {

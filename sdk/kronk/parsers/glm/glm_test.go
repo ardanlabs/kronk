@@ -47,15 +47,18 @@ func TestNew_ClaimsGLM(t *testing.T) {
 		// Architecture prefix (primary signal).
 		{"arch-glm", model.Fingerprint{Architecture: "glm"}, true},
 		{"arch-glm4", model.Fingerprint{Architecture: "glm4"}, true},
+		{"arch-glm5", model.Fingerprint{Architecture: "glm_moe_dsa"}, true},
 		{"arch-chatglm", model.Fingerprint{Architecture: "chatglm"}, true},
 		{"arch-mixed-case", model.Fingerprint{Architecture: "GLM4"}, true},
 
 		// Chat template marker (secondary signal).
 		{"template-arg-key", model.Fingerprint{ChatTemplate: "<tool_call>name<arg_key>k</arg_key>"}, true},
 		{"template-arg-value", model.Fingerprint{ChatTemplate: "<arg_value>v</arg_value>"}, true},
+		{"template-glm5", model.Fingerprint{ChatTemplate: "<tool_call>{function-name}<arg_key>{arg-key}</arg_key><arg_value>{arg-value}</arg_value></tool_call>"}, true},
 
 		// Model name fallback.
 		{"name-GLM", model.Fingerprint{ModelName: "GLM-4.6"}, true},
+		{"name-GLM5", model.Fingerprint{ModelName: "GLM-5.2"}, true},
 		{"name-lowercase", model.Fingerprint{ModelName: "glm-4-9b-chat"}, true},
 
 		// Negatives.
@@ -110,6 +113,25 @@ func TestParser_ToolCall(t *testing.T) {
 	want := "\n</tool_call>done"
 	if result.Channel != model.ChannelTool || result.Content != want {
 		t.Errorf("unexpected continuation: got %+v, want tool content %q", result, want)
+	}
+}
+
+func TestParser_GLM5ToolCall(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	result, eog := c.Classify("<tool_call>get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value><arg_key>days</arg_key><arg_value>3</arg_value></tool_call>")
+	if eog {
+		t.Fatal("GLM-5 tool call unexpectedly ended generation")
+	}
+
+	calls := Parser{}.ToolCall(t.Context(), nil, result.Content)
+	if len(calls) != 1 || calls[0].Status != 0 {
+		t.Fatalf("ToolCall: got %+v, want one successful GLM-5 call", calls)
+	}
+	if calls[0].Function.Name != "get_weather" {
+		t.Errorf("Function.Name: got %q, want %q", calls[0].Function.Name, "get_weather")
+	}
+	if args := calls[0].Function.Arguments; args["location"] != "NYC" || args["days"] != "3" {
+		t.Errorf("Function.Arguments: got %v, want location=NYC and days=3", args)
 	}
 }
 

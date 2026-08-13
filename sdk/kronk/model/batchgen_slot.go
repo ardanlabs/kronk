@@ -148,6 +148,7 @@ type slot struct {
 	finalContent     strings.Builder // Accumulated completion text
 	finalReasoning   strings.Builder // Accumulated reasoning text
 	finalTooling     strings.Builder // Accumulated tool call JSON
+	rawOutput        strings.Builder // Decoded model output retained for insecure logging
 	respToolCalls    []ResponseToolCall
 	finishReason     string
 	stopSource       string
@@ -341,6 +342,7 @@ func (s *slot) reset() {
 	s.finalContent.Reset()
 	s.finalReasoning.Reset()
 	s.finalTooling.Reset()
+	s.rawOutput.Reset()
 	s.respToolCalls = nil
 	s.finishReason = ""
 	s.stopSource = ""
