@@ -962,6 +962,57 @@ func TestApplyToolChoice(t *testing.T) {
 	})
 }
 
+func TestToolChoiceAvailableToJinjaTemplate(t *testing.T) {
+	tools := []D{
+		{"type": "function", "function": D{"name": "get_weather"}},
+		{"type": "function", "function": D{"name": "search"}},
+	}
+
+	tests := []struct {
+		name       string
+		toolChoice any
+		script     string
+		want       string
+	}{
+		{
+			name:       "required includes every tool",
+			toolChoice: "required",
+			script:     `{{ tool_choice }}:{% for tool in tools %}{{ tool.function.name }},{% endfor %}`,
+			want:       "required:get_weather,search,",
+		},
+		{
+			name:       "named choice includes selected tool",
+			toolChoice: D{"type": "function", "function": D{"name": "search"}},
+			script:     `{{ tool_choice.function.name }}:{% for tool in tools %}{{ tool.function.name }},{% endfor %}`,
+			want:       "search:search,",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := D{
+				"messages":    []D{{"role": "user", "content": "hello"}},
+				"tools":       tools,
+				"tool_choice": tt.toolChoice,
+			}
+			if err := ValidateChatRequest(d); err != nil {
+				t.Fatalf("ValidateChatRequest: %v", err)
+			}
+			applyToolChoice(d)
+
+			m := Model{log: noopLog}
+			m.template = Template{FileName: "tool-choice-test", Script: tt.script}
+			prompt, err := m.applyJinjaTemplate(t.Context(), d)
+			if err != nil {
+				t.Fatalf("applyJinjaTemplate: %v", err)
+			}
+			if prompt != tt.want {
+				t.Errorf("prompt: got %q, want %q", prompt, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateChatRequestAcceptsStopWithoutLoggingIt(t *testing.T) {
 	d := D{
 		"messages": []D{{"role": "user", "content": "hello"}},
