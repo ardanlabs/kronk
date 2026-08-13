@@ -176,7 +176,10 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 			// its pre-norm buffer). Set logits=true on the very last
 			// row to guarantee pending_h is readable, and false elsewhere.
 			isLast := (chunkStart+k == effectiveCount-1)
-			mirror.Add(tgtTokens[chunkStart+k], pos, seqIDs, isLast)
+			if err := mirror.Add(tgtTokens[chunkStart+k], pos, seqIDs, isLast); err != nil {
+				s.mtpHasBatch = false
+				return fmt.Errorf("mtp-mirror: add token at pos %d: %w", pos, err)
+			}
 
 			// Write the embd row for this mirror slot.
 			dst := draft.mirrorEmbdSlice[k*nEmbd : (k+1)*nEmbd]
@@ -251,14 +254,14 @@ func (e *batchEngine) mirrorTargetBatchToMTPDraft(s *slot, effectiveCount int) e
 //
 // Returns the generated draft tokens (also stored in s.draftTokensBuf
 // per existing convention).
-func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
+func (e *batchEngine) generateDraftTokensMTP(s *slot) ([]llama.Token, error) {
 	draft := e.model.draft.core()
 	nEmbd := draft.nEmbd
 
 	nDraft := chooseNDraft(s, e.maxDraftForSlot(s, draft.nDraft))
 	if nDraft == 0 {
 		s.draftTokensBuf = s.draftTokensBuf[:0]
-		return s.draftTokensBuf
+		return s.draftTokensBuf, nil
 	}
 
 	if cap(s.draftTokensBuf) < nDraft {
@@ -270,7 +273,7 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 	// after the last target decode wrote it. If it isn't sized, we
 	// can't safely run MTP for this round.
 	if len(s.pendingH) != nEmbd {
-		return s.draftTokensBuf
+		return s.draftTokensBuf, nil
 	}
 
 	// Greedy sampler for MTP. Non-greedy MTP requires the same per-slot
@@ -287,7 +290,9 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 
 	for range nDraft {
 		batch.NTokens = 0
-		batch.Add(curToken, pos, seqIDs, true)
+		if err := batch.Add(curToken, pos, seqIDs, true); err != nil {
+			return nil, fmt.Errorf("mtp draft: add token at pos %d: %w", pos, err)
+		}
 
 		// Write the embd row for this single-token batch. Slot 0 of
 		// draftBatchMTP.Embd is the only row, and Embd was pinned at
@@ -337,7 +342,7 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) []llama.Token {
 
 	s.draftNPast = pos
 	s.specDraftedTotal += len(s.draftTokensBuf)
-	return s.draftTokensBuf
+	return s.draftTokensBuf, nil
 }
 
 func prepareMTPDraftHidden(s *slot, nEmbd int) []float32 {
@@ -406,7 +411,9 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 		batch.Clear()
 		for j := i; j < end; j++ {
 			pos := llama.Pos(startPos + j)
-			batch.Add(tokens[j], pos, seqIDs, false)
+			if err := batch.Add(tokens[j], pos, seqIDs, false); err != nil {
+				return fmt.Errorf("imc-mtp: add target token at pos %d: %w", pos, err)
+			}
 		}
 
 		ret, err := llama.Decode(e.model.lctx, batch)
@@ -493,7 +500,9 @@ func (e *batchEngine) mirrorBuildChunkToMTPDraft(s *slot, tokens []llama.Token, 
 			// what we read into s.pendingH below as the carry-over
 			// for the next decode.
 			isLast := chunkStart+k == nTokens-1
-			mirror.Add(tokens[chunkStart+k], pos, seqIDs, isLast)
+			if err := mirror.Add(tokens[chunkStart+k], pos, seqIDs, isLast); err != nil {
+				return fmt.Errorf("mtp-build-mirror: add token at pos %d: %w", pos, err)
+			}
 
 			// Shift-right-by-1 embd alignment per the reference MTP
 			// impl: slot 0 of the very first chunk uses s.pendingH
@@ -670,14 +679,14 @@ func (e *batchEngine) captureBuildChunkForSharedMTP(s *slot, tokens []llama.Toke
 //   - The most recent target decode for this slot has been captured
 //     (captureTargetBatchForSharedMTP), so s.pendingH holds the pre-norm
 //     hidden state of s.sampled and s.draftNPast is the target position.
-func (e *batchEngine) generateDraftTokensMTPShared(s *slot) []llama.Token {
+func (e *batchEngine) generateDraftTokensMTPShared(s *slot) ([]llama.Token, error) {
 	draft := e.model.draft.core()
 	nEmbd := draft.nEmbd
 
 	nDraft := chooseNDraft(s, e.maxDraftForSlot(s, draft.nDraft))
 	if nDraft == 0 {
 		s.draftTokensBuf = s.draftTokensBuf[:0]
-		return s.draftTokensBuf
+		return s.draftTokensBuf, nil
 	}
 
 	if cap(s.draftTokensBuf) < nDraft {
@@ -688,7 +697,7 @@ func (e *batchEngine) generateDraftTokensMTPShared(s *slot) []llama.Token {
 	// pendingH is populated by the capture that ran after the last target
 	// decode. Without it we cannot condition the MTP head — short-circuit.
 	if len(s.pendingH) != nEmbd {
-		return s.draftTokensBuf
+		return s.draftTokensBuf, nil
 	}
 
 	// Greedy sampler for MTP, matching the own-KV path and the reference
@@ -706,7 +715,9 @@ func (e *batchEngine) generateDraftTokensMTPShared(s *slot) []llama.Token {
 
 	for range nDraft {
 		batch.NTokens = 0
-		batch.Add(curToken, pos, seqIDs, true)
+		if err := batch.Add(curToken, pos, seqIDs, true); err != nil {
+			return nil, fmt.Errorf("mtp shared draft: add token at pos %d: %w", pos, err)
+		}
 
 		// Copy the conditioning hidden row into the pinned embd slice
 		// backing draftBatchMTP.Embd (see loadDraftModelMTPShared).
@@ -754,5 +765,5 @@ func (e *batchEngine) generateDraftTokensMTPShared(s *slot) []llama.Token {
 	// The reference impl performs no seq_rm here either; the assistant's
 	// own transient cells at the fixed position are overwritten next round.
 	s.specDraftedTotal += len(s.draftTokensBuf)
-	return s.draftTokensBuf
+	return s.draftTokensBuf, nil
 }

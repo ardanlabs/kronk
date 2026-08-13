@@ -80,6 +80,9 @@ func contextPoolFallbackParams(params llama.ContextParams) llama.ContextParams {
 	if params.NSeqMax > 1 && params.NCtx > 0 {
 		params.NCtx /= params.NSeqMax
 	}
+	if params.NOutputsMaxPerSeq > 0 {
+		params.NOutputsMax = params.NOutputsMaxPerSeq
+	}
 
 	params.NSeqMax = 1
 	params.KVUnified = 0

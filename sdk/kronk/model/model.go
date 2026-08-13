@@ -691,10 +691,10 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l
 	typeKName := GGMLTypeFromYZMA(ctxParams.TypeK).String()
 	typeVName := GGMLTypeFromYZMA(ctxParams.TypeV).String()
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nAbortCallbackSet[%t]\nAttentionType[%d]\nCtxOtherSet[%t]\nCtxType[%d]\nDefragThold[%g]\nEmbeddings[%d]\nEvalCallbackSet[%t]\nFlashAttentionType[%s]\nKVUnified[%d]\nNBatch[%d]\nNCtx[%d]\nNOutputsMax[%d]\nNRsSeq[%d]\nNSamplers[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNoPerf[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSamplersSet[%t]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nAbortCallbackSet[%t]\nAttentionType[%d]\nCtxOtherSet[%t]\nCtxType[%d]\nDefragThold[%g]\nEmbeddings[%d]\nEvalCallbackSet[%t]\nFlashAttentionType[%s]\nKVUnified[%d]\nNBatch[%d]\nNCtx[%d]\nNOutputsMax[%d]\nNOutputsMaxPerSeq[%d]\nNRsSeq[%d]\nNSamplers[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNoPerf[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSamplersSet[%t]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
 		ctxParams.AbortCallback != 0, ctxParams.AttentionType, ctxParams.CtxOther != 0, ctxParams.CtxType,
 		ctxParams.DefragThold, ctxParams.Embeddings, ctxParams.CbEval != 0, faName, ctxParams.KVUnified,
-		ctxParams.NBatch, ctxParams.NCtx, ctxParams.NOutputsMax, ctxParams.NRsSeq, ctxParams.NSamplers,
+		ctxParams.NBatch, ctxParams.NCtx, ctxParams.NOutputsMax, ctxParams.NOutputsMaxPerSeq, ctxParams.NRsSeq, ctxParams.NSamplers,
 		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch, ctxParams.NoPerf,
 		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType, ctxParams.RopeFreqBase,
 		ctxParams.RopeFreqScale, ctxParams.RopeScalingType, ctxParams.Samplers != 0, ctxParams.SwaFull,

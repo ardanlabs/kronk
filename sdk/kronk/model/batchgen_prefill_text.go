@@ -1,16 +1,19 @@
 package model
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
+	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.opentelemetry.io/otel/attribute"
 )
 
 // addPrefillChunk adds the next chunk of generation prefill tokens to the batch.
 // The chunkLimit parameter caps how many tokens this slot may add in one call,
 // enabling round-robin fair sharing of the tray across slots.
-// Returns false only on shutdown or context cancellation; true otherwise.
+// Returns false on shutdown, context cancellation, or an internal error. It
+// finishes the slot before returning an internal error.
 func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 	if s.prefillTokens == nil || s.nPrefilled >= len(s.prefillTokens) {
 		return true
@@ -57,12 +60,17 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 	}
 
 	// Add chunk of tokens to batch.
+	batchStart := e.batch.NTokens
 	for i := range chunkSize {
 		tok := s.prefillTokens[s.nPrefilled+i]
 		isLast := s.nPrefilled+i == len(s.prefillTokens)-1
-		e.batch.Add(tok, s.nPast, s.seqIDs, isLast)
-		s.nPast++
+		if err := e.batch.Add(tok, s.nPast+llama.Pos(i), s.seqIDs, isLast); err != nil {
+			e.batch.NTokens = batchStart
+			e.finishSlot(s, fmt.Errorf("add prefill token %d: %w", s.nPrefilled+i, err))
+			return false
+		}
 	}
+	s.nPast += llama.Pos(chunkSize)
 	s.nPrefilled += chunkSize
 	if mtpDraft {
 		s.targetBatchCount += int32(chunkSize)

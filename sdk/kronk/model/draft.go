@@ -213,7 +213,7 @@ func (d *mtpDrafter) core() *draftCore { return d.c }
 func (d *mtpDrafter) draftKVCtx() llama.Context { return d.c.lctx }
 
 func (d *mtpDrafter) generate(e *batchEngine, s *slot) ([]llama.Token, error) {
-	return e.generateDraftTokensMTP(s), nil
+	return e.generateDraftTokensMTP(s)
 }
 
 func (d *mtpDrafter) syncAfterTargetDecode(e *batchEngine, s *slot, effectiveCount int) error {
@@ -250,7 +250,7 @@ func (*sharedMTPDrafter) mtp() bool          { return true }
 func (d *sharedMTPDrafter) core() *draftCore { return d.c }
 
 func (d *sharedMTPDrafter) generate(e *batchEngine, s *slot) ([]llama.Token, error) {
-	return e.generateDraftTokensMTPShared(s), nil
+	return e.generateDraftTokensMTPShared(s)
 }
 
 func (d *sharedMTPDrafter) syncAfterTargetDecode(e *batchEngine, s *slot, effectiveCount int) error {

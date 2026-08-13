@@ -460,7 +460,9 @@ func (e *batchSeqEngine) evaluateJob(job *batchSeqJob) ([][]float32, bool, error
 		for _, entry := range plan.entries {
 			seqIDs := []llama.SeqId{entry.seqID}
 			for pos, token := range entry.tokens {
-				e.batch.Add(token, llama.Pos(pos), seqIDs, true)
+				if err := e.batch.Add(token, llama.Pos(pos), seqIDs, true); err != nil {
+					return nil, true, fmt.Errorf("batchseq-evaluate: add item[%d] token at pos %d: %w", entry.itemIndex, pos, err)
+				}
 			}
 		}
 

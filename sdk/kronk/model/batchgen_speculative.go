@@ -99,7 +99,10 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 			for j := i; j < end; j++ {
 				pos := commonLen + j
 				isLast := pos == len(tokens)-1
-				batch.Add(newTokens[j], llama.Pos(pos), seqIDs, isLast)
+				if err := batch.Add(newTokens[j], llama.Pos(pos), seqIDs, isLast); err != nil {
+					s.draftCachedTokens = s.draftCachedTokens[:0]
+					return fmt.Errorf("add draft prefill token at pos %d: %w", pos, err)
+				}
 			}
 
 			ret, err := llama.Decode(draft.lctx, batch)
@@ -861,10 +864,14 @@ func (e *batchEngine) restoreTargetSpecSnapshot(s *slot, basePast llama.Pos, sam
 	rebatch := llama.BatchInit(int32(count), 0, 1)
 	defer llama.BatchFree(rebatch)
 
-	rebatch.Add(sampledAtBase, basePast, s.seqIDs, accepted == 0)
+	if err := rebatch.Add(sampledAtBase, basePast, s.seqIDs, accepted == 0); err != nil {
+		return fmt.Errorf("add speculative restore base token: %w", err)
+	}
 	for i := range accepted {
 		isLast := i == accepted-1
-		rebatch.Add(draftTokens[i], basePast+llama.Pos(1+i), s.seqIDs, isLast)
+		if err := rebatch.Add(draftTokens[i], basePast+llama.Pos(1+i), s.seqIDs, isLast); err != nil {
+			return fmt.Errorf("add speculative restore draft token %d: %w", i, err)
+		}
 	}
 
 	e.model.decodeMu.Lock()

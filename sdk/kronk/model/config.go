@@ -939,15 +939,16 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 	ctxParams.FlashAttentionType = cfg.FlashAttention().toYZMAType()
 
 	// NOutputsMax caps how many logits-flagged rows llama.cpp reserves
-	// per ubatch. The default (0) reserves n_batch rows, which is
-	// wasteful for server-style decoding where only a handful of tokens
-	// per slot ever need logits. Capping at the actual upper bound
-	// frees significant VRAM at large -ub / MTP. See ggml-org/llama.cpp
-	// PR 23861 (1.2 GB saved at -ub 2048 with MTP).
+	// per ubatch. NOutputsMaxPerSeq gives graph reservation the matching
+	// per-sequence bound instead of letting one sequence claim the total.
+	// The defaults reserve n_batch rows, which is wasteful for server-style
+	// decoding where only a handful of tokens per slot ever need logits.
+	// Capping at the actual upper bound frees significant VRAM at large
+	// -ub / MTP. See ggml-org/llama.cpp PR 23861 (1.2 GB saved at -ub 2048
+	// with MTP).
 	//
-	// Embed / rerank models pool logits across the whole prompt, so
-	// leave NOutputsMax at 0 (= n_batch) to avoid clipping the pooled
-	// outputs.
+	// Embed / rerank models pool logits across the whole prompt, so leave
+	// both limits at 0 (= n_batch) to avoid clipping the pooled outputs.
 	if !mi.IsEmbedModel && !mi.IsRerankModel {
 		// Plain decode and IMC prefill mark logits on at most one token
 		// per slot per ubatch (last prompt token during prefill, sampled
@@ -985,6 +986,7 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		}
 
 		ctxParams.NOutputsMax = uint32(nSeqMax * perSlot)
+		ctxParams.NOutputsMaxPerSeq = uint32(perSlot)
 		if mi.Type == ModelTypeHybrid {
 			ctxParams.NRsSeq = uint32(rollbackDepth)
 		}

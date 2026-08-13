@@ -323,9 +323,22 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 				s.specDraftTokens = draftTokens
 
 				// Add s.sampled + all draft tokens with logits=true.
-				e.batch.Add(s.sampled, s.nPast, s.seqIDs, true)
+				if err := e.batch.Add(s.sampled, s.nPast, s.seqIDs, true); err != nil {
+					e.finishSlot(s, fmt.Errorf("add speculative base token: %w", err))
+					continue
+				}
+				batchStart := s.specBaseBatch
+				addFailed := false
 				for i, tok := range draftTokens {
-					e.batch.Add(tok, s.nPast+llama.Pos(1+i), s.seqIDs, true)
+					if err := e.batch.Add(tok, s.nPast+llama.Pos(1+i), s.seqIDs, true); err != nil {
+						e.batch.NTokens = batchStart
+						e.finishSlot(s, fmt.Errorf("add speculative draft token %d: %w", i, err))
+						addFailed = true
+						break
+					}
+				}
+				if addFailed {
+					continue
 				}
 
 				// MTP: claim the slot's range in the target batch so the
@@ -369,7 +382,10 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			s.targetBatchCount = 1
 			s.mtpHasBatch = true
 		}
-		e.batch.Add(s.sampled, s.nPast, s.seqIDs, true)
+		if err := e.batch.Add(s.sampled, s.nPast, s.seqIDs, true); err != nil {
+			e.finishSlot(s, fmt.Errorf("add generation token: %w", err))
+			continue
+		}
 		s.nPast++
 	}
 
@@ -415,9 +431,12 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 				continue
 			}
 
-			// addPrefillChunk returns false if shutdown or context cancelled.
+			// addPrefillChunk finishes the slot itself on internal errors. On
+			// cancellation the job remains attached for this caller to finish.
 			if !e.addPrefillChunk(s, chunkLimit) {
-				e.finishSlot(s, e.slotCancelError(s))
+				if s.job != nil {
+					e.finishSlot(s, e.slotCancelError(s))
+				}
 				continue
 			}
 		}

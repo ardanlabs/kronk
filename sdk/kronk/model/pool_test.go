@@ -8,10 +8,12 @@ import (
 
 func TestContextPoolFallbackParams(t *testing.T) {
 	params := llama.ContextParams{
-		NCtx:    32_768,
-		NBatch:  8_192,
-		NUbatch: 2_048,
-		NSeqMax: 4,
+		NCtx:              32_768,
+		NBatch:            8_192,
+		NUbatch:           2_048,
+		NSeqMax:           4,
+		NOutputsMax:       20,
+		NOutputsMaxPerSeq: 5,
 	}
 
 	got := contextPoolFallbackParams(params)
@@ -31,6 +33,12 @@ func TestContextPoolFallbackParams(t *testing.T) {
 	if got.NUbatch != params.NUbatch {
 		t.Errorf("NUbatch: got %d, want %d", got.NUbatch, params.NUbatch)
 	}
+	if got.NOutputsMax != 5 {
+		t.Errorf("NOutputsMax: got %d, want %d", got.NOutputsMax, 5)
+	}
+	if got.NOutputsMaxPerSeq != 5 {
+		t.Errorf("NOutputsMaxPerSeq: got %d, want %d", got.NOutputsMaxPerSeq, 5)
+	}
 
 	if params.NCtx != 32_768 {
 		t.Errorf("original NCtx: got %d, want %d", params.NCtx, 32_768)
@@ -40,6 +48,9 @@ func TestContextPoolFallbackParams(t *testing.T) {
 	}
 	if params.KVUnified != 0 {
 		t.Errorf("original KVUnified: got %d, want %d", params.KVUnified, 0)
+	}
+	if params.NOutputsMax != 20 {
+		t.Errorf("original NOutputsMax: got %d, want %d", params.NOutputsMax, 20)
 	}
 }
 
