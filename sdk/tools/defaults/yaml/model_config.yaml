@@ -198,6 +198,8 @@ unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
 
 # ~43GB VRAM
 unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL/AGENT:
+  chat-template-kwargs:
+    preserve_thinking: true
   context-window: 131072
   sampling-parameters:
     max_tokens: 8192
@@ -207,6 +209,8 @@ unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL/AGENT:
 
 # ~40GB VRAM
 unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+  chat-template-kwargs:
+    preserve_thinking: true
   context-window: 131072
   sampling-parameters:
     max_tokens: 8192

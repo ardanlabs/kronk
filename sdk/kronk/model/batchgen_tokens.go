@@ -259,6 +259,10 @@ type decodedPieceOutcome struct {
 // processDecodedPiece passes one released stop-gate piece through the parser.
 // It reports terminal conditions to its caller and never finalizes the slot.
 func (e *batchEngine) processDecodedPiece(s *slot, piece stopPiece, logprobIndex int, reconcile bool) decodedPieceOutcome {
+	if e.model.cfg.InsecureLogging() {
+		s.rawOutput.WriteString(piece.content)
+	}
+
 	result, eog := s.stateMachine.Classify(piece.content)
 	if s.suppressTools && result.Channel == ChannelTool {
 		result.Channel = ChannelAnswer

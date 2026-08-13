@@ -120,6 +120,13 @@ func TestConvertInputToMessagesAcceptsResponsesToolChoice(t *testing.T) {
 	if diff := cmp.Diff(any(want), got["tool_choice"]); diff != "" {
 		t.Errorf("tool choice mismatch (-want +got):\n%s", diff)
 	}
+	wantTools := []model.D{{
+		"type":     "function",
+		"function": model.D{"name": "get_weather"},
+	}}
+	if diff := cmp.Diff(wantTools, got["tools"]); diff != "" {
+		t.Errorf("tools mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestConvertInputToMessagesRejectsChatToolChoice(t *testing.T) {
