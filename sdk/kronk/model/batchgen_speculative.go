@@ -187,7 +187,7 @@ func chooseNDraft(s *slot, maxDraft int) int {
 // For proper speculative sampling (Leviathan et al., 2023), non-greedy mode
 // captures the draft model's sparse probability distribution at each step.
 // The sparse distributions are stored in s.specDraftDistsSparse for verification.
-func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
+func (e *batchEngine) generateDraftTokens(s *slot) ([]llama.Token, error) {
 	draft := e.model.draft.core()
 	temperature := s.job.params.Temperature
 	greedy := temperature == 0
@@ -196,7 +196,7 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 	if nDraft == 0 {
 		s.draftTokensBuf = s.draftTokensBuf[:0]
 		s.specDraftDistsSparse = nil
-		return s.draftTokensBuf
+		return s.draftTokensBuf, nil
 	}
 
 	// Select sampler. Greedy uses the shared draft sampler (argmax).
@@ -252,7 +252,7 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 
 	// Perform the entire draft loop in a single call, minimizing per-token
 	// Go overhead between FFI calls.
-	drafted, finalPast := llama.DraftGenerate(
+	drafted, finalPast, err := llama.DraftGenerate(
 		draft.lctx,
 		&draft.batch,
 		e.model.vocab,
@@ -265,6 +265,9 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 		s.draftTokensBuf,
 		outDists,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("draft generate: %w", err)
+	}
 
 	s.draftNPast = finalPast
 	s.draftTokensBuf = s.draftTokensBuf[:drafted]
@@ -296,7 +299,7 @@ func (e *batchEngine) generateDraftTokens(s *slot) []llama.Token {
 		"max_nDraft", draft.nDraft, "acc_ema", fmt.Sprintf("%.2f", s.specAccEMA),
 		"draft_nPast_before", s.draftStartPast, "draft_nPast_after", s.draftNPast)
 
-	return s.draftTokensBuf
+	return s.draftTokensBuf, nil
 }
 
 // verifySpeculativeTokens is Phase A of speculative verification — the

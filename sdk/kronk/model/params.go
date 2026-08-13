@@ -907,13 +907,17 @@ func (m *Model) toSampler(ctx context.Context, p Params, seeds samplingSeeds) ll
 
 	if penaltiesEnabled(p) {
 		order++
-		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(p.RepeatLastN, p.RepeatPenalty, p.FrequencyPenalty, p.PresencePenalty))
+		llama.SamplerChainAdd(sampler, llama.SamplerInitPenalties(llama.VocabNTokens(m.vocab), p.RepeatLastN, p.RepeatPenalty, p.FrequencyPenalty, p.PresencePenalty))
 		m.log(ctx, "sampler-chain", "order", order, "sampler", "penalties", "repeat_last_n", p.RepeatLastN, "repeat_penalty", fmt.Sprintf("%.2f", p.RepeatPenalty), "frequency_penalty", fmt.Sprintf("%.2f", p.FrequencyPenalty), "presence_penalty", fmt.Sprintf("%.2f", p.PresencePenalty))
 	}
 
 	if dryEnabled(p) {
 		order++
-		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, int32(m.cfg.ContextWindow()), p.DryMultiplier, p.DryBase, p.DryAllowedLen, p.DryPenaltyLast, []string{"\n", ":", "\"", "*"}))
+		dryPenaltyLast := p.DryPenaltyLast
+		if dryPenaltyLast < 0 {
+			dryPenaltyLast = int32(m.cfg.ContextWindow())
+		}
+		llama.SamplerChainAdd(sampler, llama.SamplerInitDry(m.vocab, p.DryMultiplier, p.DryBase, p.DryAllowedLen, dryPenaltyLast, []string{"\n", ":", "\"", "*"}))
 		m.log(ctx, "sampler-chain", "order", order, "sampler", "dry", "multiplier", fmt.Sprintf("%.2f", p.DryMultiplier), "base", fmt.Sprintf("%.2f", p.DryBase), "allowed_len", p.DryAllowedLen, "penalty_last_n", p.DryPenaltyLast)
 	}
 

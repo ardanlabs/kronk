@@ -87,7 +87,7 @@ type drafter interface {
 	// generate produces draft tokens for the slot's next speculative
 	// round. Dispatched per-mode so adding a new mode does not require
 	// editing the engine's generate call site.
-	generate(e *batchEngine, s *slot) []llama.Token
+	generate(e *batchEngine, s *slot) ([]llama.Token, error)
 
 	// unload releases the strategy's resources. Implementations differ in
 	// whether they free the llama_model (classic owns it; MTP shares it
@@ -185,7 +185,7 @@ func (*classicDrafter) kind() draftKind    { return draftClassic }
 func (*classicDrafter) mtp() bool          { return false }
 func (d *classicDrafter) core() *draftCore { return d.c }
 
-func (d *classicDrafter) generate(e *batchEngine, s *slot) []llama.Token {
+func (d *classicDrafter) generate(e *batchEngine, s *slot) ([]llama.Token, error) {
 	return e.generateDraftTokens(s)
 }
 
@@ -212,8 +212,8 @@ func (d *mtpDrafter) core() *draftCore { return d.c }
 
 func (d *mtpDrafter) draftKVCtx() llama.Context { return d.c.lctx }
 
-func (d *mtpDrafter) generate(e *batchEngine, s *slot) []llama.Token {
-	return e.generateDraftTokensMTP(s)
+func (d *mtpDrafter) generate(e *batchEngine, s *slot) ([]llama.Token, error) {
+	return e.generateDraftTokensMTP(s), nil
 }
 
 func (d *mtpDrafter) syncAfterTargetDecode(e *batchEngine, s *slot, effectiveCount int) error {
@@ -249,8 +249,8 @@ func (*sharedMTPDrafter) kind() draftKind    { return draftMTPGemma4 }
 func (*sharedMTPDrafter) mtp() bool          { return true }
 func (d *sharedMTPDrafter) core() *draftCore { return d.c }
 
-func (d *sharedMTPDrafter) generate(e *batchEngine, s *slot) []llama.Token {
-	return e.generateDraftTokensMTPShared(s)
+func (d *sharedMTPDrafter) generate(e *batchEngine, s *slot) ([]llama.Token, error) {
+	return e.generateDraftTokensMTPShared(s), nil
 }
 
 func (d *sharedMTPDrafter) syncAfterTargetDecode(e *batchEngine, s *slot, effectiveCount int) error {

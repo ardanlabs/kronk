@@ -312,7 +312,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			// Per-mode dispatch: classic uses token-only drafting, MTP
 			// uses the hidden-state head. Adding a new strategy means
 			// implementing generate, not editing this call site.
-			draftTokens := e.model.draft.generate(e, s)
+			draftTokens, err := e.model.draft.generate(e, s)
+			if err != nil {
+				e.finishSlot(s, fmt.Errorf("generating draft tokens: %w", err))
+				continue
+			}
 			if len(draftTokens) > 0 {
 				s.specBasePast = s.nPast
 				s.specBaseBatch = e.batch.NTokens

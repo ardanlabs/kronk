@@ -261,11 +261,11 @@ export default function IMCSessions() {
               <thead>
                 <tr className="imc-table-groups">
                   <th colSpan={3} className="imc-table-group imc-table-group-session">Session</th>
+                  <th colSpan={3} className="imc-table-group imc-table-group-request">Latest Request</th>
                   <th colSpan={3} className="imc-table-group imc-table-group-current">
                     Current Working Cache
                   </th>
                   <th colSpan={4} className="imc-table-group imc-table-group-fallback">Fallback Cache</th>
-                  <th colSpan={3} className="imc-table-group imc-table-group-request">Latest Request</th>
                   <th colSpan={2} className="imc-table-group imc-table-group-capacity">Capacity / Usage</th>
                   <th colSpan={2} className="imc-table-group imc-table-group-details">Details</th>
                 </tr>
@@ -278,6 +278,15 @@ export default function IMCSessions() {
                   </th>
                   <th onClick={() => handleSort('state')} className="catalog-table-sortable">
                     {labelWithTip('State', 'imcState')}{sortIndicator('state')}
+                  </th>
+                  <th onClick={() => handleSort('input_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Input', 'imcInputTokens')}{sortIndicator('input_tokens')}
+                  </th>
+                  <th onClick={() => handleSort('output_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Output', 'imcOutputTokens')}{sortIndicator('output_tokens')}
+                  </th>
+                  <th onClick={() => handleSort('request_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
+                    {labelWithTip('Context', 'imcRequestTotal')}{sortIndicator('request_context')}
                   </th>
                   <th onClick={() => handleSort('messages')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Messages', 'imcMessages')}{sortIndicator('messages')}
@@ -300,15 +309,6 @@ export default function IMCSessions() {
                   <th onClick={() => handleSort('fallback_updates')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Updates', 'imcFallbackUpdates')}{sortIndicator('fallback_updates')}
                   </th>
-                  <th onClick={() => handleSort('input_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Input', 'imcInputTokens')}{sortIndicator('input_tokens')}
-                  </th>
-                  <th onClick={() => handleSort('output_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Output', 'imcOutputTokens')}{sortIndicator('output_tokens')}
-                  </th>
-                  <th onClick={() => handleSort('request_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Context', 'imcRequestTotal')}{sortIndicator('request_context')}
-                  </th>
                   <th onClick={() => handleSort('peak_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
                     {labelWithTip('Peak Context', 'imcPeakContext')}{sortIndicator('peak_context')}
                   </th>
@@ -329,6 +329,9 @@ export default function IMCSessions() {
                     <td>{session.model_id}</td>
                     <td>{session.id}</td>
                     <td><span className={`badge badge-${session.state}`}>{session.state}</span></td>
+                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{session.input_tokens.toLocaleString()}</td>
+                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{session.output_tokens.toLocaleString()}</td>
+                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{(session.input_tokens + session.output_tokens).toLocaleString()}</td>
                     <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.messages.toLocaleString()}</td>
                     <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.context.toLocaleString()}</td>
                     <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.allocated.toLocaleString()}</td>
@@ -336,9 +339,6 @@ export default function IMCSessions() {
                     <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.checkpoint_allocated > 0 ? session.checkpoint_allocated.toLocaleString() : '—'}</td>
                     <td className="imc-fallback-cell">{session.fallback_kind || '—'}</td>
                     <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.fallback_updates.toLocaleString()}</td>
-                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{session.input_tokens.toLocaleString()}</td>
-                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{session.output_tokens.toLocaleString()}</td>
-                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{(session.input_tokens + session.output_tokens).toLocaleString()}</td>
                     <td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{session.peak_context.toLocaleString()}</td>
                     <td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{utilization(session.peak_context, session.context_window)}</td>
                     <td><span className={`badge badge-${session.has_media ? 'yes' : 'no'}`}>{session.has_media ? 'yes' : 'no'}</span></td>
