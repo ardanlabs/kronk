@@ -22,10 +22,12 @@ libraries and model files.
 **1. Install the CLI with Homebrew (macOS or Linux)**
 
 ```shell
-brew tap ardanlabs/kronk
-brew trust ardanlabs/kronk
-brew install kronk
+brew install ardanlabs/kronk/kronk
 ```
+
+The fully qualified formula name adds the tap and trusts only the Kronk formula.
+Do not run `brew trust ardanlabs/kronk` unless you intend to trust every current
+and future formula, cask, and external command published by the tap.
 
 Other installation methods are listed in [Section 2.2](#22-choose-an-installation-method).
 
@@ -102,15 +104,17 @@ affect memory use; parameter count alone is not a reliable requirement. See
 #### Homebrew
 
 ```shell
-brew tap ardanlabs/kronk
-brew trust ardanlabs/kronk
-brew install kronk
+brew install ardanlabs/kronk/kronk
 ```
+
+Homebrew automatically adds the tap and records trust for this formula. This is
+narrower than `brew trust ardanlabs/kronk`, which trusts every current and future
+item in the tap.
 
 Upgrade an existing installation with:
 
 ```shell
-brew upgrade kronk
+brew upgrade ardanlabs/kronk/kronk
 ```
 
 #### Release archive

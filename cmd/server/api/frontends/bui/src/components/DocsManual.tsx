@@ -145,9 +145,8 @@ export default function DocsManual() {
           <h3 id="21-native-quick-start">2.1 Native Quick Start</h3>
           <p>This path installs Kronk on the host, downloads a starter model, and starts the model server. The first run requires an internet connection for native libraries and model files.</p>
           <p><strong>1. Install the CLI with Homebrew (macOS or Linux)</strong></p>
-          <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk
-brew trust ardanlabs/kronk
-brew install kronk`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`brew install ardanlabs/kronk/kronk`}</code></pre>
+          <p>The fully qualified formula name adds the tap and trusts only the Kronk formula. Do not run <code>brew trust ardanlabs/kronk</code> unless you intend to trust every current and future formula, cask, and external command published by the tap.</p>
           <p>Other installation methods are listed in <a href="#22-choose-an-installation-method">Section 2.2</a>.</p>
           <p><strong>2. Install the native inference libraries</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
@@ -205,11 +204,10 @@ brew install kronk`}</code></pre>
           </table>
           <p>Regardless of installation method, model downloads require enough disk space, and inference requires enough RAM or VRAM for the selected model and configuration. Quantization, context size, KV cache type, and concurrency all affect memory use; parameter count alone is not a reliable requirement. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a>.</p>
           <h4 id="homebrew">Homebrew</h4>
-          <pre className="code-block"><code className="language-shell">{`brew tap ardanlabs/kronk
-brew trust ardanlabs/kronk
-brew install kronk`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`brew install ardanlabs/kronk/kronk`}</code></pre>
+          <p>Homebrew automatically adds the tap and records trust for this formula. This is narrower than <code>brew trust ardanlabs/kronk</code>, which trusts every current and future item in the tap.</p>
           <p>Upgrade an existing installation with:</p>
-          <pre className="code-block"><code className="language-shell">{`brew upgrade kronk`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`brew upgrade ardanlabs/kronk/kronk`}</code></pre>
           <h4 id="release-archive">Release archive</h4>
           <p>Download the archive for your operating system and architecture from the <a href="https://github.com/ardanlabs/kronk/releases">Kronk releases page</a>, extract the <code>kronk</code> executable, and place it on your <code>PATH</code>.</p>
           <h4 id="go-toolchain">Go toolchain</h4>

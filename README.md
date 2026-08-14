@@ -35,12 +35,13 @@ Visit [kronkai.com](https://kronkai.com) or read the
 The recommended installation method on macOS and Linux is Homebrew:
 
 ```shell
-brew tap ardanlabs/kronk
-brew trust ardanlabs/kronk
-brew install kronk
+brew install ardanlabs/kronk/kronk
 
 kronk server start
 ```
+
+The fully qualified formula name trusts only the Kronk formula, not every item
+in the `ardanlabs/kronk` tap.
 
 You can also install the CLI with Go on a supported platform:
 
