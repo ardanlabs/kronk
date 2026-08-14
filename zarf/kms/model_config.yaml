@@ -218,7 +218,7 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     top_k: 20
     top_p: 1
 
-# ~20GB VRAM
+# ~26GB VRAM
 unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
   chat-template-kwargs:
     preserve_thinking: true
