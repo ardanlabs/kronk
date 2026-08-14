@@ -218,6 +218,18 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     top_k: 20
     top_p: 1
 
+# ~20GB VRAM
+unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
+  chat-template-kwargs:
+    preserve_thinking: true
+  context-window: 131072
+  sampling-parameters:
+    reasoning_effort: "low"
+    max_tokens: 16384
+    temperature: 0.6
+    top_k: 20
+    top_p: 1
+
 # ~12GB VRAM
 unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
   context-window: 131072

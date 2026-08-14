@@ -119,21 +119,20 @@ func normalizeChatTemplateValue(value any) (any, error) {
 // for any zero-valued fields.
 func (s SamplingConfig) WithDefaults() SamplingConfig {
 	defaults := SamplingConfig{
-		Temperature:     model.DefTemp,
-		TopK:            model.DefTopK,
-		TopP:            model.DefTopP,
-		MinP:            model.DefMinP,
-		RepeatPenalty:   model.DefRepeatPenalty,
-		RepeatLastN:     model.DefRepeatLastN,
-		DryMultiplier:   model.DefDryMultiplier,
-		DryBase:         model.DefDryBase,
-		DryAllowedLen:   model.DefDryAllowedLen,
-		DryPenaltyLast:  model.DefDryPenaltyLast,
-		XtcProbability:  model.DefXtcProbability,
-		XtcThreshold:    model.DefXtcThreshold,
-		XtcMinKeep:      model.DefXtcMinKeep,
-		EnableThinking:  model.DefEnableThinking,
-		ReasoningEffort: model.DefReasoningEffort,
+		Temperature:    model.DefTemp,
+		TopK:           model.DefTopK,
+		TopP:           model.DefTopP,
+		MinP:           model.DefMinP,
+		RepeatPenalty:  model.DefRepeatPenalty,
+		RepeatLastN:    model.DefRepeatLastN,
+		DryMultiplier:  model.DefDryMultiplier,
+		DryBase:        model.DefDryBase,
+		DryAllowedLen:  model.DefDryAllowedLen,
+		DryPenaltyLast: model.DefDryPenaltyLast,
+		XtcProbability: model.DefXtcProbability,
+		XtcThreshold:   model.DefXtcThreshold,
+		XtcMinKeep:     model.DefXtcMinKeep,
+		EnableThinking: model.DefEnableThinking,
 	}
 
 	if s.Temperature == 0 {
@@ -178,10 +177,6 @@ func (s SamplingConfig) WithDefaults() SamplingConfig {
 	if s.EnableThinking == "" {
 		s.EnableThinking = defaults.EnableThinking
 	}
-	if s.ReasoningEffort == "" {
-		s.ReasoningEffort = defaults.ReasoningEffort
-	}
-
 	return s
 }
 
@@ -227,10 +222,6 @@ func (s SamplingConfig) WithMetadataDefaults(metadata map[string]string) Samplin
 	if s.EnableThinking == "" {
 		s.EnableThinking = model.DefEnableThinking
 	}
-	if s.ReasoningEffort == "" {
-		s.ReasoningEffort = model.DefReasoningEffort
-	}
-
 	return s
 }
 

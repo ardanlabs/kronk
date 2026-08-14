@@ -669,8 +669,8 @@ export default function DocsSDKModel() {
 	// the model to introduce new topics. Default is 0.0 (disabled).
 	PresencePenalty float32 \`json:"presence_penalty"\`
 
-	// ReasoningEffort is a string that specifies the level of reasoning effort
-	// to use for GPT models. Default is ReasoningEffortMedium.
+	// ReasoningEffort requests a model-specific reasoning level. When empty, the
+	// chat template determines its default.
 	ReasoningEffort string \`json:"reasoning_effort"\`
 
 	// RepeatLastN specifies how many recent tokens to consider when applying
@@ -1838,10 +1838,6 @@ export default function DocsSDKModel() {
 	// appeared in the output, regardless of frequency. Higher values encourage
 	// the model to introduce new topics. Default is 0.0 (disabled).
 	DefPresencePenalty float32 = 0.0
-
-	// DefReasoningEffort is a string that specifies the level of reasoning effort to
-	// use for GPT models.
-	DefReasoningEffort = ReasoningEffortMedium
 
 	// DefRepeatLastN specifies how many recent tokens to consider when applying the
 	// repetition penalty. A larger value considers more context but may be slower.

@@ -71,6 +71,30 @@ func TestNew_ClaimsMistralAndDevstral(t *testing.T) {
 	}
 }
 
+func TestParser_AdjustParams(t *testing.T) {
+	tests := []struct {
+		name   string
+		parser Parser
+		input  string
+		want   string
+	}{
+		{name: "template default remains unset", parser: Parser{strictReasoningEffort: true}},
+		{name: "supported none", parser: Parser{strictReasoningEffort: true}, input: model.ReasoningEffortNone, want: model.ReasoningEffortNone},
+		{name: "supported high", parser: Parser{strictReasoningEffort: true}, input: model.ReasoningEffortHigh, want: model.ReasoningEffortHigh},
+		{name: "unsupported medium becomes high", parser: Parser{strictReasoningEffort: true}, input: model.ReasoningEffortMedium, want: model.ReasoningEffortHigh},
+		{name: "unrestricted template", input: model.ReasoningEffortMedium, want: model.ReasoningEffortMedium},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := tt.parser.AdjustParams(model.Params{ReasoningEffort: tt.input})
+			if params.ReasoningEffort != tt.want {
+				t.Errorf("ReasoningEffort: got %q, want %q", params.ReasoningEffort, tt.want)
+			}
+		})
+	}
+}
+
 // =============================================================================
 // Parser
 // =============================================================================

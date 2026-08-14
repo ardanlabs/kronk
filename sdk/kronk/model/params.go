@@ -73,10 +73,6 @@ const (
 	// the model to introduce new topics. Default is 0.0 (disabled).
 	DefPresencePenalty float32 = 0.0
 
-	// DefReasoningEffort is a string that specifies the level of reasoning effort to
-	// use for GPT models.
-	DefReasoningEffort = ReasoningEffortMedium
-
 	// DefRepeatLastN specifies how many recent tokens to consider when applying the
 	// repetition penalty. A larger value considers more context but may be slower.
 	DefRepeatLastN = 64
@@ -212,8 +208,8 @@ type Params struct {
 	// the model to introduce new topics. Default is 0.0 (disabled).
 	PresencePenalty float32 `json:"presence_penalty"`
 
-	// ReasoningEffort is a string that specifies the level of reasoning effort
-	// to use for GPT models. Default is ReasoningEffortMedium.
+	// ReasoningEffort requests a model-specific reasoning level. When empty, the
+	// chat template determines its default.
 	ReasoningEffort string `json:"reasoning_effort"`
 
 	// RepeatLastN specifies how many recent tokens to consider when applying
@@ -695,10 +691,10 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 	// "is true"/"is false" tests require a real bool, not a string.
 	d["enable_thinking"] = p.Thinking == ThinkingEnabled
 
-	// Mirror the resolved reasoning_effort back into d so any parser-level
-	// coercion (e.g. mistral coercing "medium" → "high" for templates that
-	// only accept {none, high}) is visible to the Jinja template, which
-	// reads d["reasoning_effort"] directly.
+	// Mirror an explicitly configured reasoning_effort back into d so any
+	// parser-level coercion is visible to the Jinja template, which reads
+	// d["reasoning_effort"] directly. Leave an omitted value undefined so the
+	// template can apply its native default.
 	if p.ReasoningEffort != "" {
 		d["reasoning_effort"] = p.ReasoningEffort
 	}
@@ -743,12 +739,6 @@ func (m *Model) adjustParams(p Params, request D) Params {
 		p.MinP = DefMinP
 		if m.paramsResolved {
 			p.MinP = m.cfg.DefaultParams.MinP
-		}
-	}
-	if p.ReasoningEffort == "" {
-		p.ReasoningEffort = DefReasoningEffort
-		if m.paramsResolved {
-			p.ReasoningEffort = m.cfg.DefaultParams.ReasoningEffort
 		}
 	}
 	if !requested("repeat_last_n") && !m.paramsResolved && p.RepeatLastN == 0 {
@@ -822,9 +812,6 @@ func resolveSamplingDefaults(p Params, metadata map[string]string, contextWindow
 	}
 	if p.MinP == 0 {
 		p.MinP = samplingMetadataFloat32(metadata, "general.sampling.min_p", DefMinP)
-	}
-	if p.ReasoningEffort == "" {
-		p.ReasoningEffort = DefReasoningEffort
 	}
 	if p.RepeatLastN == 0 {
 		p.RepeatLastN = samplingMetadataInt32(metadata, "general.sampling.penalty_last_n", DefRepeatLastN)
@@ -1171,20 +1158,18 @@ func parseBool(fieldName string, val any) (bool, error) {
 }
 
 func parseReasoningString(fieldName string, val any) (string, error) {
-	result := ReasoningEffortMedium
-
-	switch v := val.(type) {
-	case string:
-		if v != ReasoningEffortNone &&
-			v != ReasoningEffortMinimal &&
-			v != ReasoningEffortLow &&
-			v != ReasoningEffortMedium &&
-			v != ReasoningEffortHigh {
-			return "", fmt.Errorf("parse-reasoning-string: field-name[%s] is not valid option[%s]", fieldName, v)
-		}
-
-		result = v
+	v, ok := val.(string)
+	if !ok {
+		return "", fmt.Errorf("parse-reasoning-string: field-name[%s] must be a string", fieldName)
 	}
 
-	return result, nil
+	if v != ReasoningEffortNone &&
+		v != ReasoningEffortMinimal &&
+		v != ReasoningEffortLow &&
+		v != ReasoningEffortMedium &&
+		v != ReasoningEffortHigh {
+		return "", fmt.Errorf("parse-reasoning-string: field-name[%s] is not valid option[%s]", fieldName, v)
+	}
+
+	return v, nil
 }
