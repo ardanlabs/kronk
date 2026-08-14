@@ -217,11 +217,12 @@ A cold request includes model loading, and a large uncached prompt includes
 prefill. Partial CPU offload can reduce token throughput. Compare representative
 requests after the model is warm rather than relying on the first request.
 
-Model loading defaults to `load-mode: mmap`. Do not switch to `direct-io`
-solely because a GPU is present: its performance depends on the model's actual
-storage device and filesystem, and bypassing the page cache can make repeated
-loads slower. `mlock` stabilizes residency after loading but requires enough
-lockable RAM; it is not a general cold-start optimization. See
+Model loading defaults to `load-mode: auto`, which uses mmap when every selected
+device supports it and otherwise uses ordinary loading. Do not switch to
+`direct-io` solely because a GPU is present: its performance depends on the
+model's actual storage device and filesystem, and bypassing the page cache can
+make repeated loads slower. `mlock` stabilizes residency after loading but
+requires enough lockable RAM; it is not a general cold-start optimization. See
 [Chapter 3 §3.4](https://www.kronkai.com/manual#model-weight-loading) before
 changing the mode.
 

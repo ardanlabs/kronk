@@ -499,6 +499,13 @@ func TestParseGGMLType(t *testing.T) {
 }
 
 func TestLoadMode(t *testing.T) {
+	if got := LoadMode(0); got != LoadModeAuto {
+		t.Errorf("LoadMode zero value = %v, want %v", got, LoadModeAuto)
+	}
+	if got := DerefLoadMode(nil); got != LoadModeAuto {
+		t.Errorf("DerefLoadMode(nil) = %v, want %v", got, LoadModeAuto)
+	}
+
 	tests := []struct {
 		name    string
 		input   string
@@ -506,13 +513,14 @@ func TestLoadMode(t *testing.T) {
 		wantStr string
 		wantErr bool
 	}{
-		{"default", "", LoadModeMMap, "mmap", false},
+		{"default", "", LoadModeAuto, "auto", false},
+		{"auto", "auto", LoadModeAuto, "auto", false},
 		{"mmap", "mmap", LoadModeMMap, "mmap", false},
 		{"none", "none", LoadModeNone, "none", false},
 		{"mlock", "mlock", LoadModeMLock, "mlock", false},
 		{"direct io", "direct-io", LoadModeDirectIO, "direct-io", false},
 		{"dio alias", "dio", LoadModeDirectIO, "direct-io", false},
-		{"invalid", "buffered", LoadModeMMap, "mmap", true},
+		{"invalid", "buffered", LoadModeAuto, "auto", true},
 	}
 
 	for _, tt := range tests {
@@ -536,6 +544,7 @@ func TestLoadModeToYZMAType(t *testing.T) {
 		mode LoadMode
 		want llama.LoadMode
 	}{
+		{LoadModeAuto, llama.LoadModeAuto},
 		{LoadModeMMap, llama.LoadModeMmap},
 		{LoadModeNone, llama.LoadModeNone},
 		{LoadModeMLock, llama.LoadModeMlock},

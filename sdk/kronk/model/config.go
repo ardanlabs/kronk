@@ -141,6 +141,13 @@ type AdapterConfig struct {
 // Adapters contains local llama.cpp-compatible LoRA adapter GGUF files to load
 // with the model. Adapter scales are fixed for the lifetime of the model.
 //
+// ArtifactIntegrity contains expected artifact verification state keyed by
+// model file path. It is used to avoid repeating completed verification work.
+//
+// AdmissionTimeout limits how long a request waits for an admission permit.
+// The timeout applies only to admission, not request processing after a permit
+// is acquired. When unset or set to 0, the default is 3 minutes.
+//
 // AutoTune, when true, asks kronk.New to run a hardware-aware analysis of the
 // model (architecture, size, and available devices) and seed unset settings
 // (context window, KV cache type, slots, flash attention, split mode, etc.)
@@ -157,10 +164,6 @@ type AdapterConfig struct {
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
-//
-// AdmissionTimeout limits how long a request waits for an admission permit.
-// The timeout applies only to admission, not request processing after a permit
-// is acquired. When unset or set to 0, the default is 3 minutes.
 //
 // CacheTypeK is the data type for the K (key) cache. This controls the precision
 // of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0)
@@ -183,6 +186,9 @@ type AdapterConfig struct {
 // chat template. Request-level chat_template_kwargs override matching keys,
 // and explicit top-level request fields override both.
 //
+// PtrDraftModel configures a separate speculative-decoding draft model or an
+// nDraft override for an auto-detected MTP head.
+//
 // Devices is a list of device names to use for model execution. When multiple
 // devices are specified, the model is distributed across them according to the
 // SplitMode and TensorSplit configuration. Device names can be obtained from
@@ -194,6 +200,11 @@ type AdapterConfig struct {
 // context windows. When nil, FlashAttentionAuto is used so llama.cpp can decide
 // whether the active backend supports it. Set to FlashAttentionEnabled to force
 // it on, or FlashAttentionDisabled to force it off.
+//
+// IMCSessionCapacity sets the number of reusable IMC session identities. When
+// left unset or set to 0, generation models default to NSeqMax *
+// max(3, QueueDepth). An explicit value must be at least NSeqMax * QueueDepth
+// so every admitted generation request can reserve a session.
 //
 // IncrementalCache enables Incremental Message Caching (IMC) for agentic
 // workflows. It caches all messages except the last one (which triggers
@@ -208,7 +219,19 @@ type AdapterConfig struct {
 // JinjaFile is the path to the jinja file. This is not required and can be
 // used if you want to override the templated provided by the model metadata.
 //
+// LoadMode controls how model weights are loaded. The default is LoadModeAuto,
+// which uses mmap when every selected device supports it and otherwise uses
+// ordinary loading. LoadModeNone disables mmap, which can improve tensor
+// placement on multi-socket NUMA systems running MoE models with CPU experts.
+// LoadModeMLock keeps mapped model pages resident in RAM, while LoadModeDirectIO
+// bypasses the page cache where the platform and filesystem support it.
+//
 // Log is the logger to use for model operations.
+//
+// MainGPU is the index of the GPU to use as the primary device when SplitMode
+// is SplitModeNone. When nil, the default GPU (usually index 0) is used.
+//
+// PtrMoE controls expert-tensor placement for Mixture of Experts models.
 //
 // ModelFiles is the path to the model files. This is mandatory to provide.
 //
@@ -223,9 +246,6 @@ type AdapterConfig struct {
 // When set to 0, generation models default to NUBatch * NSeqMax. Embedding and
 // reranking models default to NUBatch because non-causal pooled evaluation
 // cannot necessarily split a logical batch into smaller physical batches.
-//
-// MainGPU is the index of the GPU to use as the primary device when SplitMode
-// is SplitModeNone. When nil, the default GPU (usually index 0) is used.
 //
 // NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
 // all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
@@ -254,6 +274,12 @@ type AdapterConfig struct {
 // processing times depending on the memory architecture.
 // When set to 0, the default value is 2048.
 //
+// NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
+// most when expert tensors are on CPU and the system has multiple NUMA nodes.
+// Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror".
+// "distribute" is recommended for multi-socket MoE setups; without it,
+// cross-socket memory access can cause significant bandwidth collapse.
+//
 // OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or
 // true, the KV cache is stored on the GPU (default behavior). Set to false to
 // keep the KV cache on the CPU, which reduces VRAM usage but may slow inference.
@@ -261,6 +287,9 @@ type AdapterConfig struct {
 // OpOffload controls whether host tensor operations are offloaded to the device
 // (GPU). When nil or true, operations are offloaded (default behavior). Set to
 // false to keep operations on the CPU.
+//
+// OpOffloadMinBatch sets the minimum batch size at which host tensor operations
+// are offloaded to the device. When unset or 0, llama.cpp's default is used.
 //
 // ProjFile is the path to the projection files. This is mandatory for media
 // based models like vision and audio.
@@ -285,11 +314,6 @@ type AdapterConfig struct {
 // the current batch is processing. Default is 2, meaning NSeqMax * 2 requests
 // can be in-flight. Only applies to text inference models.
 //
-// IMCSessionCapacity sets the number of reusable IMC session identities. When
-// left unset or set to 0, generation models default to NSeqMax *
-// max(3, QueueDepth). An explicit value must be at least NSeqMax * QueueDepth
-// so every admitted generation request can reserve a session.
-//
 // RopeFreqBase overrides the RoPE base frequency. When nil, uses model default.
 // Common values: 10000 (Llama), 1000000 (Qwen3).
 //
@@ -297,6 +321,9 @@ type AdapterConfig struct {
 // the value from model metadata. Kronk does not derive this value from
 // ContextWindow; an N-times extension generally uses 1/N when the model's
 // documentation requires explicit scaling.
+//
+// RecordArtifactVerification persists updated verification state after Kronk
+// verifies a model artifact. When nil, verification state is not persisted.
 //
 // RopeScaling controls the RoPE scaling method for extended context support.
 // Set to RopeScalingYaRN only when the model supports YaRN and configure the
@@ -309,14 +336,6 @@ type AdapterConfig struct {
 // factory. Backend-specific constructor parameters belong to the backend
 // package and are captured by the injected factory.
 //
-// SWAFull controls whether models with sliding window attention (SWA) use a
-// full-size KV cache for SWA layers instead of the memory-efficient small
-// cache. When nil (default), llama.cpp's default is used.
-// When explicitly set to false, SWA layers only cache the last n_swa tokens,
-// saving significant VRAM but limiting context caching and shifting. When
-// true, SWA layers use the full context window for their KV cache, preserving
-// accuracy at the cost of higher memory usage.
-//
 // SplitMode controls how the model is split across multiple GPUs:
 //   - SplitModeNone (0): single GPU
 //   - SplitModeLayer (1): split layers and KV across GPUs
@@ -327,6 +346,14 @@ type AdapterConfig struct {
 // SplitModeRow only when more than one GPU is present, otherwise SplitModeLayer.
 // Tensor parallelism on a single GPU is a no-op that performs worse and can
 // crash MoE models with view tensors (e.g. gemma4).
+//
+// SWAFull controls whether models with sliding window attention (SWA) use a
+// full-size KV cache for SWA layers instead of the memory-efficient small
+// cache. When nil (default), llama.cpp's default is used.
+// When explicitly set to false, SWA layers only cache the last n_swa tokens,
+// saving significant VRAM but limiting context caching and shifting. When
+// true, SWA layers use the full context window for their KV cache, preserving
+// accuracy at the cost of higher memory usage.
 //
 // TensorBuftOverrides is a list of tensor buffer type override patterns that
 // force matching tensors to execute on CPU instead of GPU. This is an expert-level
@@ -341,18 +368,6 @@ type AdapterConfig struct {
 // the corresponding device. For example, [0.6, 0.4] splits 60%/40% across two
 // GPUs. The length must match the number of devices. When empty, the split is
 // determined automatically based on available VRAM.
-//
-// LoadMode controls how model weights are loaded. The default is LoadModeMMap.
-// LoadModeNone disables mmap, which can improve tensor placement on multi-socket
-// NUMA systems running MoE models with CPU experts. LoadModeMLock keeps mapped
-// model pages resident in RAM, while LoadModeDirectIO bypasses the page cache
-// where the platform and filesystem support it.
-//
-// NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
-// most when expert tensors are on CPU and the system has multiple NUMA nodes.
-// Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror".
-// "distribute" is recommended for multi-socket MoE setups; without it,
-// cross-socket memory access can cause significant bandwidth collapse.
 //
 // YarnAttnFactor sets the YaRN attention magnitude scaling factor. When nil,
 // uses the model or llama.cpp default.
@@ -613,10 +628,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	switch cfg.LoadMode {
-	case LoadModeMMap, LoadModeNone, LoadModeMLock, LoadModeDirectIO:
+	case LoadModeAuto, LoadModeMMap, LoadModeNone, LoadModeMLock, LoadModeDirectIO:
 		// valid
 	default:
-		return fmt.Errorf("validate-config: unknown load mode: %d (valid: mmap, none, mlock, direct-io)", cfg.LoadMode)
+		return fmt.Errorf("validate-config: unknown load mode: %d (valid: auto, mmap, none, mlock, direct-io)", cfg.LoadMode)
 	}
 
 	if cfg.PtrDraftModel != nil {
@@ -1343,8 +1358,12 @@ func DerefFlashAttention(p *FlashAttentionType) FlashAttentionType {
 type LoadMode int32
 
 const (
-	// LoadModeMMap memory maps model weights. This is the default.
-	LoadModeMMap LoadMode = iota
+	// LoadModeAuto uses mmap when every selected device supports it and falls
+	// back to ordinary loading otherwise. This is the default.
+	LoadModeAuto LoadMode = iota
+
+	// LoadModeMMap forces model weights to be memory mapped.
+	LoadModeMMap
 
 	// LoadModeNone loads model weights without mmap, mlock, or direct I/O.
 	LoadModeNone
@@ -1359,6 +1378,8 @@ const (
 // String returns the string representation of a LoadMode.
 func (lm LoadMode) String() string {
 	switch lm {
+	case LoadModeAuto:
+		return "auto"
 	case LoadModeMMap:
 		return "mmap"
 	case LoadModeNone:
@@ -1375,6 +1396,10 @@ func (lm LoadMode) String() string {
 // ToYZMAType converts to the yzma/llama.cpp LoadMode type.
 func (lm LoadMode) ToYZMAType() llama.LoadMode {
 	switch lm {
+	case LoadModeAuto:
+		return llama.LoadModeAuto
+	case LoadModeMMap:
+		return llama.LoadModeMmap
 	case LoadModeNone:
 		return llama.LoadModeNone
 	case LoadModeMLock:
@@ -1382,7 +1407,7 @@ func (lm LoadMode) ToYZMAType() llama.LoadMode {
 	case LoadModeDirectIO:
 		return llama.LoadModeDirectIO
 	default:
-		return llama.LoadModeMmap
+		return llama.LoadModeAuto
 	}
 }
 
@@ -1433,7 +1458,9 @@ func (lm *LoadMode) UnmarshalYAML(unmarshal func(any) error) error {
 // ParseLoadMode parses a string into a LoadMode.
 func ParseLoadMode(s string) (LoadMode, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "mmap", "":
+	case "auto", "":
+		return LoadModeAuto, nil
+	case "mmap":
 		return LoadModeMMap, nil
 	case "none":
 		return LoadModeNone, nil
@@ -1442,15 +1469,15 @@ func ParseLoadMode(s string) (LoadMode, error) {
 	case "direct-io", "directio", "dio":
 		return LoadModeDirectIO, nil
 	default:
-		return LoadModeMMap, fmt.Errorf("parse-load-mode: unknown load mode: %s (valid: mmap, none, mlock, direct-io)", s)
+		return LoadModeAuto, fmt.Errorf("parse-load-mode: unknown load mode: %s (valid: auto, mmap, none, mlock, direct-io)", s)
 	}
 }
 
 // DerefLoadMode returns the value of a LoadMode pointer, defaulting to
-// LoadModeMMap when nil.
+// LoadModeAuto when nil.
 func DerefLoadMode(lm *LoadMode) LoadMode {
 	if lm == nil {
-		return LoadModeMMap
+		return LoadModeAuto
 	}
 	return *lm
 }

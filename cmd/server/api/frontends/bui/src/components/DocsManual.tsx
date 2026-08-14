@@ -424,7 +424,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
             <li>Flash Attention mode; and</li>
             <li>multi-GPU split mode.</li>
           </ul>
-          <p>Automatic tuning does not select the model weight loading mode. Storage, filesystem support, page-cache reuse, memory-lock limits, and workload lifetime matter more than GPU or RAM inventory alone, so <code>load-mode</code> remains <code>mmap</code> unless explicitly configured.</p>
+          <p>Automatic tuning does not select the model weight loading mode. The default <code>auto</code> mode uses mmap when every selected device supports it and otherwise uses ordinary loading. Storage, filesystem support, page-cache reuse, memory-lock limits, and workload lifetime still determine whether an explicit mode is appropriate.</p>
           <p>A concrete override in <code>model_config.yaml</code> constrains the analysis. Explicit <code>context-window</code> and <code>nseq-max</code> values are fixed: automatic tuning includes them in its memory calculation and never silently reduces them. The special cache type <code>auto</code> is treated as unset and therefore does not clear an analyzed <code>f16</code> or <code>q8_0</code> choice. This makes the usual workflow:</p>
           <ol>
             <li>Start with no override and let Kronk analyze the model.</li>
@@ -520,9 +520,9 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           </table>
           <p>Partial offload can make a model fit in limited VRAM, but CPU-resident layers usually reduce inference speed. On unified-memory systems, CPU and GPU do not have separate memory pools, although placement can still affect performance.</p>
           <h4 id="model-weight-loading">Model weight loading</h4>
-          <p><code>load-mode</code> controls how Kronk reads model weights. Its default and Go zero value are <code>mmap</code>:</p>
+          <p><code>load-mode</code> controls how Kronk reads model weights. Its default and Go zero value are <code>auto</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
-  load-mode: mmap`}</code></pre>
+  load-mode: auto`}</code></pre>
           <table className="flags-table">
             <thead>
               <tr>
@@ -532,8 +532,12 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
             </thead>
             <tbody>
               <tr>
+                <td><code>auto</code></td>
+                <td>Use mmap when every selected device supports it; otherwise use ordinary loading; this is the default</td>
+              </tr>
+              <tr>
                 <td><code>mmap</code></td>
-                <td>Memory-map model weights and use the operating system page cache; this is the default</td>
+                <td>Force memory-mapped model weights and use the operating system page cache</td>
               </tr>
               <tr>
                 <td><code>none</code></td>
@@ -550,7 +554,7 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
             </tbody>
           </table>
           <p>Use <code>none</code> when mmap is unsuitable or when direct allocation is needed for a measured NUMA placement issue. Use <code>mlock</code> only when the host has enough physical and lockable RAM for the model plus the rest of the workload; process resource limits may prevent all pages from being locked. Direct I/O can avoid page-cache pollution for some local-storage and GPU-loading workloads, but it can also make repeated loads slower and is not supported by every filesystem. Benchmark the actual model path before selecting it.</p>
-          <p>Kronk applies one load mode to the target model and any separate draft model. The Go SDK equivalent is <code>model.WithLoadMode</code>, using <code>LoadModeMMap</code>, <code>LoadModeNone</code>, <code>LoadModeMLock</code>, or <code>LoadModeDirectIO</code>.</p>
+          <p>Kronk applies one load mode to the target model and any separate draft model. The Go SDK equivalent is <code>model.WithLoadMode</code>, using <code>LoadModeAuto</code>, <code>LoadModeMMap</code>, <code>LoadModeNone</code>, <code>LoadModeMLock</code>, or <code>LoadModeDirectIO</code>.</p>
           <p>The former <code>use-mmap</code> and <code>use-direct-io</code> keys are no longer supported. Migrate existing configuration as follows:</p>
           <table className="flags-table">
             <thead>
@@ -795,7 +799,7 @@ some-provider/large-model:
               </tr>
               <tr>
                 <td><code>load-mode</code></td>
-                <td><code>mmap</code>, <code>none</code>, <code>mlock</code>, <code>direct-io</code></td>
+                <td><code>auto</code>, <code>mmap</code>, <code>none</code>, <code>mlock</code>, <code>direct-io</code></td>
                 <td>Model weight loading strategy</td>
               </tr>
               <tr>
@@ -3829,7 +3833,7 @@ kronk model pull <model-id> --local`}</code></pre>
           <p>Input plus generated tokens exhausted the context during inference. Request fewer output tokens, shorten the input, or increase the context. YaRN may extend supported RoPE models, but it is not a generic memory fix; follow <a href="https://www.kronkai.com/manual#chapter-7-yarn-extended-context">Chapter 7</a>.</p>
           <h4 id="slow-inference-or-slow-time-to-first-token">Slow inference or slow time to first token</h4>
           <p>Start with <code>kronk diagnose</code> and confirm that llama.cpp sees the expected GPU. A cold request includes model loading, and a large uncached prompt includes prefill. Partial CPU offload can reduce token throughput. Compare representative requests after the model is warm rather than relying on the first request.</p>
-          <p>Model loading defaults to <code>load-mode: mmap</code>. Do not switch to <code>direct-io</code> solely because a GPU is present: its performance depends on the model's actual storage device and filesystem, and bypassing the page cache can make repeated loads slower. <code>mlock</code> stabilizes residency after loading but requires enough lockable RAM; it is not a general cold-start optimization. See <a href="https://www.kronkai.com/manual#model-weight-loading">Chapter 3 §3.4</a> before changing the mode.</p>
+          <p>Model loading defaults to <code>load-mode: auto</code>, which uses mmap when every selected device supports it and otherwise uses ordinary loading. Do not switch to <code>direct-io</code> solely because a GPU is present: its performance depends on the model's actual storage device and filesystem, and bypassing the page cache can make repeated loads slower. <code>mlock</code> stabilizes residency after loading but requires enough lockable RAM; it is not a general cold-start optimization. See <a href="https://www.kronkai.com/manual#model-weight-loading">Chapter 3 §3.4</a> before changing the mode.</p>
           <p>Use Chapter 15's request, queue, prefill, TTFT, token-rate, and pool metrics to separate loading, waiting, prompt processing, and generation. IMC-specific diagnosis is below.</p>
           <h3 id="175-requests-and-streaming">17.5 Requests and Streaming</h3>
           <h4 id="`context-deadline-exceeded`">`context deadline exceeded`</h4>

@@ -92,7 +92,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [nSeqMax, setNSeqMax] = useState(1);
   const [flashAttention, setFlashAttention] = useState('auto');
   const [cacheType, setCacheType] = useState('');
-  const [loadMode, setLoadMode] = useState<ModelLoadMode>('mmap');
+  const [loadMode, setLoadMode] = useState<ModelLoadMode>('auto');
   const [cacheMode, setCacheMode] = useState('none');
   const [moeMode, setMoeMode] = useState('');
   const [moeKeepTopN, setMoeKeepTopN] = useState(0);

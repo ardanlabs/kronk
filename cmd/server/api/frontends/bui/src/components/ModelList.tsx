@@ -457,7 +457,7 @@ export default function ModelList() {
 
                         { key: 'imc-session-capacity', label: labelWithTip('imc-session-capacity', 'imcSessionCapacity'), value: fmtVal(mc['imc-session-capacity']) },
                         { key: 'incremental-cache', label: labelWithTip('incremental-cache', 'incrementalCache'), value: boolBadge(mc['incremental-cache']) },
-                        { key: 'load-mode', label: labelWithTip('load-mode', 'loadMode'), value: mc['load-mode'] || 'mmap' },
+                        { key: 'load-mode', label: labelWithTip('load-mode', 'loadMode'), value: mc['load-mode'] || 'auto' },
                         { key: 'main-gpu', label: labelWithTip('main-gpu', 'mainGpu'), value: fmtVal(mc['main-gpu']) },
                         { key: 'moe.keep-experts-top-n', label: labelWithTip('moe.keep-experts-top-n', 'moeKeepExpertsTopN'), value: fmtVal(mc.moe?.['keep-experts-top-n']) },
                         { key: 'moe.mode', label: labelWithTip('moe.mode', 'moeMode'), value: mc.moe?.mode || '—' },
