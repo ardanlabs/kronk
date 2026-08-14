@@ -116,7 +116,7 @@ export interface PoolBudgetResponse {
   reservations: Reservation[];
 }
 
-export type ModelLoadMode = 'mmap' | 'none' | 'mlock' | 'direct-io';
+export type ModelLoadMode = 'auto' | 'mmap' | 'none' | 'mlock' | 'mmap+mlock' | 'direct-io';
 
 export interface ModelConfig {
   'context-window': number;
@@ -185,6 +185,8 @@ export interface ModelInfoResponse {
   owned_by: string;
   desc: string;
   size: number;
+  file_type: number;
+  quantization: string;
   has_projection: boolean;
   web_page?: string;
   template: string;

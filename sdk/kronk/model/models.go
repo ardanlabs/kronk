@@ -85,6 +85,8 @@ type ModelInfo struct {
 	HasProjection bool
 	Desc          string
 	Size          uint64
+	FileType      int32
+	Quantization  string
 	VRAMTotal     int64
 	SlotMemory    int64
 	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
@@ -114,12 +116,13 @@ func (mi ModelInfo) String() string {
 
 	sizeGB := float64(mi.Size) / (1000 * 1000 * 1000)
 
-	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nNSWA[%d]\nTemplate[%s]\nType[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.NSWA, mi.Template.FileName, mi.Type, flagStr)
+	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nFileType[%d]\nQuantization[%s]\nNSWA[%d]\nTemplate[%s]\nType[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.FileType, mi.Quantization, mi.NSWA, mi.Template.FileName, mi.Type, flagStr)
 }
 
 func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	desc := llama.ModelDesc(model)
 	size := llama.ModelSize(model)
+	fileType := llama.ModelFtype(model)
 	count := llama.ModelMetaCount(model)
 	metadata := make(map[string]string)
 
@@ -156,6 +159,8 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		HasProjection: cfg.ProjFile != "",
 		Desc:          desc,
 		Size:          size,
+		FileType:      int32(fileType),
+		Quantization:  llama.FtypeName(fileType),
 		NSWA:          llama.ModelNSWA(model),
 		Type:          modelType,
 		IsEmbedModel:  isEmbedModel,

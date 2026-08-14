@@ -193,7 +193,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
           setNSeqMax(nSeqMax);
           setFlashAttention(mc['flash-attention'] || 'auto');
           setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
-          setLoadMode(mc['load-mode'] || 'mmap');
+          setLoadMode(mc['load-mode'] || 'auto');
           setCacheMode(mc['incremental-cache'] ? 'imc' : 'none');
           setMoeMode(mc.moe?.mode || '');
           setMoeKeepTopN(mc.moe?.['keep-experts-top-n'] ?? 0);
@@ -307,7 +307,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
         config['cache_type_k'] = cacheType || 'f16';
         config['cache_type_v'] = cacheType || 'f16';
       }
-      if (!catalogConfig || loadMode !== (catalogConfig['load-mode'] || 'mmap')) {
+      if (!catalogConfig || loadMode !== (catalogConfig['load-mode'] || 'auto')) {
         config['load_mode'] = loadMode;
       }
       const catalogCacheMode = catalogConfig?.['incremental-cache'] ? 'imc' : 'none';
@@ -878,9 +878,11 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                 onChange={(e) => setLoadMode(e.target.value as ModelLoadMode)}
                 disabled={!!session}
               >
-                <option value="mmap">mmap (default)</option>
+                <option value="auto">auto (default)</option>
+                <option value="mmap">mmap</option>
                 <option value="none">none</option>
                 <option value="mlock">mlock</option>
+                <option value="mmap+mlock">mmap+mlock</option>
                 <option value="direct-io">direct-io</option>
               </select>
             </div>

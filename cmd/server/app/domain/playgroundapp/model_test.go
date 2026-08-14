@@ -17,6 +17,7 @@ func TestSessionConfigApplyTo_LoadMode(t *testing.T) {
 		{"unset leaves base untouched", model.LoadModeDirectIO, SessionConfig{}, model.LoadModeDirectIO},
 		{"mmap overrides a non-default base", model.LoadModeDirectIO, SessionConfig{LoadMode: new(model.LoadModeMMap)}, model.LoadModeMMap},
 		{"mlock overrides base", model.LoadModeMMap, SessionConfig{LoadMode: new(model.LoadModeMLock)}, model.LoadModeMLock},
+		{"mmap mlock overrides base", model.LoadModeMLock, SessionConfig{LoadMode: new(model.LoadModeMMapMLock)}, model.LoadModeMMapMLock},
 	}
 
 	for _, tt := range tests {

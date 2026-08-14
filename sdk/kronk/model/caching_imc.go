@@ -188,7 +188,9 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 
 		for j := i; j < end; j++ {
 			pos := llama.Pos(startPos + j)
-			batch.Add(tokens[j], pos, seqIDs, false)
+			if err := batch.Add(tokens[j], pos, seqIDs, false); err != nil {
+				return fmt.Errorf("imc: add extension token at pos %d: %w", pos, err)
+			}
 		}
 
 		ret, err := llama.Decode(m.lctx, batch)

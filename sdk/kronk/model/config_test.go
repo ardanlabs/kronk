@@ -226,9 +226,12 @@ func TestEffectiveSWAFull(t *testing.T) {
 func TestModelInfoStringIncludesNSWA(t *testing.T) {
 	const nSWA = 4096
 
-	got := (ModelInfo{NSWA: nSWA}).String()
+	got := (ModelInfo{NSWA: nSWA, FileType: 15, Quantization: "Q4_K - Medium"}).String()
 	if !strings.Contains(got, "NSWA[4096]") {
 		t.Errorf("ModelInfo.String: got %q, want NSWA[%d]", got, nSWA)
+	}
+	if !strings.Contains(got, "FileType[15]") || !strings.Contains(got, "Quantization[Q4_K - Medium]") {
+		t.Errorf("ModelInfo.String: got %q, want friendly quantization", got)
 	}
 }
 
@@ -499,6 +502,13 @@ func TestParseGGMLType(t *testing.T) {
 }
 
 func TestLoadMode(t *testing.T) {
+	if got := LoadMode(0); got != LoadModeAuto {
+		t.Errorf("LoadMode zero value = %v, want %v", got, LoadModeAuto)
+	}
+	if got := DerefLoadMode(nil); got != LoadModeAuto {
+		t.Errorf("DerefLoadMode(nil) = %v, want %v", got, LoadModeAuto)
+	}
+
 	tests := []struct {
 		name    string
 		input   string
@@ -506,13 +516,15 @@ func TestLoadMode(t *testing.T) {
 		wantStr string
 		wantErr bool
 	}{
-		{"default", "", LoadModeMMap, "mmap", false},
+		{"default", "", LoadModeAuto, "auto", false},
+		{"auto", "auto", LoadModeAuto, "auto", false},
 		{"mmap", "mmap", LoadModeMMap, "mmap", false},
 		{"none", "none", LoadModeNone, "none", false},
 		{"mlock", "mlock", LoadModeMLock, "mlock", false},
+		{"mmap mlock", "mmap+mlock", LoadModeMMapMLock, "mmap+mlock", false},
 		{"direct io", "direct-io", LoadModeDirectIO, "direct-io", false},
 		{"dio alias", "dio", LoadModeDirectIO, "direct-io", false},
-		{"invalid", "buffered", LoadModeMMap, "mmap", true},
+		{"invalid", "buffered", LoadModeAuto, "auto", true},
 	}
 
 	for _, tt := range tests {
@@ -536,9 +548,11 @@ func TestLoadModeToYZMAType(t *testing.T) {
 		mode LoadMode
 		want llama.LoadMode
 	}{
+		{LoadModeAuto, llama.LoadModeAuto},
 		{LoadModeMMap, llama.LoadModeMmap},
 		{LoadModeNone, llama.LoadModeNone},
 		{LoadModeMLock, llama.LoadModeMlock},
+		{LoadModeMMapMLock, llama.LoadModeMmapMlock},
 		{LoadModeDirectIO, llama.LoadModeDirectIO},
 	}
 
@@ -601,6 +615,10 @@ func TestValidateConfig(t *testing.T) {
 		{"multi GPU setup is valid", NewConfig(
 			WithDevices([]string{"CUDA0", "CUDA1"}),
 			WithModelFiles([]string{"dummy.gguf"}),
+		), false},
+		{"mmap mlock load mode is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithLoadMode(LoadModeMMapMLock),
 		), false},
 		{"MTP nDraft override (no draft files) is valid even with NSeqMax>1", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),

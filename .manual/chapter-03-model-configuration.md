@@ -142,10 +142,11 @@ analysis chooses values such as:
 - Flash Attention mode; and
 - multi-GPU split mode.
 
-Automatic tuning does not select the model weight loading mode. Storage,
-filesystem support, page-cache reuse, memory-lock limits, and workload lifetime
-matter more than GPU or RAM inventory alone, so `load-mode` remains `mmap`
-unless explicitly configured.
+Automatic tuning does not select the model weight loading mode. The default
+`auto` mode uses mmap when every selected device supports it and otherwise uses
+ordinary loading. Storage, filesystem support, page-cache reuse, memory-lock
+limits, and workload lifetime still determine whether an explicit mode is
+appropriate.
 
 A concrete override in `model_config.yaml` constrains the analysis. Explicit
 `context-window` and `nseq-max` values are fixed: automatic tuning includes
@@ -290,31 +291,35 @@ have separate memory pools, although placement can still affect performance.
 #### Model weight loading
 
 `load-mode` controls how Kronk reads model weights. Its default and Go zero
-value are `mmap`:
+value are `auto`:
 
 ```yaml
 some-provider/some-model:
-  load-mode: mmap
+  load-mode: auto
 ```
 
 | Value | Behavior |
 | ----- | -------- |
-| `mmap` | Memory-map model weights and use the operating system page cache; this is the default |
+| `auto` | Use mmap when every selected device supports it; otherwise use ordinary loading; this is the default |
+| `mmap` | Force memory-mapped model weights and use the operating system page cache |
 | `none` | Load weights without mmap, mlock, or direct I/O |
-| `mlock` | Memory-map weights and request that their pages remain resident in RAM |
+| `mlock` | Load weights and request that their pages remain resident in RAM without forcing mmap |
+| `mmap+mlock` | Memory-map weights and request that their pages remain resident in RAM |
 | `direct-io` | Bypass the operating system page cache where the platform and filesystem support it |
 
 Use `none` when mmap is unsuitable or when direct allocation is needed for a
 measured NUMA placement issue. Use `mlock` only when the host has enough
 physical and lockable RAM for the model plus the rest of the workload; process
-resource limits may prevent all pages from being locked. Direct I/O can avoid
+resource limits may prevent all pages from being locked. Use `mmap+mlock` when
+the model should be both memory mapped and kept resident. Direct I/O can avoid
 page-cache pollution for some local-storage and GPU-loading workloads, but it
 can also make repeated loads slower and is not supported by every filesystem.
 Benchmark the actual model path before selecting it.
 
 Kronk applies one load mode to the target model and any separate draft model.
-The Go SDK equivalent is `model.WithLoadMode`, using `LoadModeMMap`,
-`LoadModeNone`, `LoadModeMLock`, or `LoadModeDirectIO`.
+The Go SDK equivalent is `model.WithLoadMode`, using `LoadModeAuto`,
+`LoadModeMMap`, `LoadModeNone`, `LoadModeMLock`, `LoadModeMMapMLock`, or
+`LoadModeDirectIO`.
 
 The former `use-mmap` and `use-direct-io` keys are no longer supported. Migrate
 existing configuration as follows:
@@ -638,7 +643,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `nubatch`, `nbatch` | Positive token counts | Physical and logical batch sizes |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
-| `load-mode` | `mmap`, `none`, `mlock`, `direct-io` | Model weight loading strategy |
+| `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |
 | `op-offload` | Boolean | Place host tensor operations on GPU when true |
 | `proj-on-cpu` | Boolean | Keep multimodal projector on CPU |

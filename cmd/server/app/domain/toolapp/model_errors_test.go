@@ -173,6 +173,22 @@ func TestModelInfoAdmissionCapacity(t *testing.T) {
 	}
 }
 
+func TestModelInfoQuantization(t *testing.T) {
+	resp := toModelInfo(
+		llamamodels.FileInfo{},
+		llamamodels.ModelInfo{FileType: 15, Quantization: "Q4_K_M"},
+		llamamodels.ModelConfig{},
+		nil,
+	)
+
+	if resp.FileType != 15 {
+		t.Errorf("FileType: got %d, want 15", resp.FileType)
+	}
+	if resp.Quantization != "Q4_K_M" {
+		t.Errorf("Quantization: got %q, want %q", resp.Quantization, "Q4_K_M")
+	}
+}
+
 func TestBuckyModelDetailsNotFound(t *testing.T) {
 	models, err := buckymodels.NewWithPaths(t.TempDir())
 	if err != nil {

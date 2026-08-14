@@ -26,7 +26,7 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b10417"
+	defaultVersion = "b10423"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -469,7 +469,14 @@ func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch
 
 	pr := downloader.NewProgressReader(progress, downloader.SizeIntervalMB10)
 
-	err := download.GetWithContext(ctx, arch.String(), opSys.String(), processor.String(), version, tempPath, pr)
+	target := download.Target{
+		Arch:      arch,
+		OS:        opSys,
+		Processor: processor,
+		Version:   version,
+	}
+
+	err := download.Install(ctx, target, tempPath, pr, nil)
 	if err != nil {
 		os.RemoveAll(tempPath)
 		return VersionTag{}, fmt.Errorf("download-into: unable to install llama.cpp: %w", err)

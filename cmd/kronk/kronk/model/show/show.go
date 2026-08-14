@@ -78,6 +78,9 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 	fmt.Printf("OwnedBy:     %s\n", mi.OwnedBy)
 	fmt.Printf("Desc:        %s\n", mi.Desc)
 	fmt.Printf("Size:        %s\n", formatBytes(mi.Size))
+	if mi.Quantization != "" {
+		fmt.Printf("Quantization: %s\n", mi.Quantization)
+	}
 	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
 	fmt.Println()
 
@@ -125,6 +128,9 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig)
 	fmt.Printf("OwnedBy:     %s\n", fi.OwnedBy)
 	fmt.Printf("Desc:        %s\n", mi.Desc)
 	fmt.Printf("Size:        %s\n", formatBytes(int64(mi.Size)))
+	if mi.Quantization != "" {
+		fmt.Printf("Quantization: %s\n", mi.Quantization)
+	}
 	fmt.Printf("HasProj:     %t\n", mi.HasProjection)
 	fmt.Printf("IsEmbed:     %t\n", mi.IsEmbedModel)
 	fmt.Printf("IsRerank:    %t\n", mi.IsRerankModel)

@@ -58,6 +58,12 @@ func TestModelMetadata(t *testing.T) {
 	if info.Size == 0 {
 		t.Error("Size should not be zero")
 	}
+	if info.FileType != 7 {
+		t.Errorf("FileType: got %d, want 7", info.FileType)
+	}
+	if info.Quantization != "Q8_0" {
+		t.Errorf("Quantization: got %q, want %q", info.Quantization, "Q8_0")
+	}
 
 	if info.HasProjection {
 		t.Error("HasProjection should be false when no projection path provided")

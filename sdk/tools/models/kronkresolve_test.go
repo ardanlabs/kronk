@@ -300,21 +300,37 @@ func TestChatTemplateKwargsRejectsNonStringNestedKey(t *testing.T) {
 }
 
 func TestModelConfigLoadMode(t *testing.T) {
-	data := []byte(`test-model:
-  load-mode: mlock
-`)
-
-	var configs map[string]ModelConfig
-	if err := yaml.Unmarshal(data, &configs); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	tests := []struct {
+		name string
+		yaml string
+		want model.LoadMode
+	}{
+		{"auto", "auto", model.LoadModeAuto},
+		{"mlock", "mlock", model.LoadModeMLock},
+		{"mmap mlock", "mmap+mlock", model.LoadModeMMapMLock},
 	}
 
-	cfg := configs["test-model"]
-	if cfg.PtrLoadMode == nil || *cfg.PtrLoadMode != model.LoadModeMLock {
-		t.Fatalf("PtrLoadMode = %v, want pointer to mlock", cfg.PtrLoadMode)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte("test-model:\n  load-mode: " + tt.yaml + "\n")
+
+			var configs map[string]ModelConfig
+			if err := yaml.Unmarshal(data, &configs); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+
+			cfg := configs["test-model"]
+			if cfg.PtrLoadMode == nil || *cfg.PtrLoadMode != tt.want {
+				t.Fatalf("PtrLoadMode = %v, want pointer to %v", cfg.PtrLoadMode, tt.want)
+			}
+			if got := cfg.ToKronkConfig().LoadMode; got != tt.want {
+				t.Errorf("ToKronkConfig().LoadMode = %v, want %v", got, tt.want)
+			}
+		})
 	}
-	if got := cfg.ToKronkConfig().LoadMode; got != model.LoadModeMLock {
-		t.Errorf("ToKronkConfig().LoadMode = %v, want %v", got, model.LoadModeMLock)
+
+	if got := (ModelConfig{}).ToKronkConfig().LoadMode; got != model.LoadModeAuto {
+		t.Errorf("default ToKronkConfig().LoadMode = %v, want %v", got, model.LoadModeAuto)
 	}
 
 	mmap := model.LoadModeMMap

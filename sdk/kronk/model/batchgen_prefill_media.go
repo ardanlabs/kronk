@@ -13,7 +13,8 @@ import (
 // addPrefillMediaChunk processes the next chunk of a generation media request.
 // For text chunks, tokens are added to the shared batch.
 // For image chunks, embeddings are encoded and decoded separately.
-// Returns false if cancelled; true otherwise (even if still prefilling).
+// Returns false if cancelled or an internal error occurs; true otherwise (even
+// if still prefilling). Internal errors finish the slot before returning.
 func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 	numChunks := int(mtmd.InputChunksSize(s.inputChunks))
 
@@ -77,12 +78,17 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			chunkSize := min(remaining, availableInBatch)
 			isLastChunk := s.chunkIdx == numChunks-1
 
+			batchStart := e.batch.NTokens
 			for i := range chunkSize {
 				tokIdx := s.chunkTokIdx + i
 				isLast := tokIdx == len(tokens)-1 && isLastChunk
-				e.batch.Add(tokens[tokIdx], s.nPast, s.seqIDs, isLast)
-				s.nPast++
+				if err := e.batch.Add(tokens[tokIdx], s.nPast+llama.Pos(i), s.seqIDs, isLast); err != nil {
+					e.batch.NTokens = batchStart
+					e.finishSlot(s, fmt.Errorf("add media prefill token %d: %w", tokIdx, err))
+					return false
+				}
 			}
+			s.nPast += llama.Pos(chunkSize)
 			s.chunkTokIdx += chunkSize
 
 			// Check if text chunk is complete.

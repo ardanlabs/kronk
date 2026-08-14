@@ -9,9 +9,9 @@ const fileTypeMap: Record<string, string> = {
   '1': 'Mostly F16',
   '2': 'Mostly Q4_0',
   '3': 'Mostly Q4_1',
-  '6': 'Mostly Q5_0',
   '7': 'Mostly Q8_0',
-  '8': 'Mostly Q5_1',
+  '8': 'Mostly Q5_0',
+  '9': 'Mostly Q5_1',
   '10': 'Mostly Q2_K',
   '11': 'Mostly Q3_K_S',
   '12': 'Mostly Q3_K_M',
@@ -21,6 +21,26 @@ const fileTypeMap: Record<string, string> = {
   '16': 'Mostly Q5_K_S',
   '17': 'Mostly Q5_K_M',
   '18': 'Mostly Q6_K',
+  '19': 'Mostly IQ2_XXS',
+  '20': 'Mostly IQ2_XS',
+  '21': 'Mostly Q2_K_S',
+  '22': 'Mostly IQ3_XS',
+  '23': 'Mostly IQ3_XXS',
+  '24': 'Mostly IQ1_S',
+  '25': 'Mostly IQ4_NL',
+  '26': 'Mostly IQ3_S',
+  '27': 'Mostly IQ3_M',
+  '28': 'Mostly IQ2_S',
+  '29': 'Mostly IQ2_M',
+  '30': 'Mostly IQ4_XS',
+  '31': 'Mostly IQ1_M',
+  '32': 'Mostly BF16',
+  '36': 'Mostly TQ1_0',
+  '37': 'Mostly TQ2_0',
+  '38': 'Mostly MXFP4_MOE',
+  '39': 'Mostly NVFP4',
+  '40': 'Mostly Q1_0',
+  '41': 'Mostly Q2_0',
 };
 
 function fmtInteger(v: string): string {
@@ -42,15 +62,16 @@ function fmtFileType(v: string): string {
 interface ModelCardProps {
   metadata: Record<string, string>;
   excludeKeys?: string[];
+  quantization?: string;
   webPage?: string;
 }
 
-export default function ModelCard({ metadata, excludeKeys = [], webPage }: ModelCardProps) {
+export default function ModelCard({ metadata, excludeKeys = [], quantization, webPage }: ModelCardProps) {
   const allExclude = [...excludeKeys, 'tokenizer.chat_template'];
 
   const hasMetadata = Object.keys(metadata).length > 0;
 
-  if (!hasMetadata && !webPage) {
+  if (!hasMetadata && !quantization && !webPage) {
     return (
       <div className="empty-state">
         <p>No metadata available for this model.</p>
@@ -79,8 +100,9 @@ export default function ModelCard({ metadata, excludeKeys = [], webPage }: Model
   const identityRows = buildRows(identitySpecs);
 
   const fileType = get('general.file_type');
-  if (fileType !== undefined) {
-    identityRows.push({ key: 'general.file_type', label: labelWithTip('Quantization', 'quantization'), value: fmtFileType(fileType) });
+  const quantizationName = quantization || (fileType !== undefined ? fmtFileType(fileType) : '');
+  if (quantizationName) {
+    identityRows.push({ key: 'general.file_type', label: labelWithTip('Quantization', 'quantization'), value: quantizationName });
   }
   const quantizedBy = get('general.quantized_by');
   if (quantizedBy !== undefined) {
