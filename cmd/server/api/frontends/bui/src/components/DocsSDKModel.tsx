@@ -576,6 +576,8 @@ export default function DocsSDKModel() {
 	HasProjection bool
 	Desc          string
 	Size          uint64
+	FileType      int32
+	Quantization  string
 	VRAMTotal     int64
 	SlotMemory    int64
 	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.

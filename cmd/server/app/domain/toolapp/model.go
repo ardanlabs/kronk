@@ -389,6 +389,8 @@ type ModelInfoResponse struct {
 	OwnedBy       string            `json:"owned_by"`
 	Desc          string            `json:"desc"`
 	Size          int64             `json:"size"`
+	FileType      int64             `json:"file_type"`
+	Quantization  string            `json:"quantization"`
 	HasProjection bool              `json:"has_projection"`
 	Template      string            `json:"template"`
 	Metadata      map[string]string `json:"metadata"`
@@ -431,6 +433,8 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 		OwnedBy:       fi.OwnedBy,
 		Desc:          mi.Desc,
 		Size:          fi.Size,
+		FileType:      mi.FileType,
+		Quantization:  mi.Quantization,
 		HasProjection: mi.HasProjection,
 		Template:      rmc.Template,
 		Metadata:      metadata,

@@ -16,6 +16,8 @@ type ModelInfo struct {
 	HasMTP        bool
 	Desc          string
 	Size          uint64
+	FileType      int64
+	Quantization  string
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string
@@ -78,6 +80,11 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 // header bytes they already hold.
 func ModelInfoFromMetadata(id string, metadata map[string]string, size uint64, hasProjection bool, hasMTP bool) ModelInfo {
 	lowerID := strings.ToLower(id)
+	fileType, err := gguf.ParseInt64(metadata, "general.file_type")
+	quantization := ""
+	if err == nil {
+		quantization = gguf.FileTypeName(fileType)
+	}
 
 	return ModelInfo{
 		ID:            id,
@@ -85,6 +92,8 @@ func ModelInfoFromMetadata(id string, metadata map[string]string, size uint64, h
 		HasMTP:        hasMTP,
 		Desc:          metadata["general.name"],
 		Size:          size,
+		FileType:      fileType,
+		Quantization:  quantization,
 		IsEmbedModel:  strings.Contains(lowerID, "embed"),
 		IsRerankModel: strings.Contains(lowerID, "rerank"),
 		Metadata:      metadata,

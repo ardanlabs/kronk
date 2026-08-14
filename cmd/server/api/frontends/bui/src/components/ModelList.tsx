@@ -429,6 +429,7 @@ export default function ModelList() {
                 <KeyValueTable rows={[
                   { key: 'owner', label: 'Provider', value: modelInfo.owned_by },
                   { key: 'size', label: 'Size', value: formatBytes(modelInfo.size) },
+                  ...(modelInfo.quantization ? [{ key: 'quantization', label: labelWithTip('Quantization', 'quantization'), value: modelInfo.quantization }] : []),
                   { key: 'created', label: 'Created', value: new Date(modelInfo.created).toLocaleString() },
                   { key: 'projection', label: labelWithTip('Has Projection', 'hasProjection'), value: <span className={`badge ${modelInfo.has_projection ? 'badge-yes' : 'badge-no'}`}>{modelInfo.has_projection ? 'Yes' : 'No'}</span> },
                   { key: 'validated', label: labelWithTip('Validated', 'validated'), value: (() => { const m = allModels.find((m) => m.id === selectedModelId); return m ? <span style={{ color: m.validated ? 'inherit' : 'var(--color-error)' }}>{m.validated ? '✓' : '✗'}</span> : '-'; })() },
@@ -532,7 +533,7 @@ export default function ModelList() {
             {activeSection === 'model-card' && (
               <div>
                 <h3 style={{ marginBottom: '16px' }}>Model Card</h3>
-                <ModelCard metadata={modelInfo.metadata ?? {}} webPage={modelInfo.web_page} />
+                <ModelCard metadata={modelInfo.metadata ?? {}} quantization={modelInfo.quantization} webPage={modelInfo.web_page} />
               </div>
             )}
 
@@ -561,12 +562,13 @@ export default function ModelList() {
                     <KeyValueTable rows={[
                       { key: 'draft-owner', label: 'Provider', value: draftModelInfo.owned_by },
                       { key: 'draft-size', label: 'Size', value: formatBytes(draftModelInfo.size) },
+                      ...(draftModelInfo.quantization ? [{ key: 'draft-quantization', label: labelWithTip('Quantization', 'quantization'), value: draftModelInfo.quantization }] : []),
                     ]} />
                   </div>
                 )}
 
                 {draftModelInfo ? (
-                  <ModelCard metadata={draftModelInfo.metadata ?? {}} webPage={draftModelInfo.web_page} />
+                  <ModelCard metadata={draftModelInfo.metadata ?? {}} quantization={draftModelInfo.quantization} webPage={draftModelInfo.web_page} />
                 ) : (
                   !draftInfoLoading && (
                     <div className="empty-state">

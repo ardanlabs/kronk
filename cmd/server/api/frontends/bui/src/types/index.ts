@@ -185,6 +185,8 @@ export interface ModelInfoResponse {
   owned_by: string;
   desc: string;
   size: number;
+  file_type: number;
+  quantization: string;
   has_projection: boolean;
   web_page?: string;
   template: string;

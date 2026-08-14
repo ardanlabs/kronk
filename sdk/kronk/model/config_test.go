@@ -226,9 +226,12 @@ func TestEffectiveSWAFull(t *testing.T) {
 func TestModelInfoStringIncludesNSWA(t *testing.T) {
 	const nSWA = 4096
 
-	got := (ModelInfo{NSWA: nSWA}).String()
+	got := (ModelInfo{NSWA: nSWA, FileType: 15, Quantization: "Q4_K - Medium"}).String()
 	if !strings.Contains(got, "NSWA[4096]") {
 		t.Errorf("ModelInfo.String: got %q, want NSWA[%d]", got, nSWA)
+	}
+	if !strings.Contains(got, "FileType[15]") || !strings.Contains(got, "Quantization[Q4_K - Medium]") {
+		t.Errorf("ModelInfo.String: got %q, want friendly quantization", got)
 	}
 }
 
