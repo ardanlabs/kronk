@@ -43,7 +43,7 @@
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)
 #   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
 #   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)
-#   load-mode: auto                      # Model loading: auto (default), mmap, none, mlock, direct-io
+#   load-mode: auto                      # Model loading: auto (default), mmap, none, mlock, mmap+mlock, direct-io
 #   yarn-attn-factor: 1.0                # YaRN attention magnitude scaling (nil = default 1.0)
 #   yarn-beta-fast: 32.0                 # YaRN low correction dimension (nil = default 32.0)
 #   yarn-beta-slow: 1.0                  # YaRN high correction dimension (nil = default 1.0)

@@ -307,6 +307,7 @@ func TestModelConfigLoadMode(t *testing.T) {
 	}{
 		{"auto", "auto", model.LoadModeAuto},
 		{"mlock", "mlock", model.LoadModeMLock},
+		{"mmap mlock", "mmap+mlock", model.LoadModeMMapMLock},
 	}
 
 	for _, tt := range tests {

@@ -518,6 +518,7 @@ func TestLoadMode(t *testing.T) {
 		{"mmap", "mmap", LoadModeMMap, "mmap", false},
 		{"none", "none", LoadModeNone, "none", false},
 		{"mlock", "mlock", LoadModeMLock, "mlock", false},
+		{"mmap mlock", "mmap+mlock", LoadModeMMapMLock, "mmap+mlock", false},
 		{"direct io", "direct-io", LoadModeDirectIO, "direct-io", false},
 		{"dio alias", "dio", LoadModeDirectIO, "direct-io", false},
 		{"invalid", "buffered", LoadModeAuto, "auto", true},
@@ -548,6 +549,7 @@ func TestLoadModeToYZMAType(t *testing.T) {
 		{LoadModeMMap, llama.LoadModeMmap},
 		{LoadModeNone, llama.LoadModeNone},
 		{LoadModeMLock, llama.LoadModeMlock},
+		{LoadModeMMapMLock, llama.LoadModeMmapMlock},
 		{LoadModeDirectIO, llama.LoadModeDirectIO},
 	}
 
@@ -610,6 +612,10 @@ func TestValidateConfig(t *testing.T) {
 		{"multi GPU setup is valid", NewConfig(
 			WithDevices([]string{"CUDA0", "CUDA1"}),
 			WithModelFiles([]string{"dummy.gguf"}),
+		), false},
+		{"mmap mlock load mode is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithLoadMode(LoadModeMMapMLock),
 		), false},
 		{"MTP nDraft override (no draft files) is valid even with NSeqMax>1", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),

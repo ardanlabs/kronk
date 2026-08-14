@@ -882,6 +882,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                 <option value="mmap">mmap</option>
                 <option value="none">none</option>
                 <option value="mlock">mlock</option>
+                <option value="mmap+mlock">mmap+mlock</option>
                 <option value="direct-io">direct-io</option>
               </select>
             </div>

@@ -223,8 +223,9 @@ type AdapterConfig struct {
 // which uses mmap when every selected device supports it and otherwise uses
 // ordinary loading. LoadModeNone disables mmap, which can improve tensor
 // placement on multi-socket NUMA systems running MoE models with CPU experts.
-// LoadModeMLock keeps mapped model pages resident in RAM, while LoadModeDirectIO
-// bypasses the page cache where the platform and filesystem support it.
+// LoadModeMLock requests resident pages without forcing mmap, LoadModeMMapMLock
+// combines mmap and mlock, and LoadModeDirectIO bypasses the page cache where
+// the platform and filesystem support it.
 //
 // Log is the logger to use for model operations.
 //
@@ -628,10 +629,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	switch cfg.LoadMode {
-	case LoadModeAuto, LoadModeMMap, LoadModeNone, LoadModeMLock, LoadModeDirectIO:
+	case LoadModeAuto, LoadModeMMap, LoadModeNone, LoadModeMLock, LoadModeMMapMLock, LoadModeDirectIO:
 		// valid
 	default:
-		return fmt.Errorf("validate-config: unknown load mode: %d (valid: auto, mmap, none, mlock, direct-io)", cfg.LoadMode)
+		return fmt.Errorf("validate-config: unknown load mode: %d (valid: auto, mmap, none, mlock, mmap+mlock, direct-io)", cfg.LoadMode)
 	}
 
 	if cfg.PtrDraftModel != nil {
@@ -1368,11 +1369,16 @@ const (
 	// LoadModeNone loads model weights without mmap, mlock, or direct I/O.
 	LoadModeNone
 
-	// LoadModeMLock memory maps model weights and keeps them resident in RAM.
+	// LoadModeMLock loads model weights and asks the operating system to keep
+	// their pages resident in RAM without forcing mmap.
 	LoadModeMLock
 
 	// LoadModeDirectIO loads model weights using direct I/O where supported.
 	LoadModeDirectIO
+
+	// LoadModeMMapMLock memory maps model weights and asks the operating system
+	// to keep their pages resident in RAM.
+	LoadModeMMapMLock
 )
 
 // String returns the string representation of a LoadMode.
@@ -1386,6 +1392,8 @@ func (lm LoadMode) String() string {
 		return "none"
 	case LoadModeMLock:
 		return "mlock"
+	case LoadModeMMapMLock:
+		return "mmap+mlock"
 	case LoadModeDirectIO:
 		return "direct-io"
 	default:
@@ -1404,6 +1412,8 @@ func (lm LoadMode) ToYZMAType() llama.LoadMode {
 		return llama.LoadModeNone
 	case LoadModeMLock:
 		return llama.LoadModeMlock
+	case LoadModeMMapMLock:
+		return llama.LoadModeMmapMlock
 	case LoadModeDirectIO:
 		return llama.LoadModeDirectIO
 	default:
@@ -1466,10 +1476,12 @@ func ParseLoadMode(s string) (LoadMode, error) {
 		return LoadModeNone, nil
 	case "mlock":
 		return LoadModeMLock, nil
+	case "mmap+mlock":
+		return LoadModeMMapMLock, nil
 	case "direct-io", "directio", "dio":
 		return LoadModeDirectIO, nil
 	default:
-		return LoadModeAuto, fmt.Errorf("parse-load-mode: unknown load mode: %s (valid: auto, mmap, none, mlock, direct-io)", s)
+		return LoadModeAuto, fmt.Errorf("parse-load-mode: unknown load mode: %s (valid: auto, mmap, none, mlock, mmap+mlock, direct-io)", s)
 	}
 }
 

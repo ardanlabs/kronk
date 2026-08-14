@@ -221,8 +221,9 @@ Model loading defaults to `load-mode: auto`, which uses mmap when every selected
 device supports it and otherwise uses ordinary loading. Do not switch to
 `direct-io` solely because a GPU is present: its performance depends on the
 model's actual storage device and filesystem, and bypassing the page cache can
-make repeated loads slower. `mlock` stabilizes residency after loading but
-requires enough lockable RAM; it is not a general cold-start optimization. See
+make repeated loads slower. `mlock` stabilizes residency after loading but does
+not force mmap; use `mmap+mlock` when both behaviors are required. Both modes
+require enough lockable RAM and are not general cold-start optimizations. See
 [Chapter 3 §3.4](https://www.kronkai.com/manual#model-weight-loading) before
 changing the mode.
 

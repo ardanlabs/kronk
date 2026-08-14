@@ -303,20 +303,23 @@ some-provider/some-model:
 | `auto` | Use mmap when every selected device supports it; otherwise use ordinary loading; this is the default |
 | `mmap` | Force memory-mapped model weights and use the operating system page cache |
 | `none` | Load weights without mmap, mlock, or direct I/O |
-| `mlock` | Memory-map weights and request that their pages remain resident in RAM |
+| `mlock` | Load weights and request that their pages remain resident in RAM without forcing mmap |
+| `mmap+mlock` | Memory-map weights and request that their pages remain resident in RAM |
 | `direct-io` | Bypass the operating system page cache where the platform and filesystem support it |
 
 Use `none` when mmap is unsuitable or when direct allocation is needed for a
 measured NUMA placement issue. Use `mlock` only when the host has enough
 physical and lockable RAM for the model plus the rest of the workload; process
-resource limits may prevent all pages from being locked. Direct I/O can avoid
+resource limits may prevent all pages from being locked. Use `mmap+mlock` when
+the model should be both memory mapped and kept resident. Direct I/O can avoid
 page-cache pollution for some local-storage and GPU-loading workloads, but it
 can also make repeated loads slower and is not supported by every filesystem.
 Benchmark the actual model path before selecting it.
 
 Kronk applies one load mode to the target model and any separate draft model.
 The Go SDK equivalent is `model.WithLoadMode`, using `LoadModeAuto`,
-`LoadModeMMap`, `LoadModeNone`, `LoadModeMLock`, or `LoadModeDirectIO`.
+`LoadModeMMap`, `LoadModeNone`, `LoadModeMLock`, `LoadModeMMapMLock`, or
+`LoadModeDirectIO`.
 
 The former `use-mmap` and `use-direct-io` keys are no longer supported. Migrate
 existing configuration as follows:
@@ -640,7 +643,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `nubatch`, `nbatch` | Positive token counts | Physical and logical batch sizes |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
-| `load-mode` | `auto`, `mmap`, `none`, `mlock`, `direct-io` | Model weight loading strategy |
+| `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |
 | `op-offload` | Boolean | Place host tensor operations on GPU when true |
 | `proj-on-cpu` | Boolean | Keep multimodal projector on CPU |
