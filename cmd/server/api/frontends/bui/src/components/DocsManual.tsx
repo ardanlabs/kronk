@@ -1368,7 +1368,7 @@ krn, err := kronk.New(
               </tr>
               <tr>
                 <td><strong>Embedded MTP head</strong></td>
-                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5/Qwen3.6 models.</td>
+                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5, Qwen3.6, and Qwen3.8 models.</td>
                 <td>Supports multiple slots</td>
               </tr>
             </tbody>
