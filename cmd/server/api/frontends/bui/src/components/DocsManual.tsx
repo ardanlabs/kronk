@@ -1368,7 +1368,7 @@ krn, err := kronk.New(
               </tr>
               <tr>
                 <td><strong>Embedded MTP head</strong></td>
-                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5/Qwen3.6 models.</td>
+                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5, Qwen3.6, and Qwen3.8 models.</td>
                 <td>Supports multiple slots</td>
               </tr>
             </tbody>
@@ -2670,13 +2670,14 @@ data: {"type":"response.completed",...}`}</code></pre>
               <tr>
                 <td><code>reasoning_effort</code></td>
                 <td>string</td>
-                <td><code>medium</code></td>
+                <td>template default</td>
                 <td>Requests <code>none</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, or <code>high</code> effort from supported reasoning templates.</td>
               </tr>
             </tbody>
           </table>
           <p>If neither the request nor model configuration supplies a positive output limit, Kronk uses the model's configured context window. The actual output can be shorter because the prompt and generated text share that window, the model can stop naturally, or another limit can end generation. See Chapter 9 for the limit and termination fields returned by each API format.</p>
           <p>Reasoning controls are model- and template-dependent. Unsupported models may ignore them. A parser can also normalize <code>reasoning_effort</code> to values accepted by its template; for example, a template that supports only <code>none</code> and <code>high</code> cannot honor every intermediate value.</p>
+          <p>When <code>reasoning_effort</code> is omitted from both the request and model configuration, Kronk leaves it undefined so the selected chat template can apply its native default.</p>
           <h2 id="106-structured-output">10.6 Structured Output</h2>
           <p>Kronk can convert JSON Schema to a GBNF grammar and constrain emitted tokens. For OpenAI-compatible clients, prefer <code>response_format</code>:</p>
           <pre className="code-block"><code className="language-json">{`{

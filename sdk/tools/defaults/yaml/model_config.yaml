@@ -16,7 +16,7 @@
 #   cache-type-v: q8_0                   # Explicit KV value type; omit for AutoTune (f16, then q8_0)
 #   chat-template-kwargs:                # Model-level Jinja defaults; request values override matching keys
 #   preserve_thinking: true              # Preserve prior tool-call reasoning when supported by the template
-#   context-window: 8192                 # Per-sequence token capacity; explicit value is fixed
+#   context-window: 8196                 # Per-sequence token capacity; explicit value is fixed
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
 #   flash-attention: auto                # Flash Attention: enabled, disabled, auto (default: auto)
 #   imc-session-capacity: 8              # Reusable IMC identities (default: nseq-max * max(3, queue-depth))
@@ -191,7 +191,7 @@ unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     preserve_thinking: true
   context-window: 131072
   sampling-parameters:
-    max_tokens: 8192
+    max_tokens: 16384
     temperature: 1.0
     top_k: 64
     top_p: 1
@@ -202,7 +202,7 @@ unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL/AGENT:
     preserve_thinking: true
   context-window: 131072
   sampling-parameters:
-    max_tokens: 8192
+    max_tokens: 16384
     temperature: 0.6
     top_k: 20
     top_p: 1
@@ -213,7 +213,19 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     preserve_thinking: true
   context-window: 131072
   sampling-parameters:
-    max_tokens: 8192
+    max_tokens: 16384
+    temperature: 0.6
+    top_k: 20
+    top_p: 1
+
+# ~26GB VRAM
+unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
+  chat-template-kwargs:
+    preserve_thinking: true
+  context-window: 131072
+  sampling-parameters:
+    reasoning_effort: "low"
+    max_tokens: 16384
     temperature: 0.6
     top_k: 20
     top_p: 1
@@ -222,7 +234,7 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
 unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
   context-window: 131072
   sampling-parameters:
-    max_tokens: 8192
+    max_tokens: 16384
     temperature: 1.0
     top_k: 64
     top_p: 1
@@ -231,7 +243,7 @@ unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
 mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
   context-window: 73728
   sampling-parameters:
-    max_tokens: 8192
+    max_tokens: 16384
     temperature: 0.6
     top_k: 20
     top_p: 1

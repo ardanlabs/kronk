@@ -29,7 +29,7 @@ export const PARAM_TOOLTIPS = {
 
   // Sampling – Reasoning
   enable_thinking: 'Enables reasoning/thinking mode in the prompt template (model-dependent). May improve accuracy on complex tasks but increases token usage and latency. Some models ignore this or keep reasoning internal.',
-  reasoning_effort: 'Requested reasoning level (model/provider dependent): none, minimal, low, medium, high (default: medium). Higher effort may produce more thorough reasoning but uses more tokens and time. Unsupported models ignore this.',
+  reasoning_effort: 'Requested reasoning level (model/provider dependent): none, minimal, low, medium, high. When omitted, the model template chooses its default. Higher effort may produce more thorough reasoning but uses more tokens and time. Unsupported models ignore this.',
 
   // Config sweep
   nbatch: 'Batch tray capacity — maximum tokens processed per decode call (shared across slots during prefill). Larger values speed up prompt evaluation and multi-request batching but increase VRAM usage. Typically keep ≤ context window size.',

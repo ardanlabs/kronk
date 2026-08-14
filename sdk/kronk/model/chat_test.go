@@ -269,6 +269,9 @@ func TestParseParamsUsesChatTemplateKwargs(t *testing.T) {
 	if got := normalized["enable_thinking"]; got != false {
 		t.Errorf("normalized enable_thinking: got %v, want false", got)
 	}
+	if _, exists := normalized["reasoning_effort"]; exists {
+		t.Error("normalized reasoning_effort: got framework default, want template default")
+	}
 }
 
 func TestChatPreservesValidationError(t *testing.T) {
@@ -284,6 +287,7 @@ func TestChatPreservesValidationError(t *testing.T) {
 		{name: "invalid integer parameter", field: "max_tokens", value: D{"invalid": true}},
 		{name: "invalid boolean parameter", field: "logprobs", value: "invalid"},
 		{name: "invalid reasoning parameter", field: "reasoning_effort", value: "invalid"},
+		{name: "invalid reasoning parameter type", field: "reasoning_effort", value: 1},
 		{name: "unsupported choice count", field: "n", value: 4},
 	}
 
@@ -2099,6 +2103,13 @@ func TestResolveSamplingDefaults(t *testing.T) {
 	if got, want := params.RepeatPenalty, float32(DefRepeatPenalty); got != want {
 		t.Errorf("RepeatPenalty: got %v, want disabled default %v", got, want)
 	}
+	if params.ReasoningEffort != "" {
+		t.Errorf("ReasoningEffort: got %q, want template default", params.ReasoningEffort)
+	}
+	explicit := resolveSamplingDefaults(Params{ReasoningEffort: ReasoningEffortHigh}, metadata, 4096)
+	if explicit.ReasoningEffort != ReasoningEffortHigh {
+		t.Errorf("explicit ReasoningEffort: got %q, want %q", explicit.ReasoningEffort, ReasoningEffortHigh)
+	}
 }
 
 func TestResolveSamplingDefaultsFallback(t *testing.T) {
@@ -2118,6 +2129,9 @@ func TestResolveSamplingDefaultsFallback(t *testing.T) {
 	}
 	if got, want := params.TopP, float32(DefTopP); got != want {
 		t.Errorf("TopP: got %v, want Kronk fallback %v", got, want)
+	}
+	if params.ReasoningEffort != "" {
+		t.Errorf("ReasoningEffort: got %q, want template default", params.ReasoningEffort)
 	}
 }
 

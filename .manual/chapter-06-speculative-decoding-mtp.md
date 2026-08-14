@@ -58,7 +58,7 @@ Kronk can load a drafter from three sources:
 | ------ | ------------------ | ----- |
 | **Classic separate draft** | A `draft-model` configuration names another compatible GGUF. | Requires `nseq-max: 1` |
 | **Companion MTP assistant** | A model-specific assistant GGUF, currently used by Gemma4 models, is discovered with the downloaded target. | Supports multiple slots |
-| **Embedded MTP head** | The target GGUF contains supported `nextn_predict_layers` metadata, currently used by Qwen3.5/Qwen3.6 models. | Supports multiple slots |
+| **Embedded MTP head** | The target GGUF contains supported `nextn_predict_layers` metadata, currently used by Qwen3.5, Qwen3.6, and Qwen3.8 models. | Supports multiple slots |
 
 Kronk checks these sources in that order. A `draft-model` block containing a
 `model-id` explicitly selects the classic separate draft and takes precedence

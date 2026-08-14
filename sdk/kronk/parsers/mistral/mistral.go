@@ -25,15 +25,15 @@ const name = "mistral"
 // "none" or "high". Matching the expression is more robust than matching
 // the human-readable exception message: it survives wording changes to the
 // raise_exception(...) text. Detected at parser construction so
-// AdjustParams can coerce any other value (e.g. the global default
-// "medium") into a valid one.
+// AdjustParams can coerce explicitly requested unsupported values into a
+// valid one.
 const strictReasoningEffortMarker = `reasoning_effort not in ['none', 'high']`
 
 // Parser implements model.Parser for Mistral and Devstral.
 type Parser struct {
 	// strictReasoningEffort is true when the model's chat template only
 	// accepts reasoning_effort values "none" or "high". When set,
-	// AdjustParams coerces any other value to "high".
+	// AdjustParams coerces any other explicit value to "high".
 	strictReasoningEffort bool
 }
 
@@ -88,10 +88,11 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 
 // AdjustParams coerces request Params into values the model's chat template
 // will accept. For templates that restrict reasoning_effort to "none" or
-// "high" (Mistral Medium 3.5+), any other value is coerced to "high" so the
-// model performs reasoning rather than silently disabling it.
+// "high" (Mistral Medium 3.5+), any other explicit value is coerced to "high"
+// so the model performs reasoning rather than silently disabling it. An empty
+// value remains unset so the template can apply its native default.
 func (p Parser) AdjustParams(params model.Params) model.Params {
-	if p.strictReasoningEffort {
+	if p.strictReasoningEffort && params.ReasoningEffort != "" {
 		switch params.ReasoningEffort {
 		case model.ReasoningEffortNone, model.ReasoningEffortHigh:
 			// Already a valid value.

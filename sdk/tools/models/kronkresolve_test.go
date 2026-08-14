@@ -471,6 +471,13 @@ func TestSamplingConfigWithMetadataDefaults(t *testing.T) {
 	if want := int32(-1); got.DryPenaltyLast != want {
 		t.Errorf("DryPenaltyLast: got %d, want Kronk fallback %d", got.DryPenaltyLast, want)
 	}
+	if got.ReasoningEffort != "" {
+		t.Errorf("ReasoningEffort: got %q, want template default", got.ReasoningEffort)
+	}
+	explicit := (SamplingConfig{ReasoningEffort: model.ReasoningEffortHigh}).WithMetadataDefaults(metadata)
+	if explicit.ReasoningEffort != model.ReasoningEffortHigh {
+		t.Errorf("explicit ReasoningEffort: got %q, want %q", explicit.ReasoningEffort, model.ReasoningEffortHigh)
+	}
 
 	malformed := (SamplingConfig{}).WithMetadataDefaults(map[string]string{
 		"general.sampling.temp":  "1e100",
@@ -481,6 +488,18 @@ func TestSamplingConfigWithMetadataDefaults(t *testing.T) {
 	}
 	if want := float32(model.DefTopP); malformed.TopP != want {
 		t.Errorf("malformed TopP: got %v, want Kronk fallback %v", malformed.TopP, want)
+	}
+}
+
+func TestSamplingConfigWithDefaultsLeavesReasoningEffortUnset(t *testing.T) {
+	got := (SamplingConfig{}).WithDefaults()
+	if got.ReasoningEffort != "" {
+		t.Errorf("ReasoningEffort: got %q, want template default", got.ReasoningEffort)
+	}
+
+	got = (SamplingConfig{ReasoningEffort: model.ReasoningEffortLow}).WithDefaults()
+	if got.ReasoningEffort != model.ReasoningEffortLow {
+		t.Errorf("explicit ReasoningEffort: got %q, want %q", got.ReasoningEffort, model.ReasoningEffortLow)
 	}
 }
 

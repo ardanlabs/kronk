@@ -385,3 +385,22 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-07-30T22:45:47Z
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL:
+    provider: unsloth
+    family: Qwen3.8-27B-GGUF
+    revision: main
+    files:
+      - Qwen3.8-27B-UD-Q4_K_XL.gguf
+    file_sizes:
+      - 17923394624
+    mmproj: mmproj-Qwen3.8-27B-UD-Q4_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 927607488
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-14T22:38:54.263499Z
