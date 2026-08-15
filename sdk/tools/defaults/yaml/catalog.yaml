@@ -7,6 +7,52 @@ providers:
   - gpustack
   - Qwen
 models:
+  Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0:
+    provider: Qwen
+    family: Qwen3-8B-GGUF
+    revision: main
+    files:
+      - Qwen3-8B-Q8_0.gguf
+    file_sizes:
+      - 8709518112
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-11T05:01:43.06638Z
+  Qwen/Qwen3-8B-Q8_0:
+    provider: Qwen
+    family: Qwen3-8B-GGUF
+    revision: main
+    files:
+      - Qwen3-8B-Q8_0.gguf
+    file_sizes:
+      - 8709518112
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-04-28T00:03:50Z
+  Qwen/Qwen3-Embedding-0.6B-Q8_0:
+    provider: Qwen
+    family: Qwen3-Embedding-0.6B-GGUF
+    revision: main
+    files:
+      - Qwen3-Embedding-0.6B-Q8_0.gguf
+    file_sizes:
+      - 639150592
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: embeddings
+      embedding: true
+    resolved_at: 2026-07-30T01:18:25.141492Z
   bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0:
     provider: bartowski
     family: cerebras_Qwen3-Coder-REAP-25B-A3B-GGUF
@@ -15,6 +61,7 @@ models:
       - cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0.gguf
     file_sizes:
       - 26457899616
+    mtp_checked: true
     model_type: MoE
     capabilities:
       endpoint: chat_completion
@@ -22,6 +69,110 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T04:36:57.716061Z
+  ggml-org/Llama-3.2-1B-Instruct-Q8_0:
+    provider: ggml-org
+    family: ultravox-v0_5-llama-3_2-1b-GGUF
+    revision: main
+    files:
+      - Llama-3.2-1B-Instruct-Q8_0.gguf
+    file_sizes:
+      - 1321083008
+    mmproj: mmproj-Llama-3.2-1B-Instruct-Q8_0.gguf
+    mmproj_orig: mmproj-ultravox-v0_5-llama-3_2-1b-f16.gguf
+    mmproj_size: 1371123616
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-04T03:57:50.322074Z
+  ggml-org/Meta-Llama-3.1-8B-Instruct-Q4_K_M:
+    provider: ggml-org
+    family: ultravox-v0_5-llama-3_1-8b-GGUF
+    revision: main
+    files:
+      - Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
+    file_sizes:
+      - 4920739232
+    mmproj: mmproj-Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
+    mmproj_orig: mmproj-ultravox-v0_5-llama-3_1-8b-f16.gguf
+    mmproj_size: 1379512224
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-04T03:41:00.439177Z
+  ggml-org/Qwen2.5-Omni-3B-Q4_K_M:
+    provider: ggml-org
+    family: Qwen2.5-Omni-3B-GGUF
+    revision: main
+    files:
+      - Qwen2.5-Omni-3B-Q4_K_M.gguf
+    file_sizes:
+      - 2104931648
+    mmproj: mmproj-Qwen2.5-Omni-3B-Q4_K_M.gguf
+    mmproj_orig: mmproj-Qwen2.5-Omni-3B-f16.gguf
+    mmproj_size: 2623983328
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      audio: true
+      video: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-04T04:05:29.510136Z
+  ggml-org/Qwen2.5-Omni-3B-Q8_0:
+    provider: ggml-org
+    family: Qwen2.5-Omni-3B-GGUF
+    revision: main
+    files:
+      - Qwen2.5-Omni-3B-Q8_0.gguf
+    file_sizes:
+      - 3616087360
+    mmproj: mmproj-Qwen2.5-Omni-3B-Q8_0.gguf
+    mmproj_orig: mmproj-Qwen2.5-Omni-3B-f16.gguf
+    mmproj_size: 2623983328
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      audio: true
+      video: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-04T04:05:58.603368Z
+  ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0:
+    provider: ggml-org
+    family: Qwen2.5-VL-3B-Instruct-GGUF
+    revision: main
+    files:
+      - Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+    file_sizes:
+      - 3285474304
+    mmproj: mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+    mmproj_orig: mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf
+    mmproj_size: 1338428128
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-12T00:51:23.962201Z
   ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0:
     provider: ggml-org
     family: Qwen3-Omni-30B-A3B-Instruct-GGUF
@@ -33,6 +184,7 @@ models:
     mmproj: mmproj-Qwen3-Omni-30B-A3B-Instruct-Q8_0.gguf
     mmproj_orig: mmproj-Qwen3-Omni-30B-A3B-Instruct-Q8_0.gguf
     mmproj_size: 1325020128
+    mtp_checked: true
     model_type: MoE
     capabilities:
       endpoint: chat_completion
@@ -43,6 +195,57 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
+  ggml-org/gemma-4-E4B-it-Q4_K_M:
+    provider: ggml-org
+    family: gemma-4-E4B-it-GGUF
+    revision: main
+    files:
+      - gemma-4-E4B-it-Q4_K_M.gguf
+    file_sizes:
+      - 5335289824
+    mmproj: mmproj-gemma-4-E4B-it-Q4_K_M.gguf
+    mmproj_size: 991551968
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      audio: true
+      video: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-03T16:44:52.082637Z
+  ggml-org/jina-embeddings-v2-base-en-q8_0:
+    provider: ggml-org
+    family: jina-embeddings-v2-base-en-Q8_0-GGUF
+    revision: main
+    files:
+      - jina-embeddings-v2-base-en-q8_0.gguf
+    file_sizes:
+      - 146218816
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: rerank
+      rerank: true
+    resolved_at: 2026-07-30T01:18:36.132801Z
+  ggml-org/qwen3-reranker-0.6b-q8_0:
+    provider: ggml-org
+    family: Qwen3-Reranker-0.6B-Q8_0-GGUF
+    revision: main
+    files:
+      - qwen3-reranker-0.6b-q8_0.gguf
+    file_sizes:
+      - 639153184
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-11T04:03:46.439615Z
   gpustack/bge-reranker-v2-m3-Q8_0:
     provider: gpustack
     family: bge-reranker-v2-m3-GGUF
@@ -51,22 +254,24 @@ models:
       - bge-reranker-v2-m3-Q8_0.gguf
     file_sizes:
       - 635676416
+    mtp_checked: true
     model_type: Dense
     capabilities:
       endpoint: rerank
       rerank: true
-    resolved_at: 2026-04-28T00:03:50Z
-  ggml-org/Qwen2.5-Omni-3B-Q8_0:
-    provider: ggml-org
-    family: Qwen2.5-Omni-3B-GGUF
+    resolved_at: 2026-08-11T04:03:36.425943Z
+  mradermacher/Qwen2-Audio-7B.Q8_0:
+    provider: mradermacher
+    family: Qwen2-Audio-7B-GGUF
     revision: main
     files:
-      - Qwen2.5-Omni-3B-Q8_0.gguf
+      - Qwen2-Audio-7B.Q8_0.gguf
     file_sizes:
-      - 3616087360
-    mmproj: mmproj-Qwen2.5-Omni-3B-Q8_0.gguf
-    mmproj_orig: mmproj-Qwen2.5-Omni-3B-Q8_0.gguf
-    mmproj_size: 2623983328
+      - 8247536704
+    mmproj: mmproj-Qwen2-Audio-7B.Q8_0.gguf
+    mmproj_orig: Qwen2-Audio-7B.mmproj-f16.gguf
+    mmproj_size: 1289301504
+    mtp_checked: true
     model_type: Dense
     capabilities:
       endpoint: chat_completion
@@ -75,7 +280,26 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-06-04T00:00:00Z
+    resolved_at: 2026-05-06T02:41:50.51447Z
+  mradermacher/Qwopus3.5-4B-Coder.Q4_K_M:
+    provider: mradermacher
+    family: Qwopus3.5-4B-Coder-GGUF
+    revision: main
+    files:
+      - Qwopus3.5-4B-Coder.Q4_K_M.gguf
+    file_sizes:
+      - 2783448480
+    mmproj: mmproj-Qwopus3.5-4B-Coder.Q4_K_M.gguf
+    mmproj_size: 672424544
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-03T19:42:44.516636Z
   mradermacher/Qwopus3.5-4B-Coder.Q8_0:
     provider: mradermacher
     family: Qwopus3.5-4B-Coder-GGUF
@@ -96,72 +320,50 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-06-03T18:40:08.158897Z
-  Qwen/Qwen3-8B-Q8_0:
-    provider: Qwen
-    family: Qwen3-8B-GGUF
+  mradermacher/gemma-4-E4B-it-Coder.i1-Q4_K_M:
+    provider: mradermacher
+    family: gemma-4-E4B-it-Coder-i1-GGUF
     revision: main
     files:
-      - Qwen3-8B-Q8_0.gguf
+      - gemma-4-E4B-it-Coder.i1-Q4_K_M.gguf
     file_sizes:
-      - 8709518112
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
-  Qwen/Qwen3-Embedding-0.6B-Q8_0:
-    provider: Qwen
-    family: Qwen3-Embedding-0.6B-GGUF
-    revision: main
-    files:
-      - Qwen3-Embedding-0.6B-Q8_0.gguf
-    file_sizes:
-      - 639150592
-    model_type: Dense
-    capabilities:
-      endpoint: embeddings
-      embedding: true
-    resolved_at: 2026-04-28T00:03:50Z
-  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
-    provider: unsloth
-    family: gemma-4-26B-A4B-it-GGUF
-    revision: main
-    files:
-      - gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
-    file_sizes:
-      - 16868240704
-    mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
-    mmproj_orig: mmproj-F16.gguf
-    mmproj_size: 1193058912
-    mtp: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
-    mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
-    mtp_size: 461766816
+      - 5335291296
     mtp_checked: true
-    model_type: MoE
+    model_type: Dense
     capabilities:
       endpoint: chat_completion
-      images: true
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
-  unsloth/gpt-oss-20b-Q8_0:
-    provider: unsloth
-    family: gpt-oss-20b-GGUF
+    resolved_at: 2026-06-03T16:55:53.408235Z
+  nomic-ai/nomic-embed-text-v1.5.Q8_0:
+    provider: nomic-ai
+    family: nomic-embed-text-v1.5-GGUF
     revision: main
     files:
-      - gpt-oss-20b-Q8_0.gguf
+      - nomic-embed-text-v1.5.Q8_0.gguf
     file_sizes:
-      - 12109567168
-    model_type: MoE
+      - 146146432
+    mtp_checked: true
+    model_type: Dense
     capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
+      endpoint: rerank
+      rerank: true
+    resolved_at: 2026-07-30T01:18:34.52641Z
+  second-state/all-MiniLM-L6-v2-Q8_0:
+    provider: second-state
+    family: All-MiniLM-L6-v2-Embedding-GGUF
+    revision: main
+    files:
+      - all-MiniLM-L6-v2-Q8_0.gguf
+    file_sizes:
+      - 25008064
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: rerank
+      rerank: true
+    resolved_at: 2026-07-30T01:18:32.85876Z
   unsloth/LFM2-700M-Q8_0:
     provider: unsloth
     family: LFM2-700M-GGUF
@@ -170,6 +372,7 @@ models:
       - LFM2-700M-Q8_0.gguf
     file_sizes:
       - 791565024
+    mtp_checked: true
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
@@ -188,6 +391,7 @@ models:
     mmproj: mmproj-LFM2.5-VL-1.6B-Q8_0.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 853993984
+    mtp_checked: true
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
@@ -196,6 +400,19 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
+  unsloth/Llama-3.3-70B-Instruct-Q8_0:
+    provider: unsloth
+    family: Llama-3.3-70B-Instruct-GGUF
+    revision: main
+    files:
+      - Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
+      - Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+    resolved_at: 2026-08-03T16:29:11.070646Z
   unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
     provider: unsloth
     family: Ministral-3-14B-Instruct-2512-GGUF
@@ -207,6 +424,7 @@ models:
     mmproj: mmproj-Ministral-3-14B-Instruct-2512-Q4_0.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 878053536
+    mtp_checked: true
     model_type: Dense
     capabilities:
       endpoint: chat_completion
@@ -223,6 +441,7 @@ models:
       - Qwen3-0.6B-Q8_0.gguf
     file_sizes:
       - 639447744
+    mtp_checked: true
     model_type: Dense
     capabilities:
       endpoint: chat_completion
@@ -230,6 +449,41 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
+  unsloth/Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL:
+    provider: unsloth
+    family: Qwen3-Coder-30B-A3B-Instruct-GGUF
+    revision: main
+    files:
+      - Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL.gguf
+    file_sizes:
+      - 35989947552
+    mtp_checked: true
+    model_type: MoE
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-17T18:15:06.78074Z
+  unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0:
+    provider: unsloth
+    family: Qwen3.5-0.8B-GGUF
+    revision: main
+    files:
+      - Qwen3.5-0.8B-Q8_0.gguf
+    file_sizes:
+      - 811843840
+    mmproj: mmproj-Qwen3.5-0.8B-Q8_0.gguf
+    mmproj_size: 204987232
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-12T16:34:50.694402Z
   unsloth/Qwen3.5-0.8B-Q8_0:
     provider: unsloth
     family: Qwen3.5-0.8B-GGUF
@@ -241,6 +495,7 @@ models:
     mmproj: mmproj-Qwen3.5-0.8B-Q8_0.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 204987232
+    mtp_checked: true
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
@@ -248,7 +503,135 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
+    resolved_at: 2026-04-29T04:52:12.243875Z
+  unsloth/Qwen3.5-122B-A10B-Q4_K_M:
+    provider: unsloth
+    family: Qwen3.5-122B-A10B-GGUF
+    revision: main
+    files:
+      - Qwen3.5-122B-A10B-Q4_K_M-00001-of-00003.gguf
+      - Qwen3.5-122B-A10B-Q4_K_M-00002-of-00003.gguf
+      - Qwen3.5-122B-A10B-Q4_K_M-00003-of-00003.gguf
+    file_sizes:
+      - 10943552
+      - 49968146912
+      - 26557874144
+    mmproj: mmproj-Qwen3.5-122B-A10B-Q4_K_M.gguf
+    mmproj_size: 908724960
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-05T15:48:20.336664Z
+  unsloth/Qwen3.6-27B-IQ4_NL:
+    provider: unsloth
+    family: Qwen3.6-27B-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-IQ4_NL.gguf
+    mmproj: mmproj-Qwen3.6-27B-IQ4_NL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-07-17T13:54:37.215183Z
+  unsloth/Qwen3.6-27B-Q4_K_M:
+    provider: unsloth
+    family: Qwen3.6-27B-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-Q4_K_M.gguf
+    file_sizes:
+      - 16817244384
+    mmproj: mmproj-Qwen3.6-27B-Q4_K_M.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 927607360
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-06T21:28:57.525318Z
+  unsloth/Qwen3.6-27B-Q4_K_S:
+    provider: unsloth
+    family: Qwen3.6-27B-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-Q4_K_S.gguf
+    mmproj: mmproj-Qwen3.6-27B-Q4_K_S.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-10T18:30:19.459848Z
+  unsloth/Qwen3.6-27B-Q6_K:
+    provider: unsloth
+    family: Qwen3.6-27B-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-Q6_K.gguf
+    mmproj: mmproj-Qwen3.6-27B-Q6_K.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-09T16:08:22.666413Z
+  unsloth/Qwen3.6-27B-Q8_0:
+    provider: unsloth
+    family: Qwen3.6-27B-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-Q8_0.gguf
+    mmproj: mmproj-Qwen3.6-27B-Q8_0.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-01T13:52:44.141413Z
+  unsloth/Qwen3.6-27B-UD-IQ2_XXS:
+    provider: unsloth
+    family: Qwen3.6-27B-MTP-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-UD-IQ2_XXS.gguf
+    mmproj: mmproj-Qwen3.6-27B-UD-IQ2_XXS.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-20T02:41:10.656781Z
   unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M:
     provider: unsloth
     family: Qwen3.6-35B-A3B-GGUF
@@ -260,25 +643,6 @@ models:
     mmproj: mmproj-Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283680
-    model_type: Hybrid
-    capabilities:
-      endpoint: chat_completion
-      images: true
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
-  unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL:
-    provider: unsloth
-    family: Qwen3.6-27B-MTP-GGUF
-    revision: main
-    files:
-      - Qwen3.6-27B-UD-Q8_K_XL.gguf
-    file_sizes:
-      - 35776484480
-    mmproj: mmproj-mtp-Qwen3.6-27B-UD-Q8_K_XL.gguf
-    mmproj_orig: mmproj-F16.gguf
-    mmproj_size: 927607360
     mtp_checked: true
     model_type: Hybrid
     capabilities:
@@ -287,62 +651,8 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-05-19T15:47:26.483029Z
+    resolved_at: 2026-08-11T09:23:59.653246Z
   unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL:
-    provider: unsloth
-    family: Qwen3.6-35B-A3B-GGUF
-    revision: main
-    files:
-      - Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
-    file_sizes:
-      - 38451182560
-    mmproj: mmproj-Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
-    mmproj_orig: mmproj-F16.gguf
-    mmproj_size: 899283680
-    model_type: Hybrid
-    capabilities:
-      endpoint: chat_completion
-      images: true
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-05-13T13:43:46.248759Z
-  unsloth/rnj-1-instruct-Q6_K:
-    provider: unsloth
-    family: rnj-1-instruct-GGUF
-    revision: main
-    files:
-      - rnj-1-instruct-Q6_K.gguf
-    file_sizes:
-      - 6826763968
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-04-28T00:03:50Z
-  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL:
-    provider: unsloth
-    family: gemma-4-E4B-it-qat-GGUF
-    revision: main
-    files:
-      - gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
-    file_sizes:
-      - 4215693760
-    mmproj: mmproj-gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
-    mmproj_orig: mmproj-F16.gguf
-    mmproj_size: 990372672
-    mtp_checked: true
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
-      images: true
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-06-10T20:19:14.621688Z
-  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL:
     provider: unsloth
     family: Qwen3.6-35B-A3B-MTP-GGUF
     revision: main
@@ -350,9 +660,8 @@ models:
       - Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
     file_sizes:
       - 39099447584
-    mmproj: mmproj-mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
+    mmproj: mmproj-Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
-    mmproj_size: 899283584
     mtp_checked: true
     model_type: Hybrid
     capabilities:
@@ -361,7 +670,70 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-07-30T22:45:47Z
+    resolved_at: 2026-05-19T10:25:20.503865Z
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL:
+    provider: unsloth
+    family: Qwen3.8-27B-GGUF
+    revision: main
+    files:
+      - Qwen3.8-27B-UD-Q4_K_XL.gguf
+    file_sizes:
+      - 17923394624
+    mmproj: mmproj-Qwen3.8-27B-UD-Q4_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 927607488
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-14T22:38:54.263499Z
+  unsloth/Qwen3.8-27B-UD-Q8_K_XL:
+    provider: unsloth
+    family: Qwen3.8-27B-GGUF
+    revision: main
+    files:
+      - Qwen3.8-27B-UD-Q8_K_XL.gguf
+    file_sizes:
+      - 31457991680
+    mmproj: mmproj-Qwen3.8-27B-UD-Q8_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 927607488
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-14T20:55:18.890296Z
+  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
+    provider: unsloth
+    family: gemma-4-26B-A4B-it-GGUF
+    revision: main
+    files:
+      - gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    file_sizes:
+      - 16947539744
+    mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 1193058784
+    mtp: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
+    mtp_size: 461766816
+    mtp_checked: true
+    model_type: MoE
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-16T14:22:40.598626Z
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL:
     provider: unsloth
     family: gemma-4-26B-A4B-it-GGUF
@@ -384,18 +756,81 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-07-30T22:45:47Z
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL:
+    resolved_at: 2026-07-19T12:40:25.472673Z
+  unsloth/gemma-4-E4B-it-Q4_K_M:
     provider: unsloth
-    family: Qwen3.8-27B-GGUF
+    family: gemma-4-E4B-it-GGUF
     revision: main
     files:
-      - Qwen3.8-27B-UD-Q4_K_XL.gguf
+      - gemma-4-E4B-it-Q4_K_M.gguf
     file_sizes:
-      - 17923394624
-    mmproj: mmproj-Qwen3.8-27B-UD-Q4_K_XL.gguf
+      - 4977169568
+    mmproj: mmproj-gemma-4-E4B-it-Q4_K_M.gguf
+    mmproj_size: 990372672
+    mtp: mtp-gemma-4-E4B-it-Q4_K_M.gguf
+    mtp_orig: mtp-gemma-4-E4B-it.gguf
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      audio: true
+      video: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-03T16:26:05.397597Z
+  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL:
+    provider: unsloth
+    family: gemma-4-E4B-it-qat-GGUF
+    revision: main
+    files:
+      - gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
+    file_sizes:
+      - 4215693760
+    mmproj: mmproj-gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
-    mmproj_size: 927607488
+    mmproj_size: 990372672
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-06-10T20:19:14.621688Z
+  unsloth/gpt-oss-20b-Q8_0:
+    provider: unsloth
+    family: gpt-oss-20b-GGUF
+    revision: main
+    files:
+      - gpt-oss-20b-Q8_0.gguf
+    file_sizes:
+      - 12109567168
+    mtp_checked: true
+    model_type: MoE
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-04-28T00:03:50Z
+  unsloth/mtp-Qwen3.5-122B-A10B-UD-Q4_K_M:
+    provider: unsloth
+    family: Qwen3.5-122B-A10B-MTP-GGUF
+    revision: main
+    files:
+      - mtp-Qwen3.5-122B-A10B-UD-Q4_K_M-00001-of-00003.gguf
+      - mtp-Qwen3.5-122B-A10B-UD-Q4_K_M-00002-of-00003.gguf
+      - mtp-Qwen3.5-122B-A10B-UD-Q4_K_M-00003-of-00003.gguf
+    file_sizes:
+      - 10943808
+      - 49995868640
+      - 28253590752
+    mmproj: mmproj-mtp-Qwen3.5-122B-A10B-UD-Q4_K_M.gguf
+    mmproj_size: 908724832
+    mtp_checked: true
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
@@ -403,4 +838,111 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-08-14T22:38:54.263499Z
+    resolved_at: 2026-08-05T15:48:20.336371Z
+  unsloth/mtp-Qwen3.6-27B-Q4_K_S:
+    provider: unsloth
+    family: Qwen3.6-27B-MTP-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-Q4_K_S.gguf
+    mmproj: mmproj-mtp-Qwen3.6-27B-Q4_K_S.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-20T03:39:01.137531Z
+  unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL:
+    provider: unsloth
+    family: Qwen3.6-27B-MTP-GGUF
+    revision: main
+    files:
+      - Qwen3.6-27B-UD-Q8_K_XL.gguf
+    file_sizes:
+      - 35776484480
+    mmproj: mmproj-mtp-Qwen3.6-27B-UD-Q8_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 927607360
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-19T15:47:26.483029Z
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL:
+    provider: unsloth
+    family: Qwen3.6-35B-A3B-MTP-GGUF
+    revision: main
+    files:
+      - Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf
+    file_sizes:
+      - 12574128416
+    mmproj: mmproj-mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 899283584
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-01T13:56:38.224419Z
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL:
+    provider: unsloth
+    family: Qwen3.6-35B-A3B-MTP-GGUF
+    revision: main
+    files:
+      - Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
+    file_sizes:
+      - 39099447584
+    mmproj: mmproj-mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 899283584
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-05-19T10:51:03.18711Z
+  unsloth/mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL:
+    provider: unsloth
+    family: gemma-4-26B-A4B-it-GGUF
+    revision: main
+    files:
+      - mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf
+    file_sizes:
+      - 461766816
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+    resolved_at: 2026-06-16T07:47:19.258957Z
+  unsloth/rnj-1-instruct-Q6_K:
+    provider: unsloth
+    family: rnj-1-instruct-GGUF
+    revision: main
+    files:
+      - rnj-1-instruct-Q6_K.gguf
+    file_sizes:
+      - 6826763968
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-04-28T00:03:50Z
