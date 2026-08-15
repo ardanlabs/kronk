@@ -387,14 +387,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`type DraftModelConfig struct {
 	ModelFiles    []string  // Path to the draft model GGUF file(s); empty means MTP nDraft override
-	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 2)
+	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 3)
 	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
 	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
 	PtrMainGPU    *int      // Primary GPU index for draft model
 	TensorSplit   []float32 // Per-device tensor split for draft model
 }`}</code>
               </pre>
-              <p className="doc-description">DraftModelConfig configures speculative decoding for a target model. It serves two purposes depending on whether ModelFiles is set: 1. Separate-GGUF draft (ModelFiles set): a smaller, faster model generates candidate tokens that the target verifies in a single forward pass. Requires NSeqMax == 1 (single-slot mode) and a draft that shares the target's vocabulary (same tokenizer). 2. MTP nDraft override (ModelFiles empty): when the target GGUF ships an auto-detected MTP head, this block lets you tune the starting number of draft tokens per round without supplying a separate model. The adaptive throttle still scales nDraft down from this ceiling (to 0) as acceptance drops. NDraft defaults to defMTPNDraft when left unset. A model can have at most one drafter. If ModelFiles is set, the separate-GGUF drafter wins even on a target that also has an MTP head.</p>
+              <p className="doc-description">DraftModelConfig configures speculative decoding for a target model. It serves two purposes depending on whether ModelFiles is set: 1. Separate-GGUF draft (ModelFiles set): a smaller, faster model generates candidate tokens that the target verifies in a single forward pass. Requires NSeqMax == 1 (single-slot mode) and a draft that shares the target's vocabulary (same tokenizer). 2. MTP nDraft override (ModelFiles empty): when the target GGUF ships an auto-detected MTP head, this block sets the number of draft tokens per round without supplying a separate model. NDraft defaults to defMTPNDraft when left unset. A model can have at most one drafter. If ModelFiles is set, the separate-GGUF drafter wins even on a target that also has an MTP head.</p>
             </div>
 
             <div className="doc-section" id="type-embeddata">

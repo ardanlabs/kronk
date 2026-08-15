@@ -258,7 +258,7 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) ([]llama.Token, error) {
 	draft := e.model.draft.core()
 	nEmbd := draft.nEmbd
 
-	nDraft := chooseNDraft(s, e.maxDraftForSlot(s, draft.nDraft))
+	nDraft := e.maxDraftForSlot(s, draft.nDraft)
 	if nDraft == 0 {
 		s.draftTokensBuf = s.draftTokensBuf[:0]
 		return s.draftTokensBuf, nil
@@ -683,7 +683,7 @@ func (e *batchEngine) generateDraftTokensMTPShared(s *slot) ([]llama.Token, erro
 	draft := e.model.draft.core()
 	nEmbd := draft.nEmbd
 
-	nDraft := chooseNDraft(s, e.maxDraftForSlot(s, draft.nDraft))
+	nDraft := e.maxDraftForSlot(s, draft.nDraft)
 	if nDraft == 0 {
 		s.draftTokensBuf = s.draftTokensBuf[:0]
 		return s.draftTokensBuf, nil

@@ -1398,9 +1398,9 @@ krn, err := kronk.New(
           <p>Defaults are:</p>
           <ul>
             <li><strong>Classic separate draft:</strong> 5</li>
-            <li><strong>MTP:</strong> 2</li>
+            <li><strong>MTP:</strong> 3</li>
           </ul>
-          <p>Kronk adapts the actual draft count independently for each execution slot. It tracks an exponential moving average (EMA) of recent acceptance and chooses the next round's size from the configured ceiling:</p>
+          <p>MTP uses the configured draft count on every round, matching llama.cpp. Kronk adaptively reduces the count for classic separate drafts. It tracks an exponential moving average (EMA) of recent acceptance and chooses the next round's size from the configured ceiling:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1432,7 +1432,7 @@ krn, err := kronk.New(
             </tbody>
           </table>
           <p>When the EMA is below 0.30, Kronk normally bypasses speculation. It performs a one-token recovery probe every 32 fully throttled rounds so a slot can detect that its workload has become predictable again.</p>
-          <p>The EMA belongs to the execution slot and persists across requests assigned to that slot. A request can therefore begin with a reduced draft size after prior requests on the same slot had poor acceptance. This is expected adaptive behavior, not evidence that the configured ceiling was ignored.</p>
+          <p>The EMA belongs to the execution slot and resets at the start of each request, so acceptance history from an unrelated request does not affect the next one.</p>
           <h3 id="65-configuration">6.5 Configuration</h3>
           <p>Configuration belongs under the target model ID in <code>~/.kronk/models/model_config.yaml</code>.</p>
           <h4 id="651-classic-separate-draft">6.5.1 Classic separate draft</h4>
@@ -1449,7 +1449,7 @@ krn, err := kronk.New(
           <pre className="code-block"><code className="language-yaml">{`some-provider/mtp-target-model:
   draft-model:
     ndraft: 6`}</code></pre>
-          <p>This form supports multiple slots. A value of 0 or an omitted value uses the MTP default of 2; a negative value is rejected. If neither a compatible companion nor an embedded MTP head is available, the override has no effect. The adaptive throttle can still select fewer candidates than the configured value.</p>
+          <p>This form supports multiple slots. A value of 0 or an omitted value uses the MTP default of 3; a negative value is rejected. If neither a compatible companion nor an embedded MTP head is available, the override has no effect.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for the complete model configuration format.</p>
           <h3 id="66-measuring-the-result">6.6 Measuring the Result</h3>
           <p>Do not use acceptance rate alone to decide whether speculation helps. Review acceptance, coverage, throughput, latency, and resource use together.</p>

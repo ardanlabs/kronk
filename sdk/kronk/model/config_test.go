@@ -578,16 +578,16 @@ func TestMTPNDraft(t *testing.T) {
 		cfg  Config
 		want int
 	}{
-		{"no draft model uses default", NewConfig(), defMTPNDraft},
+		{"no draft model uses default", NewConfig(), 3},
 		{"separate-GGUF draft ignored for MTP, uses default", NewConfig(
 			WithDraftModel(&DraftModelConfig{ModelFiles: []string{"d.gguf"}, NDraft: 9}),
-		), defMTPNDraft},
+		), 3},
 		{"MTP override uses configured value", NewConfig(
 			WithDraftModel(&DraftModelConfig{NDraft: 7}),
 		), 7},
 		{"MTP override with zero falls back to default", NewConfig(
 			WithDraftModel(&DraftModelConfig{}),
-		), defMTPNDraft},
+		), 3},
 	}
 
 	for _, tt := range tests {

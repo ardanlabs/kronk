@@ -133,11 +133,12 @@ rejected.
 Defaults are:
 
 - **Classic separate draft:** 5
-- **MTP:** 2
+- **MTP:** 3
 
-Kronk adapts the actual draft count independently for each execution slot. It
-tracks an exponential moving average (EMA) of recent acceptance and chooses the
-next round's size from the configured ceiling:
+MTP uses the configured draft count on every round, matching llama.cpp. Kronk
+adaptively reduces the count for classic separate drafts. It tracks an
+exponential moving average (EMA) of recent acceptance and chooses the next
+round's size from the configured ceiling:
 
 | Acceptance EMA | Next draft size |
 | -------------- | --------------- |
@@ -151,10 +152,8 @@ When the EMA is below 0.30, Kronk normally bypasses speculation. It performs a
 one-token recovery probe every 32 fully throttled rounds so a slot can detect
 that its workload has become predictable again.
 
-The EMA belongs to the execution slot and persists across requests assigned to
-that slot. A request can therefore begin with a reduced draft size after prior
-requests on the same slot had poor acceptance. This is expected adaptive
-behavior, not evidence that the configured ceiling was ignored.
+The EMA belongs to the execution slot and resets at the start of each request,
+so acceptance history from an unrelated request does not affect the next one.
 
 ### 6.5 Configuration
 
@@ -191,10 +190,8 @@ some-provider/mtp-target-model:
 ```
 
 This form supports multiple slots. A value of 0 or an omitted value uses the
-MTP default of 2; a negative value is rejected. If neither a compatible
+MTP default of 3; a negative value is rejected. If neither a compatible
 companion nor an embedded MTP head is available, the override has no effect.
-The adaptive throttle can still select fewer candidates than the configured
-value.
 
 See [Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration) for the complete model
 configuration format.
