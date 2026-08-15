@@ -94,8 +94,8 @@
 #     xtc_min_keep: 1                    # XTC minimum tokens to keep
 #     frequency_penalty: 0.0             # Frequency penalty
 #     presence_penalty: 0.0              # Presence penalty
-#     enable_thinking: ""                # Enable thinking mode (model-specific)
-#     reasoning_effort: ""               # Reasoning effort (model-specific)
+#     enable_thinking: false             # Thinking mode for supported models (default: true)
+#     reasoning_effort: low              # none, minimal, low, medium, or high (model-specific)
 #     grammar: ""                        # GBNF grammar constraint
 
 # ==============================================================================
