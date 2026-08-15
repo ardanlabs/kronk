@@ -195,17 +195,7 @@ unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     temperature: 1.0
     top_k: 64
     top_p: 1
-
-# ~43GB VRAM
-unsloth/mtp-Qwen3.6-27B-UD-Q8_K_XL/AGENT:
-  chat-template-kwargs:
-    preserve_thinking: true
-  context-window: 131072
-  sampling-parameters:
-    max_tokens: 16384
-    temperature: 0.6
-    top_k: 20
-    top_p: 1
+    enable_thinking: false
 
 # ~40GB VRAM
 unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
@@ -217,6 +207,20 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     temperature: 0.6
     top_k: 20
     top_p: 1
+    enable_thinking: false
+
+# ~40GB VRAM
+unsloth/Qwen3.8-27B-UD-Q8_K_XL/AGENT:
+  chat-template-kwargs:
+    preserve_thinking: true
+  context-window: 131072
+  sampling-parameters:
+    reasoning_effort: "low"
+    max_tokens: 16384
+    temperature: 0.6
+    top_k: 20
+    top_p: 1
+    enable_thinking: false
 
 # ~26GB VRAM
 unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
@@ -229,6 +233,7 @@ unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
     temperature: 0.6
     top_k: 20
     top_p: 1
+    enable_thinking: false
 
 # ~12GB VRAM
 unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
@@ -238,6 +243,7 @@ unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
     temperature: 1.0
     top_k: 64
     top_p: 1
+    enable_thinking: false
 
 # ~8GB VRAM
 mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
@@ -247,3 +253,4 @@ mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
     temperature: 0.6
     top_k: 20
     top_p: 1
+    enable_thinking: false
