@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"time"
 	"unsafe"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -258,7 +259,7 @@ func (e *batchEngine) generateDraftTokensMTP(s *slot) ([]llama.Token, error) {
 	draft := e.model.draft.core()
 	nEmbd := draft.nEmbd
 
-	nDraft := chooseNDraft(s, e.maxDraftForSlot(s, draft.nDraft))
+	nDraft := e.maxDraftForSlot(s, draft.nDraft)
 	if nDraft == 0 {
 		s.draftTokensBuf = s.draftTokensBuf[:0]
 		return s.draftTokensBuf, nil
@@ -381,6 +382,8 @@ func (dc *draftCore) mirrorBatchCapacity() int32 {
 // processBatch paths already serialize draft access via the single
 // processBatch loop, so holding decodeMu here is sufficient.
 func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tokens []llama.Token, startPos int) error {
+	start := time.Now()
+
 	nBatch := int(e.model.ctxParams.NBatch)
 	if nBatch <= 0 {
 		nBatch = e.model.cfg.NBatch()
@@ -403,8 +406,14 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 
 	seqIDs := []llama.SeqId{s.seqID}
 
+	decodeWaitStart := time.Now()
 	e.model.decodeMu.Lock()
 	defer e.model.decodeMu.Unlock()
+	decodeWaitElapsed := time.Since(decodeWaitStart)
+
+	var targetDecodeElapsed time.Duration
+	var mtpSyncElapsed time.Duration
+	var chunks int
 
 	for i := 0; i < nTokens; i += nBatch {
 		end := min(i+nBatch, nTokens)
@@ -416,11 +425,13 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 			}
 		}
 
+		targetDecodeStart := time.Now()
 		ret, err := llama.Decode(e.model.lctx, batch)
 		if err != nil || ret != 0 {
 			return fmt.Errorf("imc-mtp: target decode at pos %d: %w", startPos+i, decodeError(ret, err))
 		}
 		llama.Synchronize(e.model.lctx)
+		targetDecodeElapsed += time.Since(targetDecodeStart)
 
 		// Sync the just-decoded chunk into the MTP head's view. Own-KV
 		// (Qwen) mirrors it into the separate draft seq KV; shared-KV
@@ -429,14 +440,22 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 		// is inconsistent; the caller treats that as a build failure and
 		// clears both seqs.
 		if syncer, ok := e.model.draft.(mtpSyncer); ok {
+			mtpSyncStart := time.Now()
 			if err := syncer.syncCacheBuildChunk(e, s, tokens[i:end], llama.Pos(startPos+i)); err != nil {
 				return fmt.Errorf("imc-mtp: sync at pos %d: %w", startPos+i, err)
 			}
+			mtpSyncElapsed += time.Since(mtpSyncStart)
 		}
+		chunks++
 	}
 
+	elapsed := time.Since(start)
 	e.model.log(ctx, "cache", "status", "finished (decoding tokens into cache (mtp-mirror))",
-		"seq", s.seqID, "tokens", nTokens, "nbatch", nBatch)
+		"seq", s.seqID, "tokens", nTokens, "chunks", chunks, "nbatch", nBatch,
+		"target_decode_elapsed", fmtDur(targetDecodeElapsed),
+		"mtp_sync_elapsed", fmtDur(mtpSyncElapsed),
+		"decode_wait_elapsed", fmtDur(decodeWaitElapsed),
+		"elapsed", fmtDur(elapsed))
 
 	return nil
 }
@@ -683,7 +702,7 @@ func (e *batchEngine) generateDraftTokensMTPShared(s *slot) ([]llama.Token, erro
 	draft := e.model.draft.core()
 	nEmbd := draft.nEmbd
 
-	nDraft := chooseNDraft(s, e.maxDraftForSlot(s, draft.nDraft))
+	nDraft := e.maxDraftForSlot(s, draft.nDraft)
 	if nDraft == 0 {
 		s.draftTokensBuf = s.draftTokensBuf[:0]
 		return s.draftTokensBuf, nil

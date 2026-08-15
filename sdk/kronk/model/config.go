@@ -102,17 +102,15 @@ func float32Or(p *float32, def float32) float32 {
 //     that shares the target's vocabulary (same tokenizer).
 //
 //  2. MTP nDraft override (ModelFiles empty): when the target GGUF ships
-//     an auto-detected MTP head, this block lets you tune the starting
-//     number of draft tokens per round without supplying a separate
-//     model. The adaptive throttle still scales nDraft down from this
-//     ceiling (to 0) as acceptance drops. NDraft defaults to defMTPNDraft
-//     when left unset.
+//     an auto-detected MTP head, this block sets the number of draft tokens
+//     per round without supplying a separate model. NDraft defaults to
+//     defMTPNDraft when left unset.
 //
 // A model can have at most one drafter. If ModelFiles is set, the
 // separate-GGUF drafter wins even on a target that also has an MTP head.
 type DraftModelConfig struct {
 	ModelFiles    []string  // Path to the draft model GGUF file(s); empty means MTP nDraft override
-	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 2)
+	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 3)
 	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
 	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
 	PtrMainGPU    *int      // Primary GPU index for draft model
@@ -827,7 +825,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 
 	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.NDraft <= 0 {
 		// Separate-GGUF drafts default to defNDraft; MTP nDraft overrides
-		// (no model files) default to the more conservative defMTPNDraft.
+		// (no model files) default to defMTPNDraft.
 		if cfg.PtrDraftModel.IsSeparate() {
 			cfg.PtrDraftModel.NDraft = defNDraft
 		} else {

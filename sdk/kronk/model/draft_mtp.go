@@ -16,10 +16,8 @@ import (
 
 // defMTPNDraft is the default number of speculative tokens to draft per
 // round when MTP is auto-enabled and no explicit count was configured.
-// Conservative default — MTP heads typically have high acceptance for
-// the first 1-3 tokens and rapidly decay beyond that. The adaptive
-// chooseNDraft EMA will scale down further if acceptance is poor.
-const defMTPNDraft = 2
+// This matches llama.cpp's MTP default.
+const defMTPNDraft = 3
 
 // modelFilesLoadMTP reports whether the first GGUF shard declares one or
 // more MTP prediction layers. GGUF metadata lives in the first shard, so no
@@ -68,9 +66,8 @@ func metadataHasAssistantMTP(metadata map[string]string) bool {
 
 // mtpNDraft returns the starting (ceiling) number of draft tokens for the
 // auto-detected MTP drafter. An MTP nDraft override — a DraftModel block
-// with no model files — sets the ceiling explicitly; otherwise the
-// conservative defMTPNDraft is used. The adaptive throttle (chooseNDraft)
-// scales this ceiling down to 0 per slot as acceptance drops.
+// with no model files — sets the count explicitly; otherwise the default
+// defMTPNDraft is used.
 func mtpNDraft(cfg Config) int {
 	if cfg.PtrDraftModel != nil && !cfg.PtrDraftModel.IsSeparate() && cfg.PtrDraftModel.NDraft > 0 {
 		return cfg.PtrDraftModel.NDraft
