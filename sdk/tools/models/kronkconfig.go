@@ -374,6 +374,7 @@ type ModelConfig struct {
 	RopeScaling           model.RopeScalingType     `yaml:"rope-scaling-type,omitempty"`
 	Sampling              SamplingConfig            `yaml:"sampling-parameters,omitempty"`
 	SessionStoreKind      kvstorage.Kind            `yaml:"session-store-kind,omitempty"`
+	Speculation           model.SpeculationMode     `yaml:"speculation,omitempty"`
 	PtrSplitMode          *model.SplitMode          `yaml:"split-mode,omitempty"`
 	PtrSWAFull            *bool                     `yaml:"swa-full,omitempty"`
 	TensorBuftOverrides   []string                  `yaml:"tensor-buft-overrides,omitempty"`
@@ -442,6 +443,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrRopeFreqBase:       mc.PtrRopeFreqBase,
 		PtrRopeFreqScale:      mc.PtrRopeFreqScale,
 		RopeScaling:           mc.RopeScaling,
+		Speculation:           mc.Speculation,
 		PtrSplitMode:          mc.PtrSplitMode,
 		PtrSWAFull:            mc.PtrSWAFull,
 		TensorBuftOverrides:   mc.TensorBuftOverrides,

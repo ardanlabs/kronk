@@ -37,6 +37,7 @@
 #   rope-freq-scale: 0.25                # RoPE frequency scale (nil = auto-calculated)
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
 #   session-store-kind: ram              # IMC session storage backend (currently ram only)
+#   speculation: auto                    # auto, disabled, classic, or mtp
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
 #   swa-full: true                       # Full KV cache for SWA layers (unset = llama.cpp default; false = compact SWA)
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)

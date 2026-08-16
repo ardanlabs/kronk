@@ -127,8 +127,8 @@ func TestMaskSuppressTokenLogits(t *testing.T) {
 	if !math.IsInf(float64(logits[0]), -1) {
 		t.Errorf("suppressed logit: got %v, want -Inf", logits[0])
 	}
-	if got := argmax(logits); got != 2 {
-		t.Errorf("argmax: got %d, want 2", got)
+	if logits[2] <= logits[1] {
+		t.Errorf("unsuppressed maximum: got logits %v, want index 2", logits)
 	}
 
 	logprobs := logSoftmax(logits)

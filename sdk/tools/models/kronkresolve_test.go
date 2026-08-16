@@ -394,6 +394,27 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	}
 }
 
+func TestModelConfigSpeculation(t *testing.T) {
+	data := []byte(`test-model:
+  speculation: disabled
+`)
+
+	var configs map[string]ModelConfig
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	cfg := configs["test-model"]
+	if got := cfg.ToKronkConfig().SpeculationMode(); got != model.SpeculationDisabled {
+		t.Errorf("SpeculationMode() = %q, want %q", got, model.SpeculationDisabled)
+	}
+
+	MergeModelConfig(&cfg, ModelConfig{Speculation: model.SpeculationMTP})
+	if got := cfg.ToKronkConfig().SpeculationMode(); got != model.SpeculationMTP {
+		t.Errorf("merged SpeculationMode() = %q, want %q", got, model.SpeculationMTP)
+	}
+}
+
 func TestModelConfigFlashAttentionPresence(t *testing.T) {
 	unset := ModelConfig{}.ToKronkConfig()
 	if unset.PtrFlashAttention != nil {

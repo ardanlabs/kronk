@@ -565,6 +565,17 @@ some-provider/mtp-target-model:
     ndraft: 6
 ```
 
+Use `speculation` to select the implementation for a model:
+
+```yaml
+some-provider/mtp-target-model:
+  speculation: disabled # auto, disabled, classic, or mtp
+```
+
+`auto` preserves automatic selection. `disabled` runs target-only and does not
+load draft resources. `classic` requires `draft-model.model-id`; `mtp` requires
+a compatible embedded head or companion assistant.
+
 Do not use model names or benchmark results as universal draft-selection rules.
 Measure acceptance and throughput on the actual workload. See
 [Chapter 6](https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp) for drafter selection,
@@ -672,6 +683,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `incremental-cache` | Boolean | Incremental Message Cache |
 | `adapters` | List of `id` or absolute `path`, plus optional `scale` | Fixed load-time LoRA adapters |
 | `draft-model` | Mapping | Separate drafter or MTP draft-count override |
+| `speculation` | `auto`, `disabled`, `classic`, `mtp` | Select speculative-decoding implementation |
 | `rope-scaling-type` | Supported scaling mode | Extended-context scaling |
 | `sampling-parameters` | Mapping | Per-model generation defaults |
 | `chat-template-kwargs` | Mapping | Per-model Jinja template defaults; request values override matching keys |

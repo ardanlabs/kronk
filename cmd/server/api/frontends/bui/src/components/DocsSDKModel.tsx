@@ -412,6 +412,7 @@ export default function DocsSDKModel() {
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
 	SessionStoreFactory        SessionStoreFactory
+	Speculation                SpeculationMode
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
 	TensorBuftOverrides        []string
@@ -988,6 +989,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">SessionStoreFactory constructs an independent SessionStore.</p>
             </div>
 
+            <div className="doc-section" id="type-speculationmode">
+              <h4>SpeculationMode</h4>
+              <pre className="code-block">
+                <code>{`type SpeculationMode = internalspec.Mode`}</code>
+              </pre>
+              <p className="doc-description">SpeculationMode selects the speculative-decoding implementation for a model.</p>
+            </div>
+
             <div className="doc-section" id="type-splitmode">
               <h4>SplitMode</h4>
               <pre className="code-block">
@@ -1304,6 +1313,14 @@ export default function DocsSDKModel() {
                 <code>func (cfg Config) SWAFull() bool</code>
               </pre>
               <p className="doc-description">SWAFull reports whether a full-size sliding-window attention cache was explicitly requested. Callers that need the effective value must check PtrSWAFull first because nil leaves the choice to llama.cpp.</p>
+            </div>
+
+            <div className="doc-section" id="method-config-speculationmode">
+              <h4>Config.SpeculationMode</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) SpeculationMode() SpeculationMode</code>
+              </pre>
+              <p className="doc-description">SpeculationMode returns the selected speculative-decoding implementation. The zero value preserves automatic selection.</p>
             </div>
 
             <div className="doc-section" id="method-config-string">
@@ -2011,6 +2028,18 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="const-speculationauto">
+              <h4>SpeculationAuto</h4>
+              <pre className="code-block">
+                <code>{`const (
+	SpeculationAuto     = internalspec.ModeAuto
+	SpeculationDisabled = internalspec.ModeDisabled
+	SpeculationClassic  = internalspec.ModeClassic
+	SpeculationMTP      = internalspec.ModeMTP
+)`}</code>
+              </pre>
+            </div>
+
             <div className="doc-section" id="const-defaultprefillbatchsize">
               <h4>DefaultPrefillBatchSize</h4>
               <pre className="code-block">
@@ -2193,6 +2222,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
                 <li><a href="#type-sessionstore">SessionStore</a></li>
                 <li><a href="#type-sessionstorefactory">SessionStoreFactory</a></li>
+                <li><a href="#type-speculationmode">SpeculationMode</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-statemachine">StateMachine</a></li>
                 <li><a href="#type-statemachineflusher">StateMachineFlusher</a></li>
@@ -2233,6 +2263,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-ropefreqbase">Config.RopeFreqBase</a></li>
                 <li><a href="#method-config-ropefreqscale">Config.RopeFreqScale</a></li>
                 <li><a href="#method-config-swafull">Config.SWAFull</a></li>
+                <li><a href="#method-config-speculationmode">Config.SpeculationMode</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-config-yarnattnfactor">Config.YarnAttnFactor</a></li>
                 <li><a href="#method-config-yarnbetafast">Config.YarnBetaFast</a></li>
@@ -2311,6 +2342,7 @@ export default function DocsSDKModel() {
                 <li><a href="#const-defadaptivepdecay">DefAdaptivePDecay</a></li>
                 <li><a href="#const-thinkingenabled">ThinkingEnabled</a></li>
                 <li><a href="#const-reasoningeffortnone">ReasoningEffortNone</a></li>
+                <li><a href="#const-speculationauto">SpeculationAuto</a></li>
                 <li><a href="#const-defaultprefillbatchsize">DefaultPrefillBatchSize</a></li>
                 <li><a href="#const-defaultqueuedepth">DefaultQueueDepth</a></li>
                 <li><a href="#const-expertsallongpu">ExpertsAllOnGPU</a></li>

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
+	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/trace"
@@ -168,7 +170,6 @@ type slot struct {
 	// Speculative Decoding
 
 	draftNPast          llama.Pos     // Draft model's KV cache position
-	draftStartPast      llama.Pos     // Draft KV position before the current classic draft round
 	draftPrefillNeeded  bool          // True when draft model needs prefill after target prefill
 	draftPromptTokens   []llama.Token // Full prompt tokens for draft model prefill
 	specDraftTokens     []llama.Token // Draft tokens for current speculative step
@@ -178,9 +179,6 @@ type slot struct {
 	specAcceptedTotal   int           // Total draft tokens accepted across all speculative steps
 	specCoveredTotal    int           // Emitted output tokens processed through speculative verification
 	processingSpecToken bool          // True while an accepted draft or bonus token is being processed
-	specAccEMA          float64       // Per-request exponential moving average of acceptance rate
-	specRounds          int           // Verify rounds completed this request (used to throttle per-round logging)
-	mtpProbeTick        int           // Counts decode rounds spent fully throttled this request (EMA < floor); drives the periodic recovery probe in chooseNDraft.
 	samplingSeeds       samplingSeeds // Derived native and Go RNG seeds for this request
 	specRNG             *rand.Rand    // Request-local RNG for speculative acceptance and manual sampling
 
@@ -189,89 +187,11 @@ type slot struct {
 	// processBatch iteration.
 	draftTokensBuf    []llama.Token // Owned copy of generated draft tokens
 	draftCachedTokens []llama.Token // Prompt tokens in this slot's draft KV cache (persists across requests)
+	classic           classicengine.SlotState
 
-	// -------------------------------------------------------------------------
-	// MTP (Multi-Token Prediction) per-slot state — populated only when
-	// e.model.draft != nil && e.model.draft.mtp().
-
-	// pendingH is a copy of the pre-norm hidden-state row from the
-	// most-recently committed target position for this slot's sequence.
-	// It is used as the embd input at slot 0 of the next "mirror"
-	// batch into the MTP draft context (shift-right-by-1 alignment per
-	// common_speculative.cpp). Lazy-grow, never-shrink — sized to the
-	// model's embedding width on first use. Zero-length when no target
-	// decode has produced a hidden row yet for this slot (e.g., very
-	// first prefill chunk — slot 0 of that mirror batch is then zeroed).
-	pendingH []float32
-
-	// mtpDraftH is transient hidden-state scratch for the Qwen own-KV
-	// autoregressive draft loop. It must remain separate from pendingH:
-	// pendingH is the authoritative target-derived predecessor consumed by
-	// the post-verification mirror, while mtpDraftH is overwritten by each
-	// speculative draft decode. Lazy-grow, never-shrink.
-	mtpDraftH []float32
-
-	// targetBatchStart / targetBatchCount / targetBatchBasePos record
-	// the slot's contiguous range inside the shared target batch and the
-	// sequence position of its first token, captured during batch
-	// assembly so that the MTP mirror step (run AFTER llama_decode
-	// succeeds) can find the just-decoded rows and replay them into the
-	// draft KV with batch.embd populated.
-	//
-	// Set in three places in batchgen_engine.go:
-	//   - addPrefillChunk    (prefill chunks)
-	//   - normal gen-token add
-	//   - spec verify add    (1 sampled + nDraft drafted)
-	//
-	// For spec batches, the mirror runs after verify resolves the
-	// accepted count, so only count = 1 + accepted rows are mirrored.
-	targetBatchStart   int32
-	targetBatchCount   int32
-	targetBatchBasePos llama.Pos
-
-	// mtpHasBatch is true between batch.Add() and the post-decode mirror
-	// step, signaling that the slot contributed rows to the most-recent
-	// target decode and is awaiting an MTP mirror. Cleared by the
-	// mirror step.
-	mtpHasBatch bool
-
-	// mtpDisabledForRequest is set when own-KV draft state cannot resume
-	// alongside an IMC-restored target, or after a post-rollback mirror
-	// failure. Shared-KV Gemma4 resumes from the target state directly.
-	// Cleared in slot.reset().
-	mtpDisabledForRequest bool
-
-	// mtpDisableReason is a short, machine-friendly label describing
-	// why MTP was disabled for the current request. Surfaced in the
-	// final per-request Usage block (DraftDisableReason) and the
-	// chat-completion log line so an operator can immediately see why
-	// a request with a high DMAR also had low draft coverage. Empty
-	// while MTP is still active. Cleared in slot.reset(). Possible
-	// values mirror the speculative-log status names:
-	//   "imc-hit"      — IMC cache hit lacked restorable draft state.
-	//   "media-mrope"  — M-RoPE media state cannot resume the draft safely.
-	//   "mirror-error" — post-verify mirror failed; draft KV wiped.
-	mtpDisableReason string
-	mtpResumeSource  string
-
-	// verifyH is a slot-local cache of the target context's pre-norm
-	// hidden-state rows for the slot's just-decoded spec batch range.
-	// Captured at the top of verifySpeculativeTokens (Phase A) BEFORE
-	// any other slot's Phase B can re-decode on the target context
-	// (notably restoreTargetSpecSnapshot on hybrid targets) and
-	// invalidate the per-context pre-norm buffer.
-	//
-	// Layout: row-major, (1+nDraft) rows of nEmbd floats. Row k is the
-	// pre-norm hidden state of the target batch position
-	// s.targetBatchStart+k. finalizeSpeculativeTokens'
-	// mirrorTargetBatchToMTPDraft reads from this buffer instead of the
-	// live target pre-norm buffer so the mirror is safe to run AFTER a
-	// hybrid restoreTargetSpecSnapshot re-decode.
-	//
-	// Lazy-grow / never-shrink. Length is set to actual bytes per
-	// capture; cap is retained across requests. Cleared by the mirror
-	// after consumption and by slot.reset().
-	verifyH []float32
+	// MTP owns its request-local hidden-state, synchronization, and disable
+	// state. The engine stores it without duplicating those fields in slot.
+	mtp mtpengine.SlotState
 
 	// specSnapshot holds a snapshot of the target context's per-sequence
 	// state taken right before a speculative batch is decoded. It is
@@ -280,7 +200,7 @@ type slot struct {
 	// per-sequence recurrent state, so a partial-rejection round would
 	// leave the recurrent layer advanced past the accepted boundary
 	// and the next llama_decode fails with -1. The snapshot lets
-	// verifySpeculativeTokens restore the pre-spec state and re-decode
+	// classic finalization restores the pre-spec state and re-decodes
 	// only the accepted prefix.
 	//
 	// Allocated lazy-grow / never-shrink. The buffer is sized via
@@ -289,9 +209,8 @@ type slot struct {
 	// snapshot bytes; cap is retained across requests.
 	specSnapshot []byte
 
-	// Pending-finalize fields populated by Phase A of speculative verify
-	// (verifySpeculativeTokens) and consumed by Phase B
-	// (finalizeSpeculativeTokens). The split exists because Phase B may
+	// Pending-finalize fields populated by speculative verification and
+	// consumed by finalization. The split exists because finalization may
 	// re-decode on the target context (hybrid restoreTargetSpecSnapshot),
 	// which wipes the per-context logit buffer for every other slot's
 	// rows. Running all spec slots through Phase A first lets every slot
@@ -311,11 +230,8 @@ type slot struct {
 	specPendingLogprob         *ContentLogprob
 
 	// Sparse candidate-based speculative decoding fields.
-	draftSampler         llama.Sampler            // Per-slot sampler for draft model (non-greedy)
-	specDraftDistsSparse [][]candidateEntry       // Sparse draft distributions per drafted token
-	draftDistBuf         [][]candidateEntry       // Pre-allocated backing for specDraftDistsSparse
-	draftCandDistBuf     [][]llama.DraftCandidate // Pre-allocated backing for DraftGenerate output
-	adjustedDistBuf      []candidateEntry         // Scratch buffer for adjusted sampling
+	draftSampler     llama.Sampler            // Per-slot sampler for draft model (non-greedy)
+	draftCandDistBuf [][]llama.DraftCandidate // Pre-allocated backing for DraftGenerate output
 
 	// -------------------------------------------------------------------------
 	// Metrics
@@ -363,7 +279,6 @@ func (s *slot) reset() {
 	s.logprobsData = nil
 	s.currentLogprob = nil
 	s.draftNPast = 0
-	s.draftStartPast = 0
 	s.draftPrefillNeeded = false
 	s.draftPromptTokens = nil
 	s.specDraftTokens = nil
@@ -373,9 +288,7 @@ func (s *slot) reset() {
 	s.specAcceptedTotal = 0
 	s.specCoveredTotal = 0
 	s.processingSpecToken = false
-	s.specAccEMA = 1.0
-	s.specRounds = 0
-	s.mtpProbeTick = 0
+	s.classic.Reset()
 	s.samplingSeeds = samplingSeeds{}
 	s.specRNG = nil
 	s.specPendingFinalize = false
@@ -389,26 +302,11 @@ func (s *slot) reset() {
 	s.draftTokensBuf = s.draftTokensBuf[:0]
 	// Note: draftCachedTokens persists across requests for incremental draft KV reuse.
 
-	// MTP per-request state. pendingH capacity is retained (lazy-grow,
-	// never-shrink) but its length is reset because a new request begins
-	// a fresh sequence — the hidden state from the previous request's
-	// last position is no longer the natural predecessor of the new
-	// request's first token.
-	s.pendingH = s.pendingH[:0]
-	s.mtpDraftH = s.mtpDraftH[:0]
-	s.verifyH = s.verifyH[:0]
-	s.targetBatchStart = 0
-	s.targetBatchCount = 0
-	s.targetBatchBasePos = 0
-	s.mtpHasBatch = false
-	s.mtpDisabledForRequest = false
-	s.mtpDisableReason = ""
-	s.mtpResumeSource = ""
+	s.mtp.Reset()
 	if s.draftSampler != 0 {
 		llama.SamplerFree(s.draftSampler)
 		s.draftSampler = 0
 	}
-	s.specDraftDistsSparse = nil
 	// Note: draftDistBuf, targetDistBuf, adjustedDistBuf are reused across requests
 	s.grammarSampler = nil
 	s.startTime = time.Time{}
