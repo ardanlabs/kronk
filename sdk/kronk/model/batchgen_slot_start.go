@@ -1180,21 +1180,8 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 		}
 	}
 
-	// Process first chunk. Media prefill is handled chunk-by-chunk in processBatch.
-	//
-	// addPrefillMediaChunk has two failure modes:
-	//   1. Cancellation/shutdown: returns false WITHOUT calling finishSlot
-	//      (s.job is still attached). Caller must finishSlot with cancel err.
-	//   2. Internal error (e.g., decode failure): calls finishSlot before
-	//      returning false, which resets the slot and nils s.job.
-	// We must distinguish so we don't dereference a nil s.job in case 2.
-	if !e.addPrefillMediaChunk(s, buf) {
-		if s.job != nil {
-			e.finishSlot(s, e.slotCancelError(s))
-		}
-		return false
-	}
-
+	// Media prefill starts in processBatch after ready generation work has
+	// received priority. Admission only initializes and tokenizes the request.
 	return true
 }
 

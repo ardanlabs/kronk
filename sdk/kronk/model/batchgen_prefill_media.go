@@ -10,6 +10,43 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+func (e *batchEngine) nextMediaSlot() (*slot, int) {
+	for offset := range e.slots {
+		idx := (e.mediaNext + offset) % len(e.slots)
+		s := e.slots[idx]
+		if s.active && s.inputChunks != 0 {
+			return s, idx
+		}
+	}
+
+	return nil, -1
+}
+
+func (e *batchEngine) mediaChunkUsesSharedBatch(s *slot) bool {
+	if s.inputChunks == 0 || s.chunkIdx >= int(mtmd.InputChunksSize(s.inputChunks)) {
+		return false
+	}
+
+	chunk := mtmd.InputChunksGet(s.inputChunks, uint64(s.chunkIdx))
+	return mtmd.InputChunkGetType(chunk) == mtmd.InputChunkTypeText && !s.useMRoPE
+}
+
+func (e *batchEngine) processMediaSlot(s *slot, idx int, buf []byte) {
+	if s.job.ctx.Err() != nil {
+		e.finishSlot(s, s.job.ctx.Err())
+		e.mediaNext = (idx + 1) % len(e.slots)
+		return
+	}
+
+	// Publish the media-prefill phase before potentially slow projector or
+	// embedding decode work so diagnostics clients can observe the overlap.
+	e.publishDiagnostics(true)
+	if !e.addPrefillMediaChunk(s, buf) && s.job != nil {
+		e.finishSlot(s, e.slotCancelError(s))
+	}
+	e.mediaNext = (idx + 1) % len(e.slots)
+}
+
 // addPrefillMediaChunk processes the next chunk of a generation media request.
 // For text chunks, tokens are added to the shared batch.
 // For image chunks, embeddings are encoded and decoded separately.
@@ -49,21 +86,24 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 		}
 
 		nBatch := e.model.cfg.EffectiveNBatch()
+		chunkLimit := e.model.cfg.PrefillBatchSize()
 
 		switch s.useMRoPE {
 		case true:
-			// M-RoPE: process all tokens via separate decode (doesn't use shared batch).
-			for start := s.chunkTokIdx; start < len(tokens); start += nBatch {
-				end := min(start+nBatch, len(tokens))
-				batchTokens := tokens[start:end]
-
-				if err := e.decodeTextMRoPE(s, batchTokens); err != nil {
-					e.finishSlot(s, fmt.Errorf("decode text chunk (M-RoPE) failed: %w", err))
-					return false
-				}
+			// M-RoPE text uses a separate decode, capped to one resumable
+			// prefill unit so the scheduler can return to generation.
+			remaining := len(tokens) - s.chunkTokIdx
+			chunkSize := mediaTextContributionSize(remaining, nBatch, chunkLimit)
+			end := s.chunkTokIdx + chunkSize
+			if err := e.decodeTextMRoPE(s, tokens[s.chunkTokIdx:end]); err != nil {
+				e.finishSlot(s, fmt.Errorf("decode text chunk (M-RoPE) failed: %w", err))
+				return false
 			}
-			s.chunkTokIdx = 0
-			s.chunkIdx++
+			s.chunkTokIdx = end
+			if s.chunkTokIdx >= len(tokens) {
+				s.chunkTokIdx = 0
+				s.chunkIdx++
+			}
 
 		case false:
 			// Non-M-RoPE: add tokens to shared batch with capacity check.
@@ -75,7 +115,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 				return true
 			}
 
-			chunkSize := min(remaining, availableInBatch)
+			chunkSize := mediaTextContributionSize(remaining, availableInBatch, chunkLimit)
 			isLastChunk := s.chunkIdx == numChunks-1
 
 			batchStart := e.batch.NTokens
@@ -235,4 +275,8 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 	}
 
 	return true
+}
+
+func mediaTextContributionSize(remaining, availableInBatch, chunkLimit int) int {
+	return max(min(remaining, availableInBatch, chunkLimit), 0)
 }

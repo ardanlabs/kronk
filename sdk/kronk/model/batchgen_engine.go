@@ -37,6 +37,7 @@ type batchEngine struct {
 	batchIteration  uint64
 	imcPrepNext     int
 	prefillNext     int
+	mediaNext       int
 	diagnostics     atomic.Pointer[BatchEngineSnapshot]
 
 	// Diagnostics below are owned by processLoop and copied into diagnostics
@@ -529,28 +530,22 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 	}
 
-	// Continue prefill for media slots (separate loop since they may need separate decode calls).
-	for _, s := range e.slots {
-		if !s.active || s.inputChunks == 0 {
-			continue
-		}
-
-		// Check if client cancelled.
-		if s.job.ctx.Err() != nil {
-			e.finishSlot(s, s.job.ctx.Err())
-			continue
-		}
-
-		// Process next chunk of media request.
-		// Note: addPrefillMediaChunk calls finishSlot on error, so we just continue.
-		if !e.addPrefillMediaChunk(s, buf) {
-			continue
-		}
+	// Process at most one media unit per iteration. Text that can share the
+	// tray consumes only capacity left by generation and ordinary prefill.
+	// Image/audio and M-RoPE work use separate decode calls, so defer them until
+	// after the shared tray has decoded and published generation output.
+	mediaSlot, mediaIdx := e.nextMediaSlot()
+	if mediaSlot != nil && e.mediaChunkUsesSharedBatch(mediaSlot) {
+		e.processMediaSlot(mediaSlot, mediaIdx, buf)
+		mediaSlot = nil
 	}
 
 	// Nothing to process.
 	if e.batch.NTokens == 0 {
 		e.batchAssembling = false
+		if mediaSlot != nil {
+			e.processMediaSlot(mediaSlot, mediaIdx, buf)
+		}
 		return
 	}
 
@@ -716,6 +711,10 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			continue
 		}
 		e.finalizeSpeculativeTokens(s, buf)
+	}
+
+	if mediaSlot != nil {
+		e.processMediaSlot(mediaSlot, mediaIdx, buf)
 	}
 }
 

@@ -68,6 +68,32 @@ test-batch-load:
 
 # ==============================================================================
 
+# Media-prefill concurrency probe. Starts a deterministic streaming text
+# generation, then submits an image and verifies phase-2 media prefill never
+# creates an excessive gap between text content events. The loaded multimodal
+# model must have at least two slots. All timing and output knobs are tunable.
+MEDIA_LOAD_HOST ?= http://localhost:11435
+MEDIA_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+MEDIA_LOAD_IMAGE ?= examples/samples/giraffe.jpg
+MEDIA_LOAD_GENERATION_MAX_TOKENS ?= 512
+MEDIA_LOAD_IMAGE_MAX_TOKENS ?= 64
+MEDIA_LOAD_MAX_GENERATION_CONTENT_EVENT_GAP ?= 1.0
+MEDIA_LOAD_TIMEOUT ?= 1800
+MEDIA_LOAD_OUT ?= .tools/media-load/output/summary.json
+
+test-media-load:
+	python3 .tools/media-load/media-load.py \
+		--host "$(MEDIA_LOAD_HOST)" \
+		--model "$(MEDIA_LOAD_MODEL)" \
+		--image "$(MEDIA_LOAD_IMAGE)" \
+		--generation-max-tokens "$(MEDIA_LOAD_GENERATION_MAX_TOKENS)" \
+		--image-max-tokens "$(MEDIA_LOAD_IMAGE_MAX_TOKENS)" \
+		--max-generation-content-event-gap "$(MEDIA_LOAD_MAX_GENERATION_CONTENT_EVENT_GAP)" \
+		--timeout "$(MEDIA_LOAD_TIMEOUT)" \
+		--out "$(MEDIA_LOAD_OUT)"
+
+# ==============================================================================
+
 # HTTP request capture, replay, and streaming-response inspection.
 
 HTTP_CAPTURE_LISTEN_HOST ?= 127.0.0.1
