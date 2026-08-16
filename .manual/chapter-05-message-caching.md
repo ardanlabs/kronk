@@ -98,7 +98,7 @@ The complete generation lifecycle is introduced in
 The focused view below zooms into IMC's Stage 2 responsibility: deciding the
 safest minimum work and reserving the session that owns reusable state.
 
-![IMC session selection using complete saved prompt plans](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-session-selection.png)
+![IMC session selection using complete saved prompt plans](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-session-selection.svg)
 
 The planning process has five steps.
 
@@ -400,7 +400,7 @@ message boundaries, not token counts. With a deterministic, prefix-stable
 template, each Current prefixes the next full rendering, so Kronk restores it,
 appends only the new stable tokens, and advances the retained boundary.
 
-![IMC cache growth with a deterministic template](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-cache-growth-deterministic.png)
+![IMC cache growth with a deterministic template](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-cache-growth-deterministic.svg)
 
 A Qwen-like reasoning template can behave differently at the candidate
 boundary immediately before a new user message. When Kronk independently
@@ -415,7 +415,7 @@ complete state that still prefixes the full rendering, recomputes forward, and
 publishes the new Current state. A completed Current that ended at a real user
 message can be preserved as the next User Boundary on a later extension.
 
-![IMC cache growth with a Qwen-like reasoning template](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-cache-growth-qwen.png)
+![IMC cache growth with a Qwen-like reasoning template](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-cache-growth-qwen.svg)
 
 Kronk may also build a newer User Boundary while prefilling a request that ends
 in a real user message. It independently renders the history without that final

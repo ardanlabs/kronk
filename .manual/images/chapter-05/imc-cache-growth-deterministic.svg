@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Best-case IMC Current growth with a deterministic template</title>
+  <desc id="desc">Three requests show the best-case append path. The first request builds Current. For each later request, the previous Current is a complete prefix of the new stable plan, so Kronk restores it, prefills only the new suffix, and publishes the full sequence as the next Current. A footer explains that Current pairs prefix-matching tokens with serialized model sequence state.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.4px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .section { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .heading { font: 700 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .eyebrow { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
+      .pill { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; }
+      .white { fill: #ffffff; }
+      .green { fill: #15803d; }
+      .blue { fill: #1d4ed8; }
+      .muted { fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
+
+  <text class="title" x="72" y="67">DETERMINISTIC TEMPLATE: CURRENT KEEPS GROWING</text>
+  <text class="subtitle" x="72" y="105">Best case: every saved Current is a complete prefix of the next stable token plan.</text>
+
+  <!-- Legend and invariant -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="140" width="1778" height="108" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  </g>
+  <rect x="106" y="172" width="42" height="42" rx="9" fill="#22c55e"/>
+  <text class="body" x="166" y="199">Already in Current</text>
+  <rect x="414" y="172" width="42" height="42" rx="9" fill="#3b82f6"/>
+  <text class="body" x="474" y="199">New stable suffix</text>
+  <rect x="725" y="161" width="1081" height="66" rx="14" fill="#ecfeff" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="eyebrow" x="758" y="188" fill="#0f766e">WHY THIS IS THE BEST CASE</text>
+  <text class="body" x="758" y="214">No earlier tokens change, so only newly appended stable tokens require model compute.</text>
+
+  <!-- Request 1 -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="282" width="1778" height="144" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  </g>
+  <rect x="70" y="282" width="166" height="144" rx="24" fill="#f1f5f9"/>
+  <path d="M 202 282 Q 236 282 236 316 V 392 Q 236 426 202 426" fill="#f1f5f9"/>
+  <text class="eyebrow" x="104" y="325" fill="#475569">REQUEST 1</text>
+  <text class="heading" x="104" y="362">Initial build</text>
+  <text class="small muted" x="104" y="394">Reuse = 0</text>
+
+  <text class="eyebrow" x="278" y="317" fill="#475569">STABLE PLAN</text>
+  <g>
+    <rect x="278" y="339" width="118" height="50" rx="10" fill="#3b82f6"/>
+    <rect x="406" y="339" width="104" height="50" rx="10" fill="#3b82f6"/>
+    <text class="pill white" x="337" y="364">SYSTEM</text>
+    <text class="pill white" x="458" y="364">USER 1</text>
+  </g>
+
+  <path d="M 754 354 H 844" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="eyebrow blue" x="799" y="315" text-anchor="middle">BUILD</text>
+
+  <text class="eyebrow" x="884" y="317" fill="#475569">PUBLISHED CURRENT</text>
+  <g>
+    <rect x="884" y="339" width="118" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1012" y="339" width="104" height="50" rx="10" fill="#22c55e"/>
+    <text class="pill white" x="943" y="364">SYSTEM</text>
+    <text class="pill white" x="1064" y="364">USER 1</text>
+  </g>
+  <rect x="1473" y="324" width="333" height="70" rx="14" fill="#dcfce7"/>
+  <text class="heading" x="1639.5" y="353" text-anchor="middle">Snapshot saved</text>
+  <text class="small green" x="1639.5" y="381" text-anchor="middle">Current = complete stable plan</text>
+
+  <!-- Request 2 -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="450" width="1778" height="144" rx="24" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  </g>
+  <rect x="70" y="450" width="166" height="144" rx="24" fill="#f0fdf4"/>
+  <path d="M 202 450 Q 236 450 236 484 V 560 Q 236 594 202 594" fill="#f0fdf4"/>
+  <text class="eyebrow green" x="104" y="493">REQUEST 2</text>
+  <text class="heading" x="104" y="530">Append</text>
+  <text class="small muted" x="104" y="562">Reuse prior Current</text>
+
+  <text class="eyebrow" x="278" y="485" fill="#475569">STABLE PLAN</text>
+  <g>
+    <rect x="278" y="507" width="100" height="50" rx="10" fill="#22c55e"/>
+    <rect x="386" y="507" width="88" height="50" rx="10" fill="#22c55e"/>
+    <rect x="482" y="507" width="122" height="50" rx="10" fill="#3b82f6"/>
+    <rect x="612" y="507" width="88" height="50" rx="10" fill="#3b82f6"/>
+    <text class="pill white" x="328" y="532">SYSTEM</text>
+    <text class="pill white" x="430" y="532">USER 1</text>
+    <text class="pill white" x="543" y="532">ASST 1</text>
+    <text class="pill white" x="656" y="532">USER 2</text>
+  </g>
+
+  <path d="M 754 522 H 844" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="eyebrow green" x="799" y="490" text-anchor="middle">RESTORE</text>
+  <text class="eyebrow blue" x="799" y="565" text-anchor="middle">+ APPEND</text>
+
+  <text class="eyebrow" x="884" y="485" fill="#475569">UPDATED CURRENT</text>
+  <g>
+    <rect x="884" y="507" width="100" height="50" rx="10" fill="#22c55e"/>
+    <rect x="992" y="507" width="88" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1088" y="507" width="122" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1218" y="507" width="88" height="50" rx="10" fill="#22c55e"/>
+    <text class="pill white" x="934" y="532">SYSTEM</text>
+    <text class="pill white" x="1036" y="532">USER 1</text>
+    <text class="pill white" x="1149" y="532">ASST 1</text>
+    <text class="pill white" x="1262" y="532">USER 2</text>
+  </g>
+  <rect x="1473" y="492" width="333" height="70" rx="14" fill="#dcfce7"/>
+  <text class="heading" x="1639.5" y="521" text-anchor="middle">Only suffix computed</text>
+  <text class="small green" x="1639.5" y="549" text-anchor="middle">Assistant 1 + User 2</text>
+
+  <!-- Request 3 -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="618" width="1778" height="144" rx="24" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  </g>
+  <rect x="70" y="618" width="166" height="144" rx="24" fill="#f0fdf4"/>
+  <path d="M 202 618 Q 236 618 236 652 V 728 Q 236 762 202 762" fill="#f0fdf4"/>
+  <text class="eyebrow green" x="104" y="661">REQUEST 3</text>
+  <text class="heading" x="104" y="698">Append again</text>
+  <text class="small muted" x="104" y="730">Restore Current</text>
+
+  <text class="eyebrow" x="278" y="653" fill="#475569">STABLE PLAN</text>
+  <g>
+    <rect x="278" y="675" width="82" height="50" rx="10" fill="#22c55e"/>
+    <rect x="368" y="675" width="74" height="50" rx="10" fill="#22c55e"/>
+    <rect x="450" y="675" width="103" height="50" rx="10" fill="#22c55e"/>
+    <rect x="561" y="675" width="74" height="50" rx="10" fill="#22c55e"/>
+    <rect x="643" y="675" width="103" height="50" rx="10" fill="#3b82f6"/>
+    <rect x="754" y="675" width="74" height="50" rx="10" fill="#3b82f6"/>
+    <text class="pill white" x="319" y="700">SYSTEM</text>
+    <text class="pill white" x="405" y="700">USER 1</text>
+    <text class="pill white" x="501.5" y="700">ASST 1</text>
+    <text class="pill white" x="598" y="700">USER 2</text>
+    <text class="pill white" x="694.5" y="700">ASST 2</text>
+    <text class="pill white" x="791" y="700">USER 3</text>
+  </g>
+
+  <path d="M 846 690 H 886" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="eyebrow green" x="866" y="659" text-anchor="middle">RESTORE</text>
+  <text class="eyebrow blue" x="866" y="744" text-anchor="middle">+ APPEND</text>
+
+  <text class="eyebrow" x="926" y="653" fill="#475569">UPDATED CURRENT</text>
+  <g>
+    <rect x="926" y="675" width="82" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1016" y="675" width="74" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1098" y="675" width="103" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1209" y="675" width="74" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1291" y="675" width="103" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1402" y="675" width="74" height="50" rx="10" fill="#22c55e"/>
+    <text class="pill white" x="967" y="700">SYSTEM</text>
+    <text class="pill white" x="1053" y="700">USER 1</text>
+    <text class="pill white" x="1149.5" y="700">ASST 1</text>
+    <text class="pill white" x="1246" y="700">USER 2</text>
+    <text class="pill white" x="1342.5" y="700">ASST 2</text>
+    <text class="pill white" x="1439" y="700">USER 3</text>
+  </g>
+  <rect x="1510" y="660" width="296" height="70" rx="14" fill="#dcfce7"/>
+  <text class="heading" x="1658" y="689" text-anchor="middle">Only suffix computed</text>
+  <text class="small green" x="1658" y="717" text-anchor="middle">Assistant 2 + User 3</text>
+
+  <!-- What Current contains -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="798" width="1778" height="230" rx="24" fill="#0f172a"/>
+  </g>
+  <text class="eyebrow" x="106" y="841" fill="#5eead4">WHAT “CURRENT” SAVES</text>
+  <text class="section white" x="106" y="881">Prefix-matching token plan</text>
+  <text class="section white" x="470" y="881">+</text>
+  <text class="section white" x="516" y="881">Serialized model sequence state</text>
+
+  <rect x="106" y="913" width="292" height="78" rx="14" fill="#134e4a" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="heading white" x="252" y="946" text-anchor="middle">KV tensors</text>
+  <text class="small white" x="252" y="975" text-anchor="middle">Attention cache</text>
+
+  <rect x="418" y="913" width="292" height="78" rx="14" fill="#1e3a8a" stroke="#60a5fa" stroke-width="2"/>
+  <text class="heading white" x="564" y="946" text-anchor="middle">Recurrent / SSM</text>
+  <text class="small white" x="564" y="975" text-anchor="middle">Hybrid model state</text>
+
+  <rect x="730" y="913" width="292" height="78" rx="14" fill="#312e81" stroke="#818cf8" stroke-width="2"/>
+  <text class="heading white" x="876" y="946" text-anchor="middle">Logical positions</text>
+  <text class="small white" x="876" y="975" text-anchor="middle">Resume accounting</text>
+
+  <rect x="1042" y="913" width="292" height="78" rx="14" fill="#581c87" stroke="#c084fc" stroke-width="2"/>
+  <text class="heading white" x="1188" y="946" text-anchor="middle">Draft / MTP state</text>
+  <text class="small white" x="1188" y="975" text-anchor="middle">When compatible</text>
+
+  <rect x="1354" y="913" width="458" height="78" rx="14" fill="#7c2d12" stroke="#fb923c" stroke-width="2"/>
+  <text class="heading white" x="1583" y="946" text-anchor="middle">Model-specific snapshot encoding</text>
+  <text class="small white" x="1583" y="975" text-anchor="middle">Complete resumable state</text>
+
+  <text class="small muted" x="72" y="1064">Message blocks represent boundaries, not token counts. Exact rendered tokens determine whether Current is reusable.</text>
+</svg>

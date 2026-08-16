@@ -262,7 +262,7 @@ the complete logical tray, `status[prefill-deferred]` records the same slot and
 selector snapshot without a prefill contribution. The older `next_slot` field
 remains as an alias for `selector_next`.
 
-![How the prefill batch size and internal batch capacities cooperate during Stage 4 text prefill](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/prefill-batching.svg)
+![The two prefill phases: restore reusable IMC state, then compute missing request state](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/prefill-batching.svg)
 
 Kronk adds a generation reserve to the 2048-token default prefill contribution.
 Non-MTP reserves one row per slot and keeps the internal physical capacity at
