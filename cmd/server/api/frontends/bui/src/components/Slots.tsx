@@ -43,7 +43,7 @@ function stage2Progress(slot: BatchSlotDetail): string {
 }
 
 function requestLabel(slot: BatchSlotDetail): string {
-  return slot.request_id || '—';
+  return slot.request_id.replace(/^chatcmpl-/, '') || '—';
 }
 
 function generationLabel(slot: BatchSlotDetail): string {

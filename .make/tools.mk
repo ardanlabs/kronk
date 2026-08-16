@@ -42,16 +42,16 @@ test-load:
 
 # Long-running multi-slot batch-isolation probe. Every turn starts all
 # conversations together, proves their streamed generation overlaps, and
-# verifies that no response contains another conversation's marker. Set both
-# BATCH_LOAD_SLOTS and BATCH_LOAD_CONVERSATIONS to 4 to exercise four slots.
+# verifies that no response contains another conversation's marker. Use
+# BATCH_LOAD_SLOTS and BATCH_LOAD_CONVERSATIONS to exercise N slots.
 BATCH_LOAD_HOST ?= http://localhost:11435
 BATCH_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
 BATCH_LOAD_TURNS ?= 21
 BATCH_LOAD_TARGET_TOKENS ?= 30000
 BATCH_LOAD_TOKENS_PER_TURN ?= 1400
 BATCH_LOAD_MAX_TOKENS ?= 128
-BATCH_LOAD_SLOTS ?= 3
-BATCH_LOAD_CONVERSATIONS ?= 3
+BATCH_LOAD_SLOTS ?= 4
+BATCH_LOAD_CONVERSATIONS ?= 4
 BATCH_LOAD_OUT ?= .tools/batch-load/output/summary.json
 
 test-batch-load:

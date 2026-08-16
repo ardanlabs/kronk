@@ -157,6 +157,7 @@ def main() -> int:
             "temperature": 0,
             "seed": args.seed,
             "max_tokens": args.max_tokens,
+            "enable_thinking": False,
             "messages": [{"role": "user", "content": prompt}],
         }
         if args.out:
