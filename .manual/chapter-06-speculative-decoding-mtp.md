@@ -69,6 +69,12 @@ available, the model runs normally without speculation.
 A `draft-model` block containing only `ndraft` is different: it changes the MTP
 draft ceiling and does not select a classic draft or disable MTP.
 
+The model-level `speculation` setting selects the implementation. `auto` keeps
+the normal priority order, `disabled` runs target-only, `classic` requires a
+separate draft model, and `mtp` requires a compatible companion or embedded
+head. Explicit selection makes it possible to benchmark the same target with
+MTP enabled and disabled without changing downloaded model files.
+
 Embedded detection happens before llama.cpp loads the target. Kronk reads the
 first GGUF shard, where model metadata is stored, and enables MTP tensor loading
 when any positive `nextn_predict_layers` metadata value is present. The lookup

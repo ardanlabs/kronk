@@ -414,6 +414,7 @@ type Config struct {
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
 	SessionStoreFactory        SessionStoreFactory
+	Speculation                SpeculationMode
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
 	TensorBuftOverrides        []string
@@ -425,6 +426,7 @@ type Config struct {
 	PtrYarnOrigCtx             *int
 	nBatch                     int
 	nUBatch                    int
+	speculationPlan            speculationPlan
 }
 
 func (cfg Config) AdmissionTimeout() time.Duration {
@@ -460,6 +462,15 @@ func (cfg Config) YarnExtFactor() float32  { return float32Or(cfg.PtrYarnExtFact
 func (cfg Config) YarnOrigCtx() int        { return intOr(cfg.PtrYarnOrigCtx, 0) }
 func (cfg Config) IncrementalCache() bool  { return boolOr(cfg.PtrIncrementalCache, false) }
 func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLogging, false) }
+
+// SpeculationMode returns the selected speculative-decoding implementation.
+// The zero value preserves automatic selection.
+func (cfg Config) SpeculationMode() SpeculationMode {
+	if cfg.Speculation == "" {
+		return SpeculationAuto
+	}
+	return cfg.Speculation
+}
 
 // FlashAttention returns the configured flash attention mode. An unset value
 // defaults to auto so llama.cpp can select the supported mode.
@@ -519,7 +530,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
@@ -528,7 +539,7 @@ func (cfg Config) String() string {
 		cfg.NUMA,
 		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
-		cfg.SessionStoreFactory != nil,
+		cfg.SessionStoreFactory != nil, cfg.SpeculationMode(),
 		formatSplitModePtr(cfg.PtrSplitMode),
 		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit,
 		formatFloat32Ptr(cfg.PtrYarnAttnFactor),
@@ -633,7 +644,14 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		return fmt.Errorf("validate-config: unknown load mode: %d (valid: auto, mmap, none, mlock, mmap+mlock, direct-io)", cfg.LoadMode)
 	}
 
-	if cfg.PtrDraftModel != nil {
+	switch cfg.SpeculationMode() {
+	case SpeculationAuto, SpeculationDisabled, SpeculationClassic, SpeculationMTP:
+		// valid
+	default:
+		return fmt.Errorf("validate-config: unknown speculation mode %q (valid: auto, disabled, classic, mtp)", cfg.Speculation)
+	}
+
+	if cfg.SpeculationMode() != SpeculationDisabled && cfg.PtrDraftModel != nil {
 		if cfg.PtrDraftModel.IsSeparate() {
 			// Separate-GGUF drafter: requires single-slot mode and a
 			// readable draft GGUF that shares the target's tokenizer.
@@ -698,7 +716,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		}
 	}
 
-	if cfg.MTPDrafterFile != "" {
+	if cfg.SpeculationMode() != SpeculationDisabled && cfg.SpeculationMode() != SpeculationClassic && cfg.MTPDrafterFile != "" {
 		log(ctx, "validate-config", "model-file", cfg.MTPDrafterFile)
 
 		if err := verifyConfiguredArtifact(ctx, cfg, log, cfg.MTPDrafterFile); err != nil {
@@ -912,7 +930,7 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 	return cfg
 }
 
-func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextParams {
+func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
 
 	if mi.IsEmbedModel || mi.IsRerankModel {
@@ -963,33 +981,9 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 		perSlot := 1
 		rollbackDepth := 0
 
-		// Speculative decoding queues 1 + nDraft logits-flagged rows
-		// per slot in the verification batch (sampled token + drafted
-		// candidates). Two drafter sources to account for:
-		//
-		//   1. Explicit separate-GGUF drafter (cfg.PtrDraftModel) —
-		//      validate-config enforces nSeqMax == 1 in this branch.
-		//   2. Auto-detected MTP drafter — the target GGUF carries an
-		//      MTP head (nextn_predict_layers > 0) and the running
-		//      llama.cpp build exports the pre-norm APIs.
-		switch {
-		case cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate():
-			perSlot = 1 + cfg.PtrDraftModel.NDraft
-			rollbackDepth = cfg.PtrDraftModel.NDraft
-		case cfg.MTPDrafterFile != "" && MTPAvailable():
-			// Separate-file MTP assistant drafter (Gemma4). The companion
-			// file is present on disk; selectAndLoadDraft loads it as a
-			// shared-KV MTP head that queues 1 + nDraft logits-flagged rows
-			// per slot in the verification batch, same as the embedded MTP.
-			perSlot = 1 + mtpNDraft(cfg)
-			rollbackDepth = mtpNDraft(cfg)
-		case mtpNextNLayers(mdl) > 0 && MTPAvailable():
-			// MTP draft count: an MTP nDraft override (DraftModel with no
-			// model files) raises/lowers the ceiling; otherwise default.
-			// adjustConfig has already defaulted NDraft to defMTPNDraft for
-			// an MTP override, so cfg.PtrDraftModel.NDraft is authoritative here.
-			perSlot = 1 + mtpNDraft(cfg)
-			rollbackDepth = mtpNDraft(cfg)
+		if cfg.speculationPlan.Active() {
+			perSlot = cfg.speculationPlan.RowsPerSequence()
+			rollbackDepth = cfg.speculationPlan.NDraft
 		}
 
 		ctxParams.NOutputsMax = uint32(nSeqMax * perSlot)
@@ -1884,29 +1878,32 @@ func WithFlashAttention(v FlashAttentionType) Option {
 func WithIMCSessionCapacity(v int) Option {
 	return func(c *Config) { c.PtrIMCSessionCapacity = new(v) }
 }
-func WithIncrementalCache(v bool) Option        { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
-func WithInsecureLogging(v bool) Option         { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
-func WithJinjaFile(v string) Option             { return func(c *Config) { c.JinjaFile = v } }
-func WithLoadMode(v LoadMode) Option            { return func(c *Config) { c.LoadMode = v } }
-func WithLog(v applog.Logger) Option            { return func(c *Config) { c.Log = v } }
-func WithMainGPU(v int) Option                  { return func(c *Config) { c.PtrMainGPU = new(v) } }
-func WithMoE(v *MoEConfig) Option               { return func(c *Config) { c.PtrMoE = v } }
-func WithModelFiles(v []string) Option          { return func(c *Config) { c.ModelFiles = v } }
-func WithNGpuLayers(v int) Option               { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
-func WithNSeqMax(v int) Option                  { return func(c *Config) { c.PtrNSeqMax = new(v) } }
-func WithNThreads(v int) Option                 { return func(c *Config) { c.PtrNThreads = new(v) } }
-func WithNThreadsBatch(v int) Option            { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
-func WithPrefillBatchSize(v int) Option         { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
-func WithNUMA(v string) Option                  { return func(c *Config) { c.NUMA = v } }
-func WithOffloadKQV(v bool) Option              { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
-func WithOpOffload(v bool) Option               { return func(c *Config) { c.PtrOpOffload = new(v) } }
-func WithOpOffloadMinBatch(v int) Option        { return func(c *Config) { c.PtrOpOffloadMinBatch = new(v) } }
-func WithProjFile(v string) Option              { return func(c *Config) { c.ProjFile = v } }
-func WithMTPDrafterFile(v string) Option        { return func(c *Config) { c.MTPDrafterFile = v } }
-func WithProjOnCPU(v bool) Option               { return func(c *Config) { c.PtrProjOnCPU = new(v) } }
-func WithRopeFreqBase(v float32) Option         { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
-func WithRopeFreqScale(v float32) Option        { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
-func WithRopeScaling(v RopeScalingType) Option  { return func(c *Config) { c.RopeScaling = v } }
+func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
+func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
+func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
+func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
+func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }
+func WithMainGPU(v int) Option                 { return func(c *Config) { c.PtrMainGPU = new(v) } }
+func WithMoE(v *MoEConfig) Option              { return func(c *Config) { c.PtrMoE = v } }
+func WithModelFiles(v []string) Option         { return func(c *Config) { c.ModelFiles = v } }
+func WithNGpuLayers(v int) Option              { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
+func WithNSeqMax(v int) Option                 { return func(c *Config) { c.PtrNSeqMax = new(v) } }
+func WithNThreads(v int) Option                { return func(c *Config) { c.PtrNThreads = new(v) } }
+func WithNThreadsBatch(v int) Option           { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
+func WithPrefillBatchSize(v int) Option        { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
+func WithNUMA(v string) Option                 { return func(c *Config) { c.NUMA = v } }
+func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
+func WithOpOffload(v bool) Option              { return func(c *Config) { c.PtrOpOffload = new(v) } }
+func WithOpOffloadMinBatch(v int) Option       { return func(c *Config) { c.PtrOpOffloadMinBatch = new(v) } }
+func WithProjFile(v string) Option             { return func(c *Config) { c.ProjFile = v } }
+func WithMTPDrafterFile(v string) Option       { return func(c *Config) { c.MTPDrafterFile = v } }
+func WithProjOnCPU(v bool) Option              { return func(c *Config) { c.PtrProjOnCPU = new(v) } }
+func WithRopeFreqBase(v float32) Option        { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
+func WithRopeFreqScale(v float32) Option       { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
+func WithRopeScaling(v RopeScalingType) Option { return func(c *Config) { c.RopeScaling = v } }
+func WithSpeculationMode(v SpeculationMode) Option {
+	return func(c *Config) { c.Speculation = v }
+}
 func WithSplitMode(v SplitMode) Option          { return func(c *Config) { c.PtrSplitMode = new(v) } }
 func WithSWAFull(v bool) Option                 { return func(c *Config) { c.PtrSWAFull = new(v) } }
 func WithTensorBuftOverrides(v []string) Option { return func(c *Config) { c.TensorBuftOverrides = v } }

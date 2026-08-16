@@ -78,6 +78,7 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 		"grammar[true]",
 		"IMCSessionCapacity[9]",
 		"QueueDepth[7]",
+		"Speculation[auto]",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Config.String() missing %q in %q", want, got)
@@ -606,6 +607,15 @@ func TestDraftModelIsSeparate(t *testing.T) {
 	}
 	if !(DraftModelConfig{ModelFiles: []string{"draft.gguf"}}).IsSeparate() {
 		t.Errorf("IsSeparate() = false for config with model files, want true")
+	}
+}
+
+func TestSpeculationMode(t *testing.T) {
+	if got := NewConfig().SpeculationMode(); got != SpeculationAuto {
+		t.Errorf("default SpeculationMode() = %q, want %q", got, SpeculationAuto)
+	}
+	if got := NewConfig(WithSpeculationMode(SpeculationDisabled)).SpeculationMode(); got != SpeculationDisabled {
+		t.Errorf("SpeculationMode() = %q, want %q", got, SpeculationDisabled)
 	}
 }
 

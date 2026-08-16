@@ -31,8 +31,7 @@ import "github.com/hybridgroup/yzma/pkg/llama"
 // draft-KV state externalization lives behind the draftKVExternalizer
 // capability below: a shared-KV strategy simply does not implement it, so
 // the unsafe restore call site is unreachable for it at compile time
-// rather than guarded by a runtime flag. The post-target-decode sync
-// (mirror vs. capture) is dispatched through the mtpSyncer capability.
+// rather than guarded by a runtime flag.
 
 // draftKind identifies the speculative-decoding strategy. It is used only
 // for logging/metrics; behavioral dispatch is via concrete types and
@@ -84,11 +83,6 @@ type drafter interface {
 	// safe for every mode, including a future shared-KV mode.
 	core() *draftCore
 
-	// generate produces draft tokens for the slot's next speculative
-	// round. Dispatched per-mode so adding a new mode does not require
-	// editing the engine's generate call site.
-	generate(e *batchEngine, s *slot) ([]llama.Token, error)
-
 	// unload releases the strategy's resources. Implementations differ in
 	// whether they free the llama_model (classic owns it; MTP shares it
 	// with the target) and whether MTP batches/pins exist.
@@ -114,35 +108,6 @@ type draftKVExternalizer interface {
 	draftKVCtx() llama.Context
 }
 
-// mtpSyncer is implemented by every MTP strategy (own- and shared-KV). It
-// dispatches the two MTP "sync" operations whose body differs by KV
-// ownership so the engine's call sites do not switch on concrete type:
-//
-//   - own-KV (Qwen): mirror-replay the just-decoded target batch into the
-//     separate draft KV so the draft head's KV stays in lock-step.
-//   - shared-KV (Gemma4): there is no separate draft KV; the target's
-//     decode already populated the shared memory, so the syncer only
-//     captures the last pre-norm hidden row into s.pendingH and advances
-//     s.draftNPast.
-//
-// The heavy per-token bodies remain batchEngine methods; these methods
-// just select which body runs for the slot.
-type mtpSyncer interface {
-	drafter
-
-	// syncAfterTargetDecode runs after a successful target decode+sync for
-	// the slot, propagating the just-decoded range into the MTP head's
-	// view. effectiveCount is the number of positions whose target KV
-	// survived (== targetBatchCount for prefill/gen; 1+accepted for spec
-	// verify).
-	syncAfterTargetDecode(e *batchEngine, s *slot, effectiveCount int) error
-
-	// syncCacheBuildChunk is the IMC-cache-build analogue, called for each
-	// freshly-decoded standalone target batch (not e.batch) during a cold
-	// cache build.
-	syncCacheBuildChunk(e *batchEngine, s *slot, tokens []llama.Token, basePos llama.Pos) error
-}
-
 // =============================================================================
 
 // freeCommon releases the resources every drafter holds: the per-slot
@@ -159,19 +124,6 @@ func (dc *draftCore) freeCommon() {
 	llama.BatchFree(dc.prefillBatch)
 }
 
-// freeMTPBatches releases the MTP-only mirror/draft batches. Their Embd
-// pointers reference Go-owned, runtime.Pinner-pinned slices, so detach
-// them before BatchFree (which would otherwise free() Go memory) and
-// unpin after.
-func (dc *draftCore) freeMTPBatches() {
-	dc.draftBatchMTP.Embd = nil
-	dc.mirrorBatchMTP.Embd = nil
-	llama.BatchFree(dc.draftBatchMTP)
-	llama.BatchFree(dc.mirrorBatchMTP)
-	dc.draftEmbdPin.Unpin()
-	dc.mirrorEmbdPin.Unpin()
-}
-
 // =============================================================================
 
 // classicDrafter is a separate-GGUF, vocab-matched draft model. It owns
@@ -184,10 +136,6 @@ func (*classicDrafter) sealedDrafter()     {}
 func (*classicDrafter) kind() draftKind    { return draftClassic }
 func (*classicDrafter) mtp() bool          { return false }
 func (d *classicDrafter) core() *draftCore { return d.c }
-
-func (d *classicDrafter) generate(e *batchEngine, s *slot) ([]llama.Token, error) {
-	return e.generateDraftTokens(s)
-}
 
 func (d *classicDrafter) unload() {
 	d.c.freeCommon()
@@ -212,21 +160,9 @@ func (d *mtpDrafter) core() *draftCore { return d.c }
 
 func (d *mtpDrafter) draftKVCtx() llama.Context { return d.c.lctx }
 
-func (d *mtpDrafter) generate(e *batchEngine, s *slot) ([]llama.Token, error) {
-	return e.generateDraftTokensMTP(s)
-}
-
-func (d *mtpDrafter) syncAfterTargetDecode(e *batchEngine, s *slot, effectiveCount int) error {
-	return e.mirrorTargetBatchToMTPDraft(s, effectiveCount)
-}
-
-func (d *mtpDrafter) syncCacheBuildChunk(e *batchEngine, s *slot, tokens []llama.Token, basePos llama.Pos) error {
-	return e.mirrorBuildChunkToMTPDraft(s, tokens, basePos)
-}
-
 func (d *mtpDrafter) unload() {
 	d.c.freeCommon()
-	d.c.freeMTPBatches()
+	d.c.mtp.Free()
 	llama.Free(d.c.lctx)
 	// MTP shares the target's llama_model — the target's Unload path owns
 	// its lifetime. Skip ModelFree to avoid a double-free.
@@ -238,8 +174,7 @@ func (d *mtpDrafter) unload() {
 // gemma4-assistant). It loads its OWN llama_model from Config.MTPDrafterFile,
 // but its context is created with ctx_other==target so it SHARES the
 // target's llama_memory. There is no separate draft KV to externalize or
-// mirror into — hence it implements mtpSyncer (capture-only) but NOT
-// draftKVExternalizer.
+// mirror into, so it does NOT implement draftKVExternalizer.
 type sharedMTPDrafter struct {
 	c *draftCore
 }
@@ -249,21 +184,9 @@ func (*sharedMTPDrafter) kind() draftKind    { return draftMTPGemma4 }
 func (*sharedMTPDrafter) mtp() bool          { return true }
 func (d *sharedMTPDrafter) core() *draftCore { return d.c }
 
-func (d *sharedMTPDrafter) generate(e *batchEngine, s *slot) ([]llama.Token, error) {
-	return e.generateDraftTokensMTPShared(s)
-}
-
-func (d *sharedMTPDrafter) syncAfterTargetDecode(e *batchEngine, s *slot, effectiveCount int) error {
-	return e.captureTargetBatchForSharedMTP(s, effectiveCount)
-}
-
-func (d *sharedMTPDrafter) syncCacheBuildChunk(e *batchEngine, s *slot, tokens []llama.Token, basePos llama.Pos) error {
-	return e.captureBuildChunkForSharedMTP(s, tokens, basePos)
-}
-
 func (d *sharedMTPDrafter) unload() {
 	d.c.freeCommon()
-	d.c.freeMTPBatches()
+	d.c.mtp.Free()
 	llama.Free(d.c.lctx)
 	// Shared MTP loaded its OWN assistant llama_model from MTPDrafterFile —
 	// free it (unlike embedded Qwen MTP, which shares the target model).
@@ -281,6 +204,4 @@ var (
 	_ drafter             = (*mtpDrafter)(nil)
 	_ drafter             = (*sharedMTPDrafter)(nil)
 	_ draftKVExternalizer = (*mtpDrafter)(nil)
-	_ mtpSyncer           = (*mtpDrafter)(nil)
-	_ mtpSyncer           = (*sharedMTPDrafter)(nil)
 )

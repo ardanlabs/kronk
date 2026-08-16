@@ -701,6 +701,10 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <pre className="code-block"><code className="language-yaml">{`some-provider/mtp-target-model:
   draft-model:
     ndraft: 6`}</code></pre>
+          <p>Use <code>speculation</code> to select the implementation for a model:</p>
+          <pre className="code-block"><code className="language-yaml">{`some-provider/mtp-target-model:
+  speculation: disabled # auto, disabled, classic, or mtp`}</code></pre>
+          <p><code>auto</code> preserves automatic selection. <code>disabled</code> runs target-only and does not load draft resources. <code>classic</code> requires <code>draft-model.model-id</code>; <code>mtp</code> requires a compatible embedded head or companion assistant.</p>
           <p>Do not use model names or benchmark results as universal draft-selection rules. Measure acceptance and throughput on the actual workload. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for drafter selection, adaptive throttling, observability, and limitations.</p>
           <h4 id="extended-context-with-yarn">Extended context with YaRN</h4>
           <p>Do not add RoPE scaling merely because a large <code>context-window</code> fits in memory. Scaling must match the model and its native training context. Configuration uses <code>rope-scaling-type</code> and the <code>yarn-*</code> keys described in <a href="https://www.kronkai.com/manual#chapter-7-yarn-extended-context">Chapter 7</a>.</p>
@@ -856,6 +860,11 @@ some-provider/large-model:
                 <td><code>draft-model</code></td>
                 <td>Mapping</td>
                 <td>Separate drafter or MTP draft-count override</td>
+              </tr>
+              <tr>
+                <td><code>speculation</code></td>
+                <td><code>auto</code>, <code>disabled</code>, <code>classic</code>, <code>mtp</code></td>
+                <td>Select speculative-decoding implementation</td>
               </tr>
               <tr>
                 <td><code>rope-scaling-type</code></td>
@@ -1378,6 +1387,7 @@ krn, err := kronk.New(
           </table>
           <p>Kronk checks these sources in that order. A <code>draft-model</code> block containing a <code>model-id</code> explicitly selects the classic separate draft and takes precedence over either MTP form. Without one, Kronk uses a compatible companion MTP file when present, then checks the target for an embedded MTP head. If no source is available, the model runs normally without speculation.</p>
           <p>A <code>draft-model</code> block containing only <code>ndraft</code> is different: it changes the MTP draft ceiling and does not select a classic draft or disable MTP.</p>
+          <p>The model-level <code>speculation</code> setting selects the implementation. <code>auto</code> keeps the normal priority order, <code>disabled</code> runs target-only, <code>classic</code> requires a separate draft model, and <code>mtp</code> requires a compatible companion or embedded head. Explicit selection makes it possible to benchmark the same target with MTP enabled and disabled without changing downloaded model files.</p>
           <p>Embedded detection happens before llama.cpp loads the target. Kronk reads the first GGUF shard, where model metadata is stored, and enables MTP tensor loading when any positive <code>nextn_predict_layers</code> metadata value is present. The lookup uses the metadata suffix rather than a hard-coded architecture name, so a supported future architecture can advertise the same contract. This early step is required because llama.cpp otherwise omits gated MTP tensors during model load; adding an <code>ndraft</code> setting after load cannot recover them.</p>
           <p>MTP also requires support from the loaded llama.cpp library. When a model advertises MTP but the required API is unavailable, Kronk reports that MTP was disabled at model load and serves the model without speculation.</p>
           <h3 id="63-choosing-a-drafter">6.3 Choosing a Drafter</h3>

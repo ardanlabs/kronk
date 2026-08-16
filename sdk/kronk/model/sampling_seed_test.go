@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"math/rand"
 	"strings"
 	"testing"
 
@@ -224,19 +223,5 @@ func TestResolveRequestSamplingSeedsSession(t *testing.T) {
 	}
 	if source != "configured" || fifth.master != configured || session.samplingSeed != configured {
 		t.Errorf("configured master: got %d session[%d] source[%s], want %d session[%d] source[configured]", fifth.master, session.samplingSeed, source, configured, configured)
-	}
-}
-
-func TestSeededProbabilitySamplingIsRepeatable(t *testing.T) {
-	probs := []float32{0.1, 0.2, 0.3, 0.4}
-	rng1 := rand.New(rand.NewSource(42))
-	rng2 := rand.New(rand.NewSource(42))
-
-	for range 20 {
-		got := sampleFromProbs(rng1, probs)
-		want := sampleFromProbs(rng2, probs)
-		if got != want {
-			t.Fatalf("sampleFromProbs: got %d, want %d", got, want)
-		}
 	}
 }

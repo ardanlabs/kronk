@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.opentelemetry.io/otel/attribute"
@@ -68,18 +69,9 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 
 	chunkSize := prefillContributionSize(remaining, availableInBatch, chunkLimit)
 
-	// MTP: claim the slot's contiguous range in the target batch so the
-	// post-decode mirror knows where this chunk's pre-norm rows live.
-	mtpDraft := e.model.draft != nil && e.model.draft.mtp()
-	if mtpDraft && !s.mtpHasBatch {
-		s.targetBatchStart = e.batch.NTokens
-		s.targetBatchBasePos = s.nPast
-		s.targetBatchCount = 0
-		s.mtpHasBatch = true
-	}
-
 	// Add chunk of tokens to batch.
 	batchStart := e.batch.NTokens
+	basePos := s.nPast
 	for i := range chunkSize {
 		tok := s.prefillTokens[s.nPrefilled+i]
 		isLast := s.nPrefilled+i == len(s.prefillTokens)-1
@@ -89,11 +81,13 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 			return false
 		}
 	}
+	e.speculation.TargetRowsStaged(s.id, speculation.TargetRange{
+		Start:   batchStart,
+		Count:   int32(chunkSize),
+		BasePos: basePos,
+	})
 	s.nPast += llama.Pos(chunkSize)
 	s.nPrefilled += chunkSize
-	if mtpDraft {
-		s.targetBatchCount = int32(chunkSize)
-	}
 
 	prefillDuration := time.Since(prefillStart)
 	metrics.AddPrefillTime(e.model.modelInfo.ID, "text", prefillDuration)

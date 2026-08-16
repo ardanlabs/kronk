@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -80,21 +80,26 @@ func mtpNDraft(cfg Config) int {
 // embeddedMTP selects the auto-detected MTP path; false selects an explicit
 // separate drafter or companion MTP file.
 func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
+	mode := cfg.SpeculationMode()
+	if mode == SpeculationDisabled {
+		return 1
+	}
+
 	if embeddedMTP {
-		if MTPAvailable() {
+		if mode != SpeculationClassic && MTPAvailable() {
 			return int64(1 + mtpNDraft(cfg))
 		}
 		return 1
 	}
 
-	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
+	if mode != SpeculationMTP && cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
 		nDraft := cfg.PtrDraftModel.NDraft
 		if nDraft <= 0 {
 			nDraft = defNDraft
 		}
 		return int64(1 + nDraft)
 	}
-	if cfg.MTPDrafterFile != "" && MTPAvailable() {
+	if mode != SpeculationClassic && cfg.MTPDrafterFile != "" && MTPAvailable() {
 		return int64(1 + mtpNDraft(cfg))
 	}
 
@@ -240,7 +245,7 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// separate-GGUF draft (BatchFree on a zero struct is harmless).
 	//
 	// Note: draftBuf and targetProbs are intentionally left nil/empty
-	// for MTP. verifySpeculativeTokens
+	// for MTP. Speculative verification
 	// forces greedy verification on the MTP path (the MTP head does
 	// not produce per-token distributions), so the probabilistic
 	// sampling branches that read those buffers are unreachable. The
@@ -258,7 +263,6 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		model:          targetModel,
 		vocab:          targetVocab,
 		suppressTokens: suppressTokens,
-		nEmbd:          nEmbd,
 		lctx:           lctx,
 		mem:            mem,
 		sampler:        sampler,
@@ -267,23 +271,8 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		// BatchFree(zero) is a safe no-op (llama_batch_free NULL-checks
 		// each member), and avoids the double-free that would happen if
 		// we aliased batch:=draftBatchMTP and then freed both.
-		draftBatchMTP:   llama.BatchInit(1, 0, 1),
-		mirrorBatchMTP:  llama.BatchInit(int32(params.NBatch), 0, 1),
-		draftEmbdSlice:  make([]float32, nEmbd),
-		mirrorEmbdSlice: make([]float32, int(params.NBatch)*nEmbd),
-		nDraft:          nDraft,
-	}
-
-	// Pin the Go-owned embd buffers and attach them to the batches.
-	// The Pinners live on dm, so Unpin in Unload releases them; the
-	// batches' Embd pointers are cleared before BatchFree there too.
-	if len(dm.draftEmbdSlice) > 0 {
-		dm.draftEmbdPin.Pin(&dm.draftEmbdSlice[0])
-		dm.draftBatchMTP.Embd = (*float32)(unsafe.Pointer(&dm.draftEmbdSlice[0]))
-	}
-	if len(dm.mirrorEmbdSlice) > 0 {
-		dm.mirrorEmbdPin.Pin(&dm.mirrorEmbdSlice[0])
-		dm.mirrorBatchMTP.Embd = (*float32)(unsafe.Pointer(&dm.mirrorEmbdSlice[0]))
+		mtp:    mtpengine.NewResources(int(params.NBatch), nEmbd),
+		nDraft: nDraft,
 	}
 
 	return &mtpDrafter{c: dm}, nil
@@ -424,7 +413,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 	SetEmbeddingsPreNorm(lctx, true, true)
 
 	// Greedy sampler (temperature=0) — matches the embedded-MTP hot path;
-	// verifySpeculativeTokens forces greedy verification for MTP.
+	// MTP verification is greedy.
 	assistantVocab := llama.ModelGetVocab(asstModel)
 	suppressTokens := copySuppressTokens(assistantVocab)
 	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
@@ -441,18 +430,11 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 		model:          asstModel,
 		vocab:          llama.ModelGetVocab(targetModel),
 		suppressTokens: suppressTokens,
-		nEmbd:          nEmbd,
 		lctx:           lctx,
 		mem:            mem,
 		sampler:        sampler,
-		draftBatchMTP:  llama.BatchInit(1, 0, 1),
-		draftEmbdSlice: make([]float32, nEmbd),
+		mtp:            mtpengine.NewResources(0, nEmbd),
 		nDraft:         nDraft,
-	}
-
-	if len(dm.draftEmbdSlice) > 0 {
-		dm.draftEmbdPin.Pin(&dm.draftEmbdSlice[0])
-		dm.draftBatchMTP.Embd = (*float32)(unsafe.Pointer(&dm.draftEmbdSlice[0]))
 	}
 
 	return &sharedMTPDrafter{c: dm}, nil
@@ -476,8 +458,12 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 //
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
-func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, companionMTP bool) (drafter, error) {
-	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
+func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, plan speculationPlan) (drafter, error) {
+	switch plan.Source {
+	case speculationSourceNone:
+		return nil, nil
+
+	case speculationSourceClassic:
 		d, err := loadDraftModel(ctx, log, cfg, targetModel, targetCtxParams)
 		if err != nil {
 			return nil, err
@@ -487,14 +473,8 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 			"nDraft", d.c.nDraft, "devices", cfg.PtrDraftModel.Devices,
 			"nCtx", llama.NCtx(d.c.lctx))
 		return d, nil
-	}
 
-	// Separate-file MTP assistant (Gemma4). Present on disk and probes as a
-	// gemma4-assistant head → load it as a shared-KV MTP drafter. It needs
-	// the same pre-norm APIs the embedded MTP path does; if the loaded
-	// llama build doesn't export them, skip with a loud WARN (handled below
-	// for the embedded path, mirrored here).
-	if companionMTP {
+	case speculationSourceMTPCompanion:
 		if !MTPAvailable() {
 			const reason = "MTPDrafterFile is a gemma4-assistant MTP head but the loaded llama library does not export the pre-norm hidden-state APIs (llama_set_embeddings_nextn / llama_get_embeddings_nextn / _ith). MTP speculative decoding is DISABLED for this model. Update sdk/kronk/model/yzma.go with the symbol names exported by your llama build."
 
@@ -511,9 +491,13 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 		log(ctx, "draft-model-mtp-shared", "status", "loaded",
 			"source", "mtp-drafter-file",
 			"file", cfg.MTPDrafterFile,
-			"nDraft", d.c.nDraft, "nEmbd", d.c.nEmbd,
+			"nDraft", d.c.nDraft, "nEmbd", d.c.mtp.EmbeddingSize(),
 			"nCtx", llama.NCtx(d.c.lctx))
 		return d, nil
+	}
+
+	if plan.Source != speculationSourceMTPEmbedded {
+		return nil, fmt.Errorf("unsupported speculation source %d", plan.Source)
 	}
 
 	nLayers := mtpNextNLayers(targetModel)
@@ -562,7 +546,7 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 	log(ctx, "draft-model-mtp", "status", "loaded",
 		"source", source,
 		"nDraft", d.c.nDraft, "nextn-layers", nLayers,
-		"nEmbd", d.c.nEmbd,
+		"nEmbd", d.c.mtp.EmbeddingSize(),
 		"nCtx", llama.NCtx(d.c.lctx))
 	return d, nil
 }

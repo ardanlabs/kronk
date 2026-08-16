@@ -39,7 +39,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	imcStableInputTokens := len(s.job.imcNewCachedTokens)
 	imcReusedTokens := s.job.reusedPromptTokens
 	imcCheckpointTokens := s.job.imcCheckpointTokens
-	mtpResumeSource := s.mtpResumeSource
+	mtpResumeSource := s.mtp.ResumeSource
 	stageStarted := s.prefillStart
 
 	var elapsed time.Duration
@@ -62,7 +62,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		draftTokens := s.specDraftedTotal
 		draftAcceptedTokens := s.specAcceptedTotal
 		draftCoveredTokens := s.specCoveredTotal
-		disableReason := s.mtpDisableReason
+		disableReason := s.mtp.DisableReason
 
 		s.span.End()
 		e.freeSlotResources(s)
@@ -114,7 +114,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 		// When a draft model is configured, always emit draft metrics so
 		// the log schema stays stable for scrapers/dashboards even when
-		// speculation was disabled mid-request (chooseNDraft returned 0
+		// speculation was disabled mid-request (adaptive sizing returned 0
 		// due to a collapsed acceptance EMA). Models without a draft
 		// model omit the fields entirely.
 		if e.model.draft != nil {
@@ -247,7 +247,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
 			DraftTokens:         s.specDraftedTotal,
 			DraftAcceptedTokens: s.specAcceptedTotal,
-			DraftDisableReason:  s.mtpDisableReason,
+			DraftDisableReason:  s.mtp.DisableReason,
 		}
 
 		if usage.DraftTokens > 0 {
@@ -419,7 +419,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
 		DraftTokens:         s.specDraftedTotal,
 		DraftAcceptedTokens: s.specAcceptedTotal,
-		DraftDisableReason:  s.mtpDisableReason,
+		DraftDisableReason:  s.mtp.DisableReason,
 	}
 
 	if usage.DraftTokens > 0 {

@@ -18,6 +18,7 @@ import (
 	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -158,8 +159,8 @@ func (s *imcSession) logicalPosition() int {
 //     file. The MTP head takes (token_id, pre_norm_hidden_state) per
 //     position, so every target llama_decode must be mirrored into the
 //     draft context with batch.embd populated from
-//     llama_get_embeddings_pre_norm. See loadDraftModelMTP and the
-//     batchgen_mtp.go mirroring helpers.
+//     llama_get_embeddings_pre_norm. See loadDraftModelMTP and the MTP
+//     speculation package.
 type draftCore struct {
 	model          llama.Model
 	vocab          llama.Vocab
@@ -173,31 +174,7 @@ type draftCore struct {
 	promptBuf      []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf       []llama.Token // Reusable buffer for generateDraftTokens output
 
-	// nEmbd is the model embedding width (size of one pre-norm hidden
-	// row). Set only for MTP strategies; zero for classic drafts.
-	nEmbd int
-
-	// MTP batches carry pre-norm hidden-state vectors alongside token
-	// ids. llama_batch_init allocates EITHER the token buffer OR the
-	// embd buffer (depending on the embd arg) — never both. MTP needs
-	// both, so we call BatchInit(N, 0, 1) to get a token-only batch
-	// and then attach a Go-allocated embd buffer below.
-	//
-	//   draftBatchMTP   : AR per-step draft decode (capacity 1 token).
-	//   mirrorBatchMTP  : mirror a target batch into the draft KV
-	//                     (capacity nBatch).
-	//
-	// The embd buffers are Go-owned ([]float32) and pinned via
-	// runtime.Pinner so the GC can't relocate them while the C side
-	// reads through Batch.Embd. Pins are released and Batch.Embd is
-	// nilled out before BatchFree (which would otherwise free() Go
-	// memory and crash).
-	draftBatchMTP   llama.Batch
-	mirrorBatchMTP  llama.Batch
-	draftEmbdSlice  []float32      // Go-owned backing for draftBatchMTP.Embd  (size 1*nEmbd)
-	mirrorEmbdSlice []float32      // Go-owned backing for mirrorBatchMTP.Embd (size NBatch*nEmbd)
-	draftEmbdPin    runtime.Pinner // Keeps draftEmbdSlice[0] address stable while the batch is alive.
-	mirrorEmbdPin   runtime.Pinner // Keeps mirrorEmbdSlice[0] address stable while the batch is alive.
+	mtp *mtpengine.Resources
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).
@@ -286,12 +263,13 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	loadMTP, err := modelFilesLoadMTP(cfg.ModelFiles)
+	plan, err := resolveSpeculationPlan(ctx, l, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("detect-mtp-metadata: %w", err)
+		return nil, fmt.Errorf("resolve speculation: %w", err)
 	}
+	cfg.speculationPlan = plan
 
-	mParams, ka, err := buildModelParams(ctx, &cfg, loadMTP, l)
+	mParams, ka, err := buildModelParams(ctx, &cfg, plan.LoadMTP, l)
 	if err != nil {
 		return nil, err
 	}
@@ -309,22 +287,13 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	cfg = adjustConfig(cfg, mdl)
 	prefillChunk := cfg.PrefillBatchSize()
 
-	mtpCandidate := cfg.PtrDraftModel == nil || !cfg.PtrDraftModel.IsSeparate()
-
-	companionMTP := mtpCandidate && cfg.MTPDrafterFile != "" &&
-		probeGemma4AssistantMTP(ctx, l, cfg.MTPDrafterFile)
-
-	mtpEnabled := mtpCandidate && MTPAvailable() && (loadMTP || companionMTP)
 	pooled := isEmbedOrRerankConfig(cfg)
 	generationRowsPerSlot := 0
 	if !pooled {
-		generationRowsPerSlot = 1
-	}
-	if mtpEnabled && !pooled {
-		generationRowsPerSlot += mtpNDraft(cfg)
+		generationRowsPerSlot = plan.RowsPerSequence()
 	}
 	if !pooled {
-		cfg = adjustGenerationBatch(cfg, generationRowsPerSlot, mtpEnabled)
+		cfg = adjustGenerationBatch(cfg, generationRowsPerSlot, plan.MTP() && plan.Active())
 	}
 
 	generationReserve := cfg.NSeqMax() * generationRowsPerSlot
@@ -342,7 +311,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		"effective-prefill", effectivePrefill,
 		"effective-nbatch", cfg.EffectiveNBatch(),
 		"effective-nubatch", cfg.EffectiveNUBatch(),
-		"mtp", mtpEnabled,
+		"speculation-mode", plan.Mode,
+		"speculation-active", plan.Active(),
 		"automatic-padding", true)
 
 	modelInfo := toModelInfo(cfg, mdl)
@@ -386,7 +356,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	ctxParams := modelCtxParams(cfg, modelInfo, mdl)
+	ctxParams := modelCtxParams(cfg, modelInfo)
 
 	// Reflect the KV cache types that llama.cpp will actually use back into
 	// cfg. When the user leaves CacheTypeK/V as GGMLTypeAuto, modelCtxParams
@@ -480,7 +450,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		}
 
 	default:
-		if err := initGenerationRuntime(ctx, &m, nSlots, companionMTP); err != nil {
+		if err := initGenerationRuntime(ctx, &m, nSlots, plan); err != nil {
 			if m.mtmdMetaCtx != 0 {
 				mtmd.Free(m.mtmdMetaCtx)
 			}
@@ -753,7 +723,7 @@ func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNa
 // context, KV memory, IMC sessions, family plugin, batch engine, and the
 // optional draft model for speculative decoding. On error the helper frees
 // any partial state it created, but leaves m.model for the caller to free.
-func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, companionMTP bool) error {
+func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan speculationPlan) error {
 	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
 	if err != nil {
 		return fmt.Errorf("init-from-model: unable to init context: %w", err)
@@ -837,19 +807,19 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, companionM
 		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("init-generation-runtime: %w", err))
 	}
 
-	m.batch = newBatchEngine(m, nSlots)
-	m.batch.start(ctx)
-
 	// Initialize draft model for speculative decoding. selectAndLoadDraft
 	// picks between an explicit separate-GGUF draft (cfg.PtrDraftModel) and
 	// an auto-detected MTP head living inside the target GGUF
 	// (nextn_predict_layers > 0, qwen35 architecture). Returns (nil, nil)
 	// when no draft applies.
-	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams, companionMTP)
+	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams, plan)
 	if err != nil {
 		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("load-draft-model: %w", err))
 	}
 	m.draft = draft
+	if plan.Active() && m.draft == nil {
+		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("load-draft-model: selected speculation implementation did not create a drafter"))
+	}
 	if err := m.applyAdaptersToDraft(m.draft); err != nil {
 		return m.cleanupGenerationRuntime(ctx, err)
 	}
@@ -872,6 +842,9 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, companionM
 			sess.draftKVState = store
 		}
 	}
+
+	m.batch = newBatchEngine(m, nSlots)
+	m.batch.start(ctx)
 
 	return nil
 }

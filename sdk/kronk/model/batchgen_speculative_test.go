@@ -5,18 +5,24 @@ import (
 	"testing"
 	"time"
 
+	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
+	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 	s := slot{
-		startTime:          time.Now(),
-		specSnapshot:       []byte{1},
-		pendingH:           []float32{1},
-		mtpDraftH:          []float32{2},
+		startTime:    time.Now(),
+		specSnapshot: []byte{1},
+		mtp: mtpengine.SlotState{
+			PendingHidden: []float32{1},
+			DraftHidden:   []float32{2},
+		},
 		reusedPromptTokens: 42,
-		specAccEMA:         0.17,
-		mtpProbeTick:       31,
+		classic: classicengine.SlotState{
+			AcceptanceEMA: 0.17,
+			ProbeTick:     31,
+		},
 	}
 
 	s.reset()
@@ -27,65 +33,20 @@ func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 	if len(s.specSnapshot) != 0 {
 		t.Errorf("len(specSnapshot) = %d, want 0", len(s.specSnapshot))
 	}
-	if len(s.pendingH) != 0 {
-		t.Errorf("len(pendingH) = %d, want 0", len(s.pendingH))
+	if len(s.mtp.PendingHidden) != 0 {
+		t.Errorf("len(pendingH) = %d, want 0", len(s.mtp.PendingHidden))
 	}
-	if len(s.mtpDraftH) != 0 {
-		t.Errorf("len(mtpDraftH) = %d, want 0", len(s.mtpDraftH))
+	if len(s.mtp.DraftHidden) != 0 {
+		t.Errorf("len(mtpDraftH) = %d, want 0", len(s.mtp.DraftHidden))
 	}
 	if s.reusedPromptTokens != 0 {
 		t.Errorf("reusedPromptTokens = %d, want 0", s.reusedPromptTokens)
 	}
-	if s.specAccEMA != 1.0 {
-		t.Errorf("specAccEMA = %f, want 1.0", s.specAccEMA)
+	if s.classic.AcceptanceEMA != 1.0 {
+		t.Errorf("classic.AcceptanceEMA = %f, want 1.0", s.classic.AcceptanceEMA)
 	}
-	if s.mtpProbeTick != 0 {
-		t.Errorf("mtpProbeTick = %d, want 0", s.mtpProbeTick)
-	}
-}
-
-func TestChooseNDraftPolicy(t *testing.T) {
-	tests := []struct {
-		name     string
-		ema      float64
-		probe    int
-		want     int
-		wantTick int
-	}{
-		{name: "full draft", ema: 1.0, want: 2},
-		{name: "upper boundary", ema: 0.50, want: 2},
-		{name: "reduced draft", ema: 0.499, probe: 7, want: 1},
-		{name: "lower boundary", ema: 0.30, want: 1},
-		{name: "fully throttled", ema: 0.299, want: 0, wantTick: 1},
-		{name: "recovery probe", ema: 0.299, probe: mtpProbeInterval - 1, want: 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := slot{specAccEMA: tt.ema, mtpProbeTick: tt.probe}
-			if got := chooseNDraft(&s, 2); got != tt.want {
-				t.Errorf("chooseNDraft() = %d, want %d", got, tt.want)
-			}
-			if s.mtpProbeTick != tt.wantTick {
-				t.Errorf("mtpProbeTick = %d, want %d", s.mtpProbeTick, tt.wantTick)
-			}
-		})
-	}
-}
-
-func TestAdaptiveDraftStateDoesNotCrossRequestBoundary(t *testing.T) {
-	s := slot{specAccEMA: 0.29, mtpProbeTick: 7}
-	if got := chooseNDraft(&s, 2); got != 0 {
-		t.Fatalf("chooseNDraft() before reset = %d, want 0", got)
-	}
-
-	s.reset()
-
-	if got := chooseNDraft(&s, 2); got != 2 {
-		t.Errorf("chooseNDraft() after reset = %d, want 2", got)
-	}
-	if s.mtpProbeTick != 0 {
-		t.Errorf("mtpProbeTick = %d, want 0", s.mtpProbeTick)
+	if s.classic.ProbeTick != 0 {
+		t.Errorf("classic.ProbeTick = %d, want 0", s.classic.ProbeTick)
 	}
 }
 
@@ -235,17 +196,6 @@ func TestValidMTPDraftState(t *testing.T) {
 	}
 }
 
-func TestPrepareMTPDraftHiddenDoesNotAliasPendingH(t *testing.T) {
-	s := slot{pendingH: []float32{1, 2, 3}}
-
-	draftH := prepareMTPDraftHidden(&s, len(s.pendingH))
-	draftH[0] = 9
-
-	if s.pendingH[0] != 1 {
-		t.Errorf("pendingH[0] = %v, want 1", s.pendingH[0])
-	}
-}
-
 func TestSpecAcceptedNPast(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -262,30 +212,6 @@ func TestSpecAcceptedNPast(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := specAcceptedNPast(tt.basePast, tt.accepted); got != tt.want {
 				t.Errorf("specAcceptedNPast(%d, %d) = %d, want %d", tt.basePast, tt.accepted, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestClassicDraftKeepPosition(t *testing.T) {
-	tests := []struct {
-		name      string
-		startPast llama.Pos
-		endPast   llama.Pos
-		accepted  int
-		want      llama.Pos
-	}{
-		{"partial acceptance", 100, 104, 1, 102},
-		{"full acceptance", 100, 104, 4, 104},
-		{"EOG-truncated full acceptance", 100, 103, 2, 103},
-		{"EOG-truncated partial acceptance", 100, 103, 1, 102},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := classicDraftKeepPosition(tt.startPast, tt.endPast, tt.accepted)
-			if got != tt.want {
-				t.Errorf("classicDraftKeepPosition() = %d, want %d", got, tt.want)
 			}
 		})
 	}

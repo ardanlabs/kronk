@@ -464,6 +464,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.SessionStoreKind != (kvstorage.Kind{}) {
 		dst.SessionStoreKind = src.SessionStoreKind
 	}
+	if src.Speculation != "" {
+		dst.Speculation = src.Speculation
+	}
 	if src.PtrInsecureLogging != nil {
 		dst.PtrInsecureLogging = src.PtrInsecureLogging
 	}

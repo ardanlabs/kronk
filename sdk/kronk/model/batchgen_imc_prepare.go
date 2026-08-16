@@ -88,7 +88,7 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 	e.publishDiagnostics(true)
 	started := time.Now()
 	var err error
-	if e.model.draft != nil && e.model.draft.mtp() && !s.mtpDisabledForRequest {
+	if e.model.draft != nil && e.model.draft.mtp() && !s.mtp.Disabled {
 		err = e.decodeTokensIntoCacheMTP(job.ctx, s, chunk, prep.position)
 	} else {
 		err = e.model.decodeTokensIntoCache(job.ctx, chunk, s.seqID, prep.position)
@@ -175,7 +175,7 @@ func (e *batchEngine) clearFailedIMCPreparation(s *slot) {
 	if e.model.draft != nil && e.model.draft.mtp() {
 		llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
 		s.draftNPast = 0
-		s.pendingH = s.pendingH[:0]
+		s.mtp.PendingHidden = s.mtp.PendingHidden[:0]
 	}
 	e.model.decodeMu.Unlock()
 }

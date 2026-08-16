@@ -300,7 +300,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				if job.imcSession.draftKVState != nil {
 					draftBytes = job.imcSession.draftKVState.Bytes()
 				}
-				if len(job.imcSession.pendingH) == draft.nEmbd {
+				nEmbd := draft.mtp.EmbeddingSize()
+				if len(job.imcSession.pendingH) == nEmbd {
 					savedPendingH = append(savedPendingH, job.imcSession.pendingH...)
 				}
 				e.model.cacheMu.RUnlock()
@@ -314,25 +315,25 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					e.model.decodeMu.Unlock()
 
 					switch {
-					case validMTPDraftState(nDraftRead, uint64(len(draftBytes)), savedPendingH, draft.nEmbd):
+					case validMTPDraftState(nDraftRead, uint64(len(draftBytes)), savedPendingH, nEmbd):
 						// Mirror the slot's draft state to what the
 						// snapshot covers so subsequent mirror /
 						// generateDraftTokensMTP calls find a
 						// consistent draftNPast and pendingH.
 						s.draftNPast = cacheIdx
-						s.mtpResumeSource = "restored-draft-kv"
-						if len(savedPendingH) == draft.nEmbd {
-							if cap(s.pendingH) < draft.nEmbd {
-								s.pendingH = make([]float32, draft.nEmbd)
+						s.mtp.ResumeSource = "restored-draft-kv"
+						if len(savedPendingH) == nEmbd {
+							if cap(s.mtp.PendingHidden) < nEmbd {
+								s.mtp.PendingHidden = make([]float32, nEmbd)
 							} else {
-								s.pendingH = s.pendingH[:draft.nEmbd]
+								s.mtp.PendingHidden = s.mtp.PendingHidden[:nEmbd]
 							}
-							copy(s.pendingH, savedPendingH)
+							copy(s.mtp.PendingHidden, savedPendingH)
 						}
 						e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-done",
 							"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 							"restored_bytes", fmtBytes(nDraftRead),
-							"pending_h", len(s.pendingH) == draft.nEmbd,
+							"pending_h", len(s.mtp.PendingHidden) == nEmbd,
 							"elapsed", fmtDur(time.Since(draftRestoreStart)))
 					default:
 						// Restore failed or did not include the paired
@@ -344,14 +345,12 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 						llama.MemorySeqRm(draft.mem, s.seqID, -1, -1)
 						e.model.decodeMu.Unlock()
 						s.draftNPast = 0
-						s.pendingH = s.pendingH[:0]
-						s.mtpDisabledForRequest = true
-						s.mtpDisableReason = "imc-hit"
+						s.mtp.Disable("imc-hit")
 						e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-failed",
 							"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
 							"restored_bytes", fmtBytes(nDraftRead),
 							"expected_bytes", fmtBytes(uint64(len(draftBytes))),
-							"pending_h", len(savedPendingH) == draft.nEmbd)
+							"pending_h", len(savedPendingH) == nEmbd)
 					}
 
 				default:
@@ -360,8 +359,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					// seq empty so startSlotText disables MTP for the
 					// request via the existing mtp-disabled-imc-hit
 					// path.
-					s.mtpDisabledForRequest = true
-					s.mtpDisableReason = "imc-hit"
+					s.mtp.Disable("imc-hit")
 					e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-skip-empty",
 						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
 				}
@@ -488,8 +486,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				// collides with the surviving positions and fails
 				// with "the input could not be processed".
 				var draftClearErr error
-				clear(s.pendingH[:cap(s.pendingH)])
-				s.pendingH = s.pendingH[:0]
+				clear(s.mtp.PendingHidden[:cap(s.mtp.PendingHidden)])
+				s.mtp.PendingHidden = s.mtp.PendingHidden[:0]
 				if e.model.draft != nil && e.model.draft.mtp() {
 					_, draftClearErr = llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
 					if draftClearErr == nil {
@@ -738,7 +736,8 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 					draftBufAction = "grow"
 				}
 
-				draftSnapshotOK := validMTPDraftState(nDraftExtracted, draftKVSize, s.pendingH, draft.nEmbd)
+				nEmbd := draft.mtp.EmbeddingSize()
+				draftSnapshotOK := validMTPDraftState(nDraftExtracted, draftKVSize, s.mtp.PendingHidden, nEmbd)
 
 				e.model.cacheMu.Lock()
 				// pendingH snapshot: copy the slot's pendingH into the
@@ -746,12 +745,12 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 				// the session's pendingH backing slice.
 				if draftSnapshotOK {
 					job.imcSession.draftKVState.Commit(int(nDraftExtracted))
-					if cap(job.imcSession.pendingH) < draft.nEmbd {
-						job.imcSession.pendingH = make([]float32, draft.nEmbd)
+					if cap(job.imcSession.pendingH) < nEmbd {
+						job.imcSession.pendingH = make([]float32, nEmbd)
 					} else {
-						job.imcSession.pendingH = job.imcSession.pendingH[:draft.nEmbd]
+						job.imcSession.pendingH = job.imcSession.pendingH[:nEmbd]
 					}
-					copy(job.imcSession.pendingH, s.pendingH)
+					copy(job.imcSession.pendingH, s.mtp.PendingHidden)
 				} else {
 					job.imcSession.draftKVState.Reset()
 					job.imcSession.pendingH = job.imcSession.pendingH[:0]
@@ -767,7 +766,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 						"buf_action", draftBufAction,
 						"buf_cap_before", fmtBytes(uint64(draftCapBefore)),
 						"buf_cap_after", fmtBytes(uint64(draftCapAfter)),
-						"pending_h", len(s.pendingH) == draft.nEmbd)
+						"pending_h", len(s.mtp.PendingHidden) == nEmbd)
 				default:
 					e.model.log(job.ctx, "start-slot", "status", "imc-draft-snapshot-failed",
 						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
@@ -776,7 +775,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 						"buf_action", draftBufAction,
 						"buf_cap_before", fmtBytes(uint64(draftCapBefore)),
 						"buf_cap_after", fmtBytes(uint64(draftCapAfter)),
-						"pending_h", len(s.pendingH) == draft.nEmbd)
+						"pending_h", len(s.mtp.PendingHidden) == nEmbd)
 				}
 			}
 
@@ -950,7 +949,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		// guaranteed token-v2 tail captures pendingH before drafting.
 		if _, shared := e.model.draft.(*sharedMTPDrafter); shared && job.imcCacheHit {
 			s.draftNPast = cacheIdx
-			s.mtpResumeSource = "shared-target-kv"
+			s.mtp.ResumeSource = "shared-target-kv"
 			e.model.log(job.ctx, "speculative", "status", "mtp-resume", "slot", s.id,
 				"resume_source", "shared-target-kv", "cached_tokens", cacheIdx,
 				"tail_tokens", len(tokens))
@@ -966,11 +965,10 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		// missing, restore returned 0 bytes, etc.), s.draftNPast
 		// stays at 0 and we fall back to target-only decoding for
 		// the remainder of the request. Running MTP with stale /
-		// empty draft KV produces near-zero acceptance and poisons
-		// specAccEMA for the remainder of the request.
+		// empty draft KV produces near-zero acceptance for the remainder
+		// of the request.
 		if job.imcCacheHit && s.draftNPast < cacheIdx {
-			s.mtpDisabledForRequest = true
-			s.mtpDisableReason = "imc-hit"
+			s.mtp.Disable("imc-hit")
 			e.model.log(job.ctx, "speculative", "status", "mtp-disabled-imc-hit",
 				"slot", s.id, "id", job.id, "cached_tokens", cacheIdx,
 				"draft_n_past", s.draftNPast)
@@ -1079,10 +1077,9 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 		// M-RoPE media snapshots currently externalize target KV only. Until
 		// draft position compatibility is proven, keep target reuse enabled
 		// but disable speculative decoding for this request.
-		s.mtpDisabledForRequest = true
-		s.mtpDisableReason = "media-mrope"
+		s.mtp.Disable("media-mrope")
 		e.model.log(job.ctx, "speculative", "status", "mtp-disabled-media-mrope",
-			"slot", s.id, "id", job.id, "reason", s.mtpDisableReason)
+			"slot", s.id, "id", job.id, "reason", s.mtp.DisableReason)
 	}
 
 	nBatch := e.model.cfg.EffectiveNBatch()
@@ -1252,9 +1249,9 @@ func (e *batchEngine) snapshotProgressiveCheckpoint(ctx context.Context, s *slot
 			draftSize := llama.StateSeqGetSize(dctx, s.seqID)
 			draftExtracted := llama.StateSeqGetData(dctx, draftStore.Prepare(int(draftSize)), s.seqID)
 			e.model.decodeMu.Unlock()
-			if validMTPDraftState(draftExtracted, draftSize, s.pendingH, draft.nEmbd) {
+			if validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
 				draftStore.Commit(int(draftExtracted))
-				pendingH = slices.Clone(s.pendingH)
+				pendingH = slices.Clone(s.mtp.PendingHidden)
 			} else {
 				if closeErr := draftStore.Close(); closeErr != nil {
 					e.model.log(ctx, "start-slot", "status", "imc-progressive-draft-close-failed", "err", closeErr)
